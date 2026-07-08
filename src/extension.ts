@@ -19,9 +19,10 @@ import { DEFAULT_PRICING, PriceRule, PricingEngine } from './core/pricing';
 import { buildFleetReport, buildOutputsDigest } from './core/report';
 import { SessionIndex } from './core/sessions';
 import {
-    FarmSchedule, PREV_OUTPUT_PLACEHOLDER, sanitizePrompt, ScheduleKind,
+    FarmSchedule, FarmTrigger, PREV_OUTPUT_PLACEHOLDER, sanitizePrompt, ScheduleKind,
     TaskManager, TaskMode, WorkflowStep
 } from './core/tasks';
+import { TriggerManager } from './core/triggers';
 import { normPath, relTime } from './core/util';
 import { AgentDetailPanel } from './panels/agentDetail';
 import { DashboardPanel } from './panels/dashboard';
@@ -142,15 +143,31 @@ export function activate(context: vscode.ExtensionContext): void {
         path.join(context.globalStorageUri.fsPath, 'farm-tasks.json'),
         () => agents,
         () => cfg().get<boolean>('queueAutoAdvance', false),
-        () => cfg().get<string>('taskExtraArgs', '')
+        () => cfg().get<string>('taskExtraArgs', ''),
+        {
+            judgeArgs: () => cfg().get<string>('judgeArgs', '--model claude-haiku-4-5-20251001'),
+            maxConcurrent: () => cfg().get<number>('maxConcurrentTasks', 2),
+            maxConcurrentPerAgent: () => cfg().get<number>('maxConcurrentPerAgent', 1),
+            outputsMaxMB: () => cfg().get<number>('outputsMaxMB', 200),
+            quotaCheck: () => {
+                const guard = cfg().get<number>('quotaGuardPercent', 0);
+                const limit = cfg().get<number>('windowTokenLimit', 0);
+                if (guard <= 0 || limit <= 0) { return undefined; }
+                const pct = 100 * index.windowUsage().tokens / limit;
+                return pct >= guard ? `quota guard (${Math.round(pct)}% of 5h window)` : undefined;
+            }
+        }
     );
     context.subscriptions.push(taskManager);
+
+    const triggerManager = new TriggerManager(taskManager, () => agents, live);
+    context.subscriptions.push(triggerManager);
 
     const agentsTree = new AgentsTreeProvider(state);
     const sessionsTree = new SessionsTreeProvider(state);
     const insightsTree = new InsightsTreeProvider(state);
     const feedTree = new FeedTreeProvider(state);
-    const tasksTree = new TasksTreeProvider(taskManager);
+    const tasksTree = new TasksTreeProvider(taskManager, triggerManager);
 
     context.subscriptions.push(
         vscode.window.registerTreeDataProvider('agentfarm.agents', agentsTree),
@@ -669,6 +686,121 @@ export function activate(context: vscode.ExtensionContext): void {
             }
         }),
 
+        vscode.commands.registerCommand('agentfarm.addTrigger', async () => {
+            const title = await vscode.window.showInputBox({
+                prompt: 'Trigger name (e.g. "Inbox fabrikası")', ignoreFocusOut: true
+            });
+            if (!title) { return; }
+            const typePick = await vscode.window.showQuickPick(
+                [
+                    { label: '$(file-directory) Watch a folder', description: 'fires when files change inside', type: 'watch' as const, dir: true },
+                    { label: '$(file) Watch a file', description: 'fires when the file changes', type: 'watch' as const, dir: false },
+                    { label: '$(broadcast) Hook event', description: 'fires on a live event (needs Live Hooks)', type: 'hook' as const, dir: false }
+                ],
+                { placeHolder: 'What should fire this trigger?', ignoreFocusOut: true }
+            );
+            if (!typePick) { return; }
+
+            let watchPath: string | undefined;
+            let hookEvent: string | undefined;
+            let hookAgent: string | undefined;
+            if (typePick.type === 'watch') {
+                const picked = await vscode.window.showOpenDialog({
+                    canSelectFolders: typePick.dir, canSelectFiles: !typePick.dir,
+                    canSelectMany: false, openLabel: 'Watch this'
+                });
+                if (!picked?.length) { return; }
+                watchPath = picked[0].fsPath;
+            } else {
+                const eventPick = await vscode.window.showQuickPick(
+                    [
+                        { label: 'stop', description: 'an agent finished its turn' },
+                        { label: 'end', description: 'a session ended' },
+                        { label: 'permission', description: 'an agent is waiting for permission' },
+                        { label: 'compact', description: 'a session compacted' },
+                        { label: 'subagent', description: 'a subagent finished' }
+                    ],
+                    { placeHolder: 'Which live event?', ignoreFocusOut: true }
+                );
+                if (!eventPick) { return; }
+                hookEvent = eventPick.label;
+                const agentFilter = await vscode.window.showQuickPick(
+                    [{ label: 'Any agent' }, ...agents.map(a => ({ label: a.name }))],
+                    { placeHolder: 'Only for a specific agent?', ignoreFocusOut: true });
+                if (!agentFilter) { return; }
+                if (agentFilter.label !== 'Any agent') { hookAgent = agentFilter.label; }
+            }
+
+            const actionPick = await vscode.window.showQuickPick(
+                [
+                    { label: '$(play) Run a task', id: 'task' },
+                    ...(taskManager.workflows.length ? [{ label: '$(type-hierarchy-sub) Run a workflow', id: 'workflow' }] : [])
+                ],
+                { placeHolder: 'What should it do?', ignoreFocusOut: true }
+            );
+            if (!actionPick) { return; }
+
+            let action: FarmTrigger['action'];
+            if (actionPick.id === 'workflow') {
+                const wfPick = await vscode.window.showQuickPick(
+                    taskManager.workflows.map(w => ({ label: w.title, description: `${w.steps.length} steps`, w })),
+                    { placeHolder: 'Which workflow?', ignoreFocusOut: true });
+                if (!wfPick) { return; }
+                action = { kind: 'workflow', workflowId: wfPick.w.id };
+            } else {
+                const agent = await resolveAgent(undefined);
+                if (!agent) { return; }
+                const prompt = await vscode.window.showInputBox({
+                    prompt: 'Task prompt — {watch} inserts the watched path',
+                    value: typePick.type === 'watch' ? 'DUTIES.md dosyanı oku ve şu hedefle ilgili görevini uygula: {watch}' : '',
+                    ignoreFocusOut: true
+                });
+                if (!prompt) { return; }
+                action = {
+                    kind: 'task', agentId: agent.id, agentName: agent.name,
+                    title: title, prompt, mode: 'headless'
+                };
+            }
+
+            taskManager.addTrigger({
+                title, type: typePick.type, watchPath, hookEvent, hookAgent, action,
+                debounceSec: typePick.type === 'watch' ? 10 : 1,
+                cooldownSec: 60, maxPerHour: 6, enabled: true
+            });
+            void vscode.window.showInformationMessage(
+                `Agent Farm: trigger "${title}" armed. (debounce 10s, cooldown 60s, max 6/h — edit in farm-tasks.json if needed)`);
+        }),
+
+        vscode.commands.registerCommand('agentfarm.toggleTrigger', (node?: TaskNode) => {
+            if (node?.kind === 'trigger') { taskManager.toggleTrigger(node.trigger); }
+        }),
+        vscode.commands.registerCommand('agentfarm.deleteTrigger', async (node?: TaskNode) => {
+            if (node?.kind !== 'trigger') { return; }
+            const confirmed = await vscode.window.showWarningMessage(
+                `Delete trigger "${node.trigger.title}"?`, { modal: true }, 'Delete');
+            if (confirmed === 'Delete') { taskManager.deleteTrigger(node.trigger); }
+        }),
+        vscode.commands.registerCommand('agentfarm.fireTrigger', (node?: TaskNode) => {
+            if (node?.kind === 'trigger') { triggerManager.fire(node.trigger, 'manual'); }
+        }),
+
+        vscode.commands.registerCommand('agentfarm.openTaskHistory', async () => {
+            const dir = taskManager.historyDir;
+            if (!fs.existsSync(dir)) {
+                void vscode.window.showInformationMessage('Agent Farm: no task history yet.');
+                return;
+            }
+            const files = fs.readdirSync(dir).filter(f => f.endsWith('.jsonl')).sort().reverse();
+            if (!files.length) {
+                void vscode.window.showInformationMessage('Agent Farm: no task history yet.');
+                return;
+            }
+            const pick = await vscode.window.showQuickPick(files, { placeHolder: 'Which month?' });
+            if (pick) {
+                await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(path.join(dir, pick)));
+            }
+        }),
+
         vscode.commands.registerCommand('agentfarm.saveTaskTemplate', async (node?: TaskNode) => {
             if (node?.kind !== 'task') { return; }
             const t = node.task;
@@ -770,14 +902,32 @@ export function activate(context: vscode.ExtensionContext): void {
                     onFail = onFailPick.onFail;
                 }
                 const runIf = steps.length === 0 ? '' : (await vscode.window.showInputBox({
-                    prompt: `Step ${stepNo}: run only if previous output matches (regex) — leave empty to always run`,
+                    prompt: `Step ${stepNo}: run only if previous output matches (regex, or json:field~regex) — empty = always run`,
                     ignoreFocusOut: true
                 }) ?? '');
+                const contractPick = stepMode.mode === 'headless'
+                    ? await vscode.window.showQuickPick(
+                        [
+                            { label: 'Text output (default)', contract: undefined as 'json' | undefined },
+                            { label: 'JSON output', description: 'structured handoff: next step can use {prev_json.field}', contract: 'json' as const }
+                        ],
+                        { placeHolder: `Step ${stepNo} output contract`, ignoreFocusOut: true })
+                    : { contract: undefined };
+                if (!contractPick) { return; }
+                const verifyCriteria = stepMode.mode === 'headless'
+                    ? ((await vscode.window.showInputBox({
+                        prompt: `Step ${stepNo}: verification criteria for the cheap-model judge — empty = no verification`,
+                        placeHolder: 'e.g. Çıktı en az 3 maddelik bir plan içermeli',
+                        ignoreFocusOut: true
+                    })) ?? '')
+                    : '';
                 steps.push({
                     agentId: agentPick.agent.id, agentName: agentPick.agent.name,
                     title: stepTitle, prompt: stepPrompt, mode: stepMode.mode,
                     onFail: onFail === 'stop' ? undefined : onFail,
-                    runIf: runIf.trim() || undefined
+                    runIf: runIf.trim() || undefined,
+                    outputContract: contractPick.contract,
+                    verify: verifyCriteria.trim() ? { criteria: verifyCriteria.trim(), retries: 1 } : undefined
                 });
             }
             if (!steps.length) { return; }
@@ -838,7 +988,9 @@ export function activate(context: vscode.ExtensionContext): void {
                     { label: 'Agent', description: step.agentName, id: 'agent' },
                     { label: 'Mode', description: step.mode, id: 'mode' },
                     { label: 'On fail', description: String(step.onFail ?? 'stop'), id: 'onFail' },
-                    { label: 'Run-if condition', description: step.runIf ?? '(always runs)', id: 'runIf' }
+                    { label: 'Run-if condition', description: step.runIf ?? '(always runs)', id: 'runIf' },
+                    { label: 'Output contract', description: step.outputContract ?? 'text', id: 'contract' },
+                    { label: 'Verification', description: step.verify ? `${step.verify.criteria.slice(0, 40)} (retries ${step.verify.retries ?? 1})` : '(none)', id: 'verify' }
                 ],
                 { placeHolder: `Edit step ${node.index + 1}: ${step.title}` }
             );
@@ -895,11 +1047,41 @@ export function activate(context: vscode.ExtensionContext): void {
                 }
                 case 'runIf': {
                     const v = await vscode.window.showInputBox({
-                        prompt: 'Run only if previous output matches (regex) — empty = always run',
+                        prompt: 'Run only if previous output matches (regex, or json:field~regex) — empty = always run',
                         value: step.runIf ?? '', ignoreFocusOut: true
                     });
                     if (v === undefined) { return; }
                     taskManager.updateWorkflowStep(w, node.index, { runIf: v.trim() || undefined });
+                    break;
+                }
+                case 'contract': {
+                    const v = await vscode.window.showQuickPick(
+                        [
+                            { label: 'Text output', contract: undefined as 'json' | undefined },
+                            { label: 'JSON output', description: 'next step can use {prev_json.field}', contract: 'json' as const }
+                        ], { placeHolder: 'Output contract' });
+                    if (!v) { return; }
+                    taskManager.updateWorkflowStep(w, node.index, { outputContract: v.contract });
+                    break;
+                }
+                case 'verify': {
+                    const criteria = await vscode.window.showInputBox({
+                        prompt: 'Verification criteria for the judge — empty = remove verification',
+                        value: step.verify?.criteria ?? '', ignoreFocusOut: true
+                    });
+                    if (criteria === undefined) { return; }
+                    if (!criteria.trim()) {
+                        taskManager.updateWorkflowStep(w, node.index, { verify: undefined });
+                        break;
+                    }
+                    const retries = await vscode.window.showInputBox({
+                        prompt: 'Retries on FAIL', value: String(step.verify?.retries ?? 1),
+                        validateInput: x => /^\d+$/.test(x) ? undefined : 'Enter a number', ignoreFocusOut: true
+                    });
+                    if (retries === undefined) { return; }
+                    taskManager.updateWorkflowStep(w, node.index, {
+                        verify: { criteria: criteria.trim(), retries: Number(retries) }
+                    });
                     break;
                 }
             }

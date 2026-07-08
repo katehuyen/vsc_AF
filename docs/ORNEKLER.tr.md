@@ -200,6 +200,34 @@ Aşağıdaki senaryoları önce `deneme` üzerinde uygulayıp sonra gerçek ajan
 
 ---
 
+## S12 — Inbox Fabrikası: Elleme, Kendi Başlasın ✅
+
+**Amaç:** S1'in tam otomasyonu — ajan oturumu bile beklemeden, klasöre dosya düştüğü an tasnif zinciri koşsun ve sonucu bir hakem doğrulasın.
+
+**Adımlar:**
+
+1. Önce zinciri kur (Tasks → New Multi-Agent Workflow): tek adım yeter — ajan `deneme`, prompt: `DUTIES.md dosyanı oku ve Inbox tasnifi görevini şimdi uygula. Sonunda neyi nereye taşıdığını raporla.`, mod **Headless**, doğrulama ölçütü: `Çıktı, inbox'taki bir dosyanın arsiv klasörüne taşındığını açıkça raporlamalı.`
+2. Tetikleyiciyi kur: Tasks başlığı **⋯** → **Add Trigger** → ad `Inbox fabrikası` → **Watch a folder** → inbox klasörünü seç → **Run a workflow** → zinciri seç.
+3. Triggers bölümünde ⚡ satırın "armed" göründüğünü doğrula.
+4. **An:** İzlenen klasöre bir dosya bırak. ~10 sn (debounce) sonra bildirim düşer: "trigger fired → workflow". Görev koşar, hakem çıktıyı PASS'ler, zincir tamamlanır.
+5. **Doğrula:** dosya hedef klasörde, görev satırında `verify pass`, çıktının sonunda hakem kararı, tetik satırında `fired 1×`.
+
+Korumalar: art arda 10 dosya atarsan debounce hepsini tek ateşe indirir; 60 sn içinde yeni ateş olmaz (cooldown); saatte en fazla 6 ateş. Kota bekçisi açıksa (S8) pencere doluyken fabrika kibarca bekler.
+
+> ✅ Test (çıkış ölçütü): `deneme/inbox`'a bırakılan gerçek dosya tetikleyiciyi ateşledi, haiku dosyayı arşive taşıdı, hakem (haiku) "PASS — dosya adını, kaynak ve hedef klasörleri açıkça belirtiyor" kararını arşive yazdı, zincir tamamlandı — insan eli değmeden.
+
+## S13 — Alan Bazlı Devir: JSON Sözleşmeli Zincir ✅
+
+**Amaç:** Adımlar arası devri metin tesadüflerine değil, yapılandırılmış alanlara bağlamak.
+
+**Adımlar:**
+
+1. Zincir kur: **Adım 1** (headless, output contract: **JSON**): `Şu alanlarla geçerli bir JSON yaz: durum (ALARM/normal), seviye (1-5), ozet.` **Adım 2** (headless, run-if: `json:durum~ALARM`): `Seviye {prev_json.seviye} alarm: {prev_json.ozet}. Tek cümlelik müdahale planı yaz.`
+2. Çalıştır: durum=ALARM ise adım 2'nin prompt'una gerçek değerler gömülür ("Seviye 3 alarm: disk alanı kritik…"); durum=normal ise adım atlanır.
+3. Model JSON'u kod çitine sarsa bile ayrıştırıcı tolere eder — sen sadece alan adlarını doğru yaz.
+
+> ✅ Test (iki dal da gerçek haiku ile): alanlar prompt'a doğru gömüldü, ALARM dalı koştu, plan üretildi; çitli JSON toleransı gerçek çıktıyla doğrulandı.
+
 ## Kapanış: Ritim Önerisi
 
 - **Her gün 10 saniye:** durum çubuğu + Duties rozetleri (pending var mı?).

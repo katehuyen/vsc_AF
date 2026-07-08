@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "0.7.3",
+  "version": "0.8.0",
   "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
@@ -373,6 +373,34 @@
         "title": "Delete Step",
         "category": "Agent Farm",
         "icon": "$(trash)"
+      },
+      {
+        "command": "agentfarm.addTrigger",
+        "title": "Add Trigger",
+        "category": "Agent Farm",
+        "icon": "$(zap)"
+      },
+      {
+        "command": "agentfarm.toggleTrigger",
+        "title": "Enable/Disable Trigger",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.deleteTrigger",
+        "title": "Delete Trigger",
+        "category": "Agent Farm",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "agentfarm.fireTrigger",
+        "title": "Fire Now",
+        "category": "Agent Farm",
+        "icon": "$(play)"
+      },
+      {
+        "command": "agentfarm.openTaskHistory",
+        "title": "Open Task History",
+        "category": "Agent Farm"
       }
     ],
     "menus": {
@@ -411,6 +439,16 @@
           "command": "agentfarm.newWorkflow",
           "when": "view == agentfarm.tasks",
           "group": "navigation@3"
+        },
+        {
+          "command": "agentfarm.addTrigger",
+          "when": "view == agentfarm.tasks",
+          "group": "overflow@0"
+        },
+        {
+          "command": "agentfarm.openTaskHistory",
+          "when": "view == agentfarm.tasks",
+          "group": "overflow@2"
         },
         {
           "command": "agentfarm.clearDoneTasks",
@@ -613,6 +651,26 @@
           "command": "agentfarm.deleteWorkflowStep",
           "when": "view == agentfarm.tasks && viewItem == workflow-step",
           "group": "1_step@1"
+        },
+        {
+          "command": "agentfarm.fireTrigger",
+          "when": "view == agentfarm.tasks && viewItem == trigger",
+          "group": "inline@1"
+        },
+        {
+          "command": "agentfarm.deleteTrigger",
+          "when": "view == agentfarm.tasks && viewItem == trigger",
+          "group": "inline@2"
+        },
+        {
+          "command": "agentfarm.toggleTrigger",
+          "when": "view == agentfarm.tasks && viewItem == trigger",
+          "group": "1_trig@1"
+        },
+        {
+          "command": "agentfarm.addTrigger",
+          "when": "view == agentfarm.tasks && viewItem == triggers-root",
+          "group": "inline@1"
         }
       ]
     },
@@ -693,6 +751,31 @@
           "type": "string",
           "default": "",
           "description": "Extra CLI arguments appended to every task's claude command, e.g. \"--model haiku\" to run routine automation on a cheaper model."
+        },
+        "agentFarm.judgeArgs": {
+          "type": "string",
+          "default": "--model claude-haiku-4-5-20251001",
+          "description": "CLI arguments for internal verification (judge) calls — keep this on a cheap model."
+        },
+        "agentFarm.maxConcurrentTasks": {
+          "type": "number",
+          "default": 2,
+          "description": "Maximum tasks running at once across the whole farm (0 = unlimited). Excess starts are deferred and launched automatically."
+        },
+        "agentFarm.maxConcurrentPerAgent": {
+          "type": "number",
+          "default": 1,
+          "description": "Maximum tasks running at once per agent (0 = unlimited)."
+        },
+        "agentFarm.quotaGuardPercent": {
+          "type": "number",
+          "default": 0,
+          "description": "Defer automatic task starts when the 5h window reaches this percent of windowTokenLimit (0 = off; requires windowTokenLimit)."
+        },
+        "agentFarm.outputsMaxMB": {
+          "type": "number",
+          "default": 200,
+          "description": "Size cap for the archived task outputs folder; oldest unreferenced outputs are pruned (0 = unlimited)."
         },
         "agentFarm.queueAutoAdvance": {
           "type": "boolean",

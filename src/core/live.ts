@@ -88,6 +88,9 @@ export class LiveMonitor implements vscode.Disposable {
     private stuckTimer: NodeJS.Timeout;
     private readonly onDidUpdateEmitter = new vscode.EventEmitter<void>();
     readonly onDidUpdate = this.onDidUpdateEmitter.event;
+    private readonly onEventEmitter = new vscode.EventEmitter<LiveEvent>();
+    /** Fires for every individual live event (used by hook triggers). */
+    readonly onEvent = this.onEventEmitter.event;
     listenerState: ListenerState = 'disabled';
     activePort = 0;
 
@@ -180,7 +183,7 @@ export class LiveMonitor implements vscode.Disposable {
     }
 
     private push(s: LiveSession, kind: LiveEventKind, tool?: string, detail?: string): void {
-        this.eventLog.push({
+        const event: LiveEvent = {
             ts: Date.now(),
             sessionId: s.sessionId,
             agentId: s.agentId,
@@ -189,10 +192,12 @@ export class LiveMonitor implements vscode.Disposable {
             tool,
             detail,
             transcriptPath: s.transcriptPath
-        });
+        };
+        this.eventLog.push(event);
         if (this.eventLog.length > MAX_EVENTS) {
             this.eventLog = this.eventLog.slice(-MAX_EVENTS);
         }
+        this.onEventEmitter.fire(event);
     }
 
     handle(payload: HookPayload): void {
@@ -365,5 +370,6 @@ export class LiveMonitor implements vscode.Disposable {
         this.stop();
         clearInterval(this.stuckTimer);
         this.onDidUpdateEmitter.dispose();
+        this.onEventEmitter.dispose();
     }
 }

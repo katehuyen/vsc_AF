@@ -233,6 +233,36 @@ Headless görevler (0.4.0'dan itibaren) terminalde değil, **arka plan süreci**
 
 Sık kullandığın görevleri şablonlaştır: görev üzerinde sağ tık → **Save as Template**. Şablon bir ajana bağlanabilir ya da "any agent" olur (çalıştırırken sorar). Tasks görünümündeki **Templates** bölümünden ▶ ile tek tıkta yeni görev üretir. Örnek şablonlar: "Günlük plan", "Haftalık özet", "Hafıza bakımı".
 
+### Eşzamanlılık ve Kota Bekçisi
+
+0.8.0'dan itibaren kuyruk gerçek bir kuyruk: aynı anda koşan görev sayısı sınırlıdır (`maxConcurrentTasks` varsayılan 2, `maxConcurrentPerAgent` varsayılan 1). Sınıra takılan başlatma **iptal edilmez** — "deferred" rozetiyle bekler ve kapasite açılınca kendiliğinden koşar.
+
+**Kota bekçisi:** `windowTokenLimit` tanımlıysa ve `quotaGuardPercent` (örn. 85) ayarlıysa, 5 saatlik pencere o doluluğa ulaştığında **otomatik** işler ertelenir — bir gece fabrikası sabah kotanı yemiş olmaz. Pencere gevşeyince ertelenenler sırayla başlar.
+
+### Görev Tarihçesi
+
+Biten görevler kaybolmaz: liste tavana gelince veya **Clear Finished Tasks** deyince kayıtlar aylık `task-history/YYYY-AA.jsonl` dosyalarına taşınır (`Open Task History` komutuyla aç). Çıktı arşivi klasörü de `outputsMaxMB` tavanını aşınca en eski, referanssız çıktılardan temizlenir.
+
+## Tetikleyiciler
+
+Otomasyonun kalbi (0.8.0): işler yalnızca saatle değil, **olayla** başlar. Tasks görünümünde ⚡ **Triggers** bölümü.
+
+### Tetikleyici Türleri
+
+- **Watch (klasör/dosya):** İzlenen yol değişince ateşler. Nöbet sisteminin eyleme köprüsü: nöbet "ajan çalışırken bakar", tetikleyici ise **ajan kapalıyken bile** değişiklik anında görevi/zinciri başlatır. Örnek: FAST_NOTE'a dosya düştü → 10 sn sonra tasnif zinciri koşuyor.
+- **Hook (canlı olay):** Bir canlı olay ateşler (Live Hooks kurulu olmalı): `stop` (ajan turunu bitirdi), `end` (oturum kapandı), `permission`, `compact`, `subagent`. İsteğe bağlı ajan filtresi. Örnek: psikolog oturumu bitince asistan özet görevi koşsun.
+
+### Eylem ve Korumalar
+
+Tetik ya bir **görev** başlatır (prompt'ta `{watch}` izlenen yolu verir) ya bir **workflow** koşturur. Fırtına korumaları yerleşiktir:
+
+- **Debounce** (varsayılan 10 sn): art arda değişiklikler tek ateşe iner.
+- **Cooldown** (60 sn): ateş sonrası sessiz dönem.
+- **Saatlik tavan** (6/saat): aşılırsa uyarıyla atlanır.
+- Kendi çıktı arşivini izleyen tetik kurulamazsa/kurulmuşsa devre dışı kalır (geri besleme döngüsü koruması).
+
+Yönetim: **Add Trigger** sihirbazı; tetik satırında ▶ (elle ateşle), aç/kapat, sil; kaç kez ateşlediği ve son ateşleme zamanı satırda görünür. Watch yolu kaybolursa satır kırmızı "PATH MISSING" gösterir.
+
 ## Çoklu-Ajan İş Akışları
 
 Faz 4'ün en güçlü aracı: **Workflows** — birden çok ajanın sırayla çalıştığı zincirler. `Agent Farm: New Multi-Agent Workflow…` ile kurulur: adım adım ajan + başlık + prompt + mod seçersin.
@@ -254,6 +284,24 @@ Faz 4'ün en güçlü aracı: **Workflows** — birden çok ajanın sırayla ça
 Güvenlik: `onFail` sıçramalarıyla oluşabilecek sonsuz döngülere karşı her çalıştırma **25 adım yürütmeyle** sınırlıdır; sınıra gelen zincir uyarıyla durur.
 
 Örnek akıllı zincir: 1. psikolog: "günlüğü tara" → 2. asistan (runIf: `ALARM`): "acil müdahale planı: {prev_output}" → 3. genel (her zaman): "günü arşivle" (onFail: Continue).
+
+### Doğrulayıcı Adımlar (Verify)
+
+Gece koşan işe güvenin anahtarı (0.8.0): headless bir adıma **doğrulama ölçütü** verirsen, adım bitince ucuz bir "hakem" çağrısı (haiku — `judgeArgs` ayarı) çıktıyı ölçüte göre PASS/FAIL değerlendirir:
+
+- **PASS** → zincir normal ilerler; karar, çıktı arşivinin sonuna yazılır (`Verify (attempt 1): PASS — …`).
+- **FAIL** → adım, hakemin gerekçesi prompt'a eklenerek **yeniden denenir** (`retries`, varsayılan 1). Denemeler tükenirse adım failed sayılır ve onFail yoluna düşer.
+
+Görev satırında `verify pass/fail` rozeti görünür. Hakem çağrıları da ajanın oturum kayıtlarına düştüğü için maliyetleri karneye otomatik yansır.
+
+### Yapılandırılmış Devir (JSON)
+
+`{prev_output}` (dosya yolu) ve `{prev_text}` (çıktı metni) yanında artık **alan bazlı devir** var (0.8.0):
+
+1. Adımın **output contract**'ını JSON yap → adım `--output-format json` ile koşar.
+2. Modelden JSON isteyen bir prompt yaz (çite sarsa da, düz yazının içine gömse de ayrıştırıcı toleranslıdır).
+3. Sonraki adımda `{prev_json.alan}` (iç içe: `{prev_json.a.b}`) gerçek değerle değiştirilir.
+4. Koşullarda `json:alan~regex` sözdizimi: `runIf: json:durum~ALARM` — metin tesadüflerine takılmadan alan üstünden dallanır.
 
 ### Workflow Düzenleme
 
@@ -463,6 +511,11 @@ Gürültü koruması: önceki hafta 0.50$'ın, bu hafta 1$'ın altındaysa uyar�
 | `agentFarm.notifyTurnEnd` | false | Tur sonu bildirimi |
 | `agentFarm.queueAutoAdvance` | false | Görev bitince sıradakini otomatik başlat |
 | `agentFarm.taskExtraArgs` | boş | Görev komutlarına eklenen CLI argümanları (örn. `--model haiku`) |
+| `agentFarm.judgeArgs` | haiku | Doğrulayıcı (hakem) çağrılarının CLI argümanları — ucuz model kalsın |
+| `agentFarm.maxConcurrentTasks` | 2 | Filoda aynı anda koşan görev tavanı (0 = sınırsız) |
+| `agentFarm.maxConcurrentPerAgent` | 1 | Ajan başına eşzamanlı görev tavanı |
+| `agentFarm.quotaGuardPercent` | 0 (kapalı) | 5h penceresi bu doluluğa gelince otomatik işleri ertele |
+| `agentFarm.outputsMaxMB` | 200 | Çıktı arşivi boyut tavanı |
 | `agentFarm.autoReport` | off | Otomatik filo raporu: off / daily / weekly |
 | `agentFarm.autoReportFolder` | boş | Otomatik raporların yazılacağı klasör (vault) |
 | `agentFarm.autoReportDays` | 7 | Otomatik raporun kapsadığı gün sayısı |
@@ -484,6 +537,8 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 - **Open Live Timeline** — kulvar görünümü (canlı gözlem)
 - **Install Live Hooks / Remove Live Hooks** — canlı gözlem hook'larını kur/kaldır
 - **Add Task / Add Scheduled Task** — görev kuyruğu ve zamanlama
+- **Add Trigger** — olay tetikleyicisi (watch/hook); tetik satırında ▶ = elle ateşle
+- **Open Task History** — aylık görev tarihçesi kayıtları
 - **New Multi-Agent Workflow… / Run Workflow** — çoklu-ajan zincirleri
 - **Edit Step… / Add Step / Rename Workflow** — kurulu zinciri düzenleme
 - **Save as Template / New Task from Template** — görev şablonları
@@ -544,6 +599,15 @@ Tamamlanan fazlar (hepsi 2026-07-08):
 **Bundan sonrası ayrı ve ayrıntılı bir belgede yaşıyor:** komut paletinden **Agent Farm: Open Development Plan** — uzak görüşlü gelişim planı: olay tetikleyicileri, doğrulayıcı adımlar, MCP paneli, n8n/webhook köprüsü, multimedya üretim hattı (Kling/Seedance/Nano Banana sınıfı modellerle içerik fabrikası), zeki gözetim, çoklu makine ve vizyoner ufuk. Kodlama o plandaki öncelik sırasını izler.
 
 ## Sürüm Notları
+
+### 0.8.0 — Otomasyon Çekirdeği / Plan Faz A (2026-07-09)
+
+- **Tetikleyiciler:** watch (dosya/klasör değişince) ve hook (canlı olay) tetikleri → görev veya workflow; debounce/cooldown/saatlik tavan fırtına korumaları; `{watch}` değişkeni; Tasks'ta ⚡ Triggers bölümü
+- **Doğrulayıcı adımlar:** ucuz-model hakem (PASS/FAIL) + gerekçeli otomatik retry; karar arşive işlenir; `verify pass/fail` rozetleri
+- **Yapılandırılmış devir:** JSON output contract, `{prev_text}` ve `{prev_json.alan}` değişkenleri, `json:alan~regex` koşulları; çit/gömülü JSON'a toleranslı ayrıştırıcı (gerçek testin yakaladığı ders)
+- **Eşzamanlılık + kota bekçisi:** görev tavanları, "deferred" bekletme ve otomatik pompa; 5h penceresi doluluk eşiğinde otomatik işleri erteleme
+- **Görev tarihçesi:** aylık JSONL arşivi (Open Task History), çıktı klasörü boyut tavanı
+- Çıkış ölçütü gerçek testle kanıtlandı: inbox'a bırakılan dosya, tetikleyici→zincir→hakem onayı→arşiv döngüsünü elle hiç dokunmadan tamamladı
 
 ### 0.7.2 — Gerçek Test Kampanyası (2026-07-08)
 

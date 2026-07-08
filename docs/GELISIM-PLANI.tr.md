@@ -26,7 +26,9 @@ Uzun vadeli ölçüt şu cümledir: *"Akşam tek satır niyet yazıyorum; sabah 
 
 ---
 
-# FAZ A — Otomasyon Çekirdeği: "Kendiliğinden Başlayan İş" (hedef: 0.8.x) — EN ÖNEMLİ
+# FAZ A — Otomasyon Çekirdeği: "Kendiliğinden Başlayan İş" — ✅ TAMAMLANDI (0.8.0, 2026-07-09)
+
+> Beş özellik de gerçek çalıştırma testleriyle kapandı. Çıkış ölçütü kanıtı: inbox'a bırakılan dosya, watch tetikleyicisi→workflow→haiku tasnifi→hakem PASS→arşiv döngüsünü elle dokunmadan tamamladı. Gerçek testin yakalattığı ders: modellerin JSON'u markdown çitine sarması — ayrıştırıcı toleranslı yazıldı.
 
 Bugün her şey ya elle ya saatle tetikleniyor. Gerçek otomasyonun temeli **olay tetikleyicileri** ve **güvenilir yürütme**dir. Bu faz bitmeden entegrasyon fazlarına geçilmez, çünkü hepsi bunun üstüne oturur.
 

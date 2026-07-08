@@ -1,8 +1,11 @@
 import * as vscode from 'vscode';
-import { FarmSchedule, FarmTask, FarmTemplate, FarmWorkflow, TaskManager } from '../core/tasks';
+import { FarmSchedule, FarmTask, FarmTemplate, FarmTrigger, FarmWorkflow, TaskManager } from '../core/tasks';
+import { TriggerManager } from '../core/triggers';
 import { relTime } from '../core/util';
 
 export type TaskNode =
+    | { kind: 'triggers-root' }
+    | { kind: 'trigger'; trigger: FarmTrigger }
     | { kind: 'schedules-root' }
     | { kind: 'schedule'; schedule: FarmSchedule }
     | { kind: 'templates-root' }
@@ -26,13 +29,44 @@ export class TasksTreeProvider implements vscode.TreeDataProvider<TaskNode> {
     private emitter = new vscode.EventEmitter<void>();
     readonly onDidChangeTreeData = this.emitter.event as vscode.Event<void | TaskNode | TaskNode[] | null | undefined>;
 
-    constructor(private manager: TaskManager) {
+    constructor(private manager: TaskManager, private triggerManager?: TriggerManager) {
         manager.onDidChange(() => this.refresh());
     }
 
     refresh(): void { this.emitter.fire(); }
 
     getTreeItem(node: TaskNode): vscode.TreeItem {
+        if (node.kind === 'triggers-root') {
+            const item = new vscode.TreeItem('Triggers', vscode.TreeItemCollapsibleState.Expanded);
+            item.iconPath = new vscode.ThemeIcon('zap');
+            item.description = `${this.manager.triggers.filter(t => t.enabled).length} armed`;
+            item.contextValue = 'triggers-root';
+            return item;
+        }
+        if (node.kind === 'trigger') {
+            const t = node.trigger;
+            const armed = t.type !== 'watch' || this.triggerManager?.isArmed(t.id);
+            const item = new vscode.TreeItem(t.title, vscode.TreeItemCollapsibleState.None);
+            item.iconPath = new vscode.ThemeIcon(
+                !t.enabled ? 'circle-slash' : armed ? 'zap' : 'warning',
+                !t.enabled ? undefined
+                    : armed ? new vscode.ThemeColor('charts.yellow')
+                        : new vscode.ThemeColor('errorForeground'));
+            const src = t.type === 'watch'
+                ? `watch: …${(t.watchPath ?? '').slice(-30)}`
+                : `hook: ${t.hookEvent}${t.hookAgent ? '@' + t.hookAgent : ''}`;
+            const target = t.action.kind === 'workflow' ? 'workflow' : `task→${t.action.agentName}`;
+            const parts = [src, target];
+            if (!t.enabled) { parts.push('off'); }
+            else if (!armed && t.type === 'watch') { parts.push('PATH MISSING'); }
+            if (t.fireCount) { parts.push(`fired ${t.fireCount}×${t.lastFiredAt ? ' (' + relTime(t.lastFiredAt) + ')' : ''}`); }
+            item.description = parts.join(' • ');
+            item.tooltip = `${t.title}\n${src}\naction: ${target}\n` +
+                `debounce ${t.debounceSec}s • cooldown ${t.cooldownSec}s • max ${t.maxPerHour}/h\n` +
+                (t.lastFiredAt ? `last fired: ${new Date(t.lastFiredAt).toLocaleString()}` : 'never fired');
+            item.contextValue = 'trigger';
+            return item;
+        }
         if (node.kind === 'schedules-root') {
             const item = new vscode.TreeItem('Scheduled', vscode.TreeItemCollapsibleState.Expanded);
             item.iconPath = new vscode.ThemeIcon('calendar');
@@ -117,7 +151,10 @@ export class TasksTreeProvider implements vscode.TreeDataProvider<TaskNode> {
         const m = meta[t.status];
         item.iconPath = new vscode.ThemeIcon(m.icon, m.color ? new vscode.ThemeColor(m.color) : undefined);
         const when = t.endedAt ?? t.startedAt ?? t.createdAt;
-        item.description = `${t.status}${t.mode === 'headless' ? ' • headless' : ''} • ${relTime(when)}`;
+        const statusLabel = t.status === 'queued' && t.deferredReason
+            ? `deferred: ${t.deferredReason}`
+            : t.status + (t.verified ? ` • verify ${t.verified}` : '');
+        item.description = `${statusLabel}${t.mode === 'headless' ? ' • headless' : ''} • ${relTime(when)}`;
         item.tooltip = `${t.title}\n[${t.status}] ${t.agentName} (${t.mode})\n\n${t.prompt}`;
         item.contextValue = 'task-' + (t.status === 'queued' ? 'queued' : t.status === 'running' ? 'running' : 'final');
         if (t.status === 'running') {
@@ -133,6 +170,9 @@ export class TasksTreeProvider implements vscode.TreeDataProvider<TaskNode> {
     getChildren(node?: TaskNode): TaskNode[] {
         if (!node) {
             const roots: TaskNode[] = [];
+            if (this.manager.triggers.length) {
+                roots.push({ kind: 'triggers-root' });
+            }
             if (this.manager.schedules.length) {
                 roots.push({ kind: 'schedules-root' });
             }
@@ -150,6 +190,9 @@ export class TasksTreeProvider implements vscode.TreeDataProvider<TaskNode> {
                 roots.push({ kind: 'agent-group', agentId, agentName });
             }
             return roots;
+        }
+        if (node.kind === 'triggers-root') {
+            return this.manager.triggers.map(trigger => ({ kind: 'trigger' as const, trigger }));
         }
         if (node.kind === 'schedules-root') {
             return this.manager.schedules.map(schedule => ({ kind: 'schedule' as const, schedule }));
