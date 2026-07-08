@@ -25,8 +25,10 @@ interface AgentSummary {
     sessions: number;
     daily: Record<string, { cost: number; tokens: number; msgs: number }>;
     totalCost: number;
+    totalTokens: number;
     errors: number;
     toolCalls: number;
+    usage: { input: number; output: number; cacheWrite: number; cacheRead: number };
     insightCounts: { error: number; warning: number; info: number };
 }
 
@@ -39,12 +41,18 @@ function buildData(deps: DashboardDeps): Record<string, unknown> {
     const agentSummaries: AgentSummary[] = agents.map(a => {
         const list = deps.index.forAgent(a.id);
         const daily: AgentSummary['daily'] = {};
-        let totalCost = 0, errors = 0, toolCalls = 0, lastActivity = 0;
+        const usage = { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 };
+        let totalCost = 0, agentTokens = 0, errors = 0, toolCalls = 0, lastActivity = 0;
         for (const s of list) {
             totalCost += s.cost;
+            agentTokens += totalTokens(s.usage);
             errors += s.errors;
             toolCalls += s.toolCalls;
             lastActivity = Math.max(lastActivity, s.mtime);
+            usage.input += s.usage.input;
+            usage.output += s.usage.output;
+            usage.cacheWrite += s.usage.cacheWrite;
+            usage.cacheRead += s.usage.cacheRead;
             for (const [day, b] of Object.entries(s.daily)) {
                 const d = daily[day] ?? (daily[day] = { cost: 0, tokens: 0, msgs: 0 });
                 d.cost += b.cost;
@@ -66,8 +74,10 @@ function buildData(deps: DashboardDeps): Record<string, unknown> {
             sessions: list.length,
             daily,
             totalCost,
+            totalTokens: agentTokens,
             errors,
             toolCalls,
+            usage,
             insightCounts: counts
         };
     });

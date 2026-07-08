@@ -141,6 +141,56 @@ Bildirimdeki **Open Timeline** düğmesi seni doğrudan kulvar görünümüne g�
 - Her araç çağrısına ~2 küçük süreç (curl) eklenir; pratikte hissedilmez.
 - İki VS Code penceresi açıksa dinleyiciyi ilk açılan alır; diğeri Timeline başlığında "port in use" gösterir — sorun değildir, tek dinleyici yeter.
 
+## Görev Kuyruğu
+
+Faz 3 ile gelen koordinasyon katmanı. Yan paneldeki **Tasks** görünümünden ajanlarına iş sıralarsın; her görev ajanın klasöründe bir terminal açıp `claude` komutunu senin prompt'unla başlatır.
+
+### Görev Ekleme ve Çalıştırma
+
+1. Tasks görünümünde **+** (Add Task): ajan seç → başlık → prompt → mod seç.
+2. İki mod var:
+   - **Interactive:** `claude "prompt"` — oturum açılır, prompt ilk mesaj olarak gider, sen devam edebilirsin.
+   - **Headless:** `claude -p "prompt"` — görevi çalıştırır, çıktıyı terminale basar ve çıkar. Otomasyon için idealdir.
+3. Kuyruktaki görevler sırayla bekler; ▶ ile başlatırsın, ↑↓ ile sıralarsın.
+4. Görev terminali kapanınca (veya headless komut bitince) görev otomatik **done** olur. Shell integration açıksa çıkış koduna göre **failed** da işaretlenir. İstediğin an ✓ ile elle tamamlayabilirsin.
+5. `agentFarm.queueAutoAdvance` ayarını açarsan, bir görev bitince o ajanın kuyruğundaki sıradaki görev kendiliğinden başlar — zincirleme çalışma.
+
+Görev durumları: ○ queued → ⟳ running → ✓ done / ⛔ failed / ⊘ cancelled. Çalışan göreve tıklayınca terminali öne gelir.
+
+### Zamanlanmış Görevler
+
+Tasks görünümündeki takvim ikonuyla (**Add Scheduled Task**) tekrarlayan işler kurarsın:
+
+- **Daily** — her gün belirtilen saatte (örn. sabah 08:30 gün planı)
+- **Weekly** — haftanın belirli günü ve saati (örn. Pazar 21:00 haftalık rapor)
+- **Once** — tek seferlik, tarih+saat
+
+Zamanı gelen görev otomatik olarak kuyruğa eklenir, başlatılır ve bildirim düşer. Tek seferlikler çalıştıktan sonra kendini kapatır.
+
+**Önemli sınır:** Zamanlayıcı VS Code açıkken çalışır — bilgisayar kapalıysa veya VS Code açık değilse o çalıştırma atlanır (gün içinde açarsan o günün görevi gecikmeli tetiklenir). Makine bağımsız zamanlama istersen bunun yeri bulut tarafıdır; yol haritasında var.
+
+## Hafıza Senkronizasyonu
+
+Sağlık motorunun yakaladığı **kopya hafıza** sorununun çözüm aracı: `Agent Farm: Sync Shared Memory…`
+
+1. Ajanlar arasında aynı isimle bulunan hafıza dosyaları listelenir (✓ birebir aynı, ⚠ sapmış).
+2. Dosyayı seç → iki eylemden biri:
+   - **Compare two copies:** iki ajanın kopyasını VS Code diff ekranında yan yana karşılaştır — sapma tam olarak nerede, gör.
+   - **Sync all copies from one source:** kaynak kopyayı seç (en yenisi işaretli gelir), onayla; diğer tüm kopyaların üzerine yazılır.
+3. Üzerine yazılan her dosyanın yanına zaman damgalı `.afbak` yedeği bırakılır — pişmanlık geri alınabilir.
+
+Senkron sonrası Insights kendini yeniler; grup "birebir aynı" durumuna düşer.
+
+## Filo Raporu
+
+`Agent Farm: Export Fleet Report (Markdown)` — filonun karşılaştırmalı karnesini Markdown dosyası olarak üretir (7/30/90 gün). Obsidian vault'una kaydetmek için biçilmiş kaftandır.
+
+İçerik: filo toplamları, ajan karşılaştırma tablosu (oturum, maliyet, token, araç, hata oranı, **cache verimliliği**, bağlam yükü, hafıza sayısı), model kullanım tablosu, en pahalı oturumlar, sağlık bulguları.
+
+**Cache verimliliği** = prompt token'larının cache'ten okunan payı. Yüksekse (%90+) aynı bağlam tekrar tekrar ucuza okunuyor demektir; düşükse oturumların kısa ve bağlamın sürekli yeniden yazılıyor olabilir — birleştirilebilecek kısa oturumları düşün.
+
+Aynı karşılaştırma tablosu Dashboard'da da **Agent comparison** bölümünde canlı görünür; satıra tıklayınca ajan detayına gider.
+
 ## Sağlık ve Optimizasyon
 
 Agent Farm ajanlarını sekiz kuralla denetler. Amaç: **daha ucuz, daha tutarlı, daha az unutan ajanlar.**
@@ -216,6 +266,7 @@ Token kullanımı yerel kayıtlardan okunur ve `agentFarm.pricing` kurallarıyla
 | `agentFarm.notifyPermission` | true | İzin bekleme bildirimi |
 | `agentFarm.notifyStuck` | true | Takılma bildirimi |
 | `agentFarm.notifyTurnEnd` | false | Tur sonu bildirimi |
+| `agentFarm.queueAutoAdvance` | false | Görev bitince sıradakini otomatik başlat |
 
 ## Komutlar
 
@@ -230,6 +281,9 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 - **Open Agent in New Window / Reveal in File Explorer**
 - **Open Live Timeline** — kulvar görünümü (canlı gözlem)
 - **Install Live Hooks / Remove Live Hooks** — canlı gözlem hook'larını kur/kaldır
+- **Add Task / Add Scheduled Task** — görev kuyruğu ve zamanlama
+- **Sync Shared Memory…** — ajanlar arası kopya hafıza senkronizasyonu
+- **Export Fleet Report (Markdown)** — karşılaştırmalı filo raporu
 
 ## Veri ve Gizlilik
 
@@ -253,13 +307,28 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 
 **Live Feed ile Timeline farkı ne?** İkisi de canlı olayları gösterir; Feed liste halinde yan panelde, Timeline zaman ekseninde kulvarlarla. Hook'lar yokken Feed, oturum kayıtlarından türetilmiş (birkaç saniye gecikmeli) olaylara döner.
 
+**Zamanlanmış görev saatinde çalışmadı.** VS Code o saatte açık mıydı? Zamanlayıcı yalnızca VS Code açıkken işler. Ayrıca prompt'un içindeki çift tırnaklar tek tırnağa çevrilir — komut satırı güvenliği için.
+
+**Görev bitti ama "running" görünüyor.** Terminal hâlâ açık olabilir; terminali kapat veya ✓ ile elle tamamla. Shell integration açıksa (VS Code varsayılanı) komut bitiminde otomatik işaretlenir.
+
+**Senkronda yanlış kaynağı seçtim.** Üzerine yazılan her dosyanın yanında zaman damgalı `.afbak` yedeği durur — içeriği geri kopyala.
+
 ## Yol Haritası
 
-- ~~**Faz 2 — Canlı gözlem**~~ ✅ 0.2.0 ile geldi: hook tabanlı gerçek zamanlı olay akışı, izin/takılma bildirimleri, kulvar zaman çizelgesi.
-- **Faz 3 — Koordinasyon:** Görev kuyruğu, zamanlanmış görev takvimi, ajanlar arası ortak hafıza senkronizasyon sihirbazı, karşılaştırmalı ajan raporları.
+- ~~**Faz 2 — Canlı gözlem**~~ ✅ 0.2.0: hook tabanlı gerçek zamanlı olay akışı, izin/takılma bildirimleri, kulvar zaman çizelgesi.
+- ~~**Faz 3 — Koordinasyon**~~ ✅ 0.3.0: görev kuyruğu, zamanlanmış görevler, hafıza senkronizasyon sihirbazı, karşılaştırmalı filo raporu.
+- **Faz 4 — adaylar:** görev şablonları, headless görev çıktılarının arşivlenip raporlanması, çoklu-ajan iş akışları (görev zincirinde ajanlar arası devir), VS Code dışında da işleyen zamanlama entegrasyonu, Obsidian vault'una otomatik rapor.
 - Fikirlerin oldukça bu belge ve eklenti birlikte büyüyecek.
 
 ## Sürüm Notları
+
+### 0.3.0 — Koordinasyon (2026-07-08)
+
+- **Tasks görünümü:** ajan başına görev kuyruğu; interactive/headless modlar, başlat/sırala/tamamla/iptal, terminal takibiyle otomatik done/failed, isteğe bağlı otomatik ilerleme (`queueAutoAdvance`)
+- **Zamanlanmış görevler:** günlük / haftalık / tek seferlik; VS Code açıkken otomatik tetiklenir, bildirim düşer
+- **Sync Shared Memory:** kopya hafıza gruplarını bul, diff'le karşılaştır, tek kaynaktan yedekli senkronla
+- **Export Fleet Report:** karşılaştırmalı Markdown karne (cache verimliliği, hata oranı, bağlam yükü…) — Obsidian dostu
+- Dashboard'a **Agent comparison** tablosu eklendi
 
 ### 0.2.0 — Canlı Gözlem (2026-07-08)
 

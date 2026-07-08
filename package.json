@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "miropharm",
   "license": "MIT",
   "engines": {
@@ -42,6 +42,11 @@
           "icon": "media/agentfarm.svg"
         },
         {
+          "id": "agentfarm.tasks",
+          "name": "Tasks",
+          "icon": "media/agentfarm.svg"
+        },
+        {
           "id": "agentfarm.sessions",
           "name": "Recent Sessions",
           "icon": "media/agentfarm.svg"
@@ -62,6 +67,10 @@
       {
         "view": "agentfarm.agents",
         "contents": "No agents found yet.\n[Add Agent Root Folder](command:agentfarm.addAgentRoot)\nAgent Farm scans the configured root folders for agent directories (folders containing a CLAUDE.md).\n[Open Guide / Kılavuz](command:agentfarm.openGuide)"
+      },
+      {
+        "view": "agentfarm.tasks",
+        "contents": "Queue work for your agents and schedule recurring runs.\n[Add Task](command:agentfarm.addTask)\n[Add Scheduled Task](command:agentfarm.addSchedule)\nTasks open a terminal in the agent's folder and run claude with your prompt.\n[Open Guide / Kılavuz](command:agentfarm.openGuide)"
       }
     ],
     "commands": [
@@ -147,6 +156,90 @@
         "command": "agentfarm.openFile",
         "title": "Open File",
         "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.addTask",
+        "title": "Add Task",
+        "category": "Agent Farm",
+        "icon": "$(add)"
+      },
+      {
+        "command": "agentfarm.addSchedule",
+        "title": "Add Scheduled Task",
+        "category": "Agent Farm",
+        "icon": "$(calendar)"
+      },
+      {
+        "command": "agentfarm.startTask",
+        "title": "Start Task",
+        "category": "Agent Farm",
+        "icon": "$(play)"
+      },
+      {
+        "command": "agentfarm.completeTask",
+        "title": "Mark Done",
+        "category": "Agent Farm",
+        "icon": "$(check)"
+      },
+      {
+        "command": "agentfarm.cancelTask",
+        "title": "Cancel Task",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.deleteTask",
+        "title": "Delete Task",
+        "category": "Agent Farm",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "agentfarm.taskUp",
+        "title": "Move Up",
+        "category": "Agent Farm",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "agentfarm.taskDown",
+        "title": "Move Down",
+        "category": "Agent Farm",
+        "icon": "$(arrow-down)"
+      },
+      {
+        "command": "agentfarm.clearDoneTasks",
+        "title": "Clear Finished Tasks",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.toggleSchedule",
+        "title": "Enable/Disable Schedule",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.runScheduleNow",
+        "title": "Run Now",
+        "category": "Agent Farm",
+        "icon": "$(play)"
+      },
+      {
+        "command": "agentfarm.deleteSchedule",
+        "title": "Delete Schedule",
+        "category": "Agent Farm",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "agentfarm.revealTaskTerminal",
+        "title": "Reveal Task Terminal",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.syncMemory",
+        "title": "Sync Shared Memory…",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.exportReport",
+        "title": "Export Fleet Report (Markdown)",
+        "category": "Agent Farm"
       }
     ],
     "menus": {
@@ -170,6 +263,26 @@
           "command": "agentfarm.openTimeline",
           "when": "view == agentfarm.feed",
           "group": "navigation@1"
+        },
+        {
+          "command": "agentfarm.addTask",
+          "when": "view == agentfarm.tasks",
+          "group": "navigation@1"
+        },
+        {
+          "command": "agentfarm.addSchedule",
+          "when": "view == agentfarm.tasks",
+          "group": "navigation@2"
+        },
+        {
+          "command": "agentfarm.clearDoneTasks",
+          "when": "view == agentfarm.tasks",
+          "group": "overflow@1"
+        },
+        {
+          "command": "agentfarm.refresh",
+          "when": "view == agentfarm.tasks",
+          "group": "navigation@3"
         },
         {
           "command": "agentfarm.openGuide",
@@ -212,6 +325,66 @@
           "command": "agentfarm.revealAgent",
           "when": "view == agentfarm.agents && viewItem == agent",
           "group": "2_open@2"
+        },
+        {
+          "command": "agentfarm.startTask",
+          "when": "view == agentfarm.tasks && viewItem == task-queued",
+          "group": "inline@1"
+        },
+        {
+          "command": "agentfarm.taskUp",
+          "when": "view == agentfarm.tasks && viewItem == task-queued",
+          "group": "inline@2"
+        },
+        {
+          "command": "agentfarm.taskDown",
+          "when": "view == agentfarm.tasks && viewItem == task-queued",
+          "group": "inline@3"
+        },
+        {
+          "command": "agentfarm.completeTask",
+          "when": "view == agentfarm.tasks && viewItem == task-running",
+          "group": "inline@1"
+        },
+        {
+          "command": "agentfarm.deleteTask",
+          "when": "view == agentfarm.tasks && viewItem == task-final",
+          "group": "inline@1"
+        },
+        {
+          "command": "agentfarm.startTask",
+          "when": "view == agentfarm.tasks && viewItem == task-queued",
+          "group": "1_task@1"
+        },
+        {
+          "command": "agentfarm.cancelTask",
+          "when": "view == agentfarm.tasks && viewItem =~ /task-(queued|running)/",
+          "group": "1_task@2"
+        },
+        {
+          "command": "agentfarm.completeTask",
+          "when": "view == agentfarm.tasks && viewItem == task-running",
+          "group": "1_task@3"
+        },
+        {
+          "command": "agentfarm.deleteTask",
+          "when": "view == agentfarm.tasks && viewItem =~ /task-(queued|final)/",
+          "group": "1_task@4"
+        },
+        {
+          "command": "agentfarm.runScheduleNow",
+          "when": "view == agentfarm.tasks && viewItem =~ /schedule-(on|off)/",
+          "group": "inline@1"
+        },
+        {
+          "command": "agentfarm.deleteSchedule",
+          "when": "view == agentfarm.tasks && viewItem =~ /schedule-(on|off)/",
+          "group": "inline@2"
+        },
+        {
+          "command": "agentfarm.toggleSchedule",
+          "when": "view == agentfarm.tasks && viewItem =~ /schedule-(on|off)/",
+          "group": "1_sched@1"
         }
       ]
     },
@@ -287,6 +460,11 @@
           "type": "boolean",
           "default": false,
           "description": "Show a notification every time an agent finishes its turn."
+        },
+        "agentFarm.queueAutoAdvance": {
+          "type": "boolean",
+          "default": false,
+          "description": "When a task finishes (its terminal closes), automatically start the next queued task for that agent."
         },
         "agentFarm.includeUnmatchedProjects": {
           "type": "boolean",

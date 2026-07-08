@@ -11,6 +11,9 @@ Mission control for your **local Claude Code agents** — live fleet status, cos
 - **Insights**: context-load budget warnings, memory index consistency, duplicate/diverged memory copies across agents, stale files, error-rate signals.
 - **Live Feed**: recent prompts, tool calls and errors across the fleet — real-time via hooks when installed.
 - **Live Timeline** (v0.2): hook-powered swim-lane view per agent — tool-run blocks, prompt/permission/compaction marks, live session cards with WORKING / PERMISSION? / STALLED states, and notifications when an agent waits for permission or stalls. One-command hook setup (`Agent Farm: Install Live Hooks`) with automatic backup; listener binds to 127.0.0.1 only.
+- **Tasks & scheduling** (v0.3): per-agent task queue (interactive or headless `claude -p` runs, auto-advance option) and daily/weekly/once schedules that fire while VS Code is open.
+- **Shared memory sync** (v0.3): find duplicated memory files across agents, diff diverged copies, and sync them from a chosen source with timestamped backups.
+- **Fleet report** (v0.3): export a comparative Markdown report (cost, tokens, error rate, cache efficiency, context load) — Obsidian-friendly; same comparison table lives in the dashboard.
 - **Management**: start/continue Claude sessions per agent, scaffold new agents, open in new window.
 - **Guide (Kılavuz)**: built-in Turkish handbook — every `?` button jumps to the relevant section.
 

@@ -153,6 +153,26 @@
             ${charts}
             <h2>Agents</h2>
             <div class="grid">${cards}</div>
+            <h2>Agent comparison (all time)</h2>
+            <div class="tablewrap"><table>
+                <tr><th>Agent</th><th class="num">Sessions</th><th class="num">Cost</th><th class="num">Tokens</th><th class="num">Tools</th><th class="num">Err %</th><th class="num">Cache eff.</th><th class="num">Ctx load</th></tr>
+                ${agents.map(a => {
+                    const promptTok = a.usage.input + a.usage.cacheRead + a.usage.cacheWrite;
+                    const cacheEff = promptTok ? Math.round(100 * a.usage.cacheRead / promptTok) + '%' : '—';
+                    const errPct = a.toolCalls ? Math.round(100 * a.errors / a.toolCalls) + '%' : '—';
+                    return `<tr class="click" data-agent-row="${C.esc(a.id)}">
+                        <td><strong>${C.esc(a.name)}</strong></td>
+                        <td class="num">${a.sessions}</td>
+                        <td class="num">${C.fmtUSD(a.totalCost)}</td>
+                        <td class="num">${C.fmtTok(a.totalTokens)}</td>
+                        <td class="num">${a.toolCalls}</td>
+                        <td class="num">${errPct}</td>
+                        <td class="num">${cacheEff}</td>
+                        <td class="num">~${C.fmtTok(a.contextLoad)}</td>
+                    </tr>`;
+                }).join('')}
+            </table></div>
+            <p class="muted small">Cache eff. = cache-read share of prompt tokens (higher is cheaper). Err % = tool errors / tool calls. <a data-guide="filo-raporu">Export a Markdown report ?</a></p>
             <h2>Top sessions by cost</h2>
             <div class="tablewrap"><table>
                 <tr><th>Agent</th><th>Title</th><th class="num">When</th><th class="num">Duration</th><th class="num">Tokens</th><th class="num">Cost</th></tr>
@@ -173,6 +193,8 @@
             card.addEventListener('click', () => vscode.postMessage({ type: 'openAgent', agentId: card.dataset.agent })));
         document.querySelectorAll('[data-session]').forEach(row =>
             row.addEventListener('click', () => vscode.postMessage({ type: 'openSession', file: row.dataset.session })));
+        document.querySelectorAll('[data-agent-row]').forEach(row =>
+            row.addEventListener('click', () => vscode.postMessage({ type: 'openAgent', agentId: row.dataset.agentRow })));
         document.querySelectorAll('[data-guide]').forEach(a =>
             a.addEventListener('click', ev => { ev.stopPropagation(); vscode.postMessage({ type: 'openGuide', anchor: a.dataset.guide }); }));
     }
