@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
@@ -303,6 +303,12 @@
         "title": "Quick Start (Hızlı Başlangıç)",
         "category": "Agent Farm",
         "icon": "$(rocket)"
+      },
+      {
+        "command": "agentfarm.openExamples",
+        "title": "Open Examples (Örnek Kullanımlar)",
+        "category": "Agent Farm",
+        "icon": "$(book)"
       },
       {
         "command": "agentfarm.addDuty",
@@ -676,6 +682,11 @@
           "type": "boolean",
           "default": false,
           "description": "Show a notification every time an agent finishes its turn."
+        },
+        "agentFarm.taskExtraArgs": {
+          "type": "string",
+          "default": "",
+          "description": "Extra CLI arguments appended to every task's claude command, e.g. \"--model haiku\" to run routine automation on a cheaper model."
         },
         "agentFarm.queueAutoAdvance": {
           "type": "boolean",

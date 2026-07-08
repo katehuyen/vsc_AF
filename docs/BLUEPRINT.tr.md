@@ -15,6 +15,8 @@ Tamamen yereldir: hiçbir veri makinenden çıkmaz, hiçbir sunucuya bağlanmaz.
 
 Hiç bilmiyorsan buradan başla. Bu bölüme her an komut paletinden (`Ctrl+Shift+P`) **Agent Farm: Quick Start** yazarak dönebilirsin.
 
+> Bu kılavuzun yanında bir de **Örnek Kullanımlar** belgesi var: gerçek çalıştırmalarla test edilmiş 11 adım-adım operasyon senaryosu (inbox nöbeti, devirli zincir, bağlam diyeti, vault karnesi…). Komut paleti → **Agent Farm: Open Examples**.
+
 ### İlk 3 Dakika: Paneli Tanı
 
 1. Sol kenardaki Activity Bar'da **dört düğümlü ağ ikonuna** tıkla — Agent Farm paneli açılır. Beş bölüm görürsün:
@@ -460,6 +462,7 @@ Gürültü koruması: önceki hafta 0.50$'ın, bu hafta 1$'ın altındaysa uyar�
 | `agentFarm.notifyStuck` | true | Takılma bildirimi |
 | `agentFarm.notifyTurnEnd` | false | Tur sonu bildirimi |
 | `agentFarm.queueAutoAdvance` | false | Görev bitince sıradakini otomatik başlat |
+| `agentFarm.taskExtraArgs` | boş | Görev komutlarına eklenen CLI argümanları (örn. `--model haiku`) |
 | `agentFarm.autoReport` | off | Otomatik filo raporu: off / daily / weekly |
 | `agentFarm.autoReportFolder` | boş | Otomatik raporların yazılacağı klasör (vault) |
 | `agentFarm.autoReportDays` | 7 | Otomatik raporun kapsadığı gün sayısı |
@@ -544,6 +547,13 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 - Fikirlerin oldukça bu belge ve eklenti birlikte büyüyecek.
 
 ## Sürüm Notları
+
+### 0.7.1 — Örnekler ve Ucuz Otomasyon (2026-07-08)
+
+- **Örnek Kullanımlar belgesi:** 11 adım-adım operasyon senaryosu (`Agent Farm: Open Examples`); kritik akışlar gerçek haiku çalıştırmalarıyla test edildi
+- **`agentFarm.taskExtraArgs`:** görev/workflow komutlarına CLI argümanı ekleme — rutin otomasyonu `--model haiku` ile ucuza koşturmanın anahtarı
+- Kılavuz paneli artık birden çok belgeyi destekliyor
+- Ajan kökünde `deneme` alıştırma ajanı (testlerde kuruldu; senaryoların uygulama sahası — istenirse silinebilir)
 
 ### 0.7.0 — Cila (2026-07-08)
 

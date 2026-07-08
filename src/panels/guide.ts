@@ -110,33 +110,40 @@ export function renderMarkdown(md: string): { html: string; toc: { level: number
 }
 
 export class GuidePanel {
-    private static current: GuidePanel | undefined;
+    private static open = new Map<string, GuidePanel>();
     private disposables: vscode.Disposable[] = [];
 
-    static show(extensionUri: vscode.Uri, anchor?: string): void {
-        if (GuidePanel.current) {
-            GuidePanel.current.panel.reveal();
+    static show(
+        extensionUri: vscode.Uri,
+        anchor?: string,
+        docFile = 'BLUEPRINT.tr.md',
+        title = 'Agent Farm — Kılavuz'
+    ): void {
+        const existing = GuidePanel.open.get(docFile);
+        if (existing) {
+            existing.panel.reveal();
             if (anchor) {
-                GuidePanel.current.panel.webview.postMessage({ type: 'scrollTo', anchor });
+                existing.panel.webview.postMessage({ type: 'scrollTo', anchor });
             }
             return;
         }
         const panel = vscode.window.createWebviewPanel(
             'agentfarm.guide',
-            'Agent Farm — Kılavuz',
+            title,
             vscode.ViewColumn.Beside,
             { enableScripts: true, retainContextWhenHidden: true }
         );
-        GuidePanel.current = new GuidePanel(panel, extensionUri, anchor);
+        GuidePanel.open.set(docFile, new GuidePanel(panel, extensionUri, docFile, anchor));
     }
 
     private constructor(
         readonly panel: vscode.WebviewPanel,
         extensionUri: vscode.Uri,
+        private docFile: string,
         anchor?: string
     ) {
-        const mdPath = vscode.Uri.joinPath(extensionUri, 'docs', 'BLUEPRINT.tr.md').fsPath;
-        let md = '# Kılavuz bulunamadı\n\ndocs/BLUEPRINT.tr.md eksik.';
+        const mdPath = vscode.Uri.joinPath(extensionUri, 'docs', this.docFile).fsPath;
+        let md = `# Belge bulunamadı\n\ndocs/${this.docFile} eksik.`;
         try { md = fs.readFileSync(mdPath, 'utf8'); } catch { /* keep fallback */ }
         const { html, toc } = renderMarkdown(md);
 
@@ -189,7 +196,7 @@ ${anchor ? `setTimeout(() => { const el = document.getElementById(${JSON.stringi
     }
 
     private dispose(): void {
-        GuidePanel.current = undefined;
+        GuidePanel.open.delete(this.docFile);
         for (const d of this.disposables) { d.dispose(); }
     }
 }

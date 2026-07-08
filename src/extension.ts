@@ -141,7 +141,8 @@ export function activate(context: vscode.ExtensionContext): void {
     const taskManager = new TaskManager(
         path.join(context.globalStorageUri.fsPath, 'farm-tasks.json'),
         () => agents,
-        () => cfg().get<boolean>('queueAutoAdvance', false)
+        () => cfg().get<boolean>('queueAutoAdvance', false),
+        () => cfg().get<string>('taskExtraArgs', '')
     );
     context.subscriptions.push(taskManager);
 
@@ -546,6 +547,12 @@ export function activate(context: vscode.ExtensionContext): void {
 
         vscode.commands.registerCommand('agentfarm.quickStart', () => {
             GuidePanel.show(context.extensionUri, 'hizli-baslangic');
+        }),
+
+        vscode.commands.registerCommand('agentfarm.openExamples', (anchor?: string) => {
+            GuidePanel.show(context.extensionUri,
+                typeof anchor === 'string' ? anchor : undefined,
+                'ORNEKLER.tr.md', 'Agent Farm — Örnek Kullanımlar');
         }),
 
         vscode.commands.registerCommand('agentfarm.addDuty', async (arg?: AgentNode | { agentId?: string }) => {

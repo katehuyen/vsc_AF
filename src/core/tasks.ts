@@ -122,7 +122,9 @@ export class TaskManager implements vscode.Disposable {
     constructor(
         private storageFile: string,
         private getAgents: () => AgentInfo[],
-        private autoAdvance: () => boolean
+        private autoAdvance: () => boolean,
+        /** Extra CLI args appended to every task's claude command, e.g. "--model haiku". */
+        private extraArgs: () => string = () => ''
     ) {
         this.load();
         this.timer = setInterval(() => this.tickSchedules(), 30_000);
@@ -237,12 +239,13 @@ export class TaskManager implements vscode.Disposable {
             this.spawnHeadless(task, agent);
         } else {
             const p = sanitizePrompt(task.prompt);
+            const extra = this.extraArgs().trim();
             const terminal = vscode.window.createTerminal({
                 name: `AF: ${task.title.slice(0, 30)}`,
                 cwd: agent.dir
             });
             terminal.show();
-            terminal.sendText(`claude "${p}"`, true);
+            terminal.sendText(`claude ${extra ? extra + ' ' : ''}"${p}"`, true);
             this.terminals.set(task.id, terminal);
         }
         this.save();
@@ -262,7 +265,8 @@ export class TaskManager implements vscode.Disposable {
         const stream = fs.createWriteStream(outFile, { flags: 'a' });
 
         const p = sanitizePrompt(task.prompt);
-        const child = cp.spawn(`claude -p "${p}"`, {
+        const extra = this.extraArgs().trim();
+        const child = cp.spawn(`claude ${extra ? extra + ' ' : ''}-p "${p}"`, {
             cwd: agent.dir,
             shell: true,
             windowsHide: true

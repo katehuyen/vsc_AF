@@ -1,0 +1,193 @@
+# Agent Farm — Örnek Kullanımlar
+
+> Bu belge, Agent Farm'ı **bilgi ekranı olarak değil, iş yaptıran bir sistem olarak** kullanmanın senaryolarıdır. Her senaryo hiç bilmeyen biri takip edebilsin diye adım adım yazıldı. ✅ işaretli senaryolar gerçek `claude` çalıştırmalarıyla (haiku modeli, toplam ~$0.06) uçtan uca test edildi. Komut paletinden `Agent Farm: Open Examples` ile her an açılır.
+
+## Başlamadan: Alıştırma Ajanı
+
+Ajan kökünde **`deneme`** adında bir alıştırma ajanı var (test sürecinde kuruldu). İçinde:
+
+- `CLAUDE.md` — mini kimlik + DUTIES.md yönergesi
+- `DUTIES.md` — "Inbox tasnifi" nöbeti kurulu
+- `inbox/` ve `arsiv/` klasörleri — nöbet alıştırma sahası
+- `.claude/settings.local.json` — model **haiku**'ya sabitli (alıştırmalar ucuza koşar)
+
+Aşağıdaki senaryoları önce `deneme` üzerinde uygulayıp sonra gerçek ajanlarına taşıyabilirsin. İşin bitince klasörü silmen yeterli — panel kendini günceller.
+
+---
+
+## S1 — Inbox Nöbeti: "Klasöre düşeni tasnif et" ✅
+
+**Amaç:** Bir klasöre bıraktığın her dosyayı ajanın kendiliğinden işlemesi (senin FAST_NOTE akışın).
+
+**Adımlar:**
+
+1. Agents ağacında ajanı genişlet → **Duties** satırına sağ tık → **Add Standing Duty**.
+2. Başlık: `Inbox tasnifi` → kadans: **every-turn** → **Pick a folder to watch…** ile klasörü seç (örn. `01_INBOX\00_FAST_NOTE`).
+3. Do satırı: `Klasördeki her dosyayı inbox girişi say: uygun isim ver, uygun klasöre taşı.`
+4. Eklenti "CLAUDE.md does not mention DUTIES.md" diye sorarsa **Append to CLAUDE.md** de — bu olmadan ajan nöbete bakmaz.
+5. **Dene:** İzlenen klasöre bir dosya bırak. Birkaç saniye içinde Duties satırında turuncu göz + **"1 waiting"** belirir (Dashboard ajan kartında da `👁 1 pending`).
+6. Ajanı çalıştır: ajana sağ tık → **Start Claude Session** (oturum açıldığında ajan DUTIES.md gereği inbox'a bakar) — ya da oturum açmadan tek atımlık: Tasks → **+** → prompt: `DUTIES.md dosyanı oku ve every-turn görevlerini şimdi uygula` → **Headless**.
+7. **Doğrula:** Dosya hedef klasöre taşınır, Duties rozeti **"empty"** olur, Duties başlığında `read Xs ago` görünür (ajan nöbete baktı kanıtı).
+
+> ✅ Test: `deneme` ajanında `inbox/not-2026.md` dosyası haiku tarafından okunup `arsiv/`e taşındı; rozet "1 waiting" → "empty" geçti; uyum sinyali (`read …`) düştü.
+
+---
+
+## S2 — Netleştirme Döngüsü: Ajanla yazılı soru-cevap hattı
+
+**Amaç:** Ajan aklına takılanı bir dosyaya yazar; sen müsait olunca cevaplarsın; ajan cevabı görünce gereğini yapıp soruyu siler.
+
+**Adımlar:**
+
+1. Vault kökünde `NETLEŞTİRME İSTEKLERİ.md` dosyası oluştur (boş olabilir).
+2. Ajanın Duties bölümüne görev ekle: kadans **every-turn**, Watch = bu dosya, Do: `Cevaplanmış soru varsa gereğini yap ve o soruyu dosyadan sil. Aydınlatılması gereken yeni soruların varsa dosyaya "- Soru: ..." biçiminde ekle.`
+3. Ajanın CLAUDE.md yönergesi eklendiyse döngü hazır.
+4. **Kullanım ritmi:** Duties satırında **"changed 2h ago"** gördüğünde iki anlamı olabilir: ajan yeni soru yazdı (dosyayı aç, cevapla) ya da senin cevabın henüz işlenmedi (ajanın bir sonraki turunu bekle).
+5. Cevap yazdıktan sonra ajanın ilk turunda: gereği yapılır + soru silinir → dosya sadeleşir.
+
+**İpucu:** Bu dosya birden çok ajanla ortaksa her ajana aynı görevi ekle; kim sorduysa sorusunun başına adını yazsın diye Do satırına ekleme yap.
+
+---
+
+## S3 — Rutin Otomasyonu Ucuz Modele Bağla ✅
+
+**Amaç:** Günlük mekanik işler (tasnif, özet, kontrol) pahalı modelle koşmasın.
+
+**Adımlar:**
+
+1. Ayarlar (`Ctrl+,`) → "agent farm" ara → **Task Extra Args** → `--model haiku` yaz. Artık **tüm görev ve workflow komutları** haiku ile koşar (etkileşimli oturumların modeline karışmaz — sadece Tasks/Workflows).
+2. Alternatif (ajan bazlı): ajanın `.claude/settings.local.json` dosyasına `"model": "claude-haiku-4-5-20251001"` ekle — o ajanın her şeyi haiku olur.
+3. Tasks → takvim ikonu → **Add Scheduled Task**: Daily 08:30, prompt: `inbox'u tasnif et ve tek paragraf sabah özeti yaz`, mod: **Headless**.
+4. Ertesi sabah: görev kendiliğinden koşar; sağ tık → **Open Task Output** ile çıktıyı oku. Maliyeti Dashboard'da gör — haiku ile kuruş mertebesinde.
+
+> ✅ Test: headless görevler `--model haiku` ile koştu; 4 gerçek çalıştırmanın toplamı $0.06, çıktılar arşivlendi, çıkış kodları doğru işlendi.
+
+---
+
+## S4 — İki Ajanlı Sabah Rutini: Devirli Zincir ✅
+
+**Amaç:** psikolog analiz etsin, asistan o analizi kullanıp plan yapsın — elden ele.
+
+**Adımlar:**
+
+1. Tasks başlığında zincir ikonuna tıkla (**New Multi-Agent Workflow…**), ad: `Sabah rutini`.
+2. **Adım 1:** ajan `psikolog`, başlık `analiz`, prompt: `Dünkü günlük kayıtlarını analiz et; ruh hali ve önemli konuları maddeler halinde yaz.`, mod **Headless** (zincirde çıktı devri için şart), on-fail: Stop.
+3. **Adım 2:** ajan `asistan`, başlık `plan`, prompt: `Şu dosyada psikoloğun analizi var: {prev_output} — dosyayı oku ve buna göre bugünün planını çıkar.`, mod **Headless**.
+4. **Finish workflow** → "Run now".
+5. **İzle:** `Open Live Timeline` → **Workflow runs** şeridinde adım 1 mavi (çalışıyor) → yeşil, sonra adım 2 başlar. Bitince "workflow completed ✓" bildirimi.
+6. Çıktılar: Tasks'ta her adımın üzerinde sağ tık → **Open Task Output**.
+7. Her sabah otomatik olsun istersen: bu zinciri elle değil, S3'teki zamanlanmış görevden tetikle — prompt'u `Sabah rutini workflow'unu düşün ve...` yapmak yerine en temizi zinciri sabah görevine dönüştürmektir: Adım 1'in prompt'unu zamanlanmış göreve koy, devri workflow'a bırak.
+
+> ✅ Test: iki adımlı zincir gerçek koştu; 2. adım `{prev_output}` yoluyla 1. adımın çıktı dosyasını gerçekten okudu ve içeriğini kullandı; tamamlanma bildirimi düştü.
+
+---
+
+## S5 — Koşullu Alarm Zinciri: "Sadece gerekiyorsa müdahale"
+
+**Amaç:** Analizde alarm kelimesi geçerse acil plan adımı çalışsın; geçmezse atlansın.
+
+**Adımlar:**
+
+1. S4'teki zinciri kur; **Adım 2**'yi eklerken "run only if previous output matches" sorusuna `ALARM` yaz (adım 1'in prompt'una da "kritik bir durum varsa ALARM kelimesini kullan" talimatı ekle).
+2. Ya da kurulu zincirde: adımın üzerinde kalem ikonu → **Edit Step…** → **Run-if condition** → `ALARM`.
+3. Adım 3 (arşivleme gibi her durumda çalışacak iş) eklerken on-fail sorusuna **Continue** de — önceki adım atlansa/başarısız olsa da arşiv çalışır.
+4. **Doğrula:** Alarm yokken çalıştır → bildirimde "step 2 skipped (condition not met)" görürsün; zincir 3. adımdan devam eder.
+
+---
+
+## S6 — Bağlam Diyeti: Ajanı Ucuzlat (Optimizasyon)
+
+**Amaç:** Her oturumda otomatik yüklenen sabit bağlamı küçültüp kalıcı tasarruf almak.
+
+**Adımlar:**
+
+1. **Ölç:** Ajan detay sayfası → **Fixed context load** kartı. Çubuk bütçeyi aşıyorsa (veya Insights'ta `context-load` uyarısı varsa) diyet vakti. Kartta CLAUDE.md / MEMORY.md / AGENTS.md kırılımı var — şişman olan hangisi, gör.
+2. **Taşı:** CLAUDE.md'yi aç (Agents ağacında Identity satırı). Kimlik ve çalışma tarzı kalsın; **detay bilgi ve nadiren gereken talimatları** `memory/` altına ayrı dosyalara taşı, MEMORY.md indeksine tek satır özet ekle. Hafıza dosyaları yalnızca gerekince okunur — sabit maliyete girmez.
+3. **Kontrol et:** Insights'ta `memory-index` bulgusu çıkmasın diye taşıdığın her dosyayı MEMORY.md'ye bağla (yetim dosya = ajan hatırlamaz).
+4. **Tekrar ölç:** Agents başlığında Refresh → detay sayfasında token sayısının düştüğünü gör.
+5. **Kazancı hesapla:** düşüş × günlük oturum sayısı = günlük token tasarrufu. 2.000 token kısmak, günde 10 oturumda 20k token/gün eder.
+
+---
+
+## S7 — Kopya Hafızaları Düzelt: Diff → Birleştir → Eşitle
+
+**Amaç:** Aynı dosyanın ajanlara dağılmış, birbirinden sapmış kopyalarını tek doğruya indirmek (örnek: `ajan_kurulumu.md`).
+
+**Adımlar:**
+
+1. Komut paleti → **Agent Farm: Sync Shared Memory…** — gruplar listelenir: ✓ birebir aynı, ⚠ sapmış.
+2. Sapmış grubu seç → **Compare two copies** → iki ajanın kopyası diff ekranında; farkın ne olduğunu anla.
+3. Karar ver:
+   - Bir kopya açıkça doğruysa: tekrar komutu çalıştır → **Sync all copies from one source** → kaynağı seç (en yenisi işaretli) → **Sync**. Ezilen her dosyanın yanına `.afbak` yedeği bırakılır.
+   - İki kopyada da değerli satır varsa: **Create merge draft** → açılan taslakta `=== FROM ... ===` bloklarından nihai metni elinle birleştir → komut paleti → **Agent Farm: Apply Merged Memory** → onayla.
+4. **Doğrula:** Insights'taki `duplicate-memory` uyarısı "duplicated identically" (bilgi) seviyesine düşer.
+
+---
+
+## S8 — Bütçe ve Trend Disiplini
+
+**Amaç:** Maliyet sürprizle değil, eşikle yönetilsin.
+
+**Adımlar:**
+
+1. Ayarlar → `agentFarm.budgets` → **Edit in settings.json** → örn:
+```
+"agentFarm.budgets": { "psikolog": 20, "genel": 10, "*": 40 }
+```
+2. Davranış: %80'de Insights'ta ⚠, aşımda ⛔ + günde bir bildirim; Dashboard'da ajan kartlarında doluluk çubuğu, "Cost today" kartında filo çubuğu.
+3. Trend tarafı kendiliğinden açık: bir ajanın haftalık maliyeti önceki haftanın 2 katına çıkarsa Insights'ta `trend` uyarısı görürsün (`trendAlertFactor` ile ayarlanır, 0 = kapalı).
+4. **Aylık rutin:** Dashboard → Agent comparison → **Cache eff.** kolonuna bak. %90+ iyi; düşükse o ajanın oturumları kısa ve bağlam sürekli yeniden yazılıyor demektir — işleri birleştirmeyi düşün.
+
+---
+
+## S9 — VS Code Kapalıyken Sabah Görevi (Windows)
+
+**Amaç:** 08:30 görevi bilgisayar açık ama VS Code kapalıyken de koşsun.
+
+**Adımlar:**
+
+1. Önce görevi normal zamanlanmış görev olarak kur (S3 adım 3).
+2. Tasks → Scheduled altında göreve sağ tık → **Export as Windows Scheduled Task…**
+3. Bildirim: script yazıldı, `schtasks /Create ...` komutu panoya kopyalandı. Bir terminal aç (`Ctrl+ü`), yapıştır, Enter. Çıktıda "SUCCESS" görmelisin.
+4. **Doğrula:** `schtasks /Query /TN "AgentFarm\<görev adı>"` — kayıt listelenir. Çıktılar bildirimdeki **Open log folder** klasöründeki log dosyasında birikir.
+5. Kaldırmak istersen: `schtasks /Delete /TN "AgentFarm\<görev adı>" /F`.
+
+**Not:** `claude` komutu PATH'te olmalı (terminale `claude --version` yazarak kontrol et).
+
+---
+
+## S10 — Vault'a Otomatik Karne
+
+**Amaç:** Haftalık filo raporu + gece işlerinin çıktıları, elini sürmeden Obsidian'a düşsün.
+
+**Adımlar:**
+
+1. Ayarlar → `agentFarm.autoReportFolder` → vault içinde bir klasör yolu (örn. `D:\zone\know\note\obsidian\20_PROGRESS\ajan-karneleri`).
+2. `agentFarm.autoReport` → `weekly` (veya `daily`).
+3. Hepsi bu. Eklenti saatte bir kontrol eder; dönemin raporu yoksa üretir (`AgentFarm-Report-2026-W28.md`), bildirimle haber verir. Dönem içinde headless görev çıktısı varsa **Task outputs** bölümü de rapora eklenir.
+4. Obsidian'da klasörü açtığında karşılaştırma tablosu, model kullanımı, sağlık bulguları ve iş çıktıları tek notta.
+
+---
+
+## S11 — Takılan Ajanı Yakala ve Müdahale Et
+
+**Amaç:** Uzun işte bir ajan sessizce durduysa dakikalar içinde haberin olsun.
+
+**Ön koşul:** Canlı gözlem kurulu (**Install Live Hooks** + oturumları yeniden başlatmış olmak).
+
+**Adımlar:**
+
+1. Normalde hiçbir şey yapmazsın — ajan izin onayına düştüğünde `⚠ waiting for permission` bildirimi, 4 dakika olay üretmeyince `looks stalled` bildirimi kendiliğinden gelir; durum çubuğu sarıya döner.
+2. Bildirimdeki **Open Timeline** → takılan ajanın şeridine bak: son olay ne, hangi araçta kaldı (kartta `STALLED` + son araç adı).
+3. Müdahale: izin bekliyorsa terminaline geç ve onayla/reddet; gerçekten donduysa görevi Tasks'tan iptal et (`Cancel Task` süreci güvenle sonlandırır) veya terminali kapat, sonra **Continue Latest Session** ile kaldığı yerden devam ettir.
+4. Aynı ajan sık takılıyorsa Insights'ta `error-rate` bulgusuna bak — genelde bozuk bir araç scripti veya eksik izin vardır.
+
+---
+
+## Kapanış: Ritim Önerisi
+
+- **Her gün 10 saniye:** durum çubuğu + Duties rozetleri (pending var mı?).
+- **Her hafta 5 dakika:** Dashboard karşılaştırması + Insights sıfırlama + vault karnesi.
+- **Her ay 15 dakika:** bağlam diyeti (S6) + kopya hafıza kontrolü (S7) + bütçe gözden geçirme (S8).
+
+Yeni senaryo ihtiyacın doğduğunda bu belge büyümeye hazır — Blueprint gibi bu da eklentiyle birlikte yaşayan bir belge.
