@@ -1,0 +1,147 @@
+// Agent Farm — agent detail page script.
+(function () {
+    'use strict';
+    const vscode = acquireVsCodeApi();
+    const C = window.AFCharts;
+    let DATA = window.__DATA__;
+
+    window.addEventListener('message', ev => {
+        if (ev.data.type === 'data') { DATA = ev.data.data; render(); }
+    });
+
+    function relTime(ts) {
+        if (!ts) return 'never';
+        const s = Math.round((Date.now() - ts) / 1000);
+        if (s < 60) return s + 's ago';
+        const m = Math.round(s / 60);
+        if (m < 60) return m + 'm ago';
+        const h = Math.round(m / 60);
+        if (h < 24) return h + 'h ago';
+        return Math.round(h / 24) + 'd ago';
+    }
+
+    function dayKeysBack(n) {
+        const out = [];
+        const now = new Date();
+        for (let i = n - 1; i >= 0; i--) {
+            const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+            out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+        }
+        return out;
+    }
+
+    function render() {
+        const a = DATA.agent;
+        const days = dayKeysBack(30);
+        const costSeries = [{ name: a.name, values: days.map(d => DATA.daily[d] ? DATA.daily[d].cost : 0) }];
+
+        const ctx = a.contextLoad;
+        const budget = a.contextBudget;
+        const pct = Math.min(100, Math.round(100 * ctx.total / budget));
+        const ctxHtml = `
+            <div class="card chartbox">
+                <h3>Fixed context load <a data-guide="saglik-baglam-yuku">?</a></h3>
+                <div class="kpi">~${C.fmtTok(ctx.total)} <span class="muted" style="font-size:12px">tokens / session</span></div>
+                <div class="progress"><div class="${pct > 85 ? 'hot' : ''}" style="width:${pct}%"></div></div>
+                <div class="sub">${pct}% of ${C.fmtTok(budget)} budget</div>
+                ${C.hbars([
+                    { name: 'CLAUDE.md', value: ctx.claudeMd },
+                    { name: 'MEMORY.md', value: ctx.memoryIndex },
+                    { name: 'AGENTS.md', value: ctx.agentsMd }
+                ].filter(x => x.value > 0), { fmt: C.fmtTok })}
+            </div>`;
+
+        const toolItems = Object.entries(DATA.tools)
+            .map(([name, value]) => ({ name, value }))
+            .sort((x, y) => y.value - x.value)
+            .slice(0, 10);
+
+        const modelItems = Object.entries(DATA.models)
+            .map(([name, v]) => ({ name: name.replace(/^claude-/, ''), value: v.cost }))
+            .sort((x, y) => y.value - x.value);
+
+        const sevIcon = { error: '⛔', warning: '⚠', info: 'ℹ' };
+        const insightsHtml = DATA.insights.length
+            ? DATA.insights.map(i => `
+                <tr class="${i.filePath ? 'click' : ''}" ${i.filePath ? `data-file="${C.esc(i.filePath)}"` : ''}>
+                    <td>${sevIcon[i.severity]}</td>
+                    <td>${C.esc(i.category)}</td>
+                    <td>${C.esc(i.message)} <a data-guide="${C.esc(i.anchor)}">?</a></td>
+                </tr>`).join('')
+            : '<tr><td colspan="3" class="muted">No findings — healthy agent. 🌿</td></tr>';
+
+        const memHtml = a.memoryFiles.map(f => `
+            <tr class="click" data-file="${C.esc(f.path)}">
+                <td>${C.esc(f.name)}</td>
+                <td class="num">${(f.size / 1024).toFixed(1)} KB</td>
+                <td class="num">~${C.fmtTok(f.tokens)}</td>
+                <td class="num">${relTime(f.mtime)}</td>
+            </tr>`).join('');
+
+        const sessHtml = DATA.sessions.map(s => `
+            <tr class="click" data-session="${C.esc(s.file)}">
+                <td>${s.active ? '<span class="dot on"></span> ' : ''}${C.esc(s.title)}${s.sidechain ? ' <span class="badge">sub</span>' : ''}</td>
+                <td class="num">${relTime(s.ts)}</td>
+                <td class="num">${s.durationMin}m</td>
+                <td class="num">${s.turns}</td>
+                <td class="num">${s.toolCalls}</td>
+                <td class="num">${s.errors || ''}</td>
+                <td class="num">${C.fmtTok(s.tokens)}</td>
+                <td class="num"><strong>${C.fmtUSD(s.cost)}</strong></td>
+            </tr>`).join('');
+
+        const t = DATA.totals;
+        document.getElementById('app').innerHTML = `
+            <div class="spread">
+                <div>
+                    <h1><span class="dot ${a.active ? 'on' : 'off'}"></span> ${C.esc(a.name)}</h1>
+                    <div class="muted small">${C.esc(a.dir)} · permissions: ${C.esc(a.permissionSummary)}</div>
+                </div>
+                <div class="btnrow">
+                    <button id="start">Start session</button>
+                    <button class="secondary" id="continue">Continue latest</button>
+                    <button class="secondary" id="reveal">Reveal folder</button>
+                    <button class="secondary" data-guide="ajan-detay-sayfasi">? Guide</button>
+                </div>
+            </div>
+            <div class="row">
+                <div class="card"><div class="label">Total cost</div><div class="kpi">${C.fmtUSD(t.cost)}</div><div class="sub">avg ${C.fmtUSD(t.avgCostPerSession)} / session</div></div>
+                <div class="card"><div class="label">Sessions</div><div class="kpi">${t.sessions}</div></div>
+                <div class="card"><div class="label">Tool calls</div><div class="kpi">${t.toolCalls}</div><div class="sub">${t.errors} errors</div></div>
+                <div class="card"><div class="label">Memory</div><div class="kpi">${a.memoryFiles.length}</div><div class="sub">files</div></div>
+            </div>
+            <div class="row">
+                <div class="card chartbox"><h3>Daily cost — last 30 days</h3>${C.stackedBars(days, costSeries, {})}</div>
+                ${ctxHtml}
+            </div>
+            <div class="row">
+                <div class="card chartbox"><h3>Cost by model</h3>${C.donut(modelItems, {})}</div>
+                <div class="card chartbox"><h3>Top tools</h3>${toolItems.length ? C.hbars(toolItems, { fmt: C.fmtTok }) : '<p class="muted">No tool calls recorded.</p>'}</div>
+            </div>
+            <h2>Health &amp; optimization <a data-guide="saglik-ve-optimizasyon">?</a></h2>
+            <div class="tablewrap"><table><tr><th></th><th>Category</th><th>Finding</th></tr>${insightsHtml}</table></div>
+            <h2>Memory files</h2>
+            <div class="tablewrap"><table>
+                <tr><th>File</th><th class="num">Size</th><th class="num">Tokens</th><th class="num">Modified</th></tr>
+                ${memHtml || '<tr><td colspan="4" class="muted">No memory files.</td></tr>'}
+            </table></div>
+            <h2>Sessions</h2>
+            <div class="tablewrap"><table>
+                <tr><th>Title</th><th class="num">When</th><th class="num">Dur</th><th class="num">Turns</th><th class="num">Tools</th><th class="num">Err</th><th class="num">Tokens</th><th class="num">Cost</th></tr>
+                ${sessHtml || '<tr><td colspan="8" class="muted">No sessions yet.</td></tr>'}
+            </table></div>
+        `;
+
+        document.getElementById('start').addEventListener('click', () => vscode.postMessage({ type: 'startSession' }));
+        document.getElementById('continue').addEventListener('click', () => vscode.postMessage({ type: 'continueSession' }));
+        document.getElementById('reveal').addEventListener('click', () => vscode.postMessage({ type: 'reveal' }));
+        document.querySelectorAll('[data-file]').forEach(el =>
+            el.addEventListener('click', () => vscode.postMessage({ type: 'openFile', path: el.dataset.file })));
+        document.querySelectorAll('[data-session]').forEach(el =>
+            el.addEventListener('click', () => vscode.postMessage({ type: 'openSession', file: el.dataset.session })));
+        document.querySelectorAll('[data-guide]').forEach(el =>
+            el.addEventListener('click', ev => { ev.stopPropagation(); vscode.postMessage({ type: 'openGuide', anchor: el.dataset.guide }); }));
+    }
+
+    render();
+})();

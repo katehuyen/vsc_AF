@@ -1,0 +1,225 @@
+import * as fs from 'fs';
+import * as path from 'path';
+import * as vscode from 'vscode';
+import { PricingEngine, totalTokens, Usage } from '../core/pricing';
+import { htmlShell } from './base';
+
+export interface ViewerDeps {
+    extensionUri: vscode.Uri;
+    getPricing(): PricingEngine;
+    maxMessages(): number;
+}
+
+interface ViewMessage {
+    role: 'user' | 'assistant' | 'tool' | 'toolResult' | 'system';
+    ts: number;
+    text?: string;
+    tool?: string;
+    input?: string;
+    isError?: boolean;
+    sidechain?: boolean;
+    model?: string;
+    tokens?: number;
+    cost?: number;
+}
+
+const TEXT_LIMIT = 4000;
+
+function clip(s: string): string {
+    return s.length > TEXT_LIMIT ? s.slice(0, TEXT_LIMIT) + `\n… [truncated, ${s.length} chars total]` : s;
+}
+
+function contentToText(content: unknown): string {
+    if (typeof content === 'string') { return content; }
+    if (Array.isArray(content)) {
+        const parts: string[] = [];
+        for (const b of content as { type?: string; text?: string; content?: unknown }[]) {
+            if (b?.type === 'text' && b.text) { parts.push(b.text); }
+        }
+        return parts.join('\n');
+    }
+    return '';
+}
+
+function buildData(file: string, deps: ViewerDeps): Record<string, unknown> {
+    let raw = '';
+    try { raw = fs.readFileSync(file, 'utf8'); } catch { /* gone */ }
+
+    const messages: ViewMessage[] = [];
+    const usage: Usage = { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 };
+    const models = new Set<string>();
+    const seen = new Set<string>();
+    let cost = 0, errors = 0, toolCalls = 0, firstTs = 0, lastTs = 0;
+    let title = '';
+    let cwd = '';
+    let permissionMode = '';
+
+    for (const lineText of raw.split('\n')) {
+        if (!lineText.trim()) { continue; }
+        let line: {
+            type?: string; summary?: string; isMeta?: boolean; isSidechain?: boolean;
+            timestamp?: string; cwd?: string; permissionMode?: string; requestId?: string;
+            costUSD?: number; toolUseResult?: unknown;
+            message?: {
+                id?: string; model?: string; content?: unknown;
+                usage?: { input_tokens?: number; output_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number };
+            };
+        };
+        try { line = JSON.parse(lineText); } catch { continue; }
+
+        const ts = line.timestamp ? Date.parse(line.timestamp) : 0;
+        if (ts) {
+            if (!firstTs) { firstTs = ts; }
+            lastTs = Math.max(lastTs, ts);
+        }
+        if (line.cwd && !cwd) { cwd = line.cwd; }
+        if (line.type === 'summary' && line.summary && !title) { title = line.summary; continue; }
+        if (line.type === 'permission-mode' && line.permissionMode) { permissionMode = line.permissionMode; continue; }
+
+        if (line.type === 'user' && line.message) {
+            const content = line.message.content;
+            if (typeof content === 'string') {
+                if (!line.isMeta) {
+                    messages.push({ role: 'user', ts, text: clip(content), sidechain: line.isSidechain });
+                    if (!title) { title = content.slice(0, 80); }
+                }
+            } else if (Array.isArray(content)) {
+                for (const b of content as { type?: string; is_error?: boolean; content?: unknown; text?: string }[]) {
+                    if (b?.type === 'tool_result') {
+                        if (b.is_error) { errors++; }
+                        messages.push({
+                            role: 'toolResult', ts,
+                            text: clip(contentToText(b.content) || String(b.text ?? '')),
+                            isError: !!b.is_error,
+                            sidechain: line.isSidechain
+                        });
+                    } else if (b?.type === 'text' && b.text) {
+                        messages.push({ role: 'user', ts, text: clip(b.text), sidechain: line.isSidechain });
+                    }
+                }
+            }
+            continue;
+        }
+
+        if (line.type === 'assistant' && line.message) {
+            const msg = line.message;
+            if (msg.model && msg.model !== '<synthetic>') { models.add(msg.model); }
+            let msgTokens = 0, msgCost = 0;
+            const key = `${msg.id ?? ''}:${line.requestId ?? ''}`;
+            if (msg.usage && (key === ':' || !seen.has(key))) {
+                if (key !== ':') { seen.add(key); }
+                const u: Usage = {
+                    input: msg.usage.input_tokens ?? 0,
+                    output: msg.usage.output_tokens ?? 0,
+                    cacheWrite: msg.usage.cache_creation_input_tokens ?? 0,
+                    cacheRead: msg.usage.cache_read_input_tokens ?? 0
+                };
+                usage.input += u.input;
+                usage.output += u.output;
+                usage.cacheWrite += u.cacheWrite;
+                usage.cacheRead += u.cacheRead;
+                msgTokens = totalTokens(u);
+                msgCost = typeof line.costUSD === 'number'
+                    ? line.costUSD
+                    : deps.getPricing().costFor(msg.model ?? '', u);
+                cost += msgCost;
+            }
+            if (Array.isArray(msg.content)) {
+                for (const b of msg.content as { type?: string; text?: string; name?: string; input?: unknown }[]) {
+                    if (b?.type === 'text' && b.text?.trim()) {
+                        messages.push({
+                            role: 'assistant', ts, text: clip(b.text),
+                            model: msg.model, tokens: msgTokens, cost: msgCost,
+                            sidechain: line.isSidechain
+                        });
+                        msgTokens = 0; msgCost = 0; // attribute once
+                    } else if (b?.type === 'tool_use' && b.name) {
+                        toolCalls++;
+                        messages.push({
+                            role: 'tool', ts, tool: b.name,
+                            input: clip(JSON.stringify(b.input ?? {}, null, 2)),
+                            sidechain: line.isSidechain
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    const max = deps.maxMessages();
+    const truncatedCount = Math.max(0, messages.length - max);
+
+    return {
+        file,
+        sessionId: path.basename(file, '.jsonl'),
+        title: title || '(untitled session)',
+        cwd,
+        permissionMode,
+        firstTs,
+        lastTs,
+        models: [...models],
+        usage,
+        totalTokens: totalTokens(usage),
+        cost,
+        errors,
+        toolCalls,
+        messageCount: messages.length,
+        truncatedCount,
+        messages: messages.slice(-max)
+    };
+}
+
+export class SessionViewerPanel {
+    private static open = new Map<string, SessionViewerPanel>();
+    private disposables: vscode.Disposable[] = [];
+
+    static show(file: string, deps: ViewerDeps): void {
+        const existing = SessionViewerPanel.open.get(file);
+        if (existing) {
+            existing.panel.reveal();
+            return;
+        }
+        const panel = vscode.window.createWebviewPanel(
+            'agentfarm.session',
+            `Session: ${path.basename(file, '.jsonl').slice(0, 8)}`,
+            vscode.ViewColumn.One,
+            { enableScripts: true, retainContextWhenHidden: true }
+        );
+        SessionViewerPanel.open.set(file, new SessionViewerPanel(panel, file, deps));
+    }
+
+    private constructor(
+        readonly panel: vscode.WebviewPanel,
+        private file: string,
+        private deps: ViewerDeps
+    ) {
+        panel.webview.html = htmlShell(
+            panel.webview,
+            deps.extensionUri,
+            'Session Viewer',
+            buildData(file, deps),
+            'sessionViewer.js'
+        );
+        panel.onDidDispose(() => this.dispose(), null, this.disposables);
+        panel.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
+    }
+
+    private onMessage(msg: { type: string; [k: string]: unknown }): void {
+        switch (msg.type) {
+            case 'openRaw':
+                vscode.commands.executeCommand('vscode.open', vscode.Uri.file(this.file));
+                break;
+            case 'refresh':
+                this.panel.webview.postMessage({ type: 'data', data: buildData(this.file, this.deps) });
+                break;
+            case 'openGuide':
+                vscode.commands.executeCommand('agentfarm.openGuide', msg.anchor);
+                break;
+        }
+    }
+
+    private dispose(): void {
+        SessionViewerPanel.open.delete(this.file);
+        for (const d of this.disposables) { d.dispose(); }
+    }
+}
