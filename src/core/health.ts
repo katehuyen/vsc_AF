@@ -1,6 +1,6 @@
 import { AgentInfo } from './agents';
 import { SessionIndex } from './sessions';
-import { hashString, safeReadFile } from './util';
+import { dayKey, fmtUSD, hashString, safeReadFile } from './util';
 
 export type Severity = 'error' | 'warning' | 'info';
 
@@ -17,6 +17,8 @@ export interface Insight {
 export interface HealthConfig {
     staleMemoryDays: number;
     contextBudgetTokens: number;
+    /** Daily USD budgets by agent name; "*" applies to the whole fleet. */
+    budgets?: Record<string, number>;
 }
 
 const SHARED_CANDIDATE_EXCLUDES = new Set(['memory.md']);
@@ -154,7 +156,42 @@ export function buildInsights(
         }
     }
 
-    // 7) Duplicate / shared memory files across agents
+    // 7) Daily budget checks (per agent and fleet-wide "*")
+    if (cfg.budgets && Object.keys(cfg.budgets).length) {
+        const today = dayKey(now);
+        const todayCostOf = (agentId?: string): number => {
+            const sessions = agentId ? index.forAgent(agentId) : index.all();
+            return sessions.reduce((sum, s) => sum + (s.daily[today]?.cost ?? 0), 0);
+        };
+        for (const [name, limit] of Object.entries(cfg.budgets)) {
+            if (!limit || limit <= 0) { continue; }
+            const agent = name === '*' ? undefined : agents.find(a => a.name === name);
+            if (name !== '*' && !agent) { continue; }
+            const cost = todayCostOf(agent?.id);
+            const label = name === '*' ? 'fleet' : name;
+            if (cost >= limit) {
+                insights.push({
+                    severity: 'error',
+                    agentId: agent?.id,
+                    agentName: label,
+                    category: 'budget',
+                    message: `Daily budget exceeded: ${fmtUSD(cost)} of ${fmtUSD(limit)} (${Math.round(100 * cost / limit)}%).`,
+                    guideAnchor: 'butce-uyarilari'
+                });
+            } else if (cost >= 0.8 * limit) {
+                insights.push({
+                    severity: 'warning',
+                    agentId: agent?.id,
+                    agentName: label,
+                    category: 'budget',
+                    message: `Approaching daily budget: ${fmtUSD(cost)} of ${fmtUSD(limit)} (${Math.round(100 * cost / limit)}%).`,
+                    guideAnchor: 'butce-uyarilari'
+                });
+            }
+        }
+    }
+
+    // 8) Duplicate / shared memory files across agents
     const byName = new Map<string, { agent: AgentInfo; path: string; hash: number }[]>();
     for (const agent of agents) {
         for (const f of agent.memoryFiles) {

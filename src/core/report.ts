@@ -1,7 +1,9 @@
+import * as fs from 'fs';
 import { AgentInfo } from './agents';
 import { Insight } from './health';
 import { totalTokens } from './pricing';
 import { SessionIndex, SessionInfo } from './sessions';
+import { FarmTask } from './tasks';
 import { fmtTokens, fmtUSD } from './util';
 
 function pct(n: number): string {
@@ -110,5 +112,46 @@ export function buildFleetReport(
     }
     lines.push('');
 
+    return lines.join('\n');
+}
+
+/** Digest of archived headless task outputs over a period. */
+export function buildOutputsDigest(
+    tasks: FarmTask[],
+    sinceMs: number,
+    maxCharsPerTask = 4000
+): string {
+    const now = Date.now();
+    const cutoff = now - sinceMs;
+    const finished = tasks
+        .filter(t => t.outputFile && t.endedAt && t.endedAt >= cutoff &&
+            (t.status === 'done' || t.status === 'failed'))
+        .sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0));
+
+    const lines: string[] = [];
+    lines.push(`# Agent Farm — Task Outputs Digest (${new Date().toISOString().slice(0, 10)})`);
+    lines.push('');
+    lines.push(`${finished.length} archived task output(s) in the selected period.`);
+    lines.push('');
+    for (const t of finished) {
+        const mins = t.startedAt && t.endedAt ? Math.round((t.endedAt - t.startedAt) / 60000) : 0;
+        lines.push(`## ${t.status === 'failed' ? '⛔ ' : ''}${t.title}`);
+        lines.push('');
+        lines.push(`- Agent: **${t.agentName}** · ${new Date(t.endedAt ?? 0).toLocaleString()} · ${mins} min · ${t.status}`);
+        lines.push('');
+        let content = '';
+        try { content = fs.readFileSync(t.outputFile as string, 'utf8'); } catch { content = '(output file missing)'; }
+        // Drop the archive header (everything up to the first ---) to keep the digest readable.
+        const sep = content.indexOf('\n---\n');
+        if (sep >= 0) { content = content.slice(sep + 5); }
+        content = content.trim();
+        if (content.length > maxCharsPerTask) {
+            content = content.slice(0, maxCharsPerTask) + `\n\n… [truncated, ${content.length} chars total]`;
+        }
+        lines.push(content || '(empty output)');
+        lines.push('');
+        lines.push('---');
+        lines.push('');
+    }
     return lines.join('\n');
 }

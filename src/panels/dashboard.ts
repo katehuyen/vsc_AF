@@ -13,6 +13,7 @@ export interface DashboardDeps {
     getInsights(): Insight[];
     getPricing(): PricingEngine;
     windowTokenLimit(): number;
+    budgets(): Record<string, number>;
 }
 
 interface AgentSummary {
@@ -30,6 +31,7 @@ interface AgentSummary {
     toolCalls: number;
     usage: { input: number; output: number; cacheWrite: number; cacheRead: number };
     insightCounts: { error: number; warning: number; info: number };
+    budget?: number;
 }
 
 function buildData(deps: DashboardDeps): Record<string, unknown> {
@@ -78,7 +80,8 @@ function buildData(deps: DashboardDeps): Record<string, unknown> {
             errors,
             toolCalls,
             usage,
-            insightCounts: counts
+            insightCounts: counts,
+            budget: deps.budgets()[a.name]
         };
     });
 
@@ -126,6 +129,7 @@ function buildData(deps: DashboardDeps): Record<string, unknown> {
         heat,
         topSessions,
         window: { ...win, limit: deps.windowTokenLimit() },
+        fleetBudget: deps.budgets()['*'] ?? 0,
         insightTotals: {
             error: insights.filter(i => i.severity === 'error').length,
             warning: insights.filter(i => i.severity === 'warning').length,

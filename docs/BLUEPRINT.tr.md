@@ -203,6 +203,17 @@ Faz 4'ün en güçlü aracı: **Workflows** — birden çok ajanın sırayla ça
 
 Örnek: "Sabah rutini" = 1. psikolog (headless): "dünkü günlüğü analiz et" → 2. asistan (headless): "şu analizi kullanarak gün planı çıkar: {prev_output}".
 
+### Koşullu Dallanma
+
+0.5.0 ile zincirler düz çizgi olmaktan çıktı — her adım için iki dallanma aracı var (wizard kurulumda sorar):
+
+- **Koşullu çalıştırma (runIf):** Adıma bir regex verirsen, adım yalnızca **önceki adımın çıktısı** bu desenle eşleşiyorsa çalışır; eşleşmezse atlanır ve zincir sonraki adımdan devam eder (çıktı devri bozulmaz). Örnek: psikolog analizi "ALARM" içeriyorsa asistan acil plan yapsın, içermiyorsa o adım atlansın.
+- **Hata yönlendirmesi (onFail):** Adım başarısız olursa ne olacağını seçersin: **Stop** (varsayılan — zincir durur), **Continue** (sonraki adıma geç) veya **Jump to step N** (belirli adıma sıçra — örn. temizlik/telafi adımı).
+
+Güvenlik: `onFail` sıçramalarıyla oluşabilecek sonsuz döngülere karşı her çalıştırma **25 adım yürütmeyle** sınırlıdır; sınıra gelen zincir uyarıyla durur.
+
+Örnek akıllı zincir: 1. psikolog: "günlüğü tara" → 2. asistan (runIf: `ALARM`): "acil müdahale planı: {prev_output}" → 3. genel (her zaman): "günü arşivle" (onFail: Continue).
+
 ## Hafıza Senkronizasyonu
 
 Sağlık motorunun yakaladığı **kopya hafıza** sorununun çözüm aracı: `Agent Farm: Sync Shared Memory…`
@@ -214,6 +225,16 @@ Sağlık motorunun yakaladığı **kopya hafıza** sorununun çözüm aracı: `A
 3. Üzerine yazılan her dosyanın yanına zaman damgalı `.afbak` yedeği bırakılır — pişmanlık geri alınabilir.
 
 Senkron sonrası Insights kendini yeniler; grup "birebir aynı" durumuna düşer.
+
+### Birleştirme Taslağı (Merge Draft)
+
+Kopyalar sapmışsa ve ikisinde de değerli bilgi varsa "birini seç, diğerini ez" yetmez. Üçüncü seçenek **Create merge draft**:
+
+1. Tüm kopyalar `=== FROM ajan (kaç gün önce) ===` başlıklarıyla tek bir taslak belgede alt alta açılır (en yenisi üstte).
+2. Taslağı elinle düzenleyip nihai hâline getirirsin — işaret satırlarını ve istemediğin kısımları sil, iki kopyadaki değerli satırları birleştir.
+3. `Agent Farm: Apply Merged Memory` komutunu çalıştır: düzenlediğin içerik (kalan işaret satırları otomatik ayıklanarak) **tüm kopyalara** yazılır; her dosyanın `.afbak` yedeği alınır.
+
+Boş sonuç koruması vardır: taslağı tamamen silersen hiçbir dosyaya yazılmaz.
 
 ## Filo Raporu
 
@@ -234,6 +255,10 @@ Raporu elle almak yerine otomatiğe bağlayabilirsin — Obsidian vault'una düz
 3. Eklenti saatte bir kontrol eder; o gün/haftanın raporu yoksa üretir (`AgentFarm-Report-2026-07-08.md` veya `AgentFarm-Report-2026-W28.md`) ve bildirim düşer. Kapsanan dönem `agentFarm.autoReportDays` ile ayarlanır (varsayılan 7 gün).
 
 VS Code açıkken çalışır; gün içinde ilk açılışta o günün raporu üretilir.
+
+### Görev Çıktı Özeti
+
+`Agent Farm: Export Task Outputs Digest (Markdown)` — arşivlenmiş headless görev çıktılarını tek belgede toplar (bugün / 7 gün / 30 gün). Her görev için ajan, süre, durum ve çıktının kendisi (uzunsa kırpılır); başarısız görevler ⛔ ile işaretlenir. Zamanlanmış işlerin ve workflow'ların gün sonunda "ne üretmiş bunlar?" sorusunun tek bakışta cevabı. Varsayılan kayıt yeri `autoReportFolder` (ayarlıysa) — yani vault'una düşer.
 
 ## Sağlık ve Optimizasyon
 
@@ -291,6 +316,18 @@ Token kullanımı yerel kayıtlardan okunur ve `agentFarm.pricing` kurallarıyla
 
 **5 saatlik pencere:** Abonelik planlarında kota ~5 saatlik yuvarlanan pencerelerle işler. Dashboard son 5 saatteki token toplamını gösterir; `agentFarm.windowTokenLimit` ayarına plan limitini yazarsan yüzde çubuğu görürsün.
 
+### Bütçe Uyarıları
+
+`agentFarm.budgets` ayarıyla ajan başına (ve `"*"` ile filo geneli) **günlük bütçe** tanımlarsın:
+
+```
+"agentFarm.budgets": { "psikolog": 20, "*": 50 }
+```
+
+- Bütçenin **%80'ine** gelen ajan Insights'ta ⚠ uyarı alır; **aşan** ajan ⛔ hata olur ve günde bir kez bildirim düşer.
+- Dashboard'da bütçeli ajan kartlarında doluluk çubuğu görünür; filo bütçesi "Cost today" kartına işlenir.
+- Rakamlar API karşılığı değerdir — abonelikte fatura değil, tüketim disiplinidir: "psikolog bugün değer olarak 20$'ı geçmesin" gibi.
+
 ## Ayarlar
 
 | Ayar | Varsayılan | Ne işe yarar |
@@ -314,6 +351,7 @@ Token kullanımı yerel kayıtlardan okunur ve `agentFarm.pricing` kurallarıyla
 | `agentFarm.autoReport` | off | Otomatik filo raporu: off / daily / weekly |
 | `agentFarm.autoReportFolder` | boş | Otomatik raporların yazılacağı klasör (vault) |
 | `agentFarm.autoReportDays` | 7 | Otomatik raporun kapsadığı gün sayısı |
+| `agentFarm.budgets` | {} | Ajan başına günlük USD bütçe; `"*"` = filo geneli |
 
 ## Komutlar
 
@@ -333,8 +371,9 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 - **Save as Template / New Task from Template** — görev şablonları
 - **Open Task Output** — headless görev çıktı arşivi
 - **Export as Windows Scheduled Task…** — VS Code'dan bağımsız zamanlama
-- **Sync Shared Memory…** — ajanlar arası kopya hafıza senkronizasyonu
+- **Sync Shared Memory… / Apply Merged Memory** — kopya hafıza senkronizasyonu ve elle birleştirme
 - **Export Fleet Report (Markdown)** — karşılaştırmalı filo raporu
+- **Export Task Outputs Digest (Markdown)** — headless çıktıların toplu özeti
 
 ## Veri ve Gizlilik
 
@@ -368,15 +407,27 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 
 **Headless görev başlamadı / anında failed oldu.** `claude` PATH'te mi? Çıktı dosyasını aç (Open Task Output) — spawn hatası ve stderr orada görünür.
 
+**runIf koşulum hiç tutmuyor.** Desen, önceki adımın **çıktı dosyası içeriğine** karşı büyük/küçük harf duyarsız test edilir. İlk adımda önceki çıktı olmadığından ilk adıma runIf koyma (wizard zaten sormaz). Interactive adımların çıktısı arşivlenmediği için sonraki adımın runIf'i eşleşmez — koşullu zincirlerde headless kullan.
+
+**Bütçe bildirimi tekrar tekrar gelir mi?** Hayır — ajan başına günde bir kez. Insights'ta durum sürekli görünür.
+
 ## Yol Haritası
 
 - ~~**Faz 2 — Canlı gözlem**~~ ✅ 0.2.0: hook tabanlı gerçek zamanlı olay akışı, izin/takılma bildirimleri, kulvar zaman çizelgesi.
 - ~~**Faz 3 — Koordinasyon**~~ ✅ 0.3.0: görev kuyruğu, zamanlanmış görevler, hafıza senkronizasyon sihirbazı, karşılaştırmalı filo raporu.
 - ~~**Faz 4 — Otomasyon**~~ ✅ 0.4.0: çoklu-ajan iş akışları, headless çıktı arşivi, görev şablonları, otomatik vault raporu, Windows Görev Zamanlayıcı dışa aktarımı.
-- **Faz 5 — adaylar:** workflow'larda koşullu dallanma (çıktıya göre farklı adım), görev çıktılarının toplu raporu, ajan bazlı kota/bütçe uyarıları, hafıza senkronunda üç yönlü birleştirme.
+- ~~**Faz 5 — Zekâ**~~ ✅ 0.5.0: koşullu dallanma (runIf + onFail), görev çıktı özeti, bütçe uyarıları, birleştirme taslağı.
+- **Faz 6 — adaylar:** workflow düzenleyici arayüzü (adımları sonradan düzenleme/sıralama), çıktı özetlerinin otomatik rapora eklenmesi, ajan bazlı haftalık trend uyarıları ("psikolog geçen haftaya göre 2x pahalı"), Live Timeline'da workflow zincirlerinin görselleştirilmesi.
 - Fikirlerin oldukça bu belge ve eklenti birlikte büyüyecek.
 
 ## Sürüm Notları
+
+### 0.5.0 — Zekâ (2026-07-08)
+
+- **Koşullu dallanma:** adım başına `runIf` (önceki çıktıya regex koşulu; tutmazsa adım atlanır) ve `onFail` (Stop / Continue / Jump to step N); 25 yürütmelik döngü koruması
+- **Bütçe uyarıları:** `agentFarm.budgets` ile ajan/filo günlük bütçeleri; %80'de uyarı, aşımda hata + günde bir bildirim; Dashboard'da bütçe çubukları
+- **Birleştirme taslağı:** sapmış hafıza kopyalarını tek belgede aç, elle birleştir, `Apply Merged Memory` ile yedekli olarak hepsine yaz
+- **Görev Çıktı Özeti:** arşivlenmiş headless çıktıların dönemlik toplu Markdown raporu
 
 ### 0.4.0 — Otomasyon (2026-07-08)
 

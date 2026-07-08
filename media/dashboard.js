@@ -69,7 +69,10 @@
         const kpis = `
         <div class="row">
             <div class="card"><div class="label">Active now</div><div class="kpi">${activeCount}<span class="muted" style="font-size:13px">/${agents.length} agents</span></div><div class="sub">threshold-based on transcript activity</div></div>
-            <div class="card"><div class="label">Cost today</div><div class="kpi">${C.fmtUSD(todayCost)}</div><div class="sub">API-equivalent value</div></div>
+            <div class="card"><div class="label">Cost today</div><div class="kpi">${C.fmtUSD(todayCost)}</div>
+                ${DATA.fleetBudget > 0
+                    ? `<div class="progress"><div class="${todayCost >= DATA.fleetBudget ? 'hot' : ''}" style="width:${Math.min(100, Math.round(100 * todayCost / DATA.fleetBudget))}%"></div></div><div class="sub">${Math.round(100 * todayCost / DATA.fleetBudget)}% of ${C.fmtUSD(DATA.fleetBudget)} fleet budget</div>`
+                    : '<div class="sub">API-equivalent value</div>'}</div>
             <div class="card"><div class="label">Cost · ${range}d</div><div class="kpi">${C.fmtUSD(rangeCost)}</div><div class="sub">${C.fmtTok(rangeTokens)} tokens · ${rangeMsgs} msgs</div></div>
             <div class="card"><div class="label">Sessions</div><div class="kpi">${sessionsTotal}</div><div class="sub">all time, farm scope</div></div>
             <div class="card"><div class="label">5h window</div>${windowHtml}</div>
@@ -109,9 +112,14 @@
             const badges =
                 (a.insightCounts.error ? `<span class="badge err">${a.insightCounts.error} err</span>` : '') +
                 (a.insightCounts.warning ? `<span class="badge warn">${a.insightCounts.warning} warn</span>` : '');
+            const todayAgentCost = a.daily[today] ? a.daily[today].cost : 0;
+            const budgetBar = a.budget > 0
+                ? `<div class="progress" title="${C.fmtUSD(todayAgentCost)} / ${C.fmtUSD(a.budget)} daily budget"><div class="${todayAgentCost >= a.budget ? 'hot' : ''}" style="width:${Math.min(100, Math.round(100 * todayAgentCost / a.budget))}%"></div></div>`
+                : '';
             return `<div class="card agent-card" data-agent="${C.esc(a.id)}">
                 <h3><span class="dot ${a.active ? 'on' : 'off'}"></span>${C.esc(a.name)}${badges}</h3>
                 <div class="sub">${a.active ? 'ACTIVE' : relTime(a.lastActivity)} · ${a.sessions} sessions · ctx ~${C.fmtTok(a.contextLoad)} tok</div>
+                ${budgetBar}
                 <div class="spread" style="margin-top:8px">
                     <div><div class="label">today</div><strong>${C.fmtUSD(a.daily[today] ? a.daily[today].cost : 0)}</strong></div>
                     <div><div class="label">${range}d</div><strong>${C.fmtUSD(sum(a, days, 'cost'))}</strong></div>

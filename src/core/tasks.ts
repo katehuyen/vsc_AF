@@ -21,6 +21,7 @@ export interface FarmTask {
     fromSchedule?: string;
     outputFile?: string;
     workflowId?: string;
+    workflowRunId?: string;
     stepIndex?: number;
 }
 
@@ -57,6 +58,10 @@ export interface WorkflowStep {
     title: string;
     prompt: string;
     mode: TaskMode;
+    /** What to do when this step fails: stop the chain (default), continue, or jump to a 1-based step. */
+    onFail?: 'stop' | 'continue' | number;
+    /** Regex tested against the previous step's output content; on no match the step is skipped. */
+    runIf?: string;
 }
 
 export interface FarmWorkflow {
@@ -202,7 +207,7 @@ export class TaskManager implements vscode.Disposable {
 
     addTask(
         agent: AgentInfo, title: string, prompt: string, mode: TaskMode,
-        extra?: Partial<Pick<FarmTask, 'fromSchedule' | 'workflowId' | 'stepIndex'>>
+        extra?: Partial<Pick<FarmTask, 'fromSchedule' | 'workflowId' | 'workflowRunId' | 'stepIndex'>>
     ): FarmTask {
         const task: FarmTask = {
             id: newId(),
@@ -402,12 +407,54 @@ export class TaskManager implements vscode.Disposable {
         this.save();
     }
 
+    /** Loop guard: total step executions per workflow run. */
+    private static readonly MAX_RUN_STEPS = 25;
+    private runCounts = new Map<string, number>();
+
     runWorkflow(w: FarmWorkflow): void {
         if (!w.steps.length) { return; }
-        this.startWorkflowStep(w, 0, undefined);
+        const runId = newId();
+        this.runCounts.set(runId, 0);
+        this.routeToStep(w, 0, undefined, runId);
     }
 
-    private startWorkflowStep(w: FarmWorkflow, index: number, prevOutput: string | undefined): void {
+    /** Advance a run to a step, honoring runIf conditions and the loop guard. */
+    private routeToStep(w: FarmWorkflow, index: number, prevOutput: string | undefined, runId: string): void {
+        if (index < 0 || index >= w.steps.length) {
+            this.runCounts.delete(runId);
+            void vscode.window.showInformationMessage(
+                `Agent Farm: workflow "${w.title}" completed ✓.`);
+            return;
+        }
+        const count = this.runCounts.get(runId) ?? 0;
+        if (count >= TaskManager.MAX_RUN_STEPS) {
+            this.runCounts.delete(runId);
+            void vscode.window.showWarningMessage(
+                `Agent Farm: workflow "${w.title}" stopped — step limit reached (possible loop in onFail routing).`);
+            return;
+        }
+        this.runCounts.set(runId, count + 1);
+
+        const step = w.steps[index];
+        if (step.runIf) {
+            let matched = false;
+            if (prevOutput) {
+                try {
+                    const content = fs.readFileSync(prevOutput, 'utf8');
+                    matched = new RegExp(step.runIf, 'i').test(content);
+                } catch { matched = false; }
+            }
+            if (!matched) {
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: workflow "${w.title}" — step ${index + 1} skipped (condition /${step.runIf}/ not met).`);
+                this.routeToStep(w, index + 1, prevOutput, runId);
+                return;
+            }
+        }
+        this.startWorkflowStep(w, index, prevOutput, runId);
+    }
+
+    private startWorkflowStep(w: FarmWorkflow, index: number, prevOutput: string | undefined, runId: string): void {
         const step = w.steps[index];
         const agent = this.getAgents().find(a => a.id === step.agentId);
         if (!agent) {
@@ -417,27 +464,31 @@ export class TaskManager implements vscode.Disposable {
         }
         const prompt = step.prompt.split(PREV_OUTPUT_PLACEHOLDER).join(prevOutput ?? '');
         const task = this.addTask(agent, `${w.title} ${index + 1}/${w.steps.length}: ${step.title}`,
-            prompt, step.mode, { workflowId: w.id, stepIndex: index });
+            prompt, step.mode, { workflowId: w.id, workflowRunId: runId, stepIndex: index });
         this.startTask(task);
     }
 
     private advanceWorkflow(task: FarmTask, status: TaskStatus): void {
         const w = this.workflows.find(x => x.id === task.workflowId);
         if (!w) { return; }
-        if (status !== 'done') {
+        const runId = task.workflowRunId ?? task.workflowId ?? '';
+        const stepIndex = task.stepIndex ?? 0;
+        if (status === 'done') {
+            this.routeToStep(w, stepIndex + 1, task.outputFile, runId);
+            return;
+        }
+        const onFail = w.steps[stepIndex]?.onFail ?? 'stop';
+        if (onFail === 'stop') {
+            this.runCounts.delete(runId);
             void vscode.window.showWarningMessage(
-                `Agent Farm: workflow "${w.title}" stopped at step ${(task.stepIndex ?? 0) + 1} (${status}).`);
+                `Agent Farm: workflow "${w.title}" stopped at step ${stepIndex + 1} (${status}).`);
             return;
         }
-        const next = (task.stepIndex ?? 0) + 1;
-        if (next >= w.steps.length) {
-            void vscode.window.showInformationMessage(
-                `Agent Farm: workflow "${w.title}" completed ✓ (${w.steps.length} steps).`);
-            return;
-        }
-        void vscode.window.showInformationMessage(
-            `Agent Farm: workflow "${w.title}" — starting step ${next + 1}/${w.steps.length}.`);
-        this.startWorkflowStep(w, next, task.outputFile);
+        const nextIndex = onFail === 'continue' ? stepIndex + 1 : (onFail as number) - 1;
+        void vscode.window.showWarningMessage(
+            `Agent Farm: workflow "${w.title}" step ${stepIndex + 1} failed — ` +
+            (onFail === 'continue' ? 'continuing to next step.' : `jumping to step ${onFail}.`));
+        this.routeToStep(w, nextIndex, task.outputFile, runId);
     }
 
     // ---------- schedules ----------

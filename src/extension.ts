@@ -8,9 +8,11 @@ import {
     hasOurHooks, installHooksInto, removeHooksFrom, userSettingsPath
 } from './core/hooksInstaller';
 import { LiveMonitor } from './core/live';
-import { findDuplicateGroups, syncGroup } from './core/memorySync';
+import {
+    applyMergedContent, buildMergeDraft, findDuplicateGroups, syncGroup
+} from './core/memorySync';
 import { DEFAULT_PRICING, PriceRule, PricingEngine } from './core/pricing';
-import { buildFleetReport } from './core/report';
+import { buildFleetReport, buildOutputsDigest } from './core/report';
 import { SessionIndex } from './core/sessions';
 import {
     FarmSchedule, PREV_OUTPUT_PLACEHOLDER, sanitizePrompt, ScheduleKind,
@@ -70,14 +72,35 @@ export function activate(context: vscode.ExtensionContext): void {
     );
     context.subscriptions.push(index);
 
+    const healthConfig = () => ({
+        staleMemoryDays: cfg().get<number>('staleMemoryDays', 45),
+        contextBudgetTokens: cfg().get<number>('contextBudgetTokens', 8000),
+        budgets: cfg().get<Record<string, number>>('budgets', {})
+    });
+
     const refreshAgents = () => {
         agents = discoverAgents(cfg().get<string[]>('agentRoots', []));
-        insights = buildInsights(agents, index, {
-            staleMemoryDays: cfg().get<number>('staleMemoryDays', 45),
-            contextBudgetTokens: cfg().get<number>('contextBudgetTokens', 8000)
-        });
+        insights = buildInsights(agents, index, healthConfig());
     };
     refreshAgents();
+
+    // Budget alerts: notify once per day per agent/fleet label.
+    const budgetNotified = new Set<string>();
+    const notifyBudgets = () => {
+        const today = new Date().toISOString().slice(0, 10);
+        for (const ins of insights) {
+            if (ins.category !== 'budget' || ins.severity !== 'error') { continue; }
+            const key = `${today}:${ins.agentName}`;
+            if (budgetNotified.has(key)) { continue; }
+            budgetNotified.add(key);
+            void vscode.window.showWarningMessage(`Agent Farm: ${ins.agentName} — ${ins.message}`, 'Open Dashboard')
+                .then(choice => {
+                    if (choice === 'Open Dashboard') {
+                        void vscode.commands.executeCommand('agentfarm.openDashboard');
+                    }
+                });
+        }
+    };
 
     const live = new LiveMonitor(
         () => ({
@@ -141,10 +164,8 @@ export function activate(context: vscode.ExtensionContext): void {
     };
 
     index.onDidUpdate(() => {
-        insights = buildInsights(agents, index, {
-            staleMemoryDays: cfg().get<number>('staleMemoryDays', 45),
-            contextBudgetTokens: cfg().get<number>('contextBudgetTokens', 8000)
-        });
+        insights = buildInsights(agents, index, healthConfig());
+        notifyBudgets();
         agentsTree.refresh();
         sessionsTree.refresh();
         insightsTree.refresh();
@@ -222,7 +243,8 @@ export function activate(context: vscode.ExtensionContext): void {
         index,
         getInsights: () => insights,
         getPricing: () => pricing,
-        windowTokenLimit: () => cfg().get<number>('windowTokenLimit', 0)
+        windowTokenLimit: () => cfg().get<number>('windowTokenLimit', 0),
+        budgets: () => cfg().get<Record<string, number>>('budgets', {})
     };
     const detailDeps = {
         extensionUri: context.extensionUri,
@@ -236,6 +258,8 @@ export function activate(context: vscode.ExtensionContext): void {
         getPricing: () => pricing,
         maxMessages: () => cfg().get<number>('maxTranscriptMessages', 400)
     };
+
+    let pendingMerge: { name: string; files: string[] } | undefined;
 
     type AgentArg = { agentId?: string; agent?: AgentInfo } | undefined;
     const resolveAgent = async (arg: AgentArg): Promise<AgentInfo | undefined> => {
@@ -583,9 +607,35 @@ export function activate(context: vscode.ExtensionContext): void {
                     { placeHolder: `Step ${stepNo} run mode`, ignoreFocusOut: true }
                 );
                 if (!stepMode) { return; }
+                const onFailPick = await vscode.window.showQuickPick(
+                    [
+                        { label: 'Stop workflow (default)', onFail: 'stop' as const },
+                        { label: 'Continue to next step', onFail: 'continue' as const },
+                        { label: 'Jump to step…', onFail: 'goto' as const }
+                    ],
+                    { placeHolder: `Step ${stepNo}: if it fails?`, ignoreFocusOut: true }
+                );
+                if (!onFailPick) { return; }
+                let onFail: 'stop' | 'continue' | number = 'stop';
+                if (onFailPick.onFail === 'goto') {
+                    const target = await vscode.window.showInputBox({
+                        prompt: 'Jump to step number (1-based)', ignoreFocusOut: true,
+                        validateInput: v => /^\d+$/.test(v) && Number(v) >= 1 ? undefined : 'Enter a step number'
+                    });
+                    if (!target) { return; }
+                    onFail = Number(target);
+                } else {
+                    onFail = onFailPick.onFail;
+                }
+                const runIf = steps.length === 0 ? '' : (await vscode.window.showInputBox({
+                    prompt: `Step ${stepNo}: run only if previous output matches (regex) — leave empty to always run`,
+                    ignoreFocusOut: true
+                }) ?? '');
                 steps.push({
                     agentId: agentPick.agent.id, agentName: agentPick.agent.name,
-                    title: stepTitle, prompt: stepPrompt, mode: stepMode.mode
+                    title: stepTitle, prompt: stepPrompt, mode: stepMode.mode,
+                    onFail: onFail === 'stop' ? undefined : onFail,
+                    runIf: runIf.trim() || undefined
                 });
             }
             if (!steps.length) { return; }
@@ -697,11 +747,23 @@ export function activate(context: vscode.ExtensionContext): void {
             const action = await vscode.window.showQuickPick(
                 [
                     { label: '$(diff) Compare two copies', id: 'diff' },
-                    { label: '$(sync) Sync all copies from one source', id: 'sync' }
+                    { label: '$(sync) Sync all copies from one source', id: 'sync' },
+                    { label: '$(edit) Create merge draft (combine by hand, then apply)', id: 'merge' }
                 ],
                 { placeHolder: `${g.name} — ${g.identical ? 'identical' : 'diverged'} across ${g.copies.length} agents` }
             );
             if (!action) { return; }
+
+            if (action.id === 'merge') {
+                pendingMerge = { name: g.name, files: g.copies.map(c => c.file.path) };
+                const doc = await vscode.workspace.openTextDocument({
+                    content: buildMergeDraft(g), language: 'markdown'
+                });
+                await vscode.window.showTextDocument(doc);
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: edit the draft into the final "${g.name}", then run "Agent Farm: Apply Merged Memory".`);
+                return;
+            }
 
             if (action.id === 'diff') {
                 const left = await vscode.window.showQuickPick(
@@ -749,6 +811,58 @@ export function activate(context: vscode.ExtensionContext): void {
             void vscode.window.showInformationMessage(
                 `Agent Farm: "${g.name}" synced to ${result.written.length} agent(s) (${result.backups.length} backups).`);
             refreshAll();
+        }),
+
+        vscode.commands.registerCommand('agentfarm.applyMergedMemory', async () => {
+            if (!pendingMerge) {
+                void vscode.window.showInformationMessage(
+                    'Agent Farm: no merge in progress — start one via "Sync Shared Memory… → Create merge draft".');
+                return;
+            }
+            const editor = vscode.window.activeTextEditor;
+            if (!editor) {
+                void vscode.window.showWarningMessage('Agent Farm: open the merge draft editor first.');
+                return;
+            }
+            const confirmed = await vscode.window.showWarningMessage(
+                `Write the current editor content as "${pendingMerge.name}" to ${pendingMerge.files.length} agent(s)?\n\n` +
+                pendingMerge.files.join('\n') + '\n\nTimestamped .afbak backups are created.',
+                { modal: true }, 'Apply'
+            );
+            if (confirmed !== 'Apply') { return; }
+            const result = applyMergedContent(pendingMerge.files, editor.document.getText());
+            if (result.errors.length) {
+                void vscode.window.showErrorMessage('Agent Farm: merge errors — ' + result.errors.join('; '));
+                return;
+            }
+            void vscode.window.showInformationMessage(
+                `Agent Farm: merged "${pendingMerge.name}" written to ${result.written.length} agent(s).`);
+            pendingMerge = undefined;
+            refreshAll();
+        }),
+
+        vscode.commands.registerCommand('agentfarm.exportOutputsDigest', async () => {
+            const period = await vscode.window.showQuickPick(
+                [
+                    { label: 'Today', ms: 24 * 3600 * 1000 },
+                    { label: 'Last 7 days', ms: 7 * 24 * 3600 * 1000 },
+                    { label: 'Last 30 days', ms: 30 * 24 * 3600 * 1000 }
+                ],
+                { placeHolder: 'Digest period' }
+            );
+            if (!period) { return; }
+            const md = buildOutputsDigest(taskManager.tasks, period.ms);
+            const roots = cfg().get<string[]>('agentRoots', []);
+            const defaultDir = cfg().get<string>('autoReportFolder', '') ||
+                roots.find(r => fs.existsSync(r)) || os.homedir();
+            const target = await vscode.window.showSaveDialog({
+                defaultUri: vscode.Uri.file(path.join(defaultDir,
+                    `AgentFarm-Outputs-${new Date().toISOString().slice(0, 10)}.md`)),
+                filters: { Markdown: ['md'] }
+            });
+            if (!target) { return; }
+            fs.writeFileSync(target.fsPath, md, 'utf8');
+            await vscode.commands.executeCommand('vscode.open', target);
         }),
 
         vscode.commands.registerCommand('agentfarm.exportReport', async () => {

@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "publisher": "miropharm",
   "license": "MIT",
   "engines": {
@@ -286,6 +286,16 @@
         "command": "agentfarm.exportReport",
         "title": "Export Fleet Report (Markdown)",
         "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.exportOutputsDigest",
+        "title": "Export Task Outputs Digest (Markdown)",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.applyMergedMemory",
+        "title": "Apply Merged Memory",
+        "category": "Agent Farm"
       }
     ],
     "menus": {
@@ -567,6 +577,14 @@
           "type": "number",
           "default": 7,
           "description": "Period (in days) covered by automatic fleet reports."
+        },
+        "agentFarm.budgets": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          },
+          "default": {},
+          "description": "Daily USD budgets by agent name (API-equivalent value). Use \"*\" for a fleet-wide budget. Example: {\"psikolog\": 20, \"*\": 50}. Warns at 80%, alerts when exceeded."
         },
         "agentFarm.includeUnmatchedProjects": {
           "type": "boolean",
