@@ -13,13 +13,52 @@ Tamamen yereldir: hiçbir veri makinenden çıkmaz, hiçbir sunucuya bağlanmaz.
 
 ## Hızlı Başlangıç
 
-1. Sol Activity Bar'da **Agent Farm** ikonuna tıkla (dört düğümlü ağ ikonu).
-2. **Agents** ağacında ajanların listelenir. Yeşil nokta = şu anda aktif oturum var.
-3. Üstteki grafik ikonuyla (**Open Dashboard**) genel panoyu aç.
-4. Bir ajana tıkla → **Ajan Detay Sayfası** açılır.
-5. Ajan kartındaki **Start session** ile o ajanın klasöründe yeni bir Claude oturumu başlat.
+Hiç bilmiyorsan buradan başla. Bu bölüme her an komut paletinden (`Ctrl+Shift+P`) **Agent Farm: Quick Start** yazarak dönebilirsin.
 
-Alt durum çubuğunda her an şunu görürsün: `🤖 2 active • $1.42 today` — tıklarsan Dashboard açılır.
+### İlk 3 Dakika: Paneli Tanı
+
+1. Sol kenardaki Activity Bar'da **dört düğümlü ağ ikonuna** tıkla — Agent Farm paneli açılır. Beş bölüm görürsün:
+   - **Agents** — ajanların; yeşil nokta = şu anda çalışıyor. Ajanı genişlet: kimliği, nöbet görevleri, hafızası, izinleri, oturumları.
+   - **Tasks** — ajanlara sıraya koyduğun işler, zamanlanmış görevler, şablonlar ve iş akışları.
+   - **Recent Sessions** — filodaki son oturumlar; tıkla → okunur transkript.
+   - **Insights** — sağlık bulguları: ne şişmiş, ne kopmuş, ne bayatlamış.
+   - **Live Feed** — filodaki son olaylar.
+2. Alt durum çubuğuna bak: `🤖 1 active • $2.4 today`. Tıkla → **Dashboard** açılır: bugünkü maliyet, grafikler, ajan kartları, en pahalı oturumlar.
+3. Dashboard'da bir ajan kartına tıkla → o ajanın **detay sayfası**: maliyet trendi, hafıza tablosu, sağlık bulguları, oturum listesi.
+
+Arayüzde gördüğün her **?** düğmesi seni bu kılavuzun ilgili bölümüne getirir — kaybolman imkânsız.
+
+### İlk 10 Dakika: Üç Temel Alışkanlık
+
+1. **Canlı gözlemi kur (bir kere):** Komut paleti → `Agent Farm: Install Live Hooks` → User settings → onayla → açık claude oturumlarını yeniden başlat. Artık ajanlar canlı izlenir, izin bekleyince bildirim gelir. ([detay](#canli-gozlem))
+2. **İlk nöbet görevini ekle:** Agents ağacında bir ajanın **Duties** satırına sağ tıkla → **Add Standing Duty**. Ajanla "şuraya her tur bak" anlaşmalarını buraya taşı. ([detay](#nobet-gorevleri))
+3. **Bütçe koy:** Ayarlar → `agentFarm.budgets` → `{"psikolog": 20, "*": 50}` gibi. Aşınca haber gelir. ([detay](#butce-uyarilari))
+
+### Ne Yapmak İstiyorsun? (Tarif Listesi)
+
+| İstediğin | Nereden |
+| --- | --- |
+| Bugün ne harcadım? | Durum çubuğu, veya Dashboard → Cost today |
+| Bu ajan neye para yakıyor? | Ajan kartı → Detail → Cost by model + Top sessions |
+| Ajan şu an ne yapıyor? | Agents ağacı (WORKING/TOOL rozetleri) veya `Open Live Timeline` |
+| Geçmiş bir konuşmayı oku | Recent Sessions → tıkla; içinde arama kutusu var |
+| Ajanı başlat / devam ettir | Ajana sağ tık → Start / Continue Latest Session |
+| Yeni ajan kur | Agents başlığındaki **+** → şablon iskelet hazır gelir |
+| Ajana iş sırala | Tasks → **+** Add Task (Interactive/Headless) |
+| Her sabah 08:30 otomatik iş | Tasks → takvim ikonu → Daily 08:30 ([VS Code kapalıyken de olsun mu?](#vs-code-disinda-zamanlama-windows)) |
+| Ajanları zincirle çalıştır | Tasks → `New Multi-Agent Workflow…` — `{prev_output}` ile devir ([koşullar](#kosullu-dallanma)) |
+| "Şuraya her tur bak" anlaşması | Duties → Add Standing Duty ([detay](#nobet-gorevleri)) |
+| Ajanlardaki kopya hafızaları eşitle | Komut paleti → `Sync Shared Memory…` |
+| Haftalık karne / vault raporu | `Export Fleet Report` veya otomatik: `autoReport` ayarı |
+| Gece işleri ne üretti? | `Export Task Outputs Digest` |
+| Bir şey bozuk mu? | Insights görünümü — tıkla, ilgili dosya açılır |
+
+### Kavramlar (30 Saniyede)
+
+- **Ajan** = içinde `CLAUDE.md` olan klasör. Agent Farm hiçbir şeyi değiştirmez, sadece okur (senin onayınla yazdığı üç istisna: yeni ajan iskeleti, hook kurulumu, nöbet görevi dosyası).
+- **Maliyet** = token kullanımının API karşılığı değeri; abonelikte fatura değil, verim ölçüsüdür.
+- **Nöbet görevi** = ajanla süreklilik anlaşması ("şuraya bak, değişince şunu yap") — `DUTIES.md`'de yaşar.
+- **Görev/Workflow** = senin başlattığın işler; nöbet görevinden farkı, ajanın oturum içinde kendi kendine değil, kuyruktan tetiklenmesidir.
 
 ## Modüller
 
@@ -214,6 +253,57 @@ Güvenlik: `onFail` sıçramalarıyla oluşabilecek sonsuz döngülere karşı h
 
 Örnek akıllı zincir: 1. psikolog: "günlüğü tara" → 2. asistan (runIf: `ALARM`): "acil müdahale planı: {prev_output}" → 3. genel (her zaman): "günü arşivle" (onFail: Continue).
 
+## Nöbet Görevleri
+
+Ajanlarla yaptığın **süreklilik anlaşmalarının** sistemi: "şu dosyaya her tur bak, cevap gelmişse gereğini yap", "şu klasörü her gün kontrol et, dosya birikmişse tasnif et" gibi tetikte-kalma görevleri. Bunlar zamanla çoğalıp karışır — hangi klasördü, görev neydi, her tur muydu her gün müydü? Bu sistem hepsini tek yerde toplar.
+
+### Nasıl Çalışır: Tek Kaynak, İki Okuyucu
+
+Görevler, ajanın klasöründe **`DUTIES.md`** dosyasında yaşar. Bu bilinçli bir tasarım kararı:
+
+- **Ajan okur:** CLAUDE.md'deki kısa bir yönergeyle ajan her oturum başında DUTIES.md'yi okur ve kurallarına uyar. Dosyanın başındaki şablon, ajan için kadans kurallarını da içerir ([every-turn] = her tur kontrol et, vb.).
+- **Sen ve panel okursunuz:** Agents ağacında her ajanın **Duties** bölümü bu dosyadan beslenir — bir bakışta tüm nöbetler, kadansları ve **bekleyen iş durumu**.
+- **Esneklik:** Dosyayı elle de düzenleyebilirsin; panel senin eklediğin satırları korur. Biçim basittir: `## Başlık [kadans]` + `- **Watch:**` + `- **Do:**` satırları.
+
+### Görev Ekleme
+
+Agents ağacında ajanın **Duties** satırına sağ tık → **Add Standing Duty** (ya da ajan detay sayfasındaki **Add duty**):
+
+1. **Başlık** — örn. "Netleştirme istekleri"
+2. **Kadans** — `every-turn` (her tur) / `session-start` (oturum başı) / `daily` / `weekly` / `manual`
+3. **Watch** — izlenecek hedef: dosya seç, klasör seç, elle yol yaz veya boş bırak (hedefsiz görev de olur: "her tur ruh halimi kontrol et" gibi)
+4. **Do** — değişiklik görünce yapılacak iş: "Cevaplanmış soruların gereğini yap ve soruyu dosyadan sil"
+
+İlk görevi eklerken ajanın CLAUDE.md'sinde DUTIES.md referansı yoksa eklenti fark eder ve **onayınla** kısa bir yönerge bölümü ekler — referanssız görev, ajanın hiç bakmayacağı görevdir.
+
+### Bir Bakışta Takip
+
+Panelin asıl gücü burada — Duties bölümü sadece liste değil, **durum göstergesi**:
+
+- İzlenen **klasörde** dosya birikmişse: turuncu göz + `3 waiting` — inbox'ta iş var demek.
+- İzlenen **dosya** son 24 saatte değişmişse: turuncu göz + `changed 2h ago` — muhtemelen cevap yazdın, ajan henüz işlemedi.
+- İzlenen yol **kayıpsa**: kırmızı uyarı + Insights'ta bulgu — klasör taşınmış, görev kopmuş.
+- **Duraklatılmış** görevler soluk görünür ve ajan şablon kuralı gereği onları atlar.
+
+Yönetim: göreve sağ tık → **Pause/Resume** (silmeden dondur), **Delete**, **Open DUTIES.md** (elle düzenleme). Ajan detay sayfasında da tam tablo var: başlık, kadans, watch, do, durum.
+
+### Örnekler
+
+```
+## Netleştirme istekleri [every-turn]
+- **Watch:** `D:\zone\know\note\obsidian\NETLEŞTİRME İSTEKLERİ.md`
+- **Do:** Cevaplanmış soru varsa gereğini yap ve soruyu dosyadan sil; aydınlatılması gereken yeni soruların varsa dosyaya ekle.
+
+## Inbox tasnifi [every-turn]
+- **Watch:** `D:\zone\know\note\obsidian\01_INBOX\00_FAST_NOTE`
+- **Do:** İçerideki her dosyayı inbox girişi say: uygun isim ver, uygun klasöre taşı.
+
+## Haftalık hafıza bakımı [weekly]
+- **Do:** memory/ altındaki dosyaları gözden geçir; bayatlamış olanları güncelle veya arşivle.
+```
+
+**İpucu:** Görev/Workflow ile farkı karıştırma — nöbet görevi ajanın **oturum içindeyken** kendi kendine yaptığı kontroldür; Tasks kuyruğu ise senin (veya zamanlayıcının) dışarıdan başlattığı işlerdir. "Her tur bak" ancak ajan çalışırken işler; ajan hiç açılmıyorsa daily bir Task ile oturumu tetiklemek gerekir — ikisi birbirini tamamlar.
+
 ## Hafıza Senkronizasyonu
 
 Sağlık motorunun yakaladığı **kopya hafıza** sorununun çözüm aracı: `Agent Farm: Sync Shared Memory…`
@@ -374,6 +464,8 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 - **Sync Shared Memory… / Apply Merged Memory** — kopya hafıza senkronizasyonu ve elle birleştirme
 - **Export Fleet Report (Markdown)** — karşılaştırmalı filo raporu
 - **Export Task Outputs Digest (Markdown)** — headless çıktıların toplu özeti
+- **Quick Start (Hızlı Başlangıç)** — bu kılavuzun başlangıç bölümünü açar
+- **Add Standing Duty / Open DUTIES.md** — nöbet görevi yönetimi
 
 ## Veri ve Gizlilik
 
@@ -411,16 +503,28 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 
 **Bütçe bildirimi tekrar tekrar gelir mi?** Hayır — ajan başına günde bir kez. Insights'ta durum sürekli görünür.
 
+**Ajan nöbet görevlerine bakmıyor.** İki şart var: (1) CLAUDE.md'de DUTIES.md referansı olmalı (Insights uyarır, ekleme sihirbazı önerir); (2) ajanın açık bir oturumu olmalı — nöbet görevleri ajan çalışırken işler. Oturum açıkken de aksıyorsa CLAUDE.md'deki yönergeyi güçlendir ("her turun sonunda DUTIES.md kontrolünü raporla" gibi).
+
+**DUTIES.md'yi elle düzenledim, panel bozulur mu?** Hayır — biçim satırlarını (`## Başlık [kadans]`, `- **Watch:**`, `- **Do:**`) koruduğun sürece panel elle eklediğin her şeyi tanır ve yeniden yazımlarda korur.
+
 ## Yol Haritası
 
 - ~~**Faz 2 — Canlı gözlem**~~ ✅ 0.2.0: hook tabanlı gerçek zamanlı olay akışı, izin/takılma bildirimleri, kulvar zaman çizelgesi.
 - ~~**Faz 3 — Koordinasyon**~~ ✅ 0.3.0: görev kuyruğu, zamanlanmış görevler, hafıza senkronizasyon sihirbazı, karşılaştırmalı filo raporu.
 - ~~**Faz 4 — Otomasyon**~~ ✅ 0.4.0: çoklu-ajan iş akışları, headless çıktı arşivi, görev şablonları, otomatik vault raporu, Windows Görev Zamanlayıcı dışa aktarımı.
 - ~~**Faz 5 — Zekâ**~~ ✅ 0.5.0: koşullu dallanma (runIf + onFail), görev çıktı özeti, bütçe uyarıları, birleştirme taslağı.
-- **Faz 6 — adaylar:** workflow düzenleyici arayüzü (adımları sonradan düzenleme/sıralama), çıktı özetlerinin otomatik rapora eklenmesi, ajan bazlı haftalık trend uyarıları ("psikolog geçen haftaya göre 2x pahalı"), Live Timeline'da workflow zincirlerinin görselleştirilmesi.
+- ~~**Faz 6 — Nöbet ve Erişilebilirlik**~~ ✅ 0.6.0: nöbet görevleri sistemi (DUTIES.md), kapsamlı Türkçe Hızlı Başlangıç.
+- **Faz 7 — adaylar:** workflow düzenleyici arayüzü (adımları sonradan düzenleme/sıralama), çıktı özetlerinin otomatik rapora eklenmesi, ajan bazlı haftalık trend uyarıları ("psikolog geçen haftaya göre 2x pahalı"), Live Timeline'da workflow zincirlerinin görselleştirilmesi, nöbet görevlerinde "son kontrol zamanı" izleme (ajanın gerçekten baktığını doğrulama).
 - Fikirlerin oldukça bu belge ve eklenti birlikte büyüyecek.
 
 ## Sürüm Notları
+
+### 0.6.0 — Nöbet ve Erişilebilirlik (2026-07-08)
+
+- **Nöbet Görevleri (Standing Duties):** ajanla süreklilik anlaşmaları tek sistemde — `DUTIES.md` (ajan okur + panel yönetir), kadanslar (every-turn/session-start/daily/weekly/manual), Watch/Do alanları, sihirbazla ekleme, duraklat/sil, elle düzenleme korunur
+- **Bir bakışta durum:** izlenen klasörde biriken dosya sayısı (`3 waiting`), dosyada son değişiklik, kayıp yol uyarısı — Agents ağacında ve ajan detay tablosunda
+- **CLAUDE.md entegrasyonu:** referans yoksa onayla otomatik yönerge ekleme; Insights denetimleri (referanssız DUTIES.md, kayıp watch yolu, Do'suz görev)
+- **Türkçe Hızlı Başlangıç:** ilk 3 dakika turu, üç temel alışkanlık, 14 maddelik "ne yapmak istiyorsun?" tarif listesi, 30 saniyede kavramlar; `Agent Farm: Quick Start` komutu
 
 ### 0.5.0 — Zekâ (2026-07-08)
 

@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { Duty, readDuties } from './duties';
 import { estimateTokens, normPath, safeReadFile, safeStat } from './util';
 
 export interface FileMeta {
@@ -31,6 +32,8 @@ export interface AgentInfo {
     toolFiles: FileMeta[];
     contextLoad: ContextLoad;
     permissionSummary?: string;
+    dutiesPath?: string;
+    duties: Duty[];
 }
 
 function fileMeta(p: string): FileMeta | undefined {
@@ -60,8 +63,15 @@ function readAgent(dir: string): AgentInfo {
         normDir: normPath(dir),
         memoryFiles: [],
         toolFiles: [],
-        contextLoad: { claudeMd: 0, memoryIndex: 0, agentsMd: 0, total: 0 }
+        contextLoad: { claudeMd: 0, memoryIndex: 0, agentsMd: 0, total: 0 },
+        duties: []
     };
+
+    const dutiesInfo = readDuties(dir);
+    if (dutiesInfo) {
+        agent.dutiesPath = dutiesInfo.file;
+        agent.duties = dutiesInfo.duties;
+    }
 
     const claudeMd = path.join(dir, 'CLAUDE.md');
     if (fs.existsSync(claudeMd)) {

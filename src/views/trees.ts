@@ -1,6 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
+import { Duty, watchStatus } from '../core/duties';
 import { Insight } from '../core/health';
 import { LiveMonitor, LiveStatus } from '../core/live';
 import { SessionIndex, SessionInfo } from '../core/sessions';
@@ -23,9 +24,10 @@ const LIVE_STATUS_LABEL: Record<LiveStatus, string> = {
     'ended': 'ended'
 };
 
-type AgentNode =
+export type AgentNode =
     | { kind: 'agent'; agent: AgentInfo }
-    | { kind: 'section'; agent: AgentInfo; section: 'identity' | 'memory' | 'tools' | 'permissions' | 'sessions' }
+    | { kind: 'section'; agent: AgentInfo; section: 'identity' | 'memory' | 'tools' | 'permissions' | 'sessions' | 'duties' }
+    | { kind: 'duty'; agent: AgentInfo; duty: Duty }
     | { kind: 'file'; path: string; label: string; description?: string }
     | { kind: 'session'; session: SessionInfo };
 
@@ -120,7 +122,49 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
                     item.description = String(this.state.index.forAgent(agent.id).length);
                     return item;
                 }
+                case 'duties': {
+                    const duties = agent.duties;
+                    const pending = duties.filter(d =>
+                        !d.paused && watchStatus(d.watch)?.pending).length;
+                    const item = new vscode.TreeItem('Duties',
+                        duties.length ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None);
+                    item.iconPath = new vscode.ThemeIcon('eye',
+                        pending ? new vscode.ThemeColor('editorWarning.foreground') : undefined);
+                    item.description = duties.length
+                        ? `${duties.length}${pending ? ` • ${pending} pending` : ''}`
+                        : 'none — right-click to add';
+                    item.contextValue = 'duties-section';
+                    item.tooltip = 'Standing duties (nöbet görevleri): recurring watch-and-act agreements with this agent. Stored in DUTIES.md.';
+                    return item;
+                }
             }
+        }
+        if (node.kind === 'duty') {
+            const d = node.duty;
+            const ws = watchStatus(d.watch);
+            const item = new vscode.TreeItem(d.title, vscode.TreeItemCollapsibleState.None);
+            if (d.paused) {
+                item.iconPath = new vscode.ThemeIcon('circle-slash');
+            } else if (ws?.pending) {
+                item.iconPath = new vscode.ThemeIcon('eye', new vscode.ThemeColor('editorWarning.foreground'));
+            } else if (ws && !ws.exists) {
+                item.iconPath = new vscode.ThemeIcon('warning', new vscode.ThemeColor('errorForeground'));
+            } else {
+                item.iconPath = new vscode.ThemeIcon('eye');
+            }
+            const parts = [d.cadence];
+            if (d.paused) { parts.push('paused'); }
+            else if (ws) { parts.push(ws.summary); }
+            item.description = parts.join(' • ');
+            item.tooltip = `${d.title} [${d.cadence}${d.paused ? ', paused' : ''}]\n` +
+                (d.watch ? `Watch: ${d.watch}\n` : '') +
+                (d.action ? `Do: ${d.action}\n` : '') +
+                (d.note ? `Note: ${d.note}` : '');
+            item.contextValue = d.paused ? 'duty-paused' : 'duty-active';
+            if (node.agent.dutiesPath) {
+                item.command = openFileCommand(node.agent.dutiesPath);
+            }
+            return item;
         }
         if (node.kind === 'file') {
             const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.None);
@@ -140,6 +184,7 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
         if (node.kind === 'agent') {
             const a = node.agent;
             const children: AgentNode[] = [{ kind: 'section', agent: a, section: 'identity' }];
+            children.push({ kind: 'section', agent: a, section: 'duties' });
             if (a.memoryFiles.length) { children.push({ kind: 'section', agent: a, section: 'memory' }); }
             if (a.toolFiles.length) { children.push({ kind: 'section', agent: a, section: 'tools' }); }
             children.push({ kind: 'section', agent: a, section: 'permissions' });
@@ -147,6 +192,11 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
             return children;
         }
         if (node.kind === 'section') {
+            if (node.section === 'duties') {
+                return node.agent.duties.map(duty => ({
+                    kind: 'duty' as const, agent: node.agent, duty
+                }));
+            }
             if (node.section === 'memory') {
                 return node.agent.memoryFiles
                     .slice()

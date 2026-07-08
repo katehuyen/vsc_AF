@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
+import { watchStatus } from '../core/duties';
 import { Insight } from '../core/health';
 import { SessionIndex } from '../core/sessions';
 import { totalTokens } from '../core/pricing';
@@ -54,7 +55,21 @@ function buildData(agent: AgentInfo, deps: AgentDetailDeps): Record<string, unkn
             memoryFiles: agent.memoryFiles.map(f => ({
                 path: f.path, name: f.name, size: f.size, mtime: f.mtime, tokens: f.tokens
             })),
-            toolFiles: agent.toolFiles.map(f => ({ path: f.path, name: f.name }))
+            toolFiles: agent.toolFiles.map(f => ({ path: f.path, name: f.name })),
+            dutiesPath: agent.dutiesPath,
+            duties: agent.duties.map(d => {
+                const ws = watchStatus(d.watch);
+                return {
+                    title: d.title,
+                    cadence: d.cadence,
+                    paused: d.paused,
+                    watch: d.watch,
+                    action: d.action,
+                    status: d.paused ? 'paused' : (ws ? ws.summary : '—'),
+                    pending: !d.paused && !!ws?.pending,
+                    missing: !!ws && !ws.exists
+                };
+            })
         },
         totals: {
             cost: totalCost,
@@ -163,6 +178,9 @@ export class AgentDetailPanel {
                 break;
             case 'reveal':
                 vscode.commands.executeCommand('agentfarm.revealAgent', { agentId: this.agentId });
+                break;
+            case 'addDuty':
+                vscode.commands.executeCommand('agentfarm.addDuty', { agentId: this.agentId });
                 break;
             case 'openGuide':
                 vscode.commands.executeCommand('agentfarm.openGuide', msg.anchor);

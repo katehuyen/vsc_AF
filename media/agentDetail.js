@@ -118,6 +118,26 @@
                 <div class="card chartbox"><h3>Cost by model</h3>${C.donut(modelItems, {})}</div>
                 <div class="card chartbox"><h3>Top tools</h3>${toolItems.length ? C.hbars(toolItems, { fmt: C.fmtTok }) : '<p class="muted">No tool calls recorded.</p>'}</div>
             </div>
+            <h2>Standing duties <a data-guide="nobet-gorevleri">?</a></h2>
+            <div class="spread">
+                <p class="muted small" style="margin:4px 0">Recurring watch-and-act agreements — the agent reads DUTIES.md every session.</p>
+                <div class="btnrow">
+                    <button class="secondary" id="addDuty">Add duty</button>
+                    ${a.dutiesPath ? `<button class="secondary" data-file="${C.esc(a.dutiesPath)}">Open DUTIES.md</button>` : ''}
+                </div>
+            </div>
+            <div class="tablewrap"><table>
+                <tr><th></th><th>Duty</th><th>Cadence</th><th>Watch</th><th>Do</th><th class="num">Status</th></tr>
+                ${a.duties.length ? a.duties.map(d => `
+                    <tr class="${a.dutiesPath ? 'click' : ''}" ${a.dutiesPath ? `data-file="${C.esc(a.dutiesPath)}"` : ''} style="${d.paused ? 'opacity:.5' : ''}">
+                        <td>${d.missing ? '⛔' : d.pending ? '👁⚠' : '👁'}</td>
+                        <td><strong>${C.esc(d.title)}</strong></td>
+                        <td>${C.esc(d.cadence)}${d.paused ? ' · paused' : ''}</td>
+                        <td class="small">${C.esc(d.watch || '—')}</td>
+                        <td class="small">${C.esc(d.action || '—')}</td>
+                        <td class="num">${C.esc(d.status)}</td>
+                    </tr>`).join('') : '<tr><td colspan="6" class="muted">No standing duties yet — add the recurring "keep watching X, then do Y" agreements you have with this agent.</td></tr>'}
+            </table></div>
             <h2>Health &amp; optimization <a data-guide="saglik-ve-optimizasyon">?</a></h2>
             <div class="tablewrap"><table><tr><th></th><th>Category</th><th>Finding</th></tr>${insightsHtml}</table></div>
             <h2>Memory files</h2>
@@ -132,6 +152,7 @@
             </table></div>
         `;
 
+        document.getElementById('addDuty').addEventListener('click', () => vscode.postMessage({ type: 'addDuty' }));
         document.getElementById('start').addEventListener('click', () => vscode.postMessage({ type: 'startSession' }));
         document.getElementById('continue').addEventListener('click', () => vscode.postMessage({ type: 'continueSession' }));
         document.getElementById('reveal').addEventListener('click', () => vscode.postMessage({ type: 'reveal' }));

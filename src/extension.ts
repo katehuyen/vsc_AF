@@ -3,6 +3,10 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo, discoverAgents } from './core/agents';
+import {
+    addDuty, CADENCES, CLAUDE_MD_SNIPPET, claudeMdReferencesDuties,
+    deleteDuty, DUTIES_FILENAME, togglePauseDuty
+} from './core/duties';
 import { buildInsights, Insight } from './core/health';
 import {
     hasOurHooks, installHooksInto, removeHooksFrom, userSettingsPath
@@ -27,7 +31,7 @@ import { TimelinePanel } from './panels/timeline';
 import { FarmStatusBar } from './views/statusBar';
 import { TaskNode, TasksTreeProvider } from './views/tasksTree';
 import {
-    AgentsTreeProvider, FeedTreeProvider, InsightsTreeProvider, SessionsTreeProvider
+    AgentNode, AgentsTreeProvider, FeedTreeProvider, InsightsTreeProvider, SessionsTreeProvider
 } from './views/trees';
 
 function cfg() {
@@ -525,6 +529,118 @@ export function activate(context: vscode.ExtensionContext): void {
         }),
         vscode.commands.registerCommand('agentfarm.runScheduleNow', (node?: TaskNode) => {
             if (node?.kind === 'schedule') { taskManager.runScheduleNow(node.schedule); }
+        }),
+
+        vscode.commands.registerCommand('agentfarm.quickStart', () => {
+            GuidePanel.show(context.extensionUri, 'hizli-baslangic');
+        }),
+
+        vscode.commands.registerCommand('agentfarm.addDuty', async (arg?: AgentNode | { agentId?: string }) => {
+            let agent: AgentInfo | undefined;
+            if (arg && 'kind' in arg && (arg.kind === 'section' || arg.kind === 'agent' || arg.kind === 'duty')) {
+                agent = arg.agent;
+            } else {
+                agent = await resolveAgent(arg as { agentId?: string } | undefined);
+            }
+            if (!agent) { return; }
+
+            const title = await vscode.window.showInputBox({
+                prompt: `Duty title for ${agent.name} (e.g. "Inbox triage")`, ignoreFocusOut: true
+            });
+            if (!title) { return; }
+
+            const cadenceDescriptions: Record<string, string> = {
+                'every-turn': 'agent checks on every turn',
+                'session-start': 'checked once at session start',
+                'daily': 'first opportunity each day',
+                'weekly': 'first opportunity each week',
+                'manual': 'only when you ask'
+            };
+            const cadencePick = await vscode.window.showQuickPick(
+                CADENCES.map(c => ({ label: c, description: cadenceDescriptions[c] })),
+                { placeHolder: 'How often should the agent check?', ignoreFocusOut: true }
+            );
+            if (!cadencePick) { return; }
+
+            const watchPick = await vscode.window.showQuickPick(
+                [
+                    { label: '$(file) Pick a file to watch…', id: 'file' },
+                    { label: '$(folder) Pick a folder to watch…', id: 'folder' },
+                    { label: '$(edit) Type a path or description', id: 'type' },
+                    { label: '$(circle-slash) No watch target', id: 'none' }
+                ],
+                { placeHolder: 'What should the agent watch?', ignoreFocusOut: true }
+            );
+            if (!watchPick) { return; }
+            let watch: string | undefined;
+            if (watchPick.id === 'file' || watchPick.id === 'folder') {
+                const picked = await vscode.window.showOpenDialog({
+                    canSelectFiles: watchPick.id === 'file',
+                    canSelectFolders: watchPick.id === 'folder',
+                    canSelectMany: false,
+                    openLabel: 'Watch this'
+                });
+                if (!picked?.length) { return; }
+                watch = picked[0].fsPath;
+            } else if (watchPick.id === 'type') {
+                watch = await vscode.window.showInputBox({
+                    prompt: 'Path or description of the watch target', ignoreFocusOut: true
+                });
+                if (watch === undefined) { return; }
+                watch = watch.trim() || undefined;
+            }
+
+            const action = await vscode.window.showInputBox({
+                prompt: 'Do: what should the agent do when something changed / is waiting?',
+                ignoreFocusOut: true,
+                placeHolder: 'e.g. Cevaplanmış soruların gereğini yap ve soruyu dosyadan sil'
+            });
+            if (!action) { return; }
+
+            addDuty(agent.dir, {
+                title, cadence: cadencePick.label, paused: false, watch, action
+            });
+
+            // The duty only works if the agent actually reads DUTIES.md.
+            if (agent.claudeMdPath) {
+                const claudeMd = fs.readFileSync(agent.claudeMdPath, 'utf8');
+                if (!claudeMdReferencesDuties(claudeMd)) {
+                    const choice = await vscode.window.showWarningMessage(
+                        `${agent.name}'s CLAUDE.md does not mention ${DUTIES_FILENAME} yet — without a reference the agent will never check its duties. Append a short instruction section?`,
+                        { modal: true }, 'Append to CLAUDE.md'
+                    );
+                    if (choice === 'Append to CLAUDE.md') {
+                        fs.writeFileSync(agent.claudeMdPath, claudeMd.replace(/\n*$/, '\n') + CLAUDE_MD_SNIPPET, 'utf8');
+                    }
+                }
+            }
+            refreshAll();
+            void vscode.window.showInformationMessage(
+                `Agent Farm: duty "${title}" added to ${agent.name} (${DUTIES_FILENAME}).`);
+        }),
+
+        vscode.commands.registerCommand('agentfarm.toggleDuty', (node?: AgentNode) => {
+            if (node?.kind === 'duty') {
+                togglePauseDuty(node.agent.dir, node.duty.title);
+                refreshAll();
+            }
+        }),
+
+        vscode.commands.registerCommand('agentfarm.deleteDuty', async (node?: AgentNode) => {
+            if (node?.kind !== 'duty') { return; }
+            const confirmed = await vscode.window.showWarningMessage(
+                `Delete duty "${node.duty.title}" from ${node.agent.name}?`, { modal: true }, 'Delete');
+            if (confirmed === 'Delete') {
+                deleteDuty(node.agent.dir, node.duty.title);
+                refreshAll();
+            }
+        }),
+
+        vscode.commands.registerCommand('agentfarm.openDuties', (node?: AgentNode) => {
+            const agent = node && 'agent' in node ? node.agent : undefined;
+            if (agent?.dutiesPath) {
+                void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(agent.dutiesPath));
+            }
         }),
 
         vscode.commands.registerCommand('agentfarm.saveTaskTemplate', async (node?: TaskNode) => {

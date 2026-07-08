@@ -1,4 +1,5 @@
 import { AgentInfo } from './agents';
+import { claudeMdReferencesDuties, watchStatus } from './duties';
 import { SessionIndex } from './sessions';
 import { dayKey, fmtUSD, hashString, safeReadFile } from './util';
 
@@ -137,6 +138,48 @@ export function buildInsights(
                 filePath: agent.dir,
                 guideAnchor: 'saglik-kimlik'
             });
+        }
+
+        // 5b) Standing duties health
+        if (agent.duties.length) {
+            if (agent.claudeMdPath &&
+                !claudeMdReferencesDuties(safeReadFile(agent.claudeMdPath) ?? '')) {
+                insights.push({
+                    severity: 'warning',
+                    agentId: agent.id,
+                    agentName: agent.name,
+                    category: 'duties',
+                    message: 'DUTIES.md exists but CLAUDE.md never references it — the agent may not follow its standing duties.',
+                    filePath: agent.claudeMdPath,
+                    guideAnchor: 'nobet-gorevleri'
+                });
+            }
+            for (const duty of agent.duties) {
+                if (duty.paused || !duty.watch) { continue; }
+                const ws = watchStatus(duty.watch);
+                if (ws && !ws.exists) {
+                    insights.push({
+                        severity: 'warning',
+                        agentId: agent.id,
+                        agentName: agent.name,
+                        category: 'duties',
+                        message: `Duty "${duty.title}" watches a missing path: ${duty.watch}`,
+                        filePath: agent.dutiesPath,
+                        guideAnchor: 'nobet-gorevleri'
+                    });
+                }
+                if (!duty.action) {
+                    insights.push({
+                        severity: 'info',
+                        agentId: agent.id,
+                        agentName: agent.name,
+                        category: 'duties',
+                        message: `Duty "${duty.title}" has no Do: line — the agent knows where to look but not what to do.`,
+                        filePath: agent.dutiesPath,
+                        guideAnchor: 'nobet-gorevleri'
+                    });
+                }
+            }
         }
 
         // 6) Session-based signals (last 7 days)

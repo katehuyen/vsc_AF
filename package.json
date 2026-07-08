@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "publisher": "miropharm",
   "license": "MIT",
   "engines": {
@@ -296,6 +296,35 @@
         "command": "agentfarm.applyMergedMemory",
         "title": "Apply Merged Memory",
         "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.quickStart",
+        "title": "Quick Start (Hızlı Başlangıç)",
+        "category": "Agent Farm",
+        "icon": "$(rocket)"
+      },
+      {
+        "command": "agentfarm.addDuty",
+        "title": "Add Standing Duty",
+        "category": "Agent Farm",
+        "icon": "$(add)"
+      },
+      {
+        "command": "agentfarm.toggleDuty",
+        "title": "Pause/Resume Duty",
+        "category": "Agent Farm",
+        "icon": "$(debug-pause)"
+      },
+      {
+        "command": "agentfarm.deleteDuty",
+        "title": "Delete Duty",
+        "category": "Agent Farm",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "agentfarm.openDuties",
+        "title": "Open DUTIES.md",
+        "category": "Agent Farm"
       }
     ],
     "menus": {
@@ -386,6 +415,31 @@
           "command": "agentfarm.revealAgent",
           "when": "view == agentfarm.agents && viewItem == agent",
           "group": "2_open@2"
+        },
+        {
+          "command": "agentfarm.addDuty",
+          "when": "view == agentfarm.agents && viewItem == duties-section",
+          "group": "inline@1"
+        },
+        {
+          "command": "agentfarm.addDuty",
+          "when": "view == agentfarm.agents && viewItem == agent",
+          "group": "1_actions@4"
+        },
+        {
+          "command": "agentfarm.toggleDuty",
+          "when": "view == agentfarm.agents && viewItem =~ /duty-(active|paused)/",
+          "group": "inline@1"
+        },
+        {
+          "command": "agentfarm.deleteDuty",
+          "when": "view == agentfarm.agents && viewItem =~ /duty-(active|paused)/",
+          "group": "inline@2"
+        },
+        {
+          "command": "agentfarm.openDuties",
+          "when": "view == agentfarm.agents && viewItem =~ /duty-(active|paused)|duties-section/",
+          "group": "1_duty@1"
         },
         {
           "command": "agentfarm.startTask",

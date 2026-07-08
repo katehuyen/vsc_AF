@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
+import { watchStatus } from '../core/duties';
 import { Insight } from '../core/health';
 import { SessionIndex } from '../core/sessions';
 import { PricingEngine, totalTokens } from '../core/pricing';
@@ -32,6 +33,8 @@ interface AgentSummary {
     usage: { input: number; output: number; cacheWrite: number; cacheRead: number };
     insightCounts: { error: number; warning: number; info: number };
     budget?: number;
+    duties: number;
+    pendingDuties: number;
 }
 
 function buildData(deps: DashboardDeps): Record<string, unknown> {
@@ -81,7 +84,9 @@ function buildData(deps: DashboardDeps): Record<string, unknown> {
             toolCalls,
             usage,
             insightCounts: counts,
-            budget: deps.budgets()[a.name]
+            budget: deps.budgets()[a.name],
+            duties: a.duties.length,
+            pendingDuties: a.duties.filter(d => !d.paused && watchStatus(d.watch)?.pending).length
         };
     });
 
