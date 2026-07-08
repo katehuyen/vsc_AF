@@ -98,6 +98,19 @@ export function sanitizePrompt(p: string): string {
 /** Placeholder in workflow step prompts replaced with the previous step's output file path. */
 export const PREV_OUTPUT_PLACEHOLDER = '{prev_output}';
 
+/**
+ * The model's actual output from an archived task file — strips the metadata
+ * header (which contains the task title and prompt) and the Finished footer,
+ * so runIf conditions can't be triggered by workflow names or prompt text.
+ */
+export function archivedOutputBody(content: string): string {
+    const start = content.indexOf('\n---\n');
+    let body = start >= 0 ? content.slice(start + 5) : content;
+    const foot = body.lastIndexOf('\n---\nFinished:');
+    if (foot >= 0) { body = body.slice(0, foot); }
+    return body;
+}
+
 const MAX_TASKS = 300;
 
 interface StoreShape {
@@ -269,7 +282,8 @@ export class TaskManager implements vscode.Disposable {
         const child = cp.spawn(`claude ${extra ? extra + ' ' : ''}-p "${p}"`, {
             cwd: agent.dir,
             shell: true,
-            windowsHide: true
+            windowsHide: true,
+            stdio: ['ignore', 'pipe', 'pipe'] // closed stdin: claude won't wait 3s for piped input
         });
         this.processes.set(task.id, child);
         child.stdout?.on('data', chunk => stream.write(chunk));
@@ -506,7 +520,7 @@ export class TaskManager implements vscode.Disposable {
             let matched = false;
             if (prevOutput) {
                 try {
-                    const content = fs.readFileSync(prevOutput, 'utf8');
+                    const content = archivedOutputBody(fs.readFileSync(prevOutput, 'utf8'));
                     matched = new RegExp(step.runIf, 'i').test(content);
                 } catch { matched = false; }
             }

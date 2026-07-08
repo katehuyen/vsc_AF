@@ -1,6 +1,6 @@
 # Agent Farm — Örnek Kullanımlar
 
-> Bu belge, Agent Farm'ı **bilgi ekranı olarak değil, iş yaptıran bir sistem olarak** kullanmanın senaryolarıdır. Her senaryo hiç bilmeyen biri takip edebilsin diye adım adım yazıldı. ✅ işaretli senaryolar gerçek `claude` çalıştırmalarıyla (haiku modeli, toplam ~$0.06) uçtan uca test edildi. Komut paletinden `Agent Farm: Open Examples` ile her an açılır.
+> Bu belge, Agent Farm'ı **bilgi ekranı olarak değil, iş yaptıran bir sistem olarak** kullanmanın senaryolarıdır. Her senaryo hiç bilmeyen biri takip edebilsin diye adım adım yazıldı. ✅ işaretli senaryolar `deneme` ajanında **gerçek çalıştırmalarla** doğrulandı (13 haiku oturumu, toplam maliyet $0.17). Komut paletinden `Agent Farm: Open Examples` ile her an açılır.
 
 ## Başlamadan: Alıştırma Ajanı
 
@@ -33,7 +33,7 @@ Aşağıdaki senaryoları önce `deneme` üzerinde uygulayıp sonra gerçek ajan
 
 ---
 
-## S2 — Netleştirme Döngüsü: Ajanla yazılı soru-cevap hattı
+## S2 — Netleştirme Döngüsü: Ajanla yazılı soru-cevap hattı ✅
 
 **Amaç:** Ajan aklına takılanı bir dosyaya yazar; sen müsait olunca cevaplarsın; ajan cevabı görünce gereğini yapıp soruyu siler.
 
@@ -46,6 +46,8 @@ Aşağıdaki senaryoları önce `deneme` üzerinde uygulayıp sonra gerçek ajan
 5. Cevap yazdıktan sonra ajanın ilk turunda: gereği yapılır + soru silinir → dosya sadeleşir.
 
 **İpucu:** Bu dosya birden çok ajanla ortaksa her ajana aynı görevi ekle; kim sorduysa sorusunun başına adını yazsın diye Do satırına ekleme yap.
+
+> ✅ Test: `deneme/NETLESTIRME.md` içine cevaplı bir soru kondu ("Cevap: Hayır, dosya adları aynen kalsın"); nöbet turunda haiku cevaplanmış satırı dosyadan sildi, cevaplanmamış içeriğe dokunmadı; "changed …" sinyali doğru çalıştı.
 
 ---
 
@@ -82,7 +84,7 @@ Aşağıdaki senaryoları önce `deneme` üzerinde uygulayıp sonra gerçek ajan
 
 ---
 
-## S5 — Koşullu Alarm Zinciri: "Sadece gerekiyorsa müdahale"
+## S5 — Koşullu Alarm Zinciri: "Sadece gerekiyorsa müdahale" ✅
 
 **Amaç:** Analizde alarm kelimesi geçerse acil plan adımı çalışsın; geçmezse atlansın.
 
@@ -93,9 +95,11 @@ Aşağıdaki senaryoları önce `deneme` üzerinde uygulayıp sonra gerçek ajan
 3. Adım 3 (arşivleme gibi her durumda çalışacak iş) eklerken on-fail sorusuna **Continue** de — önceki adım atlansa/başarısız olsa da arşiv çalışır.
 4. **Doğrula:** Alarm yokken çalıştır → bildirimde "step 2 skipped (condition not met)" görürsün; zincir 3. adımdan devam eder.
 
+> ✅ Test (iki dal da gerçek): "Durum normal" çıktısında 2. adım atlandı; "ALARM: disk alanı kritik" çıktısında 2. adım koştu ve haiku gerçek bir müdahale planı yazdı ("temp dizini ve eski logları sil…"). Bu test bir bug da yakalattı: koşul eskiden arşiv başlığındaki workflow adına da bakıyordu ("Alarm kontrolü" adı koşulu tetikliyordu) — 0.7.2'de düzeltildi, koşul artık yalnızca modelin çıktısına bakar.
+
 ---
 
-## S6 — Bağlam Diyeti: Ajanı Ucuzlat (Optimizasyon)
+## S6 — Bağlam Diyeti: Ajanı Ucuzlat (Optimizasyon) ✅
 
 **Amaç:** Her oturumda otomatik yüklenen sabit bağlamı küçültüp kalıcı tasarruf almak.
 
@@ -107,9 +111,11 @@ Aşağıdaki senaryoları önce `deneme` üzerinde uygulayıp sonra gerçek ajan
 4. **Tekrar ölç:** Agents başlığında Refresh → detay sayfasında token sayısının düştüğünü gör.
 5. **Kazancı hesapla:** düşüş × günlük oturum sayısı = günlük token tasarrufu. 2.000 token kısmak, günde 10 oturumda 20k token/gün eder.
 
+> ✅ Test: `deneme`'nin CLAUDE.md'sine 2.662 token'lık bölüm eklendi (65→2.727), bütçe uyarısı doğrulandı; bölüm hafıza dosyasına taşınıp indekslenince yük 83 token'a döndü, uyarı temizlendi, yetim-dosya bulgusu çıkmadı.
+
 ---
 
-## S7 — Kopya Hafızaları Düzelt: Diff → Birleştir → Eşitle
+## S7 — Kopya Hafızaları Düzelt: Diff → Birleştir → Eşitle ✅
 
 **Amaç:** Aynı dosyanın ajanlara dağılmış, birbirinden sapmış kopyalarını tek doğruya indirmek (örnek: `ajan_kurulumu.md`).
 
@@ -122,9 +128,11 @@ Aşağıdaki senaryoları önce `deneme` üzerinde uygulayıp sonra gerçek ajan
    - İki kopyada da değerli satır varsa: **Create merge draft** → açılan taslakta `=== FROM ... ===` bloklarından nihai metni elinle birleştir → komut paleti → **Agent Farm: Apply Merged Memory** → onayla.
 4. **Doğrula:** Insights'taki `duplicate-memory` uyarısı "duplicated identically" (bilgi) seviyesine düşer.
 
+> ✅ Test: geçici ikinci ajanla (deneme2) gerçek dosyalar üzerinde: sapma tespiti, en-yeni-kaynak önerisi, yedekli senkron (v1 yedekte korundu), merge taslağının iki varyantı da içermesi, birleşik v3'ün her iki kopyaya yedekli yazılması — tümü doğrulandı; test ajanı sonrasında silindi.
+
 ---
 
-## S8 — Bütçe ve Trend Disiplini
+## S8 — Bütçe ve Trend Disiplini ✅
 
 **Amaç:** Maliyet sürprizle değil, eşikle yönetilsin.
 
@@ -138,9 +146,11 @@ Aşağıdaki senaryoları önce `deneme` üzerinde uygulayıp sonra gerçek ajan
 3. Trend tarafı kendiliğinden açık: bir ajanın haftalık maliyeti önceki haftanın 2 katına çıkarsa Insights'ta `trend` uyarısı görürsün (`trendAlertFactor` ile ayarlanır, 0 = kapalı).
 4. **Aylık rutin:** Dashboard → Agent comparison → **Cache eff.** kolonuna bak. %90+ iyi; düşükse o ajanın oturumları kısa ve bağlam sürekli yeniden yazılıyor demektir — işleri birleştirmeyi düşün.
 
+> ✅ Test: `deneme`'nin **gerçek** günlük maliyeti ($0.06) 0.01$'lık bütçeye karşı denendi → ⛔ error bulgusu üretildi; filo bütçesi aşılmamışken uyarı çıkmadı; tek günlük gerçek veride trend false-positive üretmedi.
+
 ---
 
-## S9 — VS Code Kapalıyken Sabah Görevi (Windows)
+## S9 — VS Code Kapalıyken Sabah Görevi (Windows) ✅
 
 **Amaç:** 08:30 görevi bilgisayar açık ama VS Code kapalıyken de koşsun.
 
@@ -154,9 +164,11 @@ Aşağıdaki senaryoları önce `deneme` üzerinde uygulayıp sonra gerçek ajan
 
 **Not:** `claude` komutu PATH'te olmalı (terminale `claude --version` yazarak kontrol et).
 
+> ✅ Test: eklentinin ürettiği biçimle gerçek kayıt döngüsü çalıştırıldı — `schtasks /Create` (hem DAILY hem ONCE) SUCCESS döndü, `/Query` kaydı gördü, `/Delete` ile temizlendi. Bu sistemde tarih formatı sorunsuz.
+
 ---
 
-## S10 — Vault'a Otomatik Karne
+## S10 — Vault'a Otomatik Karne ✅
 
 **Amaç:** Haftalık filo raporu + gece işlerinin çıktıları, elini sürmeden Obsidian'a düşsün.
 
@@ -167,9 +179,11 @@ Aşağıdaki senaryoları önce `deneme` üzerinde uygulayıp sonra gerçek ajan
 3. Hepsi bu. Eklenti saatte bir kontrol eder; dönemin raporu yoksa üretir (`AgentFarm-Report-2026-W28.md`), bildirimle haber verir. Dönem içinde headless görev çıktısı varsa **Task outputs** bölümü de rapora eklenir.
 4. Obsidian'da klasörü açtığında karşılaştırma tablosu, model kullanımı, sağlık bulguları ve iş çıktıları tek notta.
 
+> ✅ Test: gerçek filo verisi + gerçek görev çıktılarıyla rapor üretilip hedef klasöre yazıldı; karşılaştırma tablosu, "Task outputs" bölümü (gerçek zincir çıktılarıyla) ve sağlık bulguları doğrulandı.
+
 ---
 
-## S11 — Takılan Ajanı Yakala ve Müdahale Et
+## S11 — Takılan Ajanı Yakala ve Müdahale Et ✅
 
 **Amaç:** Uzun işte bir ajan sessizce durduysa dakikalar içinde haberin olsun.
 
@@ -181,6 +195,8 @@ Aşağıdaki senaryoları önce `deneme` üzerinde uygulayıp sonra gerçek ajan
 2. Bildirimdeki **Open Timeline** → takılan ajanın şeridine bak: son olay ne, hangi araçta kaldı (kartta `STALLED` + son araç adı).
 3. Müdahale: izin bekliyorsa terminaline geç ve onayla/reddet; gerçekten donduysa görevi Tasks'tan iptal et (`Cancel Task` süreci güvenle sonlandırır) veya terminali kapat, sonra **Continue Latest Session** ile kaldığı yerden devam ettir.
 4. Aynı ajan sık takılıyorsa Insights'ta `error-rate` bulgusuna bak — genelde bozuk bir araç scripti veya eksik izin vardır.
+
+> ✅ Test (altyapı): hook'lar `deneme` ajanına kuruldu, **gerçek** bir claude oturumunun hook olayları (session start → prompt → stop → end) dinleyiciye canlı aktı, ajan doğru çözüldü, kaldırma sonrası model ayarının korunduğu doğrulandı. İzin/takılma durum geçişleri ayrıca sentetik olaylarla test edilmişti (Faz 2).
 
 ---
 
