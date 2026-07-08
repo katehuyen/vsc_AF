@@ -4,12 +4,18 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo, discoverAgents } from './core/agents';
 import { buildInsights, Insight } from './core/health';
+import {
+    hasOurHooks, installHooksInto, removeHooksFrom, userSettingsPath
+} from './core/hooksInstaller';
+import { LiveMonitor } from './core/live';
 import { DEFAULT_PRICING, PriceRule, PricingEngine } from './core/pricing';
 import { SessionIndex } from './core/sessions';
+import { normPath } from './core/util';
 import { AgentDetailPanel } from './panels/agentDetail';
 import { DashboardPanel } from './panels/dashboard';
 import { GuidePanel } from './panels/guide';
 import { SessionViewerPanel } from './panels/sessionViewer';
+import { TimelinePanel } from './panels/timeline';
 import { FarmStatusBar } from './views/statusBar';
 import {
     AgentsTreeProvider, FeedTreeProvider, InsightsTreeProvider, SessionsTreeProvider
@@ -66,10 +72,35 @@ export function activate(context: vscode.ExtensionContext): void {
     };
     refreshAgents();
 
+    const live = new LiveMonitor(
+        () => ({
+            enabled: cfg().get<boolean>('liveMonitor', true),
+            port: cfg().get<number>('livePort', 8377),
+            stuckThresholdMs: cfg().get<number>('stuckThresholdSeconds', 240) * 1000,
+            notifyPermission: cfg().get<boolean>('notifyPermission', true),
+            notifyStuck: cfg().get<boolean>('notifyStuck', true),
+            notifyTurnEnd: cfg().get<boolean>('notifyTurnEnd', false)
+        }),
+        (cwd) => {
+            if (!cwd) { return {}; }
+            const n = normPath(cwd);
+            let best: AgentInfo | undefined;
+            for (const a of agents) {
+                if (n === a.normDir || n.startsWith(a.normDir + '/')) {
+                    if (!best || a.normDir.length > best.normDir.length) { best = a; }
+                }
+            }
+            return best ? { agentId: best.id, agentName: best.name } : {};
+        }
+    );
+    context.subscriptions.push(live);
+    live.start();
+
     const state = {
         getAgents: () => agents,
         index,
-        getInsights: () => insights
+        getInsights: () => insights,
+        live
     };
 
     const agentsTree = new AgentsTreeProvider(state);
@@ -126,7 +157,12 @@ export function activate(context: vscode.ExtensionContext): void {
         }, 800);
     };
 
-    context.subscriptions.push(new FarmStatusBar(index));
+    live.onDidUpdate(() => {
+        agentsTree.refresh();
+        feedTree.refresh();
+    }, null, context.subscriptions);
+
+    context.subscriptions.push(new FarmStatusBar(index, live));
 
     const dashboardDeps = {
         extensionUri: context.extensionUri,
@@ -185,9 +221,80 @@ export function activate(context: vscode.ExtensionContext): void {
         }),
 
         vscode.commands.registerCommand('agentfarm.openSession', (file?: string) => {
-            if (typeof file === 'string') {
+            if (typeof file === 'string' && file) {
                 SessionViewerPanel.show(file, viewerDeps);
             }
+        }),
+
+        vscode.commands.registerCommand('agentfarm.openTimeline', () => {
+            TimelinePanel.show({ extensionUri: context.extensionUri, live });
+        }),
+
+        vscode.commands.registerCommand('agentfarm.installHooks', async () => {
+            const port = cfg().get<number>('livePort', 8377);
+            const userFile = userSettingsPath(claudeDir());
+            const target = await vscode.window.showQuickPick(
+                [
+                    {
+                        label: 'User settings — all sessions (recommended)',
+                        description: userFile,
+                        files: [userFile]
+                    },
+                    {
+                        label: 'Per-agent settings.local.json',
+                        description: `${agents.length} agent folder(s)`,
+                        files: agents.map(a => path.join(a.dir, '.claude', 'settings.local.json'))
+                    }
+                ],
+                { placeHolder: 'Where should the live hooks be installed?' }
+            );
+            if (!target) { return; }
+            const confirmed = await vscode.window.showWarningMessage(
+                `Agent Farm will merge its live hooks into:\n${target.files.join('\n')}\n\nExisting settings are preserved and a one-time .agentfarm-bak backup is created.`,
+                { modal: true },
+                'Install'
+            );
+            if (confirmed !== 'Install') { return; }
+            const results = target.files.map(f => installHooksInto(f, port));
+            const failed = results.filter(r => !r.ok);
+            if (failed.length) {
+                void vscode.window.showErrorMessage(
+                    `Agent Farm: hook install failed for ${failed.map(f => `${f.file} (${f.error})`).join('; ')}`);
+            }
+            const okCount = results.filter(r => r.ok).length;
+            if (okCount) {
+                const choice = await vscode.window.showInformationMessage(
+                    `Agent Farm: live hooks installed into ${okCount} file(s). Restart running claude sessions to activate them.`,
+                    'Open Timeline'
+                );
+                if (choice === 'Open Timeline') {
+                    TimelinePanel.show({ extensionUri: context.extensionUri, live });
+                }
+            }
+        }),
+
+        vscode.commands.registerCommand('agentfarm.removeHooks', async () => {
+            const candidates = [
+                userSettingsPath(claudeDir()),
+                ...agents.map(a => path.join(a.dir, '.claude', 'settings.local.json'))
+            ].filter(hasOurHooks);
+            if (!candidates.length) {
+                void vscode.window.showInformationMessage('Agent Farm: no live hooks found to remove.');
+                return;
+            }
+            const confirmed = await vscode.window.showWarningMessage(
+                `Remove Agent Farm live hooks from:\n${candidates.join('\n')}`,
+                { modal: true },
+                'Remove'
+            );
+            if (confirmed !== 'Remove') { return; }
+            let removed = 0;
+            for (const f of candidates) {
+                const r = removeHooksFrom(f);
+                if (r?.ok) { removed++; }
+            }
+            void vscode.window.showInformationMessage(
+                `Agent Farm: live hooks removed from ${removed} file(s).`);
         }),
 
         vscode.commands.registerCommand('agentfarm.openFile', (p?: string) => {
@@ -281,6 +388,10 @@ export function activate(context: vscode.ExtensionContext): void {
             if (e.affectsConfiguration('agentFarm.agentRoots')) {
                 refreshAll();
                 index.reassignAgents();
+            }
+            if (e.affectsConfiguration('agentFarm.liveMonitor') ||
+                e.affectsConfiguration('agentFarm.livePort')) {
+                live.start();
             }
             DashboardPanel.refreshIfOpen();
         })

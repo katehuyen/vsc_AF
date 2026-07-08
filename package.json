@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "miropharm",
   "license": "MIT",
   "engines": {
@@ -78,6 +78,22 @@
         "icon": "$(question)"
       },
       {
+        "command": "agentfarm.openTimeline",
+        "title": "Open Live Timeline",
+        "category": "Agent Farm",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "agentfarm.installHooks",
+        "title": "Install Live Hooks",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.removeHooks",
+        "title": "Remove Live Hooks",
+        "category": "Agent Farm"
+      },
+      {
         "command": "agentfarm.refresh",
         "title": "Refresh",
         "category": "Agent Farm",
@@ -149,6 +165,11 @@
           "command": "agentfarm.refresh",
           "when": "view == agentfarm.agents || view == agentfarm.sessions || view == agentfarm.insights || view == agentfarm.feed",
           "group": "navigation@3"
+        },
+        {
+          "command": "agentfarm.openTimeline",
+          "when": "view == agentfarm.feed",
+          "group": "navigation@1"
         },
         {
           "command": "agentfarm.openGuide",
@@ -236,6 +257,36 @@
           "type": "number",
           "default": 400,
           "description": "Maximum number of messages rendered in the session viewer."
+        },
+        "agentFarm.liveMonitor": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run the local live-event listener (127.0.0.1) that receives Claude Code hook events."
+        },
+        "agentFarm.livePort": {
+          "type": "number",
+          "default": 8377,
+          "description": "Port for the local live-event listener. Re-run 'Install Live Hooks' after changing it."
+        },
+        "agentFarm.stuckThresholdSeconds": {
+          "type": "number",
+          "default": 240,
+          "description": "A working session with no hook events for this long is marked STALLED."
+        },
+        "agentFarm.notifyPermission": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a notification when an agent is waiting for a permission approval."
+        },
+        "agentFarm.notifyStuck": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a notification when an agent looks stalled."
+        },
+        "agentFarm.notifyTurnEnd": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show a notification every time an agent finishes its turn."
         },
         "agentFarm.includeUnmatchedProjects": {
           "type": "boolean",

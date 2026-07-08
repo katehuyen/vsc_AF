@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
 import { Insight } from '../core/health';
+import { LiveMonitor, LiveStatus } from '../core/live';
 import { SessionIndex, SessionInfo } from '../core/sessions';
 import { fmtTokens, fmtUSD, relTime, dayKey } from '../core/util';
 
@@ -9,7 +10,18 @@ export interface FarmState {
     getAgents(): AgentInfo[];
     index: SessionIndex;
     getInsights(): Insight[];
+    live?: LiveMonitor;
 }
+
+const LIVE_STATUS_LABEL: Record<LiveStatus, string> = {
+    'working': 'WORKING',
+    'tool': 'WORKING',
+    'waiting-permission': '⚠ PERMISSION',
+    'waiting-input': 'YOUR TURN',
+    'stalled': '⚠ STALLED',
+    'idle': 'idle',
+    'ended': 'ended'
+};
 
 type AgentNode =
     | { kind: 'agent'; agent: AgentInfo }
@@ -28,18 +40,29 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
     getTreeItem(node: AgentNode): vscode.TreeItem {
         if (node.kind === 'agent') {
             const agent = node.agent;
-            const active = this.state.index.isAgentActive(agent.id);
+            const liveStatus = this.state.live?.agentStatus(agent.id);
+            const active = liveStatus
+                ? liveStatus.status === 'working' || liveStatus.status === 'tool'
+                : this.state.index.isAgentActive(agent.id);
+            const urgent = liveStatus &&
+                (liveStatus.status === 'waiting-permission' || liveStatus.status === 'stalled');
             const todayCost = this.todayCost(agent.id);
             const item = new vscode.TreeItem(agent.name, vscode.TreeItemCollapsibleState.Collapsed);
             item.contextValue = 'agent';
             item.id = agent.id;
             item.iconPath = new vscode.ThemeIcon(
-                active ? 'vm-running' : 'hubot',
-                new vscode.ThemeColor(active ? 'charts.green' : 'charts.foreground')
+                urgent ? 'warning' : active ? 'vm-running' : 'hubot',
+                new vscode.ThemeColor(
+                    urgent ? 'editorWarning.foreground' : active ? 'charts.green' : 'charts.foreground')
             );
             const latest = this.state.index.latestSessionForAgent(agent.id);
             const parts: string[] = [];
-            parts.push(active ? 'ACTIVE' : (latest ? relTime(latest.mtime) : 'no sessions'));
+            if (liveStatus && liveStatus.status !== 'idle' && liveStatus.status !== 'ended') {
+                parts.push(LIVE_STATUS_LABEL[liveStatus.status] +
+                    (liveStatus.tool ? ` (${liveStatus.tool})` : ''));
+            } else {
+                parts.push(active ? 'ACTIVE' : (latest ? relTime(latest.mtime) : 'no sessions'));
+            }
             if (todayCost > 0) { parts.push(fmtUSD(todayCost) + ' today'); }
             item.description = parts.join(' • ');
             item.tooltip = new vscode.MarkdownString(
@@ -279,6 +302,36 @@ export class FeedTreeProvider implements vscode.TreeDataProvider<FeedItem> {
 
     getChildren(node?: FeedItem): FeedItem[] {
         if (node) { return []; }
+        // Prefer real-time hook events when the live monitor is receiving them.
+        if (this.state.live?.hasRecentEvents()) {
+            const kindMeta: Record<string, { icon: string; color?: string; label: string }> = {
+                prompt: { icon: 'comment', color: 'charts.blue', label: 'prompt' },
+                toolStart: { icon: 'tools', label: 'tool' },
+                toolEnd: { icon: 'check', color: 'charts.green', label: 'done' },
+                permission: { icon: 'shield', color: 'editorWarning.foreground', label: 'PERMISSION WAIT' },
+                notify: { icon: 'bell', color: 'charts.yellow', label: 'notify' },
+                stop: { icon: 'debug-stop', label: 'turn end' },
+                subagent: { icon: 'git-branch', color: 'charts.orange', label: 'subagent done' },
+                compact: { icon: 'fold', color: 'charts.purple', label: 'compaction' },
+                start: { icon: 'play', color: 'charts.green', label: 'session start' },
+                end: { icon: 'circle-slash', label: 'session end' }
+            };
+            return this.state.live.events(4 * 3600 * 1000)
+                .slice(-60)
+                .reverse()
+                .map(ev => {
+                    const meta = kindMeta[ev.kind] ?? kindMeta.notify;
+                    const agent = ev.agentName ?? ev.sessionId.slice(0, 8);
+                    return {
+                        label: `${agent}: ${ev.tool ?? meta.label}`,
+                        description: `${ev.detail ?? ''}${ev.detail ? ' • ' : ''}${relTime(ev.ts)}`,
+                        icon: meta.icon,
+                        color: meta.color,
+                        sessionFile: ev.transcriptPath ?? '',
+                        tooltip: `${agent} — ${meta.label}${ev.tool ? ` (${ev.tool})` : ''}\n${ev.detail ?? ''}\n${new Date(ev.ts).toLocaleString()}`
+                    };
+                });
+        }
         return this.state.index.feed(60).map(ev => {
             const agent = ev.agentName ?? '?';
             if (ev.kind === 'tool') {
