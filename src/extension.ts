@@ -555,6 +555,12 @@ export function activate(context: vscode.ExtensionContext): void {
                 'ORNEKLER.tr.md', 'Agent Farm — Örnek Kullanımlar');
         }),
 
+        vscode.commands.registerCommand('agentfarm.openRoadmap', (anchor?: string) => {
+            GuidePanel.show(context.extensionUri,
+                typeof anchor === 'string' ? anchor : undefined,
+                'GELISIM-PLANI.tr.md', 'Agent Farm — Gelişim Planı');
+        }),
+
         vscode.commands.registerCommand('agentfarm.addDuty', async (arg?: AgentNode | { agentId?: string }) => {
             let agent: AgentInfo | undefined;
             if (arg && 'kind' in arg && (arg.kind === 'section' || arg.kind === 'agent' || arg.kind === 'duty')) {

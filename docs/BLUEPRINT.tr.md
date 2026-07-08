@@ -537,14 +537,11 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 
 ## Yol Haritası
 
-- ~~**Faz 2 — Canlı gözlem**~~ ✅ 0.2.0: hook tabanlı gerçek zamanlı olay akışı, izin/takılma bildirimleri, kulvar zaman çizelgesi.
-- ~~**Faz 3 — Koordinasyon**~~ ✅ 0.3.0: görev kuyruğu, zamanlanmış görevler, hafıza senkronizasyon sihirbazı, karşılaştırmalı filo raporu.
-- ~~**Faz 4 — Otomasyon**~~ ✅ 0.4.0: çoklu-ajan iş akışları, headless çıktı arşivi, görev şablonları, otomatik vault raporu, Windows Görev Zamanlayıcı dışa aktarımı.
-- ~~**Faz 5 — Zekâ**~~ ✅ 0.5.0: koşullu dallanma (runIf + onFail), görev çıktı özeti, bütçe uyarıları, birleştirme taslağı.
-- ~~**Faz 6 — Nöbet ve Erişilebilirlik**~~ ✅ 0.6.0: nöbet görevleri sistemi (DUTIES.md), kapsamlı Türkçe Hızlı Başlangıç.
-- ~~**Faz 7 — Cila**~~ ✅ 0.7.0: workflow düzenleyici, otomatik raporda çıktı özeti, haftalık trend uyarıları, Timeline'da zincir görselleştirme, nöbet uyum izleme, eklenti ikonu.
-- **Sonrası:** birikmiş büyük fikir kalmadı — bundan sonrası kullanım geri bildirimlerinle şekillenecek. Aday küçük işler: nöbet görevlerine watch-değişince-bildirim, session viewer'da dışa aktarma, çoklu makine senaryosu.
-- Fikirlerin oldukça bu belge ve eklenti birlikte büyüyecek.
+Tamamlanan fazlar (hepsi 2026-07-08):
+
+- ~~**Faz 2 — Canlı gözlem**~~ ✅ 0.2.0 · ~~**Faz 3 — Koordinasyon**~~ ✅ 0.3.0 · ~~**Faz 4 — Otomasyon**~~ ✅ 0.4.0 · ~~**Faz 5 — Zekâ**~~ ✅ 0.5.0 · ~~**Faz 6 — Nöbet**~~ ✅ 0.6.0 · ~~**Faz 7 — Cila**~~ ✅ 0.7.x (+ gerçek test kampanyası)
+
+**Bundan sonrası ayrı ve ayrıntılı bir belgede yaşıyor:** komut paletinden **Agent Farm: Open Development Plan** — uzak görüşlü gelişim planı: olay tetikleyicileri, doğrulayıcı adımlar, MCP paneli, n8n/webhook köprüsü, multimedya üretim hattı (Kling/Seedance/Nano Banana sınıfı modellerle içerik fabrikası), zeki gözetim, çoklu makine ve vizyoner ufuk. Kodlama o plandaki öncelik sırasını izler.
 
 ## Sürüm Notları
 
