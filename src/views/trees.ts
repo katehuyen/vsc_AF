@@ -126,15 +126,24 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
                     const duties = agent.duties;
                     const pending = duties.filter(d =>
                         !d.paused && watchStatus(d.watch)?.pending).length;
+                    const lastRead = Math.max(0,
+                        ...this.state.index.forAgent(agent.id).map(s => s.dutiesReadTs ?? 0));
                     const item = new vscode.TreeItem('Duties',
                         duties.length ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None);
                     item.iconPath = new vscode.ThemeIcon('eye',
                         pending ? new vscode.ThemeColor('editorWarning.foreground') : undefined);
-                    item.description = duties.length
-                        ? `${duties.length}${pending ? ` • ${pending} pending` : ''}`
-                        : 'none — right-click to add';
+                    const parts: string[] = [];
+                    if (duties.length) {
+                        parts.push(String(duties.length));
+                        if (pending) { parts.push(`${pending} pending`); }
+                        parts.push(lastRead ? `read ${relTime(lastRead)}` : 'never read');
+                    } else {
+                        parts.push('none — right-click to add');
+                    }
+                    item.description = parts.join(' • ');
                     item.contextValue = 'duties-section';
-                    item.tooltip = 'Standing duties (nöbet görevleri): recurring watch-and-act agreements with this agent. Stored in DUTIES.md.';
+                    item.tooltip = 'Standing duties (nöbet görevleri): recurring watch-and-act agreements with this agent. Stored in DUTIES.md.' +
+                        (duties.length ? `\nAgent last touched DUTIES.md: ${lastRead ? relTime(lastRead) : 'never (in indexed sessions)'}` : '');
                     return item;
                 }
             }

@@ -2,7 +2,8 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "0.6.0",
+  "version": "0.7.0",
+  "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
   "engines": {
@@ -325,6 +326,41 @@
         "command": "agentfarm.openDuties",
         "title": "Open DUTIES.md",
         "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.renameWorkflow",
+        "title": "Rename Workflow",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.addWorkflowStep",
+        "title": "Add Step",
+        "category": "Agent Farm",
+        "icon": "$(add)"
+      },
+      {
+        "command": "agentfarm.editWorkflowStep",
+        "title": "Edit Step…",
+        "category": "Agent Farm",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "agentfarm.moveWorkflowStepUp",
+        "title": "Move Step Up",
+        "category": "Agent Farm",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "agentfarm.moveWorkflowStepDown",
+        "title": "Move Step Down",
+        "category": "Agent Farm",
+        "icon": "$(arrow-down)"
+      },
+      {
+        "command": "agentfarm.deleteWorkflowStep",
+        "title": "Delete Step",
+        "category": "Agent Farm",
+        "icon": "$(trash)"
       }
     ],
     "menus": {
@@ -532,9 +568,39 @@
           "group": "inline@1"
         },
         {
-          "command": "agentfarm.deleteWorkflow",
+          "command": "agentfarm.addWorkflowStep",
           "when": "view == agentfarm.tasks && viewItem == workflow",
           "group": "inline@2"
+        },
+        {
+          "command": "agentfarm.deleteWorkflow",
+          "when": "view == agentfarm.tasks && viewItem == workflow",
+          "group": "inline@3"
+        },
+        {
+          "command": "agentfarm.renameWorkflow",
+          "when": "view == agentfarm.tasks && viewItem == workflow",
+          "group": "1_wf@1"
+        },
+        {
+          "command": "agentfarm.editWorkflowStep",
+          "when": "view == agentfarm.tasks && viewItem == workflow-step",
+          "group": "inline@1"
+        },
+        {
+          "command": "agentfarm.moveWorkflowStepUp",
+          "when": "view == agentfarm.tasks && viewItem == workflow-step",
+          "group": "inline@2"
+        },
+        {
+          "command": "agentfarm.moveWorkflowStepDown",
+          "when": "view == agentfarm.tasks && viewItem == workflow-step",
+          "group": "inline@3"
+        },
+        {
+          "command": "agentfarm.deleteWorkflowStep",
+          "when": "view == agentfarm.tasks && viewItem == workflow-step",
+          "group": "1_step@1"
         }
       ]
     },
@@ -631,6 +697,16 @@
           "type": "number",
           "default": 7,
           "description": "Period (in days) covered by automatic fleet reports."
+        },
+        "agentFarm.trendAlertFactor": {
+          "type": "number",
+          "default": 2,
+          "description": "Warn when an agent's 7-day cost reaches this multiple of the previous 7 days. 0 disables trend alerts."
+        },
+        "agentFarm.autoReportIncludeOutputs": {
+          "type": "boolean",
+          "default": true,
+          "description": "Append the archived task-outputs digest to automatic fleet reports."
         },
         "agentFarm.budgets": {
           "type": "object",

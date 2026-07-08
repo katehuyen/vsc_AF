@@ -128,6 +128,43 @@
         return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${out}</svg>`;
     }
 
+    const RUN_COLORS = {
+        done: 'var(--vscode-charts-green, #4caf50)',
+        running: 'var(--vscode-charts-blue, #3794ff)',
+        failed: 'var(--vscode-charts-red, #f14c4c)',
+        queued: 'var(--vscode-descriptionForeground, #999)',
+        cancelled: 'var(--vscode-descriptionForeground, #999)'
+    };
+
+    function workflowRunsSvg(runs, now, winMs) {
+        const visible = runs.filter(r => r.steps.some(s =>
+            (s.endedAt || now) >= now - winMs));
+        if (!visible.length) { return ''; }
+        const W = 900, labelW = 150, rowH = 34, padT = 8;
+        const H = padT + visible.length * rowH + 6;
+        const from = now - winMs;
+        const x = ts => labelW + ((Math.max(ts, from) - from) / winMs) * (W - labelW - 8);
+        let out = '';
+        visible.forEach((run, i) => {
+            const y = padT + i * rowH;
+            out += `<text x="${labelW - 10}" y="${y + rowH / 2 + 3}" font-size="11" font-weight="600" text-anchor="end" fill="currentColor" opacity="0.85">${C.esc(run.title.length > 18 ? run.title.slice(0, 17) + '…' : run.title)}</text>`;
+            out += `<line x1="${labelW}" y1="${y + rowH / 2}" x2="${W - 8}" y2="${y + rowH / 2}" stroke="currentColor" opacity="0.1"/>`;
+            run.steps.forEach((s, si) => {
+                if (!s.startedAt) return;
+                const end = s.endedAt || now;
+                if (end < from) return;
+                const x1 = x(s.startedAt), x2 = Math.max(x(end), x1 + 3);
+                const color = RUN_COLORS[s.status] || RUN_COLORS.queued;
+                out += `<rect x="${x1.toFixed(1)}" y="${y + rowH / 2 - 8}" width="${(x2 - x1).toFixed(1)}" height="16" rx="3" fill="${color}" opacity="${s.status === 'running' ? 0.95 : 0.65}">` +
+                    `<title>${C.esc(s.title)} — ${C.esc(s.agentName)} (${s.status})\n${fmtClock(s.startedAt)} → ${s.endedAt ? fmtClock(s.endedAt) : 'running'}</title></rect>`;
+                out += `<text x="${(x1 + 3).toFixed(1)}" y="${y + rowH / 2 + 4}" font-size="9" fill="var(--vscode-editor-background, #000)" opacity="0.9">${si + 1}</text>`;
+            });
+        });
+        out += `<line x1="${x(now)}" y1="${padT}" x2="${x(now)}" y2="${H - 4}" stroke="var(--vscode-charts-red, #f14c4c)" stroke-width="1.5" opacity="0.8"/>`;
+        return `<h2>Workflow runs</h2><div class="card chartbox"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${out}</svg>` +
+            `<div class="legend"><span><i style="background:${RUN_COLORS.done}"></i>done</span><span><i style="background:${RUN_COLORS.running}"></i>running</span><span><i style="background:${RUN_COLORS.failed}"></i>failed</span></div></div>`;
+    }
+
     function render() {
         const now = Date.now();
         const winMs = windowMin * 60000;
@@ -192,6 +229,7 @@
             ${emptyHint}
             <h2>Swim lanes</h2>
             <div class="card chartbox">${lanesSvg(lanes, now, winMs)}<div class="legend">${legend}</div></div>
+            ${workflowRunsSvg(DATA.workflowRuns || [], now, winMs)}
             <h2>Live sessions (${DATA.sessions.length})</h2>
             <div class="grid">${sessionCards || '<p class="muted">No sessions tracked yet.</p>'}</div>
             <p class="footnote">Events arrive via local hooks (127.0.0.1 only, nothing leaves this machine). Stuck detection and permission alerts are configurable in settings.</p>

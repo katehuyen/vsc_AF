@@ -79,7 +79,8 @@ export function activate(context: vscode.ExtensionContext): void {
     const healthConfig = () => ({
         staleMemoryDays: cfg().get<number>('staleMemoryDays', 45),
         contextBudgetTokens: cfg().get<number>('contextBudgetTokens', 8000),
-        budgets: cfg().get<Record<string, number>>('budgets', {})
+        budgets: cfg().get<Record<string, number>>('budgets', {}),
+        trendFactor: cfg().get<number>('trendAlertFactor', 2)
     });
 
     const refreshAgents = () => {
@@ -193,8 +194,20 @@ export function activate(context: vscode.ExtensionContext): void {
         const file = path.join(folder, `AgentFarm-Report-${stampStr}.md`);
         if (fs.existsSync(file)) { return; }
         try {
-            const md = buildFleetReport(agents, index, insights,
-                cfg().get<number>('autoReportDays', 7));
+            const days = cfg().get<number>('autoReportDays', 7);
+            let md = buildFleetReport(agents, index, insights, days);
+            if (cfg().get<boolean>('autoReportIncludeOutputs', true)) {
+                const sinceMs = days * 24 * 3600 * 1000;
+                const hasOutputs = taskManager.tasks.some(t =>
+                    t.outputFile && t.endedAt && t.endedAt >= Date.now() - sinceMs &&
+                    (t.status === 'done' || t.status === 'failed'));
+                if (hasOutputs) {
+                    md += '\n\n' + buildOutputsDigest(taskManager.tasks, sinceMs)
+                        .replace(/^# .*$/m, '## Task outputs')
+                        .replace(/^## /gm, '### ')
+                        .replace(/^### Task outputs/m, '## Task outputs');
+                }
+            }
             fs.writeFileSync(file, md, 'utf8');
             void vscode.window.showInformationMessage(
                 `Agent Farm: fleet report written — ${path.basename(file)}`, 'Open')
@@ -307,7 +320,7 @@ export function activate(context: vscode.ExtensionContext): void {
         }),
 
         vscode.commands.registerCommand('agentfarm.openTimeline', () => {
-            TimelinePanel.show({ extensionUri: context.extensionUri, live });
+            TimelinePanel.show({ extensionUri: context.extensionUri, live, tasks: taskManager });
         }),
 
         vscode.commands.registerCommand('agentfarm.installHooks', async () => {
@@ -348,7 +361,7 @@ export function activate(context: vscode.ExtensionContext): void {
                     'Open Timeline'
                 );
                 if (choice === 'Open Timeline') {
-                    TimelinePanel.show({ extensionUri: context.extensionUri, live });
+                    TimelinePanel.show({ extensionUri: context.extensionUri, live, tasks: taskManager });
                 }
             }
         }),
@@ -766,6 +779,140 @@ export function activate(context: vscode.ExtensionContext): void {
 
         vscode.commands.registerCommand('agentfarm.runWorkflow', (node?: TaskNode) => {
             if (node?.kind === 'workflow') { taskManager.runWorkflow(node.workflow); }
+        }),
+
+        vscode.commands.registerCommand('agentfarm.renameWorkflow', async (node?: TaskNode) => {
+            if (node?.kind !== 'workflow') { return; }
+            const title = await vscode.window.showInputBox({
+                prompt: 'Workflow name', value: node.workflow.title, ignoreFocusOut: true
+            });
+            if (title) { taskManager.renameWorkflow(node.workflow, title); }
+        }),
+
+        vscode.commands.registerCommand('agentfarm.addWorkflowStep', async (node?: TaskNode) => {
+            if (node?.kind !== 'workflow') { return; }
+            const agent = await resolveAgent(undefined);
+            if (!agent) { return; }
+            const stepTitle = await vscode.window.showInputBox({
+                prompt: `New step title (${agent.name})`, ignoreFocusOut: true
+            });
+            if (!stepTitle) { return; }
+            const stepPrompt = await vscode.window.showInputBox({
+                prompt: `Step prompt — ${PREV_OUTPUT_PLACEHOLDER} inserts the previous step's output file`,
+                value: stepTitle, ignoreFocusOut: true
+            });
+            if (!stepPrompt) { return; }
+            const mode = await vscode.window.showQuickPick(
+                [
+                    { label: 'Headless', mode: 'headless' as TaskMode },
+                    { label: 'Interactive', mode: 'interactive' as TaskMode }
+                ], { placeHolder: 'Run mode' });
+            if (!mode) { return; }
+            taskManager.addWorkflowStep(node.workflow, {
+                agentId: agent.id, agentName: agent.name,
+                title: stepTitle, prompt: stepPrompt, mode: mode.mode
+            });
+        }),
+
+        vscode.commands.registerCommand('agentfarm.editWorkflowStep', async (node?: TaskNode) => {
+            if (node?.kind !== 'workflow-step') { return; }
+            const w = node.workflow;
+            const step = w.steps[node.index];
+            const field = await vscode.window.showQuickPick(
+                [
+                    { label: 'Title', description: step.title, id: 'title' },
+                    { label: 'Prompt', description: step.prompt.slice(0, 60), id: 'prompt' },
+                    { label: 'Agent', description: step.agentName, id: 'agent' },
+                    { label: 'Mode', description: step.mode, id: 'mode' },
+                    { label: 'On fail', description: String(step.onFail ?? 'stop'), id: 'onFail' },
+                    { label: 'Run-if condition', description: step.runIf ?? '(always runs)', id: 'runIf' }
+                ],
+                { placeHolder: `Edit step ${node.index + 1}: ${step.title}` }
+            );
+            if (!field) { return; }
+            switch (field.id) {
+                case 'title': {
+                    const v = await vscode.window.showInputBox({ prompt: 'Step title', value: step.title, ignoreFocusOut: true });
+                    if (v) { taskManager.updateWorkflowStep(w, node.index, { title: v }); }
+                    break;
+                }
+                case 'prompt': {
+                    const v = await vscode.window.showInputBox({
+                        prompt: `Step prompt (${PREV_OUTPUT_PLACEHOLDER} = previous output file)`,
+                        value: step.prompt, ignoreFocusOut: true
+                    });
+                    if (v) { taskManager.updateWorkflowStep(w, node.index, { prompt: v }); }
+                    break;
+                }
+                case 'agent': {
+                    const agent = await resolveAgent(undefined);
+                    if (agent) {
+                        taskManager.updateWorkflowStep(w, node.index, { agentId: agent.id, agentName: agent.name });
+                    }
+                    break;
+                }
+                case 'mode': {
+                    const v = await vscode.window.showQuickPick(
+                        [
+                            { label: 'Headless', mode: 'headless' as TaskMode },
+                            { label: 'Interactive', mode: 'interactive' as TaskMode }
+                        ], { placeHolder: 'Run mode' });
+                    if (v) { taskManager.updateWorkflowStep(w, node.index, { mode: v.mode }); }
+                    break;
+                }
+                case 'onFail': {
+                    const v = await vscode.window.showQuickPick(
+                        [
+                            { label: 'Stop workflow', value: undefined as 'continue' | number | undefined },
+                            { label: 'Continue to next step', value: 'continue' as const },
+                            { label: 'Jump to step…', value: 'goto' as unknown as number }
+                        ], { placeHolder: 'If this step fails?' });
+                    if (!v) { return; }
+                    if (String(v.value) === 'goto') {
+                        const target = await vscode.window.showInputBox({
+                            prompt: 'Jump to step number (1-based)', ignoreFocusOut: true,
+                            validateInput: x => /^\d+$/.test(x) && Number(x) >= 1 ? undefined : 'Enter a step number'
+                        });
+                        if (!target) { return; }
+                        taskManager.updateWorkflowStep(w, node.index, { onFail: Number(target) });
+                    } else {
+                        taskManager.updateWorkflowStep(w, node.index, { onFail: v.value });
+                    }
+                    break;
+                }
+                case 'runIf': {
+                    const v = await vscode.window.showInputBox({
+                        prompt: 'Run only if previous output matches (regex) — empty = always run',
+                        value: step.runIf ?? '', ignoreFocusOut: true
+                    });
+                    if (v === undefined) { return; }
+                    taskManager.updateWorkflowStep(w, node.index, { runIf: v.trim() || undefined });
+                    break;
+                }
+            }
+        }),
+
+        vscode.commands.registerCommand('agentfarm.moveWorkflowStepUp', (node?: TaskNode) => {
+            if (node?.kind === 'workflow-step') {
+                taskManager.moveWorkflowStep(node.workflow, node.index, -1);
+            }
+        }),
+
+        vscode.commands.registerCommand('agentfarm.moveWorkflowStepDown', (node?: TaskNode) => {
+            if (node?.kind === 'workflow-step') {
+                taskManager.moveWorkflowStep(node.workflow, node.index, 1);
+            }
+        }),
+
+        vscode.commands.registerCommand('agentfarm.deleteWorkflowStep', async (node?: TaskNode) => {
+            if (node?.kind !== 'workflow-step') { return; }
+            const step = node.workflow.steps[node.index];
+            const confirmed = await vscode.window.showWarningMessage(
+                `Delete step ${node.index + 1} ("${step.title}") from "${node.workflow.title}"?`,
+                { modal: true }, 'Delete');
+            if (confirmed === 'Delete') {
+                taskManager.deleteWorkflowStep(node.workflow, node.index);
+            }
         }),
 
         vscode.commands.registerCommand('agentfarm.deleteWorkflow', async (node?: TaskNode) => {

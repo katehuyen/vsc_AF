@@ -49,6 +49,8 @@ export interface SessionInfo {
     version?: string;
     gitBranch?: string;
     permissionMode?: string;
+    /** Last time a tool touched the agent's DUTIES.md in this session (duty compliance signal). */
+    dutiesReadTs?: number;
     daily: Record<string, DailyBucket>;
     /** assistant message counts in 7x24 local-time buckets, index = dow*24+hour */
     heat: number[];
@@ -240,6 +242,10 @@ export function parseSessionFile(
                     if (block?.type === 'tool_use' && block.name) {
                         info.toolCalls++;
                         info.tools[block.name] = (info.tools[block.name] ?? 0) + 1;
+                        const filePath = String(block.input?.['file_path'] ?? '');
+                        if (ts && filePath.toUpperCase().includes('DUTIES.MD')) {
+                            info.dutiesReadTs = Math.max(info.dutiesReadTs ?? 0, ts);
+                        }
                         if (ts) {
                             info.events.push({
                                 ts, kind: 'tool', tool: block.name,

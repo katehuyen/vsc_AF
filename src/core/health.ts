@@ -20,6 +20,22 @@ export interface HealthConfig {
     contextBudgetTokens: number;
     /** Daily USD budgets by agent name; "*" applies to the whole fleet. */
     budgets?: Record<string, number>;
+    /** Warn when this week's cost is >= factor × last week's. 0 disables. */
+    trendFactor?: number;
+}
+
+const TREND_MIN_PREV_USD = 0.5;
+const TREND_MIN_CURR_USD = 1;
+
+function costBetween(sessions: { daily: Record<string, { cost: number }> }[], from: number, to: number): number {
+    let total = 0;
+    for (const s of sessions) {
+        for (const [day, bucket] of Object.entries(s.daily)) {
+            const ts = new Date(day + 'T12:00:00').getTime();
+            if (ts >= from && ts < to) { total += bucket.cost; }
+        }
+    }
+    return total;
 }
 
 const SHARED_CANDIDATE_EXCLUDES = new Set(['memory.md']);
@@ -197,6 +213,53 @@ export function buildInsights(
                 guideAnchor: 'saglik-hata-orani'
             });
         }
+    }
+
+    // 6b) Duty compliance: agent had sessions this week but never touched DUTIES.md
+    for (const agent of agents) {
+        const activeDuties = agent.duties.filter(d => !d.paused);
+        if (!activeDuties.length || !agent.dutiesPath) { continue; }
+        const weekAgo = now - 7 * 24 * 3600 * 1000;
+        const recent = index.forAgent(agent.id).filter(s => s.lastTs >= weekAgo);
+        if (!recent.length) { continue; }
+        const lastRead = Math.max(0, ...recent.map(s => s.dutiesReadTs ?? 0));
+        if (!lastRead) {
+            insights.push({
+                severity: 'warning',
+                agentId: agent.id,
+                agentName: agent.name,
+                category: 'duties',
+                message: `Agent had ${recent.length} session(s) this week but never read DUTIES.md — its ${activeDuties.length} standing duties may be ignored.`,
+                filePath: agent.claudeMdPath ?? agent.dutiesPath,
+                guideAnchor: 'nobet-gorevleri'
+            });
+        }
+    }
+
+    // 6c) Weekly cost trend (per agent and fleet)
+    const trendFactor = cfg.trendFactor ?? 2;
+    if (trendFactor > 0) {
+        const week = 7 * 24 * 3600 * 1000;
+        const checkTrend = (label: string, agentId: string | undefined,
+            sessions: { daily: Record<string, { cost: number }> }[]) => {
+            const current = costBetween(sessions, now - week, now + 24 * 3600 * 1000);
+            const previous = costBetween(sessions, now - 2 * week, now - week);
+            if (previous >= TREND_MIN_PREV_USD && current >= TREND_MIN_CURR_USD &&
+                current >= trendFactor * previous) {
+                insights.push({
+                    severity: 'warning',
+                    agentId,
+                    agentName: label,
+                    category: 'trend',
+                    message: `Weekly cost trend: ${fmtUSD(current)} this week vs ${fmtUSD(previous)} last week (${(current / previous).toFixed(1)}x).`,
+                    guideAnchor: 'trend-uyarilari'
+                });
+            }
+        };
+        for (const agent of agents) {
+            checkTrend(agent.name, agent.id, index.forAgent(agent.id));
+        }
+        checkTrend('fleet', undefined, index.all());
     }
 
     // 7) Daily budget checks (per agent and fleet-wide "*")

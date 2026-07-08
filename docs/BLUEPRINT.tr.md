@@ -253,6 +253,18 @@ Güvenlik: `onFail` sıçramalarıyla oluşabilecek sonsuz döngülere karşı h
 
 Örnek akıllı zincir: 1. psikolog: "günlüğü tara" → 2. asistan (runIf: `ALARM`): "acil müdahale planı: {prev_output}" → 3. genel (her zaman): "günü arşivle" (onFail: Continue).
 
+### Workflow Düzenleme
+
+Kurulu bir zinciri silip yeniden kurmana gerek yok (0.7.0):
+
+- **Workflow üzerinde:** ▶ çalıştır, **+** adım ekle, çöp kutusu sil; sağ tık → **Rename Workflow**.
+- **Adım üzerinde:** kalem ikonu → **Edit Step…** hangi alanı değiştireceğini sorar (başlık / prompt / ajan / mod / on-fail / run-if); ↑↓ ile sırala; sağ tık → adımı sil.
+- Değişiklikler kalıcıdır ve bir sonraki çalıştırmada geçerli olur; süren bir koşuyu etkilemez.
+
+### Zincirlerin Görselleştirilmesi
+
+Live Timeline'da artık **Workflow runs** bölümü var: son 4 saatte koşan her zincir kendi şeridinde, adımlar numaralı bloklar halinde — yeşil = bitti, mavi = çalışıyor, kırmızı = başarısız. Bloğun üzerine gel: adım adı, ajan ve süre. İki ajanın birbirine iş devrettiğini kelimenin tam anlamıyla izlersin.
+
 ## Nöbet Görevleri
 
 Ajanlarla yaptığın **süreklilik anlaşmalarının** sistemi: "şu dosyaya her tur bak, cevap gelmişse gereğini yap", "şu klasörü her gün kontrol et, dosya birikmişse tasnif et" gibi tetikte-kalma görevleri. Bunlar zamanla çoğalıp karışır — hangi klasördü, görev neydi, her tur muydu her gün müydü? Bu sistem hepsini tek yerde toplar.
@@ -286,6 +298,8 @@ Panelin asıl gücü burada — Duties bölümü sadece liste değil, **durum g�
 - **Duraklatılmış** görevler soluk görünür ve ajan şablon kuralı gereği onları atlar.
 
 Yönetim: göreve sağ tık → **Pause/Resume** (silmeden dondur), **Delete**, **Open DUTIES.md** (elle düzenleme). Ajan detay sayfasında da tam tablo var: başlık, kadans, watch, do, durum.
+
+**Ajan gerçekten bakıyor mu? (0.7.0)** Duties başlığında artık bir uyum göstergesi var: `read 2h ago` = ajan DUTIES.md'ye en son o zaman dokundu (oturum kayıtlarından tespit edilir); `never read` = kayıtlı oturumlarda hiç bakmamış. Ajan bu hafta oturum yaptığı hâlde dosyayı hiç okumadıysa Insights'a uyarı düşer — anlaşma kâğıt üzerinde kalmış demektir; CLAUDE.md yönergesini güçlendir.
 
 ### Örnekler
 
@@ -345,6 +359,8 @@ Raporu elle almak yerine otomatiğe bağlayabilirsin — Obsidian vault'una düz
 3. Eklenti saatte bir kontrol eder; o gün/haftanın raporu yoksa üretir (`AgentFarm-Report-2026-07-08.md` veya `AgentFarm-Report-2026-W28.md`) ve bildirim düşer. Kapsanan dönem `agentFarm.autoReportDays` ile ayarlanır (varsayılan 7 gün).
 
 VS Code açıkken çalışır; gün içinde ilk açılışta o günün raporu üretilir.
+
+0.7.0'dan itibaren dönem içinde arşivlenmiş headless görev çıktısı varsa, **Task outputs** bölümü otomatik rapora eklenir — karne ve iş çıktıları tek belgede. İstemezsen `agentFarm.autoReportIncludeOutputs: false`.
 
 ### Görev Çıktı Özeti
 
@@ -418,6 +434,12 @@ Token kullanımı yerel kayıtlardan okunur ve `agentFarm.pricing` kurallarıyla
 - Dashboard'da bütçeli ajan kartlarında doluluk çubuğu görünür; filo bütçesi "Cost today" kartına işlenir.
 - Rakamlar API karşılığı değerdir — abonelikte fatura değil, tüketim disiplinidir: "psikolog bugün değer olarak 20$'ı geçmesin" gibi.
 
+### Trend Uyarıları
+
+Bütçe "bugün"e bakar; trend uyarısı **haftalık gidişata** bakar. Bir ajanın son 7 günlük maliyeti, önceki 7 günün `agentFarm.trendAlertFactor` katına (varsayılan 2x) ulaşırsa Insights'ta uyarı belirir: *"Weekly cost trend: $24 this week vs $6 last week (4.0x)."* Filo geneli de ayrıca izlenir.
+
+Gürültü koruması: önceki hafta 0.50$'ın, bu hafta 1$'ın altındaysa uyarı üretilmez (küçük rakamlarda kat sayısı anlamsızdır). `trendAlertFactor: 0` tamamen kapatır. Bu uyarı "kötü" demek değildir — bazen yoğun bir proje haftasıdır; amacı sessiz maliyet sürünmesini erken göstermektir.
+
 ## Ayarlar
 
 | Ayar | Varsayılan | Ne işe yarar |
@@ -442,6 +464,8 @@ Token kullanımı yerel kayıtlardan okunur ve `agentFarm.pricing` kurallarıyla
 | `agentFarm.autoReportFolder` | boş | Otomatik raporların yazılacağı klasör (vault) |
 | `agentFarm.autoReportDays` | 7 | Otomatik raporun kapsadığı gün sayısı |
 | `agentFarm.budgets` | {} | Ajan başına günlük USD bütçe; `"*"` = filo geneli |
+| `agentFarm.trendAlertFactor` | 2 | Haftalık maliyet kat eşiği (0 = kapalı) |
+| `agentFarm.autoReportIncludeOutputs` | true | Otomatik rapora görev çıktılarını ekle |
 
 ## Komutlar
 
@@ -458,6 +482,7 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 - **Install Live Hooks / Remove Live Hooks** — canlı gözlem hook'larını kur/kaldır
 - **Add Task / Add Scheduled Task** — görev kuyruğu ve zamanlama
 - **New Multi-Agent Workflow… / Run Workflow** — çoklu-ajan zincirleri
+- **Edit Step… / Add Step / Rename Workflow** — kurulu zinciri düzenleme
 - **Save as Template / New Task from Template** — görev şablonları
 - **Open Task Output** — headless görev çıktı arşivi
 - **Export as Windows Scheduled Task…** — VS Code'dan bağımsız zamanlama
@@ -514,10 +539,20 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 - ~~**Faz 4 — Otomasyon**~~ ✅ 0.4.0: çoklu-ajan iş akışları, headless çıktı arşivi, görev şablonları, otomatik vault raporu, Windows Görev Zamanlayıcı dışa aktarımı.
 - ~~**Faz 5 — Zekâ**~~ ✅ 0.5.0: koşullu dallanma (runIf + onFail), görev çıktı özeti, bütçe uyarıları, birleştirme taslağı.
 - ~~**Faz 6 — Nöbet ve Erişilebilirlik**~~ ✅ 0.6.0: nöbet görevleri sistemi (DUTIES.md), kapsamlı Türkçe Hızlı Başlangıç.
-- **Faz 7 — adaylar:** workflow düzenleyici arayüzü (adımları sonradan düzenleme/sıralama), çıktı özetlerinin otomatik rapora eklenmesi, ajan bazlı haftalık trend uyarıları ("psikolog geçen haftaya göre 2x pahalı"), Live Timeline'da workflow zincirlerinin görselleştirilmesi, nöbet görevlerinde "son kontrol zamanı" izleme (ajanın gerçekten baktığını doğrulama).
+- ~~**Faz 7 — Cila**~~ ✅ 0.7.0: workflow düzenleyici, otomatik raporda çıktı özeti, haftalık trend uyarıları, Timeline'da zincir görselleştirme, nöbet uyum izleme, eklenti ikonu.
+- **Sonrası:** birikmiş büyük fikir kalmadı — bundan sonrası kullanım geri bildirimlerinle şekillenecek. Aday küçük işler: nöbet görevlerine watch-değişince-bildirim, session viewer'da dışa aktarma, çoklu makine senaryosu.
 - Fikirlerin oldukça bu belge ve eklenti birlikte büyüyecek.
 
 ## Sürüm Notları
+
+### 0.7.0 — Cila (2026-07-08)
+
+- **Workflow düzenleyici:** adım düzenle (başlık/prompt/ajan/mod/on-fail/run-if), sırala, ekle, sil; workflow yeniden adlandır — silip kurmak tarih oldu
+- **Timeline'da zincirler:** Workflow runs bölümü — her koşu kendi şeridinde, numaralı adım blokları, durum renkleri
+- **Haftalık trend uyarıları:** son 7 gün önceki 7 günün `trendAlertFactor` katına ulaşınca Insights uyarısı (ajan + filo)
+- **Nöbet uyumu:** Duties başlığında `read 2h ago / never read`; oturum yapıp DUTIES.md'ye hiç bakmayan ajan için uyarı
+- **Otomatik raporda çıktılar:** dönemin görev çıktı özeti rapora eklenir (`autoReportIncludeOutputs`)
+- **Eklenti ikonu:** Extensions görünümünde Agent Farm artık kendi yüzüyle görünüyor
 
 ### 0.6.0 — Nöbet ve Erişilebilirlik (2026-07-08)
 

@@ -1,10 +1,12 @@
 import * as vscode from 'vscode';
 import { LiveMonitor } from '../core/live';
+import { TaskManager } from '../core/tasks';
 import { htmlShell } from './base';
 
 export interface TimelineDeps {
     extensionUri: vscode.Uri;
     live: LiveMonitor;
+    tasks: TaskManager;
 }
 
 const DATA_WINDOW_MS = 4 * 3600 * 1000; // client renders 15m/1h/4h out of this
@@ -30,7 +32,8 @@ function buildData(deps: TimelineDeps): Record<string, unknown> {
             subagentStops: s.subagentStops,
             transcriptPath: s.transcriptPath
         })),
-        events: deps.live.events(DATA_WINDOW_MS)
+        events: deps.live.events(DATA_WINDOW_MS),
+        workflowRuns: deps.tasks.workflowRuns(DATA_WINDOW_MS)
     };
 }
 
@@ -64,14 +67,16 @@ export class TimelinePanel {
         );
         panel.onDidDispose(() => this.dispose(), null, this.disposables);
         panel.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
-        this.deps.live.onDidUpdate(() => {
+        const throttledRefresh = () => {
             // Throttle bursts (a busy agent can emit several events per second).
             if (this.throttle) { return; }
             this.throttle = setTimeout(() => {
                 this.throttle = undefined;
                 this.refresh();
             }, 700);
-        }, null, this.disposables);
+        };
+        this.deps.live.onDidUpdate(throttledRefresh, null, this.disposables);
+        this.deps.tasks.onDidChange(throttledRefresh, null, this.disposables);
     }
 
     refresh(): void {

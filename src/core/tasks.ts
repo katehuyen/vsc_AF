@@ -407,6 +407,68 @@ export class TaskManager implements vscode.Disposable {
         this.save();
     }
 
+    renameWorkflow(w: FarmWorkflow, title: string): void {
+        w.title = title;
+        this.save();
+    }
+
+    addWorkflowStep(w: FarmWorkflow, step: WorkflowStep): void {
+        w.steps.push(step);
+        this.save();
+    }
+
+    updateWorkflowStep(w: FarmWorkflow, index: number, patch: Partial<WorkflowStep>): void {
+        if (index < 0 || index >= w.steps.length) { return; }
+        w.steps[index] = { ...w.steps[index], ...patch };
+        this.save();
+    }
+
+    moveWorkflowStep(w: FarmWorkflow, index: number, dir: -1 | 1): void {
+        const j = index + dir;
+        if (index < 0 || j < 0 || j >= w.steps.length) { return; }
+        [w.steps[index], w.steps[j]] = [w.steps[j], w.steps[index]];
+        this.save();
+    }
+
+    deleteWorkflowStep(w: FarmWorkflow, index: number): void {
+        if (index < 0 || index >= w.steps.length) { return; }
+        w.steps.splice(index, 1);
+        this.save();
+    }
+
+    /** Recent workflow runs (for the timeline visualization). */
+    workflowRuns(sinceMs: number): {
+        runId: string; title: string;
+        steps: { title: string; agentName: string; status: TaskStatus; startedAt?: number; endedAt?: number }[];
+    }[] {
+        const cutoff = Date.now() - sinceMs;
+        const byRun = new Map<string, FarmTask[]>();
+        for (const t of this.tasks) {
+            if (!t.workflowRunId || !t.startedAt || t.startedAt < cutoff) { continue; }
+            const list = byRun.get(t.workflowRunId) ?? [];
+            list.push(t);
+            byRun.set(t.workflowRunId, list);
+        }
+        const runs = [];
+        for (const [runId, list] of byRun) {
+            list.sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0));
+            const w = this.workflows.find(x => x.id === list[0].workflowId);
+            runs.push({
+                runId,
+                title: w?.title ?? list[0].title.split(' ')[0],
+                steps: list.map(t => ({
+                    title: t.title,
+                    agentName: t.agentName,
+                    status: t.status,
+                    startedAt: t.startedAt,
+                    endedAt: t.endedAt
+                }))
+            });
+        }
+        runs.sort((a, b) => (b.steps[0]?.startedAt ?? 0) - (a.steps[0]?.startedAt ?? 0));
+        return runs;
+    }
+
     /** Loop guard: total step executions per workflow run. */
     private static readonly MAX_RUN_STEPS = 25;
     private runCounts = new Map<string, number>();
