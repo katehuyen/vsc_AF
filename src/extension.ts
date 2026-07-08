@@ -12,7 +12,10 @@ import { findDuplicateGroups, syncGroup } from './core/memorySync';
 import { DEFAULT_PRICING, PriceRule, PricingEngine } from './core/pricing';
 import { buildFleetReport } from './core/report';
 import { SessionIndex } from './core/sessions';
-import { ScheduleKind, TaskManager, TaskMode } from './core/tasks';
+import {
+    FarmSchedule, PREV_OUTPUT_PLACEHOLDER, sanitizePrompt, ScheduleKind,
+    TaskManager, TaskMode, WorkflowStep
+} from './core/tasks';
 import { normPath, relTime } from './core/util';
 import { AgentDetailPanel } from './panels/agentDetail';
 import { DashboardPanel } from './panels/dashboard';
@@ -148,8 +151,43 @@ export function activate(context: vscode.ExtensionContext): void {
         feedTree.refresh();
     }, null, context.subscriptions);
 
+    // Automatic fleet reports (e.g. into an Obsidian vault folder), checked hourly.
+    const isoWeek = (d: Date): string => {
+        const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+        t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7));
+        const yearStart = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+        const week = Math.ceil(((t.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+        return `${t.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
+    };
+    const checkAutoReport = () => {
+        const cadence = cfg().get<string>('autoReport', 'off');
+        const folder = cfg().get<string>('autoReportFolder', '');
+        if (cadence === 'off' || !folder || !fs.existsSync(folder)) { return; }
+        const now = new Date();
+        const stampStr = cadence === 'weekly' ? isoWeek(now) : now.toISOString().slice(0, 10);
+        const file = path.join(folder, `AgentFarm-Report-${stampStr}.md`);
+        if (fs.existsSync(file)) { return; }
+        try {
+            const md = buildFleetReport(agents, index, insights,
+                cfg().get<number>('autoReportDays', 7));
+            fs.writeFileSync(file, md, 'utf8');
+            void vscode.window.showInformationMessage(
+                `Agent Farm: fleet report written — ${path.basename(file)}`, 'Open')
+                .then(choice => {
+                    if (choice === 'Open') {
+                        void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(file));
+                    }
+                });
+        } catch { /* folder not writable — retried next hour */ }
+    };
+    const reportTimer = setInterval(checkAutoReport, 3600_000);
+    context.subscriptions.push({ dispose: () => clearInterval(reportTimer) });
+
     // Initial scan + live watch of ~/.claude/projects
-    void index.scanAll().then(() => index.watch());
+    void index.scanAll().then(() => {
+        index.watch();
+        checkAutoReport();
+    });
 
     // Watch agent roots for structural changes (new agents, memory edits)
     for (const root of cfg().get<string[]>('agentRoots', [])) {
@@ -463,6 +501,178 @@ export function activate(context: vscode.ExtensionContext): void {
         }),
         vscode.commands.registerCommand('agentfarm.runScheduleNow', (node?: TaskNode) => {
             if (node?.kind === 'schedule') { taskManager.runScheduleNow(node.schedule); }
+        }),
+
+        vscode.commands.registerCommand('agentfarm.saveTaskTemplate', async (node?: TaskNode) => {
+            if (node?.kind !== 'task') { return; }
+            const t = node.task;
+            const bindAgent = await vscode.window.showQuickPick(
+                [
+                    { label: `Bind to ${t.agentName}`, bind: true },
+                    { label: 'Any agent (choose at run time)', bind: false }
+                ],
+                { placeHolder: 'Template scope' }
+            );
+            if (!bindAgent) { return; }
+            taskManager.addTemplate({
+                title: t.title, prompt: t.prompt, mode: t.mode,
+                agentId: bindAgent.bind ? t.agentId : undefined,
+                agentName: bindAgent.bind ? t.agentName : undefined
+            });
+            void vscode.window.showInformationMessage(`Agent Farm: template "${t.title}" saved.`);
+        }),
+
+        vscode.commands.registerCommand('agentfarm.runTemplate', async (node?: TaskNode) => {
+            let template = node?.kind === 'template' ? node.template : undefined;
+            if (!template) {
+                const pick = await vscode.window.showQuickPick(
+                    taskManager.templates.map(t => ({
+                        label: t.title, description: t.agentName ?? 'any agent', template: t
+                    })),
+                    { placeHolder: 'Which template?' }
+                );
+                template = pick?.template;
+            }
+            if (!template) { return; }
+            const agent = template.agentId
+                ? agents.find(a => a.id === template.agentId)
+                : await resolveAgent(undefined);
+            if (!agent) {
+                void vscode.window.showWarningMessage('Agent Farm: agent not found for this template.');
+                return;
+            }
+            const task = taskManager.addTask(agent, template.title, template.prompt, template.mode);
+            taskManager.startTask(task);
+        }),
+
+        vscode.commands.registerCommand('agentfarm.deleteTemplate', (node?: TaskNode) => {
+            if (node?.kind === 'template') { taskManager.deleteTemplate(node.template); }
+        }),
+
+        vscode.commands.registerCommand('agentfarm.newWorkflow', async () => {
+            const title = await vscode.window.showInputBox({
+                prompt: 'Workflow name', ignoreFocusOut: true
+            });
+            if (!title) { return; }
+            const steps: WorkflowStep[] = [];
+            for (;;) {
+                const stepNo = steps.length + 1;
+                const agentPick = await vscode.window.showQuickPick(
+                    [
+                        ...agents.map(a => ({ label: a.name, description: a.dir, agent: a as AgentInfo | undefined })),
+                        ...(steps.length ? [{ label: '$(check) Finish workflow', description: `${steps.length} step(s)`, agent: undefined }] : [])
+                    ],
+                    { placeHolder: `Step ${stepNo}: which agent?`, ignoreFocusOut: true }
+                );
+                if (!agentPick) { return; }
+                if (!agentPick.agent) { break; }
+                const stepTitle = await vscode.window.showInputBox({
+                    prompt: `Step ${stepNo} title (${agentPick.agent.name})`, ignoreFocusOut: true
+                });
+                if (!stepTitle) { return; }
+                const stepPrompt = await vscode.window.showInputBox({
+                    prompt: `Step ${stepNo} prompt — use ${PREV_OUTPUT_PLACEHOLDER} for the previous step's output file`,
+                    value: stepTitle, ignoreFocusOut: true
+                });
+                if (!stepPrompt) { return; }
+                const stepMode = await vscode.window.showQuickPick(
+                    [
+                        { label: 'Headless', description: 'recommended for chains — output is archived and passed on', mode: 'headless' as TaskMode },
+                        { label: 'Interactive', description: 'opens a terminal; chain continues when it closes', mode: 'interactive' as TaskMode }
+                    ],
+                    { placeHolder: `Step ${stepNo} run mode`, ignoreFocusOut: true }
+                );
+                if (!stepMode) { return; }
+                steps.push({
+                    agentId: agentPick.agent.id, agentName: agentPick.agent.name,
+                    title: stepTitle, prompt: stepPrompt, mode: stepMode.mode
+                });
+            }
+            if (!steps.length) { return; }
+            taskManager.addWorkflow(title, steps);
+            const run = await vscode.window.showInformationMessage(
+                `Agent Farm: workflow "${title}" created (${steps.length} steps).`, 'Run now');
+            if (run === 'Run now') {
+                const w = taskManager.workflows[taskManager.workflows.length - 1];
+                taskManager.runWorkflow(w);
+            }
+        }),
+
+        vscode.commands.registerCommand('agentfarm.runWorkflow', (node?: TaskNode) => {
+            if (node?.kind === 'workflow') { taskManager.runWorkflow(node.workflow); }
+        }),
+
+        vscode.commands.registerCommand('agentfarm.deleteWorkflow', async (node?: TaskNode) => {
+            if (node?.kind !== 'workflow') { return; }
+            const confirmed = await vscode.window.showWarningMessage(
+                `Delete workflow "${node.workflow.title}"?`, { modal: true }, 'Delete');
+            if (confirmed === 'Delete') { taskManager.deleteWorkflow(node.workflow); }
+        }),
+
+        vscode.commands.registerCommand('agentfarm.openTaskOutput', (node?: TaskNode) => {
+            if (node?.kind !== 'task') { return; }
+            const out = node.task.outputFile;
+            if (out && fs.existsSync(out)) {
+                void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(out));
+            } else {
+                void vscode.window.showInformationMessage(
+                    'Agent Farm: no archived output — only headless tasks capture output.');
+            }
+        }),
+
+        vscode.commands.registerCommand('agentfarm.exportSchtask', async (node?: TaskNode) => {
+            let schedule: FarmSchedule | undefined = node?.kind === 'schedule' ? node.schedule : undefined;
+            if (!schedule) {
+                const pick = await vscode.window.showQuickPick(
+                    taskManager.schedules.map(s => ({ label: s.title, description: s.agentName, s })),
+                    { placeHolder: 'Which schedule?' });
+                schedule = pick?.s;
+            }
+            if (!schedule) { return; }
+            const agent = agents.find(a => a.id === schedule.agentId);
+            if (!agent) {
+                void vscode.window.showWarningMessage('Agent Farm: agent for this schedule not found.');
+                return;
+            }
+            const scriptsDir = path.join(context.globalStorageUri.fsPath, 'schtasks');
+            fs.mkdirSync(scriptsDir, { recursive: true });
+            const logFile = path.join(taskManager.outputsDir, `schtask-${schedule.id}.log`);
+            fs.mkdirSync(taskManager.outputsDir, { recursive: true });
+            const cmdFile = path.join(scriptsDir, `af-${schedule.id}.cmd`);
+            fs.writeFileSync(cmdFile,
+                `@echo off\r\n` +
+                `rem Agent Farm scheduled task: ${schedule.title} (${agent.name})\r\n` +
+                `cd /d "${agent.dir}"\r\n` +
+                `claude -p "${sanitizePrompt(schedule.prompt)}" >> "${logFile}" 2>&1\r\n`,
+                'utf8');
+            const hm = `${String(schedule.hour).padStart(2, '0')}:${String(schedule.minute).padStart(2, '0')}`;
+            const dowNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+            let scPart: string;
+            if (schedule.kind === 'weekly') {
+                scPart = `/SC WEEKLY /D ${dowNames[schedule.dow ?? 0]} /ST ${hm}`;
+            } else if (schedule.kind === 'once') {
+                const d = new Date(schedule.onceAt ?? Date.now());
+                const sd = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+                const st = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+                scPart = `/SC ONCE /SD ${sd} /ST ${st}`;
+            } else {
+                scPart = `/SC DAILY /ST ${hm}`;
+            }
+            const schtasksCmd =
+                `schtasks /Create /TN "AgentFarm\\${schedule.title.replace(/[\\/:*?"<>|]/g, '_')}" ` +
+                `/TR "\\"${cmdFile}\\"" ${scPart} /F`;
+            await vscode.env.clipboard.writeText(schtasksCmd);
+            const choice = await vscode.window.showInformationMessage(
+                `Agent Farm: script written and the schtasks command copied to clipboard. ` +
+                `Paste it into a terminal to register the Windows scheduled task ` +
+                `(runs even when VS Code is closed; output goes to the task log). ` +
+                `Note: 'claude' must be on PATH for the scheduler.`,
+                'Open script', 'Open log folder');
+            if (choice === 'Open script') {
+                void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(cmdFile));
+            } else if (choice === 'Open log folder') {
+                void vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(taskManager.outputsDir));
+            }
         }),
 
         vscode.commands.registerCommand('agentfarm.syncMemory', async () => {

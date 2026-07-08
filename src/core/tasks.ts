@@ -1,3 +1,4 @@
+import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -18,6 +19,9 @@ export interface FarmTask {
     startedAt?: number;
     endedAt?: number;
     fromSchedule?: string;
+    outputFile?: string;
+    workflowId?: string;
+    stepIndex?: number;
 }
 
 export type ScheduleKind = 'daily' | 'weekly' | 'once';
@@ -36,6 +40,29 @@ export interface FarmSchedule {
     onceAt?: number;   // epoch ms, once only
     enabled: boolean;
     lastRunKey?: string;
+}
+
+export interface FarmTemplate {
+    id: string;
+    title: string;
+    prompt: string;
+    mode: TaskMode;
+    agentId?: string;
+    agentName?: string;
+}
+
+export interface WorkflowStep {
+    agentId: string;
+    agentName: string;
+    title: string;
+    prompt: string;
+    mode: TaskMode;
+}
+
+export interface FarmWorkflow {
+    id: string;
+    title: string;
+    steps: WorkflowStep[];
 }
 
 export function newId(): string {
@@ -59,21 +86,29 @@ export function scheduleDue(s: FarmSchedule, now: Date): { due: boolean; runKey:
     return { due: s.lastRunKey !== dayKey, runKey: dayKey };
 }
 
-function sanitizePrompt(p: string): string {
+export function sanitizePrompt(p: string): string {
     return p.replace(/"/g, "'").replace(/\s+/g, ' ').trim();
 }
+
+/** Placeholder in workflow step prompts replaced with the previous step's output file path. */
+export const PREV_OUTPUT_PLACEHOLDER = '{prev_output}';
 
 const MAX_TASKS = 300;
 
 interface StoreShape {
     tasks: FarmTask[];
     schedules: FarmSchedule[];
+    templates: FarmTemplate[];
+    workflows: FarmWorkflow[];
 }
 
 export class TaskManager implements vscode.Disposable {
     tasks: FarmTask[] = [];
     schedules: FarmSchedule[] = [];
-    private terminals = new Map<string, vscode.Terminal>(); // taskId -> terminal
+    templates: FarmTemplate[] = [];
+    workflows: FarmWorkflow[] = [];
+    private terminals = new Map<string, vscode.Terminal>();      // taskId -> terminal
+    private processes = new Map<string, cp.ChildProcess>();      // taskId -> headless process
     private timer: NodeJS.Timeout;
     private disposables: vscode.Disposable[] = [];
     private readonly onDidChangeEmitter = new vscode.EventEmitter<void>();
@@ -122,14 +157,20 @@ export class TaskManager implements vscode.Disposable {
         }
     }
 
+    get outputsDir(): string {
+        return path.join(path.dirname(this.storageFile), 'task-outputs');
+    }
+
     // ---------- persistence ----------
 
     private load(): void {
         try {
             const raw = fs.readFileSync(this.storageFile, 'utf8');
-            const json = JSON.parse(raw) as StoreShape;
+            const json = JSON.parse(raw) as Partial<StoreShape>;
             this.tasks = Array.isArray(json.tasks) ? json.tasks : [];
             this.schedules = Array.isArray(json.schedules) ? json.schedules : [];
+            this.templates = Array.isArray(json.templates) ? json.templates : [];
+            this.workflows = Array.isArray(json.workflows) ? json.workflows : [];
             // Anything marked running from a previous window is stale.
             for (const t of this.tasks) {
                 if (t.status === 'running') { t.status = 'queued'; t.startedAt = undefined; }
@@ -147,15 +188,22 @@ export class TaskManager implements vscode.Disposable {
                 const drop = new Set(finished.slice(0, overflow).map(t => t.id));
                 this.tasks = this.tasks.filter(t => !drop.has(t.id));
             }
-            fs.writeFileSync(this.storageFile,
-                JSON.stringify({ tasks: this.tasks, schedules: this.schedules }, null, 2), 'utf8');
+            fs.writeFileSync(this.storageFile, JSON.stringify({
+                tasks: this.tasks,
+                schedules: this.schedules,
+                templates: this.templates,
+                workflows: this.workflows
+            }, null, 2), 'utf8');
         } catch { /* storage is best-effort */ }
         this.onDidChangeEmitter.fire();
     }
 
     // ---------- tasks ----------
 
-    addTask(agent: AgentInfo, title: string, prompt: string, mode: TaskMode, fromSchedule?: string): FarmTask {
+    addTask(
+        agent: AgentInfo, title: string, prompt: string, mode: TaskMode,
+        extra?: Partial<Pick<FarmTask, 'fromSchedule' | 'workflowId' | 'stepIndex'>>
+    ): FarmTask {
         const task: FarmTask = {
             id: newId(),
             agentId: agent.id,
@@ -165,7 +213,7 @@ export class TaskManager implements vscode.Disposable {
             mode,
             status: 'queued',
             createdAt: Date.now(),
-            fromSchedule
+            ...extra
         };
         this.tasks.push(task);
         this.save();
@@ -178,25 +226,72 @@ export class TaskManager implements vscode.Disposable {
             void vscode.window.showWarningMessage(`Agent Farm: agent for task "${task.title}" not found.`);
             return false;
         }
-        const p = sanitizePrompt(task.prompt);
-        const cmd = task.mode === 'headless' ? `claude -p "${p}"` : `claude "${p}"`;
-        const terminal = vscode.window.createTerminal({
-            name: `AF: ${task.title.slice(0, 30)}`,
-            cwd: agent.dir
-        });
-        terminal.show();
-        terminal.sendText(cmd, true);
-        this.terminals.set(task.id, terminal);
         task.status = 'running';
         task.startedAt = Date.now();
+        if (task.mode === 'headless') {
+            this.spawnHeadless(task, agent);
+        } else {
+            const p = sanitizePrompt(task.prompt);
+            const terminal = vscode.window.createTerminal({
+                name: `AF: ${task.title.slice(0, 30)}`,
+                cwd: agent.dir
+            });
+            terminal.show();
+            terminal.sendText(`claude "${p}"`, true);
+            this.terminals.set(task.id, terminal);
+        }
         this.save();
         return true;
+    }
+
+    /** Headless tasks run as child processes so stdout/stderr land in an archived output file. */
+    private spawnHeadless(task: FarmTask, agent: AgentInfo): void {
+        fs.mkdirSync(this.outputsDir, { recursive: true });
+        const outFile = path.join(this.outputsDir, `${task.id}.md`);
+        task.outputFile = outFile;
+        const header = `# ${task.title}\n\n` +
+            `- Agent: ${task.agentName}\n` +
+            `- Started: ${new Date().toLocaleString()}\n` +
+            `- Prompt: ${task.prompt}\n\n---\n\n`;
+        fs.writeFileSync(outFile, header, 'utf8');
+        const stream = fs.createWriteStream(outFile, { flags: 'a' });
+
+        const p = sanitizePrompt(task.prompt);
+        const child = cp.spawn(`claude -p "${p}"`, {
+            cwd: agent.dir,
+            shell: true,
+            windowsHide: true
+        });
+        this.processes.set(task.id, child);
+        child.stdout?.on('data', chunk => stream.write(chunk));
+        child.stderr?.on('data', chunk => stream.write(chunk));
+        child.on('error', err => {
+            stream.write(`\n\n---\n[spawn error] ${String(err)}\n`);
+            stream.end();
+            this.processes.delete(task.id);
+            if (task.status === 'running') { this.finish(task, 'failed'); }
+        });
+        child.on('close', code => {
+            const mins = task.startedAt ? Math.round((Date.now() - task.startedAt) / 60000) : 0;
+            stream.write(`\n\n---\nFinished: ${new Date().toLocaleString()} · exit ${code ?? '?'} · ${mins} min\n`);
+            stream.end();
+            this.processes.delete(task.id);
+            if (task.status === 'running') {
+                this.finish(task, code === 0 ? 'done' : 'failed');
+            }
+        });
     }
 
     private finish(task: FarmTask, status: TaskStatus): void {
         task.status = status;
         task.endedAt = Date.now();
         this.save();
+
+        // Workflow chaining takes precedence over plain queue auto-advance.
+        if (task.workflowId !== undefined && task.stepIndex !== undefined) {
+            this.advanceWorkflow(task, status);
+            return;
+        }
         if (status === 'done' && this.autoAdvance()) {
             const next = this.nextQueuedFor(task.agentId);
             if (next) {
@@ -207,7 +302,11 @@ export class TaskManager implements vscode.Disposable {
         }
     }
 
-    completeTask(task: FarmTask): void { this.finish(task, 'done'); }
+    completeTask(task: FarmTask): void {
+        const child = this.processes.get(task.id);
+        if (child) { this.killProcess(task.id, child); }
+        this.finish(task, 'done');
+    }
 
     cancelTask(task: FarmTask): void {
         const terminal = this.terminals.get(task.id);
@@ -215,14 +314,35 @@ export class TaskManager implements vscode.Disposable {
             terminal.dispose();
             this.terminals.delete(task.id);
         }
+        const child = this.processes.get(task.id);
+        if (child) { this.killProcess(task.id, child); }
         task.status = 'cancelled';
         task.endedAt = Date.now();
         this.save();
     }
 
+    private killProcess(taskId: string, child: cp.ChildProcess): void {
+        this.processes.delete(taskId);
+        try {
+            if (process.platform === 'win32' && child.pid) {
+                // shell:true wraps claude in cmd.exe — kill the whole tree.
+                cp.exec(`taskkill /pid ${child.pid} /T /F`);
+            } else {
+                child.kill();
+            }
+        } catch { /* already gone */ }
+    }
+
     deleteTask(task: FarmTask): void {
         this.tasks = this.tasks.filter(t => t.id !== task.id);
+        this.deleteOutput(task);
         this.save();
+    }
+
+    private deleteOutput(task: FarmTask): void {
+        if (task.outputFile) {
+            try { fs.unlinkSync(task.outputFile); } catch { /* keep going */ }
+        }
     }
 
     moveTask(task: FarmTask, dir: -1 | 1): void {
@@ -237,11 +357,13 @@ export class TaskManager implements vscode.Disposable {
     }
 
     clearFinished(): number {
-        const before = this.tasks.length;
+        const finished = this.tasks.filter(t =>
+            t.status !== 'queued' && t.status !== 'running');
+        for (const t of finished) { this.deleteOutput(t); }
         this.tasks = this.tasks.filter(t =>
             t.status === 'queued' || t.status === 'running');
         this.save();
-        return before - this.tasks.length;
+        return finished.length;
     }
 
     nextQueuedFor(agentId: string): FarmTask | undefined {
@@ -250,6 +372,72 @@ export class TaskManager implements vscode.Disposable {
 
     revealTerminal(task: FarmTask): void {
         this.terminals.get(task.id)?.show();
+    }
+
+    // ---------- templates ----------
+
+    addTemplate(t: Omit<FarmTemplate, 'id'>): FarmTemplate {
+        const template: FarmTemplate = { ...t, id: newId() };
+        this.templates.push(template);
+        this.save();
+        return template;
+    }
+
+    deleteTemplate(t: FarmTemplate): void {
+        this.templates = this.templates.filter(x => x.id !== t.id);
+        this.save();
+    }
+
+    // ---------- workflows ----------
+
+    addWorkflow(title: string, steps: WorkflowStep[]): FarmWorkflow {
+        const workflow: FarmWorkflow = { id: newId(), title, steps };
+        this.workflows.push(workflow);
+        this.save();
+        return workflow;
+    }
+
+    deleteWorkflow(w: FarmWorkflow): void {
+        this.workflows = this.workflows.filter(x => x.id !== w.id);
+        this.save();
+    }
+
+    runWorkflow(w: FarmWorkflow): void {
+        if (!w.steps.length) { return; }
+        this.startWorkflowStep(w, 0, undefined);
+    }
+
+    private startWorkflowStep(w: FarmWorkflow, index: number, prevOutput: string | undefined): void {
+        const step = w.steps[index];
+        const agent = this.getAgents().find(a => a.id === step.agentId);
+        if (!agent) {
+            void vscode.window.showWarningMessage(
+                `Agent Farm: workflow "${w.title}" stopped — agent "${step.agentName}" not found.`);
+            return;
+        }
+        const prompt = step.prompt.split(PREV_OUTPUT_PLACEHOLDER).join(prevOutput ?? '');
+        const task = this.addTask(agent, `${w.title} ${index + 1}/${w.steps.length}: ${step.title}`,
+            prompt, step.mode, { workflowId: w.id, stepIndex: index });
+        this.startTask(task);
+    }
+
+    private advanceWorkflow(task: FarmTask, status: TaskStatus): void {
+        const w = this.workflows.find(x => x.id === task.workflowId);
+        if (!w) { return; }
+        if (status !== 'done') {
+            void vscode.window.showWarningMessage(
+                `Agent Farm: workflow "${w.title}" stopped at step ${(task.stepIndex ?? 0) + 1} (${status}).`);
+            return;
+        }
+        const next = (task.stepIndex ?? 0) + 1;
+        if (next >= w.steps.length) {
+            void vscode.window.showInformationMessage(
+                `Agent Farm: workflow "${w.title}" completed ✓ (${w.steps.length} steps).`);
+            return;
+        }
+        void vscode.window.showInformationMessage(
+            `Agent Farm: workflow "${w.title}" — starting step ${next + 1}/${w.steps.length}.`);
+        this.startWorkflowStep(w, next, task.outputFile);
     }
 
     // ---------- schedules ----------
@@ -277,7 +465,7 @@ export class TaskManager implements vscode.Disposable {
             void vscode.window.showWarningMessage(`Agent Farm: agent for schedule "${s.title}" not found.`);
             return;
         }
-        const task = this.addTask(agent, s.title, s.prompt, s.mode, s.id);
+        const task = this.addTask(agent, s.title, s.prompt, s.mode, { fromSchedule: s.id });
         this.startTask(task);
     }
 
@@ -290,7 +478,7 @@ export class TaskManager implements vscode.Disposable {
             if (s.kind === 'once') { s.enabled = false; }
             const agent = this.getAgents().find(a => a.id === s.agentId);
             if (!agent) { continue; }
-            const task = this.addTask(agent, s.title, s.prompt, s.mode, s.id);
+            const task = this.addTask(agent, s.title, s.prompt, s.mode, { fromSchedule: s.id });
             void vscode.window.showInformationMessage(
                 `Agent Farm: scheduled task started — "${s.title}" (${s.agentName})`);
             this.startTask(task);
@@ -299,6 +487,9 @@ export class TaskManager implements vscode.Disposable {
 
     dispose(): void {
         clearInterval(this.timer);
+        for (const [taskId, child] of this.processes) {
+            this.killProcess(taskId, child);
+        }
         for (const d of this.disposables) { d.dispose(); }
         this.onDidChangeEmitter.dispose();
     }

@@ -1,10 +1,15 @@
 import * as vscode from 'vscode';
-import { FarmSchedule, FarmTask, TaskManager } from '../core/tasks';
+import { FarmSchedule, FarmTask, FarmTemplate, FarmWorkflow, TaskManager } from '../core/tasks';
 import { relTime } from '../core/util';
 
 export type TaskNode =
     | { kind: 'schedules-root' }
     | { kind: 'schedule'; schedule: FarmSchedule }
+    | { kind: 'templates-root' }
+    | { kind: 'template'; template: FarmTemplate }
+    | { kind: 'workflows-root' }
+    | { kind: 'workflow'; workflow: FarmWorkflow }
+    | { kind: 'workflow-step'; workflow: FarmWorkflow; index: number }
     | { kind: 'agent-group'; agentId: string; agentName: string }
     | { kind: 'task'; task: FarmTask };
 
@@ -45,6 +50,49 @@ export class TasksTreeProvider implements vscode.TreeDataProvider<TaskNode> {
             item.description = `${s.agentName} • ${scheduleWhen(s)}${s.enabled ? '' : ' • off'}`;
             item.tooltip = `${s.title}\n${s.agentName} — ${scheduleWhen(s)} (${s.mode})\n\n${s.prompt}`;
             item.contextValue = s.enabled ? 'schedule-on' : 'schedule-off';
+            return item;
+        }
+        if (node.kind === 'templates-root') {
+            const item = new vscode.TreeItem('Templates', vscode.TreeItemCollapsibleState.Collapsed);
+            item.iconPath = new vscode.ThemeIcon('bookmark');
+            item.description = String(this.manager.templates.length);
+            item.contextValue = 'templates-root';
+            return item;
+        }
+        if (node.kind === 'template') {
+            const t = node.template;
+            const item = new vscode.TreeItem(t.title, vscode.TreeItemCollapsibleState.None);
+            item.iconPath = new vscode.ThemeIcon('bookmark');
+            item.description = `${t.agentName ?? 'any agent'} • ${t.mode}`;
+            item.tooltip = `${t.title}\n${t.agentName ?? 'agent chosen at run time'} (${t.mode})\n\n${t.prompt}`;
+            item.contextValue = 'template';
+            return item;
+        }
+        if (node.kind === 'workflows-root') {
+            const item = new vscode.TreeItem('Workflows', vscode.TreeItemCollapsibleState.Expanded);
+            item.iconPath = new vscode.ThemeIcon('type-hierarchy-sub');
+            item.description = String(this.manager.workflows.length);
+            item.contextValue = 'workflows-root';
+            return item;
+        }
+        if (node.kind === 'workflow') {
+            const w = node.workflow;
+            const item = new vscode.TreeItem(w.title, vscode.TreeItemCollapsibleState.Collapsed);
+            item.iconPath = new vscode.ThemeIcon('type-hierarchy-sub', new vscode.ThemeColor('charts.purple'));
+            const agents = [...new Set(w.steps.map(s => s.agentName))];
+            item.description = `${w.steps.length} steps • ${agents.join(' → ')}`;
+            item.tooltip = `${w.title}\n\n` +
+                w.steps.map((s, i) => `${i + 1}. [${s.agentName}] ${s.title} (${s.mode})`).join('\n');
+            item.contextValue = 'workflow';
+            return item;
+        }
+        if (node.kind === 'workflow-step') {
+            const s = node.workflow.steps[node.index];
+            const item = new vscode.TreeItem(`${node.index + 1}. ${s.title}`, vscode.TreeItemCollapsibleState.None);
+            item.iconPath = new vscode.ThemeIcon('arrow-small-right');
+            item.description = `${s.agentName} • ${s.mode}`;
+            item.tooltip = s.prompt;
+            item.contextValue = 'workflow-step';
             return item;
         }
         if (node.kind === 'agent-group') {
@@ -88,6 +136,12 @@ export class TasksTreeProvider implements vscode.TreeDataProvider<TaskNode> {
             if (this.manager.schedules.length) {
                 roots.push({ kind: 'schedules-root' });
             }
+            if (this.manager.workflows.length) {
+                roots.push({ kind: 'workflows-root' });
+            }
+            if (this.manager.templates.length) {
+                roots.push({ kind: 'templates-root' });
+            }
             const groups = new Map<string, string>();
             for (const t of this.manager.tasks) {
                 groups.set(t.agentId, t.agentName);
@@ -99,6 +153,17 @@ export class TasksTreeProvider implements vscode.TreeDataProvider<TaskNode> {
         }
         if (node.kind === 'schedules-root') {
             return this.manager.schedules.map(schedule => ({ kind: 'schedule' as const, schedule }));
+        }
+        if (node.kind === 'templates-root') {
+            return this.manager.templates.map(template => ({ kind: 'template' as const, template }));
+        }
+        if (node.kind === 'workflows-root') {
+            return this.manager.workflows.map(workflow => ({ kind: 'workflow' as const, workflow }));
+        }
+        if (node.kind === 'workflow') {
+            return node.workflow.steps.map((_s, index) => ({
+                kind: 'workflow-step' as const, workflow: node.workflow, index
+            }));
         }
         if (node.kind === 'agent-group') {
             const order: Record<string, number> = { running: 0, queued: 1, failed: 2, done: 3, cancelled: 4 };

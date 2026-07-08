@@ -167,7 +167,41 @@ Tasks görünümündeki takvim ikonuyla (**Add Scheduled Task**) tekrarlayan iş
 
 Zamanı gelen görev otomatik olarak kuyruğa eklenir, başlatılır ve bildirim düşer. Tek seferlikler çalıştıktan sonra kendini kapatır.
 
-**Önemli sınır:** Zamanlayıcı VS Code açıkken çalışır — bilgisayar kapalıysa veya VS Code açık değilse o çalıştırma atlanır (gün içinde açarsan o günün görevi gecikmeli tetiklenir). Makine bağımsız zamanlama istersen bunun yeri bulut tarafıdır; yol haritasında var.
+**Önemli sınır:** Bu zamanlayıcı VS Code açıkken çalışır — kapalıysa o çalıştırma atlanır (gün içinde açarsan o günün görevi gecikmeli tetiklenir). VS Code'dan bağımsız çalışması gerekenler için bir sonraki bölüme bak.
+
+### VS Code Dışında Zamanlama (Windows)
+
+Bir zamanlanmış görevi **Windows Görev Zamanlayıcı**'ya taşıyabilirsin: zamanlama üzerinde sağ tık → **Export as Windows Scheduled Task…**
+
+1. Eklenti, ajan klasöründe `claude -p "prompt"` çalıştırıp çıktıyı log dosyasına yazan bir `.cmd` script'i üretir.
+2. Hazır `schtasks /Create ...` komutu panoya kopyalanır — terminale yapıştırıp çalıştırınca kayıt tamamlanır.
+3. Artık görev VS Code (hatta oturumun) kapalıyken bile işler; çıktılar log dosyasında birikir ("Open log folder" ile ulaşırsın).
+
+Gereksinim: `claude` komutunun PATH'te olması. Kaldırmak için: `schtasks /Delete /TN "AgentFarm\<isim>"`.
+
+### Görev Çıktı Arşivi
+
+Headless görevler (0.4.0'dan itibaren) terminalde değil, **arka plan süreci** olarak çalışır ve tüm çıktı otomatik arşivlenir:
+
+- Her headless görevin çıktısı başlık/ajan/başlangıç bilgili bir Markdown dosyasına yazılır; sonuna çıkış kodu ve süre eklenir.
+- Görev bittikten sonra sağ tık → **Open Task Output** ile açarsın (çalışırken de kısmi çıktıyı görebilirsin).
+- Çıkış kodu 0 değilse görev otomatik **failed** işaretlenir — güvenilir otomasyon sinyali.
+- Görev silinince veya **Clear Finished Tasks** deyince çıktı dosyaları da temizlenir.
+
+### Görev Şablonları
+
+Sık kullandığın görevleri şablonlaştır: görev üzerinde sağ tık → **Save as Template**. Şablon bir ajana bağlanabilir ya da "any agent" olur (çalıştırırken sorar). Tasks görünümündeki **Templates** bölümünden ▶ ile tek tıkta yeni görev üretir. Örnek şablonlar: "Günlük plan", "Haftalık özet", "Hafıza bakımı".
+
+## Çoklu-Ajan İş Akışları
+
+Faz 4'ün en güçlü aracı: **Workflows** — birden çok ajanın sırayla çalıştığı zincirler. `Agent Farm: New Multi-Agent Workflow…` ile kurulur: adım adım ajan + başlık + prompt + mod seçersin.
+
+- Bir adım **done** olunca sonraki adım kendiliğinden başlar (farklı ajan olabilir). Adım **failed** olursa zincir durur ve bildirim düşer.
+- **Devir mekanizması:** Bir adımın prompt'unda `{prev_output}` yazarsan, önceki adımın arşivlenmiş çıktı dosyasının yolu oraya yerleştirilir. Sonraki ajan o dosyayı okuyarak işe başlar — ajandan ajana gerçek bilgi devri.
+- Zincir adımları Tasks görünümünde `Akış adı 1/3: ...` biçiminde numaralı görünür.
+- Adımlar için **headless** önerilir (çıktı arşivlenir ve devredilir); interactive adım terminali kapanınca zincir devam eder.
+
+Örnek: "Sabah rutini" = 1. psikolog (headless): "dünkü günlüğü analiz et" → 2. asistan (headless): "şu analizi kullanarak gün planı çıkar: {prev_output}".
 
 ## Hafıza Senkronizasyonu
 
@@ -190,6 +224,16 @@ Senkron sonrası Insights kendini yeniler; grup "birebir aynı" durumuna düşer
 **Cache verimliliği** = prompt token'larının cache'ten okunan payı. Yüksekse (%90+) aynı bağlam tekrar tekrar ucuza okunuyor demektir; düşükse oturumların kısa ve bağlamın sürekli yeniden yazılıyor olabilir — birleştirilebilecek kısa oturumları düşün.
 
 Aynı karşılaştırma tablosu Dashboard'da da **Agent comparison** bölümünde canlı görünür; satıra tıklayınca ajan detayına gider.
+
+### Otomatik Rapor (Vault'a)
+
+Raporu elle almak yerine otomatiğe bağlayabilirsin — Obsidian vault'una düzenli karne düşer:
+
+1. `agentFarm.autoReportFolder` ayarına hedef klasörü yaz (örn. vault içindeki bir klasör).
+2. `agentFarm.autoReport` ayarını `daily` veya `weekly` yap.
+3. Eklenti saatte bir kontrol eder; o gün/haftanın raporu yoksa üretir (`AgentFarm-Report-2026-07-08.md` veya `AgentFarm-Report-2026-W28.md`) ve bildirim düşer. Kapsanan dönem `agentFarm.autoReportDays` ile ayarlanır (varsayılan 7 gün).
+
+VS Code açıkken çalışır; gün içinde ilk açılışta o günün raporu üretilir.
 
 ## Sağlık ve Optimizasyon
 
@@ -267,6 +311,9 @@ Token kullanımı yerel kayıtlardan okunur ve `agentFarm.pricing` kurallarıyla
 | `agentFarm.notifyStuck` | true | Takılma bildirimi |
 | `agentFarm.notifyTurnEnd` | false | Tur sonu bildirimi |
 | `agentFarm.queueAutoAdvance` | false | Görev bitince sıradakini otomatik başlat |
+| `agentFarm.autoReport` | off | Otomatik filo raporu: off / daily / weekly |
+| `agentFarm.autoReportFolder` | boş | Otomatik raporların yazılacağı klasör (vault) |
+| `agentFarm.autoReportDays` | 7 | Otomatik raporun kapsadığı gün sayısı |
 
 ## Komutlar
 
@@ -282,6 +329,10 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 - **Open Live Timeline** — kulvar görünümü (canlı gözlem)
 - **Install Live Hooks / Remove Live Hooks** — canlı gözlem hook'larını kur/kaldır
 - **Add Task / Add Scheduled Task** — görev kuyruğu ve zamanlama
+- **New Multi-Agent Workflow… / Run Workflow** — çoklu-ajan zincirleri
+- **Save as Template / New Task from Template** — görev şablonları
+- **Open Task Output** — headless görev çıktı arşivi
+- **Export as Windows Scheduled Task…** — VS Code'dan bağımsız zamanlama
 - **Sync Shared Memory…** — ajanlar arası kopya hafıza senkronizasyonu
 - **Export Fleet Report (Markdown)** — karşılaştırmalı filo raporu
 
@@ -313,14 +364,27 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 
 **Senkronda yanlış kaynağı seçtim.** Üzerine yazılan her dosyanın yanında zaman damgalı `.afbak` yedeği durur — içeriği geri kopyala.
 
+**Workflow adımı takıldı / zincir ilerlemiyor.** Adım "done" olmadan sonraki başlamaz. Interactive adımda terminali kapatman gerekir; headless adımda `claude` çıkış kodunu bekler. Zincir failed ile durduysa bildirimde hangi adım olduğu yazar; görevi düzeltip workflow'u yeniden çalıştır.
+
+**Headless görev başlamadı / anında failed oldu.** `claude` PATH'te mi? Çıktı dosyasını aç (Open Task Output) — spawn hatası ve stderr orada görünür.
+
 ## Yol Haritası
 
 - ~~**Faz 2 — Canlı gözlem**~~ ✅ 0.2.0: hook tabanlı gerçek zamanlı olay akışı, izin/takılma bildirimleri, kulvar zaman çizelgesi.
 - ~~**Faz 3 — Koordinasyon**~~ ✅ 0.3.0: görev kuyruğu, zamanlanmış görevler, hafıza senkronizasyon sihirbazı, karşılaştırmalı filo raporu.
-- **Faz 4 — adaylar:** görev şablonları, headless görev çıktılarının arşivlenip raporlanması, çoklu-ajan iş akışları (görev zincirinde ajanlar arası devir), VS Code dışında da işleyen zamanlama entegrasyonu, Obsidian vault'una otomatik rapor.
+- ~~**Faz 4 — Otomasyon**~~ ✅ 0.4.0: çoklu-ajan iş akışları, headless çıktı arşivi, görev şablonları, otomatik vault raporu, Windows Görev Zamanlayıcı dışa aktarımı.
+- **Faz 5 — adaylar:** workflow'larda koşullu dallanma (çıktıya göre farklı adım), görev çıktılarının toplu raporu, ajan bazlı kota/bütçe uyarıları, hafıza senkronunda üç yönlü birleştirme.
 - Fikirlerin oldukça bu belge ve eklenti birlikte büyüyecek.
 
 ## Sürüm Notları
+
+### 0.4.0 — Otomasyon (2026-07-08)
+
+- **Çoklu-Ajan İş Akışları:** ajan zincirlerinde otomatik adım geçişi; `{prev_output}` ile önceki adımın çıktısını sonraki ajana devretme; hata durumunda zincir durur
+- **Headless çıktı arşivi:** headless görevler arka plan süreci olarak çalışır; çıktı başlık+çıkış kodu+süre ile Markdown'a arşivlenir; Open Task Output
+- **Görev şablonları:** Save as Template / New Task from Template; ajana bağlı veya serbest
+- **Otomatik filo raporu:** günlük/haftalık, hedef klasöre (Obsidian vault) kendiliğinden yazılır
+- **Windows Görev Zamanlayıcı dışa aktarımı:** zamanlanmış görevi VS Code'dan bağımsız çalışan schtasks kaydına çevirir (script + panoya hazır komut)
 
 ### 0.3.0 — Koordinasyon (2026-07-08)
 

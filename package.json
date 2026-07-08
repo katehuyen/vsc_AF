@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publisher": "miropharm",
   "license": "MIT",
   "engines": {
@@ -232,6 +232,52 @@
         "category": "Agent Farm"
       },
       {
+        "command": "agentfarm.saveTaskTemplate",
+        "title": "Save as Template",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.runTemplate",
+        "title": "New Task from Template",
+        "category": "Agent Farm",
+        "icon": "$(play)"
+      },
+      {
+        "command": "agentfarm.deleteTemplate",
+        "title": "Delete Template",
+        "category": "Agent Farm",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "agentfarm.newWorkflow",
+        "title": "New Multi-Agent Workflow…",
+        "category": "Agent Farm",
+        "icon": "$(type-hierarchy-sub)"
+      },
+      {
+        "command": "agentfarm.runWorkflow",
+        "title": "Run Workflow",
+        "category": "Agent Farm",
+        "icon": "$(play)"
+      },
+      {
+        "command": "agentfarm.deleteWorkflow",
+        "title": "Delete Workflow",
+        "category": "Agent Farm",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "agentfarm.openTaskOutput",
+        "title": "Open Task Output",
+        "category": "Agent Farm",
+        "icon": "$(output)"
+      },
+      {
+        "command": "agentfarm.exportSchtask",
+        "title": "Export as Windows Scheduled Task…",
+        "category": "Agent Farm"
+      },
+      {
         "command": "agentfarm.syncMemory",
         "title": "Sync Shared Memory…",
         "category": "Agent Farm"
@@ -275,6 +321,11 @@
           "group": "navigation@2"
         },
         {
+          "command": "agentfarm.newWorkflow",
+          "when": "view == agentfarm.tasks",
+          "group": "navigation@3"
+        },
+        {
           "command": "agentfarm.clearDoneTasks",
           "when": "view == agentfarm.tasks",
           "group": "overflow@1"
@@ -282,7 +333,7 @@
         {
           "command": "agentfarm.refresh",
           "when": "view == agentfarm.tasks",
-          "group": "navigation@3"
+          "group": "navigation@4"
         },
         {
           "command": "agentfarm.openGuide",
@@ -385,6 +436,41 @@
           "command": "agentfarm.toggleSchedule",
           "when": "view == agentfarm.tasks && viewItem =~ /schedule-(on|off)/",
           "group": "1_sched@1"
+        },
+        {
+          "command": "agentfarm.exportSchtask",
+          "when": "view == agentfarm.tasks && viewItem =~ /schedule-(on|off)/",
+          "group": "1_sched@2"
+        },
+        {
+          "command": "agentfarm.openTaskOutput",
+          "when": "view == agentfarm.tasks && viewItem =~ /task-(final|running)/",
+          "group": "1_task@0"
+        },
+        {
+          "command": "agentfarm.saveTaskTemplate",
+          "when": "view == agentfarm.tasks && viewItem =~ /task-/",
+          "group": "2_extra@1"
+        },
+        {
+          "command": "agentfarm.runTemplate",
+          "when": "view == agentfarm.tasks && viewItem == template",
+          "group": "inline@1"
+        },
+        {
+          "command": "agentfarm.deleteTemplate",
+          "when": "view == agentfarm.tasks && viewItem == template",
+          "group": "inline@2"
+        },
+        {
+          "command": "agentfarm.runWorkflow",
+          "when": "view == agentfarm.tasks && viewItem == workflow",
+          "group": "inline@1"
+        },
+        {
+          "command": "agentfarm.deleteWorkflow",
+          "when": "view == agentfarm.tasks && viewItem == workflow",
+          "group": "inline@2"
         }
       ]
     },
@@ -465,6 +551,22 @@
           "type": "boolean",
           "default": false,
           "description": "When a task finishes (its terminal closes), automatically start the next queued task for that agent."
+        },
+        "agentFarm.autoReport": {
+          "type": "string",
+          "enum": ["off", "daily", "weekly"],
+          "default": "off",
+          "description": "Automatically write a fleet report into autoReportFolder (checked hourly while VS Code is open)."
+        },
+        "agentFarm.autoReportFolder": {
+          "type": "string",
+          "default": "",
+          "description": "Folder for automatic fleet reports (e.g. a folder inside your Obsidian vault)."
+        },
+        "agentFarm.autoReportDays": {
+          "type": "number",
+          "default": 7,
+          "description": "Period (in days) covered by automatic fleet reports."
         },
         "agentFarm.includeUnmatchedProjects": {
           "type": "boolean",
