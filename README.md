@@ -9,7 +9,8 @@ Mission control for your **local Claude Code agents** — live fleet status, cos
 - **Agent detail page**: 30-day cost trend, fixed context load budget, model split, top tools, memory table, per-agent health findings, full session list.
 - **Session viewer**: readable transcript with tool calls/results, per-message tokens & cost, filtering.
 - **Insights**: context-load budget warnings, memory index consistency, duplicate/diverged memory copies across agents, stale files, error-rate signals.
-- **Live Feed**: recent prompts, tool calls and errors across the fleet.
+- **Live Feed**: recent prompts, tool calls and errors across the fleet — real-time via hooks when installed.
+- **Live Timeline** (v0.2): hook-powered swim-lane view per agent — tool-run blocks, prompt/permission/compaction marks, live session cards with WORKING / PERMISSION? / STALLED states, and notifications when an agent waits for permission or stalls. One-command hook setup (`Agent Farm: Install Live Hooks`) with automatic backup; listener binds to 127.0.0.1 only.
 - **Management**: start/continue Claude sessions per agent, scaffold new agents, open in new window.
 - **Guide (Kılavuz)**: built-in Turkish handbook — every `?` button jumps to the relevant section.
 

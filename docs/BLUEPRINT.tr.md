@@ -85,6 +85,62 @@ Filodaki son olayların canlı akışı: kullanıcı komutları (prompt), araç 
 
 `🤖 N active • $X today` — aktif ajan sayısı ve bugünkü toplam maliyet. Üzerine gelince 5 saatlik pencere özetini de gösterir. 30 saniyede bir ve her veri değişiminde güncellenir.
 
+## Canlı Gözlem
+
+Faz 2 ile gelen gerçek zamanlı izleme katmanı. Oturum kayıtları diske birkaç saniye gecikmeyle düşer; canlı gözlem ise **Claude Code hook'ları** üzerinden olayları anında yakalar: komut girildiği an, araç çalıştığı an, izin beklendiği an.
+
+### Nasıl Çalışır
+
+1. Eklenti, yalnızca bu makineden erişilebilen küçük bir dinleyici açar: `127.0.0.1:8377` (ayarlanabilir).
+2. Claude Code'un hook sistemine 9 olay için tek satırlık bir `curl` komutu eklenir; her olay dinleyiciye JSON olarak POST edilir.
+3. Eklenti olaylardan oturum başına bir **durum makinesi** yürütür:
+
+| Durum | Anlamı |
+| --- | --- |
+| WORKING | Komut alındı, model düşünüyor |
+| TOOL | Şu anda bir araç çalışıyor (adı gösterilir) |
+| PERMISSION? | **İzin onayı bekliyor** — sen onaylayana kadar duruyor |
+| YOUR TURN | Turunu bitirdi, senin girdini bekliyor |
+| STALLED | Çalışıyordu ama uzun süredir olay yok — takılmış olabilir |
+| IDLE / ENDED | Boşta / oturum kapandı |
+
+Hiçbir veri makineden çıkmaz; dinleyici yalnızca localhost'a bağlıdır.
+
+### Kurulum: Install Live Hooks
+
+1. Komut paletinden **Agent Farm: Install Live Hooks** çalıştır.
+2. Hedef seç: **User settings** (önerilen — tüm oturumları kapsar, tek dosya: `~/.claude/settings.json`) veya ajan başına `.claude/settings.local.json`.
+3. Onay ver. Eklenti mevcut ayarlarına **dokunmaz**: kendi girdilerini yanına ekler, ilk yazımda `.agentfarm-bak` yedeği alır, senin elle koyduğun hook'ları korur.
+4. **Önemli:** Hook'lar oturum başlarken okunur — halihazırda açık claude oturumlarını yeniden başlatmadan olay gelmez.
+
+Kaldırmak için: **Agent Farm: Remove Live Hooks** — yalnızca Agent Farm'ın kendi girdilerini siler, seninkilere dokunmaz.
+
+### Zaman Çizelgesi (Timeline)
+
+**Agent Farm: Open Live Timeline** komutuyla veya Live Feed görünümündeki nabız ikonuyla açılır.
+
+- **Kulvarlar (swim lanes):** Her ajan bir şerit; yeşil bloklar araç koşularını (süresiyle), noktalar/elmaslar olayları gösterir: mavi nokta = komut, kırmızı elmas = izin bekleme, mor elmas = compaction, turuncu nokta = subagent bitti, çizgi = tur sonu.
+- Kırmızı dikey çizgi = şu an. Pencere seçici: 15 dakika / 1 saat / 4 saat.
+- **Live sessions kartları:** Her oturumun anlık durumu, son komutu, sayaçları; "Open transcript" ile kayda atlanır.
+- Panel olay geldikçe kendini günceller.
+
+### Bildirimler
+
+| Ayar | Varsayılan | Ne zaman |
+| --- | --- | --- |
+| `agentFarm.notifyPermission` | açık | Ajan izin onayı beklemeye başlayınca |
+| `agentFarm.notifyStuck` | açık | Çalışan oturumdan `stuckThresholdSeconds` (240 sn) boyunca olay gelmeyince |
+| `agentFarm.notifyTurnEnd` | kapalı | Ajan turunu her bitirdiğinde (gürültülü olabilir) |
+
+Bildirimdeki **Open Timeline** düğmesi seni doğrudan kulvar görünümüne götürür. Ayrıca durum çubuğu izin/takılma varken sarıya döner: `🤖 2 active • $1.42 today • 🔔 1 waiting`.
+
+### Güvenlik ve Performans
+
+- Dinleyici yalnızca `127.0.0.1` — dışarıdan erişilemez, hiçbir dış servise veri gitmez.
+- Hook komutu `curl -m 3 ... || cd .` kalıbındadır: dinleyici kapalıysa en fazla 3 saniyede sessizce vazgeçer ve **ajanı asla bloklamaz** (çıkış kodu her zaman 0).
+- Her araç çağrısına ~2 küçük süreç (curl) eklenir; pratikte hissedilmez.
+- İki VS Code penceresi açıksa dinleyiciyi ilk açılan alır; diğeri Timeline başlığında "port in use" gösterir — sorun değildir, tek dinleyici yeter.
+
 ## Sağlık ve Optimizasyon
 
 Agent Farm ajanlarını sekiz kuralla denetler. Amaç: **daha ucuz, daha tutarlı, daha az unutan ajanlar.**
@@ -154,6 +210,12 @@ Token kullanımı yerel kayıtlardan okunur ve `agentFarm.pricing` kurallarıyla
 | `agentFarm.maxTranscriptMessages` | 400 | Oturum görüntüleyicide gösterilen en fazla mesaj |
 | `agentFarm.includeUnmatchedProjects` | false | Ajan köklerine eşleşmeyen oturumları da dahil et |
 | `agentFarm.pricing` | yukarıdaki tablo | Model fiyat kuralları |
+| `agentFarm.liveMonitor` | true | Canlı olay dinleyicisini çalıştır |
+| `agentFarm.livePort` | 8377 | Dinleyici portu (değiştirince hook'ları yeniden kur) |
+| `agentFarm.stuckThresholdSeconds` | 240 | Takılma eşiği |
+| `agentFarm.notifyPermission` | true | İzin bekleme bildirimi |
+| `agentFarm.notifyStuck` | true | Takılma bildirimi |
+| `agentFarm.notifyTurnEnd` | false | Tur sonu bildirimi |
 
 ## Komutlar
 
@@ -166,6 +228,8 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 - **Add Agent Root Folder** — yeni kök klasör ekle
 - **Start Claude Session / Continue Latest Session** — ajan klasöründe terminal açıp `claude` başlatır
 - **Open Agent in New Window / Reveal in File Explorer**
+- **Open Live Timeline** — kulvar görünümü (canlı gözlem)
+- **Install Live Hooks / Remove Live Hooks** — canlı gözlem hook'larını kur/kaldır
 
 ## Veri ve Gizlilik
 
@@ -185,13 +249,27 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 
 **Subagent (sub rozetli) oturumlar ne?** Ana oturumun yan görevleri (sidechain). Maliyetleri ayrı satır olarak görünür ki nereye token gittiğini görebil.
 
+**Timeline boş, "No live events yet" diyor.** Üç sebep olabilir: (1) hook'lar kurulmadı — **Install Live Hooks** çalıştır; (2) hook'lar kuruldu ama açık claude oturumları yeniden başlatılmadı; (3) dinleyici portu başka pencere tarafından tutuluyor — başlıktaki duruma bak.
+
+**Live Feed ile Timeline farkı ne?** İkisi de canlı olayları gösterir; Feed liste halinde yan panelde, Timeline zaman ekseninde kulvarlarla. Hook'lar yokken Feed, oturum kayıtlarından türetilmiş (birkaç saniye gecikmeli) olaylara döner.
+
 ## Yol Haritası
 
-- **Faz 2 — Canlı gözlem:** Hook tabanlı gerçek zamanlı olay akışı (araç çağrısı anında düşer), takılı ajan/izin bekliyor bildirimleri, kulvar (swim-lane) zaman çizelgesi.
+- ~~**Faz 2 — Canlı gözlem**~~ ✅ 0.2.0 ile geldi: hook tabanlı gerçek zamanlı olay akışı, izin/takılma bildirimleri, kulvar zaman çizelgesi.
 - **Faz 3 — Koordinasyon:** Görev kuyruğu, zamanlanmış görev takvimi, ajanlar arası ortak hafıza senkronizasyon sihirbazı, karşılaştırmalı ajan raporları.
 - Fikirlerin oldukça bu belge ve eklenti birlikte büyüyecek.
 
 ## Sürüm Notları
+
+### 0.2.0 — Canlı Gözlem (2026-07-08)
+
+- **Live Timeline paneli:** ajan başına kulvar, araç koşu blokları, olay işaretleri, 15m/1h/4h pencere, canlı "şu an" çizgisi
+- **Hook dinleyicisi:** 127.0.0.1 üzerinde yerel HTTP dinleyici; 9 hook olayı (PreToolUse, PostToolUse, UserPromptSubmit, Notification, Stop, SubagentStop, SessionStart, SessionEnd, PreCompact)
+- **Install/Remove Live Hooks:** yedekli, mevcut ayarları koruyan güvenli kurulum sihirbazı
+- **Durum makinesi:** WORKING / TOOL / PERMISSION? / YOUR TURN / STALLED / IDLE / ENDED
+- **Bildirimler:** izin bekleme, takılma (ayarlanabilir eşik), isteğe bağlı tur sonu
+- Agents ağacı ve durum çubuğu canlı durumla besleniyor; bekleyen ajan varken durum çubuğu sarıya döner
+- Live Feed gerçek zamanlı hook olaylarını gösteriyor (hook yokken transcript'e döner)
 
 ### 0.1.0 — İlk sürüm (2026-07-08)
 
