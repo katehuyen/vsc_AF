@@ -385,6 +385,52 @@ Bu tarif, plandaki F4'ün bugünkü karşılığıdır; NoteScribe tarafı olgun
 
 > ✅ Test: semantik hat sahte embedding sunucusuyla uçtan uca doğrulandı (OpenAI+Gemini şemaları, artımlı indeks, kalıcılık, prune, "kahve" sorgusunun kahve oturumunu bulması); allowlist korumaları (alt alan adı kabul, benzer-ad reddi, boş liste reddi) ve tarayıcı promptunun sert kuralları 20 kontrolle test edildi.
 
+## S22 — Komuta Merkezi Sabahı: Kuyruk, Pano, Anomali ✅
+
+**Amaç:** 5+ ajanlı bir günü tek ekrandan yönetmek — "kim beni bekliyor, ne dönüyor, para nereye gidiyor?"
+
+1. **Sabah ilk bakış:** durum çubuğunda `🔔 2 need you` → tıkla → **Needs You** kuyruğu açılır. En üstte izin bekleyen oturum (Open Session → onayla), altında dünkü tarayıcı adımı onayı (**Run** de, workflow kaldığı yerden yürür).
+2. **Pano açık kalsın:** **Open Task Board (Kanban)** → günün işlerini komuta çubuğuna cümleyle yaz: *"öğlen 12'de asistan inbox'ı tasnif etsin"* → önizleme → Create. Biriken Inbox kartlarını Running'e sürükleyerek sırayla başlat; biten kartın çıktısına çift tık.
+3. **Haftalık maliyet bakımı:** Insights'ta ⚠ *"psikolog bugün normalinin 4.2 katında"* görürsen **Cost Anomaly Report** → ağır toplar listesindeki en pahalı oturumu aç, sebebe bak (kaçak döngü? şişmiş bağlam? bkz. S6 bağlam diyeti).
+4. **Talimat değişikliğini ölçerek yap:** CLAUDE.md'ye kural ekleyeceksen önce kötü izlerden 3-5 **eval vakası** biriktir (Add Eval Case…), kuralı ekle, **Run Eval Set…** → "5/5 geçti" görmeden yeni kuralı kesinleşmiş sayma. Bir vaka gerilediyse rapor hangi vaka olduğunu söyler.
+5. **"Dün gece ne oldu?"** — Recent Sessions'ta gece koşusunun satırı ⧉ 3 sub rozeti taşıyorsa ağacı aç, pahalı subagent'ı bul; oturumu açıp **▶ Replay** ile hatanın anına atla (next error ⚠).
+
+> ✅ Test: kuyruk sıralaması/aksiyonları, onay yarışı (ilk karar kazanır), anomali matematiği (medyan+MAD, 4.2x tespiti, sessiz gün bağışıklığı), ağır toplar hesabı, eval mağazası+karşılaştırma ve subagent ebeveyn bağlantısı+rollup 45 birim kontrolüyle; eval hattı gerçek haiku koşusuyla (pozitif vaka PASS, negatif kontrol FAIL) doğrulandı.
+
+## S23 — Kendi Kendini Denetleyen Fabrika: Guardrail, Nabız, Gece Vardiyası ✅
+
+**Amaç:** Otomasyonun kendisini güvenilir kılmak — izinler sıkı, tetikler ölçülü, VS Code kapalıyken bile iş dönsün.
+
+1. **İzin taraması (kurulumla gelir):** Insights'ta ⚠ *"Overly broad allow rule Bash(*)"* gördüğünde tıkla → settings.local.json açılır → kuralı ajanın gerçekten kullandığı komutlara daralt (`Bash(git *)`, `Bash(npm run *)`). ⛔ tehlikeli kalıp bulgusunu asla bekletme.
+2. **Nabız aç:** `agentFarm.pulse: "nightly"` → her gece her ajana ucuz "kim olduğunu söyle" testi. Sabah Insights'ta ⛔ *"Pulse check FAILED"* varsa ajan gerçek işe girmeden bozulmuş demektir (CLAUDE.md mi bozuldu? MCP mi çöktü?). İlk kurulumda elle dene: **Run Pulse Check Now**.
+3. **Tetiklerine karne ver:** Tasks ağacında tetik satırları artık `fired 12× • 7d: 9✓/1✗ • start ~4s` gösterir. ⚠ "hep fail" uyarısı gelirse **Trigger Reliability Report** → son çıktıları aç, zincirin neresinin kırıldığını bul.
+4. **Gece vardiyası:** **Install Headless Service (Windows)…** → onayla. Artık gece 03:00 zamanlaması ve inbox watch tetiği VS Code kapalıyken de işler; sabah panel açılınca *"headless service ran 3 task(s) while you were away"* bildirimi + görevler listede. Servis VS Code açıkken uyur — çift koşma olmaz.
+
+> ✅ Test: 40 birim kontrolü — lint kuralları (bypass/tehlikeli/geniş/kullanılmayan/mükerrer, force-with-lease muafiyeti), tetik istatistikleri (medyan gecikme, hep-fail/hiç-ateşlenmemiş), nabız deposu; servis sahte `claude.cmd` ile uçtan uca koştu (zamanlama ateşledi, watch tetiği {watch} ikamesiyle görev açtı, çıktılar arşivlendi, taze heartbeat'te uyudu). Nabız hattı gerçek haiku ile PASS aldı.
+
+## S24 — Ölçerek Talimat Mühendisliği: Sürüm, Deney, Distilasyon ✅
+
+**Amaç:** "CLAUDE.md'ye şu kuralı eklesem daha mı iyi olur?" sorusunu hisle değil ölçümle cevaplamak; hafızayı da bakımlı tutmak.
+
+1. **Tarihçe kendiliğinden birikir:** CLAUDE.md'yi her değiştirdiğinde (elle, öneri uygulamasıyla veya Antigravity senkronuyla) panel yeni sürümü kaydeder. Bir ay sonra **Instruction History & Impact…** → tablo: v3'ten beri kalite ▲0.4, maliyet/gün ▼$0.8. Kötüleşme görürsen içerik tarihçede — geri dönmek kopyala-yapıştır.
+2. **Kuralı önce yarıştır:** Insights'ta 💡 önerisi mi var? Doğrudan uygulama yerine **A/B Instruction Experiment…** → "Öneriyi dene" → istem seti olarak eval vakaların koşulur → *"A 1 · B 3 · eşit 1"* → **Apply B**. Kural artık kanıtlı.
+3. **Hafıza bakım günü (ayda bir):** **Distill Memory File…** → aday listesi (şişmiş/bayat önce) → taslağı diff'te incele: tekrarlar birleşmiş, çelişkiler `⚠ ÇELİŞKİ:` etiketli → Apply (.afbak). Ardından **Ask Fleet Memory…** ile *"X hakkında ne biliyoruz?"* diye doğrula — bilgi kaybolmamış olmalı.
+4. **Model disiplini kendiliğinden:** ayarlara bir kez yaz: `modelPolicy: [{"source":"trigger","model":"haiku"},{"source":"schedule","model":"haiku"}]` + `quotaDowngradePercent: 70`. Rutinler ucuz, elin değdiği işler tam model; pencere %70'i aşarsa fabrika kendini ucuza çeker ve bunu çıktı başlığına yazar.
+
+> ✅ Test: 44 birim kontrolü — sürüm dedupe/korelasyon (kalite ▲2.0 tablosu), politika kuralları (ilk-eşleşen, bozuk regex atlama, kota önceliği), distilasyon adayları/yedekli uygulama/çit soyma + limit-mesajı ve frontmatter korumaları, hafıza parçalama, A/B konum-yanlılığı düzeltmesi (swap/unswap) sahte claude ile uçtan uca doğrulandı. (Canlı distilasyon koşusu kota penceresi dolduğu için sahte-model hattıyla test edildi.)
+
+## S25 — Ekosistem Günü: Paralel Kod, Uzak Canlılık, Sesli Rapor ✅
+
+**Amaç:** Faz J araçlarını tek iş gününde birleştirmek.
+
+1. **Sabah — paralel kod:** kod ajanının repo'sunda üç fikir var. **Run Parallel Worktrees…** → *"login hatasını düzelt ; koyu tema ekle ; testleri hızlandır"* → üçü kendi worktree'sinde koşar, ana çalışma kopyan tertemiz kalır. Öğlen **Worktree Runs…** → diffstat'lara bak: ikisini **Merge**, birini **Open** ile yeni pencerede incele, beğenmediysen **Discard**.
+2. **Gün boyu — uzak göz:** laptop'ta `farmRelay.js` çalışıyor (bir kez kurdun: **Save Relay Script…** + başlangıç görevi). Masaüstündeki panelde laptop'taki psikolog oturumu canlı WORKING yanıyor — dosya senkronundan başka hiçbir kanal açılmadı.
+3. **Akşam — dışa raporlama:** haftalık inceleme için **Export Traces (OpenTelemetry JSON)…** → dosyayı Langfuse'a yükle; subagent maliyet ağacı span hiyerarşisi olarak görünür.
+4. **Yeni ajan lazım:** ekip arkadaşının paylaştığı repo'yu `packGalleryRepos`'a ekle → **Browse Agent Pack Gallery…** → "editor" paketini seç → güvenli import (tetikler kapalı gelir, sır yok).
+5. **Telefonda kapanış:** **Speak Daily Briefing (TTS)** → günün karnesi mp3 olarak telefon klasörüne düşer; arabada dinle. (Gemini'de koşmak istediğin ufak bir işi de `cliProfiles` ile aynı kuyruktan geçirebilirsin.)
+
+> ✅ Test: 40 birim kontrolü — OTLP span hiyerarşisi (ebeveyn/çocuk, hata durumu), gerçek git repo'da worktree yaşam döngüsü (oluştur→commit→status→merge→temizle; git 2.14 geri düşüşü dahil), relay tailer (offset/kesme/tekrarsızlık) + uzak script uçtan uca (gerçek süreç, eski satır tekrarı yok), galeri (yerel + file:// klon + pull), CLI şablon ikamesi, brifing hata yolları.
+
 ## Kapanış: Ritim Önerisi
 
 - **Her gün 10 saniye:** durum çubuğu + Duties rozetleri (pending var mı?).

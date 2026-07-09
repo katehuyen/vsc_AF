@@ -124,6 +124,7 @@ Bir oturumun ham JSONL kaydını okunur konuşmaya çevirir:
 - Üstteki arama kutusu mesajları ve araç adlarını filtreler.
 - **Open raw JSONL** ham kaydı editörde açar.
 - Çok uzun oturumlarda son N mesaj gösterilir (`agentFarm.maxTranscriptMessages` ayarı, varsayılan 400).
+- **▶ Replay** oturumu adım adım oynatır — ayrıntı için [Oturum Replay](#oturum-replay).
 
 ### Insights Ağacı
 
@@ -605,6 +606,89 @@ Sinyal yorgunluğuna karşı: on ayrı uyarı yerine haftada bir, üç cümlelik
 - İndeks: **Build Semantic Index** komutu son `semanticMaxSessions` (300) oturumu parçalar halinde vektörler; dosya tabanlıdır, artımlı çalışır (yalnız yeni/değişen oturumlar) ve her semantik aramada 20 oturuma kadar kendini tazeler.
 - Sonuçlarda benzerlik yüzdesi rozeti görünür; semantik modda yazarken otomatik arama yapılmaz (her sorgu bir embedding çağrısıdır), Enter'la ararsın.
 
+## Komuta Merkezi
+
+Filo büyüyünce dar boğaz sensin: kim izin bekliyor, hangi tarayıcı adımı onay istiyor, bütçe nerede taştı? Komuta Merkezi katmanı (Faz G) bu soruların tek ekranda cevaplanması içindir.
+
+### Onay Kuyruğu
+
+**Agent Farm: Open Needs You (Approval Queue)** — sana gelen her şey tek, aciliyet sıralı kuyrukta:
+
+1. 🛡️ **İzin bekleyen oturumlar** (canlı hook verisinden) — tek tıkla oturumu veya Timeline'ı aç.
+2. 🌐 **Onay bekleyen tarayıcı adımları** — kuyruktan doğrudan **Run / Reject**. Bildirim ile kuyruk yarışır; ilk karar kazanır. Bildirimi kaçırırsan istek kuyrukta bekler, workflow onayını alana kadar ilerlemez.
+3. ⏳ **Takılmış (stalled) oturumlar** · 💸 **bütçe aşımları** · ⇄ **Antigravity çakışmaları** (tek tık uzlaştırma) · 💡 **açık talimat önerileri** · 🕓 **park edilmiş görevler** (eşzamanlılık/kota) · 💬 **sırası sende** oturumları.
+
+Durum çubuğu artık bu kuyruğu sayar: `🔔 N need you` görünüyorsa tıklamak kuyruğu açar. İş engelleyen üç tür sayılır: izin, tarayıcı onayı, stalled.
+
+### Kanban Panosu
+
+**Agent Farm: Open Task Board (Kanban)** (Tasks başlığındaki $(layout) simgesi) — görev kuyruğunun yönetici yüzeyi:
+
+- Kolonlar: **📥 Inbox** (kuyrukta, elle başlatılacak) · **🕓 Parked** (kapasite/kota bekleyen) · **⚙️ Running** · **🛡️ Needs Approval** (izin + tarayıcı onayları, kart üstünde Run/Reject) · **🏁 Done** (son 30).
+- Kartları **sürükle-bırak**: Inbox→Running = başlat, Running→Done = tamamla, Inbox→Done = iptal. Kart üstünde ajan, süre, verify rozeti, medya maliyeti; çıktı arşivi olan karta **çift tık** = çıktıyı aç.
+- Panonun üstünde **komuta çubuğu**: doğal dil cümleni yaz, ucuz model plana çevirir, önizleme onayıyla kurulur (aşağıdaki Doğal Dil Komuta ile aynı akış).
+
+### Maliyet Anomalisi
+
+Sabit bütçe eşiği kör noktalıdır; anomali dedektörü "bugün her zamankinden çok farklı" gününü istatistikle yakalar:
+
+- Ajan (ve filo) başına son **14 günün medyanı + MAD** (sağlam sapma) hesaplanır; bugün `medyan + 3.5σ` üstünde **ve** medyanın en az 2 katıysa Insights'a ⚠ düşer: *"psikolog bugün normalinin 4.2 katında"*.
+- `agentFarm.costAnomalyMinUsd` (varsayılan 1$) altındaki günler gürültü sayılır; 0 dedektörü kapatır. Bütçelerden bağımsız çalışır, model çağrısı yoktur.
+- **Agent Farm: Cost Anomaly Report** — tablo halinde bugün/medyan/çarpan + **ağır toplar raporu**: son 7 günde token'ın %50'sini yiyen oturumların listesi ("oturumların %5'i token'ın yarısını yedi").
+
+### Eval Seti
+
+Kalite karnesinin doğal evrimi: kötü giden üretim izleri **regresyon test vakası** olur (trace→dataset döngüsü).
+
+1. **Add Eval Case…** — aday listesi otomatik gelir: düşük puanlı kalite örnekleri (≤2/5), verify FAIL olmuş adımlar, ya da elle yaz. Vaka = **girdi** (ajana yeniden sorulacak istem) + **beklenti** (hakem ölçütü, düz dil).
+2. **Run Eval Set…** — onaylı ve maliyeti belli: her vaka bir ajan çağrısı (`agentFarm.evalRunArgs`, varsayılan haiku — gerçek modeli test etmek istersen boşalt) + bir ucuz hakem çağrısı. Sonuç karne: *"12/14 geçti, 2 geriledi"* — önceki koşuya göre gerileme/düzelme vaka adlarıyla raporlanır.
+3. **Review Eval Cases…** — vakaları gözden geçir/sil. CLAUDE.md'yi değiştirdikten sonra seti koşmak, talimat değişikliğinin etkisini ölçülebilir yapar.
+
+### Oturum Replay
+
+Oturum görüntüleyicide **▶ Replay** — "ne oldu?" sorusunun en hızlı cevabı: mesajlar ve araç çağrıları gerçek zaman aralıklarına sadık kalarak (5 sn tavanlı, 1x-8x hız) adım adım akar. **next error ⚠** ve **next prompt 💬** düğmeleriyle kritik anlara atla; −1/+1 ile kare kare ilerle.
+
+### Subagent Ağacı
+
+Subagent'lar maliyetin görünmez kısmıdır. Recent Sessions ve ajan oturum listeleri artık **ağaç**tır: alt-ajan kayıtları (`…/oturum-id/subagents/*.jsonl`) ebeveyn oturumun altında toplanır, ebeveyn satırında **⧉ N sub • $X total** rollup'ı görünür (kendisi + 5 seviyeye kadar altları). Tek tek maliyetler alt satırlarda durur.
+
+## Güvenlik ve Güvenilirlik
+
+Otonom filo büyüdükçe iki soru kritikleşir: "ajanlarım neye izinli?" ve "otomasyonuma güvenebilir miyim?" (Faz H).
+
+### Guardrail Denetçisi
+
+Her ajanın `.claude/settings(.local).json` izin kuralları otomatik denetlenir (`agentFarm.permissionLint`, varsayılan açık) ve bulgular Insights'a düşer; tıklayınca ayar dosyası açılır, kuralı orada daraltırsın:
+
+- ⛔ **bypass modu:** `defaultMode: bypassPermissions` — tüm izin soruları kapalı demek.
+- ⛔ **tehlikeli kalıp:** allow kuralının içinde `rm -rf`, `curl … | sh`, `-EncodedCommand`, `git push --force`, disk format gibi kalıplar (`--force-with-lease` muaf).
+- ⚠ **aşırı geniş kural:** `Bash(*)`, çıplak `Bash`, `*`, `WebFetch(domain:*)` — her şey sorusuz koşar.
+- ℹ **kullanılmayan geniş kural:** joker içeren kural ama o araç son 30 günde hiç çağrılmamış — bedava risk yüzeyi.
+- ℹ **mükerrer kural** ve bozuk JSON uyarısı.
+
+### Tetik Karnesi
+
+Otomasyona güven ölçülebilir olmalı. Tasks ağacındaki her tetik satırı artık karnesini taşır: `fired 12× • 7d: 9✓/1✗ • start ~4s` (7 günlük başarı/başarısızlık + medyan başlama gecikmesi). **Agent Farm: Trigger Reliability Report** tam tabloyu verir. İki koku Insights'a otomatik düşer:
+
+- ⚠ **hep fail:** tetiğin son koşuları üst üste FAILED — başlattığı zincir kırık.
+- ℹ **hiç ateşlenmemiş:** tetik kurulu ama hiç çalışmamış — watch yolu/hook filtresi/webhook çağıranı kontrol et.
+
+### Nabız Kontrolü
+
+Sorunlar iş üstünde değil, nabızda yakalansın: her ajana sabit ucuz bir "kim olduğunu tek cümlede söyle" promptu gider, ucuz hakem cevabın CLAUDE.md kimliğiyle tutarlılığını PASS/FAIL'ler. Kırık CLI, bozulmuş CLAUDE.md, cevap veremeyen ajan gerçek işe girmeden görünür.
+
+- `agentFarm.pulse`: `off` (varsayılan) / `nightly` / `weekly`; elle: **Run Pulse Check Now**.
+- FAIL olan ajan Insights'ta ⛔ olur; maliyet ajan başına iki ucuz çağrıdır (`judgeArgs` modeli).
+
+### Headless Servis
+
+"VS Code açıkken" kısıtının ilacı: **Install Headless Service (Windows)…** küçük bir node sürecini oturum açılışına (schtasks, mevcut kullanıcı) kaydeder. Servis:
+
+- VS Code çalışırken **uyur** (eklentinin 30 sn'de bir yazdığı heartbeat'e bakar) — çakışma olmaz; VS Code kapanınca ~90 sn içinde devralır.
+- Devraldığında **zamanlanmış görevleri** ve **watch tetiklerini** işler: `claude -p` headless koşar, çıktıyı aynı arşive yazar, görev kayıtlarını `farm-tasks.json`'a ekler — panel açıldığında her şey yerli yerindedir ve "servis sen yokken N görev koştu" bildirimi gelir.
+- Kapsam bilinçli olarak dar: hook/webhook tetikleri canlı dinleyici, workflow/dispatch aksiyonları tam motor ister — onlar VS Code'da kalır. Servis görevleri daima headless koşar.
+- `node` PATH'te olmalı. Durum: **Headless Service Status**; kaldırma: **Remove Headless Service**. Günlük: `service-runs.jsonl`.
+
 ## Doğal Dil Komuta
 
 Kurulum arayüzünün kestirmesi: Tasks başlığındaki 🚀 (veya `Agent Farm: Natural Language Command…`) → tek cümle yaz:
@@ -621,6 +705,39 @@ Filo büyüyünce "bu iş hangi ajana?" sorusu da otomatikleşir. Tetikleyici ek
 2. **Sınıflandırıcı sonra:** kural tutmazsa ucuz model, ajanların CLAUDE.md rol özetlerine bakarak seçer (`agentFarm.dispatchClassifier`, varsayılan açık; kapatırsan kural tutmayan iş düşer ve bildirilir).
 
 Görev başlığına seçilen ajan ve yöntem yazılır (`inbox işi → psikolog [model]`). Kurmadan denemek için: `Agent Farm: Test Dispatcher…` — metni yaz, kimin alacağını ve gerekçeyi gör.
+
+## Zekâ Derinliği
+
+Talimat mühendisliğini tahminden ölçüme taşıyan katman (Faz I): her CLAUDE.md değişikliği kayıtlı, etkisi ölçülü, hafıza bakımı yarı-otomatik.
+
+### Talimat Sürümleme
+
+Her ajanın CLAUDE.md'si değiştiğinde otomatik olarak zaman damgalı tarihçeye alınır (içerikle birlikte — geriye dönüp bakabilirsin). **Instruction History & Impact…** komutu sürüm tablosunu açar: her sürümün hükmü boyunca kaç oturum koştu, kalite ortalaması ne oldu (▲/▼ önceki sürüme göre), günlük maliyet neydi. *"Bu kuraldan sonra kalite +0.6"* artık bir tablo satırıdır. A/B deneyinin kazananı uygulandığında da tarihçeye işlenir.
+
+### A/B Talimat Deneyi
+
+**A/B Instruction Experiment…** — iki CLAUDE.md varyantı, aynı istem seti, yan yana hakem:
+
+1. B varyantı üç kaynaktan gelebilir: açık bir **talimat önerisini** dene (mevcut + kural), **dosyadan** seç veya kuralı **elle yaz**.
+2. İstem seti: ajanın **eval vakaları** varsa otomatik onlar (en fazla 5); yoksa `;` ile ayırıp yazarsın.
+3. Her istem iki izole kum havuzunda koşar (geçici klasör: varyant CLAUDE.md + memory kopyası — gerçek ajana dokunulmaz). Ucuz hakem cevapları **rastgele sırayla** görür (konum yanlılığı korunur) ve 1/2/EŞİT der.
+4. Rapor: A-B-eşit skoru + istem başına gerekçeler. **B kazandıysa** tek tıkla kalıcı yapılır (.afbak yedekli, sürüm tarihçesine işlenir).
+
+### Hafıza Distilasyonu
+
+Bağlam diyetinin yarı-otomatik hali: **Distill Memory File…** → şişmiş (~2000+ token) veya bayat dosyalar aday listesinde önce gelir → ucuz model yoğunlaştırma taslağı üretir (tekrarlar birleşik, çelişkiler `⚠ ÇELİŞKİ:` ile işaretli, bayat satırlar "Arşiv adayı" bölümünde, frontmatter aynen) → **diff ekranında** karşılaştırırsın → Apply dersen .afbak yedeğiyle uygulanır. Korumalar: model limit/hata mesajı asla taslak sayılmaz; frontmatter'ı düşüren taslak reddedilir; MEMORY.md indeksi hiç aday olmaz (el emeği).
+
+### Semantik Hafıza Sorgusu
+
+Transcript araması geçmişi bulur; bu, **bilgiyi** bulur. **Ask Fleet Memory…** → *"kullanıcının uyku düzeni hakkında ne biliniyor?"* → tüm ajanların memory/*.md dosyaları embedding indeksinde aranır (aynı sağlayıcı ayarları: `embeddingsProvider`), sonuçlar ajan + dosya + benzerlik yüzdesiyle listelenir, seçince dosya açılır. İndeks artımlıdır (yalnız değişen dosyalar yeniden vektörlenir) ve transcript indeksinden ayrıdır.
+
+### Model Politikası
+
+Kota bekçisinin proaktif hali: görev nereden doğduysa ona göre model.
+
+- `agentFarm.modelPolicy` kuralları — ilk eşleşen kazanır: `[{"source": "trigger", "model": "haiku"}]` = tetikten doğan her rutin iş ucuz modelde; `source` = trigger/schedule/workflow/manual/any, ayrıca `agent` ve `promptMatch` regex'leri.
+- **Kota düşürme:** `quotaDowngradePercent` (örn. 70) — 5 saatlik pencere bu doluluk yüzdesini aşınca fabrika kaynaklı her görev `quotaDowngradeModel`'e (varsayılan haiku) zorlanır. Elle açtığın oturumlara karışılmaz.
+- Uygulanan politika headless çıktı başlığına yazılır (`Model policy: quota window 82% ≥ 70% — downgraded…`) — neyin neden ucuz koştuğu hep izlenebilir.
 
 ## Ölçek ve Taşınabilirlik
 
@@ -673,6 +790,38 @@ Ajanların Claude için optimize; ama istersen aynı ajan Google Antigravity (Ge
 - **AGENTS.md değişti** (Antigravity oturumu ajana bir şey öğretti) → komut sorar: **Apply to CLAUDE.md** dersen kazanım yedekli olarak CLAUDE.md'ye taşınır — optimizasyon mirası iki tarafta da yaşar.
 - **İkisi de değişti** → çakışma uyarısı (warning): Diff görüntüle veya yön seç; kaybeden taraf `.afbak` yedeğiyle korunur.
 - Elle düzenlediğin workflow dosyalarına ve senin yazdığın (bizim üretmediğimiz) AGENTS.md'ye onaysız dokunulmaz.
+
+### Paralel Worktree Koşuları
+
+Kod ajanları için ölçek anahtarı (Faz J): aynı repo'da birden çok iş, sıfır çakışma.
+
+- **Run Parallel Worktrees…** → ajan (git repo olmalı) → istemleri `;` ile ayır → her istem kendi `git worktree`'sinde (`af/` dallı, repo'nun yanındaki `.af-worktrees-*` klasöründe) headless koşar; ajana "bitince commit et" talimatı otomatik eklenir. Kartlar panoda `⑂` önekiyle görünür.
+- **Worktree Runs…** → koşu listesi: kaç commit, diffstat, kaydedilmemiş değişiklik var mı → seçince üç aksiyon: **Merge** (mevcut dala `--no-ff`, sonra worktree temizliği), **Open** (yeni pencerede aç, elle incele), **Discard** (worktree + dal silinir, onaylı).
+- Eski git sürümlerinde (`worktree remove` yoksa) temizlik elle silme + `worktree prune` ile yapılır — sürüm kontrolü otomatik.
+
+### Canlı Relay (Uzak Makine)
+
+E1 klasör-senkronu geçmişi taşır; relay **canlılığı** taşır. Kurulum:
+
+1. Bu makinede: **Save Relay Script for Another Machine…** → `farmRelay.js`'i kaydet, diğer makineye kopyala.
+2. Diğer makinede: `node farmRelay.js --claude %USERPROFILE%\.claude --out <senkronKlasörü>\relay-laptop.jsonl --machine laptop` (başlangıca da koyabilirsin). Script transcript'lere eklenen satırları izler ve kompakt olay akışı yazar — ağ yok, taşıma senin senkron aracın.
+3. Bu makinede: `agentFarm.relayFeeds` = `[{"name": "laptop", "file": "D:\\Sync\\relay-laptop.jsonl"}]` → olaylar canlı monitöre akar: uzak ajan Live Feed'de/ajan satırında WORKING görünür. Ajan eşleşmesi klasör adıyla yapılır (iki makinede aynı isimli ajan klasörü = aynı ajan).
+
+### OpenTelemetry Dışa Aktarım
+
+**Export Traces (OpenTelemetry JSON)…** — tüm oturumlar (subagent ağaçları ebeveyn-çocuk span ilişkisiyle) OTLP/JSON dosyasına yazılır: Langfuse, Grafana Tempo veya herhangi bir OTLP tüketicisine besleyebilirsin. Yerellik korunur: yalnızca dosya yazılır, nereye göndereceğin senin kararın. Span öznitelikleri: ajan, model, token'lar (`gen_ai.*`), maliyet, araç sayısı, hatalar (hatalı oturum = ERROR status).
+
+### Agentpack Galerisi
+
+Ajan paketlerinin tüketim tarafı: `agentFarm.packGalleryRepos` = git URL'leri veya yerel klasörler → **Browse Agent Pack Gallery…** kaynakları senkronlar (git: sığ klon + pull), bulunan `.agentpack`'leri listeler, seçtiğin normal **güvenli import akışıyla** kurulur (hafıza/sır asla pakette yok, tetikler kapalı gelir, yeni webhook token).
+
+### Çoklu-CLI Yürütücü
+
+Görev yürütücü artık claude'a kilitli değil: `agentFarm.cliProfiles` = `[{"name": "gemini", "headless": "gemini -p \"{prompt}\""}]` → Add Task sihirbazı CLI seçtirir. **Beklenti sınırı net:** claude-dışı yürütücüler çıktı arşivi + çıkış kodu durumu alır; transcript analizi, canlı hook'lar, maliyet ve kalite katmanları Claude'a özgüdür. Antigravity senkronu (1.3.0) ile aynı ajan kimliği iki tarafta da çalışır.
+
+### Sesli Brifing
+
+NoteScribe döngüsünün dönüş yarısı: **Speak Daily Briefing (TTS)** günlük özet kartını fal.ai TTS modelinden geçirir ve mp3'ü `digestTtsFolder`'a (telefonla senkron bir klasör / vault) düşürür. Ayarlar: `digestTtsModel` (fal'daki gerçek model kimliğini doğrula), anahtar aynı `FAL_KEY` sırrı. Klasör boşsa `autoReportFolder` kullanılır.
 
 ### Marketplace / Yayın
 
@@ -763,6 +912,18 @@ Gürültü koruması: önceki hafta 0.50$'ın, bu hafta 1$'ın altındaysa uyar�
 | `agentFarm.semanticMaxSessions` | 300 | Semantik indeksin kapsadığı oturum sayısı |
 | `agentFarm.browserAllowHosts` | [] | Tarayıcı adımları için global alan adı allowlist'i |
 | `agentFarm.browserApproval` | ask | Tarayıcı adımı öncesi onay: ask / auto |
+| `agentFarm.costAnomalyMinUsd` | 1 | Maliyet anomali dedektörü tabanı (USD); 0 kapatır |
+| `agentFarm.evalRunArgs` | --model haiku… | Eval koşularının CLI argümanları; boş = ajanın varsayılan modeli |
+| `agentFarm.permissionLint` | true | İzin kurallarının guardrail denetimi (Insights) |
+| `agentFarm.pulse` | off | Sentetik nabız kontrolü: off / nightly / weekly |
+| `agentFarm.modelPolicy` | [] | Kural tabanlı model yönlendirme (source/agent/promptMatch → model) |
+| `agentFarm.quotaDowngradePercent` | 0 | Pencere bu %'yi aşınca fabrika görevleri ucuz modele düşer |
+| `agentFarm.quotaDowngradeModel` | haiku | Kota düşürmede zorlanan model |
+| `agentFarm.cliProfiles` | [] | Alternatif CLI yürütücüleri ({prompt}/{args} şablonları) |
+| `agentFarm.relayFeeds` | [] | Uzak makine canlı relay dosyaları ({name, file}) |
+| `agentFarm.packGalleryRepos` | [] | Agentpack galeri kaynakları (git URL / yerel klasör) |
+| `agentFarm.digestTtsModel` | boş | Sesli brifing için fal.ai TTS model kimliği |
+| `agentFarm.digestTtsFolder` | boş | Brifing mp3'ünün düştüğü klasör (boş = autoReportFolder) |
 
 ## Komutlar
 
@@ -806,6 +967,22 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 - **Test Dispatcher…** — bir metni dispatcher kimin alacağını göster
 - **Build Semantic Index** — anlamsal arama için oturum vektör indeksini kur/tazele
 - **Open Ultra Roadmap (Ultra Gelişim)** — araştırma temelli ikinci nesil yol haritası
+- **Open Needs You (Approval Queue)** — sana gelen her şey tek aciliyet sıralı kuyrukta
+- **Open Task Board (Kanban)** — sürükle-bırak görev panosu + komuta çubuğu
+- **Cost Anomaly Report** — medyan+MAD anomali tablosu ve ağır toplar raporu
+- **Add Eval Case… / Run Eval Set… / Review Eval Cases…** — kötü izlerden regresyon seti kur ve koş
+- **Run Pulse Check Now** — tüm ajanlara sentetik nabız (ucuz model + ucuz hakem)
+- **Trigger Reliability Report** — tetik güvenilirlik tablosu (ateşlenme, ✓/✗, gecikme)
+- **Install / Remove Headless Service (Windows), Headless Service Status** — VS Code kapalıyken zamanlama/watch tetiklerini işleten yerel servis
+- **Instruction History & Impact…** — CLAUDE.md sürüm tarihçesi + kalite/maliyet korelasyonu
+- **A/B Instruction Experiment…** — iki talimat varyantını aynı istemlerle yarıştır, kazananı uygula
+- **Distill Memory File…** — şişmiş/bayat hafıza dosyasına ucuz modelle yoğunlaştırma taslağı (diff + onay)
+- **Ask Fleet Memory… (Semantic)** — "filo bu konuda ne biliyor?" — memory dosyalarında anlamsal arama
+- **Run Parallel Worktrees… / Worktree Runs…** — çakışmasız paralel kod koşuları + merge/discard yönetimi
+- **Export Traces (OpenTelemetry JSON)…** — oturumlar OTLP span'leri olarak dışarı
+- **Browse Agent Pack Gallery…** — git/klasör kaynaklı paket galerisinden içe aktar
+- **Speak Daily Briefing (TTS)** — günlük özeti fal.ai TTS ile mp3'e seslendir
+- **Save Relay Script for Another Machine…** — uzak makine canlı relay script'i
 
 ## Veri ve Gizlilik
 
@@ -858,6 +1035,39 @@ Tamamlanan fazlar (hepsi 2026-07-08):
 **Bundan sonrası ayrı ve ayrıntılı bir belgede yaşıyor:** komut paletinden **Agent Farm: Open Development Plan** — uzak görüşlü gelişim planı: olay tetikleyicileri, doğrulayıcı adımlar, MCP paneli, n8n/webhook köprüsü, multimedya üretim hattı (Kling/Seedance/Nano Banana sınıfı modellerle içerik fabrikası), zeki gözetim, çoklu makine ve vizyoner ufuk. Kodlama o plandaki öncelik sırasını izler.
 
 ## Sürüm Notları
+
+### 2.5.0 — Ölçek ve Ekosistem / Ultra Faz J (2026-07-09) — ULTRA PLAN TAMAM
+
+- **Paralel worktree koşuları (J1):** `Run Parallel Worktrees…` her istemi kendi git worktree'sinde koşturur (af/ dalları); `Worktree Runs…` ile diffstat + Merge/Open/Discard; eski git sürümü geri düşüşü
+- **Canlı relay (J2):** uzak makinede `farmRelay.js` transcript olaylarını senkron dosyasına yazar; `agentFarm.relayFeeds` bu dosyayı canlı monitöre akıtır — uzak ajan WORKING görünür
+- **OpenTelemetry dışa aktarım (J3):** oturumlar (subagent ağacı ebeveyn-çocuk span'leriyle) OTLP/JSON — Langfuse/Tempo'ya beslenebilir
+- **Agentpack galerisi (J4):** `packGalleryRepos` (git/klasör) → `Browse Agent Pack Gallery…` → güvenli import akışı
+- **Çoklu-CLI (J5):** `cliProfiles` ile gemini/codex görevleri ({prompt}/{args} şablonları); derin gözlem Claude'a özgü kalır
+- **Sesli brifing (J6):** `Speak Daily Briefing (TTS)` — günlük özet fal.ai TTS ile mp3 olarak telefona/vault'a
+
+### 2.4.0 — Zekâ Derinliği / Ultra Faz I (2026-07-09)
+
+- **Talimat sürümleme (I1):** her CLAUDE.md değişikliği içeriğiyle tarihçeye; `Instruction History & Impact…` sürüm başına oturum/kalite/maliyet korelasyon tablosu ("bu kuraldan sonra kalite ▲0.6")
+- **A/B talimat deneyi (I2):** iki varyant izole kum havuzlarında aynı istemlerle koşar (eval vakaları otomatik istem seti olur), hakem rastgele sırayla karşılaştırır; B kazanırsa tek tık kalıcı (.afbak + tarihçe)
+- **Hafıza distilasyonu (I3):** şişmiş/bayat memory dosyalarına ucuz model yoğunlaştırma taslağı → diff → onaylı uygulama; limit mesajı/frontmatter kaybı korumaları
+- **Semantik hafıza sorgusu (I4):** `Ask Fleet Memory…` — memory/*.md dosyalarında anlam bazlı arama, ajan bazlı sonuç (transcript indeksinden ayrı artımlı indeks)
+- **Model politikası (I5):** `agentFarm.modelPolicy` kurallarıyla kaynak/ajan/istem bazlı model yönlendirme + `quotaDowngradePercent` ile pencere dolunca otomatik ucuza düşürme; karar çıktı başlığına yazılır
+
+### 2.3.0 — Güvenlik ve Güvenilirlik / Ultra Faz H (2026-07-09)
+
+- **Guardrail denetçisi (H1):** izin kuralları otomatik denetlenir — bypass modu, tehlikeli kalıplar (`rm -rf`, `curl|sh`, force push…), aşırı geniş kurallar (`Bash(*)`), 30 gündür kullanılmayan joker kurallar, mükerrerler; bulgular Insights'ta, tık = ayar dosyası
+- **Tetik karnesi (H2):** tetik satırında `fired 12× • 7d: 9✓/1✗ • start ~4s`; `Trigger Reliability Report` tablosu; "hep fail" ve "hiç ateşlenmemiş" uyarıları
+- **Nabız kontrolü (H3):** ajan başına sabit ucuz prompt + kimlik tutarlılığı hakemi; `agentFarm.pulse` nightly/weekly veya elle; FAIL → Insights ⛔
+- **Headless servis (H4):** VS Code kapalıyken zamanlama + watch tetiklerini işleten yerel node servisi (schtasks, logon); heartbeat ile çakışmasız devir; çıktılar aynı arşive, "sen yokken N görev koştu" bildirimi
+
+### 2.2.0 — Komuta Merkezi / Ultra Faz G (2026-07-09)
+
+- **Onay kuyruğu (G1):** "Needs You" paneli — izin bekleyenler, tarayıcı onayları (kuyruktan Run/Reject), stalled, bütçe aşımı, Antigravity çakışması, talimat önerileri, park edilmiş görevler tek aciliyet sıralı listede; durum çubuğu rozeti artık kuyruğu sayar ve tıklayınca açar
+- **Kanban panosu (G5):** Inbox/Parked/Running/Needs Approval/Done kolonları, sürükle-bırak geçişler, kart rozetleri, üstte doğal dil komuta çubuğu
+- **Maliyet anomalisi (G2):** 14 gün medyan+MAD dedektörü (bütçeden bağımsız, model çağrısız) + `Cost Anomaly Report` (ağır toplar: token'ın %50'sini yiyen oturumlar)
+- **Eval seti (G3):** düşük puanlı/verify-FAIL izler tek adımda regresyon vakası; onaylı koşu + "12/14 geçti, 2 geriledi" karnesi
+- **Oturum replay (G4):** görüntüleyicide ▶ Replay — gerçek aralıklarla adım adım oynatma, hız 1x-8x, hata/prompt atlama
+- **Subagent ağacı (G6):** oturum listeleri ağaç oldu; ebeveyn satırında ⧉ maliyet rollup'ı (5 seviye)
 
 ### 2.1.0 — Semantik Arama + Tarayıcı Adımları + Ultra Yol Haritası (2026-07-09)
 

@@ -1,3 +1,4 @@
+import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -6,6 +7,19 @@ import { AgentInfo, discoverAgents } from './core/agents';
 import {
     applyPackFiles, buildAgentPack, readAgentPack, rebindPack, writeAgentPack
 } from './core/agentpack';
+import { buildAbReport, runAbTest } from './core/abtest';
+import { dailyCostHistory, detectCostAnomaly, heavyHitters, todayCost } from './core/anomaly';
+import { speakText } from './core/briefing';
+import { buildOtlpTraces } from './core/otel';
+import { collectGalleryPacks } from './core/packgallery';
+import { RelayTailer } from './core/relay';
+import {
+    createWorktree, isGitRepo, listAfWorktrees, mergeWorktree, removeWorktree, worktreeStatus
+} from './core/worktree';
+import { applyDistilled, distillCandidates, distillFile } from './core/distill';
+import { buildImpactReport, correlateVersions, InstructionHistory } from './core/instrhistory';
+import { chunkMemoryFile, memoryFileRefs } from './core/memquery';
+import { modelArgsFor as policyModelArgs, ModelPolicyRule } from './core/modelpolicy';
 import {
     AGENTS_MD_NAME, antigravityStatus, syncToAntigravity, syncToClaude, SyncResult
 } from './core/antigravity';
@@ -18,7 +32,11 @@ import {
     addDuty, CADENCES, CLAUDE_MD_SNIPPET, claudeMdReferencesDuties,
     deleteDuty, DUTIES_FILENAME, togglePauseDuty, watchStatus
 } from './core/duties';
+import { buildEvalReport, compareRuns, EvalCase, EvalStore, runEvalSet, summarizeRun } from './core/evals';
 import { buildInsights, Insight } from './core/health';
+import { ApprovalQueue, blockingCount, buildNeedsQueue, NeedItem } from './core/needs';
+import { PulseStore, runPulseSweep } from './core/pulse';
+import { buildTriggerStats, describeTriggerStat, triggerAlerts } from './core/triggerstats';
 import {
     hasOurHooks, installHooksInto, removeHooksFrom, userSettingsPath
 } from './core/hooksInstaller';
@@ -29,7 +47,7 @@ import {
     applyMergedContent, buildMergeDraft, findDuplicateGroups, syncGroup
 } from './core/memorySync';
 import { SecretsVault } from './core/secrets';
-import { DEFAULT_PRICING, PriceRule, PricingEngine } from './core/pricing';
+import { DEFAULT_PRICING, PriceRule, PricingEngine, totalTokens } from './core/pricing';
 import { QualityStore, sampleQuality } from './core/quality';
 import { buildDailyDigest, buildFleetReport, buildOutputsDigest } from './core/report';
 import { SessionIndex } from './core/sessions';
@@ -38,15 +56,17 @@ import {
 } from './core/suggest';
 import { buildWeeklyFactsText, generateWeeklySummary, isoWeek, WeeklyFacts } from './core/summary';
 import {
-    FarmSchedule, FarmTrigger, newId, PREV_OUTPUT_PLACEHOLDER, sanitizePrompt, ScheduleKind,
-    TaskManager, TaskMode, WorkflowStep
+    CliProfile, FarmSchedule, FarmTrigger, newId, PREV_OUTPUT_PLACEHOLDER, sanitizePrompt,
+    ScheduleKind, TaskManager, TaskMode, WorkflowStep
 } from './core/tasks';
 import { TriggerManager } from './core/triggers';
-import { dayKey, normPath, relTime } from './core/util';
+import { dayKey, fmtTokens, fmtUSD, normPath, relTime } from './core/util';
 import { AgentDetailPanel } from './panels/agentDetail';
 import { DashboardPanel } from './panels/dashboard';
 import { GalleryPanel } from './panels/gallery';
 import { GuidePanel } from './panels/guide';
+import { KanbanPanel } from './panels/kanban';
+import { NeedsPanel } from './panels/needsPanel';
 import { SearchPanel } from './panels/searchPanel';
 import { SessionViewerPanel } from './panels/sessionViewer';
 import { TimelinePanel } from './panels/timeline';
@@ -99,6 +119,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const suggestionStore = new SuggestionStore(path.join(context.globalStorageUri.fsPath, 'suggestions.json'));
     const judgeArgs = () => cfg().get<string>('judgeArgs', '--model claude-haiku-4-5-20251001');
 
+    // G3: eval cases + runs (trace→dataset loop).
+    const evalStore = new EvalStore(path.join(context.globalStorageUri.fsPath, 'evals.json'));
+
+    // H3: pulse (smoke) results.
+    const pulseStore = new PulseStore(path.join(context.globalStorageUri.fsPath, 'pulse.json'));
+
+    // I1: CLAUDE.md version history (per agent).
+    const instrHistory = new InstructionHistory(path.join(context.globalStorageUri.fsPath, 'instr-history'));
+
+    // I4: semantic index over memory/*.md (separate from the transcript index).
+    const memIndex = new SemanticIndex(path.join(context.globalStorageUri.fsPath, 'semantic-memory.json'));
+
+    // G1: browser-step approvals waiting for a human, mirrored into the Needs You queue.
+    const approvalQueue = new ApprovalQueue();
+    const needsEmitter = new vscode.EventEmitter<void>();
+    context.subscriptions.push(needsEmitter);
+    approvalQueue.onChange = () => needsEmitter.fire();
+
     // D4 semantic layer: file-based vector index + provider config from settings/vault.
     const semIndex = new SemanticIndex(path.join(context.globalStorageUri.fsPath, 'semantic-index.json'));
     const embeddingsCfg = (): EmbeddingsConfig => {
@@ -140,19 +178,38 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
     context.subscriptions.push(index);
 
+    let taskManagerRef: TaskManager | undefined;
     const healthConfig = () => ({
         staleMemoryDays: cfg().get<number>('staleMemoryDays', 45),
         contextBudgetTokens: cfg().get<number>('contextBudgetTokens', 8000),
         budgets: cfg().get<Record<string, number>>('budgets', {}),
         trendFactor: cfg().get<number>('trendAlertFactor', 2),
+        anomalyMinUsd: cfg().get<number>('costAnomalyMinUsd', 1),
         qualityScores: qualityStore.scores,
         suggestions: suggestionStore.open().map(s =>
-            ({ id: s.id, agentId: s.agentId, agentName: s.agentName, rule: s.rule }))
+            ({ id: s.id, agentId: s.agentId, agentName: s.agentName, rule: s.rule })),
+        permissionLint: cfg().get<boolean>('permissionLint', true),
+        // H2: reliability alerts from trigger/task records (taskManager is created below;
+        // the ref is late-bound so early buildInsights calls simply see none).
+        triggerAlerts: taskManagerRef
+            ? triggerAlerts(buildTriggerStats(taskManagerRef.triggers, taskManagerRef.tasks))
+            : [],
+        // H3: latest pulse per agent, failures only.
+        pulseFailures: agents
+            .map(a => pulseStore.latestFor(a.id))
+            .filter((p): p is NonNullable<typeof p> => !!p && !p.ok)
+            .map(p => ({ agentId: p.agentId, agentName: p.agentName, reason: p.reason, ts: p.ts }))
     });
 
     const refreshAgents = () => {
         agents = discoverAgents(cfg().get<string[]>('agentRoots', []));
         insights = buildInsights(agents, index, healthConfig());
+        // I1: snapshot changed CLAUDE.md files into the version history.
+        for (const a of agents) {
+            if (!a.claudeMdPath) { continue; }
+            try { instrHistory.record(a.id, fs.readFileSync(a.claudeMdPath, 'utf8')); }
+            catch { /* unreadable */ }
+        }
     };
     refreshAgents();
 
@@ -195,6 +252,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     if (!best || a.normDir.length > best.normDir.length) { best = a; }
                 }
             }
+            if (!best) {
+                // J2: remote relay events carry another machine's paths — match by
+                // folder basename (the same agent usually lives under the same name).
+                const base = n.split('/').pop() ?? '';
+                best = agents.find(a => a.name.toLowerCase() === base);
+            }
             return best ? { agentId: best.id, agentName: best.name } : {};
         },
         // B3 inbound: /trigger/<token> → webhook trigger (late-bound; manager is created below)
@@ -202,6 +265,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
     context.subscriptions.push(live);
     live.start();
+
+    // J2: tail relay feed files from other machines into the live monitor.
+    const relayTailer = new RelayTailer(
+        () => cfg().get<{ name?: string; file?: string }[]>('relayFeeds', [])
+            .filter(f => f && typeof f.file === 'string' && f.file.trim())
+            .map(f => ({ name: (f.name ?? 'remote').trim() || 'remote', file: (f.file as string).trim() })),
+        (feedName, ev) => {
+            const payload = {
+                session_id: `${feedName}:${ev.sessionId}`,
+                cwd: ev.cwd,
+                hook_event_name:
+                    ev.kind === 'prompt' ? 'UserPromptSubmit' :
+                    ev.kind === 'tool' ? 'PreToolUse' :
+                    ev.kind === 'stop' ? 'Stop' : 'PostToolUse',
+                prompt: ev.detail,
+                tool_name: ev.tool
+            };
+            live.handle(payload);
+        });
+    relayTailer.start();
+    context.subscriptions.push(relayTailer);
 
     const state = {
         getAgents: () => agents,
@@ -230,6 +314,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             getEnv: () => vault.env(),
             resolveTemplate: (s) => vault.substitute(s),
             forward: postForward,
+            // J5: alternative CLI executors (gemini / codex / …).
+            cliProfiles: () => cfg().get<CliProfile[]>('cliProfiles', []),
+            // I5: rule-based model routing + quota-pressure downgrade.
+            modelArgsFor: (task) => {
+                const limit = cfg().get<number>('windowTokenLimit', 0);
+                const quotaPct = limit > 0 ? 100 * index.windowUsage().tokens / limit : undefined;
+                return policyModelArgs(
+                    {
+                        fromTrigger: task.fromTrigger, fromSchedule: task.fromSchedule,
+                        workflowId: task.workflowId, agentName: task.agentName, prompt: task.prompt
+                    },
+                    cfg().get<ModelPolicyRule[]>('modelPolicy', []),
+                    quotaPct,
+                    {
+                        percent: cfg().get<number>('quotaDowngradePercent', 0),
+                        model: cfg().get<string>('quotaDowngradeModel', 'claude-haiku-4-5-20251001')
+                    });
+            },
             mediaAuth: () => {
                 const secretName = cfg().get<string>('mediaAuthSecret', 'FAL_KEY');
                 const key = vault.get(secretName);
@@ -238,15 +340,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             mediaBaseUrl: () => cfg().get<string>('mediaBaseUrl', '') || undefined as unknown as string,
             mediaPricing: () => cfg().get<MediaPriceRule[]>('mediaPricing', DEFAULT_MEDIA_PRICING),
             browserAllowHosts: () => cfg().get<string[]>('browserAllowHosts', []),
-            confirmBrowser: async ({ title, url, goal }) => {
-                if (cfg().get<string>('browserApproval', 'ask') !== 'ask') { return true; }
-                const choice = await vscode.window.showWarningMessage(
-                    `Browser step "${title}" wants to run:\n\nURL: ${url}\nGoal: ${goal}\n\nAllow this run?`,
-                    { modal: true }, 'Run');
-                return choice === 'Run';
+            confirmBrowser: ({ title, url, goal }) => {
+                if (cfg().get<string>('browserApproval', 'ask') !== 'ask') {
+                    return Promise.resolve(true);
+                }
+                // G1: the request goes into the approval queue; the notification
+                // and the Needs You panel race — first settle wins.
+                const { id, promise } = approvalQueue.add({ title, url, goal });
+                void vscode.window.showWarningMessage(
+                    `Agent Farm: browser step "${title}" wants to run — ${url} (${goal})`,
+                    'Run', 'Reject', 'Open Needs You'
+                ).then(choice => {
+                    if (choice === 'Run' || choice === 'Reject') {
+                        approvalQueue.settle(id, choice === 'Run');
+                    } else if (choice === 'Open Needs You') {
+                        void vscode.commands.executeCommand('agentfarm.openNeeds');
+                    }
+                });
+                return promise;
             }
         }
     );
+    taskManagerRef = taskManager;
     context.subscriptions.push(taskManager);
 
     const triggerManager = new TriggerManager(taskManager, () => agents, live, {
@@ -261,7 +376,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const sessionsTree = new SessionsTreeProvider(state);
     const insightsTree = new InsightsTreeProvider(state);
     const feedTree = new FeedTreeProvider(state);
-    const tasksTree = new TasksTreeProvider(taskManager, triggerManager);
+    const tasksTree = new TasksTreeProvider(taskManager, triggerManager,
+        // H2: per-trigger reliability line (fired count, 7d ✓/✗, median start delay)
+        (t) => {
+            const stat = buildTriggerStats([t], taskManager.tasks)[0];
+            return stat && (stat.fireCountTotal || stat.tasks7d) ? describeTriggerStat(stat) : undefined;
+        });
 
     context.subscriptions.push(
         vscode.window.registerTreeDataProvider('agentfarm.agents', agentsTree),
@@ -287,7 +407,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         sessionsTree.refresh();
         insightsTree.refresh();
         feedTree.refresh();
+        needsEmitter.fire();
     }, null, context.subscriptions);
+    taskManager.onDidChange(() => needsEmitter.fire(), null, context.subscriptions);
 
     // Automatic fleet reports (e.g. into an Obsidian vault folder), checked hourly.
     const checkAutoReport = () => {
@@ -366,6 +488,38 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     (scored.length ? '. See the Quality column on the Dashboard.' : '.'));
             }
         } finally { qualityBusy = false; }
+    };
+
+    // ---------- H3: synthetic pulse (smoke) checks ----------
+    let pulseBusy = false;
+    const runPulse = async (manual: boolean): Promise<void> => {
+        if (pulseBusy) { return; }
+        pulseBusy = true;
+        try {
+            const targets = agents
+                .filter(a => a.claudeMdPath)
+                .map(a => ({
+                    id: a.id, name: a.name, dir: a.dir,
+                    claudeMdHead: (fs.readFileSync(a.claudeMdPath!, 'utf8')).slice(0, 300)
+                }));
+            if (!targets.length) { return; }
+            const results = await (manual
+                ? vscode.window.withProgress(
+                    { location: vscode.ProgressLocation.Notification, title: 'Agent Farm: pulse sweep (cheap model)…' },
+                    (progress) => runPulseSweep(targets, judgeArgs(), judgeArgs(), pulseStore,
+                        m => progress.report({ message: m })))
+                : runPulseSweep(targets, judgeArgs(), judgeArgs(), pulseStore));
+            const failed = results.filter(r => !r.ok);
+            refreshInsights();
+            if (failed.length) {
+                void vscode.window.showWarningMessage(
+                    `Agent Farm pulse: ${failed.length}/${results.length} agent(s) FAILED — ` +
+                    failed.map(f => f.agentName).join(', ') + '. See Insights.');
+            } else if (manual) {
+                void vscode.window.showInformationMessage(
+                    `Agent Farm pulse: all ${results.length} agent(s) healthy ✓`);
+            }
+        } finally { pulseBusy = false; }
     };
 
     // ---------- D2: instruction suggestion scan ----------
@@ -607,6 +761,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             context.globalState.get<string>('agentfarm.weeklySummaryKey') !== isoWeek(new Date())) {
             void runWeeklySummary(false);
         }
+        // H3: pulse cadence (nightly/weekly), same hourly clock.
+        const pulseCadence = cfg().get<string>('pulse', 'off');
+        if (pulseCadence !== 'off') {
+            const interval = pulseCadence === 'nightly' ? 24 * 3600 * 1000 : 7 * 24 * 3600 * 1000;
+            if (now - pulseStore.lastRunAt >= interval) { void runPulse(false); }
+        }
         // E2: daily digest after the configured local time, once per day.
         const digestAt = cfg().get<string>('dailyDigest', 'off');
         const m = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(digestAt.trim());
@@ -627,6 +787,52 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         checkPeriodicIntelligence();
     }, 3600_000);
     context.subscriptions.push({ dispose: () => clearInterval(reportTimer) });
+
+    // ---------- H4: headless service coordination ----------
+    // Heartbeat: while VS Code runs, the service stays idle (fresh = <90s).
+    const heartbeatFile = path.join(context.globalStorageUri.fsPath, 'live.heartbeat');
+    const writeHeartbeat = () => {
+        try { fs.writeFileSync(heartbeatFile, String(Date.now()), 'utf8'); } catch { /* best-effort */ }
+    };
+    writeHeartbeat();
+    const heartbeatTimer = setInterval(writeHeartbeat, 30_000);
+    context.subscriptions.push({ dispose: () => clearInterval(heartbeatTimer) });
+
+    // Service config: agent map + CLI args, regenerated on every activation.
+    const writeServiceConfig = () => {
+        try {
+            fs.writeFileSync(path.join(context.globalStorageUri.fsPath, 'service-config.json'),
+                JSON.stringify({
+                    agents: agents.map(a => ({ id: a.id, name: a.name, dir: a.dir })),
+                    extraArgs: cfg().get<string>('taskExtraArgs', ''),
+                    maxConcurrent: 1
+                }, null, 2), 'utf8');
+        } catch { /* best-effort */ }
+    };
+    writeServiceConfig();
+
+    // "While you were away": show what the service ran since last activation.
+    const serviceRunsFile = path.join(context.globalStorageUri.fsPath, 'service-runs.jsonl');
+    try {
+        const lastSeen = context.globalState.get<number>('agentfarm.serviceRunsSeenTs', 0);
+        if (fs.existsSync(serviceRunsFile)) {
+            const lines = fs.readFileSync(serviceRunsFile, 'utf8').trim().split('\n');
+            const fresh = lines
+                .map(l => { try { return JSON.parse(l) as { ts: number; kind: string; title?: string; status?: string }; } catch { return undefined; } })
+                .filter((e): e is NonNullable<typeof e> => !!e && e.ts > lastSeen && e.kind === 'task-finished');
+            if (fresh.length) {
+                const ok = fresh.filter(e => e.status === 'done').length;
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: headless service ran ${fresh.length} task(s) while you were away (${ok} ok, ${fresh.length - ok} failed).`,
+                    'Show Log').then(choice => {
+                        if (choice === 'Show Log') {
+                            void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(serviceRunsFile));
+                        }
+                    });
+            }
+        }
+        void context.globalState.update('agentfarm.serviceRunsSeenTs', Date.now());
+    } catch { /* log unreadable */ }
 
     // Initial scan + live watch of ~/.claude/projects
     void index.scanAll().then(() => {
@@ -662,9 +868,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     live.onDidUpdate(() => {
         agentsTree.refresh();
         feedTree.refresh();
+        needsEmitter.fire();
     }, null, context.subscriptions);
 
-    context.subscriptions.push(new FarmStatusBar(index, live));
+    // G1: the Needs You queue is assembled from live state + approvals + insights + parked tasks.
+    const buildNeeds = (): NeedItem[] => buildNeedsQueue({
+        liveSessions: live.sessions(),
+        approvals: approvalQueue.list(),
+        insights,
+        deferredTasks: taskManager.tasks
+            .filter(t => t.status === 'queued' && t.autoStart)
+            .map(t => ({
+                id: t.id, title: t.title, agentName: t.agentName,
+                deferredReason: t.deferredReason, createdAt: t.createdAt
+            })),
+        includeYourTurn: true
+    });
+
+    context.subscriptions.push(new FarmStatusBar(index, live, {
+        blocking: () => blockingCount(buildNeeds()),
+        onExtra: needsEmitter.event
+    }));
 
     const dashboardDeps = {
         extensionUri: context.extensionUri,
@@ -692,6 +916,126 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         getPricing: () => pricing,
         maxMessages: () => cfg().get<number>('maxTranscriptMessages', 400)
     };
+
+    // ---------- G1/G5: Needs You queue + kanban board ----------
+
+    const handleNeedAction = async (actionId: string, item: NeedItem): Promise<void> => {
+        switch (actionId) {
+            case 'approve':
+            case 'reject':
+                if (item.ref.approvalId) { approvalQueue.settle(item.ref.approvalId, actionId === 'approve'); }
+                break;
+            case 'open-session':
+                if (item.ref.transcriptPath && fs.existsSync(item.ref.transcriptPath)) {
+                    SessionViewerPanel.show(item.ref.transcriptPath, viewerDeps);
+                } else {
+                    void vscode.commands.executeCommand('agentfarm.openTimeline');
+                }
+                break;
+            case 'open-timeline':
+                void vscode.commands.executeCommand('agentfarm.openTimeline');
+                break;
+            case 'open-dashboard':
+                void vscode.commands.executeCommand('agentfarm.openDashboard');
+                break;
+            case 'sync-antigravity':
+                await vscode.commands.executeCommand('agentfarm.syncAntigravity', { agentId: item.ref.agentId });
+                break;
+            case 'review-suggestion':
+                await vscode.commands.executeCommand('agentfarm.reviewSuggestions', item.ref.suggestionId);
+                break;
+            case 'open-board':
+                void vscode.commands.executeCommand('agentfarm.openBoard');
+                break;
+        }
+    };
+
+    const needsDeps = {
+        extensionUri: context.extensionUri,
+        buildItems: buildNeeds,
+        onAction: handleNeedAction,
+        onDidChange: needsEmitter.event
+    };
+
+    // F1 command bar, callable with prefilled text (used by the kanban board).
+    const runCommandBar = async (prefill?: string): Promise<void> => {
+        if (!agents.length) {
+            void vscode.window.showWarningMessage('Agent Farm: no agents found — configure agentFarm.agentRoots first.');
+            return;
+        }
+        const utterance = prefill ?? await vscode.window.showInputBox({
+            prompt: 'Ne yapılsın? (doğal dil — tek seferlik iş, zamanlama veya zincir)',
+            placeHolder: 'örn. yarın 09:00\'da psikolog haftalık analizi koşsun, çıktı vault\'a yazılsın',
+            ignoreFocusOut: true
+        });
+        if (!utterance?.trim()) { return; }
+        const agentNames = agents.map(a => a.name);
+        const result = await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title: 'Agent Farm: planning (cheap model)…' },
+            () => interpretCommand(os.homedir(), judgeArgs(), agentNames, utterance));
+        if (!result.plan) {
+            void vscode.window.showWarningMessage(
+                `Agent Farm: could not turn that into a plan — ${result.errors.join('; ')}` +
+                (result.raw ? ` | model said: ${result.raw.slice(0, 200)}` : ''));
+            return;
+        }
+        const plan: FarmPlan = result.plan;
+        const canRunNow = plan.kind === 'task' || plan.kind === 'workflow';
+        const choice = await vscode.window.showInformationMessage(
+            describePlan(plan) + '\n\nKurulsun mu?',
+            { modal: true },
+            ...(canRunNow ? ['Create & Run', 'Create'] : ['Create']));
+        if (!choice) { return; }
+
+        const findAgent = (name?: string) =>
+            agents.find(a => a.name.toLowerCase() === (name ?? '').toLowerCase());
+        if (plan.kind === 'task') {
+            const agent = findAgent(plan.agent)!;
+            const task = taskManager.addTask(agent, plan.title, plan.prompt!, 'headless');
+            if (choice === 'Create & Run') { taskManager.startTask(task); }
+            void vscode.window.showInformationMessage(
+                `Agent Farm: task "${plan.title}" ${choice === 'Create & Run' ? 'started' : 'queued'} (${agent.name}).`);
+        } else if (plan.kind === 'schedule') {
+            const agent = findAgent(plan.agent)!;
+            const s = plan.schedule!;
+            taskManager.addSchedule({
+                agentId: agent.id, agentName: agent.name, title: plan.title, prompt: plan.prompt!,
+                mode: 'headless', kind: s.kind,
+                hour: s.hour ?? 9, minute: s.minute ?? 0, dow: s.dow,
+                onceAt: s.kind === 'once' ? Date.parse(s.onceAt!.replace(' ', 'T')) : undefined,
+                enabled: true
+            });
+            void vscode.window.showInformationMessage(
+                `Agent Farm: schedule "${plan.title}" created (runs while VS Code is open).`);
+        } else {
+            const steps: WorkflowStep[] = plan.steps!.map(st => {
+                const agent = findAgent(st.agent)!;
+                return {
+                    agentId: agent.id, agentName: agent.name,
+                    title: st.title || st.prompt.slice(0, 40), prompt: st.prompt, mode: 'headless' as TaskMode
+                };
+            });
+            const w = taskManager.addWorkflow(plan.title, steps);
+            if (choice === 'Create & Run') { taskManager.runWorkflow(w); }
+            void vscode.window.showInformationMessage(
+                `Agent Farm: workflow "${plan.title}" ${choice === 'Create & Run' ? 'started' : 'created'} (${steps.length} steps).`);
+        }
+    };
+
+    const kanbanDeps = {
+        extensionUri: context.extensionUri,
+        manager: taskManager,
+        buildWaiting: () => buildNeeds().filter(i =>
+            i.kind === 'permission' || i.kind === 'browser-approval' || i.kind === 'stalled'),
+        runCommandText: (text: string) => runCommandBar(text),
+        settleApproval: (id: string, ok: boolean) => approvalQueue.settle(id, ok),
+        onDidChangeNeeds: needsEmitter.event
+    };
+
+    needsEmitter.event(() => {
+        NeedsPanel.refreshIfOpen();
+        KanbanPanel.refreshIfOpen();
+    }, null, context.subscriptions);
 
     let pendingMerge: { name: string; files: string[] } | undefined;
 
@@ -860,7 +1204,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 { placeHolder: 'How should this task run?' }
             );
             if (!mode) { return; }
+            // J5: alternative CLI executors, only offered when profiles exist.
+            const profiles = cfg().get<CliProfile[]>('cliProfiles', []).filter(p => p?.name && p.headless);
+            let cli: string | undefined;
+            if (profiles.length) {
+                const cliPick = await vscode.window.showQuickPick(
+                    [{ label: 'claude', description: 'default executor (full monitoring)' },
+                     ...profiles.map(p => ({ label: p.name, description: p.headless }))],
+                    { placeHolder: 'Which CLI runs this task? (non-claude executors get output archiving only)' });
+                if (!cliPick) { return; }
+                if (cliPick.label !== 'claude') { cli = cliPick.label; }
+            }
             const task = taskManager.addTask(agent, title, prompt, mode.mode);
+            if (cli) { task.cli = cli; }
             const start = await vscode.window.showInformationMessage(
                 `Agent Farm: task "${title}" queued for ${agent.name}.`, 'Start now');
             if (start === 'Start now') { taskManager.startTask(task); }
@@ -2237,68 +2593,710 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         // ---------- F1: natural-language command bar ----------
 
-        vscode.commands.registerCommand('agentfarm.commandBar', async () => {
-            if (!agents.length) {
-                void vscode.window.showWarningMessage('Agent Farm: no agents found — configure agentFarm.agentRoots first.');
-                return;
+        vscode.commands.registerCommand('agentfarm.commandBar', () => runCommandBar()),
+
+        // ---------- G1/G5: Needs You + kanban board ----------
+
+        vscode.commands.registerCommand('agentfarm.openNeeds', () => {
+            NeedsPanel.show(needsDeps);
+        }),
+
+        vscode.commands.registerCommand('agentfarm.openBoard', () => {
+            KanbanPanel.show(kanbanDeps);
+        }),
+
+        // ---------- G2: cost anomaly report ----------
+
+        vscode.commands.registerCommand('agentfarm.costReport', async () => {
+            const now = Date.now();
+            const minUsd = cfg().get<number>('costAnomalyMinUsd', 1);
+            const lines: string[] = [];
+            lines.push('# Agent Farm — Cost Anomaly Report');
+            lines.push('');
+            lines.push(`Generated: ${new Date(now).toLocaleString()} · baseline: trailing 14 days (median + MAD)`);
+            lines.push('');
+            lines.push('| Agent | Today | 14d median | Robust σ | Factor | Anomaly |');
+            lines.push('| --- | --- | --- | --- | --- | --- |');
+            const rowFor = (label: string, sessions: { daily: Record<string, { cost: number }> }[]) => {
+                const hist = dailyCostHistory(sessions, 14, now);
+                const today = todayCost(sessions, now);
+                const med = hist.slice().sort((a, b) => a - b)[Math.floor(hist.length / 2)] ?? 0;
+                const anomaly = detectCostAnomaly(hist, today, { minUsd });
+                lines.push(`| ${label} | ${fmtUSD(today)} | ${fmtUSD(med)} | ` +
+                    `${anomaly ? fmtUSD(anomaly.sigma) : '—'} | ` +
+                    `${anomaly ? anomaly.factor.toFixed(1) + 'x' : '—'} | ${anomaly ? '⚠ YES' : 'no'} |`);
+            };
+            rowFor('**fleet**', index.all());
+            for (const a of agents) { rowFor(a.name, index.forAgent(a.id)); }
+            lines.push('');
+            const hh = heavyHitters(index.all().map(s => ({
+                file: s.file,
+                title: s.title,
+                agentName: s.agentName,
+                cost: s.cost,
+                tokens: totalTokens(s.usage),
+                lastTs: s.lastTs
+            })), 7 * 24 * 3600 * 1000, now);
+            lines.push('## Heavy hitters (last 7 days)');
+            lines.push('');
+            lines.push(hh.sessionCount
+                ? `**${hh.heavy.length} of ${hh.sessionCount} sessions (${hh.heavyCountPct}%) consume ` +
+                  `${hh.tokenSharePct}% of all tokens** (${fmtTokens(hh.totalTokens)} total, ${fmtUSD(hh.totalCost)}).`
+                : 'No sessions in the window.');
+            lines.push('');
+            for (const s of hh.heavy.slice(0, 10)) {
+                lines.push(`- ${s.agentName ?? '?'} — "${s.title}" · ${fmtTokens(s.tokens)} tok · ` +
+                    `${fmtUSD(s.cost)} · ${new Date(s.lastTs).toLocaleString()}`);
             }
-            const utterance = await vscode.window.showInputBox({
-                prompt: 'Ne yapılsın? (doğal dil — tek seferlik iş, zamanlama veya zincir)',
-                placeHolder: 'örn. yarın 09:00\'da psikolog haftalık analizi koşsun, çıktı vault\'a yazılsın',
+            const doc = await vscode.workspace.openTextDocument({
+                content: lines.join('\n'), language: 'markdown'
+            });
+            await vscode.window.showTextDocument(doc, { preview: true });
+        }),
+
+        // ---------- G3: eval set (trace→dataset) ----------
+
+        vscode.commands.registerCommand('agentfarm.addEvalCase', async (arg?: AgentArg) => {
+            const agent = await resolveAgent(arg);
+            if (!agent) { return; }
+            interface Candidate extends vscode.QuickPickItem {
+                input?: string; expectation?: string;
+                source?: EvalCase['source'];
+            }
+            const candidates: Candidate[] = [];
+            for (const q of qualityStore.scores.filter(s => s.agentId === agent.id && s.score <= 2)) {
+                if (evalStore.hasSource(q.sessionId)) { continue; }
+                candidates.push({
+                    label: `⭐ ${q.score}/5 — ${q.promptSnippet}`,
+                    description: q.reason.slice(0, 60),
+                    detail: 'low-scored session → regression case',
+                    input: q.promptSnippet,
+                    expectation: '',
+                    source: { kind: 'quality', sessionId: q.sessionId }
+                });
+            }
+            for (const t of taskManager.tasks.filter(t => t.agentId === agent.id && t.verified === 'fail')) {
+                if (evalStore.hasSource(undefined, t.id)) { continue; }
+                candidates.push({
+                    label: `✗ verify FAIL — ${t.title}`,
+                    detail: 'failed verification → regression case',
+                    input: t.prompt,
+                    expectation: '',
+                    source: { kind: 'verify', taskId: t.id }
+                });
+            }
+            candidates.push({ label: '$(edit) Manual case…', detail: 'type the input yourself' });
+            const picked = await vscode.window.showQuickPick(candidates, {
+                placeHolder: `New eval case for ${agent.name} — from a bad trace, or manual`
+            });
+            if (!picked) { return; }
+            const input = await vscode.window.showInputBox({
+                prompt: 'Case input (the prompt replayed against the agent)',
+                value: picked.input ?? '',
                 ignoreFocusOut: true
             });
-            if (!utterance?.trim()) { return; }
-            const agentNames = agents.map(a => a.name);
-            const result = await vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Notification, title: 'Agent Farm: planning (cheap model)…' },
-                () => interpretCommand(os.homedir(), judgeArgs(), agentNames, utterance));
-            if (!result.plan) {
-                void vscode.window.showWarningMessage(
-                    `Agent Farm: could not turn that into a plan — ${result.errors.join('; ')}` +
-                    (result.raw ? ` | model said: ${result.raw.slice(0, 200)}` : ''));
+            if (!input?.trim()) { return; }
+            const expectation = await vscode.window.showInputBox({
+                prompt: 'Expectation (what a good answer must satisfy — judge criteria)',
+                placeHolder: 'örn. Türkçe olmalı, 3 somut öneri içermeli, başlık atmalı',
+                ignoreFocusOut: true
+            });
+            if (!expectation?.trim()) { return; }
+            evalStore.addCase({
+                agentId: agent.id, agentName: agent.name,
+                title: input.slice(0, 60),
+                input, expectation,
+                source: picked.source ?? { kind: 'manual' }
+            });
+            void vscode.window.showInformationMessage(
+                `Agent Farm: eval case added — ${agent.name} now has ${evalStore.casesFor(agent.id).length} case(s).`);
+        }),
+
+        vscode.commands.registerCommand('agentfarm.runEvals', async (arg?: AgentArg) => {
+            const withCases = agents.filter(a => evalStore.casesFor(a.id).length);
+            if (!withCases.length) {
+                void vscode.window.showInformationMessage(
+                    'Agent Farm: no eval cases yet — use "Add Eval Case…" first (bad traces become regression tests).');
                 return;
             }
-            const plan: FarmPlan = result.plan;
-            const canRunNow = plan.kind === 'task' || plan.kind === 'workflow';
-            const choice = await vscode.window.showInformationMessage(
-                describePlan(plan) + '\n\nKurulsun mu?',
-                { modal: true },
-                ...(canRunNow ? ['Create & Run', 'Create'] : ['Create']));
-            if (!choice) { return; }
-
-            const findAgent = (name?: string) =>
-                agents.find(a => a.name.toLowerCase() === (name ?? '').toLowerCase());
-            if (plan.kind === 'task') {
-                const agent = findAgent(plan.agent)!;
-                const task = taskManager.addTask(agent, plan.title, plan.prompt!, 'headless');
-                if (choice === 'Create & Run') { taskManager.startTask(task); }
-                void vscode.window.showInformationMessage(
-                    `Agent Farm: task "${plan.title}" ${choice === 'Create & Run' ? 'started' : 'queued'} (${agent.name}).`);
-            } else if (plan.kind === 'schedule') {
-                const agent = findAgent(plan.agent)!;
-                const s = plan.schedule!;
-                taskManager.addSchedule({
-                    agentId: agent.id, agentName: agent.name, title: plan.title, prompt: plan.prompt!,
-                    mode: 'headless', kind: s.kind,
-                    hour: s.hour ?? 9, minute: s.minute ?? 0, dow: s.dow,
-                    onceAt: s.kind === 'once' ? Date.parse(s.onceAt!.replace(' ', 'T')) : undefined,
-                    enabled: true
-                });
-                void vscode.window.showInformationMessage(
-                    `Agent Farm: schedule "${plan.title}" created (runs while VS Code is open).`);
-            } else {
-                const steps: WorkflowStep[] = plan.steps!.map(st => {
-                    const agent = findAgent(st.agent)!;
-                    return {
-                        agentId: agent.id, agentName: agent.name,
-                        title: st.title || st.prompt.slice(0, 40), prompt: st.prompt, mode: 'headless' as TaskMode
-                    };
-                });
-                const w = taskManager.addWorkflow(plan.title, steps);
-                if (choice === 'Create & Run') { taskManager.runWorkflow(w); }
-                void vscode.window.showInformationMessage(
-                    `Agent Farm: workflow "${plan.title}" ${choice === 'Create & Run' ? 'started' : 'created'} (${steps.length} steps).`);
+            let agent = await resolveAgent(arg);
+            if (agent && !evalStore.casesFor(agent.id).length) { agent = undefined; }
+            if (!agent) {
+                const pick = await vscode.window.showQuickPick(withCases.map(a => ({
+                    label: a.name,
+                    description: `${evalStore.casesFor(a.id).length} case(s)`,
+                    agent: a
+                })), { placeHolder: 'Run whose eval set?' });
+                agent = pick?.agent;
             }
+            if (!agent) { return; }
+            const cases = evalStore.casesFor(agent.id);
+            const runArgs = cfg().get<string>('evalRunArgs', '--model claude-haiku-4-5-20251001');
+            const confirm = await vscode.window.showInformationMessage(
+                `Run ${cases.length} eval case(s) against ${agent.name}?\n\n` +
+                `Each case = one agent call (${runArgs || 'agent default model'}) + one cheap judge call.`,
+                { modal: true }, 'Run');
+            if (confirm !== 'Run') { return; }
+            const results = await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: `Agent Farm: evals — ${agent.name}` },
+                (progress) => runEvalSet(agent!.dir, runArgs, judgeArgs(), cases,
+                    m => progress.report({ message: m })));
+            const prev = evalStore.lastRun(agent.id);
+            const cmp = compareRuns(prev, results);
+            evalStore.addRun({
+                id: newId(), agentId: agent.id, agentName: agent.name, ts: Date.now(),
+                passed: results.filter(r => r.pass).length,
+                failed: results.filter(r => !r.pass).length,
+                results
+            });
+            const doc = await vscode.workspace.openTextDocument({
+                content: buildEvalReport(agent.name, results, cmp, prev), language: 'markdown'
+            });
+            await vscode.window.showTextDocument(doc, { preview: true });
+            void vscode.window.showInformationMessage(
+                `Agent Farm evals — ${agent.name}: ${summarizeRun(results, cmp)}`);
+        }),
+
+        vscode.commands.registerCommand('agentfarm.reviewEvalCases', async (arg?: AgentArg) => {
+            const agent = await resolveAgent(arg);
+            if (!agent) { return; }
+            const cases = evalStore.casesFor(agent.id);
+            if (!cases.length) {
+                void vscode.window.showInformationMessage(`Agent Farm: ${agent.name} has no eval cases.`);
+                return;
+            }
+            const pick = await vscode.window.showQuickPick(cases.map(c => ({
+                label: c.title,
+                description: c.source?.kind ?? 'manual',
+                detail: `Expect: ${c.expectation.slice(0, 100)}`,
+                caseId: c.id
+            })), { placeHolder: `${agent.name} — ${cases.length} eval case(s); pick one to delete` });
+            if (!pick) { return; }
+            const del = await vscode.window.showWarningMessage(
+                `Delete eval case "${pick.label}"?`, { modal: true }, 'Delete');
+            if (del === 'Delete') {
+                evalStore.deleteCase(pick.caseId);
+                void vscode.window.showInformationMessage('Agent Farm: eval case deleted.');
+            }
+        }),
+
+        // ---------- H2/H3: reliability ----------
+
+        vscode.commands.registerCommand('agentfarm.runPulseNow', () => runPulse(true)),
+
+        vscode.commands.registerCommand('agentfarm.triggerReport', async () => {
+            const stats = buildTriggerStats(taskManager.triggers, taskManager.tasks);
+            if (!stats.length) {
+                void vscode.window.showInformationMessage('Agent Farm: no triggers configured.');
+                return;
+            }
+            const lines: string[] = [];
+            lines.push('# Agent Farm — Trigger Reliability');
+            lines.push('');
+            lines.push(`Generated: ${new Date().toLocaleString()} · window: last 7 days`);
+            lines.push('');
+            lines.push('| Trigger | Armed | Fired (total) | 7d ✓/✗ | Median start delay | Last fired | Flags |');
+            lines.push('| --- | --- | --- | --- | --- | --- | --- |');
+            for (const s of stats) {
+                const delay = s.medianStartDelayMs !== undefined
+                    ? (s.medianStartDelayMs < 90_000
+                        ? Math.round(s.medianStartDelayMs / 1000) + 's'
+                        : Math.round(s.medianStartDelayMs / 60_000) + 'm')
+                    : '—';
+                const flags = [
+                    s.neverFired ? 'never fired' : '',
+                    s.alwaysFails ? '⚠ always fails' : ''
+                ].filter(Boolean).join(', ') || '—';
+                lines.push(`| ${s.title} | ${s.enabled ? 'yes' : 'no'} | ${s.fireCountTotal} | ` +
+                    `${s.ok7d}/${s.fail7d} | ${delay} | ` +
+                    `${s.lastFiredAt ? new Date(s.lastFiredAt).toLocaleString() : 'never'} | ${flags} |`);
+            }
+            const doc = await vscode.workspace.openTextDocument({
+                content: lines.join('\n'), language: 'markdown'
+            });
+            await vscode.window.showTextDocument(doc, { preview: true });
+        }),
+
+        // ---------- H4: headless service ----------
+
+        vscode.commands.registerCommand('agentfarm.installFarmService', async () => {
+            const storage = context.globalStorageUri.fsPath;
+            const serviceSrc = path.join(context.extensionPath, 'out', 'service', 'farmService.js');
+            if (!fs.existsSync(serviceSrc)) {
+                void vscode.window.showErrorMessage('Agent Farm: service script missing from the extension build.');
+                return;
+            }
+            const choice = await vscode.window.showInformationMessage(
+                'Install the Agent Farm headless service?\n\n' +
+                'A Windows Scheduled Task (logon-time, current user) will run a small node process that ' +
+                'processes schedules and watch-triggers while VS Code is closed. ' +
+                'It goes idle automatically whenever VS Code is running.\n\nRequires node on PATH.',
+                { modal: true }, 'Install');
+            if (choice !== 'Install') { return; }
+            try {
+                const serviceDst = path.join(storage, 'farm-service.js');
+                fs.copyFileSync(serviceSrc, serviceDst);
+                writeServiceConfig();
+                const cmdFile = path.join(storage, 'farm-service.cmd');
+                fs.writeFileSync(cmdFile,
+                    `@echo off\r\nnode "${serviceDst}" --storage "${storage}" >> "${path.join(storage, 'farm-service.log')}" 2>&1\r\n`,
+                    'utf8');
+                cp.exec(`schtasks /create /tn "AgentFarmService" /sc onlogon /tr "\\"${cmdFile}\\"" /f`,
+                    { windowsHide: true }, (err) => {
+                        if (err) {
+                            void vscode.window.showErrorMessage(
+                                `Agent Farm: schtasks failed — ${String(err.message).slice(0, 200)}`);
+                            return;
+                        }
+                        cp.exec('schtasks /run /tn "AgentFarmService"', { windowsHide: true });
+                        void vscode.window.showInformationMessage(
+                            'Agent Farm: headless service installed and started ✓ — it sleeps while VS Code is open and takes over when you close it.');
+                    });
+            } catch (e) {
+                void vscode.window.showErrorMessage(`Agent Farm: service install failed — ${String(e)}`);
+            }
+        }),
+
+        vscode.commands.registerCommand('agentfarm.removeFarmService', async () => {
+            const choice = await vscode.window.showWarningMessage(
+                'Remove the Agent Farm headless service (scheduled task + running instance)?',
+                { modal: true }, 'Remove');
+            if (choice !== 'Remove') { return; }
+            cp.exec('schtasks /end /tn "AgentFarmService"', { windowsHide: true }, () => {
+                cp.exec('schtasks /delete /tn "AgentFarmService" /f', { windowsHide: true }, (err) => {
+                    void (err
+                        ? vscode.window.showWarningMessage('Agent Farm: scheduled task not found (already removed?).')
+                        : vscode.window.showInformationMessage('Agent Farm: headless service removed.'));
+                });
+            });
+        }),
+
+        // ---------- I1: instruction history + impact ----------
+
+        vscode.commands.registerCommand('agentfarm.instructionHistory', async (arg?: AgentArg) => {
+            const agent = await resolveAgent(arg);
+            if (!agent) { return; }
+            const versions = instrHistory.versions(agent.id);
+            const impacts = correlateVersions(
+                versions,
+                qualityStore.scores.filter(q => q.agentId === agent.id),
+                index.forAgent(agent.id).map(s => ({ lastTs: s.lastTs, cost: s.cost })));
+            const doc = await vscode.workspace.openTextDocument({
+                content: buildImpactReport(agent.name, impacts), language: 'markdown'
+            });
+            await vscode.window.showTextDocument(doc, { preview: true });
+        }),
+
+        // ---------- I2: A/B instruction experiment ----------
+
+        vscode.commands.registerCommand('agentfarm.abTest', async (arg?: AgentArg) => {
+            const agent = await resolveAgent(arg);
+            if (!agent?.claudeMdPath) {
+                void vscode.window.showWarningMessage('Agent Farm: agent has no CLAUDE.md to experiment on.');
+                return;
+            }
+            const current = fs.readFileSync(agent.claudeMdPath, 'utf8');
+            // Variant B source: append an open suggestion, pick a file, or paste a rule.
+            interface VariantPick extends vscode.QuickPickItem { variantKind: 'suggestion' | 'file' | 'paste'; rule?: string }
+            const options: VariantPick[] = suggestionStore.open()
+                .filter(s => s.agentId === agent.id)
+                .map(s => ({
+                    label: `$(lightbulb) Öneriyi dene: ${s.rule.slice(0, 70)}`,
+                    detail: 'B = mevcut CLAUDE.md + bu kural', variantKind: 'suggestion' as const, rule: s.rule
+                }));
+            options.push(
+                { label: '$(file) B varyantını dosyadan seç…', variantKind: 'file' },
+                { label: '$(edit) Eklenecek kuralı elle yaz…', variantKind: 'paste' });
+            const picked = await vscode.window.showQuickPick(options, {
+                placeHolder: `A = ${agent.name}'in mevcut CLAUDE.md'si. B varyantı nereden gelsin?`
+            });
+            if (!picked) { return; }
+            let variantB: string | undefined;
+            if (picked.variantKind === 'suggestion' && picked.rule) {
+                variantB = current.trimEnd() + `\n\n## Deneme kuralı (A/B)\n- ${picked.rule}\n`;
+            } else if (picked.variantKind === 'file') {
+                const uris = await vscode.window.showOpenDialog({
+                    canSelectMany: false, filters: { Markdown: ['md'] }, title: 'Variant B CLAUDE.md'
+                });
+                if (uris?.[0]) { variantB = fs.readFileSync(uris[0].fsPath, 'utf8'); }
+            } else {
+                const rule = await vscode.window.showInputBox({
+                    prompt: 'B varyantına eklenecek kural (tek satır)', ignoreFocusOut: true
+                });
+                if (rule?.trim()) {
+                    variantB = current.trimEnd() + `\n\n## Deneme kuralı (A/B)\n- ${rule.trim()}\n`;
+                }
+            }
+            if (!variantB) { return; }
+            const evalCases = evalStore.casesFor(agent.id);
+            let prompts = evalCases.map(c => c.input).slice(0, 5);
+            if (!prompts.length) {
+                const raw = await vscode.window.showInputBox({
+                    prompt: 'Deneme istemleri ( ; ile ayır, 2-5 adet)',
+                    placeHolder: 'örn. bugünkü notları özetle ; haftalık plan çıkar',
+                    ignoreFocusOut: true
+                });
+                prompts = (raw ?? '').split(';').map(s => s.trim()).filter(Boolean).slice(0, 5);
+            }
+            if (!prompts.length) { return; }
+            const runArgs = cfg().get<string>('evalRunArgs', '--model claude-haiku-4-5-20251001');
+            const confirm = await vscode.window.showInformationMessage(
+                `A/B deneyi: ${prompts.length} istem × 2 varyant + ${prompts.length} hakem çağrısı ` +
+                `(${runArgs || 'ajan varsayılan modeli'}). Koşulsun mu?`,
+                { modal: true }, 'Run');
+            if (confirm !== 'Run') { return; }
+            const summary = await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: `Agent Farm: A/B — ${agent.name}` },
+                (progress) => runAbTest(agent.dir, current, variantB!, prompts, runArgs, judgeArgs(),
+                    m => progress.report({ message: m })));
+            const doc = await vscode.workspace.openTextDocument({
+                content: buildAbReport(agent.name, summary), language: 'markdown'
+            });
+            await vscode.window.showTextDocument(doc, { preview: true });
+            if (summary.winsB > summary.winsA) {
+                const apply = await vscode.window.showInformationMessage(
+                    `B kazandı (${summary.winsB}-${summary.winsA}, ${summary.ties} eşit). B varyantı CLAUDE.md'ye uygulansın mı? (.afbak yedeği alınır)`,
+                    { modal: true }, 'Apply B');
+                if (apply === 'Apply B') {
+                    const backup = `${agent.claudeMdPath}.${Date.now()}.afbak`;
+                    fs.copyFileSync(agent.claudeMdPath, backup);
+                    fs.writeFileSync(agent.claudeMdPath, variantB, 'utf8');
+                    instrHistory.record(agent.id, variantB);
+                    void vscode.window.showInformationMessage(
+                        `Agent Farm: B uygulandı ✓ (yedek: ${path.basename(backup)})`);
+                }
+            } else {
+                void vscode.window.showInformationMessage(
+                    `Agent Farm A/B: A ${summary.winsA} · B ${summary.winsB} · eşit ${summary.ties} — mevcut talimat yerinde kalıyor.`);
+            }
+        }),
+
+        // ---------- I3: memory distillation ----------
+
+        vscode.commands.registerCommand('agentfarm.distillMemory', async (arg?: AgentArg) => {
+            const agent = await resolveAgent(arg);
+            if (!agent) { return; }
+            const candidates = distillCandidates(agent.memoryFiles, {
+                staleDays: cfg().get<number>('staleMemoryDays', 45)
+            });
+            const items = (candidates.length ? candidates : agent.memoryFiles
+                .filter(f => f.name.toLowerCase() !== 'memory.md')
+                .map(f => ({ path: f.path, name: f.name, tokens: f.tokens, staleDays: 0, reason: 'elle seçildi' })))
+                .map(c => ({ label: c.name, description: c.reason, detail: c.path, cand: c }));
+            if (!items.length) {
+                void vscode.window.showInformationMessage(`Agent Farm: ${agent.name} has no memory files to distill.`);
+                return;
+            }
+            const pick = await vscode.window.showQuickPick(items, {
+                placeHolder: candidates.length
+                    ? 'Distill which memory file? (oversized/stale candidates first)'
+                    : 'No obvious candidates — pick any memory file'
+            });
+            if (!pick) { return; }
+            const result = await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: `Agent Farm: distilling ${pick.label} (cheap model)…` },
+                () => distillFile(agent.dir, judgeArgs(), pick.cand.path));
+            if (!result.draft) {
+                void vscode.window.showWarningMessage(`Agent Farm: distillation failed — ${result.error}`);
+                return;
+            }
+            const draftFile = path.join(os.tmpdir(), `af-distill-${Date.now()}-${pick.label}`);
+            fs.writeFileSync(draftFile, result.draft, 'utf8');
+            await vscode.commands.executeCommand('vscode.diff',
+                vscode.Uri.file(pick.cand.path), vscode.Uri.file(draftFile),
+                `${pick.label}: current ↔ distilled draft`);
+            const choice = await vscode.window.showInformationMessage(
+                `Distilled draft: ~${result.tokensBefore} → ~${result.tokensAfter} tokens. Apply over the original? (.afbak backup)`,
+                'Apply', 'Discard');
+            if (choice === 'Apply') {
+                const backup = applyDistilled(pick.cand.path, result.draft);
+                refreshAll();
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: ${pick.label} distilled ✓ (backup: ${path.basename(backup)})`);
+            }
+            try { fs.unlinkSync(draftFile); } catch { /* temp cleanup */ }
+        }),
+
+        // ---------- I4: semantic memory query ----------
+
+        vscode.commands.registerCommand('agentfarm.askMemory', async () => {
+            const ecfg = embeddingsCfg();
+            if (ecfg.provider === 'off') {
+                void vscode.window.showWarningMessage(
+                    'Agent Farm: semantic memory needs an embeddings provider — set agentFarm.embeddingsProvider (gemini, or a local OpenAI-compatible endpoint).');
+                return;
+            }
+            const query = await vscode.window.showInputBox({
+                prompt: 'Filo bu konuda ne biliyor? (anlamsal hafıza sorgusu)',
+                placeHolder: 'örn. kullanıcının uyku düzeni hakkında bilinenler',
+                ignoreFocusOut: true
+            });
+            if (!query?.trim()) { return; }
+            const hits = await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: 'Agent Farm: querying fleet memory…' },
+                async (progress) => {
+                    const refs = memoryFileRefs(agents);
+                    memIndex.prune(new Set(refs.map(r => r.key)));
+                    const pending = memIndex.pending(refs.map(r => ({ sessionId: r.key, mtime: r.mtime })));
+                    const byKey = new Map(refs.map(r => [r.key, r]));
+                    for (const [i, p] of pending.entries()) {
+                        const ref = byKey.get(p.sessionId)!;
+                        progress.report({ message: `indexing ${i + 1}/${pending.length}` });
+                        const texts = chunkMemoryFile(ref.file);
+                        if (texts.length) {
+                            const { vectors, error } = await embedTexts(texts, ecfg);
+                            if (error) { throw new Error(error); }
+                            memIndex.addSession(p.sessionId, p.mtime, texts.map(t => ({
+                                sessionFile: ref.file, sessionId: ref.key,
+                                agentName: ref.agentName, title: ref.name, ts: ref.mtime, text: t
+                            })), vectors!);
+                        } else {
+                            memIndex.addSession(p.sessionId, p.mtime, [], []);
+                        }
+                    }
+                    memIndex.save();
+                    const q = await embedTexts([query], ecfg);
+                    if (q.error || !q.vectors) { throw new Error(q.error ?? 'query embedding failed'); }
+                    return memIndex.search(q.vectors[0], 12).filter(h => h.score > 0.15);
+                }).then(h => h, err => {
+                    void vscode.window.showWarningMessage(`Agent Farm: memory query failed — ${String(err.message ?? err)}`);
+                    return undefined;
+                });
+            if (!hits) { return; }
+            if (!hits.length) {
+                void vscode.window.showInformationMessage('Agent Farm: no memory matches — the fleet knows nothing about that (yet).');
+                return;
+            }
+            const pick = await vscode.window.showQuickPick(hits.map(h => ({
+                label: `${h.chunk.agentName} — ${h.chunk.title}`,
+                description: `${Math.round(h.score * 100)}%`,
+                detail: h.chunk.text.slice(0, 160),
+                file: h.chunk.sessionFile
+            })), { placeHolder: `"${query}" — ${hits.length} memory record(s), pick to open`, matchOnDetail: true });
+            if (pick) {
+                void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(pick.file));
+            }
+        }),
+
+        // ---------- J3: OpenTelemetry export ----------
+
+        vscode.commands.registerCommand('agentfarm.exportOtel', async () => {
+            const target = await vscode.window.showSaveDialog({
+                defaultUri: vscode.Uri.file(path.join(os.homedir(), `agent-farm-traces-${dayKey(Date.now())}.json`)),
+                filters: { 'OTLP JSON': ['json'] },
+                title: 'Export sessions as OTLP/JSON traces'
+            });
+            if (!target) { return; }
+            const doc = buildOtlpTraces(index.all().map(s => ({
+                sessionId: s.sessionId,
+                parentSessionId: s.parentSessionId,
+                title: s.title,
+                agentName: s.agentName,
+                firstTs: s.firstTs,
+                lastTs: s.lastTs,
+                cost: s.cost,
+                usage: s.usage,
+                models: s.models,
+                toolCalls: s.toolCalls,
+                errors: s.errors,
+                machine: s.machine
+            })));
+            fs.writeFileSync(target.fsPath, JSON.stringify(doc, null, 2), 'utf8');
+            void vscode.window.showInformationMessage(
+                `Agent Farm: ${index.all().length} session span(s) exported — feed the file to Langfuse/Tempo/any OTLP-JSON consumer.`,
+                'Open').then(c => {
+                    if (c === 'Open') { void vscode.commands.executeCommand('vscode.open', target); }
+                });
+        }),
+
+        // ---------- J1: parallel worktree runs ----------
+
+        vscode.commands.registerCommand('agentfarm.runParallel', async (arg?: AgentArg) => {
+            const agent = await resolveAgent(arg);
+            if (!agent) { return; }
+            if (!(await isGitRepo(agent.dir))) {
+                void vscode.window.showWarningMessage(
+                    `Agent Farm: ${agent.name} is not a git repository — parallel worktree runs need one.`);
+                return;
+            }
+            const raw = await vscode.window.showInputBox({
+                prompt: 'Paralel koşular ( ; ile ayır — her istem kendi worktree\'sinde koşar)',
+                placeHolder: 'örn. login formunu düzelt ; dark mode ekle ; testleri hızlandır',
+                ignoreFocusOut: true
+            });
+            const prompts = (raw ?? '').split(';').map(s => s.trim()).filter(Boolean).slice(0, 6);
+            if (!prompts.length) { return; }
+            const maxConc = cfg().get<number>('maxConcurrentPerAgent', 1);
+            if (prompts.length > 1 && maxConc > 0 && maxConc < prompts.length) {
+                const c = await vscode.window.showInformationMessage(
+                    `maxConcurrentPerAgent = ${maxConc}: koşular sırayla işler (worktree'ler yine izole). Devam?`,
+                    { modal: true }, 'Devam');
+                if (c !== 'Devam') { return; }
+            }
+            for (const prompt of prompts) {
+                const { wt, error } = await createWorktree(agent.dir, prompt.slice(0, 24));
+                if (!wt) {
+                    void vscode.window.showErrorMessage(`Agent Farm: worktree failed — ${error}`);
+                    continue;
+                }
+                const task = taskManager.addTask(agent, `⑂ ${wt.name}`, prompt +
+                    ' — İş bittiğinde değişiklikleri anlamlı bir mesajla commit et.', 'headless');
+                task.workDir = wt.path;
+                taskManager.startTask(task);
+            }
+            void vscode.window.showInformationMessage(
+                `Agent Farm: ${prompts.length} parallel worktree run(s) launched — track them on the Board; reconcile later via "Worktree Runs…".`);
+        }),
+
+        vscode.commands.registerCommand('agentfarm.worktreeRuns', async (arg?: AgentArg) => {
+            const agent = await resolveAgent(arg);
+            if (!agent) { return; }
+            const wts = await listAfWorktrees(agent.dir);
+            if (!wts.length) {
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: ${agent.name} has no farm worktrees (af/ branches).`);
+                return;
+            }
+            const stats = await Promise.all(wts.map(wt => worktreeStatus(agent.dir, wt)));
+            const pick = await vscode.window.showQuickPick(stats.map(s => ({
+                label: `⑂ ${s.wt.name}`,
+                description: `${s.commits} commit(s)${s.dirty ? ' • uncommitted changes' : ''}`,
+                detail: s.diffStat,
+                stat: s
+            })), { placeHolder: `${agent.name} — ${wts.length} worktree run(s)` });
+            if (!pick) { return; }
+            const action = await vscode.window.showQuickPick([
+                { label: '$(git-merge) Merge into current branch', id: 'merge' },
+                { label: '$(folder-opened) Open worktree folder', id: 'open' },
+                { label: '$(trash) Discard (remove worktree + branch)', id: 'discard' }
+            ], { placeHolder: `⑂ ${pick.stat.wt.name} — ${pick.stat.diffStat}` });
+            if (!action) { return; }
+            if (action.id === 'merge') {
+                const r = await mergeWorktree(agent.dir, pick.stat.wt);
+                if (r.ok) {
+                    const rm = await removeWorktree(agent.dir, pick.stat.wt, true);
+                    void vscode.window.showInformationMessage(
+                        `Agent Farm: merged ⑂ ${pick.stat.wt.name} ✓ (${rm.detail})`);
+                } else {
+                    void vscode.window.showWarningMessage(
+                        `Agent Farm: merge failed — ${r.detail}. Resolve manually in the repo.`);
+                }
+            } else if (action.id === 'open') {
+                void vscode.commands.executeCommand('vscode.openFolder',
+                    vscode.Uri.file(pick.stat.wt.path), { forceNewWindow: true });
+            } else {
+                const sure = await vscode.window.showWarningMessage(
+                    `Discard ⑂ ${pick.stat.wt.name}? Its ${pick.stat.commits} commit(s) and uncommitted changes are lost.`,
+                    { modal: true }, 'Discard');
+                if (sure === 'Discard') {
+                    const r = await removeWorktree(agent.dir, pick.stat.wt, true);
+                    void (r.ok
+                        ? vscode.window.showInformationMessage(`Agent Farm: ⑂ ${pick.stat.wt.name} discarded.`)
+                        : vscode.window.showWarningMessage(`Agent Farm: ${r.detail}`));
+                }
+            }
+        }),
+
+        // ---------- J4: agentpack gallery ----------
+
+        vscode.commands.registerCommand('agentfarm.browsePackGallery', async () => {
+            const sources = cfg().get<string[]>('packGalleryRepos', []);
+            if (!sources.length) {
+                void vscode.window.showInformationMessage(
+                    'Agent Farm: add gallery sources first — agentFarm.packGalleryRepos (git URLs or local folders with .agentpack files).');
+                return;
+            }
+            const cacheDir = path.join(context.globalStorageUri.fsPath, 'pack-gallery');
+            const { packs, errors } = await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: 'Agent Farm: syncing pack gallery…' },
+                () => collectGalleryPacks(sources, cacheDir));
+            if (errors.length) {
+                void vscode.window.showWarningMessage(`Agent Farm gallery: ${errors.join(' · ')}`.slice(0, 300));
+            }
+            if (!packs.length) {
+                void vscode.window.showInformationMessage('Agent Farm: no .agentpack files found in the configured sources.');
+                return;
+            }
+            const pick = await vscode.window.showQuickPick(packs.map(p => ({
+                label: `$(package) ${p.packName}`,
+                description: `${p.fileCount} file(s) • ${p.workflowCount} workflow(s)` +
+                    (p.exportedAt ? ` • ${new Date(p.exportedAt).toLocaleDateString()}` : ''),
+                detail: p.source,
+                file: p.file
+            })), { placeHolder: `${packs.length} pack(s) — pick to import (memory/secrets never included; triggers arrive disabled)` });
+            if (pick) {
+                await vscode.commands.executeCommand('agentfarm.importAgentPack', pick.file);
+            }
+        }),
+
+        // ---------- J6: spoken briefing (TTS) ----------
+
+        vscode.commands.registerCommand('agentfarm.speakDigest', async () => {
+            const model = cfg().get<string>('digestTtsModel', '');
+            const folder = cfg().get<string>('digestTtsFolder', '') ||
+                cfg().get<string>('autoReportFolder', '');
+            const secretName = cfg().get<string>('mediaAuthSecret', 'FAL_KEY');
+            const key = vault.get(secretName);
+            const text = buildDigestText();
+            const result = await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: 'Agent Farm: generating spoken briefing…' },
+                () => speakText(text, model, key ? `Key ${key}` : '', folder,
+                    { baseUrl: cfg().get<string>('mediaBaseUrl', '') || undefined }));
+            if (!result.ok) {
+                void vscode.window.showWarningMessage(`Agent Farm: briefing failed — ${result.error}`);
+                return;
+            }
+            void vscode.window.showInformationMessage(
+                `Agent Farm: spoken briefing saved — ${path.basename(result.file!)}`, 'Reveal')
+                .then(c => {
+                    if (c === 'Reveal') {
+                        void vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(result.file!));
+                    }
+                });
+        }),
+
+        // ---------- J2: relay script for the remote machine ----------
+
+        vscode.commands.registerCommand('agentfarm.exportRelayScript', async () => {
+            const src = path.join(context.extensionPath, 'out', 'service', 'farmRelay.js');
+            if (!fs.existsSync(src)) {
+                void vscode.window.showErrorMessage('Agent Farm: relay script missing from the extension build.');
+                return;
+            }
+            const target = await vscode.window.showSaveDialog({
+                defaultUri: vscode.Uri.file(path.join(os.homedir(), 'farmRelay.js')),
+                title: 'Save the relay script (copy it to the OTHER machine)'
+            });
+            if (!target) { return; }
+            fs.copyFileSync(src, target.fsPath);
+            void vscode.window.showInformationMessage(
+                'Agent Farm: relay script saved. On the other machine run: ' +
+                `node farmRelay.js --claude %USERPROFILE%\\.claude --out <syncedFolder>\\relay-laptop.jsonl --machine laptop — ` +
+                'then add that synced file here via agentFarm.relayFeeds.');
+        }),
+
+        vscode.commands.registerCommand('agentfarm.farmServiceStatus', () => {
+            cp.exec('schtasks /query /tn "AgentFarmService" /fo LIST', { windowsHide: true }, (err, stdout) => {
+                if (err) {
+                    void vscode.window.showInformationMessage(
+                        'Agent Farm: headless service is NOT installed — run "Install Headless Service…" to keep schedules alive while VS Code is closed.');
+                    return;
+                }
+                const statusLine = String(stdout).split('\n').find(l => /Status|Durum/i.test(l))?.trim() ?? '';
+                let lastRun = '';
+                try {
+                    const lines = fs.readFileSync(serviceRunsFile, 'utf8').trim().split('\n');
+                    const last = JSON.parse(lines[lines.length - 1]) as { ts: number; kind: string };
+                    lastRun = ` · last log entry: ${last.kind} @ ${new Date(last.ts).toLocaleString()}`;
+                } catch { /* no log yet */ }
+                void vscode.window.showInformationMessage(
+                    `Agent Farm service: installed (${statusLine || 'see Task Scheduler'})${lastRun}`,
+                    'Open Log').then(choice => {
+                        if (choice === 'Open Log' && fs.existsSync(serviceRunsFile)) {
+                            void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(serviceRunsFile));
+                        }
+                    });
+            });
         }),
 
         // ---------- F2: dispatcher test ----------
@@ -2444,14 +3442,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 });
         }),
 
-        vscode.commands.registerCommand('agentfarm.importAgentPack', async () => {
-            const picked = await vscode.window.showOpenDialog({
-                canSelectMany: false,
-                filters: { 'Agent Pack': ['agentpack', 'json'] },
-                openLabel: 'Import Agent Pack'
-            });
-            if (!picked?.length) { return; }
-            const { pack, error } = readAgentPack(picked[0].fsPath);
+        vscode.commands.registerCommand('agentfarm.importAgentPack', async (fileArg?: unknown) => {
+            // J4: the pack gallery calls this with a concrete file path.
+            let packFile = typeof fileArg === 'string' && fs.existsSync(fileArg) ? fileArg : undefined;
+            if (!packFile) {
+                const picked = await vscode.window.showOpenDialog({
+                    canSelectMany: false,
+                    filters: { 'Agent Pack': ['agentpack', 'json'] },
+                    openLabel: 'Import Agent Pack'
+                });
+                if (!picked?.length) { return; }
+                packFile = picked[0].fsPath;
+            }
+            const { pack, error } = readAgentPack(packFile);
             if (!pack) {
                 void vscode.window.showErrorMessage(`Agent Farm: cannot import — ${error}.`);
                 return;

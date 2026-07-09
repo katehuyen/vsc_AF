@@ -42,6 +42,10 @@ export interface FarmTask {
     deferredReason?: string;
     /** start was requested; the pump launches it when capacity frees up. */
     autoStart?: boolean;
+    /** J1: run in this directory instead of the agent folder (worktree runs). */
+    workDir?: string;
+    /** J5: named CLI profile (agentFarm.cliProfiles); empty = claude. */
+    cli?: string;
 }
 
 export type ScheduleKind = 'daily' | 'weekly' | 'once';
@@ -151,6 +155,23 @@ export function newId(): string {
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
 
+/** J5 — a non-claude executor: command templates with {prompt} and {args}. */
+export interface CliProfile {
+    name: string;
+    /** e.g. `gemini -p "{prompt}"` */
+    headless: string;
+    /** e.g. `gemini "{prompt}"`; falls back to headless */
+    interactive?: string;
+}
+
+export function buildCliCommand(template: string, prompt: string, args: string): string {
+    return template
+        .split('{prompt}').join(sanitizePrompt(prompt))
+        .split('{args}').join(args.trim())
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+}
+
 /** Pure due-check so the scheduler is testable. */
 export function scheduleDue(s: FarmSchedule, now: Date): { due: boolean; runKey: string } {
     if (!s.enabled) { return { due: false, runKey: '' }; }
@@ -214,6 +235,10 @@ export interface TaskManagerOptions {
     mediaAuth?: () => string;              // e.g. "Key <FAL_KEY>" (resolved from the vault)
     mediaBaseUrl?: () => string;           // override for tests / self-hosted proxies
     mediaPricing?: () => MediaPriceRule[]; // C3 cost estimation rules
+    /** I5: model policy — extra --model args (and reason) for a task launch. */
+    modelArgsFor?: (task: FarmTask) => { args: string; reason: string } | undefined;
+    /** J5: alternative CLI profiles ({prompt}/{args} templates). */
+    cliProfiles?: () => CliProfile[];
     /** F3: global browser-step allowlist + per-step approval gate. */
     browserAllowHosts?: () => string[];
     /** Resolve to true to run the browser step; false cancels it. */
@@ -448,18 +473,33 @@ export class TaskManager implements vscode.Disposable {
             this.spawnHeadless(task, agent);
         } else {
             const p = sanitizePrompt(task.prompt);
-            const extra = this.extraArgs().trim();
+            let extra = this.extraArgs().trim();
+            const profile = this.cliProfileFor(task);
+            let command: string;
+            if (profile) {
+                command = buildCliCommand(profile.interactive ?? profile.headless, task.prompt, extra);
+            } else {
+                const policy = this.opts.modelArgsFor?.(task);
+                if (policy) { extra = (extra ? extra + ' ' : '') + policy.args; }
+                command = `claude ${extra ? extra + ' ' : ''}"${p}"`;
+            }
             const terminal = vscode.window.createTerminal({
                 name: `AF: ${task.title.slice(0, 30)}`,
-                cwd: agent.dir,
+                cwd: task.workDir ?? agent.dir,
                 env: this.opts.getEnv?.()
             });
             terminal.show();
-            terminal.sendText(`claude ${extra ? extra + ' ' : ''}"${p}"`, true);
+            terminal.sendText(command, true);
             this.terminals.set(task.id, terminal);
         }
         this.save();
         return true;
+    }
+
+    /** J5: resolve the task's CLI profile (undefined = the default claude executor). */
+    private cliProfileFor(task: FarmTask): CliProfile | undefined {
+        if (!task.cli) { return undefined; }
+        return this.opts.cliProfiles?.().find(p => p.name === task.cli);
     }
 
     /** Headless tasks run as child processes so stdout/stderr land in an archived output file. */
@@ -467,20 +507,29 @@ export class TaskManager implements vscode.Disposable {
         fs.mkdirSync(this.outputsDir, { recursive: true });
         const outFile = path.join(this.outputsDir, `${task.id}.md`);
         task.outputFile = outFile;
+        const profile = this.cliProfileFor(task);
+        const policy = profile ? undefined : this.opts.modelArgsFor?.(task);
         const header = `# ${task.title}\n\n` +
             `- Agent: ${task.agentName}\n` +
             `- Started: ${new Date().toLocaleString()}\n` +
+            (profile ? `- CLI: ${profile.name}\n` : '') +
+            (policy ? `- Model policy: ${policy.reason}\n` : '') +
+            (task.workDir ? `- Workdir: ${task.workDir}\n` : '') +
             `- Prompt: ${task.prompt}\n\n---\n\n`;
         fs.writeFileSync(outFile, header, 'utf8');
         const stream = fs.createWriteStream(outFile, { flags: 'a' });
 
         const p = sanitizePrompt(task.prompt);
         let extra = this.extraArgs().trim();
+        if (policy) { extra = (extra ? extra + ' ' : '') + policy.args; }
         if (task.outputContract === 'json') {
             extra = (extra ? extra + ' ' : '') + '--output-format json';
         }
-        const child = cp.spawn(`claude ${extra ? extra + ' ' : ''}-p "${p}"`, {
-            cwd: agent.dir,
+        const command = profile
+            ? buildCliCommand(profile.headless, task.prompt, this.extraArgs())
+            : `claude ${extra ? extra + ' ' : ''}-p "${p}"`;
+        const child = cp.spawn(command, {
+            cwd: task.workDir ?? agent.dir,
             shell: true,
             windowsHide: true,
             stdio: ['ignore', 'pipe', 'pipe'], // closed stdin: claude won't wait 3s for piped input

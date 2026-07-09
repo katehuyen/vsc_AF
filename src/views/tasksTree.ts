@@ -29,7 +29,9 @@ export class TasksTreeProvider implements vscode.TreeDataProvider<TaskNode> {
     private emitter = new vscode.EventEmitter<void>();
     readonly onDidChangeTreeData = this.emitter.event as vscode.Event<void | TaskNode | TaskNode[] | null | undefined>;
 
-    constructor(private manager: TaskManager, private triggerManager?: TriggerManager) {
+    constructor(private manager: TaskManager, private triggerManager?: TriggerManager,
+        /** H2: one-line reliability scorecard per trigger. */
+        private triggerStat?: (t: FarmTrigger) => string | undefined) {
         manager.onDidChange(() => this.refresh());
     }
 
@@ -63,11 +65,14 @@ export class TasksTreeProvider implements vscode.TreeDataProvider<TaskNode> {
             const parts = [src, target];
             if (!t.enabled) { parts.push('off'); }
             else if (!armed && t.type === 'watch') { parts.push('PATH MISSING'); }
-            if (t.fireCount) { parts.push(`fired ${t.fireCount}×${t.lastFiredAt ? ' (' + relTime(t.lastFiredAt) + ')' : ''}`); }
+            const stat = this.triggerStat?.(t);
+            if (stat) { parts.push(stat); }
+            else if (t.fireCount) { parts.push(`fired ${t.fireCount}×${t.lastFiredAt ? ' (' + relTime(t.lastFiredAt) + ')' : ''}`); }
             item.description = parts.join(' • ');
             item.tooltip = `${t.title}\n${src}\naction: ${target}\n` +
                 `debounce ${t.debounceSec}s • cooldown ${t.cooldownSec}s • max ${t.maxPerHour}/h\n` +
-                (t.lastFiredAt ? `last fired: ${new Date(t.lastFiredAt).toLocaleString()}` : 'never fired');
+                (t.lastFiredAt ? `last fired: ${new Date(t.lastFiredAt).toLocaleString()}` : 'never fired') +
+                (stat ? `\nreliability: ${stat}` : '');
             item.contextValue = t.type === 'webhook' ? 'trigger-webhook' : 'trigger';
             return item;
         }

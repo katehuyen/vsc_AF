@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.1.0",
+  "version": "2.5.0",
   "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
@@ -526,6 +526,125 @@
         "title": "Open Ultra Roadmap (Ultra Gelişim)",
         "category": "Agent Farm",
         "icon": "$(telescope)"
+      },
+      {
+        "command": "agentfarm.openNeeds",
+        "title": "Open Needs You (Approval Queue)",
+        "category": "Agent Farm",
+        "icon": "$(bell)"
+      },
+      {
+        "command": "agentfarm.openBoard",
+        "title": "Open Task Board (Kanban)",
+        "category": "Agent Farm",
+        "icon": "$(layout)"
+      },
+      {
+        "command": "agentfarm.costReport",
+        "title": "Cost Anomaly Report",
+        "category": "Agent Farm",
+        "icon": "$(graph-line)"
+      },
+      {
+        "command": "agentfarm.addEvalCase",
+        "title": "Add Eval Case…",
+        "category": "Agent Farm",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "agentfarm.runEvals",
+        "title": "Run Eval Set…",
+        "category": "Agent Farm",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "agentfarm.reviewEvalCases",
+        "title": "Review Eval Cases…",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.runPulseNow",
+        "title": "Run Pulse Check Now",
+        "category": "Agent Farm",
+        "icon": "$(heart)"
+      },
+      {
+        "command": "agentfarm.triggerReport",
+        "title": "Trigger Reliability Report",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.installFarmService",
+        "title": "Install Headless Service (Windows)…",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.removeFarmService",
+        "title": "Remove Headless Service",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.farmServiceStatus",
+        "title": "Headless Service Status",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.instructionHistory",
+        "title": "Instruction History & Impact…",
+        "category": "Agent Farm",
+        "icon": "$(history)"
+      },
+      {
+        "command": "agentfarm.abTest",
+        "title": "A/B Instruction Experiment…",
+        "category": "Agent Farm",
+        "icon": "$(law)"
+      },
+      {
+        "command": "agentfarm.distillMemory",
+        "title": "Distill Memory File…",
+        "category": "Agent Farm",
+        "icon": "$(fold-down)"
+      },
+      {
+        "command": "agentfarm.askMemory",
+        "title": "Ask Fleet Memory… (Semantic)",
+        "category": "Agent Farm",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "agentfarm.runParallel",
+        "title": "Run Parallel Worktrees…",
+        "category": "Agent Farm",
+        "icon": "$(git-branch)"
+      },
+      {
+        "command": "agentfarm.worktreeRuns",
+        "title": "Worktree Runs… (Merge / Discard)",
+        "category": "Agent Farm",
+        "icon": "$(git-merge)"
+      },
+      {
+        "command": "agentfarm.exportOtel",
+        "title": "Export Traces (OpenTelemetry JSON)…",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.browsePackGallery",
+        "title": "Browse Agent Pack Gallery…",
+        "category": "Agent Farm",
+        "icon": "$(package)"
+      },
+      {
+        "command": "agentfarm.speakDigest",
+        "title": "Speak Daily Briefing (TTS)",
+        "category": "Agent Farm",
+        "icon": "$(unmute)"
+      },
+      {
+        "command": "agentfarm.exportRelayScript",
+        "title": "Save Relay Script for Another Machine…",
+        "category": "Agent Farm"
       }
     ],
     "menus": {
@@ -574,6 +693,36 @@
           "command": "agentfarm.commandBar",
           "when": "view == agentfarm.tasks",
           "group": "navigation@0"
+        },
+        {
+          "command": "agentfarm.openBoard",
+          "when": "view == agentfarm.tasks",
+          "group": "navigation@0"
+        },
+        {
+          "command": "agentfarm.openNeeds",
+          "when": "view == agentfarm.feed",
+          "group": "navigation@0"
+        },
+        {
+          "command": "agentfarm.openNeeds",
+          "when": "view == agentfarm.insights",
+          "group": "navigation@0"
+        },
+        {
+          "command": "agentfarm.costReport",
+          "when": "view == agentfarm.insights",
+          "group": "overflow@3"
+        },
+        {
+          "command": "agentfarm.runEvals",
+          "when": "view == agentfarm.insights",
+          "group": "overflow@4"
+        },
+        {
+          "command": "agentfarm.addEvalCase",
+          "when": "view == agentfarm.insights",
+          "group": "overflow@5"
         },
         {
           "command": "agentfarm.addTask",
@@ -1080,6 +1229,82 @@
           "default": "ask",
           "description": "'ask' = confirm every browser step before it runs (recommended); 'auto' = run allowlisted browser steps without asking."
         },
+        "agentFarm.cliProfiles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string", "description": "profile name shown in the task wizard" },
+              "headless": { "type": "string", "description": "command template with {prompt} and {args}, e.g. gemini -p \"{prompt}\"" },
+              "interactive": { "type": "string", "description": "optional interactive template; falls back to headless" }
+            }
+          },
+          "default": [],
+          "description": "Alternative CLI executors for tasks (gemini / codex / …). Non-claude tasks get output archiving and exit-code status; deep monitoring (transcripts, live hooks, cost) stays Claude-specific."
+        },
+        "agentFarm.relayFeeds": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string", "description": "machine label (e.g. laptop)" },
+              "file": { "type": "string", "description": "path to the synced relay-*.jsonl written by farmRelay.js on that machine" }
+            }
+          },
+          "default": [],
+          "description": "Live relay feeds from other machines (J2): run farmRelay.js there ('Save Relay Script for Another Machine…'), sync its output file here, list it in this setting."
+        },
+        "agentFarm.packGalleryRepos": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Agent pack gallery sources: git URLs (shallow-cloned into extension storage) or local folders containing .agentpack files."
+        },
+        "agentFarm.digestTtsModel": {
+          "type": "string",
+          "default": "",
+          "description": "fal.ai TTS model id for the spoken daily briefing (e.g. an ElevenLabs TTS endpoint on fal — verify the exact id on fal.ai). Empty disables 'Speak Daily Briefing'."
+        },
+        "agentFarm.digestTtsFolder": {
+          "type": "string",
+          "default": "",
+          "description": "Folder the spoken briefing mp3 is saved into (e.g. a phone-synced folder). Empty = autoReportFolder."
+        },
+        "agentFarm.modelPolicy": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "source": { "type": "string", "enum": ["any", "trigger", "schedule", "workflow", "manual"], "description": "which launches the rule applies to" },
+              "agent": { "type": "string", "description": "case-insensitive regex on the agent name (empty = any)" },
+              "promptMatch": { "type": "string", "description": "case-insensitive regex on the prompt (empty = any)" },
+              "model": { "type": "string", "description": "model id/alias passed as --model" }
+            }
+          },
+          "default": [],
+          "description": "Rule-based model routing for farm-launched tasks; first match wins. Example: [{\"source\": \"trigger\", \"model\": \"haiku\"}] runs all trigger-born work on a cheap model."
+        },
+        "agentFarm.quotaDowngradePercent": {
+          "type": "number",
+          "default": 0,
+          "description": "When the 5h window reaches this percent of windowTokenLimit, farm-launched tasks are forced onto quotaDowngradeModel (0 = off)."
+        },
+        "agentFarm.quotaDowngradeModel": {
+          "type": "string",
+          "default": "claude-haiku-4-5-20251001",
+          "description": "Model forced when the quota downgrade kicks in."
+        },
+        "agentFarm.permissionLint": {
+          "type": "boolean",
+          "default": true,
+          "description": "Audit each agent's permission rules (blanket allows, dangerous patterns, unused broad rules) and surface findings in Insights."
+        },
+        "agentFarm.pulse": {
+          "type": "string",
+          "enum": ["off", "nightly", "weekly"],
+          "default": "off",
+          "description": "Synthetic pulse checks: a fixed cheap prompt per agent + cheap judge verifies the answer matches the agent's identity (uses judgeArgs; small API cost per agent). Manual: 'Run Pulse Check Now'."
+        },
         "agentFarm.qualitySample": {
           "type": "string",
           "enum": ["off", "daily", "weekly"],
@@ -1127,6 +1352,16 @@
           "type": "number",
           "default": 2,
           "description": "Warn when an agent's 7-day cost reaches this multiple of the previous 7 days. 0 disables trend alerts."
+        },
+        "agentFarm.costAnomalyMinUsd": {
+          "type": "number",
+          "default": 1,
+          "description": "Statistical cost-anomaly detector (median + MAD over 14 days): ignore days below this USD level. 0 disables the detector."
+        },
+        "agentFarm.evalRunArgs": {
+          "type": "string",
+          "default": "--model claude-haiku-4-5-20251001",
+          "description": "CLI arguments for eval-set replay calls. Keep a cheap model for routine regression checks; empty = the agent's default model (more faithful, more expensive)."
         },
         "agentFarm.autoReportIncludeOutputs": {
           "type": "boolean",

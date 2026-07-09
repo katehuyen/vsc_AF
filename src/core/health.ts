@@ -1,7 +1,9 @@
 import { AgentInfo } from './agents';
+import { dailyCostHistory, detectCostAnomaly, todayCost } from './anomaly';
 import { antigravityStatus } from './antigravity';
 import { claudeMdReferencesDuties, watchStatus } from './duties';
 import { agentMcpConfigFiles, mcpUsage, readAgentMcpServers } from './mcp';
+import { lintPermissions } from './permlint';
 import { looksLikePlaintextSecret } from './secrets';
 import { SessionIndex } from './sessions';
 import { dayKey, fmtUSD, hashString, safeReadFile } from './util';
@@ -27,10 +29,18 @@ export interface HealthConfig {
     budgets?: Record<string, number>;
     /** Warn when this week's cost is >= factor × last week's. 0 disables. */
     trendFactor?: number;
+    /** G2: statistical cost-anomaly floor in USD (0 disables the detector). */
+    anomalyMinUsd?: number;
     /** D1: judge quality scores (stamped with the scored session's activity time). */
     qualityScores?: { agentId?: string; sessionTs: number; score: number }[];
     /** D2: open instruction suggestions, surfaced as clickable insights. */
     suggestions?: { id: string; agentId: string; agentName: string; rule: string }[];
+    /** H1: skip the permission audit when false (default on). */
+    permissionLint?: boolean;
+    /** H2: trigger reliability alerts, computed by the extension from task records. */
+    triggerAlerts?: { severity: 'warning' | 'info'; title: string; message: string }[];
+    /** H3: latest failed pulse per agent. */
+    pulseFailures?: { agentId: string; agentName: string; reason: string; ts: number }[];
 }
 
 const TREND_MIN_PREV_USD = 0.5;
@@ -252,6 +262,57 @@ export function buildInsights(
         }
     }
 
+    // 5e) Guardrail audit (H1): permission rules that grant too much
+    if (cfg.permissionLint !== false) {
+        for (const agent of agents) {
+            if (!agent.settingsPath) { continue; }
+            const raw = safeReadFile(agent.settingsPath);
+            if (!raw) { continue; }
+            const monthAgo = now - 30 * 24 * 3600 * 1000;
+            const usage = new Map<string, number>();
+            for (const s of index.forAgent(agent.id)) {
+                if (s.lastTs < monthAgo) { continue; }
+                for (const [tool, count] of Object.entries(s.tools)) {
+                    usage.set(tool, (usage.get(tool) ?? 0) + count);
+                }
+            }
+            for (const f of lintPermissions(raw, usage)) {
+                insights.push({
+                    severity: f.severity,
+                    agentId: agent.id,
+                    agentName: agent.name,
+                    category: 'guardrail',
+                    message: f.message,
+                    filePath: agent.settingsPath,
+                    guideAnchor: 'guardrail-denetcisi'
+                });
+            }
+        }
+    }
+
+    // H2) Trigger reliability alerts (computed extension-side from task records)
+    for (const a of cfg.triggerAlerts ?? []) {
+        insights.push({
+            severity: a.severity,
+            agentName: 'fleet',
+            category: 'trigger',
+            message: a.message,
+            guideAnchor: 'tetik-karnesi'
+        });
+    }
+
+    // H3) Failed pulse checks: the agent's basic loop is broken
+    for (const p of cfg.pulseFailures ?? []) {
+        insights.push({
+            severity: 'error',
+            agentId: p.agentId,
+            agentName: p.agentName,
+            category: 'pulse',
+            message: `Pulse check FAILED (${new Date(p.ts).toLocaleString()}): ${p.reason}`,
+            guideAnchor: 'nabiz-kontrolu'
+        });
+    }
+
     // 5c) MCP hygiene: defined-but-unused servers, plaintext credentials in config
     for (const agent of agents) {
         const servers = readAgentMcpServers(agent);
@@ -338,6 +399,32 @@ export function buildInsights(
             checkTrend(agent.name, agent.id, index.forAgent(agent.id));
         }
         checkTrend('fleet', undefined, index.all());
+    }
+
+    // 6f) Statistical cost anomaly (G2): today far above the robust median band
+    const anomalyMinUsd = cfg.anomalyMinUsd ?? 1;
+    if (anomalyMinUsd > 0) {
+        const checkAnomaly = (label: string, agentId: string | undefined,
+            sessions: { daily: Record<string, { cost: number }> }[]) => {
+            const anomaly = detectCostAnomaly(
+                dailyCostHistory(sessions, 14, now),
+                todayCost(sessions, now),
+                { minUsd: anomalyMinUsd });
+            if (anomaly) {
+                insights.push({
+                    severity: 'warning',
+                    agentId,
+                    agentName: label,
+                    category: 'cost-anomaly',
+                    message: `Cost anomaly: ${fmtUSD(anomaly.todayCost)} today is ${anomaly.factor.toFixed(1)}x the 14-day median (${fmtUSD(anomaly.median)}) — see the Cost Anomaly Report.`,
+                    guideAnchor: 'maliyet-anomalisi'
+                });
+            }
+        };
+        for (const agent of agents) {
+            checkAnomaly(agent.name, agent.id, index.forAgent(agent.id));
+        }
+        checkAnomaly('fleet', undefined, index.all());
     }
 
     // 6d) Quality scorecard (D1): declining or low judge scores per agent

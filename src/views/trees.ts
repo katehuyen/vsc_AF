@@ -261,10 +261,16 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
             }
             if (node.section === 'sessions') {
                 return this.state.index.forAgent(node.agent.id)
+                    .filter(s => !s.parentSessionId)
                     .sort((a, b) => b.mtime - a.mtime)
                     .slice(0, 15)
                     .map(session => ({ kind: 'session' as const, session }));
             }
+        }
+        if (node.kind === 'session') {
+            // G6: expand a session into its subagent transcripts
+            return this.state.index.childrenOf(node.session.sessionId)
+                .map(session => ({ kind: 'session' as const, session }));
         }
         return [];
     }
@@ -285,7 +291,11 @@ function openFileCommand(p: string): vscode.Command {
 }
 
 function sessionTreeItem(s: SessionInfo, index: SessionIndex, showAgent: boolean): vscode.TreeItem {
-    const item = new vscode.TreeItem(s.title, vscode.TreeItemCollapsibleState.None);
+    // G6: nested subagent transcripts hang under their parent with a cost rollup.
+    const children = index.childrenOf(s.sessionId);
+    const item = new vscode.TreeItem(s.title, children.length
+        ? vscode.TreeItemCollapsibleState.Collapsed
+        : vscode.TreeItemCollapsibleState.None);
     const active = index.isSessionActive(s);
     item.iconPath = new vscode.ThemeIcon(
         active ? 'record' : (s.isSidechain ? 'git-branch' : 'comment-discussion'),
@@ -297,8 +307,14 @@ function sessionTreeItem(s: SessionInfo, index: SessionIndex, showAgent: boolean
     parts.push(relTime(s.mtime));
     if (s.cost > 0) { parts.push(fmtUSD(s.cost)); }
     if (s.isSidechain) { parts.push('sub'); }
+    let rollupLine = '';
+    if (children.length) {
+        const roll = index.subtreeRollup(s.sessionId);
+        parts.push(`⧉ ${roll.count} sub • ${fmtUSD(s.cost + roll.cost)} total`);
+        rollupLine = `\nSubagents: ${roll.count} • tree total ${fmtUSD(s.cost + roll.cost)} (self ${fmtUSD(s.cost)})`;
+    }
     item.description = parts.join(' • ');
-    item.tooltip = `${s.title}\n${s.models.join(', ')}\n${s.userTurns} turns • ${s.toolCalls} tool calls • ${s.errors} errors`;
+    item.tooltip = `${s.title}\n${s.models.join(', ')}\n${s.userTurns} turns • ${s.toolCalls} tool calls • ${s.errors} errors` + rollupLine;
     item.command = {
         command: 'agentfarm.openSession',
         title: 'Open Session',
@@ -320,8 +336,8 @@ export class SessionsTreeProvider implements vscode.TreeDataProvider<SessionInfo
     }
 
     getChildren(node?: SessionInfo): SessionInfo[] {
-        if (node) { return []; }
-        return this.state.index.all()
+        if (node) { return this.state.index.childrenOf(node.sessionId); }
+        return this.state.index.topLevel()
             .sort((a, b) => b.mtime - a.mtime)
             .slice(0, 30);
     }

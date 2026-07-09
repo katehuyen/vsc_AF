@@ -31,6 +31,8 @@ export interface SessionInfo {
     file: string;
     sessionId: string;
     isSidechain: boolean;
+    /** G6: parent session id for nested subagent transcripts (…/<parentId>/subagents/x.jsonl). */
+    parentSessionId?: string;
     /** E1: which machine's claudeDir this session came from (undefined = this machine). */
     machine?: string;
     agentId?: string;
@@ -341,6 +343,11 @@ export class SessionIndex implements vscode.Disposable {
         const info = parseSessionFile(file, this.pricing, depth);
         if (!info) { this.sessions.delete(file); return; }
         info.machine = machine;
+        if (depth > 0) {
+            // …/<projectDir>/<parentSessionId>/(subagents/)…/file.jsonl
+            const segments = file.split(/[\\/]/);
+            info.parentSessionId = segments[segments.length - 1 - depth];
+        }
         this.assignAgent(info);
         if (!info.agentId && !this.includeUnmatched()) {
             // Keep it out of the index but remember nothing: farm-focused scope.
@@ -440,6 +447,31 @@ export class SessionIndex implements vscode.Disposable {
 
     latestSessionForAgent(agentId: string): SessionInfo | undefined {
         return this.forAgent(agentId).sort((a, b) => b.mtime - a.mtime)[0];
+    }
+
+    /** G6: sessions that head a tree — no parent, or the parent transcript is gone. */
+    topLevel(): SessionInfo[] {
+        const ids = new Set(this.all().map(s => s.sessionId));
+        return this.all().filter(s => !s.parentSessionId || !ids.has(s.parentSessionId));
+    }
+
+    /** G6: direct subagent sessions of a parent session. */
+    childrenOf(sessionId: string): SessionInfo[] {
+        return this.all()
+            .filter(s => s.parentSessionId === sessionId)
+            .sort((a, b) => a.firstTs - b.firstTs);
+    }
+
+    /** G6: cost/count of a session's whole subagent tree (self excluded), max 5 levels. */
+    subtreeRollup(sessionId: string, depth = 0): { cost: number; count: number } {
+        if (depth >= 5) { return { cost: 0, count: 0 }; }
+        let cost = 0, count = 0;
+        for (const child of this.childrenOf(sessionId)) {
+            const sub = this.subtreeRollup(child.sessionId, depth + 1);
+            cost += child.cost + sub.cost;
+            count += 1 + sub.count;
+        }
+        return { cost, count };
     }
 
     feed(limit = 60): FeedEvent[] {

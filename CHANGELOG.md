@@ -2,6 +2,39 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.5.0 — Scale & Ecosystem (Ultra Phase J) (2026-07-09)
+
+- **Parallel worktree runs (J1)**: each prompt runs in its own `git worktree` (`af/` branches) — conflict-free parallel code work; `Worktree Runs…` shows diffstats and offers Merge / Open / Discard (with a fallback for old git versions).
+- **Live relay (J2)**: `farmRelay.js` on another machine turns its Claude activity into a compact event feed file; synced here and listed in `agentFarm.relayFeeds`, remote agents light up in the live monitor. Transport is your own file sync — no sockets.
+- **OpenTelemetry export (J3)**: sessions (with subagent parent/child span hierarchy) as OTLP/JSON for Langfuse / Grafana Tempo / any OTLP consumer. Only writes a file; you choose where it goes.
+- **Agent pack gallery (J4)**: git-repo or folder pack sources (`agentFarm.packGalleryRepos`) → browse → import through the normal safe flow.
+- **Multi-CLI executor (J5)**: `agentFarm.cliProfiles` runs tasks on gemini/codex-style CLIs via `{prompt}`/`{args}` templates; deep monitoring stays Claude-specific by design.
+- **Spoken briefing (J6)**: the daily digest as an mp3 via fal.ai TTS, dropped into a phone-synced folder.
+
+## 2.4.0 — Intelligence Depth (Ultra Phase I) (2026-07-09)
+
+- **Instruction versioning (I1)**: every CLAUDE.md change is snapshotted; `Instruction History & Impact…` correlates versions with quality scores and cost per day — rule changes become measurable.
+- **A/B instruction experiments (I2)**: two variants answer the same prompt set (eval cases auto-selected) in isolated sandboxes; a cheap judge compares with randomized order; the winner applies with backup + history entry.
+- **Memory distillation (I3)**: cheap-model condensing drafts for oversized/stale memory files — diff view, explicit approval, `.afbak` backup; guards against CLI limit messages and dropped frontmatter.
+- **Semantic memory query (I4)**: `Ask Fleet Memory…` searches all agents' memory files by meaning (separate incremental index, same embeddings providers).
+- **Model policy engine (I5)**: rule-based `--model` routing by task source/agent/prompt (`agentFarm.modelPolicy`) plus automatic downgrade when the 5h window passes `quotaDowngradePercent`; decisions are stamped into task output headers.
+
+## 2.3.0 — Safety & Reliability (Ultra Phase H) (2026-07-09)
+
+- **Guardrail auditor (H1)**: automatic permission lint per agent — bypassed permission modes, dangerous whitelisted patterns (`rm -rf`, `curl | sh`, force push…), blanket allows (`Bash(*)`), wildcard rules unused for 30 days, duplicates. Findings in Insights, click-through to the settings file.
+- **Trigger reliability scorecard (H2)**: every trigger row shows `fired 12× • 7d: 9✓/1✗ • start ~4s`; `Trigger Reliability Report` for the full table; "always fails" and "never fired" alerts.
+- **Synthetic pulse checks (H3)**: a fixed cheap prompt per agent + cheap identity-coherence judge (`agentFarm.pulse` nightly/weekly or `Run Pulse Check Now`); failures become error insights before real work breaks.
+- **Headless service (H4)**: a dependency-free node process (Windows scheduled task) keeps schedules and watch triggers running while VS Code is closed; heartbeat handover, shared task store and outputs archive, "ran N tasks while you were away" digest.
+
+## 2.2.0 — Command Center (Ultra Phase G) (2026-07-09)
+
+- **Needs You queue (G1)**: one urgency-sorted panel for everything blocked on you — permission waits, browser-step approvals (Run/Reject from the queue; races the notification, first decision wins), stalled sessions, budget breaches, Antigravity conflicts, open suggestions, parked tasks. The status-bar badge now counts and opens this queue.
+- **Kanban board (G5)**: Inbox / Parked / Running / Needs Approval / Done columns with drag-and-drop transitions, card badges (agent, duration, verify, media cost) and the natural-language command bar on top.
+- **Cost anomaly detector (G2)**: median+MAD statistics over the trailing 14 days flag "today is 4.2x normal" per agent and fleet — independent of budgets, no model calls. `Cost Anomaly Report` adds the heavy-hitters view (which few sessions eat 50% of tokens).
+- **Eval sets (G3)**: low-scored sessions and FAIL-verified steps become regression cases in one step; replay the set on demand (cheap model + cheap judge) and get a scorecard with regressions vs the previous run.
+- **Session replay (G4)**: ▶ Replay in the session viewer — step-through playback honoring real gaps, 1x-8x speed, jump to next error / next prompt.
+- **Subagent tree (G6)**: session lists are now trees; parent rows show a ⧉ cost rollup of the whole subagent subtree (up to 5 levels).
+
 ## 2.1.0 — Semantic Search, Browser Steps & Ultra Roadmap (2026-07-09)
 
 - **Semantic search**: "semantic" mode in Transcript Search — meaning-based queries over an incremental, file-based vector index. Providers: Gemini API or any OpenAI-compatible endpoint (fully local via Ollama). `Build Semantic Index` command, similarity badges.
