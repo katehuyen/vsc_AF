@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
@@ -450,6 +450,35 @@
         "title": "New Recipe Workflow…",
         "category": "Agent Farm",
         "icon": "$(sparkle)"
+      },
+      {
+        "command": "agentfarm.searchTranscripts",
+        "title": "Search Transcripts…",
+        "category": "Agent Farm",
+        "icon": "$(search)"
+      },
+      {
+        "command": "agentfarm.sampleQualityNow",
+        "title": "Sample Output Quality Now",
+        "category": "Agent Farm",
+        "icon": "$(verified)"
+      },
+      {
+        "command": "agentfarm.scanSuggestionsNow",
+        "title": "Scan for Instruction Suggestions…",
+        "category": "Agent Farm",
+        "icon": "$(lightbulb)"
+      },
+      {
+        "command": "agentfarm.reviewSuggestions",
+        "title": "Review Instruction Suggestions…",
+        "category": "Agent Farm",
+        "icon": "$(lightbulb)"
+      },
+      {
+        "command": "agentfarm.weeklySummaryNow",
+        "title": "Generate Weekly Summary Now",
+        "category": "Agent Farm"
       }
     ],
     "menus": {
@@ -468,6 +497,26 @@
           "command": "agentfarm.refresh",
           "when": "view == agentfarm.agents || view == agentfarm.sessions || view == agentfarm.insights || view == agentfarm.feed",
           "group": "navigation@3"
+        },
+        {
+          "command": "agentfarm.searchTranscripts",
+          "when": "view == agentfarm.sessions",
+          "group": "navigation@1"
+        },
+        {
+          "command": "agentfarm.reviewSuggestions",
+          "when": "view == agentfarm.insights",
+          "group": "navigation@1"
+        },
+        {
+          "command": "agentfarm.sampleQualityNow",
+          "when": "view == agentfarm.insights",
+          "group": "overflow@1"
+        },
+        {
+          "command": "agentfarm.scanSuggestionsNow",
+          "when": "view == agentfarm.insights",
+          "group": "overflow@2"
         },
         {
           "command": "agentfarm.openTimeline",
@@ -892,10 +941,32 @@
           "type": "array",
           "items": {
             "type": "string",
-            "enum": ["permission", "stalled", "budget", "workflow-done", "workflow-failed"]
+            "enum": ["permission", "stalled", "budget", "workflow-done", "workflow-failed", "summary"]
           },
-          "default": ["permission", "stalled", "budget", "workflow-done", "workflow-failed"],
+          "default": ["permission", "stalled", "budget", "workflow-done", "workflow-failed", "summary"],
           "description": "Which notification types are forwarded to notifyWebhookUrl."
+        },
+        "agentFarm.qualitySample": {
+          "type": "string",
+          "enum": ["off", "daily", "weekly"],
+          "default": "off",
+          "description": "Automatically sample recent session outputs and score them 1-5 with the cheap-model judge (uses judgeArgs; small API cost per sample). Manual: 'Sample Output Quality Now'."
+        },
+        "agentFarm.qualitySamplesPerAgent": {
+          "type": "number",
+          "default": 2,
+          "description": "How many not-yet-scored recent sessions per agent each quality sampling run scores."
+        },
+        "agentFarm.suggestScan": {
+          "type": "string",
+          "enum": ["off", "weekly"],
+          "default": "off",
+          "description": "Weekly cheap-model scan of your follow-up messages for repeated corrections, proposing CLAUDE.md rules (Insights view). Manual: 'Scan for Instruction Suggestions…'."
+        },
+        "agentFarm.weeklySummary": {
+          "type": "boolean",
+          "default": false,
+          "description": "Once per ISO week, write a three-sentence human-language fleet summary (cheap model) as a notification — and into autoReportFolder if set."
         },
         "agentFarm.queueAutoAdvance": {
           "type": "boolean",

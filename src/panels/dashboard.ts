@@ -16,6 +16,8 @@ export interface DashboardDeps {
     windowTokenLimit(): number;
     budgets(): Record<string, number>;
     mediaCost(): { today: number; month: number };
+    /** D1: rolling 14-day quality average by agent id. */
+    quality?(agentId: string): { avg?: number; count: number };
 }
 
 interface AgentSummary {
@@ -36,6 +38,8 @@ interface AgentSummary {
     budget?: number;
     duties: number;
     pendingDuties: number;
+    quality?: number;
+    qualityCount: number;
 }
 
 function buildData(deps: DashboardDeps): Record<string, unknown> {
@@ -87,7 +91,9 @@ function buildData(deps: DashboardDeps): Record<string, unknown> {
             insightCounts: counts,
             budget: deps.budgets()[a.name],
             duties: a.duties.length,
-            pendingDuties: a.duties.filter(d => !d.paused && watchStatus(d.watch)?.pending).length
+            pendingDuties: a.duties.filter(d => !d.paused && watchStatus(d.watch)?.pending).length,
+            quality: deps.quality?.(a.id)?.avg,
+            qualityCount: deps.quality?.(a.id)?.count ?? 0
         };
     });
 

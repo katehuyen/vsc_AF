@@ -67,6 +67,32 @@ export function normPath(p: string): string {
     return p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
 }
 
+/** Make a prompt safe to pass through a shell command line. */
+export function sanitizePrompt(p: string): string {
+    return p.replace(/"/g, "'").replace(/\s+/g, ' ').trim();
+}
+
+export function tryParseJson(s: string): unknown {
+    try { return JSON.parse(s); } catch { return undefined; }
+}
+
+/** Parse JSON that models love to wrap: plain, ```json fenced, or embedded in prose. */
+export function extractJson(s: string): unknown {
+    const direct = tryParseJson(s.trim());
+    if (direct !== undefined) { return direct; }
+    const fence = /```(?:json)?\s*([\s\S]*?)```/i.exec(s);
+    if (fence) {
+        const fenced = tryParseJson(fence[1].trim());
+        if (fenced !== undefined) { return fenced; }
+    }
+    const start = s.indexOf('{');
+    const end = s.lastIndexOf('}');
+    if (start >= 0 && end > start) {
+        return tryParseJson(s.slice(start, end + 1));
+    }
+    return undefined;
+}
+
 export function debounce<T extends (...args: never[]) => void>(fn: T, ms: number): T {
     let timer: NodeJS.Timeout | undefined;
     return ((...args: never[]) => {

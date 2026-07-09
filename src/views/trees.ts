@@ -348,7 +348,14 @@ export class InsightsTreeProvider implements vscode.TreeDataProvider<Insight> {
         );
         item.description = `${ins.agentName} • ${ins.category}`;
         item.tooltip = ins.message;
-        if (ins.filePath) {
+        if (ins.suggestionId) {
+            item.iconPath = new vscode.ThemeIcon('lightbulb', new vscode.ThemeColor('charts.yellow'));
+            item.command = {
+                command: 'agentfarm.reviewSuggestions',
+                title: 'Review Suggestion',
+                arguments: [ins.suggestionId]
+            };
+        } else if (ins.filePath) {
             item.command = openFileCommand(ins.filePath);
         } else {
             item.command = {

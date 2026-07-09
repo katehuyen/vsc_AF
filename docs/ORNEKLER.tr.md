@@ -271,10 +271,35 @@ Korumalar: art arda 10 dosya atarsan debounce hepsini tek ateşe indirir; 60 sn 
 
 > ✅ Test: hattın tamamı sahte fal sunucusuyla uçtan uca doğrulandı (ajan promptu → üretim → görselin indirilmesi → galeri/maliyet → videonun bir sonraki adıma devri). Gerçek fal.ai'de kimlik doğrulama ve hata yolu senin anahtarınla test edildi: API anahtarı tanıdı, kredisiz hesabı "Exhausted balance" ile reddetti ve bu hata arşive düzgün işlendi. Krediyi yüklediğin gün bu senaryo ilk gerçek koşusunu yapar.
 
+## S16 — Zeki Gözetim: Kalite Karnesi, Talimat Önerisi, Arama ✅ (mekanikler)
+
+**Amaç:** Maliyetin yanına kaliteyi koy, ajanın tekrar tekrar yaptığı hatayı kurala çevir, eski konuşmayı saniyede bul.
+
+**Kalite karnesi (haftalık ritmin parçası):**
+
+1. `Ctrl+Shift+P` → **Agent Farm: Sample Output Quality Now** — ucuz model hakem, ajan başına 2 yeni oturumu 1-5 puanlar (birkaç saniye/oturum).
+2. Dashboard → **Agent comparison** tablosunda **Quality** kolonu: son 14 günün ortalaması. Filo raporuna da aynı kolon gelir.
+3. Sürekli izlemek istersen: `agentFarm.qualitySample` = `weekly`. Puan düşüşe geçerse Insights'ta `quality` uyarısı belirir — maliyet ucuz ama karne kırıksa otomasyon zarar ediyor demektir.
+
+**Talimat önerisi (ajan kendini iyileştirsin):**
+
+1. Bir ajana birkaç oturumdur aynı düzeltmeyi yazıyorsan ("başlıkları Türkçe yaz" gibi) → **Agent Farm: Scan for Instruction Suggestions…** → ajanı seç.
+2. Ucuz model takip mesajlarını tarar; tekrarlayan kalıp bulursa Insights'a 💡 satırı düşer.
+3. 💡'ya tıkla → öneri ve dayanağı gösterilir → **Apply to CLAUDE.md** dersen kural, ajanın CLAUDE.md'sine `## Learned rules (Agent Farm)` altına eklenir; **Dismiss** dersen kapanır. Onaysız hiçbir şey yazılmaz.
+
+**Transcript arama:**
+
+1. Recent Sessions başlığındaki 🔍 (veya **Search Transcripts…**) → sorguyu yaz (3+ harfte kendiliğinden arar, Enter ile de).
+2. Ajan filtresi ve `regex` kutusu var; sonuçta eşleşme vurgulu, bağlamıyla görünür. Tıkla → oturum görüntüleyici açılır.
+
+**Haftalık özet (bonus):** `agentFarm.weeklySummary` = `true` → her hafta ilk açılışta üç cümlelik insan dili karne bildirimi; `autoReportFolder` ayarlıysa vault'a da yazılır, n8n webhook'una `summary` olayı olarak gider.
+
+> ✅ Test: mekaniklerin tamamı gerçek haiku çağrılarıyla doğrulandı — örnekleme puanı üretip sakladı (aynı oturum ikinci kez puanlanmıyor), tekrarlanan "Türkçe başlık / tarih biçimi" düzeltmelerinden kural önerisi çıktı ve CLAUDE.md'ye bölüm halinde eklendi, arama düz metin/regex/ajan filtresi/sınır durumlarıyla, haftalık özet üç cümle sınırıyla test edildi (28 kontrol).
+
 ## Kapanış: Ritim Önerisi
 
 - **Her gün 10 saniye:** durum çubuğu + Duties rozetleri (pending var mı?).
-- **Her hafta 5 dakika:** Dashboard karşılaştırması + Insights sıfırlama + vault karnesi.
+- **Her hafta 5 dakika:** Dashboard karşılaştırması + Insights sıfırlama + vault karnesi + kalite örneklemesi (S16).
 - **Her ay 15 dakika:** bağlam diyeti (S6) + kopya hafıza kontrolü (S7) + bütçe gözden geçirme (S8).
 
 Yeni senaryo ihtiyacın doğduğunda bu belge büyümeye hazır — Blueprint gibi bu da eklentiyle birlikte yaşayan bir belge.

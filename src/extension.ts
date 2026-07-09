@@ -19,8 +19,13 @@ import {
 } from './core/memorySync';
 import { SecretsVault } from './core/secrets';
 import { DEFAULT_PRICING, PriceRule, PricingEngine } from './core/pricing';
+import { QualityStore, sampleQuality } from './core/quality';
 import { buildFleetReport, buildOutputsDigest } from './core/report';
 import { SessionIndex } from './core/sessions';
+import {
+    applySuggestionToClaudeMd, collectUserMessages, scanCorrections, SuggestionStore
+} from './core/suggest';
+import { buildWeeklyFactsText, generateWeeklySummary, isoWeek, WeeklyFacts } from './core/summary';
 import {
     FarmSchedule, FarmTrigger, newId, PREV_OUTPUT_PLACEHOLDER, sanitizePrompt, ScheduleKind,
     TaskManager, TaskMode, WorkflowStep
@@ -31,6 +36,7 @@ import { AgentDetailPanel } from './panels/agentDetail';
 import { DashboardPanel } from './panels/dashboard';
 import { GalleryPanel } from './panels/gallery';
 import { GuidePanel } from './panels/guide';
+import { SearchPanel } from './panels/searchPanel';
 import { SessionViewerPanel } from './panels/sessionViewer';
 import { TimelinePanel } from './panels/timeline';
 import { FarmStatusBar } from './views/statusBar';
@@ -76,12 +82,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const vault = new SecretsVault(context.secrets, context.globalState);
     await vault.refresh();
 
+    // D1/D2: file-backed stores for quality scores and instruction suggestions.
+    fs.mkdirSync(context.globalStorageUri.fsPath, { recursive: true });
+    const qualityStore = new QualityStore(path.join(context.globalStorageUri.fsPath, 'quality.json'));
+    const suggestionStore = new SuggestionStore(path.join(context.globalStorageUri.fsPath, 'suggestions.json'));
+    const judgeArgs = () => cfg().get<string>('judgeArgs', '--model claude-haiku-4-5-20251001');
+
     // B4: outbound notification forwarding (n8n / Make / any webhook).
     const postForward = (type: string, message: string): void => {
         const url = cfg().get<string>('notifyWebhookUrl', '');
         if (!url) { return; }
         const events = cfg().get<string[]>('notifyWebhookEvents',
-            ['permission', 'stalled', 'budget', 'workflow-done', 'workflow-failed']);
+            ['permission', 'stalled', 'budget', 'workflow-done', 'workflow-failed', 'summary']);
         if (!events.includes(type)) { return; }
         fetch(vault.substitute(url), {
             method: 'POST',
@@ -103,7 +115,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         staleMemoryDays: cfg().get<number>('staleMemoryDays', 45),
         contextBudgetTokens: cfg().get<number>('contextBudgetTokens', 8000),
         budgets: cfg().get<Record<string, number>>('budgets', {}),
-        trendFactor: cfg().get<number>('trendAlertFactor', 2)
+        trendFactor: cfg().get<number>('trendAlertFactor', 2),
+        qualityScores: qualityStore.scores,
+        suggestions: suggestionStore.open().map(s =>
+            ({ id: s.id, agentId: s.agentId, agentName: s.agentName, rule: s.rule }))
     });
 
     const refreshAgents = () => {
@@ -234,13 +249,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }, null, context.subscriptions);
 
     // Automatic fleet reports (e.g. into an Obsidian vault folder), checked hourly.
-    const isoWeek = (d: Date): string => {
-        const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-        t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7));
-        const yearStart = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
-        const week = Math.ceil(((t.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-        return `${t.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
-    };
     const checkAutoReport = () => {
         const cadence = cfg().get<string>('autoReport', 'off');
         const folder = cfg().get<string>('autoReportFolder', '');
@@ -251,7 +259,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (fs.existsSync(file)) { return; }
         try {
             const days = cfg().get<number>('autoReportDays', 7);
-            let md = buildFleetReport(agents, index, insights, days);
+            let md = buildFleetReport(agents, index, insights, days,
+                id => qualityStore.avgSince(id, days * 24 * 3600 * 1000));
             if (cfg().get<boolean>('autoReportIncludeOutputs', true)) {
                 const sinceMs = days * 24 * 3600 * 1000;
                 const hasOutputs = taskManager.tasks.some(t =>
@@ -274,13 +283,176 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 });
         } catch { /* folder not writable — retried next hour */ }
     };
-    const reportTimer = setInterval(checkAutoReport, 3600_000);
+    // ---------- D1: quality sampling ----------
+    const sessionSampleRefs = () => index.all()
+        .filter(s => s.agentId)
+        .map(s => {
+            const agent = agents.find(a => a.id === s.agentId);
+            return {
+                file: s.file,
+                sessionId: s.sessionId,
+                agentId: s.agentId as string,
+                agentName: s.agentName ?? agent?.name ?? '?',
+                agentDir: agent?.dir ?? os.homedir(),
+                lastTs: s.lastTs,
+                isSidechain: s.isSidechain,
+                userTurns: s.userTurns
+            };
+        });
+    const refreshInsights = () => {
+        insights = buildInsights(agents, index, healthConfig());
+        insightsTree.refresh();
+        DashboardPanel.refreshIfOpen();
+    };
+    let qualityBusy = false;
+    const runQualitySample = async (manual: boolean): Promise<void> => {
+        if (qualityBusy) {
+            if (manual) {
+                void vscode.window.showInformationMessage('Agent Farm: quality sampling is already running.');
+            }
+            return;
+        }
+        qualityBusy = true;
+        try {
+            const { scored, skipped } = await sampleQuality(
+                sessionSampleRefs(), qualityStore, judgeArgs(),
+                { perAgent: cfg().get<number>('qualitySamplesPerAgent', 2) });
+            refreshInsights();
+            if (manual) {
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: quality sampling done — ${scored.length} session(s) scored` +
+                    (skipped ? `, ${skipped} skipped` : '') +
+                    (scored.length ? '. See the Quality column on the Dashboard.' : '.'));
+            }
+        } finally { qualityBusy = false; }
+    };
+
+    // ---------- D2: instruction suggestion scan ----------
+    const scanAgentSuggestions = async (agent: AgentInfo): Promise<number> => {
+        const cutoff = Date.now() - 14 * 24 * 3600 * 1000;
+        const files = index.forAgent(agent.id)
+            .filter(s => !s.isSidechain && s.lastTs >= cutoff)
+            .sort((a, b) => b.mtime - a.mtime)
+            .slice(0, 10)
+            .map(s => s.file);
+        const messages = collectUserMessages(files);
+        if (messages.length < 4) { return 0; } // not enough follow-ups to show a repeated pattern
+        const { rules } = await scanCorrections(agent.dir, judgeArgs(), agent.name, messages);
+        return suggestionStore.addAll(rules.map(r => ({
+            agentId: agent.id, agentName: agent.name, rule: r.rule, evidence: r.evidence
+        }))).length;
+    };
+
+    // ---------- D3: weekly health summary ----------
+    const buildWeeklyFacts = (): WeeklyFacts => {
+        const now = Date.now();
+        const week = 7 * 24 * 3600 * 1000;
+        const costIn = (sessions: { daily: Record<string, { cost: number }> }[], from: number, to: number) => {
+            let total = 0;
+            for (const s of sessions) {
+                for (const [day, b] of Object.entries(s.daily)) {
+                    const ts = new Date(day + 'T12:00:00').getTime();
+                    if (ts >= from && ts < to) { total += b.cost; }
+                }
+            }
+            return total;
+        };
+        const all = index.all();
+        return {
+            totalWeek: costIn(all, now - week, now + 24 * 3600 * 1000),
+            totalPrevWeek: costIn(all, now - 2 * week, now - week),
+            agents: agents.map(a => {
+                const sessions = index.forAgent(a.id);
+                const recent = sessions.filter(s => s.lastTs >= now - week);
+                const q = qualityStore.avgSince(a.id, week, now);
+                return {
+                    name: a.name,
+                    costWeek: costIn(sessions, now - week, now + 24 * 3600 * 1000),
+                    costPrevWeek: costIn(sessions, now - 2 * week, now - week),
+                    sessions: recent.length,
+                    errors: recent.reduce((x, s) => x + s.errors, 0),
+                    toolCalls: recent.reduce((x, s) => x + s.toolCalls, 0),
+                    qualityAvg: q.avg,
+                    qualityCount: q.count
+                };
+            }),
+            insights: insights.map(i => ({
+                severity: i.severity, agentName: i.agentName, category: i.category, message: i.message
+            }))
+        };
+    };
+    let summaryBusy = false;
+    const runWeeklySummary = async (manual: boolean): Promise<void> => {
+        if (summaryBusy) { return; }
+        summaryBusy = true;
+        try {
+            const text = await generateWeeklySummary(
+                os.homedir(), judgeArgs(), buildWeeklyFactsText(buildWeeklyFacts()));
+            if (!text) {
+                if (manual) {
+                    void vscode.window.showWarningMessage(
+                        'Agent Farm: weekly summary failed — is the claude CLI on PATH?');
+                }
+                return;
+            }
+            const weekKey = isoWeek(new Date());
+            await context.globalState.update('agentfarm.weeklySummaryKey', weekKey);
+            postForward('summary', text);
+            const folder = cfg().get<string>('autoReportFolder', '');
+            if (folder && fs.existsSync(folder)) {
+                try {
+                    fs.writeFileSync(path.join(folder, `AgentFarm-Weekly-Summary-${weekKey}.md`),
+                        `# Agent Farm — Weekly Summary (${weekKey})\n\n${text}\n`, 'utf8');
+                } catch { /* folder not writable */ }
+            }
+            void vscode.window.showInformationMessage(`Agent Farm — weekly summary: ${text}`, 'Open Dashboard')
+                .then(choice => {
+                    if (choice === 'Open Dashboard') {
+                        void vscode.commands.executeCommand('agentfarm.openDashboard');
+                    }
+                });
+        } finally { summaryBusy = false; }
+    };
+
+    // D1-D3 cadences ride the same hourly clock as the auto report.
+    const checkPeriodicIntelligence = () => {
+        const now = Date.now();
+        const cadence = cfg().get<string>('qualitySample', 'off');
+        if (cadence !== 'off') {
+            const interval = cadence === 'daily' ? 24 * 3600 * 1000 : 7 * 24 * 3600 * 1000;
+            if (now - qualityStore.lastSampleAt >= interval) { void runQualitySample(false); }
+        }
+        if (cfg().get<string>('suggestScan', 'off') === 'weekly' &&
+            now - suggestionStore.lastScanAt >= 7 * 24 * 3600 * 1000) {
+            suggestionStore.lastScanAt = now;
+            suggestionStore.save();
+            void (async () => {
+                let added = 0;
+                for (const agent of agents) { added += await scanAgentSuggestions(agent); }
+                if (added) {
+                    refreshInsights();
+                    void vscode.window.showInformationMessage(
+                        `Agent Farm: ${added} new instruction suggestion(s) — see the Insights view.`);
+                }
+            })();
+        }
+        if (cfg().get<boolean>('weeklySummary', false) &&
+            context.globalState.get<string>('agentfarm.weeklySummaryKey') !== isoWeek(new Date())) {
+            void runWeeklySummary(false);
+        }
+    };
+
+    const reportTimer = setInterval(() => {
+        checkAutoReport();
+        checkPeriodicIntelligence();
+    }, 3600_000);
     context.subscriptions.push({ dispose: () => clearInterval(reportTimer) });
 
     // Initial scan + live watch of ~/.claude/projects
     void index.scanAll().then(() => {
         index.watch();
         checkAutoReport();
+        checkPeriodicIntelligence();
     });
 
     // Watch agent roots for structural changes (new agents, memory edits)
@@ -321,7 +493,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         mediaCost: () => ({
             today: mediaCostSince(taskManager.outputsDir, 24 * 3600 * 1000),
             month: mediaCostSince(taskManager.outputsDir, 30 * 24 * 3600 * 1000)
-        })
+        }),
+        quality: (agentId: string) => qualityStore.avgSince(agentId, 14 * 24 * 3600 * 1000)
     };
     const detailDeps = {
         extensionUri: context.extensionUri,
@@ -1640,7 +1813,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 { placeHolder: 'Report period' }
             );
             if (!period) { return; }
-            const md = buildFleetReport(agents, index, insights, period.days);
+            const md = buildFleetReport(agents, index, insights, period.days,
+                id => qualityStore.avgSince(id, period.days * 24 * 3600 * 1000));
             const roots = cfg().get<string[]>('agentRoots', []);
             const defaultDir = roots.find(r => fs.existsSync(r)) ?? os.homedir();
             const defaultName = `AgentFarm-Report-${new Date().toISOString().slice(0, 10)}.md`;
@@ -1696,6 +1870,82 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             refreshAll();
             void vscode.window.showInformationMessage(`Agent Farm: agent "${name}" created.`);
             await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(path.join(dir, 'CLAUDE.md')));
+        }),
+
+        // ---------- Phase D commands ----------
+
+        vscode.commands.registerCommand('agentfarm.searchTranscripts', () => {
+            SearchPanel.show({
+                extensionUri: context.extensionUri,
+                index,
+                getAgentNames: () => agents.map(a => a.name)
+            });
+        }),
+
+        vscode.commands.registerCommand('agentfarm.sampleQualityNow', () => {
+            void vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: 'Agent Farm: scoring recent outputs (cheap model)…' },
+                () => runQualitySample(true));
+        }),
+
+        vscode.commands.registerCommand('agentfarm.scanSuggestionsNow', async (arg?: AgentArg) => {
+            const agent = await resolveAgent(arg);
+            if (!agent) { return; }
+            await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: `Agent Farm: scanning ${agent.name}'s corrections (cheap model)…` },
+                async () => {
+                    const added = await scanAgentSuggestions(agent);
+                    refreshInsights();
+                    void vscode.window.showInformationMessage(added
+                        ? `Agent Farm: ${added} new suggestion(s) for ${agent.name} — see the Insights view.`
+                        : `Agent Farm: no repeated correction patterns found for ${agent.name} (needs a few follow-up messages in recent sessions).`);
+                });
+        }),
+
+        vscode.commands.registerCommand('agentfarm.reviewSuggestions', async (suggestionId?: unknown) => {
+            let suggestion = typeof suggestionId === 'string' ? suggestionStore.byId(suggestionId) : undefined;
+            if (!suggestion) {
+                const open = suggestionStore.open();
+                if (!open.length) {
+                    void vscode.window.showInformationMessage(
+                        'Agent Farm: no open suggestions — run "Scan for Instruction Suggestions…" first.');
+                    return;
+                }
+                const pick = await vscode.window.showQuickPick(
+                    open.map(s => ({ label: s.rule, description: s.agentName, detail: s.evidence, s })),
+                    { placeHolder: 'Review which suggestion?' });
+                suggestion = pick?.s;
+            }
+            if (!suggestion) { return; }
+            const agent = agents.find(a => a.id === suggestion!.agentId);
+            const choice = await vscode.window.showInformationMessage(
+                `${suggestion.agentName} — suggested CLAUDE.md rule:\n\n"${suggestion.rule}"\n\nBased on: ${suggestion.evidence || '(no evidence text)'}`,
+                { modal: true },
+                'Apply to CLAUDE.md', 'Dismiss');
+            if (choice === 'Apply to CLAUDE.md') {
+                if (agent?.claudeMdPath && applySuggestionToClaudeMd(agent.claudeMdPath, suggestion.rule)) {
+                    suggestionStore.setStatus(suggestion.id, 'applied');
+                    void vscode.window.showInformationMessage(
+                        `Agent Farm: rule added to ${suggestion.agentName}'s CLAUDE.md.`, 'Open CLAUDE.md')
+                        .then(c => {
+                            if (c === 'Open CLAUDE.md' && agent?.claudeMdPath) {
+                                void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(agent.claudeMdPath));
+                            }
+                        });
+                } else {
+                    void vscode.window.showWarningMessage(
+                        'Agent Farm: could not apply — the agent\'s CLAUDE.md was not found or is unwritable.');
+                }
+            } else if (choice === 'Dismiss') {
+                suggestionStore.setStatus(suggestion.id, 'dismissed');
+            }
+            refreshInsights();
+        }),
+
+        vscode.commands.registerCommand('agentfarm.weeklySummaryNow', () => {
+            void vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: 'Agent Farm: writing weekly summary (cheap model)…' },
+                () => runWeeklySummary(true));
         })
     );
 

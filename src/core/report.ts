@@ -19,7 +19,9 @@ export function buildFleetReport(
     agents: AgentInfo[],
     index: SessionIndex,
     insights: Insight[],
-    days: number
+    days: number,
+    /** D1: rolling quality average for the period, by agent id. */
+    quality?: (agentId: string) => { avg?: number; count: number }
 ): string {
     const now = Date.now();
     const cutoff = now - days * 24 * 3600 * 1000;
@@ -46,8 +48,8 @@ export function buildFleetReport(
     // Per-agent comparison
     lines.push('## Agent comparison');
     lines.push('');
-    lines.push('| Agent | Sessions | Cost | Tokens | Tools | Err % | Cache eff. | Ctx load | Memory files |');
-    lines.push('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |');
+    lines.push('| Agent | Sessions | Cost | Tokens | Tools | Err % | Quality | Cache eff. | Ctx load | Memory files |');
+    lines.push('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |');
     for (const agent of agents) {
         const sessions = index.forAgent(agent.id).filter(s => inRange(s, cutoff));
         const cost = sessions.reduce((a, s) => a + s.cost, 0);
@@ -56,13 +58,16 @@ export function buildFleetReport(
         const errors = sessions.reduce((a, s) => a + s.errors, 0);
         const input = sessions.reduce((a, s) => a + s.usage.input + s.usage.cacheRead + s.usage.cacheWrite, 0);
         const cacheRead = sessions.reduce((a, s) => a + s.usage.cacheRead, 0);
+        const q = quality?.(agent.id);
+        const qCell = q?.avg !== undefined ? `${q.avg.toFixed(1)}/5 (${q.count})` : '—';
         lines.push(`| ${agent.name} | ${sessions.length} | ${fmtUSD(cost)} | ${fmtTokens(tok)} | ${tools} | ` +
-            `${tools ? pct(errors / tools) : '—'} | ${input ? pct(cacheRead / input) : '—'} | ` +
+            `${tools ? pct(errors / tools) : '—'} | ${qCell} | ${input ? pct(cacheRead / input) : '—'} | ` +
             `~${fmtTokens(agent.contextLoad.total)} | ${agent.memoryFiles.length} |`);
     }
     lines.push('');
     lines.push('> Cache eff. = cache-read share of all prompt tokens (higher is cheaper). ' +
-        'Ctx load = CLAUDE.md + MEMORY.md + AGENTS.md, paid every session.');
+        'Ctx load = CLAUDE.md + MEMORY.md + AGENTS.md, paid every session. ' +
+        'Quality = cheap-model judge average (1-5) over sampled sessions in the period.');
     lines.push('');
 
     // Models

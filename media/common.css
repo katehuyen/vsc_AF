@@ -106,6 +106,20 @@ details summary { cursor: pointer; opacity: .8; font-size: 12px; }
     border: 1px solid var(--vscode-input-border, transparent); border-radius: 4px;
 }
 
+/* Transcript search panel */
+input[type="text"], select {
+    font-family: inherit; font-size: 13px;
+    color: var(--vscode-input-foreground); background: var(--vscode-input-background);
+    border: 1px solid var(--vscode-input-border, transparent); border-radius: 4px;
+    padding: 5px 8px;
+}
+.card.click { cursor: pointer; }
+.card.click:hover { background: var(--vscode-list-hoverBackground); }
+mark {
+    background: var(--vscode-editor-findMatchHighlightBackground, #ffd33d55);
+    color: inherit; border-radius: 2px; padding: 0 1px;
+}
+
 .footnote { margin-top: 30px; font-size: 11px; opacity: .55; }
 
 /* Guide layout */

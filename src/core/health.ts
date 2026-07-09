@@ -15,6 +15,8 @@ export interface Insight {
     message: string;
     filePath?: string;
     guideAnchor: string;
+    /** D2: clicking a suggestion insight opens the review flow for this suggestion. */
+    suggestionId?: string;
 }
 
 export interface HealthConfig {
@@ -24,6 +26,10 @@ export interface HealthConfig {
     budgets?: Record<string, number>;
     /** Warn when this week's cost is >= factor × last week's. 0 disables. */
     trendFactor?: number;
+    /** D1: judge quality scores (stamped with the scored session's activity time). */
+    qualityScores?: { agentId?: string; sessionTs: number; score: number }[];
+    /** D2: open instruction suggestions, surfaced as clickable insights. */
+    suggestions?: { id: string; agentId: string; agentName: string; rule: string }[];
 }
 
 const TREND_MIN_PREV_USD = 0.5;
@@ -303,6 +309,60 @@ export function buildInsights(
             checkTrend(agent.name, agent.id, index.forAgent(agent.id));
         }
         checkTrend('fleet', undefined, index.all());
+    }
+
+    // 6d) Quality scorecard (D1): declining or low judge scores per agent
+    if (cfg.qualityScores?.length) {
+        const week = 7 * 24 * 3600 * 1000;
+        const avgIn = (agentId: string, from: number, to: number) => {
+            const list = cfg.qualityScores!.filter(q =>
+                q.agentId === agentId && q.sessionTs >= from && q.sessionTs < to);
+            return {
+                avg: list.length ? list.reduce((a, q) => a + q.score, 0) / list.length : undefined,
+                count: list.length
+            };
+        };
+        for (const agent of agents) {
+            const cur = avgIn(agent.id, now - week, now + 24 * 3600 * 1000);
+            const prev = avgIn(agent.id, now - 2 * week, now - week);
+            if (cur.count >= 2 && prev.count >= 2 &&
+                cur.avg !== undefined && prev.avg !== undefined &&
+                cur.avg <= prev.avg - 0.8) {
+                insights.push({
+                    severity: 'warning',
+                    agentId: agent.id,
+                    agentName: agent.name,
+                    category: 'quality',
+                    message: `Quality trend declining: ${cur.avg.toFixed(1)}/5 this week vs ${prev.avg.toFixed(1)}/5 last week (${cur.count} samples).`,
+                    guideAnchor: 'kalite-karnesi'
+                });
+                continue;
+            }
+            const recent = avgIn(agent.id, now - 2 * week, now + 24 * 3600 * 1000);
+            if (recent.count >= 3 && recent.avg !== undefined && recent.avg < 3) {
+                insights.push({
+                    severity: 'warning',
+                    agentId: agent.id,
+                    agentName: agent.name,
+                    category: 'quality',
+                    message: `Low output quality: ${recent.avg.toFixed(1)}/5 average over ${recent.count} sampled sessions — review the agent's instructions.`,
+                    guideAnchor: 'kalite-karnesi'
+                });
+            }
+        }
+    }
+
+    // 6e) Instruction suggestions (D2): pending CLAUDE.md rule proposals
+    for (const s of cfg.suggestions ?? []) {
+        insights.push({
+            severity: 'info',
+            agentId: s.agentId,
+            agentName: s.agentName,
+            category: 'suggestion',
+            message: `Suggested CLAUDE.md rule: "${s.rule}" — click to review.`,
+            guideAnchor: 'talimat-onerileri',
+            suggestionId: s.id
+        });
     }
 
     // 7) Daily budget checks (per agent and fleet-wide "*")

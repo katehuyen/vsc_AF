@@ -138,9 +138,11 @@ Metin ajanları + medya modelleri aynı zincirde. Burada 1.0 deriz çünkü ekle
 
 ---
 
-# FAZ D — Zeki Gözetim ve Öz-İyileştirme (hedef: 1.1)
+# FAZ D — Zeki Gözetim ve Öz-İyileştirme — ✅ TAMAMLANDI (1.1.0, 2026-07-09)
 
 Fabrika çalışırken kalitenin bekçiliğini de fabrika yapsın.
+
+> **Uygulama notu (1.1.0):** D1-D4'ün tamamı gerçekleştirildi; D4'te metin/regex arama tamam, opsiyonel semantik katman (yerel embedding) SQLite kararı gibi ihtiyaç doğarsa yeniden değerlendirilecek. Otomatik döngüler (qualitySample, suggestScan, weeklySummary) varsayılan **kapalı** gelir — ucuz modelle de olsa API harcaması kullanıcı onayıyla başlar; elle komutlar her zaman açık.
 
 ### D1. Kalite Karnesi [M]
 - **Ne:** A2 judge altyapısıyla dönemsel örnekleme: ajan başına çıktı kalite skoru (1-5), karneye "Quality" kolonu, düşüş trendi uyarısı.
