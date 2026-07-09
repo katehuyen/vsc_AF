@@ -15,6 +15,7 @@ export interface DashboardDeps {
     getPricing(): PricingEngine;
     windowTokenLimit(): number;
     budgets(): Record<string, number>;
+    mediaCost(): { today: number; month: number };
 }
 
 interface AgentSummary {
@@ -135,6 +136,7 @@ function buildData(deps: DashboardDeps): Record<string, unknown> {
         topSessions,
         window: { ...win, limit: deps.windowTokenLimit() },
         fleetBudget: deps.budgets()['*'] ?? 0,
+        mediaCost: deps.mediaCost(),
         insightTotals: {
             error: insights.filter(i => i.severity === 'error').length,
             warning: insights.filter(i => i.severity === 'warning').length,

@@ -3,6 +3,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo } from './agents';
+import {
+    DEFAULT_MEDIA_PRICING, downloadAsset, estimateMediaCost, extFromUrl,
+    MediaMeta, MediaPriceRule, runFalJob
+} from './media';
 
 export type TaskStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
 export type TaskMode = 'interactive' | 'headless';
@@ -30,6 +34,8 @@ export interface FarmTask {
     attempt?: number;
     /** result of the verify step, when the step had one. */
     verified?: 'pass' | 'fail';
+    /** estimated cost of a media step (USD). */
+    mediaCost?: number;
     /** why a requested start is waiting (concurrency / quota). */
     deferredReason?: string;
     /** start was requested; the pump launches it when capacity frees up. */
@@ -87,6 +93,12 @@ export interface WorkflowStep {
      * The response body becomes the handoff for the next step.
      */
     webhook?: { url: string; method?: string; body?: string };
+    /**
+     * Media step (fal.ai queue): model id + JSON input template ({prev_*} and
+     * {secret:} are substituted). Assets are downloaded into the outputs
+     * archive; the response JSON becomes the next step's handoff.
+     */
+    media?: { model: string; input: string; timeoutMin?: number };
 }
 
 /** What one step passes to the next. */
@@ -212,6 +224,10 @@ export interface TaskManagerOptions {
     resolveTemplate?: (s: string) => string;
     /** Outbound notification forwarding (B4). */
     forward?: (type: string, message: string) => void;
+    /** C1: media provider settings. */
+    mediaAuth?: () => string;              // e.g. "Key <FAL_KEY>" (resolved from the vault)
+    mediaBaseUrl?: () => string;           // override for tests / self-hosted proxies
+    mediaPricing?: () => MediaPriceRule[]; // C3 cost estimation rules
 }
 
 export class TaskManager implements vscode.Disposable {
@@ -853,6 +869,10 @@ export class TaskManager implements vscode.Disposable {
             this.runWebhookStep(w, index, handoff, runId);
             return;
         }
+        if (step.media) {
+            void this.runMediaStep(w, index, handoff, runId);
+            return;
+        }
         const agent = this.getAgents().find(a => a.id === step.agentId);
         if (!agent) {
             void vscode.window.showWarningMessage(
@@ -917,6 +937,92 @@ export class TaskManager implements vscode.Disposable {
                 `# ${task.title}\n\n- Webhook: ${method} ${hook.url}\n\n---\n\n[request error] ${String(err)}\n`, 'utf8');
             this.finish(task, 'failed');
         });
+    }
+
+    /** C1: a chain step that generates media via the fal.ai queue API. */
+    private async runMediaStep(w: FarmWorkflow, index: number, handoff: Handoff, runId: string): Promise<void> {
+        const step = w.steps[index];
+        const media = step.media!;
+        const resolve = (s: string) => (this.opts.resolveTemplate ?? ((x: string) => x))(this.substitute(s, handoff));
+
+        const task: FarmTask = {
+            id: newId(),
+            agentId: '',
+            agentName: 'media',
+            title: `${w.title} ${index + 1}/${w.steps.length}: ${step.title}`,
+            prompt: `${media.model}`,
+            mode: 'headless',
+            status: 'running',
+            createdAt: Date.now(),
+            startedAt: Date.now(),
+            workflowId: w.id,
+            workflowRunId: runId,
+            stepIndex: index
+        };
+        this.tasks.push(task);
+        fs.mkdirSync(this.outputsDir, { recursive: true });
+        const outFile = path.join(this.outputsDir, `${task.id}.md`);
+        task.outputFile = outFile;
+        this.save();
+
+        const auth = (this.opts.mediaAuth?.() ?? '').trim();
+        const finishWith = (ok: boolean, detail: string, response?: unknown, assets: string[] = [], estCost = 0) => {
+            fs.writeFileSync(outFile,
+                `# ${task.title}\n\n- Media model: ${media.model}\n- Started: ${new Date(task.startedAt!).toLocaleString()}\n` +
+                (assets.length ? `- Assets: ${assets.map(a => path.basename(a)).join(', ')}\n` : '') +
+                (estCost ? `- Est. cost: $${estCost.toFixed(3)}\n` : '') +
+                `\n---\n\n${response ? JSON.stringify(response, null, 2).slice(0, 20_000) : detail}\n\n---\n` +
+                `Finished: ${new Date().toLocaleString()} · ${ok ? 'OK' : 'FAILED'}\n`, 'utf8');
+            this.finish(task, ok ? 'done' : 'failed');
+        };
+
+        if (!auth || auth.includes('{secret:')) {
+            finishWith(false, 'Media auth missing — store your key with "Agent Farm: Set Secret…" as FAL_KEY.');
+            return;
+        }
+
+        const input = resolve(media.input);
+        const result = await runFalJob(media.model, input, auth, {
+            baseUrl: this.opts.mediaBaseUrl?.(),
+            timeoutMs: (media.timeoutMin ?? 10) * 60_000
+        });
+        if (!result.ok) {
+            finishWith(false, `[media error] ${result.error ?? 'unknown'}`);
+            return;
+        }
+
+        const assets: string[] = [];
+        for (const [i, url] of result.assetUrls.slice(0, 4).entries()) {
+            const file = path.join(this.outputsDir, `${task.id}-${i + 1}.${extFromUrl(url)}`);
+            if (await downloadAsset(url, file)) { assets.push(file); }
+        }
+        const estCost = estimateMediaCost(media.model, result.response,
+            this.opts.mediaPricing?.() ?? DEFAULT_MEDIA_PRICING);
+        task.mediaCost = estCost;
+
+        const meta: MediaMeta = {
+            taskId: task.id,
+            title: step.title,
+            model: media.model,
+            input: input.slice(0, 2000),
+            assetFiles: assets,
+            estCost,
+            ts: Date.now(),
+            workflowTitle: w.title
+        };
+        fs.writeFileSync(path.join(this.outputsDir, `${task.id}.media.json`),
+            JSON.stringify(meta, null, 2), 'utf8');
+        finishWith(true, '', result.response, assets, estCost);
+    }
+
+    /** Gallery Re-run/Vary: run a single media job outside any stored workflow. */
+    runMediaAdhoc(title: string, model: string, input: string): void {
+        const w: FarmWorkflow = {
+            id: 'adhoc-' + newId(),
+            title: 'Media',
+            steps: [{ agentId: '', agentName: 'media', title, prompt: '', mode: 'headless', media: { model, input } }]
+        };
+        void this.runMediaStep(w, 0, {}, newId());
     }
 
     private advanceWorkflow(task: FarmTask, status: TaskStatus): void {

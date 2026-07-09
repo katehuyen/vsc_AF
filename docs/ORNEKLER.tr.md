@@ -250,6 +250,27 @@ Korumalar: art arda 10 dosya atarsan debounce hepsini tek ateşe indirir; 60 sn 
 
 > ✅ Test (gerçek HTTP mekanikleriyle): /trigger ucuna doğru token'la POST → görev ateşledi ve `{payload}` prompt'a girdi; yanlış token 404 aldı. Webhook adımı: `{secret:}` URL'de, `{prev_json.*}` gövdede çözüldü, sunucu yanıtı sonraki adıma devroldu (3/3 adım done). Permission olayı forward kanalından JSON olarak ulaştı. n8n tarafı reçetedir — kendi akışını bağladığında hat hazır.
 
+## S15 — İçerik Fabrikası: Metin → Görsel → Video ✅ (hat; gerçek üretim kredi bekliyor)
+
+**Amaç:** Ajan metni yazsın, medya modelleri görseli ve videoyu üretsin — tek zincir, galeri ve karneyle.
+
+**Bir kerelik kurulum (anahtar):**
+
+1. [fal.ai](https://fal.ai) hesabından API anahtarını al (Keys bölümü) ve hesabına kredi yükle (Billing).
+2. `Ctrl+Shift+P` → **Agent Farm: Set Secret…** → ad: `FAL_KEY` → değeri yapıştır. Bu kadar — anahtar OS anahtarlığında, hiçbir dosyada değil. (Detay: Kılavuz → Sır Kasası → "API Anahtarı Nasıl Eklenir".)
+
+**Zincir kurulumu (kolay yol — reçete):**
+
+1. Tasks başlığı **⋯** → **New Recipe Workflow…** → **Metin → Görsel → Video** → ajanı seç (örn. `genel`).
+2. Workflows altında kurulan zincirde 1. adımın kalem ikonuna bas → Prompt → `KONUYU BURAYA YAZ` kısmını gerçek konunla değiştir (örn. "sabah rutini hakkında motive edici kısa video").
+3. İstersen video adımının modelini güncelle (Edit Step → Media model) — güncel model adlarını fal.ai/models'ten kontrol et.
+4. ▶ **Run Workflow**: ajan İngilizce sinematik promptu yazar → Flux kapak görselini üretir → Kling kısa videoyu üretir. Video adımı dakikalar sürebilir; Timeline'da koşusunu izlersin.
+5. **Sonuç:** Tasks başlığındaki 📷 ikonuyla **Media Gallery** — görsel ve video önizlemeli, model + girdi + tahmini maliyetle. Beğenmedin mi: **Vary…** ile promptu düzenleyip yeniden üret. Dashboard'da **Media cost** kartı harcamayı gösterir.
+
+**Sık takılmalar:** "Set Secret" hatası = FAL_KEY girilmemiş; arşivde "Exhausted balance" = fal hesabında kredi yok; model adı hatası = fal.ai/models'ten güncel kimliği al.
+
+> ✅ Test: hattın tamamı sahte fal sunucusuyla uçtan uca doğrulandı (ajan promptu → üretim → görselin indirilmesi → galeri/maliyet → videonun bir sonraki adıma devri). Gerçek fal.ai'de kimlik doğrulama ve hata yolu senin anahtarınla test edildi: API anahtarı tanıdı, kredisiz hesabı "Exhausted balance" ile reddetti ve bu hata arşive düzgün işlendi. Krediyi yüklediğin gün bu senaryo ilk gerçek koşusunu yapar.
+
 ## Kapanış: Ritim Önerisi
 
 - **Her gün 10 saniye:** durum çubuğu + Duties rozetleri (pending var mı?).

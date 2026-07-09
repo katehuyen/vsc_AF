@@ -13,6 +13,7 @@ import {
 } from './core/hooksInstaller';
 import { LiveMonitor } from './core/live';
 import { addMcpServer, removeMcpServer } from './core/mcp';
+import { DEFAULT_MEDIA_PRICING, MediaPriceRule, mediaCostSince, readMediaMetas } from './core/media';
 import {
     applyMergedContent, buildMergeDraft, findDuplicateGroups, syncGroup
 } from './core/memorySync';
@@ -28,6 +29,7 @@ import { TriggerManager } from './core/triggers';
 import { normPath, relTime } from './core/util';
 import { AgentDetailPanel } from './panels/agentDetail';
 import { DashboardPanel } from './panels/dashboard';
+import { GalleryPanel } from './panels/gallery';
 import { GuidePanel } from './panels/guide';
 import { SessionViewerPanel } from './panels/sessionViewer';
 import { TimelinePanel } from './panels/timeline';
@@ -183,7 +185,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             },
             getEnv: () => vault.env(),
             resolveTemplate: (s) => vault.substitute(s),
-            forward: postForward
+            forward: postForward,
+            mediaAuth: () => {
+                const secretName = cfg().get<string>('mediaAuthSecret', 'FAL_KEY');
+                const key = vault.get(secretName);
+                return key ? `Key ${key}` : '';
+            },
+            mediaBaseUrl: () => cfg().get<string>('mediaBaseUrl', '') || undefined as unknown as string,
+            mediaPricing: () => cfg().get<MediaPriceRule[]>('mediaPricing', DEFAULT_MEDIA_PRICING)
         }
     );
     context.subscriptions.push(taskManager);
@@ -308,7 +317,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         getInsights: () => insights,
         getPricing: () => pricing,
         windowTokenLimit: () => cfg().get<number>('windowTokenLimit', 0),
-        budgets: () => cfg().get<Record<string, number>>('budgets', {})
+        budgets: () => cfg().get<Record<string, number>>('budgets', {}),
+        mediaCost: () => ({
+            today: mediaCostSince(taskManager.outputsDir, 24 * 3600 * 1000),
+            month: mediaCostSince(taskManager.outputsDir, 30 * 24 * 3600 * 1000)
+        })
     };
     const detailDeps = {
         extensionUri: context.extensionUri,
@@ -715,6 +728,89 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         }),
 
+        vscode.commands.registerCommand('agentfarm.openGallery', () => {
+            GalleryPanel.show({ extensionUri: context.extensionUri, tasks: taskManager });
+        }),
+
+        vscode.commands.registerCommand('agentfarm.rerunMedia', async (taskId?: string, vary?: boolean) => {
+            const meta = readMediaMetas(taskManager.outputsDir).find(m => m.taskId === taskId);
+            if (!meta) {
+                void vscode.window.showWarningMessage('Agent Farm: media metadata not found.');
+                return;
+            }
+            let input = meta.input;
+            if (vary) {
+                const edited = await vscode.window.showInputBox({
+                    prompt: `Vary input for ${meta.model}`, value: meta.input, ignoreFocusOut: true
+                });
+                if (!edited) { return; }
+                input = edited;
+            }
+            taskManager.runMediaAdhoc(meta.title + (vary ? ' (vary)' : ' (re-run)'), meta.model, input);
+            void vscode.window.showInformationMessage(`Agent Farm: media job started — ${meta.model}`);
+        }),
+
+        vscode.commands.registerCommand('agentfarm.addRecipe', async () => {
+            const recipes: { label: string; description: string; build: (agent: AgentInfo) => WorkflowStep[] }[] = [
+                {
+                    label: 'Metin → Görsel',
+                    description: 'ajan görsel prompt\'u yazar, Flux üretir',
+                    build: (agent) => [
+                        {
+                            agentId: agent.id, agentName: agent.name, title: 'görsel promptu',
+                            prompt: 'Şu konu için tek paragraflık, İngilizce, ayrıntılı bir görsel üretim promptu yaz (sadece promptu yaz): KONUYU BURAYA YAZ',
+                            mode: 'headless'
+                        },
+                        {
+                            agentId: '', agentName: 'media', title: 'görsel üret', prompt: '', mode: 'headless',
+                            media: { model: 'fal-ai/flux/schnell', input: '{"prompt": "{prev_text}"}' }
+                        }
+                    ]
+                },
+                {
+                    label: 'Metin → Görsel → Video',
+                    description: 'içerik fabrikası: prompt → görsel → kısa video',
+                    build: (agent) => [
+                        {
+                            agentId: agent.id, agentName: agent.name, title: 'sahne promptu',
+                            prompt: 'Şu konu için İngilizce, sinematik tek paragraf görsel/video promptu yaz (sadece promptu): KONUYU BURAYA YAZ',
+                            mode: 'headless'
+                        },
+                        {
+                            agentId: '', agentName: 'media', title: 'kapak görseli', prompt: '', mode: 'headless',
+                            media: { model: 'fal-ai/flux/schnell', input: '{"prompt": "{prev_text}"}' }
+                        },
+                        {
+                            agentId: '', agentName: 'media', title: 'kısa video', prompt: '', mode: 'headless',
+                            media: { model: 'fal-ai/kling-video/v2/master/text-to-video', input: '{"prompt": "{prev_text}", "duration": "5"}', timeoutMin: 20 }
+                        }
+                    ]
+                },
+                {
+                    label: 'Ses → Metin (Whisper)',
+                    description: 'ses dosyasını metne çevir, ajan özetlesin',
+                    build: (agent) => [
+                        {
+                            agentId: '', agentName: 'media', title: 'transkript', prompt: '', mode: 'headless',
+                            media: { model: 'fal-ai/whisper', input: '{"audio_url": "SES DOSYASI URL BURAYA"}' }
+                        },
+                        {
+                            agentId: agent.id, agentName: agent.name, title: 'özetle',
+                            prompt: 'Şu transkripti Türkçe maddelerle özetle: {prev_text}',
+                            mode: 'headless'
+                        }
+                    ]
+                }
+            ];
+            const pick = await vscode.window.showQuickPick(recipes, { placeHolder: 'Hazır reçete seç (kurulduktan sonra adımları düzenleyebilirsin)' });
+            if (!pick) { return; }
+            const agent = await resolveAgent(undefined);
+            if (!agent) { return; }
+            taskManager.addWorkflow(pick.label, pick.build(agent));
+            void vscode.window.showInformationMessage(
+                `Agent Farm: "${pick.label}" reçetesi kuruldu — Tasks → Workflows altında adımları (KONU/URL yer tutucularını) düzenleyip ▶ ile çalıştır. Medya adımları için FAL_KEY sırrı gerekli.`);
+        }),
+
         vscode.commands.registerCommand('agentfarm.setSecret', async () => {
             const name = await vscode.window.showInputBox({
                 prompt: 'Secret name (used as env var and {secret:NAME}, e.g. FAL_KEY)',
@@ -990,13 +1086,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const stepNo = steps.length + 1;
                 const agentPick = await vscode.window.showQuickPick(
                     [
-                        ...agents.map(a => ({ label: a.name, description: a.dir, agent: a as AgentInfo | undefined, isWebhook: false })),
-                        { label: '$(globe) Webhook step', description: 'HTTP call to n8n/Make/any URL — no agent', agent: undefined as AgentInfo | undefined, isWebhook: true },
-                        ...(steps.length ? [{ label: '$(check) Finish workflow', description: `${steps.length} step(s)`, agent: undefined as AgentInfo | undefined, isWebhook: false }] : [])
+                        ...agents.map(a => ({ label: a.name, description: a.dir, agent: a as AgentInfo | undefined, isWebhook: false, isMedia: false })),
+                        { label: '$(globe) Webhook step', description: 'HTTP call to n8n/Make/any URL — no agent', agent: undefined as AgentInfo | undefined, isWebhook: true, isMedia: false },
+                        { label: '$(device-camera-video) Media step (fal.ai)', description: 'image/video/audio generation — needs FAL_KEY secret', agent: undefined as AgentInfo | undefined, isWebhook: false, isMedia: true },
+                        ...(steps.length ? [{ label: '$(check) Finish workflow', description: `${steps.length} step(s)`, agent: undefined as AgentInfo | undefined, isWebhook: false, isMedia: false }] : [])
                     ],
                     { placeHolder: `Step ${stepNo}: which agent?`, ignoreFocusOut: true }
                 );
                 if (!agentPick) { return; }
+                if (agentPick.isMedia) {
+                    const mTitle = await vscode.window.showInputBox({
+                        prompt: `Step ${stepNo} title (media)`, value: 'Görsel üret', ignoreFocusOut: true
+                    });
+                    if (!mTitle) { return; }
+                    const mModel = await vscode.window.showInputBox({
+                        prompt: 'fal.ai model id — güncel listeyi fal.ai/models\'ten doğrula',
+                        value: 'fal-ai/flux/schnell',
+                        placeHolder: 'örn. fal-ai/flux/schnell, fal-ai/kling-video/v2/master/text-to-video',
+                        ignoreFocusOut: true
+                    });
+                    if (!mModel) { return; }
+                    const mInput = await vscode.window.showInputBox({
+                        prompt: 'JSON input template — {prev_text}/{prev_json.x} çözülür',
+                        value: '{"prompt": "{prev_text}"}', ignoreFocusOut: true
+                    });
+                    if (!mInput) { return; }
+                    steps.push({
+                        agentId: '', agentName: 'media', title: mTitle, prompt: '', mode: 'headless',
+                        media: { model: mModel, input: mInput }
+                    });
+                    continue;
+                }
                 if (agentPick.isWebhook) {
                     const whTitle = await vscode.window.showInputBox({
                         prompt: `Step ${stepNo} title (webhook)`, value: 'Dışarı bildir', ignoreFocusOut: true
@@ -1146,6 +1266,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         { label: 'Webhook URL', description: step.webhook.url.slice(0, 50), id: 'whUrl' },
                         { label: 'Webhook body', description: (step.webhook.body ?? '(none)').slice(0, 50), id: 'whBody' }
                     ] : []),
+                    ...(step.media ? [
+                        { label: 'Media model', description: step.media.model, id: 'mModel' },
+                        { label: 'Media input', description: step.media.input.slice(0, 50), id: 'mInput' }
+                    ] : []),
                     { label: 'Prompt', description: step.prompt.slice(0, 60), id: 'prompt' },
                     { label: 'Agent', description: step.agentName, id: 'agent' },
                     { label: 'Mode', description: step.mode, id: 'mode' },
@@ -1172,6 +1296,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     const v = await vscode.window.showInputBox({ prompt: 'Webhook body template (empty = none)', value: step.webhook!.body ?? '', ignoreFocusOut: true });
                     if (v === undefined) { return; }
                     taskManager.updateWorkflowStep(w, node.index, { webhook: { ...step.webhook!, body: v.trim() || undefined } });
+                    break;
+                }
+                case 'mModel': {
+                    const v = await vscode.window.showInputBox({ prompt: 'fal.ai model id', value: step.media!.model, ignoreFocusOut: true });
+                    if (v) { taskManager.updateWorkflowStep(w, node.index, { media: { ...step.media!, model: v } }); }
+                    break;
+                }
+                case 'mInput': {
+                    const v = await vscode.window.showInputBox({ prompt: 'JSON input template', value: step.media!.input, ignoreFocusOut: true });
+                    if (v) { taskManager.updateWorkflowStep(w, node.index, { media: { ...step.media!, input: v } }); }
                     break;
                 }
                 case 'prompt': {

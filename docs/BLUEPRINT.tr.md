@@ -333,6 +333,43 @@ API anahtarları ayar dosyalarında düz metin gezmesin (0.9.0): **Set Secret…
 
 `List Secrets` yalnızca adları gösterir; değerler asla görüntülenmez. Sağlık motoru, ayar dosyalarında anahtara benzeyen düz metin görürse (`sk-…` vb.) kasaya taşıman için uyarır.
 
+### API Anahtarı Nasıl Eklenir (adım adım)
+
+Örnek: fal.ai anahtarını bağlamak —
+
+1. [fal.ai](https://fal.ai) hesabında **Keys** bölümünden anahtarını kopyala (biçimi `xxxx:yyyy` şeklindedir).
+2. VS Code'da `Ctrl+Shift+P` → **Agent Farm: Set Secret…**
+3. Ad sorusuna **`FAL_KEY`** yaz (medya adımları varsayılan olarak bu adı arar; farklı ad istersen `agentFarm.mediaAuthSecret` ayarını değiştir).
+4. Değer sorusuna anahtarı yapıştır (yazdıkça gizlenir) → Enter. Bitti — anahtar işletim sistemi anahtarlığında.
+5. Kontrol: **List Secrets** komutu adı listeler (değeri asla göstermez). Medya adımı çalıştığında anahtar otomatik kullanılır.
+
+Aynı yöntem her servis için geçerlidir: `ELEVENLABS_KEY`, `N8N_TOKEN`… — ad ne olursa görevlere env değişkeni olarak girer ve `{secret:AD}` şablonuyla erişilir. **Üç altın kural:** anahtarı asla bir dosyaya/prompt'a yazma; sohbete/ekrana yapıştırdıysan servis panelinden yenile (rotate); kullanmadığını **Delete Secret…** ile sil.
+
+## Medya Üretim Hattı
+
+1.0 ile eklenti kategori değiştirdi: metin ajanların ve **medya modelleri** (görsel/video/ses) aynı zincirde çalışır — İçerik Fabrikası.
+
+### Medya Adımı (🎬)
+
+Workflow kurarken **Media step (fal.ai)** seç: adım, fal.ai'nin kuyruk API'si üzerinden bir üretim modeli çağırır. Tek kapı stratejisi sayesinde Kling, Seedance, Veo, Flux, Nano Banana sınıfı yüzlerce modele tek mekanizmayla erişirsin — model kimliği serbest metindir (`fal-ai/flux/schnell` gibi; güncel listeyi fal.ai/models'ten doğrula, piyasa aylık değişir).
+
+- **Girdi şablonu** JSON'dur ve `{prev_text}` / `{prev_json.alan}` çözülür: ajanın yazdığı prompt doğruca modele akar.
+- Üretilen **varlıklar (asset) indirilir ve arşivlenir**; yanıt JSON'u sonraki adımın devri olur (`{prev_json.images.0.url}` gibi).
+- Uzun video işleri dakikalarca sürebilir — adım `running` kalır, kuyruk durumu düzenli yoklanır (adım başına zaman aşımı ayarlanabilir).
+- Ön koşul: **FAL_KEY** sırrı (yukarıdaki adımlar). Anahtar yoksa adım koşmaz ve net bir mesajla failed olur; kredi bittiyse fal'ın hatası arşive düşer.
+
+### Medya Galerisi
+
+`Agent Farm: Open Media Gallery` (Tasks başlığındaki kamera ikonu): üretilmiş tüm görsel/video/sesler — önizleme, model, girdi, tahmini maliyet, hangi zincirden geldiği. **Re-run** aynı parametrelerle yeniden üretir; **Vary…** girdiyi düzenletip üretir. Tıkla → dosya açılır.
+
+### Medya Maliyeti
+
+`agentFarm.mediaPricing` kurallarıyla (görsel başına / saniye başına / istek başına USD) her işin tahmini maliyeti hesaplanır, galeriye ve Dashboard'daki **Media cost** kartına işlenir — metin + medya, tüm AI harcaman tek karnede. Varsayılan fiyatlar yer tutucudur: fal.ai fiyat sayfasından doğrula ve ayarla.
+
+### Reçeteler
+
+`Agent Farm: New Recipe Workflow…` hazır fabrika şablonları kurar: **Metin → Görsel**, **Metin → Görsel → Video**, **Ses → Metin (Whisper)**. Kurulan zincirdeki yer tutucuları (KONU, URL) düzenleyip çalıştırırsın — boş sayfa problemi yok.
+
 ## Webhook Köprüsü
 
 Dış dünya bağlantısının evrensel kapısı (0.9.0): n8n, Make, Zapier — webhook konuşan her şey.
@@ -558,6 +595,9 @@ Gürültü koruması: önceki hafta 0.50$'ın, bu hafta 1$'ın altındaysa uyar�
 | `agentFarm.outputsMaxMB` | 200 | Çıktı arşivi boyut tavanı |
 | `agentFarm.notifyWebhookUrl` | boş | Bildirimlerin iletileceği webhook (n8n→Telegram vb.) |
 | `agentFarm.notifyWebhookEvents` | hepsi | İletilecek olay türleri |
+| `agentFarm.mediaAuthSecret` | FAL_KEY | Medya anahtarını tutan sır adı |
+| `agentFarm.mediaPricing` | tablo | Medya maliyet tahmin kuralları (fal.ai'den doğrula) |
+| `agentFarm.mediaBaseUrl` | boş | fal kuyruk adresi override (test/proxy) |
 | `agentFarm.autoReport` | off | Otomatik filo raporu: off / daily / weekly |
 | `agentFarm.autoReportFolder` | boş | Otomatik raporların yazılacağı klasör (vault) |
 | `agentFarm.autoReportDays` | 7 | Otomatik raporun kapsadığı gün sayısı |
@@ -584,6 +624,8 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 - **Set Secret… / Delete Secret… / List Secrets** — sır kasası
 - **Add MCP Server… / Remove MCP Server** — MCP envanteri (Agents ağacındaki MCP bölümünden)
 - **Copy Webhook URL** — webhook tetiğinin gizli adresi
+- **Open Media Gallery** — üretilen medyalar (önizleme + Re-run/Vary)
+- **New Recipe Workflow…** — hazır fabrika şablonları
 - **New Multi-Agent Workflow… / Run Workflow** — çoklu-ajan zincirleri
 - **Edit Step… / Add Step / Rename Workflow** — kurulu zinciri düzenleme
 - **Save as Template / New Task from Template** — görev şablonları
@@ -644,6 +686,15 @@ Tamamlanan fazlar (hepsi 2026-07-08):
 **Bundan sonrası ayrı ve ayrıntılı bir belgede yaşıyor:** komut paletinden **Agent Farm: Open Development Plan** — uzak görüşlü gelişim planı: olay tetikleyicileri, doğrulayıcı adımlar, MCP paneli, n8n/webhook köprüsü, multimedya üretim hattı (Kling/Seedance/Nano Banana sınıfı modellerle içerik fabrikası), zeki gözetim, çoklu makine ve vizyoner ufuk. Kodlama o plandaki öncelik sırasını izler.
 
 ## Sürüm Notları
+
+### 1.0.0 — İçerik Fabrikası / Plan Faz C (2026-07-09)
+
+- **🎬 Medya adımları:** fal.ai kuyruk API'siyle görsel/video/ses üretimi zincirin içinde; varlıklar arşive iner, yanıt sonraki adıma devrolur; anahtarsız/kredisiz durumlar net hatayla yakalanır
+- **Medya Galerisi:** önizlemeli panel (görsel/video/ses), model+girdi+maliyet+köken bilgisi, Re-run ve Vary
+- **Medya maliyeti:** kural tabanlı tahmin, galeri toplamı ve Dashboard "Media cost" kartı — metin+medya tek karnede
+- **Reçeteler:** Metin→Görsel, Metin→Görsel→Video, Ses→Metin hazır şablonları
+- **API anahtarı rehberi:** Sır Kasası bölümüne adım adım "anahtar nasıl eklenir" + üç altın kural
+- Testler: sahte fal sunucusuyla tam hat (indirme/meta/maliyet/devir) + gerçek fal.ai kimlik-hata yolu (anahtar tanındı, bakiye hatası zarifçe yakalandı)
 
 ### 0.9.0 — Dış Dünya Köprüsü / Plan Faz B (2026-07-09)
 

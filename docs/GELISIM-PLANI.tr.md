@@ -105,7 +105,9 @@ Bugün her şey ya elle ya saatle tetikleniyor. Gerçek otomasyonun temeli **ola
 
 ---
 
-# FAZ C — Multimedya Üretim Hattı (hedef: 1.0) — "İçerik Fabrikası"
+# FAZ C — Multimedya Üretim Hattı — ✅ TAMAMLANDI (1.0.0, 2026-07-09) — "İçerik Fabrikası"
+
+> Dört özellik kapandı: medya adımları (fal kuyruk API'si, varlık indirme+arşiv, yanıt→devir), galeri (Re-run/Vary), maliyet entegrasyonu (Dashboard kartı), üç reçete. Testler: sahte fal sunucusuyla tam hat uçtan uca; gerçek fal.ai'de kimlik doğrulama ve hata yolu doğrulandı (kullanıcının anahtarı tanındı, "Exhausted balance" zarifçe yakalandı). **Gerçek üretim koşusu, hesaba kredi yüklendiğinde S15 reçetesiyle yapılacak.** Fiyat tablosu yer tutucu — fal.ai'den doğrulanmalı.
 
 Metin ajanları + medya modelleri aynı zincirde. Burada 1.0 deriz çünkü eklenti bu noktada kategori değiştirir: ajan monitöründen üretim hattına.
 

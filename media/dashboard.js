@@ -78,6 +78,9 @@
             <div class="card"><div class="label">5h window</div>${windowHtml}</div>
             <div class="card"><div class="label">Insights</div><div class="kpi">${ins.error + ins.warning + ins.info}</div>
                 <div class="sub">${ins.error} errors · ${ins.warning} warnings · ${ins.info} info <a data-guide="saglik-ve-optimizasyon">?</a></div></div>
+            ${DATA.mediaCost && DATA.mediaCost.month > 0 ? `
+            <div class="card"><div class="label">Media cost</div><div class="kpi">${C.fmtUSD(DATA.mediaCost.today)}</div>
+                <div class="sub">today · ${C.fmtUSD(DATA.mediaCost.month)} last 30d (est.) <a data-guide="medya-uretim-hatti">?</a></div></div>` : ''}
         </div>`;
 
         const series = agents.map(a => ({
