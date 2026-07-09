@@ -162,7 +162,9 @@ Fabrika çalışırken kalitenin bekçiliğini de fabrika yapsın.
 
 ---
 
-# FAZ E — Ölçek ve Taşınabilirlik (hedef: 1.2)
+# FAZ E — Ölçek ve Taşınabilirlik — ✅ TAMAMLANDI (1.2.0, 2026-07-09)
+
+> **Uygulama notu (1.2.0):** E1 klasör-senkron yaklaşımıyla yapıldı (`extraClaudeDirs` — relay script'e gerek kalmadı; ihtiyaç doğarsa eklenir). E2 günlük digest kartı + mevcut webhook hattı. E3 `.agentpack` tek JSON dosyası (zip yerine — bağımlılıksız kalma kararıyla uyumlu). E4 hazırlık tamam (LICENSE/CHANGELOG/README/gizlilik beyanı); Marketplace/Open VSX **yayın kararı kullanıcıda** — adımlar README "Publishing" bölümünde.
 
 ### E1. Çoklu Makine [L]
 - **Ne:** İkinci makinenin filosunu aynı panelde izleme: hafif "farm relay" (uzak makinede çalışan küçük script, transcript özetlerini ve hook olaylarını güvenli kanaldan iletir) veya salt-okunur klasör senkronu (Syncthing/SSH) üzerinden ikinci `claudeDir`.

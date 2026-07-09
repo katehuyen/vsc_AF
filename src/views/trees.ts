@@ -293,6 +293,7 @@ function sessionTreeItem(s: SessionInfo, index: SessionIndex, showAgent: boolean
     );
     const parts: string[] = [];
     if (showAgent && s.agentName) { parts.push(s.agentName); }
+    if (s.machine) { parts.push(`⇄ ${s.machine}`); }
     parts.push(relTime(s.mtime));
     if (s.cost > 0) { parts.push(fmtUSD(s.cost)); }
     if (s.isSidechain) { parts.push('sub'); }

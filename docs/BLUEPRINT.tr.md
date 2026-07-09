@@ -57,6 +57,9 @@ Arayüzde gördüğün her **?** düğmesi seni bu kılavuzun ilgili bölümüne
 | Bunu hangi ajanla konuşmuştum? | Recent Sessions başlığındaki 🔍 → `Search Transcripts…` ([detay](#transcript-arama)) |
 | Ajanlar kaliteli mi çalışıyor? | `Sample Output Quality Now` → Dashboard'da Quality kolonu ([detay](#kalite-karnesi)) |
 | Ajan hep aynı hatayı yapıyor | `Scan for Instruction Suggestions…` → Insights'taki 💡 önerisini uygula ([detay](#talimat-onerileri)) |
+| Laptop'taki filoyu da buradan izle | Senkron klasör + `extraClaudeDirs` ([detay](#coklu-makine)) |
+| Günlük karne Telegram'a düşsün | `agentFarm.dailyDigest` = "21:30" ([detay](#gunluk-ozet-karti-cebe)) |
+| Ajanı başka makineye taşı / paylaş | Ajana sağ tık → `Export Agent Pack…` ([detay](#ajan-paketleri)) |
 
 ### Kavramlar (30 Saniyede)
 
@@ -579,6 +582,45 @@ Sinyal yorgunluğuna karşı: on ayrı uyarı yerine haftada bir, üç cümlelik
 - Sonuca tıklayınca oturum görüntüleyici açılır; eşleşme bağlamıyla (öncesi/sonrası) ve vurgulu gösterilir.
 - Sonuçlar oturum başına 3, toplam 150 ile sınırlıdır — taşarsa sorguyu daralt.
 
+## Ölçek ve Taşınabilirlik
+
+Filo tek makineye sığmadığında: başka makinelerin oturumlarını aynı panelde izle, günlük karneyi cebine gönder, ajanlarını tek dosyayla taşı.
+
+### Çoklu Makine
+
+İkinci makinenin `.claude` klasörünü bir senkron aracıyla (Syncthing, OneDrive, SSH kopyası) bu makineye salt-okunur aynala, sonra:
+
+```json
+"agentFarm.extraClaudeDirs": [
+  { "name": "laptop", "dir": "D:/sync/laptop/.claude" }
+]
+```
+
+- O makinenin oturumları panele **⇄ laptop** rozetiyle gelir; maliyet, karne ve arama hepsini kapsar.
+- Ajan eşleştirme yine çalışma dizinine bakar: iki makinede aynı klasör düzenini kullanıyorsan uzak oturumlar doğru ajana sayılır; eşleşmeyenler `Other projects (laptop)` altında toplanır (`includeUnmatchedProjects` açıkken).
+- Senkron kopyada `projects` klasörü bulunamazsa açılışta uyarı alırsın — senkronun çalıştığını kontrol et.
+- Agent Farm uzak klasöre **hiçbir şey yazmaz**; izleme tek yönlüdür.
+
+### Günlük Özet Kartı (Cebe)
+
+Haftalık akıllı özetin küçük kardeşi — model çağrısı yok, saf veri, telefon dostu tek mesaj: bugünün maliyeti, aktif ajanlar, en çok harcayanlar (bütçe yüzdesiyle), görev/nöbet durumu ve uyarılar.
+
+- **Elle:** `Agent Farm: Send Daily Digest Now`.
+- **Otomatik:** `agentFarm.dailyDigest` = `"21:30"` gibi bir saat — o saatten sonraki ilk kontrolde günde bir kez `notifyWebhookUrl`'e `digest` olayı olarak gönderilir (n8n → Telegram hattıyla cebe düşer).
+- Webhook ayarlı değilse elle çalıştırma sonucu bildirim olarak gösterir.
+
+### Ajan Paketleri
+
+Ajanı şablonlaştırıp başka makineye taşımak veya paylaşmak için tek dosya: `.agentpack`.
+
+- **Dışa aktar:** ajana sağ tık → **Export Agent Pack…** (veya komut paleti). Pakete girenler: `CLAUDE.md`, `DUTIES.md`, `tools/`, `.claude` ayarları, `.mcp.json` + ajanın karıştığı workflow/tetik/zamanlama/şablonlar.
+- **ASLA girmeyenler:** `memory/` (kişisel hafıza) ve sırlar. İçinde kimlik bilgisi kokan dosyalar otomatik atlanır ve uyarı verilir; webhook token'ları paketten çıkarılır. `{secret:AD}` referansları korunur — hedef makinede aynı adla sır tanımlayınca çalışır.
+- **İçe aktar:** **Import Agent Pack…** → paket dosyasını seç → kök klasör + yeni isim → onay. Taze `memory/MEMORY.md` iskeleti kurulur; workflow adımları yeni ajana bağlanır (aynı isimli yerel ajanlar isimle çözülür, bulunamayan self'e düşer ve uyarı verilir); tetikleyiciler ve zamanlamalar **kapalı** gelir — gözden geçirip kendin açarsın.
+
+### Marketplace / Yayın
+
+Eklenti yayın kalitesinde hazırlandı: `LICENSE` (MIT), `CHANGELOG.md`, README'de gizlilik beyanı ("telemetri yok") ve yayın adımları. Marketplace/Open VSX'e çıkmak bir ürünleşme kararıdır ve sana aittir — adımlar README'nin "Publishing" bölümünde (publisher hesabı + `vsce publish`).
+
 ## Maliyet Hesabı
 
 Token kullanımı yerel kayıtlardan okunur ve `agentFarm.pricing` kurallarıyla fiyatlanır (milyon token başına USD; ilk eşleşen regex kazanır):
@@ -618,6 +660,7 @@ Gürültü koruması: önceki hafta 0.50$'ın, bu hafta 1$'ın altındaysa uyar�
 | --- | --- | --- |
 | `agentFarm.agentRoots` | `["D:/zone/agent/ajanlar"]` | Ajan klasörlerinin tarandığı kökler |
 | `agentFarm.claudeDir` | boş (`~/.claude`) | Claude Code veri dizini |
+| `agentFarm.extraClaudeDirs` | [] | Diğer makinelerin senkronlu `.claude` klasörleri (`{name, dir}`) |
 | `agentFarm.activeThresholdSeconds` | 150 | Bu süre içinde kaydı değişen oturum "aktif" sayılır |
 | `agentFarm.staleMemoryDays` | 45 | Bayat hafıza eşiği |
 | `agentFarm.contextBudgetTokens` | 8000 | Sabit bağlam yükü bütçesi |
@@ -653,6 +696,7 @@ Gürültü koruması: önceki hafta 0.50$'ın, bu hafta 1$'ın altındaysa uyar�
 | `agentFarm.qualitySamplesPerAgent` | 2 | Örnekleme başına ajan başına puanlanacak oturum sayısı |
 | `agentFarm.suggestScan` | off | Haftalık talimat önerisi taraması: off / weekly |
 | `agentFarm.weeklySummary` | false | Haftada bir üç cümlelik akıllı filo özeti |
+| `agentFarm.dailyDigest` | off | Günlük özet kartının webhook'a gönderileceği saat (örn. "21:30") |
 
 ## Komutlar
 
@@ -689,11 +733,15 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 - **Sample Output Quality Now** — kalite karnesi için elle örnekleme (ucuz model)
 - **Scan for Instruction Suggestions… / Review Instruction Suggestions…** — düzeltme kalıplarından CLAUDE.md kuralı önerisi ve onaylı uygulama
 - **Generate Weekly Summary Now** — üç cümlelik akıllı filo özeti (ucuz model)
+- **Send Daily Digest Now** — günlük özet kartını webhook'a/bildirime gönder
+- **Export Agent Pack… / Import Agent Pack…** — ajanı tek dosyayla taşı/paylaş (hafıza ve sırlar hariç)
 
 ## Veri ve Gizlilik
 
-- Eklenti **hiçbir ağ isteği yapmaz**. Tüm veri diskinden okunur, hiçbir şey yazılmaz (yalnızca "New Agent" komutu senin istediğin iskeleti oluşturur).
-- Oturum kayıtlarını Claude Code zaten tutuyor; Agent Farm onları yalnızca okur.
+- **Telemetri yok.** Eklenti hiçbir veri toplamaz, hiçbir yere raporlamaz.
+- **Kendi başına ağ isteği yapmaz.** Ağa çıkan yalnızca senin yapılandırdıkların: medya üretimi (fal.ai anahtarınla), webhook iletimi (senin URL'lerin) ve senin başlattığın `claude` koşuları. Canlı olay dinleyicisi yalnızca `127.0.0.1`'e bağlanır.
+- **Sırlar** OS anahtarlığında (SecretStorage) yaşar — dosyalara yazılmaz, ajan paketlerine girmez.
+- Oturum kayıtlarını Claude Code zaten tutuyor; Agent Farm onları yalnızca okur. Yazdığı yerler hep senin onayınla ve bellidir: yeni ajan iskeleti, hook kurulumu (yedekli), DUTIES.md, rapor/paket dosyaları.
 - Ajan eşleştirme kuralı: oturumun çalışma dizini (`cwd`) bir ajan klasörünün altındaysa o ajana sayılır. Kökler dışındaki projeler varsayılan olarak kapsam dışıdır.
 
 ## SSS
@@ -739,6 +787,14 @@ Tamamlanan fazlar (hepsi 2026-07-08):
 **Bundan sonrası ayrı ve ayrıntılı bir belgede yaşıyor:** komut paletinden **Agent Farm: Open Development Plan** — uzak görüşlü gelişim planı: olay tetikleyicileri, doğrulayıcı adımlar, MCP paneli, n8n/webhook köprüsü, multimedya üretim hattı (Kling/Seedance/Nano Banana sınıfı modellerle içerik fabrikası), zeki gözetim, çoklu makine ve vizyoner ufuk. Kodlama o plandaki öncelik sırasını izler.
 
 ## Sürüm Notları
+
+### 1.2.0 — Ölçek ve Taşınabilirlik / Plan Faz E (2026-07-09)
+
+- **Çoklu makine:** `extraClaudeDirs` ile diğer makinelerin senkronlu `.claude` klasörleri aynı panelde; oturumlarda ⇄ makine rozeti, cwd ile ajan eşleşmesi, eksik senkron uyarısı
+- **Günlük özet kartı:** telefon dostu, model çağrısız günlük karne — `dailyDigest` saatiyle webhook'a (`digest` olayı) veya elle
+- **Ajan paketleri:** `.agentpack` dışa/içe aktarım — kimlik+nöbet+araçlar+workflow/tetik/zamanlama tek dosyada; hafıza ve sırlar asla pakete girmez, sır kokan dosyalar otomatik atlanır, içe aktarılan tetik/zamanlamalar kapalı gelir
+- **Yayın hazırlığı:** LICENSE (MIT), CHANGELOG.md, README gizlilik beyanı + yayın adımları — Marketplace kararı kullanıcıda
+- Testler: 26 kontrol — paket roundtrip/sır dışlama/yol kaçışı/yeniden bağlama, digest içerikleri, çoklu makine taraması gerçek dosyalarla
 
 ### 1.1.0 — Zeki Gözetim / Plan Faz D (2026-07-09)
 

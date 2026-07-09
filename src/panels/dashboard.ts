@@ -121,7 +121,7 @@ function buildData(deps: DashboardDeps): Record<string, unknown> {
         .slice(0, 12)
         .map(s => ({
             file: s.file,
-            agent: s.agentName ?? '?',
+            agent: (s.agentName ?? '?') + (s.machine ? ` ⇄ ${s.machine}` : ''),
             title: s.title,
             ts: s.lastTs,
             durationMin: s.firstTs && s.lastTs ? Math.round((s.lastTs - s.firstTs) / 60000) : 0,

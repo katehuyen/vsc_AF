@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
@@ -479,6 +479,23 @@
         "command": "agentfarm.weeklySummaryNow",
         "title": "Generate Weekly Summary Now",
         "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.sendDigestNow",
+        "title": "Send Daily Digest Now",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.exportAgentPack",
+        "title": "Export Agent Pack…",
+        "category": "Agent Farm",
+        "icon": "$(package)"
+      },
+      {
+        "command": "agentfarm.importAgentPack",
+        "title": "Import Agent Pack…",
+        "category": "Agent Farm",
+        "icon": "$(package)"
       }
     ],
     "menus": {
@@ -609,6 +626,11 @@
           "command": "agentfarm.revealAgent",
           "when": "view == agentfarm.agents && viewItem == agent",
           "group": "2_open@2"
+        },
+        {
+          "command": "agentfarm.exportAgentPack",
+          "when": "view == agentfarm.agents && viewItem == agent",
+          "group": "2_open@3"
         },
         {
           "command": "agentfarm.addDuty",
@@ -815,6 +837,18 @@
           "default": "",
           "description": "Path to the Claude Code data directory. Leave empty to use ~/.claude."
         },
+        "agentFarm.extraClaudeDirs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string", "description": "Machine label shown on sessions (e.g. laptop)" },
+              "dir": { "type": "string", "description": "Path to that machine's synced .claude folder" }
+            }
+          },
+          "default": [],
+          "description": "Additional (read-only, synced) Claude data folders from other machines — e.g. a Syncthing/OneDrive copy of the laptop's ~/.claude. Their sessions appear with a ⇄ machine badge."
+        },
         "agentFarm.activeThresholdSeconds": {
           "type": "number",
           "default": 150,
@@ -941,10 +975,15 @@
           "type": "array",
           "items": {
             "type": "string",
-            "enum": ["permission", "stalled", "budget", "workflow-done", "workflow-failed", "summary"]
+            "enum": ["permission", "stalled", "budget", "workflow-done", "workflow-failed", "summary", "digest"]
           },
-          "default": ["permission", "stalled", "budget", "workflow-done", "workflow-failed", "summary"],
+          "default": ["permission", "stalled", "budget", "workflow-done", "workflow-failed", "summary", "digest"],
           "description": "Which notification types are forwarded to notifyWebhookUrl."
+        },
+        "agentFarm.dailyDigest": {
+          "type": "string",
+          "default": "off",
+          "description": "Send a compact daily fleet scorecard to notifyWebhookUrl after this local time (HH:MM, e.g. \"21:30\"); \"off\" disables. No model call — plain data. Manual: 'Send Daily Digest Now'."
         },
         "agentFarm.qualitySample": {
           "type": "string",

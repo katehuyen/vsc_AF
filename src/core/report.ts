@@ -120,6 +120,50 @@ export function buildFleetReport(
     return lines.join('\n');
 }
 
+// ---------- E2: daily digest card (Telegram-friendly, no LLM) ----------
+
+export interface DailyDigestData {
+    date: string;
+    todayCost: number;
+    activeAgents: number;
+    totalAgents: number;
+    agents: { name: string; todayCost: number; budget?: number }[];
+    warnings: string[];
+    pendingDuties: number;
+    runningTasks: number;
+    queuedTasks: number;
+    mediaCostToday: number;
+}
+
+/**
+ * Compact plain-text daily scorecard for phones (webhook → n8n → Telegram).
+ * Pure data in, text out — no model call, no cost.
+ */
+export function buildDailyDigest(d: DailyDigestData): string {
+    const lines: string[] = [];
+    lines.push(`🤖 Agent Farm — ${d.date}`);
+    lines.push(`Bugün: ${fmtUSD(d.todayCost)}` +
+        (d.mediaCostToday > 0 ? ` (+${fmtUSD(d.mediaCostToday)} medya)` : '') +
+        ` · ${d.activeAgents}/${d.totalAgents} ajan aktif`);
+    const spenders = d.agents
+        .filter(a => a.todayCost > 0)
+        .sort((a, b) => b.todayCost - a.todayCost)
+        .slice(0, 5)
+        .map(a => `${a.name} ${fmtUSD(a.todayCost)}` +
+            (a.budget && a.budget > 0 ? ` (%${Math.round(100 * a.todayCost / a.budget)})` : ''));
+    if (spenders.length) { lines.push('Harcama: ' + spenders.join(' · ')); }
+    if (d.runningTasks || d.queuedTasks) {
+        lines.push(`Görevler: ${d.runningTasks} çalışıyor, ${d.queuedTasks} kuyrukta`);
+    }
+    if (d.pendingDuties) { lines.push(`👁 Nöbet: ${d.pendingDuties} bekleyen iş`); }
+    if (d.warnings.length) {
+        lines.push('⚠ ' + d.warnings.slice(0, 4).join(' | '));
+    } else {
+        lines.push('✅ Sağlık bulgusu yok');
+    }
+    return lines.join('\n').slice(0, 1500);
+}
+
 /** Digest of archived headless task outputs over a period. */
 export function buildOutputsDigest(
     tasks: FarmTask[],

@@ -31,6 +31,8 @@ export interface SessionInfo {
     file: string;
     sessionId: string;
     isSidechain: boolean;
+    /** E1: which machine's claudeDir this session came from (undefined = this machine). */
+    machine?: string;
     agentId?: string;
     agentName?: string;
     cwd?: string;
@@ -268,15 +270,25 @@ export function parseSessionFile(
     return info;
 }
 
+export interface ClaudeDirRef {
+    /** machine label shown on sessions; undefined = this machine. */
+    name?: string;
+    dir: string;
+}
+
 export class SessionIndex implements vscode.Disposable {
     private sessions = new Map<string, SessionInfo>();
-    private watcher?: fs.FSWatcher;
+    private watchers: fs.FSWatcher[] = [];
     private pending = new Map<string, NodeJS.Timeout>();
     private readonly onDidUpdateEmitter = new vscode.EventEmitter<void>();
     readonly onDidUpdate = this.onDidUpdateEmitter.event;
+    /** E1: configured extra dirs whose projects folder was not found on the last scan. */
+    missingDirs: string[] = [];
 
     constructor(
         private claudeDir: string,
+        /** E1: additional (synced) claude dirs from other machines. */
+        private extraDirs: () => ClaudeDirRef[],
         private pricing: PricingEngine,
         private getAgents: () => AgentInfo[],
         private includeUnmatched: () => boolean,
@@ -287,40 +299,48 @@ export class SessionIndex implements vscode.Disposable {
         return path.join(this.claudeDir, 'projects');
     }
 
+    private allDirs(): ClaudeDirRef[] {
+        return [{ dir: this.claudeDir }, ...this.extraDirs().filter(d => d?.dir)];
+    }
+
     async scanAll(): Promise<void> {
         this.sessions.clear();
-        const projectsDir = this.projectsDir;
-        if (!fs.existsSync(projectsDir)) {
-            this.onDidUpdateEmitter.fire();
-            return;
-        }
-        const files: { file: string; depth: number }[] = [];
-        const walk = (dir: string, depth: number) => {
-            let entries: fs.Dirent[] = [];
-            try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
-            for (const e of entries) {
-                const p = path.join(dir, e.name);
-                if (e.isDirectory()) {
-                    if (depth < 3) { walk(p, depth + 1); }
-                } else if (e.name.endsWith('.jsonl')) {
-                    files.push({ file: p, depth });
-                }
+        this.missingDirs = [];
+        for (const ref of this.allDirs()) {
+            const projectsDir = path.join(ref.dir, 'projects');
+            if (!fs.existsSync(projectsDir)) {
+                if (ref.name) { this.missingDirs.push(ref.dir); }
+                continue;
             }
-        };
-        let projectDirs: fs.Dirent[] = [];
-        try { projectDirs = fs.readdirSync(projectsDir, { withFileTypes: true }); } catch { /* ignore */ }
-        for (const d of projectDirs) {
-            if (d.isDirectory()) { walk(path.join(projectsDir, d.name), 0); }
-        }
-        for (const { file, depth } of files) {
-            this.indexFile(file, depth);
+            const files: { file: string; depth: number }[] = [];
+            const walk = (dir: string, depth: number) => {
+                let entries: fs.Dirent[] = [];
+                try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+                for (const e of entries) {
+                    const p = path.join(dir, e.name);
+                    if (e.isDirectory()) {
+                        if (depth < 3) { walk(p, depth + 1); }
+                    } else if (e.name.endsWith('.jsonl')) {
+                        files.push({ file: p, depth });
+                    }
+                }
+            };
+            let projectDirs: fs.Dirent[] = [];
+            try { projectDirs = fs.readdirSync(projectsDir, { withFileTypes: true }); } catch { /* ignore */ }
+            for (const d of projectDirs) {
+                if (d.isDirectory()) { walk(path.join(projectsDir, d.name), 0); }
+            }
+            for (const { file, depth } of files) {
+                this.indexFile(file, depth, ref.name);
+            }
         }
         this.onDidUpdateEmitter.fire();
     }
 
-    private indexFile(file: string, depth: number): void {
+    private indexFile(file: string, depth: number, machine?: string): void {
         const info = parseSessionFile(file, this.pricing, depth);
         if (!info) { this.sessions.delete(file); return; }
+        info.machine = machine;
         this.assignAgent(info);
         if (!info.agentId && !this.includeUnmatched()) {
             // Keep it out of the index but remember nothing: farm-focused scope.
@@ -347,7 +367,7 @@ export class SessionIndex implements vscode.Disposable {
             info.agentId = best.id;
             info.agentName = best.name;
         } else if (this.includeUnmatched()) {
-            info.agentName = 'Other projects';
+            info.agentName = info.machine ? `Other projects (${info.machine})` : 'Other projects';
         }
     }
 
@@ -366,27 +386,32 @@ export class SessionIndex implements vscode.Disposable {
     }
 
     watch(): void {
-        const projectsDir = this.projectsDir;
-        if (!fs.existsSync(projectsDir)) { return; }
-        try {
-            this.watcher = fs.watch(projectsDir, { recursive: true }, (_event, filename) => {
-                if (!filename || !filename.toString().endsWith('.jsonl')) { return; }
-                const full = path.join(projectsDir, filename.toString());
-                const prev = this.pending.get(full);
-                if (prev) { clearTimeout(prev); }
-                this.pending.set(full, setTimeout(() => {
-                    this.pending.delete(full);
-                    const rel = path.relative(projectsDir, full);
-                    const depth = rel.split(path.sep).length - 2; // projectDir/file = depth 0
-                    if (fs.existsSync(full)) {
-                        this.indexFile(full, Math.max(0, depth));
-                    } else {
-                        this.sessions.delete(full);
-                    }
-                    this.onDidUpdateEmitter.fire();
-                }, 400));
-            });
-        } catch { /* recursive watch unavailable — refresh stays manual */ }
+        for (const w of this.watchers) { try { w.close(); } catch { /* already closed */ } }
+        this.watchers = [];
+        for (const ref of this.allDirs()) {
+            const projectsDir = path.join(ref.dir, 'projects');
+            if (!fs.existsSync(projectsDir)) { continue; }
+            try {
+                const watcher = fs.watch(projectsDir, { recursive: true }, (_event, filename) => {
+                    if (!filename || !filename.toString().endsWith('.jsonl')) { return; }
+                    const full = path.join(projectsDir, filename.toString());
+                    const prev = this.pending.get(full);
+                    if (prev) { clearTimeout(prev); }
+                    this.pending.set(full, setTimeout(() => {
+                        this.pending.delete(full);
+                        const rel = path.relative(projectsDir, full);
+                        const depth = rel.split(path.sep).length - 2; // projectDir/file = depth 0
+                        if (fs.existsSync(full)) {
+                            this.indexFile(full, Math.max(0, depth), ref.name);
+                        } else {
+                            this.sessions.delete(full);
+                        }
+                        this.onDidUpdateEmitter.fire();
+                    }, 400));
+                });
+                this.watchers.push(watcher);
+            } catch { /* recursive watch unavailable — refresh stays manual */ }
+        }
     }
 
     all(): SessionInfo[] {
@@ -445,7 +470,7 @@ export class SessionIndex implements vscode.Disposable {
     }
 
     dispose(): void {
-        this.watcher?.close();
+        for (const w of this.watchers) { try { w.close(); } catch { /* already closed */ } }
         for (const t of this.pending.values()) { clearTimeout(t); }
         this.onDidUpdateEmitter.dispose();
     }

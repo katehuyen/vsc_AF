@@ -296,6 +296,29 @@ Korumalar: art arda 10 dosya atarsan debounce hepsini tek ateşe indirir; 60 sn 
 
 > ✅ Test: mekaniklerin tamamı gerçek haiku çağrılarıyla doğrulandı — örnekleme puanı üretip sakladı (aynı oturum ikinci kez puanlanmıyor), tekrarlanan "Türkçe başlık / tarih biçimi" düzeltmelerinden kural önerisi çıktı ve CLAUDE.md'ye bölüm halinde eklendi, arama düz metin/regex/ajan filtresi/sınır durumlarıyla, haftalık özet üç cümle sınırıyla test edildi (28 kontrol).
 
+## S17 — Ölçek: İkinci Makine, Cepte Karne, Taşınabilir Ajan ✅ (mekanikler)
+
+**Amaç:** Filo büyüyünce komuta merkezi tek kalsın: laptop'un oturumları da bu panelde, günlük karne Telegram'da, ajanın kendisi tek dosyada.
+
+**İkinci makineyi bağla:**
+
+1. Laptop'un `~/.claude` klasörünü bir senkron aracıyla bu makineye aynala (Syncthing önerilir; OneDrive/SSH kopyası da olur). Tek yön yeterli: laptop → burası.
+2. Ayarlara ekle: `"agentFarm.extraClaudeDirs": [{ "name": "laptop", "dir": "D:/sync/laptop/.claude" }]`.
+3. **Refresh** → laptop oturumları Recent Sessions'ta **⇄ laptop** rozetiyle belirir. İki makinede aynı ajan klasör düzenini kullanıyorsan oturumlar doğru ajana sayılır; maliyet, karne, arama — hepsi artık iki makineyi görür.
+
+**Günlük karneyi cebe gönder:**
+
+1. S14'teki n8n → Telegram hattın varsa ekstra bir şey gerekmez: `agentFarm.dailyDigest` = `"21:30"`.
+2. Her akşam o saatten sonra tek mesaj düşer: bugünün maliyeti, en çok harcayanlar (bütçe yüzdesiyle), görev/nöbet durumu, uyarılar. Model çağrısı yok — sıfır ek maliyet.
+3. Denemek için: **Agent Farm: Send Daily Digest Now** (webhook yoksa bildirim olarak gösterir).
+
+**Ajanı taşı / paylaş:**
+
+1. Ajana sağ tık → **Export Agent Pack…** → `kahveci.agentpack` kaydet. Kimlik, nöbetler, araçlar ve ajanın workflow/tetik/zamanlamaları tek dosyada; **hafızası ve sırların dışarıda** (kimlik bilgisi kokan dosyaları da kendiliğinden atlar ve söyler).
+2. Hedef makinede **Import Agent Pack…** → dosyayı seç → kök + isim → onay. Ajan taze bir hafızayla kurulur; tetik ve zamanlamalar güvenlik için kapalı gelir — gözden geçir, `{secret:AD}` kullanan adımlar için sırları `Set Secret…` ile tanımla, sonra aç.
+
+> ✅ Test: mekanikler gerçek dosyalarla doğrulandı (26 kontrol) — paket dışa/içe roundtrip, sır kokan dosyanın dışlanması, `memory/` dışlaması, yol-kaçışı (zip-slip) koruması, isimle yeniden bağlama ve bilinmeyen ajanın self'e düşmesi, kapalı gelen tetik/zamanlama; iki sahte `.claude` diziniyle çoklu makine taraması (⇄ rozet, ajan eşleşmesi, eksik senkron uyarısı); digest kartının dolu/temiz gün içerikleri.
+
 ## Kapanış: Ritim Önerisi
 
 - **Her gün 10 saniye:** durum çubuğu + Duties rozetleri (pending var mı?).

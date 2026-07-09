@@ -19,6 +19,11 @@ Mission control for your **local Claude Code agents** — live fleet status, cos
 - **Shared memory sync** (v0.3): find duplicated memory files across agents, diff diverged copies, and sync them from a chosen source with timestamped backups.
 - **Fleet report** (v0.3): export a comparative Markdown report (cost, tokens, error rate, cache efficiency, context load) — Obsidian-friendly; same comparison table lives in the dashboard.
 - **Management**: start/continue Claude sessions per agent, scaffold new agents, open in new window.
+- **Automation core** (v0.8): file/hook/webhook triggers that start tasks or workflows, cheap-model verify steps with automatic retry, structured JSON handoffs (`{prev_json.field}`), concurrency caps + 5h-window quota guard, monthly task history.
+- **Outside-world bridge** (v0.9): secrets vault in the OS keychain (`{secret:NAME}` + env injection), MCP server inventory with real usage counts, webhook workflow steps, an inbound `127.0.0.1/trigger/<token>` endpoint for n8n/Make, and notification forwarding to any webhook.
+- **Content factory** (v1.0): media generation steps (fal.ai queue — image/video/audio) inside workflows, a media gallery with previews and Re-run/Vary, rule-based media cost estimation, ready-made recipes.
+- **Smart supervision** (v1.1): quality scorecard (cheap-model judge scores sampled sessions 1-5 — Quality column + decline alerts), instruction suggestions mined from your repeated corrections (applied to CLAUDE.md only with approval), weekly three-sentence fleet summary, transcript search across all sessions.
+- **Scale & portability** (v1.2): watch other machines' synced `.claude` folders in the same panel (⇄ badges), a daily phone-friendly digest card via webhook, and `.agentpack` export/import to move or share agents (memory and secrets never leave the machine).
 - **Guide (Kılavuz)**: built-in Turkish handbook — every `?` button jumps to the relevant section.
 
 ## Getting started
@@ -32,6 +37,21 @@ Mission control for your **local Claude Code agents** — live fleet status, cos
 
 Token usage is read from Claude Code's local JSONL transcripts and priced with the rules in `agentFarm.pricing` (USD per million tokens, first regex match wins). On subscription plans this is the **API-equivalent value** of your usage, not a bill.
 
+## Privacy
+
+- **No telemetry.** The extension collects nothing and phones home to no one.
+- **No network calls of its own.** The only network traffic is what *you* configure: media generation (your fal.ai key), webhook forwarding (your URLs), and the `claude` CLI runs it launches on your behalf. The live-event listener binds to `127.0.0.1` only.
+- **Secrets** live in the OS keychain via VS Code SecretStorage — never in files, never in exported agent packs.
+- All data (transcripts, agent folders, task archives) stays on your disk.
+
+## Publishing (maintainer notes)
+
+The extension is publish-ready: `LICENSE`, `CHANGELOG.md`, icon, and this README. To release:
+
+1. Create a publisher on [marketplace.visualstudio.com/manage](https://marketplace.visualstudio.com/manage) matching `"publisher": "miropharm"` and get a Personal Access Token.
+2. `npx vsce login miropharm`, then `npx vsce publish` (add `repository` to package.json once the repo is public).
+3. Optionally publish to Open VSX: `npx ovsx publish -p <token>`.
+
 ## License
 
-MIT
+MIT — see the LICENSE file.

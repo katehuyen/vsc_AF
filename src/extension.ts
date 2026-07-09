@@ -4,8 +4,11 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo, discoverAgents } from './core/agents';
 import {
+    applyPackFiles, buildAgentPack, readAgentPack, rebindPack, writeAgentPack
+} from './core/agentpack';
+import {
     addDuty, CADENCES, CLAUDE_MD_SNIPPET, claudeMdReferencesDuties,
-    deleteDuty, DUTIES_FILENAME, togglePauseDuty
+    deleteDuty, DUTIES_FILENAME, togglePauseDuty, watchStatus
 } from './core/duties';
 import { buildInsights, Insight } from './core/health';
 import {
@@ -20,7 +23,7 @@ import {
 import { SecretsVault } from './core/secrets';
 import { DEFAULT_PRICING, PriceRule, PricingEngine } from './core/pricing';
 import { QualityStore, sampleQuality } from './core/quality';
-import { buildFleetReport, buildOutputsDigest } from './core/report';
+import { buildDailyDigest, buildFleetReport, buildOutputsDigest } from './core/report';
 import { SessionIndex } from './core/sessions';
 import {
     applySuggestionToClaudeMd, collectUserMessages, scanCorrections, SuggestionStore
@@ -31,7 +34,7 @@ import {
     TaskManager, TaskMode, WorkflowStep
 } from './core/tasks';
 import { TriggerManager } from './core/triggers';
-import { normPath, relTime } from './core/util';
+import { dayKey, normPath, relTime } from './core/util';
 import { AgentDetailPanel } from './panels/agentDetail';
 import { DashboardPanel } from './panels/dashboard';
 import { GalleryPanel } from './panels/gallery';
@@ -93,7 +96,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const url = cfg().get<string>('notifyWebhookUrl', '');
         if (!url) { return; }
         const events = cfg().get<string[]>('notifyWebhookEvents',
-            ['permission', 'stalled', 'budget', 'workflow-done', 'workflow-failed', 'summary']);
+            ['permission', 'stalled', 'budget', 'workflow-done', 'workflow-failed', 'summary', 'digest']);
         if (!events.includes(type)) { return; }
         fetch(vault.substitute(url), {
             method: 'POST',
@@ -104,6 +107,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     const index = new SessionIndex(
         claudeDir(),
+        // E1: synced claude dirs from other machines, labeled by machine name.
+        () => cfg().get<{ name?: string; dir?: string }[]>('extraClaudeDirs', [])
+            .filter(d => d && typeof d.dir === 'string' && d.dir.trim())
+            .map(d => ({ name: (d.name ?? '').trim() || 'remote', dir: (d.dir as string).trim() })),
         pricing,
         () => agents,
         () => cfg().get<boolean>('includeUnmatchedProjects', false),
@@ -414,6 +421,44 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         } finally { summaryBusy = false; }
     };
 
+    // ---------- E2: daily digest card (webhook → n8n → Telegram) ----------
+    const buildDigestText = (): string => {
+        const now = Date.now();
+        const today = dayKey(now);
+        const todayCostOf = (sessions: { daily: Record<string, { cost: number }> }[]) =>
+            sessions.reduce((sum, s) => sum + (s.daily[today]?.cost ?? 0), 0);
+        return buildDailyDigest({
+            date: today,
+            todayCost: todayCostOf(index.all()),
+            activeAgents: index.activeAgentIds(now).size,
+            totalAgents: agents.length,
+            agents: agents.map(a => ({
+                name: a.name,
+                todayCost: todayCostOf(index.forAgent(a.id)),
+                budget: cfg().get<Record<string, number>>('budgets', {})[a.name]
+            })),
+            warnings: insights
+                .filter(i => i.severity !== 'info')
+                .slice(0, 4)
+                .map(i => `${i.agentName}: ${i.message}`.slice(0, 90)),
+            pendingDuties: agents.reduce((sum, a) =>
+                sum + a.duties.filter(d => !d.paused && watchStatus(d.watch)?.pending).length, 0),
+            runningTasks: taskManager.tasks.filter(t => t.status === 'running').length,
+            queuedTasks: taskManager.tasks.filter(t => t.status === 'queued').length,
+            mediaCostToday: mediaCostSince(taskManager.outputsDir, 24 * 3600 * 1000)
+        });
+    };
+    const sendDailyDigest = (manual: boolean): void => {
+        const text = buildDigestText();
+        const hasWebhook = !!cfg().get<string>('notifyWebhookUrl', '');
+        if (hasWebhook) { postForward('digest', text); }
+        if (manual) {
+            void vscode.window.showInformationMessage(
+                hasWebhook ? `Agent Farm: digest sent.\n${text}` : `${text}\n(notifyWebhookUrl boş — yalnızca burada gösterildi)`,
+                { modal: false });
+        }
+    };
+
     // D1-D3 cadences ride the same hourly clock as the auto report.
     const checkPeriodicIntelligence = () => {
         const now = Date.now();
@@ -440,6 +485,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             context.globalState.get<string>('agentfarm.weeklySummaryKey') !== isoWeek(new Date())) {
             void runWeeklySummary(false);
         }
+        // E2: daily digest after the configured local time, once per day.
+        const digestAt = cfg().get<string>('dailyDigest', 'off');
+        const m = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(digestAt.trim());
+        if (m) {
+            const nowDate = new Date();
+            const due = nowDate.getHours() * 60 + nowDate.getMinutes() >=
+                Number(m[1]) * 60 + Number(m[2]);
+            const today = dayKey(now);
+            if (due && context.globalState.get<string>('agentfarm.dailyDigestKey') !== today) {
+                void context.globalState.update('agentfarm.dailyDigestKey', today);
+                sendDailyDigest(false);
+            }
+        }
     };
 
     const reportTimer = setInterval(() => {
@@ -453,6 +511,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         index.watch();
         checkAutoReport();
         checkPeriodicIntelligence();
+        if (index.missingDirs.length) {
+            void vscode.window.showWarningMessage(
+                `Agent Farm: remote claude dir(s) without a projects folder: ${index.missingDirs.join(', ')} — check agentFarm.extraClaudeDirs and your folder sync.`);
+        }
     });
 
     // Watch agent roots for structural changes (new agents, memory edits)
@@ -1946,6 +2008,127 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             void vscode.window.withProgress(
                 { location: vscode.ProgressLocation.Notification, title: 'Agent Farm: writing weekly summary (cheap model)…' },
                 () => runWeeklySummary(true));
+        }),
+
+        vscode.commands.registerCommand('agentfarm.sendDigestNow', () => {
+            sendDailyDigest(true);
+        }),
+
+        // ---------- E3: agent packs ----------
+
+        vscode.commands.registerCommand('agentfarm.exportAgentPack', async (arg?: AgentArg) => {
+            const agent = await resolveAgent(arg);
+            if (!agent) { return; }
+            const { pack, warnings } = buildAgentPack(agent, taskManager);
+            const roots = cfg().get<string[]>('agentRoots', []);
+            const defaultDir = roots.find(r => fs.existsSync(r)) ?? os.homedir();
+            const target = await vscode.window.showSaveDialog({
+                defaultUri: vscode.Uri.file(path.join(defaultDir, `${agent.name}.agentpack`)),
+                filters: { 'Agent Pack': ['agentpack'] }
+            });
+            if (!target) { return; }
+            writeAgentPack(target.fsPath, pack);
+            const summary = `${pack.files.length} file(s), ${pack.workflows.length} workflow(s), ` +
+                `${pack.triggers.length} trigger(s), ${pack.schedules.length} schedule(s)`;
+            void vscode.window.showInformationMessage(
+                `Agent Farm: "${agent.name}" exported (${summary}). Memory and secrets are NOT included.` +
+                (warnings.length ? ` Skipped: ${warnings.join('; ')}` : ''),
+                'Reveal')
+                .then(c => {
+                    if (c === 'Reveal') { void vscode.commands.executeCommand('revealFileInOS', target); }
+                });
+        }),
+
+        vscode.commands.registerCommand('agentfarm.importAgentPack', async () => {
+            const picked = await vscode.window.showOpenDialog({
+                canSelectMany: false,
+                filters: { 'Agent Pack': ['agentpack', 'json'] },
+                openLabel: 'Import Agent Pack'
+            });
+            if (!picked?.length) { return; }
+            const { pack, error } = readAgentPack(picked[0].fsPath);
+            if (!pack) {
+                void vscode.window.showErrorMessage(`Agent Farm: cannot import — ${error}.`);
+                return;
+            }
+            const roots = cfg().get<string[]>('agentRoots', []).filter(r => fs.existsSync(r));
+            if (!roots.length) {
+                void vscode.window.showWarningMessage('Agent Farm: configure an agent root folder first.');
+                return;
+            }
+            const root = roots.length === 1
+                ? roots[0]
+                : await vscode.window.showQuickPick(roots, { placeHolder: 'Where should the imported agent live?' });
+            if (!root) { return; }
+            const name = await vscode.window.showInputBox({
+                prompt: 'Name for the imported agent (folder name)',
+                value: pack.name,
+                validateInput: v => !/^[\w-]+$/.test(v) ? 'Use letters, digits, - or _ only'
+                    : fs.existsSync(path.join(root, v)) ? 'A folder with this name already exists' : undefined
+            });
+            if (!name) { return; }
+            const dir = path.join(root, name);
+            const confirmed = await vscode.window.showInformationMessage(
+                `Import "${pack.name}" as "${name}"?\n\n` +
+                `${pack.files.length} file(s), ${pack.workflows.length} workflow(s), ` +
+                `${pack.triggers.length} trigger(s, disabled), ${pack.schedules.length} schedule(s, disabled).\n\n` +
+                pack.notes.join('\n'),
+                { modal: true }, 'Import');
+            if (confirmed !== 'Import') { return; }
+
+            fs.mkdirSync(path.join(dir, 'memory'), { recursive: true });
+            fs.writeFileSync(path.join(dir, 'memory', 'MEMORY.md'), MEMORY_MD_TEMPLATE, 'utf8');
+            const { written, skipped } = applyPackFiles(pack, dir);
+            refreshAll();
+
+            const self = agents.find(a => a.dir === dir) ?? { id: normPath(dir), name };
+            const rb = rebindPack(pack, { id: self.id, name },
+                n => {
+                    const found = agents.find(a => a.name === n);
+                    return found ? { id: found.id, name: found.name } : undefined;
+                });
+            const idMap = new Map<string, string>();
+            for (const w of rb.workflows) {
+                const created = taskManager.addWorkflow(w.title, w.steps);
+                idMap.set(w.id, created.id);
+            }
+            for (const t of rb.triggers) {
+                const action = t.action.kind === 'workflow'
+                    ? { ...t.action, workflowId: idMap.get(t.action.workflowId) ?? t.action.workflowId }
+                    : t.action;
+                taskManager.addTrigger({
+                    title: t.title, type: t.type, watchPath: t.watchPath,
+                    hookEvent: t.hookEvent, hookAgent: t.hookAgent, token: t.token,
+                    action, debounceSec: t.debounceSec, cooldownSec: t.cooldownSec,
+                    maxPerHour: t.maxPerHour, enabled: false
+                });
+            }
+            for (const s of rb.schedules) {
+                taskManager.addSchedule({
+                    agentId: s.agentId, agentName: s.agentName, title: s.title, prompt: s.prompt,
+                    mode: s.mode, kind: s.kind, hour: s.hour, minute: s.minute,
+                    dow: s.dow, onceAt: s.onceAt, enabled: false
+                });
+            }
+            for (const t of rb.templates) {
+                taskManager.addTemplate({
+                    title: t.title, prompt: t.prompt, mode: t.mode,
+                    agentId: t.agentId, agentName: t.agentName
+                });
+            }
+            refreshAll();
+            void vscode.window.showInformationMessage(
+                `Agent Farm: "${name}" imported — ${written.length} file(s)` +
+                (skipped.length ? `, ${skipped.length} skipped` : '') +
+                `, ${rb.workflows.length} workflow(s), ${rb.triggers.length} trigger(s) ve ${rb.schedules.length} schedule(s) (disabled — review, then enable).` +
+                (rb.warnings.length ? ` Notes: ${rb.warnings.join('; ')}` : ''),
+                'Open CLAUDE.md')
+                .then(c => {
+                    if (c === 'Open CLAUDE.md') {
+                        void vscode.commands.executeCommand('vscode.open',
+                            vscode.Uri.file(path.join(dir, 'CLAUDE.md')));
+                    }
+                });
         })
     );
 
@@ -1956,6 +2139,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 pricing = new PricingEngine(cfg().get<PriceRule[]>('pricing', DEFAULT_PRICING));
                 index.updatePricing(pricing);
                 void index.scanAll().then(() => index.reassignAgents());
+            }
+            if (e.affectsConfiguration('agentFarm.extraClaudeDirs')) {
+                void index.scanAll().then(() => {
+                    index.reassignAgents();
+                    index.watch();
+                });
             }
             if (e.affectsConfiguration('agentFarm.agentRoots')) {
                 refreshAll();
