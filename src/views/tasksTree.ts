@@ -54,7 +54,9 @@ export class TasksTreeProvider implements vscode.TreeDataProvider<TaskNode> {
                         : new vscode.ThemeColor('errorForeground'));
             const src = t.type === 'watch'
                 ? `watch: …${(t.watchPath ?? '').slice(-30)}`
-                : `hook: ${t.hookEvent}${t.hookAgent ? '@' + t.hookAgent : ''}`;
+                : t.type === 'webhook'
+                    ? `webhook: /trigger/…${(t.token ?? '').slice(-6)}`
+                    : `hook: ${t.hookEvent}${t.hookAgent ? '@' + t.hookAgent : ''}`;
             const target = t.action.kind === 'workflow' ? 'workflow' : `task→${t.action.agentName}`;
             const parts = [src, target];
             if (!t.enabled) { parts.push('off'); }
@@ -64,7 +66,7 @@ export class TasksTreeProvider implements vscode.TreeDataProvider<TaskNode> {
             item.tooltip = `${t.title}\n${src}\naction: ${target}\n` +
                 `debounce ${t.debounceSec}s • cooldown ${t.cooldownSec}s • max ${t.maxPerHour}/h\n` +
                 (t.lastFiredAt ? `last fired: ${new Date(t.lastFiredAt).toLocaleString()}` : 'never fired');
-            item.contextValue = 'trigger';
+            item.contextValue = t.type === 'webhook' ? 'trigger-webhook' : 'trigger';
             return item;
         }
         if (node.kind === 'schedules-root') {

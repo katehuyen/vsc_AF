@@ -81,6 +81,12 @@ export interface WorkflowStep {
     outputContract?: 'text' | 'json';
     /** Cheap-model quality gate: on FAIL the step is retried with the judge's feedback. */
     verify?: { criteria: string; retries?: number };
+    /**
+     * Webhook step: instead of claude, the step is an HTTP call. url/body
+     * templates support {prev_output} {prev_text} {prev_json.x} {secret:NAME}.
+     * The response body becomes the handoff for the next step.
+     */
+    webhook?: { url: string; method?: string; body?: string };
 }
 
 /** What one step passes to the next. */
@@ -93,9 +99,11 @@ export interface Handoff {
 export interface FarmTrigger {
     id: string;
     title: string;
-    type: 'watch' | 'hook';
+    type: 'watch' | 'hook' | 'webhook';
     /** watch: file or folder whose change fires the trigger */
     watchPath?: string;
+    /** webhook: secret path token — POST http://127.0.0.1:<port>/trigger/<token> */
+    token?: string;
     /** hook: live event kind (prompt, toolStart, stop, end, permission, …) */
     hookEvent?: string;
     /** hook: only fire for this agent (name); empty = any agent */
@@ -198,6 +206,12 @@ export interface TaskManagerOptions {
     /** Return a reason string to defer auto work (e.g. quota window nearly full), or undefined. */
     quotaCheck?: () => string | undefined;
     outputsMaxMB?: () => number;
+    /** Secrets injected as environment variables into spawned tasks. */
+    getEnv?: () => Record<string, string>;
+    /** {secret:NAME} substitution for webhook templates. */
+    resolveTemplate?: (s: string) => string;
+    /** Outbound notification forwarding (B4). */
+    forward?: (type: string, message: string) => void;
 }
 
 export class TaskManager implements vscode.Disposable {
@@ -431,7 +445,8 @@ export class TaskManager implements vscode.Disposable {
             const extra = this.extraArgs().trim();
             const terminal = vscode.window.createTerminal({
                 name: `AF: ${task.title.slice(0, 30)}`,
-                cwd: agent.dir
+                cwd: agent.dir,
+                env: this.opts.getEnv?.()
             });
             terminal.show();
             terminal.sendText(`claude ${extra ? extra + ' ' : ''}"${p}"`, true);
@@ -462,7 +477,8 @@ export class TaskManager implements vscode.Disposable {
             cwd: agent.dir,
             shell: true,
             windowsHide: true,
-            stdio: ['ignore', 'pipe', 'pipe'] // closed stdin: claude won't wait 3s for piped input
+            stdio: ['ignore', 'pipe', 'pipe'], // closed stdin: claude won't wait 3s for piped input
+            env: { ...process.env, ...this.opts.getEnv?.() }
         });
         this.processes.set(task.id, child);
         child.stdout?.on('data', chunk => stream.write(chunk));
@@ -805,6 +821,7 @@ export class TaskManager implements vscode.Disposable {
         if (index < 0 || index >= w.steps.length) {
             this.runCounts.delete(runId);
             this.handoffs.delete(runId);
+            this.opts.forward?.('workflow-done', `Workflow "${w.title}" completed`);
             void vscode.window.showInformationMessage(
                 `Agent Farm: workflow "${w.title}" completed ✓.`);
             return;
@@ -830,18 +847,76 @@ export class TaskManager implements vscode.Disposable {
 
     private startWorkflowStep(w: FarmWorkflow, index: number, handoff: Handoff, runId: string): void {
         const step = w.steps[index];
+        this.handoffs.set(runId, handoff);
+
+        if (step.webhook) {
+            this.runWebhookStep(w, index, handoff, runId);
+            return;
+        }
         const agent = this.getAgents().find(a => a.id === step.agentId);
         if (!agent) {
             void vscode.window.showWarningMessage(
                 `Agent Farm: workflow "${w.title}" stopped — agent "${step.agentName}" not found.`);
             return;
         }
-        this.handoffs.set(runId, handoff);
         const prompt = this.substitute(step.prompt, handoff);
         const task = this.addTask(agent, `${w.title} ${index + 1}/${w.steps.length}: ${step.title}`,
             prompt, step.mode, { workflowId: w.id, workflowRunId: runId, stepIndex: index });
         if (step.outputContract) { task.outputContract = step.outputContract; }
         this.startTask(task);
+    }
+
+    /** B3: a chain step that is an HTTP call; the response becomes the next handoff. */
+    private runWebhookStep(w: FarmWorkflow, index: number, handoff: Handoff, runId: string): void {
+        const step = w.steps[index];
+        const hook = step.webhook!;
+        const resolve = (s: string) => (this.opts.resolveTemplate ?? ((x: string) => x))(this.substitute(s, handoff));
+        const url = resolve(hook.url);
+        const method = (hook.method ?? 'POST').toUpperCase();
+        const body = hook.body ? resolve(hook.body) : undefined;
+
+        const task: FarmTask = {
+            id: newId(),
+            agentId: '',
+            agentName: 'webhook',
+            title: `${w.title} ${index + 1}/${w.steps.length}: ${step.title}`,
+            prompt: `${method} ${hook.url}`,
+            mode: 'headless',
+            status: 'running',
+            createdAt: Date.now(),
+            startedAt: Date.now(),
+            workflowId: w.id,
+            workflowRunId: runId,
+            stepIndex: index
+        };
+        this.tasks.push(task);
+        fs.mkdirSync(this.outputsDir, { recursive: true });
+        const outFile = path.join(this.outputsDir, `${task.id}.md`);
+        task.outputFile = outFile;
+        this.save();
+
+        const started = Date.now();
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 120_000);
+        fetch(url, {
+            method,
+            headers: body ? { 'Content-Type': 'application/json' } : undefined,
+            body: method === 'GET' ? undefined : body,
+            signal: controller.signal
+        }).then(async res => {
+            clearTimeout(timer);
+            const text = (await res.text()).slice(0, 100_000);
+            fs.writeFileSync(outFile,
+                `# ${task.title}\n\n- Webhook: ${method} ${hook.url}\n- Status: ${res.status}\n` +
+                `- Started: ${new Date(started).toLocaleString()}\n\n---\n\n${text}\n\n---\n` +
+                `Finished: ${new Date().toLocaleString()} · HTTP ${res.status}\n`, 'utf8');
+            this.finish(task, res.ok ? 'done' : 'failed');
+        }).catch(err => {
+            clearTimeout(timer);
+            fs.writeFileSync(outFile,
+                `# ${task.title}\n\n- Webhook: ${method} ${hook.url}\n\n---\n\n[request error] ${String(err)}\n`, 'utf8');
+            this.finish(task, 'failed');
+        });
     }
 
     private advanceWorkflow(task: FarmTask, status: TaskStatus): void {
@@ -857,6 +932,7 @@ export class TaskManager implements vscode.Disposable {
         if (onFail === 'stop') {
             this.runCounts.delete(runId);
             this.handoffs.delete(runId);
+            this.opts.forward?.('workflow-failed', `Workflow "${w.title}" stopped at step ${stepIndex + 1} (${status})`);
             void vscode.window.showWarningMessage(
                 `Agent Farm: workflow "${w.title}" stopped at step ${stepIndex + 1} (${status}).`);
             return;

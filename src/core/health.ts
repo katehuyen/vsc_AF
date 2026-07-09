@@ -1,5 +1,7 @@
 import { AgentInfo } from './agents';
 import { claudeMdReferencesDuties, watchStatus } from './duties';
+import { agentMcpConfigFiles, mcpUsage, readAgentMcpServers } from './mcp';
+import { looksLikePlaintextSecret } from './secrets';
 import { SessionIndex } from './sessions';
 import { dayKey, fmtUSD, hashString, safeReadFile } from './util';
 
@@ -212,6 +214,47 @@ export function buildInsights(
                 message: `High tool error rate over last 7 days: ${errors}/${toolCalls} (${Math.round(100 * errors / toolCalls)}%).`,
                 guideAnchor: 'saglik-hata-orani'
             });
+        }
+    }
+
+    // 5c) MCP hygiene: defined-but-unused servers, plaintext credentials in config
+    for (const agent of agents) {
+        const servers = readAgentMcpServers(agent);
+        if (servers.length) {
+            const monthAgo = now - 30 * 24 * 3600 * 1000;
+            const hadSessions = index.forAgent(agent.id).some(s => s.lastTs >= monthAgo);
+            if (hadSessions) {
+                const usage = mcpUsage(index, agent.id, 30 * 24 * 3600 * 1000);
+                for (const server of servers) {
+                    if (!usage.get(server.name)) {
+                        insights.push({
+                            severity: 'info',
+                            agentId: agent.id,
+                            agentName: agent.name,
+                            category: 'mcp',
+                            message: `MCP server "${server.name}" is defined but unused in the last 30 days — consider removing it (it may still cost startup time/context).`,
+                            filePath: server.source,
+                            guideAnchor: 'mcp-yonetimi'
+                        });
+                    }
+                }
+            }
+        }
+        for (const file of agentMcpConfigFiles(agent)) {
+            const content = safeReadFile(file);
+            if (!content) { continue; }
+            const hit = looksLikePlaintextSecret(content);
+            if (hit) {
+                insights.push({
+                    severity: 'warning',
+                    agentId: agent.id,
+                    agentName: agent.name,
+                    category: 'secrets',
+                    message: `Possible plaintext credential (${hit}) in ${file.split(/[\\/]/).pop()} — move it to the secrets vault.`,
+                    filePath: file,
+                    guideAnchor: 'sir-kasasi'
+                });
+            }
         }
     }
 

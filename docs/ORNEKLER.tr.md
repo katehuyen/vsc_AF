@@ -228,6 +228,28 @@ Korumalar: art arda 10 dosya atarsan debounce hepsini tek ateşe indirir; 60 sn 
 
 > ✅ Test (iki dal da gerçek haiku ile): alanlar prompt'a doğru gömüldü, ALARM dalı koştu, plan üretildi; çitli JSON toleransı gerçek çıktıyla doğrulandı.
 
+## S14 — n8n Köprüsü: Dış Dünyayla Çift Yönlü Hat ✅ (mekanikler)
+
+**Amaç:** Dış olaylar (mail, Telegram, takvim…) ajan fabrikasını tetiklesin; fabrika sonuçları dış dünyaya teslim etsin. n8n örnek — Make/Zapier'de birebir aynı mantık.
+
+**Ön hazırlık:** API anahtarların varsa önce kasaya koy: `Agent Farm: Set Secret…` (örn. ad `N8N_TOKEN`). Ayar dosyalarına anahtar yazma — panel zaten uyarır.
+
+**İçeri hat (n8n → Agent Farm):**
+
+1. Tasks → **Add Trigger** → ad ver → **Webhook** → eylem olarak görev seç, prompt örneği: `Şu isteği işle: {payload}` → gizli URL panoya kopyalanır (`http://127.0.0.1:8377/trigger/…`).
+2. n8n'de akış kur: (tetik: Gmail/Telegram/ne istersen) → **HTTP Request** node: POST, URL = kopyaladığın adres, body JSON (örn. `{"gorev":"fatura işle","kimden":"…"}`).
+3. n8n aynı makinedeyse doğrudan çalışır; başka makinedeyse bilinçli olarak tünel/proxy kurman gerekir (uç güvenlik gereği yalnızca 127.0.0.1 dinler).
+4. **Dene:** n8n akışını elle tetikle → Agent Farm bildirimi düşer, görev koşar, `{payload}` prompt'ta.
+
+**Dışarı hat (Agent Farm → n8n → Telegram):**
+
+1. n8n'de bir **Webhook** node'lu akış kur (arkasına Telegram/Slack/mail node'u bağla), webhook adresini al.
+2. İki kullanım:
+   - **Zincir adımı olarak:** workflow kurarken **🌐 Webhook step** → URL = n8n adresi → body: `{"text":"{prev_text}"}` — önceki ajan adımının çıktısı Telegram'a gider; n8n'in yanıtı da `{prev_json.alan}` ile sonraki adımda kullanılabilir.
+   - **Bildirim yönlendirme olarak:** Ayarlar → `agentFarm.notifyWebhookUrl` = n8n adresi → izin bekleme/takılma/bütçe/zincir olayları JSON olarak akar; n8n mesaja çevirir. Artık "psikolog izin bekliyor" telefonda.
+
+> ✅ Test (gerçek HTTP mekanikleriyle): /trigger ucuna doğru token'la POST → görev ateşledi ve `{payload}` prompt'a girdi; yanlış token 404 aldı. Webhook adımı: `{secret:}` URL'de, `{prev_json.*}` gövdede çözüldü, sunucu yanıtı sonraki adıma devroldu (3/3 adım done). Permission olayı forward kanalından JSON olarak ulaştı. n8n tarafı reçetedir — kendi akışını bağladığında hat hazır.
+
 ## Kapanış: Ritim Önerisi
 
 - **Her gün 10 saniye:** durum çubuğu + Duties rozetleri (pending var mı?).

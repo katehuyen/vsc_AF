@@ -12,14 +12,16 @@ import {
     hasOurHooks, installHooksInto, removeHooksFrom, userSettingsPath
 } from './core/hooksInstaller';
 import { LiveMonitor } from './core/live';
+import { addMcpServer, removeMcpServer } from './core/mcp';
 import {
     applyMergedContent, buildMergeDraft, findDuplicateGroups, syncGroup
 } from './core/memorySync';
+import { SecretsVault } from './core/secrets';
 import { DEFAULT_PRICING, PriceRule, PricingEngine } from './core/pricing';
 import { buildFleetReport, buildOutputsDigest } from './core/report';
 import { SessionIndex } from './core/sessions';
 import {
-    FarmSchedule, FarmTrigger, PREV_OUTPUT_PLACEHOLDER, sanitizePrompt, ScheduleKind,
+    FarmSchedule, FarmTrigger, newId, PREV_OUTPUT_PLACEHOLDER, sanitizePrompt, ScheduleKind,
     TaskManager, TaskMode, WorkflowStep
 } from './core/tasks';
 import { TriggerManager } from './core/triggers';
@@ -63,10 +65,28 @@ const MEMORY_MD_TEMPLATE = `# Memory Index
 <!-- One line per memory file: - [Title](file.md) — short hook -->
 `;
 
-export function activate(context: vscode.ExtensionContext): void {
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
     let agents: AgentInfo[] = [];
     let insights: Insight[] = [];
     let pricing = new PricingEngine(cfg().get<PriceRule[]>('pricing', DEFAULT_PRICING));
+
+    // B2: secrets vault (OS keychain via SecretStorage), cached for sync use.
+    const vault = new SecretsVault(context.secrets, context.globalState);
+    await vault.refresh();
+
+    // B4: outbound notification forwarding (n8n / Make / any webhook).
+    const postForward = (type: string, message: string): void => {
+        const url = cfg().get<string>('notifyWebhookUrl', '');
+        if (!url) { return; }
+        const events = cfg().get<string[]>('notifyWebhookEvents',
+            ['permission', 'stalled', 'budget', 'workflow-done', 'workflow-failed']);
+        if (!events.includes(type)) { return; }
+        fetch(vault.substitute(url), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ source: 'agent-farm', type, message, ts: new Date().toISOString() })
+        }).catch(() => { /* fire-and-forget */ });
+    };
 
     const index = new SessionIndex(
         claudeDir(),
@@ -99,6 +119,7 @@ export function activate(context: vscode.ExtensionContext): void {
             const key = `${today}:${ins.agentName}`;
             if (budgetNotified.has(key)) { continue; }
             budgetNotified.add(key);
+            postForward('budget', `${ins.agentName} — ${ins.message}`);
             void vscode.window.showWarningMessage(`Agent Farm: ${ins.agentName} — ${ins.message}`, 'Open Dashboard')
                 .then(choice => {
                     if (choice === 'Open Dashboard') {
@@ -108,6 +129,7 @@ export function activate(context: vscode.ExtensionContext): void {
         }
     };
 
+    let triggerManagerRef: TriggerManager | undefined;
     const live = new LiveMonitor(
         () => ({
             enabled: cfg().get<boolean>('liveMonitor', true),
@@ -115,7 +137,8 @@ export function activate(context: vscode.ExtensionContext): void {
             stuckThresholdMs: cfg().get<number>('stuckThresholdSeconds', 240) * 1000,
             notifyPermission: cfg().get<boolean>('notifyPermission', true),
             notifyStuck: cfg().get<boolean>('notifyStuck', true),
-            notifyTurnEnd: cfg().get<boolean>('notifyTurnEnd', false)
+            notifyTurnEnd: cfg().get<boolean>('notifyTurnEnd', false),
+            forward: postForward
         }),
         (cwd) => {
             if (!cwd) { return {}; }
@@ -127,7 +150,9 @@ export function activate(context: vscode.ExtensionContext): void {
                 }
             }
             return best ? { agentId: best.id, agentName: best.name } : {};
-        }
+        },
+        // B3 inbound: /trigger/<token> → webhook trigger (late-bound; manager is created below)
+        (token, payload) => triggerManagerRef?.fireWebhook(token, payload) ?? false
     );
     context.subscriptions.push(live);
     live.start();
@@ -155,12 +180,16 @@ export function activate(context: vscode.ExtensionContext): void {
                 if (guard <= 0 || limit <= 0) { return undefined; }
                 const pct = 100 * index.windowUsage().tokens / limit;
                 return pct >= guard ? `quota guard (${Math.round(pct)}% of 5h window)` : undefined;
-            }
+            },
+            getEnv: () => vault.env(),
+            resolveTemplate: (s) => vault.substitute(s),
+            forward: postForward
         }
     );
     context.subscriptions.push(taskManager);
 
     const triggerManager = new TriggerManager(taskManager, () => agents, live);
+    triggerManagerRef = triggerManager;
     context.subscriptions.push(triggerManager);
 
     const agentsTree = new AgentsTreeProvider(state);
@@ -686,6 +715,98 @@ export function activate(context: vscode.ExtensionContext): void {
             }
         }),
 
+        vscode.commands.registerCommand('agentfarm.setSecret', async () => {
+            const name = await vscode.window.showInputBox({
+                prompt: 'Secret name (used as env var and {secret:NAME}, e.g. FAL_KEY)',
+                validateInput: v => /^[\w.-]+$/.test(v) ? undefined : 'Letters, digits, _ . - only',
+                ignoreFocusOut: true
+            });
+            if (!name) { return; }
+            const value = await vscode.window.showInputBox({
+                prompt: `Value for ${name}`, password: true, ignoreFocusOut: true
+            });
+            if (value === undefined) { return; }
+            await vault.set(name, value);
+            void vscode.window.showInformationMessage(
+                `Agent Farm: secret "${name}" stored in the OS keychain (injected into tasks as env + {secret:${name}}).`);
+        }),
+
+        vscode.commands.registerCommand('agentfarm.deleteSecret', async () => {
+            const names = vault.names();
+            if (!names.length) {
+                void vscode.window.showInformationMessage('Agent Farm: no secrets stored.');
+                return;
+            }
+            const pick = await vscode.window.showQuickPick(names, { placeHolder: 'Delete which secret?' });
+            if (!pick) { return; }
+            await vault.delete(pick);
+            void vscode.window.showInformationMessage(`Agent Farm: secret "${pick}" deleted.`);
+        }),
+
+        vscode.commands.registerCommand('agentfarm.listSecrets', () => {
+            const names = vault.names();
+            void vscode.window.showInformationMessage(
+                names.length
+                    ? `Agent Farm secrets (values hidden): ${names.join(', ')}`
+                    : 'Agent Farm: no secrets stored — use "Set Secret…".');
+        }),
+
+        vscode.commands.registerCommand('agentfarm.addMcpServer', async (node?: AgentNode) => {
+            const agent = node && 'agent' in node ? node.agent : await resolveAgent(undefined);
+            if (!agent) { return; }
+            const name = await vscode.window.showInputBox({
+                prompt: `MCP server name for ${agent.name} (e.g. obsidian)`, ignoreFocusOut: true,
+                validateInput: v => /^[\w-]+$/.test(v) ? undefined : 'Letters, digits, - _ only'
+            });
+            if (!name) { return; }
+            const kind = await vscode.window.showQuickPick(
+                [
+                    { label: 'stdio (command)', id: 'stdio' },
+                    { label: 'http / sse (url)', id: 'http' }
+                ], { placeHolder: 'Transport', ignoreFocusOut: true });
+            if (!kind) { return; }
+            let def: { command?: string; url?: string; type?: string };
+            if (kind.id === 'stdio') {
+                const command = await vscode.window.showInputBox({
+                    prompt: 'Command (e.g. npx -y @some/mcp-server)', ignoreFocusOut: true
+                });
+                if (!command) { return; }
+                def = { command };
+            } else {
+                const url = await vscode.window.showInputBox({
+                    prompt: 'Server URL', ignoreFocusOut: true
+                });
+                if (!url) { return; }
+                def = { url, type: 'http' };
+            }
+            const file = addMcpServer(agent, name, def);
+            refreshAll();
+            void vscode.window.showInformationMessage(
+                `Agent Farm: MCP server "${name}" added to ${path.basename(file)}. Restart the agent's sessions to load it.`);
+        }),
+
+        vscode.commands.registerCommand('agentfarm.removeMcpServer', async (node?: AgentNode) => {
+            if (node?.kind !== 'mcp-server') { return; }
+            const confirmed = await vscode.window.showWarningMessage(
+                `Remove MCP server "${node.server.name}" from ${node.server.source}? (a one-time .afbak backup is kept)`,
+                { modal: true }, 'Remove');
+            if (confirmed !== 'Remove') { return; }
+            if (removeMcpServer(node.server)) {
+                refreshAll();
+                void vscode.window.showInformationMessage(`Agent Farm: MCP server "${node.server.name}" removed.`);
+            } else {
+                void vscode.window.showWarningMessage('Agent Farm: could not remove (file unreadable or entry missing).');
+            }
+        }),
+
+        vscode.commands.registerCommand('agentfarm.copyWebhookUrl', async (node?: TaskNode) => {
+            if (node?.kind !== 'trigger' || node.trigger.type !== 'webhook' || !node.trigger.token) { return; }
+            const port = cfg().get<number>('livePort', 8377);
+            const url = `http://127.0.0.1:${port}/trigger/${node.trigger.token}`;
+            await vscode.env.clipboard.writeText(url);
+            void vscode.window.showInformationMessage(`Agent Farm: webhook URL copied — ${url}`);
+        }),
+
         vscode.commands.registerCommand('agentfarm.addTrigger', async () => {
             const title = await vscode.window.showInputBox({
                 prompt: 'Trigger name (e.g. "Inbox fabrikası")', ignoreFocusOut: true
@@ -695,7 +816,8 @@ export function activate(context: vscode.ExtensionContext): void {
                 [
                     { label: '$(file-directory) Watch a folder', description: 'fires when files change inside', type: 'watch' as const, dir: true },
                     { label: '$(file) Watch a file', description: 'fires when the file changes', type: 'watch' as const, dir: false },
-                    { label: '$(broadcast) Hook event', description: 'fires on a live event (needs Live Hooks)', type: 'hook' as const, dir: false }
+                    { label: '$(broadcast) Hook event', description: 'fires on a live event (needs Live Hooks)', type: 'hook' as const, dir: false },
+                    { label: '$(globe) Webhook', description: 'fires when n8n/Make/anything POSTs to a local URL', type: 'webhook' as const, dir: false }
                 ],
                 { placeHolder: 'What should fire this trigger?', ignoreFocusOut: true }
             );
@@ -704,7 +826,10 @@ export function activate(context: vscode.ExtensionContext): void {
             let watchPath: string | undefined;
             let hookEvent: string | undefined;
             let hookAgent: string | undefined;
-            if (typePick.type === 'watch') {
+            let token: string | undefined;
+            if (typePick.type === 'webhook') {
+                token = newId() + newId();
+            } else if (typePick.type === 'watch') {
                 const picked = await vscode.window.showOpenDialog({
                     canSelectFolders: typePick.dir, canSelectFiles: !typePick.dir,
                     canSelectMany: false, openLabel: 'Watch this'
@@ -751,8 +876,9 @@ export function activate(context: vscode.ExtensionContext): void {
                 const agent = await resolveAgent(undefined);
                 if (!agent) { return; }
                 const prompt = await vscode.window.showInputBox({
-                    prompt: 'Task prompt — {watch} inserts the watched path',
-                    value: typePick.type === 'watch' ? 'DUTIES.md dosyanı oku ve şu hedefle ilgili görevini uygula: {watch}' : '',
+                    prompt: 'Task prompt — {watch} = watched path, {payload} = webhook body',
+                    value: typePick.type === 'watch' ? 'DUTIES.md dosyanı oku ve şu hedefle ilgili görevini uygula: {watch}'
+                        : typePick.type === 'webhook' ? 'Şu isteği işle: {payload}' : '',
                     ignoreFocusOut: true
                 });
                 if (!prompt) { return; }
@@ -763,12 +889,19 @@ export function activate(context: vscode.ExtensionContext): void {
             }
 
             taskManager.addTrigger({
-                title, type: typePick.type, watchPath, hookEvent, hookAgent, action,
+                title, type: typePick.type, watchPath, hookEvent, hookAgent, token, action,
                 debounceSec: typePick.type === 'watch' ? 10 : 1,
                 cooldownSec: 60, maxPerHour: 6, enabled: true
             });
-            void vscode.window.showInformationMessage(
-                `Agent Farm: trigger "${title}" armed. (debounce 10s, cooldown 60s, max 6/h — edit in farm-tasks.json if needed)`);
+            if (typePick.type === 'webhook' && token) {
+                const url = `http://127.0.0.1:${cfg().get<number>('livePort', 8377)}/trigger/${token}`;
+                await vscode.env.clipboard.writeText(url);
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: webhook trigger armed — URL copied to clipboard: ${url} (POST; body JSON'u {payload} olarak göreve girer).`);
+            } else {
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: trigger "${title}" armed. (debounce 10s, cooldown 60s, max 6/h — edit in farm-tasks.json if needed)`);
+            }
         }),
 
         vscode.commands.registerCommand('agentfarm.toggleTrigger', (node?: TaskNode) => {
@@ -857,12 +990,37 @@ export function activate(context: vscode.ExtensionContext): void {
                 const stepNo = steps.length + 1;
                 const agentPick = await vscode.window.showQuickPick(
                     [
-                        ...agents.map(a => ({ label: a.name, description: a.dir, agent: a as AgentInfo | undefined })),
-                        ...(steps.length ? [{ label: '$(check) Finish workflow', description: `${steps.length} step(s)`, agent: undefined }] : [])
+                        ...agents.map(a => ({ label: a.name, description: a.dir, agent: a as AgentInfo | undefined, isWebhook: false })),
+                        { label: '$(globe) Webhook step', description: 'HTTP call to n8n/Make/any URL — no agent', agent: undefined as AgentInfo | undefined, isWebhook: true },
+                        ...(steps.length ? [{ label: '$(check) Finish workflow', description: `${steps.length} step(s)`, agent: undefined as AgentInfo | undefined, isWebhook: false }] : [])
                     ],
                     { placeHolder: `Step ${stepNo}: which agent?`, ignoreFocusOut: true }
                 );
                 if (!agentPick) { return; }
+                if (agentPick.isWebhook) {
+                    const whTitle = await vscode.window.showInputBox({
+                        prompt: `Step ${stepNo} title (webhook)`, value: 'Dışarı bildir', ignoreFocusOut: true
+                    });
+                    if (!whTitle) { return; }
+                    const whUrl = await vscode.window.showInputBox({
+                        prompt: 'URL — {secret:NAME} and {prev_*} variables are substituted',
+                        placeHolder: 'https://n8n.example.com/webhook/…', ignoreFocusOut: true
+                    });
+                    if (!whUrl) { return; }
+                    const whMethod = await vscode.window.showQuickPick(['POST', 'GET'],
+                        { placeHolder: 'Method', ignoreFocusOut: true });
+                    if (!whMethod) { return; }
+                    const whBody = whMethod === 'GET' ? '' : ((await vscode.window.showInputBox({
+                        prompt: 'JSON body template — e.g. {"text": "{prev_text}"} (empty = none)',
+                        ignoreFocusOut: true
+                    })) ?? '');
+                    steps.push({
+                        agentId: '', agentName: 'webhook', title: whTitle,
+                        prompt: '', mode: 'headless',
+                        webhook: { url: whUrl, method: whMethod, body: whBody.trim() || undefined }
+                    });
+                    continue;
+                }
                 if (!agentPick.agent) { break; }
                 const stepTitle = await vscode.window.showInputBox({
                     prompt: `Step ${stepNo} title (${agentPick.agent.name})`, ignoreFocusOut: true
@@ -984,6 +1142,10 @@ export function activate(context: vscode.ExtensionContext): void {
             const field = await vscode.window.showQuickPick(
                 [
                     { label: 'Title', description: step.title, id: 'title' },
+                    ...(step.webhook ? [
+                        { label: 'Webhook URL', description: step.webhook.url.slice(0, 50), id: 'whUrl' },
+                        { label: 'Webhook body', description: (step.webhook.body ?? '(none)').slice(0, 50), id: 'whBody' }
+                    ] : []),
                     { label: 'Prompt', description: step.prompt.slice(0, 60), id: 'prompt' },
                     { label: 'Agent', description: step.agentName, id: 'agent' },
                     { label: 'Mode', description: step.mode, id: 'mode' },
@@ -999,6 +1161,17 @@ export function activate(context: vscode.ExtensionContext): void {
                 case 'title': {
                     const v = await vscode.window.showInputBox({ prompt: 'Step title', value: step.title, ignoreFocusOut: true });
                     if (v) { taskManager.updateWorkflowStep(w, node.index, { title: v }); }
+                    break;
+                }
+                case 'whUrl': {
+                    const v = await vscode.window.showInputBox({ prompt: 'Webhook URL', value: step.webhook!.url, ignoreFocusOut: true });
+                    if (v) { taskManager.updateWorkflowStep(w, node.index, { webhook: { ...step.webhook!, url: v } }); }
+                    break;
+                }
+                case 'whBody': {
+                    const v = await vscode.window.showInputBox({ prompt: 'Webhook body template (empty = none)', value: step.webhook!.body ?? '', ignoreFocusOut: true });
+                    if (v === undefined) { return; }
+                    taskManager.updateWorkflowStep(w, node.index, { webhook: { ...step.webhook!, body: v.trim() || undefined } });
                     break;
                 }
                 case 'prompt': {

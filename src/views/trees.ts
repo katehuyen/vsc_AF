@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
 import { Duty, watchStatus } from '../core/duties';
 import { Insight } from '../core/health';
+import { McpServerDef, mcpUsage, readAgentMcpServers } from '../core/mcp';
 import { LiveMonitor, LiveStatus } from '../core/live';
 import { SessionIndex, SessionInfo } from '../core/sessions';
 import { fmtTokens, fmtUSD, relTime, dayKey } from '../core/util';
@@ -26,10 +27,13 @@ const LIVE_STATUS_LABEL: Record<LiveStatus, string> = {
 
 export type AgentNode =
     | { kind: 'agent'; agent: AgentInfo }
-    | { kind: 'section'; agent: AgentInfo; section: 'identity' | 'memory' | 'tools' | 'permissions' | 'sessions' | 'duties' }
+    | { kind: 'section'; agent: AgentInfo; section: 'identity' | 'memory' | 'tools' | 'permissions' | 'sessions' | 'duties' | 'mcp' }
     | { kind: 'duty'; agent: AgentInfo; duty: Duty }
+    | { kind: 'mcp-server'; agent: AgentInfo; server: McpServerDef; calls: number }
     | { kind: 'file'; path: string; label: string; description?: string }
     | { kind: 'session'; session: SessionInfo };
+
+const MCP_USAGE_WINDOW_MS = 30 * 24 * 3600 * 1000;
 
 export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
     private emitter = new vscode.EventEmitter<void>();
@@ -122,6 +126,18 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
                     item.description = String(this.state.index.forAgent(agent.id).length);
                     return item;
                 }
+                case 'mcp': {
+                    const servers = readAgentMcpServers(agent);
+                    const item = new vscode.TreeItem('MCP',
+                        servers.length ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None);
+                    item.iconPath = new vscode.ThemeIcon('plug');
+                    item.description = servers.length
+                        ? `${servers.length} server(s)`
+                        : 'none — right-click to add';
+                    item.contextValue = 'mcp-section';
+                    item.tooltip = 'MCP servers this agent can use (from .mcp.json / .claude settings) with real 30-day usage.';
+                    return item;
+                }
                 case 'duties': {
                     const duties = agent.duties;
                     const pending = duties.filter(d =>
@@ -147,6 +163,17 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
                     return item;
                 }
             }
+        }
+        if (node.kind === 'mcp-server') {
+            const s = node.server;
+            const item = new vscode.TreeItem(s.name, vscode.TreeItemCollapsibleState.None);
+            item.iconPath = new vscode.ThemeIcon('plug',
+                node.calls > 0 ? new vscode.ThemeColor('charts.green') : undefined);
+            item.description = `${s.transport} • ${node.calls > 0 ? `${node.calls} calls (30d)` : 'unused (30d)'}`;
+            item.tooltip = `${s.name} (${s.transport})\n${s.commandOrUrl}\nDefined in: ${s.source}\nCalls in last 30 days: ${node.calls}`;
+            item.contextValue = 'mcp-server';
+            item.command = openFileCommand(s.source);
+            return item;
         }
         if (node.kind === 'duty') {
             const d = node.duty;
@@ -196,11 +223,21 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
             children.push({ kind: 'section', agent: a, section: 'duties' });
             if (a.memoryFiles.length) { children.push({ kind: 'section', agent: a, section: 'memory' }); }
             if (a.toolFiles.length) { children.push({ kind: 'section', agent: a, section: 'tools' }); }
+            children.push({ kind: 'section', agent: a, section: 'mcp' });
             children.push({ kind: 'section', agent: a, section: 'permissions' });
             children.push({ kind: 'section', agent: a, section: 'sessions' });
             return children;
         }
         if (node.kind === 'section') {
+            if (node.section === 'mcp') {
+                const usage = mcpUsage(this.state.index, node.agent.id, MCP_USAGE_WINDOW_MS);
+                return readAgentMcpServers(node.agent).map(server => ({
+                    kind: 'mcp-server' as const,
+                    agent: node.agent,
+                    server,
+                    calls: usage.get(server.name) ?? 0
+                }));
+            }
             if (node.section === 'duties') {
                 return node.agent.duties.map(duty => ({
                     kind: 'duty' as const, agent: node.agent, duty

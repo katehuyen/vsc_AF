@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
@@ -401,6 +401,38 @@
         "command": "agentfarm.openTaskHistory",
         "title": "Open Task History",
         "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.setSecret",
+        "title": "Set Secret…",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.deleteSecret",
+        "title": "Delete Secret…",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.listSecrets",
+        "title": "List Secrets",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.addMcpServer",
+        "title": "Add MCP Server…",
+        "category": "Agent Farm",
+        "icon": "$(add)"
+      },
+      {
+        "command": "agentfarm.removeMcpServer",
+        "title": "Remove MCP Server",
+        "category": "Agent Farm",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "agentfarm.copyWebhookUrl",
+        "title": "Copy Webhook URL",
+        "category": "Agent Farm"
       }
     ],
     "menus": {
@@ -654,18 +686,33 @@
         },
         {
           "command": "agentfarm.fireTrigger",
-          "when": "view == agentfarm.tasks && viewItem == trigger",
+          "when": "view == agentfarm.tasks && viewItem =~ /trigger(-webhook)?$/",
           "group": "inline@1"
         },
         {
           "command": "agentfarm.deleteTrigger",
-          "when": "view == agentfarm.tasks && viewItem == trigger",
+          "when": "view == agentfarm.tasks && viewItem =~ /trigger(-webhook)?$/",
           "group": "inline@2"
         },
         {
           "command": "agentfarm.toggleTrigger",
-          "when": "view == agentfarm.tasks && viewItem == trigger",
+          "when": "view == agentfarm.tasks && viewItem =~ /trigger(-webhook)?$/",
           "group": "1_trig@1"
+        },
+        {
+          "command": "agentfarm.copyWebhookUrl",
+          "when": "view == agentfarm.tasks && viewItem == trigger-webhook",
+          "group": "1_trig@2"
+        },
+        {
+          "command": "agentfarm.addMcpServer",
+          "when": "view == agentfarm.agents && viewItem == mcp-section",
+          "group": "inline@1"
+        },
+        {
+          "command": "agentfarm.removeMcpServer",
+          "when": "view == agentfarm.agents && viewItem == mcp-server",
+          "group": "inline@1"
         },
         {
           "command": "agentfarm.addTrigger",
@@ -776,6 +823,20 @@
           "type": "number",
           "default": 200,
           "description": "Size cap for the archived task outputs folder; oldest unreferenced outputs are pruned (0 = unlimited)."
+        },
+        "agentFarm.notifyWebhookUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Forward farm notifications (permission, stalled, budget, workflow done/failed) to this webhook URL as JSON — e.g. an n8n webhook that relays to Telegram. Supports {secret:NAME}."
+        },
+        "agentFarm.notifyWebhookEvents": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["permission", "stalled", "budget", "workflow-done", "workflow-failed"]
+          },
+          "default": ["permission", "stalled", "budget", "workflow-done", "workflow-failed"],
+          "description": "Which notification types are forwarded to notifyWebhookUrl."
         },
         "agentFarm.queueAutoAdvance": {
           "type": "boolean",

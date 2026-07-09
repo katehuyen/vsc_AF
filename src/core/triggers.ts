@@ -79,8 +79,16 @@ export class TriggerManager implements vscode.Disposable {
         }
     }
 
+    /** B3 inbound: fire the webhook trigger matching this token (from /trigger/<token>). */
+    fireWebhook(token: string, payload: unknown): boolean {
+        const trigger = this.tasks.triggers.find(t =>
+            t.type === 'webhook' && t.enabled && t.token === token);
+        if (!trigger) { return false; }
+        return this.tryFire(trigger, 'webhook', payload);
+    }
+
     /** Fire if cooldown and hourly cap allow it. */
-    tryFire(trigger: FarmTrigger, reason: string): boolean {
+    tryFire(trigger: FarmTrigger, reason: string, payload?: unknown): boolean {
         const now = Date.now();
         if (trigger.lastFiredAt && now - trigger.lastFiredAt < trigger.cooldownSec * 1000) {
             return false;
@@ -91,11 +99,11 @@ export class TriggerManager implements vscode.Disposable {
                 `Agent Farm: trigger "${trigger.title}" hit its hourly cap (${trigger.maxPerHour}) — skipping.`);
             return false;
         }
-        this.fire(trigger, reason);
+        this.fire(trigger, reason, payload);
         return true;
     }
 
-    fire(trigger: FarmTrigger, reason: string): void {
+    fire(trigger: FarmTrigger, reason: string, payload?: unknown): void {
         this.tasks.markTriggerFired(trigger);
         if (trigger.action.kind === 'workflow') {
             const w = this.tasks.workflows.find(x => x.id === (trigger.action as { workflowId: string }).workflowId);
@@ -116,7 +124,10 @@ export class TriggerManager implements vscode.Disposable {
                 `Agent Farm: trigger "${trigger.title}" points to a missing agent.`);
             return;
         }
-        const prompt = action.prompt.split('{watch}').join(trigger.watchPath ?? '');
+        let prompt = action.prompt.split('{watch}').join(trigger.watchPath ?? '');
+        const payloadStr = payload === undefined ? ''
+            : (typeof payload === 'string' ? payload : JSON.stringify(payload)).slice(0, 500);
+        prompt = prompt.split('{payload}').join(payloadStr);
         const task = this.tasks.addTask(agent, action.title, prompt, action.mode, { fromTrigger: trigger.id });
         void vscode.window.showInformationMessage(
             `Agent Farm: trigger "${trigger.title}" fired (${reason}) → task "${action.title}".`);

@@ -70,7 +70,9 @@ Bugün her şey ya elle ya saatle tetikleniyor. Gerçek otomasyonun temeli **ola
 
 ---
 
-# FAZ B — MCP ve Dış Dünya Köprüsü (hedef: 0.9.x)
+# FAZ B — MCP ve Dış Dünya Köprüsü — ✅ TAMAMLANDI (0.9.0, 2026-07-09)
+
+> Dört özellik de gerçek HTTP mekanikleriyle test edilerek kapandı: sır kasası (OS anahtarlığı + env + {secret:} şablonu), MCP envanteri (gerçek kullanım: obsidian=394 çağrı/30g), webhook adımı (yanıt→devir), /trigger ucu (token+payload), bildirim yönlendirme. n8n ile saha kurulumu Örnekler S14'te reçete olarak duruyor.
 
 **Stratejik karar:** Tek tek servis entegrasyonu yazmak çıkmaz sokak. İki evrensel kapı var: **MCP** (ajanın araçları) ve **webhook** (platformların dili). İkisini birinci sınıf yapınca "diğer servislerle çalışma" sorunu bir kere ve kalıcı çözülür.
 

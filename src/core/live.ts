@@ -69,6 +69,8 @@ export interface LiveConfig {
     notifyPermission: boolean;
     notifyStuck: boolean;
     notifyTurnEnd: boolean;
+    /** B4: forward notifications to an external webhook (n8n → Telegram etc.). */
+    forward?: (type: string, message: string) => void;
 }
 
 const MAX_EVENTS = 800;
@@ -96,7 +98,9 @@ export class LiveMonitor implements vscode.Disposable {
 
     constructor(
         private getConfig: () => LiveConfig,
-        private resolveAgent: (cwd: string | undefined) => { agentId?: string; agentName?: string }
+        private resolveAgent: (cwd: string | undefined) => { agentId?: string; agentName?: string },
+        /** B3 inbound: /trigger/<token> requests land here; return true if a trigger accepted it. */
+        private onTrigger?: (token: string, payload: unknown) => boolean
     ) {
         this.stuckTimer = setInterval(() => this.checkStuck(), 30_000);
     }
@@ -112,7 +116,10 @@ export class LiveMonitor implements vscode.Disposable {
             return;
         }
         const server = http.createServer((req, res) => {
-            if (req.method !== 'POST' || !(req.url ?? '').startsWith('/event')) {
+            const url = req.url ?? '';
+            const isEvent = req.method === 'POST' && url.startsWith('/event');
+            const triggerMatch = req.method === 'POST' ? /^\/trigger\/([\w-]+)$/.exec(url.split('?')[0]) : null;
+            if (!isEvent && !triggerMatch) {
                 res.statusCode = 404;
                 res.end();
                 return;
@@ -123,8 +130,16 @@ export class LiveMonitor implements vscode.Disposable {
                 if (body.length > 1_000_000) { req.destroy(); }
             });
             req.on('end', () => {
-                res.statusCode = 200;
                 res.setHeader('Content-Type', 'application/json');
+                if (triggerMatch) {
+                    let payload: unknown;
+                    try { payload = body ? JSON.parse(body) : undefined; } catch { payload = body; }
+                    const accepted = this.onTrigger?.(triggerMatch[1], payload) ?? false;
+                    res.statusCode = accepted ? 200 : 404;
+                    res.end(JSON.stringify({ ok: accepted }));
+                    return;
+                }
+                res.statusCode = 200;
                 res.end('{}');
                 try { this.handle(JSON.parse(body) as HookPayload); } catch { /* malformed hook payload */ }
             });
@@ -235,6 +250,7 @@ export class LiveMonitor implements vscode.Disposable {
                 if (/permission|approv|allow/i.test(msg)) {
                     s.status = 'waiting-permission';
                     this.push(s, 'permission', undefined, truncate(msg, 90));
+                    cfg.forward?.('permission', `${s.agentName ?? s.sessionId.slice(0, 8)}: ${truncate(msg, 120)}`);
                     if (cfg.notifyPermission) {
                         this.notify('warn', `${s.agentName ?? s.sessionId.slice(0, 8)} is waiting for permission`, msg);
                     }
@@ -292,14 +308,19 @@ export class LiveMonitor implements vscode.Disposable {
                 now - s.lastEventTs > cfg.stuckThresholdMs) {
                 s.status = 'stalled';
                 changed = true;
-                if (cfg.notifyStuck && !s.notifiedStuck) {
+                if (!s.notifiedStuck) {
                     s.notifiedStuck = true;
-                    this.notify(
-                        'warn',
-                        `${s.agentName ?? s.sessionId.slice(0, 8)} looks stalled`,
-                        `No hook events for ${Math.round((now - s.lastEventTs) / 60000)} min` +
-                        (s.currentTool ? ` (last tool: ${s.currentTool})` : '')
-                    );
+                    cfg.forward?.('stalled',
+                        `${s.agentName ?? s.sessionId.slice(0, 8)} looks stalled` +
+                        (s.currentTool ? ` (last tool: ${s.currentTool})` : ''));
+                    if (cfg.notifyStuck) {
+                        this.notify(
+                            'warn',
+                            `${s.agentName ?? s.sessionId.slice(0, 8)} looks stalled`,
+                            `No hook events for ${Math.round((now - s.lastEventTs) / 60000)} min` +
+                            (s.currentTool ? ` (last tool: ${s.currentTool})` : '')
+                        );
+                    }
                 }
             }
         }
