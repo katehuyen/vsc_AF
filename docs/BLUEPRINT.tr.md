@@ -57,9 +57,12 @@ Arayüzde gördüğün her **?** düğmesi seni bu kılavuzun ilgili bölümüne
 | Bunu hangi ajanla konuşmuştum? | Recent Sessions başlığındaki 🔍 → `Search Transcripts…` ([detay](#transcript-arama)) |
 | Ajanlar kaliteli mi çalışıyor? | `Sample Output Quality Now` → Dashboard'da Quality kolonu ([detay](#kalite-karnesi)) |
 | Ajan hep aynı hatayı yapıyor | `Scan for Instruction Suggestions…` → Insights'taki 💡 önerisini uygula ([detay](#talimat-onerileri)) |
+| "Cümleyle söyleyeyim, o kursun" | Tasks başlığındaki 🚀 → `Natural Language Command…` ([detay](#dogal-dil-komuta)) |
+| Gelen iş doğru ajana kendisi gitsin | Tetik eylemi: Dispatch ([detay](#dispatcher-is-dagitici)) |
 | Laptop'taki filoyu da buradan izle | Senkron klasör + `extraClaudeDirs` ([detay](#coklu-makine)) |
 | Günlük karne Telegram'a düşsün | `agentFarm.dailyDigest` = "21:30" ([detay](#gunluk-ozet-karti-cebe)) |
 | Ajanı başka makineye taşı / paylaş | Ajana sağ tık → `Export Agent Pack…` ([detay](#ajan-paketleri)) |
+| Ajan Antigravity'de de çalışsın | Ajana sağ tık → `Sync Agent with Antigravity…` ([detay](#antigravity-uyumlulugu)) |
 
 ### Kavramlar (30 Saniyede)
 
@@ -582,6 +585,23 @@ Sinyal yorgunluğuna karşı: on ayrı uyarı yerine haftada bir, üç cümlelik
 - Sonuca tıklayınca oturum görüntüleyici açılır; eşleşme bağlamıyla (öncesi/sonrası) ve vurgulu gösterilir.
 - Sonuçlar oturum başına 3, toplam 150 ile sınırlıdır — taşarsa sorguyu daralt.
 
+## Doğal Dil Komuta
+
+Kurulum arayüzünün kestirmesi: Tasks başlığındaki 🚀 (veya `Agent Farm: Natural Language Command…`) → tek cümle yaz:
+
+> *"yarın 09:00'da psikolog haftalık analizi koşsun"* · *"önce yazar taslak yazsın, sonra editör düzeltsin"* · *"asistana şimdi şu işi ver: …"*
+
+Ucuz model cümleyi yapılandırılmış bir plana çevirir (tek seferlik iş / zamanlama / çok adımlı zincir), sana **insan diliyle önizleme** gösterilir — *Create* veya *Create & Run* demeden hiçbir şey kurulmaz. Plan doğrulanır: yalnızca gerçek ajan adların kabul edilir, saatler ve adımlar kontrol edilir; model saçmalarsa ham çıktıyla birlikte hata görürsün, sessizce yanlış bir şey kurulmaz. "Yarın" gibi ifadeler o anki tarihe göre hesaplanır.
+
+## Dispatcher (İş Dağıtıcı)
+
+Filo büyüyünce "bu iş hangi ajana?" sorusu da otomatikleşir. Tetikleyici eklerken eylem olarak **Dispatch — route to the best agent** seç: her ateşlemede gelen metne (webhook gövdesi / izlenen yol) bakılır ve iş en uygun ajana verilir.
+
+1. **Kurallar önce:** `agentFarm.dispatchRules` — regex → ajan; ilk eşleşen kazanır. Örn. `[{"match": "uyku|kaygı", "agent": "psikolog"}]`. Deterministik ve bedava.
+2. **Sınıflandırıcı sonra:** kural tutmazsa ucuz model, ajanların CLAUDE.md rol özetlerine bakarak seçer (`agentFarm.dispatchClassifier`, varsayılan açık; kapatırsan kural tutmayan iş düşer ve bildirilir).
+
+Görev başlığına seçilen ajan ve yöntem yazılır (`inbox işi → psikolog [model]`). Kurmadan denemek için: `Agent Farm: Test Dispatcher…` — metni yaz, kimin alacağını ve gerekçeyi gör.
+
 ## Ölçek ve Taşınabilirlik
 
 Filo tek makineye sığmadığında: başka makinelerin oturumlarını aynı panelde izle, günlük karneyi cebine gönder, ajanlarını tek dosyayla taşı.
@@ -616,6 +636,23 @@ Ajanı şablonlaştırıp başka makineye taşımak veya paylaşmak için tek do
 - **Dışa aktar:** ajana sağ tık → **Export Agent Pack…** (veya komut paleti). Pakete girenler: `CLAUDE.md`, `DUTIES.md`, `tools/`, `.claude` ayarları, `.mcp.json` + ajanın karıştığı workflow/tetik/zamanlama/şablonlar.
 - **ASLA girmeyenler:** `memory/` (kişisel hafıza) ve sırlar. İçinde kimlik bilgisi kokan dosyalar otomatik atlanır ve uyarı verilir; webhook token'ları paketten çıkarılır. `{secret:AD}` referansları korunur — hedef makinede aynı adla sır tanımlayınca çalışır.
 - **İçe aktar:** **Import Agent Pack…** → paket dosyasını seç → kök klasör + yeni isim → onay. Taze `memory/MEMORY.md` iskeleti kurulur; workflow adımları yeni ajana bağlanır (aynı isimli yerel ajanlar isimle çözülür, bulunamayan self'e düşer ve uyarı verilir); tetikleyiciler ve zamanlamalar **kapalı** gelir — gözden geçirip kendin açarsın.
+
+### Antigravity Uyumluluğu
+
+Ajanların Claude için optimize; ama istersen aynı ajan Google Antigravity (Gemini) altında da çalışır. Antigravity'nin standardı: kökte **AGENTS.md** (araçlar-arası talimat dosyası), `.agents/workflows/*.md` (slash-komut iş akışları), `.agents/skills/` (beceri kılavuzları); MCP yapılandırması global `~/.gemini/config/mcp_config.json` (Claude'un `.mcp.json`'ı ile aynı `mcpServers` şeması). `memory/` dosyaları düz markdown olduğundan **iki taraf da olduğu gibi kullanır — dönüşüm gerekmez**.
+
+**Kur:** ajana sağ tık → **Sync Agent with Antigravity…**
+
+- `CLAUDE.md` → `AGENTS.md` üretilir (öz-referanslar uyarlanır; dosya başında senkron işareti).
+- Aktif nöbet görevleri → `.agents/workflows/` dosyaları (Antigravity'de `/nobet-adi` diye çağrılır).
+- `.mcp.json` varsa → `.agents/mcp_config.suggested.json` önerisi (global gemini dosyasına elle birleştirirsin — Agent Farm `~/.gemini`'ye asla yazmaz).
+
+**Yaşat (yönlü senkron):** Bu tek seferlik bir dışa aktarım değil. Her senkronda içerik parmak izleri `.agents/af-antigravity-sync.json`'a yazılır; sonraki çalıştırmada hangi taraf ilerlemiş anlaşılır:
+
+- **CLAUDE.md değişti** → Insights'ta hatırlatma; komut AGENTS.md'yi tazeler.
+- **AGENTS.md değişti** (Antigravity oturumu ajana bir şey öğretti) → komut sorar: **Apply to CLAUDE.md** dersen kazanım yedekli olarak CLAUDE.md'ye taşınır — optimizasyon mirası iki tarafta da yaşar.
+- **İkisi de değişti** → çakışma uyarısı (warning): Diff görüntüle veya yön seç; kaybeden taraf `.afbak` yedeğiyle korunur.
+- Elle düzenlediğin workflow dosyalarına ve senin yazdığın (bizim üretmediğimiz) AGENTS.md'ye onaysız dokunulmaz.
 
 ### Marketplace / Yayın
 
@@ -697,6 +734,8 @@ Gürültü koruması: önceki hafta 0.50$'ın, bu hafta 1$'ın altındaysa uyar�
 | `agentFarm.suggestScan` | off | Haftalık talimat önerisi taraması: off / weekly |
 | `agentFarm.weeklySummary` | false | Haftada bir üç cümlelik akıllı filo özeti |
 | `agentFarm.dailyDigest` | off | Günlük özet kartının webhook'a gönderileceği saat (örn. "21:30") |
+| `agentFarm.dispatchRules` | [] | Dispatcher kuralları: regex → ajan (ilk eşleşen kazanır) |
+| `agentFarm.dispatchClassifier` | true | Kural tutmazsa ucuz model ajan seçsin |
 
 ## Komutlar
 
@@ -735,6 +774,9 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 - **Generate Weekly Summary Now** — üç cümlelik akıllı filo özeti (ucuz model)
 - **Send Daily Digest Now** — günlük özet kartını webhook'a/bildirime gönder
 - **Export Agent Pack… / Import Agent Pack…** — ajanı tek dosyayla taşı/paylaş (hafıza ve sırlar hariç)
+- **Sync Agent with Antigravity…** — AGENTS.md + workflow üretimi ve iki yönlü fark senkronu
+- **Natural Language Command…** — cümleden onaylı görev/zamanlama/zincir kurulumu (ucuz model)
+- **Test Dispatcher…** — bir metni dispatcher kimin alacağını göster
 
 ## Veri ve Gizlilik
 
@@ -787,6 +829,20 @@ Tamamlanan fazlar (hepsi 2026-07-08):
 **Bundan sonrası ayrı ve ayrıntılı bir belgede yaşıyor:** komut paletinden **Agent Farm: Open Development Plan** — uzak görüşlü gelişim planı: olay tetikleyicileri, doğrulayıcı adımlar, MCP paneli, n8n/webhook köprüsü, multimedya üretim hattı (Kling/Seedance/Nano Banana sınıfı modellerle içerik fabrikası), zeki gözetim, çoklu makine ve vizyoner ufuk. Kodlama o plandaki öncelik sırasını izler.
 
 ## Sürüm Notları
+
+### 2.0.0 — Doğal Dil Komuta ve Dispatcher / Plan Faz F çekirdeği (2026-07-09)
+
+- **🚀 Doğal Dil Komuta:** tek cümle → ucuz model → doğrulanmış plan (görev/zamanlama/zincir) → insan-okur önizleme → onayla kurulum; yalnızca gerçek ajan adları kabul edilir, "yarın" gibi ifadeler o anki tarihe göre çözülür
+- **Dispatcher:** tetik eylemi "Dispatch" — gelen işi kurallar (regex→ajan) yönlendirir, tutmazsa ucuz model CLAUDE.md rol özetlerinden seçer; `Test Dispatcher…` ile kurmadan dene
+- Faz F durumu: F1+F2 kod olarak tamam; F3 (tarayıcı otomasyonu) tarayıcı MCP + MCP paneliyle bugün de kurulabilir (özel adım tipi ertelendi); F4 (ses döngüsü) mevcut Whisper reçetesi + inbox tetiğiyle karşılanıyor (S20); F5 (çoklu-CLI) düşük öncelikle ertelendi
+- Testler: 16 kontrol — plan doğrulama/önizleme, kural yönlendirme; gerçek haiku ile "yarın 09:00" zaman hesabı, 2 adımlı zincir sırası ve sınıflandırıcının doğru ajanı seçmesi
+
+### 1.3.0 — Antigravity Uyumluluğu (2026-07-09)
+
+- **Sync Agent with Antigravity…:** CLAUDE.md → AGENTS.md üretimi (senkron işaretli), aktif nöbetler → `.agents/workflows/` slash-komutları, `.mcp.json` → global gemini yapılandırması için birleştirme önerisi; `memory/` dokunulmaz (iki araç da düz markdown okur)
+- **Yönlü senkron:** parmak izi takibiyle hangi tarafın ilerlediği algılanır — Claude→Antigravity tazeleme, Antigravity→Claude geri taşıma (yedekli), çakışmada Diff/yön seçimi; elle düzenlenen dosyalar korunur
+- **Insights:** `antigravity` kategorisi — tek taraf ilerlemişse info hatırlatma, iki taraf da değiştiyse warning
+- Testler: 27 kontrol — dönüşüm/geri dönüşüm, tam yaşam döngüsü (none→in-sync→ahead→conflict→çözüm), yabancı dosya koruması, sıfır gürültü
 
 ### 1.2.0 — Ölçek ve Taşınabilirlik / Plan Faz E (2026-07-09)
 

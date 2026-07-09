@@ -1,9 +1,16 @@
 import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { AgentInfo } from './agents';
+import { DispatchRule, dispatchText } from './dispatch';
 import { LiveEvent, LiveMonitor } from './live';
-import { FarmTrigger, TaskManager } from './tasks';
-import { normPath } from './util';
+import { FarmTrigger, TaskManager, TaskMode } from './tasks';
+import { normPath, safeReadFile, truncate } from './util';
+
+export interface DispatchOptions {
+    judgeArgs: () => string;
+    rules: () => DispatchRule[];
+    useClassifier: () => boolean;
+}
 
 /**
  * A1 — Triggers: fires tasks/workflows from filesystem changes (watch) or
@@ -19,7 +26,8 @@ export class TriggerManager implements vscode.Disposable {
     constructor(
         private tasks: TaskManager,
         private getAgents: () => AgentInfo[],
-        live?: LiveMonitor
+        live?: LiveMonitor,
+        private dispatchOpts?: DispatchOptions
     ) {
         if (live) {
             this.disposables.push(live.onEvent(ev => this.onHookEvent(ev)));
@@ -118,19 +126,61 @@ export class TriggerManager implements vscode.Disposable {
             return;
         }
         const action = trigger.action;
+        const payloadStr = payload === undefined ? ''
+            : (typeof payload === 'string' ? payload : JSON.stringify(payload)).slice(0, 500);
+        const substitute = (s: string) =>
+            s.split('{watch}').join(trigger.watchPath ?? '').split('{payload}').join(payloadStr);
+
+        if (action.kind === 'dispatch') {
+            void this.fireDispatch(trigger, action, reason, substitute(action.prompt), payloadStr);
+            return;
+        }
         const agent = this.getAgents().find(a => a.id === action.agentId);
         if (!agent) {
             void vscode.window.showWarningMessage(
                 `Agent Farm: trigger "${trigger.title}" points to a missing agent.`);
             return;
         }
-        let prompt = action.prompt.split('{watch}').join(trigger.watchPath ?? '');
-        const payloadStr = payload === undefined ? ''
-            : (typeof payload === 'string' ? payload : JSON.stringify(payload)).slice(0, 500);
-        prompt = prompt.split('{payload}').join(payloadStr);
+        const prompt = substitute(action.prompt);
         const task = this.tasks.addTask(agent, action.title, prompt, action.mode, { fromTrigger: trigger.id });
         void vscode.window.showInformationMessage(
             `Agent Farm: trigger "${trigger.title}" fired (${reason}) → task "${action.title}".`);
+        this.tasks.startTask(task);
+    }
+
+    /** F2: route the firing to the best agent — rules first, cheap-model classifier as fallback. */
+    private async fireDispatch(
+        trigger: FarmTrigger,
+        action: { title: string; prompt: string; mode: TaskMode },
+        reason: string,
+        prompt: string,
+        payloadStr: string
+    ): Promise<void> {
+        const opts = this.dispatchOpts;
+        if (!opts) {
+            void vscode.window.showWarningMessage(
+                `Agent Farm: trigger "${trigger.title}" is a dispatch trigger but no dispatcher is configured.`);
+            return;
+        }
+        const candidates = this.getAgents().map(a => ({
+            name: a.name,
+            hint: truncate((safeReadFile(a.claudeMdPath ?? '') ?? '')
+                .replace(/^#.*$/m, '').trim(), 160)
+        }));
+        const routeText = payloadStr || `${trigger.watchPath ?? ''} ${prompt}`.trim();
+        const result = await dispatchText(
+            process.cwd(), opts.judgeArgs(), routeText, opts.rules(), candidates, opts.useClassifier());
+        if (!result.agent) {
+            void vscode.window.showWarningMessage(
+                `Agent Farm: dispatch trigger "${trigger.title}" found no agent — ${result.reason}.`);
+            return;
+        }
+        const agent = this.getAgents().find(a => a.name === result.agent);
+        if (!agent) { return; }
+        const task = this.tasks.addTask(agent, `${action.title} → ${agent.name}`, prompt, action.mode,
+            { fromTrigger: trigger.id });
+        void vscode.window.showInformationMessage(
+            `Agent Farm: dispatch "${trigger.title}" (${reason}) → ${agent.name} [${result.method}: ${truncate(result.reason, 60)}].`);
         this.tasks.startTask(task);
     }
 

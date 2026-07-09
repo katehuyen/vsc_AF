@@ -57,7 +57,9 @@ export class TasksTreeProvider implements vscode.TreeDataProvider<TaskNode> {
                 : t.type === 'webhook'
                     ? `webhook: /trigger/…${(t.token ?? '').slice(-6)}`
                     : `hook: ${t.hookEvent}${t.hookAgent ? '@' + t.hookAgent : ''}`;
-            const target = t.action.kind === 'workflow' ? 'workflow' : `task→${t.action.agentName}`;
+            const target = t.action.kind === 'workflow' ? 'workflow'
+                : t.action.kind === 'dispatch' ? 'dispatch→auto'
+                    : `task→${t.action.agentName}`;
             const parts = [src, target];
             if (!t.enabled) { parts.push('off'); }
             else if (!armed && t.type === 'watch') { parts.push('PATH MISSING'); }

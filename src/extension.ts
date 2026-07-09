@@ -7,6 +7,11 @@ import {
     applyPackFiles, buildAgentPack, readAgentPack, rebindPack, writeAgentPack
 } from './core/agentpack';
 import {
+    AGENTS_MD_NAME, antigravityStatus, syncToAntigravity, syncToClaude, SyncResult
+} from './core/antigravity';
+import { describePlan, FarmPlan, interpretCommand } from './core/commandbar';
+import { DispatchRule, dispatchText } from './core/dispatch';
+import {
     addDuty, CADENCES, CLAUDE_MD_SNIPPET, claudeMdReferencesDuties,
     deleteDuty, DUTIES_FILENAME, togglePauseDuty, watchStatus
 } from './core/duties';
@@ -219,7 +224,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
     context.subscriptions.push(taskManager);
 
-    const triggerManager = new TriggerManager(taskManager, () => agents, live);
+    const triggerManager = new TriggerManager(taskManager, () => agents, live, {
+        judgeArgs,
+        rules: () => cfg().get<DispatchRule[]>('dispatchRules', []),
+        useClassifier: () => cfg().get<boolean>('dispatchClassifier', true)
+    });
     triggerManagerRef = triggerManager;
     context.subscriptions.push(triggerManager);
 
@@ -1190,6 +1199,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const actionPick = await vscode.window.showQuickPick(
                 [
                     { label: '$(play) Run a task', id: 'task' },
+                    { label: '$(arrow-swap) Dispatch — route to the best agent', description: 'rules + cheap-model classifier decide per firing', id: 'dispatch' },
                     ...(taskManager.workflows.length ? [{ label: '$(type-hierarchy-sub) Run a workflow', id: 'workflow' }] : [])
                 ],
                 { placeHolder: 'What should it do?', ignoreFocusOut: true }
@@ -1197,7 +1207,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (!actionPick) { return; }
 
             let action: FarmTrigger['action'];
-            if (actionPick.id === 'workflow') {
+            if (actionPick.id === 'dispatch') {
+                const prompt = await vscode.window.showInputBox({
+                    prompt: 'Task prompt — {watch} = watched path, {payload} = webhook body (routing looks at the payload)',
+                    value: typePick.type === 'webhook' ? 'Şu isteği işle: {payload}'
+                        : 'Şu hedefteki yeni işi değerlendir ve gereğini yap: {watch}',
+                    ignoreFocusOut: true
+                });
+                if (!prompt) { return; }
+                action = { kind: 'dispatch', title, prompt, mode: 'headless' };
+            } else if (actionPick.id === 'workflow') {
                 const wfPick = await vscode.window.showQuickPick(
                     taskManager.workflows.map(w => ({ label: w.title, description: `${w.steps.length} steps`, w })),
                     { placeHolder: 'Which workflow?', ignoreFocusOut: true });
@@ -2012,6 +2031,190 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         vscode.commands.registerCommand('agentfarm.sendDigestNow', () => {
             sendDailyDigest(true);
+        }),
+
+        // ---------- F1: natural-language command bar ----------
+
+        vscode.commands.registerCommand('agentfarm.commandBar', async () => {
+            if (!agents.length) {
+                void vscode.window.showWarningMessage('Agent Farm: no agents found — configure agentFarm.agentRoots first.');
+                return;
+            }
+            const utterance = await vscode.window.showInputBox({
+                prompt: 'Ne yapılsın? (doğal dil — tek seferlik iş, zamanlama veya zincir)',
+                placeHolder: 'örn. yarın 09:00\'da psikolog haftalık analizi koşsun, çıktı vault\'a yazılsın',
+                ignoreFocusOut: true
+            });
+            if (!utterance?.trim()) { return; }
+            const agentNames = agents.map(a => a.name);
+            const result = await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: 'Agent Farm: planning (cheap model)…' },
+                () => interpretCommand(os.homedir(), judgeArgs(), agentNames, utterance));
+            if (!result.plan) {
+                void vscode.window.showWarningMessage(
+                    `Agent Farm: could not turn that into a plan — ${result.errors.join('; ')}` +
+                    (result.raw ? ` | model said: ${result.raw.slice(0, 200)}` : ''));
+                return;
+            }
+            const plan: FarmPlan = result.plan;
+            const canRunNow = plan.kind === 'task' || plan.kind === 'workflow';
+            const choice = await vscode.window.showInformationMessage(
+                describePlan(plan) + '\n\nKurulsun mu?',
+                { modal: true },
+                ...(canRunNow ? ['Create & Run', 'Create'] : ['Create']));
+            if (!choice) { return; }
+
+            const findAgent = (name?: string) =>
+                agents.find(a => a.name.toLowerCase() === (name ?? '').toLowerCase());
+            if (plan.kind === 'task') {
+                const agent = findAgent(plan.agent)!;
+                const task = taskManager.addTask(agent, plan.title, plan.prompt!, 'headless');
+                if (choice === 'Create & Run') { taskManager.startTask(task); }
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: task "${plan.title}" ${choice === 'Create & Run' ? 'started' : 'queued'} (${agent.name}).`);
+            } else if (plan.kind === 'schedule') {
+                const agent = findAgent(plan.agent)!;
+                const s = plan.schedule!;
+                taskManager.addSchedule({
+                    agentId: agent.id, agentName: agent.name, title: plan.title, prompt: plan.prompt!,
+                    mode: 'headless', kind: s.kind,
+                    hour: s.hour ?? 9, minute: s.minute ?? 0, dow: s.dow,
+                    onceAt: s.kind === 'once' ? Date.parse(s.onceAt!.replace(' ', 'T')) : undefined,
+                    enabled: true
+                });
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: schedule "${plan.title}" created (runs while VS Code is open).`);
+            } else {
+                const steps: WorkflowStep[] = plan.steps!.map(st => {
+                    const agent = findAgent(st.agent)!;
+                    return {
+                        agentId: agent.id, agentName: agent.name,
+                        title: st.title || st.prompt.slice(0, 40), prompt: st.prompt, mode: 'headless' as TaskMode
+                    };
+                });
+                const w = taskManager.addWorkflow(plan.title, steps);
+                if (choice === 'Create & Run') { taskManager.runWorkflow(w); }
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: workflow "${plan.title}" ${choice === 'Create & Run' ? 'started' : 'created'} (${steps.length} steps).`);
+            }
+        }),
+
+        // ---------- F2: dispatcher test ----------
+
+        vscode.commands.registerCommand('agentfarm.testDispatch', async () => {
+            const text = await vscode.window.showInputBox({
+                prompt: 'Gelen iş metni — dispatcher hangi ajana yönlendirirdi?',
+                placeHolder: 'örn. dün gece uyuyamadım, sabah da kaygılıydım',
+                ignoreFocusOut: true
+            });
+            if (!text?.trim()) { return; }
+            const candidates = agents.map(a => ({
+                name: a.name,
+                hint: (fs.existsSync(a.claudeMdPath ?? '') ? fs.readFileSync(a.claudeMdPath!, 'utf8') : '')
+                    .replace(/^#.*$/m, '').replace(/\s+/g, ' ').trim().slice(0, 160)
+            }));
+            const result = await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: 'Agent Farm: dispatching…' },
+                () => dispatchText(os.homedir(), judgeArgs(), text,
+                    cfg().get<DispatchRule[]>('dispatchRules', []), candidates,
+                    cfg().get<boolean>('dispatchClassifier', true)));
+            void vscode.window.showInformationMessage(
+                result.agent
+                    ? `Agent Farm dispatch → ${result.agent} [${result.method}] — ${result.reason}`
+                    : `Agent Farm dispatch: no agent matched — ${result.reason}`);
+        }),
+
+        // ---------- Antigravity compatibility (directional sync) ----------
+
+        vscode.commands.registerCommand('agentfarm.syncAntigravity', async (arg?: AgentArg) => {
+            const agent = await resolveAgent(arg);
+            if (!agent) { return; }
+            if (!agent.claudeMdPath) {
+                void vscode.window.showWarningMessage('Agent Farm: this agent has no CLAUDE.md to sync from.');
+                return;
+            }
+            const agentsPath = path.join(agent.dir, AGENTS_MD_NAME);
+            const showResult = (title: string, r: SyncResult) => {
+                refreshAll();
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: ${title} — ${r.written.length} file(s) written` +
+                    (r.skipped.length ? `, ${r.skipped.length} left untouched` : '') +
+                    (r.backups.length ? `, ${r.backups.length} backup(s)` : '') +
+                    (r.notes.length ? `. ${r.notes.join(' ')}` : '.'),
+                    'Open AGENTS.md')
+                    .then(c => {
+                        if (c === 'Open AGENTS.md') {
+                            void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(agentsPath));
+                        }
+                    });
+            };
+
+            const status = antigravityStatus(agent.dir);
+            switch (status.state) {
+                case 'none': {
+                    const ok = await vscode.window.showInformationMessage(
+                        `Make "${agent.name}" Antigravity-compatible?\n\n` +
+                        `Creates AGENTS.md (from CLAUDE.md), .agents/workflows/ from active duties, ` +
+                        `and an MCP merge suggestion if .mcp.json exists.\n\n` +
+                        `memory/ is shared as-is — no conversion. From now on, edits on either side are detected and can be synced back.`,
+                        { modal: true }, 'Create');
+                    if (ok !== 'Create') { return; }
+                    showResult('Antigravity files created', syncToAntigravity(agent.dir, agent.duties));
+                    return;
+                }
+                case 'foreign': {
+                    const ok = await vscode.window.showWarningMessage(
+                        `${agent.name} already has an AGENTS.md that Agent Farm did not generate. ` +
+                        `Overwrite it with CLAUDE.md content? (a timestamped .afbak backup is kept)`,
+                        { modal: true }, 'Overwrite');
+                    if (ok !== 'Overwrite') { return; }
+                    showResult('AGENTS.md replaced', syncToAntigravity(agent.dir, agent.duties, { force: true }));
+                    return;
+                }
+                case 'in-sync': {
+                    // Refresh duty workflows anyway — duties may have changed independently.
+                    showResult('already in sync (duty workflows refreshed)', syncToAntigravity(agent.dir, agent.duties));
+                    return;
+                }
+                case 'claude-ahead': {
+                    showResult('CLAUDE.md → AGENTS.md synced', syncToAntigravity(agent.dir, agent.duties));
+                    return;
+                }
+                case 'antigravity-ahead': {
+                    const choice = await vscode.window.showInformationMessage(
+                        `AGENTS.md was edited on the Antigravity side. Carry the changes back into CLAUDE.md? ` +
+                        `(CLAUDE.md gets a timestamped .afbak backup)`,
+                        { modal: true }, 'Apply to CLAUDE.md', 'Show Diff', 'Overwrite with CLAUDE.md');
+                    if (choice === 'Apply to CLAUDE.md') {
+                        showResult('AGENTS.md → CLAUDE.md synced', syncToClaude(agent.dir));
+                    } else if (choice === 'Show Diff') {
+                        await vscode.commands.executeCommand('vscode.diff',
+                            vscode.Uri.file(agent.claudeMdPath), vscode.Uri.file(agentsPath),
+                            `${agent.name}: CLAUDE.md ↔ AGENTS.md`);
+                    } else if (choice === 'Overwrite with CLAUDE.md') {
+                        showResult('AGENTS.md overwritten from CLAUDE.md', syncToAntigravity(agent.dir, agent.duties));
+                    }
+                    return;
+                }
+                case 'conflict': {
+                    const choice = await vscode.window.showWarningMessage(
+                        `Both CLAUDE.md and AGENTS.md changed since the last sync — pick a direction ` +
+                        `(the losing side gets a timestamped .afbak backup) or inspect the diff first.`,
+                        { modal: true }, 'Show Diff', 'Claude wins', 'Antigravity wins');
+                    if (choice === 'Show Diff') {
+                        await vscode.commands.executeCommand('vscode.diff',
+                            vscode.Uri.file(agent.claudeMdPath), vscode.Uri.file(agentsPath),
+                            `${agent.name}: CLAUDE.md ↔ AGENTS.md (conflict)`);
+                    } else if (choice === 'Claude wins') {
+                        const b = path.join(agent.dir, AGENTS_MD_NAME);
+                        try { fs.copyFileSync(b, `${b}.${Date.now()}.afbak`); } catch { /* best effort */ }
+                        showResult('resolved: CLAUDE.md → AGENTS.md', syncToAntigravity(agent.dir, agent.duties, { force: true }));
+                    } else if (choice === 'Antigravity wins') {
+                        showResult('resolved: AGENTS.md → CLAUDE.md', syncToClaude(agent.dir));
+                    }
+                    return;
+                }
+            }
         }),
 
         // ---------- E3: agent packs ----------

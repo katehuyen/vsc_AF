@@ -319,6 +319,54 @@ Korumalar: art arda 10 dosya atarsan debounce hepsini tek ateşe indirir; 60 sn 
 
 > ✅ Test: mekanikler gerçek dosyalarla doğrulandı (26 kontrol) — paket dışa/içe roundtrip, sır kokan dosyanın dışlanması, `memory/` dışlaması, yol-kaçışı (zip-slip) koruması, isimle yeniden bağlama ve bilinmeyen ajanın self'e düşmesi, kapalı gelen tetik/zamanlama; iki sahte `.claude` diziniyle çoklu makine taraması (⇄ rozet, ajan eşleşmesi, eksik senkron uyarısı); digest kartının dolu/temiz gün içerikleri.
 
+## S18 — Çift Beyin: Ajanı Antigravity'de de Çalıştır ✅ (mekanikler)
+
+**Amaç:** Claude için kurduğun ajan, istediğinde Google Antigravity (Gemini) altında da aynı kimlik ve hafızayla çalışsın — ve iki dünyada öğrenilenler birbirine aksın.
+
+**Kurulum (bir kez):**
+
+1. Ajana sağ tık → **Sync Agent with Antigravity…** → onay. Üç şey üretilir: `AGENTS.md` (CLAUDE.md'den), `.agents/workflows/` (aktif nöbetlerin — Antigravity'de `/inbox-tasnifi` gibi slash komut olurlar), `.mcp.json` varsa MCP birleştirme önerisi.
+2. Antigravity'yi ajan klasöründe aç — AGENTS.md kimliği ve memory/ hafızayı (düz markdown olduğu için) doğrudan okur. MCP kullanıyorsan öneri dosyasını `~/.gemini/config/mcp_config.json`'a birleştir.
+
+**Yaşatma (asıl değer bu):**
+
+- Claude oturumunda CLAUDE.md'yi geliştirdin → Insights'ta "CLAUDE.md changed…" hatırlatması belirir → komutu çalıştır, AGENTS.md tazelenir.
+- Antigravity oturumu AGENTS.md'ye bir ders ekledi → komut fark eder ve sorar: **Apply to CLAUDE.md** → kazanım yedekli olarak Claude tarafına taşınır. Optimizasyon mirası tek tarafta hapsolmaz.
+- İkisi birden değiştiyse çakışma uyarısı: önce **Show Diff**, sonra yön seç — kaybeden içerik `.afbak` yedeğinde durur.
+
+**Sık takılmalar:** kendi elle yazdığın AGENTS.md varsa komut onaysız üzerine yazmaz; elle düzenlediğin workflow dosyaları senkronda atlanır (notta söylenir); nöbet tanımının tek kaynağı DUTIES.md kalır.
+
+> ✅ Test: tam yaşam döngüsü gerçek dosyalarla doğrulandı (27 kontrol) — üretim, ileri/geri senkron (öz-referans dönüşümleri dahil: "CLAUDE.md" ↔ "AGENTS.md"), çakışma tespiti ve çözümü, yabancı dosya/elle düzenleme korumaları, opt-in olmayan ajanda sıfır Insights gürültüsü.
+
+## S19 — Cümleyle Komuta + Kendi Yolunu Bulan İş ✅
+
+**Amaç:** Kurulum ekranlarına hiç girmeden konuşur gibi iş kur; gelen işler de doğru ajanı kendileri bulsun.
+
+**Doğal dil komuta:**
+
+1. Tasks başlığındaki 🚀 → *"yarın sabah 09:00'da psikolog haftalık analiz raporunu koşsun"* yaz.
+2. Ucuz model planı çıkarır, önizleme gelir: `📅 Zamanlama: … Ajan: psikolog … bir kez — 2026-07-10 09:00`. **Create** dersen kurulur — demezsen hiçbir şey olmaz.
+3. Zincir de kurabilirsin: *"önce yazar taslağı yazsın, sonra editör düzeltsin"* → 2 adımlı workflow, `{prev_text}` devri hazır.
+
+**Dispatcher:**
+
+1. `agentFarm.dispatchRules`'a bariz kuralları koy: `[{"match": "uyku|kaygı|rüya", "agent": "psikolog"}]` — deterministik ve bedava.
+2. Tetik ekle: **Add Trigger** → Webhook → eylem: **Dispatch — route to the best agent**. Artık n8n'den düşen her iş önce kurallara, tutmazsa ucuz model sınıflandırıcısına gider (ajanların CLAUDE.md rol özetlerini okur).
+3. Kurmadan denemek için **Test Dispatcher…**: *"dün gece uyuyamadım"* → `psikolog [rule]` veya kural yoksa `psikolog [model] — gerekçe`.
+
+> ✅ Test: gerçek haiku çağrılarıyla doğrulandı — "yarın 09:00" ifadesi doğru tarihe çevrildi (2026-07-10 09:00), iki adımlı zincir doğru ajan sırasıyla kuruldu, sınıflandırıcı uyku/kaygı metnini psikoloğa yönlendirdi; bozuk regex'ler atlanıyor, bilinmeyen ajan adı planı geçirmiyor (16 kontrol).
+
+## S20 — Ses Döngüsü: Telefondan Konuş, Fabrika İşlesin (F4 tarifi)
+
+**Amaç:** Sesli notun kendi kendine metne dönüşüp doğru zincire girmesi — hepsi bugün var olan yapıtaşlarıyla.
+
+1. **Ses → Metin:** `New Recipe Workflow…` → **Ses → Metin (Whisper)** reçetesi (FAL_KEY gerekli). İlk adım ses dosyasını transkribe eder, ikinci adım ajanla özetler/işler.
+2. **Kendiliğinden başlasın:** telefonundan sesli notların bir klasöre düşüyorsa (NoteScribe/Syncthing/OneDrive), o klasöre **watch tetiği** kur; eylemi yukarıdaki workflow yap. Ses dosyası düştü → zincir başladı.
+3. **Doğru ajana gitsin:** eylemi workflow yerine **Dispatch** yaparsan transkript içeriğine göre iş psikoloğa/asistana/kime uygunsa ona gider (S19).
+4. **Cevap cebe:** zincirin sonuna bir webhook adımı ekle → n8n → Telegram'a özet döner. (TTS ile seslendirme fal.ai TTS modeliyle ek bir medya adımı — modeli fal.ai/models'ten doğrula.)
+
+Bu tarif, plandaki F4'ün bugünkü karşılığıdır; NoteScribe tarafı olgunlaştıkça doğrudan köprü (uygulamadan tetik) eklenebilir.
+
 ## Kapanış: Ritim Önerisi
 
 - **Her gün 10 saniye:** durum çubuğu + Duties rozetleri (pending var mı?).

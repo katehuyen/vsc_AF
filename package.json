@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "1.2.0",
+  "version": "2.0.0",
   "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
@@ -496,6 +496,24 @@
         "title": "Import Agent Pack…",
         "category": "Agent Farm",
         "icon": "$(package)"
+      },
+      {
+        "command": "agentfarm.syncAntigravity",
+        "title": "Sync Agent with Antigravity…",
+        "category": "Agent Farm",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "agentfarm.commandBar",
+        "title": "Natural Language Command…",
+        "category": "Agent Farm",
+        "icon": "$(rocket)"
+      },
+      {
+        "command": "agentfarm.testDispatch",
+        "title": "Test Dispatcher…",
+        "category": "Agent Farm",
+        "icon": "$(arrow-swap)"
       }
     ],
     "menus": {
@@ -539,6 +557,11 @@
           "command": "agentfarm.openTimeline",
           "when": "view == agentfarm.feed",
           "group": "navigation@1"
+        },
+        {
+          "command": "agentfarm.commandBar",
+          "when": "view == agentfarm.tasks",
+          "group": "navigation@0"
         },
         {
           "command": "agentfarm.addTask",
@@ -631,6 +654,11 @@
           "command": "agentfarm.exportAgentPack",
           "when": "view == agentfarm.agents && viewItem == agent",
           "group": "2_open@3"
+        },
+        {
+          "command": "agentfarm.syncAntigravity",
+          "when": "view == agentfarm.agents && viewItem == agent",
+          "group": "2_open@4"
         },
         {
           "command": "agentfarm.addDuty",
@@ -984,6 +1012,23 @@
           "type": "string",
           "default": "off",
           "description": "Send a compact daily fleet scorecard to notifyWebhookUrl after this local time (HH:MM, e.g. \"21:30\"); \"off\" disables. No model call — plain data. Manual: 'Send Daily Digest Now'."
+        },
+        "agentFarm.dispatchRules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "match": { "type": "string", "description": "case-insensitive regex tested against the incoming text" },
+              "agent": { "type": "string", "description": "agent name that takes the work" }
+            }
+          },
+          "default": [],
+          "description": "Dispatcher routing rules for 'dispatch' triggers — first matching regex wins. Example: [{\"match\": \"uyku|kaygı\", \"agent\": \"psikolog\"}]."
+        },
+        "agentFarm.dispatchClassifier": {
+          "type": "boolean",
+          "default": true,
+          "description": "When no dispatch rule matches, let the cheap model (judgeArgs) pick the agent from CLAUDE.md role hints."
         },
         "agentFarm.qualitySample": {
           "type": "string",

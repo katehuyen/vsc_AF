@@ -1,4 +1,5 @@
 import { AgentInfo } from './agents';
+import { antigravityStatus } from './antigravity';
 import { claudeMdReferencesDuties, watchStatus } from './duties';
 import { agentMcpConfigFiles, mcpUsage, readAgentMcpServers } from './mcp';
 import { looksLikePlaintextSecret } from './secrets';
@@ -203,6 +204,34 @@ export function buildInsights(
                         guideAnchor: 'nobet-gorevleri'
                     });
                 }
+            }
+        }
+
+        // 5d) Antigravity sync drift (only for agents that opted into the compat layer)
+        {
+            const ag = antigravityStatus(agent.dir);
+            if (ag.state === 'conflict') {
+                insights.push({
+                    severity: 'warning',
+                    agentId: agent.id,
+                    agentName: agent.name,
+                    category: 'antigravity',
+                    message: 'CLAUDE.md and AGENTS.md have BOTH changed since the last Antigravity sync — reconcile before they contradict each other.',
+                    filePath: agent.claudeMdPath,
+                    guideAnchor: 'antigravity-uyumlulugu'
+                });
+            } else if (ag.state === 'claude-ahead' || ag.state === 'antigravity-ahead') {
+                insights.push({
+                    severity: 'info',
+                    agentId: agent.id,
+                    agentName: agent.name,
+                    category: 'antigravity',
+                    message: ag.state === 'claude-ahead'
+                        ? 'CLAUDE.md changed since the last Antigravity sync — run "Sync Agent with Antigravity…" to update AGENTS.md.'
+                        : 'AGENTS.md was edited (Antigravity side) — run "Sync Agent with Antigravity…" to carry the changes back to CLAUDE.md.',
+                    filePath: agent.claudeMdPath,
+                    guideAnchor: 'antigravity-uyumlulugu'
+                });
             }
         }
 

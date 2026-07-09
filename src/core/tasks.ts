@@ -123,7 +123,9 @@ export interface FarmTrigger {
     hookAgent?: string;
     action:
         | { kind: 'task'; agentId: string; agentName: string; title: string; prompt: string; mode: TaskMode }
-        | { kind: 'workflow'; workflowId: string };
+        | { kind: 'workflow'; workflowId: string }
+        /** F2: no fixed agent — the dispatcher routes each firing to the best agent. */
+        | { kind: 'dispatch'; title: string; prompt: string; mode: TaskMode };
     debounceSec: number;
     cooldownSec: number;
     maxPerHour: number;

@@ -184,7 +184,9 @@ Fabrika çalışırken kalitenin bekçiliğini de fabrika yapsın.
 
 ---
 
-# FAZ F — Vizyoner / Ar-Ge (2.x ufku)
+# FAZ F — Vizyoner / Ar-Ge (2.x ufku) — 🟡 ÇEKİRDEK TAMAMLANDI (2.0.0, 2026-07-09)
+
+> **Uygulama notu (2.0.0):** F1 ✅ (Natural Language Command — cümle → doğrulanmış plan → onaylı kurulum) ve F2 ✅ (Dispatch tetik eylemi — kural + ucuz model sınıflandırıcı) kod olarak tamam. F3 tarayıcı otomasyonu bugün tarayıcı MCP sunucusu ekleyerek (MCP paneli) kurulabilir — özel "browser step" tipi, gerçek talep doğana dek ertelendi. F4 ses döngüsü mevcut yapıtaşlarla tarifleşti (ORNEKLER S20: Whisper reçetesi + watch/dispatch tetiği + webhook dönüşü); NoteScribe doğrudan köprüsü ileride. F5 çoklu-CLI düşük öncelikle ertelendi (kısmi karşılık: taskExtraArgs). Ayrıca plan dışı eklenen: Antigravity uyumluluk katmanı (1.3.0, iki yönlü senkron).
 
 ### F1. Doğal Dil Komuta Çubuğu [L] ⭐ (uzak ama dönüştürücü)
 - **Ne:** Panelde tek satır: *"yarın 09:00'da psikolog haftalık analizi koşsun, ALARM varsa asistan planlasın, çıktı vault'a"* → ucuz model bunu yapılandırılmış schedule+workflow tanımına çevirir, önizleme onayıyla kurulur.
