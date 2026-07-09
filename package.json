@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
@@ -514,6 +514,18 @@
         "title": "Test Dispatcher…",
         "category": "Agent Farm",
         "icon": "$(arrow-swap)"
+      },
+      {
+        "command": "agentfarm.buildSemanticIndex",
+        "title": "Build Semantic Index",
+        "category": "Agent Farm",
+        "icon": "$(database)"
+      },
+      {
+        "command": "agentfarm.openUltraRoadmap",
+        "title": "Open Ultra Roadmap (Ultra Gelişim)",
+        "category": "Agent Farm",
+        "icon": "$(telescope)"
       }
     ],
     "menus": {
@@ -1029,6 +1041,44 @@
           "type": "boolean",
           "default": true,
           "description": "When no dispatch rule matches, let the cheap model (judgeArgs) pick the agent from CLAUDE.md role hints."
+        },
+        "agentFarm.embeddingsProvider": {
+          "type": "string",
+          "enum": ["off", "gemini", "openai"],
+          "default": "off",
+          "description": "Semantic search embeddings: 'gemini' (Google API, GEMINI_API_KEY secret) or 'openai' (any OpenAI-compatible /embeddings endpoint — incl. fully local Ollama/LM Studio via embeddingsBaseUrl, no key needed)."
+        },
+        "agentFarm.embeddingsModel": {
+          "type": "string",
+          "default": "",
+          "description": "Embedding model id. Empty = provider default (gemini-embedding-001 / text-embedding-3-small; for Ollama e.g. nomic-embed-text)."
+        },
+        "agentFarm.embeddingsBaseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Override the embeddings endpoint base URL. For local Ollama: http://127.0.0.1:11434/v1"
+        },
+        "agentFarm.embeddingsSecret": {
+          "type": "string",
+          "default": "",
+          "description": "Vault secret name holding the embeddings API key. Empty = GEMINI_API_KEY or OPENAI_API_KEY by provider; local endpoints may need none."
+        },
+        "agentFarm.semanticMaxSessions": {
+          "type": "number",
+          "default": 300,
+          "description": "How many most-recent sessions the semantic index covers."
+        },
+        "agentFarm.browserAllowHosts": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Global host allowlist for browser steps (subdomains included). A browser step refuses to run if neither this nor its own allowHosts covers the URL."
+        },
+        "agentFarm.browserApproval": {
+          "type": "string",
+          "enum": ["ask", "auto"],
+          "default": "ask",
+          "description": "'ask' = confirm every browser step before it runs (recommended); 'auto' = run allowlisted browser steps without asking."
         },
         "agentFarm.qualitySample": {
           "type": "string",

@@ -2,6 +2,12 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.1.0 — Semantic Search, Browser Steps & Ultra Roadmap (2026-07-09)
+
+- **Semantic search**: "semantic" mode in Transcript Search — meaning-based queries over an incremental, file-based vector index. Providers: Gemini API or any OpenAI-compatible endpoint (fully local via Ollama). `Build Semantic Index` command, similarity badges.
+- **Browser steps (F3)**: workflow step where the agent drives its own browser MCP. Non-negotiable host allowlist (a non-covered URL never runs) + per-step approval modal by default; onFail routing applies.
+- **Ultra Roadmap**: research-based second-generation roadmap (`docs/ULTRA-GELISIM.tr.md`, `Open Ultra Roadmap` command) — approval queue, cost anomaly detection, eval sets, kanban board, guardrail linting and more.
+
 ## 2.0.0 — Natural-Language Command & Dispatcher (2026-07-09)
 
 - **Natural Language Command…**: one sentence → cheap-model plan (task / schedule / multi-step workflow) → human-readable preview → installed only on approval. Agent names are validated; relative times ("tomorrow 9:00") resolve against the current date.

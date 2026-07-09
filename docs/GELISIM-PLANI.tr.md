@@ -142,7 +142,7 @@ Metin ajanları + medya modelleri aynı zincirde. Burada 1.0 deriz çünkü ekle
 
 Fabrika çalışırken kalitenin bekçiliğini de fabrika yapsın.
 
-> **Uygulama notu (1.1.0):** D1-D4'ün tamamı gerçekleştirildi; D4'te metin/regex arama tamam, opsiyonel semantik katman (yerel embedding) SQLite kararı gibi ihtiyaç doğarsa yeniden değerlendirilecek. Otomatik döngüler (qualitySample, suggestScan, weeklySummary) varsayılan **kapalı** gelir — ucuz modelle de olsa API harcaması kullanıcı onayıyla başlar; elle komutlar her zaman açık.
+> **Uygulama notu (1.1.0):** D1-D4'ün tamamı gerçekleştirildi; D4'te metin/regex arama tamam. **Güncelleme (2.1.0):** semantik katman da tamamlandı — Gemini API veya OpenAI-uyumlu uç (Ollama ile tamamen yerel), dosya tabanlı artımlı vektör indeksi (SQLite'a gerek kalmadı). Otomatik döngüler (qualitySample, suggestScan, weeklySummary) varsayılan **kapalı** gelir — ucuz modelle de olsa API harcaması kullanıcı onayıyla başlar; elle komutlar her zaman açık.
 
 ### D1. Kalite Karnesi [M]
 - **Ne:** A2 judge altyapısıyla dönemsel örnekleme: ajan başına çıktı kalite skoru (1-5), karneye "Quality" kolonu, düşüş trendi uyarısı.
@@ -186,7 +186,8 @@ Fabrika çalışırken kalitenin bekçiliğini de fabrika yapsın.
 
 # FAZ F — Vizyoner / Ar-Ge (2.x ufku) — 🟡 ÇEKİRDEK TAMAMLANDI (2.0.0, 2026-07-09)
 
-> **Uygulama notu (2.0.0):** F1 ✅ (Natural Language Command — cümle → doğrulanmış plan → onaylı kurulum) ve F2 ✅ (Dispatch tetik eylemi — kural + ucuz model sınıflandırıcı) kod olarak tamam. F3 tarayıcı otomasyonu bugün tarayıcı MCP sunucusu ekleyerek (MCP paneli) kurulabilir — özel "browser step" tipi, gerçek talep doğana dek ertelendi. F4 ses döngüsü mevcut yapıtaşlarla tarifleşti (ORNEKLER S20: Whisper reçetesi + watch/dispatch tetiği + webhook dönüşü); NoteScribe doğrudan köprüsü ileride. F5 çoklu-CLI düşük öncelikle ertelendi (kısmi karşılık: taskExtraArgs). Ayrıca plan dışı eklenen: Antigravity uyumluluk katmanı (1.3.0, iki yönlü senkron).
+> **Uygulama notu (2.0.0):** F1 ✅ (Natural Language Command — cümle → doğrulanmış plan → onaylı kurulum) ve F2 ✅ (Dispatch tetik eylemi — kural + ucuz model sınıflandırıcı) kod olarak tamam. F4 ses döngüsü mevcut yapıtaşlarla tarifleşti (ORNEKLER S20); NoteScribe doğrudan köprüsü ileride. Ayrıca plan dışı eklenen: Antigravity uyumluluk katmanı (1.3.0, iki yönlü senkron).
+> **Güncelleme (2.1.0):** F3 ✅ — Browser step zincir adımı geldi: ajan kendi tarayıcı MCP'siyle koşar, alan adı allowlist'i pazarlıksız + adım başı onay (plandaki güvenlik ilkesi aynen). F5 çoklu-CLI, ULTRA-GELISIM planına J5 olarak taşındı. Bundan sonrası: **Agent Farm: Open Ultra Roadmap** — araştırma temelli G/H/I/J fazları.
 
 ### F1. Doğal Dil Komuta Çubuğu [L] ⭐ (uzak ama dönüştürücü)
 - **Ne:** Panelde tek satır: *"yarın 09:00'da psikolog haftalık analizi koşsun, ALARM varsa asistan planlasın, çıktı vault'a"* → ucuz model bunu yapılandırılmış schedule+workflow tanımına çevirir, önizleme onayıyla kurulur.

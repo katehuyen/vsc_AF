@@ -23,6 +23,8 @@ export interface SearchHit {
     before: string;
     match: string;
     after: string;
+    /** D4 semantic layer: cosine similarity (0-1) when the hit came from the vector index. */
+    score?: number;
 }
 
 export interface SearchOptions {

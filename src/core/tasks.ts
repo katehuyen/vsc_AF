@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo } from './agents';
+import { buildBrowserPrompt, hostAllowed } from './browser';
 import {
     DEFAULT_MEDIA_PRICING, downloadAsset, estimateMediaCost, extFromUrl,
     MediaMeta, MediaPriceRule, runFalJob
@@ -100,6 +101,11 @@ export interface WorkflowStep {
      * archive; the response JSON becomes the next step's handoff.
      */
     media?: { model: string; input: string; timeoutMin?: number };
+    /**
+     * F3 — browser automation step: the step's agent drives its browser MCP.
+     * Host allowlist is enforced before launch; empty allowlist = refuse.
+     */
+    browser?: { url: string; goal: string; allowHosts?: string[] };
 }
 
 /** What one step passes to the next. */
@@ -208,6 +214,10 @@ export interface TaskManagerOptions {
     mediaAuth?: () => string;              // e.g. "Key <FAL_KEY>" (resolved from the vault)
     mediaBaseUrl?: () => string;           // override for tests / self-hosted proxies
     mediaPricing?: () => MediaPriceRule[]; // C3 cost estimation rules
+    /** F3: global browser-step allowlist + per-step approval gate. */
+    browserAllowHosts?: () => string[];
+    /** Resolve to true to run the browser step; false cancels it. */
+    confirmBrowser?: (info: { title: string; url: string; goal: string }) => Promise<boolean>;
 }
 
 export class TaskManager implements vscode.Disposable {
@@ -853,6 +863,10 @@ export class TaskManager implements vscode.Disposable {
             void this.runMediaStep(w, index, handoff, runId);
             return;
         }
+        if (step.browser) {
+            void this.runBrowserStep(w, index, handoff, runId);
+            return;
+        }
         const agent = this.getAgents().find(a => a.id === step.agentId);
         if (!agent) {
             void vscode.window.showWarningMessage(
@@ -993,6 +1007,52 @@ export class TaskManager implements vscode.Disposable {
         fs.writeFileSync(path.join(this.outputsDir, `${task.id}.media.json`),
             JSON.stringify(meta, null, 2), 'utf8');
         finishWith(true, '', result.response, assets, estCost);
+    }
+
+    /** F3: browser step — allowlist gate + optional approval, then a normal agent task. */
+    private async runBrowserStep(w: FarmWorkflow, index: number, handoff: Handoff, runId: string): Promise<void> {
+        const step = w.steps[index];
+        const browser = step.browser!;
+        const url = this.substitute(browser.url, handoff);
+        const goal = this.substitute(browser.goal, handoff);
+        const allowHosts = (browser.allowHosts?.length ? browser.allowHosts : undefined)
+            ?? this.opts.browserAllowHosts?.() ?? [];
+
+        const fail = (why: string) => {
+            void vscode.window.showWarningMessage(
+                `Agent Farm: browser step "${step.title}" blocked — ${why}`);
+            // Synthetic failed task so onFail routing still applies.
+            const task: FarmTask = {
+                id: newId(), agentId: step.agentId, agentName: step.agentName,
+                title: `${w.title} ${index + 1}/${w.steps.length}: ${step.title}`,
+                prompt: `browser: ${url}`, mode: 'headless', status: 'failed',
+                createdAt: Date.now(), startedAt: Date.now(), endedAt: Date.now(),
+                workflowId: w.id, workflowRunId: runId, stepIndex: index
+            };
+            this.tasks.push(task);
+            this.save();
+            this.advanceWorkflow(task, 'failed');
+        };
+
+        if (!hostAllowed(url, allowHosts)) {
+            fail(allowHosts.length
+                ? `"${url}" is outside the allowlist (${allowHosts.join(', ')})`
+                : 'no host allowlist configured (set agentFarm.browserAllowHosts or the step\'s allowHosts)');
+            return;
+        }
+        if (this.opts.confirmBrowser) {
+            const ok = await this.opts.confirmBrowser({ title: step.title, url, goal });
+            if (!ok) { fail('not approved'); return; }
+        }
+        const agent = this.getAgents().find(a => a.id === step.agentId);
+        if (!agent) {
+            fail(`agent "${step.agentName}" not found`);
+            return;
+        }
+        const prompt = buildBrowserPrompt(url, goal, allowHosts);
+        const task = this.addTask(agent, `${w.title} ${index + 1}/${w.steps.length}: ${step.title}`,
+            prompt, 'headless', { workflowId: w.id, workflowRunId: runId, stepIndex: index });
+        this.startTask(task);
     }
 
     /** Gallery Re-run/Vary: run a single media job outside any stored workflow. */

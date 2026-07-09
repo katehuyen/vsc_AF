@@ -367,6 +367,24 @@ Korumalar: art arda 10 dosya atarsan debounce hepsini tek ateşe indirir; 60 sn 
 
 Bu tarif, plandaki F4'ün bugünkü karşılığıdır; NoteScribe tarafı olgunlaştıkça doğrudan köprü (uygulamadan tetik) eklenebilir.
 
+## S21 — Anlamla Ara, Siteye Gönder ✅ (mekanikler)
+
+**Amaç:** "Neydi o konuştuğumuz?" sorusunu anlamla çözmek ve API'si olmayan siteleri zincire bağlamak.
+
+**Semantik arama:**
+
+1. Sağlayıcı seç: en kolayı Gemini — [aistudio.google.com](https://aistudio.google.com)'dan anahtar al → **Set Secret…** → `GEMINI_API_KEY` → ayar: `embeddingsProvider: "gemini"`. Tamamen yerel istersen: Ollama kur, `ollama pull nomic-embed-text`, ayarlar: `embeddingsProvider: "openai"`, `embeddingsBaseUrl: "http://127.0.0.1:11434/v1"`, `embeddingsModel: "nomic-embed-text"` — anahtar gerekmez, hiçbir şey makineden çıkmaz.
+2. **Build Semantic Index** → son 300 oturum vektörlere iner (artımlı — ikinci koşu yalnız yenileri işler).
+3. Arama panelinde **semantic** işaretle → *"ajanla motivasyon düşüklüğü ve sabah rutini konuştuğum yer"* → sonuçlar benzerlik yüzdesiyle sıralı; tıkla, oturum açılır.
+
+**Tarayıcı adımı:**
+
+1. Ajana tarayıcı MCP'si kur: Agents → MCP → **Add MCP Server…** → örn. `npx chrome-devtools-mcp@latest`.
+2. Zincir kur: **New Multi-Agent Workflow…** → **Browser step** → ajan + URL (örn. `https://example.com/rapor`) + hedef ("son raporu bul, rakamları çıkar") + izinli alan adı (`example.com`).
+3. Çalıştır: önce modal onay gelir (URL+hedef gösterilir — `browserApproval: "auto"` yapana dek her seferinde). Allowlist dışı URL'ye zincir **hiç başlamadan** failed düşer; ajanın raporu sonraki adıma `{prev_text}` olarak geçer.
+
+> ✅ Test: semantik hat sahte embedding sunucusuyla uçtan uca doğrulandı (OpenAI+Gemini şemaları, artımlı indeks, kalıcılık, prune, "kahve" sorgusunun kahve oturumunu bulması); allowlist korumaları (alt alan adı kabul, benzer-ad reddi, boş liste reddi) ve tarayıcı promptunun sert kuralları 20 kontrolle test edildi.
+
 ## Kapanış: Ritim Önerisi
 
 - **Her gün 10 saniye:** durum çubuğu + Duties rozetleri (pending var mı?).

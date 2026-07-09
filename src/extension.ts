@@ -11,6 +11,9 @@ import {
 } from './core/antigravity';
 import { describePlan, FarmPlan, interpretCommand } from './core/commandbar';
 import { DispatchRule, dispatchText } from './core/dispatch';
+import { EmbeddingsConfig, EmbeddingsProvider, embedTexts } from './core/embeddings';
+import { SearchResult } from './core/search';
+import { chunkTranscript, SemanticIndex } from './core/semantic';
 import {
     addDuty, CADENCES, CLAUDE_MD_SNIPPET, claudeMdReferencesDuties,
     deleteDuty, DUTIES_FILENAME, togglePauseDuty, watchStatus
@@ -95,6 +98,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const qualityStore = new QualityStore(path.join(context.globalStorageUri.fsPath, 'quality.json'));
     const suggestionStore = new SuggestionStore(path.join(context.globalStorageUri.fsPath, 'suggestions.json'));
     const judgeArgs = () => cfg().get<string>('judgeArgs', '--model claude-haiku-4-5-20251001');
+
+    // D4 semantic layer: file-based vector index + provider config from settings/vault.
+    const semIndex = new SemanticIndex(path.join(context.globalStorageUri.fsPath, 'semantic-index.json'));
+    const embeddingsCfg = (): EmbeddingsConfig => {
+        const provider = cfg().get<string>('embeddingsProvider', 'off') as EmbeddingsProvider;
+        const secretName = cfg().get<string>('embeddingsSecret', '').trim() ||
+            (provider === 'gemini' ? 'GEMINI_API_KEY' : 'OPENAI_API_KEY');
+        return {
+            provider,
+            model: cfg().get<string>('embeddingsModel', ''),
+            baseUrl: cfg().get<string>('embeddingsBaseUrl', ''),
+            apiKey: vault.get(secretName) ?? ''
+        };
+    };
 
     // B4: outbound notification forwarding (n8n / Make / any webhook).
     const postForward = (type: string, message: string): void => {
@@ -219,7 +236,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return key ? `Key ${key}` : '';
             },
             mediaBaseUrl: () => cfg().get<string>('mediaBaseUrl', '') || undefined as unknown as string,
-            mediaPricing: () => cfg().get<MediaPriceRule[]>('mediaPricing', DEFAULT_MEDIA_PRICING)
+            mediaPricing: () => cfg().get<MediaPriceRule[]>('mediaPricing', DEFAULT_MEDIA_PRICING),
+            browserAllowHosts: () => cfg().get<string[]>('browserAllowHosts', []),
+            confirmBrowser: async ({ title, url, goal }) => {
+                if (cfg().get<string>('browserApproval', 'ask') !== 'ask') { return true; }
+                const choice = await vscode.window.showWarningMessage(
+                    `Browser step "${title}" wants to run:\n\nURL: ${url}\nGoal: ${goal}\n\nAllow this run?`,
+                    { modal: true }, 'Run');
+                return choice === 'Run';
+            }
         }
     );
     context.subscriptions.push(taskManager);
@@ -428,6 +453,94 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     }
                 });
         } finally { summaryBusy = false; }
+    };
+
+    // ---------- D4 semantic layer: incremental index + query ----------
+    const semanticSessions = () => index.all()
+        .filter(s => !s.isSidechain && s.userTurns > 0)
+        .sort((a, b) => b.mtime - a.mtime)
+        .slice(0, cfg().get<number>('semanticMaxSessions', 300));
+    let semBusy = false;
+    const updateSemanticIndex = async (
+        maxSessions?: number,
+        report?: (msg: string) => void
+    ): Promise<{ indexed: number; remaining: number; error?: string }> => {
+        const ecfg = embeddingsCfg();
+        if (ecfg.provider === 'off') { return { indexed: 0, remaining: 0, error: 'embeddings provider is off' }; }
+        if (semBusy) { return { indexed: 0, remaining: 0 }; }
+        semBusy = true;
+        try {
+            const sessions = semanticSessions();
+            semIndex.prune(new Set(sessions.map(s => s.sessionId)));
+            const bySid = new Map(sessions.map(s => [s.sessionId, s]));
+            const pending = semIndex.pending(sessions.map(s => ({ sessionId: s.sessionId, mtime: s.mtime })));
+            const todo = maxSessions ? pending.slice(0, maxSessions) : pending;
+            let indexed = 0;
+            for (const p of todo) {
+                const s = bySid.get(p.sessionId)!;
+                const texts = chunkTranscript(s.file);
+                if (texts.length) {
+                    const { vectors, error } = await embedTexts(texts, ecfg);
+                    if (error) { semIndex.save(); return { indexed, remaining: pending.length - indexed, error }; }
+                    semIndex.addSession(p.sessionId, p.mtime, texts.map(t => ({
+                        sessionFile: s.file, sessionId: s.sessionId,
+                        agentName: s.agentName ?? '?', title: s.title, ts: s.lastTs, text: t
+                    })), vectors!);
+                } else {
+                    semIndex.addSession(p.sessionId, p.mtime, [], []);
+                }
+                indexed++;
+                report?.(`${indexed}/${todo.length}`);
+            }
+            semIndex.save();
+            return { indexed, remaining: pending.length - indexed };
+        } finally { semBusy = false; }
+    };
+    const semanticStatus = () => ({
+        provider: embeddingsCfg().provider,
+        ...semIndex.stats()
+    });
+    const semanticSearch = async (query: string, agentName?: string): Promise<SearchResult> => {
+        const ecfg = embeddingsCfg();
+        if (ecfg.provider === 'off') {
+            return {
+                hits: [], filesScanned: 0, truncated: false,
+                error: 'Semantic mode is off — set agentFarm.embeddingsProvider (gemini, or an OpenAI-compatible endpoint such as local Ollama).'
+            };
+        }
+        // Keep the index warm: quietly absorb up to 20 new sessions per query.
+        const upd = await updateSemanticIndex(20);
+        if (upd.error && !semIndex.stats().chunks) {
+            return { hits: [], filesScanned: 0, truncated: false, error: 'Indexing failed: ' + upd.error };
+        }
+        const q = await embedTexts([query], ecfg);
+        if (q.error || !q.vectors) {
+            return { hits: [], filesScanned: 0, truncated: false, error: 'Query embedding failed: ' + (q.error ?? '?') };
+        }
+        const hits = semIndex.search(q.vectors[0], 40)
+            .filter(h => !agentName || h.chunk.agentName === agentName)
+            .filter(h => h.score > 0.15)
+            .slice(0, 20)
+            .map(h => ({
+                file: h.chunk.sessionFile,
+                agentName: h.chunk.agentName,
+                title: h.chunk.title,
+                ts: h.chunk.ts,
+                role: 'assistant' as const,
+                before: '',
+                match: '',
+                after: h.chunk.text.slice(0, 280) + (h.chunk.text.length > 280 ? '…' : ''),
+                score: h.score
+            }));
+        const stats = semIndex.stats();
+        const result: SearchResult = { hits, filesScanned: stats.sessions, truncated: false };
+        if (upd.remaining > 0) {
+            result.error = undefined;
+            if (!hits.length) {
+                result.error = `${upd.remaining} session(s) not indexed yet — run "Build Semantic Index" for full coverage.`;
+            }
+        }
+        return result;
     };
 
     // ---------- E2: daily digest card (webhook → n8n → Telegram) ----------
@@ -862,6 +975,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             GuidePanel.show(context.extensionUri,
                 typeof anchor === 'string' ? anchor : undefined,
                 'GELISIM-PLANI.tr.md', 'Agent Farm — Gelişim Planı');
+        }),
+
+        vscode.commands.registerCommand('agentfarm.openUltraRoadmap', (anchor?: string) => {
+            GuidePanel.show(context.extensionUri,
+                typeof anchor === 'string' ? anchor : undefined,
+                'ULTRA-GELISIM.tr.md', 'Agent Farm — ULTRA Gelişim Planı');
         }),
 
         vscode.commands.registerCommand('agentfarm.addDuty', async (arg?: AgentNode | { agentId?: string }) => {
@@ -1340,14 +1459,47 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const stepNo = steps.length + 1;
                 const agentPick = await vscode.window.showQuickPick(
                     [
-                        ...agents.map(a => ({ label: a.name, description: a.dir, agent: a as AgentInfo | undefined, isWebhook: false, isMedia: false })),
-                        { label: '$(globe) Webhook step', description: 'HTTP call to n8n/Make/any URL — no agent', agent: undefined as AgentInfo | undefined, isWebhook: true, isMedia: false },
-                        { label: '$(device-camera-video) Media step (fal.ai)', description: 'image/video/audio generation — needs FAL_KEY secret', agent: undefined as AgentInfo | undefined, isWebhook: false, isMedia: true },
-                        ...(steps.length ? [{ label: '$(check) Finish workflow', description: `${steps.length} step(s)`, agent: undefined as AgentInfo | undefined, isWebhook: false, isMedia: false }] : [])
+                        ...agents.map(a => ({ label: a.name, description: a.dir, agent: a as AgentInfo | undefined, isWebhook: false, isMedia: false, isBrowser: false })),
+                        { label: '$(globe) Webhook step', description: 'HTTP call to n8n/Make/any URL — no agent', agent: undefined as AgentInfo | undefined, isWebhook: true, isMedia: false, isBrowser: false },
+                        { label: '$(device-camera-video) Media step (fal.ai)', description: 'image/video/audio generation — needs FAL_KEY secret', agent: undefined as AgentInfo | undefined, isWebhook: false, isMedia: true, isBrowser: false },
+                        { label: '$(browser) Browser step', description: 'agent drives its browser MCP — allowlist + approval enforced', agent: undefined as AgentInfo | undefined, isWebhook: false, isMedia: false, isBrowser: true },
+                        ...(steps.length ? [{ label: '$(check) Finish workflow', description: `${steps.length} step(s)`, agent: undefined as AgentInfo | undefined, isWebhook: false, isMedia: false, isBrowser: false }] : [])
                     ],
                     { placeHolder: `Step ${stepNo}: which agent?`, ignoreFocusOut: true }
                 );
                 if (!agentPick) { return; }
+                if (agentPick.isBrowser) {
+                    const bAgent = await resolveAgent(undefined);
+                    if (!bAgent) { return; }
+                    const bTitle = await vscode.window.showInputBox({
+                        prompt: `Step ${stepNo} title (browser)`, value: 'Siteden veri topla', ignoreFocusOut: true
+                    });
+                    if (!bTitle) { return; }
+                    const bUrl = await vscode.window.showInputBox({
+                        prompt: 'Start URL — {prev_text}/{prev_json.x} are substituted',
+                        placeHolder: 'https://example.com/reports', ignoreFocusOut: true
+                    });
+                    if (!bUrl) { return; }
+                    const bGoal = await vscode.window.showInputBox({
+                        prompt: 'Goal — what should the agent do on the site?',
+                        placeHolder: 'örn. son raporu bul, özetle ve rakamları çıkar', ignoreFocusOut: true
+                    });
+                    if (!bGoal) { return; }
+                    const defaultHost = (() => { try { return new URL(bUrl).hostname; } catch { return ''; } })();
+                    const bHosts = await vscode.window.showInputBox({
+                        prompt: 'Allowed hosts (comma-separated) — the agent may NOT leave these domains',
+                        value: defaultHost, ignoreFocusOut: true
+                    });
+                    if (bHosts === undefined) { return; }
+                    steps.push({
+                        agentId: bAgent.id, agentName: bAgent.name, title: bTitle, prompt: '', mode: 'headless',
+                        browser: {
+                            url: bUrl, goal: bGoal,
+                            allowHosts: bHosts.split(',').map(h => h.trim()).filter(Boolean)
+                        }
+                    });
+                    continue;
+                }
                 if (agentPick.isMedia) {
                     const mTitle = await vscode.window.showInputBox({
                         prompt: `Step ${stepNo} title (media)`, value: 'Görsel üret', ignoreFocusOut: true
@@ -1524,6 +1676,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         { label: 'Media model', description: step.media.model, id: 'mModel' },
                         { label: 'Media input', description: step.media.input.slice(0, 50), id: 'mInput' }
                     ] : []),
+                    ...(step.browser ? [
+                        { label: 'Browser URL', description: step.browser.url.slice(0, 50), id: 'bUrl' },
+                        { label: 'Browser goal', description: step.browser.goal.slice(0, 50), id: 'bGoal' },
+                        { label: 'Browser allowed hosts', description: (step.browser.allowHosts ?? []).join(', ') || '(global list)', id: 'bHosts' }
+                    ] : []),
                     { label: 'Prompt', description: step.prompt.slice(0, 60), id: 'prompt' },
                     { label: 'Agent', description: step.agentName, id: 'agent' },
                     { label: 'Mode', description: step.mode, id: 'mode' },
@@ -1560,6 +1717,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 case 'mInput': {
                     const v = await vscode.window.showInputBox({ prompt: 'JSON input template', value: step.media!.input, ignoreFocusOut: true });
                     if (v) { taskManager.updateWorkflowStep(w, node.index, { media: { ...step.media!, input: v } }); }
+                    break;
+                }
+                case 'bUrl': {
+                    const v = await vscode.window.showInputBox({ prompt: 'Start URL', value: step.browser!.url, ignoreFocusOut: true });
+                    if (v) { taskManager.updateWorkflowStep(w, node.index, { browser: { ...step.browser!, url: v } }); }
+                    break;
+                }
+                case 'bGoal': {
+                    const v = await vscode.window.showInputBox({ prompt: 'Browser goal', value: step.browser!.goal, ignoreFocusOut: true });
+                    if (v) { taskManager.updateWorkflowStep(w, node.index, { browser: { ...step.browser!, goal: v } }); }
+                    break;
+                }
+                case 'bHosts': {
+                    const v = await vscode.window.showInputBox({
+                        prompt: 'Allowed hosts, comma-separated (empty = use agentFarm.browserAllowHosts)',
+                        value: (step.browser!.allowHosts ?? []).join(', '), ignoreFocusOut: true
+                    });
+                    if (v === undefined) { return; }
+                    taskManager.updateWorkflowStep(w, node.index, {
+                        browser: { ...step.browser!, allowHosts: v.split(',').map(h => h.trim()).filter(Boolean) }
+                    });
                     break;
                 }
                 case 'prompt': {
@@ -1959,8 +2137,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             SearchPanel.show({
                 extensionUri: context.extensionUri,
                 index,
-                getAgentNames: () => agents.map(a => a.name)
+                getAgentNames: () => agents.map(a => a.name),
+                semanticSearch,
+                semanticStatus
             });
+        }),
+
+        vscode.commands.registerCommand('agentfarm.buildSemanticIndex', async () => {
+            if (embeddingsCfg().provider === 'off') {
+                void vscode.window.showWarningMessage(
+                    'Agent Farm: set agentFarm.embeddingsProvider first — "gemini" (needs GEMINI_API_KEY secret) or "openai" (any OpenAI-compatible endpoint, e.g. local Ollama via embeddingsBaseUrl).');
+                return;
+            }
+            await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: 'Agent Farm: building semantic index…' },
+                async progress => {
+                    const res = await updateSemanticIndex(undefined, m => progress.report({ message: m }));
+                    const stats = semIndex.stats();
+                    if (res.error) {
+                        void vscode.window.showErrorMessage(
+                            `Agent Farm: semantic indexing stopped — ${res.error} (indexed ${res.indexed}, index now ${stats.sessions} sessions / ${stats.chunks} chunks).`);
+                    } else {
+                        void vscode.window.showInformationMessage(
+                            `Agent Farm: semantic index ready — ${stats.sessions} session(s), ${stats.chunks} chunk(s)` +
+                            (res.indexed ? ` (${res.indexed} newly indexed).` : ' (already up to date).'));
+                    }
+                });
         }),
 
         vscode.commands.registerCommand('agentfarm.sampleQualityNow', () => {

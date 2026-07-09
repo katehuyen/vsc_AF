@@ -58,6 +58,8 @@ Arayüzde gördüğün her **?** düğmesi seni bu kılavuzun ilgili bölümüne
 | Ajanlar kaliteli mi çalışıyor? | `Sample Output Quality Now` → Dashboard'da Quality kolonu ([detay](#kalite-karnesi)) |
 | Ajan hep aynı hatayı yapıyor | `Scan for Instruction Suggestions…` → Insights'taki 💡 önerisini uygula ([detay](#talimat-onerileri)) |
 | "Cümleyle söyleyeyim, o kursun" | Tasks başlığındaki 🚀 → `Natural Language Command…` ([detay](#dogal-dil-komuta)) |
+| Anlamıyla ara ("neydi o konu?") | Arama panelinde **semantic** kutusu ([detay](#transcript-arama)) |
+| Ajan siteye girip veri toplasın | Zincire Browser step ([detay](#tarayici-adimlari)) |
 | Gelen iş doğru ajana kendisi gitsin | Tetik eylemi: Dispatch ([detay](#dispatcher-is-dagitici)) |
 | Laptop'taki filoyu da buradan izle | Senkron klasör + `extraClaudeDirs` ([detay](#coklu-makine)) |
 | Günlük karne Telegram'a düşsün | `agentFarm.dailyDigest` = "21:30" ([detay](#gunluk-ozet-karti-cebe)) |
@@ -379,6 +381,18 @@ Workflow kurarken **Media step (fal.ai)** seç: adım, fal.ai'nin kuyruk API'si 
 
 `Agent Farm: New Recipe Workflow…` hazır fabrika şablonları kurar: **Metin → Görsel**, **Metin → Görsel → Video**, **Ses → Metin (Whisper)**. Kurulan zincirdeki yer tutucuları (KONU, URL) düzenleyip çalıştırırsın — boş sayfa problemi yok.
 
+## Tarayıcı Adımları
+
+API'si olmayan servislerin kapısı: zincire **Browser step** ekle — adımın ajanı, kendi tarayıcı MCP'siyle siteye girer, hedefi yerine getirir ve bulgularını sonraki adıma `{prev_text}` olarak devreder.
+
+**Ön koşul:** ajanda bir tarayıcı MCP sunucusu kurulu olmalı (Agents ağacı → MCP → **Add MCP Server…** → örn. `npx chrome-devtools-mcp@latest` veya Playwright MCP). Agent Farm tarayıcı motoru taşımaz; güvenlik zarfını taşır:
+
+- **Alan adı allowlist'i (pazarlıksız):** adımın `allowHosts` listesi ya da global `agentFarm.browserAllowHosts` URL'yi kapsamıyorsa adım **hiç çalışmadan** failed olur (onFail kuralların işler). Alt alan adları dahildir.
+- **Adım başı onay:** `agentFarm.browserApproval` = `ask` (varsayılan) — her koşudan önce URL+hedefle modal onay; `auto` yalnız bilinçli tercihle.
+- Ajan prompt'una sert kurallar gömülür: listedışı bağlantı açma, kimlik bilgisi uydurma, MCP yoksa deneme — "BROWSER MCP YOK" raporla.
+
+Kurulum: `New Multi-Agent Workflow…` → **Browser step** → ajan + URL + hedef + izinli alan adları. `Edit Step…` ile URL/hedef/allowlist sonradan değişir; URL ve hedefte `{prev_text}`/`{prev_json.x}` çözülür.
+
 ## Webhook Köprüsü
 
 Dış dünya bağlantısının evrensel kapısı (0.9.0): n8n, Make, Zapier — webhook konuşan her şey.
@@ -585,6 +599,12 @@ Sinyal yorgunluğuna karşı: on ayrı uyarı yerine haftada bir, üç cümlelik
 - Sonuca tıklayınca oturum görüntüleyici açılır; eşleşme bağlamıyla (öncesi/sonrası) ve vurgulu gösterilir.
 - Sonuçlar oturum başına 3, toplam 150 ile sınırlıdır — taşarsa sorguyu daralt.
 
+**Semantik mod (anlamsal arama):** kelime değil anlam arar — *"ajanla motivasyon düşüklüğünü konuştuğum yer"* gibi sorular için. Paneldeki **semantic** kutusunu işaretle.
+
+- Kurulum: `agentFarm.embeddingsProvider` = `gemini` (Google API — `GEMINI_API_KEY` sırrını Set Secret ile ekle) veya `openai` (OpenAI-uyumlu herhangi bir uç — **tamamen yerel** istersen Ollama: `embeddingsBaseUrl` = `http://127.0.0.1:11434/v1`, model örn. `nomic-embed-text`, anahtar gerekmez).
+- İndeks: **Build Semantic Index** komutu son `semanticMaxSessions` (300) oturumu parçalar halinde vektörler; dosya tabanlıdır, artımlı çalışır (yalnız yeni/değişen oturumlar) ve her semantik aramada 20 oturuma kadar kendini tazeler.
+- Sonuçlarda benzerlik yüzdesi rozeti görünür; semantik modda yazarken otomatik arama yapılmaz (her sorgu bir embedding çağrısıdır), Enter'la ararsın.
+
 ## Doğal Dil Komuta
 
 Kurulum arayüzünün kestirmesi: Tasks başlığındaki 🚀 (veya `Agent Farm: Natural Language Command…`) → tek cümle yaz:
@@ -736,6 +756,13 @@ Gürültü koruması: önceki hafta 0.50$'ın, bu hafta 1$'ın altındaysa uyar�
 | `agentFarm.dailyDigest` | off | Günlük özet kartının webhook'a gönderileceği saat (örn. "21:30") |
 | `agentFarm.dispatchRules` | [] | Dispatcher kuralları: regex → ajan (ilk eşleşen kazanır) |
 | `agentFarm.dispatchClassifier` | true | Kural tutmazsa ucuz model ajan seçsin |
+| `agentFarm.embeddingsProvider` | off | Semantik arama: gemini / openai (Ollama dahil) |
+| `agentFarm.embeddingsModel` | boş (otomatik) | Embedding modeli |
+| `agentFarm.embeddingsBaseUrl` | boş (otomatik) | Uç adresi override (Ollama: http://127.0.0.1:11434/v1) |
+| `agentFarm.embeddingsSecret` | boş (otomatik) | Anahtarı tutan sır adı (GEMINI_API_KEY / OPENAI_API_KEY) |
+| `agentFarm.semanticMaxSessions` | 300 | Semantik indeksin kapsadığı oturum sayısı |
+| `agentFarm.browserAllowHosts` | [] | Tarayıcı adımları için global alan adı allowlist'i |
+| `agentFarm.browserApproval` | ask | Tarayıcı adımı öncesi onay: ask / auto |
 
 ## Komutlar
 
@@ -777,6 +804,8 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 - **Sync Agent with Antigravity…** — AGENTS.md + workflow üretimi ve iki yönlü fark senkronu
 - **Natural Language Command…** — cümleden onaylı görev/zamanlama/zincir kurulumu (ucuz model)
 - **Test Dispatcher…** — bir metni dispatcher kimin alacağını göster
+- **Build Semantic Index** — anlamsal arama için oturum vektör indeksini kur/tazele
+- **Open Ultra Roadmap (Ultra Gelişim)** — araştırma temelli ikinci nesil yol haritası
 
 ## Veri ve Gizlilik
 
@@ -829,6 +858,13 @@ Tamamlanan fazlar (hepsi 2026-07-08):
 **Bundan sonrası ayrı ve ayrıntılı bir belgede yaşıyor:** komut paletinden **Agent Farm: Open Development Plan** — uzak görüşlü gelişim planı: olay tetikleyicileri, doğrulayıcı adımlar, MCP paneli, n8n/webhook köprüsü, multimedya üretim hattı (Kling/Seedance/Nano Banana sınıfı modellerle içerik fabrikası), zeki gözetim, çoklu makine ve vizyoner ufuk. Kodlama o plandaki öncelik sırasını izler.
 
 ## Sürüm Notları
+
+### 2.1.0 — Semantik Arama + Tarayıcı Adımları + Ultra Yol Haritası (2026-07-09)
+
+- **Semantik arama (D4 tamam):** arama panelinde "semantic" modu — anlam bazlı sorgu; Gemini API veya OpenAI-uyumlu uç (Ollama ile tamamen yerel olabilir); dosya tabanlı artımlı vektör indeksi, `Build Semantic Index` komutu, benzerlik rozetleri
+- **Tarayıcı adımları (F3 tamam):** zincirde Browser step — ajan kendi tarayıcı MCP'siyle koşar; alan adı allowlist'i pazarlıksız (kapsamayan URL hiç çalışmaz), adım başı modal onay varsayılan; onFail kuralları işler
+- **ULTRA Gelişim Planı:** internet araştırmasına dayalı ikinci nesil yol haritası (G/H/I/J fazları — onay kuyruğu, maliyet anomalisi, eval seti, kanban pano, guardrail denetçisi…) — `Open Ultra Roadmap` komutu
+- Testler: 20 kontrol — sahte embedding sunucusuyla (OpenAI+Gemini şemaları) tam semantik hat, artımlılık/kalıcılık/prune, allowlist ve prompt korumaları
 
 ### 2.0.0 — Doğal Dil Komuta ve Dispatcher / Plan Faz F çekirdeği (2026-07-09)
 
