@@ -2,6 +2,12 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.11.0 — Viewer fixes: ↑ jump, per-model context gauge, timestamped export (2026-07-10)
+
+- **↑ turn jump fixed**: the up arrow on turn bands (and clicking an earlier row in the Turn breakdown table) did nothing. Cause: the bands are `position: sticky`, so every band already scrolled past reports its *stuck* position — pinned at the top of the viewport — and `scrollIntoView` on it is a no-op. Jumps now anchor on the turn's first message (which sits in normal flow) and offset by the band height, so both directions land the band at the top.
+- **Context gauge no longer assumes 200K**: the ceiling is now resolved from the session's current model (Fable 5 / Mythos 5 / Opus 4.6–4.8 / Sonnet 4.6+ → 1M; Haiku 4.5 and older generations → 200K). Unknown models show the raw context size with no percent and no amber/red coloring — no guessed ceiling. `agentFarm.contextWindowTokens` now defaults to **0 = auto**; set a value only to force a fixed ceiling.
+- **Export MD filenames carry a timestamp**: `session-<id>-YYYY-MM-DD_HHMMSS.md` (local time) — repeated exports of the same session no longer collide on the same suggested name.
+
 ## 2.10.0 — Terminal rendering remedies (2026-07-10)
 
 VS Code's terminal is xterm.js inside Chromium — long TUI sessions (claude) can hit rendering glitches there: ghost spaces while typing, lost/garbled lines. Two remedies, one command:

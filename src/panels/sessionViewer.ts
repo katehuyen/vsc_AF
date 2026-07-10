@@ -9,8 +9,10 @@ export interface ViewerDeps {
     extensionUri: vscode.Uri;
     getPricing(): PricingEngine;
     maxMessages(): number;
-    /** Context-window size used by the "Context now" gauge (agentFarm.contextWindowTokens). */
-    contextLimit(): number;
+    /** Context-window size for the "Context now" gauge, resolved from the session's
+     *  current model (agentFarm.contextWindowTokens > 0 overrides). 0 = unknown model —
+     *  the gauge then shows the raw token count without a percent or color. */
+    contextLimitFor(model: string): number;
     /** User-set session name (rename feature); wins over the transcript-derived title. */
     titleFor?(sessionId: string): string | undefined;
     /** Export MD remembers the last folder saved to; falls back to session cwd / home. */
@@ -80,6 +82,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
     const seen = new Set<string>();
     let cost = 0, errors = 0, toolCalls = 0, firstTs = 0, lastTs = 0;
     let ctxTokens = 0, ctxTs = 0;
+    let ctxModel = '';
     let title = '';
     let cwd = '';
     let permissionMode = '';
@@ -145,6 +148,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
                 ctxTokens = (msg.usage.input_tokens ?? 0) + (msg.usage.cache_read_input_tokens ?? 0) +
                     (msg.usage.cache_creation_input_tokens ?? 0) + (msg.usage.output_tokens ?? 0);
                 ctxTs = ts || ctxTs;
+                if (msg.model && msg.model !== '<synthetic>') { ctxModel = msg.model; }
             }
             let msgTokens = 0, msgCost = 0;
             const key = `${msg.id ?? ''}:${line.requestId ?? ''}`;
@@ -237,7 +241,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
         cost,
         errors,
         toolCalls,
-        context: { tokens: ctxTokens, ts: ctxTs, limit: deps.contextLimit() },
+        context: { tokens: ctxTokens, ts: ctxTs, limit: deps.contextLimitFor(ctxModel), model: ctxModel },
         turnCount: turnNo,
         turnTotals,
         turns,
@@ -332,7 +336,10 @@ export class SessionViewerPanel {
                 const dir = remembered && fs.existsSync(remembered) ? remembered
                     : typeof msg.cwd === 'string' && msg.cwd && fs.existsSync(msg.cwd) ? msg.cwd
                         : os.homedir();
-                const name = `session-${path.basename(this.file, '.jsonl').slice(0, 8)}-${new Date().toISOString().slice(0, 10)}.md`;
+                const d = new Date();
+                const p2 = (n: number) => String(n).padStart(2, '0');
+                const stamp = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}_${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}`;
+                const name = `session-${path.basename(this.file, '.jsonl').slice(0, 8)}-${stamp}.md`;
                 void vscode.window.showSaveDialog({
                     defaultUri: vscode.Uri.file(path.join(dir, name)),
                     filters: { Markdown: ['md'] }

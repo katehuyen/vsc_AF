@@ -48,7 +48,7 @@ import {
     applyMergedContent, buildMergeDraft, findDuplicateGroups, syncGroup
 } from './core/memorySync';
 import { SecretsVault } from './core/secrets';
-import { DEFAULT_PRICING, PriceRule, PricingEngine, totalTokens } from './core/pricing';
+import { contextWindowFor, DEFAULT_PRICING, PriceRule, PricingEngine, totalTokens } from './core/pricing';
 import { QualityStore, sampleQuality } from './core/quality';
 import { buildDailyDigest, buildFleetReport, buildOutputsDigest } from './core/report';
 import { SessionIndex, SessionInfo } from './core/sessions';
@@ -928,7 +928,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         extensionUri: context.extensionUri,
         getPricing: () => pricing,
         maxMessages: () => cfg().get<number>('maxTranscriptMessages', 400),
-        contextLimit: () => cfg().get<number>('contextWindowTokens', 200000),
+        contextLimitFor: (model: string) => {
+            const forced = cfg().get<number>('contextWindowTokens', 0);
+            return forced > 0 ? forced : contextWindowFor(model);
+        },
         titleFor: (sessionId: string) => sessionTitles()[sessionId],
         lastExportDir: () => context.globalState.get<string>('agentfarm.lastExportDir'),
         setLastExportDir: (dir: string) => { void context.globalState.update('agentfarm.lastExportDir', dir); },

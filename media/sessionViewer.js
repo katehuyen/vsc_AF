@@ -87,6 +87,19 @@
         render({ keepScroll: true });
     }
 
+    /** Scroll so a turn band sits at the top of the viewport. The bands are
+     *  position:sticky, so every band already scrolled past reports its STUCK
+     *  position (pinned at the top) — scrollIntoView on it is a no-op, which is
+     *  why upward jumps must anchor on the band's first message (in normal flow)
+     *  and offset by the band height. */
+    function scrollToTurn(n) {
+        const el = document.querySelector(`.turnhdr[data-turn="${n}"]`);
+        if (!el) { return; }
+        const anchor = el.nextElementSibling || el;
+        const y = anchor.getBoundingClientRect().top + window.scrollY - el.offsetHeight - 10;
+        window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
+    }
+
     /** Jump to the previous/next *rendered* turn band (filters may hide some turns). */
     function jumpTurn(from, dir) {
         const nums = Array.from(document.querySelectorAll('.turnhdr[data-turn]'))
@@ -95,8 +108,7 @@
         if (i < 0) { return; }
         const target = dir === 'prev' ? nums[i - 1] : nums[i + 1];
         if (target === undefined) { return; }
-        const el = document.querySelector(`.turnhdr[data-turn="${target}"]`);
-        if (el) { el.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
+        scrollToTurn(target);
     }
 
     function listHtml(msgs) {
@@ -433,8 +445,7 @@
                     const i = replay.msgs.findIndex(m => m.turn === n);
                     if (i >= 0) { replay.pos = i; renderReplayList(); }
                 } else {
-                    const el = document.querySelector(`.turnhdr[data-turn="${n}"]`);
-                    if (el) { el.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
+                    scrollToTurn(n);
                 }
             }));
             turnbox.addEventListener('change', ev => {

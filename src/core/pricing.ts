@@ -59,3 +59,20 @@ export function addUsage(a: Usage, b: Usage): void {
 export function totalTokens(u: Usage): number {
     return u.input + u.output + u.cacheWrite + u.cacheRead;
 }
+
+/** Known context-window sizes by model id. First match wins, so 1M-window
+ *  generations are listed before the 200K catch-alls of the same family.
+ *  Unknown models (including future ones) return 0 — the viewer then shows
+ *  the raw context size without a percent instead of guessing a ceiling. */
+const CONTEXT_WINDOWS: { re: RegExp; tokens: number }[] = [
+    { re: /fable|mythos/i, tokens: 1_000_000 },
+    { re: /opus-4-[678]/i, tokens: 1_000_000 },
+    { re: /sonnet-4-6|sonnet-5/i, tokens: 1_000_000 },
+    { re: /opus-4|sonnet-4|haiku-4|claude-3/i, tokens: 200_000 }
+];
+
+export function contextWindowFor(model: string): number {
+    if (!model) { return 0; }
+    const hit = CONTEXT_WINDOWS.find(c => c.re.test(model));
+    return hit ? hit.tokens : 0;
+}

@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.10.0",
+  "version": "2.11.0",
   "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
@@ -1120,8 +1120,8 @@
         },
         "agentFarm.contextWindowTokens": {
           "type": "number",
-          "default": 200000,
-          "description": "Model context-window size used by the session viewer's 'Context now' gauge (percent full + /compact hint)."
+          "default": 0,
+          "description": "Context-window ceiling for the session viewer's 'Context now' gauge. 0 = auto-detect from the session's model (unknown models show the raw token count without a percent); set a value to force a fixed ceiling."
         },
         "agentFarm.liveMonitor": {
           "type": "boolean",

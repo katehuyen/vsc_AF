@@ -130,13 +130,13 @@ Bir oturumun ham JSONL kaydını okunur konuşmaya çevirir:
 
 - Mesajlar renk kodludur: mavi = kullanıcı, yeşil = asistan, sarı = araç çağrısı, mor = araç sonucu. Hatalı araç sonuçları kırmızı kenarlıkla ve açık halde gelir.
 - Her asistan mesajında model, token ve maliyet görünür. Yalnızca araç çağrısı yapan (metinsiz) asistan adımlarının token'ı da kaybolmaz — ilk araç çağrısı satırında görünür (2.6.0).
-- **Tur bantları (2.6.0, 2.8.0'da belirginleştirildi):** her kullanıcı komutu yeni bir tur açar. Tur başlangıcı artık ince bir çizgi değil, **tam genişlikte renkli bir bant**: vurgu renkli sol kenar, kalın `Turn 3/12`, komutun ilk cümlesi ve o turun token/maliyeti. Bant **yapışkandır** — hızlı kaydırırken içinde olduğun turun bandı üstte sabit kalır, tur geçişleri kaçmaz. Banttaki **onay kutusu** o turun MD dışa aktarımına dahil olup olmayacağını seçer; **↑ ↓ okları** (2.9.0) kaydırmadan bir önceki/sonraki tura zıplatır — bant yapışkan olduğu için oklar hep elinin altındadır.
-- **⬇ Export MD (2.8.0):** o an gördüğün görünümü Markdown dosyasına aktarır — **ne görüyorsan onu**: Show chip'leri (örn. yalnız Dialog ya da yalnız Tool calls), metin filtresi ve replay konumu aynen uygulanır; seçimden çıkarılan turlar dışarıda kalır. Dosya başında oturum kimliği, süre, toplamlar ve uygulanan filtrelerin özeti bulunur. Kaydetme penceresi **en son kaydettiğin klasörde** açılır (2.9.0; ilk kullanımda oturumun kendi klasörü); kayıttan sonra dosya editörde açılır.
+- **Tur bantları (2.6.0, 2.8.0'da belirginleştirildi):** her kullanıcı komutu yeni bir tur açar. Tur başlangıcı artık ince bir çizgi değil, **tam genişlikte renkli bir bant**: vurgu renkli sol kenar, kalın `Turn 3/12`, komutun ilk cümlesi ve o turun token/maliyeti. Bant **yapışkandır** — hızlı kaydırırken içinde olduğun turun bandı üstte sabit kalır, tur geçişleri kaçmaz. Banttaki **onay kutusu** o turun MD dışa aktarımına dahil olup olmayacağını seçer; **↑ ↓ okları** (2.9.0) kaydırmadan bir önceki/sonraki tura zıplatır — bant yapışkan olduğu için oklar hep elinin altındadır (↑ okunun hiç kaydırmama hatası 2.11.0'da giderildi).
+- **⬇ Export MD (2.8.0):** o an gördüğün görünümü Markdown dosyasına aktarır — **ne görüyorsan onu**: Show chip'leri (örn. yalnız Dialog ya da yalnız Tool calls), metin filtresi ve replay konumu aynen uygulanır; seçimden çıkarılan turlar dışarıda kalır. Dosya başında oturum kimliği, süre, toplamlar ve uygulanan filtrelerin özeti bulunur. Kaydetme penceresi **en son kaydettiğin klasörde** açılır (2.9.0; ilk kullanımda oturumun kendi klasörü); önerilen dosya adı **tarih + saat damgası** taşır (`session-abcd1234-2026-07-10_143522.md`, 2.11.0) — aynı oturumu arka arkaya dışa aktarınca dosyalar çakışmaz. Kayıttan sonra dosya editörde açılır.
 - **Export seçimi (2.9.0):** tur seçimi iki yerden, **senkron** yapılır — turun bandındaki kutu ve Turn breakdown tablosundaki `md` kolonu aynı seçimi gösterir, birinden değiştirince öbürü anında güncellenir. Tablodaki **All / None / Invert** düğmeleri toplu seçim yapar; satırdaki **only** düğmesi tek hamlede "yalnız bu turu" seçer. Başlık satırı ve Export MD düğmesi seçim varken `12/37 in export` sayacını gösterir.
 - **Turn breakdown tablosu (2.7.0):** KPI kartlarının hemen altındaki açılır kutu tüm turları **tek tabloda** listeler: tur no, komutun ilk cümlesi, token, maliyet. Satıra tıkla → o turun ayracına atlar (replay'deyken oynatmayı o tura taşır). Tur toplamları artık oturum toplamıyla birebir tutar — düşünme (thinking) adımlarının token'ı da turuna yazılır.
 - **Show filtresi (2.7.0):** mesaj listesinin üstündeki chip satırı türlere göre filtreler: **All · Dialog · User · Assistant · Tool calls · Results · Errors**. "Dialog" yalnız sen + asistan konuşmasını bırakır (araç trafiği gizlenir); chip'ler çoklu seçilebilir. Filtre **replay'i de etkiler** — Dialog seçiliyken replay'de yalnız diyalog akar.
 - **⏵ Resume (2.7.0):** sağ üstteki düğme bu oturumu terminalde `claude --resume` ile devam ettirir.
-- **Context now kartı (2.6.0):** son isteğin bağlam boyutu (prompt + cache + çıktı) ve `agentFarm.contextWindowTokens` (varsayılan 200K) içindeki yüzdesi. %70'te sararır ve `/compact` ya da `/clear` önerir, %90'da kızarır. Oturum çalışırken kayıt her değiştiğinde kart **canlı** tazelenir — "bağlam doldu mu, compact zamanı mı?" sorusunun anlık cevabı.
+- **Context now kartı (2.6.0, 2.11.0'da model-farkındalıklı):** son isteğin bağlam boyutu (prompt + cache + çıktı) ve **oturumun modelinin bağlam penceresi** içindeki yüzdesi. Tavan artık sabit 200K değil, modelden bulunur: Fable 5 / Mythos 5 / Opus 4.6–4.8 / Sonnet 4.6+ → 1M; Haiku 4.5 ve daha eski nesiller → 200K. %70'te sararır ve `/compact` ya da `/clear` önerir, %90'da kızarır. **Model tabloda yoksa** yüzde ve renk gösterilmez — sadece ham bağlam boyutu yazılır (tahmini tavan uydurulmaz). `agentFarm.contextWindowTokens` ayarına değer girerek sabit tavan zorlanabilir (0 = otomatik). Oturum çalışırken kayıt her değiştiğinde kart **canlı** tazelenir — "bağlam doldu mu, compact zamanı mı?" sorusunun anlık cevabı.
 - Üstteki arama kutusu mesajları ve araç adlarını filtreler.
 - **Open raw JSONL** ham kaydı editörde açar.
 - Çok uzun oturumlarda son N mesaj gösterilir (`agentFarm.maxTranscriptMessages` ayarı, varsayılan 400).
@@ -915,7 +915,7 @@ Gürültü koruması: önceki hafta 0.50$'ın, bu hafta 1$'ın altındaysa uyar�
 | `agentFarm.contextBudgetTokens` | 8000 | Sabit bağlam yükü bütçesi |
 | `agentFarm.windowTokenLimit` | 0 (kapalı) | 5 saatlik pencere limiti (yüzde çubuğu için) |
 | `agentFarm.maxTranscriptMessages` | 400 | Oturum görüntüleyicide gösterilen en fazla mesaj |
-| `agentFarm.contextWindowTokens` | 200000 | Oturum görüntüleyicideki "Context now" göstergesinin tavanı (yüzde + /compact önerisi) |
+| `agentFarm.contextWindowTokens` | 0 (otomatik) | "Context now" tavanı. 0 = oturumun modelinden otomatik bulunur (bilinmeyen modelde yüzde gösterilmez); sabit tavan zorlamak için değer gir |
 | `agentFarm.includeUnmatchedProjects` | false | Ajan köklerine eşleşmeyen oturumları da dahil et |
 | `agentFarm.pricing` | yukarıdaki tablo | Model fiyat kuralları |
 | `agentFarm.liveMonitor` | true | Canlı olay dinleyicisini çalıştır |
@@ -1079,6 +1079,12 @@ Tamamlanan fazlar (hepsi 2026-07-08):
 **Bundan sonrası ayrı ve ayrıntılı bir belgede yaşıyor:** komut paletinden **Agent Farm: Open Development Plan** — uzak görüşlü gelişim planı: olay tetikleyicileri, doğrulayıcı adımlar, MCP paneli, n8n/webhook köprüsü, multimedya üretim hattı (Kling/Seedance/Nano Banana sınıfı modellerle içerik fabrikası), zeki gözetim, çoklu makine ve vizyoner ufuk. Kodlama o plandaki öncelik sırasını izler.
 
 ## Sürüm Notları
+
+### 2.11.0 — ↑ Zıplama Düzeltmesi, Model Bazlı Context Tavanı, Damgalı Export (2026-07-10)
+
+- **↑ oku düzeltildi:** tur bandındaki ↑ (ve Turn breakdown tablosunda yukarıdaki bir tura tıklama) hiçbir şey yapmıyordu. Neden: bantlar yapışkan (`position: sticky`) olduğundan geçilmiş her bant tarayıcıya "zaten ekranın tepesindeyim" diyor, `scrollIntoView` da yerinden kıpırdamıyordu. Zıplama artık turun ilk mesajını çapa alıp bant yüksekliği kadar pay bırakarak kaydırıyor — iki yön de çalışıyor.
+- **Context now tavanı modele göre:** sabit 200K varsayımı kalktı. Tavan oturumun modelinden bulunur (Fable 5 / Mythos 5 / Opus 4.6–4.8 / Sonnet 4.6+ → 1M; Haiku 4.5 ve eski nesiller → 200K); model tabloda yoksa yüzde/renk yok, sadece ham bağlam boyutu. `agentFarm.contextWindowTokens` varsayılanı artık **0 = otomatik**.
+- **Export MD dosya adına zaman damgası:** `session-<id>-YYYY-MM-DD_HHMMSS.md` (yerel saat) — aynı gün içindeki tekrarlı dışa aktarımlar aynı adı önermez.
 
 ### 2.10.0 — Terminal Render Çareleri (2026-07-10)
 
