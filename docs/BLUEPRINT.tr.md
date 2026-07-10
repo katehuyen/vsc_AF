@@ -130,7 +130,8 @@ Bir oturumun ham JSONL kaydını okunur konuşmaya çevirir:
 
 - Mesajlar renk kodludur: mavi = kullanıcı, yeşil = asistan, sarı = araç çağrısı, mor = araç sonucu. Hatalı araç sonuçları kırmızı kenarlıkla ve açık halde gelir.
 - Her asistan mesajında model, token ve maliyet görünür. Yalnızca araç çağrısı yapan (metinsiz) asistan adımlarının token'ı da kaybolmaz — ilk araç çağrısı satırında görünür (2.6.0).
-- **Tur ayraçları (2.6.0):** her kullanıcı komutu yeni bir tur açar; ayraç satırında `Turn 3/12 · 45.2K tok · $0.31` — o turun toplam token ve maliyeti. Üstteki Tokens kartındaki oturum toplamının turlara dökümü budur.
+- **Tur bantları (2.6.0, 2.8.0'da belirginleştirildi):** her kullanıcı komutu yeni bir tur açar. Tur başlangıcı artık ince bir çizgi değil, **tam genişlikte renkli bir bant**: vurgu renkli sol kenar, kalın `Turn 3/12`, komutun ilk cümlesi ve o turun token/maliyeti. Bant **yapışkandır** — hızlı kaydırırken içinde olduğun turun bandı üstte sabit kalır, tur geçişleri kaçmaz. Banttaki **onay kutusu** o turun MD dışa aktarımına dahil olup olmayacağını seçer (aşağıya bak).
+- **⬇ Export MD (2.8.0):** o an gördüğün görünümü Markdown dosyasına aktarır — **ne görüyorsan onu**: Show chip'leri (örn. yalnız Dialog ya da yalnız Tool calls), metin filtresi ve replay konumu aynen uygulanır; bandı işaretsiz bırakılan turlar dışarıda kalır. Dosya başında oturum kimliği, süre, toplamlar ve uygulanan filtrelerin özeti bulunur. Kaydetme penceresi oturumun kendi klasöründe açılır; kayıttan sonra dosya editörde açılır.
 - **Turn breakdown tablosu (2.7.0):** KPI kartlarının hemen altındaki açılır kutu tüm turları **tek tabloda** listeler: tur no, komutun ilk cümlesi, token, maliyet. Satıra tıkla → o turun ayracına atlar (replay'deyken oynatmayı o tura taşır). Tur toplamları artık oturum toplamıyla birebir tutar — düşünme (thinking) adımlarının token'ı da turuna yazılır.
 - **Show filtresi (2.7.0):** mesaj listesinin üstündeki chip satırı türlere göre filtreler: **All · Dialog · User · Assistant · Tool calls · Results · Errors**. "Dialog" yalnız sen + asistan konuşmasını bırakır (araç trafiği gizlenir); chip'ler çoklu seçilebilir. Filtre **replay'i de etkiler** — Dialog seçiliyken replay'de yalnız diyalog akar.
 - **⏵ Resume (2.7.0):** sağ üstteki düğme bu oturumu terminalde `claude --resume` ile devam ettirir.
@@ -286,18 +287,26 @@ Otomasyonun kalbi (0.8.0): işler yalnızca saatle değil, **olayla** başlar. T
 
 ### Eylem ve Korumalar
 
-Tetik ya bir **görev** başlatır (prompt'ta `{watch}` izlenen yolu verir) ya bir **workflow** koşturur. Fırtına korumaları yerleşiktir:
+Tetik ateşleyince üç eylemden birini yapar (sihirbaz "What should it do when it fires?" diye sorar):
 
-- **Debounce** (varsayılan 10 sn): art arda değişiklikler tek ateşe iner.
-- **Cooldown** (60 sn): ateş sonrası sessiz dönem.
-- **Saatlik tavan** (6/saat): aşılırsa uyarıyla atlanır.
+- **Run a task on an agent you pick** — bir sonraki adımda **ajanı sen seçersin**, sonra prompt'u yazarsın (prompt'ta `{watch}` izlenen yolu, `{payload}` webhook gövdesini verir). "Olay olunca şu ajana şu komutu ver" kurulumunun yolu budur.
+- **Dispatch — route to the best agent automatically** — sabit ajan yok; her ateşlemede kurallar (`agentFarm.dispatchRules`) + ucuz model sınıflandırıcısı işi en uygun ajana yönlendirir. Ajan seçme adımı **bilerek** yoktur.
+- **Run a workflow** — kayıtlı bir zinciri koşturur.
+
+Fırtına korumaları yerleşiktir ve **2.8.0'dan itibaren her tetik için ayrı ayarlanır** — sihirbazın son adımı "Default timing / Customize timing…" diye sorar:
+
+- **Debounce** (varsayılan watch'ta 10 sn): art arda değişiklikler tek ateşe iner.
+- **Cooldown** (varsayılan 60 sn): ateş sonrası sessiz dönem.
+- **Saatlik tavan** (varsayılan 6/saat, 0 = sınırsız): aşılırsa uyarıyla atlanır.
 - Kendi çıktı arşivini izleyen tetik kurulamazsa/kurulmuşsa devre dışı kalır (geri besleme döngüsü koruması).
 
-Yönetim: **Add Trigger** sihirbazı; tetik satırında ▶ (elle ateşle), aç/kapat, sil; kaç kez ateşlediği ve son ateşleme zamanı satırda görünür. Watch yolu kaybolursa satır kırmızı "PATH MISSING" gösterir.
+Yönetim: **Add Trigger** sihirbazı; tetik satırında ▶ (elle ateşle), aç/kapat, sil; sağ tık → **Edit Trigger** ile ad, prompt, hedef ajan, debounce, cooldown ve saatlik tavan sonradan değiştirilir (2.8.0 — `farm-tasks.json`'ı elle düzenlemek artık gerekmez). Kaç kez ateşlediği ve son ateşleme zamanı satırda görünür. Watch yolu kaybolursa satır kırmızı "PATH MISSING" gösterir.
 
 ## Çoklu-Ajan İş Akışları
 
 Faz 4'ün en güçlü aracı: **Workflows** — birden çok ajanın sırayla çalıştığı zincirler. `Agent Farm: New Multi-Agent Workflow…` ile kurulur: adım adım ajan + başlık + prompt + mod seçersin.
+
+Sihirbazı bitirmek (2.8.0'da düzeltildi): en az bir adım ekledikten sonra ajan listesinin **en üstünde** `✓ Finish & save workflow` görünür — onu seç, zincir kaydedilir ve Tasks görünümündeki **Workflows** bölümüne düşer. Esc'ye basarsan emek çöpe gitmez: "Save / Discard" diye sorar. Bir adımın ortasında (başlık/prompt kutusunda) vazgeçersen yalnızca **o adım** iptal olur, sihirbaz adım seçicide kalır. Adım kurulurken sorulan "If this step fails: stop the workflow" seçeneği zinciri bitirme komutu değildir — o adım **hata verirse** ne olacağını seçer (bkz. [Koşullu Dallanma](#kosullu-dallanma)).
 
 - Bir adım **done** olunca sonraki adım kendiliğinden başlar (farklı ajan olabilir). Adım **failed** olursa zincir durur ve bildirim düşer.
 - **Devir mekanizması:** Bir adımın prompt'unda `{prev_output}` yazarsan, önceki adımın arşivlenmiş çıktı dosyasının yolu oraya yerleştirilir. Sonraki ajan o dosyayı okuyarak işe başlar — ajandan ajana gerçek bilgi devri.
@@ -1060,6 +1069,16 @@ Tamamlanan fazlar (hepsi 2026-07-08):
 **Bundan sonrası ayrı ve ayrıntılı bir belgede yaşıyor:** komut paletinden **Agent Farm: Open Development Plan** — uzak görüşlü gelişim planı: olay tetikleyicileri, doğrulayıcı adımlar, MCP paneli, n8n/webhook köprüsü, multimedya üretim hattı (Kling/Seedance/Nano Banana sınıfı modellerle içerik fabrikası), zeki gözetim, çoklu makine ve vizyoner ufuk. Kodlama o plandaki öncelik sırasını izler.
 
 ## Sürüm Notları
+
+### 2.8.0 — Tur Bantları, MD Dışa Aktarım, Sihirbaz ve Tetik Düzeltmeleri (2026-07-10)
+
+Üçüncü geri bildirim turu:
+
+- **Belirgin tur bantları:** silik `Turn n/m` çizgisi tam genişlikte **renkli ve yapışkan** banda dönüştü — vurgu renkli kenar, kalın tur numarası, komut özeti, token/maliyet. Kaydırırken aktif turun bandı üstte sabit kalır.
+- **⬇ Export MD:** görüntüleyicideki **o anki görünüm** Markdown dosyasına iner — Show chip'leri (yalnız Dialog, yalnız Tool calls…), metin filtresi ve replay konumu aynen uygulanır. Her tur bandındaki onay kutusuyla turlar tek tek dahil/hariç edilir. Dosya başına oturum kimliği, toplamlar ve filtre özeti yazılır; kayıt sonrası dosya editörde açılır.
+- **Workflow sihirbazı düzeltildi:** `✓ Finish & save workflow` artık adım seçicinin **en üstünde**; adım varken Esc'ye basmak sihirbazı sessizce çöpe atmak yerine **Save / Discard** diye sorar ("workflow oluşturamıyorum" şikâyetinin kökü buydu); adım ortasında vazgeçmek yalnız o adımı iptal eder. Adım sorusundaki "Stop workflow" etiketi netleşti: "If this step fails: stop the workflow" — bu, hata durumu seçimidir, sihirbazı bitirmez.
+- **Tetik başına zamanlama:** Add Trigger sihirbazının son adımı **Default timing / Customize timing…** — debounce, cooldown ve saatlik tavan artık her tetik için ayrı ayarlanır. Kurulu tetikte sağ tık → **Edit Trigger**: ad, prompt, hedef ajan ve üç zamanlama alanı panelden düzenlenir; `farm-tasks.json`'ı elle açmak gerekmez.
+- **Tetik eylemi netleşti:** "Run a task **on an agent you pick**" (sonraki adımda ajanı sen seçersin) ile "Dispatch — route to the best agent **automatically**" (ajan seçimi bilerek yok; kural + sınıflandırıcı yönlendirir) ayrımı etikette; ajan seçici pencere odak kaybında artık sessizce kapanmıyor.
 
 ### 2.7.0 — Oturum Görüntüleyici Cilası (2026-07-10)
 

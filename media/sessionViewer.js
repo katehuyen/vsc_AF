@@ -15,6 +15,8 @@
         { id: 'error', label: 'Errors', match: m => m.isError }
     ];
     let roleSel = new Set();
+    // Turns unticked in their band are left out of Export MD (default: all included).
+    const exportOff = new Set();
     // G4 replay state: play messages 0..pos step by step over the *filtered* list,
     // honoring real gaps.
     const replay = { active: false, playing: false, pos: 0, speed: 2, timer: null, msgs: [] };
@@ -55,13 +57,23 @@
         return DATA.messages.filter(m => matchesRole(m) && matchesText(m));
     }
 
+    function turnInfo(n) {
+        return (DATA.turns || []).find(x => x.n === n);
+    }
+
     function turnHdrHtml(m) {
         if (!m.turnStart || !m.turn) { return ''; }
         const t = (DATA.turnTotals || {})[m.turn];
         const total = t && (t.tokens || t.cost)
-            ? ` · ${C.fmtTok(t.tokens)} tok · ${C.fmtUSD(t.cost)}`
+            ? `${C.fmtTok(t.tokens)} tok · ${C.fmtUSD(t.cost)}`
             : '';
-        return `<div class="turnhdr" data-turn="${m.turn}"><span>Turn ${m.turn}/${DATA.turnCount || '?'}${total}</span></div>`;
+        const info = turnInfo(m.turn);
+        return `<div class="turnhdr" data-turn="${m.turn}">
+            <label class="turnsel" title="Include this turn in Export MD">
+                <input type="checkbox" data-turnsel="${m.turn}"${exportOff.has(m.turn) ? '' : ' checked'}></label>
+            <span class="turnnum">Turn ${m.turn}/${DATA.turnCount || '?'}</span>
+            <span class="turnlabel">${C.esc((info && info.label) || '')}</span>
+            <span class="turnstats">${total}</span></div>`;
     }
 
     function listHtml(msgs) {
@@ -159,6 +171,57 @@
         render();
     }
 
+    // ---------- Markdown export (exports exactly the current view) ----------
+
+    function mdFence(s) {
+        return s.includes('```') ? '````' : '```';
+    }
+
+    function exportMarkdown() {
+        const source = replay.active ? replay.msgs.slice(0, replay.pos + 1) : visibleMsgs();
+        const msgs = source.filter(m => !m.turn || !exportOff.has(m.turn));
+        const lines = [`# ${DATA.title}`, ''];
+        lines.push(`- Session: \`${DATA.sessionId}\``);
+        if (DATA.cwd) { lines.push(`- Folder: \`${DATA.cwd}\``); }
+        lines.push(`- Span: ${fmtTime(DATA.firstTs)} → ${fmtTime(DATA.lastTs)}`);
+        lines.push(`- Total: ${C.fmtTok(DATA.totalTokens)} tok · ${C.fmtUSD(DATA.cost)} · ${DATA.turnCount || 0} turns · ${DATA.toolCalls} tool calls`);
+        const view = [];
+        if (roleSel.size) { view.push('show: ' + [...roleSel].join(', ')); }
+        if (filter) { view.push(`text filter: "${filter}"`); }
+        if (exportOff.size) { view.push(`excluded turns: ${[...exportOff].sort((a, b) => a - b).join(', ')}`); }
+        if (replay.active) { view.push(`replay position: ${replay.pos + 1}/${replay.msgs.length}`); }
+        if (view.length) { view.push(`${msgs.length} of ${DATA.messages.length} messages`); lines.push(`- View: ${view.join(' · ')}`); }
+        lines.push('', '---');
+        for (const m of msgs) {
+            if (m.turnStart && m.turn) {
+                const t = (DATA.turnTotals || {})[m.turn];
+                const info = turnInfo(m.turn);
+                const stats = t && (t.tokens || t.cost) ? ` · ${C.fmtTok(t.tokens)} tok · ${C.fmtUSD(t.cost)}` : '';
+                lines.push('', `## Turn ${m.turn}/${DATA.turnCount || '?'}${info && info.label ? ' — ' + info.label : ''}${stats}`);
+            }
+            const bits = [
+                m.ts ? new Date(m.ts).toLocaleTimeString() : '',
+                m.model ? m.model.replace(/^claude-/, '') : '',
+                m.tokens ? C.fmtTok(m.tokens) + ' tok' : '',
+                m.cost ? C.fmtUSD(m.cost) : '',
+                m.sidechain ? 'subagent' : '',
+                m.isError ? '⚠ ERROR' : ''
+            ].filter(Boolean).join(' · ');
+            if (m.role === 'tool') {
+                const f = mdFence(m.input || '');
+                lines.push('', `**TOOL CALL — ${m.tool || '?'}**${bits ? ' (' + bits + ')' : ''}`, '', f + 'json', m.input || '', f);
+            } else if (m.role === 'toolResult') {
+                const f = mdFence(m.text || '');
+                lines.push('', `**TOOL RESULT**${bits ? ' (' + bits + ')' : ''}`, '', f, m.text || '(empty result)', f);
+            } else {
+                const roleLabel = { user: 'USER', assistant: 'ASSISTANT', system: 'SYSTEM' }[m.role] || m.role.toUpperCase();
+                lines.push('', `**${roleLabel}**${bits ? ' (' + bits + ')' : ''}`, '', m.text || '');
+            }
+        }
+        lines.push('');
+        return lines.join('\n');
+    }
+
     // ---------- main render ----------
 
     function chipRowHtml() {
@@ -214,10 +277,22 @@
                     position:sticky; top:6px; z-index:20;
                     background:var(--vscode-editor-background, var(--vscode-sideBar-background)); }
                 .replaybar .muted { margin-left:auto; }
-                .turnhdr { display:flex; align-items:center; gap:10px; margin:16px 0 4px;
-                    color:var(--vscode-descriptionForeground); font-size:11px; white-space:nowrap; }
-                .turnhdr::before, .turnhdr::after { content:''; height:1px; flex:1;
-                    background:var(--vscode-panel-border); }
+                /* Turn band: full-width, tinted and sticky — turn boundaries must stay
+                   obvious while scrolling fast through a long transcript. */
+                .turnhdr { display:flex; align-items:center; gap:10px; margin:26px 0 10px;
+                    padding:7px 12px; border-radius:4px; font-size:13px;
+                    background:var(--vscode-editor-inactiveSelectionBackground, #3a3d41);
+                    background:color-mix(in srgb, var(--vscode-textLink-foreground) 14%, var(--vscode-editor-background));
+                    border-left:4px solid var(--vscode-textLink-foreground);
+                    position:sticky; top:0; z-index:10; }
+                .turnhdr .turnnum { font-weight:700; white-space:nowrap;
+                    color:var(--vscode-textLink-foreground); }
+                .turnhdr .turnlabel { flex:1; overflow:hidden; text-overflow:ellipsis;
+                    white-space:nowrap; opacity:.9; }
+                .turnhdr .turnstats { white-space:nowrap; font-size:11px;
+                    color:var(--vscode-descriptionForeground); }
+                .turnhdr .turnsel { display:flex; align-items:center; cursor:pointer; }
+                .turnhdr .turnsel input { cursor:pointer; margin:0; }
                 .turnbox { margin:10px 0; }
                 .turnbox summary { font-size:12px; }
                 .turnbox table { margin-top:6px; }
@@ -236,6 +311,7 @@
                 <div class="btnrow">
                     <button id="resume">⏵ Resume</button>
                     <button class="secondary" id="replaytoggle">${replay.active ? '✕ Exit replay' : '▶ Replay'}</button>
+                    <button class="secondary" id="exportmd" title="Exports what you see: active filters apply; unticked turn bands are left out">⬇ Export MD</button>
                     <button class="secondary" id="refresh">Refresh</button>
                     <button class="secondary" id="raw">Open raw JSONL</button>
                     <button class="secondary" data-guide="oturum-goruntuleyici">? Guide</button>
@@ -281,6 +357,15 @@
         document.getElementById('raw').addEventListener('click', () => vscode.postMessage({ type: 'openRaw' }));
         document.getElementById('resume').addEventListener('click', () =>
             vscode.postMessage({ type: 'resume', cwd: DATA.cwd }));
+        document.getElementById('exportmd').addEventListener('click', () =>
+            vscode.postMessage({ type: 'exportMd', md: exportMarkdown(), cwd: DATA.cwd }));
+        // Delegated: turn checkboxes survive the filter box re-rendering #msgs.
+        document.getElementById('msgs').addEventListener('change', ev => {
+            const cb = ev.target && ev.target.closest ? ev.target.closest('input[data-turnsel]') : null;
+            if (!cb) { return; }
+            const n = Number(cb.dataset.turnsel);
+            if (cb.checked) { exportOff.delete(n); } else { exportOff.add(n); }
+        });
         document.querySelectorAll('[data-guide]').forEach(el =>
             el.addEventListener('click', () => vscode.postMessage({ type: 'openGuide', anchor: el.dataset.guide })));
 

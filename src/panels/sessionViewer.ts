@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { PricingEngine, totalTokens, Usage } from '../core/pricing';
@@ -315,6 +316,26 @@ export class SessionViewerPanel {
             case 'refresh':
                 this.panel.webview.postMessage({ type: 'data', data: buildData(this.file, this.deps) });
                 break;
+            case 'exportMd': {
+                if (typeof msg.md !== 'string' || !msg.md) { break; }
+                const md = msg.md;
+                const cwd = typeof msg.cwd === 'string' && msg.cwd && fs.existsSync(msg.cwd)
+                    ? msg.cwd : os.homedir();
+                const name = `session-${path.basename(this.file, '.jsonl').slice(0, 8)}-${new Date().toISOString().slice(0, 10)}.md`;
+                void vscode.window.showSaveDialog({
+                    defaultUri: vscode.Uri.file(path.join(cwd, name)),
+                    filters: { Markdown: ['md'] }
+                }).then(uri => {
+                    if (!uri) { return; }
+                    try {
+                        fs.writeFileSync(uri.fsPath, md, 'utf8');
+                        void vscode.window.showTextDocument(uri);
+                    } catch (e) {
+                        void vscode.window.showErrorMessage(`Agent Farm: export failed — ${String(e)}`);
+                    }
+                });
+                break;
+            }
             case 'openGuide':
                 vscode.commands.executeCommand('agentfarm.openGuide', msg.anchor);
                 break;

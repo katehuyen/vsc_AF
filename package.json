@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.7.0",
+  "version": "2.8.0",
   "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
@@ -419,6 +419,12 @@
         "title": "Fire Now",
         "category": "Agent Farm",
         "icon": "$(play)"
+      },
+      {
+        "command": "agentfarm.editTrigger",
+        "title": "Edit Trigger (prompt, agent, timing)",
+        "category": "Agent Farm",
+        "icon": "$(edit)"
       },
       {
         "command": "agentfarm.openTaskHistory",
@@ -1025,9 +1031,14 @@
           "group": "1_trig@1"
         },
         {
+          "command": "agentfarm.editTrigger",
+          "when": "view == agentfarm.tasks && viewItem =~ /trigger(-webhook)?$/",
+          "group": "1_trig@2"
+        },
+        {
           "command": "agentfarm.copyWebhookUrl",
           "when": "view == agentfarm.tasks && viewItem == trigger-webhook",
-          "group": "1_trig@2"
+          "group": "1_trig@3"
         },
         {
           "command": "agentfarm.addMcpServer",

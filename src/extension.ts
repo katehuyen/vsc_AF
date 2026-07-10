@@ -1060,7 +1060,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (id) { return agents.find(a => a.id === id); }
         const pick = await vscode.window.showQuickPick(
             agents.map(a => ({ label: a.name, description: a.dir, agent: a })),
-            { placeHolder: 'Select an agent' }
+            { placeHolder: 'Select an agent', ignoreFocusOut: true }
         );
         return pick?.agent;
     };
@@ -1728,11 +1728,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
             const actionPick = await vscode.window.showQuickPick(
                 [
-                    { label: '$(play) Run a task', id: 'task' },
-                    { label: '$(arrow-swap) Dispatch — route to the best agent', description: 'rules + cheap-model classifier decide per firing', id: 'dispatch' },
+                    { label: '$(play) Run a task on an agent you pick', description: 'next: choose the agent, then the prompt', id: 'task' },
+                    { label: '$(arrow-swap) Dispatch — route to the best agent automatically', description: 'no fixed agent: rules + cheap-model classifier decide per firing', id: 'dispatch' },
                     ...(taskManager.workflows.length ? [{ label: '$(type-hierarchy-sub) Run a workflow', id: 'workflow' }] : [])
                 ],
-                { placeHolder: 'What should it do?', ignoreFocusOut: true }
+                { placeHolder: 'What should it do when it fires?', ignoreFocusOut: true }
             );
             if (!actionPick) { return; }
 
@@ -1768,19 +1768,43 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 };
             }
 
+            // Per-trigger timing: defaults are fine for most, but every trigger can be tuned
+            // here or later via right-click → Edit Trigger (values are read at fire time).
+            const defDebounce = typePick.type === 'watch' ? 10 : 1;
+            let debounceSec = defDebounce, cooldownSec = 60, maxPerHour = 6;
+            const timingPick = await vscode.window.showQuickPick(
+                [
+                    { label: '$(watch) Default timing', description: `debounce ${defDebounce}s · cooldown 60s · max 6/h`, custom: false },
+                    { label: '$(gear) Customize timing…', description: 'set debounce, cooldown and hourly cap for this trigger', custom: true }
+                ],
+                { placeHolder: 'Trigger timing (Esc = defaults)', ignoreFocusOut: true }
+            );
+            if (timingPick?.custom) {
+                const askNum = async (label: string, value: number, min: number) => {
+                    const v = await vscode.window.showInputBox({
+                        prompt: label, value: String(value), ignoreFocusOut: true,
+                        validateInput: s => /^\d+$/.test(s) && Number(s) >= min ? undefined : `Enter a whole number ≥ ${min}`
+                    });
+                    return v === undefined ? undefined : Number(v);
+                };
+                debounceSec = await askNum('Debounce seconds — quiet time after a change before firing', debounceSec, 1) ?? debounceSec;
+                cooldownSec = await askNum('Cooldown seconds — minimum gap between two firings', cooldownSec, 0) ?? cooldownSec;
+                maxPerHour = await askNum('Max firings per hour (0 = unlimited)', maxPerHour, 0) ?? maxPerHour;
+            }
+
             taskManager.addTrigger({
                 title, type: typePick.type, watchPath, hookEvent, hookAgent, token, action,
-                debounceSec: typePick.type === 'watch' ? 10 : 1,
-                cooldownSec: 60, maxPerHour: 6, enabled: true
+                debounceSec, cooldownSec, maxPerHour, enabled: true
             });
+            const timing = `debounce ${debounceSec}s, cooldown ${cooldownSec}s, max ${maxPerHour || '∞'}/h`;
             if (typePick.type === 'webhook' && token) {
                 const url = `http://127.0.0.1:${cfg().get<number>('livePort', 8377)}/trigger/${token}`;
                 await vscode.env.clipboard.writeText(url);
                 void vscode.window.showInformationMessage(
-                    `Agent Farm: webhook trigger armed — URL copied to clipboard: ${url} (POST; body JSON'u {payload} olarak göreve girer).`);
+                    `Agent Farm: webhook trigger armed — URL copied to clipboard: ${url} (POST; body JSON'u {payload} olarak göreve girer; ${timing}).`);
             } else {
                 void vscode.window.showInformationMessage(
-                    `Agent Farm: trigger "${title}" armed. (debounce 10s, cooldown 60s, max 6/h — edit in farm-tasks.json if needed)`);
+                    `Agent Farm: trigger "${title}" armed (${timing} — right-click the trigger to edit).`);
             }
         }),
 
@@ -1795,6 +1819,76 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }),
         vscode.commands.registerCommand('agentfarm.fireTrigger', (node?: TaskNode) => {
             if (node?.kind === 'trigger') { triggerManager.fire(node.trigger, 'manual'); }
+        }),
+        vscode.commands.registerCommand('agentfarm.editTrigger', async (node?: TaskNode) => {
+            if (node?.kind !== 'trigger') { return; }
+            const t = node.trigger;
+            const fields = [
+                { label: '$(edit) Rename', description: t.title, id: 'title' },
+                ...(t.action.kind !== 'workflow'
+                    ? [{ label: '$(comment) Prompt', description: t.action.prompt.replace(/\s+/g, ' ').slice(0, 60), id: 'prompt' }] : []),
+                ...(t.action.kind === 'task'
+                    ? [{ label: '$(person) Agent', description: t.action.agentName, id: 'agent' }] : []),
+                { label: '$(watch) Debounce seconds', description: String(t.debounceSec), id: 'debounce' },
+                { label: '$(history) Cooldown seconds', description: String(t.cooldownSec), id: 'cooldown' },
+                { label: '$(dashboard) Max firings per hour (0 = unlimited)', description: String(t.maxPerHour), id: 'cap' }
+            ];
+            const pick = await vscode.window.showQuickPick(fields,
+                { placeHolder: `Edit trigger "${t.title}"`, ignoreFocusOut: true });
+            if (!pick) { return; }
+            const askNum = async (label: string, value: number, min: number) => {
+                const v = await vscode.window.showInputBox({
+                    prompt: label, value: String(value), ignoreFocusOut: true,
+                    validateInput: s => /^\d+$/.test(s) && Number(s) >= min ? undefined : `Enter a whole number ≥ ${min}`
+                });
+                return v === undefined ? undefined : Number(v);
+            };
+            switch (pick.id) {
+                case 'title': {
+                    const v = await vscode.window.showInputBox({
+                        prompt: 'Trigger name', value: t.title, ignoreFocusOut: true });
+                    if (!v) { return; }
+                    t.title = v;
+                    if (t.action.kind !== 'workflow') { t.action.title = v; }
+                    break;
+                }
+                case 'prompt': {
+                    if (t.action.kind === 'workflow') { return; }
+                    const v = await vscode.window.showInputBox({
+                        prompt: 'Task prompt — {watch} = watched path, {payload} = webhook body',
+                        value: t.action.prompt, ignoreFocusOut: true });
+                    if (!v) { return; }
+                    t.action.prompt = v;
+                    break;
+                }
+                case 'agent': {
+                    if (t.action.kind !== 'task') { return; }
+                    const agent = await resolveAgent(undefined);
+                    if (!agent) { return; }
+                    t.action.agentId = agent.id;
+                    t.action.agentName = agent.name;
+                    break;
+                }
+                case 'debounce': {
+                    const v = await askNum('Debounce seconds — quiet time after a change before firing', t.debounceSec, 1);
+                    if (v === undefined) { return; }
+                    t.debounceSec = v;
+                    break;
+                }
+                case 'cooldown': {
+                    const v = await askNum('Cooldown seconds — minimum gap between two firings', t.cooldownSec, 0);
+                    if (v === undefined) { return; }
+                    t.cooldownSec = v;
+                    break;
+                }
+                case 'cap': {
+                    const v = await askNum('Max firings per hour (0 = unlimited)', t.maxPerHour, 0);
+                    if (v === undefined) { return; }
+                    t.maxPerHour = v;
+                    break;
+                }
+            }
+            taskManager.updateTrigger(t);
         }),
 
         vscode.commands.registerCommand('agentfarm.openTaskHistory', async () => {
@@ -1870,38 +1964,49 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const stepNo = steps.length + 1;
                 const agentPick = await vscode.window.showQuickPick(
                     [
+                        // Finish sits on top once there is something to save — bottom of a long
+                        // agent list is invisible, and Esc used to silently discard everything.
+                        ...(steps.length ? [{ label: '$(check) Finish & save workflow', description: `save "${title}" with ${steps.length} step(s)`, agent: undefined as AgentInfo | undefined, isWebhook: false, isMedia: false, isBrowser: false }] : []),
                         ...agents.map(a => ({ label: a.name, description: a.dir, agent: a as AgentInfo | undefined, isWebhook: false, isMedia: false, isBrowser: false })),
                         { label: '$(globe) Webhook step', description: 'HTTP call to n8n/Make/any URL — no agent', agent: undefined as AgentInfo | undefined, isWebhook: true, isMedia: false, isBrowser: false },
                         { label: '$(device-camera-video) Media step (fal.ai)', description: 'image/video/audio generation — needs FAL_KEY secret', agent: undefined as AgentInfo | undefined, isWebhook: false, isMedia: true, isBrowser: false },
-                        { label: '$(browser) Browser step', description: 'agent drives its browser MCP — allowlist + approval enforced', agent: undefined as AgentInfo | undefined, isWebhook: false, isMedia: false, isBrowser: true },
-                        ...(steps.length ? [{ label: '$(check) Finish workflow', description: `${steps.length} step(s)`, agent: undefined as AgentInfo | undefined, isWebhook: false, isMedia: false, isBrowser: false }] : [])
+                        { label: '$(browser) Browser step', description: 'agent drives its browser MCP — allowlist + approval enforced', agent: undefined as AgentInfo | undefined, isWebhook: false, isMedia: false, isBrowser: true }
                     ],
-                    { placeHolder: `Step ${stepNo}: which agent?`, ignoreFocusOut: true }
+                    { placeHolder: `Step ${stepNo}: which agent? (Esc = ${steps.length ? 'finish' : 'cancel'})`, ignoreFocusOut: true }
                 );
-                if (!agentPick) { return; }
+                if (!agentPick) {
+                    if (!steps.length) { return; }
+                    const save = await vscode.window.showWarningMessage(
+                        `Save workflow "${title}" with ${steps.length} step(s)?`, { modal: true }, 'Save', 'Discard');
+                    if (save === 'Save') { break; }
+                    if (save === 'Discard') { return; }
+                    continue;
+                }
                 if (agentPick.isBrowser) {
+                    // Cancelling any field drops this half-built step and returns to the
+                    // step picker — it no longer discards the whole workflow.
                     const bAgent = await resolveAgent(undefined);
-                    if (!bAgent) { return; }
+                    if (!bAgent) { continue; }
                     const bTitle = await vscode.window.showInputBox({
                         prompt: `Step ${stepNo} title (browser)`, value: 'Siteden veri topla', ignoreFocusOut: true
                     });
-                    if (!bTitle) { return; }
+                    if (!bTitle) { continue; }
                     const bUrl = await vscode.window.showInputBox({
                         prompt: 'Start URL — {prev_text}/{prev_json.x} are substituted',
                         placeHolder: 'https://example.com/reports', ignoreFocusOut: true
                     });
-                    if (!bUrl) { return; }
+                    if (!bUrl) { continue; }
                     const bGoal = await vscode.window.showInputBox({
                         prompt: 'Goal — what should the agent do on the site?',
                         placeHolder: 'örn. son raporu bul, özetle ve rakamları çıkar', ignoreFocusOut: true
                     });
-                    if (!bGoal) { return; }
+                    if (!bGoal) { continue; }
                     const defaultHost = (() => { try { return new URL(bUrl).hostname; } catch { return ''; } })();
                     const bHosts = await vscode.window.showInputBox({
                         prompt: 'Allowed hosts (comma-separated) — the agent may NOT leave these domains',
                         value: defaultHost, ignoreFocusOut: true
                     });
-                    if (bHosts === undefined) { return; }
+                    if (bHosts === undefined) { continue; }
                     steps.push({
                         agentId: bAgent.id, agentName: bAgent.name, title: bTitle, prompt: '', mode: 'headless',
                         browser: {
@@ -1915,19 +2020,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     const mTitle = await vscode.window.showInputBox({
                         prompt: `Step ${stepNo} title (media)`, value: 'Görsel üret', ignoreFocusOut: true
                     });
-                    if (!mTitle) { return; }
+                    if (!mTitle) { continue; }
                     const mModel = await vscode.window.showInputBox({
                         prompt: 'fal.ai model id — güncel listeyi fal.ai/models\'ten doğrula',
                         value: 'fal-ai/flux/schnell',
                         placeHolder: 'örn. fal-ai/flux/schnell, fal-ai/kling-video/v2/master/text-to-video',
                         ignoreFocusOut: true
                     });
-                    if (!mModel) { return; }
+                    if (!mModel) { continue; }
                     const mInput = await vscode.window.showInputBox({
                         prompt: 'JSON input template — {prev_text}/{prev_json.x} çözülür',
                         value: '{"prompt": "{prev_text}"}', ignoreFocusOut: true
                     });
-                    if (!mInput) { return; }
+                    if (!mInput) { continue; }
                     steps.push({
                         agentId: '', agentName: 'media', title: mTitle, prompt: '', mode: 'headless',
                         media: { model: mModel, input: mInput }
@@ -1938,15 +2043,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     const whTitle = await vscode.window.showInputBox({
                         prompt: `Step ${stepNo} title (webhook)`, value: 'Dışarı bildir', ignoreFocusOut: true
                     });
-                    if (!whTitle) { return; }
+                    if (!whTitle) { continue; }
                     const whUrl = await vscode.window.showInputBox({
                         prompt: 'URL — {secret:NAME} and {prev_*} variables are substituted',
                         placeHolder: 'https://n8n.example.com/webhook/…', ignoreFocusOut: true
                     });
-                    if (!whUrl) { return; }
+                    if (!whUrl) { continue; }
                     const whMethod = await vscode.window.showQuickPick(['POST', 'GET'],
                         { placeHolder: 'Method', ignoreFocusOut: true });
-                    if (!whMethod) { return; }
+                    if (!whMethod) { continue; }
                     const whBody = whMethod === 'GET' ? '' : ((await vscode.window.showInputBox({
                         prompt: 'JSON body template — e.g. {"text": "{prev_text}"} (empty = none)',
                         ignoreFocusOut: true
@@ -1962,12 +2067,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const stepTitle = await vscode.window.showInputBox({
                     prompt: `Step ${stepNo} title (${agentPick.agent.name})`, ignoreFocusOut: true
                 });
-                if (!stepTitle) { return; }
+                if (!stepTitle) { continue; }
                 const stepPrompt = await vscode.window.showInputBox({
                     prompt: `Step ${stepNo} prompt — use ${PREV_OUTPUT_PLACEHOLDER} for the previous step's output file`,
                     value: stepTitle, ignoreFocusOut: true
                 });
-                if (!stepPrompt) { return; }
+                if (!stepPrompt) { continue; }
                 const stepMode = await vscode.window.showQuickPick(
                     [
                         { label: 'Headless', description: 'recommended for chains — output is archived and passed on', mode: 'headless' as TaskMode },
@@ -1975,23 +2080,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     ],
                     { placeHolder: `Step ${stepNo} run mode`, ignoreFocusOut: true }
                 );
-                if (!stepMode) { return; }
+                if (!stepMode) { continue; }
+                // "if it fails" lives in the labels too — the bare "Stop workflow" wording
+                // read like "stop adding steps" and derailed users mid-wizard.
                 const onFailPick = await vscode.window.showQuickPick(
                     [
-                        { label: 'Stop workflow (default)', onFail: 'stop' as const },
-                        { label: 'Continue to next step', onFail: 'continue' as const },
-                        { label: 'Jump to step…', onFail: 'goto' as const }
+                        { label: 'If this step fails: stop the workflow (default)', onFail: 'stop' as const },
+                        { label: 'If this step fails: continue to next step', onFail: 'continue' as const },
+                        { label: 'If this step fails: jump to step…', onFail: 'goto' as const }
                     ],
-                    { placeHolder: `Step ${stepNo}: if it fails?`, ignoreFocusOut: true }
+                    { placeHolder: `Step ${stepNo}: what happens if this step fails?`, ignoreFocusOut: true }
                 );
-                if (!onFailPick) { return; }
+                if (!onFailPick) { continue; }
                 let onFail: 'stop' | 'continue' | number = 'stop';
                 if (onFailPick.onFail === 'goto') {
                     const target = await vscode.window.showInputBox({
                         prompt: 'Jump to step number (1-based)', ignoreFocusOut: true,
                         validateInput: v => /^\d+$/.test(v) && Number(v) >= 1 ? undefined : 'Enter a step number'
                     });
-                    if (!target) { return; }
+                    if (!target) { continue; }
                     onFail = Number(target);
                 } else {
                     onFail = onFailPick.onFail;
@@ -2008,7 +2115,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         ],
                         { placeHolder: `Step ${stepNo} output contract`, ignoreFocusOut: true })
                     : { contract: undefined };
-                if (!contractPick) { return; }
+                if (!contractPick) { continue; }
                 const verifyCriteria = stepMode.mode === 'headless'
                     ? ((await vscode.window.showInputBox({
                         prompt: `Step ${stepNo}: verification criteria for the cheap-model judge — empty = no verification`,

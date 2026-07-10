@@ -1153,6 +1153,11 @@ export class TaskManager implements vscode.Disposable {
         this.save();
     }
 
+    /** Persist in-place edits (timing is read at fire time, so no re-arm is needed). */
+    updateTrigger(_t: FarmTrigger): void {
+        this.save();
+    }
+
     deleteTrigger(t: FarmTrigger): void {
         this.triggers = this.triggers.filter(x => x.id !== t.id);
         this.save();

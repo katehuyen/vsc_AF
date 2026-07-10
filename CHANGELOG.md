@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.8.0 — Turn bands, Markdown export, wizard & trigger fixes (2026-07-10)
+
+Third round of real-user feedback:
+
+- **Prominent turn bands**: the thin `Turn n/m` divider is now a full-width tinted, sticky band (accent border, bold turn number, prompt snippet, tokens/cost) — turn boundaries stay visible while scrolling fast.
+- **⬇ Export MD**: exports exactly the current view of the session (Show chips + text filter + replay position all apply) as a Markdown file — dialog-only, tool-calls-only or everything. Each turn band has a checkbox; untick a turn to leave it out of the export. Save dialog defaults to the session's folder.
+- **Workflow wizard fixed**: "Finish & save workflow" now sits at the *top* of the step picker; pressing Esc with steps in hand asks *Save / Discard* instead of silently throwing the workflow away (the old behavior made workflows "impossible to create"); cancelling a field mid-step drops only that step, not the whole wizard. The confusing per-step "Stop workflow" choice is now clearly labeled "If this step fails: …".
+- **Trigger timing per trigger**: the Add Trigger wizard ends with *Default timing / Customize timing…* (debounce, cooldown, hourly cap), and every trigger now has right-click → **Edit Trigger** for name, prompt, target agent, debounce, cooldown and cap — no more editing `farm-tasks.json` by hand.
+- **Clearer trigger actions**: "Run a task on an agent you pick" (you choose the agent next) vs "Dispatch — route to the best agent automatically"; the agent picker no longer dies silently when the window loses focus.
+
 ## 2.7.0 — Session viewer polish (2026-07-10)
 
 Second round of real-user feedback, all about reviewing sessions:
