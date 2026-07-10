@@ -51,6 +51,8 @@ export interface SessionInfo {
     assistantMsgs: number;
     toolCalls: number;
     tools: Record<string, number>;
+    /** Skill invocations (Skill tool calls + typed /commands) by skill/command name. */
+    skillCalls: Record<string, number>;
     errors: number;
     version?: string;
     gitBranch?: string;
@@ -153,6 +155,7 @@ export function parseSessionFile(
         assistantMsgs: 0,
         toolCalls: 0,
         tools: {},
+        skillCalls: {},
         errors: 0,
         daily: {},
         heat: new Array(168).fill(0),
@@ -199,8 +202,14 @@ export function parseSessionFile(
                     });
                 }
             };
+            const countCommand = (text: string) => {
+                // Typed /commands land as <command-name>/x</command-name> user messages.
+                const m = /<command-name>\/?([\w:-]+)<\/command-name>/.exec(text);
+                if (m) { info.skillCalls[m[1]] = (info.skillCalls[m[1]] ?? 0) + 1; }
+            };
             if (typeof content === 'string') {
                 if (!line.isMeta && !content.startsWith('<')) { countPrompt(content); }
+                else if (!line.isMeta) { countCommand(content); }
             } else if (Array.isArray(content)) {
                 for (const block of content as { type?: string; is_error?: boolean; text?: string }[]) {
                     if (block?.type === 'tool_result' && block.is_error) {
@@ -210,10 +219,10 @@ export function parseSessionFile(
                                 ts, kind: 'error', detail: 'tool error', sessionFile: file
                             });
                         }
-                    } else if (block?.type === 'text' && block.text &&
-                        !line.isMeta && !block.text.startsWith('<')) {
+                    } else if (block?.type === 'text' && block.text && !line.isMeta) {
                         // Newer transcripts carry user prompts as text blocks in an array.
-                        countPrompt(block.text);
+                        if (!block.text.startsWith('<')) { countPrompt(block.text); }
+                        else { countCommand(block.text); }
                     }
                 }
             }
@@ -273,6 +282,12 @@ export function parseSessionFile(
                     if (block?.type === 'tool_use' && block.name) {
                         info.toolCalls++;
                         info.tools[block.name] = (info.tools[block.name] ?? 0) + 1;
+                        if (block.name === 'Skill') {
+                            const skillName = String(block.input?.['skill'] ?? '').trim();
+                            if (skillName) {
+                                info.skillCalls[skillName] = (info.skillCalls[skillName] ?? 0) + 1;
+                            }
+                        }
                         const filePath = String(block.input?.['file_path'] ?? '');
                         if (ts && filePath.toUpperCase().includes('DUTIES.MD')) {
                             info.dutiesReadTs = Math.max(info.dutiesReadTs ?? 0, ts);

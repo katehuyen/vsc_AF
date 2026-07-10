@@ -4,6 +4,7 @@ import { AgentInfo } from '../core/agents';
 import { Duty, watchStatus } from '../core/duties';
 import { Insight } from '../core/health';
 import { McpServerDef, mcpUsage, readAgentMcpServers } from '../core/mcp';
+import { readAgentSkills, SkillDef, skillUsage } from '../core/skills';
 import { LiveMonitor, LiveStatus } from '../core/live';
 import { SessionIndex, SessionInfo } from '../core/sessions';
 import { fmtTokens, fmtUSD, relTime, dayKey } from '../core/util';
@@ -27,9 +28,10 @@ const LIVE_STATUS_LABEL: Record<LiveStatus, string> = {
 
 export type AgentNode =
     | { kind: 'agent'; agent: AgentInfo }
-    | { kind: 'section'; agent: AgentInfo; section: 'identity' | 'memory' | 'tools' | 'permissions' | 'sessions' | 'duties' | 'mcp' }
+    | { kind: 'section'; agent: AgentInfo; section: 'identity' | 'memory' | 'tools' | 'permissions' | 'sessions' | 'duties' | 'mcp' | 'skills' }
     | { kind: 'duty'; agent: AgentInfo; duty: Duty }
     | { kind: 'mcp-server'; agent: AgentInfo; server: McpServerDef; calls: number }
+    | { kind: 'skill'; agent: AgentInfo; skill: SkillDef; calls: number }
     | { kind: 'file'; path: string; label: string; description?: string }
     | { kind: 'session'; session: SessionInfo };
 
@@ -138,6 +140,18 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
                     item.tooltip = 'MCP servers this agent can use (from .mcp.json / .claude settings) with real 30-day usage.';
                     return item;
                 }
+                case 'skills': {
+                    const skills = readAgentSkills(agent);
+                    const item = new vscode.TreeItem('Skills',
+                        skills.length ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None);
+                    item.iconPath = new vscode.ThemeIcon('sparkle');
+                    item.description = skills.length
+                        ? `${skills.length} skill(s)`
+                        : 'none — right-click to add';
+                    item.contextValue = 'skills-section';
+                    item.tooltip = 'Agent Skills claude can load for this agent (.claude/skills in the agent folder + ~/.claude/skills shared by all agents) with real 30-day usage.';
+                    return item;
+                }
                 case 'duties': {
                     const duties = agent.duties;
                     const pending = duties.filter(d =>
@@ -172,6 +186,19 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
             item.description = `${s.transport} • ${node.calls > 0 ? `${node.calls} calls (30d)` : 'unused (30d)'}`;
             item.tooltip = `${s.name} (${s.transport})\n${s.commandOrUrl}\nDefined in: ${s.source}\nCalls in last 30 days: ${node.calls}`;
             item.contextValue = 'mcp-server';
+            item.command = openFileCommand(s.source);
+            return item;
+        }
+        if (node.kind === 'skill') {
+            const s = node.skill;
+            const item = new vscode.TreeItem(s.name, vscode.TreeItemCollapsibleState.None);
+            item.iconPath = new vscode.ThemeIcon('sparkle',
+                node.calls > 0 ? new vscode.ThemeColor('charts.green') : undefined);
+            item.description = `${s.scope} • ${node.calls > 0 ? `${node.calls} calls (30d)` : 'unused (30d)'}`;
+            item.tooltip = `${s.name} (${s.scope === 'user' ? 'user scope — shared by all agents' : 'agent scope'})\n` +
+                (s.description ? `${s.description}\n` : '') +
+                `${s.source}\nInvocations in last 30 days: ${node.calls}`;
+            item.contextValue = 'skill';
             item.command = openFileCommand(s.source);
             return item;
         }
@@ -224,6 +251,7 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
             if (a.memoryFiles.length) { children.push({ kind: 'section', agent: a, section: 'memory' }); }
             if (a.toolFiles.length) { children.push({ kind: 'section', agent: a, section: 'tools' }); }
             children.push({ kind: 'section', agent: a, section: 'mcp' });
+            children.push({ kind: 'section', agent: a, section: 'skills' });
             children.push({ kind: 'section', agent: a, section: 'permissions' });
             children.push({ kind: 'section', agent: a, section: 'sessions' });
             return children;
@@ -236,6 +264,15 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
                     agent: node.agent,
                     server,
                     calls: usage.get(server.name) ?? 0
+                }));
+            }
+            if (node.section === 'skills') {
+                const usage = skillUsage(this.state.index, node.agent.id, MCP_USAGE_WINDOW_MS);
+                return readAgentSkills(node.agent).map(skill => ({
+                    kind: 'skill' as const,
+                    agent: node.agent,
+                    skill,
+                    calls: usage.get(skill.name) ?? 0
                 }));
             }
             if (node.section === 'duties') {

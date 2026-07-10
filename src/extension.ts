@@ -43,6 +43,7 @@ import {
 } from './core/hooksInstaller';
 import { LiveMonitor } from './core/live';
 import { addMcpServer, removeMcpServer } from './core/mcp';
+import { addSkill, removeSkill } from './core/skills';
 import { DEFAULT_MEDIA_PRICING, MediaPriceRule, mediaCostSince, readMediaMetas } from './core/media';
 import {
     applyMergedContent, buildMergeDraft, findDuplicateGroups, syncGroup
@@ -1754,6 +1755,49 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 void vscode.window.showInformationMessage(`Agent Farm: MCP server "${node.server.name}" removed.`);
             } else {
                 void vscode.window.showWarningMessage('Agent Farm: could not remove (file unreadable or entry missing).');
+            }
+        }),
+
+        vscode.commands.registerCommand('agentfarm.addSkill', async (node?: AgentNode) => {
+            const agent = node && 'agent' in node ? node.agent : await resolveAgent(undefined);
+            if (!agent) { return; }
+            const name = await vscode.window.showInputBox({
+                prompt: `Skill name for ${agent.name} (folder under .claude/skills, e.g. release-notes)`,
+                ignoreFocusOut: true,
+                validateInput: v => /^[a-z0-9][a-z0-9-]*$/.test(v) ? undefined : 'Lowercase letters, digits and - only'
+            });
+            if (!name) { return; }
+            const description = await vscode.window.showInputBox({
+                prompt: 'One-line description (claude uses it to decide when to load the skill)',
+                ignoreFocusOut: true
+            });
+            if (description === undefined) { return; }
+            try {
+                const file = addSkill(agent, name, description.trim() || name);
+                refreshAll();
+                const doc = await vscode.workspace.openTextDocument(file);
+                await vscode.window.showTextDocument(doc);
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: skill "${name}" scaffolded — write the instructions in SKILL.md. New claude sessions pick it up.`);
+            } catch (e) {
+                void vscode.window.showWarningMessage(`Agent Farm: ${(e as Error).message ?? String(e)}`);
+            }
+        }),
+
+        vscode.commands.registerCommand('agentfarm.removeSkill', async (node?: AgentNode) => {
+            if (node?.kind !== 'skill') { return; }
+            const shared = node.skill.scope === 'user';
+            const confirmed = await vscode.window.showWarningMessage(
+                `Remove skill "${node.skill.name}"` +
+                (shared ? ' from ~/.claude/skills — user scope, EVERY agent loses it' : ` from ${node.agent.name}`) +
+                '? (a one-time backup is kept in skills.afbak)',
+                { modal: true }, 'Remove');
+            if (confirmed !== 'Remove') { return; }
+            if (removeSkill(node.skill)) {
+                refreshAll();
+                void vscode.window.showInformationMessage(`Agent Farm: skill "${node.skill.name}" removed.`);
+            } else {
+                void vscode.window.showWarningMessage('Agent Farm: could not remove the skill folder.');
             }
         }),
 

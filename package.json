@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.11.0",
+  "version": "2.12.0",
   "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
@@ -461,6 +461,18 @@
       {
         "command": "agentfarm.removeMcpServer",
         "title": "Remove MCP Server",
+        "category": "Agent Farm",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "agentfarm.addSkill",
+        "title": "Add Skill…",
+        "category": "Agent Farm",
+        "icon": "$(add)"
+      },
+      {
+        "command": "agentfarm.removeSkill",
+        "title": "Remove Skill",
         "category": "Agent Farm",
         "icon": "$(trash)"
       },
@@ -1054,6 +1066,16 @@
         {
           "command": "agentfarm.removeMcpServer",
           "when": "view == agentfarm.agents && viewItem == mcp-server",
+          "group": "inline@1"
+        },
+        {
+          "command": "agentfarm.addSkill",
+          "when": "view == agentfarm.agents && viewItem == skills-section",
+          "group": "inline@1"
+        },
+        {
+          "command": "agentfarm.removeSkill",
+          "when": "view == agentfarm.agents && viewItem == skill",
           "group": "inline@1"
         },
         {

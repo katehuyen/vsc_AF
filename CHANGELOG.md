@@ -2,6 +2,11 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.12.0 — Skills management (2026-07-10)
+
+- **Skills section in the Agents tree**: each agent now lists its Agent Skills (SKILL.md folders) next to MCP — read from the same directories Claude Code reads (`.claude/skills/` in the agent folder = agent scope, `~/.claude/skills/` = user scope shared by all agents; agent scope shadows user scope on name clashes). Rows show name, scope and **real 30-day usage** counted from transcripts (both `Skill` tool calls by the model and typed `/command` invocations); green sparkle = in use. Click opens SKILL.md.
+- **Add Skill… / Remove Skill**: **+** on the section scaffolds `.claude/skills/<name>/SKILL.md` (name + one-line description wizard) and opens it for editing; the trash icon on a skill removes its folder with a one-time backup in a sibling `skills.afbak/` folder. Removing a user-scope skill warns that every agent loses it.
+
 ## 2.11.0 — Viewer fixes: ↑ jump, per-model context gauge, timestamped export (2026-07-10)
 
 - **↑ turn jump fixed**: the up arrow on turn bands (and clicking an earlier row in the Turn breakdown table) did nothing. Cause: the bands are `position: sticky`, so every band already scrolled past reports its *stuck* position — pinned at the top of the viewport — and `scrollIntoView` on it is a no-op. Jumps now anchor on the turn's first message (which sits in normal flow) and offset by the band height, so both directions land the band at the top.

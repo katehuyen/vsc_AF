@@ -84,8 +84,11 @@ Yan paneldeki ana ağaç. Her ajan şu alt bölümlerle açılır:
 | Bölüm | İçerik |
 | --- | --- |
 | Identity | `CLAUDE.md` — tıklayınca açılır, yanında tahmini token boyutu |
+| Duties | Nöbet görevleri (`DUTIES.md`) — bkz. [Nöbet Görevleri](#nobet-gorevleri) |
 | Memory | `memory/` altındaki tüm dosyalar; token tahmini ve son değişiklik zamanı |
 | Tools | `tools/` klasöründeki scriptler |
+| MCP | Ajanın MCP sunucuları + 30 günlük gerçek kullanım — bkz. [MCP Yönetimi](#mcp-yonetimi) |
+| Skills | Agent Skills (`.claude/skills` + `~/.claude/skills`) + 30 günlük gerçek kullanım — bkz. [Skill Yönetimi](#skill-yonetimi) (2.12.0) |
 | Permissions | `.claude/settings.local.json` izin özeti |
 | Sessions | Son 15 oturum; tıklayınca Oturum Görüntüleyici açılır |
 
@@ -374,6 +377,15 @@ Ajanlarının dış dünyaya açılan araç kapıları — MCP sunucuları — a
 - **Gerçek kullanım:** her sunucunun son 30 gündeki gerçek araç çağrısı sayısı satırda yazar (oturum kayıtlarından `mcp__sunucu__araç` sayımı). Yeşil fiş = kullanılıyor.
 - **Ekle/Kaldır:** bölümde **+** → sihirbaz ajanın `.mcp.json`'ına yazar; sunucuda çöp ikonu → kaynağından siler (bir kerelik `.afbak` yedeğiyle). Değişiklik, ajanın yeni oturumunda geçerli olur.
 - **Insights denetimi:** 30 gündür hiç kullanılmayan tanımlı sunucu bilgi bulgusu üretir — her sunucu oturum açılışına yük ekler, ölü olanı temizle.
+
+## Skill Yönetimi
+
+Ajanların öğretilmiş yetenekleri — Agent Skills (SKILL.md klasörleri) — panelde görünür (2.12.0). Agents ağacında her ajanın **Skills** bölümü:
+
+- Skill'ler, Claude Code'un okuduğu aynı klasörlerden okunur: ajan klasöründeki `.claude/skills/` (**agent** kapsamı) + `~/.claude/skills/` (**user** kapsamı — bütün ajanlar paylaşır). Aynı ada sahip skill'de agent kapsamı user kapsamını gölgeler. Satırda ad, kapsam ve SKILL.md frontmatter'ındaki açıklama (tooltip) görünür; tıklamak SKILL.md'yi açar.
+- **Gerçek kullanım:** son 30 gündeki çağrı sayısı satırda yazar — hem modelin `Skill` aracıyla yaptığı çağrılar hem senin yazdığın `/skill-adi` komutları oturum kayıtlarından sayılır. Yeşil kıvılcım = kullanılıyor.
+- **Ekle/Kaldır:** bölümde **+** → ad + tek satır açıklama sorulur, ajanın `.claude/skills/<ad>/SKILL.md` iskeleti oluşturulup açılır (talimatları sen yazarsın); skill satırında çöp ikonu → klasörü siler (bir kerelik yedek `.claude/skills.afbak/` altına alınır). User kapsamındaki bir skill silinirken bütün ajanların kaybedeceği modalda açıkça söylenir. Değişiklik, ajanın yeni oturumunda geçerli olur.
+- Not: eklenti kurulumuyla gelen plugin skill'leri bu klasörlerin dışında yaşar ve listede görünmez — panel, senin yönettiğin dosya tabanlı skill'lere odaklanır.
 
 ## Sır Kasası
 
@@ -987,6 +999,7 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 - **Open Task History** — aylık görev tarihçesi kayıtları
 - **Set Secret… / Delete Secret… / List Secrets** — sır kasası
 - **Add MCP Server… / Remove MCP Server** — MCP envanteri (Agents ağacındaki MCP bölümünden)
+- **Add Skill… / Remove Skill** — skill envanteri (Agents ağacındaki Skills bölümünden; SKILL.md iskeleti kurar / yedekli siler)
 - **Copy Webhook URL** — webhook tetiğinin gizli adresi
 - **Open Media Gallery** — üretilen medyalar (önizleme + Re-run/Vary)
 - **New Recipe Workflow…** — hazır fabrika şablonları
@@ -1079,6 +1092,11 @@ Tamamlanan fazlar (hepsi 2026-07-08):
 **Bundan sonrası ayrı ve ayrıntılı bir belgede yaşıyor:** komut paletinden **Agent Farm: Open Development Plan** — uzak görüşlü gelişim planı: olay tetikleyicileri, doğrulayıcı adımlar, MCP paneli, n8n/webhook köprüsü, multimedya üretim hattı (Kling/Seedance/Nano Banana sınıfı modellerle içerik fabrikası), zeki gözetim, çoklu makine ve vizyoner ufuk. Kodlama o plandaki öncelik sırasını izler.
 
 ## Sürüm Notları
+
+### 2.12.0 — Skill Yönetimi (2026-07-10)
+
+- **Agents ağacına Skills bölümü:** her ajanın altında MCP'nin yanına — Claude Code'un okuduğu aynı klasörlerden (`.claude/skills/` agent kapsamı + `~/.claude/skills/` user kapsamı, agent gölgeler) SKILL.md envanteri; ad, kapsam, açıklama (tooltip) ve **son 30 gündeki gerçek çağrı sayısı** (modelin `Skill` aracı çağrıları + senin yazdığın `/komut` çağrıları oturum kayıtlarından sayılır; yeşil kıvılcım = kullanılıyor). Tıkla → SKILL.md açılır. Ayrıntı: [Skill Yönetimi](#skill-yonetimi).
+- **Add Skill… / Remove Skill:** bölümde **+** ad + açıklama sorup `.claude/skills/<ad>/SKILL.md` iskeletini kurar ve açar; çöp ikonu klasörü siler (bir kerelik yedek `.claude/skills.afbak/` altında; user kapsamlı skill silinirken "bütün ajanlar kaybeder" uyarısı modalda).
 
 ### 2.11.0 — ↑ Zıplama Düzeltmesi, Model Bazlı Context Tavanı, Damgalı Export (2026-07-10)
 
