@@ -73,7 +73,30 @@
                 <input type="checkbox" data-turnsel="${m.turn}"${exportOff.has(m.turn) ? '' : ' checked'}></label>
             <span class="turnnum">Turn ${m.turn}/${DATA.turnCount || '?'}</span>
             <span class="turnlabel">${C.esc((info && info.label) || '')}</span>
-            <span class="turnstats">${total}</span></div>`;
+            <span class="turnstats">${total}</span>
+            <span class="turnnav">
+                <button class="tnav" data-tnav="prev" data-from="${m.turn}" title="Jump to previous turn">↑</button>
+                <button class="tnav" data-tnav="next" data-from="${m.turn}" title="Jump to next turn">↓</button>
+            </span></div>`;
+    }
+
+    /** Include/exclude a turn in the export and repaint both selection surfaces
+     *  (turn bands + breakdown table) so they stay in sync. */
+    function setTurnExport(n, included) {
+        if (included) { exportOff.delete(n); } else { exportOff.add(n); }
+        render({ keepScroll: true });
+    }
+
+    /** Jump to the previous/next *rendered* turn band (filters may hide some turns). */
+    function jumpTurn(from, dir) {
+        const nums = Array.from(document.querySelectorAll('.turnhdr[data-turn]'))
+            .map(el => Number(el.dataset.turn)).sort((a, b) => a - b);
+        const i = nums.indexOf(from);
+        if (i < 0) { return; }
+        const target = dir === 'prev' ? nums[i - 1] : nums[i + 1];
+        if (target === undefined) { return; }
+        const el = document.querySelector(`.turnhdr[data-turn="${target}"]`);
+        if (el) { el.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
     }
 
     function listHtml(msgs) {
@@ -236,14 +259,28 @@
         </div>`;
     }
 
+    function includedTurnCount() {
+        return (DATA.turns || []).filter(t => !exportOff.has(t.n)).length;
+    }
+
     function turnBoxHtml() {
         const turns = DATA.turns || [];
         if (!turns.length) { return ''; }
+        const inc = includedTurnCount();
+        const incLabel = inc === turns.length ? 'all in export' : `${inc}/${turns.length} in export`;
         return `<details id="turnbox" class="turnbox"${turnsOpen ? ' open' : ''}>
-            <summary>Turn breakdown — ${turns.length} turns (click a row to jump)</summary>
+            <summary>Turn breakdown — ${turns.length} turns · ${incLabel} (click a row to jump)</summary>
+            <div class="selrow">
+                <span class="muted small">Export selection:</span>
+                <button class="chip" data-selact="all">All</button>
+                <button class="chip" data-selact="none">None</button>
+                <button class="chip" data-selact="invert">Invert</button>
+                <span class="muted small">— or use the checkboxes here / on the turn bands (they stay in sync); "only" exports just that turn</span>
+            </div>
             <div class="tablewrap"><table>
-                <thead><tr><th>#</th><th>prompt</th><th class="num">tokens</th><th class="num">cost</th></tr></thead>
+                <thead><tr><th>md</th><th>#</th><th>prompt</th><th class="num">tokens</th><th class="num">cost</th></tr></thead>
                 <tbody>${turns.map(t => `<tr class="click" data-turn="${t.n}">
+                    <td class="selcell"><input type="checkbox" data-turnsel="${t.n}"${exportOff.has(t.n) ? '' : ' checked'} title="Include in Export MD"><button class="only" data-only="${t.n}" title="Export only this turn">only</button></td>
                     <td>${t.n}</td><td>${C.esc(t.label || '—')}</td>
                     <td class="num">${t.tokens ? C.fmtTok(t.tokens) : '—'}</td>
                     <td class="num">${t.cost ? C.fmtUSD(t.cost) : '—'}</td>
@@ -293,6 +330,19 @@
                     color:var(--vscode-descriptionForeground); }
                 .turnhdr .turnsel { display:flex; align-items:center; cursor:pointer; }
                 .turnhdr .turnsel input { cursor:pointer; margin:0; }
+                .turnhdr .turnnav { display:flex; gap:4px; }
+                .turnhdr .tnav { font-size:11px; padding:0 7px; line-height:17px; cursor:pointer;
+                    border-radius:3px; background:transparent; opacity:.7;
+                    border:1px solid var(--vscode-widget-border, #4444);
+                    color:var(--vscode-foreground); }
+                .turnhdr .tnav:hover { opacity:1; }
+                .selrow { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:8px 0 2px; }
+                .turnbox .selcell { white-space:nowrap; }
+                .turnbox .only { font-size:10px; margin-left:6px; padding:0 6px; cursor:pointer;
+                    border-radius:3px; background:transparent; opacity:.7;
+                    border:1px solid var(--vscode-widget-border, #4444);
+                    color:var(--vscode-foreground); }
+                .turnbox .only:hover { opacity:1; }
                 .turnbox { margin:10px 0; }
                 .turnbox summary { font-size:12px; }
                 .turnbox table { margin-top:6px; }
@@ -311,7 +361,7 @@
                 <div class="btnrow">
                     <button id="resume">⏵ Resume</button>
                     <button class="secondary" id="replaytoggle">${replay.active ? '✕ Exit replay' : '▶ Replay'}</button>
-                    <button class="secondary" id="exportmd" title="Exports what you see: active filters apply; unticked turn bands are left out">⬇ Export MD</button>
+                    <button class="secondary" id="exportmd" title="Exports what you see: active filters apply; unticked turns are left out">⬇ Export MD${exportOff.size ? ` (${includedTurnCount()}/${(DATA.turns || []).length} turns)` : ''}</button>
                     <button class="secondary" id="refresh">Refresh</button>
                     <button class="secondary" id="raw">Open raw JSONL</button>
                     <button class="secondary" data-guide="oturum-goruntuleyici">? Guide</button>
@@ -359,12 +409,14 @@
             vscode.postMessage({ type: 'resume', cwd: DATA.cwd }));
         document.getElementById('exportmd').addEventListener('click', () =>
             vscode.postMessage({ type: 'exportMd', md: exportMarkdown(), cwd: DATA.cwd }));
-        // Delegated: turn checkboxes survive the filter box re-rendering #msgs.
+        // Delegated: turn-band controls survive the filter box re-rendering #msgs.
         document.getElementById('msgs').addEventListener('change', ev => {
             const cb = ev.target && ev.target.closest ? ev.target.closest('input[data-turnsel]') : null;
-            if (!cb) { return; }
-            const n = Number(cb.dataset.turnsel);
-            if (cb.checked) { exportOff.delete(n); } else { exportOff.add(n); }
+            if (cb) { setTurnExport(Number(cb.dataset.turnsel), cb.checked); }
+        });
+        document.getElementById('msgs').addEventListener('click', ev => {
+            const btn = ev.target && ev.target.closest ? ev.target.closest('button[data-tnav]') : null;
+            if (btn) { jumpTurn(Number(btn.dataset.from), btn.dataset.tnav); }
         });
         document.querySelectorAll('[data-guide]').forEach(el =>
             el.addEventListener('click', () => vscode.postMessage({ type: 'openGuide', anchor: el.dataset.guide })));
@@ -372,7 +424,9 @@
         const turnbox = document.getElementById('turnbox');
         if (turnbox) {
             turnbox.addEventListener('toggle', () => { turnsOpen = turnbox.open; });
-            turnbox.querySelectorAll('tr[data-turn]').forEach(tr => tr.addEventListener('click', () => {
+            turnbox.querySelectorAll('tr[data-turn]').forEach(tr => tr.addEventListener('click', ev => {
+                // selection controls inside the row must not also trigger the jump
+                if (ev.target && ev.target.closest && ev.target.closest('input,button')) { return; }
                 const n = Number(tr.dataset.turn);
                 if (replay.active) {
                     stopTimer();
@@ -382,6 +436,22 @@
                     const el = document.querySelector(`.turnhdr[data-turn="${n}"]`);
                     if (el) { el.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
                 }
+            }));
+            turnbox.addEventListener('change', ev => {
+                const cb = ev.target && ev.target.closest ? ev.target.closest('input[data-turnsel]') : null;
+                if (cb) { setTurnExport(Number(cb.dataset.turnsel), cb.checked); }
+            });
+            turnbox.querySelectorAll('button[data-only]').forEach(b => b.addEventListener('click', () => {
+                (DATA.turns || []).forEach(t => exportOff.add(t.n));
+                exportOff.delete(Number(b.dataset.only));
+                render({ keepScroll: true });
+            }));
+            turnbox.querySelectorAll('button[data-selact]').forEach(b => b.addEventListener('click', () => {
+                const turns = DATA.turns || [];
+                if (b.dataset.selact === 'all') { exportOff.clear(); }
+                else if (b.dataset.selact === 'none') { turns.forEach(t => exportOff.add(t.n)); }
+                else { turns.forEach(t => { if (exportOff.has(t.n)) { exportOff.delete(t.n); } else { exportOff.add(t.n); } }); }
+                render({ keepScroll: true });
             }));
         }
 

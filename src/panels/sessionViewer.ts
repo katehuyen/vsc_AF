@@ -13,6 +13,9 @@ export interface ViewerDeps {
     contextLimit(): number;
     /** User-set session name (rename feature); wins over the transcript-derived title. */
     titleFor?(sessionId: string): string | undefined;
+    /** Export MD remembers the last folder saved to; falls back to session cwd / home. */
+    lastExportDir?(): string | undefined;
+    setLastExportDir?(dir: string): void;
 }
 
 interface ViewMessage {
@@ -319,16 +322,19 @@ export class SessionViewerPanel {
             case 'exportMd': {
                 if (typeof msg.md !== 'string' || !msg.md) { break; }
                 const md = msg.md;
-                const cwd = typeof msg.cwd === 'string' && msg.cwd && fs.existsSync(msg.cwd)
-                    ? msg.cwd : os.homedir();
+                const remembered = this.deps.lastExportDir?.();
+                const dir = remembered && fs.existsSync(remembered) ? remembered
+                    : typeof msg.cwd === 'string' && msg.cwd && fs.existsSync(msg.cwd) ? msg.cwd
+                        : os.homedir();
                 const name = `session-${path.basename(this.file, '.jsonl').slice(0, 8)}-${new Date().toISOString().slice(0, 10)}.md`;
                 void vscode.window.showSaveDialog({
-                    defaultUri: vscode.Uri.file(path.join(cwd, name)),
+                    defaultUri: vscode.Uri.file(path.join(dir, name)),
                     filters: { Markdown: ['md'] }
                 }).then(uri => {
                     if (!uri) { return; }
                     try {
                         fs.writeFileSync(uri.fsPath, md, 'utf8');
+                        this.deps.setLastExportDir?.(path.dirname(uri.fsPath));
                         void vscode.window.showTextDocument(uri);
                     } catch (e) {
                         void vscode.window.showErrorMessage(`Agent Farm: export failed — ${String(e)}`);

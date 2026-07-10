@@ -130,8 +130,9 @@ Bir oturumun ham JSONL kaydını okunur konuşmaya çevirir:
 
 - Mesajlar renk kodludur: mavi = kullanıcı, yeşil = asistan, sarı = araç çağrısı, mor = araç sonucu. Hatalı araç sonuçları kırmızı kenarlıkla ve açık halde gelir.
 - Her asistan mesajında model, token ve maliyet görünür. Yalnızca araç çağrısı yapan (metinsiz) asistan adımlarının token'ı da kaybolmaz — ilk araç çağrısı satırında görünür (2.6.0).
-- **Tur bantları (2.6.0, 2.8.0'da belirginleştirildi):** her kullanıcı komutu yeni bir tur açar. Tur başlangıcı artık ince bir çizgi değil, **tam genişlikte renkli bir bant**: vurgu renkli sol kenar, kalın `Turn 3/12`, komutun ilk cümlesi ve o turun token/maliyeti. Bant **yapışkandır** — hızlı kaydırırken içinde olduğun turun bandı üstte sabit kalır, tur geçişleri kaçmaz. Banttaki **onay kutusu** o turun MD dışa aktarımına dahil olup olmayacağını seçer (aşağıya bak).
-- **⬇ Export MD (2.8.0):** o an gördüğün görünümü Markdown dosyasına aktarır — **ne görüyorsan onu**: Show chip'leri (örn. yalnız Dialog ya da yalnız Tool calls), metin filtresi ve replay konumu aynen uygulanır; bandı işaretsiz bırakılan turlar dışarıda kalır. Dosya başında oturum kimliği, süre, toplamlar ve uygulanan filtrelerin özeti bulunur. Kaydetme penceresi oturumun kendi klasöründe açılır; kayıttan sonra dosya editörde açılır.
+- **Tur bantları (2.6.0, 2.8.0'da belirginleştirildi):** her kullanıcı komutu yeni bir tur açar. Tur başlangıcı artık ince bir çizgi değil, **tam genişlikte renkli bir bant**: vurgu renkli sol kenar, kalın `Turn 3/12`, komutun ilk cümlesi ve o turun token/maliyeti. Bant **yapışkandır** — hızlı kaydırırken içinde olduğun turun bandı üstte sabit kalır, tur geçişleri kaçmaz. Banttaki **onay kutusu** o turun MD dışa aktarımına dahil olup olmayacağını seçer; **↑ ↓ okları** (2.9.0) kaydırmadan bir önceki/sonraki tura zıplatır — bant yapışkan olduğu için oklar hep elinin altındadır.
+- **⬇ Export MD (2.8.0):** o an gördüğün görünümü Markdown dosyasına aktarır — **ne görüyorsan onu**: Show chip'leri (örn. yalnız Dialog ya da yalnız Tool calls), metin filtresi ve replay konumu aynen uygulanır; seçimden çıkarılan turlar dışarıda kalır. Dosya başında oturum kimliği, süre, toplamlar ve uygulanan filtrelerin özeti bulunur. Kaydetme penceresi **en son kaydettiğin klasörde** açılır (2.9.0; ilk kullanımda oturumun kendi klasörü); kayıttan sonra dosya editörde açılır.
+- **Export seçimi (2.9.0):** tur seçimi iki yerden, **senkron** yapılır — turun bandındaki kutu ve Turn breakdown tablosundaki `md` kolonu aynı seçimi gösterir, birinden değiştirince öbürü anında güncellenir. Tablodaki **All / None / Invert** düğmeleri toplu seçim yapar; satırdaki **only** düğmesi tek hamlede "yalnız bu turu" seçer. Başlık satırı ve Export MD düğmesi seçim varken `12/37 in export` sayacını gösterir.
 - **Turn breakdown tablosu (2.7.0):** KPI kartlarının hemen altındaki açılır kutu tüm turları **tek tabloda** listeler: tur no, komutun ilk cümlesi, token, maliyet. Satıra tıkla → o turun ayracına atlar (replay'deyken oynatmayı o tura taşır). Tur toplamları artık oturum toplamıyla birebir tutar — düşünme (thinking) adımlarının token'ı da turuna yazılır.
 - **Show filtresi (2.7.0):** mesaj listesinin üstündeki chip satırı türlere göre filtreler: **All · Dialog · User · Assistant · Tool calls · Results · Errors**. "Dialog" yalnız sen + asistan konuşmasını bırakır (araç trafiği gizlenir); chip'ler çoklu seçilebilir. Filtre **replay'i de etkiler** — Dialog seçiliyken replay'de yalnız diyalog akar.
 - **⏵ Resume (2.7.0):** sağ üstteki düğme bu oturumu terminalde `claude --resume` ile devam ettirir.
@@ -1069,6 +1070,16 @@ Tamamlanan fazlar (hepsi 2026-07-08):
 **Bundan sonrası ayrı ve ayrıntılı bir belgede yaşıyor:** komut paletinden **Agent Farm: Open Development Plan** — uzak görüşlü gelişim planı: olay tetikleyicileri, doğrulayıcı adımlar, MCP paneli, n8n/webhook köprüsü, multimedya üretim hattı (Kling/Seedance/Nano Banana sınıfı modellerle içerik fabrikası), zeki gözetim, çoklu makine ve vizyoner ufuk. Kodlama o plandaki öncelik sırasını izler.
 
 ## Sürüm Notları
+
+### 2.9.0 — Export Seçim Kolaylıkları, Tur Gezinmesi, Odak Denetimi (2026-07-10)
+
+2.8.0'a anında gelen geri bildirimin ("toplu seçim ve gezinme söylenmeden gelmeli") karşılığı:
+
+- **Export seçimi her yerden:** Turn breakdown tablosuna tur başına onay kutusu (`md` kolonu) — **bantlardaki kutularla canlı senkron**; satırda **only** (yalnız bu tur), üstte **All / None / Invert** toplu düğmeleri; başlıkta ve Export MD düğmesinde `12/37 in export` sayacı.
+- **Tur gezinmesi:** her bantta **↑ ↓** — kaydırmadan önceki/sonraki tura atla (bant yapışkan, oklar hep görünür).
+- **Export MD son kaydedilen klasörü hatırlar;** bir sonraki kayıt penceresi oradan açılır.
+- **Odak kaybı denetimi (tüm eklenti):** dengeli-parantez taramasıyla 38 QuickPick/InputBox adımının pencere odak kaybında **sessizce kapandığı** bulundu — sihirbaz ortasında akışı mesajsız öldürüyordu ("ajan sorusu hiç gelmedi" deneyiminin en olası nedeni). 38'i de düzeltildi. Ayrıca çapraz doğrulama: tanımlı her komut kayıtlı, her menü referansı geçerli, her sağ-tık `when` koşulu gerçek bir ağaç durumuyla eşleşiyor.
+- **Add Trigger ajan sorusu netleşti:** "Which agent runs this task when the trigger fires?" + kurulum onayı hedefi söylüyor ("armed — runs on psikolog…"). Workflow sihirbazındaki "Run now" artık tam olarak yeni kurulan zinciri koşturuyor.
 
 ### 2.8.0 — Tur Bantları, MD Dışa Aktarım, Sihirbaz ve Tetik Düzeltmeleri (2026-07-10)
 

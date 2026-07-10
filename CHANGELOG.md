@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.9.0 — Export selection UX, turn navigation, focus-loss audit (2026-07-10)
+
+Follow-up to 2.8.0 after immediate feedback ("bulk operations and navigation must come without being asked"):
+
+- **Export selection, everywhere**: the Turn breakdown table now has a checkbox per turn **synced live with the turn bands** (change either side, both update), an **only** button per row (export just that turn), and **All / None / Invert** bulk buttons. The summary line and the Export MD button show a live `included/total` counter when anything is excluded.
+- **Turn-to-turn navigation**: every turn band carries **↑ ↓** buttons — jump straight to the previous/next turn without scrolling; the band is sticky, so the buttons are always at hand.
+- **Export MD remembers the last folder** you saved to; the save dialog opens there next time (falls back to the session folder).
+- **Focus-loss audit (fleet-wide)**: a balanced-paren scan found **38** QuickPick/InputBox steps that silently dismissed when the window lost focus — mid-wizard this killed the flow with no message (the most likely cause of "the agent question never appeared" reports). All 38 now keep focus. Also cross-checked: every declared command is registered, every menu reference exists, every context-menu `when` clause matches a real tree item state.
+- **Add Trigger asks the agent question unambiguously** ("Which agent runs this task when the trigger fires?") and the confirmation states the target ("armed — runs on psikolog…"). The wizard's "Run now" after creating a workflow now runs the exact workflow it created.
+
 ## 2.8.0 — Turn bands, Markdown export, wizard & trigger fixes (2026-07-10)
 
 Third round of real-user feedback:

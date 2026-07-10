@@ -928,7 +928,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         getPricing: () => pricing,
         maxMessages: () => cfg().get<number>('maxTranscriptMessages', 400),
         contextLimit: () => cfg().get<number>('contextWindowTokens', 200000),
-        titleFor: (sessionId: string) => sessionTitles()[sessionId]
+        titleFor: (sessionId: string) => sessionTitles()[sessionId],
+        lastExportDir: () => context.globalState.get<string>('agentfarm.lastExportDir'),
+        setLastExportDir: (dir: string) => { void context.globalState.update('agentfarm.lastExportDir', dir); }
     };
 
     // ---------- G1/G5: Needs You queue + kanban board ----------
@@ -1155,7 +1157,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         files: agents.map(a => path.join(a.dir, '.claude', 'settings.local.json'))
                     }
                 ],
-                { placeHolder: 'Where should the live hooks be installed?' }
+                { ignoreFocusOut: true, placeHolder: 'Where should the live hooks be installed?' }
             );
             if (!target) { return; }
             const confirmed = await vscode.window.showWarningMessage(
@@ -1256,7 +1258,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     { label: 'Interactive', description: 'opens a claude session with this prompt', mode: 'interactive' as TaskMode },
                     { label: 'Headless', description: 'claude -p — runs the prompt and exits', mode: 'headless' as TaskMode }
                 ],
-                { placeHolder: 'How should this task run?' }
+                { ignoreFocusOut: true, placeHolder: 'How should this task run?' }
             );
             if (!mode) { return; }
             // J5: alternative CLI executors, only offered when profiles exist.
@@ -1266,7 +1268,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const cliPick = await vscode.window.showQuickPick(
                     [{ label: 'claude', description: 'default executor (full monitoring)' },
                      ...profiles.map(p => ({ label: p.name, description: p.headless }))],
-                    { placeHolder: 'Which CLI runs this task? (non-claude executors get output archiving only)' });
+                    { ignoreFocusOut: true, placeHolder: 'Which CLI runs this task? (non-claude executors get output archiving only)' });
                 if (!cliPick) { return; }
                 if (cliPick.label !== 'claude') { cli = cliPick.label; }
             }
@@ -1294,7 +1296,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     { label: 'Weekly', sched: 'weekly' as ScheduleKind },
                     { label: 'Once', sched: 'once' as ScheduleKind }
                 ],
-                { placeHolder: 'How often?' }
+                { ignoreFocusOut: true, placeHolder: 'How often?' }
             );
             if (!kindPick) { return; }
 
@@ -1316,7 +1318,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (kindPick.sched === 'weekly') {
                     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
                     const dayPick = await vscode.window.showQuickPick(
-                        days.map((d, i) => ({ label: d, dow: i })), { placeHolder: 'Which day?' });
+                        days.map((d, i) => ({ label: d, dow: i })), { ignoreFocusOut: true, placeHolder: 'Which day?' });
                     if (!dayPick) { return; }
                     dow = dayPick.dow;
                 }
@@ -1326,7 +1328,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     { label: 'Interactive', mode: 'interactive' as TaskMode },
                     { label: 'Headless', description: 'claude -p — runs and exits', mode: 'headless' as TaskMode }
                 ],
-                { placeHolder: 'Run mode' }
+                { ignoreFocusOut: true, placeHolder: 'Run mode' }
             );
             if (!mode) { return; }
             taskManager.addSchedule({
@@ -1576,7 +1578,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     ]
                 }
             ];
-            const pick = await vscode.window.showQuickPick(recipes, { placeHolder: 'Hazır reçete seç (kurulduktan sonra adımları düzenleyebilirsin)' });
+            const pick = await vscode.window.showQuickPick(recipes, { ignoreFocusOut: true, placeHolder: 'Hazır reçete seç (kurulduktan sonra adımları düzenleyebilirsin)' });
             if (!pick) { return; }
             const agent = await resolveAgent(undefined);
             if (!agent) { return; }
@@ -1607,7 +1609,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 void vscode.window.showInformationMessage('Agent Farm: no secrets stored.');
                 return;
             }
-            const pick = await vscode.window.showQuickPick(names, { placeHolder: 'Delete which secret?' });
+            const pick = await vscode.window.showQuickPick(names, { ignoreFocusOut: true, placeHolder: 'Delete which secret?' });
             if (!pick) { return; }
             await vault.delete(pick);
             void vscode.window.showInformationMessage(`Agent Farm: secret "${pick}" deleted.`);
@@ -1753,10 +1755,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (!wfPick) { return; }
                 action = { kind: 'workflow', workflowId: wfPick.w.id };
             } else {
-                const agent = await resolveAgent(undefined);
-                if (!agent) { return; }
+                const agentPick = await vscode.window.showQuickPick(
+                    agents.map(a => ({ label: a.name, description: a.dir, agent: a })),
+                    { placeHolder: 'Which agent runs this task when the trigger fires?', ignoreFocusOut: true }
+                );
+                if (!agentPick) { return; }
+                const agent = agentPick.agent;
                 const prompt = await vscode.window.showInputBox({
-                    prompt: 'Task prompt — {watch} = watched path, {payload} = webhook body',
+                    prompt: `Prompt for ${agent.name} — {watch} = watched path, {payload} = webhook body`,
                     value: typePick.type === 'watch' ? 'DUTIES.md dosyanı oku ve şu hedefle ilgili görevini uygula: {watch}'
                         : typePick.type === 'webhook' ? 'Şu isteği işle: {payload}' : '',
                     ignoreFocusOut: true
@@ -1796,15 +1802,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 title, type: typePick.type, watchPath, hookEvent, hookAgent, token, action,
                 debounceSec, cooldownSec, maxPerHour, enabled: true
             });
+            const target = action.kind === 'task' ? `runs on ${action.agentName}`
+                : action.kind === 'dispatch' ? 'dispatches to the best agent per firing'
+                    : 'runs a workflow';
             const timing = `debounce ${debounceSec}s, cooldown ${cooldownSec}s, max ${maxPerHour || '∞'}/h`;
             if (typePick.type === 'webhook' && token) {
                 const url = `http://127.0.0.1:${cfg().get<number>('livePort', 8377)}/trigger/${token}`;
                 await vscode.env.clipboard.writeText(url);
                 void vscode.window.showInformationMessage(
-                    `Agent Farm: webhook trigger armed — URL copied to clipboard: ${url} (POST; body JSON'u {payload} olarak göreve girer; ${timing}).`);
+                    `Agent Farm: webhook trigger armed — ${target}; URL copied to clipboard: ${url} (POST; body JSON'u {payload} olarak göreve girer; ${timing}).`);
             } else {
                 void vscode.window.showInformationMessage(
-                    `Agent Farm: trigger "${title}" armed (${timing} — right-click the trigger to edit).`);
+                    `Agent Farm: trigger "${title}" armed — ${target} (${timing}; right-click the trigger to edit).`);
             }
         }),
 
@@ -1902,7 +1911,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 void vscode.window.showInformationMessage('Agent Farm: no task history yet.');
                 return;
             }
-            const pick = await vscode.window.showQuickPick(files, { placeHolder: 'Which month?' });
+            const pick = await vscode.window.showQuickPick(files, { ignoreFocusOut: true, placeHolder: 'Which month?' });
             if (pick) {
                 await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(path.join(dir, pick)));
             }
@@ -1916,7 +1925,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     { label: `Bind to ${t.agentName}`, bind: true },
                     { label: 'Any agent (choose at run time)', bind: false }
                 ],
-                { placeHolder: 'Template scope' }
+                { ignoreFocusOut: true, placeHolder: 'Template scope' }
             );
             if (!bindAgent) { return; }
             taskManager.addTemplate({
@@ -1934,7 +1943,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     taskManager.templates.map(t => ({
                         label: t.title, description: t.agentName ?? 'any agent', template: t
                     })),
-                    { placeHolder: 'Which template?' }
+                    { ignoreFocusOut: true, placeHolder: 'Which template?' }
                 );
                 template = pick?.template;
             }
@@ -2133,13 +2142,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 });
             }
             if (!steps.length) { return; }
-            taskManager.addWorkflow(title, steps);
+            const created = taskManager.addWorkflow(title, steps);
             const run = await vscode.window.showInformationMessage(
-                `Agent Farm: workflow "${title}" created (${steps.length} steps).`, 'Run now');
-            if (run === 'Run now') {
-                const w = taskManager.workflows[taskManager.workflows.length - 1];
-                taskManager.runWorkflow(w);
-            }
+                `Agent Farm: workflow "${title}" created (${steps.length} steps) — see Tasks → Workflows.`, 'Run now');
+            if (run === 'Run now') { taskManager.runWorkflow(created); }
         }),
 
         vscode.commands.registerCommand('agentfarm.runWorkflow', (node?: TaskNode) => {
@@ -2171,7 +2177,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 [
                     { label: 'Headless', mode: 'headless' as TaskMode },
                     { label: 'Interactive', mode: 'interactive' as TaskMode }
-                ], { placeHolder: 'Run mode' });
+                ], { ignoreFocusOut: true, placeHolder: 'Run mode' });
             if (!mode) { return; }
             taskManager.addWorkflowStep(node.workflow, {
                 agentId: agent.id, agentName: agent.name,
@@ -2207,7 +2213,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     { label: 'Output contract', description: step.outputContract ?? 'text', id: 'contract' },
                     { label: 'Verification', description: step.verify ? `${step.verify.criteria.slice(0, 40)} (retries ${step.verify.retries ?? 1})` : '(none)', id: 'verify' }
                 ],
-                { placeHolder: `Edit step ${node.index + 1}: ${step.title}` }
+                { ignoreFocusOut: true, placeHolder: `Edit step ${node.index + 1}: ${step.title}` }
             );
             if (!field) { return; }
             switch (field.id) {
@@ -2278,17 +2284,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         [
                             { label: 'Headless', mode: 'headless' as TaskMode },
                             { label: 'Interactive', mode: 'interactive' as TaskMode }
-                        ], { placeHolder: 'Run mode' });
+                        ], { ignoreFocusOut: true, placeHolder: 'Run mode' });
                     if (v) { taskManager.updateWorkflowStep(w, node.index, { mode: v.mode }); }
                     break;
                 }
                 case 'onFail': {
                     const v = await vscode.window.showQuickPick(
                         [
-                            { label: 'Stop workflow', value: undefined as 'continue' | number | undefined },
-                            { label: 'Continue to next step', value: 'continue' as const },
-                            { label: 'Jump to step…', value: 'goto' as unknown as number }
-                        ], { placeHolder: 'If this step fails?' });
+                            { label: 'If this step fails: stop the workflow', value: undefined as 'continue' | number | undefined },
+                            { label: 'If this step fails: continue to next step', value: 'continue' as const },
+                            { label: 'If this step fails: jump to step…', value: 'goto' as unknown as number }
+                        ], { ignoreFocusOut: true, placeHolder: 'What happens if this step fails?' });
                     if (!v) { return; }
                     if (String(v.value) === 'goto') {
                         const target = await vscode.window.showInputBox({
@@ -2316,7 +2322,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         [
                             { label: 'Text output', contract: undefined as 'json' | undefined },
                             { label: 'JSON output', description: 'next step can use {prev_json.field}', contract: 'json' as const }
-                        ], { placeHolder: 'Output contract' });
+                        ], { ignoreFocusOut: true, placeHolder: 'Output contract' });
                     if (!v) { return; }
                     taskManager.updateWorkflowStep(w, node.index, { outputContract: v.contract });
                     break;
@@ -2390,7 +2396,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (!schedule) {
                 const pick = await vscode.window.showQuickPick(
                     taskManager.schedules.map(s => ({ label: s.title, description: s.agentName, s })),
-                    { placeHolder: 'Which schedule?' });
+                    { ignoreFocusOut: true, placeHolder: 'Which schedule?' });
                 schedule = pick?.s;
             }
             if (!schedule) { return; }
@@ -2454,7 +2460,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     detail: g.identical ? 'all copies identical' : 'copies have DIVERGED',
                     group: g
                 })),
-                { placeHolder: 'Which shared memory file do you want to work on?' }
+                { ignoreFocusOut: true, placeHolder: 'Which shared memory file do you want to work on?' }
             );
             if (!groupPick) { return; }
             const g = groupPick.group;
@@ -2465,7 +2471,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     { label: '$(sync) Sync all copies from one source', id: 'sync' },
                     { label: '$(edit) Create merge draft (combine by hand, then apply)', id: 'merge' }
                 ],
-                { placeHolder: `${g.name} — ${g.identical ? 'identical' : 'diverged'} across ${g.copies.length} agents` }
+                { ignoreFocusOut: true, placeHolder: `${g.name} — ${g.identical ? 'identical' : 'diverged'} across ${g.copies.length} agents` }
             );
             if (!action) { return; }
 
@@ -2486,14 +2492,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         label: c.agent.name,
                         description: relTime(c.file.mtime),
                         copy: c
-                    })), { placeHolder: 'Left side' });
+                    })), { ignoreFocusOut: true, placeHolder: 'Left side' });
                 if (!left) { return; }
                 const right = await vscode.window.showQuickPick(
                     g.copies.filter(c => c !== left.copy).map(c => ({
                         label: c.agent.name,
                         description: relTime(c.file.mtime),
                         copy: c
-                    })), { placeHolder: 'Right side' });
+                    })), { ignoreFocusOut: true, placeHolder: 'Right side' });
                 if (!right) { return; }
                 await vscode.commands.executeCommand('vscode.diff',
                     vscode.Uri.file(left.copy.file.path),
@@ -2508,7 +2514,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     description: `${relTime(c.file.mtime)} • ${(c.file.size / 1024).toFixed(1)} KB`,
                     copy: c
                 })),
-                { placeHolder: 'Which copy is the source of truth?' }
+                { ignoreFocusOut: true, placeHolder: 'Which copy is the source of truth?' }
             );
             if (!source) { return; }
             const targets = g.copies.filter(c => c !== source.copy);
@@ -2563,7 +2569,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     { label: 'Last 7 days', ms: 7 * 24 * 3600 * 1000 },
                     { label: 'Last 30 days', ms: 30 * 24 * 3600 * 1000 }
                 ],
-                { placeHolder: 'Digest period' }
+                { ignoreFocusOut: true, placeHolder: 'Digest period' }
             );
             if (!period) { return; }
             const md = buildOutputsDigest(taskManager.tasks, period.ms);
@@ -2587,7 +2593,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     { label: 'Last 30 days', days: 30 },
                     { label: 'Last 90 days', days: 90 }
                 ],
-                { placeHolder: 'Report period' }
+                { ignoreFocusOut: true, placeHolder: 'Report period' }
             );
             if (!period) { return; }
             const md = buildFleetReport(agents, index, insights, period.days,
@@ -2627,10 +2633,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
             const root = roots.length === 1
                 ? roots[0]
-                : (await vscode.window.showQuickPick(roots, { placeHolder: 'Where should the agent live?' }));
+                : (await vscode.window.showQuickPick(roots, { ignoreFocusOut: true, placeHolder: 'Where should the agent live?' }));
             if (!root) { return; }
             const name = await vscode.window.showInputBox({
-                prompt: 'New agent name (folder name)',
+                ignoreFocusOut: true, prompt: 'New agent name (folder name)',
                 validateInput: v => /^[\w-]+$/.test(v) ? undefined : 'Use letters, digits, - or _ only'
             });
             if (!name) { return; }
@@ -2714,7 +2720,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
                 const pick = await vscode.window.showQuickPick(
                     open.map(s => ({ label: s.rule, description: s.agentName, detail: s.evidence, s })),
-                    { placeHolder: 'Review which suggestion?' });
+                    { ignoreFocusOut: true, placeHolder: 'Review which suggestion?' });
                 suggestion = pick?.s;
             }
             if (!suggestion) { return; }
@@ -2849,7 +2855,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
             candidates.push({ label: '$(edit) Manual case…', detail: 'type the input yourself' });
             const picked = await vscode.window.showQuickPick(candidates, {
-                placeHolder: `New eval case for ${agent.name} — from a bad trace, or manual`
+                ignoreFocusOut: true, placeHolder: `New eval case for ${agent.name} — from a bad trace, or manual`
             });
             if (!picked) { return; }
             const input = await vscode.window.showInputBox({
@@ -2888,7 +2894,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     label: a.name,
                     description: `${evalStore.casesFor(a.id).length} case(s)`,
                     agent: a
-                })), { placeHolder: 'Run whose eval set?' });
+                })), { ignoreFocusOut: true, placeHolder: 'Run whose eval set?' });
                 agent = pick?.agent;
             }
             if (!agent) { return; }
@@ -2932,7 +2938,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 description: c.source?.kind ?? 'manual',
                 detail: `Expect: ${c.expectation.slice(0, 100)}`,
                 caseId: c.id
-            })), { placeHolder: `${agent.name} — ${cases.length} eval case(s); pick one to delete` });
+            })), { ignoreFocusOut: true, placeHolder: `${agent.name} — ${cases.length} eval case(s); pick one to delete` });
             if (!pick) { return; }
             const del = await vscode.window.showWarningMessage(
                 `Delete eval case "${pick.label}"?`, { modal: true }, 'Delete');
@@ -3070,7 +3076,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 { label: '$(file) B varyantını dosyadan seç…', variantKind: 'file' },
                 { label: '$(edit) Eklenecek kuralı elle yaz…', variantKind: 'paste' });
             const picked = await vscode.window.showQuickPick(options, {
-                placeHolder: `A = ${agent.name}'in mevcut CLAUDE.md'si. B varyantı nereden gelsin?`
+                ignoreFocusOut: true, placeHolder: `A = ${agent.name}'in mevcut CLAUDE.md'si. B varyantı nereden gelsin?`
             });
             if (!picked) { return; }
             let variantB: string | undefined;
@@ -3150,7 +3156,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return;
             }
             const pick = await vscode.window.showQuickPick(items, {
-                placeHolder: candidates.length
+                ignoreFocusOut: true, placeHolder: candidates.length
                     ? 'Distill which memory file? (oversized/stale candidates first)'
                     : 'No obvious candidates — pick any memory file'
             });
@@ -3234,7 +3240,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 description: `${Math.round(h.score * 100)}%`,
                 detail: h.chunk.text.slice(0, 160),
                 file: h.chunk.sessionFile
-            })), { placeHolder: `"${query}" — ${hits.length} memory record(s), pick to open`, matchOnDetail: true });
+            })), { ignoreFocusOut: true, placeHolder: `"${query}" — ${hits.length} memory record(s), pick to open`, matchOnDetail: true });
             if (pick) {
                 void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(pick.file));
             }
@@ -3325,13 +3331,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 description: `${s.commits} commit(s)${s.dirty ? ' • uncommitted changes' : ''}`,
                 detail: s.diffStat,
                 stat: s
-            })), { placeHolder: `${agent.name} — ${wts.length} worktree run(s)` });
+            })), { ignoreFocusOut: true, placeHolder: `${agent.name} — ${wts.length} worktree run(s)` });
             if (!pick) { return; }
             const action = await vscode.window.showQuickPick([
                 { label: '$(git-merge) Merge into current branch', id: 'merge' },
                 { label: '$(folder-opened) Open worktree folder', id: 'open' },
                 { label: '$(trash) Discard (remove worktree + branch)', id: 'discard' }
-            ], { placeHolder: `⑂ ${pick.stat.wt.name} — ${pick.stat.diffStat}` });
+            ], { ignoreFocusOut: true, placeHolder: `⑂ ${pick.stat.wt.name} — ${pick.stat.diffStat}` });
             if (!action) { return; }
             if (action.id === 'merge') {
                 const r = await mergeWorktree(agent.dir, pick.stat.wt);
@@ -3385,7 +3391,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     (p.exportedAt ? ` • ${new Date(p.exportedAt).toLocaleDateString()}` : ''),
                 detail: p.source,
                 file: p.file
-            })), { placeHolder: `${packs.length} pack(s) — pick to import (memory/secrets never included; triggers arrive disabled)` });
+            })), { ignoreFocusOut: true, placeHolder: `${packs.length} pack(s) — pick to import (memory/secrets never included; triggers arrive disabled)` });
             if (pick) {
                 await vscode.commands.executeCommand('agentfarm.importAgentPack', pick.file);
             }
@@ -3628,10 +3634,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
             const root = roots.length === 1
                 ? roots[0]
-                : await vscode.window.showQuickPick(roots, { placeHolder: 'Where should the imported agent live?' });
+                : await vscode.window.showQuickPick(roots, { ignoreFocusOut: true, placeHolder: 'Where should the imported agent live?' });
             if (!root) { return; }
             const name = await vscode.window.showInputBox({
-                prompt: 'Name for the imported agent (folder name)',
+                ignoreFocusOut: true, prompt: 'Name for the imported agent (folder name)',
                 value: pack.name,
                 validateInput: v => !/^[\w-]+$/.test(v) ? 'Use letters, digits, - or _ only'
                     : fs.existsSync(path.join(root, v)) ? 'A folder with this name already exists' : undefined
