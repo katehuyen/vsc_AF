@@ -72,11 +72,33 @@
 
         const memHtml = a.memoryFiles.map(f => `
             <tr class="click" data-file="${C.esc(f.path)}">
-                <td>${C.esc(f.name)}</td>
+                <td>${C.esc(f.name)}${f.orphan ? ' <span title="not referenced in MEMORY.md">⚠</span>' : ''}</td>
                 <td class="num">${(f.size / 1024).toFixed(1)} KB</td>
                 <td class="num">~${C.fmtTok(f.tokens)}</td>
                 <td class="num">${relTime(f.mtime)}</td>
+                <td class="num">${f.recalls === -1 ? '<span class="muted" title="index — loads every session">index</span>'
+                    : f.recalls > 0 ? `<span style="color:var(--vscode-charts-green,#4caf50)">×${f.recalls}</span>`
+                    : '<span class="muted">0</span>'}</td>
             </tr>`).join('');
+
+        // X2 — one card answering "is this agent's mind lean and actually used?"
+        const ch = DATA.contextHealth;
+        const warn = v => v > 0 ? `<span style="color:var(--vscode-charts-yellow,#cca700)">${v}</span>` : '0';
+        const dutyRead = ch.duties.active === 0 ? '—'
+            : ch.duties.lastReadTs ? relTime(ch.duties.lastReadTs)
+            : (ch.duties.sessionsThisWeek > 0 ? '<span style="color:var(--vscode-charts-red,#f14c4c)">never</span>' : 'never');
+        const healthHtml = `
+            <div class="card">
+                <h3>Context health <a data-guide="hafiza-yonetimi">?</a></h3>
+                <div class="sub" style="line-height:1.9">
+                    <strong>Memory:</strong> ${ch.memory.files} files · ~${C.fmtTok(ch.memory.tokens)} tok on demand ·
+                        ${warn(ch.memory.orphans)} orphan · ${warn(ch.memory.notRecalled)} not recalled (30d) · ${warn(ch.memory.stale)} stale (45d+)<br>
+                    <strong>Skills:</strong> ${ch.skills.total} · ${warn(ch.skills.unused)} unused (30d)<br>
+                    <strong>MCP:</strong> ${ch.mcp.total} server(s) · ${warn(ch.mcp.unused)} unused (30d)${ch.mcp.disabled ? ` · ${ch.mcp.disabled} disabled` : ''}<br>
+                    <strong>Duties:</strong> ${ch.duties.active} active${ch.duties.paused ? ` · ${ch.duties.paused} paused` : ''} ·
+                        DUTIES.md last read: ${dutyRead} <span class="muted">(${ch.duties.sessionsThisWeek} session(s) this week)</span>
+                </div>
+            </div>`;
 
         const sessHtml = DATA.sessions.map(s => `
             <tr class="click" data-session="${C.esc(s.file)}">
@@ -117,6 +139,7 @@
             <div class="row">
                 <div class="card chartbox"><h3>Cost by model</h3>${C.donut(modelItems, {})}</div>
                 <div class="card chartbox"><h3>Top tools</h3>${toolItems.length ? C.hbars(toolItems, { fmt: C.fmtTok }) : '<p class="muted">No tool calls recorded.</p>'}</div>
+                ${healthHtml}
             </div>
             <h2>Standing duties <a data-guide="nobet-gorevleri">?</a></h2>
             <div class="spread">
@@ -142,8 +165,8 @@
             <div class="tablewrap"><table><tr><th></th><th>Category</th><th>Finding</th></tr>${insightsHtml}</table></div>
             <h2>Memory files</h2>
             <div class="tablewrap"><table>
-                <tr><th>File</th><th class="num">Size</th><th class="num">Tokens</th><th class="num">Modified</th></tr>
-                ${memHtml || '<tr><td colspan="4" class="muted">No memory files.</td></tr>'}
+                <tr><th>File</th><th class="num">Size</th><th class="num">Tokens</th><th class="num">Modified</th><th class="num">Recalls 30d</th></tr>
+                ${memHtml || '<tr><td colspan="5" class="muted">No memory files.</td></tr>'}
             </table></div>
             <h2>Sessions</h2>
             <div class="tablewrap"><table>

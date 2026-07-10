@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.15.0",
+  "version": "2.16.0",
   "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
@@ -384,6 +384,11 @@
       {
         "command": "agentfarm.copyMemory",
         "title": "Copy Memory File to Agent…",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.scanMemoryContradictions",
+        "title": "Scan Memory Contradictions… (cheap model)",
         "category": "Agent Farm"
       },
       {
@@ -1028,6 +1033,11 @@
           "command": "agentfarm.fixMemoryIndex",
           "when": "view == agentfarm.agents && viewItem =~ /memory-(section|index)/",
           "group": "1_mem@2"
+        },
+        {
+          "command": "agentfarm.scanMemoryContradictions",
+          "when": "view == agentfarm.agents && viewItem == memory-section",
+          "group": "1_mem@3"
         },
         {
           "command": "agentfarm.copyMemory",

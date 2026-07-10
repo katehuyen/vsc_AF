@@ -2,6 +2,13 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.16.0 — Memory & duty management, wave 3: unified intelligence (2026-07-11)
+
+- **Capability Matrix grows two grids**: *Memory files × agents* — cross-agent copies with 30-day recall heat and a **divergence ring** (orange = this copy's content differs from the newest one); ＋ copies the file to that agent with the MEMORY.md pointer line. *Duties × agents* — cadence cells (`turn/start/daily/weekly/manual`, ⏸ = paused, tooltip shows watch/do); ＋ copies the duty (with the CLAUDE.md DUTIES.md-reference check on the target). Multi-agent rows sort first.
+- **"Context health" card on the Agent Detail page**: memory hygiene (files, on-demand tokens, orphans, not-recalled 30d, stale 45d+), skills/MCP usage summaries and duty compliance (last DUTIES.md read + sessions this week) in one glance. The Memory files table gains a **Recalls 30d** column and orphan markers.
+- **Scan Memory Contradictions…** (right-click a Memory section): a cheap model cross-reads the agent's memory corpus and lists conflicting claims (which files, which claims, short note) as a markdown report. Date/recency differences don't count; output passes JSON validation and the quota-message guard. Findings are suggestions — read both records before merging or deleting anything.
+- **Frontmatter audit**: memory files without a description now surface as info insights (index lines and semantic recall key on the description).
+
 ## 2.15.0 — Memory & duty management, wave 2 (2026-07-11)
 
 - **Memory Graph panel** (`Agent Farm: Open Memory Graph`, or right-click a Memory section): the `[[wikilink]]` structure of each agent's memory as a graph — node size = token weight, green = recalled (30d), dashed yellow ring = missing from MEMORY.md; edge = resolved wikilink (targets resolve via basename AND frontmatter `name:` slug). Cards list **broken links** (targets that resolve to nothing), **islands** (records with no links at all) and **hubs** (most linked-to records). Click a node to open the file.

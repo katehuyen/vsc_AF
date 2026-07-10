@@ -411,6 +411,8 @@ Ajanların öğretilmiş yetenekleri — Agent Skills (SKILL.md klasörleri) —
 - **Hücreler:** yeşil dolu rozet + sayı = son 30 günde kullanılmış (renk yoğunluğu = çağrı sıklığı); soluk ✓ = kurulu ama kullanılmamış; ⏻ = o ajanda kapalı; **＋** = kurulu değil — tıklayınca yeteneği başka bir ajandan **o ajana kopyalar** (onaylı).
 - **Özet çipleri:** her matriste toplam / kullanılan (30g) / kullanılmayan sayısı. Hiçbir ajanın 30 günde kullanmadığı satır sarı ● ile işaretlenir — filo genelinde temizlenebilecek yetenekler.
 - Satır adına ya da dolu bir hücreye tıklamak ilgili SKILL.md / config dosyasını açar. Herhangi bir kopyalama/düzenleme sonrası matris kendini tazeler.
+- **Memory files matrisi (2.16.0):** aynı adlı hafıza dosyalarının hangi ajanlarda olduğu, hücrede 30 günlük recall sayısı; **turuncu halkalı hücre = kopya en yenisinden SAPMIŞ** (içerik farklı — birinde güncellenmiş, diğeri eski). ＋ ile dosyayı o ajana kopyala (hedef MEMORY.md'ye indeks satırıyla). Çok-ajanlı satırlar üstte — senkron/diverjans asıl orada önemli.
+- **Duties matrisi (2.16.0):** nöbet başlıkları × ajanlar; hücrede kadans kısaltması (`turn/start/daily/weekly/manual`), ⏸ = duraklatılmış; tooltip watch/do gösterir; ＋ ile nöbeti o ajana kopyala (hedefte CLAUDE.md DUTIES.md referansı yoksa onayla eklenir).
 
 ## Sır Kasası
 
@@ -562,6 +564,8 @@ Ajanın hafızası (`memory/*.md`) artık yalnız listelenmiyor — **gerçekten
 - **New Memory File…** (bölümde **+**): ad + tür + tek satır açıklama sorar; frontmatter'lı dosyayı kurar ve **MEMORY.md'ye pointer satırını otomatik ekler** — yeni hafıza asla yetim doğmaz.
 - **Archive Memory File** (dosya satırında arşiv ikonu): silmek yerine `memory/archive/` klasörüne taşır (tarama kapsamı dışı) ve MEMORY.md'deki satırını düşürür (indeks yedeklenir). "Belki lazım olur" dosyaları context'ten çıkarmanın güvenli yolu.
 - **Copy Memory File to Agent…** (2.15.0, sağ tık): dosyayı başka ajana kopyalar ve hedefin MEMORY.md'sine pointer satırını otomatik ekler — kopya yetim doğmaz.
+- **Scan Memory Contradictions…** (2.16.0, Memory bölümü sağ tık): ucuz model, ajanın hafıza dosyalarını çapraz okuyup **birbiriyle çelişen ifadeleri** listeler (hangi iki dosya, hangi iki iddia, kısa değerlendirme) — sonuç markdown raporu olarak açılır. Tarih/güncellik farkı çelişki sayılmaz; model çıktısı JSON doğrulamasından ve limit-mesajı korumasından geçer. **Bulgular öneri niteliğindedir: doğrulamadan silme/birleştirme yapma.**
+- **Frontmatter denetimi (2.16.0):** description'sız hafıza dosyası Insights'a bilgi bulgusu düşürür — indeks satırı ve anlamsal arama açıklamaya dayanır.
 - **Fix Memory Index…** (2.15.0, Memory bölümü/MEMORY.md sağ tık): indeksi tek seferde onarır — yetim dosyalara pointer satırı ekler (açıklama frontmatter'dan), var olmayan dosyalara işaret eden ölü satırları düşürür. Önerilen düzeltmeler tek tek seçilebilir; indeks yedeklenir.
 
 ### Hafıza Grafiği (Memory Graph)
@@ -1071,7 +1075,7 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 - **Export Task Outputs Digest (Markdown)** — headless çıktıların toplu özeti
 - **Quick Start (Hızlı Başlangıç)** — bu kılavuzun başlangıç bölümünü açar
 - **Add Standing Duty / Add Duty from Template… / Edit Duty… / Copy Duty to Agent… / Automate Duty… / Move Duty Up-Down / Open DUTIES.md** — nöbet görevi yönetimi
-- **New Memory File… / Archive Memory File / Copy Memory File to Agent… / Fix Memory Index…** — hafıza yönetimi (frontmatter iskeleti + otomatik indeks satırı / yedekli arşivleme / tek-tık indeks onarımı)
+- **New Memory File… / Archive Memory File / Copy Memory File to Agent… / Fix Memory Index… / Scan Memory Contradictions…** — hafıza yönetimi (frontmatter iskeleti + otomatik indeks satırı / yedekli arşivleme / tek-tık indeks onarımı / ucuz modelle çelişki taraması)
 - **Open Memory Graph** — hafızanın [[wikilink]] dokusu: hub'lar, adalar, kırık hedefler, recall renklendirmesi
 - **Search Transcripts…** — tüm oturum kayıtlarında metin/regex arama
 - **Sample Output Quality Now** — kalite karnesi için elle örnekleme (ucuz model)
@@ -1152,6 +1156,13 @@ Tamamlanan fazlar (hepsi 2026-07-08):
 **Bundan sonrası ayrı ve ayrıntılı bir belgede yaşıyor:** komut paletinden **Agent Farm: Open Development Plan** — uzak görüşlü gelişim planı: olay tetikleyicileri, doğrulayıcı adımlar, MCP paneli, n8n/webhook köprüsü, multimedya üretim hattı (Kling/Seedance/Nano Banana sınıfı modellerle içerik fabrikası), zeki gözetim, çoklu makine ve vizyoner ufuk. Kodlama o plandaki öncelik sırasını izler.
 
 ## Sürüm Notları
+
+### 2.16.0 — Hafıza & Nöbet Yönetimi Dalga 3: Birleşik Zekâ (2026-07-11)
+
+- **Yetenek Matrisi'ne iki yeni matris:** *Memory files × Ajanlar* (recall yoğunluğu + **diverjans halkası** — kopya en yeni sürümden sapmışsa turuncu; ＋ ile indeksli kopyalama) ve *Duties × Ajanlar* (kadans/⏸ hücreleri, ＋ ile nöbet kopyalama). Filonun tüm bilgi ve nöbet dokusu tek ekranda.
+- **Ajan Detayında "Context health" kartı:** hafıza (dosya/token/orphan/hatırlanmayan/bayat), skills ve MCP kullanım özetleri, nöbet uyumu (DUTIES.md son okuma + haftalık oturum sayısı) — "bu ajanın zihni ne durumda" tek kart. Memory files tablosuna **Recalls 30d** kolonu ve orphan işareti eklendi.
+- **Scan Memory Contradictions…:** ucuz modelle hafıza dosyaları arasında çelişki taraması; markdown rapor. Bkz. [Hafıza Yönetimi](#hafiza-yonetimi).
+- **Frontmatter denetimi:** description'sız hafıza dosyaları Insights'ta.
 
 ### 2.15.0 — Hafıza & Nöbet Yönetimi Dalga 2 (2026-07-11)
 

@@ -1,10 +1,14 @@
+import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
+import { addDuty, CLAUDE_MD_SNIPPET, claudeMdReferencesDuties } from '../core/duties';
 import {
     copyMcpServerTo, mcpLastUsed, mcpUsage, readAgentMcpServers, readDisabledServers
 } from '../core/mcp';
+import { copyMemoryFileTo, memoryLastUsed, memoryUsage } from '../core/memusage';
 import { copySkillTo, readAgentSkills, skillLastUsed, skillUsage } from '../core/skills';
 import { SessionIndex } from '../core/sessions';
+import { hashString, safeReadFile } from '../core/util';
 import { htmlShell } from './base';
 
 /**
@@ -80,12 +84,74 @@ function buildData(deps: CapabilitiesDeps): Record<string, unknown> {
         }
     }
 
+    // Memory: row identity = basename; cross-agent copies get divergence hashes.
+    const memRows = new Map<string, {
+        name: string;
+        cells: Record<string, Cell & { tokens: number; mtime: number; hash: number; diverged?: boolean }>;
+    }>();
+    for (const agent of agents) {
+        const usage = memoryUsage(deps.index, agent.id, WINDOW_MS);
+        const lastUsed = memoryLastUsed(deps.index, agent.id);
+        for (const f of agent.memoryFiles) {
+            if (f.name.toLowerCase() === 'memory.md') { continue; }
+            const key = f.name.toLowerCase();
+            let row = memRows.get(key);
+            if (!row) {
+                row = { name: f.name, cells: {} };
+                memRows.set(key, row);
+            }
+            row.cells[agent.id] = {
+                present: true,
+                calls: usage.get(key) ?? 0,
+                lastTs: lastUsed.get(key),
+                source: f.path,
+                tokens: f.tokens,
+                mtime: f.mtime,
+                hash: hashString(safeReadFile(f.path) ?? '')
+            };
+        }
+    }
+    for (const row of memRows.values()) {
+        const cells = Object.values(row.cells);
+        if (cells.length < 2) { continue; }
+        const newest = cells.reduce((a, b) => (b.mtime > a.mtime ? b : a));
+        for (const c of cells) {
+            if (c.hash !== newest.hash) { c.diverged = true; }
+        }
+    }
+
+    // Duties: row identity = title; cells carry cadence + state.
+    const dutyRows = new Map<string, {
+        title: string;
+        cells: Record<string, { cadence: string; paused: boolean; watch?: string; action?: string; source?: string }>;
+    }>();
+    for (const agent of agents) {
+        for (const d of agent.duties) {
+            const key = d.title.toLowerCase();
+            let row = dutyRows.get(key);
+            if (!row) {
+                row = { title: d.title, cells: {} };
+                dutyRows.set(key, row);
+            }
+            row.cells[agent.id] = {
+                cadence: d.cadence, paused: d.paused, watch: d.watch, action: d.action,
+                source: agent.dutiesPath
+            };
+        }
+    }
+
+    const spread = (cells: Record<string, unknown>) => Object.keys(cells).length;
     return {
         generatedAt: Date.now(),
         agents: agents.map(a => ({ id: a.id, name: a.name })),
         skills: [...skillRows.values()]
             .sort((a, b) => a.scope === b.scope ? a.name.localeCompare(b.name) : a.scope === 'user' ? -1 : 1),
-        mcp: [...mcpRows.values()].sort((a, b) => a.name.localeCompare(b.name))
+        mcp: [...mcpRows.values()].sort((a, b) => a.name.localeCompare(b.name)),
+        // Shared (multi-agent) rows first — that's where sync/divergence matters.
+        memory: [...memRows.values()].sort((a, b) =>
+            spread(b.cells) - spread(a.cells) || a.name.localeCompare(b.name)),
+        duties: [...dutyRows.values()].sort((a, b) =>
+            spread(b.cells) - spread(a.cells) || a.title.localeCompare(b.title))
     };
 }
 
@@ -163,6 +229,55 @@ export class CapabilitiesPanel {
                 } catch (e) {
                     void vscode.window.showWarningMessage(`Agent Farm: ${(e as Error).message ?? String(e)}`);
                 }
+                break;
+            }
+            case 'copyMemory': {
+                const to = this.agentById(String(msg.toAgentId));
+                const from = this.agentById(String(msg.fromAgentId));
+                if (!to || !from) { return; }
+                const file = from.memoryFiles.find(f => f.name.toLowerCase() === String(msg.name).toLowerCase());
+                if (!file) { return; }
+                const ok = await vscode.window.showInformationMessage(
+                    `Copy memory "${file.name}" from ${from.name} to ${to.name}? (it is also indexed in the target's MEMORY.md)`,
+                    { modal: true }, 'Copy');
+                if (ok !== 'Copy') { return; }
+                try {
+                    copyMemoryFileTo(file.path, to.dir);
+                    this.deps.refreshTrees();
+                    this.refresh();
+                } catch (e) {
+                    void vscode.window.showWarningMessage(`Agent Farm: ${(e as Error).message ?? String(e)}`);
+                }
+                break;
+            }
+            case 'copyDuty': {
+                const to = this.agentById(String(msg.toAgentId));
+                const from = this.agentById(String(msg.fromAgentId));
+                if (!to || !from) { return; }
+                const duty = from.duties.find(d => d.title.toLowerCase() === String(msg.title).toLowerCase());
+                if (!duty) { return; }
+                if (to.duties.some(d => d.title === duty.title)) {
+                    void vscode.window.showWarningMessage(`Agent Farm: ${to.name} already has a duty titled "${duty.title}".`);
+                    return;
+                }
+                const ok = await vscode.window.showInformationMessage(
+                    `Copy duty "${duty.title}" from ${from.name} to ${to.name}?`,
+                    { modal: true }, 'Copy');
+                if (ok !== 'Copy') { return; }
+                addDuty(to.dir, { ...duty });
+                if (to.claudeMdPath) {
+                    const claudeMd = fs.readFileSync(to.claudeMdPath, 'utf8');
+                    if (!claudeMdReferencesDuties(claudeMd)) {
+                        const append = await vscode.window.showWarningMessage(
+                            `${to.name}'s CLAUDE.md does not mention DUTIES.md — without a reference the agent will never check its duties. Append the instruction section?`,
+                            { modal: true }, 'Append to CLAUDE.md');
+                        if (append === 'Append to CLAUDE.md') {
+                            fs.writeFileSync(to.claudeMdPath, claudeMd.replace(/\n*$/, '\n') + CLAUDE_MD_SNIPPET, 'utf8');
+                        }
+                    }
+                }
+                this.deps.refreshTrees();
+                this.refresh();
                 break;
             }
             case 'copyMcp': {

@@ -17,7 +17,7 @@ import { RelayTailer } from './core/relay';
 import {
     createWorktree, isGitRepo, listAfWorktrees, mergeWorktree, removeWorktree, worktreeStatus
 } from './core/worktree';
-import { applyDistilled, distillCandidates, distillFile } from './core/distill';
+import { applyDistilled, distillCandidates, distillFile, scanContradictions } from './core/distill';
 import { buildImpactReport, correlateVersions, InstructionHistory } from './core/instrhistory';
 import { chunkMemoryFile, memoryFileRefs } from './core/memquery';
 import { modelArgsFor as policyModelArgs, ModelPolicyRule } from './core/modelpolicy';
@@ -2034,6 +2034,46 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 `Agent Farm: MEMORY.md updated — ${picks.filter(p => p.fix.kind === 'add').length} added, ` +
                 `${picks.filter(p => p.fix.kind === 'remove').length} removed` +
                 (backup ? ` (backup: ${path.basename(backup)})` : '') + '.');
+        }),
+
+        vscode.commands.registerCommand('agentfarm.scanMemoryContradictions', async (node?: AgentNode) => {
+            const agent = node && 'agent' in node ? node.agent : await resolveAgent(undefined);
+            if (!agent) { return; }
+            const files = agent.memoryFiles.filter(f => f.name.toLowerCase() !== 'memory.md');
+            if (files.length < 2) {
+                void vscode.window.showInformationMessage('Agent Farm: need at least two memory files to cross-check.');
+                return;
+            }
+            const result = await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: `Agent Farm: scanning ${agent.name}'s memory for contradictions (cheap model)…` },
+                () => scanContradictions(agent.dir, judgeArgs(), files));
+            if (result.error) {
+                void vscode.window.showWarningMessage(`Agent Farm: contradiction scan failed — ${result.error}`);
+                return;
+            }
+            const list = result.contradictions ?? [];
+            if (!list.length) {
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: no contradictions found across ${result.scanned.length} memory file(s)` +
+                    (result.truncated ? ' (corpus truncated to budget — largest files first were included)' : '') + '. 🌿');
+                return;
+            }
+            const lines = [
+                `# ${agent.name} — hafıza çelişki taraması`,
+                '',
+                `Taranan: ${result.scanned.join(', ')}${result.truncated ? ' _(bütçe nedeniyle kısmi)_' : ''}`,
+                `Model bulgusu ${list.length} — **doğrulamadan silme/birleştirme yapma**, önce iki kaydı da oku.`,
+                ''
+            ];
+            list.forEach((c, i) => {
+                lines.push(`## ${i + 1}. ${c.files.join(' ↔ ')}`);
+                lines.push(`- **A:** ${c.claimA}`);
+                lines.push(`- **B:** ${c.claimB}`);
+                if (c.note) { lines.push(`- **Not:** ${c.note}`); }
+                lines.push('');
+            });
+            const doc = await vscode.workspace.openTextDocument({ content: lines.join('\n'), language: 'markdown' });
+            await vscode.window.showTextDocument(doc);
         }),
 
         vscode.commands.registerCommand('agentfarm.copyMemory', async (node?: AgentNode) => {

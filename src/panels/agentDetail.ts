@@ -2,8 +2,12 @@ import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
 import { watchStatus } from '../core/duties';
 import { Insight } from '../core/health';
+import { mcpUsage, readAgentMcpServers, readDisabledServers } from '../core/mcp';
+import { indexedMemoryNames, memoryUsage } from '../core/memusage';
+import { readAgentSkills, skillUsage } from '../core/skills';
 import { SessionIndex } from '../core/sessions';
 import { totalTokens } from '../core/pricing';
+import { safeReadFile } from '../core/util';
 import { htmlShell } from './base';
 
 export interface AgentDetailDeps {
@@ -41,6 +45,47 @@ function buildData(agent: AgentInfo, deps: AgentDetailDeps): Record<string, unkn
         }
     }
 
+    // X2 — context health: is this agent's mind lean and actually used?
+    const WINDOW_MS = 30 * 24 * 3600 * 1000;
+    const STALE_MS = 45 * 24 * 3600 * 1000;
+    const now = Date.now();
+    const memUsage = memoryUsage(deps.index, agent.id, WINDOW_MS);
+    const indexed = agent.memoryIndexPath
+        ? indexedMemoryNames(safeReadFile(agent.memoryIndexPath) ?? '')
+        : undefined;
+    const memFiles = agent.memoryFiles.filter(f => f.name.toLowerCase() !== 'memory.md');
+    const agentSkills = readAgentSkills(agent);
+    const sUsage = skillUsage(deps.index, agent.id, WINDOW_MS);
+    const servers = readAgentMcpServers(agent);
+    const mUsage = mcpUsage(deps.index, agent.id, WINDOW_MS);
+    const disabledServers = readDisabledServers(agent);
+    const weekAgo = now - 7 * 24 * 3600 * 1000;
+    const recentSessions = sessions.filter(s => s.lastTs >= weekAgo && !s.isSidechain);
+    const contextHealth = {
+        memory: {
+            files: memFiles.length,
+            tokens: memFiles.reduce((a, f) => a + f.tokens, 0),
+            orphans: indexed ? memFiles.filter(f => !indexed.has(f.name.toLowerCase())).length : 0,
+            notRecalled: memFiles.filter(f => !(memUsage.get(f.name.toLowerCase()))).length,
+            stale: memFiles.filter(f => now - f.mtime > STALE_MS).length
+        },
+        skills: {
+            total: agentSkills.length,
+            unused: agentSkills.filter(s => !(sUsage.get(s.name))).length
+        },
+        mcp: {
+            total: servers.length,
+            unused: servers.filter(s => !(mUsage.get(s.name))).length,
+            disabled: servers.filter(s => disabledServers.has(s.name)).length
+        },
+        duties: {
+            active: agent.duties.filter(d => !d.paused).length,
+            paused: agent.duties.filter(d => d.paused).length,
+            lastReadTs: Math.max(0, ...sessions.map(s => s.dutiesReadTs ?? 0)),
+            sessionsThisWeek: recentSessions.length
+        }
+    };
+
     return {
         agent: {
             id: agent.id,
@@ -53,7 +98,9 @@ function buildData(agent: AgentInfo, deps: AgentDetailDeps): Record<string, unkn
             claudeMdPath: agent.claudeMdPath,
             memoryIndexPath: agent.memoryIndexPath,
             memoryFiles: agent.memoryFiles.map(f => ({
-                path: f.path, name: f.name, size: f.size, mtime: f.mtime, tokens: f.tokens
+                path: f.path, name: f.name, size: f.size, mtime: f.mtime, tokens: f.tokens,
+                recalls: f.name.toLowerCase() === 'memory.md' ? -1 : (memUsage.get(f.name.toLowerCase()) ?? 0),
+                orphan: !!indexed && f.name.toLowerCase() !== 'memory.md' && !indexed.has(f.name.toLowerCase())
             })),
             toolFiles: agent.toolFiles.map(f => ({ path: f.path, name: f.name })),
             dutiesPath: agent.dutiesPath,
@@ -71,6 +118,7 @@ function buildData(agent: AgentInfo, deps: AgentDetailDeps): Record<string, unkn
                 };
             })
         },
+        contextHealth,
         totals: {
             cost: totalCost,
             sessions: sessions.length,

@@ -1,6 +1,6 @@
 import * as cp from 'child_process';
 import * as fs from 'fs';
-import { estimateTokens, sanitizePrompt } from './util';
+import { estimateTokens, extractJson, sanitizePrompt } from './util';
 
 /**
  * I3 — Memory distillation. A cheap model condenses a bloated or stale
@@ -101,4 +101,79 @@ export function applyDistilled(filePath: string, draft: string): string {
     fs.copyFileSync(filePath, backup);
     fs.writeFileSync(filePath, draft, 'utf8');
     return backup;
+}
+
+// ---------- D2 — cross-file contradiction scan ----------
+
+export interface Contradiction {
+    files: string[];
+    claimA: string;
+    claimB: string;
+    note?: string;
+}
+
+export interface ContradictionResult {
+    contradictions?: Contradiction[];
+    error?: string;
+    /** files actually included (budget may truncate the corpus) */
+    scanned: string[];
+    truncated: boolean;
+}
+
+const CONTRADICTION_PROMPT =
+    'Sen bir hafıza denetçisisin. Aşağıda bir yapay zekâ ajanının hafıza dosyaları var ' +
+    '(=== DOSYA: ad === satırlarıyla ayrılmış). Görevin: dosyalar ARASINDA veya içinde ' +
+    'birbiriyle ÇELİŞEN ifadeleri bulmak. Tarih/güncellik farkı tek başına çelişki değildir ' +
+    '(yeni bilgi eskisini güncelleyebilir); yalnızca hangisinin geçerli olduğu belirsiz kalan ' +
+    'gerçek uyuşmazlıkları listele. YALNIZCA şu JSON ile yanıt ver, başka hiçbir şey yazma: ' +
+    '{"contradictions":[{"files":["a.md","b.md"],"claimA":"...","claimB":"...","note":"kısa değerlendirme"}]} ' +
+    '— çelişki yoksa boş dizi döndür.';
+
+const SCAN_BUDGET_CHARS = 24_000;
+
+/** Cheap-model sweep over an agent's memory corpus for contradicting claims. */
+export function scanContradictions(
+    cwd: string,
+    judgeArgs: string,
+    files: { name: string; path: string }[]
+): Promise<ContradictionResult> {
+    return new Promise(resolve => {
+        let corpus = '';
+        const scanned: string[] = [];
+        let truncated = false;
+        for (const f of files) {
+            let content = '';
+            try { content = fs.readFileSync(f.path, 'utf8'); } catch { continue; }
+            const block = `\n=== DOSYA: ${f.name} ===\n${content.trim()}\n`;
+            if (corpus.length + block.length > SCAN_BUDGET_CHARS) { truncated = true; break; }
+            corpus += block;
+            scanned.push(f.name);
+        }
+        if (!scanned.length) {
+            resolve({ error: 'no readable memory files', scanned, truncated });
+            return;
+        }
+        const prompt = sanitizePrompt(`${CONTRADICTION_PROMPT} ${corpus}`);
+        cp.exec(`claude ${judgeArgs.trim()} -p "${prompt}"`,
+            { cwd, timeout: 240_000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
+            (err, stdout) => {
+                const out = String(stdout ?? '').trim();
+                if (!out) {
+                    resolve({ error: 'no output' + (err ? ` (${String(err.message).slice(0, 80)})` : ''), scanned, truncated });
+                    return;
+                }
+                if (/session limit|usage limit|rate limit|overloaded|api error/i.test(out.slice(0, 200))) {
+                    resolve({ error: 'model unavailable: ' + out.slice(0, 120), scanned, truncated });
+                    return;
+                }
+                const json = extractJson(out) as { contradictions?: Contradiction[] } | undefined;
+                if (!json || !Array.isArray(json.contradictions)) {
+                    resolve({ error: 'unparseable model output: ' + out.slice(0, 120), scanned, truncated });
+                    return;
+                }
+                const clean = json.contradictions.filter(c =>
+                    c && Array.isArray(c.files) && typeof c.claimA === 'string' && typeof c.claimB === 'string');
+                resolve({ contradictions: clean, scanned, truncated });
+            });
+    });
 }

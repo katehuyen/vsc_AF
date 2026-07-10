@@ -31,18 +31,40 @@
         }
         const tipParts = [];
         if (cell.disabled) { tipParts.push('DISABLED for this agent'); }
-        tipParts.push(cell.calls > 0 ? cell.calls + ' calls (30d), last ' + relTime(cell.lastTs) : 'unused (30d)');
+        if (cell.diverged) { tipParts.push('≠ DIVERGED from the newest copy — contents differ'); }
+        tipParts.push(cell.calls > 0
+            ? cell.calls + (kind === 'memory' ? ' recalls' : ' calls') + ' (30d), last ' + relTime(cell.lastTs)
+            : (kind === 'memory' ? 'not recalled (30d)' : 'unused (30d)'));
+        if (kind === 'memory' && typeof cell.tokens === 'number') { tipParts.push('~' + cell.tokens + ' tok · changed ' + relTime(cell.mtime)); }
         if (cell.source) { tipParts.push(cell.source); }
         const tip = tipParts.join('\n');
+        const divCls = cell.diverged ? ' divg' : '';
         if (cell.disabled) {
             return `<td class="c"><button class="pill off" title="${C.esc(tip)}" data-open="${C.esc(cell.source || '')}">⏻</button></td>`;
         }
         if (cell.calls > 0) {
             const heat = Math.min(1, 0.35 + Math.log10(cell.calls + 1) / 3);
-            return `<td class="c"><button class="pill used" style="opacity:${heat.toFixed(2)}" title="${C.esc(tip)}" ` +
+            return `<td class="c"><button class="pill used${divCls}" style="opacity:${heat.toFixed(2)}" title="${C.esc(tip)}" ` +
                 `data-open="${C.esc(cell.source || '')}">${cell.calls}</button></td>`;
         }
-        return `<td class="c"><button class="pill idle" title="${C.esc(tip)}" data-open="${C.esc(cell.source || '')}">✓</button></td>`;
+        return `<td class="c"><button class="pill idle${divCls}" title="${C.esc(tip)}" data-open="${C.esc(cell.source || '')}">✓</button></td>`;
+    }
+
+    const CADENCE_SHORT = { 'every-turn': 'turn', 'session-start': 'start', daily: 'daily', weekly: 'weekly', manual: 'manual' };
+
+    function dutyCellHtml(row, agent, cell) {
+        if (!cell) {
+            const donor = DATA.agents.find(a => row.cells[a.id]);
+            if (!donor) { return '<td class="c absent"><span title="no duty">—</span></td>'; }
+            return `<td class="c absent"><button class="copyhere" title="no such duty — copy from ${C.esc(donor.name)}" ` +
+                `data-kind="duty" data-name="${C.esc(row.title)}" data-from="${C.esc(donor.id)}" data-to="${C.esc(agent.id)}">＋</button></td>`;
+        }
+        const tip = `${row.title} [${cell.cadence}${cell.paused ? ', paused' : ''}]` +
+            (cell.watch ? '\nWatch: ' + cell.watch : '') +
+            (cell.action ? '\nDo: ' + cell.action : '');
+        const label = (cell.paused ? '⏸ ' : '') + (CADENCE_SHORT[cell.cadence] || cell.cadence);
+        return `<td class="c"><button class="pill duty${cell.paused ? ' off' : ''}" title="${C.esc(tip)}" ` +
+            `data-open="${C.esc(cell.source || '')}">${C.esc(label)}</button></td>`;
     }
 
     function matrix(rows, kind, title, hint) {
@@ -62,13 +84,37 @@
             const anyUse = agents.some(a => row.cells[a.id] && row.cells[a.id].calls > 0);
             const firstSrc = agents.map(a => row.cells[a.id] && row.cells[a.id].source).find(Boolean) || '';
             const scopeTag = row.scope === 'user' ? ' <span class="tag">shared</span>' : '';
-            const sub = kind === 'skill' ? (row.description || '') : (row.transport + ' · ' + row.commandOrUrl);
+            const sub = kind === 'skill' ? (row.description || '')
+                : kind === 'memory' ? 'memory file — green count = explicit recalls (30d)'
+                : (row.transport + ' · ' + row.commandOrUrl);
             return `<tr>
                 <td class="name"><button class="rowname${anyUse ? '' : ' muted'}" title="${C.esc(sub)}" data-open="${C.esc(firstSrc)}">${C.esc(row.name)}</button>${scopeTag}${anyUse ? '' : ' <span class="dead" title="no agent used this in 30 days">●</span>'}</td>` +
                 agents.map(a => cellHtml(row, a, row.cells[a.id], kind)).join('') +
             '</tr>';
         }).join('');
         return `<h2>${title} <span class="chips">${chips}</span></h2>
+            <div class="card" style="overflow-x:auto"><table class="matrix">${head}${body}</table></div>`;
+    }
+
+    function dutyMatrix(rows) {
+        const agents = DATA.agents;
+        if (!rows.length) {
+            return '<h2>Duties</h2><p class="muted">None found. Add one from the Agents tree: Duties → right-click.</p>';
+        }
+        const pausedCells = rows.reduce((a, r) => a + agents.filter(x => r.cells[x.id] && r.cells[x.id].paused).length, 0);
+        const chips = `<span class="badge">${rows.length} total</span>` +
+            (pausedCells ? `<span class="badge warn">${pausedCells} paused cell(s)</span>` : '');
+        const head = `<tr><th class="name">Duties</th>` +
+            agents.map(a => `<th class="agent" title="${C.esc(a.name)}">${C.esc(a.name.length > 10 ? a.name.slice(0, 9) + '…' : a.name)}</th>`).join('') +
+            '</tr>';
+        const body = rows.map(row => {
+            const firstSrc = agents.map(a => row.cells[a.id] && row.cells[a.id].source).find(Boolean) || '';
+            return `<tr>
+                <td class="name"><button class="rowname" title="standing duty" data-open="${C.esc(firstSrc)}">${C.esc(row.title)}</button></td>` +
+                agents.map(a => dutyCellHtml(row, a, row.cells[a.id])).join('') +
+            '</tr>';
+        }).join('');
+        return `<h2>Duties <span class="chips">${chips}</span></h2>
             <div class="card" style="overflow-x:auto"><table class="matrix">${head}${body}</table></div>`;
     }
 
@@ -91,6 +137,8 @@
                 }
                 .matrix .pill.idle { opacity: 0.45; }
                 .matrix .pill.off { color: var(--vscode-charts-orange, #d18616); }
+                .matrix .pill.divg { box-shadow: 0 0 0 2px var(--vscode-charts-orange, #d18616); border-radius: 10px; }
+                .matrix .pill.duty { font-size: 11px; opacity: 0.85; }
                 .matrix .copyhere { opacity: 0.25; font-size: 13px; }
                 .matrix .copyhere:hover { opacity: 1; color: var(--vscode-charts-blue, #3794ff); }
                 .matrix .absent span { opacity: 0.2; }
@@ -111,7 +159,9 @@
             </div>
             ${matrix(DATA.skills, 'skill', 'Skills', 'Scaffold one from the Agents tree: Skills → +.')}
             ${matrix(DATA.mcp, 'mcp', 'MCP servers', 'Add one from the Agents tree: MCP → +.')}
-            <p class="footnote">Counts come from real session transcripts: Skill tool calls, typed /commands and mcp__server__tool calls. Copying installs into the target agent's .claude/skills or .mcp.json; new claude sessions pick it up.</p>
+            ${matrix(DATA.memory || [], 'memory', 'Memory files', 'Create one from the Agents tree: Memory → +.')}
+            ${dutyMatrix(DATA.duties || [])}
+            <p class="footnote">Counts come from real session transcripts: Skill tool calls, typed /commands, mcp__server__tool calls and explicit memory-file reads. Memory cells with an orange ring have DIVERGED from the newest copy. Copying installs into the target agent (skills/.mcp.json/memory+index/DUTIES.md); new claude sessions pick it up.</p>
         `;
 
         document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
@@ -120,11 +170,13 @@
             b.addEventListener('click', () => {
                 if (b.dataset.open) { vscode.postMessage({ type: 'open', path: b.dataset.open }); }
             }));
+        const COPY_MSG = { skill: 'copySkill', mcp: 'copyMcp', memory: 'copyMemory', duty: 'copyDuty' };
         document.querySelectorAll('.copyhere').forEach(b =>
             b.addEventListener('click', () => {
                 vscode.postMessage({
-                    type: b.dataset.kind === 'skill' ? 'copySkill' : 'copyMcp',
+                    type: COPY_MSG[b.dataset.kind] || 'copyMcp',
                     name: b.dataset.name,
+                    title: b.dataset.name,
                     scope: b.dataset.scope,
                     fromAgentId: b.dataset.from,
                     toAgentId: b.dataset.to

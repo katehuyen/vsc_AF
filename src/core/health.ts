@@ -3,6 +3,7 @@ import { dailyCostHistory, detectCostAnomaly, todayCost } from './anomaly';
 import { antigravityStatus } from './antigravity';
 import { claudeMdReferencesDuties, watchStatus } from './duties';
 import { agentMcpConfigFiles, mcpUsage, readAgentMcpServers } from './mcp';
+import { readMemoryFrontmatter } from './memusage';
 import { readAgentSkills, skillUsage } from './skills';
 import { lintPermissions } from './permlint';
 import { looksLikePlaintextSecret } from './secrets';
@@ -144,6 +145,23 @@ export function buildInsights(
                     message: `"${f.name}" untouched for ${Math.round((now - f.mtime) / 86400000)} days — review or archive.`,
                     filePath: f.path,
                     guideAnchor: 'saglik-bayat-hafiza'
+                });
+            }
+        }
+
+        // 3b) Memory files without a frontmatter description — the description
+        // is what recall (index line + semantic search) keys on.
+        for (const f of agent.memoryFiles) {
+            if (f.name.toLowerCase() === 'memory.md') { continue; }
+            if (!readMemoryFrontmatter(f.path).description) {
+                insights.push({
+                    severity: 'info',
+                    agentId: agent.id,
+                    agentName: agent.name,
+                    category: 'memory-frontmatter',
+                    message: `"${f.name}" has no frontmatter description — index lines and recall quality depend on it.`,
+                    filePath: f.path,
+                    guideAnchor: 'hafiza-yonetimi'
                 });
             }
         }
