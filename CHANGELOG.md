@@ -2,6 +2,15 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.18.0 — Task lifecycle ergonomics, wave 2 (2026-07-11)
+
+Managing delegated work is now one click from the Tasks tree.
+
+- **Retry / Retry with edited prompt**: any finished task (done/failed/cancelled) can be re-queued as a fresh copy (`(retry N)` title, incrementing attempt counter), optionally after editing the prompt in place.
+- **Resume workflow from this step**: a finished workflow-step task can restart the chain from its own step, rebuilding the handoff from the previous step's output in the same run — no more re-running the whole workflow to get past a failed step.
+- **Run Next + priority/aging**: bump a queued task to the front of the launch order (`⬆ next`); the queue is no longer pure insertion order — higher priority launches first, ties break oldest-first, and every queued task gains +1 priority per 30 minutes waited so nothing starves.
+- **Duplicate guard**: adding a task whose exact prompt is already queued for that agent now asks for confirmation.
+
 ## 2.17.0 — Task health & analytics, wave 1 (2026-07-11)
 
 The "see at a glance + health signals" maturity from skills/MCP/memory, applied to the task system. Statistics merge the live task list with the `task-history/YYYY-MM.jsonl` archive, so finished-and-cleared runs still count.

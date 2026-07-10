@@ -160,12 +160,15 @@ export class TasksTreeProvider implements vscode.TreeDataProvider<TaskNode> {
         const m = meta[t.status];
         item.iconPath = new vscode.ThemeIcon(m.icon, m.color ? new vscode.ThemeColor(m.color) : undefined);
         const when = t.endedAt ?? t.startedAt ?? t.createdAt;
+        const prio = t.status === 'queued' && (t.priority ?? 0) > 0 ? ' • ⬆ next' : '';
         const statusLabel = t.status === 'queued' && t.deferredReason
             ? `deferred: ${t.deferredReason}`
             : t.status + (t.verified ? ` • verify ${t.verified}` : '');
-        item.description = `${statusLabel}${t.mode === 'headless' ? ' • headless' : ''} • ${relTime(when)}`;
+        item.description = `${statusLabel}${prio}${t.mode === 'headless' ? ' • headless' : ''} • ${relTime(when)}`;
         item.tooltip = `${t.title}\n[${t.status}] ${t.agentName} (${t.mode})\n\n${t.prompt}`;
-        item.contextValue = 'task-' + (t.status === 'queued' ? 'queued' : t.status === 'running' ? 'running' : 'final');
+        // Workflow-step finals get a distinct context so the menu offers "resume chain" instead of a plain retry.
+        const finalKind = t.workflowId !== undefined ? 'final-workflow' : 'final';
+        item.contextValue = 'task-' + (t.status === 'queued' ? 'queued' : t.status === 'running' ? 'running' : finalKind);
         if (t.status === 'running') {
             item.command = {
                 command: 'agentfarm.revealTaskTerminal',

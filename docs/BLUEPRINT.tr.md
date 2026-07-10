@@ -248,6 +248,18 @@ Faz 3 ile gelen koordinasyon katmanı. Yan paneldeki **Tasks** görünümünden 
 
 Görev durumları: ○ queued → ⟳ running → ✓ done / ⛔ failed / ⊘ cancelled. Çalışan göreve tıklayınca terminali öne gelir.
 
+**Dedup koruması (2.18.0):** aynı ajana birebir aynı prompt zaten kuyruktaysa Add Task seni uyarır — kazara ikinci kez eklemeyi önler.
+
+### Yeniden Çalıştırma ve Öncelik
+
+Biten veya bekleyen görevlerde tek tıkla (2.18.0):
+
+- **Retry** (biten görevlerde ⟳): görevi taze bir kopya olarak yeniden kuyruğa alır (`(retry N)` başlığı, artan deneme sayacı). **Retry with edited prompt…** aynısını, prompt'u önce düzeltmen için bir kutuyla açar. `done`/`failed`/`cancelled` görevlerin hepsinde çalışır.
+- **Resume workflow from this step** (⏵, workflow adımına ait biten görevlerde): zinciri o adımdan yeniden başlatır; besleme (handoff) aynı koşudaki bir önceki adımın çıktısından yeniden kurulur — baştan çalıştırmadan kaldığın yerden devam.
+- **Run Next** (⌃, bekleyen görevlerde): görevi kuyruğun önüne alır (önceliğini diğer bekleyenlerin üstüne çıkarır); kapasite açılınca ilk o başlar. Satırda `⬆ next` etiketiyle görünür.
+
+**Öncelik ve yaşlanma:** kuyruk artık salt ekleme sırası değil — yüksek öncelikli önce başlar, eşitlikte eski görev önce. Bekleyen her görev her 30 dakikada +1 öncelik kazanır (yaşlanma), böylece sürekli yüksek-öncelikli iş gelse bile eskiler aç kalmaz.
+
 ### Zamanlanmış Görevler
 
 Tasks görünümündeki takvim ikonuyla (**Add Scheduled Task**) tekrarlayan işler kurarsın:
@@ -1168,6 +1180,15 @@ Tamamlanan fazlar (hepsi 2026-07-08):
 **Bundan sonrası ayrı ve ayrıntılı bir belgede yaşıyor:** komut paletinden **Agent Farm: Open Development Plan** — uzak görüşlü gelişim planı: olay tetikleyicileri, doğrulayıcı adımlar, MCP paneli, n8n/webhook köprüsü, multimedya üretim hattı (Kling/Seedance/Nano Banana sınıfı modellerle içerik fabrikası), zeki gözetim, çoklu makine ve vizyoner ufuk. Kodlama o plandaki öncelik sırasını izler.
 
 ## Sürüm Notları
+
+### 2.18.0 — Görev Yaşam Döngüsü Ergonomisi, Dalga 2 (2026-07-11)
+
+Delege edilen işi yönetmek tek tıka indi ([Yeniden Çalıştırma ve Öncelik](#yeniden-calistirma-ve-oncelik)):
+
+- **Retry / Retry with edited prompt:** biten görevi taze kopya olarak yeniden kuyruğa al (isteğe bağlı prompt düzeltmesiyle).
+- **Resume workflow from this step:** başarısız workflow zincirini kaldığı adımdan, önceki adımın çıktısını yeniden besleyerek devam ettir — baştan koşma yok.
+- **Run Next + öncelik/yaşlanma:** bekleyen görevi kuyruğun önüne al; kuyruk önceliğe göre sıralanır, bekleyen görevler yaşlandıkça öncelik kazanır (açlık önleme).
+- **Dedup koruması:** aynı ajana birebir aynı prompt zaten kuyruktaysa Add Task uyarır.
 
 ### 2.17.0 — Görev Sağlığı & Analitiği, Dalga 1 (2026-07-11)
 

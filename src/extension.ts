@@ -1400,6 +1400,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 prompt: 'Prompt to send to claude', value: title, ignoreFocusOut: true
             });
             if (!prompt) { return; }
+            // Dedup guard: an identical task already waiting is almost always an accident.
+            if (taskManager.queuedDuplicate(agent.id, prompt)) {
+                const anyway = await vscode.window.showWarningMessage(
+                    `${agent.name} already has an identical task queued. Add another?`,
+                    { modal: true }, 'Add anyway');
+                if (anyway !== 'Add anyway') { return; }
+            }
             const mode = await vscode.window.showQuickPick(
                 [
                     { label: 'Interactive', description: 'opens a claude session with this prompt', mode: 'interactive' as TaskMode },
@@ -1497,6 +1504,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }),
         vscode.commands.registerCommand('agentfarm.deleteTask', (node?: TaskNode) => {
             if (node?.kind === 'task') { taskManager.deleteTask(node.task); }
+        }),
+        vscode.commands.registerCommand('agentfarm.retryTask', (node?: TaskNode) => {
+            if (node?.kind === 'task') { taskManager.retryTask(node.task); }
+        }),
+        vscode.commands.registerCommand('agentfarm.retryTaskEdit', async (node?: TaskNode) => {
+            if (node?.kind !== 'task') { return; }
+            const prompt = await vscode.window.showInputBox({
+                title: `Retry "${node.task.title}" with an edited prompt`,
+                value: node.task.prompt,
+                ignoreFocusOut: true
+            });
+            if (prompt === undefined) { return; }
+            taskManager.retryTask(node.task, prompt);
+        }),
+        vscode.commands.registerCommand('agentfarm.resumeWorkflow', (node?: TaskNode) => {
+            if (node?.kind === 'task') { taskManager.resumeWorkflowFromTask(node.task); }
+        }),
+        vscode.commands.registerCommand('agentfarm.runTaskNext', (node?: TaskNode) => {
+            if (node?.kind === 'task') { taskManager.runTaskNext(node.task); }
         }),
         vscode.commands.registerCommand('agentfarm.taskUp', (node?: TaskNode) => {
             if (node?.kind === 'task') { taskManager.moveTask(node.task, -1); }

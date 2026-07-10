@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.17.0",
+  "version": "2.18.0",
   "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
@@ -215,6 +215,29 @@
         "title": "Delete Task",
         "category": "Agent Farm",
         "icon": "$(trash)"
+      },
+      {
+        "command": "agentfarm.retryTask",
+        "title": "Retry",
+        "category": "Agent Farm",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "agentfarm.retryTaskEdit",
+        "title": "Retry with edited prompt…",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.resumeWorkflow",
+        "title": "Resume workflow from this step",
+        "category": "Agent Farm",
+        "icon": "$(debug-continue)"
+      },
+      {
+        "command": "agentfarm.runTaskNext",
+        "title": "Run Next",
+        "category": "Agent Farm",
+        "icon": "$(chevron-up)"
       },
       {
         "command": "agentfarm.taskUp",
@@ -1100,14 +1123,49 @@
           "group": "inline@1"
         },
         {
-          "command": "agentfarm.deleteTask",
+          "command": "agentfarm.runTaskNext",
+          "when": "view == agentfarm.tasks && viewItem == task-queued",
+          "group": "inline@0"
+        },
+        {
+          "command": "agentfarm.retryTask",
           "when": "view == agentfarm.tasks && viewItem == task-final",
+          "group": "inline@0"
+        },
+        {
+          "command": "agentfarm.resumeWorkflow",
+          "when": "view == agentfarm.tasks && viewItem == task-final-workflow",
+          "group": "inline@0"
+        },
+        {
+          "command": "agentfarm.deleteTask",
+          "when": "view == agentfarm.tasks && viewItem =~ /task-final/",
           "group": "inline@1"
         },
         {
           "command": "agentfarm.startTask",
           "when": "view == agentfarm.tasks && viewItem == task-queued",
           "group": "1_task@1"
+        },
+        {
+          "command": "agentfarm.runTaskNext",
+          "when": "view == agentfarm.tasks && viewItem == task-queued",
+          "group": "1_task@1b"
+        },
+        {
+          "command": "agentfarm.retryTask",
+          "when": "view == agentfarm.tasks && viewItem == task-final",
+          "group": "1_task@1c"
+        },
+        {
+          "command": "agentfarm.retryTaskEdit",
+          "when": "view == agentfarm.tasks && viewItem == task-final",
+          "group": "1_task@1d"
+        },
+        {
+          "command": "agentfarm.resumeWorkflow",
+          "when": "view == agentfarm.tasks && viewItem == task-final-workflow",
+          "group": "1_task@1c"
         },
         {
           "command": "agentfarm.cancelTask",

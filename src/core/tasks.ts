@@ -46,6 +46,8 @@ export interface FarmTask {
     workDir?: string;
     /** J5: named CLI profile (agentFarm.cliProfiles); empty = claude. */
     cli?: string;
+    /** Launch priority; higher runs sooner. Unset = 0. Ages up while queued so nothing starves. */
+    priority?: number;
 }
 
 export type ScheduleKind = 'daily' | 'weekly' | 'once';
@@ -449,10 +451,19 @@ export class TaskManager implements vscode.Disposable {
         return this.launch(task);
     }
 
+    /** Effective launch priority: base priority plus one point per 30 min waited (anti-starvation aging). */
+    private effectivePriority(t: FarmTask, now: number): number {
+        return (t.priority ?? 0) + Math.floor((now - t.createdAt) / (30 * 60_000));
+    }
+
     /** Launch deferred tasks as capacity frees up (called on every finish + every 30s). */
     private pump(): void {
-        for (const task of this.tasks) {
-            if (task.status !== 'queued' || !task.autoStart) { continue; }
+        const now = Date.now();
+        const ready = this.tasks
+            .filter(t => t.status === 'queued' && t.autoStart)
+            .sort((a, b) => this.effectivePriority(b, now) - this.effectivePriority(a, now)
+                || a.createdAt - b.createdAt);
+        for (const task of ready) {
             if (this.launchBlock(task)) { continue; }
             task.autoStart = false;
             task.deferredReason = undefined;
@@ -703,6 +714,80 @@ export class TaskManager implements vscode.Disposable {
         this.save();
     }
 
+    /** Bump a queued task above every other queued task and request its start (launches next as capacity frees). */
+    runTaskNext(task: FarmTask): void {
+        if (task.status !== 'queued') { return; }
+        const maxP = Math.max(0, ...this.tasks
+            .filter(t => t.status === 'queued' && t.id !== task.id)
+            .map(t => t.priority ?? 0));
+        task.priority = maxP + 1;
+        this.startTask(task);
+    }
+
+    /** An already-queued task on the same agent with the same prompt — the dup guard for the add flow. */
+    queuedDuplicate(agentId: string, prompt: string): FarmTask | undefined {
+        const norm = (s: string) => s.trim().replace(/\s+/g, ' ');
+        const target = norm(prompt);
+        return this.tasks.find(t => t.status === 'queued'
+            && t.agentId === agentId && norm(t.prompt) === target);
+    }
+
+    /**
+     * Re-run a finished task as a fresh copy. A workflow-step task (with no edited
+     * prompt) resumes the chain from its step instead of running in isolation.
+     */
+    retryTask(task: FarmTask, newPrompt?: string): FarmTask | undefined {
+        if (task.workflowId !== undefined && task.stepIndex !== undefined && newPrompt === undefined) {
+            this.resumeWorkflowFromTask(task);
+            return undefined;
+        }
+        const agent = this.getAgents().find(a => a.id === task.agentId);
+        if (!agent) {
+            void vscode.window.showWarningMessage(`Agent Farm: agent for "${task.title}" not found.`);
+            return undefined;
+        }
+        const baseTitle = task.title.replace(/ \(retry \d+\)$/i, '');
+        const attempt = (task.attempt ?? 0) + 1;
+        const copy = this.addTask(agent, `${baseTitle} (retry ${attempt})`, newPrompt ?? task.prompt, task.mode);
+        copy.attempt = attempt;
+        copy.outputContract = task.outputContract;
+        copy.cli = task.cli;
+        copy.workDir = task.workDir;
+        this.startTask(copy);
+        return copy;
+    }
+
+    /**
+     * Re-enter a workflow at the step this task belongs to, rebuilding the handoff
+     * from the previous step's output in the same run (empty for the first step).
+     */
+    resumeWorkflowFromTask(task: FarmTask): void {
+        const w = this.workflows.find(x => x.id === task.workflowId);
+        if (!w || task.stepIndex === undefined) {
+            void vscode.window.showWarningMessage(
+                `Agent Farm: the workflow for "${task.title}" no longer exists.`);
+            return;
+        }
+        const stepIndex = task.stepIndex;
+        if (stepIndex >= w.steps.length) {
+            void vscode.window.showWarningMessage(
+                `Agent Farm: step ${stepIndex + 1} no longer exists in "${w.title}".`);
+            return;
+        }
+        const runId = task.workflowRunId ?? newId();
+        let handoff: Handoff = {};
+        if (stepIndex > 0) {
+            const prev = this.tasks
+                .filter(t => t.workflowRunId === runId && t.stepIndex === stepIndex - 1 && t.status === 'done')
+                .sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0))[0];
+            if (prev) { handoff = this.computeHandoff(prev); }
+        }
+        this.runCounts.set(runId, 0);
+        void vscode.window.showInformationMessage(
+            `Agent Farm: resuming workflow "${w.title}" from step ${stepIndex + 1}.`);
+        this.routeToStep(w, stepIndex, handoff, runId);
+    }
+
     clearFinished(): number {
         const finished = this.tasks.filter(t =>
             t.status !== 'queued' && t.status !== 'running');
@@ -715,7 +800,11 @@ export class TaskManager implements vscode.Disposable {
     }
 
     nextQueuedFor(agentId: string): FarmTask | undefined {
-        return this.tasks.find(t => t.agentId === agentId && t.status === 'queued');
+        const now = Date.now();
+        return this.tasks
+            .filter(t => t.agentId === agentId && t.status === 'queued')
+            .sort((a, b) => this.effectivePriority(b, now) - this.effectivePriority(a, now)
+                || a.createdAt - b.createdAt)[0];
     }
 
     revealTerminal(task: FarmTask): void {
