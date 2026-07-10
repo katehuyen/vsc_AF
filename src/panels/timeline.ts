@@ -9,7 +9,9 @@ export interface TimelineDeps {
     tasks: TaskManager;
 }
 
-const DATA_WINDOW_MS = 4 * 3600 * 1000; // client renders 15m/1h/4h out of this
+// Detail ranges (≤8h) render from this in-memory window; 24h+ density ranges
+// are bucketed on demand from the persistent store (see the 'history' message).
+const DATA_WINDOW_MS = 8 * 3600 * 1000;
 
 function buildData(deps: TimelineDeps): Record<string, unknown> {
     return {
@@ -99,6 +101,18 @@ export class TimelinePanel {
             case 'refresh':
                 this.refresh();
                 break;
+            case 'history': {
+                // Long ranges: per-lane density buckets from the persistent event store.
+                const hours = typeof msg.hours === 'number' && msg.hours > 0 ? msg.hours : 24;
+                const windowMs = Math.min(hours, 31 * 24) * 3600 * 1000;
+                void this.panel.webview.postMessage({
+                    type: 'history',
+                    hours,
+                    density: this.deps.live.density(windowMs),
+                    workflowRuns: this.deps.tasks.workflowRuns(windowMs)
+                });
+                break;
+            }
         }
     }
 

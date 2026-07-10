@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import * as http from 'http';
 import * as vscode from 'vscode';
 import { truncate } from './util';
@@ -73,8 +74,28 @@ export interface LiveConfig {
     forward?: (type: string, message: string) => void;
 }
 
-const MAX_EVENTS = 800;
+// Detail views (≤8h) render from memory; longer ranges are bucketed from the
+// on-disk store, so memory only needs to cover the largest detail window.
+const MEMORY_WINDOW_MS = 24 * 3600 * 1000;
+const MEMORY_MAX_EVENTS = 30_000;
+// The JSONL store keeps a month of history for the density views.
+const STORE_RETENTION_MS = 31 * 24 * 3600 * 1000;
+const STORE_MAX_BYTES = 64 * 1024 * 1024;
 const SESSION_TTL_MS = 3 * 3600 * 1000;
+
+/** Per-lane density counts for long timeline ranges: [tools, prompts, alerts, other]. */
+export interface DensityLane {
+    name: string;
+    buckets: [number, number, number, number][];
+}
+
+export interface DensityData {
+    from: number;
+    to: number;
+    bucketMs: number;
+    lanes: DensityLane[];
+    totalEvents: number;
+}
 
 function toolDetail(input: Record<string, unknown> | undefined): string {
     if (!input) { return ''; }
@@ -100,9 +121,114 @@ export class LiveMonitor implements vscode.Disposable {
         private getConfig: () => LiveConfig,
         private resolveAgent: (cwd: string | undefined) => { agentId?: string; agentName?: string },
         /** B3 inbound: /trigger/<token> requests land here; return true if a trigger accepted it. */
-        private onTrigger?: (token: string, payload: unknown) => boolean
+        private onTrigger?: (token: string, payload: unknown) => boolean,
+        /** JSONL file persisting events across reloads (timeline history). */
+        private storeFile?: string
     ) {
         this.stuckTimer = setInterval(() => this.checkStuck(), 30_000);
+        this.loadStore();
+    }
+
+    // ---------- Persistent event store ----------
+
+    private pendingWrites: string[] = [];
+    private flushTimer?: NodeJS.Timeout;
+
+    /** Seed memory with the last day of persisted events; prune the store file. */
+    private loadStore(): void {
+        if (!this.storeFile || !fs.existsSync(this.storeFile)) { return; }
+        try {
+            const st = fs.statSync(this.storeFile);
+            const raw = fs.readFileSync(this.storeFile, 'utf8');
+            const cutoff = Date.now() - MEMORY_WINDOW_MS;
+            const keepFrom = Date.now() - STORE_RETENTION_MS;
+            const keptLines: string[] = [];
+            for (const line of raw.split('\n')) {
+                if (!line.trim()) { continue; }
+                let e: LiveEvent;
+                try { e = JSON.parse(line) as LiveEvent; } catch { continue; }
+                if (typeof e.ts !== 'number' || !e.kind) { continue; }
+                if (e.ts >= keepFrom) { keptLines.push(line); }
+                if (e.ts >= cutoff) { this.eventLog.push(e); }
+            }
+            this.eventLog.sort((a, b) => a.ts - b.ts);
+            this.capMemory();
+            // Rewrite when the file outgrew retention or size budget.
+            if (st.size > STORE_MAX_BYTES || keptLines.length * 1.5 < raw.split('\n').length) {
+                fs.writeFileSync(this.storeFile, keptLines.join('\n') + (keptLines.length ? '\n' : ''), 'utf8');
+            }
+        } catch { /* unreadable store — start fresh */ }
+    }
+
+    private persist(event: LiveEvent): void {
+        if (!this.storeFile) { return; }
+        this.pendingWrites.push(JSON.stringify(event));
+        if (this.flushTimer) { return; }
+        this.flushTimer = setTimeout(() => {
+            this.flushTimer = undefined;
+            const chunk = this.pendingWrites.join('\n') + '\n';
+            this.pendingWrites = [];
+            fs.appendFile(this.storeFile as string, chunk, () => { /* best effort */ });
+        }, 2000);
+    }
+
+    private capMemory(): void {
+        const cutoff = Date.now() - MEMORY_WINDOW_MS;
+        let drop = 0;
+        while (drop < this.eventLog.length && this.eventLog[drop].ts < cutoff) { drop++; }
+        const over = (this.eventLog.length - drop) - MEMORY_MAX_EVENTS;
+        if (over > 0) { drop += over; }
+        if (drop > 0) { this.eventLog = this.eventLog.slice(drop); }
+    }
+
+    /**
+     * Long-range density: bucketed per-lane counts read from the persistent
+     * store (memory only holds the last day). [tools, prompts, alerts, other].
+     */
+    density(windowMs: number, bucketCount = 168): DensityData {
+        const to = Date.now();
+        const from = to - windowMs;
+        const bucketMs = windowMs / bucketCount;
+        const lanes = new Map<string, [number, number, number, number][]>();
+        const laneOf = (name: string) => {
+            let l = lanes.get(name);
+            if (!l) {
+                l = Array.from({ length: bucketCount }, () => [0, 0, 0, 0] as [number, number, number, number]);
+                lanes.set(name, l);
+            }
+            return l;
+        };
+        let total = 0;
+        const add = (e: LiveEvent) => {
+            if (e.ts < from || e.ts > to) { return; }
+            const bucket = Math.min(bucketCount - 1, Math.floor((e.ts - from) / bucketMs));
+            const lane = laneOf(e.agentName ?? e.sessionId.slice(0, 8));
+            const slot = e.kind === 'toolStart' || e.kind === 'toolEnd' ? 0
+                : e.kind === 'prompt' ? 1
+                : e.kind === 'permission' ? 2
+                : 3;
+            lane[bucket][slot]++;
+            total++;
+        };
+        if (this.storeFile && windowMs > MEMORY_WINDOW_MS && fs.existsSync(this.storeFile)) {
+            try {
+                const memFrom = this.eventLog.length ? this.eventLog[0].ts : to;
+                for (const line of fs.readFileSync(this.storeFile, 'utf8').split('\n')) {
+                    if (!line.trim()) { continue; }
+                    try {
+                        const e = JSON.parse(line) as LiveEvent;
+                        // The store also holds what memory holds — avoid double counting.
+                        if (typeof e.ts === 'number' && e.ts < memFrom) { add(e); }
+                    } catch { /* skip bad line */ }
+                }
+            } catch { /* unreadable store */ }
+        }
+        for (const e of this.eventLog) { add(e); }
+        return {
+            from, to, bucketMs,
+            lanes: [...lanes.entries()].map(([name, buckets]) => ({ name, buckets })),
+            totalEvents: total
+        };
     }
 
     // ---------- HTTP listener ----------
@@ -209,9 +335,8 @@ export class LiveMonitor implements vscode.Disposable {
             transcriptPath: s.transcriptPath
         };
         this.eventLog.push(event);
-        if (this.eventLog.length > MAX_EVENTS) {
-            this.eventLog = this.eventLog.slice(-MAX_EVENTS);
-        }
+        this.capMemory();
+        this.persist(event);
         this.onEventEmitter.fire(event);
     }
 
@@ -390,6 +515,11 @@ export class LiveMonitor implements vscode.Disposable {
     dispose(): void {
         this.stop();
         clearInterval(this.stuckTimer);
+        if (this.flushTimer) { clearTimeout(this.flushTimer); }
+        if (this.storeFile && this.pendingWrites.length) {
+            try { fs.appendFileSync(this.storeFile, this.pendingWrites.join('\n') + '\n'); } catch { /* best effort */ }
+            this.pendingWrites = [];
+        }
         this.onDidUpdateEmitter.dispose();
         this.onEventEmitter.dispose();
     }

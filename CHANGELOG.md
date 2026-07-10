@@ -2,6 +2,21 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.13.0 — Deeper capability management + long time ranges (2026-07-10)
+
+**Skills & MCP — see at a glance, manage in one click:**
+
+- **Capability Matrix panel** (new, `Agent Farm: Open Capability Matrix`, table icon in the Agents view title): skills × agents and MCP servers × agents grids with 30-day usage heat, summary chips (total / used / unused), dead-capability markers, and one-click copy from an empty cell to install a capability onto that agent. Clicking a used cell or row name opens the source file.
+- **At-a-glance tree status:** MCP/Skills section headers now read `N • M used (30d)` (MCP also `K disabled`); rows show last-used time; MCP tooltips list the top called tools (`vault_read ×394, search_query ×88…`).
+- **MCP management (right-click):** Edit MCP Server… (edit command/URL in place, backed up), Disable/Enable MCP Server (via the agent's `disabledMcpjsonServers` — the same key Claude Code honors; disabled servers render greyed with ⊘), Copy MCP Server to Agent….
+- **Skill management (right-click):** Copy Skill to Agent…, Move Skill Between Agent/User Scope…, Reveal Skill Folder.
+- **Health insights:** warns on a SKILL.md with no description (claude loads skills by description, so it would rarely fire) and flags agent-scope skills unused for 30 days.
+
+**Long time ranges:**
+
+- **Live Timeline** gains an **8h** detail window plus **24h / 3d / 7d / 30d** density views (per-lane activity bars — tools/prompts/permission-waits — bucketed over 168 slots). Events now persist to `globalStorage/live-events.jsonl`, so **a reload no longer resets the timeline**: memory holds the last 24h, the file keeps 31 days (64MB cap, auto-pruned). 31 days by design, not load — hook events carry no pattern beyond that; the Dashboard is the tool for longer horizons.
+- **Dashboard** cost range adds **180d and 365d**; past 120 days the daily bars are bucketed weekly so they stay readable. No extra load — the data already lives in the transcripts.
+
 ## 2.12.0 — Skills management (2026-07-10)
 
 - **Skills section in the Agents tree**: each agent now lists its Agent Skills (SKILL.md folders) next to MCP — read from the same directories Claude Code reads (`.claude/skills/` in the agent folder = agent scope, `~/.claude/skills/` = user scope shared by all agents; agent scope shadows user scope on name clashes). Rows show name, scope and **real 30-day usage** counted from transcripts (both `Skill` tool calls by the model and typed `/command` invocations); green sparkle = in use. Click opens SKILL.md.

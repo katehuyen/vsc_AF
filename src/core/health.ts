@@ -3,6 +3,7 @@ import { dailyCostHistory, detectCostAnomaly, todayCost } from './anomaly';
 import { antigravityStatus } from './antigravity';
 import { claudeMdReferencesDuties, watchStatus } from './duties';
 import { agentMcpConfigFiles, mcpUsage, readAgentMcpServers } from './mcp';
+import { readAgentSkills, skillUsage } from './skills';
 import { lintPermissions } from './permlint';
 import { looksLikePlaintextSecret } from './secrets';
 import { SessionIndex } from './sessions';
@@ -333,6 +334,39 @@ export function buildInsights(
                             guideAnchor: 'mcp-yonetimi'
                         });
                     }
+                }
+            }
+        }
+        // Skill hygiene: agent-scope skills nobody used + skills claude can't pick well.
+        const skills = readAgentSkills(agent);
+        if (skills.length) {
+            const monthAgo = now - 30 * 24 * 3600 * 1000;
+            const hadSessions = index.forAgent(agent.id).some(s => s.lastTs >= monthAgo);
+            const usage = hadSessions ? skillUsage(index, agent.id, 30 * 24 * 3600 * 1000) : undefined;
+            for (const skill of skills) {
+                // User-scope skills appear under every agent — report those once (first agent).
+                if (!skill.description && (skill.scope === 'agent' || agent === agents[0])) {
+                    insights.push({
+                        severity: 'warning',
+                        agentId: agent.id,
+                        agentName: agent.name,
+                        category: 'skills',
+                        message: `Skill "${skill.name}" has no description in its SKILL.md frontmatter — claude uses the description to decide when to load a skill, so it will rarely fire.`,
+                        filePath: skill.source,
+                        guideAnchor: 'skill-yonetimi'
+                    });
+                }
+                // Unused user-scope skills are reported per agent too noisily; flag agent scope only.
+                if (usage && skill.scope === 'agent' && !usage.get(skill.name)) {
+                    insights.push({
+                        severity: 'info',
+                        agentId: agent.id,
+                        agentName: agent.name,
+                        category: 'skills',
+                        message: `Skill "${skill.name}" was not invoked in the last 30 days — its description still rides along in every session; remove or merge it if it earns nothing.`,
+                        filePath: skill.source,
+                        guideAnchor: 'skill-yonetimi'
+                    });
                 }
             }
         }

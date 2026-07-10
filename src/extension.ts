@@ -42,8 +42,10 @@ import {
     hasOurHooks, installHooksInto, removeHooksFrom, userSettingsPath
 } from './core/hooksInstaller';
 import { LiveMonitor } from './core/live';
-import { addMcpServer, removeMcpServer } from './core/mcp';
-import { addSkill, removeSkill } from './core/skills';
+import {
+    addMcpServer, copyMcpServerTo, readServerRawDef, removeMcpServer, setServerDisabled, updateMcpServer
+} from './core/mcp';
+import { addSkill, copySkillTo, moveSkillScope, removeSkill } from './core/skills';
 import { DEFAULT_MEDIA_PRICING, MediaPriceRule, mediaCostSince, readMediaMetas } from './core/media';
 import {
     applyMergedContent, buildMergeDraft, findDuplicateGroups, syncGroup
@@ -64,6 +66,7 @@ import {
 import { TriggerManager } from './core/triggers';
 import { dayKey, fmtTokens, fmtUSD, normPath, relTime } from './core/util';
 import { AgentDetailPanel } from './panels/agentDetail';
+import { CapabilitiesPanel } from './panels/capabilities';
 import { DashboardPanel } from './panels/dashboard';
 import { GalleryPanel } from './panels/gallery';
 import { GuidePanel } from './panels/guide';
@@ -268,7 +271,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             return best ? { agentId: best.id, agentName: best.name } : {};
         },
         // B3 inbound: /trigger/<token> → webhook trigger (late-bound; manager is created below)
-        (token, payload) => triggerManagerRef?.fireWebhook(token, payload) ?? false
+        (token, payload) => triggerManagerRef?.fireWebhook(token, payload) ?? false,
+        path.join(context.globalStorageUri.fsPath, 'live-events.jsonl')
     );
     context.subscriptions.push(live);
     live.start();
@@ -405,6 +409,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         insightsTree.refresh();
         feedTree.refresh();
         tasksTree.refresh();
+        CapabilitiesPanel.refreshIfOpen();
     };
 
     index.onDidUpdate(() => {
@@ -1087,6 +1092,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return pick?.agent;
     };
 
+    const toggleMcp = (node: AgentNode | undefined, disable: boolean) => {
+        if (node?.kind !== 'mcp-server') { return; }
+        setServerDisabled(node.agent, node.server.name, disable);
+        refreshAll();
+        void vscode.window.showInformationMessage(
+            `Agent Farm: MCP server "${node.server.name}" ${disable ? 'disabled' : 'enabled'} for ${node.agent.name} ` +
+            `(disabledMcpjsonServers in .claude/settings.local.json). New sessions honor it.`);
+    };
+
     context.subscriptions.push(
         vscode.commands.registerCommand('agentfarm.openDashboard', () => {
             DashboardPanel.show(dashboardDeps);
@@ -1145,6 +1159,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         vscode.commands.registerCommand('agentfarm.openTimeline', () => {
             TimelinePanel.show({ extensionUri: context.extensionUri, live, tasks: taskManager });
+        }),
+
+        vscode.commands.registerCommand('agentfarm.openCapabilities', () => {
+            CapabilitiesPanel.show({
+                extensionUri: context.extensionUri,
+                getAgents: () => agents,
+                index,
+                refreshTrees: refreshAll
+            });
         }),
 
         // xterm.js render glitches (ghost spaces, lost lines) have two known remedies:
@@ -1798,6 +1821,108 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 void vscode.window.showInformationMessage(`Agent Farm: skill "${node.skill.name}" removed.`);
             } else {
                 void vscode.window.showWarningMessage('Agent Farm: could not remove the skill folder.');
+            }
+        }),
+
+        vscode.commands.registerCommand('agentfarm.duplicateSkill', async (node?: AgentNode) => {
+            if (node?.kind !== 'skill') { return; }
+            const targets = agents.filter(a => a.id !== node.agent.id);
+            if (!targets.length) {
+                void vscode.window.showInformationMessage('Agent Farm: no other agent to copy to.');
+                return;
+            }
+            const pick = await vscode.window.showQuickPick(
+                targets.map(a => ({ label: a.name, description: a.dir, agent: a })),
+                { placeHolder: `Copy skill "${node.skill.name}" to which agent?`, ignoreFocusOut: true });
+            if (!pick) { return; }
+            try {
+                copySkillTo(node.skill, pick.agent);
+                refreshAll();
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: skill "${node.skill.name}" copied to ${pick.agent.name}. New claude sessions pick it up.`);
+            } catch (e) {
+                void vscode.window.showWarningMessage(`Agent Farm: ${(e as Error).message ?? String(e)}`);
+            }
+        }),
+
+        vscode.commands.registerCommand('agentfarm.shareSkill', async (node?: AgentNode) => {
+            if (node?.kind !== 'skill') { return; }
+            const toUser = node.skill.scope === 'agent';
+            const confirmed = await vscode.window.showInformationMessage(
+                toUser
+                    ? `Move skill "${node.skill.name}" to ~/.claude/skills? Every agent will be able to load it.`
+                    : `Move skill "${node.skill.name}" into ${node.agent.name}'s .claude/skills? Other agents lose it.`,
+                { modal: true }, 'Move');
+            if (confirmed !== 'Move') { return; }
+            try {
+                moveSkillScope(node.skill, node.agent);
+                refreshAll();
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: skill "${node.skill.name}" is now ${toUser ? 'shared by all agents (user scope)' : `private to ${node.agent.name} (agent scope)`}.`);
+            } catch (e) {
+                void vscode.window.showWarningMessage(`Agent Farm: ${(e as Error).message ?? String(e)}`);
+            }
+        }),
+
+        vscode.commands.registerCommand('agentfarm.revealSkill', (node?: AgentNode) => {
+            if (node?.kind !== 'skill') { return; }
+            void vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(node.skill.source));
+        }),
+
+        vscode.commands.registerCommand('agentfarm.editMcpServer', async (node?: AgentNode) => {
+            if (node?.kind !== 'mcp-server') { return; }
+            const def = readServerRawDef(node.server);
+            if (!def) {
+                void vscode.window.showWarningMessage('Agent Farm: could not read the server definition from its source file.');
+                return;
+            }
+            if (def.url) {
+                const url = await vscode.window.showInputBox({
+                    prompt: `Server URL for "${node.server.name}"`, value: String(def.url), ignoreFocusOut: true
+                });
+                if (!url) { return; }
+                def.url = url;
+            } else {
+                const current = [def.command, ...((def.args as string[] | undefined) ?? [])].filter(Boolean).join(' ');
+                const command = await vscode.window.showInputBox({
+                    prompt: `Command for "${node.server.name}" (first word = executable, rest = args)`,
+                    value: current, ignoreFocusOut: true
+                });
+                if (!command) { return; }
+                const parts = command.trim().split(/\s+/);
+                def.command = parts[0];
+                if (parts.length > 1) { def.args = parts.slice(1); } else { delete def.args; }
+            }
+            if (updateMcpServer(node.server, def)) {
+                refreshAll();
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: MCP server "${node.server.name}" updated (a one-time .afbak backup is kept). Restart the agent's sessions to load it.`);
+            } else {
+                void vscode.window.showWarningMessage('Agent Farm: could not update (file unreadable or entry missing).');
+            }
+        }),
+
+        vscode.commands.registerCommand('agentfarm.disableMcpServer', (node?: AgentNode) => toggleMcp(node, true)),
+        vscode.commands.registerCommand('agentfarm.enableMcpServer', (node?: AgentNode) => toggleMcp(node, false)),
+
+        vscode.commands.registerCommand('agentfarm.copyMcpServer', async (node?: AgentNode) => {
+            if (node?.kind !== 'mcp-server') { return; }
+            const targets = agents.filter(a => a.id !== node.agent.id);
+            if (!targets.length) {
+                void vscode.window.showInformationMessage('Agent Farm: no other agent to copy to.');
+                return;
+            }
+            const pick = await vscode.window.showQuickPick(
+                targets.map(a => ({ label: a.name, description: a.dir, agent: a })),
+                { placeHolder: `Copy MCP server "${node.server.name}" to which agent?`, ignoreFocusOut: true });
+            if (!pick) { return; }
+            const file = copyMcpServerTo(node.server, pick.agent);
+            if (file) {
+                refreshAll();
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: MCP server "${node.server.name}" copied to ${pick.agent.name} (${path.basename(file)}).`);
+            } else {
+                void vscode.window.showWarningMessage('Agent Farm: could not read the server definition to copy it.');
             }
         }),
 

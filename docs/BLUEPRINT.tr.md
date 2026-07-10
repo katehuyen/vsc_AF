@@ -106,7 +106,7 @@ Oturum başlıkları 2.7.0'dan itibaren konuşmadan türetilir: `/compact` gibi 
 Filonun genel panosu. `Agent Farm: Open Dashboard` komutuyla veya durum çubuğuna tıklayarak açılır.
 
 - **KPI kartları**: aktif ajan sayısı, bugünkü maliyet, seçili aralık maliyeti, oturum sayısı, 5 saatlik pencere, toplam bulgu sayısı.
-- **Daily cost by agent**: son 7/14/30/90 günün ajan bazında yığılmış maliyet grafiği. Sağ üstteki aralık seçiciyle değiştirilir.
+- **Daily cost by agent**: ajan bazında yığılmış maliyet grafiği. Aralık seçici (2.13.0 ile genişledi): **7 / 14 / 30 / 90 / 180 / 365 gün**. 120 günü aşan aralıklarda çubuklar okunur kalsın diye günlükler otomatik **haftalık gruplanır** (başlıkta "weekly buckets" notu). Tüm günlük veri zaten oturum kayıtlarından geldiği için 1 yıllık görünüm ek yük getirmez.
 - **Cost by model**: hangi modele ne kadar harcandığını gösteren halka grafik.
 - **Token types**: input / output / cache write / cache read dağılımı. Cache read oranın yüksekse prompt cache verimli çalışıyor demektir — bu iyidir.
 - **Activity heatmap**: haftanın günü × saat bazında mesaj yoğunluğu. Çalışma ritmini gösterir.
@@ -207,9 +207,12 @@ Kaldırmak için: **Agent Farm: Remove Live Hooks** — yalnızca Agent Farm'ın
 **Agent Farm: Open Live Timeline** komutuyla veya Live Feed görünümündeki nabız ikonuyla açılır.
 
 - **Kulvarlar (swim lanes):** Her ajan bir şerit; yeşil bloklar araç koşularını (süresiyle), noktalar/elmaslar olayları gösterir: mavi nokta = komut, kırmızı elmas = izin bekleme, mor elmas = compaction, turuncu nokta = subagent bitti, çizgi = tur sonu.
-- Kırmızı dikey çizgi = şu an. Pencere seçici: 15 dakika / 1 saat / 4 saat.
+- Kırmızı dikey çizgi = şu an. Pencere seçici (2.13.0 ile genişledi): **15m / 1h / 4h / 8h** ayrıntılı kulvar görünümü + **24h / 3d / 7d / 30d** yoğunluk görünümü.
+- **Yoğunluk görünümü (24h+):** o ölçekte tek tek noktalar okunmaz — her kulvar 168 zaman dilimine bölünür, dilim başına aktivite çubuğu çizilir (yeşil = araçlar, mavi = komutlar, √ ölçek); şeridin üstündeki kırmızı bant = o dilimde izin beklemesi yaşandı. Amaç desenleri görmek: hangi ajan hangi gün/saatte çalışmış, nerede takılmış.
+- **Kalıcılık (2.13.0):** olaylar artık `globalStorage/live-events.jsonl` dosyasına yazılır — VS Code'u kapatıp açmak zaman çizelgesini sıfırlamaz. Bellekte son 24 saat tutulur (uzun aralıklar diskten okunur), dosyada son **31 gün** saklanır (üstü otomatik budanır, boyut sınırı 64MB). 31 günden geriye gitmemesinin nedeni yük değil anlam: hook olayları o ölçekte desen bilgisi taşımaz — uzun vadeli bakış için Dashboard (1 yıla kadar) doğru araçtır.
 - **Live sessions kartları:** Her oturumun anlık durumu, son komutu, sayaçları; "Open transcript" ile kayda atlanır.
 - Panel olay geldikçe kendini günceller.
+- Not: 2.13.0 öncesi olaylar diske yazılmadığından, kurulumdan sonra uzun aralıklar zamanla dolar.
 
 ### Bildirimler
 
@@ -374,8 +377,14 @@ Live Timeline'da artık **Workflow runs** bölümü var: son 4 saatte koşan her
 Ajanlarının dış dünyaya açılan araç kapıları — MCP sunucuları — artık panelde görünür (0.9.0). Agents ağacında her ajanın **MCP** bölümü:
 
 - Sunucular, Claude Code'un okuduğu aynı dosyalardan okunur (`.mcp.json`, `.claude/settings*.json`); ad, taşıma tipi (stdio/http/sse) ve tanım kaynağı görünür.
+- **Bir bakışta durum (2.13.0):** bölüm başlığı `N server(s) • M used (30d) • K disabled` özetini gösterir. Sunucu satırında son kullanım zamanı (`last 3h`) yazar; tooltip'te **en çok çağrılan araçların dökümü** (`vault_read ×394, search_query ×88…`) — hangi MCP aracının gerçekten iş gördüğü tek bakışta belli olur.
 - **Gerçek kullanım:** her sunucunun son 30 gündeki gerçek araç çağrısı sayısı satırda yazar (oturum kayıtlarından `mcp__sunucu__araç` sayımı). Yeşil fiş = kullanılıyor.
-- **Ekle/Kaldır:** bölümde **+** → sihirbaz ajanın `.mcp.json`'ına yazar; sunucuda çöp ikonu → kaynağından siler (bir kerelik `.afbak` yedeğiyle). Değişiklik, ajanın yeni oturumunda geçerli olur.
+- **Ekle/Kaldır:** bölümde **+** → sihirbaz ajanın `.mcp.json`'ına yazar; sunucuda çöp ikonu → kaynağından siler (bir kerelik `.afbak` yedeğiyle).
+- **Yönetim (2.13.0, sağ tık):**
+  - **Edit MCP Server…** — komutu/URL'yi yerinde düzenler (yedekli).
+  - **Disable / Enable MCP Server** — sunucuyu ajanın `.claude/settings.local.json` içindeki `disabledMcpjsonServers` listesine ekler/çıkarır (Claude Code'un onurlandırdığı aynı anahtar). Silmeden geçici kapatmak için; kapalı sunucu ağaçta ⊘ ile gri görünür.
+  - **Copy MCP Server to Agent…** — tanımı başka bir ajanın `.mcp.json`'ına kopyalar (filo genelinde tek tanımı yayma).
+- Değişiklik, ajanın yeni oturumunda geçerli olur.
 - **Insights denetimi:** 30 gündür hiç kullanılmayan tanımlı sunucu bilgi bulgusu üretir — her sunucu oturum açılışına yük ekler, ölü olanı temizle.
 
 ## Skill Yönetimi
@@ -383,9 +392,25 @@ Ajanlarının dış dünyaya açılan araç kapıları — MCP sunucuları — a
 Ajanların öğretilmiş yetenekleri — Agent Skills (SKILL.md klasörleri) — panelde görünür (2.12.0). Agents ağacında her ajanın **Skills** bölümü:
 
 - Skill'ler, Claude Code'un okuduğu aynı klasörlerden okunur: ajan klasöründeki `.claude/skills/` (**agent** kapsamı) + `~/.claude/skills/` (**user** kapsamı — bütün ajanlar paylaşır). Aynı ada sahip skill'de agent kapsamı user kapsamını gölgeler. Satırda ad, kapsam ve SKILL.md frontmatter'ındaki açıklama (tooltip) görünür; tıklamak SKILL.md'yi açar.
+- **Bir bakışta durum (2.13.0):** bölüm başlığı `N skill(s) • M used (30d)` özetini gösterir; skill satırında son kullanım zamanı (`last 2d`) yazar.
 - **Gerçek kullanım:** son 30 gündeki çağrı sayısı satırda yazar — hem modelin `Skill` aracıyla yaptığı çağrılar hem senin yazdığın `/skill-adi` komutları oturum kayıtlarından sayılır. Yeşil kıvılcım = kullanılıyor.
-- **Ekle/Kaldır:** bölümde **+** → ad + tek satır açıklama sorulur, ajanın `.claude/skills/<ad>/SKILL.md` iskeleti oluşturulup açılır (talimatları sen yazarsın); skill satırında çöp ikonu → klasörü siler (bir kerelik yedek `.claude/skills.afbak/` altına alınır). User kapsamındaki bir skill silinirken bütün ajanların kaybedeceği modalda açıkça söylenir. Değişiklik, ajanın yeni oturumunda geçerli olur.
+- **Ekle/Kaldır:** bölümde **+** → ad + tek satır açıklama sorulur, ajanın `.claude/skills/<ad>/SKILL.md` iskeleti oluşturulup açılır (talimatları sen yazarsın); skill satırında çöp ikonu → klasörü siler (bir kerelik yedek `.claude/skills.afbak/` altına alınır). User kapsamındaki bir skill silinirken bütün ajanların kaybedeceği modalda açıkça söylenir.
+- **Yönetim (2.13.0, sağ tık):**
+  - **Copy Skill to Agent…** — skill klasörünü (içindeki yardımcı dosyalarla) başka bir ajana kopyalar.
+  - **Move Skill Between Agent/User Scope…** — agent kapsamındaki bir skill'i `~/.claude/skills`'e taşır (tüm ajanlarla paylaş) ya da user kapsamındakini bu ajanın klasörüne indirir (özelleştir). Onaylı, tek hareket.
+  - **Reveal Skill Folder** — SKILL.md klasörünü sistem dosya yöneticisinde açar.
+- Değişiklik, ajanın yeni oturumunda geçerli olur.
+- **Insights denetimi (2.13.0):** açıklamasız SKILL.md için uyarı (claude açıklamaya bakarak skill'i yükler — açıklama yoksa nadiren ateşlenir) + 30 gündür kullanılmayan agent-kapsamı skill için bilgi bulgusu.
 - Not: eklenti kurulumuyla gelen plugin skill'leri bu klasörlerin dışında yaşar ve listede görünmez — panel, senin yönettiğin dosya tabanlı skill'lere odaklanır.
+
+## Yetenek Matrisi
+
+**Agent Farm: Open Capability Matrix** (Agents ağacının başlığındaki tablo ikonu) — filonun bütün skill ve MCP yeteneklerini tek ızgarada gösterir (2.13.0). Amaç: hangi ajanda hangi yetenek var, hangisi gerçekten kullanılıyor, hangisi ölü ağırlık — hepsi bir bakışta.
+
+- **İki matris:** *Skills × Ajanlar* ve *MCP sunucuları × Ajanlar*. Satır = yetenek, sütun = ajan.
+- **Hücreler:** yeşil dolu rozet + sayı = son 30 günde kullanılmış (renk yoğunluğu = çağrı sıklığı); soluk ✓ = kurulu ama kullanılmamış; ⏻ = o ajanda kapalı; **＋** = kurulu değil — tıklayınca yeteneği başka bir ajandan **o ajana kopyalar** (onaylı).
+- **Özet çipleri:** her matriste toplam / kullanılan (30g) / kullanılmayan sayısı. Hiçbir ajanın 30 günde kullanmadığı satır sarı ● ile işaretlenir — filo genelinde temizlenebilecek yetenekler.
+- Satır adına ya da dolu bir hücreye tıklamak ilgili SKILL.md / config dosyasını açar. Herhangi bir kopyalama/düzenleme sonrası matris kendini tazeler.
 
 ## Sır Kasası
 
@@ -1000,6 +1025,9 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 - **Set Secret… / Delete Secret… / List Secrets** — sır kasası
 - **Add MCP Server… / Remove MCP Server** — MCP envanteri (Agents ağacındaki MCP bölümünden)
 - **Add Skill… / Remove Skill** — skill envanteri (Agents ağacındaki Skills bölümünden; SKILL.md iskeleti kurar / yedekli siler)
+- **Copy Skill to Agent… / Move Skill Between Agent/User Scope… / Reveal Skill Folder** — skill filo yönetimi (sağ tık)
+- **Edit MCP Server… / Disable MCP Server / Enable MCP Server / Copy MCP Server to Agent…** — MCP yönetimi (sağ tık)
+- **Open Capability Matrix (Skills × MCP × Agents)** — filonun yetenek ızgarası, kullanım yoğunluğu ve tek tıkla kopyalama
 - **Copy Webhook URL** — webhook tetiğinin gizli adresi
 - **Open Media Gallery** — üretilen medyalar (önizleme + Re-run/Vary)
 - **New Recipe Workflow…** — hazır fabrika şablonları
@@ -1092,6 +1120,21 @@ Tamamlanan fazlar (hepsi 2026-07-08):
 **Bundan sonrası ayrı ve ayrıntılı bir belgede yaşıyor:** komut paletinden **Agent Farm: Open Development Plan** — uzak görüşlü gelişim planı: olay tetikleyicileri, doğrulayıcı adımlar, MCP paneli, n8n/webhook köprüsü, multimedya üretim hattı (Kling/Seedance/Nano Banana sınıfı modellerle içerik fabrikası), zeki gözetim, çoklu makine ve vizyoner ufuk. Kodlama o plandaki öncelik sırasını izler.
 
 ## Sürüm Notları
+
+### 2.13.0 — Yetenek Yönetiminde Derinlik + Uzun Zaman Aralıkları (2026-07-10)
+
+**Skills & MCP yönetimi — bir bakışta gör, tek tıkla yönet:**
+
+- **Yetenek Matrisi paneli** (yeni): Skills × Ajanlar ve MCP × Ajanlar ızgaraları; 30 günlük kullanım yoğunluğu, özet çipleri, ölü yetenek işaretleri ve boş hücreden tek tıkla kopyalama. Bkz. [Yetenek Matrisi](#yetenek-matrisi).
+- **Ağaçta bir-bakışta durum:** MCP/Skills bölüm başlıkları artık `N • M used (30d)` (+ MCP'de `K disabled`); satırlarda son kullanım zamanı; MCP tooltip'inde en çok çağrılan araç dökümü.
+- **MCP yönetimi (sağ tık):** Edit MCP Server… (yerinde düzenle, yedekli), Disable/Enable MCP Server (ajanın `disabledMcpjsonServers` listesi), Copy MCP Server to Agent…
+- **Skill yönetimi (sağ tık):** Copy Skill to Agent…, Move Skill Between Agent/User Scope…, Reveal Skill Folder.
+- **Sağlık bulguları:** açıklamasız SKILL.md uyarısı + kullanılmayan agent-kapsamı skill bilgisi.
+
+**Uzun zaman aralıkları:**
+
+- **Live Timeline** artık **8h** ayrıntı + **24h / 3d / 7d / 30d** yoğunluk görünümü sunuyor. Yoğunluk görünümünde her kulvar zaman dilimlerine bölünüp aktivite çubuklarıyla çizilir (araçlar/komutlar/izin beklemeleri). Olaylar `globalStorage/live-events.jsonl`'e yazıldığı için **reload zaman çizelgesini sıfırlamıyor**; bellekte 24 saat, diskte 31 gün tutulur (64MB tavan). Neden 31 gün: hook olayları daha uzun ölçekte desen taşımaz; uzun vade için Dashboard doğru araç.
+- **Dashboard** maliyet aralığına **180g ve 365g** eklendi; 120 günü aşınca çubuklar okunur kalsın diye günlükler haftalık gruplanıyor. Ek yük yok — veri zaten oturum kayıtlarında.
 
 ### 2.12.0 — Skill Yönetimi (2026-07-10)
 

@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.12.0",
+  "version": "2.13.0",
   "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
@@ -477,6 +477,47 @@
         "icon": "$(trash)"
       },
       {
+        "command": "agentfarm.duplicateSkill",
+        "title": "Copy Skill to Agent…",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.shareSkill",
+        "title": "Move Skill Between Agent/User Scope…",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.revealSkill",
+        "title": "Reveal Skill Folder",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.editMcpServer",
+        "title": "Edit MCP Server…",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.disableMcpServer",
+        "title": "Disable MCP Server (this agent)",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.enableMcpServer",
+        "title": "Enable MCP Server (this agent)",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.copyMcpServer",
+        "title": "Copy MCP Server to Agent…",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.openCapabilities",
+        "title": "Open Capability Matrix (Skills × MCP × Agents)",
+        "category": "Agent Farm",
+        "icon": "$(table)"
+      },
+      {
         "command": "agentfarm.copyWebhookUrl",
         "title": "Copy Webhook URL",
         "category": "Agent Farm"
@@ -705,6 +746,11 @@
           "command": "agentfarm.newAgent",
           "when": "view == agentfarm.agents",
           "group": "navigation@2"
+        },
+        {
+          "command": "agentfarm.openCapabilities",
+          "when": "view == agentfarm.agents",
+          "group": "navigation@3"
         },
         {
           "command": "agentfarm.refresh",
@@ -1065,8 +1111,28 @@
         },
         {
           "command": "agentfarm.removeMcpServer",
-          "when": "view == agentfarm.agents && viewItem == mcp-server",
+          "when": "view == agentfarm.agents && viewItem =~ /^mcp-server/",
           "group": "inline@1"
+        },
+        {
+          "command": "agentfarm.editMcpServer",
+          "when": "view == agentfarm.agents && viewItem =~ /^mcp-server/",
+          "group": "1_mcp@1"
+        },
+        {
+          "command": "agentfarm.disableMcpServer",
+          "when": "view == agentfarm.agents && viewItem == mcp-server",
+          "group": "1_mcp@2"
+        },
+        {
+          "command": "agentfarm.enableMcpServer",
+          "when": "view == agentfarm.agents && viewItem == mcp-server-disabled",
+          "group": "1_mcp@2"
+        },
+        {
+          "command": "agentfarm.copyMcpServer",
+          "when": "view == agentfarm.agents && viewItem =~ /^mcp-server/",
+          "group": "1_mcp@3"
         },
         {
           "command": "agentfarm.addSkill",
@@ -1075,8 +1141,23 @@
         },
         {
           "command": "agentfarm.removeSkill",
-          "when": "view == agentfarm.agents && viewItem == skill",
+          "when": "view == agentfarm.agents && viewItem =~ /^skill-/",
           "group": "inline@1"
+        },
+        {
+          "command": "agentfarm.duplicateSkill",
+          "when": "view == agentfarm.agents && viewItem == skill-agent",
+          "group": "1_skill@1"
+        },
+        {
+          "command": "agentfarm.shareSkill",
+          "when": "view == agentfarm.agents && viewItem =~ /^skill-/",
+          "group": "1_skill@2"
+        },
+        {
+          "command": "agentfarm.revealSkill",
+          "when": "view == agentfarm.agents && viewItem =~ /^skill-/",
+          "group": "1_skill@3"
         },
         {
           "command": "agentfarm.addTrigger",

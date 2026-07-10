@@ -84,6 +84,49 @@ export function skillUsage(index: SessionIndex, agentId: string, sinceMs: number
     return usage;
 }
 
+/** Approximate last-used time per skill: newest session that invoked it. */
+export function skillLastUsed(index: SessionIndex, agentId: string): Map<string, number> {
+    const last = new Map<string, number>();
+    for (const session of index.forAgent(agentId)) {
+        for (const skill of Object.keys(session.skillCalls)) {
+            last.set(skill, Math.max(last.get(skill) ?? 0, session.lastTs));
+        }
+    }
+    return last;
+}
+
+/** Copy a skill folder into another agent's .claude/skills (fleet management). */
+export function copySkillTo(skill: SkillDef, target: AgentInfo): string {
+    const destDir = path.join(target.dir, '.claude', 'skills', path.basename(skill.dir));
+    if (fs.existsSync(destDir)) { throw new Error(`"${skill.name}" already exists on ${target.name}`); }
+    fs.mkdirSync(path.dirname(destDir), { recursive: true });
+    fs.cpSync(skill.dir, destDir, { recursive: true });
+    return destDir;
+}
+
+/**
+ * Move a skill between scopes: agent → ~/.claude/skills (share with every
+ * agent) or user → this agent's .claude/skills (make it private).
+ */
+export function moveSkillScope(skill: SkillDef, agent: AgentInfo): string {
+    const destRoot = skill.scope === 'agent'
+        ? path.join(os.homedir(), '.claude', 'skills')
+        : path.join(agent.dir, '.claude', 'skills');
+    const destDir = path.join(destRoot, path.basename(skill.dir));
+    if (fs.existsSync(destDir)) {
+        throw new Error(`"${skill.name}" already exists in the ${skill.scope === 'agent' ? 'user' : 'agent'} scope`);
+    }
+    fs.mkdirSync(destRoot, { recursive: true });
+    try {
+        fs.renameSync(skill.dir, destDir);
+    } catch {
+        // Cross-device or locked file: copy + delete.
+        fs.cpSync(skill.dir, destDir, { recursive: true });
+        fs.rmSync(skill.dir, { recursive: true, force: true });
+    }
+    return destDir;
+}
+
 const skillMdTemplate = (name: string, description: string) => `---
 name: ${name}
 description: ${description}

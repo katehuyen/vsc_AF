@@ -88,6 +88,22 @@
             values: days.map(d => a.daily[d] ? a.daily[d].cost : 0)
         })).filter(s => s.values.some(v => v > 0));
 
+        // 180d/365d: weekly buckets keep the bars readable (daily would be ~1px).
+        let chartDays = days, chartSeries = series, bucketNote = '';
+        if (range > 120) {
+            chartDays = [];
+            chartSeries = series.map(s => ({ name: s.name, values: [] }));
+            for (let i = 0; i < days.length; i += 7) {
+                chartDays.push(days[i]);
+                series.forEach((s, si) => {
+                    let v = 0;
+                    for (let j = i; j < Math.min(i + 7, days.length); j++) v += s.values[j] || 0;
+                    chartSeries[si].values.push(v);
+                });
+            }
+            bucketNote = ' <span class="muted" style="font-size:11px">(weekly buckets)</span>';
+        }
+
         const modelItems = Object.entries(DATA.modelTotals)
             .map(([name, v]) => ({ name: name.replace(/^claude-/, ''), value: v.cost }))
             .sort((a, b) => b.value - a.value);
@@ -102,7 +118,7 @@
 
         const charts = `
         <div class="row">
-            <div class="card chartbox"><h3>Daily cost by agent <a data-guide="dashboard">?</a></h3>${C.stackedBars(days, series, {})}</div>
+            <div class="card chartbox"><h3>Daily cost by agent${bucketNote} <a data-guide="dashboard">?</a></h3>${C.stackedBars(chartDays, chartSeries, {})}</div>
             <div class="card chartbox"><h3>Cost by model</h3>${C.donut(modelItems, {})}</div>
         </div>
         <div class="row">
@@ -154,7 +170,7 @@
                 <div><h1>Agent Farm</h1><div class="muted small">Generated ${new Date(DATA.generatedAt).toLocaleString()} · data: local Claude Code transcripts</div></div>
                 <div class="btnrow">
                     <span class="seg">
-                        ${[7, 14, 30, 90].map(r => `<button data-range="${r}" class="${r === range ? 'sel' : ''}">${r}d</button>`).join('')}
+                        ${[7, 14, 30, 90, 180, 365].map(r => `<button data-range="${r}" class="${r === range ? 'sel' : ''}">${r}d</button>`).join('')}
                     </span>
                     <button class="secondary" id="refresh">Refresh</button>
                     <button class="secondary" data-guide="dashboard">? Guide</button>

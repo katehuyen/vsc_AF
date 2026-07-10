@@ -4,12 +4,39 @@
     const vscode = acquireVsCodeApi();
     const C = window.AFCharts;
     let DATA = window.__DATA__;
-    let windowMin = 60; // 15 | 60 | 240
+    // ≤480 renders event dots from live memory; ≥1440 renders density buckets
+    // fetched from the host's persistent store (survives reloads, keeps 31d).
+    let windowMin = 60;
+    const DETAIL_MAX_MIN = 480;
+    let HISTORY = null;        // { hours, density, workflowRuns }
+    let historyFetchedAt = 0;
+    let historyRequested = 0;
+
+    function isDensity() { return windowMin > DETAIL_MAX_MIN; }
+
+    function requestHistory(force) {
+        const hours = windowMin / 60;
+        const fresh = HISTORY && HISTORY.hours === hours && Date.now() - historyFetchedAt < 30000;
+        if (!force && (fresh || Date.now() - historyRequested < 3000)) { return; }
+        historyRequested = Date.now();
+        vscode.postMessage({ type: 'history', hours });
+    }
 
     window.addEventListener('message', ev => {
-        if (ev.data.type === 'data') { DATA = ev.data.data; render(); }
+        if (ev.data.type === 'data') {
+            DATA = ev.data.data;
+            if (isDensity()) { requestHistory(false); }
+            render();
+        } else if (ev.data.type === 'history') {
+            HISTORY = ev.data;
+            historyFetchedAt = Date.now();
+            render();
+        }
     });
-    setInterval(render, 5000); // advance the "now" line even without events
+    setInterval(() => {
+        if (isDensity()) { requestHistory(false); }
+        render();
+    }, 5000); // advance the "now" line even without events
 
     const STATUS_META = {
         'working':            { label: 'WORKING',     color: 'var(--vscode-charts-blue, #3794ff)' },
@@ -24,6 +51,14 @@
     function fmtClock(ts) {
         const d = new Date(ts);
         return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    }
+
+    const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    function fmtTick(ts, winMs) {
+        const d = new Date(ts);
+        if (winMs <= 26 * 3600 * 1000) { return fmtClock(ts); }
+        const day = d.getDate() + ' ' + MONTHS[d.getMonth()];
+        return winMs <= 4 * 24 * 3600 * 1000 ? day + ' ' + fmtClock(ts) : day;
     }
 
     function relTime(ts) {
@@ -128,6 +163,57 @@
         return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${out}</svg>`;
     }
 
+    // Density view: per-lane bucket bars (tools green + prompts blue stacked,
+    // sqrt scale) with red alert ticks — patterns over dots at day+ zoom.
+    function densitySvg(density, winMs) {
+        const lanes = (density && density.lanes) || [];
+        if (!lanes.length || !density.totalEvents) {
+            return '<p class="muted">No recorded events in this range. History accumulates while hooks are installed (from v2.13.0 on, it survives reloads).</p>';
+        }
+        const W = 900, labelW = 110, rowH = 44, padT = 22, barMax = rowH - 14;
+        const names = lanes.map(l => l.name);
+        const H = padT + names.length * rowH + 12;
+        const from = density.from;
+        const x = i => labelW + (i / lanes[0].buckets.length) * (W - labelW - 8);
+        const bw = Math.max(1.5, (W - labelW - 8) / lanes[0].buckets.length - 0.6);
+        let maxTotal = 1;
+        for (const l of lanes) {
+            for (const b of l.buckets) { maxTotal = Math.max(maxTotal, b[0] + b[1] + b[3]); }
+        }
+        let out = '';
+        for (let i = 0; i <= 6; i++) {
+            const ts = from + (winMs / 6) * i;
+            const xx = labelW + ((W - labelW - 8) / 6) * i;
+            out += `<line x1="${xx}" y1="${padT - 6}" x2="${xx}" y2="${H - 6}" stroke="currentColor" opacity="0.07"/>` +
+                `<text x="${xx}" y="${padT - 10}" font-size="9" text-anchor="middle" fill="currentColor" opacity="0.55">${fmtTick(ts, winMs)}</text>`;
+        }
+        lanes.forEach((lane, li) => {
+            const y0 = padT + li * rowH + rowH - 6; // baseline
+            out += `<text x="${labelW - 10}" y="${padT + li * rowH + rowH / 2 + 3}" font-size="11" font-weight="600" text-anchor="end" fill="currentColor" opacity="0.85">${C.esc(lane.name.length > 14 ? lane.name.slice(0, 13) + '…' : lane.name)}</text>`;
+            out += `<line x1="${labelW}" y1="${y0}" x2="${W - 8}" y2="${y0}" stroke="currentColor" opacity="0.12"/>`;
+            lane.buckets.forEach((b, bi) => {
+                const total = b[0] + b[1] + b[3];
+                if (!total && !b[2]) { return; }
+                const bx = x(bi);
+                const h = Math.max(2, Math.sqrt(total / maxTotal) * barMax);
+                const hTools = total ? h * ((b[0] + b[3]) / total) : 0;
+                const hPrompts = h - hTools;
+                const t0 = from + bi * density.bucketMs;
+                const tip = `<title>${fmtTick(t0, winMs)} – ${fmtTick(t0 + density.bucketMs, winMs)}\n${b[0]} tool · ${b[1]} prompt · ${b[2]} permission · ${b[3]} other</title>`;
+                if (hTools > 0) {
+                    out += `<rect x="${bx.toFixed(1)}" y="${(y0 - hTools).toFixed(1)}" width="${bw.toFixed(1)}" height="${hTools.toFixed(1)}" fill="var(--vscode-charts-green, #4caf50)" opacity="0.75">${tip}</rect>`;
+                }
+                if (hPrompts > 0) {
+                    out += `<rect x="${bx.toFixed(1)}" y="${(y0 - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${hPrompts.toFixed(1)}" fill="var(--vscode-charts-blue, #3794ff)" opacity="0.85">${tip}</rect>`;
+                }
+                if (b[2] > 0) {
+                    out += `<rect x="${bx.toFixed(1)}" y="${(padT + li * rowH + 2).toFixed(1)}" width="${bw.toFixed(1)}" height="4" fill="var(--vscode-charts-red, #f14c4c)">${tip}</rect>`;
+                }
+            });
+        });
+        return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${out}</svg>`;
+    }
+
     const RUN_COLORS = {
         done: 'var(--vscode-charts-green, #4caf50)',
         running: 'var(--vscode-charts-blue, #3794ff)',
@@ -194,9 +280,24 @@
             </div>`;
         }).join('');
 
+        const density = isDensity();
         const events = DATA.events || [];
-        const lanes = buildLanes(events, now, winMs);
-        const hasAny = events.length > 0;
+        const hasAny = density ? !!(HISTORY && HISTORY.density && HISTORY.density.totalEvents) : events.length > 0;
+
+        let lanesHtml;
+        if (density) {
+            if (HISTORY && HISTORY.hours === windowMin / 60) {
+                lanesHtml = densitySvg(HISTORY.density, winMs);
+            } else {
+                requestHistory(true);
+                lanesHtml = '<p class="muted">Loading history…</p>';
+            }
+        } else {
+            lanesHtml = lanesSvg(buildLanes(events, now, winMs), now, winMs);
+        }
+        const runsData = density && HISTORY && HISTORY.hours === windowMin / 60
+            ? (HISTORY.workflowRuns || [])
+            : (DATA.workflowRuns || []);
 
         const emptyHint = hasAny ? '' : `
             <div class="card" style="margin-top:12px">
@@ -208,28 +309,36 @@
                 </div>
             </div>`;
 
-        const legend = Object.entries(MARK_STYLE).map(([k, v]) =>
-            `<span><i style="background:${v.color};${v.shape === 'diamond' ? 'transform:rotate(45deg);' : ''}"></i>${v.label}</span>`).join('') +
-            `<span><i style="background:var(--vscode-charts-green,#4caf50);width:16px;border-radius:3px"></i>tool run</span>`;
+        const legend = density
+            ? `<span><i style="background:var(--vscode-charts-green,#4caf50);width:16px;border-radius:3px"></i>tools</span>` +
+              `<span><i style="background:var(--vscode-charts-blue,#3794ff);width:16px;border-radius:3px"></i>prompts</span>` +
+              `<span><i style="background:var(--vscode-charts-red,#f14c4c);width:16px;border-radius:3px"></i>permission waits (top strip)</span>` +
+              `<span class="muted">bar height = activity (√ scale) per ${Math.round((winMs / 168) / 60000)}min bucket</span>`
+            : Object.entries(MARK_STYLE).map(([k, v]) =>
+                `<span><i style="background:${v.color};${v.shape === 'diamond' ? 'transform:rotate(45deg);' : ''}"></i>${v.label}</span>`).join('') +
+              `<span><i style="background:var(--vscode-charts-green,#4caf50);width:16px;border-radius:3px"></i>tool run</span>`;
 
         document.getElementById('app').innerHTML = `
             <div class="spread">
                 <div>
                     <h1>Live Timeline</h1>
-                    <div class="muted small">${listenerHtml} · fed by Claude Code hooks · window keeps last 4h</div>
+                    <div class="muted small">${listenerHtml} · fed by Claude Code hooks · detail ≤8h live, 24h+ from persisted history (kept 31 days)</div>
                 </div>
                 <div class="btnrow">
                     <span class="seg">
-                        ${[15, 60, 240].map(m => `<button data-win="${m}" class="${m === windowMin ? 'sel' : ''}">${m < 60 ? m + 'm' : (m / 60) + 'h'}</button>`).join('')}
+                        ${[15, 60, 240, 480, 1440, 4320, 10080, 43200].map(m => {
+                            const label = m < 60 ? m + 'm' : m <= 1440 ? (m / 60) + 'h' : (m / 1440) + 'd';
+                            return `<button data-win="${m}" class="${m === windowMin ? 'sel' : ''}">${label}</button>`;
+                        }).join('')}
                     </span>
                     <button class="secondary" id="refresh">Refresh</button>
                     <button class="secondary" data-guide="canli-gozlem">? Guide</button>
                 </div>
             </div>
             ${emptyHint}
-            <h2>Swim lanes</h2>
-            <div class="card chartbox">${lanesSvg(lanes, now, winMs)}<div class="legend">${legend}</div></div>
-            ${workflowRunsSvg(DATA.workflowRuns || [], now, winMs)}
+            <h2>${density ? 'Activity density' : 'Swim lanes'}</h2>
+            <div class="card chartbox">${lanesHtml}<div class="legend">${legend}</div></div>
+            ${workflowRunsSvg(runsData, now, winMs)}
             <h2>Live sessions (${DATA.sessions.length})</h2>
             <div class="grid">${sessionCards || '<p class="muted">No sessions tracked yet.</p>'}</div>
             <p class="footnote">Events arrive via local hooks (127.0.0.1 only, nothing leaves this machine). Stuck detection and permission alerts are configurable in settings.</p>
@@ -237,7 +346,10 @@
 
         const install = document.getElementById('install');
         if (install) { install.addEventListener('click', () => vscode.postMessage({ type: 'installHooks' })); }
-        document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
+        document.getElementById('refresh').addEventListener('click', () => {
+            if (isDensity()) { requestHistory(true); }
+            vscode.postMessage({ type: 'refresh' });
+        });
         document.querySelectorAll('[data-win]').forEach(b =>
             b.addEventListener('click', () => { windowMin = Number(b.dataset.win); render(); }));
         document.querySelectorAll('[data-guide]').forEach(b =>
