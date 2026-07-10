@@ -30,8 +30,8 @@ import { EmbeddingsConfig, EmbeddingsProvider, embedTexts } from './core/embeddi
 import { SearchResult } from './core/search';
 import { chunkTranscript, SemanticIndex } from './core/semantic';
 import {
-    addDuty, CADENCES, CLAUDE_MD_SNIPPET, claudeMdReferencesDuties,
-    deleteDuty, DUTIES_FILENAME, togglePauseDuty, updateDuty, watchStatus
+    addDuty, CADENCES, CLAUDE_MD_SNIPPET, claudeMdReferencesDuties, deleteDuty,
+    DUTIES_FILENAME, DUTY_TEMPLATES, moveDuty, togglePauseDuty, updateDuty, watchStatus
 } from './core/duties';
 import { buildEvalReport, compareRuns, EvalCase, EvalStore, runEvalSet, summarizeRun } from './core/evals';
 import { buildInsights, Insight } from './core/health';
@@ -46,7 +46,9 @@ import {
     addMcpServer, copyMcpServerTo, readServerRawDef, removeMcpServer, setServerDisabled, updateMcpServer
 } from './core/mcp';
 import { addSkill, copySkillTo, moveSkillScope, removeSkill } from './core/skills';
-import { addMemoryFile, archiveMemoryFile, MEMORY_TYPES } from './core/memusage';
+import {
+    addMemoryFile, applyIndexFixes, archiveMemoryFile, copyMemoryFileTo, MEMORY_TYPES, planIndexFixes
+} from './core/memusage';
 import { DEFAULT_MEDIA_PRICING, MediaPriceRule, mediaCostSince, readMediaMetas } from './core/media';
 import {
     applyMergedContent, buildMergeDraft, findDuplicateGroups, syncGroup
@@ -68,6 +70,7 @@ import { TriggerManager } from './core/triggers';
 import { dayKey, fmtTokens, fmtUSD, normPath, relTime } from './core/util';
 import { AgentDetailPanel } from './panels/agentDetail';
 import { CapabilitiesPanel } from './panels/capabilities';
+import { MemoryGraphPanel } from './panels/memoryGraph';
 import { DashboardPanel } from './panels/dashboard';
 import { GalleryPanel } from './panels/gallery';
 import { GuidePanel } from './panels/guide';
@@ -1093,6 +1096,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return pick?.agent;
     };
 
+    // A duty only works if the agent's CLAUDE.md actually points at DUTIES.md.
+    const ensureDutiesReference = async (agent: AgentInfo) => {
+        if (!agent.claudeMdPath) { return; }
+        const claudeMd = fs.readFileSync(agent.claudeMdPath, 'utf8');
+        if (claudeMdReferencesDuties(claudeMd)) { return; }
+        const choice = await vscode.window.showWarningMessage(
+            `${agent.name}'s CLAUDE.md does not mention ${DUTIES_FILENAME} yet — without a reference the agent will never check its duties. Append a short instruction section?`,
+            { modal: true }, 'Append to CLAUDE.md'
+        );
+        if (choice === 'Append to CLAUDE.md') {
+            fs.writeFileSync(agent.claudeMdPath, claudeMd.replace(/\n*$/, '\n') + CLAUDE_MD_SNIPPET, 'utf8');
+        }
+    };
+
     const toggleMcp = (node: AgentNode | undefined, disable: boolean) => {
         if (node?.kind !== 'mcp-server') { return; }
         setServerDisabled(node.agent, node.server.name, disable);
@@ -1573,22 +1590,97 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 title, cadence: cadencePick.label, paused: false, watch, action
             });
 
-            // The duty only works if the agent actually reads DUTIES.md.
-            if (agent.claudeMdPath) {
-                const claudeMd = fs.readFileSync(agent.claudeMdPath, 'utf8');
-                if (!claudeMdReferencesDuties(claudeMd)) {
-                    const choice = await vscode.window.showWarningMessage(
-                        `${agent.name}'s CLAUDE.md does not mention ${DUTIES_FILENAME} yet — without a reference the agent will never check its duties. Append a short instruction section?`,
-                        { modal: true }, 'Append to CLAUDE.md'
-                    );
-                    if (choice === 'Append to CLAUDE.md') {
-                        fs.writeFileSync(agent.claudeMdPath, claudeMd.replace(/\n*$/, '\n') + CLAUDE_MD_SNIPPET, 'utf8');
-                    }
-                }
-            }
+            await ensureDutiesReference(agent);
             refreshAll();
             void vscode.window.showInformationMessage(
                 `Agent Farm: duty "${title}" added to ${agent.name} (${DUTIES_FILENAME}).`);
+        }),
+
+        vscode.commands.registerCommand('agentfarm.addDutyFromTemplate', async (node?: AgentNode) => {
+            const agent = node && 'agent' in node ? node.agent : await resolveAgent(undefined);
+            if (!agent) { return; }
+            const pick = await vscode.window.showQuickPick(
+                DUTY_TEMPLATES.map(t => ({ label: t.label, description: t.detail, template: t })),
+                { placeHolder: `Duty template for ${agent.name}`, ignoreFocusOut: true });
+            if (!pick) { return; }
+            const t = pick.template;
+            let watch: string | undefined;
+            if (t.watchKind !== 'none') {
+                const picked = await vscode.window.showOpenDialog({
+                    canSelectFiles: t.watchKind === 'file',
+                    canSelectFolders: t.watchKind === 'folder',
+                    canSelectMany: false,
+                    openLabel: 'Watch this',
+                    title: `${t.label} — what should the agent watch?`
+                });
+                if (!picked?.length) { return; }
+                watch = picked[0].fsPath;
+            }
+            addDuty(agent.dir, { ...t.duty, watch });
+            await ensureDutiesReference(agent);
+            refreshAll();
+            void vscode.window.showInformationMessage(
+                `Agent Farm: duty "${t.duty.title}" added to ${agent.name} from template — right-click → Edit Duty… to fine-tune.`);
+        }),
+
+        vscode.commands.registerCommand('agentfarm.automateDuty', async (node?: AgentNode) => {
+            if (node?.kind !== 'duty') { return; }
+            const d = node.duty;
+            if (!d.watch || !fs.existsSync(d.watch)) {
+                void vscode.window.showWarningMessage(
+                    'Agent Farm: this duty has no existing watch path — only duties watching a real file/folder can be automated as a trigger.');
+                return;
+            }
+            const confirmed = await vscode.window.showInformationMessage(
+                `Create a watch trigger from duty "${d.title}"? The duty stays in DUTIES.md (checked while the agent runs); the trigger ALSO fires a headless ${node.agent.name} task when ${d.watch} changes — even while the agent is idle.`,
+                { modal: true }, 'Create Trigger');
+            if (confirmed !== 'Create Trigger') { return; }
+            taskManager.addTrigger({
+                title: `Duty: ${d.title}`,
+                type: 'watch',
+                watchPath: d.watch,
+                action: {
+                    kind: 'task', agentId: node.agent.id, agentName: node.agent.name,
+                    title: d.title,
+                    prompt: `DUTIES.md'deki "${d.title}" görevini uygula. İzlenen hedef değişti: {watch}` +
+                        (d.action ? ` Yapılacak iş: ${d.action}` : ''),
+                    mode: 'headless'
+                },
+                debounceSec: 10, cooldownSec: 60, maxPerHour: 6, enabled: true
+            });
+            void vscode.window.showInformationMessage(
+                `Agent Farm: trigger "Duty: ${d.title}" armed (debounce 10s, cooldown 60s, max 6/h) — manage it in the Tasks view under Triggers.`);
+        }),
+
+        vscode.commands.registerCommand('agentfarm.copyDuty', async (node?: AgentNode) => {
+            if (node?.kind !== 'duty') { return; }
+            const targets = agents.filter(a => a.id !== node.agent.id);
+            if (!targets.length) {
+                void vscode.window.showInformationMessage('Agent Farm: no other agent to copy to.');
+                return;
+            }
+            const pick = await vscode.window.showQuickPick(
+                targets.map(a => ({ label: a.name, description: a.dir, agent: a })),
+                { placeHolder: `Copy duty "${node.duty.title}" to which agent?`, ignoreFocusOut: true });
+            if (!pick) { return; }
+            if (pick.agent.duties.some(x => x.title === node.duty.title)) {
+                void vscode.window.showWarningMessage(
+                    `Agent Farm: ${pick.agent.name} already has a duty titled "${node.duty.title}".`);
+                return;
+            }
+            addDuty(pick.agent.dir, { ...node.duty });
+            await ensureDutiesReference(pick.agent);
+            refreshAll();
+            void vscode.window.showInformationMessage(
+                `Agent Farm: duty "${node.duty.title}" copied to ${pick.agent.name}.`);
+        }),
+
+        vscode.commands.registerCommand('agentfarm.moveDutyUp', (node?: AgentNode) => {
+            if (node?.kind === 'duty') { moveDuty(node.agent.dir, node.duty.title, -1); refreshAll(); }
+        }),
+
+        vscode.commands.registerCommand('agentfarm.moveDutyDown', (node?: AgentNode) => {
+            if (node?.kind === 'duty') { moveDuty(node.agent.dir, node.duty.title, 1); refreshAll(); }
         }),
 
         vscode.commands.registerCommand('agentfarm.toggleDuty', (node?: AgentNode) => {
@@ -1902,6 +1994,64 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 refreshAll();
                 void vscode.window.showInformationMessage(
                     `Agent Farm: "${node.file.name}" archived${res.indexUpdated ? ' and removed from MEMORY.md' : ''}.`);
+            } catch (e) {
+                void vscode.window.showWarningMessage(`Agent Farm: ${(e as Error).message ?? String(e)}`);
+            }
+        }),
+
+        vscode.commands.registerCommand('agentfarm.openMemoryGraph', (node?: AgentNode) => {
+            const agentId = node && 'agent' in node ? node.agent.id : undefined;
+            MemoryGraphPanel.show({
+                extensionUri: context.extensionUri,
+                getAgents: () => agents,
+                index
+            }, agentId);
+        }),
+
+        vscode.commands.registerCommand('agentfarm.fixMemoryIndex', async (arg?: AgentNode | { agentId?: string }) => {
+            const agent = arg && 'agent' in arg ? arg.agent : await resolveAgent(arg as { agentId?: string } | undefined);
+            if (!agent) { return; }
+            const fixes = planIndexFixes(agent.dir, agent.memoryFiles);
+            if (!fixes.length) {
+                void vscode.window.showInformationMessage(`Agent Farm: ${agent.name}'s MEMORY.md index is consistent — nothing to fix.`);
+                return;
+            }
+            const picks = await vscode.window.showQuickPick(
+                fixes.map(f => ({
+                    label: f.kind === 'add' ? `$(add) Index "${f.target}"` : `$(trash) Drop dead reference "${f.target}"`,
+                    description: f.line.length > 80 ? f.line.slice(0, 79) + '…' : f.line,
+                    picked: true,
+                    fix: f
+                })),
+                {
+                    canPickMany: true, ignoreFocusOut: true,
+                    placeHolder: `${agent.name} — MEMORY.md fixes (add orphan pointers, drop dead lines); index is backed up`
+                });
+            if (!picks?.length) { return; }
+            const backup = applyIndexFixes(agent.dir, picks.map(p => p.fix));
+            refreshAll();
+            void vscode.window.showInformationMessage(
+                `Agent Farm: MEMORY.md updated — ${picks.filter(p => p.fix.kind === 'add').length} added, ` +
+                `${picks.filter(p => p.fix.kind === 'remove').length} removed` +
+                (backup ? ` (backup: ${path.basename(backup)})` : '') + '.');
+        }),
+
+        vscode.commands.registerCommand('agentfarm.copyMemory', async (node?: AgentNode) => {
+            if (node?.kind !== 'memory-file') { return; }
+            const targets = agents.filter(a => a.id !== node.agent.id);
+            if (!targets.length) {
+                void vscode.window.showInformationMessage('Agent Farm: no other agent to copy to.');
+                return;
+            }
+            const pick = await vscode.window.showQuickPick(
+                targets.map(a => ({ label: a.name, description: a.dir, agent: a })),
+                { placeHolder: `Copy "${node.file.name}" to which agent?`, ignoreFocusOut: true });
+            if (!pick) { return; }
+            try {
+                copyMemoryFileTo(node.file.path, pick.agent.dir);
+                refreshAll();
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: "${node.file.name}" copied to ${pick.agent.name} and indexed in its MEMORY.md.`);
             } catch (e) {
                 void vscode.window.showWarningMessage(`Agent Farm: ${(e as Error).message ?? String(e)}`);
             }

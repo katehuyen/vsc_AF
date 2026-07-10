@@ -160,6 +160,66 @@ export function updateDuty(agentDir: string, oldTitle: string, duty: Duty): bool
         b.title === oldTitle ? { ...duty, lines: serializeDuty(duty).split('\n') } : b));
 }
 
+/** Reorder: swap a duty with its neighbour (direction -1 = up, 1 = down). */
+export function moveDuty(agentDir: string, title: string, direction: -1 | 1): boolean {
+    return rewrite(agentDir, blocks => {
+        const i = blocks.findIndex(b => b.title === title);
+        const j = i + direction;
+        if (i < 0 || j < 0 || j >= blocks.length) { return blocks; }
+        const next = blocks.slice();
+        [next[i], next[j]] = [next[j], next[i]];
+        return next;
+    });
+}
+
+/**
+ * Ready-made duty patterns (the user's proven vigilance loops). `watchKind`
+ * tells the wizard what to ask for; the duty's watch stays empty until then.
+ */
+export const DUTY_TEMPLATES: {
+    label: string;
+    detail: string;
+    watchKind: 'file' | 'folder' | 'none';
+    duty: Omit<Duty, 'watch'>;
+}[] = [
+    {
+        label: 'Soru-cevap döngüsü',
+        detail: 'izlenen dosyada cevaplanmış soruların gereğini yap, yenilerini ekle',
+        watchKind: 'file',
+        duty: {
+            title: 'Netleştirme istekleri', cadence: 'every-turn', paused: false,
+            action: 'Cevaplanmış soru varsa gereğini yap ve soruyu dosyadan sil; aydınlatılması gereken yeni soruların varsa dosyaya ekle.'
+        }
+    },
+    {
+        label: 'Inbox tasnifi',
+        detail: 'izlenen klasörde biriken her dosyayı adlandırıp yerine taşı',
+        watchKind: 'folder',
+        duty: {
+            title: 'Inbox tasnifi', cadence: 'every-turn', paused: false,
+            action: 'İçerideki her dosyayı inbox girişi say: uygun isim ver, uygun klasöre taşı.'
+        }
+    },
+    {
+        label: 'Haftalık hafıza bakımı',
+        detail: 'memory/ dosyalarını gözden geçir, bayatları güncelle/arşivle',
+        watchKind: 'none',
+        duty: {
+            title: 'Haftalık hafıza bakımı', cadence: 'weekly', paused: false,
+            action: 'memory/ altındaki dosyaları gözden geçir; bayatlamış olanları güncelle veya arşivle; MEMORY.md indeksini tutarlı tut.'
+        }
+    },
+    {
+        label: 'Çıktı klasörü nöbeti',
+        detail: 'izlenen klasöre düşen sonuçları kontrol et, gereğini yapıp temizle',
+        watchKind: 'folder',
+        duty: {
+            title: 'Çıktı kontrolü', cadence: 'session-start', paused: false,
+            action: 'Klasördeki yeni çıktıları gözden geçir; hatalıysa düzelt, tamamsa ilgili yere işle ve dosyayı arşivle.'
+        }
+    }
+];
+
 /** True if the agent's CLAUDE.md references DUTIES.md (i.e. the agent will obey it). */
 export function claudeMdReferencesDuties(claudeMdContent: string): boolean {
     return claudeMdContent.toUpperCase().includes('DUTIES.MD');

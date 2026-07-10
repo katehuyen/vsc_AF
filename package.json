@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.14.0",
+  "version": "2.15.0",
   "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
@@ -368,6 +368,48 @@
         "title": "Archive Memory File",
         "category": "Agent Farm",
         "icon": "$(archive)"
+      },
+      {
+        "command": "agentfarm.openMemoryGraph",
+        "title": "Open Memory Graph",
+        "category": "Agent Farm",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "agentfarm.fixMemoryIndex",
+        "title": "Fix Memory Index…",
+        "category": "Agent Farm",
+        "icon": "$(wrench)"
+      },
+      {
+        "command": "agentfarm.copyMemory",
+        "title": "Copy Memory File to Agent…",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.addDutyFromTemplate",
+        "title": "Add Duty from Template…",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.automateDuty",
+        "title": "Automate Duty (create trigger)…",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.copyDuty",
+        "title": "Copy Duty to Agent…",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.moveDutyUp",
+        "title": "Move Duty Up",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.moveDutyDown",
+        "title": "Move Duty Down",
+        "category": "Agent Farm"
       },
       {
         "command": "agentfarm.deleteDuty",
@@ -976,6 +1018,46 @@
           "command": "agentfarm.archiveMemory",
           "when": "view == agentfarm.agents && viewItem == memory-file",
           "group": "inline@1"
+        },
+        {
+          "command": "agentfarm.openMemoryGraph",
+          "when": "view == agentfarm.agents && viewItem == memory-section",
+          "group": "1_mem@1"
+        },
+        {
+          "command": "agentfarm.fixMemoryIndex",
+          "when": "view == agentfarm.agents && viewItem =~ /memory-(section|index)/",
+          "group": "1_mem@2"
+        },
+        {
+          "command": "agentfarm.copyMemory",
+          "when": "view == agentfarm.agents && viewItem == memory-file",
+          "group": "1_mem@1"
+        },
+        {
+          "command": "agentfarm.addDutyFromTemplate",
+          "when": "view == agentfarm.agents && viewItem == duties-section",
+          "group": "1_duty@0"
+        },
+        {
+          "command": "agentfarm.automateDuty",
+          "when": "view == agentfarm.agents && viewItem =~ /duty-(active|paused)/",
+          "group": "1_duty@2"
+        },
+        {
+          "command": "agentfarm.copyDuty",
+          "when": "view == agentfarm.agents && viewItem =~ /duty-(active|paused)/",
+          "group": "1_duty@3"
+        },
+        {
+          "command": "agentfarm.moveDutyUp",
+          "when": "view == agentfarm.agents && viewItem =~ /duty-(active|paused)/",
+          "group": "2_order@1"
+        },
+        {
+          "command": "agentfarm.moveDutyDown",
+          "when": "view == agentfarm.agents && viewItem =~ /duty-(active|paused)/",
+          "group": "2_order@2"
         },
         {
           "command": "agentfarm.deleteDuty",

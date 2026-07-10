@@ -2,6 +2,15 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.15.0 — Memory & duty management, wave 2 (2026-07-11)
+
+- **Memory Graph panel** (`Agent Farm: Open Memory Graph`, or right-click a Memory section): the `[[wikilink]]` structure of each agent's memory as a graph — node size = token weight, green = recalled (30d), dashed yellow ring = missing from MEMORY.md; edge = resolved wikilink (targets resolve via basename AND frontmatter `name:` slug). Cards list **broken links** (targets that resolve to nothing), **islands** (records with no links at all) and **hubs** (most linked-to records). Click a node to open the file.
+- **Fix Memory Index…**: one command repairs MEMORY.md — proposes a pointer line for every orphan file (description pulled from its frontmatter) and drops index lines whose every file reference is dead; you pick which fixes to apply, the index is backed up.
+- **Copy Memory File to Agent…**: copies the file and appends the pointer line to the target's MEMORY.md, so copies never arrive orphaned.
+- **Add Duty from Template…**: four proven vigilance patterns installed in one pick (Q&A loop on a watched file, inbox triage on a folder, weekly memory upkeep, output-folder review); the wizard asks only for the watch target.
+- **Automate Duty (create trigger)…**: bridges duties and automation — a duty watching a real file/folder gets a watch trigger that fires a headless task on the same agent even while it is idle (debounce 10s, cooldown 60s, max 6/h). The duty itself stays in DUTIES.md; the two complement each other.
+- **Copy Duty to Agent…** (with title-collision guard + CLAUDE.md reference check on the target) and **Move Duty Up/Down** (reorder DUTIES.md blocks from the tree).
+
 ## 2.14.0 — Memory & duty management, wave 1 (2026-07-11)
 
 The "see at a glance + manage in one click" maturity from Skills/MCP, applied to memory and duties:

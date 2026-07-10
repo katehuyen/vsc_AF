@@ -524,7 +524,13 @@ Panelin asıl gücü burada — Duties bölümü sadece liste değil, **durum g�
 - İzlenen yol **kayıpsa**: kırmızı uyarı + Insights'ta bulgu — klasör taşınmış, görev kopmuş.
 - **Duraklatılmış** görevler soluk görünür ve ajan şablon kuralı gereği onları atlar.
 
-Yönetim: göreve sağ tık → **Edit Duty…** (2.14.0 — başlık/kadans/watch/do/not alanlarını mevcut değerleriyle önceden doldurulmuş sihirbazda değiştir; dosyayı elle açmak gerekmez), **Pause/Resume** (silmeden dondur), **Delete**, **Open DUTIES.md** (elle düzenleme). Ajan detay sayfasında da tam tablo var: başlık, kadans, watch, do, durum.
+Yönetim: göreve sağ tık → **Edit Duty…** (2.14.0 — başlık/kadans/watch/do/not alanlarını mevcut değerleriyle önceden doldurulmuş sihirbazda değiştir; dosyayı elle açmak gerekmez), **Pause/Resume** (silmeden dondur), **Delete**, **Open DUTIES.md** (elle düzenleme), **Move Up / Move Down** (2.15.0 — DUTIES.md'deki blok sırasını değiştirir; ajan dosyayı yukarıdan aşağı okur, önemli nöbeti üste al). Ajan detay sayfasında da tam tablo var: başlık, kadans, watch, do, durum.
+
+2.15.0 ile gelen üç yönetim derinliği:
+
+- **Add Duty from Template…** (Duties bölümüne sağ tık): kanıtlanmış nöbet kalıpları tek seçimle kurulur — *Soru-cevap döngüsü* (izlenen dosyada cevaplananların gereğini yap), *Inbox tasnifi* (klasörde birikenleri adlandır/taşı), *Haftalık hafıza bakımı*, *Çıktı klasörü nöbeti*. Şablon watch hedefini sorar, sonrasını Edit Duty… ile incelt.
+- **Automate Duty (create trigger)…** (göreve sağ tık): nöbet ile otomasyon arasındaki köprü. Manuel nöbet yalnız **ajan çalışırken** işler; bu komut, watch hedefi gerçek bir dosya/klasör olan nöbetten bir **watch tetikleyicisi** üretir — hedef değiştiğinde ajan **boştayken bile** headless bir görev ateşlenir (debounce 10s, cooldown 60s, en çok 6/saat; Tasks görünümünden yönetilir). Nöbet DUTIES.md'de durur; ikisi birbirini tamamlar.
+- **Copy Duty to Agent…** (göreve sağ tık): nöbeti başka ajana kopyalar (aynı başlık varsa uyarır); hedef ajanın CLAUDE.md'si DUTIES.md'ye referans vermiyorsa onayla ekletir.
 
 **Ajan gerçekten bakıyor mu? (0.7.0)** Duties başlığında artık bir uyum göstergesi var: `read 2h ago` = ajan DUTIES.md'ye en son o zaman dokundu (oturum kayıtlarından tespit edilir); `never read` = kayıtlı oturumlarda hiç bakmamış. Ajan bu hafta oturum yaptığı hâlde dosyayı hiç okumadıysa Insights'a uyarı düşer — anlaşma kâğıt üzerinde kalmış demektir; CLAUDE.md yönergesini güçlendir.
 
@@ -555,6 +561,19 @@ Ajanın hafızası (`memory/*.md`) artık yalnız listelenmiyor — **gerçekten
 - **Tooltip'te kimlik:** dosyanın frontmatter `type`'ı (project/feedback/user/reference) ve `description`'ı tooltip'te görünür.
 - **New Memory File…** (bölümde **+**): ad + tür + tek satır açıklama sorar; frontmatter'lı dosyayı kurar ve **MEMORY.md'ye pointer satırını otomatik ekler** — yeni hafıza asla yetim doğmaz.
 - **Archive Memory File** (dosya satırında arşiv ikonu): silmek yerine `memory/archive/` klasörüne taşır (tarama kapsamı dışı) ve MEMORY.md'deki satırını düşürür (indeks yedeklenir). "Belki lazım olur" dosyaları context'ten çıkarmanın güvenli yolu.
+- **Copy Memory File to Agent…** (2.15.0, sağ tık): dosyayı başka ajana kopyalar ve hedefin MEMORY.md'sine pointer satırını otomatik ekler — kopya yetim doğmaz.
+- **Fix Memory Index…** (2.15.0, Memory bölümü/MEMORY.md sağ tık): indeksi tek seferde onarır — yetim dosyalara pointer satırı ekler (açıklama frontmatter'dan), var olmayan dosyalara işaret eden ölü satırları düşürür. Önerilen düzeltmeler tek tek seçilebilir; indeks yedeklenir.
+
+### Hafıza Grafiği (Memory Graph)
+
+**Agent Farm: Open Memory Graph** (Memory bölümüne sağ tık ya da komut paleti) — hafıza kayıtlarını birbirine bağlayan `[[wikilink]]` dokusunu görünür kılar (2.15.0). Kayıt yazma disiplininin ("ilgili kayıtlara [[ad]] ile bağlan") gerçekte işleyip işlemediğini burada görürsün:
+
+- **Graf:** her kayıt bir düğüm (boyut = token ağırlığı, yeşil = son 30 günde hatırlanmış, sarı kesikli halka = MEMORY.md'de yok), her `[[link]]` bir kenar. `[[hedef]]` hem dosya adına hem frontmatter `name:` slug'ına çözülür. Düğüme tıkla → dosya açılır. MEMORY.md indeks olduğu için düğüm değildir.
+- **Broken links:** hiçbir dosyaya çözülmeyen `[[hedefler]]` — yazım hatası ya da "yazılması planlanıp unutulmuş" kayıt. (Kullanıcı sözleşmesine göre kırık link hata değil, yazılacak kayıt işaretidir — ama farkında olmak istersin.)
+- **Islands:** hiç link vermeyen/almayan kayıtlar — dokuya bağlanmamış bilgi; bağla ya da arşivle.
+- **Hubs:** en çok link alan kayıtlar — bilginin merkezleri; bunları şişirme, bakımlı tut.
+- **Not in MEMORY.md** kartındaki **Fix Memory Index…** düğmesi onarımı panelden başlatır.
+- Ajan seçici üstte; veriler her açılış/Refresh'te dosyalardan taze okunur.
 
 ## Hafıza Senkronizasyonu
 
@@ -1051,8 +1070,9 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 - **Export Fleet Report (Markdown)** — karşılaştırmalı filo raporu
 - **Export Task Outputs Digest (Markdown)** — headless çıktıların toplu özeti
 - **Quick Start (Hızlı Başlangıç)** — bu kılavuzun başlangıç bölümünü açar
-- **Add Standing Duty / Edit Duty… / Open DUTIES.md** — nöbet görevi yönetimi
-- **New Memory File… / Archive Memory File** — hafıza yönetimi (frontmatter iskeleti + otomatik indeks satırı / yedekli arşivleme)
+- **Add Standing Duty / Add Duty from Template… / Edit Duty… / Copy Duty to Agent… / Automate Duty… / Move Duty Up-Down / Open DUTIES.md** — nöbet görevi yönetimi
+- **New Memory File… / Archive Memory File / Copy Memory File to Agent… / Fix Memory Index…** — hafıza yönetimi (frontmatter iskeleti + otomatik indeks satırı / yedekli arşivleme / tek-tık indeks onarımı)
+- **Open Memory Graph** — hafızanın [[wikilink]] dokusu: hub'lar, adalar, kırık hedefler, recall renklendirmesi
 - **Search Transcripts…** — tüm oturum kayıtlarında metin/regex arama
 - **Sample Output Quality Now** — kalite karnesi için elle örnekleme (ucuz model)
 - **Scan for Instruction Suggestions… / Review Instruction Suggestions…** — düzeltme kalıplarından CLAUDE.md kuralı önerisi ve onaylı uygulama
@@ -1132,6 +1152,15 @@ Tamamlanan fazlar (hepsi 2026-07-08):
 **Bundan sonrası ayrı ve ayrıntılı bir belgede yaşıyor:** komut paletinden **Agent Farm: Open Development Plan** — uzak görüşlü gelişim planı: olay tetikleyicileri, doğrulayıcı adımlar, MCP paneli, n8n/webhook köprüsü, multimedya üretim hattı (Kling/Seedance/Nano Banana sınıfı modellerle içerik fabrikası), zeki gözetim, çoklu makine ve vizyoner ufuk. Kodlama o plandaki öncelik sırasını izler.
 
 ## Sürüm Notları
+
+### 2.15.0 — Hafıza & Nöbet Yönetimi Dalga 2 (2026-07-11)
+
+- **Memory Graph paneli:** hafıza kayıtlarının `[[wikilink]]` dokusu — düğüm boyu token, yeşil = hatırlanmış, sarı halka = indekste yok; broken links / islands / hubs kartları; düğüme tıkla → dosya. Ayrıntı: [Hafıza Grafiği](#hafiza-grafigi-memory-graph).
+- **Fix Memory Index…:** yetim dosyalara pointer ekle + ölü indeks satırlarını düş — seçmeli, yedekli, tek komut.
+- **Copy Memory File to Agent…:** dosya + hedef MEMORY.md pointer'ı birlikte.
+- **Add Duty from Template…:** kanıtlanmış 4 nöbet kalıbı (soru-cevap döngüsü, inbox tasnifi, haftalık hafıza bakımı, çıktı nöbeti).
+- **Automate Duty…:** watch'lu nöbetten tek tıkla watch tetikleyicisi — ajan boştayken de ateşlenir; nöbet yerinde kalır.
+- **Copy Duty to Agent… / Move Duty Up-Down:** nöbetleri filoda çoğalt, DUTIES.md sırasını panelden düzenle.
 
 ### 2.14.0 — Hafıza & Nöbet Yönetimi Dalga 1 (2026-07-11)
 
