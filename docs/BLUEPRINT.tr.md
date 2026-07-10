@@ -124,6 +124,7 @@ Tek bir ajanın komuta ekranı:
 - **Fixed context load**: her oturumda otomatik yüklenen sabit bağlam (`CLAUDE.md` + `MEMORY.md` + `AGENTS.md`) bütçe çubuğu. Detay için aşağıdaki Sağlık bölümüne bak.
 - **Top tools**: ajanın en çok kullandığı araçlar — ajanın gerçekte ne iş yaptığının röntgeni.
 - **Health & optimization**: bu ajana özel bulgular; satıra tıklayınca ilgili dosya açılır.
+- **Task health** kartı: bu ajana delege edilen işlerin 30 günlük karnesi — detay için [Görev Sağlığı](#gorev-sagligi).
 - **Memory files**: boyut, token ve tazelik bilgisiyle hafıza tablosu.
 - **Sessions**: tüm oturum listesi; süre, tur, araç, hata, token, maliyet kolonlarıyla.
 
@@ -292,6 +293,16 @@ Sık kullandığın görevleri şablonlaştır: görev üzerinde sağ tık → *
 
 Biten görevler kaybolmaz: liste tavana gelince veya **Clear Finished Tasks** deyince kayıtlar aylık `task-history/YYYY-AA.jsonl` dosyalarına taşınır (`Open Task History` komutuyla aç). Çıktı arşivi klasörü de `outputsMaxMB` tavanını aşınca en eski, referanssız çıktılardan temizlenir.
 
+### Görev Sağlığı
+
+Delege ettiğin işler ne kadar güvenilir dönüyor? (2.17.0) Tarihçe arşivi + canlı görev listesi birleştirilip üç yüzeye işlenir:
+
+- **Ajan Detay sayfasında "Task health" kartı** — son 30 günün karnesi: koşu sayısı (✓/✗/iptal), başarı yüzdesi (yeşil ≥%80, kırmızı <%50), medyan süre, retry ve verify sayıları, kaynak dökümü (manual/schedule/trigger/workflow), medya maliyeti, o anki kuyruk durumu. Üst üste başarısızlık varsa kırmızı uyarı satırı son başarısız görevi adıyla gösterir.
+- **Yetenek Matrisi'nde Tasks ızgarası** — aşağıda [Yetenek Matrisi](#yetenek-matrisi) bölümüne bak.
+- **Insights uyarıları** — bir ajanın 30 günlük başarı oranı %50'nin altına düşerse (en az 5 tamamlanmış koşuyla) ve bir görev ailesinin son koşuları hep FAILED ise `task` kategorisinde uyarı düşer: zincir kırık, kota yakmaya devam etmeden çıktıya bak.
+
+Tekrarlanan koşular **görev ailesi** olarak gruplanır: başlıktaki `(retry N)` eki, tarih ve sayılar normalize edilir — "Nöbet turu 2026-07-08" ile "Nöbet turu 2026-07-09" aynı ailedir. İptal edilen görevler başarı oranına katılmaz (kullanıcı kararıdır, hata değil).
+
 ## Tetikleyiciler
 
 Otomasyonun kalbi (0.8.0): işler yalnızca saatle değil, **olayla** başlar. Tasks görünümünde ⚡ **Triggers** bölümü.
@@ -413,6 +424,7 @@ Ajanların öğretilmiş yetenekleri — Agent Skills (SKILL.md klasörleri) —
 - Satır adına ya da dolu bir hücreye tıklamak ilgili SKILL.md / config dosyasını açar. Herhangi bir kopyalama/düzenleme sonrası matris kendini tazeler.
 - **Memory files matrisi (2.16.0):** aynı adlı hafıza dosyalarının hangi ajanlarda olduğu, hücrede 30 günlük recall sayısı; **turuncu halkalı hücre = kopya en yenisinden SAPMIŞ** (içerik farklı — birinde güncellenmiş, diğeri eski). ＋ ile dosyayı o ajana kopyala (hedef MEMORY.md'ye indeks satırıyla). Çok-ajanlı satırlar üstte — senkron/diverjans asıl orada önemli.
 - **Duties matrisi (2.16.0):** nöbet başlıkları × ajanlar; hücrede kadans kısaltması (`turn/start/daily/weekly/manual`), ⏸ = duraklatılmış; tooltip watch/do gösterir; ＋ ile nöbeti o ajana kopyala (hedefte CLAUDE.md DUTIES.md referansı yoksa onayla eklenir).
+- **Tasks matrisi (2.17.0):** görev aileleri × ajanlar — son 30 günün en yoğun 30 ailesi ([Görev Sağlığı](#gorev-sagligi)). Hücrede tamamlanmış koşu sayısı: yeşil = hepsi başarılı, kırmızı = hepsi başarısız, turuncu halka = karışık (`2✓/1✗`); satır etiketi kaynağını söyler (`man/sch/trg/wf`), son koşuları hep başarısız aile kırmızı ● alır. Hücreye/satıra tıklamak tam görev tarihçesini açar.
 
 ## Sır Kasası
 
@@ -1156,6 +1168,14 @@ Tamamlanan fazlar (hepsi 2026-07-08):
 **Bundan sonrası ayrı ve ayrıntılı bir belgede yaşıyor:** komut paletinden **Agent Farm: Open Development Plan** — uzak görüşlü gelişim planı: olay tetikleyicileri, doğrulayıcı adımlar, MCP paneli, n8n/webhook köprüsü, multimedya üretim hattı (Kling/Seedance/Nano Banana sınıfı modellerle içerik fabrikası), zeki gözetim, çoklu makine ve vizyoner ufuk. Kodlama o plandaki öncelik sırasını izler.
 
 ## Sürüm Notları
+
+### 2.17.0 — Görev Sağlığı & Analitiği, Dalga 1 (2026-07-11)
+
+Skills/MCP/hafızanın "bir bakışta + sağlık" olgunluğu görev sistemine taşındı. Kaynak: canlı görev listesi + `task-history` arşivi birleşimi ([Görev Sağlığı](#gorev-sagligi)).
+
+- **Ajan Detayında "Task health" kartı:** 30 günlük karne — koşular (✓/✗/iptal), başarı yüzdesi, medyan süre, retry/verify, kaynak dökümü, medya maliyeti, anlık kuyruk; üst üste başarısızlıkta kırmızı uyarı + son başarısız görev.
+- **Yetenek Matrisi'ne Tasks ızgarası:** görev aileleri × ajanlar (retry/tarih gürültüsü normalize edilir); hücre yeşil = hep başarılı, kırmızı = hep başarısız, turuncu halka = karışık; kaynak etiketi (`man/sch/trg/wf`); tıkla → görev tarihçesi.
+- **Insights `task` uyarıları:** başarı oranı %50 altına düşen ajan (≥5 koşu) ve son koşuları hep FAILED olan görev ailesi uyarı düşürür.
 
 ### 2.16.0 — Hafıza & Nöbet Yönetimi Dalga 3: Birleşik Zekâ (2026-07-11)
 

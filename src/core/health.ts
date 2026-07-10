@@ -41,6 +41,8 @@ export interface HealthConfig {
     permissionLint?: boolean;
     /** H2: trigger reliability alerts, computed by the extension from task records. */
     triggerAlerts?: { severity: 'warning' | 'info'; title: string; message: string }[];
+    /** Task reliability alerts (taskstats): fail-heavy agents, always-failing task families. */
+    taskAlerts?: { severity: 'warning' | 'info'; agentId?: string; agentName: string; message: string }[];
     /** H3: latest failed pulse per agent. */
     pulseFailures?: { agentId: string; agentName: string; reason: string; ts: number }[];
 }
@@ -317,6 +319,17 @@ export function buildInsights(
             category: 'trigger',
             message: a.message,
             guideAnchor: 'tetik-karnesi'
+        });
+    }
+
+    for (const a of cfg.taskAlerts ?? []) {
+        insights.push({
+            severity: a.severity,
+            agentId: a.agentId,
+            agentName: a.agentName,
+            category: 'task',
+            message: a.message,
+            guideAnchor: 'gorev-sagligi'
         });
     }
 

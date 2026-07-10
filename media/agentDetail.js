@@ -100,6 +100,39 @@
                 </div>
             </div>`;
 
+        // Task health — how reliably does delegated work come back?
+        const th = DATA.taskHealth;
+        const red = t => `<span style="color:var(--vscode-charts-red,#f14c4c)">${t}</span>`;
+        const green = t => `<span style="color:var(--vscode-charts-green,#4caf50)">${t}</span>`;
+        const fmtDur = ms => {
+            const sec = Math.round(ms / 1000);
+            return sec < 90 ? `~${sec}s` : `~${Math.round(sec / 60)}m`;
+        };
+        let taskBody;
+        if (!th || (!th.total && !th.queued && !th.running)) {
+            taskBody = '<p class="muted">No task runs in the last 30 days — delegate work via the Tasks view.</p>';
+        } else {
+            const rate = th.successRate === undefined ? '—'
+                : `${Math.round(th.successRate * 100)}%`;
+            const rateHtml = th.successRate === undefined ? rate
+                : th.successRate >= 0.8 ? green(rate) : th.successRate < 0.5 ? red(rate) : rate;
+            const src = Object.entries(th.sources).filter(([, n]) => n > 0)
+                .map(([k, n]) => `${k} ${n}`).join(' · ') || '—';
+            taskBody = `
+                <div class="sub" style="line-height:1.9">
+                    <strong>Runs (30d):</strong> ${th.total} — ${th.done}✓ · ${th.failed ? red(th.failed + '✗') : '0✗'}${th.cancelled ? ` · ${th.cancelled} cancelled` : ''} · success ${rateHtml}<br>
+                    <strong>Median duration:</strong> ${th.medianDurationMs !== undefined ? fmtDur(th.medianDurationMs) : '—'}${th.retries ? ` · ${th.retries} retr${th.retries > 1 ? 'ies' : 'y'}` : ''}${th.verifyPass || th.verifyFail ? ` · verify ${th.verifyPass}✓/${th.verifyFail}✗` : ''}<br>
+                    <strong>Sources:</strong> ${src}${th.mediaCostUsd ? `<br><strong>Media cost:</strong> ${C.fmtUSD(th.mediaCostUsd)}` : ''}
+                    ${th.queued || th.running ? `<br><strong>Now:</strong> ${th.running} running · ${th.queued} queued` : ''}
+                    ${th.failStreak >= 2 ? `<br>${red(`⚠ last ${th.failStreak} runs failed`)}${th.lastFailure ? ` <span class="muted">(“${C.esc(th.lastFailure.title)}”, ${relTime(th.lastFailure.ts)})</span>` : ''}` : ''}
+                </div>`;
+        }
+        const taskHtml = `
+            <div class="card">
+                <h3>Task health <a data-guide="gorev-sagligi">?</a></h3>
+                ${taskBody}
+            </div>`;
+
         const sessHtml = DATA.sessions.map(s => `
             <tr class="click" data-session="${C.esc(s.file)}">
                 <td>${s.active ? '<span class="dot on"></span> ' : ''}${C.esc(s.title)}${s.sidechain ? ' <span class="badge">sub</span>' : ''}</td>
@@ -140,6 +173,7 @@
                 <div class="card chartbox"><h3>Cost by model</h3>${C.donut(modelItems, {})}</div>
                 <div class="card chartbox"><h3>Top tools</h3>${toolItems.length ? C.hbars(toolItems, { fmt: C.fmtTok }) : '<p class="muted">No tool calls recorded.</p>'}</div>
                 ${healthHtml}
+                ${taskHtml}
             </div>
             <h2>Standing duties <a data-guide="nobet-gorevleri">?</a></h2>
             <div class="spread">

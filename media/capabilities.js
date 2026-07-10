@@ -118,6 +118,46 @@
             <div class="card" style="overflow-x:auto"><table class="matrix">${head}${body}</table></div>`;
     }
 
+    const SOURCE_TAG = { manual: 'man', schedule: 'sch', trigger: 'trg', workflow: 'wf' };
+
+    function taskCellHtml(cell) {
+        if (!cell) { return '<td class="c absent"><span title="no runs on this agent">—</span></td>'; }
+        const tip = `${cell.runs} completed run(s) (30d): ${cell.done}✓ / ${cell.failed}✗` +
+            `\nlast run ${relTime(cell.lastTs)}`;
+        const label = cell.failed === 0 ? String(cell.runs)
+            : cell.done === 0 ? `${cell.failed}✗`
+            : `${cell.done}✓/${cell.failed}✗`;
+        const cls = cell.failed === 0 ? 'used' : cell.done === 0 ? 'fail' : 'mixed';
+        const heat = Math.min(1, 0.35 + Math.log10(cell.runs + 1) / 3);
+        return `<td class="c"><button class="pill ${cls}" style="opacity:${heat.toFixed(2)}" ` +
+            `title="${C.esc(tip)}" data-taskhist="1">${C.esc(label)}</button></td>`;
+    }
+
+    function taskMatrix(rows) {
+        const agents = DATA.agents;
+        if (!rows.length) {
+            return '<h2>Tasks</h2><p class="muted">No completed task runs in the last 30 days — delegate work via the Tasks view.</p>';
+        }
+        const runsTotal = rows.reduce((a, r) => a + r.runsTotal, 0);
+        const failing = rows.filter(r => r.alwaysFails).length;
+        const chips = `<span class="badge">${rows.length} task famil${rows.length > 1 ? 'ies' : 'y'}</span>
+            <span class="badge">${runsTotal} runs (30d)</span>` +
+            (failing ? `<span class="badge warn">${failing} always failing</span>` : '');
+        const head = `<tr><th class="name">Tasks</th>` +
+            agents.map(a => `<th class="agent" title="${C.esc(a.name)}">${C.esc(a.name.length > 10 ? a.name.slice(0, 9) + '…' : a.name)}</th>`).join('') +
+            '</tr>';
+        const body = rows.map(row => {
+            const title = row.title.length > 60 ? row.title.slice(0, 59) + '…' : row.title;
+            return `<tr>
+                <td class="name"><button class="rowname" title="${C.esc(row.title)} — click for the full task history" data-taskhist="1">${C.esc(title)}</button>
+                    <span class="tag">${SOURCE_TAG[row.source] || row.source}</span>${row.alwaysFails ? ' <span class="dead" style="color:var(--vscode-charts-red,#f14c4c)" title="its last runs all failed">●</span>' : ''}</td>` +
+                agents.map(a => taskCellHtml(row.cells[a.id])).join('') +
+            '</tr>';
+        }).join('');
+        return `<h2>Tasks <span class="chips">${chips}</span></h2>
+            <div class="card" style="overflow-x:auto"><table class="matrix">${head}${body}</table></div>`;
+    }
+
     function render() {
         document.getElementById('app').innerHTML = `
             <style>
@@ -137,6 +177,14 @@
                 }
                 .matrix .pill.idle { opacity: 0.45; }
                 .matrix .pill.off { color: var(--vscode-charts-orange, #d18616); }
+                .matrix .pill.fail {
+                    background: var(--vscode-charts-red, #f14c4c); color: var(--vscode-editor-background, #000);
+                    border-radius: 10px; min-width: 30px; font-weight: 700; font-size: 11px;
+                }
+                .matrix .pill.mixed {
+                    color: var(--vscode-charts-orange, #d18616); font-weight: 700; font-size: 11px;
+                    box-shadow: 0 0 0 1px var(--vscode-charts-orange, #d18616); border-radius: 10px;
+                }
                 .matrix .pill.divg { box-shadow: 0 0 0 2px var(--vscode-charts-orange, #d18616); border-radius: 10px; }
                 .matrix .pill.duty { font-size: 11px; opacity: 0.85; }
                 .matrix .copyhere { opacity: 0.25; font-size: 13px; }
@@ -161,11 +209,14 @@
             ${matrix(DATA.mcp, 'mcp', 'MCP servers', 'Add one from the Agents tree: MCP → +.')}
             ${matrix(DATA.memory || [], 'memory', 'Memory files', 'Create one from the Agents tree: Memory → +.')}
             ${dutyMatrix(DATA.duties || [])}
-            <p class="footnote">Counts come from real session transcripts: Skill tool calls, typed /commands, mcp__server__tool calls and explicit memory-file reads. Memory cells with an orange ring have DIVERGED from the newest copy. Copying installs into the target agent (skills/.mcp.json/memory+index/DUTIES.md); new claude sessions pick it up.</p>
+            ${taskMatrix(DATA.tasks || [])}
+            <p class="footnote">Counts come from real session transcripts: Skill tool calls, typed /commands, mcp__server__tool calls and explicit memory-file reads. Memory cells with an orange ring have DIVERGED from the newest copy. Copying installs into the target agent (skills/.mcp.json/memory+index/DUTIES.md); new claude sessions pick it up. Task rows group repeated runs of the same job (retry/date noise collapsed): green = all succeeded, red = all failed, orange ring = mixed — click for the full task history.</p>
         `;
 
         document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
         document.getElementById('guide').addEventListener('click', () => vscode.postMessage({ type: 'openGuide' }));
+        document.querySelectorAll('[data-taskhist]').forEach(b =>
+            b.addEventListener('click', () => vscode.postMessage({ type: 'openTaskHistory' })));
         document.querySelectorAll('[data-open]').forEach(b =>
             b.addEventListener('click', () => {
                 if (b.dataset.open) { vscode.postMessage({ type: 'open', path: b.dataset.open }); }

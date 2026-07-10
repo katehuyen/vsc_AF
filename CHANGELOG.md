@@ -2,6 +2,14 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.17.0 — Task health & analytics, wave 1 (2026-07-11)
+
+The "see at a glance + health signals" maturity from skills/MCP/memory, applied to the task system. Statistics merge the live task list with the `task-history/YYYY-MM.jsonl` archive, so finished-and-cleared runs still count.
+
+- **"Task health" card on the Agent Detail page**: the last 30 days of delegated work — runs (✓/✗/cancelled), success rate (green ≥80%, red <50%), median duration, retries and verify outcomes, source breakdown (manual/schedule/trigger/workflow), media cost and the live queue. Consecutive failures show a red warning line naming the last failed task.
+- **Tasks grid in the Capability Matrix**: task families × agents (repeated runs of the same job group together — retry suffixes, dates and numbers are normalized). Cells show completed-run counts: green = all succeeded, red = all failed, orange ring = mixed; a source tag (`man/sch/trg/wf`) marks where the family's runs come from and a red dot flags families whose last runs all failed. Click any cell for the full task history.
+- **Task reliability insights**: an agent whose 30-day success rate drops below 50% (with ≥5 completed runs) and any task family whose last runs all FAILED now raise `task` warnings in the Insights view — broken chains surface before they burn more quota.
+
 ## 2.16.0 — Memory & duty management, wave 3: unified intelligence (2026-07-11)
 
 - **Capability Matrix grows two grids**: *Memory files × agents* — cross-agent copies with 30-day recall heat and a **divergence ring** (orange = this copy's content differs from the newest one); ＋ copies the file to that agent with the MEMORY.md pointer line. *Duties × agents* — cadence cells (`turn/start/daily/weekly/manual`, ⏸ = paused, tooltip shows watch/do); ＋ copies the duty (with the CLAUDE.md DUTIES.md-reference check on the target). Multi-agent rows sort first.

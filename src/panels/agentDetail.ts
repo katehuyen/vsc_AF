@@ -5,6 +5,7 @@ import { Insight } from '../core/health';
 import { mcpUsage, readAgentMcpServers, readDisabledServers } from '../core/mcp';
 import { indexedMemoryNames, memoryUsage } from '../core/memusage';
 import { readAgentSkills, skillUsage } from '../core/skills';
+import { buildAgentTaskStats, TaskRecord } from '../core/taskstats';
 import { SessionIndex } from '../core/sessions';
 import { totalTokens } from '../core/pricing';
 import { safeReadFile } from '../core/util';
@@ -16,6 +17,8 @@ export interface AgentDetailDeps {
     index: SessionIndex;
     getInsights(): Insight[];
     contextBudget(): number;
+    /** live task list merged with the task-history archive (see taskstats). */
+    taskRecords(): TaskRecord[];
 }
 
 function buildData(agent: AgentInfo, deps: AgentDetailDeps): Record<string, unknown> {
@@ -86,6 +89,11 @@ function buildData(agent: AgentInfo, deps: AgentDetailDeps): Record<string, unkn
         }
     };
 
+    // Task health: how reliably does delegated work come back from this agent?
+    const taskHealth = buildAgentTaskStats(
+        deps.taskRecords().filter(t => t.agentId === agent.id)
+    ).get(agent.id) ?? null;
+
     return {
         agent: {
             id: agent.id,
@@ -119,6 +127,7 @@ function buildData(agent: AgentInfo, deps: AgentDetailDeps): Record<string, unkn
             })
         },
         contextHealth,
+        taskHealth,
         totals: {
             cost: totalCost,
             sessions: sessions.length,

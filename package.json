@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.16.0",
+  "version": "2.17.0",
   "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
@@ -1314,8 +1314,14 @@
           "items": {
             "type": "object",
             "properties": {
-              "name": { "type": "string", "description": "Machine label shown on sessions (e.g. laptop)" },
-              "dir": { "type": "string", "description": "Path to that machine's synced .claude folder" }
+              "name": {
+                "type": "string",
+                "description": "Machine label shown on sessions (e.g. laptop)"
+              },
+              "dir": {
+                "type": "string",
+                "description": "Path to that machine's synced .claude folder"
+              }
             }
           },
           "default": [],
@@ -1432,20 +1438,63 @@
           "items": {
             "type": "object",
             "properties": {
-              "match": { "type": "string" },
-              "usd": { "type": "number" },
-              "per": { "type": "string", "enum": ["request", "image", "second"] }
+              "match": {
+                "type": "string"
+              },
+              "usd": {
+                "type": "number"
+              },
+              "per": {
+                "type": "string",
+                "enum": [
+                  "request",
+                  "image",
+                  "second"
+                ]
+              }
             }
           },
           "default": [
-            { "match": "flux.*schnell", "usd": 0.003, "per": "image" },
-            { "match": "flux", "usd": 0.025, "per": "image" },
-            { "match": "nano-banana|gemini.*image", "usd": 0.04, "per": "image" },
-            { "match": "kling", "usd": 0.1, "per": "second" },
-            { "match": "seedance", "usd": 0.06, "per": "second" },
-            { "match": "veo", "usd": 0.4, "per": "second" },
-            { "match": "whisper|speech-to-text", "usd": 0.005, "per": "request" },
-            { "match": "tts|text-to-speech|elevenlabs", "usd": 0.01, "per": "request" }
+            {
+              "match": "flux.*schnell",
+              "usd": 0.003,
+              "per": "image"
+            },
+            {
+              "match": "flux",
+              "usd": 0.025,
+              "per": "image"
+            },
+            {
+              "match": "nano-banana|gemini.*image",
+              "usd": 0.04,
+              "per": "image"
+            },
+            {
+              "match": "kling",
+              "usd": 0.1,
+              "per": "second"
+            },
+            {
+              "match": "seedance",
+              "usd": 0.06,
+              "per": "second"
+            },
+            {
+              "match": "veo",
+              "usd": 0.4,
+              "per": "second"
+            },
+            {
+              "match": "whisper|speech-to-text",
+              "usd": 0.005,
+              "per": "request"
+            },
+            {
+              "match": "tts|text-to-speech|elevenlabs",
+              "usd": 0.01,
+              "per": "request"
+            }
           ]
         },
         "agentFarm.notifyWebhookUrl": {
@@ -1457,9 +1506,25 @@
           "type": "array",
           "items": {
             "type": "string",
-            "enum": ["permission", "stalled", "budget", "workflow-done", "workflow-failed", "summary", "digest"]
+            "enum": [
+              "permission",
+              "stalled",
+              "budget",
+              "workflow-done",
+              "workflow-failed",
+              "summary",
+              "digest"
+            ]
           },
-          "default": ["permission", "stalled", "budget", "workflow-done", "workflow-failed", "summary", "digest"],
+          "default": [
+            "permission",
+            "stalled",
+            "budget",
+            "workflow-done",
+            "workflow-failed",
+            "summary",
+            "digest"
+          ],
           "description": "Which notification types are forwarded to notifyWebhookUrl."
         },
         "agentFarm.dailyDigest": {
@@ -1472,8 +1537,14 @@
           "items": {
             "type": "object",
             "properties": {
-              "match": { "type": "string", "description": "case-insensitive regex tested against the incoming text" },
-              "agent": { "type": "string", "description": "agent name that takes the work" }
+              "match": {
+                "type": "string",
+                "description": "case-insensitive regex tested against the incoming text"
+              },
+              "agent": {
+                "type": "string",
+                "description": "agent name that takes the work"
+              }
             }
           },
           "default": [],
@@ -1486,7 +1557,11 @@
         },
         "agentFarm.embeddingsProvider": {
           "type": "string",
-          "enum": ["off", "gemini", "openai"],
+          "enum": [
+            "off",
+            "gemini",
+            "openai"
+          ],
           "default": "off",
           "description": "Semantic search embeddings: 'gemini' (Google API, GEMINI_API_KEY secret) or 'openai' (any OpenAI-compatible /embeddings endpoint — incl. fully local Ollama/LM Studio via embeddingsBaseUrl, no key needed)."
         },
@@ -1512,13 +1587,18 @@
         },
         "agentFarm.browserAllowHosts": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "description": "Global host allowlist for browser steps (subdomains included). A browser step refuses to run if neither this nor its own allowHosts covers the URL."
         },
         "agentFarm.browserApproval": {
           "type": "string",
-          "enum": ["ask", "auto"],
+          "enum": [
+            "ask",
+            "auto"
+          ],
           "default": "ask",
           "description": "'ask' = confirm every browser step before it runs (recommended); 'auto' = run allowlisted browser steps without asking."
         },
@@ -1527,9 +1607,18 @@
           "items": {
             "type": "object",
             "properties": {
-              "name": { "type": "string", "description": "profile name shown in the task wizard" },
-              "headless": { "type": "string", "description": "command template with {prompt} and {args}, e.g. gemini -p \"{prompt}\"" },
-              "interactive": { "type": "string", "description": "optional interactive template; falls back to headless" }
+              "name": {
+                "type": "string",
+                "description": "profile name shown in the task wizard"
+              },
+              "headless": {
+                "type": "string",
+                "description": "command template with {prompt} and {args}, e.g. gemini -p \"{prompt}\""
+              },
+              "interactive": {
+                "type": "string",
+                "description": "optional interactive template; falls back to headless"
+              }
             }
           },
           "default": [],
@@ -1540,8 +1629,14 @@
           "items": {
             "type": "object",
             "properties": {
-              "name": { "type": "string", "description": "machine label (e.g. laptop)" },
-              "file": { "type": "string", "description": "path to the synced relay-*.jsonl written by farmRelay.js on that machine" }
+              "name": {
+                "type": "string",
+                "description": "machine label (e.g. laptop)"
+              },
+              "file": {
+                "type": "string",
+                "description": "path to the synced relay-*.jsonl written by farmRelay.js on that machine"
+              }
             }
           },
           "default": [],
@@ -1549,7 +1644,9 @@
         },
         "agentFarm.packGalleryRepos": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "description": "Agent pack gallery sources: git URLs (shallow-cloned into extension storage) or local folders containing .agentpack files."
         },
@@ -1568,10 +1665,29 @@
           "items": {
             "type": "object",
             "properties": {
-              "source": { "type": "string", "enum": ["any", "trigger", "schedule", "workflow", "manual"], "description": "which launches the rule applies to" },
-              "agent": { "type": "string", "description": "case-insensitive regex on the agent name (empty = any)" },
-              "promptMatch": { "type": "string", "description": "case-insensitive regex on the prompt (empty = any)" },
-              "model": { "type": "string", "description": "model id/alias passed as --model" }
+              "source": {
+                "type": "string",
+                "enum": [
+                  "any",
+                  "trigger",
+                  "schedule",
+                  "workflow",
+                  "manual"
+                ],
+                "description": "which launches the rule applies to"
+              },
+              "agent": {
+                "type": "string",
+                "description": "case-insensitive regex on the agent name (empty = any)"
+              },
+              "promptMatch": {
+                "type": "string",
+                "description": "case-insensitive regex on the prompt (empty = any)"
+              },
+              "model": {
+                "type": "string",
+                "description": "model id/alias passed as --model"
+              }
             }
           },
           "default": [],
@@ -1594,13 +1710,21 @@
         },
         "agentFarm.pulse": {
           "type": "string",
-          "enum": ["off", "nightly", "weekly"],
+          "enum": [
+            "off",
+            "nightly",
+            "weekly"
+          ],
           "default": "off",
           "description": "Synthetic pulse checks: a fixed cheap prompt per agent + cheap judge verifies the answer matches the agent's identity (uses judgeArgs; small API cost per agent). Manual: 'Run Pulse Check Now'."
         },
         "agentFarm.qualitySample": {
           "type": "string",
-          "enum": ["off", "daily", "weekly"],
+          "enum": [
+            "off",
+            "daily",
+            "weekly"
+          ],
           "default": "off",
           "description": "Automatically sample recent session outputs and score them 1-5 with the cheap-model judge (uses judgeArgs; small API cost per sample). Manual: 'Sample Output Quality Now'."
         },
@@ -1611,7 +1735,10 @@
         },
         "agentFarm.suggestScan": {
           "type": "string",
-          "enum": ["off", "weekly"],
+          "enum": [
+            "off",
+            "weekly"
+          ],
           "default": "off",
           "description": "Weekly cheap-model scan of your follow-up messages for repeated corrections, proposing CLAUDE.md rules (Insights view). Manual: 'Scan for Instruction Suggestions…'."
         },
@@ -1627,7 +1754,11 @@
         },
         "agentFarm.autoReport": {
           "type": "string",
-          "enum": ["off", "daily", "weekly"],
+          "enum": [
+            "off",
+            "daily",
+            "weekly"
+          ],
           "default": "off",
           "description": "Automatically write a fleet report into autoReportFolder (checked hourly while VS Code is open)."
         },

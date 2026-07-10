@@ -39,6 +39,9 @@ import { ApprovalQueue, blockingCount, buildNeedsQueue, NeedItem } from './core/
 import { PulseStore, runPulseSweep } from './core/pulse';
 import { buildTriggerStats, describeTriggerStat, triggerAlerts } from './core/triggerstats';
 import {
+    buildAgentTaskStats, buildTaskFamilies, mergeTaskRecords, readTaskHistory, taskAlerts
+} from './core/taskstats';
+import {
     hasOurHooks, installHooksInto, removeHooksFrom, userSettingsPath
 } from './core/hooksInstaller';
 import { LiveMonitor } from './core/live';
@@ -193,6 +196,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     index.setTitleOverrides(sessionTitles());
 
     let taskManagerRef: TaskManager | undefined;
+    // Task analytics source: live task list merged with the finished-task
+    // archive (45d read comfortably covers every 30d window we compute).
+    const allTaskRecords = () => taskManagerRef
+        ? mergeTaskRecords(
+            taskManagerRef.tasks,
+            readTaskHistory(taskManagerRef.historyDir, Date.now() - 45 * 24 * 3600 * 1000))
+        : [];
     const healthConfig = () => ({
         staleMemoryDays: cfg().get<number>('staleMemoryDays', 45),
         contextBudgetTokens: cfg().get<number>('contextBudgetTokens', 8000),
@@ -208,6 +218,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         triggerAlerts: taskManagerRef
             ? triggerAlerts(buildTriggerStats(taskManagerRef.triggers, taskManagerRef.tasks))
             : [],
+        // Task reliability: fail-heavy agents + always-failing task families.
+        taskAlerts: (() => {
+            const records = allTaskRecords();
+            return records.length
+                ? taskAlerts(buildAgentTaskStats(records), buildTaskFamilies(records))
+                : [];
+        })(),
         // H3: latest pulse per agent, failures only.
         pulseFailures: agents
             .map(a => pulseStore.latestFor(a.id))
@@ -932,7 +949,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         getAgents: () => agents,
         index,
         getInsights: () => insights,
-        contextBudget: () => cfg().get<number>('contextBudgetTokens', 8000)
+        contextBudget: () => cfg().get<number>('contextBudgetTokens', 8000),
+        taskRecords: () => allTaskRecords()
     };
     const viewerDeps = {
         extensionUri: context.extensionUri,
@@ -1184,7 +1202,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 extensionUri: context.extensionUri,
                 getAgents: () => agents,
                 index,
-                refreshTrees: refreshAll
+                refreshTrees: refreshAll,
+                taskRecords: () => allTaskRecords()
             });
         }),
 

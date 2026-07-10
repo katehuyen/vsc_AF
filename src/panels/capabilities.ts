@@ -7,6 +7,7 @@ import {
 } from '../core/mcp';
 import { copyMemoryFileTo, memoryLastUsed, memoryUsage } from '../core/memusage';
 import { copySkillTo, readAgentSkills, skillLastUsed, skillUsage } from '../core/skills';
+import { buildTaskFamilies, TaskRecord } from '../core/taskstats';
 import { SessionIndex } from '../core/sessions';
 import { hashString, safeReadFile } from '../core/util';
 import { htmlShell } from './base';
@@ -22,6 +23,8 @@ export interface CapabilitiesDeps {
     getAgents(): AgentInfo[];
     index: SessionIndex;
     refreshTrees(): void;
+    /** live task list merged with the task-history archive (see taskstats). */
+    taskRecords(): TaskRecord[];
 }
 
 const WINDOW_MS = 30 * 24 * 3600 * 1000;
@@ -140,6 +143,10 @@ function buildData(deps: CapabilitiesDeps): Record<string, unknown> {
         }
     }
 
+    // Tasks: row identity = title family (retry/date/number noise collapsed);
+    // cells carry completed-run counts + outcomes. Top 30 busiest families.
+    const taskFamilies = buildTaskFamilies(deps.taskRecords()).slice(0, 30);
+
     const spread = (cells: Record<string, unknown>) => Object.keys(cells).length;
     return {
         generatedAt: Date.now(),
@@ -151,7 +158,8 @@ function buildData(deps: CapabilitiesDeps): Record<string, unknown> {
         memory: [...memRows.values()].sort((a, b) =>
             spread(b.cells) - spread(a.cells) || a.name.localeCompare(b.name)),
         duties: [...dutyRows.values()].sort((a, b) =>
-            spread(b.cells) - spread(a.cells) || a.title.localeCompare(b.title))
+            spread(b.cells) - spread(a.cells) || a.title.localeCompare(b.title)),
+        tasks: taskFamilies
     };
 }
 
@@ -205,6 +213,9 @@ export class CapabilitiesPanel {
                 break;
             case 'openGuide':
                 void vscode.commands.executeCommand('agentfarm.openGuide', 'yetenek-matrisi');
+                break;
+            case 'openTaskHistory':
+                void vscode.commands.executeCommand('agentfarm.openTaskHistory');
                 break;
             case 'open':
                 if (typeof msg.path === 'string' && msg.path) {
