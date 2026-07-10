@@ -31,7 +31,7 @@ import { SearchResult } from './core/search';
 import { chunkTranscript, SemanticIndex } from './core/semantic';
 import {
     addDuty, CADENCES, CLAUDE_MD_SNIPPET, claudeMdReferencesDuties,
-    deleteDuty, DUTIES_FILENAME, togglePauseDuty, watchStatus
+    deleteDuty, DUTIES_FILENAME, togglePauseDuty, updateDuty, watchStatus
 } from './core/duties';
 import { buildEvalReport, compareRuns, EvalCase, EvalStore, runEvalSet, summarizeRun } from './core/evals';
 import { buildInsights, Insight } from './core/health';
@@ -46,6 +46,7 @@ import {
     addMcpServer, copyMcpServerTo, readServerRawDef, removeMcpServer, setServerDisabled, updateMcpServer
 } from './core/mcp';
 import { addSkill, copySkillTo, moveSkillScope, removeSkill } from './core/skills';
+import { addMemoryFile, archiveMemoryFile, MEMORY_TYPES } from './core/memusage';
 import { DEFAULT_MEDIA_PRICING, MediaPriceRule, mediaCostSince, readMediaMetas } from './core/media';
 import {
     applyMergedContent, buildMergeDraft, findDuplicateGroups, syncGroup
@@ -933,7 +934,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const viewerDeps = {
         extensionUri: context.extensionUri,
         getPricing: () => pricing,
-        maxMessages: () => cfg().get<number>('maxTranscriptMessages', 400),
+        maxMessages: () => cfg().get<number>('maxTranscriptMessages', 1500),
         contextLimitFor: (model: string) => {
             const forced = cfg().get<number>('contextWindowTokens', 0);
             return forced > 0 ? forced : contextWindowFor(model);
@@ -1597,6 +1598,42 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         }),
 
+        vscode.commands.registerCommand('agentfarm.editDuty', async (node?: AgentNode) => {
+            if (node?.kind !== 'duty') { return; }
+            const d = node.duty;
+            const title = await vscode.window.showInputBox({
+                prompt: 'Duty title', value: d.title, ignoreFocusOut: true
+            });
+            if (!title) { return; }
+            const cadencePick = await vscode.window.showQuickPick(
+                CADENCES.map(c => ({ label: c, description: c === d.cadence ? 'current' : undefined })),
+                { placeHolder: `Cadence (current: ${d.cadence})`, ignoreFocusOut: true });
+            if (!cadencePick) { return; }
+            const watch = await vscode.window.showInputBox({
+                prompt: 'Watch target — path or description (empty = none)',
+                value: d.watch ?? '', ignoreFocusOut: true
+            });
+            if (watch === undefined) { return; }
+            const action = await vscode.window.showInputBox({
+                prompt: 'Do: what should the agent do?', value: d.action ?? '', ignoreFocusOut: true
+            });
+            if (action === undefined) { return; }
+            const note = await vscode.window.showInputBox({
+                prompt: 'Note (optional)', value: d.note ?? '', ignoreFocusOut: true
+            });
+            if (note === undefined) { return; }
+            updateDuty(node.agent.dir, d.title, {
+                title,
+                cadence: cadencePick.label,
+                paused: d.paused,
+                watch: watch.trim() || undefined,
+                action: action.trim() || undefined,
+                note: note.trim() || undefined
+            });
+            refreshAll();
+            void vscode.window.showInformationMessage(`Agent Farm: duty "${title}" updated.`);
+        }),
+
         vscode.commands.registerCommand('agentfarm.deleteDuty', async (node?: AgentNode) => {
             if (node?.kind !== 'duty') { return; }
             const confirmed = await vscode.window.showWarningMessage(
@@ -1821,6 +1858,52 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 void vscode.window.showInformationMessage(`Agent Farm: skill "${node.skill.name}" removed.`);
             } else {
                 void vscode.window.showWarningMessage('Agent Farm: could not remove the skill folder.');
+            }
+        }),
+
+        vscode.commands.registerCommand('agentfarm.addMemory', async (node?: AgentNode) => {
+            const agent = node && 'agent' in node ? node.agent : await resolveAgent(undefined);
+            if (!agent) { return; }
+            const name = await vscode.window.showInputBox({
+                prompt: `Memory file name for ${agent.name} (kebab-case, e.g. project-notescribe)`,
+                ignoreFocusOut: true,
+                validateInput: v => /^[a-z0-9][a-z0-9_-]*$/.test(v) ? undefined : 'Lowercase letters, digits, - _ only'
+            });
+            if (!name) { return; }
+            const typePick = await vscode.window.showQuickPick(
+                MEMORY_TYPES.map(t => ({ label: t })),
+                { placeHolder: 'Memory type (frontmatter metadata.type)', ignoreFocusOut: true });
+            if (!typePick) { return; }
+            const description = await vscode.window.showInputBox({
+                prompt: 'One-line description (goes into frontmatter AND the MEMORY.md index line)',
+                ignoreFocusOut: true
+            });
+            if (!description) { return; }
+            try {
+                const file = addMemoryFile(agent.dir, name, typePick.label, description.trim());
+                refreshAll();
+                const doc = await vscode.workspace.openTextDocument(file);
+                await vscode.window.showTextDocument(doc);
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: memory "${name}.md" created and indexed in MEMORY.md — write the fact into the body.`);
+            } catch (e) {
+                void vscode.window.showWarningMessage(`Agent Farm: ${(e as Error).message ?? String(e)}`);
+            }
+        }),
+
+        vscode.commands.registerCommand('agentfarm.archiveMemory', async (node?: AgentNode) => {
+            if (node?.kind !== 'memory-file') { return; }
+            const confirmed = await vscode.window.showWarningMessage(
+                `Archive "${node.file.name}"? It moves to memory/archive/ (out of the agent's index — NOT deleted) and its MEMORY.md line is removed (index backed up).`,
+                { modal: true }, 'Archive');
+            if (confirmed !== 'Archive') { return; }
+            try {
+                const res = archiveMemoryFile(node.agent.dir, node.file.name);
+                refreshAll();
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: "${node.file.name}" archived${res.indexUpdated ? ' and removed from MEMORY.md' : ''}.`);
+            } catch (e) {
+                void vscode.window.showWarningMessage(`Agent Farm: ${(e as Error).message ?? String(e)}`);
             }
         }),
 

@@ -85,7 +85,7 @@ Yan paneldeki ana ağaç. Her ajan şu alt bölümlerle açılır:
 | --- | --- |
 | Identity | `CLAUDE.md` — tıklayınca açılır, yanında tahmini token boyutu |
 | Duties | Nöbet görevleri (`DUTIES.md`) — bkz. [Nöbet Görevleri](#nobet-gorevleri) |
-| Memory | `memory/` altındaki tüm dosyalar; token tahmini ve son değişiklik zamanı |
+| Memory | `memory/` altındaki dosyalar; token, son değişiklik + **30 günlük recall sayısı ve orphan işareti** — bkz. [Hafıza Yönetimi](#hafiza-yonetimi) (2.14.0) |
 | Tools | `tools/` klasöründeki scriptler |
 | MCP | Ajanın MCP sunucuları + 30 günlük gerçek kullanım — bkz. [MCP Yönetimi](#mcp-yonetimi) |
 | Skills | Agent Skills (`.claude/skills` + `~/.claude/skills`) + 30 günlük gerçek kullanım — bkz. [Skill Yönetimi](#skill-yonetimi) (2.12.0) |
@@ -142,7 +142,7 @@ Bir oturumun ham JSONL kaydını okunur konuşmaya çevirir:
 - **Context now kartı (2.6.0, 2.11.0'da model-farkındalıklı):** son isteğin bağlam boyutu (prompt + cache + çıktı) ve **oturumun modelinin bağlam penceresi** içindeki yüzdesi. Tavan artık sabit 200K değil, modelden bulunur: Fable 5 / Mythos 5 / Opus 4.6–4.8 / Sonnet 4.6+ → 1M; Haiku 4.5 ve daha eski nesiller → 200K. %70'te sararır ve `/compact` ya da `/clear` önerir, %90'da kızarır. **Model tabloda yoksa** yüzde ve renk gösterilmez — sadece ham bağlam boyutu yazılır (tahmini tavan uydurulmaz). `agentFarm.contextWindowTokens` ayarına değer girerek sabit tavan zorlanabilir (0 = otomatik). Oturum çalışırken kayıt her değiştiğinde kart **canlı** tazelenir — "bağlam doldu mu, compact zamanı mı?" sorusunun anlık cevabı.
 - Üstteki arama kutusu mesajları ve araç adlarını filtreler.
 - **Open raw JSONL** ham kaydı editörde açar.
-- Çok uzun oturumlarda son N mesaj gösterilir (`agentFarm.maxTranscriptMessages` ayarı, varsayılan 400).
+- Çok uzun oturumlarda son N mesaj gösterilir (`agentFarm.maxTranscriptMessages` ayarı, varsayılan 1500).
 - **▶ Replay** oturumu adım adım oynatır — ayrıntı için [Oturum Replay](#oturum-replay).
 
 ### Insights Ağacı
@@ -519,12 +519,12 @@ Agents ağacında ajanın **Duties** satırına sağ tık → **Add Standing Dut
 
 Panelin asıl gücü burada — Duties bölümü sadece liste değil, **durum göstergesi**:
 
-- İzlenen **klasörde** dosya birikmişse: turuncu göz + `3 waiting` — inbox'ta iş var demek.
+- İzlenen **klasörde** dosya birikmişse: turuncu göz + `3 waiting` — inbox'ta iş var demek. **Tooltip artık bekleyenleri gösterir (2.14.0):** hangi dosyaların beklediği (ilk 5 ad) ve en eskisinin ne zamandır oturduğu (`oldest 3d ago`) — panele gitmeden "ne birikmiş" görürsün.
 - İzlenen **dosya** son 24 saatte değişmişse: turuncu göz + `changed 2h ago` — muhtemelen cevap yazdın, ajan henüz işlemedi.
 - İzlenen yol **kayıpsa**: kırmızı uyarı + Insights'ta bulgu — klasör taşınmış, görev kopmuş.
 - **Duraklatılmış** görevler soluk görünür ve ajan şablon kuralı gereği onları atlar.
 
-Yönetim: göreve sağ tık → **Pause/Resume** (silmeden dondur), **Delete**, **Open DUTIES.md** (elle düzenleme). Ajan detay sayfasında da tam tablo var: başlık, kadans, watch, do, durum.
+Yönetim: göreve sağ tık → **Edit Duty…** (2.14.0 — başlık/kadans/watch/do/not alanlarını mevcut değerleriyle önceden doldurulmuş sihirbazda değiştir; dosyayı elle açmak gerekmez), **Pause/Resume** (silmeden dondur), **Delete**, **Open DUTIES.md** (elle düzenleme). Ajan detay sayfasında da tam tablo var: başlık, kadans, watch, do, durum.
 
 **Ajan gerçekten bakıyor mu? (0.7.0)** Duties başlığında artık bir uyum göstergesi var: `read 2h ago` = ajan DUTIES.md'ye en son o zaman dokundu (oturum kayıtlarından tespit edilir); `never read` = kayıtlı oturumlarda hiç bakmamış. Ajan bu hafta oturum yaptığı hâlde dosyayı hiç okumadıysa Insights'a uyarı düşer — anlaşma kâğıt üzerinde kalmış demektir; CLAUDE.md yönergesini güçlendir.
 
@@ -544,6 +544,17 @@ Yönetim: göreve sağ tık → **Pause/Resume** (silmeden dondur), **Delete**, 
 ```
 
 **İpucu:** Görev/Workflow ile farkı karıştırma — nöbet görevi ajanın **oturum içindeyken** kendi kendine yaptığı kontroldür; Tasks kuyruğu ise senin (veya zamanlayıcının) dışarıdan başlattığı işlerdir. "Her tur bak" ancak ajan çalışırken işler; ajan hiç açılmıyorsa daily bir Task ile oturumu tetiklemek gerekir — ikisi birbirini tamamlar.
+
+## Hafıza Yönetimi
+
+Ajanın hafızası (`memory/*.md`) artık yalnız listelenmiyor — **gerçekten kullanılıp kullanılmadığı** ölçülüyor ve panelden yönetiliyor (2.14.0). Agents ağacında **Memory** bölümü:
+
+- **Bir bakışta durum:** bölüm başlığı `N files • ~X tok • M recalled (30d)` — kaç dosya var, toplam ağırlığı ne, kaçı son 30 günde gerçekten hatırlanmış.
+- **Recall takibi:** her dosya satırında `recalled ×5 (30d), last 2h` ya da `not recalled (30d)` yazar; hatırlanan dosyanın ikonu yeşildir. "Recall" = ajanın dosyayı bir araçla (Read/Edit/Write) **açıkça** açması — oturum kayıtlarından sayılır. MEMORY.md indeksi her oturumda pasif yüklendiği için bu metrikten muaftır (`index — loads every session` diye işaretli). Skills/MCP'deki "used/unused" mantığının hafıza karşılığı: 30 gündür hiç hatırlanmayan dosya, indekste yer kaplayan ölü ağırlık adayıdır.
+- **Orphan işareti:** MEMORY.md'de referansı olmayan dosya satırda `⚠ orphan` gösterir — ajan indeksten bulamayacağı için o hafıza fiilen kayıptır.
+- **Tooltip'te kimlik:** dosyanın frontmatter `type`'ı (project/feedback/user/reference) ve `description`'ı tooltip'te görünür.
+- **New Memory File…** (bölümde **+**): ad + tür + tek satır açıklama sorar; frontmatter'lı dosyayı kurar ve **MEMORY.md'ye pointer satırını otomatik ekler** — yeni hafıza asla yetim doğmaz.
+- **Archive Memory File** (dosya satırında arşiv ikonu): silmek yerine `memory/archive/` klasörüne taşır (tarama kapsamı dışı) ve MEMORY.md'deki satırını düşürür (indeks yedeklenir). "Belki lazım olur" dosyaları context'ten çıkarmanın güvenli yolu.
 
 ## Hafıza Senkronizasyonu
 
@@ -951,7 +962,7 @@ Gürültü koruması: önceki hafta 0.50$'ın, bu hafta 1$'ın altındaysa uyar�
 | `agentFarm.staleMemoryDays` | 45 | Bayat hafıza eşiği |
 | `agentFarm.contextBudgetTokens` | 8000 | Sabit bağlam yükü bütçesi |
 | `agentFarm.windowTokenLimit` | 0 (kapalı) | 5 saatlik pencere limiti (yüzde çubuğu için) |
-| `agentFarm.maxTranscriptMessages` | 400 | Oturum görüntüleyicide gösterilen en fazla mesaj |
+| `agentFarm.maxTranscriptMessages` | 1500 | Oturum görüntüleyicide gösterilen en fazla mesaj |
 | `agentFarm.contextWindowTokens` | 0 (otomatik) | "Context now" tavanı. 0 = oturumun modelinden otomatik bulunur (bilinmeyen modelde yüzde gösterilmez); sabit tavan zorlamak için değer gir |
 | `agentFarm.includeUnmatchedProjects` | false | Ajan köklerine eşleşmeyen oturumları da dahil et |
 | `agentFarm.pricing` | yukarıdaki tablo | Model fiyat kuralları |
@@ -1040,7 +1051,8 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 - **Export Fleet Report (Markdown)** — karşılaştırmalı filo raporu
 - **Export Task Outputs Digest (Markdown)** — headless çıktıların toplu özeti
 - **Quick Start (Hızlı Başlangıç)** — bu kılavuzun başlangıç bölümünü açar
-- **Add Standing Duty / Open DUTIES.md** — nöbet görevi yönetimi
+- **Add Standing Duty / Edit Duty… / Open DUTIES.md** — nöbet görevi yönetimi
+- **New Memory File… / Archive Memory File** — hafıza yönetimi (frontmatter iskeleti + otomatik indeks satırı / yedekli arşivleme)
 - **Search Transcripts…** — tüm oturum kayıtlarında metin/regex arama
 - **Sample Output Quality Now** — kalite karnesi için elle örnekleme (ucuz model)
 - **Scan for Instruction Suggestions… / Review Instruction Suggestions…** — düzeltme kalıplarından CLAUDE.md kuralı önerisi ve onaylı uygulama
@@ -1120,6 +1132,18 @@ Tamamlanan fazlar (hepsi 2026-07-08):
 **Bundan sonrası ayrı ve ayrıntılı bir belgede yaşıyor:** komut paletinden **Agent Farm: Open Development Plan** — uzak görüşlü gelişim planı: olay tetikleyicileri, doğrulayıcı adımlar, MCP paneli, n8n/webhook köprüsü, multimedya üretim hattı (Kling/Seedance/Nano Banana sınıfı modellerle içerik fabrikası), zeki gözetim, çoklu makine ve vizyoner ufuk. Kodlama o plandaki öncelik sırasını izler.
 
 ## Sürüm Notları
+
+### 2.14.0 — Hafıza & Nöbet Yönetimi Dalga 1 (2026-07-11)
+
+Skills/MCP'ye gelen "bir bakışta gör + tek tıkla yönet" olgunluğu hafıza ve nöbetlere taşındı:
+
+- **Hafıza recall takibi:** Memory bölümü artık `N files • ~X tok • M recalled (30d)`; her dosyada gerçek hatırlanma sayısı/zamanı (`recalled ×5, last 2h` / `not recalled (30d)`), yeşil = kullanılıyor. Recall = ajanın dosyayı araçla açıkça açması (oturum kayıtlarından). Ayrıntı: [Hafıza Yönetimi](#hafiza-yonetimi).
+- **Orphan işareti:** MEMORY.md'de referansı olmayan dosya satırda `⚠ orphan`; tooltip'te frontmatter type/description.
+- **New Memory File… / Archive Memory File:** frontmatter iskeleti + otomatik indeks satırı; arşivleme `memory/archive/`'e taşır ve indeks satırını yedekli düşürür.
+- **Edit Duty…:** nöbet görevini önceden doldurulmuş sihirbazla düzenle (başlık/kadans/watch/do/not) — DUTIES.md'yi elle açmak gerekmez.
+- **Watch önizleme:** `3 waiting` tooltip'i artık bekleyen dosya adlarını ve en eskisinin yaşını gösterir.
+- **Oturum görüntüleyici varsayılanı:** `maxTranscriptMessages` 400 → **1500**.
+- **Ayrıca (2.13.1–2.13.2):** timeline session-start işareti maviye döndü; bazı oturum sayfalarının "Loading…"de takılması düzeltildi (transkriptte `</script>` geçen oturumlar inline script'i bozuyordu — enjeksiyon artık kaçışlı).
 
 ### 2.13.0 — Yetenek Yönetiminde Derinlik + Uzun Zaman Aralıkları (2026-07-10)
 

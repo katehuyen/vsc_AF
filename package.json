@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.13.2",
+  "version": "2.14.0",
   "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
@@ -350,6 +350,24 @@
         "title": "Pause/Resume Duty",
         "category": "Agent Farm",
         "icon": "$(debug-pause)"
+      },
+      {
+        "command": "agentfarm.editDuty",
+        "title": "Edit Duty…",
+        "category": "Agent Farm",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "agentfarm.addMemory",
+        "title": "New Memory File…",
+        "category": "Agent Farm",
+        "icon": "$(add)"
+      },
+      {
+        "command": "agentfarm.archiveMemory",
+        "title": "Archive Memory File",
+        "category": "Agent Farm",
+        "icon": "$(archive)"
       },
       {
         "command": "agentfarm.deleteDuty",
@@ -945,6 +963,21 @@
           "group": "inline@1"
         },
         {
+          "command": "agentfarm.editDuty",
+          "when": "view == agentfarm.agents && viewItem =~ /duty-(active|paused)/",
+          "group": "1_duty@0"
+        },
+        {
+          "command": "agentfarm.addMemory",
+          "when": "view == agentfarm.agents && viewItem == memory-section",
+          "group": "inline@1"
+        },
+        {
+          "command": "agentfarm.archiveMemory",
+          "when": "view == agentfarm.agents && viewItem == memory-file",
+          "group": "inline@1"
+        },
+        {
           "command": "agentfarm.deleteDuty",
           "when": "view == agentfarm.agents && viewItem =~ /duty-(active|paused)/",
           "group": "inline@2"
@@ -1218,7 +1251,7 @@
         },
         "agentFarm.maxTranscriptMessages": {
           "type": "number",
-          "default": 400,
+          "default": 1500,
           "description": "Maximum number of messages rendered in the session viewer."
         },
         "agentFarm.contextWindowTokens": {

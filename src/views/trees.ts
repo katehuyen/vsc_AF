@@ -1,7 +1,8 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { AgentInfo } from '../core/agents';
+import { AgentInfo, FileMeta } from '../core/agents';
 import { Duty, watchStatus } from '../core/duties';
+import { indexedMemoryNames, memoryLastUsed, memoryUsage, readMemoryFrontmatter } from '../core/memusage';
 import { Insight } from '../core/health';
 import {
     McpServerDef, mcpLastUsed, mcpToolBreakdown, mcpUsage, readAgentMcpServers, readDisabledServers
@@ -9,7 +10,7 @@ import {
 import { readAgentSkills, SkillDef, skillLastUsed, skillUsage } from '../core/skills';
 import { LiveMonitor, LiveStatus } from '../core/live';
 import { SessionIndex, SessionInfo } from '../core/sessions';
-import { fmtTokens, fmtUSD, relTime, dayKey } from '../core/util';
+import { fmtTokens, fmtUSD, relTime, dayKey, safeReadFile } from '../core/util';
 
 export interface FarmState {
     getAgents(): AgentInfo[];
@@ -34,6 +35,7 @@ export type AgentNode =
     | { kind: 'duty'; agent: AgentInfo; duty: Duty }
     | { kind: 'mcp-server'; agent: AgentInfo; server: McpServerDef; calls: number; lastTs?: number; disabled?: boolean }
     | { kind: 'skill'; agent: AgentInfo; skill: SkillDef; calls: number; lastTs?: number }
+    | { kind: 'memory-file'; agent: AgentInfo; file: FileMeta; calls: number; lastTs?: number; orphan: boolean }
     | { kind: 'file'; path: string; label: string; description?: string }
     | { kind: 'session'; session: SessionInfo };
 
@@ -106,7 +108,13 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
                 case 'memory': {
                     const item = new vscode.TreeItem('Memory', vscode.TreeItemCollapsibleState.Collapsed);
                     item.iconPath = new vscode.ThemeIcon('database');
-                    item.description = `${agent.memoryFiles.length} files`;
+                    const totalTok = agent.memoryFiles.reduce((a, f) => a + f.tokens, 0);
+                    const usage = memoryUsage(this.state.index, agent.id, MCP_USAGE_WINDOW_MS);
+                    const recalled = agent.memoryFiles.filter(f =>
+                        f.name !== 'MEMORY.md' && (usage.get(f.name.toLowerCase()) ?? 0) > 0).length;
+                    item.description = `${agent.memoryFiles.length} files • ~${fmtTokens(totalTok)} tok • ${recalled} recalled (30d)`;
+                    item.contextValue = 'memory-section';
+                    item.tooltip = 'The agent\'s memory files with real recall stats: "recalled" counts explicit tool reads of the file in the last 30 days (passive index injection is not visible in transcripts). MEMORY.md is the index — it loads every session.';
                     return item;
                 }
                 case 'tools': {
@@ -231,6 +239,35 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
             item.command = openFileCommand(s.source);
             return item;
         }
+        if (node.kind === 'memory-file') {
+            const f = node.file;
+            const isIndex = f.name === 'MEMORY.md';
+            const item = new vscode.TreeItem(f.name, vscode.TreeItemCollapsibleState.None);
+            item.iconPath = isIndex
+                ? new vscode.ThemeIcon('book')
+                : new vscode.ThemeIcon('file',
+                    node.calls > 0 ? new vscode.ThemeColor('charts.green') : undefined);
+            const parts = [`~${fmtTokens(f.tokens)} tok`, relTime(f.mtime)];
+            if (isIndex) {
+                parts.push('index — loads every session');
+            } else {
+                parts.push(node.calls > 0
+                    ? `recalled ×${node.calls} (30d)${node.lastTs ? `, last ${relTime(node.lastTs)}` : ''}`
+                    : 'not recalled (30d)');
+                if (node.orphan) { parts.push('⚠ orphan'); }
+            }
+            item.description = parts.join(' • ');
+            const meta = readMemoryFrontmatter(f.path);
+            item.tooltip = `${f.name}${meta.type ? ` [${meta.type}]` : ''}\n` +
+                (meta.description ? `${meta.description}\n` : '') +
+                `${f.path}\n~${fmtTokens(f.tokens)} tokens • changed ${relTime(f.mtime)}` +
+                (isIndex ? '' :
+                    `\nExplicit recalls in last 30 days: ${node.calls}` +
+                    (node.orphan ? '\n⚠ Not referenced in MEMORY.md — the agent may never find it.' : ''));
+            item.contextValue = isIndex ? 'memory-index' : 'memory-file';
+            item.command = openFileCommand(f.path);
+            return item;
+        }
         if (node.kind === 'duty') {
             const d = node.duty;
             const ws = watchStatus(d.watch);
@@ -251,7 +288,11 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
             item.tooltip = `${d.title} [${d.cadence}${d.paused ? ', paused' : ''}]\n` +
                 (d.watch ? `Watch: ${d.watch}\n` : '') +
                 (d.action ? `Do: ${d.action}\n` : '') +
-                (d.note ? `Note: ${d.note}` : '');
+                (d.note ? `Note: ${d.note}\n` : '') +
+                (ws?.files?.length
+                    ? `Waiting: ${ws.files.join(', ')}${ws.summary.startsWith(`${ws.files.length} `) ? '' : '…'}` +
+                      (ws.oldestMtime ? ` (oldest ${relTime(ws.oldestMtime)})` : '')
+                    : '');
             item.contextValue = d.paused ? 'duty-paused' : 'duty-active';
             if (node.agent.dutiesPath) {
                 item.command = openFileCommand(node.agent.dutiesPath);
@@ -316,14 +357,21 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
                 }));
             }
             if (node.section === 'memory') {
+                const usage = memoryUsage(this.state.index, node.agent.id, MCP_USAGE_WINDOW_MS);
+                const lastUsed = memoryLastUsed(this.state.index, node.agent.id);
+                const indexed = node.agent.memoryIndexPath
+                    ? indexedMemoryNames(safeReadFile(node.agent.memoryIndexPath) ?? '')
+                    : undefined;
                 return node.agent.memoryFiles
                     .slice()
                     .sort((x, y) => (x.name === 'MEMORY.md' ? -1 : y.name === 'MEMORY.md' ? 1 : x.name.localeCompare(y.name)))
                     .map(f => ({
-                        kind: 'file' as const,
-                        path: f.path,
-                        label: f.name,
-                        description: `~${fmtTokens(f.tokens)} tok • ${relTime(f.mtime)}`
+                        kind: 'memory-file' as const,
+                        agent: node.agent,
+                        file: f,
+                        calls: usage.get(f.name.toLowerCase()) ?? 0,
+                        lastTs: lastUsed.get(f.name.toLowerCase()),
+                        orphan: !!indexed && f.name !== 'MEMORY.md' && !indexed.has(f.name.toLowerCase())
                     }));
             }
             if (node.section === 'tools') {

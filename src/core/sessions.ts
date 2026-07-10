@@ -53,6 +53,8 @@ export interface SessionInfo {
     tools: Record<string, number>;
     /** Skill invocations (Skill tool calls + typed /commands) by skill/command name. */
     skillCalls: Record<string, number>;
+    /** Explicit tool touches of memory/<file>.md, by lowercase basename (recall signal). */
+    memoryReads: Record<string, number>;
     errors: number;
     version?: string;
     gitBranch?: string;
@@ -156,6 +158,7 @@ export function parseSessionFile(
         toolCalls: 0,
         tools: {},
         skillCalls: {},
+        memoryReads: {},
         errors: 0,
         daily: {},
         heat: new Array(168).fill(0),
@@ -291,6 +294,13 @@ export function parseSessionFile(
                         const filePath = String(block.input?.['file_path'] ?? '');
                         if (ts && filePath.toUpperCase().includes('DUTIES.MD')) {
                             info.dutiesReadTs = Math.max(info.dutiesReadTs ?? 0, ts);
+                        }
+                        // Memory recall signal: any tool explicitly touching a
+                        // file inside a memory/ folder (Read/Edit/Write/…).
+                        const memMatch = /[\\/]memory[\\/]([^\\/]+\.md)$/i.exec(filePath);
+                        if (memMatch) {
+                            const memName = memMatch[1].toLowerCase();
+                            info.memoryReads[memName] = (info.memoryReads[memName] ?? 0) + 1;
                         }
                         if (ts) {
                             info.events.push({

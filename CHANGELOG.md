@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.14.0 — Memory & duty management, wave 1 (2026-07-11)
+
+The "see at a glance + manage in one click" maturity from Skills/MCP, applied to memory and duties:
+
+- **Memory recall tracking**: the Memory section header now reads `N files • ~X tok • M recalled (30d)`; each file row shows its real recall count/time (`recalled ×5 (30d), last 2h` or `not recalled (30d)`, green icon = in use). A recall is the agent explicitly opening the file with a tool (Read/Edit/Write), counted from transcripts; MEMORY.md is exempt (it loads passively every session, marked `index — loads every session`).
+- **Orphan marker**: files not referenced from MEMORY.md show `⚠ orphan` (the agent can never find them through the index). Tooltips show the frontmatter `type` and `description`.
+- **New Memory File…** (+ on the section): name + type + one-line description → scaffolds the frontmatter file AND appends the MEMORY.md pointer line, so new memories are never born orphaned.
+- **Archive Memory File**: moves the file to `memory/archive/` (out of the scan) and drops its MEMORY.md line with a timestamped index backup — the safe way to remove dead weight without deleting.
+- **Edit Duty…** (right-click a duty): change title/cadence/watch/do/note in a wizard prefilled with current values; no more hand-editing DUTIES.md for small changes.
+- **Watch preview**: a duty's `3 waiting` tooltip now lists the waiting file names and the age of the oldest one.
+- `agentFarm.maxTranscriptMessages` default raised 400 → **1500**.
+
 ## 2.13.2 — Fix: session viewer stuck on "Loading…" (2026-07-11)
 
 - Some session pages hung forever on "Loading…" with raw JSON leaking into the page. Cause: the transcript data is injected into an inline `<script>window.__DATA__ = …</script>` tag, and any session whose transcript quoted a literal `</script>` (e.g. this project's own webview code) closed that tag early, corrupting the page. Fixed at the source (`base.ts`): the injected JSON now escapes `<` as `<` and the U+2028/U+2029 line separators, so no transcript content can break out of the script tag. Affects every Agent Farm webview, not just the session viewer.

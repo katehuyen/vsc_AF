@@ -150,6 +150,16 @@ export function deleteDuty(agentDir: string, title: string): boolean {
     return rewrite(agentDir, blocks => blocks.filter(b => b.title !== title));
 }
 
+/**
+ * Replace a duty block in place (title/cadence/watch/action/note). The block
+ * is regenerated from the fields; other blocks and the file header stay
+ * untouched.
+ */
+export function updateDuty(agentDir: string, oldTitle: string, duty: Duty): boolean {
+    return rewrite(agentDir, blocks => blocks.map(b =>
+        b.title === oldTitle ? { ...duty, lines: serializeDuty(duty).split('\n') } : b));
+}
+
 /** True if the agent's CLAUDE.md references DUTIES.md (i.e. the agent will obey it). */
 export function claudeMdReferencesDuties(claudeMdContent: string): boolean {
     return claudeMdContent.toUpperCase().includes('DUTIES.MD');
@@ -162,6 +172,10 @@ export interface WatchStatus {
     summary: string;
     /** true when there is likely pending work (non-empty dir / recently changed file) */
     pending: boolean;
+    /** for dirs: first few waiting file names (the "what exactly is waiting" preview) */
+    files?: string[];
+    /** for dirs: mtime of the oldest waiting entry (how long work has been sitting) */
+    oldestMtime?: number;
 }
 
 /** Inspect a duty's watch target so the UI can show at a glance whether work is waiting. */
@@ -174,15 +188,26 @@ export function watchStatus(watch: string | undefined, now = Date.now()): WatchS
         return { exists: false, kind: 'missing', summary: 'missing', pending: false };
     }
     if (st.isDirectory()) {
-        let count = 0;
+        let entries: string[] = [];
         try {
-            count = fs.readdirSync(watch).filter(n => !n.startsWith('.')).length;
+            entries = fs.readdirSync(watch).filter(n => !n.startsWith('.'));
         } catch { /* unreadable */ }
+        const count = entries.length;
+        // Preview: which files are waiting + how long the oldest has been sitting.
+        let oldestMtime: number | undefined;
+        for (const name of entries.slice(0, 20)) {
+            const es = safeStat(path.join(watch, name));
+            if (es && (oldestMtime === undefined || es.mtimeMs < oldestMtime)) {
+                oldestMtime = es.mtimeMs;
+            }
+        }
         return {
             exists: true,
             kind: 'dir',
             summary: count > 0 ? `${count} waiting` : 'empty',
-            pending: count > 0
+            pending: count > 0,
+            files: count > 0 ? entries.slice(0, 5) : undefined,
+            oldestMtime
         };
     }
     const changedRecently = now - st.mtimeMs < 24 * 3600 * 1000;
