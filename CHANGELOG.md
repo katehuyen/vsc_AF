@@ -2,6 +2,13 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.10.0 — Terminal rendering remedies (2026-07-10)
+
+VS Code's terminal is xterm.js inside Chromium — long TUI sessions (claude) can hit rendering glitches there: ghost spaces while typing, lost/garbled lines. Two remedies, one command:
+
+- **`Agent Farm: Terminal Rendering Fix…`** shows the current state of the relevant settings and offers: **Apply render fix** (`terminal.integrated.gpuAcceleration: off` + `smoothScrolling: off` — the DOM renderer fixes most glitch reports), **Disable persistent sessions** (restored terminals are a common source of garbled output), **Restore VS Code defaults**, and a shortcut to all terminal settings.
+- **`agentFarm.externalTerminal`** (toggle in the same command): Start Session / Continue Latest / Resume open in the **OS terminal** — Windows Terminal when available, plain cmd window as fallback — skipping xterm.js entirely. Farm tasks intentionally stay in the integrated terminal so their lifecycle can be tracked.
+
 ## 2.9.0 — Export selection UX, turn navigation, focus-loss audit (2026-07-10)
 
 Follow-up to 2.8.0 after immediate feedback ("bulk operations and navigation must come without being asked"):

@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo, discoverAgents } from './core/agents';
+import { openExternalTerminal } from './core/extTerminal';
 import {
     applyPackFiles, buildAgentPack, readAgentPack, rebindPack, writeAgentPack
 } from './core/agentpack';
@@ -930,7 +931,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         contextLimit: () => cfg().get<number>('contextWindowTokens', 200000),
         titleFor: (sessionId: string) => sessionTitles()[sessionId],
         lastExportDir: () => context.globalState.get<string>('agentfarm.lastExportDir'),
-        setLastExportDir: (dir: string) => { void context.globalState.update('agentfarm.lastExportDir', dir); }
+        setLastExportDir: (dir: string) => { void context.globalState.update('agentfarm.lastExportDir', dir); },
+        launchTerminal: (name: string, cwd: string | undefined, command: string) =>
+            launchClaudeTerminal(name, cwd, command)
     };
 
     // ---------- G1/G5: Needs You queue + kanban board ----------
@@ -1056,6 +1059,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     let pendingMerge: { name: string; files: string[] } | undefined;
 
     type AgentArg = { agentId?: string; agent?: AgentInfo } | undefined;
+    /** Claude session terminals (start/continue/resume) honor agentFarm.externalTerminal —
+     *  long TUI sessions can escape xterm.js rendering glitches. Farm tasks stay integrated
+     *  (their lifecycle is tracked via terminal close events). */
+    const launchClaudeTerminal = (name: string, cwd: string | undefined, command: string) => {
+        if (cfg().get<boolean>('externalTerminal', false)) {
+            openExternalTerminal(cwd, command);
+            return;
+        }
+        const terminal = vscode.window.createTerminal({ name, cwd });
+        terminal.show();
+        terminal.sendText(command, true);
+    };
+
     const resolveAgent = async (arg: AgentArg): Promise<AgentInfo | undefined> => {
         if (arg?.agent) { return arg.agent; }
         const id = arg?.agentId;
@@ -1103,11 +1119,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const s = arg && 'session' in arg && arg.session ? arg.session : arg as SessionInfo | undefined;
                 if (!s?.sessionId) { return; }
                 const cwd = s.cwd && fs.existsSync(s.cwd) ? s.cwd : undefined;
-                const terminal = vscode.window.createTerminal({
-                    name: `claude: ${s.agentName ?? s.sessionId.slice(0, 8)}`, cwd
-                });
-                terminal.show();
-                terminal.sendText(`claude --resume ${s.sessionId}`, true);
+                launchClaudeTerminal(`claude: ${s.agentName ?? s.sessionId.slice(0, 8)}`, cwd,
+                    `claude --resume ${s.sessionId}`);
             }),
 
         vscode.commands.registerCommand('agentfarm.renameSession',
@@ -1128,6 +1141,80 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         vscode.commands.registerCommand('agentfarm.openTimeline', () => {
             TimelinePanel.show({ extensionUri: context.extensionUri, live, tasks: taskManager });
+        }),
+
+        // xterm.js render glitches (ghost spaces, lost lines) have two known remedies:
+        // the DOM renderer (gpuAcceleration off) and skipping xterm.js entirely for long
+        // claude sessions via the OS terminal. Both live behind this one command.
+        vscode.commands.registerCommand('agentfarm.terminalRenderFix', async () => {
+            const term = () => vscode.workspace.getConfiguration('terminal.integrated');
+            const gpu = term().get<string>('gpuAcceleration', 'auto');
+            const smooth = term().get<boolean>('smoothScrolling', false);
+            const persist = term().get<boolean>('enablePersistentSessions', true);
+            const external = cfg().get<boolean>('externalTerminal', false);
+            const cur = (v: boolean) => v ? 'on' : 'off';
+            const pick = await vscode.window.showQuickPick(
+                [
+                    {
+                        label: '$(wrench) Apply render fix (recommended)',
+                        description: `gpuAcceleration: off + smoothScrolling: off — fixes ghost spaces / lost lines${gpu === 'off' && !smooth ? ' • already applied' : ''}`,
+                        id: 'fix'
+                    },
+                    {
+                        label: `$(terminal) Claude sessions in external terminal: turn ${external ? 'OFF' : 'ON'}`,
+                        description: 'start/continue/resume open in Windows Terminal (or a cmd window) — skips xterm.js entirely; farm tasks stay integrated for tracking',
+                        id: 'external'
+                    },
+                    {
+                        label: `$(circle-slash) Disable persistent sessions (currently ${cur(persist)})`,
+                        description: 'terminals are NOT restored after reload — helps when restored terminals come back garbled',
+                        id: 'persist'
+                    },
+                    {
+                        label: '$(discard) Restore VS Code defaults',
+                        description: 'removes the gpuAcceleration / smoothScrolling / persistent-sessions overrides',
+                        id: 'restore'
+                    },
+                    {
+                        label: '$(settings-gear) Open all terminal settings…',
+                        description: 'font, letter spacing, custom glyphs and the rest',
+                        id: 'open'
+                    }
+                ],
+                {
+                    ignoreFocusOut: true,
+                    placeHolder: `Terminal rendering — current: gpu ${gpu} · smoothScrolling ${cur(smooth)} · persistent ${cur(persist)} · external claude ${cur(external)}`
+                }
+            );
+            if (!pick) { return; }
+            const G = vscode.ConfigurationTarget.Global;
+            switch (pick.id) {
+                case 'fix':
+                    await term().update('gpuAcceleration', 'off', G);
+                    await term().update('smoothScrolling', false, G);
+                    void vscode.window.showInformationMessage(
+                        'Agent Farm: render fix applied (gpuAcceleration=off, smoothScrolling=off) — open a NEW terminal for it to take effect. Still glitchy? Re-run this command and try the external terminal option.');
+                    break;
+                case 'external':
+                    await cfg().update('externalTerminal', !external, G);
+                    void vscode.window.showInformationMessage(
+                        `Agent Farm: claude session terminals now open ${!external ? 'in the OS terminal (Windows Terminal when available)' : 'in the integrated terminal'}.`);
+                    break;
+                case 'persist':
+                    await term().update('enablePersistentSessions', false, G);
+                    void vscode.window.showInformationMessage(
+                        'Agent Farm: persistent terminal sessions disabled — terminals will not be restored after a reload (that restore step is a common source of garbled output).');
+                    break;
+                case 'restore':
+                    await term().update('gpuAcceleration', undefined, G);
+                    await term().update('smoothScrolling', undefined, G);
+                    await term().update('enablePersistentSessions', undefined, G);
+                    void vscode.window.showInformationMessage('Agent Farm: terminal rendering settings restored to VS Code defaults.');
+                    break;
+                case 'open':
+                    await vscode.commands.executeCommand('workbench.action.openSettings', 'terminal.integrated');
+                    break;
+            }
         }),
 
         vscode.commands.registerCommand('agentfarm.lapReset', async () => {
@@ -1217,17 +1304,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('agentfarm.startSession', async (arg: AgentArg) => {
             const agent = await resolveAgent(arg);
             if (!agent) { return; }
-            const terminal = vscode.window.createTerminal({ name: `claude: ${agent.name}`, cwd: agent.dir });
-            terminal.show();
-            terminal.sendText('claude', true);
+            launchClaudeTerminal(`claude: ${agent.name}`, agent.dir, 'claude');
         }),
 
         vscode.commands.registerCommand('agentfarm.continueSession', async (arg: AgentArg) => {
             const agent = await resolveAgent(arg);
             if (!agent) { return; }
-            const terminal = vscode.window.createTerminal({ name: `claude: ${agent.name}`, cwd: agent.dir });
-            terminal.show();
-            terminal.sendText('claude --continue', true);
+            launchClaudeTerminal(`claude: ${agent.name}`, agent.dir, 'claude --continue');
         }),
 
         vscode.commands.registerCommand('agentfarm.openAgentInNewWindow', async (arg: AgentArg) => {

@@ -160,6 +160,15 @@ Filodaki son olayların canlı akışı: kullanıcı komutları (prompt), araç 
 - Yeni tur için tekrar **Reset Token Lap**; sayacı kaldırmak için **Clear Token Lap**.
 - Sınır: lap, son 48 saatlik mesaj penceresinden beslenir — 48 saatten yaşlı bir lap yalnızca son 48 saati sayar (tooltip'te uyarır).
 
+## Terminal Render Sağlığı
+
+VS Code'un terminali gerçek bir terminal değildir — Chromium içinde çalışan **xterm.js** emülatörüdür (shell → PTY → xterm.js → Electron → GPU). Katman sayısı yüzünden uzun TUI oturumlarında (claude gibi) render aksaklıkları görülebilir: yazarken varmış gibi görünen hayalet boşluklar, kaybolan/bozulan satırlar, kaydırınca düzelen görüntü. İki çare var, ikisi de tek komutta: **Agent Farm: Terminal Rendering Fix…**
+
+- **Apply render fix (önerilen):** `terminal.integrated.gpuAcceleration: off` + `smoothScrolling: off` — GPU/WebGL yerine DOM renderer. Hayalet boşluk/satır kaybı raporlarının çoğunu bu çözer. Yeni açılan terminallerde geçerli olur.
+- **Claude sessions in external terminal:** `agentFarm.externalTerminal` ayarını açar/kapatır. Açıkken **Start Session / Continue Latest / Resume** oturumları VS Code terminali yerine **işletim sistemi terminalinde** açılır (Windows Terminal varsa o, yoksa düz cmd penceresi) — xterm.js tamamen devre dışı, native render. Farm görevleri bilerek entegre terminalde kalır: yaşam döngüleri terminal kapanma olayından izlenir.
+- **Disable persistent sessions:** reload sonrası geri yüklenen terminaller de sık bir bozuk-görüntü kaynağıdır; bu seçenek geri yüklemeyi kapatır (bedeli: reload'da terminaller kaybolur).
+- **Restore VS Code defaults:** üç ayarı da varsayılana döndürür. Komut açılırken mevcut durumu gösterir (`gpu off · smoothScrolling off · …`).
+
 ## Canlı Gözlem
 
 Faz 2 ile gelen gerçek zamanlı izleme katmanı. Oturum kayıtları diske birkaç saniye gecikmeyle düşer; canlı gözlem ise **Claude Code hook'ları** üzerinden olayları anında yakalar: komut girildiği an, araç çalıştığı an, izin beklendiği an.
@@ -1070,6 +1079,11 @@ Tamamlanan fazlar (hepsi 2026-07-08):
 **Bundan sonrası ayrı ve ayrıntılı bir belgede yaşıyor:** komut paletinden **Agent Farm: Open Development Plan** — uzak görüşlü gelişim planı: olay tetikleyicileri, doğrulayıcı adımlar, MCP paneli, n8n/webhook köprüsü, multimedya üretim hattı (Kling/Seedance/Nano Banana sınıfı modellerle içerik fabrikası), zeki gözetim, çoklu makine ve vizyoner ufuk. Kodlama o plandaki öncelik sırasını izler.
 
 ## Sürüm Notları
+
+### 2.10.0 — Terminal Render Çareleri (2026-07-10)
+
+- **Terminal Rendering Fix… komutu:** hayalet boşluk / satır kaybı yaşayanlara tek durak — mevcut ayar durumunu gösterir; render fix (`gpuAcceleration: off` + `smoothScrolling: off`), persistent sessions kapatma, varsayılana dönüş ve tüm terminal ayarlarına kısayol.
+- **`agentFarm.externalTerminal`:** Start/Continue/Resume oturumları Windows Terminal'de (yoksa cmd) açılır — uzun claude oturumları xterm.js'e hiç girmez. Farm görevleri izleme için entegre terminalde kalır. Ayrıntı: [Terminal Render Sağlığı](#terminal-render-sagligi).
 
 ### 2.9.0 — Export Seçim Kolaylıkları, Tur Gezinmesi, Odak Denetimi (2026-07-10)
 

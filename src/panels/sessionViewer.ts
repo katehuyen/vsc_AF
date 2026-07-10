@@ -16,6 +16,8 @@ export interface ViewerDeps {
     /** Export MD remembers the last folder saved to; falls back to session cwd / home. */
     lastExportDir?(): string | undefined;
     setLastExportDir?(dir: string): void;
+    /** Resume honors agentFarm.externalTerminal when provided by the extension host. */
+    launchTerminal?(name: string, cwd: string | undefined, command: string): void;
 }
 
 interface ViewMessage {
@@ -309,11 +311,15 @@ export class SessionViewerPanel {
                 const sessionId = path.basename(this.file, '.jsonl');
                 const cwd = typeof msg.cwd === 'string' && msg.cwd && fs.existsSync(msg.cwd)
                     ? msg.cwd : undefined;
-                const terminal = vscode.window.createTerminal({
-                    name: `claude: ${sessionId.slice(0, 8)}`, cwd
-                });
+                const name = `claude: ${sessionId.slice(0, 8)}`;
+                const command = `claude --resume ${sessionId}`;
+                if (this.deps.launchTerminal) {
+                    this.deps.launchTerminal(name, cwd, command);
+                    break;
+                }
+                const terminal = vscode.window.createTerminal({ name, cwd });
                 terminal.show();
-                terminal.sendText(`claude --resume ${sessionId}`, true);
+                terminal.sendText(command, true);
                 break;
             }
             case 'refresh':

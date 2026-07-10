@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.9.0",
+  "version": "2.10.0",
   "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
@@ -425,6 +425,12 @@
         "title": "Edit Trigger (prompt, agent, timing)",
         "category": "Agent Farm",
         "icon": "$(edit)"
+      },
+      {
+        "command": "agentfarm.terminalRenderFix",
+        "title": "Terminal Rendering Fix (ghost spaces / lost lines)…",
+        "category": "Agent Farm",
+        "icon": "$(terminal)"
       },
       {
         "command": "agentfarm.openTaskHistory",
@@ -1151,6 +1157,11 @@
           "type": "string",
           "default": "",
           "description": "Extra CLI arguments appended to every task's claude command, e.g. \"--model haiku\" to run routine automation on a cheaper model."
+        },
+        "agentFarm.externalTerminal": {
+          "type": "boolean",
+          "default": false,
+          "description": "Open claude session terminals (Start/Continue/Resume) in the OS terminal — Windows Terminal when available — instead of the integrated terminal. Avoids xterm.js rendering glitches (ghost spaces, lost lines) in long TUI sessions. Farm tasks stay in the integrated terminal so their status can be tracked. Toggle via 'Terminal Rendering Fix…'."
         },
         "agentFarm.judgeArgs": {
           "type": "string",
