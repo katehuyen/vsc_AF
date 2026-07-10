@@ -2,6 +2,10 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.13.1 — Timeline session-start color (2026-07-10)
+
+- Live Timeline "session start" marks are now pure blue (#0000FF) instead of green, so they read distinctly against the green tool-run bars.
+
 ## 2.13.0 — Deeper capability management + long time ranges (2026-07-10)
 
 **Skills & MCP — see at a glance, manage in one click:**

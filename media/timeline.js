@@ -113,7 +113,7 @@
         notify:     { color: 'var(--vscode-charts-yellow, #cca700)', shape: 'circle',  label: 'notification' },
         compact:    { color: 'var(--vscode-charts-purple, #b180d7)', shape: 'diamond', label: 'compaction' },
         subagent:   { color: 'var(--vscode-charts-orange, #d18616)', shape: 'circle',  label: 'subagent done' },
-        start:      { color: 'var(--vscode-charts-green, #4caf50)',  shape: 'tick',    label: 'session start' },
+        start:      { color: '#0000FF',                              shape: 'tick',    label: 'session start' },
         end:        { color: 'var(--vscode-descriptionForeground, #999)', shape: 'tick', label: 'session end' }
     };
 
