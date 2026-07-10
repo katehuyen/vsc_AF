@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.5.0",
+  "version": "2.6.0",
   "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
@@ -80,6 +80,17 @@
         "title": "Open Dashboard",
         "category": "Agent Farm",
         "icon": "$(graph)"
+      },
+      {
+        "command": "agentfarm.lapReset",
+        "title": "Reset Token Lap (start counting from now)",
+        "category": "Agent Farm",
+        "icon": "$(watch)"
+      },
+      {
+        "command": "agentfarm.lapClear",
+        "title": "Clear Token Lap",
+        "category": "Agent Farm"
       },
       {
         "command": "agentfarm.openGuide",
@@ -1062,6 +1073,11 @@
           "type": "number",
           "default": 400,
           "description": "Maximum number of messages rendered in the session viewer."
+        },
+        "agentFarm.contextWindowTokens": {
+          "type": "number",
+          "default": 200000,
+          "description": "Model context-window size used by the session viewer's 'Context now' gauge (percent full + /compact hint)."
         },
         "agentFarm.liveMonitor": {
           "type": "boolean",

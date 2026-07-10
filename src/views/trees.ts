@@ -314,7 +314,8 @@ function sessionTreeItem(s: SessionInfo, index: SessionIndex, showAgent: boolean
         rollupLine = `\nSubagents: ${roll.count} • tree total ${fmtUSD(s.cost + roll.cost)} (self ${fmtUSD(s.cost)})`;
     }
     item.description = parts.join(' • ');
-    item.tooltip = `${s.title}\n${s.models.join(', ')}\n${s.userTurns} turns • ${s.toolCalls} tool calls • ${s.errors} errors` + rollupLine;
+    item.tooltip = `${s.title}\n${s.models.join(', ')}\n${s.userTurns} turns • ${s.toolCalls} tool calls • ${s.errors} errors` +
+        (s.lastCtxTokens ? `\nContext now: ~${fmtTokens(s.lastCtxTokens)} tokens` : '') + rollupLine;
     item.command = {
         command: 'agentfarm.openSession',
         title: 'Open Session',

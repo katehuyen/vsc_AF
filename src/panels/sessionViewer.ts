@@ -8,6 +8,8 @@ export interface ViewerDeps {
     extensionUri: vscode.Uri;
     getPricing(): PricingEngine;
     maxMessages(): number;
+    /** Context-window size used by the "Context now" gauge (agentFarm.contextWindowTokens). */
+    contextLimit(): number;
 }
 
 interface ViewMessage {
@@ -21,6 +23,10 @@ interface ViewMessage {
     model?: string;
     tokens?: number;
     cost?: number;
+    /** 1-based turn number (a turn starts at each top-level user prompt). */
+    turn?: number;
+    /** True on the message that opens a turn — the viewer draws the turn divider here. */
+    turnStart?: boolean;
 }
 
 const TEXT_LIMIT = 4000;
@@ -41,7 +47,7 @@ function contentToText(content: unknown): string {
     return '';
 }
 
-function buildData(file: string, deps: ViewerDeps): Record<string, unknown> {
+export function buildData(file: string, deps: ViewerDeps): Record<string, unknown> {
     let raw = '';
     try { raw = fs.readFileSync(file, 'utf8'); } catch { /* gone */ }
 
@@ -50,6 +56,7 @@ function buildData(file: string, deps: ViewerDeps): Record<string, unknown> {
     const models = new Set<string>();
     const seen = new Set<string>();
     let cost = 0, errors = 0, toolCalls = 0, firstTs = 0, lastTs = 0;
+    let ctxTokens = 0, ctxTs = 0;
     let title = '';
     let cwd = '';
     let permissionMode = '';
@@ -104,6 +111,11 @@ function buildData(file: string, deps: ViewerDeps): Record<string, unknown> {
         if (line.type === 'assistant' && line.message) {
             const msg = line.message;
             if (msg.model && msg.model !== '<synthetic>') { models.add(msg.model); }
+            if (msg.usage) {
+                ctxTokens = (msg.usage.input_tokens ?? 0) + (msg.usage.cache_read_input_tokens ?? 0) +
+                    (msg.usage.cache_creation_input_tokens ?? 0) + (msg.usage.output_tokens ?? 0);
+                ctxTs = ts || ctxTs;
+            }
             let msgTokens = 0, msgCost = 0;
             const key = `${msg.id ?? ''}:${line.requestId ?? ''}`;
             if (msg.usage && (key === ':' || !seen.has(key))) {
@@ -135,13 +147,36 @@ function buildData(file: string, deps: ViewerDeps): Record<string, unknown> {
                         msgTokens = 0; msgCost = 0; // attribute once
                     } else if (b?.type === 'tool_use' && b.name) {
                         toolCalls++;
+                        // Tool-only assistant turns still cost tokens — attribute them to the first tool block.
                         messages.push({
                             role: 'tool', ts, tool: b.name,
                             input: clip(JSON.stringify(b.input ?? {}, null, 2)),
+                            model: msgTokens ? msg.model : undefined,
+                            tokens: msgTokens || undefined, cost: msgCost || undefined,
                             sidechain: line.isSidechain
                         });
+                        msgTokens = 0; msgCost = 0;
                     }
                 }
+            }
+        }
+    }
+
+    // Turn accounting: a turn opens at each top-level user prompt; everything until the
+    // next prompt (assistant text, tool calls, results) bills to that turn.
+    let turnNo = 0;
+    const turnTotals: Record<number, { tokens: number; cost: number }> = {};
+    for (const m of messages) {
+        if (m.role === 'user' && !m.sidechain) {
+            turnNo++;
+            m.turnStart = true;
+        }
+        if (turnNo > 0) {
+            m.turn = turnNo;
+            if (m.tokens || m.cost) {
+                const t = turnTotals[turnNo] ?? (turnTotals[turnNo] = { tokens: 0, cost: 0 });
+                t.tokens += m.tokens ?? 0;
+                t.cost += m.cost ?? 0;
             }
         }
     }
@@ -163,6 +198,9 @@ function buildData(file: string, deps: ViewerDeps): Record<string, unknown> {
         cost,
         errors,
         toolCalls,
+        context: { tokens: ctxTokens, ts: ctxTs, limit: deps.contextLimit() },
+        turnCount: turnNo,
+        turnTotals,
         messageCount: messages.length,
         truncatedCount,
         messages: messages.slice(-max)
@@ -172,6 +210,8 @@ function buildData(file: string, deps: ViewerDeps): Record<string, unknown> {
 export class SessionViewerPanel {
     private static open = new Map<string, SessionViewerPanel>();
     private disposables: vscode.Disposable[] = [];
+    private watcher?: fs.FSWatcher;
+    private pushTimer?: NodeJS.Timeout;
 
     static show(file: string, deps: ViewerDeps): void {
         const existing = SessionViewerPanel.open.get(file);
@@ -202,6 +242,24 @@ export class SessionViewerPanel {
         );
         panel.onDidDispose(() => this.dispose(), null, this.disposables);
         panel.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
+        this.watchFile();
+    }
+
+    /** Live refresh: push fresh data (KPIs, context gauge, new messages) while the session is still running. */
+    private watchFile(): void {
+        try {
+            const base = path.basename(this.file);
+            this.watcher = fs.watch(path.dirname(this.file), (_event, filename) => {
+                if (filename && filename.toString() !== base) { return; }
+                if (this.pushTimer) { clearTimeout(this.pushTimer); }
+                this.pushTimer = setTimeout(() => {
+                    this.pushTimer = undefined;
+                    if (!fs.existsSync(this.file)) { return; }
+                    void this.panel.webview.postMessage(
+                        { type: 'data', data: buildData(this.file, this.deps), auto: true });
+                }, 800);
+            });
+        } catch { /* watch unavailable — Refresh stays manual */ }
     }
 
     private onMessage(msg: { type: string; [k: string]: unknown }): void {
@@ -220,6 +278,8 @@ export class SessionViewerPanel {
 
     private dispose(): void {
         SessionViewerPanel.open.delete(this.file);
+        try { this.watcher?.close(); } catch { /* already closed */ }
+        if (this.pushTimer) { clearTimeout(this.pushTimer); }
         for (const d of this.disposables) { d.dispose(); }
     }
 }

@@ -885,10 +885,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         includeYourTurn: true
     });
 
-    context.subscriptions.push(new FarmStatusBar(index, live, {
+    const LAP_KEY = 'agentfarm.lapStartTs';
+    const statusBar = new FarmStatusBar(index, live, {
         blocking: () => blockingCount(buildNeeds()),
-        onExtra: needsEmitter.event
-    }));
+        onExtra: needsEmitter.event,
+        lap: () => {
+            const sinceTs = context.globalState.get<number>(LAP_KEY, 0);
+            if (!sinceTs) { return undefined; }
+            return { sinceTs, ...index.lapUsage(sinceTs) };
+        }
+    });
+    context.subscriptions.push(statusBar);
 
     const dashboardDeps = {
         extensionUri: context.extensionUri,
@@ -914,7 +921,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const viewerDeps = {
         extensionUri: context.extensionUri,
         getPricing: () => pricing,
-        maxMessages: () => cfg().get<number>('maxTranscriptMessages', 400)
+        maxMessages: () => cfg().get<number>('maxTranscriptMessages', 400),
+        contextLimit: () => cfg().get<number>('contextWindowTokens', 200000)
     };
 
     // ---------- G1/G5: Needs You queue + kanban board ----------
@@ -1082,6 +1090,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         vscode.commands.registerCommand('agentfarm.openTimeline', () => {
             TimelinePanel.show({ extensionUri: context.extensionUri, live, tasks: taskManager });
+        }),
+
+        vscode.commands.registerCommand('agentfarm.lapReset', async () => {
+            await context.globalState.update(LAP_KEY, Date.now());
+            statusBar.update();
+            void vscode.window.setStatusBarMessage('Agent Farm: token lap started — counting from now', 4000);
+        }),
+
+        vscode.commands.registerCommand('agentfarm.lapClear', async () => {
+            await context.globalState.update(LAP_KEY, 0);
+            statusBar.update();
         }),
 
         vscode.commands.registerCommand('agentfarm.installHooks', async () => {

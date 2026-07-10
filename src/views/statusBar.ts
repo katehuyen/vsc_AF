@@ -8,6 +8,8 @@ export interface StatusBarExtras {
     blocking?: () => number;
     /** extra refresh trigger (needs-queue changes). */
     onExtra?: vscode.Event<void>;
+    /** Lap counter (trip meter): usage since the user-set mark; undefined = no lap running. */
+    lap?: () => { sinceTs: number; tokens: number; cost: number; msgs: number } | undefined;
 }
 
 export class FarmStatusBar implements vscode.Disposable {
@@ -37,7 +39,9 @@ export class FarmStatusBar implements vscode.Disposable {
         const waiting = this.extras?.blocking?.() ?? this.live?.waitingCount() ?? 0;
         const win = this.index.windowUsage();
 
+        const lap = this.extras?.lap?.();
         let text = `$(hubot) ${active} active • ${fmtUSD(cost)} today`;
+        if (lap) { text += ` • $(watch) ${fmtTokens(lap.tokens)}`; }
         if (waiting > 0) {
             text += ` • $(bell) ${waiting} need you`;
             this.item.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
@@ -53,14 +57,24 @@ export class FarmStatusBar implements vscode.Disposable {
                 ? `Live listener: ● port ${this.live.activePort}`
                 : `Live listener: ${this.live.listenerState}`)
             : 'Live listener: off';
-        this.item.tooltip = new vscode.MarkdownString(
+        const lapAge = lap ? Date.now() - lap.sinceTs : 0;
+        const lapLine = lap
+            ? `⏱ Lap since ${new Date(lap.sinceTs).toLocaleTimeString()}: ${fmtTokens(lap.tokens)} tokens • ` +
+              `${fmtUSD(lap.cost)} • ${lap.msgs} msgs` +
+              (lapAge > 48 * 3600 * 1000 ? ' _(lap older than 48h — only the last 48h are counted)_' : '') +
+              `\n\n[Reset lap](command:agentfarm.lapReset) · [Clear lap](command:agentfarm.lapClear)\n\n`
+            : `[Start token lap](command:agentfarm.lapReset) — trip meter that counts tokens from now\n\n`;
+        const tooltip = new vscode.MarkdownString(
             `**Agent Farm**\n\n` +
             `Active agents: ${active}${waiting ? ` • ⚠ ${waiting} waiting/stalled` : ''}\n\n` +
             `Today's cost (API-equivalent): ${fmtUSD(cost)}\n\n` +
             `Trailing 5h window: ${fmtTokens(win.tokens)} tokens • ${win.msgs} msgs\n\n` +
+            lapLine +
             `${liveLine}\n\n` +
             `_Click to open the dashboard_`
         );
+        tooltip.isTrusted = { enabledCommands: ['agentfarm.lapReset', 'agentfarm.lapClear'] };
+        this.item.tooltip = tooltip;
     }
 
     dispose(): void {

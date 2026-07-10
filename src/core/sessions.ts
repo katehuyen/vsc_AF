@@ -55,6 +55,8 @@ export interface SessionInfo {
     permissionMode?: string;
     /** Last time a tool touched the agent's DUTIES.md in this session (duty compliance signal). */
     dutiesReadTs?: number;
+    /** Approximate context size after the last assistant reply (prompt + cache + output of the latest request). */
+    lastCtxTokens?: number;
     daily: Record<string, DailyBucket>;
     /** assistant message counts in 7x24 local-time buckets, index = dow*24+hour */
     heat: number[];
@@ -203,6 +205,13 @@ export function parseSessionFile(
         if (line.type === 'assistant' && line.message) {
             const msg = line.message;
             if (msg.model && msg.model !== '<synthetic>') { models.add(msg.model); }
+
+            if (msg.usage) {
+                info.lastCtxTokens = (msg.usage.input_tokens ?? 0) +
+                    (msg.usage.cache_read_input_tokens ?? 0) +
+                    (msg.usage.cache_creation_input_tokens ?? 0) +
+                    (msg.usage.output_tokens ?? 0);
+            }
 
             let msgCost = 0;
             let msgTokens = 0;
@@ -495,6 +504,21 @@ export class SessionIndex implements vscode.Disposable {
             }
         }
         return { tokens, cost, msgs, windowStart };
+    }
+
+    /** Usage since a user-set lap mark (trip meter). Sources recentMsgs, so it only sees the last 48h. */
+    lapUsage(sinceTs: number): { tokens: number; cost: number; msgs: number } {
+        let tokens = 0, cost = 0, msgs = 0;
+        for (const s of this.sessions.values()) {
+            for (const m of s.recentMsgs) {
+                if (m.ts >= sinceTs) {
+                    tokens += m.tokens;
+                    cost += m.cost;
+                    msgs++;
+                }
+            }
+        }
+        return { tokens, cost, msgs };
     }
 
     updatePricing(pricing: PricingEngine): void {

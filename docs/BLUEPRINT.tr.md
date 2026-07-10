@@ -25,6 +25,8 @@ Hiç bilmiyorsan buradan başla. Bu bölüme her an komut paletinden (`Ctrl+Shif
    - **Recent Sessions** — filodaki son oturumlar; tıkla → okunur transkript.
    - **Insights** — sağlık bulguları: ne şişmiş, ne kopmuş, ne bayatlamış.
    - **Live Feed** — filodaki son olaylar.
+
+   > **Bölümlerden biri görünmüyor mu?** VS Code, bir görünüm bir kez gizlenmiş ya da başka panele sürüklenmişse bunu kalıcı hatırlar. Agent Farm panelinde herhangi bir bölüm başlığına **sağ tıkla** → listede eksik bölümü (ör. **Tasks**) işaretle; geri gelir. Bölüm başka panele sürüklenmişse aynı listeden bulup Agent Farm'a geri sürükleyebilirsin.
 2. Alt durum çubuğuna bak: `🤖 1 active • $2.4 today`. Tıkla → **Dashboard** açılır: bugünkü maliyet, grafikler, ajan kartları, en pahalı oturumlar.
 3. Dashboard'da bir ajan kartına tıkla → o ajanın **detay sayfası**: maliyet trendi, hafıza tablosu, sağlık bulguları, oturum listesi.
 
@@ -120,7 +122,9 @@ Tek bir ajanın komuta ekranı:
 Bir oturumun ham JSONL kaydını okunur konuşmaya çevirir:
 
 - Mesajlar renk kodludur: mavi = kullanıcı, yeşil = asistan, sarı = araç çağrısı, mor = araç sonucu. Hatalı araç sonuçları kırmızı kenarlıkla ve açık halde gelir.
-- Her asistan mesajında model, token ve maliyet görünür.
+- Her asistan mesajında model, token ve maliyet görünür. Yalnızca araç çağrısı yapan (metinsiz) asistan adımlarının token'ı da kaybolmaz — ilk araç çağrısı satırında görünür (2.6.0).
+- **Tur ayraçları (2.6.0):** her kullanıcı komutu yeni bir tur açar; ayraç satırında `Turn 3/12 · 45.2K tok · $0.31` — o turun toplam token ve maliyeti. Üstteki Tokens kartındaki oturum toplamının turlara dökümü budur.
+- **Context now kartı (2.6.0):** son isteğin bağlam boyutu (prompt + cache + çıktı) ve `agentFarm.contextWindowTokens` (varsayılan 200K) içindeki yüzdesi. %70'te sararır ve `/compact` ya da `/clear` önerir, %90'da kızarır. Oturum çalışırken kayıt her değiştiğinde kart **canlı** tazelenir — "bağlam doldu mu, compact zamanı mı?" sorusunun anlık cevabı.
 - Üstteki arama kutusu mesajları ve araç adlarını filtreler.
 - **Open raw JSONL** ham kaydı editörde açar.
 - Çok uzun oturumlarda son N mesaj gösterilir (`agentFarm.maxTranscriptMessages` ayarı, varsayılan 400).
@@ -137,6 +141,12 @@ Filodaki son olayların canlı akışı: kullanıcı komutları (prompt), araç 
 ### Durum Çubuğu
 
 `🤖 N active • $X today` — aktif ajan sayısı ve bugünkü toplam maliyet. Üzerine gelince 5 saatlik pencere özetini de gösterir. 30 saniyede bir ve her veri değişiminde güncellenir.
+
+**Token lap sayacı (2.6.0):** kronometrelerin lap tuşu ya da arabalardaki günlük kilometre sayacı gibi — ana sayaçlar (bugün / 5 saatlik pencere) transcript'lerden türediği için sıfırlanamaz, ama **kendi sıfırlanabilir sayacını** başlatabilirsin:
+
+- **Agent Farm: Reset Token Lap** — o andan itibaren tüm filonun token/maliyet/mesajını saymaya başlar; durum çubuğunda `⏱ 84.2K` olarak görünür, tooltip'te ayrıntısı ve sıfırlama/temizleme linkleri vardır.
+- Yeni tur için tekrar **Reset Token Lap**; sayacı kaldırmak için **Clear Token Lap**.
+- Sınır: lap, son 48 saatlik mesaj penceresinden beslenir — 48 saatten yaşlı bir lap yalnızca son 48 saati sayar (tooltip'te uyarır).
 
 ## Canlı Gözlem
 
@@ -648,6 +658,8 @@ Kalite karnesinin doğal evrimi: kötü giden üretim izleri **regresyon test va
 
 Oturum görüntüleyicide **▶ Replay** — "ne oldu?" sorusunun en hızlı cevabı: mesajlar ve araç çağrıları gerçek zaman aralıklarına sadık kalarak (5 sn tavanlı, 1x-8x hız) adım adım akar. **next error ⚠** ve **next prompt 💬** düğmeleriyle kritik anlara atla; −1/+1 ile kare kare ilerle.
 
+Kontrol çubuğu **yapışkandır** (2.6.0): mesajlar aşağı aktıkça çubuk ekranın üstüne sabitlenir — oynatma ne kadar ilerlerse ilerlesin Pause/hız/atlama düğmeleri hep elinin altındadır.
+
 ### Subagent Ağacı
 
 Subagent'lar maliyetin görünmez kısmıdır. Recent Sessions ve ajan oturum listeleri artık **ağaç**tır: alt-ajan kayıtları (`…/oturum-id/subagents/*.jsonl`) ebeveyn oturumun altında toplanır, ebeveyn satırında **⧉ N sub • $X total** rollup'ı görünür (kendisi + 5 seviyeye kadar altları). Tek tek maliyetler alt satırlarda durur.
@@ -872,6 +884,7 @@ Gürültü koruması: önceki hafta 0.50$'ın, bu hafta 1$'ın altındaysa uyar�
 | `agentFarm.contextBudgetTokens` | 8000 | Sabit bağlam yükü bütçesi |
 | `agentFarm.windowTokenLimit` | 0 (kapalı) | 5 saatlik pencere limiti (yüzde çubuğu için) |
 | `agentFarm.maxTranscriptMessages` | 400 | Oturum görüntüleyicide gösterilen en fazla mesaj |
+| `agentFarm.contextWindowTokens` | 200000 | Oturum görüntüleyicideki "Context now" göstergesinin tavanı (yüzde + /compact önerisi) |
 | `agentFarm.includeUnmatchedProjects` | false | Ajan köklerine eşleşmeyen oturumları da dahil et |
 | `agentFarm.pricing` | yukarıdaki tablo | Model fiyat kuralları |
 | `agentFarm.liveMonitor` | true | Canlı olay dinleyicisini çalıştır |
@@ -1035,6 +1048,16 @@ Tamamlanan fazlar (hepsi 2026-07-08):
 **Bundan sonrası ayrı ve ayrıntılı bir belgede yaşıyor:** komut paletinden **Agent Farm: Open Development Plan** — uzak görüşlü gelişim planı: olay tetikleyicileri, doğrulayıcı adımlar, MCP paneli, n8n/webhook köprüsü, multimedya üretim hattı (Kling/Seedance/Nano Banana sınıfı modellerle içerik fabrikası), zeki gözetim, çoklu makine ve vizyoner ufuk. Kodlama o plandaki öncelik sırasını izler.
 
 ## Sürüm Notları
+
+### 2.6.0 — Gözlemlenebilirlik Cilası (2026-07-10)
+
+İlk gerçek kullanıcı geri bildirimi turu. Dört istek, dört özellik:
+
+- **Tur bazlı token dökümü:** oturum görüntüleyicide her kullanıcı komutu bir tur ayracı açar — `Turn 3/12 · 45.2K tok · $0.31`. Oturum toplamının hangi turda harcandığı artık görünür. Yalnız araç çağıran (metinsiz) asistan adımlarının token'ı da artık kaybolmuyor: ilk araç satırında gösterilir.
+- **Context now göstergesi:** son isteğin bağlam boyutu ve `contextWindowTokens` yüzdesi; %70'te sarı + `/compact` önerisi, %90'da kırmızı. Oturum kaydı değiştikçe görüntüleyici kendini **canlı** tazeler; Recent Sessions tooltip'inde de `Context now: ~181.9K tokens` satırı var.
+- **Yapışkan replay çubuğu:** replay kontrolleri artık mesajlarla birlikte yukarı kayıp kaybolmuyor — çubuk ekranın üstüne sabitlenir, Pause/hız her an elinin altında.
+- **Token lap sayacı:** `Reset Token Lap` komutu kronometre lap'ı / günlük km sayacı gibi ikinci bir sayaç başlatır; durum çubuğunda `⏱ 84.2K`, tooltip'te ayrıntı ve sıfırlama linkleri. `Clear Token Lap` kaldırır. (Son 48 saatlik pencereden beslenir.)
+- Ayrıca: Quick Start'a "bölüm görünmüyorsa" notu (VS Code'un gizlenmiş görünümleri hatırlaması).
 
 ### 2.5.0 — Ölçek ve Ekosistem / Ultra Faz J (2026-07-09) — ULTRA PLAN TAMAM
 

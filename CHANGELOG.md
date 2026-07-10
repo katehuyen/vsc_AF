@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.6.0 — Observability polish (2026-07-10)
+
+First round of real-user feedback — four requests, four features:
+
+- **Per-turn token breakdown**: the session viewer draws a divider at every user prompt — `Turn 3/12 · 45.2K tok · $0.31` — so the session total is now itemized by turn. Tokens of tool-only assistant steps (no text block) are no longer dropped; they show on the first tool-call row.
+- **Context gauge**: a "Context now" card shows the last request's context size (prompt + cache + output) against `agentFarm.contextWindowTokens` (default 200K) — amber at 70% with a `/compact` hint, red at 90%. The viewer now live-refreshes while the session is running, and session tooltips in the tree show `Context now: ~X tokens`.
+- **Sticky replay controls**: the replay bar pins to the top of the viewer, so Pause/speed/jump buttons stay reachable while messages stream past (previously they scrolled out of view).
+- **Token lap counter**: `Reset Token Lap` starts a trip-meter (like a stopwatch lap) counting fleet-wide tokens/cost from that moment — shown as `⏱ 84.2K` in the status bar with details and reset/clear links in the tooltip; `Clear Token Lap` removes it. Fed from the 48h recent-message window.
+- Quick Start now explains how to restore a hidden sidebar section (VS Code remembers hidden views — e.g. a missing **Tasks** view).
+
 ## 2.5.0 — Scale & Ecosystem (Ultra Phase J) (2026-07-09)
 
 - **Parallel worktree runs (J1)**: each prompt runs in its own `git worktree` (`af/` branches) — conflict-free parallel code work; `Worktree Runs…` shows diffstats and offers Merge / Open / Discard (with a fallback for old git versions).

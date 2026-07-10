@@ -9,11 +9,37 @@
     const replay = { active: false, playing: false, pos: 0, speed: 2, timer: null };
 
     window.addEventListener('message', ev => {
-        if (ev.data.type === 'data') { DATA = ev.data.data; stopTimer(); replay.active = false; render(); }
+        if (ev.data.type !== 'data') { return; }
+        DATA = ev.data.data;
+        if (ev.data.auto && replay.active) {
+            // live update while replaying: keep position/controls, just refresh the counter.
+            updateReplayUi();
+            return;
+        }
+        if (ev.data.auto) {
+            // don't steal focus while the user is typing in the filter box
+            const ae = document.activeElement;
+            if (!ae || ae.id !== 'filter') { render({ keepScroll: true }); }
+            return;
+        }
+        stopTimer(); replay.active = false; render();
     });
 
     function fmtTime(ts) {
         return ts ? new Date(ts).toLocaleString() : '—';
+    }
+
+    function turnHdrHtml(m) {
+        if (!m.turnStart || !m.turn) { return ''; }
+        const t = (DATA.turnTotals || {})[m.turn];
+        const total = t && (t.tokens || t.cost)
+            ? ` · ${C.fmtTok(t.tokens)} tok · ${C.fmtUSD(t.cost)}`
+            : '';
+        return `<div class="turnhdr"><span>Turn ${m.turn}/${DATA.turnCount || '?'}${total}</span></div>`;
+    }
+
+    function listHtml(msgs) {
+        return msgs.map((m, i) => turnHdrHtml(m) + messageHtml(m, i)).join('');
     }
 
     function messageHtml(m, idx) {
@@ -70,7 +96,7 @@
         if (!msgs) { return; }
         const i = replay.pos;
         if (!msgs.querySelector(`[data-idx="${i}"]`)) {
-            msgs.insertAdjacentHTML('beforeend', messageHtml(DATA.messages[i], i));
+            msgs.insertAdjacentHTML('beforeend', turnHdrHtml(DATA.messages[i]) + messageHtml(DATA.messages[i], i));
         }
         // drop anything past pos (when stepping back we re-render fully instead)
         updateReplayUi();
@@ -95,7 +121,7 @@
     function renderReplayList() {
         const msgs = document.getElementById('msgs');
         if (!msgs) { return; }
-        msgs.innerHTML = DATA.messages.slice(0, replay.pos + 1).map((m, i) => messageHtml(m, i)).join('');
+        msgs.innerHTML = listHtml(DATA.messages.slice(0, replay.pos + 1));
         updateReplayUi();
         const el = msgs.querySelector(`[data-idx="${replay.pos}"]`);
         if (el) { el.scrollIntoView({ block: 'end' }); }
@@ -103,7 +129,9 @@
 
     // ---------- main render ----------
 
-    function render() {
+    function render(opts) {
+        const keepScroll = opts && opts.keepScroll;
+        const prevScroll = keepScroll ? { x: window.scrollX, y: window.scrollY } : null;
         const durMin = DATA.firstTs && DATA.lastTs ? Math.round((DATA.lastTs - DATA.firstTs) / 60000) : 0;
         const visible = DATA.messages.filter(m => {
             if (!filter) return true;
@@ -112,11 +140,28 @@
         });
         const errorCount = DATA.messages.filter(m => m.isError).length;
 
+        const ctx = DATA.context || { tokens: 0, limit: 0 };
+        const ctxPct = ctx.limit > 0 && ctx.tokens > 0 ? Math.round(ctx.tokens / ctx.limit * 100) : 0;
+        const ctxColor = ctxPct >= 90 ? 'var(--vscode-errorForeground)'
+            : ctxPct >= 70 ? 'var(--vscode-editorWarning-foreground, #cca700)' : '';
+        const ctxSub = ctx.tokens > 0
+            ? (ctx.limit > 0
+                ? `${ctxPct}% of ${C.fmtTok(ctx.limit)}${ctxPct >= 70 ? ' — consider /compact or /clear' : ''}`
+                : 'last request (prompt+cache+output)')
+            : 'no usage data';
+
         document.getElementById('app').innerHTML = `
             <style>
+                /* sticky: keep replay controls reachable while messages stream past */
                 .replaybar { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:10px 0;
-                    padding:8px 10px; border:1px solid var(--vscode-panel-border); border-radius:6px; }
+                    padding:8px 10px; border:1px solid var(--vscode-panel-border); border-radius:6px;
+                    position:sticky; top:6px; z-index:20;
+                    background:var(--vscode-editor-background, var(--vscode-sideBar-background)); }
                 .replaybar .muted { margin-left:auto; }
+                .turnhdr { display:flex; align-items:center; gap:10px; margin:16px 0 4px;
+                    color:var(--vscode-descriptionForeground); font-size:11px; white-space:nowrap; }
+                .turnhdr::before, .turnhdr::after { content:''; height:1px; flex:1;
+                    background:var(--vscode-panel-border); }
             </style>
             <div class="spread">
                 <div>
@@ -134,6 +179,9 @@
                 <div class="card"><div class="label">Cost</div><div class="kpi">${C.fmtUSD(DATA.cost)}</div><div class="sub">API-equivalent</div></div>
                 <div class="card"><div class="label">Tokens</div><div class="kpi">${C.fmtTok(DATA.totalTokens)}</div>
                     <div class="sub">in ${C.fmtTok(DATA.usage.input)} · out ${C.fmtTok(DATA.usage.output)} · cacheR ${C.fmtTok(DATA.usage.cacheRead)} · cacheW ${C.fmtTok(DATA.usage.cacheWrite)}</div></div>
+                <div class="card"><div class="label">Context now</div>
+                    <div class="kpi"${ctxColor ? ` style="color:${ctxColor}"` : ''}>${ctx.tokens > 0 ? C.fmtTok(ctx.tokens) : '—'}</div>
+                    <div class="sub"${ctxColor ? ` style="color:${ctxColor}"` : ''}>${ctxSub}</div></div>
                 <div class="card"><div class="label">Span</div><div class="kpi">${durMin}m</div><div class="sub">${fmtTime(DATA.firstTs)} → ${fmtTime(DATA.lastTs)}</div></div>
                 <div class="card"><div class="label">Activity</div><div class="kpi">${DATA.toolCalls}</div><div class="sub">tool calls · ${DATA.errors} errors · ${C.esc((DATA.models || []).map(m => m.replace(/^claude-/, '')).join(', '))}</div></div>
             </div>
@@ -155,9 +203,10 @@
             </div>`}
             ${DATA.truncatedCount ? `<p class="muted small">Showing last ${DATA.messages.length} of ${DATA.messageCount} messages (${DATA.truncatedCount} older hidden — raise <code>agentFarm.maxTranscriptMessages</code> to see more).</p>` : ''}
             <div id="msgs">${replay.active
-                ? DATA.messages.slice(0, replay.pos + 1).map((m, i) => messageHtml(m, i)).join('')
-                : (visible.map((m, i) => messageHtml(m, i)).join('') || '<p class="muted">No messages match.</p>')}</div>
+                ? listHtml(DATA.messages.slice(0, replay.pos + 1))
+                : (listHtml(visible) || '<p class="muted">No messages match.</p>')}</div>
         `;
+        if (prevScroll) { window.scrollTo(prevScroll.x, prevScroll.y); }
 
         document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
         document.getElementById('raw').addEventListener('click', () => vscode.postMessage({ type: 'openRaw' }));
@@ -205,7 +254,7 @@
                     const hay = ((m.text || '') + ' ' + (m.tool || '') + ' ' + (m.input || '')).toLowerCase();
                     return hay.includes(filter);
                 });
-                msgs.innerHTML = vis.map((m, i) => messageHtml(m, i)).join('') || '<p class="muted">No messages match.</p>';
+                msgs.innerHTML = listHtml(vis) || '<p class="muted">No messages match.</p>';
             });
         }
     }
