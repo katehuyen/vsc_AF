@@ -10,6 +10,26 @@ export function getNonce(): string {
 }
 
 /**
+ * Escape a value for safe embedding inside an inline <script> tag. A literal
+ * "</script>" in the data (common in transcripts that quote HTML — e.g. this
+ * very file) would close the tag early and corrupt the page: the viewer hangs
+ * on "Loading…" while the rest of the JSON leaks into the body as text.
+ * Escaping "<" (which stays "<" inside a JS/JSON string) makes that impossible;
+ * U+2028/U+2029 are line terminators that break the JS string literal, so they
+ * are escaped too. The two separators are derived via String.fromCharCode so
+ * this source file never contains the raw characters (they would be treated as
+ * newlines by the TypeScript parser).
+ */
+export function jsonForScript(data: unknown): string {
+    const lineSep = String.fromCharCode(0x2028);
+    const paraSep = String.fromCharCode(0x2029);
+    return JSON.stringify(data)
+        .split('<').join('\\u003c')
+        .split(lineSep).join('\\u2028')
+        .split(paraSep).join('\\u2029');
+}
+
+/**
  * Standard HTML shell for Agent Farm webviews: strict CSP, shared CSS,
  * injected data object, shared chart helpers + a page script from /media.
  */
@@ -37,7 +57,7 @@ export function htmlShell(
 </head>
 <body>
 ${bodyHtml}
-<script nonce="${nonce}">window.__DATA__ = ${JSON.stringify(data)};</script>
+<script nonce="${nonce}">window.__DATA__ = ${jsonForScript(data)};</script>
 <script nonce="${nonce}" src="${charts}"></script>
 <script nonce="${nonce}" src="${script}"></script>
 </body>

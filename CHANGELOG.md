@@ -2,6 +2,10 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.13.2 — Fix: session viewer stuck on "Loading…" (2026-07-11)
+
+- Some session pages hung forever on "Loading…" with raw JSON leaking into the page. Cause: the transcript data is injected into an inline `<script>window.__DATA__ = …</script>` tag, and any session whose transcript quoted a literal `</script>` (e.g. this project's own webview code) closed that tag early, corrupting the page. Fixed at the source (`base.ts`): the injected JSON now escapes `<` as `<` and the U+2028/U+2029 line separators, so no transcript content can break out of the script tag. Affects every Agent Farm webview, not just the session viewer.
+
 ## 2.13.1 — Timeline session-start color (2026-07-10)
 
 - Live Timeline "session start" marks are now pure blue (#0000FF) instead of green, so they read distinctly against the green tool-run bars.
