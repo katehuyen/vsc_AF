@@ -297,6 +297,8 @@ function sessionTreeItem(s: SessionInfo, index: SessionIndex, showAgent: boolean
         ? vscode.TreeItemCollapsibleState.Collapsed
         : vscode.TreeItemCollapsibleState.None);
     const active = index.isSessionActive(s);
+    // Resume needs a local, top-level transcript with a known working directory.
+    item.contextValue = !s.isSidechain && !s.machine && s.cwd ? 'session-resumable' : 'session';
     item.iconPath = new vscode.ThemeIcon(
         active ? 'record' : (s.isSidechain ? 'git-branch' : 'comment-discussion'),
         active ? new vscode.ThemeColor('charts.green') : undefined

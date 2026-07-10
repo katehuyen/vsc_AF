@@ -10,6 +10,8 @@ export interface ViewerDeps {
     maxMessages(): number;
     /** Context-window size used by the "Context now" gauge (agentFarm.contextWindowTokens). */
     contextLimit(): number;
+    /** User-set session name (rename feature); wins over the transcript-derived title. */
+    titleFor?(sessionId: string): string | undefined;
 }
 
 interface ViewMessage {
@@ -33,6 +35,21 @@ const TEXT_LIMIT = 4000;
 
 function clip(s: string): string {
     return s.length > TEXT_LIMIT ? s.slice(0, TEXT_LIMIT) + `\n… [truncated, ${s.length} chars total]` : s;
+}
+
+/** Human-readable prompt snippet: slash commands show as their name, harness XML is skipped. */
+function promptLabel(text: string): string {
+    const t = text.replace(/\s+/g, ' ').trim();
+    const cmd = /<command-name>([^<]+)<\/command-name>/.exec(t);
+    if (cmd) { return cmd[1].trim(); }
+    return t.slice(0, 90);
+}
+
+/** Title candidate from a user prompt — command/harness noise never names a session. */
+function titleCandidate(text: string): string {
+    const t = text.replace(/\s+/g, ' ').trim();
+    if (!t || t.startsWith('<') || t.startsWith('/') || t.startsWith('!')) { return ''; }
+    return t.slice(0, 80);
 }
 
 function contentToText(content: unknown): string {
@@ -60,6 +77,10 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
     let title = '';
     let cwd = '';
     let permissionMode = '';
+    // Turn accounting runs inside the parse loop: usage on assistant lines whose content
+    // never renders (e.g. thinking-only stream lines) must still bill to the open turn.
+    let inTurn = 0;
+    const turnTotals: Record<number, { tokens: number; cost: number }> = {};
 
     for (const lineText of raw.split('\n')) {
         if (!lineText.trim()) { continue; }
@@ -88,7 +109,8 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
             if (typeof content === 'string') {
                 if (!line.isMeta) {
                     messages.push({ role: 'user', ts, text: clip(content), sidechain: line.isSidechain });
-                    if (!title) { title = content.slice(0, 80); }
+                    if (!line.isSidechain) { inTurn++; }
+                    if (!title) { title = titleCandidate(content); }
                 }
             } else if (Array.isArray(content)) {
                 for (const b of content as { type?: string; is_error?: boolean; content?: unknown; text?: string }[]) {
@@ -102,6 +124,8 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
                         });
                     } else if (b?.type === 'text' && b.text) {
                         messages.push({ role: 'user', ts, text: clip(b.text), sidechain: line.isSidechain });
+                        if (!line.isSidechain) { inTurn++; }
+                        if (!title) { title = titleCandidate(b.text); }
                     }
                 }
             }
@@ -135,6 +159,11 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
                     ? line.costUSD
                     : deps.getPricing().costFor(msg.model ?? '', u);
                 cost += msgCost;
+                if (inTurn > 0 && (msgTokens || msgCost)) {
+                    const t = turnTotals[inTurn] ?? (turnTotals[inTurn] = { tokens: 0, cost: 0 });
+                    t.tokens += msgTokens;
+                    t.cost += msgCost;
+                }
             }
             if (Array.isArray(msg.content)) {
                 for (const b of msg.content as { type?: string; text?: string; name?: string; input?: unknown }[]) {
@@ -162,32 +191,36 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
         }
     }
 
-    // Turn accounting: a turn opens at each top-level user prompt; everything until the
-    // next prompt (assistant text, tool calls, results) bills to that turn.
+    // Second pass tags each message with its turn (totals were billed in the parse loop,
+    // where usage from non-rendering assistant lines is still visible).
     let turnNo = 0;
-    const turnTotals: Record<number, { tokens: number; cost: number }> = {};
+    const turnLabels: Record<number, string> = {};
     for (const m of messages) {
         if (m.role === 'user' && !m.sidechain) {
             turnNo++;
             m.turnStart = true;
+            turnLabels[turnNo] = promptLabel(m.text ?? '');
         }
-        if (turnNo > 0) {
-            m.turn = turnNo;
-            if (m.tokens || m.cost) {
-                const t = turnTotals[turnNo] ?? (turnTotals[turnNo] = { tokens: 0, cost: 0 });
-                t.tokens += m.tokens ?? 0;
-                t.cost += m.cost ?? 0;
-            }
-        }
+        if (turnNo > 0) { m.turn = turnNo; }
+    }
+    // Flat per-turn table for the "Turn breakdown" box.
+    const turns: { n: number; label: string; tokens: number; cost: number }[] = [];
+    for (let n = 1; n <= turnNo; n++) {
+        turns.push({
+            n, label: turnLabels[n] ?? '',
+            tokens: turnTotals[n]?.tokens ?? 0,
+            cost: turnTotals[n]?.cost ?? 0
+        });
     }
 
     const max = deps.maxMessages();
     const truncatedCount = Math.max(0, messages.length - max);
 
+    const sessionId = path.basename(file, '.jsonl');
     return {
         file,
-        sessionId: path.basename(file, '.jsonl'),
-        title: title || '(untitled session)',
+        sessionId,
+        title: deps.titleFor?.(sessionId) || title || '(untitled session)',
         cwd,
         permissionMode,
         firstTs,
@@ -201,6 +234,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
         context: { tokens: ctxTokens, ts: ctxTs, limit: deps.contextLimit() },
         turnCount: turnNo,
         turnTotals,
+        turns,
         messageCount: messages.length,
         truncatedCount,
         messages: messages.slice(-max)
@@ -267,6 +301,17 @@ export class SessionViewerPanel {
             case 'openRaw':
                 vscode.commands.executeCommand('vscode.open', vscode.Uri.file(this.file));
                 break;
+            case 'resume': {
+                const sessionId = path.basename(this.file, '.jsonl');
+                const cwd = typeof msg.cwd === 'string' && msg.cwd && fs.existsSync(msg.cwd)
+                    ? msg.cwd : undefined;
+                const terminal = vscode.window.createTerminal({
+                    name: `claude: ${sessionId.slice(0, 8)}`, cwd
+                });
+                terminal.show();
+                terminal.sendText(`claude --resume ${sessionId}`, true);
+                break;
+            }
             case 'refresh':
                 this.panel.webview.postMessage({ type: 'data', data: buildData(this.file, this.deps) });
                 break;

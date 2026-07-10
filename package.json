@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.6.0",
+  "version": "2.7.0",
   "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
@@ -67,11 +67,11 @@
     "viewsWelcome": [
       {
         "view": "agentfarm.agents",
-        "contents": "No agents found yet.\n[Add Agent Root Folder](command:agentfarm.addAgentRoot)\nAgent Farm scans the configured root folders for agent directories (folders containing a CLAUDE.md).\n[Open Guide / Kılavuz](command:agentfarm.openGuide)"
+        "contents": "No agents found yet.\n[Add Agent Root Folder](command:agentfarm.addAgentRoot)\nAgent Farm scans the configured root folders for agent directories (folders containing a CLAUDE.md).\n[Open Guide](command:agentfarm.openGuide)"
       },
       {
         "view": "agentfarm.tasks",
-        "contents": "Queue work for your agents and schedule recurring runs.\n[Add Task](command:agentfarm.addTask)\n[Add Scheduled Task](command:agentfarm.addSchedule)\nTasks open a terminal in the agent's folder and run claude with your prompt.\n[Open Guide / Kılavuz](command:agentfarm.openGuide)"
+        "contents": "Queue work for your agents and schedule recurring runs.\n[Add Task](command:agentfarm.addTask)\n[Add Scheduled Task](command:agentfarm.addSchedule)\nTasks open a terminal in the agent's folder and run claude with your prompt.\n[Open Guide](command:agentfarm.openGuide)"
       }
     ],
     "commands": [
@@ -94,7 +94,7 @@
       },
       {
         "command": "agentfarm.openGuide",
-        "title": "Open Guide (Kılavuz)",
+        "title": "Open Guide",
         "category": "Agent Farm",
         "icon": "$(question)"
       },
@@ -163,6 +163,18 @@
         "command": "agentfarm.openSession",
         "title": "Open Session",
         "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.resumeSession",
+        "title": "Resume Session in Terminal",
+        "category": "Agent Farm",
+        "icon": "$(debug-continue)"
+      },
+      {
+        "command": "agentfarm.renameSession",
+        "title": "Rename Session…",
+        "category": "Agent Farm",
+        "icon": "$(edit)"
       },
       {
         "command": "agentfarm.openFile",
@@ -787,6 +799,21 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "agentfarm.resumeSession",
+          "when": "view =~ /^agentfarm\\.(agents|sessions)$/ && viewItem == session-resumable",
+          "group": "inline@1"
+        },
+        {
+          "command": "agentfarm.resumeSession",
+          "when": "view =~ /^agentfarm\\.(agents|sessions)$/ && viewItem == session-resumable",
+          "group": "1_session@1"
+        },
+        {
+          "command": "agentfarm.renameSession",
+          "when": "view =~ /^agentfarm\\.(agents|sessions)$/ && viewItem =~ /^session/",
+          "group": "1_session@2"
+        },
         {
           "command": "agentfarm.startSession",
           "when": "view == agentfarm.agents && viewItem == agent",

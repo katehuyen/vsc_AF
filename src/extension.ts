@@ -50,7 +50,7 @@ import { SecretsVault } from './core/secrets';
 import { DEFAULT_PRICING, PriceRule, PricingEngine, totalTokens } from './core/pricing';
 import { QualityStore, sampleQuality } from './core/quality';
 import { buildDailyDigest, buildFleetReport, buildOutputsDigest } from './core/report';
-import { SessionIndex } from './core/sessions';
+import { SessionIndex, SessionInfo } from './core/sessions';
 import {
     applySuggestionToClaudeMd, collectUserMessages, scanCorrections, SuggestionStore
 } from './core/suggest';
@@ -177,6 +177,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         () => cfg().get<number>('activeThresholdSeconds', 150) * 1000
     );
     context.subscriptions.push(index);
+
+    // User-set session names survive restarts via globalState.
+    const TITLES_KEY = 'agentfarm.sessionTitles';
+    const sessionTitles = () => context.globalState.get<Record<string, string>>(TITLES_KEY, {});
+    index.setTitleOverrides(sessionTitles());
 
     let taskManagerRef: TaskManager | undefined;
     const healthConfig = () => ({
@@ -922,7 +927,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         extensionUri: context.extensionUri,
         getPricing: () => pricing,
         maxMessages: () => cfg().get<number>('maxTranscriptMessages', 400),
-        contextLimit: () => cfg().get<number>('contextWindowTokens', 200000)
+        contextLimit: () => cfg().get<number>('contextWindowTokens', 200000),
+        titleFor: (sessionId: string) => sessionTitles()[sessionId]
     };
 
     // ---------- G1/G5: Needs You queue + kanban board ----------
@@ -1087,6 +1093,36 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 SessionViewerPanel.show(file, viewerDeps);
             }
         }),
+
+        // Tree elements differ per view: Agents wraps the session in {kind:'session', session},
+        // Recent Sessions passes the SessionInfo itself.
+        vscode.commands.registerCommand('agentfarm.resumeSession',
+            (arg?: { session?: SessionInfo } | SessionInfo) => {
+                const s = arg && 'session' in arg && arg.session ? arg.session : arg as SessionInfo | undefined;
+                if (!s?.sessionId) { return; }
+                const cwd = s.cwd && fs.existsSync(s.cwd) ? s.cwd : undefined;
+                const terminal = vscode.window.createTerminal({
+                    name: `claude: ${s.agentName ?? s.sessionId.slice(0, 8)}`, cwd
+                });
+                terminal.show();
+                terminal.sendText(`claude --resume ${s.sessionId}`, true);
+            }),
+
+        vscode.commands.registerCommand('agentfarm.renameSession',
+            async (arg?: { session?: SessionInfo } | SessionInfo) => {
+                const s = arg && 'session' in arg && arg.session ? arg.session : arg as SessionInfo | undefined;
+                if (!s?.sessionId) { return; }
+                const value = await vscode.window.showInputBox({
+                    prompt: 'Session name (leave empty to restore the automatic title)',
+                    value: s.title, ignoreFocusOut: true
+                });
+                if (value === undefined) { return; }
+                const titles = { ...sessionTitles() };
+                if (value.trim()) { titles[s.sessionId] = value.trim(); }
+                else { delete titles[s.sessionId]; }
+                await context.globalState.update(TITLES_KEY, titles);
+                index.setTitleOverrides(titles);
+            }),
 
         vscode.commands.registerCommand('agentfarm.openTimeline', () => {
             TimelinePanel.show({ extensionUri: context.extensionUri, live, tasks: taskManager });

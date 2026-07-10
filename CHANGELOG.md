@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.7.0 — Session viewer polish (2026-07-10)
+
+Second round of real-user feedback, all about reviewing sessions:
+
+- **Resume any session**: ⏵ / right-click → **Resume Session in Terminal** on session rows (Agents tree and Recent Sessions), and a **⏵ Resume** button in the session viewer — opens a terminal in the session's folder and runs `claude --resume <id>`. Continue Latest is no longer the only way back in.
+- **Turn breakdown table**: a collapsible box under the KPI cards lists every turn in one table (number, prompt snippet, tokens, cost); clicking a row jumps to that turn (or moves the replay position). Turn accounting fixed: usage on non-rendering assistant lines (thinking-only stream lines) now bills to its turn — per-turn totals add up to the session total exactly.
+- **Show filter**: chip row (All / Dialog / User / Assistant / Tool calls / Results / Errors) filters the message list *and* the replay stream — "Dialog" plays back just you and the assistant.
+- **✕ Exit in the sticky replay bar** — no more scrolling up to leave replay.
+- **Human session titles**: `<command-name>` blocks, slash commands and `!` shell lines no longer become titles; array-content prompts (newer transcript format) are recognized. Turn labels show commands as e.g. `/clear`.
+- **Rename Session…**: give any session a persistent custom name (empty restores the automatic title); stored in extension state, transcripts untouched.
+- Removed the Turkish word "Kılavuz" from the English UI strings.
+
 ## 2.6.0 — Observability polish (2026-07-10)
 
 First round of real-user feedback — four requests, four features:

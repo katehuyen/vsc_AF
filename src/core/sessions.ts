@@ -39,6 +39,8 @@ export interface SessionInfo {
     agentName?: string;
     cwd?: string;
     title: string;
+    /** Title derived from the transcript, kept so clearing a user rename can restore it. */
+    autoTitle: string;
     firstTs: number;
     lastTs: number;
     mtime: number;
@@ -101,6 +103,16 @@ function toolDetail(input: Record<string, unknown> | undefined): string {
     return truncate(String(cand), 90);
 }
 
+/**
+ * Session title from a user prompt: skip harness/command noise (XML-ish blocks,
+ * slash commands, shell passthrough) so names read like the conversation.
+ */
+function titleFromPrompt(text: string): string {
+    const t = text.replace(/\s+/g, ' ').trim();
+    if (!t || t.startsWith('<') || t.startsWith('/') || t.startsWith('!')) { return ''; }
+    return truncate(t, 80);
+}
+
 function textOfContent(content: unknown): string {
     if (typeof content === 'string') { return content; }
     if (Array.isArray(content)) {
@@ -130,6 +142,7 @@ export function parseSessionFile(
         sessionId: path.basename(file, '.jsonl'),
         isSidechain: projectDirDepth > 0,
         title: '',
+        autoTitle: '',
         firstTs: 0,
         lastTs: 0,
         mtime: st.mtimeMs,
@@ -177,18 +190,19 @@ export function parseSessionFile(
 
         if (line.type === 'user' && line.message) {
             const content = line.message.content;
-            if (typeof content === 'string') {
-                if (!line.isMeta && !content.startsWith('<')) {
-                    info.userTurns++;
-                    if (!info.title) { info.title = truncate(content, 80); }
-                    if (ts) {
-                        info.events.push({
-                            ts, kind: 'prompt', detail: truncate(content, 90), sessionFile: file
-                        });
-                    }
+            const countPrompt = (text: string) => {
+                info.userTurns++;
+                if (!info.title) { info.title = titleFromPrompt(text); }
+                if (ts) {
+                    info.events.push({
+                        ts, kind: 'prompt', detail: truncate(text, 90), sessionFile: file
+                    });
                 }
+            };
+            if (typeof content === 'string') {
+                if (!line.isMeta && !content.startsWith('<')) { countPrompt(content); }
             } else if (Array.isArray(content)) {
-                for (const block of content as { type?: string; is_error?: boolean }[]) {
+                for (const block of content as { type?: string; is_error?: boolean; text?: string }[]) {
                     if (block?.type === 'tool_result' && block.is_error) {
                         info.errors++;
                         if (ts) {
@@ -196,6 +210,10 @@ export function parseSessionFile(
                                 ts, kind: 'error', detail: 'tool error', sessionFile: file
                             });
                         }
+                    } else if (block?.type === 'text' && block.text &&
+                        !line.isMeta && !block.text.startsWith('<')) {
+                        // Newer transcripts carry user prompts as text blocks in an array.
+                        countPrompt(block.text);
                     }
                 }
             }
@@ -274,6 +292,7 @@ export function parseSessionFile(
     if (!info.title) {
         info.title = info.isSidechain ? 'Subagent task' : '(untitled session)';
     }
+    info.autoTitle = info.title;
     if (info.events.length > MAX_EVENTS_PER_FILE) {
         info.events = info.events.slice(-MAX_EVENTS_PER_FILE);
     }
@@ -289,6 +308,8 @@ export interface ClaudeDirRef {
 
 export class SessionIndex implements vscode.Disposable {
     private sessions = new Map<string, SessionInfo>();
+    /** User-set session names (sessionId → title), persisted by the extension. */
+    private titleOverrides = new Map<string, string>();
     private watchers: fs.FSWatcher[] = [];
     private pending = new Map<string, NodeJS.Timeout>();
     private readonly onDidUpdateEmitter = new vscode.EventEmitter<void>();
@@ -357,6 +378,8 @@ export class SessionIndex implements vscode.Disposable {
             const segments = file.split(/[\\/]/);
             info.parentSessionId = segments[segments.length - 1 - depth];
         }
+        const override = this.titleOverrides.get(info.sessionId);
+        if (override) { info.title = override; }
         this.assignAgent(info);
         if (!info.agentId && !this.includeUnmatched()) {
             // Keep it out of the index but remember nothing: farm-focused scope.
@@ -385,6 +408,16 @@ export class SessionIndex implements vscode.Disposable {
         } else if (this.includeUnmatched()) {
             info.agentName = info.machine ? `Other projects (${info.machine})` : 'Other projects';
         }
+    }
+
+    /** Replace the user-set session names and re-apply them to everything indexed. */
+    setTitleOverrides(map: Record<string, string>): void {
+        this.titleOverrides = new Map(
+            Object.entries(map).filter(([, v]) => typeof v === 'string' && v.trim()));
+        for (const s of this.sessions.values()) {
+            s.title = this.titleOverrides.get(s.sessionId) ?? s.autoTitle;
+        }
+        this.onDidUpdateEmitter.fire();
     }
 
     /** Re-run agent assignment after agents were re-discovered. */

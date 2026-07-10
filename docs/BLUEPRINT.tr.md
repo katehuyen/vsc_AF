@@ -91,6 +91,13 @@ Yan paneldeki ana ağaç. Her ajan şu alt bölümlerle açılır:
 
 Ajan üzerinde sağ tık menüsü: **Start Claude Session**, **Continue Latest Session**, **Open Agent Detail**, **Open in New Window**, **Reveal in File Explorer**.
 
+Oturum satırında sağ tık menüsü (2.7.0):
+
+- **Resume Session in Terminal** — o oturumun klasöründe terminal açıp `claude --resume <oturum-id>` çalıştırır: **herhangi bir geçmiş oturuma** kaldığın yerden devam edersin (Continue Latest yalnızca en son oturumu sürdürür). Satırın üzerine gelince çıkan ⏵ ikonu da aynısını yapar. Oturum Görüntüleyicinin sağ üstündeki **⏵ Resume** düğmesi de aynı işi görür.
+- **Rename Session…** — oturuma kendi adını ver (hatırlamak için); boş bırakırsan otomatik başlık geri gelir. Adlar kalıcıdır, transcript dosyasına dokunulmaz.
+
+Oturum başlıkları 2.7.0'dan itibaren konuşmadan türetilir: `/compact` gibi komutlar, `<...>` harness blokları ve `!` kabuk satırları artık başlık olmaz — ilk gerçek kullanıcı cümlesi başlıktır.
+
 ### Dashboard
 
 Filonun genel panosu. `Agent Farm: Open Dashboard` komutuyla veya durum çubuğuna tıklayarak açılır.
@@ -124,6 +131,9 @@ Bir oturumun ham JSONL kaydını okunur konuşmaya çevirir:
 - Mesajlar renk kodludur: mavi = kullanıcı, yeşil = asistan, sarı = araç çağrısı, mor = araç sonucu. Hatalı araç sonuçları kırmızı kenarlıkla ve açık halde gelir.
 - Her asistan mesajında model, token ve maliyet görünür. Yalnızca araç çağrısı yapan (metinsiz) asistan adımlarının token'ı da kaybolmaz — ilk araç çağrısı satırında görünür (2.6.0).
 - **Tur ayraçları (2.6.0):** her kullanıcı komutu yeni bir tur açar; ayraç satırında `Turn 3/12 · 45.2K tok · $0.31` — o turun toplam token ve maliyeti. Üstteki Tokens kartındaki oturum toplamının turlara dökümü budur.
+- **Turn breakdown tablosu (2.7.0):** KPI kartlarının hemen altındaki açılır kutu tüm turları **tek tabloda** listeler: tur no, komutun ilk cümlesi, token, maliyet. Satıra tıkla → o turun ayracına atlar (replay'deyken oynatmayı o tura taşır). Tur toplamları artık oturum toplamıyla birebir tutar — düşünme (thinking) adımlarının token'ı da turuna yazılır.
+- **Show filtresi (2.7.0):** mesaj listesinin üstündeki chip satırı türlere göre filtreler: **All · Dialog · User · Assistant · Tool calls · Results · Errors**. "Dialog" yalnız sen + asistan konuşmasını bırakır (araç trafiği gizlenir); chip'ler çoklu seçilebilir. Filtre **replay'i de etkiler** — Dialog seçiliyken replay'de yalnız diyalog akar.
+- **⏵ Resume (2.7.0):** sağ üstteki düğme bu oturumu terminalde `claude --resume` ile devam ettirir.
 - **Context now kartı (2.6.0):** son isteğin bağlam boyutu (prompt + cache + çıktı) ve `agentFarm.contextWindowTokens` (varsayılan 200K) içindeki yüzdesi. %70'te sararır ve `/compact` ya da `/clear` önerir, %90'da kızarır. Oturum çalışırken kayıt her değiştiğinde kart **canlı** tazelenir — "bağlam doldu mu, compact zamanı mı?" sorusunun anlık cevabı.
 - Üstteki arama kutusu mesajları ve araç adlarını filtreler.
 - **Open raw JSONL** ham kaydı editörde açar.
@@ -658,7 +668,9 @@ Kalite karnesinin doğal evrimi: kötü giden üretim izleri **regresyon test va
 
 Oturum görüntüleyicide **▶ Replay** — "ne oldu?" sorusunun en hızlı cevabı: mesajlar ve araç çağrıları gerçek zaman aralıklarına sadık kalarak (5 sn tavanlı, 1x-8x hız) adım adım akar. **next error ⚠** ve **next prompt 💬** düğmeleriyle kritik anlara atla; −1/+1 ile kare kare ilerle.
 
-Kontrol çubuğu **yapışkandır** (2.6.0): mesajlar aşağı aktıkça çubuk ekranın üstüne sabitlenir — oynatma ne kadar ilerlerse ilerlesin Pause/hız/atlama düğmeleri hep elinin altındadır.
+Kontrol çubuğu **yapışkandır** (2.6.0): mesajlar aşağı aktıkça çubuk ekranın üstüne sabitlenir — oynatma ne kadar ilerlerse ilerlesin Pause/hız/atlama düğmeleri hep elinin altındadır. Çubukta **✕ Exit** de vardır (2.7.0) — replay'den çıkmak için yukarı kaydırmak gerekmez.
+
+Replay, **Show filtresine** uyar (2.7.0): Dialog seçiliyse yalnız diyalog mesajları oynar; Turn breakdown tablosunda bir satıra tıklamak oynatmayı o turun başına taşır.
 
 ### Subagent Ağacı
 
@@ -943,7 +955,7 @@ Gürültü koruması: önceki hafta 0.50$'ın, bu hafta 1$'ın altındaysa uyar�
 Tümü komut paletinde `Agent Farm:` önekiyle:
 
 - **Open Dashboard** — genel pano
-- **Open Guide (Kılavuz)** — bu belge
+- **Open Guide** — bu belge
 - **Refresh** — ajanları ve oturumları yeniden tara
 - **New Agent** — şablondan yeni ajan iskeleti (CLAUDE.md + memory + .claude)
 - **Add Agent Root Folder** — yeni kök klasör ekle
@@ -1048,6 +1060,18 @@ Tamamlanan fazlar (hepsi 2026-07-08):
 **Bundan sonrası ayrı ve ayrıntılı bir belgede yaşıyor:** komut paletinden **Agent Farm: Open Development Plan** — uzak görüşlü gelişim planı: olay tetikleyicileri, doğrulayıcı adımlar, MCP paneli, n8n/webhook köprüsü, multimedya üretim hattı (Kling/Seedance/Nano Banana sınıfı modellerle içerik fabrikası), zeki gözetim, çoklu makine ve vizyoner ufuk. Kodlama o plandaki öncelik sırasını izler.
 
 ## Sürüm Notları
+
+### 2.7.0 — Oturum Görüntüleyici Cilası (2026-07-10)
+
+İkinci geri bildirim turu — hepsi oturum inceleme deneyimi üzerine:
+
+- **Herhangi bir oturumdan devam:** oturum satırında ⏵ / sağ tık → **Resume Session in Terminal** (`claude --resume <id>`); Oturum Görüntüleyicide sağ üstte **⏵ Resume**. Continue Latest artık tek seçenek değil.
+- **Turn breakdown tablosu:** tüm turlar tek tabloda (no, komut özeti, token, maliyet); satıra tıkla → tura atla. Tur muhasebesi düzeltildi: thinking-only asistan adımlarının token'ı artık turuna yazılıyor — tur toplamları oturum toplamını birebir tutuyor (önceden büyük kısmı görünmüyordu).
+- **Show filtresi:** All / Dialog / User / Assistant / Tool calls / Results / Errors chip'leri; pasif görünümü de replay akışını da filtreler. "Dialog" = yalnız sen + asistan.
+- **Replay çubuğunda ✕ Exit** — çıkış için yukarı kaydırma bitti.
+- **Oturum adları insanlaştı:** `<command-name>…` blokları, `/komutlar` ve `!` satırları başlık olmaz; başlık ilk gerçek cümleden gelir (array içerikli yeni transcript formatı da destekli). Tur etiketlerinde komutlar `/clear` gibi kısa adla görünür.
+- **Rename Session…:** oturuma kalıcı özel ad ver; boş bırak → otomatik başlık geri gelir.
+- Arayüzdeki "Kılavuz" kelimeleri temizlendi (arayüz dili İngilizce).
 
 ### 2.6.0 — Gözlemlenebilirlik Cilası (2026-07-10)
 

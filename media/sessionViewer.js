@@ -5,8 +5,19 @@
     const C = window.AFCharts;
     let DATA = window.__DATA__;
     let filter = '';
-    // G4 replay state: show messages 0..pos step by step, honoring real gaps.
-    const replay = { active: false, playing: false, pos: 0, speed: 2, timer: null };
+    let turnsOpen = false;
+    // Role filter: empty set = show everything. "Errors" matches by flag, not role.
+    const ROLE_CHIPS = [
+        { id: 'user', label: 'User', match: m => m.role === 'user' },
+        { id: 'assistant', label: 'Assistant', match: m => m.role === 'assistant' },
+        { id: 'tool', label: 'Tool calls', match: m => m.role === 'tool' },
+        { id: 'toolResult', label: 'Results', match: m => m.role === 'toolResult' },
+        { id: 'error', label: 'Errors', match: m => m.isError }
+    ];
+    let roleSel = new Set();
+    // G4 replay state: play messages 0..pos step by step over the *filtered* list,
+    // honoring real gaps.
+    const replay = { active: false, playing: false, pos: 0, speed: 2, timer: null, msgs: [] };
 
     window.addEventListener('message', ev => {
         if (ev.data.type !== 'data') { return; }
@@ -29,13 +40,28 @@
         return ts ? new Date(ts).toLocaleString() : '—';
     }
 
+    function matchesRole(m) {
+        if (!roleSel.size) { return true; }
+        return ROLE_CHIPS.some(c => roleSel.has(c.id) && c.match(m));
+    }
+
+    function matchesText(m) {
+        if (!filter) { return true; }
+        const hay = ((m.text || '') + ' ' + (m.tool || '') + ' ' + (m.input || '')).toLowerCase();
+        return hay.includes(filter);
+    }
+
+    function visibleMsgs() {
+        return DATA.messages.filter(m => matchesRole(m) && matchesText(m));
+    }
+
     function turnHdrHtml(m) {
         if (!m.turnStart || !m.turn) { return ''; }
         const t = (DATA.turnTotals || {})[m.turn];
         const total = t && (t.tokens || t.cost)
             ? ` · ${C.fmtTok(t.tokens)} tok · ${C.fmtUSD(t.cost)}`
             : '';
-        return `<div class="turnhdr"><span>Turn ${m.turn}/${DATA.turnCount || '?'}${total}</span></div>`;
+        return `<div class="turnhdr" data-turn="${m.turn}"><span>Turn ${m.turn}/${DATA.turnCount || '?'}${total}</span></div>`;
     }
 
     function listHtml(msgs) {
@@ -75,15 +101,14 @@
     }
 
     function stepDelay(i) {
-        const msgs = DATA.messages;
-        const a = msgs[i - 1], b = msgs[i];
+        const a = replay.msgs[i - 1], b = replay.msgs[i];
         const gap = a && b && a.ts && b.ts ? Math.max(0, b.ts - a.ts) : 400;
         return Math.max(120, Math.min(gap, 5000) / replay.speed);
     }
 
     function scheduleNext() {
         if (!replay.playing) { return; }
-        if (replay.pos >= DATA.messages.length - 1) { stopTimer(); updateReplayUi(); return; }
+        if (replay.pos >= replay.msgs.length - 1) { stopTimer(); updateReplayUi(); return; }
         replay.timer = setTimeout(() => {
             replay.pos++;
             renderReplayStep();
@@ -96,9 +121,8 @@
         if (!msgs) { return; }
         const i = replay.pos;
         if (!msgs.querySelector(`[data-idx="${i}"]`)) {
-            msgs.insertAdjacentHTML('beforeend', turnHdrHtml(DATA.messages[i]) + messageHtml(DATA.messages[i], i));
+            msgs.insertAdjacentHTML('beforeend', turnHdrHtml(replay.msgs[i]) + messageHtml(replay.msgs[i], i));
         }
-        // drop anything past pos (when stepping back we re-render fully instead)
         updateReplayUi();
         const el = msgs.querySelector(`[data-idx="${i}"]`);
         if (el) { el.scrollIntoView({ block: 'end', behavior: 'smooth' }); }
@@ -106,38 +130,70 @@
 
     function updateReplayUi() {
         const label = document.getElementById('rp-pos');
-        if (label) { label.textContent = `${replay.pos + 1}/${DATA.messages.length}`; }
+        if (label) {
+            label.textContent = `${Math.min(replay.pos + 1, replay.msgs.length)}/${replay.msgs.length}`;
+        }
         const btn = document.getElementById('rp-play');
         if (btn) { btn.textContent = replay.playing ? '⏸ Pause' : '▶ Play'; }
     }
 
     function jumpTo(pred, from) {
-        const msgs = DATA.messages;
-        for (let i = from + 1; i < msgs.length; i++) {
-            if (pred(msgs[i])) { replay.pos = i; renderReplayList(); return; }
+        for (let i = from + 1; i < replay.msgs.length; i++) {
+            if (pred(replay.msgs[i])) { replay.pos = i; renderReplayList(); return; }
         }
     }
 
     function renderReplayList() {
         const msgs = document.getElementById('msgs');
         if (!msgs) { return; }
-        msgs.innerHTML = listHtml(DATA.messages.slice(0, replay.pos + 1));
+        msgs.innerHTML = listHtml(replay.msgs.slice(0, replay.pos + 1));
         updateReplayUi();
         const el = msgs.querySelector(`[data-idx="${replay.pos}"]`);
         if (el) { el.scrollIntoView({ block: 'end' }); }
     }
 
+    function exitReplay() {
+        stopTimer();
+        replay.active = false;
+        replay.pos = 0;
+        render();
+    }
+
     // ---------- main render ----------
+
+    function chipRowHtml() {
+        const all = !roleSel.size;
+        const dialog = roleSel.size === 2 && roleSel.has('user') && roleSel.has('assistant');
+        return `<div class="chiprow">
+            <span class="muted small">Show:</span>
+            <button class="chip${all ? ' on' : ''}" data-preset="all">All</button>
+            <button class="chip${dialog ? ' on' : ''}" data-preset="dialog">Dialog</button>
+            ${ROLE_CHIPS.map(c =>
+                `<button class="chip${roleSel.has(c.id) ? ' on' : ''}" data-chip="${c.id}">${c.label}</button>`).join('')}
+        </div>`;
+    }
+
+    function turnBoxHtml() {
+        const turns = DATA.turns || [];
+        if (!turns.length) { return ''; }
+        return `<details id="turnbox" class="turnbox"${turnsOpen ? ' open' : ''}>
+            <summary>Turn breakdown — ${turns.length} turns (click a row to jump)</summary>
+            <div class="tablewrap"><table>
+                <thead><tr><th>#</th><th>prompt</th><th class="num">tokens</th><th class="num">cost</th></tr></thead>
+                <tbody>${turns.map(t => `<tr class="click" data-turn="${t.n}">
+                    <td>${t.n}</td><td>${C.esc(t.label || '—')}</td>
+                    <td class="num">${t.tokens ? C.fmtTok(t.tokens) : '—'}</td>
+                    <td class="num">${t.cost ? C.fmtUSD(t.cost) : '—'}</td>
+                </tr>`).join('')}</tbody>
+            </table></div>
+        </details>`;
+    }
 
     function render(opts) {
         const keepScroll = opts && opts.keepScroll;
         const prevScroll = keepScroll ? { x: window.scrollX, y: window.scrollY } : null;
         const durMin = DATA.firstTs && DATA.lastTs ? Math.round((DATA.lastTs - DATA.firstTs) / 60000) : 0;
-        const visible = DATA.messages.filter(m => {
-            if (!filter) return true;
-            const hay = ((m.text || '') + ' ' + (m.tool || '') + ' ' + (m.input || '')).toLowerCase();
-            return hay.includes(filter);
-        });
+        const visible = visibleMsgs();
         const errorCount = DATA.messages.filter(m => m.isError).length;
 
         const ctx = DATA.context || { tokens: 0, limit: 0 };
@@ -162,6 +218,15 @@
                     color:var(--vscode-descriptionForeground); font-size:11px; white-space:nowrap; }
                 .turnhdr::before, .turnhdr::after { content:''; height:1px; flex:1;
                     background:var(--vscode-panel-border); }
+                .turnbox { margin:10px 0; }
+                .turnbox summary { font-size:12px; }
+                .turnbox table { margin-top:6px; }
+                .chiprow { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:8px 0; }
+                .chip { font-size:11px; padding:2px 10px; border-radius:10px; cursor:pointer;
+                    background:transparent; color:var(--vscode-foreground); opacity:.75;
+                    border:1px solid var(--vscode-widget-border, #4444); }
+                .chip.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground);
+                    border-color:transparent; opacity:1; }
             </style>
             <div class="spread">
                 <div>
@@ -169,6 +234,7 @@
                     <div class="muted small">${C.esc(DATA.cwd || '')} · ${C.esc(DATA.sessionId)} · ${DATA.permissionMode ? 'mode: ' + C.esc(DATA.permissionMode) : ''}</div>
                 </div>
                 <div class="btnrow">
+                    <button id="resume">⏵ Resume</button>
                     <button class="secondary" id="replaytoggle">${replay.active ? '✕ Exit replay' : '▶ Replay'}</button>
                     <button class="secondary" id="refresh">Refresh</button>
                     <button class="secondary" id="raw">Open raw JSONL</button>
@@ -185,6 +251,7 @@
                 <div class="card"><div class="label">Span</div><div class="kpi">${durMin}m</div><div class="sub">${fmtTime(DATA.firstTs)} → ${fmtTime(DATA.lastTs)}</div></div>
                 <div class="card"><div class="label">Activity</div><div class="kpi">${DATA.toolCalls}</div><div class="sub">tool calls · ${DATA.errors} errors · ${C.esc((DATA.models || []).map(m => m.replace(/^claude-/, '')).join(', '))}</div></div>
             </div>
+            ${turnBoxHtml()}
             ${replay.active ? `
             <div class="replaybar">
                 <button id="rp-play">▶ Play</button>
@@ -196,26 +263,67 @@
                 </select>
                 <button class="secondary" id="rp-nexterr" ${errorCount ? '' : 'disabled'}>next error ⚠</button>
                 <button class="secondary" id="rp-nextprompt">next prompt 💬</button>
-                <span class="muted small" id="rp-pos">${replay.pos + 1}/${DATA.messages.length}</span>
+                <button class="secondary" id="rp-exit">✕ Exit</button>
+                <span class="muted small" id="rp-pos">${Math.min(replay.pos + 1, replay.msgs.length)}/${replay.msgs.length}</span>
             </div>` : `
             <div class="searchbar" style="margin:14px 0 6px">
                 <input id="filter" type="text" placeholder="Filter messages… (text, tool name)" value="${C.esc(filter)}">
             </div>`}
+            ${chipRowHtml()}
             ${DATA.truncatedCount ? `<p class="muted small">Showing last ${DATA.messages.length} of ${DATA.messageCount} messages (${DATA.truncatedCount} older hidden — raise <code>agentFarm.maxTranscriptMessages</code> to see more).</p>` : ''}
             <div id="msgs">${replay.active
-                ? listHtml(DATA.messages.slice(0, replay.pos + 1))
+                ? listHtml(replay.msgs.slice(0, replay.pos + 1))
                 : (listHtml(visible) || '<p class="muted">No messages match.</p>')}</div>
         `;
         if (prevScroll) { window.scrollTo(prevScroll.x, prevScroll.y); }
 
         document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
         document.getElementById('raw').addEventListener('click', () => vscode.postMessage({ type: 'openRaw' }));
+        document.getElementById('resume').addEventListener('click', () =>
+            vscode.postMessage({ type: 'resume', cwd: DATA.cwd }));
         document.querySelectorAll('[data-guide]').forEach(el =>
             el.addEventListener('click', () => vscode.postMessage({ type: 'openGuide', anchor: el.dataset.guide })));
 
+        const turnbox = document.getElementById('turnbox');
+        if (turnbox) {
+            turnbox.addEventListener('toggle', () => { turnsOpen = turnbox.open; });
+            turnbox.querySelectorAll('tr[data-turn]').forEach(tr => tr.addEventListener('click', () => {
+                const n = Number(tr.dataset.turn);
+                if (replay.active) {
+                    stopTimer();
+                    const i = replay.msgs.findIndex(m => m.turn === n);
+                    if (i >= 0) { replay.pos = i; renderReplayList(); }
+                } else {
+                    const el = document.querySelector(`.turnhdr[data-turn="${n}"]`);
+                    if (el) { el.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
+                }
+            }));
+        }
+
+        // role chips work in both modes; in replay they rebuild the playback list
+        const applyRoleChange = () => {
+            if (replay.active) {
+                stopTimer();
+                replay.msgs = visibleMsgs();
+                replay.pos = Math.min(replay.pos, Math.max(0, replay.msgs.length - 1));
+            }
+            render({ keepScroll: true });
+        };
+        document.querySelectorAll('.chip').forEach(chip => chip.addEventListener('click', () => {
+            if (chip.dataset.preset === 'all') { roleSel = new Set(); }
+            else if (chip.dataset.preset === 'dialog') { roleSel = new Set(['user', 'assistant']); }
+            else {
+                const id = chip.dataset.chip;
+                if (roleSel.has(id)) { roleSel.delete(id); } else { roleSel.add(id); }
+            }
+            applyRoleChange();
+        }));
+
         document.getElementById('replaytoggle').addEventListener('click', () => {
+            if (replay.active) { exitReplay(); return; }
             stopTimer();
-            replay.active = !replay.active;
+            replay.active = true;
+            replay.msgs = visibleMsgs();
             replay.pos = 0;
             render();
         });
@@ -232,7 +340,7 @@
                 stopTimer(); replay.pos = Math.max(0, replay.pos - 1); renderReplayList();
             });
             document.getElementById('rp-fwd').addEventListener('click', () => {
-                stopTimer(); replay.pos = Math.min(DATA.messages.length - 1, replay.pos + 1); renderReplayList();
+                stopTimer(); replay.pos = Math.min(replay.msgs.length - 1, replay.pos + 1); renderReplayList();
             });
             document.getElementById('rp-speed').addEventListener('change', e => {
                 replay.speed = Number(e.target.value) || 2;
@@ -243,18 +351,14 @@
             document.getElementById('rp-nextprompt').addEventListener('click', () => {
                 stopTimer(); jumpTo(m => m.role === 'user', replay.pos);
             });
+            document.getElementById('rp-exit').addEventListener('click', exitReplay);
             updateReplayUi();
         } else {
             const input = document.getElementById('filter');
             input.addEventListener('input', () => {
                 filter = input.value.toLowerCase();
                 const msgs = document.getElementById('msgs');
-                const vis = DATA.messages.filter(m => {
-                    if (!filter) return true;
-                    const hay = ((m.text || '') + ' ' + (m.tool || '') + ' ' + (m.input || '')).toLowerCase();
-                    return hay.includes(filter);
-                });
-                msgs.innerHTML = listHtml(vis) || '<p class="muted">No messages match.</p>';
+                msgs.innerHTML = listHtml(visibleMsgs()) || '<p class="muted">No messages match.</p>';
             });
         }
     }
