@@ -39,10 +39,15 @@
         const srcTag = external
             ? `<span class="badge warn" title="registered from a watched/external folder">${C.esc(item.source)}</span>`
             : '';
+        const pickTag = item.selectedCount
+            ? `<span class="badge" style="color:var(--vscode-charts-green,#4caf50);border-color:var(--vscode-charts-green,#4caf50)" title="kept in a selection step">✓ ${item.selectedCount} kept</span>`
+            : item.rejectedCount
+                ? `<span class="badge muted" title="dropped in a selection step">✗ ${item.rejectedCount} dropped</span>`
+                : '';
         return `<div class="card">
             ${preview}
             <h3 style="margin:8px 0 2px">${C.esc(item.title)}</h3>
-            <div class="sub">${C.esc(item.model)} · ${fmtTime(item.ts)}${item.estCost ? ' · ~' + C.fmtUSD(item.estCost) : ''} ${sceneTag}${srcTag}</div>
+            <div class="sub">${C.esc(item.model)} · ${fmtTime(item.ts)}${item.estCost ? ' · ~' + C.fmtUSD(item.estCost) : ''} ${sceneTag}${srcTag}${pickTag}</div>
             ${item.workflowTitle ? `<div class="sub muted">from: ${C.esc(item.workflowTitle)}</div>` : ''}
             ${item.input ? `<details style="margin-top:6px"><summary class="small">input</summary><pre>${C.esc(item.input)}</pre></details>` : ''}
             <div class="btnrow">

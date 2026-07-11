@@ -6,7 +6,7 @@ import { AgentInfo } from './agents';
 import { buildBrowserPrompt, hostAllowed } from './browser';
 import {
     DEFAULT_MEDIA_PRICING, downloadAsset, estimateMediaCost, extFromUrl,
-    MediaMeta, MediaPriceRule, runFalJob
+    mediaCandidates, MediaMeta, MediaPriceRule, readMediaMetas, recordSelection, runFalJob
 } from './media';
 import { extractJson, sanitizePrompt } from './util';
 
@@ -119,6 +119,14 @@ export interface WorkflowStep {
      * step's onFail policy applies. No agent, no model call.
      */
     approval?: { message?: string };
+    /**
+     * Wave B — visual selection gate: opens a gallery-picker of the assets
+     * produced so far in this run; the user keeps some (min..max). The SELECTED
+     * asset URLs become the handoff (`{prev_json.selected.N}` / `{prev_text}`),
+     * so the next media/agent step works only with the chosen ones. Cancelling
+     * applies the step's onFail policy. No agent, no model call.
+     */
+    select?: { message?: string; min?: number; max?: number };
     /**
      * Fan-out: this step runs concurrently with adjacent `parallel` steps. A
      * maximal run of consecutive parallel steps forms a group; the step after
@@ -260,6 +268,14 @@ export interface TaskManagerOptions {
     confirmBrowser?: (info: { title: string; url: string; goal: string }) => Promise<boolean>;
     /** Human-in-the-loop workflow gate; resolve true to continue the chain, false to fail the step. */
     confirmApproval?: (info: { title: string; message: string }) => Promise<boolean>;
+    /**
+     * Wave B — visual selection gate. Resolve with the chosen asset URLs (the
+     * subset kept), or null to cancel (the step's onFail policy applies).
+     */
+    confirmSelection?: (info: {
+        title: string; message: string; min: number; max?: number;
+        candidates: { taskId: string; title: string; url: string; file?: string; kind: string }[];
+    }) => Promise<string[] | null>;
 }
 
 export class TaskManager implements vscode.Disposable {
@@ -1040,6 +1056,10 @@ export class TaskManager implements vscode.Disposable {
             void this.runApprovalStep(w, index, handoff, runId);
             return;
         }
+        if (step.select) {
+            void this.runSelectStep(w, index, handoff, runId);
+            return;
+        }
         const agent = this.getAgents().find(a => a.id === step.agentId);
         if (!agent) {
             void vscode.window.showWarningMessage(
@@ -1159,9 +1179,10 @@ export class TaskManager implements vscode.Disposable {
         }
 
         const assets: string[] = [];
+        const assetUrls: string[] = [];
         for (const [i, url] of result.assetUrls.slice(0, 4).entries()) {
             const file = path.join(this.outputsDir, `${task.id}-${i + 1}.${extFromUrl(url)}`);
-            if (await downloadAsset(url, file)) { assets.push(file); }
+            if (await downloadAsset(url, file)) { assets.push(file); assetUrls.push(url); }
         }
         const estCost = estimateMediaCost(media.model, result.response,
             this.opts.mediaPricing?.() ?? DEFAULT_MEDIA_PRICING);
@@ -1173,6 +1194,7 @@ export class TaskManager implements vscode.Disposable {
             model: media.model,
             input: input.slice(0, 2000),
             assetFiles: assets,
+            assetUrls,
             estCost,
             ts: Date.now(),
             workflowTitle: w.title,
@@ -1272,6 +1294,85 @@ export class TaskManager implements vscode.Disposable {
             this.advanceWorkflow(task, ok ? 'done' : 'failed');
         } else if (ok) {
             this.routeToStep(w, index + 1, handoff, runId);
+        } else {
+            this.advanceWorkflow(task, 'failed');
+        }
+    }
+
+    /**
+     * Wave B — visual selection gate: the user keeps a subset of the assets
+     * produced so far in this run. Chosen asset URLs become the handoff so the
+     * next step (e.g. an image→video model) works only with the picks. No gate
+     * wired (tests/headless) = keep everything so chains don't hang.
+     */
+    private async runSelectStep(w: FarmWorkflow, index: number, handoff: Handoff, runId: string): Promise<void> {
+        const step = w.steps[index];
+        const sel = step.select!;
+        const message = this.substitute(sel.message ?? '', handoff);
+
+        // Candidates: assets produced by this run's media tasks up to this step.
+        const runTaskIds = new Set(this.tasks
+            .filter(t => t.workflowRunId === runId && (t.stepIndex ?? -1) < index)
+            .map(t => t.id));
+        const metas = readMediaMetas(this.outputsDir).filter(m => runTaskIds.has(m.taskId));
+        const candidates = mediaCandidates(metas);
+
+        const task: FarmTask = {
+            id: newId(), agentId: '', agentName: 'select',
+            title: `${w.title} ${index + 1}/${w.steps.length}: ${step.title}`,
+            prompt: message || `(choose ${candidates.length} candidate asset(s))`,
+            mode: 'headless', status: 'running',
+            createdAt: Date.now(), startedAt: Date.now(),
+            workflowId: w.id, workflowRunId: runId, stepIndex: index
+        };
+        this.tasks.push(task);
+        fs.mkdirSync(this.outputsDir, { recursive: true });
+        const outFile = path.join(this.outputsDir, `${task.id}.md`);
+        task.outputFile = outFile;
+        this.save();
+
+        const min = Math.max(0, sel.min ?? 1);
+        const max = sel.max;
+        let chosen: string[] | null;
+        if (!candidates.length) {
+            chosen = []; // nothing to pick — pass an empty selection through
+        } else if (this.opts.confirmSelection) {
+            chosen = await this.opts.confirmSelection({
+                title: step.title, message, min, max,
+                candidates: candidates.map(c => ({ taskId: c.taskId, title: c.title, url: c.url, file: c.file, kind: c.kind }))
+            });
+        } else {
+            chosen = candidates.map(c => c.url); // no UI wired → keep all
+        }
+
+        const cancelled = chosen === null;
+        const selected = chosen ?? [];
+        if (!cancelled) { recordSelection(this.outputsDir, metas, selected); }
+
+        // The selection becomes the handoff: {prev_json.selected.N} = a URL,
+        // {prev_text} = newline-joined URLs (one asset per line).
+        const selHandoff: Handoff = {
+            file: outFile,
+            text: selected.join('\n'),
+            json: { selected, count: selected.length }
+        };
+        try {
+            fs.writeFileSync(outFile,
+                `# ${task.title}\n\n- Selection step\n` + (message ? `- Message: ${message}\n` : '') +
+                `- Candidates: ${candidates.length} · Kept: ${selected.length}${cancelled ? ' (CANCELLED)' : ''}\n` +
+                `\n---\n\n${JSON.stringify({ selected, count: selected.length }, null, 2)}\n\n---\n` +
+                `Finished: ${new Date().toLocaleString()} · ${cancelled ? 'CANCELLED' : 'OK'}\n`, 'utf8');
+        } catch { /* archive gone */ }
+        task.status = cancelled ? 'failed' : 'done';
+        task.endedAt = Date.now();
+        this.save();
+        this.pump();
+
+        const group = this.parallelGroups.get(runId);
+        if (group && index >= group.start && index <= group.end) {
+            this.advanceWorkflow(task, cancelled ? 'failed' : 'done');
+        } else if (!cancelled) {
+            this.routeToStep(w, index + 1, selHandoff, runId);
         } else {
             this.advanceWorkflow(task, 'failed');
         }

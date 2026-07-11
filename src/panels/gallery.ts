@@ -39,6 +39,8 @@ function buildData(deps: GalleryDeps, webview: vscode.Webview): Record<string, u
                 projectId: m.projectId,
                 sceneId: m.sceneId,
                 source: m.source ?? (m.model === 'external' ? 'external' : 'fal'),
+                selectedCount: m.selectedUrls?.length ?? 0,
+                rejectedCount: m.rejectedUrls?.length ?? 0,
                 assetPath: asset,
                 assetUri: asset ? webview.asWebviewUri(vscode.Uri.file(asset)).toString() : undefined,
                 kind: asset ? assetKind(asset) : 'file'

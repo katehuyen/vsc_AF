@@ -85,6 +85,7 @@ import { GuidePanel } from './panels/guide';
 import { KanbanPanel } from './panels/kanban';
 import { NeedsPanel } from './panels/needsPanel';
 import { SearchPanel } from './panels/searchPanel';
+import { SelectionPanel } from './panels/selectionPanel';
 import { SessionViewerPanel } from './panels/sessionViewer';
 import { TimelinePanel } from './panels/timeline';
 import { FarmStatusBar } from './views/statusBar';
@@ -472,6 +473,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     }
                 });
                 return promise;
+            },
+            // Wave B: visual selection gate — a gallery-picker webview.
+            confirmSelection: (info) => {
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: pick assets for "${info.title}" (${info.candidates.length} candidate(s))`);
+                return SelectionPanel.pick(context.extensionUri, info);
             }
         }
     );
@@ -2777,12 +2784,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     [
                         // Finish sits on top once there is something to save — bottom of a long
                         // agent list is invisible, and Esc used to silently discard everything.
-                        ...(steps.length ? [{ label: '$(check) Finish & save workflow', description: `save "${title}" with ${steps.length} step(s)`, agent: undefined as AgentInfo | undefined, isWebhook: false, isMedia: false, isBrowser: false, isApproval: false }] : []),
-                        ...agents.map(a => ({ label: a.name, description: a.dir, agent: a as AgentInfo | undefined, isWebhook: false, isMedia: false, isBrowser: false, isApproval: false })),
-                        { label: '$(globe) Webhook step', description: 'HTTP call to n8n/Make/any URL — no agent', agent: undefined as AgentInfo | undefined, isWebhook: true, isMedia: false, isBrowser: false, isApproval: false },
-                        { label: '$(device-camera-video) Media step (fal.ai)', description: 'image/video/audio generation — needs FAL_KEY secret', agent: undefined as AgentInfo | undefined, isWebhook: false, isMedia: true, isBrowser: false, isApproval: false },
-                        { label: '$(browser) Browser step', description: 'agent drives its browser MCP — allowlist + approval enforced', agent: undefined as AgentInfo | undefined, isWebhook: false, isMedia: false, isBrowser: true, isApproval: false },
-                        { label: '$(check) Approval gate', description: 'pause the chain for human sign-off — no agent, no model call', agent: undefined as AgentInfo | undefined, isWebhook: false, isMedia: false, isBrowser: false, isApproval: true }
+                        ...(steps.length ? [{ label: '$(check) Finish & save workflow', description: `save "${title}" with ${steps.length} step(s)`, agent: undefined as AgentInfo | undefined, isWebhook: false, isMedia: false, isBrowser: false, isApproval: false, isSelect: false }] : []),
+                        ...agents.map(a => ({ label: a.name, description: a.dir, agent: a as AgentInfo | undefined, isWebhook: false, isMedia: false, isBrowser: false, isApproval: false, isSelect: false })),
+                        { label: '$(globe) Webhook step', description: 'HTTP call to n8n/Make/any URL — no agent', agent: undefined as AgentInfo | undefined, isWebhook: true, isMedia: false, isBrowser: false, isApproval: false, isSelect: false },
+                        { label: '$(device-camera-video) Media step (fal.ai)', description: 'image/video/audio generation — needs FAL_KEY secret', agent: undefined as AgentInfo | undefined, isWebhook: false, isMedia: true, isBrowser: false, isApproval: false, isSelect: false },
+                        { label: '$(checklist) Select assets (visual pick)', description: 'keep a subset of produced assets — the chosen ones flow on', agent: undefined as AgentInfo | undefined, isWebhook: false, isMedia: false, isBrowser: false, isApproval: false, isSelect: true },
+                        { label: '$(browser) Browser step', description: 'agent drives its browser MCP — allowlist + approval enforced', agent: undefined as AgentInfo | undefined, isWebhook: false, isMedia: false, isBrowser: true, isApproval: false, isSelect: false },
+                        { label: '$(check) Approval gate', description: 'pause the chain for human sign-off — no agent, no model call', agent: undefined as AgentInfo | undefined, isWebhook: false, isMedia: false, isBrowser: false, isApproval: false, isSelect: false }
                     ],
                     { placeHolder: `Step ${stepNo}: which agent? (Esc = ${steps.length ? 'finish' : 'cancel'})`, ignoreFocusOut: true }
                 );
@@ -2866,6 +2874,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     steps.push({
                         agentId: '', agentName: 'approval', title: aTitle, prompt: '', mode: 'headless',
                         approval: { message: aMsg.trim() || undefined }
+                    });
+                    continue;
+                }
+                if (agentPick.isSelect) {
+                    const sTitle = await vscode.window.showInputBox({
+                        prompt: `Step ${stepNo} title (select assets)`, value: 'Adayları seç', ignoreFocusOut: true
+                    });
+                    if (!sTitle) { continue; }
+                    const sMsg = await vscode.window.showInputBox({
+                        prompt: 'Message shown in the picker (optional) — {prev_text}/{prev_json.x} are substituted',
+                        placeHolder: 'örn. Video üretimine gidecek kareleri seç', ignoreFocusOut: true
+                    });
+                    if (sMsg === undefined) { continue; }
+                    const sRange = await vscode.window.showInputBox({
+                        prompt: 'How many to keep? min or min-max (empty = at least 1)',
+                        placeHolder: 'örn. 2  ·  1-3  ·  boş', ignoreFocusOut: true,
+                        validateInput: v => v.trim() && !/^\d+(-\d+)?$/.test(v.trim()) ? 'Use N or N-M' : undefined
+                    });
+                    if (sRange === undefined) { continue; }
+                    const rm = /^(\d+)(?:-(\d+))?$/.exec(sRange.trim());
+                    const min = rm ? Number(rm[1]) : 1;
+                    const max = rm && rm[2] ? Number(rm[2]) : undefined;
+                    steps.push({
+                        agentId: '', agentName: 'select', title: sTitle, prompt: '', mode: 'headless',
+                        select: { message: sMsg.trim() || undefined, min, max }
                     });
                     continue;
                 }

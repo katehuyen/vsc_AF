@@ -416,6 +416,18 @@ Zincire bir **Approval gate** koyarsın (2.19.0): o adıma gelince zincir DURUR 
 - Onay adımı Tasks ağacında görünür bir satırdır (`approval`), çıktı arşivine APPROVED/REJECTED damgası düşer.
 - **Uyarı:** onay kapısı yalnızca VS Code açıkken çalışır; headless serviste (sen yokken) kapı otomatik onaylanır ki zincir asılı kalmasın.
 
+### Görsel Seçim Adımı (Dalga B)
+
+Üretimin kalbi: **8 aday görselden 2'sini seç, yalnız onlarla devam et.** Zincire **$(checklist) Select assets (visual pick)** adımı koyarsın (2.24.0): o adıma gelince, run'ın o ana kadar ürettiği tüm varlıklar bir **galeri-picker** panelinde açılır; kaç tane tutacağını seçersin (min veya min-max).
+
+- Sihirbaz sorar: başlık, picker mesajı (`{prev_text}`/`{prev_json.x}` çözülür), kaç tane tutulacak (`2` ya da `1-3` ya da boş = en az 1).
+- Panelde adaylara tıklayıp seçersin; min sağlanana kadar **Use selected** pasiftir, max'a ulaşınca fazlası engellenir.
+- **Seçilenlerin URL'leri handoff olur:** sonraki adım `{prev_json.selected.0}` (tek URL) veya `{prev_text}` (satır satır tüm seçilen URL'ler) ile yalnız seçilenlerle çalışır. Kritik incelik: yerel dosya yolu değil, modelin ürettiği **uzak URL** akar — böylece bir sonraki fal.ai adımı (görsel→video) doğrudan tüketir.
+- Seçilmeyenler galeride `✗ dropped`, seçilenler `✓ kept` rozetiyle işaretlenir.
+- **Cancel:** adımın **onFail** politikası uygulanır. Tasks ağacında görünür `select` satırı; headless'ta (UI yoksa) hepsi tutulur ki zincir asılı kalmasın.
+
+Tipik zincir: *ajan prompt yazar → media (4 aday üret) → **görsel seçim (2 tut)** → media (görsel→video, `{prev_json.selected.0}`)*.
+
 ### Workflow Düzenleme
 
 Kurulu bir zinciri silip yeniden kurmana gerek yok (0.7.0):

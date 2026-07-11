@@ -48,6 +48,15 @@ export interface MediaMeta {
     sceneId?: string;
     /** 'fal' (generated) or 'external:<label>' (ingested/registered by hand). */
     source?: string;
+    /**
+     * Wave B — remote asset URLs from the media response, aligned with
+     * assetFiles order. Downstream steps (a fal image→video model) need the URL,
+     * not the local path, so the selection step hands these off.
+     */
+    assetUrls?: string[];
+    /** Wave B — visual-selection decisions (asset URLs the user kept / dropped). */
+    selectedUrls?: string[];
+    rejectedUrls?: string[];
 }
 
 /** Extensions the ingest watcher treats as media (mirrors the gallery's kinds). */
@@ -186,6 +195,55 @@ export function readMediaMetas(outputsDir: string): MediaMeta[] {
     return metas.sort((a, b) => b.ts - a.ts);
 }
 
+/** Wave B — one selectable asset flattened from a media meta. */
+export interface AssetCandidate {
+    taskId: string;
+    title: string;
+    /** remote URL (handed off downstream); falls back to file path if unknown */
+    url: string;
+    /** local file for preview (may be missing if pruned) */
+    file?: string;
+    kind: 'image' | 'video' | 'audio' | 'file';
+}
+
+/** Flatten metas into per-asset selection candidates (assetUrls aligned to files). */
+export function mediaCandidates(metas: MediaMeta[]): AssetCandidate[] {
+    const out: AssetCandidate[] = [];
+    for (const m of metas) {
+        const files = m.assetFiles ?? [];
+        const urls = m.assetUrls ?? [];
+        const n = Math.max(files.length, urls.length);
+        for (let i = 0; i < n; i++) {
+            const file = files[i];
+            const url = urls[i] ?? file;
+            if (!url) { continue; }
+            out.push({
+                taskId: m.taskId,
+                title: m.title + (n > 1 ? ` #${i + 1}` : ''),
+                url,
+                file,
+                kind: assetKind(file ?? url)
+            });
+        }
+    }
+    return out;
+}
+
+/**
+ * Wave B — persist a visual-selection decision across the given metas: each
+ * meta records which of ITS asset URLs were kept vs dropped, so the gallery can
+ * badge them. `selected` is the full set of chosen URLs across all candidates.
+ */
+export function recordSelection(outputsDir: string, metas: MediaMeta[], selected: string[]): void {
+    const keep = new Set(selected);
+    for (const m of metas) {
+        const urls = m.assetUrls ?? (m.assetFiles ?? []);
+        const sel = urls.filter(u => keep.has(u));
+        const rej = urls.filter(u => !keep.has(u));
+        updateMediaMeta(outputsDir, m.taskId, { selectedUrls: sel, rejectedUrls: rej });
+    }
+}
+
 export function mediaCostSince(outputsDir: string, sinceMs: number): number {
     const cutoff = Date.now() - sinceMs;
     return readMediaMetas(outputsDir)
@@ -243,7 +301,7 @@ export function registerExternalAsset(
 export function updateMediaMeta(
     outputsDir: string,
     taskId: string,
-    patch: Partial<Pick<MediaMeta, 'projectId' | 'sceneId' | 'title'>>
+    patch: Partial<Pick<MediaMeta, 'projectId' | 'sceneId' | 'title' | 'selectedUrls' | 'rejectedUrls'>>
 ): MediaMeta | undefined {
     const file = path.join(outputsDir, `${taskId}.media.json`);
     if (!fs.existsSync(file)) { return undefined; }

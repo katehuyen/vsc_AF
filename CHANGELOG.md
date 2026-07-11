@@ -2,6 +2,13 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.24.0 — Visual selection step, wave B1 (2026-07-11)
+
+The heart of media production: pick a subset of generated candidates and continue only with those.
+
+- **Select-assets step** (`$(checklist) Select assets (visual pick)` in the workflow wizard): when the chain reaches it, every asset produced so far in the run opens in a **gallery-picker** panel. Keep some (min, or min-max); **Use selected** stays disabled until the minimum is met and blocks past the maximum. The chosen asset **URLs become the handoff** — the next media/agent step works only with them via `{prev_json.selected.0}` (one URL) or `{prev_text}` (all kept URLs, one per line). It's the remote URL that flows, not the local path, so a downstream fal.ai image→video step consumes it directly. Cancel applies the step's onFail policy; with no UI wired (headless) everything is kept so chains don't hang. Kept/dropped assets are badged `✓ kept` / `✗ dropped` in the gallery.
+- Media metas now record `assetUrls` (remote URLs aligned to downloaded files) so selections can hand off URLs.
+
 ## 2.23.0 — Media asset pipeline, wave A (2026-07-11)
 
 First wave of the media/video-production roadmap (`docs/ROADMAP.media.tr.md`): make every asset — generated or hand-downloaded — trackable by production scene.
