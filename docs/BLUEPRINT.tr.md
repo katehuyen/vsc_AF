@@ -573,6 +573,8 @@ Workflow kurarken ajan yerine **🌐 Webhook step** seçebilirsin: adım, claude
 - URL ve JSON gövde şablonlarında `{prev_text}`, `{prev_json.alan}`, `{prev_output}` ve `{secret:NAME}` çözülür.
 - Yanıt gövdesi arşive yazılır ve **sonraki adımın devri olur** — n8n'in döndürdüğü JSON'dan `{prev_json.alan}` ile okumaya devam edersin. 2xx dışı yanıt adımı failed yapar (onFail kuralların işler).
 - Örnek zincir: psikolog analiz → webhook adımı analizi n8n'e POST'lar (n8n Telegram'a iletir) → n8n yanıtı zincirde kullanılır.
+- **Auth başlığı (2.27.0):** sihirbaz opsiyonel bir başlık sorar (`Authorization: Bearer {secret:MY_TOKEN}` gibi; `{secret:}` çözülür) — kimlik isteyen API'lere bağlanmak için.
+- **Poll modu (2.27.0) — genel kuyruk istemcisi:** sihirbazda "Poll until done?" sorulunca webhook adımı **submit → poll** yapan bir kuyruk istemcisine dönüşür. İlk çağrı işi başlatır; yanıttaki bir JSON yolundan (`urlField`, ör. `urls.get`/`status_url`/`name`) poll URL'si okunur; her poll'da bir durum alanı (`statusField`, ör. `status`) verilen "done"/"fail" regex'lerine göre değerlendirilir; iş bitince final yanıt devir olur. Böylece **provider yazmadan herhangi kuyruklu API** (Gemini gibi uzun-süren operasyon API'leri, self-hosted kuyruklar) zincire girer — auth başlığı poll isteklerine de taşınır, zaman aşımı ve aralık ayarlanır.
 
 ### İçeri: /trigger Ucu
 

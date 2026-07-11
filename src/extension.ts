@@ -28,6 +28,7 @@ import { describePlan, FarmPlan, interpretCommand } from './core/commandbar';
 import { DispatchRule, dispatchText } from './core/dispatch';
 import { EmbeddingsConfig, EmbeddingsProvider, embedTexts } from './core/embeddings';
 import { SearchResult } from './core/search';
+import { WebhookPollConfig } from './core/mediaProviders';
 import { chunkTranscript, SemanticIndex } from './core/semantic';
 import {
     addDuty, CADENCES, CLAUDE_MD_SNIPPET, claudeMdReferencesDuties, deleteDuty,
@@ -2936,10 +2937,52 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         prompt: 'JSON body template — e.g. {"text": "{prev_text}"} (empty = none)',
                         ignoreFocusOut: true
                     })) ?? '');
+                    // Optional auth header (queued APIs): "Name: Value", {secret:NAME} substituted.
+                    const whHeader = await vscode.window.showInputBox({
+                        prompt: 'Auth header (optional) — "Name: Value", {secret:NAME} substituted',
+                        placeHolder: 'örn. Authorization: Bearer {secret:MY_TOKEN}', ignoreFocusOut: true
+                    });
+                    if (whHeader === undefined) { continue; }
+                    const headers: Record<string, string> = {};
+                    const hIdx = whHeader.indexOf(':');
+                    if (hIdx > 0) { headers[whHeader.slice(0, hIdx).trim()] = whHeader.slice(hIdx + 1).trim(); }
+                    // Optional poll mode: turn this into a submit→poll queue client.
+                    const whPollUrlField = await vscode.window.showInputBox({
+                        prompt: 'Poll until done? JSON path in the response to the poll URL (empty = single call)',
+                        placeHolder: 'örn. urls.get · status_url · name', ignoreFocusOut: true
+                    });
+                    if (whPollUrlField === undefined) { continue; }
+                    let poll: WebhookPollConfig | undefined;
+                    if (whPollUrlField.trim()) {
+                        const whStatusField = await vscode.window.showInputBox({
+                            prompt: 'JSON path to the status field in each poll response',
+                            value: 'status', ignoreFocusOut: true
+                        });
+                        if (whStatusField === undefined) { continue; }
+                        const whDone = await vscode.window.showInputBox({
+                            prompt: 'Status regex meaning "done"', value: 'succeeded|completed|complete|done|success', ignoreFocusOut: true
+                        });
+                        if (whDone === undefined) { continue; }
+                        const whInterval = await vscode.window.showInputBox({
+                            prompt: 'Poll interval seconds', value: '3',
+                            validateInput: v => /^\d+$/.test(v.trim()) ? undefined : 'A number', ignoreFocusOut: true
+                        });
+                        if (whInterval === undefined) { continue; }
+                        poll = {
+                            urlField: whPollUrlField.trim(),
+                            statusField: whStatusField.trim() || undefined,
+                            doneRegex: whDone.trim() || undefined,
+                            intervalSec: Number(whInterval) || 3
+                        };
+                    }
                     steps.push({
                         agentId: '', agentName: 'webhook', title: whTitle,
                         prompt: '', mode: 'headless',
-                        webhook: { url: whUrl, method: whMethod, body: whBody.trim() || undefined }
+                        webhook: {
+                            url: whUrl, method: whMethod, body: whBody.trim() || undefined,
+                            headers: Object.keys(headers).length ? headers : undefined,
+                            poll
+                        }
                     });
                     continue;
                 }

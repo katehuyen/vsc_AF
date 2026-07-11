@@ -8,7 +8,7 @@ import {
     DEFAULT_MEDIA_PRICING, downloadAsset, estimateMediaCost, extFromUrl, injectMediaFeedback,
     mediaCandidates, MediaMeta, MediaPriceRule, readMediaMetas, recordSelection
 } from './media';
-import { providerFor } from './mediaProviders';
+import { pollWebhookResult, providerFor, WebhookPollConfig } from './mediaProviders';
 import { extractJson, sanitizePrompt } from './util';
 
 export type TaskStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
@@ -97,11 +97,17 @@ export interface WorkflowStep {
     /** Cheap-model quality gate: on FAIL the step is retried with the judge's feedback. */
     verify?: { criteria: string; retries?: number };
     /**
-     * Webhook step: instead of claude, the step is an HTTP call. url/body
+     * Webhook step: instead of claude, the step is an HTTP call. url/body/header
      * templates support {prev_output} {prev_text} {prev_json.x} {secret:NAME}.
-     * The response body becomes the handoff for the next step.
+     * The response body becomes the handoff for the next step. Wave C: optional
+     * `headers` (auth for queued APIs) and `poll` (submit→poll any queued API —
+     * Gemini long-running ops etc. — without a bespoke media provider).
      */
-    webhook?: { url: string; method?: string; body?: string };
+    webhook?: {
+        url: string; method?: string; body?: string;
+        headers?: Record<string, string>;
+        poll?: WebhookPollConfig;
+    };
     /**
      * Media step (fal.ai queue): model id + JSON input template ({prev_*} and
      * {secret:} are substituted). Assets are downloaded into the outputs
@@ -1175,17 +1181,37 @@ export class TaskManager implements vscode.Disposable {
         task.outputFile = outFile;
         this.save();
 
+        // Wave C: templated custom headers (auth for queued APIs).
+        const headers: Record<string, string> = {};
+        if (body) { headers['Content-Type'] = 'application/json'; }
+        for (const [k, v] of Object.entries(hook.headers ?? {})) { headers[k] = resolve(v); }
+
         const started = Date.now();
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 120_000);
         fetch(url, {
             method,
-            headers: body ? { 'Content-Type': 'application/json' } : undefined,
+            headers,
             body: method === 'GET' ? undefined : body,
             signal: controller.signal
         }).then(async res => {
             clearTimeout(timer);
             const text = (await res.text()).slice(0, 100_000);
+            // Poll mode: the initial call only submits; poll until the job is done.
+            if (hook.poll && res.ok) {
+                let submitJson: unknown;
+                try { submitJson = JSON.parse(text); } catch { submitJson = text; }
+                const result = await pollWebhookResult(submitJson, headers, hook.poll);
+                const finalText = typeof result.response === 'string'
+                    ? result.response
+                    : JSON.stringify(result.response ?? {}, null, 2);
+                fs.writeFileSync(outFile,
+                    `# ${task.title}\n\n- Webhook (poll): ${method} ${hook.url}\n- Submit: HTTP ${res.status}\n` +
+                    `- Started: ${new Date(started).toLocaleString()}\n\n---\n\n${finalText.slice(0, 100_000)}\n\n---\n` +
+                    `Finished: ${new Date().toLocaleString()} · ${result.ok ? 'OK' : 'FAILED — ' + (result.error ?? '')}\n`, 'utf8');
+                this.finish(task, result.ok ? 'done' : 'failed');
+                return;
+            }
             fs.writeFileSync(outFile,
                 `# ${task.title}\n\n- Webhook: ${method} ${hook.url}\n- Status: ${res.status}\n` +
                 `- Started: ${new Date(started).toLocaleString()}\n\n---\n\n${text}\n\n---\n` +

@@ -2,6 +2,10 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.27.0 — Webhook poll mode (generic queue client), wave C (2026-07-11)
+
+- **Webhook step: auth headers + poll mode**. The webhook step can now carry an auth header (`Authorization: Bearer {secret:TOKEN}`, `{secret:}` substituted) and, more importantly, a **poll mode** that turns it into a submit→poll queue client for *any* queued API — no bespoke media provider needed. The wizard asks for a JSON path to the poll URL in the submit response (e.g. `urls.get`, `status_url`), a status field, and a "done" regex; the step then polls until the job finishes and hands off the final response. This covers Gemini's long-running media operations, self-hosted queues, and anything else with a submit-then-poll shape. Auth headers are carried into the poll requests; interval and timeout are configurable. Completes wave C of the media roadmap.
+
 ## 2.26.0 — Media provider abstraction + Replicate, wave C (2026-07-11)
 
 - **Media providers**: the media step no longer hard-codes fal.ai. The model id now routes to a provider — unprefixed ids go to fal.ai exactly as before (every existing workflow is unchanged), and `replicate:owner/name` (or `replicate:owner/name:version`) goes to **Replicate's prediction API**. Downloading, the asset archive, gallery, cost, selection and vision QA all work identically regardless of provider. Store your Replicate token as the `REPLICATE_API_TOKEN` secret (configurable via `agentFarm.replicateAuthSecret`). New providers plug in behind one interface (`run(model, input, auth)`), so fal's behaviour is preserved bit-for-bit.
