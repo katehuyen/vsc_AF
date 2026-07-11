@@ -52,6 +52,10 @@ import { OwnerLease } from './core/owner';
 import { buildFarmStatus } from './core/farmstatus';
 import { matchTaskSession } from './core/taskcost';
 import {
+    buildDelegationPrompt, delegationTitle, DismissEntry, filterDismissed,
+    FIX_COMMANDS, insightKey, pickAutoDelegates
+} from './core/insightops';
+import {
     addMcpServer, copyMcpServerTo, readServerRawDef, removeMcpServer, setServerDisabled, updateMcpServer
 } from './core/mcp';
 import { addSkill, copySkillTo, moveSkillScope, removeSkill } from './core/skills';
@@ -245,9 +249,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             .map(p => ({ agentId: p.agentId, agentName: p.agentName, reason: p.reason, ts: p.ts }))
     });
 
+    // Insights lifecycle: a dismissed insight stays hidden (for a day, a week
+    // or forever) everywhere insights are consumed — tree, dashboard, digest.
+    const DISMISS_KEY = 'agentfarm.dismissedInsights';
+    const DELEGATED_KEY = 'agentfarm.insightDelegated';
+    let dismissedInsightCount = 0;
+    const applyInsightDismiss = (list: Insight[]): Insight[] => {
+        const dismissed = context.globalState.get<Record<string, DismissEntry>>(DISMISS_KEY, {});
+        const res = filterDismissed(list, dismissed, Date.now());
+        if (res.expiredKeys.length) {
+            for (const k of res.expiredKeys) { delete dismissed[k]; }
+            void context.globalState.update(DISMISS_KEY, dismissed);
+        }
+        dismissedInsightCount = res.dismissedCount;
+        return res.visible;
+    };
+
     const refreshAgents = () => {
         agents = discoverAgents(cfg().get<string[]>('agentRoots', []));
-        insights = buildInsights(agents, index, healthConfig());
+        insights = applyInsightDismiss(buildInsights(agents, index, healthConfig()));
         // I1: snapshot changed CLAUDE.md files into the version history.
         for (const a of agents) {
             if (!a.claudeMdPath) { continue; }
@@ -473,6 +493,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         getAgents: () => agents,
         index,
         getInsights: () => insights,
+        getDismissedInsightCount: () => dismissedInsightCount,
         live
     };
 
@@ -772,7 +793,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
 
     index.onDidUpdate(() => {
-        insights = buildInsights(agents, index, healthConfig());
+        insights = applyInsightDismiss(buildInsights(agents, index, healthConfig()));
         notifyBudgets();
         agentsTree.refresh();
         sessionsTree.refresh();
@@ -833,8 +854,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 userTurns: s.userTurns
             };
         });
+    // Opt-in auto-delegation: chosen categories become headless tasks for the
+    // insight's OWN agent as soon as they appear — with a 24h per-problem
+    // cooldown so a lingering warning doesn't spawn a task an hour. Off by
+    // default (it spends agent time/money); runner window only (B11).
+    const autoDelegateInsights = () => {
+        if (!taskRunner) { return; }
+        const cats = cfg().get<string[]>('insightAutoDelegate', []);
+        if (!cats.length) { return; }
+        const last = context.globalState.get<Record<string, number>>(DELEGATED_KEY, {});
+        const picks = pickAutoDelegates(insights, cats, last, Date.now())
+            .filter(i => i.agentId && agents.some(a => a.id === i.agentId));
+        if (!picks.length) { return; }
+        for (const ins of picks) {
+            const agent = agents.find(a => a.id === ins.agentId)!;
+            const task = taskManager.addTask(agent, delegationTitle([ins]), buildDelegationPrompt([ins]), 'headless');
+            taskManager.startTask(task);
+            last[insightKey(ins)] = Date.now();
+        }
+        void context.globalState.update(DELEGATED_KEY, last);
+        void vscode.window.showInformationMessage(
+            `Agent Farm: ${picks.length} insight(s) auto-delegated to their agents (agentFarm.insightAutoDelegate).`,
+            'Show Tasks'
+        ).then(c => { if (c === 'Show Tasks') { void vscode.commands.executeCommand('agentfarm.tasks.focus'); } });
+    };
+
     const refreshInsights = () => {
-        insights = buildInsights(agents, index, healthConfig());
+        insights = applyInsightDismiss(buildInsights(agents, index, healthConfig()));
+        autoDelegateInsights();
         insightsTree.refresh();
         DashboardPanel.refreshIfOpen();
     };
@@ -1507,6 +1554,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return pick?.agent;
     };
 
+    // Palette entry point for the insight commands (tree rows pass the object).
+    const pickInsight = async (placeHolder: string, fixableOnly = false): Promise<Insight | undefined> => {
+        const list = insights.filter(i => !fixableOnly || FIX_COMMANDS[i.category]);
+        if (!list.length) {
+            void vscode.window.showInformationMessage('Agent Farm: no matching insights.');
+            return undefined;
+        }
+        const sevIcon = (s: string) => s === 'error' ? '$(error)' : s === 'warning' ? '$(warning)' : '$(info)';
+        const pick = await vscode.window.showQuickPick(list.map(i => ({
+            label: `${sevIcon(i.severity)} ${i.message.slice(0, 80)}`,
+            description: `${i.agentName} · ${i.category}`,
+            ins: i
+        })), { placeHolder, ignoreFocusOut: true });
+        return pick?.ins;
+    };
+
     // A duty only works if the agent's CLAUDE.md actually points at DUTIES.md.
     const ensureDutiesReference = async (agent: AgentInfo) => {
         if (!agent.claudeMdPath) { return; }
@@ -1660,6 +1723,110 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 showCreated(`workflow "${w.title}" (${a.agent.name} → ${b.agent.name})`,
                     () => { taskManager.runWorkflow(w); });
             }
+        }),
+
+        // ---------- Insights lifecycle: dismiss / fix / delegate / restore ----------
+
+        vscode.commands.registerCommand('agentfarm.dismissInsight', async (ins?: Insight) => {
+            const target = ins ?? await pickInsight('Dismiss which insight?');
+            if (!target) { return; }
+            const choice = await vscode.window.showQuickPick([
+                { label: '$(clock) 1 day', ms: 24 * 3600 * 1000 },
+                { label: '$(calendar) 7 days', ms: 7 * 24 * 3600 * 1000 },
+                { label: '$(close) Forever', ms: 0 }
+            ], { placeHolder: `Hide "${target.message.slice(0, 70)}" for…`, ignoreFocusOut: true });
+            if (!choice) { return; }
+            const dismissed = context.globalState.get<Record<string, DismissEntry>>(DISMISS_KEY, {});
+            dismissed[insightKey(target)] = {
+                until: choice.ms === 0 ? 0 : Date.now() + choice.ms,
+                label: `[${target.agentName} · ${target.category}] ${target.message.slice(0, 80)}`
+            };
+            await context.globalState.update(DISMISS_KEY, dismissed);
+            refreshInsights();
+        }),
+
+        vscode.commands.registerCommand('agentfarm.fixInsight', async (ins?: Insight) => {
+            const target = ins ?? await pickInsight('Fix which insight?', true);
+            if (!target) { return; }
+            const fix = FIX_COMMANDS[target.category];
+            if (!fix) {
+                void vscode.window.showInformationMessage(
+                    'Agent Farm: no mechanical fix for this insight — use "Delegate to Agent" instead.');
+                return;
+            }
+            void vscode.commands.executeCommand(fix.command,
+                fix.agentScoped && target.agentId ? { agentId: target.agentId } : undefined);
+        }),
+
+        vscode.commands.registerCommand('agentfarm.delegateInsight', async (ins?: Insight) => {
+            let selected: Insight[];
+            if (ins) {
+                selected = [ins];
+            } else {
+                if (!insights.length) {
+                    void vscode.window.showInformationMessage('Agent Farm: no insights to delegate.');
+                    return;
+                }
+                const sevIcon = (s: string) => s === 'error' ? '$(error)' : s === 'warning' ? '$(warning)' : '$(info)';
+                const picks = await vscode.window.showQuickPick(insights.map(i => ({
+                    label: `${sevIcon(i.severity)} ${i.message.slice(0, 80)}`,
+                    description: `${i.agentName} · ${i.category}`,
+                    picked: i.severity !== 'info',
+                    ins: i
+                })), {
+                    canPickMany: true, ignoreFocusOut: true,
+                    placeHolder: 'Delegate which insights? One headless task per agent; warnings/errors preselected'
+                });
+                if (!picks?.length) { return; }
+                selected = picks.map(p => p.ins);
+            }
+            // Each insight goes to its OWN agent; fleet-level ones (no agent)
+            // are pooled onto an agent the user picks once.
+            const byAgent = new Map<string, Insight[]>();
+            const fleet: Insight[] = [];
+            for (const i of selected) {
+                if (i.agentId && agents.some(a => a.id === i.agentId)) {
+                    (byAgent.get(i.agentId) ?? byAgent.set(i.agentId, []).get(i.agentId)!).push(i);
+                } else { fleet.push(i); }
+            }
+            if (fleet.length) {
+                const fa = await resolveAgent(undefined);
+                if (!fa) { return; }
+                (byAgent.get(fa.id) ?? byAgent.set(fa.id, []).get(fa.id)!).push(...fleet);
+            }
+            const summary = [...byAgent.entries()]
+                .map(([id, list]) => `${agents.find(a => a.id === id)!.name}: ${list.length}`).join(' · ');
+            const go = await vscode.window.showInformationMessage(
+                `Delegate ${selected.length} insight(s) as headless task(s)? → ${summary}`,
+                { modal: true }, 'Delegate');
+            if (go !== 'Delegate') { return; }
+            for (const [id, list] of byAgent) {
+                const agent = agents.find(a => a.id === id)!;
+                const task = taskManager.addTask(agent, delegationTitle(list), buildDelegationPrompt(list), 'headless');
+                taskManager.startTask(task);
+            }
+            void vscode.window.showInformationMessage(
+                `Agent Farm: ${byAgent.size} task(s) queued — the agents will investigate and report.`, 'Show Tasks'
+            ).then(c => { if (c === 'Show Tasks') { void vscode.commands.executeCommand('agentfarm.tasks.focus'); } });
+        }),
+
+        vscode.commands.registerCommand('agentfarm.restoreInsights', async () => {
+            const dismissed = context.globalState.get<Record<string, DismissEntry>>(DISMISS_KEY, {});
+            const entries = Object.entries(dismissed);
+            if (!entries.length) {
+                void vscode.window.showInformationMessage('Agent Farm: no dismissed insights.');
+                return;
+            }
+            const picks = await vscode.window.showQuickPick(entries.map(([key, e]) => ({
+                label: e.label,
+                description: e.until === 0 ? 'hidden forever' : `hidden until ${new Date(e.until).toLocaleString()}`,
+                picked: true,
+                key
+            })), { canPickMany: true, placeHolder: 'Restore which dismissed insights?', ignoreFocusOut: true });
+            if (!picks?.length) { return; }
+            for (const p of picks) { delete dismissed[p.key]; }
+            await context.globalState.update(DISMISS_KEY, dismissed);
+            refreshInsights();
         }),
 
         // Tree elements differ per view: Agents wraps the session in {kind:'session', session},

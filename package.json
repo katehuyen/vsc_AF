@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.40.0",
+  "version": "2.41.0",
   "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
@@ -72,6 +72,10 @@
       {
         "view": "agentfarm.tasks",
         "contents": "Queue work for your agents and schedule recurring runs.\n[Set Up a Working Example](command:agentfarm.setupExample)\nOne click creates a real inbox trigger, morning schedule or two-agent chain — edit or remove it anytime.\n[Add Task](command:agentfarm.addTask)\n[Add Scheduled Task](command:agentfarm.addSchedule)\nTasks open a terminal in the agent's folder and run claude with your prompt.\n[Open Guide](command:agentfarm.openGuide)"
+      },
+      {
+        "view": "agentfarm.insights",
+        "contents": "No health findings right now ✓\nWhen findings appear, each row offers inline actions: 🛠 Fix (mechanical categories), 🚀 Delegate to an agent, ✕ Dismiss for a day/week/forever.\n[Restore Dismissed Insights…](command:agentfarm.restoreInsights)"
       }
     ],
     "walkthroughs": [
@@ -150,6 +154,30 @@
         "title": "Set Up Example Automation…",
         "category": "Agent Farm",
         "icon": "$(rocket)"
+      },
+      {
+        "command": "agentfarm.delegateInsight",
+        "title": "Delegate Insight(s) to Agent…",
+        "category": "Agent Farm",
+        "icon": "$(rocket)"
+      },
+      {
+        "command": "agentfarm.fixInsight",
+        "title": "Fix Insight",
+        "category": "Agent Farm",
+        "icon": "$(tools)"
+      },
+      {
+        "command": "agentfarm.dismissInsight",
+        "title": "Dismiss Insight…",
+        "category": "Agent Farm",
+        "icon": "$(close)"
+      },
+      {
+        "command": "agentfarm.restoreInsights",
+        "title": "Restore Dismissed Insights…",
+        "category": "Agent Farm",
+        "icon": "$(eye)"
       },
       {
         "command": "agentfarm.lapReset",
@@ -958,6 +986,16 @@
           "group": "navigation@1"
         },
         {
+          "command": "agentfarm.delegateInsight",
+          "when": "view == agentfarm.insights",
+          "group": "navigation@2"
+        },
+        {
+          "command": "agentfarm.restoreInsights",
+          "when": "view == agentfarm.insights",
+          "group": "overflow@0"
+        },
+        {
           "command": "agentfarm.sampleQualityNow",
           "when": "view == agentfarm.insights",
           "group": "overflow@1"
@@ -1064,6 +1102,21 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "agentfarm.fixInsight",
+          "when": "view == agentfarm.insights && viewItem == insight-fixable",
+          "group": "inline@1"
+        },
+        {
+          "command": "agentfarm.delegateInsight",
+          "when": "view == agentfarm.insights && viewItem =~ /^insight(-fixable|-suggestion)?$/",
+          "group": "inline@2"
+        },
+        {
+          "command": "agentfarm.dismissInsight",
+          "when": "view == agentfarm.insights && viewItem =~ /^insight(-fixable|-suggestion)?$/",
+          "group": "inline@3"
+        },
         {
           "command": "agentfarm.resumeSession",
           "when": "view =~ /^agentfarm\\.(agents|sessions)$/ && viewItem == session-resumable",
@@ -1943,6 +1996,14 @@
           ],
           "default": "off",
           "description": "Synthetic pulse checks: a fixed cheap prompt per agent + cheap judge verifies the answer matches the agent's identity (uses judgeArgs; small API cost per agent). Manual: 'Run Pulse Check Now'."
+        },
+        "agentFarm.insightAutoDelegate": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Insight categories that are **automatically delegated** to the insight's own agent as a headless task when they appear (warnings/errors only; 24h cooldown per problem; only the task-runner window queues them). Empty = off. Example: `[\"memory-index\", \"duties\", \"guardrail\"]`. Categories are shown next to each row in the Insights view. This spends agent time — enable deliberately."
         },
         "agentFarm.qualitySample": {
           "type": "string",

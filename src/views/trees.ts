@@ -4,6 +4,7 @@ import { AgentInfo, FileMeta } from '../core/agents';
 import { Duty, watchStatus } from '../core/duties';
 import { indexedMemoryNames, memoryLastUsed, memoryUsage, readMemoryFrontmatter } from '../core/memusage';
 import { Insight } from '../core/health';
+import { FIX_COMMANDS } from '../core/insightops';
 import {
     McpServerDef, mcpLastUsed, mcpToolBreakdown, mcpUsage, readAgentMcpServers, readDisabledServers
 } from '../core/mcp';
@@ -13,11 +14,16 @@ import { totalTokens } from '../core/pricing';
 import { SessionIndex, SessionInfo } from '../core/sessions';
 import { fmtTokens, fmtUSD, relTime, dayKey, safeReadFile } from '../core/util';
 
+/** Findings whose evidence is the agent's own cost view, not a guide section. */
+const COST_CATEGORIES = new Set(['cost-anomaly', 'trend', 'budget', 'error-rate']);
+
 export interface FarmState {
     getAgents(): AgentInfo[];
     index: SessionIndex;
     getInsights(): Insight[];
     live?: LiveMonitor;
+    /** Dismissed-insight count — the Insights tree shows an honest reminder row. */
+    getDismissedInsightCount?(): number;
 }
 
 const LIVE_STATUS_LABEL: Record<LiveStatus, string> = {
@@ -504,6 +510,15 @@ export class InsightsTreeProvider implements vscode.TreeDataProvider<Insight> {
     refresh(): void { this.emitter.fire(); }
 
     getTreeItem(ins: Insight): vscode.TreeItem {
+        // Honest reminder row: dismissed findings are hidden, not gone.
+        if (ins.category === '__dismissed__') {
+            const item = new vscode.TreeItem(ins.message, vscode.TreeItemCollapsibleState.None);
+            item.iconPath = new vscode.ThemeIcon('eye-closed');
+            item.tooltip = 'Dismissed insights stay hidden for their chosen duration. Click to review and restore.';
+            item.contextValue = 'insight-dismissed-note';
+            item.command = { command: 'agentfarm.restoreInsights', title: 'Restore Dismissed Insights' };
+            return item;
+        }
         const item = new vscode.TreeItem(ins.message, vscode.TreeItemCollapsibleState.None);
         const iconByseverity = { error: 'error', warning: 'warning', info: 'info' } as const;
         const colorBySeverity = {
@@ -516,7 +531,10 @@ export class InsightsTreeProvider implements vscode.TreeDataProvider<Insight> {
             new vscode.ThemeColor(colorBySeverity[ins.severity])
         );
         item.description = `${ins.agentName} • ${ins.category}`;
-        item.tooltip = ins.message;
+        item.tooltip = `${ins.message}\n\nActions (hover / right-click): `
+            + `${FIX_COMMANDS[ins.category] ? 'Fix · ' : ''}Delegate to Agent · Dismiss`;
+        item.contextValue = ins.suggestionId ? 'insight-suggestion'
+            : FIX_COMMANDS[ins.category] ? 'insight-fixable' : 'insight';
         if (ins.suggestionId) {
             item.iconPath = new vscode.ThemeIcon('lightbulb', new vscode.ThemeColor('charts.yellow'));
             item.command = {
@@ -526,6 +544,14 @@ export class InsightsTreeProvider implements vscode.TreeDataProvider<Insight> {
             };
         } else if (ins.filePath) {
             item.command = openFileCommand(ins.filePath);
+        } else if (ins.agentId && COST_CATEGORIES.has(ins.category)) {
+            // Cost/trend findings: the evidence lives in the agent's own cost
+            // view, not in a guide paragraph — click lands on the numbers.
+            item.command = {
+                command: 'agentfarm.openAgentDetail',
+                title: 'Open Agent Detail',
+                arguments: [{ agentId: ins.agentId }]
+            };
         } else {
             item.command = {
                 command: 'agentfarm.openGuide',
@@ -538,7 +564,16 @@ export class InsightsTreeProvider implements vscode.TreeDataProvider<Insight> {
 
     getChildren(node?: Insight): Insight[] {
         if (node) { return []; }
-        return this.state.getInsights();
+        const list = [...this.state.getInsights()];
+        const hidden = this.state.getDismissedInsightCount?.() ?? 0;
+        if (hidden > 0) {
+            list.push({
+                severity: 'info', agentName: '', category: '__dismissed__',
+                message: `${hidden} dismissed insight(s) hidden — click to restore`,
+                guideAnchor: ''
+            } as Insight);
+        }
+        return list;
     }
 }
 

@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.41.0 — Insights become actionable: fix, delegate, dismiss, auto-delegate (2026-07-12)
+
+Insights used to be a read-only list — click opened a guide section and rows (like a cost anomaly) lingered forever. Every finding now has a closing path:
+
+- **🛠 Fix (inline)**: categories with existing mechanical machinery get a one-click fix — memory-index repair, duplicate-memory merge, stale/large-memory distillation, antigravity sync, plaintext-key → vault, pulse re-run.
+- **🚀 Delegate to Agent**: one click turns a finding (or a multi-selected batch via the view-title button) into a headless task with a well-formed work order — findings numbered, "read first, fix only what is safe, report what you did / couldn't do" rules included. Each finding goes to **its own agent** (one task per agent); fleet-level findings ask for an agent once.
+- **✕ Dismiss**: hide a finding for a day / a week / forever. Hidden ones are counted honestly ("n dismissed insight(s) hidden" row → restore picker; also `Restore Dismissed Insights…`). Identity is anchored on agent+category+file, so a cost anomaly stays dismissed even when its numbers change; dismissal filters everywhere (tree, dashboard counts).
+- **Smarter clicks**: cost-anomaly / trend / budget / error-rate findings now open the agent's own cost view instead of a guide paragraph — the evidence is there.
+- **Opt-in auto-delegation** (`agentFarm.insightAutoDelegate`, default off): listed categories are delegated to their own agent automatically when they appear — warnings/errors only, max one task per problem per 24h, runner-window only, each delegation announced.
+
 ## 2.40.0 — Task token costs + jump-to-match + gallery feedback (2026-07-11)
 
 - **Finished headless tasks now show what they cost.** The task's `claude -p` transcript is matched by lifespan in the session index and its priced token cost lands on the task row (`done • $0.12`), in the tooltip (with the source transcript) and in the daily digest's outcome line. Honesty rule: if a second session ran in the same agent folder at the same time, no figure is guessed — the task simply stays uncosted. Terminal-mode tasks are never matched.

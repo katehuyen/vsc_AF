@@ -753,6 +753,18 @@ VS Code açıkken çalışır; gün içinde ilk açılışta o günün raporu ü
 
 Agent Farm ajanlarını sekiz kuralla denetler. Amaç: **daha ucuz, daha tutarlı, daha az unutan ajanlar.**
 
+### Insight Yaşam Döngüsü (2.41.0)
+
+Insights artık salt-okunur bir liste değil — her bulgunun bir **kapanış yolu** var. Satırın üzerine gelince (veya sağ tık) üç eylem çıkar:
+
+- **🛠 Fix** — mekanik düzeltmesi zaten var olan kategorilerde tek tık ilgili akışı başlatır: `memory-index` → indeks onarımı, `duplicate-memory` → birleştirme taslağı, `stale-memory`/`large-memory` → distilasyon, `antigravity` → senkron, `secrets` → anahtarı kasaya taşı, `pulse` → nabzı yeniden koş. Yalnız düzeltilebilir kategorilerde görünür.
+- **🚀 Delegate to Agent** — bulguyu (ya da görünüm başlığındaki düğmeyle **birden çok bulguyu**) seçilen ajana headless görev olarak havale eder. İş emri otomatik yazılır: bulgular numaralı listelenir, "önce oku, kök nedeni anla, güvenle düzeltebildiğini düzelt, emin olmadığını YAPMA — raporla" kuralları eklidir. Çoklu havalede her bulgu **kendi ajanına** gider (ajanı olmayan filo-geneli bulgular için bir kez ajan seçersin); ajan başına tek görev açılır. Görev bitince çıktı arşivinde ne düzeltildiğinin raporu durur.
+- **✕ Dismiss** — "olmuş bir olay" niteliğindeki bulgular (maliyet anomalisi gibi) sonsuza dek listede kalmasın: 1 gün / 7 gün / kalıcı gizle. Gizlenenler dürüstçe sayılır — listenin altında "n dismissed insight(s) hidden" satırı belirir; tıklayınca geri alma seçicisi açılır (görünüm menüsünde **Restore Dismissed Insights…**). Kimlik mesaj metnine değil ajan+kategori+dosyaya bağlıdır: "4.2×" yarın "3.9×" olsa da aynı bulgu gizli kalır.
+
+**Tık davranışı da akıllandı:** `cost-anomaly` / `trend` / `budget` / `error-rate` bulgularına tıklamak artık kılavuz paragrafı değil, **ajanın kendi maliyet görünümünü** (Ajan Detayı) açar — kanıt oradadır.
+
+**Otomatik havale (opsiyonel, varsayılan kapalı):** `agentFarm.insightAutoDelegate` ayarına kategori adları yaz (örn. `["memory-index", "duties"]`) — o kategorilerin warning/error bulguları belirir belirmez kendi ajanına headless görev olarak düşer. Aynı soruna 24 saatte en fazla bir görev açılır (bekleyen uyarı saat başı görev doğurmaz); görevleri yalnız görev-yürütücü pencere kuyruğa alır ve her otomatik havale bildirimle haber verilir. Ajan zamanı/parası harcadığı için bilinçli açılır.
+
 ### Sağlık: Bağlam Yükü
 
 `CLAUDE.md` + `memory/MEMORY.md` + `.agents/AGENTS.md` her oturum başında otomatik olarak bağlama yüklenir — buna **sabit bağlam yükü** diyoruz ve her oturumda yeniden ödenir. `agentFarm.contextBudgetTokens` bütçesini (varsayılan 8.000 token) aşan ajanlar uyarı alır.
