@@ -132,7 +132,7 @@
     function lanesSvg(lanes, now, winMs) {
         const names = [...lanes.keys()];
         if (!names.length) { return '<p class="muted">No lanes yet.</p>'; }
-        const W = 900, labelW = 168, rowH = 40, padT = 22;
+        const W = 900, labelW = 100, rowH = 46, padT = 22;
         const H = padT + names.length * rowH + 10;
         const from = now - winMs;
         const x = ts => labelW + ((ts - from) / winMs) * (W - labelW - 8);
@@ -149,18 +149,18 @@
         names.forEach((name, i) => {
             const y = padT + i * rowH;
             const lane = lanes.get(name);
-            // Per-agent YOUR-TURN toggles in the left gutter (♪ ◎ ▣ ▭).
-            const ty = y + rowH / 2 - 8;
+            // Gutter: agent name on top, the per-agent YOUR-TURN toggles (♪ ◎ ▣ ▭)
+            // stacked on their own row beneath it — the lane is tall enough for both.
+            out += `<text x="4" y="${y + 14}" font-size="11" font-weight="600" text-anchor="start" fill="currentColor" opacity="0.85">${C.esc(name.length > 14 ? name.slice(0, 13) + '…' : name)}</text>`;
+            const ty = y + 23;
             TURN_ACTIONS.forEach((a, ai) => {
-                const gx = 4 + ai * 19;
+                const gx = 4 + ai * 18;
                 const on = actionsFor(name).indexOf(a.id) !== -1;
                 out += `<g class="af-toggle" data-agent="${C.esc(name)}" data-action="${a.id}" style="cursor:pointer">` +
-                    `<rect x="${gx}" y="${ty}" width="16" height="16" rx="3" fill="${on ? 'var(--vscode-charts-blue, #3794ff)' : 'transparent'}" stroke="currentColor" stroke-opacity="${on ? '0' : '0.45'}" opacity="${on ? '0.95' : '1'}"/>` +
-                    `<text x="${gx + 8}" y="${ty + 12}" font-size="11" text-anchor="middle" fill="${on ? 'var(--vscode-editor-background, #fff)' : 'currentColor'}" opacity="${on ? '1' : '0.55'}" style="pointer-events:none">${a.glyph}</text>` +
+                    `<rect x="${gx}" y="${ty}" width="15" height="15" rx="3" fill="${on ? 'var(--vscode-charts-blue, #3794ff)' : 'transparent'}" stroke="currentColor" stroke-opacity="${on ? '0' : '0.45'}" opacity="${on ? '0.95' : '1'}"/>` +
+                    `<text x="${gx + 7.5}" y="${ty + 11.5}" font-size="10.5" text-anchor="middle" fill="${on ? 'var(--vscode-editor-background, #fff)' : 'currentColor'}" opacity="${on ? '1' : '0.55'}" style="pointer-events:none">${a.glyph}</text>` +
                     `<title>${C.esc(a.label)} — ${C.esc(name)} sıraya geçince</title></g>`;
             });
-            const labelX = 4 + TURN_ACTIONS.length * 19 + 4;
-            out += `<text x="${labelX}" y="${y + rowH / 2 + 3}" font-size="11" font-weight="600" text-anchor="start" fill="currentColor" opacity="0.85">${C.esc(name.length > 11 ? name.slice(0, 10) + '…' : name)}</text>`;
             out += `<line x1="${labelW}" y1="${y + rowH / 2}" x2="${W - 8}" y2="${y + rowH / 2}" stroke="currentColor" opacity="0.1"/>`;
             for (const seg of lane.segments) {
                 const x1 = x(seg.start), x2 = Math.max(x(seg.end), x1 + 2);
