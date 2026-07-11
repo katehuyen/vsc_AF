@@ -390,6 +390,44 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     relayTailer.start();
     context.subscriptions.push(relayTailer);
 
+    // ---- E2a: external-CLI session lifecycle (Start Session With…) ----
+    // Sessions opened with a non-claude CLI have no hooks, so the only reliable
+    // signal is the terminal itself: open → SessionStart, close → SessionEnd.
+    // Namespaced `cli:` session ids keep them apart from claude's UUIDs.
+    const cliTerminals = new Map<vscode.Terminal, { sessionId: string; cwd?: string }>();
+    context.subscriptions.push(vscode.window.onDidCloseTerminal(t => {
+        const info = cliTerminals.get(t);
+        if (!info) { return; }
+        cliTerminals.delete(t);
+        live.handle({
+            session_id: info.sessionId, cwd: info.cwd,
+            hook_event_name: 'SessionEnd', reason: 'terminal closed'
+        });
+    }));
+    // After a reload the terminal→session map is gone while rebuildSessions()
+    // revives `cli:` lanes from the store. Re-attach each one to its restored
+    // terminal by name, or close it out honestly — otherwise it would linger
+    // as a ghost row until the session TTL. Delayed: restored terminals appear
+    // shortly after activation.
+    const cliRebindTimer = setTimeout(() => {
+        for (const s of live.sessions()) {
+            if (!s.source || s.status === 'ended') { continue; }
+            const bound = [...cliTerminals.values()].some(i => i.sessionId === s.sessionId);
+            if (bound) { continue; }
+            const term = vscode.window.terminals.find(t =>
+                t.name === `${s.source}: ${s.agentName}` && !cliTerminals.has(t));
+            if (term) {
+                cliTerminals.set(term, { sessionId: s.sessionId, cwd: s.cwd });
+            } else {
+                live.handle({
+                    session_id: s.sessionId, cwd: s.cwd,
+                    hook_event_name: 'SessionEnd', reason: 'window reloaded'
+                });
+            }
+        }
+    }, 5000);
+    context.subscriptions.push({ dispose: () => clearTimeout(cliRebindTimer) });
+
     const state = {
         getAgents: () => agents,
         index,
@@ -1273,14 +1311,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     /** Claude session terminals (start/continue/resume) honor agentFarm.externalTerminal —
      *  long TUI sessions can escape xterm.js rendering glitches. Farm tasks stay integrated
      *  (their lifecycle is tracked via terminal close events). */
-    const launchClaudeTerminal = (name: string, cwd: string | undefined, command: string) => {
+    // Returns the created terminal (undefined in external-terminal mode) so the
+    // E2a lifecycle watcher can track external-CLI sessions; existing callers
+    // ignore the return value, so claude behaviour is unchanged.
+    const launchClaudeTerminal = (name: string, cwd: string | undefined, command: string): vscode.Terminal | undefined => {
         if (cfg().get<boolean>('externalTerminal', false)) {
             openExternalTerminal(cwd, command);
-            return;
+            return undefined;
         }
         const terminal = vscode.window.createTerminal({ name, cwd });
         terminal.show();
         terminal.sendText(command, true);
+        return terminal;
     };
 
     const resolveAgent = async (arg: AgentArg): Promise<AgentInfo | undefined> => {
@@ -1588,7 +1630,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const command = pick.profile
                 ? (buildCliCommand(pick.profile.interactive ?? pick.profile.headless, '', '') || pick.profile.name)
                 : 'claude';
-            launchClaudeTerminal(`${pick.id}: ${agent.name}`, agent.dir, command);
+            const term = launchClaudeTerminal(`${pick.id}: ${agent.name}`, agent.dir, command);
+            // E2a: claude sessions report themselves via hooks; external CLIs
+            // don't, so track the terminal lifecycle instead. In external-terminal
+            // mode there is no terminal object — lifecycle honestly untracked.
+            if (pick.profile && term) {
+                const sessionId = `cli:${pick.id}:${agent.id}:${Date.now()}`;
+                cliTerminals.set(term, { sessionId, cwd: agent.dir });
+                live.handle({ session_id: sessionId, cwd: agent.dir, hook_event_name: 'SessionStart', source: pick.id });
+            }
             void context.globalState.update(AGENT_CLI_KEY, { ...lastByAgent, [agent.id]: pick.id });
         }),
 

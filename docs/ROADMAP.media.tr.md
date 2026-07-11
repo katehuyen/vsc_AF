@@ -146,13 +146,14 @@ Token bütçe uyarıları var; medya maliyeti gösteriliyor ama **eşik aşımı
 - ◦ UXP paneli: bilinçli ERTELENDİ (maliyetli; XML/EDL yolu doyduktan sonra ayrı karar).
 - *Test: 28/28 (framesToTc/pathToFileUrl + pickSequenceAssets selected/rejected/empty + buildFcpXml yapı/escape + buildEdl + detectSceneId + ingest auto-scene). Gerçekleşen dokunma riski: düşük — tamamen ekleme; ingest'e opsiyonel callback (geriye uyumlu).*
 
-### ◐ Dalga E — Çoklu-CLI oturumları (E1 TAMAM 2.29.0; E2+E3 kaldı) (ayrıntı §5)
+### ◐ Dalga E — Çoklu-CLI oturumları (E1 2.29.0 + E2a 2.30.0 TAMAM; E2b+E3 kaldı) (ayrıntı §5)
 **Hedef:** Kullanıcının seçtiği başka bir CLI/modelle sezon açıp aynı panelden izleyebilmesi — **claude yoluna dokunmadan**.
 - ✅ **E1 — `Start Session With…`** (2.29.0): ajan sağ tık + komut paleti; CLI profili QuickPick (Claude Code varsayılan + `cliProfiles`), profilin `interactive` komutuyla ajan klasöründe terminal oturumu açar. Ajan başına son-kullanılan CLI globalState'te (`agentfarm.agentCli`) hatırlanır, listede üste gelir. `externalTerminal` ayarına uyar. **Claude yolu (startSession/continueSession) DOKUNULMADI — ayrı kardeş komut.** *Test: 7/7 (buildCliCommand boş-prompt session davranışı + last-used sort).*
-- ☐ **E2 — Canlı izleme adaptörleri:** CLI'ın hook/notify imkânı varsa mevcut listener'a POST eden mini feeder (RelayTailer deseni); yoksa yalnız yaşam-döngüsü durumu. KODLANMADI.
+- ✅ **E2a — Terminal yaşam döngüsü** (2.30.0): Start Session With… ile açılan claude-dışı oturum timeline'da görünür — terminal açılınca `idle` kulvar satırı, kapanınca `ended`. Oturum kimliği `cli:<cliId>:...` namespace'li (claude UUID'leriyle çakışmaz); kartta CLI rozeti + "external CLI — lifecycle only" ibaresi. Reload sonrası satır geri yüklenen terminale adıyla yeniden bağlanır, terminal yoksa dürüstçe kapatılır. `externalTerminal` modunda izlenmez (terminal nesnesi yok). **Sınır:** ara durumlar/maliyet yok — yalnız açık/kapalı. *Test: 16/16 (cliSourceOf + start/end akışı + rebuild + claude-yolu regresyonu).*
+- ☐ **E2b — Zengin olay adaptörleri:** CLI'ın hook/notify imkânı varsa mevcut listener'a POST eden mini feeder (RelayTailer deseni) veya log-tail. CLI başına adaptör; araştırma gerekir. KODLANMADI.
 - ☐ **E3 — Transkript adaptörleri:** `SessionSource` arayüzü; diğer CLI'ların oturum kayıtlarını SessionInfo'ya normalize eden opsiyonel parser'lar; kaynak rozeti; bilinmeyen modelde maliyet=0 + uyarı. KODLANMADI.
 - 📄 **E2/E3 devir notu (ayrıntılı teknik):** [HANDOFF_E2E3.tr.md](HANDOFF_E2E3.tr.md) — mimari dikişler (LiveMonitor/RelayTailer/SessionIndex/PricingEngine), adım adım plan, test/paket disiplini.
-- *Gerçekleşen dokunma riski (E1): sıfıra yakın — yeni komut + globalState; mevcut launchClaudeTerminal yeniden kullanıldı, claude yolu değişmedi. E2-E3 ekleme, fail-soft.*
+- *Gerçekleşen dokunma riski (E1): sıfıra yakın — yeni komut + globalState; mevcut launchClaudeTerminal yeniden kullanıldı, claude yolu değişmedi. (E2a): sıfıra yakın — launchClaudeTerminal artık terminali döndürüyor (mevcut çağıranlar yok sayar, davranış aynı); LiveSession'a opsiyonel `source` alanı (yalnız `cli:` id'lerde dolar, claude oturumlarında hep boş). E2b-E3 ekleme, fail-soft.*
 
 ### ☐ Dalga F — Uzun iş dayanıklılığı
 **Hedef:** Saatlik render'lar ve gece koşuları VS Code yeniden başlatmalarına dayansın.

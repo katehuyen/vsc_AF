@@ -18,6 +18,8 @@ export interface LiveSession {
     cwd?: string;
     agentId?: string;
     agentName?: string;
+    /** External CLI id (gemini/codex/…), derived from the `cli:<id>:` session_id namespace. */
+    source?: string;
     status: LiveStatus;
     currentTool?: string;
     lastPrompt?: string;
@@ -103,6 +105,16 @@ export interface DensityData {
     totalEvents: number;
 }
 
+/**
+ * E2a: sessions opened via "Start Session With…" use namespaced ids
+ * (`cli:<cliId>:<agentId>:<ts>`) so they can never collide with claude's UUID
+ * session ids. The CLI id is derived from the namespace — claude payloads carry
+ * `source` with a different meaning (startup/resume/clear), so it is not used.
+ */
+export function cliSourceOf(sessionId: string): string | undefined {
+    return sessionId.startsWith('cli:') ? (sessionId.split(':')[1] || undefined) : undefined;
+}
+
 function toolDetail(input: Record<string, unknown> | undefined): string {
     if (!input) { return ''; }
     const cand = input['file_path'] ?? input['command'] ?? input['description'] ??
@@ -186,6 +198,7 @@ export class LiveMonitor implements vscode.Disposable {
                     transcriptPath: e.transcriptPath,
                     agentId: e.agentId,
                     agentName: e.agentName,
+                    source: cliSourceOf(e.sessionId),
                     status: 'idle',
                     startedAt: e.ts,
                     lastEventTs: e.ts,
@@ -368,6 +381,7 @@ export class LiveMonitor implements vscode.Disposable {
                 cwd: payload.cwd,
                 agentId,
                 agentName,
+                source: cliSourceOf(id),
                 status: 'idle',
                 startedAt: Date.now(),
                 lastEventTs: Date.now(),

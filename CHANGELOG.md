@@ -2,6 +2,11 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.30.0 — External CLI session lifecycle on the timeline, wave E2a (2026-07-11)
+
+- **Sessions opened with another CLI now show up on the Live Timeline**: starting a gemini/codex/… session via *Start Session With…* adds an `idle` lane row the moment the terminal opens and marks it `ended` when the terminal closes. The card carries a CLI badge and an honest "external CLI — lifecycle only" note — external CLIs emit no hooks, so intermediate states (working/tool), prompts and cost are not tracked (that's the event-feeder / transcript-adapter roadmap steps). Session ids are namespaced (`cli:<cliId>:…`) so they can never collide with Claude's session ids; **the Claude hook path is untouched**.
+- After a window reload, external lanes re-attach to their restored terminal by name; if the terminal didn't come back, the lane is closed out instead of lingering as a ghost row. In `agentFarm.externalTerminal` mode there is no terminal object to watch, so lifecycle tracking is honestly skipped.
+
 ## 2.29.0 — Start a session with another CLI, wave E1 (2026-07-11)
 
 - **Start Session With… (choose CLI)**: a new agent right-click / palette command opens a terminal session in the agent's folder using a CLI you pick — Claude Code (default) or any `agentFarm.cliProfiles` entry (gemini, codex, …), launched with the profile's `interactive` command. The last CLI you used for each agent is remembered and floats to the top. It honours `agentFarm.externalTerminal`. **The Claude path is untouched** — this is a separate sibling command; existing *Start Claude Session* / *Continue Latest Session* behave exactly as before. Live monitoring, transcripts and cost stay Claude-specific for now (multi-CLI session monitoring — event feeder + transcript adapters — is the next roadmap step).

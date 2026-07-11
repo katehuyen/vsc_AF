@@ -26,6 +26,7 @@ function buildData(deps: TimelineDeps): Record<string, unknown> {
         sessions: deps.live.sessions().map(s => ({
             sessionId: s.sessionId,
             agentName: s.agentName ?? s.sessionId.slice(0, 8),
+            source: s.source,
             status: s.status,
             currentTool: s.currentTool,
             lastPrompt: s.lastPrompt,
