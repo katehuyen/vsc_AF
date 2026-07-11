@@ -6,8 +6,9 @@ import { AgentInfo } from './agents';
 import { buildBrowserPrompt, hostAllowed } from './browser';
 import {
     DEFAULT_MEDIA_PRICING, downloadAsset, estimateMediaCost, extFromUrl, injectMediaFeedback,
-    mediaCandidates, MediaMeta, MediaPriceRule, readMediaMetas, recordSelection, runFalJob
+    mediaCandidates, MediaMeta, MediaPriceRule, readMediaMetas, recordSelection
 } from './media';
+import { providerFor } from './mediaProviders';
 import { extractJson, sanitizePrompt } from './util';
 
 export type TaskStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
@@ -254,9 +255,9 @@ export interface TaskManagerOptions {
     resolveTemplate?: (s: string) => string;
     /** Outbound notification forwarding (B4). */
     forward?: (type: string, message: string) => void;
-    /** C1: media provider settings. */
-    mediaAuth?: () => string;              // e.g. "Key <FAL_KEY>" (resolved from the vault)
-    mediaBaseUrl?: () => string;           // override for tests / self-hosted proxies
+    /** C1: media provider settings. providerId = 'fal' | 'replicate' (Wave C). */
+    mediaAuth?: (providerId: string) => string;              // full Authorization header, e.g. "Key <FAL_KEY>" / "Bearer <token>"
+    mediaBaseUrl?: (providerId: string) => string | undefined; // override for tests / self-hosted proxies
     mediaPricing?: () => MediaPriceRule[]; // C3 cost estimation rules
     /** I5: model policy — extra --model args (and reason) for a task launch. */
     modelArgsFor?: (task: FarmTask) => { args: string; reason: string } | undefined;
@@ -1228,7 +1229,8 @@ export class TaskManager implements vscode.Disposable {
         task.outputFile = outFile;
         this.save();
 
-        const auth = (this.opts.mediaAuth?.() ?? '').trim();
+        const provider = providerFor(media.model);
+        const auth = (this.opts.mediaAuth?.(provider.id) ?? '').trim();
         const finishWith = (ok: boolean, detail: string, response?: unknown, assets: string[] = [], estCost = 0) => {
             fs.writeFileSync(outFile,
                 `# ${task.title}\n\n- Media model: ${media.model}\n- Started: ${new Date(task.startedAt!).toLocaleString()}\n` +
@@ -1240,13 +1242,13 @@ export class TaskManager implements vscode.Disposable {
         };
 
         if (!auth || auth.includes('{secret:')) {
-            finishWith(false, 'Media auth missing — store your key with "Agent Farm: Set Secret…" as FAL_KEY.');
+            finishWith(false, `Media auth missing — store your ${provider.label} key with "Agent Farm: Set Secret…" as ${provider.secretHint}.`);
             return;
         }
 
         const input = retry ? injectMediaFeedback(resolve(media.input), retry.feedback) : resolve(media.input);
-        const result = await runFalJob(media.model, input, auth, {
-            baseUrl: this.opts.mediaBaseUrl?.(),
+        const result = await provider.run(media.model, input, auth, {
+            baseUrl: this.opts.mediaBaseUrl?.(provider.id),
             timeoutMs: (media.timeoutMin ?? 10) * 60_000
         });
         if (!result.ok) {

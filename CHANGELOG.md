@@ -2,6 +2,11 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.26.0 — Media provider abstraction + Replicate, wave C (2026-07-11)
+
+- **Media providers**: the media step no longer hard-codes fal.ai. The model id now routes to a provider — unprefixed ids go to fal.ai exactly as before (every existing workflow is unchanged), and `replicate:owner/name` (or `replicate:owner/name:version`) goes to **Replicate's prediction API**. Downloading, the asset archive, gallery, cost, selection and vision QA all work identically regardless of provider. Store your Replicate token as the `REPLICATE_API_TOKEN` secret (configurable via `agentFarm.replicateAuthSecret`). New providers plug in behind one interface (`run(model, input, auth)`), so fal's behaviour is preserved bit-for-bit.
+- Under the hood `MediaProvider` / `providerFor(model)` (`core/mediaProviders.ts`); `mediaAuth`/`mediaBaseUrl` are now provider-aware. Gemini and a generic webhook poll-mode remain for a later increment.
+
 ## 2.25.0 — Media vision QA, wave B2 (2026-07-11)
 
 - **Vision QA on media steps**: give a media step an optional quality criterion (the wizard asks). As soon as the asset is produced, a **vision-capable model** (the cheap judge, haiku by default) opens the file via its Read tool and rules PASS/FAIL with a reason. On FAIL the step **regenerates itself** — the reason is folded into the input's `prompt` field — up to the configured retry count; if it still fails, the step's onFail policy applies. It's the visual counterpart of the text `verify` gate ("one person, sharp face, no six fingers, matches the storyboard brief"). Fail-open: if the judge can't run, the pipeline is not blocked. This also fixes verify on media steps, which previously crashed on retry (media tasks have no agent). Completes wave B of the media roadmap.

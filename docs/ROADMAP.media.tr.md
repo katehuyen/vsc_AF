@@ -129,13 +129,14 @@ Token bütçe uyarıları var; medya maliyeti gösteriliyor ama **eşik aşımı
 - ☐ "Regenerate with feedback" hızlı aksiyonu galeri kartında. KODLANMADI (küçük UI eklentisi — Dalga C öncesi/sonrası eklenebilir).
 - *Gerçekleşen dokunma riski: orta — B1 startWorkflowStep'e tek dispatch dalı + runSelectStep; B2 finish()'e media-verify dallanması + runMediaStep retry param; klasik approval/handoff/text-verify aynen; media meta geriye uyumlu.*
 
-### ☐ Dalga C — Medya sağlayıcı soyutlaması
+### ◐ Dalga C — Medya sağlayıcı soyutlaması (soyutlama + Replicate TAMAM 2.26.0; Gemini + webhook-poll kaldı)
 **Hedef:** fal.ai tekelini kırmak, API'li platformları eşit vatandaş yapmak.
-- `MediaProvider` arayüzü: `submit(model, input) → jobId`, `poll(jobId)`, `assets(response)`, `estimateCost(...)`. Mevcut fal yolu ilk provider olarak arkasına alınır (davranış birebir korunur).
-- İlk yeni sağlayıcılar: **Replicate** ve **Gemini API** (Imagen/Veo); anahtarlar mevcut Secrets vault'tan.
-- Webhook adımına opsiyonel **poll modu** (`pollUrl`/`until` regex + timeout) — sağlayıcı yazılmadan da kuyruklu API'lerle çalışabilme.
-- Sağlayıcı-bazlı maliyet kuralları ve galeri rozetleri.
-- *Dokunma riski: orta — runMediaStep'in içi refactor edilir ama tek çağrı noktası var; fal round-trip'i mevcut testle sabitlenir.*
+- ✅ `MediaProvider` arayüzü (`core/mediaProviders.ts`): `run(model,input,authHeader,opts)` + `providerFor(model)` yönlendirme. Mevcut fal yolu ilk provider olarak arkasına alındı — **model önekiyle yönlendirme, öneksiz=fal, davranış birebir korundu** (mevcut tüm workflow'lar değişmedi). runMediaStep artık `provider.run` çağırıyor (tek çağrı noktası); mediaAuth/mediaBaseUrl provider-farkında (fal→Key/FAL_KEY, replicate→Bearer/REPLICATE_API_TOKEN).
+- ✅ **Replicate provider** (`replicate:owner/name[:version]`): prediction API submit→poll→assets; en-yeni (`/v1/models/.../predictions`) ve sabit-sürüm (`/v1/predictions {version,input}`) yolları; string ve dizi output; fail/timeout/sync tamamlanma. *Test: 21/21 mock sunucuya karşı (routing + submit yolları + poll + fail + sync + string-output + auth header + bad-json + http-error).*
+- ☐ **Gemini API** (Imagen/Veo) provider'ı. KODLANMADI — Gemini'nin medya API'si (uzun-süren operasyonlar) karmaşık, canlı test edilemeden düşük güven; webhook-poll modu geldiğinde işlevsel olarak kapsanır ya da ayrı provider yazılır.
+- ☐ Webhook adımına opsiyonel **poll modu** (kuyruklu herhangi bir API'yi provider yazmadan kullan). KODLANMADI — sıradaki iş.
+- ☐ Sağlayıcı-bazlı maliyet kuralları/rozetleri (mevcut `mediaPricing` regex'i model-id'ye — `replicate:` önekli — çalışıyor; ayrı rozet yok).
+- *Gerçekleşen dokunma riski: düşük-orta — runMediaStep tek çağrı noktasından provider'a geçti; fal round-trip mevcut testlerle + provider testiyle sabit; TaskManagerOptions.mediaAuth/mediaBaseUrl imzası (providerId) aldı (geriye uyumlu: 0-arg impl atanabilir).*
 
 ### ☐ Dalga D — Kurgu köprüsü (Premiere)
 **Hedef:** "Klasördeki klipler"den "Premiere'de açılır sekans"a.

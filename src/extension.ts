@@ -432,12 +432,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         model: cfg().get<string>('quotaDowngradeModel', 'claude-haiku-4-5-20251001')
                     });
             },
-            mediaAuth: () => {
-                const secretName = cfg().get<string>('mediaAuthSecret', 'FAL_KEY');
-                const key = vault.get(secretName);
+            mediaAuth: (providerId) => {
+                if (providerId === 'replicate') {
+                    const token = vault.get(cfg().get<string>('replicateAuthSecret', 'REPLICATE_API_TOKEN'));
+                    return token ? `Bearer ${token}` : '';
+                }
+                const key = vault.get(cfg().get<string>('mediaAuthSecret', 'FAL_KEY'));
                 return key ? `Key ${key}` : '';
             },
-            mediaBaseUrl: () => cfg().get<string>('mediaBaseUrl', '') || undefined as unknown as string,
+            mediaBaseUrl: (providerId) => providerId === 'replicate'
+                ? (cfg().get<string>('replicateBaseUrl', '') || undefined)
+                : (cfg().get<string>('mediaBaseUrl', '') || undefined),
             mediaPricing: () => cfg().get<MediaPriceRule[]>('mediaPricing', DEFAULT_MEDIA_PRICING),
             browserAllowHosts: () => cfg().get<string[]>('browserAllowHosts', []),
             confirmBrowser: ({ title, url, goal }) => {
@@ -2842,9 +2847,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     });
                     if (!mTitle) { continue; }
                     const mModel = await vscode.window.showInputBox({
-                        prompt: 'fal.ai model id — güncel listeyi fal.ai/models\'ten doğrula',
+                        prompt: 'Media model id — fal (varsayılan) ya da "replicate:owner/name[:version]" (Replicate)',
                         value: 'fal-ai/flux/schnell',
-                        placeHolder: 'örn. fal-ai/flux/schnell, fal-ai/kling-video/v2/master/text-to-video',
+                        placeHolder: 'örn. fal-ai/flux/schnell · replicate:black-forest-labs/flux-schnell',
                         ignoreFocusOut: true
                     });
                     if (!mModel) { continue; }

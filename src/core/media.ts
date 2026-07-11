@@ -76,7 +76,7 @@ interface FalQueueSubmit {
     detail?: unknown;
 }
 
-async function jsonFetch(url: string, init: RequestInit): Promise<{ ok: boolean; status: number; json: unknown; text: string }> {
+export async function jsonFetch(url: string, init: RequestInit): Promise<{ ok: boolean; status: number; json: unknown; text: string }> {
     const res = await fetch(url, init);
     const text = await res.text();
     let json: unknown;

@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.25.0",
+  "version": "2.26.0",
   "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
@@ -1510,6 +1510,16 @@
           "type": "string",
           "default": "FAL_KEY",
           "description": "Name of the vault secret holding your fal.ai key (store it via 'Agent Farm: Set Secret…')."
+        },
+        "agentFarm.replicateAuthSecret": {
+          "type": "string",
+          "default": "REPLICATE_API_TOKEN",
+          "description": "Name of the vault secret holding your Replicate API token (store it via 'Agent Farm: Set Secret…'). Used for media models with a 'replicate:' prefix."
+        },
+        "agentFarm.replicateBaseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Override the Replicate API base URL (testing / self-hosted proxy). Empty = https://api.replicate.com."
         },
         "agentFarm.mediaBaseUrl": {
           "type": "string",

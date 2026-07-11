@@ -510,7 +510,12 @@ Aynı yöntem her servis için geçerlidir: `ELEVENLABS_KEY`, `N8N_TOKEN`… —
 
 ### Medya Adımı (🎬)
 
-Workflow kurarken **Media step (fal.ai)** seç: adım, fal.ai'nin kuyruk API'si üzerinden bir üretim modeli çağırır. Tek kapı stratejisi sayesinde Kling, Seedance, Veo, Flux, Nano Banana sınıfı yüzlerce modele tek mekanizmayla erişirsin — model kimliği serbest metindir (`fal-ai/flux/schnell` gibi; güncel listeyi fal.ai/models'ten doğrula, piyasa aylık değişir).
+Workflow kurarken **Media step** seç: adım bir üretim modeli çağırır. Model kimliği serbest metindir ve **hangi sağlayıcıya gideceğini kimliğin öneki belirler** (2.26.0 — MediaProvider soyutlaması):
+
+- **fal.ai (varsayılan):** önek yoksa fal.ai kuyruk API'sine gider — `fal-ai/flux/schnell` gibi. Tek kapı stratejisiyle Kling, Seedance, Veo, Flux, Nano Banana sınıfı yüzlerce modele erişirsin. Anahtar: **FAL_KEY**. Mevcut tüm workflow'lar değişmeden çalışır (önek eklenmedi).
+- **Replicate:** `replicate:` önekiyle Replicate prediction API'sine gider — `replicate:black-forest-labs/flux-schnell` (en yeni) ya da `replicate:owner/name:<version>` (sabit sürüm). Anahtar: **REPLICATE_API_TOKEN** (secret olarak sakla; ayar `agentFarm.replicateAuthSecret`).
+
+Sağlayıcı farkı adım için şeffaftır: indirme, asset arşivi, galeri, maliyet, seçim ve vision QA hepsi aynı çalışır. Yeni sağlayıcılar tek arayüzle (`submit/poll/assets`) eklenir; fal davranışı birebir korunur.
 
 - **Girdi şablonu** JSON'dur ve `{prev_text}` / `{prev_json.alan}` çözülür: ajanın yazdığı prompt doğruca modele akar.
 - Üretilen **varlıklar (asset) indirilir ve arşivlenir**; yanıt JSON'u sonraki adımın devri olur (`{prev_json.images.0.url}` gibi).
