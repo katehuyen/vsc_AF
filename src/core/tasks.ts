@@ -118,6 +118,12 @@ export interface WorkflowStep {
      * step's onFail policy applies. No agent, no model call.
      */
     approval?: { message?: string };
+    /**
+     * Fan-out: this step runs concurrently with adjacent `parallel` steps. A
+     * maximal run of consecutive parallel steps forms a group; the step after
+     * the group receives all their outputs merged (fan-in). Unset = sequential.
+     */
+    parallel?: boolean;
 }
 
 /** What one step passes to the next. */
@@ -264,6 +270,13 @@ export class TaskManager implements vscode.Disposable {
     private terminals = new Map<string, vscode.Terminal>();      // taskId -> terminal
     private processes = new Map<string, cp.ChildProcess>();      // taskId -> headless process
     private handoffs = new Map<string, Handoff>();               // workflowRunId -> last handoff
+    // workflowRunId -> the parallel group currently fanning out on that run.
+    private parallelGroups = new Map<string, {
+        start: number; end: number;
+        pending: Set<number>;
+        results: Map<number, Handoff>;
+        statuses: Map<number, TaskStatus>;
+    }>();
     private timer: NodeJS.Timeout;
     private lastOutputsPrune = 0;
     private disposables: vscode.Disposable[] = [];
@@ -973,6 +986,7 @@ export class TaskManager implements vscode.Disposable {
         if (index < 0 || index >= w.steps.length) {
             this.runCounts.delete(runId);
             this.handoffs.delete(runId);
+            this.parallelGroups.delete(runId);
             this.opts.forward?.('workflow-done', `Workflow "${w.title}" completed`);
             void vscode.window.showInformationMessage(
                 `Agent Farm: workflow "${w.title}" completed ✓.`);
@@ -981,6 +995,7 @@ export class TaskManager implements vscode.Disposable {
         const count = this.runCounts.get(runId) ?? 0;
         if (count >= TaskManager.MAX_RUN_STEPS) {
             this.runCounts.delete(runId);
+            this.parallelGroups.delete(runId);
             void vscode.window.showWarningMessage(
                 `Agent Farm: workflow "${w.title}" stopped — step limit reached (possible loop in onFail routing).`);
             return;
@@ -988,6 +1003,13 @@ export class TaskManager implements vscode.Disposable {
         this.runCounts.set(runId, count + 1);
 
         const step = w.steps[index];
+        // Entering a parallel region (from anywhere) fans out the whole group.
+        if (step.parallel) {
+            let gs = index;
+            while (gs > 0 && w.steps[gs - 1].parallel) { gs--; }
+            this.startParallelGroup(w, gs, handoff, runId);
+            return;
+        }
         if (step.runIf && !this.runIfMatches(step.runIf, handoff)) {
             void vscode.window.showInformationMessage(
                 `Agent Farm: workflow "${w.title}" — step ${index + 1} skipped (condition /${step.runIf}/ not met).`);
@@ -1240,7 +1262,11 @@ export class TaskManager implements vscode.Disposable {
         task.endedAt = Date.now();
         this.save();
         this.pump();
-        if (ok) {
+        // Inside a parallel group the collector handles fan-in; otherwise pass through on approve.
+        const group = this.parallelGroups.get(runId);
+        if (group && index >= group.start && index <= group.end) {
+            this.advanceWorkflow(task, ok ? 'done' : 'failed');
+        } else if (ok) {
             this.routeToStep(w, index + 1, handoff, runId);
         } else {
             this.advanceWorkflow(task, 'failed');
@@ -1261,6 +1287,14 @@ export class TaskManager implements vscode.Disposable {
         const w = this.workflows.find(x => x.id === task.workflowId);
         if (!w) { return; }
         const runId = task.workflowRunId ?? task.workflowId ?? '';
+        // Single chokepoint for parallel fan-in: a branch of the active group
+        // collects here instead of advancing the run on its own.
+        const group = this.parallelGroups.get(runId);
+        if (group && task.stepIndex !== undefined
+            && task.stepIndex >= group.start && task.stepIndex <= group.end) {
+            this.onParallelBranchDone(w, task, status);
+            return;
+        }
         const stepIndex = task.stepIndex ?? 0;
         if (status === 'done') {
             this.routeToStep(w, stepIndex + 1, this.computeHandoff(task), runId);
@@ -1280,6 +1314,88 @@ export class TaskManager implements vscode.Disposable {
             `Agent Farm: workflow "${w.title}" step ${stepIndex + 1} failed — ` +
             (onFail === 'continue' ? 'continuing to next step.' : `jumping to step ${onFail}.`));
         this.routeToStep(w, nextIndex, this.computeHandoff(task), runId);
+    }
+
+    // ---------- parallel groups (fan-out / fan-in) ----------
+
+    /** Launch every step of the parallel group [start..end] concurrently with the same handoff. */
+    private startParallelGroup(w: FarmWorkflow, start: number, handoff: Handoff, runId: string): void {
+        let end = start;
+        while (end + 1 < w.steps.length && w.steps[end + 1].parallel) { end++; }
+        const group = {
+            start, end,
+            pending: new Set<number>(),
+            results: new Map<number, Handoff>(),
+            statuses: new Map<number, TaskStatus>()
+        };
+        this.parallelGroups.set(runId, group);
+        this.handoffs.set(runId, handoff);
+        for (let i = start; i <= end; i++) {
+            const step = w.steps[i];
+            if (step.runIf && !this.runIfMatches(step.runIf, handoff)) {
+                group.statuses.set(i, 'done'); // a skipped branch is benign, not a failure
+                continue;
+            }
+            group.pending.add(i);
+            this.startWorkflowStep(w, i, handoff, runId);
+        }
+        if (group.pending.size === 0) { this.finishParallelGroup(w, runId); }
+    }
+
+    private onParallelBranchDone(w: FarmWorkflow, task: FarmTask, status: TaskStatus): void {
+        const runId = task.workflowRunId ?? '';
+        const group = this.parallelGroups.get(runId);
+        if (!group || task.stepIndex === undefined) { return; }
+        group.pending.delete(task.stepIndex);
+        group.statuses.set(task.stepIndex, status);
+        if (status === 'done') { group.results.set(task.stepIndex, this.computeHandoff(task)); }
+        if (group.pending.size === 0) { this.finishParallelGroup(w, runId); }
+    }
+
+    /** Fan-in: merge branch outputs and either advance past the group or apply the group's onFail. */
+    private finishParallelGroup(w: FarmWorkflow, runId: string): void {
+        const group = this.parallelGroups.get(runId);
+        if (!group) { return; }
+        this.parallelGroups.delete(runId);
+        const merged = this.mergeHandoffs(w, group);
+        const anyFailed = [...group.statuses.values()].some(s => s === 'failed');
+        if (!anyFailed) {
+            this.routeToStep(w, group.end + 1, merged, runId);
+            return;
+        }
+        // Group-level failure policy = the onFail of the group's first step.
+        const onFail = w.steps[group.start].onFail ?? 'stop';
+        if (onFail === 'stop') {
+            this.runCounts.delete(runId);
+            this.handoffs.delete(runId);
+            this.opts.forward?.('workflow-failed',
+                `Workflow "${w.title}" stopped — a parallel branch (steps ${group.start + 1}-${group.end + 1}) failed`);
+            void vscode.window.showWarningMessage(
+                `Agent Farm: workflow "${w.title}" stopped — a parallel branch failed (steps ${group.start + 1}-${group.end + 1}).`);
+            return;
+        }
+        const nextIndex = onFail === 'continue' ? group.end + 1 : (onFail as number) - 1;
+        void vscode.window.showWarningMessage(
+            `Agent Farm: workflow "${w.title}" — a parallel branch failed; ` +
+            (onFail === 'continue' ? 'continuing past the group.' : `jumping to step ${onFail}.`));
+        this.routeToStep(w, nextIndex, merged, runId);
+    }
+
+    /** Combine a group's branch outputs into one handoff: labeled text + a {branches:[…]} envelope. */
+    private mergeHandoffs(w: FarmWorkflow, group: { start: number; end: number; results: Map<number, Handoff> }): Handoff {
+        const texts: string[] = [];
+        const branches: { step: string; text: string; json?: unknown; skipped?: boolean }[] = [];
+        for (let i = group.start; i <= group.end; i++) {
+            const title = w.steps[i].title;
+            const h = group.results.get(i);
+            if (h && (h.text ?? '').trim()) {
+                texts.push(`## ${title}\n${h.text}`);
+                branches.push({ step: title, text: h.text ?? '', json: h.json });
+            } else {
+                branches.push({ step: title, text: '', skipped: !group.results.has(i) });
+            }
+        }
+        return { text: texts.join('\n\n'), json: { branches } };
     }
 
     // ---------- triggers (A1 storage/CRUD; watching lives in TriggerManager) ----------

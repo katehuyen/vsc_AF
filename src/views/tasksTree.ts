@@ -132,9 +132,11 @@ export class TasksTreeProvider implements vscode.TreeDataProvider<TaskNode> {
         if (node.kind === 'workflow-step') {
             const s = node.workflow.steps[node.index];
             const item = new vscode.TreeItem(`${node.index + 1}. ${s.title}`, vscode.TreeItemCollapsibleState.None);
-            item.iconPath = new vscode.ThemeIcon('arrow-small-right');
-            item.description = `${s.agentName} • ${s.mode}`;
-            item.tooltip = s.prompt;
+            item.iconPath = new vscode.ThemeIcon(s.parallel ? 'git-merge' : 'arrow-small-right',
+                s.parallel ? new vscode.ThemeColor('charts.purple') : undefined);
+            const kind = s.approval ? 'approval' : s.webhook ? 'webhook' : s.media ? 'media' : s.browser ? 'browser' : s.mode;
+            item.description = `${s.agentName} • ${kind}${s.parallel ? ' • ∥ parallel' : ''}`;
+            item.tooltip = (s.parallel ? '∥ runs in parallel with adjacent parallel steps\n\n' : '') + (s.prompt || s.title);
             item.contextValue = 'workflow-step';
             return item;
         }

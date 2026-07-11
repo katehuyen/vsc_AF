@@ -2,6 +2,10 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.20.0 — Parallel steps & fan-in, wave 3b (2026-07-11)
+
+- **Parallel step groups**: mark a workflow step *Parallel* (in the New Workflow wizard or Edit Step) and consecutive parallel steps form a group. When the chain reaches the group, every step launches at once with the same handoff (fan-out); once all branches finish, their outputs merge into one handoff and the step after the group runs (fan-in). The merged `{prev_text}` is labeled by step title and `{prev_json.branches}` is a `[{step, text, json}]` array. Each branch can carry its own `runIf` (a non-matching branch is skipped, not failed); if any branch fails, the group's first-step `onFail` policy applies. Real concurrency is bounded by `maxConcurrentTasks`/`maxConcurrentPerAgent`. Fully backward compatible — steps without the flag run sequentially as before. Group members show a ∥ merge icon in the Tasks tree. This completes wave 3 (DAG orchestration).
+
 ## 2.19.0 — Workflow approval step, wave 3a (2026-07-11)
 
 - **Approval gate step**: drop a human-in-the-loop gate into any multi-agent workflow (New Workflow → *Approval gate*). When the chain reaches it, it pauses and waits for your sign-off — no agent, no model call. The request appears both as a notification and in the **Needs You** panel (first settle wins). **Approve** passes the previous step's output straight through to the next step; **Reject** applies the step's onFail policy (stop by default). The gate shows as an `approval` row in the Tasks tree with an APPROVED/REJECTED stamp in its output archive. Runs only while VS Code is open; the headless service auto-approves so unattended chains never hang. (First half of wave 3 — parallel/fan-in steps are a separate wave.)

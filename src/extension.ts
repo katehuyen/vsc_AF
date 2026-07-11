@@ -2737,13 +2737,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         ignoreFocusOut: true
                     })) ?? '')
                     : '';
+                // Parallel grouping: only meaningful once there's a prior step to run alongside.
+                const parallelPick = steps.length ? await vscode.window.showQuickPick(
+                    [
+                        { label: 'Sequential (default)', description: 'runs after the previous step', parallel: false },
+                        { label: 'Parallel', description: 'runs concurrently with adjacent parallel steps; the next step gets all their outputs merged', parallel: true }
+                    ],
+                    { placeHolder: `Step ${stepNo}: run in sequence or in parallel?`, ignoreFocusOut: true }) : undefined;
+                if (steps.length && !parallelPick) { continue; }
                 steps.push({
                     agentId: agentPick.agent.id, agentName: agentPick.agent.name,
                     title: stepTitle, prompt: stepPrompt, mode: stepMode.mode,
                     onFail: onFail === 'stop' ? undefined : onFail,
                     runIf: runIf.trim() || undefined,
                     outputContract: contractPick.contract,
-                    verify: verifyCriteria.trim() ? { criteria: verifyCriteria.trim(), retries: 1 } : undefined
+                    verify: verifyCriteria.trim() ? { criteria: verifyCriteria.trim(), retries: 1 } : undefined,
+                    parallel: parallelPick?.parallel || undefined
                 });
             }
             if (!steps.length) { return; }
@@ -2817,6 +2826,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     { label: 'Agent', description: step.agentName, id: 'agent' },
                     { label: 'Mode', description: step.mode, id: 'mode' },
                     { label: 'On fail', description: String(step.onFail ?? 'stop'), id: 'onFail' },
+                    { label: 'Parallel', description: step.parallel ? 'on — runs with adjacent parallel steps' : 'off — sequential', id: 'parallel' },
                     { label: 'Run-if condition', description: step.runIf ?? '(always runs)', id: 'runIf' },
                     { label: 'Output contract', description: step.outputContract ?? 'text', id: 'contract' },
                     { label: 'Verification', description: step.verify ? `${step.verify.criteria.slice(0, 40)} (retries ${step.verify.retries ?? 1})` : '(none)', id: 'verify' }
@@ -2920,6 +2930,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     } else {
                         taskManager.updateWorkflowStep(w, node.index, { onFail: v.value });
                     }
+                    break;
+                }
+                case 'parallel': {
+                    const v = await vscode.window.showQuickPick(
+                        [
+                            { label: 'Sequential', description: 'runs after the previous step', parallel: false },
+                            { label: 'Parallel', description: 'runs concurrently with adjacent parallel steps (grouped; fan-in to the next step)', parallel: true }
+                        ], { ignoreFocusOut: true, placeHolder: `Step ${node.index + 1}: sequential or parallel?` });
+                    if (!v) { return; }
+                    taskManager.updateWorkflowStep(w, node.index, { parallel: v.parallel || undefined });
                     break;
                 }
                 case 'runIf': {

@@ -383,6 +383,17 @@ Görev satırında `verify pass/fail` rozeti görünür. Hakem çağrıları da 
 3. Sonraki adımda `{prev_json.alan}` (iç içe: `{prev_json.a.b}`) gerçek değerle değiştirilir.
 4. Koşullarda `json:alan~regex` sözdizimi: `runIf: json:durum~ALARM` — metin tesadüflerine takılmadan alan üstünden dallanır.
 
+### Paralel Adımlar (Fan-out / Fan-in)
+
+Bağımsız işleri aynı anda koştur, sonra sonuçları birleştir (2.20.0). Bir adımı **parallel** işaretlersin (sihirbazda "Parallel" seçeneği ya da Edit Step → Parallel); **ardışık parallel adımlar bir grup** oluşturur.
+
+- **Fan-out:** zincir gruba gelince grubun TÜM adımları aynı anda, aynı besleme (handoff) ile başlar. (Gerçek eşzamanlılık `maxConcurrentTasks`/`maxConcurrentPerAgent` ayarlarının izin verdiği kadar; aksi halde sırayla ama yine grup olarak biterler.)
+- **Fan-in:** grubun tüm dalları bitince çıktıları **tek beslemede birleşir** ve gruptan sonraki adıma geçer. `{prev_text}` = her dalın çıktısı başlığıyla etiketli; `{prev_json.branches}` = `[{step, text, json}]` dizisi. (Birleşik beslemenin tek dosyası yoktur — `{prev_output}` fan-in'de boştur.)
+- **Dal koşulu:** her dalın kendi `runIf`'i olabilir; tutmayan dal sessizce atlanır (grubu düşürmez).
+- **Grup hatası:** bir dal bile başarısızsa grubun **ilk adımının onFail**'i uygulanır (stop/continue/jump).
+- Grup üyeleri Tasks ağacında ∥ (mor git-merge ikonu) ile işaretlenir.
+- **Uyarı:** koşan bir grup VS Code kapanırsa (in-flight run durumu bellekte tutulur) fan-in tamamlanmaz — bu mevcut workflow-run davranışıyla aynıdır. Onay/webhook/media/browser adımları da bir grupta yer alabilir; tek istisna, insan-onay adımı grup içinde beslemeyi geçirmez (kendi APPROVED notunu katar).
+
 ### Onay Adımı (İnsan Kapısı)
 
 Zincire bir **Approval gate** koyarsın (2.19.0): o adıma gelince zincir DURUR ve senin onayını bekler — ajan yok, model çağrısı yok. New Workflow sihirbazında **$(check) Approval gate** seçeneği; isteğe bağlı bir mesaj sorar (`{prev_text}`/`{prev_json.x}` çözülür).
@@ -1190,6 +1201,10 @@ Tamamlanan fazlar (hepsi 2026-07-08):
 **Bundan sonrası ayrı ve ayrıntılı bir belgede yaşıyor:** komut paletinden **Agent Farm: Open Development Plan** — uzak görüşlü gelişim planı: olay tetikleyicileri, doğrulayıcı adımlar, MCP paneli, n8n/webhook köprüsü, multimedya üretim hattı (Kling/Seedance/Nano Banana sınıfı modellerle içerik fabrikası), zeki gözetim, çoklu makine ve vizyoner ufuk. Kodlama o plandaki öncelik sırasını izler.
 
 ## Sürüm Notları
+
+### 2.20.0 — Paralel Adımlar & Fan-in, Dalga 3b (2026-07-11)
+
+- **Parallel adım grupları:** ardışık `parallel` adımlar aynı anda başlar (fan-out), hepsi bitince çıktıları tek beslemede birleşip sonraki adıma geçer (fan-in). Her dalın kendi runIf'i; grup hatasında ilk adımın onFail'i. Lineer motorla tam geriye uyumlu (bayraksız adımlar bugünkü gibi). Bkz. [Paralel Adımlar](#paralel-adimlar-fan-out--fan-in). Dalga 3 (DAG orkestrasyon) tamamlandı.
 
 ### 2.19.0 — Workflow Onay Adımı, Dalga 3a (2026-07-11)
 
