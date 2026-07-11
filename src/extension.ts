@@ -52,7 +52,11 @@ import { addSkill, copySkillTo, moveSkillScope, removeSkill } from './core/skill
 import {
     addMemoryFile, applyIndexFixes, archiveMemoryFile, copyMemoryFileTo, MEMORY_TYPES, planIndexFixes
 } from './core/memusage';
-import { DEFAULT_MEDIA_PRICING, MediaPriceRule, mediaCostSince, readMediaMetas } from './core/media';
+import {
+    DEFAULT_MEDIA_PRICING, MediaPriceRule, mediaCostSince, readMediaMetas, registerExternalAsset
+} from './core/media';
+import { IngestFolder, IngestWatcher } from './core/ingest';
+import { discoverProductions, newProduction, PRODUCTION_FILENAME, writeProduction } from './core/production';
 import {
     applyMergedContent, buildMergeDraft, findDuplicateGroups, syncGroup
 } from './core/memorySync';
@@ -473,6 +477,72 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
     taskManagerRef = taskManager;
     context.subscriptions.push(taskManager);
+
+    // Wave A (media roadmap): watched ingest folders → assets registered into
+    // the gallery in place (downloads from web platforms, editor exports…).
+    const ingest = new IngestWatcher(
+        taskManager.outputsDir,
+        () => cfg().get<IngestFolder[]>('ingestFolders', [])
+            .filter(f => f && typeof f.path === 'string' && !!f.path.trim()),
+        (metas) => {
+            GalleryPanel.refreshIfOpen();
+            const sources = [...new Set(metas.map(m => m.source ?? 'external'))].join(', ');
+            void vscode.window.showInformationMessage(
+                `Agent Farm: ${metas.length} media asset(s) registered from ${sources}`, 'Open Gallery'
+            ).then(choice => {
+                if (choice === 'Open Gallery') { void vscode.commands.executeCommand('agentfarm.openGallery'); }
+            });
+        }
+    );
+    context.subscriptions.push(ingest);
+    ingest.start();
+
+    // Wave A: monthly media budget alert (0 = off) — warn once per calendar month.
+    let mediaBudgetNotifiedMonth = '';
+    const checkMediaBudget = () => {
+        const budget = cfg().get<number>('mediaBudgetMonthUSD', 0);
+        if (budget <= 0) { return; }
+        const month = new Date().toISOString().slice(0, 7);
+        if (mediaBudgetNotifiedMonth === month) { return; }
+        const spent = mediaCostSince(taskManager.outputsDir, 30 * 24 * 3600 * 1000);
+        if (spent < budget) { return; }
+        mediaBudgetNotifiedMonth = month;
+        postForward('budget', `media budget exceeded — ~$${spent.toFixed(2)} of $${budget} (last 30 days)`);
+        void vscode.window.showWarningMessage(
+            `Agent Farm: media budget exceeded — ~$${spent.toFixed(2)} of $${budget} in the last 30 days`,
+            'Open Gallery'
+        ).then(choice => {
+            if (choice === 'Open Gallery') { void vscode.commands.executeCommand('agentfarm.openGallery'); }
+        });
+    };
+    taskManager.onDidChange(checkMediaBudget, null, context.subscriptions);
+
+    // Wave A: shared production-scene picker. undefined = user cancelled;
+    // {} = explicitly no assignment (also when no manifests exist).
+    const pickProductionScene = async (
+        placeHolder: string
+    ): Promise<{ projectId?: string; sceneId?: string } | undefined> => {
+        const productions = discoverProductions(agents);
+        if (!productions.length) { return {}; }
+        interface ScenePick extends vscode.QuickPickItem { projectId?: string; sceneId?: string }
+        const items: ScenePick[] = [{ label: '$(dash) No scene', description: 'no production/scene assignment' }];
+        for (const p of productions) {
+            items.push({
+                label: `$(folder) ${p.production.title}`,
+                description: `${p.agentName} — project only`, projectId: p.production.id
+            });
+            for (const s of p.production.scenes) {
+                items.push({
+                    label: `    $(circle-small) ${s.title}`,
+                    description: `${p.production.title} · ${s.status}`,
+                    projectId: p.production.id, sceneId: s.id
+                });
+            }
+        }
+        const pick = await vscode.window.showQuickPick(items, { placeHolder, ignoreFocusOut: true });
+        if (!pick) { return undefined; }
+        return { projectId: pick.projectId, sceneId: pick.sceneId };
+    };
 
     const triggerManager = new TriggerManager(taskManager, () => agents, live, {
         judgeArgs,
@@ -1878,7 +1948,59 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }),
 
         vscode.commands.registerCommand('agentfarm.openGallery', () => {
-            GalleryPanel.show({ extensionUri: context.extensionUri, tasks: taskManager });
+            GalleryPanel.show({ extensionUri: context.extensionUri, tasks: taskManager, getAgents: () => agents });
+        }),
+
+        // Wave A: scene-by-scene production manifest (production.json in an agent folder).
+        vscode.commands.registerCommand('agentfarm.newProduction', async () => {
+            const agent = await resolveAgent(undefined);
+            if (!agent) { return; }
+            const file = path.join(agent.dir, PRODUCTION_FILENAME);
+            if (fs.existsSync(file)) {
+                const over = await vscode.window.showWarningMessage(
+                    `${agent.name} already has a ${PRODUCTION_FILENAME}. Overwrite it?`,
+                    { modal: true }, 'Overwrite');
+                if (over !== 'Overwrite') { return; }
+            }
+            const title = await vscode.window.showInputBox({
+                prompt: `Production title (${agent.name})`, placeHolder: 'örn. Tanıtım Filmi', ignoreFocusOut: true
+            });
+            if (!title) { return; }
+            const scenesRaw = await vscode.window.showInputBox({
+                prompt: 'Scene titles, comma-separated — production.json can be edited by hand later',
+                placeHolder: 'Açılış, Ürün tanıtımı, Kapanış', ignoreFocusOut: true
+            });
+            if (scenesRaw === undefined) { return; }
+            const sceneTitles = scenesRaw.split(',').map(s => s.trim()).filter(Boolean);
+            writeProduction(file, newProduction(title, sceneTitles));
+            const choice = await vscode.window.showInformationMessage(
+                `Agent Farm: production "${title}" created with ${sceneTitles.length} scene(s) in ${agent.name}.`,
+                'Open file', 'Open Gallery');
+            if (choice === 'Open file') { void vscode.window.showTextDocument(vscode.Uri.file(file)); }
+            if (choice === 'Open Gallery') { void vscode.commands.executeCommand('agentfarm.openGallery'); }
+        }),
+
+        // Wave A: register hand-downloaded / locally produced files as gallery assets.
+        vscode.commands.registerCommand('agentfarm.registerAsset', async () => {
+            const picked = await vscode.window.showOpenDialog({
+                canSelectMany: true, openLabel: 'Register as media asset'
+            });
+            if (!picked?.length) { return; }
+            const link = await pickProductionScene('Assign the file(s) to a production scene?');
+            if (link === undefined) { return; }
+            let n = 0;
+            for (const uri of picked) {
+                if (registerExternalAsset(taskManager.outputsDir, uri.fsPath,
+                    { ...link, source: 'external:manual' })) { n++; }
+            }
+            GalleryPanel.refreshIfOpen();
+            void vscode.window.showInformationMessage(
+                `Agent Farm: ${n} asset(s) registered` +
+                (picked.length - n ? ` (${picked.length - n} already known)` : '') + '.',
+                'Open Gallery'
+            ).then(choice => {
+                if (choice === 'Open Gallery') { void vscode.commands.executeCommand('agentfarm.openGallery'); }
+            });
         }),
 
         vscode.commands.registerCommand('agentfarm.rerunMedia', async (taskId?: string, vary?: boolean) => {
@@ -1895,7 +2017,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (!edited) { return; }
                 input = edited;
             }
-            taskManager.runMediaAdhoc(meta.title + (vary ? ' (vary)' : ' (re-run)'), meta.model, input);
+            taskManager.runMediaAdhoc(meta.title + (vary ? ' (vary)' : ' (re-run)'), meta.model, input,
+                { projectId: meta.projectId, sceneId: meta.sceneId });
             void vscode.window.showInformationMessage(`Agent Farm: media job started — ${meta.model}`);
         }),
 
@@ -2722,9 +2845,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         value: '{"prompt": "{prev_text}"}', ignoreFocusOut: true
                     });
                     if (!mInput) { continue; }
+                    // Wave A: optional production/scene link (asked only when a manifest exists).
+                    const mLink = await pickProductionScene('Tie produced assets to a production scene? (gallery grouping)');
                     steps.push({
                         agentId: '', agentName: 'media', title: mTitle, prompt: '', mode: 'headless',
-                        media: { model: mModel, input: mInput }
+                        media: { model: mModel, input: mInput, projectId: mLink?.projectId, sceneId: mLink?.sceneId }
                     });
                     continue;
                 }
@@ -4454,6 +4579,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (e.affectsConfiguration('agentFarm.liveMonitor') ||
                 e.affectsConfiguration('agentFarm.livePort')) {
                 live.start();
+            }
+            if (e.affectsConfiguration('agentFarm.ingestFolders')) {
+                ingest.restart();
             }
             DashboardPanel.refreshIfOpen();
         })

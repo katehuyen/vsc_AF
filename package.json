@@ -623,6 +623,16 @@
         "icon": "$(device-camera-video)"
       },
       {
+        "command": "agentfarm.newProduction",
+        "title": "New Production (scene manifest)",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.registerAsset",
+        "title": "Register Media Asset(s)…",
+        "category": "Agent Farm"
+      },
+      {
         "command": "agentfarm.rerunMedia",
         "title": "Re-run Media Job",
         "category": "Agent Farm"
@@ -1505,6 +1515,37 @@
           "type": "string",
           "default": "",
           "description": "Override the fal.ai queue base URL (testing / self-hosted proxy). Empty = https://queue.fal.run."
+        },
+        "agentFarm.ingestFolders": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "folder to watch (non-recursive)"
+              },
+              "label": {
+                "type": "string",
+                "description": "source label shown in the gallery (default: folder name)"
+              },
+              "projectId": {
+                "type": "string",
+                "description": "auto-assign ingested assets to this production id"
+              },
+              "sceneId": {
+                "type": "string",
+                "description": "auto-assign to this scene id (needs projectId)"
+              }
+            }
+          },
+          "default": [],
+          "description": "Media ingest folders (downloads, render exports…): scanned every 30s; new image/video/audio files are registered into the Media Gallery in place (no copy). Files older than 48h at scan time are ignored."
+        },
+        "agentFarm.mediaBudgetMonthUSD": {
+          "type": "number",
+          "default": 0,
+          "description": "Warn once per month when estimated media cost over the last 30 days exceeds this amount (USD). 0 = off."
         },
         "agentFarm.mediaPricing": {
           "type": "array",

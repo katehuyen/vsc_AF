@@ -159,11 +159,72 @@ export class LiveMonitor implements vscode.Disposable {
             }
             this.eventLog.sort((a, b) => a.ts - b.ts);
             this.capMemory();
+            this.rebuildSessions();
             // Rewrite when the file outgrew retention or size budget.
             if (st.size > STORE_MAX_BYTES || keptLines.length * 1.5 < raw.split('\n').length) {
                 fs.writeFileSync(this.storeFile, keptLines.join('\n') + (keptLines.length ? '\n' : ''), 'utf8');
             }
         } catch { /* unreadable store — start fresh */ }
+    }
+
+    /**
+     * Rebuild the session cards from persisted events so a reload doesn't blank
+     * the "Live sessions" list while the lanes still show recent activity.
+     * Mirrors handle()'s status transitions; only sessions within the normal
+     * TTL are revived, ended ones stay gone, and stale mid-work sessions are
+     * marked stalled quietly (no reload-noise notification).
+     */
+    private rebuildSessions(): void {
+        const now = Date.now();
+        const cutoff = now - SESSION_TTL_MS;
+        for (const e of this.eventLog) {
+            if (e.ts < cutoff) { continue; }
+            let s = this.sessionsMap.get(e.sessionId);
+            if (!s) {
+                s = {
+                    sessionId: e.sessionId,
+                    transcriptPath: e.transcriptPath,
+                    agentId: e.agentId,
+                    agentName: e.agentName,
+                    status: 'idle',
+                    startedAt: e.ts,
+                    lastEventTs: e.ts,
+                    prompts: 0,
+                    toolCalls: 0,
+                    errors: 0,
+                    compactions: 0,
+                    subagentStops: 0,
+                    notifiedStuck: false
+                };
+                this.sessionsMap.set(e.sessionId, s);
+            }
+            s.lastEventTs = e.ts;
+            if (e.transcriptPath) { s.transcriptPath = e.transcriptPath; }
+            switch (e.kind) {
+                case 'start': s.status = 'idle'; s.startedAt = e.ts; break;
+                case 'prompt': s.status = 'working'; s.prompts++; s.lastPrompt = e.detail; break;
+                case 'toolStart': s.status = 'tool'; s.currentTool = e.tool; s.toolCalls++; break;
+                case 'toolEnd': s.status = 'working'; s.currentTool = undefined; break;
+                case 'permission': s.status = 'waiting-permission'; break;
+                case 'stop': s.status = 'waiting-input'; s.currentTool = undefined; break;
+                case 'subagent': s.subagentStops++; break;
+                case 'compact': s.compactions++; break;
+                case 'notify':
+                    if (/waiting|input|idle/i.test(e.detail ?? '')) { s.status = 'waiting-input'; }
+                    break;
+                case 'end': s.status = 'ended'; break;
+            }
+        }
+        const cfg = this.getConfig();
+        for (const [id, s] of this.sessionsMap) {
+            if (s.status === 'ended') { this.sessionsMap.delete(id); continue; }
+            // Mid-work before the reload: either the next hook event refreshes it,
+            // or it is long gone — mark it stalled without notifying.
+            if ((s.status === 'working' || s.status === 'tool') && now - s.lastEventTs > cfg.stuckThresholdMs) {
+                s.status = 'stalled';
+                s.notifiedStuck = true;
+            }
+        }
     }
 
     private persist(event: LiveEvent): void {

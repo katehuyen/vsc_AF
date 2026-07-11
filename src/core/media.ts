@@ -43,6 +43,21 @@ export interface MediaMeta {
     estCost: number;
     ts: number;
     workflowTitle?: string;
+    /** Wave A — production linkage: manifest project id + scene id. */
+    projectId?: string;
+    sceneId?: string;
+    /** 'fal' (generated) or 'external:<label>' (ingested/registered by hand). */
+    source?: string;
+}
+
+/** Extensions the ingest watcher treats as media (mirrors the gallery's kinds). */
+export const MEDIA_EXTS = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'webm', 'mov', 'mp3', 'wav', 'ogg'];
+
+export function assetKind(file: string): 'image' | 'video' | 'audio' | 'file' {
+    const ext = file.split('.').pop()?.toLowerCase() ?? '';
+    return ['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext) ? 'image'
+        : ['mp4', 'webm', 'mov'].includes(ext) ? 'video'
+        : ['mp3', 'wav', 'ogg'].includes(ext) ? 'audio' : 'file';
 }
 
 interface FalQueueSubmit {
@@ -176,4 +191,67 @@ export function mediaCostSince(outputsDir: string, sinceMs: number): number {
     return readMediaMetas(outputsDir)
         .filter(m => m.ts >= cutoff)
         .reduce((a, m) => a + (m.estCost || 0), 0);
+}
+
+/** All asset paths already known to the gallery (dedup base for ingest). */
+export function registeredAssetPaths(outputsDir: string): Set<string> {
+    const set = new Set<string>();
+    for (const m of readMediaMetas(outputsDir)) {
+        for (const f of m.assetFiles) { set.add(path.resolve(f).toLowerCase()); }
+    }
+    return set;
+}
+
+/**
+ * Wave A — register a file that was NOT produced by a media step (downloaded
+ * from a web platform, exported from an editor…) as a gallery asset. The file
+ * is referenced in place (no copy — videos are big); only a sidecar meta is
+ * written into the outputs dir. Returns undefined if already registered.
+ */
+export function registerExternalAsset(
+    outputsDir: string,
+    filePath: string,
+    opts: { title?: string; projectId?: string; sceneId?: string; source?: string } = {},
+    known?: Set<string>
+): MediaMeta | undefined {
+    const abs = path.resolve(filePath);
+    const key = abs.toLowerCase();
+    const registry = known ?? registeredAssetPaths(outputsDir);
+    if (registry.has(key)) { return undefined; }
+    let ts = Date.now();
+    try { ts = fs.statSync(abs).mtimeMs; } catch { /* keep now */ }
+    const meta: MediaMeta = {
+        taskId: 'ext-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+        title: opts.title ?? path.basename(abs),
+        model: 'external',
+        input: '',
+        assetFiles: [abs],
+        estCost: 0,
+        ts,
+        projectId: opts.projectId,
+        sceneId: opts.sceneId,
+        source: opts.source ?? 'external'
+    };
+    fs.mkdirSync(outputsDir, { recursive: true });
+    fs.writeFileSync(path.join(outputsDir, `${meta.taskId}.media.json`),
+        JSON.stringify(meta, null, 2), 'utf8');
+    registry.add(key);
+    return meta;
+}
+
+/** Patch one sidecar meta (gallery "Assign to scene…"). Returns the updated meta. */
+export function updateMediaMeta(
+    outputsDir: string,
+    taskId: string,
+    patch: Partial<Pick<MediaMeta, 'projectId' | 'sceneId' | 'title'>>
+): MediaMeta | undefined {
+    const file = path.join(outputsDir, `${taskId}.media.json`);
+    if (!fs.existsSync(file)) { return undefined; }
+    try {
+        const meta = JSON.parse(fs.readFileSync(file, 'utf8')) as MediaMeta;
+        Object.assign(meta, patch);
+        // An explicit undefined clears the assignment (JSON.stringify drops it).
+        fs.writeFileSync(file, JSON.stringify(meta, null, 2), 'utf8');
+        return meta;
+    } catch { return undefined; }
 }

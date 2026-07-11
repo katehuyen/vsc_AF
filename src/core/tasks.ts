@@ -104,9 +104,10 @@ export interface WorkflowStep {
     /**
      * Media step (fal.ai queue): model id + JSON input template ({prev_*} and
      * {secret:} are substituted). Assets are downloaded into the outputs
-     * archive; the response JSON becomes the next step's handoff.
+     * archive; the response JSON becomes the next step's handoff. Wave A:
+     * optional projectId/sceneId tie the produced assets to a production scene.
      */
-    media?: { model: string; input: string; timeoutMin?: number };
+    media?: { model: string; input: string; timeoutMin?: number; projectId?: string; sceneId?: string };
     /**
      * F3 — browser automation step: the step's agent drives its browser MCP.
      * Host allowlist is enforced before launch; empty allowlist = refuse.
@@ -1174,7 +1175,10 @@ export class TaskManager implements vscode.Disposable {
             assetFiles: assets,
             estCost,
             ts: Date.now(),
-            workflowTitle: w.title
+            workflowTitle: w.title,
+            projectId: media.projectId,
+            sceneId: media.sceneId,
+            source: 'fal'
         };
         fs.writeFileSync(path.join(this.outputsDir, `${task.id}.media.json`),
             JSON.stringify(meta, null, 2), 'utf8');
@@ -1274,11 +1278,14 @@ export class TaskManager implements vscode.Disposable {
     }
 
     /** Gallery Re-run/Vary: run a single media job outside any stored workflow. */
-    runMediaAdhoc(title: string, model: string, input: string): void {
+    runMediaAdhoc(title: string, model: string, input: string, link?: { projectId?: string; sceneId?: string }): void {
         const w: FarmWorkflow = {
             id: 'adhoc-' + newId(),
             title: 'Media',
-            steps: [{ agentId: '', agentName: 'media', title, prompt: '', mode: 'headless', media: { model, input } }]
+            steps: [{
+                agentId: '', agentName: 'media', title, prompt: '', mode: 'headless',
+                media: { model, input, projectId: link?.projectId, sceneId: link?.sceneId }
+            }]
         };
         void this.runMediaStep(w, 0, {}, newId());
     }
