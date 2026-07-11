@@ -51,6 +51,10 @@ export interface FarmTask {
     priority?: number;
     /** F2: in-flight media job poll info — lets a reload reattach to the render instead of losing it. */
     mediaJob?: { provider: string; statusUrl: string; responseUrl: string; deadline: number; input?: string };
+    /** Z4: API-equivalent token cost of the task's matched transcript (headless runs). */
+    costUSD?: number;
+    /** Z4: the transcript the cost came from (opens in the session viewer). */
+    costSessionFile?: string;
 }
 
 export type ScheduleKind = 'daily' | 'weekly' | 'once';
@@ -287,6 +291,17 @@ export interface TaskManagerOptions {
         title: string; message: string; min: number; max?: number;
         candidates: { taskId: string; title: string; url: string; file?: string; kind: string }[];
     }) => Promise<string[] | null>;
+    /**
+     * B11 multi-window safety. false = this window is a read-only FOLLOWER:
+     * load() skips the stale pass (it must not cancel the runner window's live
+     * rows), the pump/scheduler never launch, media jobs are not reattached,
+     * and save() is blocked (onFollowerWrite fires so the host can warn).
+     * A follower watches the store file and mirrors the runner's changes.
+     * Default: runner (single-window behavior, unchanged).
+     */
+    isRunner?: () => boolean;
+    /** Called when a write was blocked in follower mode. */
+    onFollowerWrite?: () => void;
 }
 
 export class TaskManager implements vscode.Disposable {
@@ -328,6 +343,7 @@ export class TaskManager implements vscode.Disposable {
             for (const t of this.reattachQueue) { void this.reattachMediaTask(t); }
             this.reattachQueue = [];
         }
+        if (!this.runner()) { this.startFollowerWatch(); }
         this.timer = setInterval(() => { this.tickSchedules(); this.pump(); }, 30_000);
 
         this.disposables.push(vscode.window.onDidCloseTerminal(terminal => {
@@ -371,6 +387,11 @@ export class TaskManager implements vscode.Disposable {
 
     // ---------- persistence ----------
 
+    /** B11: true when this window runs the queue (default; single-window). */
+    private runner(): boolean {
+        return this.opts.isRunner ? this.opts.isRunner() : true;
+    }
+
     private load(): void {
         try {
             const raw = fs.readFileSync(this.storageFile, 'utf8');
@@ -380,6 +401,9 @@ export class TaskManager implements vscode.Disposable {
             this.templates = Array.isArray(json.templates) ? json.templates : [];
             this.workflows = Array.isArray(json.workflows) ? json.workflows : [];
             this.triggers = Array.isArray(json.triggers) ? json.triggers : [];
+            // B11: a follower window mirrors the store as-is — the stale pass
+            // below would cancel rows that are alive in the runner window.
+            if (!this.runner()) { return; }
             // Anything marked running from a previous window is stale. Plain
             // tasks go back to the queue; workflow members are cancelled — their
             // process/poll died with the window, and a zombie 'queued' row could
@@ -463,6 +487,15 @@ export class TaskManager implements vscode.Disposable {
         return out;
     }
 
+    /** Z4: attach the matched transcript's cost to a finished task (idempotent). */
+    setTaskCost(taskId: string, costUSD: number, sessionFile: string): void {
+        const t = this.tasks.find(x => x.id === taskId);
+        if (!t || t.costUSD !== undefined) { return; }
+        t.costUSD = costUSD;
+        t.costSessionFile = sessionFile;
+        this.save();
+    }
+
     /** Resume an interrupted run from its earliest interrupted step. */
     resumeInterrupted(runId: string): void {
         const r = this.interrupted.find(x => x.runId === runId);
@@ -538,7 +571,73 @@ export class TaskManager implements vscode.Disposable {
         } catch { /* best-effort */ }
     }
 
+    // ---------- B11: follower mode (another window runs the queue) ----------
+
+    private followerWatcher?: fs.FSWatcher;
+    private followerReloadTimer?: NodeJS.Timeout;
+
+    /** Mirror the runner window's saves so this window's views stay fresh. */
+    private startFollowerWatch(): void {
+        try {
+            const base = path.basename(this.storageFile);
+            this.followerWatcher = fs.watch(path.dirname(this.storageFile), (_event, filename) => {
+                if (filename && filename.toString() !== base) { return; }
+                if (this.followerReloadTimer) { clearTimeout(this.followerReloadTimer); }
+                this.followerReloadTimer = setTimeout(() => {
+                    this.followerReloadTimer = undefined;
+                    try {
+                        const json = JSON.parse(fs.readFileSync(this.storageFile, 'utf8')) as Partial<StoreShape>;
+                        this.tasks = Array.isArray(json.tasks) ? json.tasks : [];
+                        this.schedules = Array.isArray(json.schedules) ? json.schedules : [];
+                        this.templates = Array.isArray(json.templates) ? json.templates : [];
+                        this.workflows = Array.isArray(json.workflows) ? json.workflows : [];
+                        this.triggers = Array.isArray(json.triggers) ? json.triggers : [];
+                        this.onDidChangeEmitter.fire();
+                    } catch { /* mid-write or gone — the next change retries */ }
+                }, 800);
+            });
+        } catch { /* watch unavailable — views refresh on reload only */ }
+    }
+
+    private stopFollowerWatch(): void {
+        try { this.followerWatcher?.close(); } catch { /* already closed */ }
+        this.followerWatcher = undefined;
+        if (this.followerReloadTimer) { clearTimeout(this.followerReloadTimer); this.followerReloadTimer = undefined; }
+    }
+
+    /**
+     * The ownership lease landed on this window after startup (the runner
+     * window closed). Take over its duties: re-read the store with the stale
+     * pass, reattach persisted media jobs, resume pumping on the next tick.
+     * The host must flip its isRunner() answer to true BEFORE calling this.
+     */
+    /** Rare edge: the lease was lost while running (e.g. a long OS sleep let
+     *  another window take over). Stop launching and mirror the new runner. */
+    becomeFollower(): void {
+        if (!this.followerWatcher) { this.startFollowerWatch(); }
+    }
+
+    becomeRunner(): void {
+        this.stopFollowerWatch();
+        this.load();
+        if (this.reattachQueue.length) {
+            void vscode.window.showInformationMessage(
+                `Agent Farm: reattached to ${this.reattachQueue.length} in-flight media job(s) from the previous window.`);
+            for (const t of this.reattachQueue) { void this.reattachMediaTask(t); }
+            this.reattachQueue = [];
+        }
+        this.onDidChangeEmitter.fire();
+    }
+
     private save(): void {
+        if (!this.runner()) {
+            // B11 follower: never write — the runner window owns the store. The
+            // in-memory change is transient (the follower watcher restores disk
+            // truth moments later); the host warns via onFollowerWrite.
+            this.opts.onFollowerWrite?.();
+            this.onDidChangeEmitter.fire();
+            return;
+        }
         try {
             fs.mkdirSync(path.dirname(this.storageFile), { recursive: true });
             if (this.tasks.length > MAX_TASKS) {
@@ -619,6 +718,7 @@ export class TaskManager implements vscode.Disposable {
 
     /** Launch deferred tasks as capacity frees up (called on every finish + every 30s). */
     private pump(): void {
+        if (!this.runner()) { return; } // B11: only the runner window launches
         const now = Date.now();
         const ready = this.tasks
             .filter(t => t.status === 'queued' && t.autoStart)
@@ -1923,6 +2023,7 @@ export class TaskManager implements vscode.Disposable {
     }
 
     private tickSchedules(): void {
+        if (!this.runner()) { return; } // B11: only the runner window fires schedules
         const now = new Date();
         for (const s of this.schedules) {
             const { due, runKey } = scheduleDue(s, now);
@@ -1940,6 +2041,7 @@ export class TaskManager implements vscode.Disposable {
 
     dispose(): void {
         clearInterval(this.timer);
+        this.stopFollowerWatch();
         for (const [taskId, child] of this.processes) {
             this.killProcess(taskId, child);
         }

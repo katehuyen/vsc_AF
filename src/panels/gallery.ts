@@ -144,6 +144,11 @@ export class GalleryPanel {
             case 'vary':
                 void vscode.commands.executeCommand('agentfarm.rerunMedia', msg.taskId, true);
                 break;
+            case 'feedback':
+                // B-wave leftover: regenerate with a written critique injected
+                // into the prompt (same mechanism as the vision-QA retry).
+                void vscode.commands.executeCommand('agentfarm.rerunMedia', msg.taskId, false, true);
+                break;
             case 'assign': {
                 if (typeof msg.taskId !== 'string') { break; }
                 const target = await this.pickScene();

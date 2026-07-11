@@ -14,7 +14,8 @@ export type TaskNode =
     | { kind: 'workflow'; workflow: FarmWorkflow }
     | { kind: 'workflow-step'; workflow: FarmWorkflow; index: number }
     | { kind: 'agent-group'; agentId: string; agentName: string }
-    | { kind: 'task'; task: FarmTask };
+    | { kind: 'task'; task: FarmTask }
+    | { kind: 'follower-note' };
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -31,13 +32,23 @@ export class TasksTreeProvider implements vscode.TreeDataProvider<TaskNode> {
 
     constructor(private manager: TaskManager, private triggerManager?: TriggerManager,
         /** H2: one-line reliability scorecard per trigger. */
-        private triggerStat?: (t: FarmTrigger) => string | undefined) {
+        private triggerStat?: (t: FarmTrigger) => string | undefined,
+        /** B11: false = another window runs the queue (this view is read-only). */
+        private isRunner?: () => boolean) {
         manager.onDidChange(() => this.refresh());
     }
 
     refresh(): void { this.emitter.fire(); }
 
     getTreeItem(node: TaskNode): vscode.TreeItem {
+        if (node.kind === 'follower-note') {
+            const item = new vscode.TreeItem('Read-only — another window runs the queue', vscode.TreeItemCollapsibleState.None);
+            item.iconPath = new vscode.ThemeIcon('lock', new vscode.ThemeColor('charts.yellow'));
+            item.tooltip = 'Another VS Code window holds the task-runner lease: it launches scheduled/queued work. '
+                + 'This view mirrors it live. If that window closes, this one takes over automatically.';
+            item.contextValue = 'follower-note';
+            return item;
+        }
         if (node.kind === 'triggers-root') {
             const item = new vscode.TreeItem('Triggers', vscode.TreeItemCollapsibleState.Expanded);
             item.iconPath = new vscode.ThemeIcon('zap');
@@ -166,8 +177,11 @@ export class TasksTreeProvider implements vscode.TreeDataProvider<TaskNode> {
         const statusLabel = t.status === 'queued' && t.deferredReason
             ? `deferred: ${t.deferredReason}`
             : t.status + (t.verified ? ` • verify ${t.verified}` : '');
-        item.description = `${statusLabel}${prio}${t.mode === 'headless' ? ' • headless' : ''} • ${relTime(when)}`;
-        item.tooltip = `${t.title}\n[${t.status}] ${t.agentName} (${t.mode})\n\n${t.prompt}`;
+        const cost = t.costUSD !== undefined ? ` • $${t.costUSD.toFixed(2)}` : '';
+        item.description = `${statusLabel}${prio}${t.mode === 'headless' ? ' • headless' : ''}${cost} • ${relTime(when)}`;
+        item.tooltip = `${t.title}\n[${t.status}] ${t.agentName} (${t.mode})`
+            + (t.costUSD !== undefined ? `\nCost: $${t.costUSD.toFixed(4)} (API-equivalent, from the matched transcript)` : '')
+            + `\n\n${t.prompt}`;
         // Workflow-step finals get a distinct context so the menu offers "resume chain" instead of a plain retry.
         const finalKind = t.workflowId !== undefined ? 'final-workflow' : 'final';
         item.contextValue = 'task-' + (t.status === 'queued' ? 'queued' : t.status === 'running' ? 'running' : finalKind);
@@ -184,6 +198,9 @@ export class TasksTreeProvider implements vscode.TreeDataProvider<TaskNode> {
     getChildren(node?: TaskNode): TaskNode[] {
         if (!node) {
             const roots: TaskNode[] = [];
+            if (this.isRunner && !this.isRunner()) {
+                roots.push({ kind: 'follower-note' });
+            }
             if (this.manager.triggers.length) {
                 roots.push({ kind: 'triggers-root' });
             }

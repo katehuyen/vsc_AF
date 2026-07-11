@@ -116,8 +116,11 @@
             <p class="muted small">${r.hits.length} match(es) in ${r.filesScanned} scanned session(s)${r.truncated ? ' — results capped, refine your query' : ''}.</p>
             ${rows}`;
         out.querySelectorAll('[data-hit]').forEach(el =>
-            el.addEventListener('click', () =>
-                vscode.postMessage({ type: 'openSession', file: r.hits[Number(el.dataset.hit)].file })));
+            el.addEventListener('click', () => {
+                const hit = r.hits[Number(el.dataset.hit)];
+                // ts rides along: the viewer opens scrolled to the matched message.
+                vscode.postMessage({ type: 'openSession', file: hit.file, ts: hit.ts || 0 });
+            }));
     }
 
     window.addEventListener('message', ev => {

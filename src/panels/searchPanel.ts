@@ -71,7 +71,9 @@ export class SearchPanel {
                 break;
             }
             case 'openSession':
-                void vscode.commands.executeCommand('agentfarm.openSession', msg.file);
+                // ts = matched message time — the viewer scrolls right to it.
+                void vscode.commands.executeCommand('agentfarm.openSession', msg.file,
+                    typeof msg.ts === 'number' && msg.ts > 0 ? msg.ts : undefined);
                 break;
             case 'buildIndex':
                 void vscode.commands.executeCommand('agentfarm.buildSemanticIndex');

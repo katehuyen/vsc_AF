@@ -2,6 +2,25 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.40.0 — Task token costs + jump-to-match + gallery feedback (2026-07-11)
+
+- **Finished headless tasks now show what they cost.** The task's `claude -p` transcript is matched by lifespan in the session index and its priced token cost lands on the task row (`done • $0.12`), in the tooltip (with the source transcript) and in the daily digest's outcome line. Honesty rule: if a second session ran in the same agent folder at the same time, no figure is guessed — the task simply stays uncosted. Terminal-mode tasks are never matched.
+- **Transcript search results jump to the exact message**: clicking a hit opens the session viewer scrolled to (and flashing) the matched message — same mechanism as the timeline click-through from 2.37.0.
+- **Gallery: Feedback… button** (the last open wave-B item): write what was wrong — the critique is injected into the prompt (same mechanism as the vision-QA retry) and the asset regenerates.
+
+## 2.39.0 — Activation wave: Farm Status card, one-click examples, walkthrough (2026-07-11)
+
+A deep review found the biggest gap wasn't missing features but dormant ones — this release is about waking the factory up:
+
+- **Farm Status card on the Dashboard**: nine honest per-subsystem rows (live monitoring, tasks & schedules, triggers, workflows, media pipeline, external CLIs, asset ingest, smart oversight, secret vault) — green = in real use, blue = configured but idle, gray = never used. Every dormant row carries **one wake-up button** (set up an example, add an API key, open the right setting or guide section). The card opens expanded while something is dormant and collapses to one line once everything hums. The external-CLI row doubles as adapter health: profiles configured but zero sessions seen hints at a format drift (adapters are fail-soft by design).
+- **`Agent Farm: Set Up Example Automation…`** — one click creates a real, editable definition: 📥 inbox duty (watch trigger + classify task), 🌅 morning briefing (daily 09:00 schedule) or 🔗 two-agent chain (analyze → `{prev_text}` → summarize workflow, with a Run Now offer). Reachable from the palette, the empty Tasks view, the Farm Status card and the walkthrough.
+- **Getting-started walkthrough** (VS Code Welcome → Walkthroughs): five steps from adding agent roots to the first automation, in Turkish, with a media page per step.
+
+## 2.38.0 — Multi-window task safety + test suite in-repo (2026-07-11)
+
+- **Only one window runs the task queue now.** Windows race for a lease file (`tasks.owner`); the winner runs the pump/scheduler, the others become read-only followers — a lock-badged row in the Tasks view says so, the list live-mirrors the runner's state, and blocked edits warn instead of silently clobbering. When the runner window closes, a follower takes over automatically within ~20s (running its own stale-detection + resume offer + media reattach). This closes the known B11 limit: two windows could double-launch scheduled work and cancel each other's live rows.
+- **The full test suite (26 files, 469 checks) now lives in the repo** under `test/` with an aggregating runner — `npm test` compiles and runs everything. Previously the suite lived in session-temp folders and could be lost to a temp cleanup.
+
 ## 2.37.0 — Timeline click-through + filter clear button (2026-07-11)
 
 - **Clicking the timeline now lands you on the exact moment.** Any mark on a swim lane (prompt dot, permission diamond, turn-end tick, …) — and now also the green tool-run blocks — opens the Session Viewer scrolled to the message nearest that event, with a brief highlight frame. If the viewer is already open it is revealed and jumped to the spot. Previously a click just opened the session at the top.

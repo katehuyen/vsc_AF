@@ -161,6 +161,30 @@
                 <td class="num"><strong>${C.fmtUSD(s.cost)}</strong></td>
             </tr>`).join('');
 
+        // Z1: Farm Status — which subsystems are live/idle/never-used, one
+        // wake-up action each. Opens expanded only while something is dormant.
+        const st = DATA.farmStatus || [];
+        const stDot = {
+            active: 'var(--vscode-charts-green,#4caf50)',
+            ready: 'var(--vscode-charts-blue,#3794ff)',
+            dormant: 'var(--vscode-descriptionForeground,#999)'
+        };
+        const stCounts = { active: 0, ready: 0, dormant: 0 };
+        st.forEach(r => { stCounts[r.state]++; });
+        const statusCard = st.length ? `
+            <details class="card" style="margin:12px 0;padding:10px 14px" ${stCounts.dormant ? 'open' : ''}>
+                <summary><strong>Farm status</strong> — ${stCounts.active} live · ${stCounts.ready} ready · ${stCounts.dormant} dormant${stCounts.dormant ? ' <span class="muted small">(unused capability — one click each)</span>' : ''}</summary>
+                <div style="margin-top:8px">
+                ${st.map(r => `
+                    <div style="display:flex;align-items:center;gap:10px;padding:3px 0">
+                        <i style="width:9px;height:9px;border-radius:50%;flex:none;background:${stDot[r.state]}" title="${r.state}"></i>
+                        <strong style="width:140px;flex:none;font-size:12px">${C.esc(r.label)}</strong>
+                        <span class="muted small" style="flex:1">${C.esc(r.detail)}</span>
+                        ${r.action ? `<button class="secondary" style="flex:none" data-status-kind="${r.action.kind}" data-status-value="${C.esc(r.action.value)}">${C.esc(r.action.label)}</button>` : ''}
+                    </div>`).join('')}
+                </div>
+            </details>` : '';
+
         const unknown = DATA.unknownModels.length
             ? `<p class="footnote">⚠ No pricing rule matched: ${DATA.unknownModels.map(C.esc).join(', ')} — their cost is counted as $0. Add a rule in <code>agentFarm.pricing</code>.</p>`
             : '';
@@ -182,6 +206,7 @@
                 </div>
             </div>
             ${kpis}
+            ${statusCard}
             ${charts}
             <h2>Agents</h2>
             <div class="grid">${cards}</div>
@@ -234,6 +259,10 @@
             row.addEventListener('click', () => vscode.postMessage({ type: 'openAgent', agentId: row.dataset.agentRow })));
         document.querySelectorAll('[data-guide]').forEach(a =>
             a.addEventListener('click', ev => { ev.stopPropagation(); vscode.postMessage({ type: 'openGuide', anchor: a.dataset.guide }); }));
+        document.querySelectorAll('[data-status-kind]').forEach(b =>
+            b.addEventListener('click', () => vscode.postMessage({
+                type: 'statusAction', kind: b.dataset.statusKind, value: b.dataset.statusValue
+            })));
     }
 
     render();

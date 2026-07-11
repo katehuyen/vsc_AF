@@ -48,6 +48,9 @@ import {
     hasOurHooks, installHooksInto, removeHooksFrom, userSettingsPath
 } from './core/hooksInstaller';
 import { LiveMonitor, LiveSession } from './core/live';
+import { OwnerLease } from './core/owner';
+import { buildFarmStatus } from './core/farmstatus';
+import { matchTaskSession } from './core/taskcost';
 import {
     addMcpServer, copyMcpServerTo, readServerRawDef, removeMcpServer, setServerDisabled, updateMcpServer
 } from './core/mcp';
@@ -56,7 +59,7 @@ import {
     addMemoryFile, applyIndexFixes, archiveMemoryFile, copyMemoryFileTo, MEMORY_TYPES, planIndexFixes
 } from './core/memusage';
 import {
-    DEFAULT_MEDIA_PRICING, MediaPriceRule, mediaCostSince, readMediaMetas, registerExternalAsset
+    DEFAULT_MEDIA_PRICING, MediaPriceRule, injectMediaFeedback, mediaCostSince, readMediaMetas, registerExternalAsset
 } from './core/media';
 import { IngestFolder, IngestWatcher } from './core/ingest';
 import { discoverProductions, newProduction, PRODUCTION_FILENAME, writeProduction } from './core/production';
@@ -473,6 +476,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         live
     };
 
+    // B11: only ONE window may run the task pump/scheduler — otherwise two
+    // windows double-launch scheduled work and clobber each other's state.
+    // Windows race for a lease file; losers follow read-only and take over
+    // automatically when the runner window closes.
+    const taskLease = new OwnerLease(
+        path.join(context.globalStorageUri.fsPath, 'tasks.owner'),
+        `${process.pid}-${Math.random().toString(36).slice(2, 8)}`
+    );
+    let taskRunner = taskLease.tryClaim();
+    let followerWarnedAt = 0;
+
     const taskManager = new TaskManager(
         path.join(context.globalStorageUri.fsPath, 'farm-tasks.json'),
         () => agents,
@@ -563,11 +577,70 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 void vscode.window.showInformationMessage(
                     `Agent Farm: pick assets for "${info.title}" (${info.candidates.length} candidate(s))`);
                 return SelectionPanel.pick(context.extensionUri, info);
+            },
+            // B11: multi-window safety (see taskLease above).
+            isRunner: () => taskRunner,
+            onFollowerWrite: () => {
+                if (Date.now() - followerWarnedAt < 10_000) { return; }
+                followerWarnedAt = Date.now();
+                void vscode.window.showWarningMessage(
+                    'Agent Farm: another window runs the task queue — changes made here are not saved. Manage tasks in that window.');
             }
         }
     );
     taskManagerRef = taskManager;
     context.subscriptions.push(taskManager);
+
+    // B11: lease heartbeat — renew while held; take over when the runner closes.
+    if (!taskRunner) {
+        void vscode.window.showInformationMessage(
+            'Agent Farm: another window already runs the task queue — tasks are read-only here and mirror that window.');
+    }
+    const leaseTimer = setInterval(() => {
+        const held = taskLease.tryClaim();
+        if (held && !taskRunner) {
+            taskRunner = true; // flip BEFORE becomeRunner so load() runs in runner mode
+            taskManager.becomeRunner();
+            void vscode.window.showInformationMessage(
+                'Agent Farm: this window now runs the task queue (the previous runner window closed).');
+        } else if (!held && taskRunner) {
+            // Lost the lease (e.g. a long OS sleep let another window take over).
+            taskRunner = false;
+            taskManager.becomeFollower();
+        }
+    }, 7_000);
+    context.subscriptions.push({ dispose: () => { clearInterval(leaseTimer); taskLease.release(); } });
+
+    // Z4: attach real token costs to finished headless tasks. The task ran
+    // `claude -p` in the agent folder, so its transcript lands in the session
+    // index — match by lifespan and copy the priced cost onto the task.
+    // Ambiguity (a second session in the same folder at the same time) means
+    // no match: better no figure than a wrong one. Runner window only.
+    const costPending = new Map<string, { agentId: string; startedAt: number; endedAt: number; tries: number }>();
+    const tryAttachCosts = () => {
+        if (!taskRunner) { return; }
+        for (const [id, p] of costPending) {
+            const hit = matchTaskSession(p, index.forAgent(p.agentId));
+            if (hit) {
+                taskManager.setTaskCost(id, hit.cost, hit.file);
+                costPending.delete(id);
+            } else if (++p.tries > 60 || Date.now() - p.endedAt > 15 * 60_000) {
+                costPending.delete(id); // transcript never appeared or stayed ambiguous
+            }
+        }
+    };
+    context.subscriptions.push(taskManager.onDidChange(() => {
+        const cutoff = Date.now() - 10 * 60_000;
+        for (const t of taskManager.tasks) {
+            if (t.mode !== 'headless' || (t.status !== 'done' && t.status !== 'failed')) { continue; }
+            if (t.costUSD !== undefined || !t.startedAt || !t.endedAt || t.endedAt < cutoff) { continue; }
+            if (!costPending.has(t.id)) {
+                costPending.set(t.id, { agentId: t.agentId, startedAt: t.startedAt, endedAt: t.endedAt, tries: 0 });
+            }
+        }
+        tryAttachCosts();
+    }));
+    context.subscriptions.push(index.onDidUpdate(() => { if (costPending.size) { tryAttachCosts(); } }));
 
     // F1: workflow runs cut by the last window close — offer to pick them up.
     // Not automatic: a resumed run can spend money/agent time, so the user decides.
@@ -676,7 +749,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         (t) => {
             const stat = buildTriggerStats([t], taskManager.tasks)[0];
             return stat && (stat.fireCountTotal || stat.tasks7d) ? describeTriggerStat(stat) : undefined;
-        });
+        },
+        // B11: read-only badge while another window holds the runner lease.
+        () => taskRunner);
 
     context.subscriptions.push(
         vscode.window.registerTreeDataProvider('agentfarm.agents', agentsTree),
@@ -1026,7 +1101,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     done: finishedToday.filter(t => t.status === 'done').length,
                     failed: finishedToday.filter(t => t.status === 'failed').length,
                     topFailures: finishedToday.filter(t => t.status === 'failed')
-                        .map(t => t.title.replace(/ \(retry \d+\)$/i, '')).slice(0, 3)
+                        .map(t => t.title.replace(/ \(retry \d+\)$/i, '')).slice(0, 3),
+                    // Z4: matched-transcript token costs (headless runs only).
+                    costUSD: finishedToday.reduce((sum, t) => sum + (t.costUSD ?? 0), 0)
                 };
             })()
         });
@@ -1216,7 +1293,41 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             today: mediaCostSince(taskManager.outputsDir, 24 * 3600 * 1000),
             month: mediaCostSince(taskManager.outputsDir, 30 * 24 * 3600 * 1000)
         }),
-        quality: (agentId: string) => qualityStore.avgSince(agentId, 14 * 24 * 3600 * 1000)
+        quality: (agentId: string) => qualityStore.avgSince(agentId, 14 * 24 * 3600 * 1000),
+        // Z1: honest activation card — which subsystems are live/idle/dormant.
+        farmStatus: () => {
+            const week = Date.now() - 7 * 24 * 3600 * 1000;
+            const extBySource: Record<string, number> = {};
+            for (const s of index.external()) {
+                if (s.source) { extBySource[s.source] = (extBySource[s.source] ?? 0) + 1; }
+            }
+            return buildFarmStatus({
+                listenerState: live.listenerState,
+                eventsLast24h: live.events(24 * 3600 * 1000).length,
+                taskCount: taskManager.tasks.length,
+                tasksDone7d: taskManager.tasks.filter(t =>
+                    t.status === 'done' && (t.endedAt ?? 0) >= week).length,
+                scheduleCount: taskManager.schedules.length,
+                triggerCount: taskManager.triggers.length,
+                triggersFired7d: taskManager.triggers.filter(t => (t.lastFiredAt ?? 0) >= week).length,
+                workflowCount: taskManager.workflows.length,
+                workflowRuns7d: taskManager.workflowRuns(7 * 24 * 3600 * 1000).length,
+                hasMediaKey: !!(vault.get(cfg().get<string>('mediaAuthSecret', 'FAL_KEY'))
+                    || vault.get(cfg().get<string>('replicateAuthSecret', 'REPLICATE_API_TOKEN'))),
+                mediaAssetCount: readMediaMetas(taskManager.outputsDir).length,
+                mediaCostMonth: mediaCostSince(taskManager.outputsDir, 30 * 24 * 3600 * 1000),
+                cliProfileCount: cfg().get<CliProfile[]>('cliProfiles', []).length,
+                externalSessions: extBySource,
+                ingestFolderCount: cfg().get<IngestFolder[]>('ingestFolders', [])
+                    .filter(f => f && typeof f.path === 'string' && !!f.path.trim()).length,
+                registeredAssetCount: readMediaMetas(taskManager.outputsDir)
+                    .filter(m => (m.source ?? '').startsWith('external')).length,
+                oversightLoopsOn: ['qualitySample', 'suggestScan', 'weeklySummary']
+                    .filter(k => cfg().get<boolean>(k, false)).length,
+                qualitySamples: qualityStore.scores.length,
+                secretCount: vault.names().length
+            });
+        }
     };
     const detailDeps = {
         extensionUri: context.extensionUri,
@@ -1446,6 +1557,108 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (typeof file === 'string' && file) {
                 SessionViewerPanel.show(file, viewerDeps,
                     typeof focusTs === 'number' && focusTs > 0 ? focusTs : undefined);
+            }
+        }),
+
+        // Z1: one-click working examples — the shortest path from "installed"
+        // to "something actually runs". Each is a real, removable definition.
+        vscode.commands.registerCommand('agentfarm.setupExample', async () => {
+            if (!agents.length) {
+                void vscode.window.showWarningMessage('Agent Farm: no agents found — add an agent root folder first.');
+                return;
+            }
+            const pick = await vscode.window.showQuickPick([
+                {
+                    id: 'inbox' as const,
+                    label: '$(inbox) Inbox duty — classify files dropped into a folder',
+                    description: 'watch trigger → headless task',
+                    detail: 'A new file in the watched folder fires an agent task that inspects and files it (guide S1).'
+                },
+                {
+                    id: 'morning' as const,
+                    label: '$(calendar) Morning briefing — every day at 09:00',
+                    description: 'daily schedule → headless task',
+                    detail: 'The agent reviews its memory/duties and writes a short day plan (guide S3).'
+                },
+                {
+                    id: 'chain' as const,
+                    label: '$(link) Two-agent chain — analyze, then summarize',
+                    description: 'workflow with {prev_text} handoff',
+                    detail: 'Agent A analyzes, agent B turns the analysis into an executive summary (guide S4).'
+                }
+            ], { placeHolder: 'Pick a working example — created as a normal definition you can edit or remove', ignoreFocusOut: true });
+            if (!pick) { return; }
+
+            const showCreated = (what: string, runNow?: () => void) => {
+                const buttons = runNow ? ['Run Now', 'Show Tasks'] : ['Show Tasks'];
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: ${what} created — manage it in the Tasks view.`, ...buttons
+                ).then(choice => {
+                    if (choice === 'Run Now' && runNow) { runNow(); }
+                    if (choice === 'Show Tasks' || choice === 'Run Now') {
+                        void vscode.commands.executeCommand('agentfarm.tasks.focus');
+                    }
+                });
+            };
+
+            if (pick.id === 'inbox') {
+                const agent = await resolveAgent(undefined);
+                if (!agent) { return; }
+                const folderUri = await vscode.window.showOpenDialog({
+                    canSelectFiles: false, canSelectFolders: true, canSelectMany: false,
+                    openLabel: 'Watch this folder'
+                });
+                if (!folderUri?.length) { return; }
+                const folder = folderUri[0].fsPath;
+                const trigger = taskManager.addTrigger({
+                    title: `Inbox: ${path.basename(folder)}`,
+                    type: 'watch',
+                    watchPath: folder,
+                    action: {
+                        kind: 'task', agentId: agent.id, agentName: agent.name,
+                        title: 'Inbox tasnifi',
+                        prompt: 'İzlenen klasöre ({watch}) yeni veya değişmiş bir dosya düştü. Dosyayı bul, içeriğine bak ve: '
+                            + '(1) ne olduğunu tek satırda özetle; (2) CLAUDE.md/hafızandaki kurallara göre uygun yere taşı ya da işle; '
+                            + '(3) ne yaptığını kısaca raporla. Emin olamadığın dosyaya dokunma, sadece raporla.',
+                        mode: 'headless'
+                    },
+                    debounceSec: 20, cooldownSec: 60, maxPerHour: 6, enabled: true
+                });
+                showCreated(`watch trigger "${trigger.title}" (${agent.name})`);
+            } else if (pick.id === 'morning') {
+                const agent = await resolveAgent(undefined);
+                if (!agent) { return; }
+                taskManager.addSchedule({
+                    agentId: agent.id, agentName: agent.name,
+                    title: 'Sabah brifingi',
+                    prompt: 'Günaydın. Hafızanı, DUTIES.md görevlerini ve dünkü durumu gözden geçir; '
+                        + 'bugün için 3-5 maddelik kısa bir plan/brifing yaz. Yeni dosya oluşturma, sadece raporla.',
+                    mode: 'headless', kind: 'daily', hour: 9, minute: 0, enabled: true
+                });
+                showCreated(`daily schedule "Sabah brifingi" 09:00 (${agent.name})`);
+            } else {
+                const pickStep = (ph: string) => vscode.window.showQuickPick(
+                    agents.map(a => ({ label: a.name, description: a.dir, agent: a })),
+                    { placeHolder: ph, ignoreFocusOut: true });
+                const a = await pickStep('Step 1 — which agent analyzes?');
+                if (!a) { return; }
+                const b = await pickStep('Step 2 — which agent summarizes?');
+                if (!b) { return; }
+                const w = taskManager.addWorkflow('Analiz → Özet', [
+                    {
+                        agentId: a.agent.id, agentName: a.agent.name, title: 'Analiz',
+                        prompt: 'Ajan klasöründeki güncel duruma (hafıza, son raporlar, DUTIES.md) bakarak bugünün en önemli 3 konusunu analiz et. '
+                            + 'Her biri için durum + risk + öneri yaz.',
+                        mode: 'headless'
+                    },
+                    {
+                        agentId: b.agent.id, agentName: b.agent.name, title: 'Özet',
+                        prompt: 'Aşağıdaki analizi 5 cümleyi geçmeyen bir yönetici özetine çevir:\n\n{prev_text}',
+                        mode: 'headless'
+                    }
+                ]);
+                showCreated(`workflow "${w.title}" (${a.agent.name} → ${b.agent.name})`,
+                    () => { taskManager.runWorkflow(w); });
             }
         }),
 
@@ -2225,21 +2438,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             });
         }),
 
-        vscode.commands.registerCommand('agentfarm.rerunMedia', async (taskId?: string, vary?: boolean) => {
+        vscode.commands.registerCommand('agentfarm.rerunMedia', async (taskId?: string, vary?: boolean, withFeedback?: boolean) => {
             const meta = readMediaMetas(taskManager.outputsDir).find(m => m.taskId === taskId);
             if (!meta) {
                 void vscode.window.showWarningMessage('Agent Farm: media metadata not found.');
                 return;
             }
             let input = meta.input;
+            let suffix = ' (re-run)';
             if (vary) {
                 const edited = await vscode.window.showInputBox({
                     prompt: `Vary input for ${meta.model}`, value: meta.input, ignoreFocusOut: true
                 });
                 if (!edited) { return; }
                 input = edited;
+                suffix = ' (vary)';
+            } else if (withFeedback) {
+                // Regenerate with a critique — injected into the prompt field the
+                // same way the vision-QA retry does it.
+                const fb = await vscode.window.showInputBox({
+                    prompt: `What was wrong / what should change? (${meta.model})`,
+                    placeHolder: 'e.g. eller bozuk; ışık daha sıcak olsun; kamera daha yakın',
+                    ignoreFocusOut: true
+                });
+                if (!fb) { return; }
+                input = injectMediaFeedback(meta.input, fb);
+                suffix = ' (feedback)';
             }
-            taskManager.runMediaAdhoc(meta.title + (vary ? ' (vary)' : ' (re-run)'), meta.model, input,
+            taskManager.runMediaAdhoc(meta.title + suffix, meta.model, input,
                 { projectId: meta.projectId, sceneId: meta.sceneId });
             void vscode.window.showInformationMessage(`Agent Farm: media job started — ${meta.model}`);
         }),

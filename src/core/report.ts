@@ -134,7 +134,7 @@ export interface DailyDigestData {
     queuedTasks: number;
     mediaCostToday: number;
     /** Tasks that finished today (done/failed) + a few failure titles. */
-    taskOutcomesToday?: { done: number; failed: number; topFailures: string[] };
+    taskOutcomesToday?: { done: number; failed: number; topFailures: string[]; costUSD?: number };
 }
 
 /**
@@ -160,6 +160,7 @@ export function buildDailyDigest(d: DailyDigestData): string {
     const out = d.taskOutcomesToday;
     if (out && (out.done || out.failed)) {
         lines.push(`Bugün biten: ${out.done}✓ ${out.failed}✗` +
+            (out.costUSD ? ` · ~$${out.costUSD.toFixed(2)}` : '') +
             (out.topFailures.length ? ` — hata: ${out.topFailures.slice(0, 2).join(', ')}` : ''));
     }
     if (d.pendingDuties) { lines.push(`👁 Nöbet: ${d.pendingDuties} bekleyen iş`); }

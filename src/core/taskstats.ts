@@ -25,6 +25,8 @@ export interface TaskRecord {
     workflowId?: string;
     attempt?: number;
     verified?: 'pass' | 'fail';
+    /** Z4: matched-transcript token cost (headless runs). */
+    costUSD?: number;
     mediaCost?: number;
 }
 

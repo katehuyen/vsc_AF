@@ -106,6 +106,7 @@ Oturum başlıkları 2.7.0'dan itibaren konuşmadan türetilir: `/compact` gibi 
 Filonun genel panosu. `Agent Farm: Open Dashboard` komutuyla veya durum çubuğuna tıklayarak açılır.
 
 - **KPI kartları**: aktif ajan sayısı, bugünkü maliyet, seçili aralık maliyeti, oturum sayısı, 5 saatlik pencere, toplam bulgu sayısı.
+- **Farm Status kartı (2.39.0):** KPI'ların hemen altında, alt sistem başına dürüst bir aktivasyon satırı — **yeşil nokta = canlı kullanımda, mavi = kurulu ama boşta, gri = hiç kullanılmamış.** Dokuz satır: canlı izleme, görevler/zamanlama, tetikleyiciler, iş akışları, medya hattı, harici CLI'lar, varlık alımı (ingest), zeki gözetim, sır kasası. Uyuyan her satırın yanında **tek tık uyandırma** düğmesi vardır (örnek kurulum, anahtar ekleme, ilgili ayar/kılavuz). Bir şey uyuyorsa kart açık gelir; her şey canlıysa tek satır özete katlanır. Harici CLI satırı adaptörlerin fail-soft doğasını da hatırlatır: profil var ama hiç oturum görünmüyorsa bu bir format kayması işareti olabilir.
 - **Daily cost by agent**: ajan bazında yığılmış maliyet grafiği. Aralık seçici (2.13.0 ile genişledi): **7 / 14 / 30 / 90 / 180 / 365 gün**. 120 günü aşan aralıklarda çubuklar okunur kalsın diye günlükler otomatik **haftalık gruplanır** (başlıkta "weekly buckets" notu). Tüm günlük veri zaten oturum kayıtlarından geldiği için 1 yıllık görünüm ek yük getirmez.
 - **Cost by model**: hangi modele ne kadar harcandığını gösteren halka grafik.
 - **Token types**: input / output / cache write / cache read dağılımı. Cache read oranın yüksekse prompt cache verimli çalışıyor demektir — bu iyidir.
@@ -239,6 +240,10 @@ Bildirimdeki **Open Timeline** düğmesi seni doğrudan kulvar görünümüne g�
 
 Faz 3 ile gelen koordinasyon katmanı. Yan paneldeki **Tasks** görünümünden ajanlarına iş sıralarsın; her görev ajanın klasöründe bir terminal açıp `claude` komutunu senin prompt'unla başlatır.
 
+### Tek Tık Örnek Kurulum (2.39.0)
+
+Boş sayfa problemine karşı: **Agent Farm: Set Up Example Automation…** üç çalışan örnekten birini gerçek, düzenlenebilir bir tanım olarak kurar — 📥 **Inbox nöbeti** (klasör seç → watch trigger + tasnif görevi), 🌅 **Sabah brifingi** (ajan seç → her gün 09:00 headless görev), 🔗 **İki ajanlı zincir** (A analiz → `{prev_text}` → B özet workflow'u, istersen hemen koştur). Kurulan şey sihir değildir; Tasks görünümünde görünür, düzenlenir, silinir. Komut palete ek olarak Tasks görünümünün boş karşılama ekranından, Dashboard'daki Farm Status kartından ve kurulum turundan (walkthrough) da erişilir. VS Code'un **Welcome → Walkthroughs** bölümündeki "Agent Farm: Beş Adımda Kurulum" turu, ajan tanıtmadan ilk otomasyona beş adımı sırayla yürütür.
+
 ### Görev Ekleme ve Çalıştırma
 
 1. Tasks görünümünde **+** (Add Task): ajan seç → başlık → prompt → mod seç.
@@ -312,6 +317,12 @@ Sık kullandığın görevleri şablonlaştır: görev üzerinde sağ tık → *
 0.8.0'dan itibaren kuyruk gerçek bir kuyruk: aynı anda koşan görev sayısı sınırlıdır (`maxConcurrentTasks` varsayılan 2, `maxConcurrentPerAgent` varsayılan 1). Sınıra takılan başlatma **iptal edilmez** — "deferred" rozetiyle bekler ve kapasite açılınca kendiliğinden koşar.
 
 **Kota bekçisi:** `windowTokenLimit` tanımlıysa ve `quotaGuardPercent` (örn. 85) ayarlıysa, 5 saatlik pencere o doluluğa ulaştığında **otomatik** işler ertelenir — bir gece fabrikası sabah kotanı yemiş olmaz. Pencere gevşeyince ertelenenler sırayla başlar.
+
+**Çoklu pencere güvenliği (2.38.0):** Görev kuyruğunu aynı anda yalnızca **tek** VS Code penceresi yürütür. Pencereler açılışta bir kira dosyası (`tasks.owner`) için yarışır; kirayı alan pencere pompayı/zamanlayıcıyı çalıştırır, diğerleri **salt-okunur takipçi** olur — Tasks görünümünün başında kilit rozetli "Read-only — another window runs the queue" satırı görünür, liste yürütücünün kayıtlarını canlı yansıtır. Takipçide yapılan değişiklik kaydedilmez (uyarı çıkar; görev yönetimini yürütücü pencerede yap). Yürütücü pencere kapanınca kira ~20 saniye içinde boşa düşer ve takipçilerden biri **kendiliğinden devralır** (yarıda kalan koşular o anda tespit edilip Resume teklif edilir). Önceden iki pencere aynı zamanlanmış görevi çift başlatabilir ve birbirinin koşan satırlarını "iptal" diye ezebilirdi — bu yapısal olarak kapandı.
+
+### Görev Maliyeti (2.40.0)
+
+Headless biten her görev, `claude -p` koşusunun yazdığı transkriptle **yaşam süresi eşleşmesi** üzerinden buluşturulur ve transkriptin fiyatlanmış token maliyeti görev satırına rozet olarak düşer (`done • $0.12 • 3m ago`); günlük digest'e de günün toplamı eklenir. Dürüstlük kuralı: aynı ajan klasöründe aynı anda ikinci bir oturum varsa (belirsizlik) rakam **uydurulmaz** — görev maliyetsiz kalır. Terminal modundaki görevlerde eşleştirme yapılmaz (oturum görevden sonra da sürer). Eşleşen transkript görevin tooltip'inde durur; medya adımlarının `mediaCost`'u bundan ayrıdır.
 
 ### Görev Tarihçesi
 
@@ -535,7 +546,7 @@ Sağlayıcı farkı adım için şeffaftır: indirme, asset arşivi, galeri, mal
 
 ### Medya Galerisi
 
-`Agent Farm: Open Media Gallery` (Tasks başlığındaki kamera ikonu): üretilmiş tüm görsel/video/sesler — önizleme, model, girdi, tahmini maliyet, hangi zincirden geldiği. **Re-run** aynı parametrelerle yeniden üretir; **Vary…** girdiyi düzenletip üretir. **Scene…** varlığı bir prodüksiyon sahnesine bağlar/çözer. Tıkla → dosya açılır.
+`Agent Farm: Open Media Gallery` (Tasks başlığındaki kamera ikonu): üretilmiş tüm görsel/video/sesler — önizleme, model, girdi, tahmini maliyet, hangi zincirden geldiği. **Re-run** aynı parametrelerle yeniden üretir; **Vary…** girdiyi düzenletip üretir; **Feedback… (2.40.0)** "neyi beğenmedin?" diye sorar ve eleştirini prompt'a enjekte edip yeniden üretir (vision-QA retry'ının elle hali). **Scene…** varlığı bir prodüksiyon sahnesine bağlar/çözer. Tıkla → dosya açılır.
 
 ### Prodüksiyon Sahneleri (Dalga A)
 
@@ -818,7 +829,7 @@ Sinyal yorgunluğuna karşı: on ayrı uyarı yerine haftada bir, üç cümlelik
 - **Aç:** `Agent Farm: Search Transcripts…` veya Recent Sessions başlığındaki 🔍.
 - Tüm oturum kayıtlarında **kullanıcı istekleri + ajan cevapları** taranır; en yeni oturumlar önce gelir.
 - Seçenekler: ajan filtresi, `regex` kutusu (düz metin varsayılan, büyük/küçük harf duyarsız), `match case`.
-- Sonuca tıklayınca oturum görüntüleyici açılır; eşleşme bağlamıyla (öncesi/sonrası) ve vurgulu gösterilir.
+- Sonuca tıklayınca oturum görüntüleyici açılır ve **tam eşleşen mesaja kayar** (2.40.0) — mesaj kısa süreliğine çerçeveyle vurgulanır.
 - Sonuçlar oturum başına 3, toplam 150 ile sınırlıdır — taşarsa sorguyu daralt.
 
 **Semantik mod (anlamsal arama):** kelime değil anlam arar — *"ajanla motivasyon düşüklüğünü konuştuğum yer"* gibi sorular için. Paneldeki **semantic** kutusunu işaretle.

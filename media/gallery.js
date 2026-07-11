@@ -53,7 +53,8 @@
             <div class="btnrow">
                 ${item.assetPath ? `<button class="secondary" data-open="${C.esc(item.assetPath)}">Open file</button>` : ''}
                 ${external ? '' : `<button class="secondary" data-rerun="${C.esc(item.taskId)}">Re-run</button>
-                <button class="secondary" data-vary="${C.esc(item.taskId)}">Vary…</button>`}
+                <button class="secondary" data-vary="${C.esc(item.taskId)}">Vary…</button>
+                <button class="secondary" data-feedback="${C.esc(item.taskId)}" title="Say what was wrong — the note is injected into the prompt and the asset is regenerated">Feedback…</button>`}
                 <button class="secondary" data-assign="${C.esc(item.taskId)}">Scene…</button>
             </div>
         </div>`;
@@ -147,6 +148,8 @@
             el.addEventListener('click', () => vscode.postMessage({ type: 'rerun', taskId: el.dataset.rerun })));
         document.querySelectorAll('[data-vary]').forEach(el =>
             el.addEventListener('click', () => vscode.postMessage({ type: 'vary', taskId: el.dataset.vary })));
+        document.querySelectorAll('[data-feedback]').forEach(el =>
+            el.addEventListener('click', () => vscode.postMessage({ type: 'feedback', taskId: el.dataset.feedback })));
         document.querySelectorAll('[data-assign]').forEach(el =>
             el.addEventListener('click', () => vscode.postMessage({ type: 'assign', taskId: el.dataset.assign })));
         document.querySelectorAll('[data-status-scene]').forEach(el =>

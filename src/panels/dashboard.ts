@@ -4,6 +4,7 @@ import { watchStatus } from '../core/duties';
 import { Insight } from '../core/health';
 import { SessionIndex } from '../core/sessions';
 import { PricingEngine, totalTokens } from '../core/pricing';
+import { SubsystemStatus } from '../core/farmstatus';
 import { dayKey } from '../core/util';
 import { htmlShell } from './base';
 
@@ -18,6 +19,8 @@ export interface DashboardDeps {
     mediaCost(): { today: number; month: number };
     /** D1: rolling 14-day quality average by agent id. */
     quality?(agentId: string): { avg?: number; count: number };
+    /** Z1: per-subsystem activation rows for the Farm Status card. */
+    farmStatus?(): SubsystemStatus[];
 }
 
 interface AgentSummary {
@@ -149,6 +152,7 @@ function buildData(deps: DashboardDeps): Record<string, unknown> {
             info: insights.filter(i => i.severity === 'info').length
         },
         unknownModels: [...deps.getPricing().unknownModels],
+        farmStatus: deps.farmStatus?.() ?? [],
         // E3: external-CLI sessions (side list — excluded from every cost/usage
         // figure above; surfaced as an honest one-liner).
         externalSessions: (() => {
@@ -225,6 +229,19 @@ export class DashboardPanel {
             case 'refresh':
                 this.refresh();
                 break;
+            case 'statusAction': {
+                // Farm Status card buttons. Commands are whitelisted — the
+                // webview must not be able to run arbitrary commands.
+                const ALLOWED = new Set(['agentfarm.setupExample', 'agentfarm.installHooks', 'agentfarm.setSecret']);
+                if (msg.kind === 'command' && typeof msg.value === 'string' && ALLOWED.has(msg.value)) {
+                    void vscode.commands.executeCommand(msg.value);
+                } else if (msg.kind === 'guide' && typeof msg.value === 'string') {
+                    void vscode.commands.executeCommand('agentfarm.openGuide', msg.value);
+                } else if (msg.kind === 'settings' && typeof msg.value === 'string') {
+                    void vscode.commands.executeCommand('workbench.action.openSettings', msg.value);
+                }
+                break;
+            }
         }
     }
 

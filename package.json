@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.37.0",
+  "version": "2.40.0",
   "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
@@ -71,7 +71,71 @@
       },
       {
         "view": "agentfarm.tasks",
-        "contents": "Queue work for your agents and schedule recurring runs.\n[Add Task](command:agentfarm.addTask)\n[Add Scheduled Task](command:agentfarm.addSchedule)\nTasks open a terminal in the agent's folder and run claude with your prompt.\n[Open Guide](command:agentfarm.openGuide)"
+        "contents": "Queue work for your agents and schedule recurring runs.\n[Set Up a Working Example](command:agentfarm.setupExample)\nOne click creates a real inbox trigger, morning schedule or two-agent chain — edit or remove it anytime.\n[Add Task](command:agentfarm.addTask)\n[Add Scheduled Task](command:agentfarm.addSchedule)\nTasks open a terminal in the agent's folder and run claude with your prompt.\n[Open Guide](command:agentfarm.openGuide)"
+      }
+    ],
+    "walkthroughs": [
+      {
+        "id": "agentfarm.gettingStarted",
+        "title": "Agent Farm: Beş Adımda Kurulum",
+        "description": "Canlı izlemeden ilk otonom işe — ajan filonun komuta merkezi.",
+        "steps": [
+          {
+            "id": "agents",
+            "title": "1 · Ajanlarını tanıt",
+            "description": "Agent Farm, kök klasörlerin altındaki CLAUDE.md içeren her klasörü bir ajan olarak tanır.\n[Ajan Kökü Ekle](command:agentfarm.addAgentRoot)",
+            "media": {
+              "markdown": "docs/walkthrough/01-agents.md"
+            },
+            "completionEvents": [
+              "onCommand:agentfarm.addAgentRoot"
+            ]
+          },
+          {
+            "id": "hooks",
+            "title": "2 · Canlı hook'ları kur",
+            "description": "Hook'lar her ajan olayını (komut, araç, izin bekleme) yerel dinleyiciye iletir — timeline ve bildirimler bununla çalışır.\n[Install Live Hooks](command:agentfarm.installHooks)",
+            "media": {
+              "markdown": "docs/walkthrough/02-hooks.md"
+            },
+            "completionEvents": [
+              "onCommand:agentfarm.installHooks"
+            ]
+          },
+          {
+            "id": "dashboard",
+            "title": "3 · Dashboard'u aç",
+            "description": "Maliyet, sağlık ve Farm Status kartı — hangi alt sistem uyuyor, tek bakışta.\n[Open Dashboard](command:agentfarm.openDashboard)",
+            "media": {
+              "markdown": "docs/walkthrough/03-dashboard.md"
+            },
+            "completionEvents": [
+              "onCommand:agentfarm.openDashboard"
+            ]
+          },
+          {
+            "id": "example",
+            "title": "4 · İlk otomasyonu kur",
+            "description": "Tek tıkla çalışan bir örnek: inbox nöbeti, sabah brifingi veya iki ajanlı zincir.\n[Set Up Example Automation](command:agentfarm.setupExample)",
+            "media": {
+              "markdown": "docs/walkthrough/04-example.md"
+            },
+            "completionEvents": [
+              "onCommand:agentfarm.setupExample"
+            ]
+          },
+          {
+            "id": "guide",
+            "title": "5 · Rehberi keşfet",
+            "description": "25 senaryolu Türkçe kılavuz: medya hattı, webhook köprüsü, çoklu ajan zincirleri…\n[Open Guide](command:agentfarm.openGuide)",
+            "media": {
+              "markdown": "docs/walkthrough/05-guide.md"
+            },
+            "completionEvents": [
+              "onCommand:agentfarm.openGuide"
+            ]
+          }
+        ]
       }
     ],
     "commands": [
@@ -80,6 +144,12 @@
         "title": "Open Dashboard",
         "category": "Agent Farm",
         "icon": "$(graph)"
+      },
+      {
+        "command": "agentfarm.setupExample",
+        "title": "Set Up Example Automation…",
+        "category": "Agent Farm",
+        "icon": "$(rocket)"
       },
       {
         "command": "agentfarm.lapReset",
@@ -2021,7 +2091,8 @@
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "package": "vsce package --allow-missing-repository"
+    "package": "vsce package --allow-missing-repository",
+    "test": "tsc -p ./ && node test/run-all.js"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
