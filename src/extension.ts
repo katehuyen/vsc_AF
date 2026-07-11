@@ -1442,9 +1442,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (agent) { AgentDetailPanel.show(agent.id, detailDeps); }
         }),
 
-        vscode.commands.registerCommand('agentfarm.openSession', (file?: string) => {
+        vscode.commands.registerCommand('agentfarm.openSession', (file?: string, focusTs?: number) => {
             if (typeof file === 'string' && file) {
-                SessionViewerPanel.show(file, viewerDeps);
+                SessionViewerPanel.show(file, viewerDeps,
+                    typeof focusTs === 'number' && focusTs > 0 ? focusTs : undefined);
             }
         }),
 

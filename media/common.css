@@ -76,6 +76,7 @@ table { border-collapse: collapse; width: 100%; font-size: 12px; }
 th { text-align: left; font-weight: 600; opacity: .75; padding: 5px 10px 5px 0; border-bottom: 1px solid var(--vscode-widget-border, #4443); white-space: nowrap; }
 td { padding: 5px 10px 5px 0; border-bottom: 1px solid var(--vscode-widget-border, #2222); vertical-align: top; }
 tr.click { cursor: pointer; }
+svg .mark { cursor: pointer; } /* timeline marks/segments click through to the session */
 tr.click:hover td { background: var(--vscode-list-hoverBackground); }
 td.num, th.num { text-align: right; }
 

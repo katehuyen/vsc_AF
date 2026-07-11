@@ -2,6 +2,11 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.37.0 — Timeline click-through + filter clear button (2026-07-11)
+
+- **Clicking the timeline now lands you on the exact moment.** Any mark on a swim lane (prompt dot, permission diamond, turn-end tick, …) — and now also the green tool-run blocks — opens the Session Viewer scrolled to the message nearest that event, with a brief highlight frame. If the viewer is already open it is revealed and jumped to the spot. Previously a click just opened the session at the top.
+- **Session Viewer filter box has a ✕ clear button**: appears while the box is non-empty; one click clears the filter and refocuses the input.
+
 ## 2.36.0 — Bug-scan fixes: codex hook wiring, honest costs, parallel reattach (2026-07-11)
 
 Fixes from a logic-trace bug scan of the workflow + multi-CLI systems:

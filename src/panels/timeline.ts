@@ -97,7 +97,9 @@ export class TimelinePanel {
                 break;
             case 'openSession':
                 if (typeof msg.file === 'string' && msg.file) {
-                    void vscode.commands.executeCommand('agentfarm.openSession', msg.file);
+                    // ts = clicked mark/segment time — the viewer scrolls right there.
+                    void vscode.commands.executeCommand('agentfarm.openSession', msg.file,
+                        typeof msg.ts === 'number' && msg.ts > 0 ? msg.ts : undefined);
                 }
                 break;
             case 'openGuide':

@@ -22,6 +22,7 @@
     const replay = { active: false, playing: false, pos: 0, speed: 2, timer: null, msgs: [] };
 
     window.addEventListener('message', ev => {
+        if (ev.data.type === 'focus') { focusAt(ev.data.ts); return; }
         if (ev.data.type !== 'data') { return; }
         DATA = ev.data.data;
         if (ev.data.auto && replay.active) {
@@ -98,6 +99,25 @@
         const anchor = el.nextElementSibling || el;
         const y = anchor.getBoundingClientRect().top + window.scrollY - el.offsetHeight - 10;
         window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
+    }
+
+    /** Timeline click-through: scroll to the rendered message nearest the given
+     *  timestamp and flash it. Replay indexes a different list, so exit it first. */
+    function focusAt(ts) {
+        if (!ts) { return; }
+        if (replay.active) { stopTimer(); replay.active = false; render(); }
+        let best = -1, bestDist = Infinity;
+        visibleMsgs().forEach((m, i) => {
+            if (!m.ts) { return; }
+            const d = Math.abs(m.ts - ts);
+            if (d < bestDist) { bestDist = d; best = i; }
+        });
+        if (best < 0) { return; }
+        const el = document.querySelector(`#msgs [data-idx="${best}"]`);
+        if (!el) { return; }
+        el.scrollIntoView({ block: 'center' });
+        el.classList.add('flash');
+        setTimeout(() => el.classList.remove('flash'), 2500);
     }
 
     /** Jump to the previous/next *rendered* turn band (filters may hide some turns). */
@@ -364,6 +384,12 @@
                     border:1px solid var(--vscode-widget-border, #4444); }
                 .chip.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground);
                     border-color:transparent; opacity:1; }
+                .searchbar .clearbtn { position:absolute; right:4px; top:50%; transform:translateY(-50%);
+                    background:transparent; border:none; padding:2px 6px; cursor:pointer;
+                    font-size:12px; line-height:1; color:var(--vscode-descriptionForeground); }
+                .searchbar .clearbtn:hover { color:var(--vscode-foreground); }
+                /* Timeline click-through: briefly spotlight the message we jumped to. */
+                .msg.flash { outline:2px solid var(--vscode-textLink-foreground); outline-offset:2px; }
             </style>
             <div class="spread">
                 <div>
@@ -404,8 +430,9 @@
                 <button class="secondary" id="rp-exit">✕ Exit</button>
                 <span class="muted small" id="rp-pos">${Math.min(replay.pos + 1, replay.msgs.length)}/${replay.msgs.length}</span>
             </div>` : `
-            <div class="searchbar" style="margin:14px 0 6px">
-                <input id="filter" type="text" placeholder="Filter messages… (text, tool name)" value="${C.esc(filter)}">
+            <div class="searchbar" style="margin:14px 0 6px; position:relative">
+                <input id="filter" type="text" placeholder="Filter messages… (text, tool name)" value="${C.esc(filter)}" style="padding-right:28px">
+                <button id="filterclear" class="clearbtn" title="Clear filter" style="display:${filter ? '' : 'none'}">✕</button>
             </div>`}
             ${chipRowHtml()}
             ${DATA.truncatedCount ? `<p class="muted small">Showing last ${DATA.messages.length} of ${DATA.messageCount} messages (${DATA.truncatedCount} older hidden — raise <code>agentFarm.maxTranscriptMessages</code> to see more).</p>` : ''}
@@ -521,13 +548,18 @@
             updateReplayUi();
         } else {
             const input = document.getElementById('filter');
-            input.addEventListener('input', () => {
+            const clear = document.getElementById('filterclear');
+            const applyFilter = () => {
                 filter = input.value.toLowerCase();
+                clear.style.display = filter ? '' : 'none';
                 const msgs = document.getElementById('msgs');
                 msgs.innerHTML = listHtml(visibleMsgs()) || '<p class="muted">No messages match.</p>';
-            });
+            };
+            input.addEventListener('input', applyFilter);
+            clear.addEventListener('click', () => { input.value = ''; applyFilter(); input.focus(); });
         }
     }
 
     render();
+    if (DATA.focusTs) { focusAt(DATA.focusTs); }
 })();

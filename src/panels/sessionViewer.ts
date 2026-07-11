@@ -257,10 +257,13 @@ export class SessionViewerPanel {
     private watcher?: fs.FSWatcher;
     private pushTimer?: NodeJS.Timeout;
 
-    static show(file: string, deps: ViewerDeps): void {
+    /** focusTs: scroll to (and flash) the message nearest this timestamp — the
+     *  timeline passes the clicked mark's time so the viewer opens right there. */
+    static show(file: string, deps: ViewerDeps, focusTs?: number): void {
         const existing = SessionViewerPanel.open.get(file);
         if (existing) {
             existing.panel.reveal();
+            if (focusTs) { void existing.panel.webview.postMessage({ type: 'focus', ts: focusTs }); }
             return;
         }
         const panel = vscode.window.createWebviewPanel(
@@ -269,19 +272,22 @@ export class SessionViewerPanel {
             vscode.ViewColumn.One,
             { enableScripts: true, retainContextWhenHidden: true }
         );
-        SessionViewerPanel.open.set(file, new SessionViewerPanel(panel, file, deps));
+        SessionViewerPanel.open.set(file, new SessionViewerPanel(panel, file, deps, focusTs));
     }
 
     private constructor(
         readonly panel: vscode.WebviewPanel,
         private file: string,
-        private deps: ViewerDeps
+        private deps: ViewerDeps,
+        focusTs?: number
     ) {
+        const data = buildData(file, deps);
+        if (focusTs) { data.focusTs = focusTs; }
         panel.webview.html = htmlShell(
             panel.webview,
             deps.extensionUri,
             'Session Viewer',
-            buildData(file, deps),
+            data,
             'sessionViewer.js'
         );
         panel.onDidDispose(() => this.dispose(), null, this.disposables);

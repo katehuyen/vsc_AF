@@ -113,13 +113,13 @@
             const name = e.agentName || e.sessionId.slice(0, 8);
             const lane = laneOf(name);
             if (e.kind === 'toolStart') {
-                open.set(e.sessionId, { start: e.ts, tool: e.tool || '?', lane });
+                open.set(e.sessionId, { start: e.ts, tool: e.tool || '?', lane, file: e.transcriptPath || '' });
             } else if (e.kind === 'toolEnd') {
                 const o = open.get(e.sessionId);
                 if (o) {
                     open.delete(e.sessionId);
                     if (e.ts >= from) {
-                        o.lane.segments.push({ start: Math.max(o.start, from), end: e.ts, tool: o.tool });
+                        o.lane.segments.push({ start: Math.max(o.start, from), end: e.ts, tool: o.tool, file: o.file });
                     }
                 }
             } else if (e.ts >= from) {
@@ -128,7 +128,7 @@
         }
         // Tools still running: draw to "now".
         for (const o of open.values()) {
-            o.lane.segments.push({ start: Math.max(o.start, from), end: now, tool: o.tool, live: true });
+            o.lane.segments.push({ start: Math.max(o.start, from), end: now, tool: o.tool, live: true, file: o.file });
         }
         return lanes;
     }
@@ -179,7 +179,7 @@
             out += `<line x1="${labelW}" y1="${y + rowH / 2}" x2="${W - 8}" y2="${y + rowH / 2}" stroke="currentColor" opacity="0.1"/>`;
             for (const seg of lane.segments) {
                 const x1 = x(seg.start), x2 = Math.max(x(seg.end), x1 + 2);
-                out += `<rect x="${x1.toFixed(1)}" y="${y + rowH / 2 - 7}" width="${(x2 - x1).toFixed(1)}" height="14" rx="3" fill="var(--vscode-charts-green, #4caf50)" opacity="${seg.live ? 0.95 : 0.55}">` +
+                out += `<rect x="${x1.toFixed(1)}" y="${y + rowH / 2 - 7}" width="${(x2 - x1).toFixed(1)}" height="14" rx="3" fill="var(--vscode-charts-green, #4caf50)" opacity="${seg.live ? 0.95 : 0.55}" class="mark" data-file="${C.esc(seg.file || '')}" data-ts="${seg.start}">` +
                     `<title>${C.esc(seg.tool)} — ${fmtClock(seg.start)} → ${seg.live ? 'running' : fmtClock(seg.end)} (${Math.max(1, Math.round((seg.end - seg.start) / 1000))}s)</title></rect>`;
             }
             for (const m of lane.marks) {
@@ -187,11 +187,11 @@
                 const mx = x(m.ts), my = y + rowH / 2;
                 const tip = `<title>${C.esc(st.label)}${m.tool ? ' · ' + C.esc(m.tool) : ''}${m.detail ? ' — ' + C.esc(m.detail) : ''} (${fmtClock(m.ts)})</title>`;
                 if (st.shape === 'diamond') {
-                    out += `<path d="M ${mx} ${my - 6} L ${mx + 5} ${my} L ${mx} ${my + 6} L ${mx - 5} ${my} Z" fill="${st.color}" class="mark" data-file="${C.esc(m.file)}">${tip}</path>`;
+                    out += `<path d="M ${mx} ${my - 6} L ${mx + 5} ${my} L ${mx} ${my + 6} L ${mx - 5} ${my} Z" fill="${st.color}" class="mark" data-file="${C.esc(m.file)}" data-ts="${m.ts}">${tip}</path>`;
                 } else if (st.shape === 'tick') {
-                    out += `<line x1="${mx}" y1="${my - 8}" x2="${mx}" y2="${my + 8}" stroke="${st.color}" stroke-width="2" class="mark" data-file="${C.esc(m.file)}">${tip}</line>`;
+                    out += `<line x1="${mx}" y1="${my - 8}" x2="${mx}" y2="${my + 8}" stroke="${st.color}" stroke-width="2" class="mark" data-file="${C.esc(m.file)}" data-ts="${m.ts}">${tip}</line>`;
                 } else {
-                    out += `<circle cx="${mx}" cy="${my}" r="4.2" fill="${st.color}" class="mark" data-file="${C.esc(m.file)}">${tip}</circle>`;
+                    out += `<circle cx="${mx}" cy="${my}" r="4.2" fill="${st.color}" class="mark" data-file="${C.esc(m.file)}" data-ts="${m.ts}">${tip}</circle>`;
                 }
             }
         });
@@ -399,7 +399,10 @@
             b.addEventListener('click', () => vscode.postMessage({ type: 'openSession', file: b.dataset.open })));
         document.querySelectorAll('.mark').forEach(el =>
             el.addEventListener('click', () => {
-                if (el.dataset.file) { vscode.postMessage({ type: 'openSession', file: el.dataset.file }); }
+                if (el.dataset.file) {
+                    // ts rides along so the viewer opens scrolled to this exact event.
+                    vscode.postMessage({ type: 'openSession', file: el.dataset.file, ts: Number(el.dataset.ts) || 0 });
+                }
             }));
         document.querySelectorAll('.af-toggle').forEach(el =>
             el.addEventListener('click', () => {
