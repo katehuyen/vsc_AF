@@ -394,6 +394,12 @@ export class TaskManager implements vscode.Disposable {
                 // render (and the chain behind it) survives the reload.
                 if (t.mediaJob && Date.now() < t.mediaJob.deadline) {
                     this.reattachQueue.push(t);
+                    // B2: a reattached PARALLEL branch must not drive the chain —
+                    // the group's fan-in state died with the window. The run is
+                    // paused: the startup resume offer skips it, and completion
+                    // re-offers it explicitly (see reattachMediaTask).
+                    const step = this.workflows.find(x => x.id === t.workflowId)?.steps[t.stepIndex ?? -1];
+                    if (step?.parallel) { this.parallelReattachRuns.add(t.workflowRunId ?? ''); }
                     continue;
                 }
                 staleChanged = true;
@@ -432,15 +438,19 @@ export class TaskManager implements vscode.Disposable {
     // ---------- F1: interrupted workflow runs ----------
 
     private interrupted: { runId: string; workflowId: string; stepIndex: number; taskId: string }[] = [];
+    /** B2: runs with a reattaching parallel media branch — paused until it completes. */
+    private parallelReattachRuns = new Set<string>();
 
     /**
      * Workflow runs cut mid-flight by the last window close (detected at load).
      * Runs whose workflow no longer exists (ad-hoc media runs) are not offered —
-     * there is nothing to resume them into.
+     * there is nothing to resume them into. Runs still reattaching a parallel
+     * media branch are held back and offered when that branch completes.
      */
     interruptedRuns(): { runId: string; workflowTitle: string; stepIndex: number; stepTitle: string }[] {
         const out = [];
         for (const r of this.interrupted) {
+            if (this.parallelReattachRuns.has(r.runId)) { continue; }
             const w = this.workflows.find(x => x.id === r.workflowId);
             if (!w) { continue; }
             out.push({
@@ -459,7 +469,22 @@ export class TaskManager implements vscode.Disposable {
         if (!r) { return; }
         this.interrupted = this.interrupted.filter(x => x.runId !== runId);
         const task = this.tasks.find(t => t.id === r.taskId);
-        if (task) { this.resumeWorkflowFromTask(task); }
+        if (task) {
+            this.resumeWorkflowFromTask(task);
+            return;
+        }
+        // B9: the cancelled task was archived by the MAX_TASKS overflow — resume
+        // from the stored coordinates instead of silently doing nothing.
+        const w = this.workflows.find(x => x.id === r.workflowId);
+        if (!w || r.stepIndex >= w.steps.length) {
+            void vscode.window.showWarningMessage(
+                'Agent Farm: this run can no longer be resumed — its workflow or step is gone.');
+            return;
+        }
+        this.runCounts.set(runId, 0);
+        void vscode.window.showInformationMessage(
+            `Agent Farm: resuming workflow "${w.title}" from step ${r.stepIndex + 1}.`);
+        this.routeToStep(w, r.stepIndex, this.rebuildHandoff(runId, r.stepIndex), runId);
     }
 
     dismissInterrupted(): void {
@@ -813,7 +838,10 @@ export class TaskManager implements vscode.Disposable {
             this.save();
             void vscode.window.showWarningMessage(
                 `Agent Farm: media "${task.title}" failed vision QA — regenerating (${attempt + 1}/${retries}).`);
-            const handoff = this.handoffs.get(task.workflowRunId ?? '') ?? {};
+            // B4: after a reload the in-memory handoff is gone — rebuild it from
+            // the previous step's archived output so {prev_*} resolve correctly.
+            const handoff = this.handoffs.get(task.workflowRunId ?? '')
+                ?? this.rebuildHandoff(task.workflowRunId ?? '', task.stepIndex ?? 0);
             void this.runMediaStep(w, task.stepIndex as number, handoff, task.workflowRunId as string,
                 { attempt: attempt + 1, feedback: reason });
             return;
@@ -983,13 +1011,7 @@ export class TaskManager implements vscode.Disposable {
             return;
         }
         const runId = task.workflowRunId ?? newId();
-        let handoff: Handoff = {};
-        if (stepIndex > 0) {
-            const prev = this.tasks
-                .filter(t => t.workflowRunId === runId && t.stepIndex === stepIndex - 1 && t.status === 'done')
-                .sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0))[0];
-            if (prev) { handoff = this.computeHandoff(prev); }
-        }
+        const handoff = this.rebuildHandoff(runId, stepIndex);
         this.runCounts.set(runId, 0);
         void vscode.window.showInformationMessage(
             `Agent Farm: resuming workflow "${w.title}" from step ${stepIndex + 1}.`);
@@ -1118,6 +1140,19 @@ export class TaskManager implements vscode.Disposable {
         const runId = newId();
         this.runCounts.set(runId, 0);
         this.routeToStep(w, 0, {}, runId);
+    }
+
+    /**
+     * Rebuild a step's incoming handoff from disk: the latest done task of the
+     * previous step in the same run. Used wherever the in-memory handoffs map
+     * may be gone (resume after reload, verify-retry after reattach).
+     */
+    private rebuildHandoff(runId: string, stepIndex: number): Handoff {
+        if (stepIndex <= 0) { return {}; }
+        const prev = this.tasks
+            .filter(t => t.workflowRunId === runId && t.stepIndex === stepIndex - 1 && t.status === 'done')
+            .sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0))[0];
+        return prev ? this.computeHandoff(prev) : {};
     }
 
     /** Build what a finished step hands to the next one (A3: structured handoff). */
@@ -1400,19 +1435,31 @@ export class TaskManager implements vscode.Disposable {
             model: string; stepTitle: string; workflowTitle?: string; input: string;
             projectId?: string; sceneId?: string; note?: string;
         },
-        result: MediaResult
+        result: MediaResult,
+        /** B2: reattached parallel branches must not drive the chain (fan-in state is gone). */
+        suppressAdvance = false
     ): Promise<void> {
         task.mediaJob = undefined;
         const outFile = task.outputFile as string;
         const writeOut = (ok: boolean, detail: string, response?: unknown, assets: string[] = [], estCost = 0) => {
-            fs.writeFileSync(outFile,
-                `# ${task.title}\n\n- Media model: ${info.model}\n- Started: ${new Date(task.startedAt!).toLocaleString()}\n` +
-                (info.note ? `- Note: ${info.note}\n` : '') +
-                (assets.length ? `- Assets: ${assets.map(a => path.basename(a)).join(', ')}\n` : '') +
-                (estCost ? `- Est. cost: $${estCost.toFixed(3)}\n` : '') +
-                `\n---\n\n${response ? JSON.stringify(response, null, 2).slice(0, 20_000) : detail}\n\n---\n` +
-                `Finished: ${new Date().toLocaleString()} · ${ok ? 'OK' : 'FAILED'}\n`, 'utf8');
-            this.finish(task, ok ? 'done' : 'failed');
+            // B8: an unwritable archive must never leave the task stuck 'running'.
+            try {
+                fs.writeFileSync(outFile,
+                    `# ${task.title}\n\n- Media model: ${info.model}\n- Started: ${new Date(task.startedAt!).toLocaleString()}\n` +
+                    (info.note ? `- Note: ${info.note}\n` : '') +
+                    (assets.length ? `- Assets: ${assets.map(a => path.basename(a)).join(', ')}\n` : '') +
+                    (estCost ? `- Est. cost: $${estCost.toFixed(3)}\n` : '') +
+                    `\n---\n\n${response ? JSON.stringify(response, null, 2).slice(0, 20_000) : detail}\n\n---\n` +
+                    `Finished: ${new Date().toLocaleString()} · ${ok ? 'OK' : 'FAILED'}\n`, 'utf8');
+            } catch { /* archive unwritable — the task still finishes */ }
+            if (suppressAdvance) {
+                task.status = ok ? 'done' : 'failed';
+                task.endedAt = Date.now();
+                this.save();
+                this.pump();
+            } else {
+                this.finish(task, ok ? 'done' : 'failed');
+            }
         };
         if (!result.ok) {
             writeOut(false, `[media error] ${result.error ?? 'unknown'}`);
@@ -1423,7 +1470,8 @@ export class TaskManager implements vscode.Disposable {
         const assetUrls: string[] = [];
         for (const [i, url] of result.assetUrls.slice(0, 4).entries()) {
             const file = path.join(this.outputsDir, `${task.id}-${i + 1}.${extFromUrl(url)}`);
-            if (await downloadAsset(url, file)) { assets.push(file); assetUrls.push(url); }
+            try { if (await downloadAsset(url, file)) { assets.push(file); assetUrls.push(url); } }
+            catch { /* one bad asset must not sink the step */ }
         }
         const estCost = estimateMediaCost(info.model, result.response,
             this.opts.mediaPricing?.() ?? DEFAULT_MEDIA_PRICING);
@@ -1443,8 +1491,10 @@ export class TaskManager implements vscode.Disposable {
             sceneId: info.sceneId,
             source: 'fal'
         };
-        fs.writeFileSync(path.join(this.outputsDir, `${task.id}.media.json`),
-            JSON.stringify(meta, null, 2), 'utf8');
+        try {
+            fs.writeFileSync(path.join(this.outputsDir, `${task.id}.media.json`),
+                JSON.stringify(meta, null, 2), 'utf8');
+        } catch { /* gallery meta is best-effort */ }
         writeOut(true, '', result.response, assets, estCost);
     }
 
@@ -1484,7 +1534,32 @@ export class TaskManager implements vscode.Disposable {
         } catch (e) {
             result = { ok: false, error: `reattach poll error: ${String(e).slice(0, 300)}`, assetUrls: [] };
         }
-        await this.completeMediaTask(task, info, result);
+        // B2: a parallel branch completes WITHOUT advancing — the group's fan-in
+        // state died with the window, so advancing here would either re-fan the
+        // group (duplicate renders) or skip the merge. The run is offered for
+        // resume instead, once its last reattaching branch is done.
+        const isParallelBranch = step?.parallel === true;
+        await this.completeMediaTask(task, info, result, isParallelBranch);
+        if (!isParallelBranch) { return; }
+        const runId = task.workflowRunId ?? '';
+        const stillReattaching = this.tasks.some(t =>
+            t.workflowRunId === runId && t.status === 'running' && t.mediaJob);
+        if (stillReattaching) { return; }
+        this.parallelReattachRuns.delete(runId);
+        const known = this.interrupted.find(r => r.runId === runId);
+        if (!known) {
+            this.interrupted.push({
+                runId, workflowId: task.workflowId ?? '',
+                stepIndex: task.stepIndex ?? 0, taskId: task.id
+            });
+        } else if ((task.stepIndex ?? 0) < known.stepIndex) {
+            known.stepIndex = task.stepIndex ?? 0;
+            known.taskId = task.id;
+        }
+        void vscode.window.showWarningMessage(
+            `Agent Farm: parallel branch "${task.title}" finished after the reload, but the group's fan-in state was lost — the run is paused. Resume re-runs the whole group.`,
+            'Resume'
+        ).then(choice => { if (choice === 'Resume') { this.resumeInterrupted(runId); } });
     }
 
     /** F3: browser step — allowlist gate + optional approval, then a normal agent task. */

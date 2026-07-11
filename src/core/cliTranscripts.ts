@@ -209,7 +209,9 @@ function parseCodexFile(file: string, resolveAgent: (cwd?: string) => { agentId?
         const input = cumulative.input_tokens ?? 0;
         info.usage = {
             input: Math.max(0, input - cached),
-            output: cumulative.output_tokens ?? 0,
+            // reasoning tokens are DISJOINT from output_tokens in the rollout
+            // (total = input + output + reasoning) and are billed as output.
+            output: (cumulative.output_tokens ?? 0) + (cumulative.reasoning_output_tokens ?? 0),
             cacheWrite: 0,
             cacheRead: cached
         };
@@ -301,6 +303,7 @@ function parseGeminiFile(
     let cost = 0;
     let currentModel = '';
     let sawUsage = false;
+    let tsMin = Infinity, tsMax = -Infinity;
 
     const handleUser = (msg: Record<string, unknown>) => {
         info.userTurns++;
@@ -349,13 +352,14 @@ function parseGeminiFile(
         else if (rec['result'] && typeof rec['result'] === 'object') {
             handleStats((rec['result'] as Record<string, unknown>)['stats']);
         }
-        const ts = ['timestamp', 'created_at', 'startTime', 'lastUpdated']
-            .map(k => typeof rec[k] === 'string' ? Date.parse(rec[k] as string) : NaN)
-            .find(v => !Number.isNaN(v));
-        if (ts) {
-            info.firstTs = info.firstTs === mtime ? ts : Math.min(info.firstTs, ts);
-            info.lastTs = info.lastTs === mtime ? ts : Math.max(info.lastTs, ts);
-        }
+        // B6: start-ish and end-ish keys are tracked separately so a session
+        // with startTime + lastUpdated (and no per-message timestamps) still
+        // gets its real recency instead of appearing as old as its start.
+        const tsOf = (k: string) => typeof rec[k] === 'string' ? Date.parse(rec[k] as string) : NaN;
+        const start = [tsOf('timestamp'), tsOf('created_at'), tsOf('startTime')].find(v => !Number.isNaN(v));
+        const end = [tsOf('lastUpdated'), tsOf('timestamp'), tsOf('created_at')].find(v => !Number.isNaN(v));
+        if (start !== undefined) { tsMin = Math.min(tsMin, start); tsMax = Math.max(tsMax, start); }
+        if (end !== undefined) { tsMax = Math.max(tsMax, end); }
     };
 
     let doc: unknown;
@@ -376,6 +380,8 @@ function parseGeminiFile(
     }
 
     if (!sawUsage && info.userTurns === 0) { return undefined; }
+    if (Number.isFinite(tsMin)) { info.firstTs = tsMin; }
+    if (Number.isFinite(tsMax)) { info.lastTs = tsMax; }
     info.models = [...models];
     info.cost = cost;
     // The project folder in the path is sha256(projectRoot) — match it against
@@ -403,14 +409,23 @@ export function geminiSessionsSource(
             hashedAt = now;
             hashMap = new Map();
             for (const a of agentDirs()) {
-                // gemini hashes the absolute project root; slash direction and a
-                // trailing separator are the usual variance across platforms.
-                const variants = new Set([
+                // gemini hashes the absolute project root; slash direction, a
+                // trailing separator and the Windows drive-letter case are the
+                // usual variance across platforms/shells.
+                const bases = [
                     a.dir,
                     a.dir.replace(/\\/g, '/'),
                     a.dir.replace(/\//g, '\\'),
                     a.dir.replace(/[\\/]+$/, '')
-                ]);
+                ];
+                const variants = new Set<string>();
+                for (const b of bases) {
+                    variants.add(b);
+                    if (/^[a-z]:/i.test(b)) {
+                        variants.add(b[0].toLowerCase() + b.slice(1));
+                        variants.add(b[0].toUpperCase() + b.slice(1));
+                    }
+                }
                 for (const v of variants) {
                     hashMap.set(crypto.createHash('sha256').update(v).digest('hex'),
                         { agentId: a.id, agentName: a.name });

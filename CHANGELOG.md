@@ -2,6 +2,15 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.36.0 — Bug-scan fixes: codex hook wiring, honest costs, parallel reattach (2026-07-11)
+
+Fixes from a logic-trace bug scan of the workflow + multi-CLI systems:
+
+- **Codex notify wiring actually works now (B1)**: codex passes its notify payload as the *last command-line argument*, not stdin (verified against openai/codex's own test). `cliHook.js` now auto-detects a trailing JSON argument — `notify = ["node", "<path>\\cliHook.js"]` just works; `--json` (stdin) and explicit `--event` args still supported. Flag values that merely look like JSON are not mistaken for the payload.
+- **Codex costs include reasoning tokens (B3)**: `reasoning_output_tokens` are disjoint from `output_tokens` in the rollout and are billed as output — they are now added to the output side of the usage.
+- **Reattached parallel branches no longer derail the run (B2)**: after a reload, a reattached media job belonging to a *parallel group* used to advance the chain as if sequential — skipping the fan-in merge or re-fanning the group into duplicate renders. Such branches now complete without advancing; the run is paused and offered for resume when the last reattaching branch finishes (resume re-runs the group — its fan-in state died with the window, stated honestly in the prompt). The startup resume offer defers these runs instead of racing them.
+- **Smaller fixes**: vision-verify retries after a reload rebuild the `{prev_*}` handoff from disk instead of regenerating with empty context (B4); an unwritable archive can no longer leave a media task stuck "running" (B8); gemini sessions with `lastUpdated` but no per-message timestamps get their real recency (B6); an agent-assigned live lane is no longer suppressed by an unassigned transcript (B7); resuming a run whose cancelled task was archived away now works from stored coordinates (B9); gemini project-hash matching covers drive-letter case variants (B10); external CLI transcripts refresh on a quiet 60s interval, so sessions run outside farm terminals appear without a reload (B5).
+
 ## 2.35.0 — Poll retry & crash-proofing, wave F3 (2026-07-11)
 
 - **A network blip no longer kills a long render.** All media/webhook poll loops (fal, Replicate, webhook poll mode) now tolerate transient failures — network errors, 5xx and 429 are retried with growing waits before the job is declared failed; permanent errors (4xx) still fail fast. **Submits are deliberately never retried** — a duplicate submit could queue (and charge) the job twice.

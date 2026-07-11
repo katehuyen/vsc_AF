@@ -459,6 +459,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         externalSessTimer = setTimeout(refreshExternalSessions, 15_000);
     }));
     context.subscriptions.push({ dispose: () => { if (externalSessTimer) { clearTimeout(externalSessTimer); } } });
+    // B5: CLIs used OUTSIDE farm terminals produce no live events, so a quiet
+    // interval keeps their transcripts appearing without a reload. Cheap: the
+    // sources cache per file (mtime+size) and per scan (60s), and setExternal
+    // only fires when the content signature actually changed.
+    const externalInterval = setInterval(refreshExternalSessions, 60_000);
+    context.subscriptions.push({ dispose: () => clearInterval(externalInterval) });
 
     const state = {
         getAgents: () => agents,
@@ -4596,11 +4602,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 void vscode.window.showErrorMessage('Agent Farm: cliHook.js missing from the extension build.');
                 return;
             }
-            await vscode.env.clipboard.writeText(`node "${hook}" --json`);
+            await vscode.env.clipboard.writeText(`node "${hook}"`);
             void vscode.window.showInformationMessage(
-                'Agent Farm: hook bridge command copied. Wire it into your CLI\'s notify/hook config ' +
-                '(it reads JSON from stdin; or use --event/--tool/--prompt args). Inside a "Start Session With…" ' +
-                'terminal the AGENT_FARM_SESSION/CWD/EVENT_PORT env vars route events onto that session\'s lane; ' +
+                'Agent Farm: hook bridge command copied. Wire it into your CLI\'s notify/hook config — ' +
+                'a trailing JSON argument (codex notify style) is auto-detected; --json reads stdin; ' +
+                'or use --event/--tool/--prompt args. Inside a "Start Session With…" terminal the ' +
+                'AGENT_FARM_SESSION/CWD/EVENT_PORT env vars route events onto that session\'s lane; ' +
                 'you can also reference the script as %AGENT_FARM_HOOK% there.');
         }),
 

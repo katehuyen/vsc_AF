@@ -5,7 +5,9 @@
  *   node cliHook.js --event UserPromptSubmit --prompt "fix the login bug"
  *   node cliHook.js --event PreToolUse --tool Bash
  *   node cliHook.js --event Stop
- *   codex-notify-json | node cliHook.js --json     (merges JSON from stdin)
+ *   node cliHook.js '{"type":"agent-turn-complete"}'   (codex notify passes the
+ *                     payload as the LAST ARGUMENT — auto-detected, no flag)
+ *   some-cli | node cliHook.js --json                  (merges JSON from stdin)
  *
  * Terminals opened by "Start Session With…" carry AGENT_FARM_SESSION /
  * AGENT_FARM_CWD / AGENT_FARM_EVENT_PORT / AGENT_FARM_HOOK env vars, so a hook
@@ -33,12 +35,23 @@ const TYPE_MAP: Record<string, string> = {
     'session-end': 'SessionEnd'
 };
 
+/** Flags whose next token is a value — such a token is never the notify payload. */
+const VALUE_FLAGS = ['--event', '--tool', '--prompt', '--message', '--reason', '--session', '--cwd', '--port'];
+
 function main(): void {
     let merged: Record<string, unknown> = {};
+    // Codex-style: the notify payload arrives as the last command-line argument
+    // (verified against openai/codex's own notify test — NOT stdin).
+    const argv = process.argv.slice(2);
+    const last = argv[argv.length - 1];
+    if (last?.trimStart().startsWith('{') && !VALUE_FLAGS.includes(argv[argv.length - 2] ?? '')) {
+        try { merged = JSON.parse(last) as Record<string, unknown>; }
+        catch (e) { console.error('cliHook: argv json ignored — ' + String(e)); }
+    }
     if (process.argv.includes('--json')) {
         try {
             const raw = fs.readFileSync(0, 'utf8').trim();
-            if (raw) { merged = JSON.parse(raw) as Record<string, unknown>; }
+            if (raw) { merged = { ...merged, ...JSON.parse(raw) as Record<string, unknown> }; }
         } catch (e) { console.error('cliHook: stdin json ignored — ' + String(e)); }
     }
 

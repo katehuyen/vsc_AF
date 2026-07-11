@@ -26,8 +26,10 @@ export function buildExternalSessions(sources: SessionSource[]): SessionInfo[] {
 /**
  * A session opened via Start Session With… can appear twice: as a file-less
  * live-events lane AND as the CLI's own transcript (E3b). When a transcript
- * entry of the same CLI overlaps a lane in time (same agent, or either side
- * unassigned), the transcript wins — it is the richer record.
+ * entry of the same CLI overlaps a lane in time and the agent attribution is
+ * consistent (both the same agent, or both unassigned), the transcript wins —
+ * it is the richer record. One side assigned + the other not is NOT a match:
+ * suppressing there could hide a different agent's legitimate lane.
  */
 export function dedupeExternal(sessions: SessionInfo[]): SessionInfo[] {
     const transcripts = sessions.filter(s => s.file);
@@ -36,7 +38,7 @@ export function dedupeExternal(sessions: SessionInfo[]): SessionInfo[] {
         if (s.file) { return true; }
         return !transcripts.some(t =>
             t.source === s.source &&
-            (!t.agentId || !s.agentId || t.agentId === s.agentId) &&
+            (t.agentId && s.agentId ? t.agentId === s.agentId : !t.agentId && !s.agentId) &&
             t.firstTs <= s.lastTs + SLACK && t.lastTs >= s.firstTs - SLACK);
     });
 }
