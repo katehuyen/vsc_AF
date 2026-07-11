@@ -73,7 +73,7 @@ import {
 } from './core/suggest';
 import { buildWeeklyFactsText, generateWeeklySummary, isoWeek, WeeklyFacts } from './core/summary';
 import {
-    CliProfile, FarmSchedule, FarmTrigger, newId, PREV_OUTPUT_PLACEHOLDER, sanitizePrompt,
+    buildCliCommand, CliProfile, FarmSchedule, FarmTrigger, newId, PREV_OUTPUT_PLACEHOLDER, sanitizePrompt,
     ScheduleKind, TaskManager, TaskMode, WorkflowStep
 } from './core/tasks';
 import { TriggerManager } from './core/triggers';
@@ -310,6 +310,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // ---- Turn-ready notifications (per-agent, opt-in via timeline swim-lane toggles) ----
     // The swim lane for each agent carries four toggles: ♪ sound, ◎ focus, ▣ modal,
     // ▭ toast. Whatever an agent has selected fires when it crosses INTO YOUR TURN.
+    const AGENT_CLI_KEY = 'agentfarm.agentCli'; // E1: last CLI used per agent for "Start Session With…"
     const TURN_ACTIONS_KEY = 'agentfarm.turnActions';
     const getTurnActions = (): Record<string, string[]> =>
         context.globalState.get<Record<string, string[]>>(TURN_ACTIONS_KEY, {});
@@ -1554,6 +1555,41 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const agent = await resolveAgent(arg);
             if (!agent) { return; }
             launchClaudeTerminal(`claude: ${agent.name}`, agent.dir, 'claude --continue');
+        }),
+
+        // E1: open a session with a different CLI (gemini/codex/…) WITHOUT touching
+        // the claude path — a sibling command. The claude default stays untouched.
+        vscode.commands.registerCommand('agentfarm.startSessionWith', async (arg: AgentArg) => {
+            const agent = await resolveAgent(arg);
+            if (!agent) { return; }
+            const profiles = cfg().get<CliProfile[]>('cliProfiles', []);
+            if (!profiles.length) {
+                const add = await vscode.window.showInformationMessage(
+                    'Agent Farm: no alternative CLIs configured. Add one in agentFarm.cliProfiles (e.g. gemini, codex).',
+                    'Open Settings');
+                if (add === 'Open Settings') {
+                    void vscode.commands.executeCommand('workbench.action.openSettings', 'agentFarm.cliProfiles');
+                }
+                return;
+            }
+            const lastByAgent = context.globalState.get<Record<string, string>>(AGENT_CLI_KEY, {});
+            const last = lastByAgent[agent.id] ?? 'claude';
+            interface CliPick extends vscode.QuickPickItem { id: string; profile?: CliProfile }
+            const items: CliPick[] = [
+                { id: 'claude', label: 'Claude Code', description: 'the default executor', profile: undefined },
+                ...profiles.map(p => ({ id: p.name, label: p.name, description: p.interactive ?? p.headless, profile: p }))
+            ];
+            for (const it of items) { if (it.id === last) { it.description += ' • last used'; } }
+            items.sort((a, b) => (a.id === last ? -1 : 0) - (b.id === last ? -1 : 0)); // last-used first
+            const pick = await vscode.window.showQuickPick(items, {
+                placeHolder: `Start a session for ${agent.name} with…`, ignoreFocusOut: true
+            });
+            if (!pick) { return; }
+            const command = pick.profile
+                ? (buildCliCommand(pick.profile.interactive ?? pick.profile.headless, '', '') || pick.profile.name)
+                : 'claude';
+            launchClaudeTerminal(`${pick.id}: ${agent.name}`, agent.dir, command);
+            void context.globalState.update(AGENT_CLI_KEY, { ...lastByAgent, [agent.id]: pick.id });
         }),
 
         vscode.commands.registerCommand('agentfarm.openAgentInNewWindow', async (arg: AgentArg) => {

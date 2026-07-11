@@ -1032,7 +1032,9 @@ Ajan paketlerinin tüketim tarafı: `agentFarm.packGalleryRepos` = git URL'leri 
 
 ### Çoklu-CLI Yürütücü
 
-Görev yürütücü artık claude'a kilitli değil: `agentFarm.cliProfiles` = `[{"name": "gemini", "headless": "gemini -p \"{prompt}\""}]` → Add Task sihirbazı CLI seçtirir. **Beklenti sınırı net:** claude-dışı yürütücüler çıktı arşivi + çıkış kodu durumu alır; transcript analizi, canlı hook'lar, maliyet ve kalite katmanları Claude'a özgüdür. Antigravity senkronu (1.3.0) ile aynı ajan kimliği iki tarafta da çalışır.
+Görev yürütücü artık claude'a kilitli değil: `agentFarm.cliProfiles` = `[{"name": "gemini", "headless": "gemini -p \"{prompt}\"", "interactive": "gemini"}]` → Add Task sihirbazı CLI seçtirir. **Beklenti sınırı net:** claude-dışı yürütücüler çıktı arşivi + çıkış kodu durumu alır; transcript analizi, canlı hook'lar, maliyet ve kalite katmanları Claude'a özgüdür. Antigravity senkronu (1.3.0) ile aynı ajan kimliği iki tarafta da çalışır.
+
+**Farklı bir modelle sezon aç (2.29.0 — Dalga E1):** Ajanda sağ tık → **Start Session With… (choose CLI)** ya da komut paletinden aynısı: bir CLI seçtirir (Claude Code varsayılan + `cliProfiles`'taki gemini/codex/…) ve o profilin `interactive` komutuyla ajan klasöründe bir terminal oturumu açar. **Claude yolu birebir korunur** — bu ayrı bir kardeş komuttur, mevcut Start Claude Session'a dokunmaz. Ajan başına son kullandığın CLI hatırlanır ve listede üste gelir (`externalTerminal` ayarına da uyar). Not: interaktif oturum için profilin `interactive` alanını sade launcher yaz (`"gemini"` gibi); canlı izleme/maliyet hâlâ Claude'a özgü — çoklu-CLI oturum izleme (feeder + transcript adaptörleri) yol haritasının sonraki adımı.
 
 ### Sesli Brifing
 

@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.28.0",
+  "version": "2.29.0",
   "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
@@ -142,6 +142,12 @@
         "title": "Continue Latest Session",
         "category": "Agent Farm",
         "icon": "$(debug-continue)"
+      },
+      {
+        "command": "agentfarm.startSessionWith",
+        "title": "Start Session With… (choose CLI)",
+        "category": "Agent Farm",
+        "icon": "$(run-all)"
       },
       {
         "command": "agentfarm.openAgentDetail",
@@ -1019,9 +1025,14 @@
           "group": "1_actions@2"
         },
         {
-          "command": "agentfarm.openAgentDetail",
+          "command": "agentfarm.startSessionWith",
           "when": "view == agentfarm.agents && viewItem == agent",
           "group": "1_actions@3"
+        },
+        {
+          "command": "agentfarm.openAgentDetail",
+          "when": "view == agentfarm.agents && viewItem == agent",
+          "group": "1_actions@4"
         },
         {
           "command": "agentfarm.openAgentInNewWindow",

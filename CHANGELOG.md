@@ -2,6 +2,10 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.29.0 — Start a session with another CLI, wave E1 (2026-07-11)
+
+- **Start Session With… (choose CLI)**: a new agent right-click / palette command opens a terminal session in the agent's folder using a CLI you pick — Claude Code (default) or any `agentFarm.cliProfiles` entry (gemini, codex, …), launched with the profile's `interactive` command. The last CLI you used for each agent is remembered and floats to the top. It honours `agentFarm.externalTerminal`. **The Claude path is untouched** — this is a separate sibling command; existing *Start Claude Session* / *Continue Latest Session* behave exactly as before. Live monitoring, transcripts and cost stay Claude-specific for now (multi-CLI session monitoring — event feeder + transcript adapters — is the next roadmap step).
+
 ## 2.28.0 — Premiere bridge (sequence export), wave D (2026-07-11)
 
 - **Export a production as an editor sequence**: `Agent Farm: Export Premiere Sequence` (or the **Export sequence →** button in the gallery when a production is selected) turns a production manifest + its assets into an **FCP7 XML** (Premiere imports it via File → Import) and a **CMX3600 EDL**. One clip per scene in manifest order — a video you kept in a selection step wins, else any video, else an image; rejected assets are skipped; scenes with no asset are omitted. Pick the frame rate (24/25/30/60) and a default per-scene clip length.
