@@ -87,9 +87,9 @@ export async function runAbTest(
     const results: AbPromptResult[] = [];
     try {
         for (const [i, prompt] of prompts.entries()) {
-            log?.(`${i + 1}/${prompts.length}: A koşuyor…`);
+            log?.(`${i + 1}/${prompts.length}: running A…`);
             const outA = await execClaude(dirA, runArgs, prompt);
-            log?.(`${i + 1}/${prompts.length}: B koşuyor…`);
+            log?.(`${i + 1}/${prompts.length}: running B…`);
             const outB = await execClaude(dirB, runArgs, prompt);
             log?.(`${i + 1}/${prompts.length}: hakem…`);
             const { winner, reason } = (!outA && !outB)

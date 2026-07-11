@@ -96,7 +96,7 @@
                 </div>
             </div>
             <div class="kb-bar">
-                <input id="cmd" type="text" placeholder="🚀 Doğal dil komut… (örn. 'yarın 09:00'da psikolog haftalık analiz koşsun')" ${pendingCommand ? 'disabled' : ''}>
+                <input id="cmd" type="text" placeholder="🚀 Natural-language command… (e.g. 'run the psikolog weekly analysis tomorrow at 09:00')" ${pendingCommand ? 'disabled' : ''}>
                 <button id="cmdgo" ${pendingCommand ? 'disabled' : ''}>${pendingCommand ? 'planning…' : 'Plan'}</button>
             </div>
             <div class="kb-board">

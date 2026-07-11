@@ -12,9 +12,10 @@ export interface TimelineDeps {
     setTurnActions: (map: Record<string, string[]>) => void;
 }
 
-// Detail ranges (≤8h) render from this in-memory window; 24h+ density ranges
-// are bucketed on demand from the persistent store (see the 'history' message).
-const DATA_WINDOW_MS = 8 * 3600 * 1000;
+// Detail ranges (≤24h — the monitor keeps 24h in memory) render from this
+// window; 3d+ density ranges are bucketed on demand from the persistent
+// store (see the 'history' message).
+const DATA_WINDOW_MS = 24 * 3600 * 1000;
 
 function buildData(deps: TimelineDeps): Record<string, unknown> {
     return {
@@ -104,6 +105,9 @@ export class TimelinePanel {
                 break;
             case 'openGuide':
                 void vscode.commands.executeCommand('agentfarm.openGuide', msg.anchor);
+                break;
+            case 'openDashboard':
+                void vscode.commands.executeCommand('agentfarm.openDashboard');
                 break;
             case 'refresh':
                 this.refresh();

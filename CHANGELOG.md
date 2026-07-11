@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.44.0 — UI language sweep: English only (2026-07-12)
+
+The interface had Turkish leaking into an otherwise English UI (most visibly the swim-lane turn-ready toggle tooltips and the hint line above them). A full sweep fixed every surface:
+
+- Timeline: toggle labels/tooltips/hint line, "alert on your turn" chips; Kanban command-bar placeholder; Memory Graph card notes; selection panel title; A/B experiment flow; command bar plan preview (day names included); eval scorecard; instruction-history delta labels; duty-template picker; media/approval/select/webhook wizard defaults and `örn.` placeholders; walkthrough step titles/descriptions (the Welcome-tab chrome); a few command titles that carried Turkish parentheticals.
+- **The language rule is now explicit**: UI = English only. Turkish remains everywhere it belongs — prompts sent to (Turkish-speaking) agents and judge models, generated Turkish documents (digest, forecast, A/B report, memory-contradiction report, DUTIES.md template) and ALL documents including the guide, docs/ and the five walkthrough pages.
+
+## 2.43.0 — Cross-navigation + 16h/24h swim lanes (2026-07-12)
+
+- **One-click switching between the three main surfaces**: the Agent Detail page gains **Dashboard** and **Live Timeline** buttons, and the Live Timeline gains a **Dashboard** button (the Dashboard already had Live Timeline) — the triangle is fully connected.
+- **Timeline: 16h option + classic swim lanes up to 24h.** The window picker now reads 15m / 1h / 4h / 8h / **16h** / 24h / 3d / 7d / 30d, and 16h/24h render as the normal event-flow swim lanes instead of jumping to density bars — the live monitor keeps 24h in memory, so bars are only needed from 3d up.
+
 ## 2.42.0 — Loop-closing sweep: no more dead ends (2026-07-12)
 
 A user-flow pass over every surface, hunting places where the extension shows something but offers no way to act on it (the Insights pattern):

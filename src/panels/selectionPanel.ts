@@ -31,7 +31,7 @@ export class SelectionPanel {
             for (const c of req.candidates) { if (c.file) { roots.add(path.dirname(c.file)); } }
             const panel = vscode.window.createWebviewPanel(
                 'agentfarm.selection',
-                `Seç — ${req.title}`.slice(0, 50),
+                `Pick — ${req.title}`.slice(0, 50),
                 vscode.ViewColumn.One,
                 {
                     enableScripts: true,

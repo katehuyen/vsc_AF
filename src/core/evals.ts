@@ -189,12 +189,12 @@ export function compareRuns(prev: EvalRun | undefined, results: EvalResult[]): R
     return cmp;
 }
 
-/** Human-readable scorecard, e.g. "12/14 geçti, 2 geriledi". */
+/** Human-readable scorecard, e.g. "12/14 passed, 2 regressed". */
 export function summarizeRun(results: EvalResult[], cmp: RunComparison): string {
     const passed = results.filter(r => r.pass).length;
-    const parts = [`${passed}/${results.length} geçti`];
-    if (cmp.regressed.length) { parts.push(`${cmp.regressed.length} geriledi`); }
-    if (cmp.improved.length) { parts.push(`${cmp.improved.length} düzeldi`); }
+    const parts = [`${passed}/${results.length} passed`];
+    if (cmp.regressed.length) { parts.push(`${cmp.regressed.length} regressed`); }
+    if (cmp.improved.length) { parts.push(`${cmp.improved.length} improved`); }
     return parts.join(', ');
 }
 

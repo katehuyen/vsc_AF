@@ -200,7 +200,7 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
                     }
                     item.description = parts.join(' • ');
                     item.contextValue = 'duties-section';
-                    item.tooltip = 'Standing duties (nöbet görevleri): recurring watch-and-act agreements with this agent. Stored in DUTIES.md.' +
+                    item.tooltip = 'Standing duties: recurring watch-and-act agreements with this agent. Stored in DUTIES.md.' +
                         (duties.length ? `\nAgent last touched DUTIES.md: ${lastRead ? relTime(lastRead) : 'never (in indexed sessions)'}` : '');
                     return item;
                 }

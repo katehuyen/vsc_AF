@@ -121,6 +121,7 @@ Dashboard, oturum kayıtları değiştikçe kendini otomatik günceller.
 
 Tek bir ajanın komuta ekranı:
 
+- Üst düğme satırında **Dashboard** ve **Live Timeline** (2.43.0) — üç ana yüzey arasında tek tık geçiş.
 - Toplam maliyet, oturum başına ortalama, araç çağrısı ve hata sayıları.
 - Son 30 günün maliyet grafiği ve model dağılımı.
 - **Fixed context load**: her oturumda otomatik yüklenen sabit bağlam (`CLAUDE.md` + `MEMORY.md` + `AGENTS.md`) bütçe çubuğu. Detay için aşağıdaki Sağlık bölümüne bak.
@@ -212,7 +213,8 @@ Kaldırmak için: **Agent Farm: Remove Live Hooks** — yalnızca Agent Farm'ın
 - **Kulvarlar (swim lanes):** Her ajan bir şerit; yeşil bloklar araç koşularını (süresiyle), noktalar/elmaslar olayları gösterir: mavi nokta = komut, kırmızı elmas = izin bekleme, mor elmas = compaction, turuncu nokta = subagent bitti, çizgi = tur sonu.
 - **Tıkla → tam o ana git (2.37.0):** Kulvardaki herhangi bir işarete **veya yeşil araç bloğuna** tıklayınca Oturum Görüntüleyici yalnızca açılmakla kalmaz, kayıtta **tam o olayın olduğu mesaja** kayar ve mesajı kısa süreliğine çerçeveyle vurgular. Görüntüleyici zaten açıksa aynı tık onu öne getirip o noktaya taşır.
 - **Sıra-sende bildirimleri (2.22.0):** Her kulvarın solundaki dört kutucuk — **♪ ses · ◎ odak · ▣ modal · ▭ toast** — o ajan **YOUR TURN**'e geçtiğinde (görev bitip senin girdini beklemeye başlayınca) çalışacak eylemleri seçer. Ajan başına bağımsızdır; kutucuğa tıkla, seç/kaldır. Seçim `globalState`'e yazılır ve tetikleme host tarafındadır — **panel kapalıyken de çalışır**. *Ses:* kısa bip (Windows'ta PowerShell beep). *Odak:* timeline panelini öne getirir (VS Code'un OS penceresini garanti öne getiren API'si yoktur; modal en güçlü dikkat çekicidir). *Modal:* "Sıra sende: <ajan>" bloklayıcı diyaloğu + Transkripti aç. *Toast:* köşede non-modal bildirim. Aynı tura tek bildirim düşer (3 sn'lik ajan-başı yutma). Bu, global `notifyTurnEnd` ayarından ayrıdır — o tüm ajanlar için tek bir toast atar; bu ise ajan-seçmeli ve zengin eylemlidir.
-- Kırmızı dikey çizgi = şu an. Pencere seçici (2.13.0 ile genişledi): **15m / 1h / 4h / 8h** ayrıntılı kulvar görünümü + **24h / 3d / 7d / 30d** yoğunluk görünümü.
+- Kırmızı dikey çizgi = şu an. Pencere seçici (2.43.0 ile genişledi): **15m / 1h / 4h / 8h / 16h / 24h** ayrıntılı kulvar görünümü + **3d / 7d / 30d** yoğunluk görünümü. 16h ve 24h de artık klasik akış (kulvar) olarak çizilir — monitör 24 saati bellekte tuttuğundan bar'lara düşmek yalnız 3 gün ve üzerinde gerekir.
+- Sağ üstte **Dashboard** düğmesi (2.43.0): Dashboard ↔ Ajan Detayı ↔ Timeline üçgeninde tek tık geçiş (Dashboard'da Live Timeline, Ajan Detayında her ikisi de var).
 - **Yoğunluk görünümü (24h+):** o ölçekte tek tek noktalar okunmaz — her kulvar 168 zaman dilimine bölünür, dilim başına aktivite çubuğu çizilir (yeşil = araçlar, mavi = komutlar, √ ölçek); şeridin üstündeki kırmızı bant = o dilimde izin beklemesi yaşandı. Amaç desenleri görmek: hangi ajan hangi gün/saatte çalışmış, nerede takılmış.
 - **Kalıcılık (2.13.0):** olaylar artık `globalStorage/live-events.jsonl` dosyasına yazılır — VS Code'u kapatıp açmak zaman çizelgesini sıfırlamaz. Bellekte son 24 saat tutulur (uzun aralıklar diskten okunur), dosyada son **31 gün** saklanır (üstü otomatik budanır, boyut sınırı 64MB). 31 günden geriye gitmemesinin nedeni yük değil anlam: hook olayları o ölçekte desen bilgisi taşımaz — uzun vadeli bakış için Dashboard (1 yıla kadar) doğru araçtır.
 - **Live sessions kartları:** Her oturumun anlık durumu, son komutu, sayaçları; "Open transcript" ile kayda atlanır.

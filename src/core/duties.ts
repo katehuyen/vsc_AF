@@ -182,9 +182,11 @@ export const DUTY_TEMPLATES: {
     watchKind: 'file' | 'folder' | 'none';
     duty: Omit<Duty, 'watch'>;
 }[] = [
+    // Picker labels are UI (English); duty title/action are written into the
+    // agent's DUTIES.md and stay Turkish — the user's agents work in Turkish.
     {
-        label: 'Soru-cevap döngüsü',
-        detail: 'izlenen dosyada cevaplanmış soruların gereğini yap, yenilerini ekle',
+        label: 'Question-answer loop',
+        detail: 'act on answered questions in the watched file, add new ones',
         watchKind: 'file',
         duty: {
             title: 'Netleştirme istekleri', cadence: 'every-turn', paused: false,
@@ -192,8 +194,8 @@ export const DUTY_TEMPLATES: {
         }
     },
     {
-        label: 'Inbox tasnifi',
-        detail: 'izlenen klasörde biriken her dosyayı adlandırıp yerine taşı',
+        label: 'Inbox triage',
+        detail: 'name and file every document that lands in the watched folder',
         watchKind: 'folder',
         duty: {
             title: 'Inbox tasnifi', cadence: 'every-turn', paused: false,
@@ -201,8 +203,8 @@ export const DUTY_TEMPLATES: {
         }
     },
     {
-        label: 'Haftalık hafıza bakımı',
-        detail: 'memory/ dosyalarını gözden geçir, bayatları güncelle/arşivle',
+        label: 'Weekly memory upkeep',
+        detail: 'review memory/ files, refresh or archive the stale ones',
         watchKind: 'none',
         duty: {
             title: 'Haftalık hafıza bakımı', cadence: 'weekly', paused: false,
@@ -210,8 +212,8 @@ export const DUTY_TEMPLATES: {
         }
     },
     {
-        label: 'Çıktı klasörü nöbeti',
-        detail: 'izlenen klasöre düşen sonuçları kontrol et, gereğini yapıp temizle',
+        label: 'Output folder watch',
+        detail: 'check results landing in the watched folder, act and clean up',
         watchKind: 'folder',
         duty: {
             title: 'Çıktı kontrolü', cadence: 'session-start', paused: false,

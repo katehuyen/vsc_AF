@@ -100,13 +100,13 @@
 
             const lists = `
                 <div class="row">
-                    ${brokenLinks.length ? `<div class="card"><h3>Broken links</h3><p class="muted small">[[hedef]] hiçbir dosyaya çözülmüyor — yazım hatası ya da henüz yazılmamış kayıt.</p>${brokenLinks.map(l =>
+                    ${brokenLinks.length ? `<div class="card"><h3>Broken links</h3><p class="muted small">The [[target]] resolves to no file — a typo, or a note not written yet.</p>${brokenLinks.map(l =>
                         `<div class="sub">• ${C.esc(l.from)} → <span style="color:var(--vscode-charts-red,#f14c4c)">[[${C.esc(l.to)}]]</span></div>`).join('')}</div>` : ''}
-                    ${islands.length ? `<div class="card"><h3>Islands</h3><p class="muted small">Hiç link vermeyen/almayan kayıtlar — dokuya bağla ya da arşivle.</p>${islands.map(n =>
+                    ${islands.length ? `<div class="card"><h3>Islands</h3><p class="muted small">Notes with no links in or out — weave them into the fabric or archive them.</p>${islands.map(n =>
                         `<div class="sub">• <button class="linkish" data-open="${C.esc(n.path)}">${C.esc(n.name)}</button>${n.recalls ? '' : ' <span class="muted">(not recalled 30d)</span>'}</div>`).join('')}</div>` : ''}
-                    ${hubs.length ? `<div class="card"><h3>Hubs</h3><p class="muted small">En çok link alan kayıtlar — bilginin merkezleri.</p>${hubs.map(n =>
+                    ${hubs.length ? `<div class="card"><h3>Hubs</h3><p class="muted small">The most linked-to notes — the centers of knowledge.</p>${hubs.map(n =>
                         `<div class="sub">• <button class="linkish" data-open="${C.esc(n.path)}">${C.esc(n.name)}</button> — ${n.incoming} in</div>`).join('')}</div>` : ''}
-                    ${notIndexed.length ? `<div class="card"><h3>Not in MEMORY.md</h3><p class="muted small">İndekste satırı olmayan dosyalar — ajan bunları bulamaz.</p>${notIndexed.map(n =>
+                    ${notIndexed.length ? `<div class="card"><h3>Not in MEMORY.md</h3><p class="muted small">Files with no line in the index — the agent cannot find them.</p>${notIndexed.map(n =>
                         `<div class="sub">• <button class="linkish" data-open="${C.esc(n.path)}">${C.esc(n.name)}</button></div>`).join('')}
                         <div class="btnrow" style="margin-top:8px"><button id="fixindex">Fix Memory Index…</button></div></div>` : ''}
                 </div>`;

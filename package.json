@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.42.0",
+  "version": "2.44.0",
   "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
@@ -81,13 +81,13 @@
     "walkthroughs": [
       {
         "id": "agentfarm.gettingStarted",
-        "title": "Agent Farm: Beş Adımda Kurulum",
-        "description": "Canlı izlemeden ilk otonom işe — ajan filonun komuta merkezi.",
+        "title": "Agent Farm: Setup in Five Steps",
+        "description": "From live monitoring to your first autonomous job — mission control for your agent fleet.",
         "steps": [
           {
             "id": "agents",
-            "title": "1 · Ajanlarını tanıt",
-            "description": "Agent Farm, kök klasörlerin altındaki CLAUDE.md içeren her klasörü bir ajan olarak tanır.\n[Ajan Kökü Ekle](command:agentfarm.addAgentRoot)",
+            "title": "1 · Introduce your agents",
+            "description": "Agent Farm treats every folder with a CLAUDE.md under your root folders as an agent.\n[Add Agent Root](command:agentfarm.addAgentRoot)",
             "media": {
               "markdown": "docs/walkthrough/01-agents.md"
             },
@@ -97,8 +97,8 @@
           },
           {
             "id": "hooks",
-            "title": "2 · Canlı hook'ları kur",
-            "description": "Hook'lar her ajan olayını (komut, araç, izin bekleme) yerel dinleyiciye iletir — timeline ve bildirimler bununla çalışır.\n[Install Live Hooks](command:agentfarm.installHooks)",
+            "title": "2 · Install the live hooks",
+            "description": "Hooks forward every agent event (prompt, tool, permission wait) to the local listener — the timeline and notifications run on them.\n[Install Live Hooks](command:agentfarm.installHooks)",
             "media": {
               "markdown": "docs/walkthrough/02-hooks.md"
             },
@@ -108,8 +108,8 @@
           },
           {
             "id": "dashboard",
-            "title": "3 · Dashboard'u aç",
-            "description": "Maliyet, sağlık ve Farm Status kartı — hangi alt sistem uyuyor, tek bakışta.\n[Open Dashboard](command:agentfarm.openDashboard)",
+            "title": "3 · Open the Dashboard",
+            "description": "Costs, health and the Farm Status card — which subsystem is dormant, at a glance.\n[Open Dashboard](command:agentfarm.openDashboard)",
             "media": {
               "markdown": "docs/walkthrough/03-dashboard.md"
             },
@@ -119,8 +119,8 @@
           },
           {
             "id": "example",
-            "title": "4 · İlk otomasyonu kur",
-            "description": "Tek tıkla çalışan bir örnek: inbox nöbeti, sabah brifingi veya iki ajanlı zincir.\n[Set Up Example Automation](command:agentfarm.setupExample)",
+            "title": "4 · Set up your first automation",
+            "description": "A working example in one click: an inbox duty, a morning briefing or a two-agent chain.\n[Set Up Example Automation](command:agentfarm.setupExample)",
             "media": {
               "markdown": "docs/walkthrough/04-example.md"
             },
@@ -130,8 +130,8 @@
           },
           {
             "id": "guide",
-            "title": "5 · Rehberi keşfet",
-            "description": "25 senaryolu Türkçe kılavuz: medya hattı, webhook köprüsü, çoklu ajan zincirleri…\n[Open Guide](command:agentfarm.openGuide)",
+            "title": "5 · Explore the guide",
+            "description": "The built-in guide (Turkish, 25 scenarios): media pipeline, webhook bridge, multi-agent chains…\n[Open Guide](command:agentfarm.openGuide)",
             "media": {
               "markdown": "docs/walkthrough/05-guide.md"
             },
@@ -456,19 +456,19 @@
       },
       {
         "command": "agentfarm.quickStart",
-        "title": "Quick Start (Hızlı Başlangıç)",
+        "title": "Quick Start",
         "category": "Agent Farm",
         "icon": "$(rocket)"
       },
       {
         "command": "agentfarm.openExamples",
-        "title": "Open Examples (Örnek Kullanımlar)",
+        "title": "Open Examples",
         "category": "Agent Farm",
         "icon": "$(book)"
       },
       {
         "command": "agentfarm.openRoadmap",
-        "title": "Open Development Plan (Gelişim Planı)",
+        "title": "Open Development Plan",
         "category": "Agent Farm",
         "icon": "$(milestone)"
       },
@@ -830,7 +830,7 @@
       },
       {
         "command": "agentfarm.openUltraRoadmap",
-        "title": "Open Ultra Roadmap (Ultra Gelişim)",
+        "title": "Open Ultra Roadmap",
         "category": "Agent Farm",
         "icon": "$(telescope)"
       },

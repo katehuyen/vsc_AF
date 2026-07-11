@@ -156,6 +156,8 @@
                     <button id="start">Start session</button>
                     <button class="secondary" id="continue">Continue latest</button>
                     <button class="secondary" id="reveal">Reveal folder</button>
+                    <button class="secondary" id="dashboard">Dashboard</button>
+                    <button class="secondary" id="timeline">Live Timeline</button>
                     <button class="secondary" data-guide="ajan-detay-sayfasi">? Guide</button>
                 </div>
             </div>
@@ -213,6 +215,8 @@
         document.getElementById('start').addEventListener('click', () => vscode.postMessage({ type: 'startSession' }));
         document.getElementById('continue').addEventListener('click', () => vscode.postMessage({ type: 'continueSession' }));
         document.getElementById('reveal').addEventListener('click', () => vscode.postMessage({ type: 'reveal' }));
+        document.getElementById('dashboard').addEventListener('click', () => vscode.postMessage({ type: 'openDashboard' }));
+        document.getElementById('timeline').addEventListener('click', () => vscode.postMessage({ type: 'openTimeline' }));
         document.querySelectorAll('[data-file]').forEach(el =>
             el.addEventListener('click', () => vscode.postMessage({ type: 'openFile', path: el.dataset.file })));
         document.querySelectorAll('[data-session]').forEach(el =>

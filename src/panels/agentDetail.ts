@@ -239,6 +239,13 @@ export class AgentDetailPanel {
             case 'addDuty':
                 vscode.commands.executeCommand('agentfarm.addDuty', { agentId: this.agentId });
                 break;
+            // Quick cross-navigation between the three main surfaces.
+            case 'openDashboard':
+                vscode.commands.executeCommand('agentfarm.openDashboard');
+                break;
+            case 'openTimeline':
+                vscode.commands.executeCommand('agentfarm.openTimeline');
+                break;
             case 'openGuide':
                 vscode.commands.executeCommand('agentfarm.openGuide', msg.anchor);
                 break;

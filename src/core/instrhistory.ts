@@ -108,9 +108,9 @@ export function correlateVersions(
 
 /** One-line diff summary between consecutive versions (size/token delta). */
 export function describeVersionDelta(prev: InstrVersion | undefined, cur: InstrVersion): string {
-    if (!prev) { return `ilk kayıt (~${cur.tokens} tok)`; }
+    if (!prev) { return `first snapshot (~${cur.tokens} tok)`; }
     const d = cur.tokens - prev.tokens;
-    return d === 0 ? 'aynı boyut (içerik değişti)' : `${d > 0 ? '+' : ''}${d} tok`;
+    return d === 0 ? 'same size (content changed)' : `${d > 0 ? '+' : ''}${d} tok`;
 }
 
 export function buildImpactReport(agentName: string, impacts: VersionImpact[]): string {

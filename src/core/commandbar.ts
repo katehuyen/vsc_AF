@@ -33,7 +33,7 @@ export interface FarmPlan {
     steps?: PlanStep[];
 }
 
-const DOW_TR = ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi'];
+const DOW_TR = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 export function buildCommandPrompt(agentNames: string[], utterance: string, now: Date): string {
     const nowStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-` +
@@ -107,21 +107,21 @@ export function validatePlan(plan: FarmPlan, agentNames: string[]): string[] {
 /** Human-readable preview the user approves before anything is installed. */
 export function describePlan(plan: FarmPlan): string {
     if (plan.kind === 'task') {
-        return `▶ Tek seferlik iş: "${plan.title}"\nAjan: ${plan.agent}\nTalimat: ${plan.prompt}`;
+        return `▶ One-off task: "${plan.title}"\nAgent: ${plan.agent}\nInstruction: ${plan.prompt}`;
     }
     if (plan.kind === 'schedule') {
         const s = plan.schedule!;
         const when = s.kind === 'once'
-            ? `bir kez — ${s.onceAt}`
+            ? `once — ${s.onceAt}`
             : s.kind === 'weekly'
-                ? `her ${DOW_TR[s.dow ?? 0]} ${String(s.hour).padStart(2, '0')}:${String(s.minute).padStart(2, '0')}`
-                : `her gün ${String(s.hour).padStart(2, '0')}:${String(s.minute).padStart(2, '0')}`;
-        return `📅 Zamanlama: "${plan.title}"\nAjan: ${plan.agent}\nNe zaman: ${when}\nTalimat: ${plan.prompt}`;
+                ? `every ${DOW_TR[s.dow ?? 0]} ${String(s.hour).padStart(2, '0')}:${String(s.minute).padStart(2, '0')}`
+                : `daily ${String(s.hour).padStart(2, '0')}:${String(s.minute).padStart(2, '0')}`;
+        return `📅 Schedule: "${plan.title}"\nAgent: ${plan.agent}\nWhen: ${when}\nInstruction: ${plan.prompt}`;
     }
     const steps = (plan.steps ?? [])
         .map((s, i) => `  ${i + 1}. [${s.agent}] ${s.title || s.prompt.slice(0, 50)}: ${s.prompt.slice(0, 120)}`)
         .join('\n');
-    return `⛓ Zincir: "${plan.title}" (${plan.steps?.length} adım)\n${steps}`;
+    return `⛓ Chain: "${plan.title}" (${plan.steps?.length} steps)\n${steps}`;
 }
 
 /** One cheap-model call: utterance → validated plan (or errors + raw output for debugging). */

@@ -4,10 +4,11 @@
     const vscode = acquireVsCodeApi();
     const C = window.AFCharts;
     let DATA = window.__DATA__;
-    // ≤480 renders event dots from live memory; ≥1440 renders density buckets
-    // fetched from the host's persistent store (survives reloads, keeps 31d).
+    // ≤1440 renders event dots from live memory (the monitor keeps 24h);
+    // longer ranges render density buckets fetched from the host's persistent
+    // store (survives reloads, keeps 31d).
     let windowMin = 60;
-    const DETAIL_MAX_MIN = 480;
+    const DETAIL_MAX_MIN = 1440;
     let HISTORY = null;        // { hours, density, workflowRuns }
     let historyFetchedAt = 0;
     let historyRequested = 0;
@@ -17,10 +18,10 @@
     // to globalState so they fire even when this panel is closed.
     let turnActions = null;    // agentName -> array of action ids
     const TURN_ACTIONS = [
-        { id: 'sound', glyph: '♪', label: 'Ses (bip)' },
-        { id: 'focus', glyph: '◎', label: 'Odak / öne getir' },
-        { id: 'modal', glyph: '▣', label: 'Modal uyarı kutusu' },
-        { id: 'toast', glyph: '▭', label: 'Toast (köşe bildirimi)' }
+        { id: 'sound', glyph: '♪', label: 'Sound (beep)' },
+        { id: 'focus', glyph: '◎', label: 'Focus / bring forward' },
+        { id: 'modal', glyph: '▣', label: 'Modal alert box' },
+        { id: 'toast', glyph: '▭', label: 'Toast (corner notification)' }
     ];
     function actionsFor(name) { return (turnActions && turnActions[name]) || []; }
 
@@ -33,10 +34,10 @@
             const style = sel
                 ? 'background:var(--vscode-charts-blue,#3794ff);color:var(--vscode-editor-background,#fff);border-color:var(--vscode-charts-blue,#3794ff)'
                 : 'opacity:0.6';
-            return `<span class="af-toggle badge" data-agent="${C.esc(name)}" data-action="${a.id}" title="${C.esc(a.label)} — sıra gelince" style="cursor:pointer;padding:1px 6px;${style}">${a.glyph}</span>`;
+            return `<span class="af-toggle badge" data-agent="${C.esc(name)}" data-action="${a.id}" title="${C.esc(a.label)} — when it's your turn" style="cursor:pointer;padding:1px 6px;${style}">${a.glyph}</span>`;
         }).join(' ');
         return `<div class="sub" style="margin-top:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">` +
-            `<span class="muted small">sıra gelince uyar:</span>${chips}</div>`;
+            `<span class="muted small">alert on your turn:</span>${chips}</div>`;
     }
 
     function isDensity() { return windowMin > DETAIL_MAX_MIN; }
@@ -174,7 +175,7 @@
                 out += `<g class="af-toggle" data-agent="${C.esc(name)}" data-action="${a.id}" style="cursor:pointer">` +
                     `<rect x="${gx}" y="${ty}" width="15" height="15" rx="3" fill="${on ? 'var(--vscode-charts-blue, #3794ff)' : 'transparent'}" stroke="currentColor" stroke-opacity="${on ? '0' : '0.45'}" opacity="${on ? '0.95' : '1'}"/>` +
                     `<text x="${gx + 7.5}" y="${ty + 11.5}" font-size="10.5" text-anchor="middle" fill="${on ? 'var(--vscode-editor-background, #fff)' : 'currentColor'}" opacity="${on ? '1' : '0.55'}" style="pointer-events:none">${a.glyph}</text>` +
-                    `<title>${C.esc(a.label)} — ${C.esc(name)} sıraya geçince</title></g>`;
+                    `<title>${C.esc(a.label)} — when ${C.esc(name)} hits YOUR TURN</title></g>`;
             });
             out += `<line x1="${labelW}" y1="${y + rowH / 2}" x2="${W - 8}" y2="${y + rowH / 2}" stroke="currentColor" opacity="0.1"/>`;
             for (const seg of lane.segments) {
@@ -362,22 +363,23 @@
             <div class="spread">
                 <div>
                     <h1>Live Timeline</h1>
-                    <div class="muted small">${listenerHtml} · fed by Claude Code hooks · detail ≤8h live, 24h+ from persisted history (kept 31 days)</div>
+                    <div class="muted small">${listenerHtml} · fed by Claude Code hooks · detail ≤24h live, 3d+ from persisted history (kept 31 days)</div>
                 </div>
                 <div class="btnrow">
                     <span class="seg">
-                        ${[15, 60, 240, 480, 1440, 4320, 10080, 43200].map(m => {
+                        ${[15, 60, 240, 480, 960, 1440, 4320, 10080, 43200].map(m => {
                             const label = m < 60 ? m + 'm' : m <= 1440 ? (m / 60) + 'h' : (m / 1440) + 'd';
                             return `<button data-win="${m}" class="${m === windowMin ? 'sel' : ''}">${label}</button>`;
                         }).join('')}
                     </span>
                     <button class="secondary" id="refresh">Refresh</button>
+                    <button class="secondary" id="dashboard">Dashboard</button>
                     <button class="secondary" data-guide="canli-gozlem">? Guide</button>
                 </div>
             </div>
             ${emptyHint}
             <h2>${density ? 'Activity density' : 'Swim lanes'}</h2>
-            ${density ? '' : `<div class="muted small" style="margin:-4px 0 6px">Sol kutucuklar — ajan <b>YOUR TURN</b>'e geçince: ${TURN_ACTIONS.map(a => a.glyph + ' ' + a.label.split(' ')[0].toLowerCase()).join(' · ')}. Ajan başına ayrı seç (panel kapalıyken de çalışır).</div>`}
+            ${density ? '' : `<div class="muted small" style="margin:-4px 0 6px">Left toggles — when an agent hits <b>YOUR TURN</b>: ${TURN_ACTIONS.map(a => a.glyph + ' ' + a.label.split(' ')[0].toLowerCase()).join(' · ')}. Pick per agent (they fire even while this panel is closed).</div>`}
             <div class="card chartbox">${lanesHtml}<div class="legend">${legend}</div></div>
             ${workflowRunsSvg(runsData, now, winMs)}
             <h2>Live sessions (${DATA.sessions.length})</h2>
@@ -391,6 +393,8 @@
             if (isDensity()) { requestHistory(true); }
             vscode.postMessage({ type: 'refresh' });
         });
+        document.getElementById('dashboard').addEventListener('click', () =>
+            vscode.postMessage({ type: 'openDashboard' }));
         document.querySelectorAll('[data-win]').forEach(b =>
             b.addEventListener('click', () => { windowMin = Number(b.dataset.win); render(); }));
         document.querySelectorAll('[data-guide]').forEach(b =>

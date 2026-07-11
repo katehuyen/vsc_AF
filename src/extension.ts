@@ -379,18 +379,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         const transcript = s.transcriptPath;
         if (actions.includes('modal')) {
-            const buttons = transcript ? ['Transkripti aç'] : [];
+            const buttons = transcript ? ['Open Transcript'] : [];
             void vscode.window.showInformationMessage(
-                `Agent Farm — Sıra sende: ${name}`, { modal: true }, ...buttons
+                `Agent Farm — Your turn: ${name}`, { modal: true }, ...buttons
             ).then(choice => {
-                if (choice === 'Transkripti aç' && transcript) {
+                if (choice === 'Open Transcript' && transcript) {
                     void vscode.commands.executeCommand('agentfarm.openSession', transcript);
                 }
             });
         }
         if (actions.includes('toast')) {
             void vscode.window.showInformationMessage(
-                `Agent Farm: ${name} — sıra sende`, 'Open Timeline'
+                `Agent Farm: ${name} — your turn`, 'Open Timeline'
             ).then(choice => {
                 if (choice === 'Open Timeline') { showTimeline(); }
             });
@@ -1161,7 +1161,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (hasWebhook) { postForward('digest', text); }
         if (manual) {
             void vscode.window.showInformationMessage(
-                hasWebhook ? `Agent Farm: digest sent.\n${text}` : `${text}\n(notifyWebhookUrl boş — yalnızca burada gösterildi)`,
+                hasWebhook ? `Agent Farm: digest sent.\n${text}` : `${text}\n(notifyWebhookUrl empty — shown here only)`,
                 { modal: false });
         }
     };
@@ -1454,8 +1454,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             return;
         }
         const utterance = prefill ?? await vscode.window.showInputBox({
-            prompt: 'Ne yapılsın? (doğal dil — tek seferlik iş, zamanlama veya zincir)',
-            placeHolder: 'örn. yarın 09:00\'da psikolog haftalık analizi koşsun, çıktı vault\'a yazılsın',
+            prompt: 'What should happen? (natural language — one-off task, schedule or chain; Turkish input is fine)',
+            placeHolder: 'e.g. run the psikolog weekly analysis tomorrow at 09:00, write the output to the vault',
             ignoreFocusOut: true
         });
         if (!utterance?.trim()) { return; }
@@ -1687,7 +1687,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     watchPath: folder,
                     action: {
                         kind: 'task', agentId: agent.id, agentName: agent.name,
-                        title: 'Inbox tasnifi',
+                        title: 'Inbox triage',
                         prompt: 'İzlenen klasöre ({watch}) yeni veya değişmiş bir dosya düştü. Dosyayı bul, içeriğine bak ve: '
                             + '(1) ne olduğunu tek satırda özetle; (2) CLAUDE.md/hafızandaki kurallara göre uygun yere taşı ya da işle; '
                             + '(3) ne yaptığını kısaca raporla. Emin olamadığın dosyaya dokunma, sadece raporla.',
@@ -1701,12 +1701,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (!agent) { return; }
                 taskManager.addSchedule({
                     agentId: agent.id, agentName: agent.name,
-                    title: 'Sabah brifingi',
+                    title: 'Morning briefing',
                     prompt: 'Günaydın. Hafızanı, DUTIES.md görevlerini ve dünkü durumu gözden geçir; '
                         + 'bugün için 3-5 maddelik kısa bir plan/brifing yaz. Yeni dosya oluşturma, sadece raporla.',
                     mode: 'headless', kind: 'daily', hour: 9, minute: 0, enabled: true
                 });
-                showCreated(`daily schedule "Sabah brifingi" 09:00 (${agent.name})`);
+                showCreated(`daily schedule "Morning briefing" 09:00 (${agent.name})`);
             } else {
                 const pickStep = (ph: string) => vscode.window.showQuickPick(
                     agents.map(a => ({ label: a.name, description: a.dir, agent: a })),
@@ -1715,15 +1715,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (!a) { return; }
                 const b = await pickStep('Step 2 — which agent summarizes?');
                 if (!b) { return; }
-                const w = taskManager.addWorkflow('Analiz → Özet', [
+                const w = taskManager.addWorkflow('Analyze → Summarize', [
                     {
-                        agentId: a.agent.id, agentName: a.agent.name, title: 'Analiz',
+                        agentId: a.agent.id, agentName: a.agent.name, title: 'Analyze',
                         prompt: 'Ajan klasöründeki güncel duruma (hafıza, son raporlar, DUTIES.md) bakarak bugünün en önemli 3 konusunu analiz et. '
                             + 'Her biri için durum + risk + öneri yaz.',
                         mode: 'headless'
                     },
                     {
-                        agentId: b.agent.id, agentName: b.agent.name, title: 'Özet',
+                        agentId: b.agent.id, agentName: b.agent.name, title: 'Summarize',
                         prompt: 'Aşağıdaki analizi 5 cümleyi geçmeyen bir yönetici özetine çevir:\n\n{prev_text}',
                         mode: 'headless'
                     }
@@ -2391,7 +2391,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const action = await vscode.window.showInputBox({
                 prompt: 'Do: what should the agent do when something changed / is waiting?',
                 ignoreFocusOut: true,
-                placeHolder: 'e.g. Cevaplanmış soruların gereğini yap ve soruyu dosyadan sil'
+                placeHolder: 'e.g. Act on the answered questions and remove them from the file'
             });
             if (!action) { return; }
 
@@ -2568,12 +2568,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (over !== 'Overwrite') { return; }
             }
             const title = await vscode.window.showInputBox({
-                prompt: `Production title (${agent.name})`, placeHolder: 'örn. Tanıtım Filmi', ignoreFocusOut: true
+                prompt: `Production title (${agent.name})`, placeHolder: 'e.g. Launch Film', ignoreFocusOut: true
             });
             if (!title) { return; }
             const scenesRaw = await vscode.window.showInputBox({
                 prompt: 'Scene titles, comma-separated — production.json can be edited by hand later',
-                placeHolder: 'Açılış, Ürün tanıtımı, Kapanış', ignoreFocusOut: true
+                placeHolder: 'e.g. Opening, Product intro, Closing', ignoreFocusOut: true
             });
             if (scenesRaw === undefined) { return; }
             const sceneTitles = scenesRaw.split(',').map(s => s.trim()).filter(Boolean);
@@ -2674,7 +2674,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // same way the vision-QA retry does it.
                 const fb = await vscode.window.showInputBox({
                     prompt: `What was wrong / what should change? (${meta.model})`,
-                    placeHolder: 'e.g. eller bozuk; ışık daha sıcak olsun; kamera daha yakın',
+                    placeHolder: 'e.g. hands look wrong; warmer light; closer camera',
                     ignoreFocusOut: true
                 });
                 if (!fb) { return; }
@@ -2688,63 +2688,65 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         vscode.commands.registerCommand('agentfarm.addRecipe', async () => {
             const recipes: { label: string; description: string; build: (agent: AgentInfo) => WorkflowStep[] }[] = [
+                // Labels/titles are UI (English); step prompts stay Turkish —
+                // they are instructions to the user's Turkish-speaking agents.
                 {
-                    label: 'Metin → Görsel',
-                    description: 'ajan görsel prompt\'u yazar, Flux üretir',
+                    label: 'Text → Image',
+                    description: 'the agent writes the image prompt, Flux renders it',
                     build: (agent) => [
                         {
-                            agentId: agent.id, agentName: agent.name, title: 'görsel promptu',
+                            agentId: agent.id, agentName: agent.name, title: 'image prompt',
                             prompt: 'Şu konu için tek paragraflık, İngilizce, ayrıntılı bir görsel üretim promptu yaz (sadece promptu yaz): KONUYU BURAYA YAZ',
                             mode: 'headless'
                         },
                         {
-                            agentId: '', agentName: 'media', title: 'görsel üret', prompt: '', mode: 'headless',
+                            agentId: '', agentName: 'media', title: 'render image', prompt: '', mode: 'headless',
                             media: { model: 'fal-ai/flux/schnell', input: '{"prompt": "{prev_text}"}' }
                         }
                     ]
                 },
                 {
-                    label: 'Metin → Görsel → Video',
-                    description: 'içerik fabrikası: prompt → görsel → kısa video',
+                    label: 'Text → Image → Video',
+                    description: 'content factory: prompt → image → short video',
                     build: (agent) => [
                         {
-                            agentId: agent.id, agentName: agent.name, title: 'sahne promptu',
+                            agentId: agent.id, agentName: agent.name, title: 'scene prompt',
                             prompt: 'Şu konu için İngilizce, sinematik tek paragraf görsel/video promptu yaz (sadece promptu): KONUYU BURAYA YAZ',
                             mode: 'headless'
                         },
                         {
-                            agentId: '', agentName: 'media', title: 'kapak görseli', prompt: '', mode: 'headless',
+                            agentId: '', agentName: 'media', title: 'cover image', prompt: '', mode: 'headless',
                             media: { model: 'fal-ai/flux/schnell', input: '{"prompt": "{prev_text}"}' }
                         },
                         {
-                            agentId: '', agentName: 'media', title: 'kısa video', prompt: '', mode: 'headless',
+                            agentId: '', agentName: 'media', title: 'short video', prompt: '', mode: 'headless',
                             media: { model: 'fal-ai/kling-video/v2/master/text-to-video', input: '{"prompt": "{prev_text}", "duration": "5"}', timeoutMin: 20 }
                         }
                     ]
                 },
                 {
-                    label: 'Ses → Metin (Whisper)',
-                    description: 'ses dosyasını metne çevir, ajan özetlesin',
+                    label: 'Audio → Text (Whisper)',
+                    description: 'transcribe the audio file, the agent summarizes it',
                     build: (agent) => [
                         {
-                            agentId: '', agentName: 'media', title: 'transkript', prompt: '', mode: 'headless',
+                            agentId: '', agentName: 'media', title: 'transcript', prompt: '', mode: 'headless',
                             media: { model: 'fal-ai/whisper', input: '{"audio_url": "SES DOSYASI URL BURAYA"}' }
                         },
                         {
-                            agentId: agent.id, agentName: agent.name, title: 'özetle',
+                            agentId: agent.id, agentName: agent.name, title: 'summarize',
                             prompt: 'Şu transkripti Türkçe maddelerle özetle: {prev_text}',
                             mode: 'headless'
                         }
                     ]
                 }
             ];
-            const pick = await vscode.window.showQuickPick(recipes, { ignoreFocusOut: true, placeHolder: 'Hazır reçete seç (kurulduktan sonra adımları düzenleyebilirsin)' });
+            const pick = await vscode.window.showQuickPick(recipes, { ignoreFocusOut: true, placeHolder: 'Pick a recipe (steps are editable after install)' });
             if (!pick) { return; }
             const agent = await resolveAgent(undefined);
             if (!agent) { return; }
             taskManager.addWorkflow(pick.label, pick.build(agent));
             void vscode.window.showInformationMessage(
-                `Agent Farm: "${pick.label}" reçetesi kuruldu — Tasks → Workflows altında adımları (KONU/URL yer tutucularını) düzenleyip ▶ ile çalıştır. Medya adımları için FAL_KEY sırrı gerekli.`);
+                `Agent Farm: "${pick.label}" recipe installed — edit the steps (the KONU/URL placeholders) under Tasks → Workflows and run with ▶. Media steps need the FAL_KEY secret.`);
         }),
 
         vscode.commands.registerCommand('agentfarm.setSecret', async () => {
@@ -3130,7 +3132,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         vscode.commands.registerCommand('agentfarm.addTrigger', async () => {
             const title = await vscode.window.showInputBox({
-                prompt: 'Trigger name (e.g. "Inbox fabrikası")', ignoreFocusOut: true
+                prompt: 'Trigger name (e.g. "Inbox factory")', ignoreFocusOut: true
             });
             if (!title) { return; }
             const typePick = await vscode.window.showQuickPick(
@@ -3259,7 +3261,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const url = `http://127.0.0.1:${cfg().get<number>('livePort', 8377)}/trigger/${token}`;
                 await vscode.env.clipboard.writeText(url);
                 void vscode.window.showInformationMessage(
-                    `Agent Farm: webhook trigger armed — ${target}; URL copied to clipboard: ${url} (POST; body JSON'u {payload} olarak göreve girer; ${timing}).`);
+                    `Agent Farm: webhook trigger armed — ${target}; URL copied to clipboard: ${url} (POST; the request body reaches the task as {payload}; ${timing}).`);
             } else {
                 void vscode.window.showInformationMessage(
                     `Agent Farm: trigger "${title}" armed — ${target} (${timing}; right-click the trigger to edit).`);
@@ -3475,7 +3477,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     if (!bUrl) { continue; }
                     const bGoal = await vscode.window.showInputBox({
                         prompt: 'Goal — what should the agent do on the site?',
-                        placeHolder: 'örn. son raporu bul, özetle ve rakamları çıkar', ignoreFocusOut: true
+                        placeHolder: 'e.g. find the latest report, summarize it and extract the numbers', ignoreFocusOut: true
                     });
                     if (!bGoal) { continue; }
                     const defaultHost = (() => { try { return new URL(bUrl).hostname; } catch { return ''; } })();
@@ -3495,18 +3497,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
                 if (agentPick.isMedia) {
                     const mTitle = await vscode.window.showInputBox({
-                        prompt: `Step ${stepNo} title (media)`, value: 'Görsel üret', ignoreFocusOut: true
+                        prompt: `Step ${stepNo} title (media)`, value: 'Render image', ignoreFocusOut: true
                     });
                     if (!mTitle) { continue; }
                     const mModel = await vscode.window.showInputBox({
-                        prompt: 'Media model id — fal (varsayılan) ya da "replicate:owner/name[:version]" (Replicate)',
+                        prompt: 'Media model id — fal (default) or "replicate:owner/name[:version]" (Replicate)',
                         value: 'fal-ai/flux/schnell',
-                        placeHolder: 'örn. fal-ai/flux/schnell · replicate:black-forest-labs/flux-schnell',
+                        placeHolder: 'e.g. fal-ai/flux/schnell · replicate:black-forest-labs/flux-schnell',
                         ignoreFocusOut: true
                     });
                     if (!mModel) { continue; }
                     const mInput = await vscode.window.showInputBox({
-                        prompt: 'JSON input template — {prev_text}/{prev_json.x} çözülür',
+                        prompt: 'JSON input template — {prev_text}/{prev_json.x} are substituted',
                         value: '{"prompt": "{prev_text}"}', ignoreFocusOut: true
                     });
                     if (!mInput) { continue; }
@@ -3515,7 +3517,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // Wave B2: optional vision QA — a vision model checks the asset; FAIL regenerates.
                     const mQA = await vscode.window.showInputBox({
                         prompt: 'Vision QA criteria (optional) — a vision model checks the asset; FAIL regenerates with feedback',
-                        placeHolder: 'örn. tek bir kişi, net yüz, altı parmak yok, storyboard tarifine uygun', ignoreFocusOut: true
+                        placeHolder: 'e.g. a single person, clear face, no six fingers, matches the storyboard brief', ignoreFocusOut: true
                     });
                     if (mQA === undefined) { continue; }
                     const mRetries = mQA.trim() ? await vscode.window.showInputBox({
@@ -3532,12 +3534,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
                 if (agentPick.isApproval) {
                     const aTitle = await vscode.window.showInputBox({
-                        prompt: `Step ${stepNo} title (approval gate)`, value: 'İnsan onayı bekle', ignoreFocusOut: true
+                        prompt: `Step ${stepNo} title (approval gate)`, value: 'Wait for approval', ignoreFocusOut: true
                     });
                     if (!aTitle) { continue; }
                     const aMsg = await vscode.window.showInputBox({
                         prompt: 'Message shown when asking for approval (optional) — {prev_text}/{prev_json.x} are substituted',
-                        placeHolder: 'örn. Yayına çıkmadan önce çıktıyı gözden geçir', ignoreFocusOut: true
+                        placeHolder: 'e.g. Review the output before it goes live', ignoreFocusOut: true
                     });
                     if (aMsg === undefined) { continue; }
                     steps.push({
@@ -3548,17 +3550,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
                 if (agentPick.isSelect) {
                     const sTitle = await vscode.window.showInputBox({
-                        prompt: `Step ${stepNo} title (select assets)`, value: 'Adayları seç', ignoreFocusOut: true
+                        prompt: `Step ${stepNo} title (select assets)`, value: 'Pick candidates', ignoreFocusOut: true
                     });
                     if (!sTitle) { continue; }
                     const sMsg = await vscode.window.showInputBox({
                         prompt: 'Message shown in the picker (optional) — {prev_text}/{prev_json.x} are substituted',
-                        placeHolder: 'örn. Video üretimine gidecek kareleri seç', ignoreFocusOut: true
+                        placeHolder: 'e.g. Pick the frames that go on to video generation', ignoreFocusOut: true
                     });
                     if (sMsg === undefined) { continue; }
                     const sRange = await vscode.window.showInputBox({
                         prompt: 'How many to keep? min or min-max (empty = at least 1)',
-                        placeHolder: 'örn. 2  ·  1-3  ·  boş', ignoreFocusOut: true,
+                        placeHolder: 'e.g. 2  ·  1-3  ·  empty', ignoreFocusOut: true,
                         validateInput: v => v.trim() && !/^\d+(-\d+)?$/.test(v.trim()) ? 'Use N or N-M' : undefined
                     });
                     if (sRange === undefined) { continue; }
@@ -3573,7 +3575,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
                 if (agentPick.isWebhook) {
                     const whTitle = await vscode.window.showInputBox({
-                        prompt: `Step ${stepNo} title (webhook)`, value: 'Dışarı bildir', ignoreFocusOut: true
+                        prompt: `Step ${stepNo} title (webhook)`, value: 'Notify outward', ignoreFocusOut: true
                     });
                     if (!whTitle) { continue; }
                     const whUrl = await vscode.window.showInputBox({
@@ -3591,7 +3593,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // Optional auth header (queued APIs): "Name: Value", {secret:NAME} substituted.
                     const whHeader = await vscode.window.showInputBox({
                         prompt: 'Auth header (optional) — "Name: Value", {secret:NAME} substituted',
-                        placeHolder: 'örn. Authorization: Bearer {secret:MY_TOKEN}', ignoreFocusOut: true
+                        placeHolder: 'e.g. Authorization: Bearer {secret:MY_TOKEN}', ignoreFocusOut: true
                     });
                     if (whHeader === undefined) { continue; }
                     const headers: Record<string, string> = {};
@@ -3600,7 +3602,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // Optional poll mode: turn this into a submit→poll queue client.
                     const whPollUrlField = await vscode.window.showInputBox({
                         prompt: 'Poll until done? JSON path in the response to the poll URL (empty = single call)',
-                        placeHolder: 'örn. urls.get · status_url · name', ignoreFocusOut: true
+                        placeHolder: 'e.g. urls.get · status_url · name', ignoreFocusOut: true
                     });
                     if (whPollUrlField === undefined) { continue; }
                     let poll: WebhookPollConfig | undefined;
@@ -3693,7 +3695,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const verifyCriteria = stepMode.mode === 'headless'
                     ? ((await vscode.window.showInputBox({
                         prompt: `Step ${stepNo}: verification criteria for the cheap-model judge — empty = no verification`,
-                        placeHolder: 'e.g. Çıktı en az 3 maddelik bir plan içermeli',
+                        placeHolder: 'e.g. the output must contain a plan with at least 3 items',
                         ignoreFocusOut: true
                     })) ?? '')
                     : '';
@@ -4460,7 +4462,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (!input?.trim()) { return; }
             const expectation = await vscode.window.showInputBox({
                 prompt: 'Expectation (what a good answer must satisfy — judge criteria)',
-                placeHolder: 'örn. Türkçe olmalı, 3 somut öneri içermeli, başlık atmalı',
+                placeHolder: 'e.g. must be in Turkish, contain 3 concrete suggestions, no headings',
                 ignoreFocusOut: true
             });
             if (!expectation?.trim()) { return; }
@@ -4663,14 +4665,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const options: VariantPick[] = suggestionStore.open()
                 .filter(s => s.agentId === agent.id)
                 .map(s => ({
-                    label: `$(lightbulb) Öneriyi dene: ${s.rule.slice(0, 70)}`,
+                    label: `$(lightbulb) Try the suggestion: ${s.rule.slice(0, 70)}`,
                     detail: 'B = mevcut CLAUDE.md + bu kural', variantKind: 'suggestion' as const, rule: s.rule
                 }));
             options.push(
-                { label: '$(file) B varyantını dosyadan seç…', variantKind: 'file' },
-                { label: '$(edit) Eklenecek kuralı elle yaz…', variantKind: 'paste' });
+                { label: '$(file) Pick variant B from a file…', variantKind: 'file' },
+                { label: '$(edit) Write the rule to add…', variantKind: 'paste' });
             const picked = await vscode.window.showQuickPick(options, {
-                ignoreFocusOut: true, placeHolder: `A = ${agent.name}'in mevcut CLAUDE.md'si. B varyantı nereden gelsin?`
+                ignoreFocusOut: true, placeHolder: `A = ${agent.name}'s current CLAUDE.md. Where does variant B come from?`
             });
             if (!picked) { return; }
             let variantB: string | undefined;
@@ -4683,7 +4685,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (uris?.[0]) { variantB = fs.readFileSync(uris[0].fsPath, 'utf8'); }
             } else {
                 const rule = await vscode.window.showInputBox({
-                    prompt: 'B varyantına eklenecek kural (tek satır)', ignoreFocusOut: true
+                    prompt: 'Rule to add to variant B (one line)', ignoreFocusOut: true
                 });
                 if (rule?.trim()) {
                     variantB = current.trimEnd() + `\n\n## Deneme kuralı (A/B)\n- ${rule.trim()}\n`;
@@ -4694,8 +4696,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             let prompts = evalCases.map(c => c.input).slice(0, 5);
             if (!prompts.length) {
                 const raw = await vscode.window.showInputBox({
-                    prompt: 'Deneme istemleri ( ; ile ayır, 2-5 adet)',
-                    placeHolder: 'örn. bugünkü notları özetle ; haftalık plan çıkar',
+                    prompt: 'Trial prompts (separate with ; — 2-5 of them)',
+                    placeHolder: 'e.g. summarize today\'s notes ; draft the weekly plan',
                     ignoreFocusOut: true
                 });
                 prompts = (raw ?? '').split(';').map(s => s.trim()).filter(Boolean).slice(0, 5);
@@ -4703,8 +4705,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (!prompts.length) { return; }
             const runArgs = cfg().get<string>('evalRunArgs', '--model claude-haiku-4-5-20251001');
             const confirm = await vscode.window.showInformationMessage(
-                `A/B deneyi: ${prompts.length} istem × 2 varyant + ${prompts.length} hakem çağrısı ` +
-                `(${runArgs || 'ajan varsayılan modeli'}). Koşulsun mu?`,
+                `A/B experiment: ${prompts.length} prompts × 2 variants + ${prompts.length} judge calls ` +
+                `(${runArgs || 'agent default model'}). Run it?`,
                 { modal: true }, 'Run');
             if (confirm !== 'Run') { return; }
             const summary = await vscode.window.withProgress(
@@ -4717,7 +4719,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             await vscode.window.showTextDocument(doc, { preview: true });
             if (summary.winsB > summary.winsA) {
                 const apply = await vscode.window.showInformationMessage(
-                    `B kazandı (${summary.winsB}-${summary.winsA}, ${summary.ties} eşit). B varyantı CLAUDE.md'ye uygulansın mı? (.afbak yedeği alınır)`,
+                    `B won (${summary.winsB}-${summary.winsA}, ${summary.ties} ties). Apply variant B to CLAUDE.md? (an .afbak backup is taken)`,
                     { modal: true }, 'Apply B');
                 if (apply === 'Apply B') {
                     const backup = `${agent.claudeMdPath}.${Date.now()}.afbak`;
@@ -4725,11 +4727,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     fs.writeFileSync(agent.claudeMdPath, variantB, 'utf8');
                     instrHistory.record(agent.id, variantB);
                     void vscode.window.showInformationMessage(
-                        `Agent Farm: B uygulandı ✓ (yedek: ${path.basename(backup)})`);
+                        `Agent Farm: B applied ✓ (backup: ${path.basename(backup)})`);
                 }
             } else {
                 void vscode.window.showInformationMessage(
-                    `Agent Farm A/B: A ${summary.winsA} · B ${summary.winsB} · eşit ${summary.ties} — mevcut talimat yerinde kalıyor.`);
+                    `Agent Farm A/B: A ${summary.winsA} · B ${summary.winsB} · ties ${summary.ties} — keeping the current instructions.`);
             }
         }),
 
@@ -4789,8 +4791,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return;
             }
             const query = await vscode.window.showInputBox({
-                prompt: 'Filo bu konuda ne biliyor? (anlamsal hafıza sorgusu)',
-                placeHolder: 'örn. kullanıcının uyku düzeni hakkında bilinenler',
+                prompt: 'What does the fleet know about this? (semantic memory query — Turkish queries are fine)',
+                placeHolder: 'e.g. what is known about the user\'s sleep pattern',
                 ignoreFocusOut: true
             });
             if (!query?.trim()) { return; }
@@ -4882,8 +4884,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return;
             }
             const raw = await vscode.window.showInputBox({
-                prompt: 'Paralel koşular ( ; ile ayır — her istem kendi worktree\'sinde koşar)',
-                placeHolder: 'örn. login formunu düzelt ; dark mode ekle ; testleri hızlandır',
+                prompt: 'Parallel runs (separate with ; — each prompt runs in its own worktree)',
+                placeHolder: 'e.g. fix the login form ; add dark mode ; speed up the tests',
                 ignoreFocusOut: true
             });
             const prompts = (raw ?? '').split(';').map(s => s.trim()).filter(Boolean).slice(0, 6);
@@ -4891,7 +4893,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const maxConc = cfg().get<number>('maxConcurrentPerAgent', 1);
             if (prompts.length > 1 && maxConc > 0 && maxConc < prompts.length) {
                 const c = await vscode.window.showInformationMessage(
-                    `maxConcurrentPerAgent = ${maxConc}: koşular sırayla işler (worktree'ler yine izole). Devam?`,
+                    `maxConcurrentPerAgent = ${maxConc}: runs execute in turn (worktrees stay isolated). Continue?`,
                     { modal: true }, 'Devam');
                 if (c !== 'Devam') { return; }
             }
@@ -5082,8 +5084,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         vscode.commands.registerCommand('agentfarm.testDispatch', async () => {
             const text = await vscode.window.showInputBox({
-                prompt: 'Gelen iş metni — dispatcher hangi ajana yönlendirirdi?',
-                placeHolder: 'örn. dün gece uyuyamadım, sabah da kaygılıydım',
+                prompt: 'Incoming work text — which agent would the dispatcher route it to? (Turkish input is fine)',
+                placeHolder: 'e.g. couldn\'t sleep last night, anxious this morning too',
                 ignoreFocusOut: true
             });
             if (!text?.trim()) { return; }
