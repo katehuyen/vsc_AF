@@ -133,6 +133,8 @@ export interface DailyDigestData {
     runningTasks: number;
     queuedTasks: number;
     mediaCostToday: number;
+    /** Tasks that finished today (done/failed) + a few failure titles. */
+    taskOutcomesToday?: { done: number; failed: number; topFailures: string[] };
 }
 
 /**
@@ -154,6 +156,11 @@ export function buildDailyDigest(d: DailyDigestData): string {
     if (spenders.length) { lines.push('Harcama: ' + spenders.join(' · ')); }
     if (d.runningTasks || d.queuedTasks) {
         lines.push(`Görevler: ${d.runningTasks} çalışıyor, ${d.queuedTasks} kuyrukta`);
+    }
+    const out = d.taskOutcomesToday;
+    if (out && (out.done || out.failed)) {
+        lines.push(`Bugün biten: ${out.done}✓ ${out.failed}✗` +
+            (out.topFailures.length ? ` — hata: ${out.topFailures.slice(0, 2).join(', ')}` : ''));
     }
     if (d.pendingDuties) { lines.push(`👁 Nöbet: ${d.pendingDuties} bekleyen iş`); }
     if (d.warnings.length) {

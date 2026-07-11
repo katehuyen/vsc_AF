@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.20.0",
+  "version": "2.21.0",
   "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
@@ -526,6 +526,12 @@
         "category": "Agent Farm"
       },
       {
+        "command": "agentfarm.openForecast",
+        "title": "Task Forecast",
+        "category": "Agent Farm",
+        "icon": "$(calendar)"
+      },
+      {
         "command": "agentfarm.setSecret",
         "title": "Set Secret…",
         "category": "Agent Farm"
@@ -934,6 +940,11 @@
           "command": "agentfarm.addRecipe",
           "when": "view == agentfarm.tasks",
           "group": "overflow@1"
+        },
+        {
+          "command": "agentfarm.openForecast",
+          "when": "view == agentfarm.tasks",
+          "group": "navigation@5"
         },
         {
           "command": "agentfarm.openTaskHistory",
@@ -1399,6 +1410,11 @@
           "type": "number",
           "default": 8000,
           "description": "Warn when an agent's fixed context load (CLAUDE.md + MEMORY.md + AGENTS.md) exceeds this estimated token budget."
+        },
+        "agentFarm.forecastDays": {
+          "type": "number",
+          "default": 7,
+          "description": "How many days ahead the Task Forecast projects scheduled runs."
         },
         "agentFarm.windowTokenLimit": {
           "type": "number",

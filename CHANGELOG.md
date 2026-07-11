@@ -2,6 +2,12 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.21.0 — Task forecast & digest outcomes, wave 4 (2026-07-11)
+
+- **Task Forecast** (calendar icon in the Tasks view title): a markdown projection of what runs next — each schedule's fire times over the next `forecastDays` (default 7), grouped by day, annotated with the same job's 30-day median duration and success rate (from task-history analytics); plus the current queue, running tasks, and an estimated total agent-time. Duration is computed from successful runs only.
+- **Daily digest gains task outcomes**: the daily summary card now includes a "finished today: X✓ Y✗ — failures: …" line.
+- Per-task dollar-cost estimation is intentionally deferred — token cost lives in session transcripts, not tied to tasks, so the forecast projects duration and success rather than fabricating a cost. This completes the task roadmap (waves 1–4).
+
 ## 2.20.0 — Parallel steps & fan-in, wave 3b (2026-07-11)
 
 - **Parallel step groups**: mark a workflow step *Parallel* (in the New Workflow wizard or Edit Step) and consecutive parallel steps form a group. When the chain reaches the group, every step launches at once with the same handoff (fan-out); once all branches finish, their outputs merge into one handoff and the step after the group runs (fan-in). The merged `{prev_text}` is labeled by step title and `{prev_json.branches}` is a `[{step, text, json}]` array. Each branch can carry its own `runIf` (a non-matching branch is skipped, not failed); if any branch fails, the group's first-step `onFail` policy applies. Real concurrency is bounded by `maxConcurrentTasks`/`maxConcurrentPerAgent`. Fully backward compatible — steps without the flag run sequentially as before. Group members show a ∥ merge icon in the Tasks tree. This completes wave 3 (DAG orchestration).

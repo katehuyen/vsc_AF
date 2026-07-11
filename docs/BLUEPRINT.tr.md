@@ -305,6 +305,16 @@ Sık kullandığın görevleri şablonlaştır: görev üzerinde sağ tık → *
 
 Biten görevler kaybolmaz: liste tavana gelince veya **Clear Finished Tasks** deyince kayıtlar aylık `task-history/YYYY-AA.jsonl` dosyalarına taşınır (`Open Task History` komutuyla aç). Çıktı arşivi klasörü de `outputsMaxMB` tavanını aşınca en eski, referanssız çıktılardan temizlenir.
 
+### Görev Öngörüsü (Forecast)
+
+**Task Forecast** (Tasks görünümünün başlığındaki takvim ikonu, 2.21.0) — sonraki günlerde neyin, ne zaman koşacağını bir markdown belgesinde gösterir:
+
+- **Zamanlanmış koşular:** her zamanlamanın sonraki `forecastDays` (varsayılan 7) gündeki ateşleme zamanları, güne göre gruplu; her koşunun yanında aynı işin **son 30 gündeki medyan süresi ve başarı oranı** (Görev Sağlığı verisinden — geçmiş yoksa boş).
+- **Şu an çalışan** ve **kuyrukta bekleyen** görevler (bekleyenlerde erteleme nedeni).
+- Üstte toplam koşu sayısı ve tahmini **ajan-süresi** (bilinen medyanların toplamı).
+
+Not: Süre öngörüsü yalnız başarılı koşuların medyanından hesaplanır (hızlı bir hata süreyi çarpıtmasın). Görev başına dolar maliyeti izlenmediğinden (token maliyeti oturum transkriptinde, göreve bağlı değil) forecast dolar değil süre/başarı öngörür; medya maliyeti ayrıca Dashboard'da.
+
 ### Görev Sağlığı
 
 Delege ettiğin işler ne kadar güvenilir dönüyor? (2.17.0) Tarihçe arşivi + canlı görev listesi birleştirilip üç yüzeye işlenir:
@@ -1201,6 +1211,12 @@ Tamamlanan fazlar (hepsi 2026-07-08):
 **Bundan sonrası ayrı ve ayrıntılı bir belgede yaşıyor:** komut paletinden **Agent Farm: Open Development Plan** — uzak görüşlü gelişim planı: olay tetikleyicileri, doğrulayıcı adımlar, MCP paneli, n8n/webhook köprüsü, multimedya üretim hattı (Kling/Seedance/Nano Banana sınıfı modellerle içerik fabrikası), zeki gözetim, çoklu makine ve vizyoner ufuk. Kodlama o plandaki öncelik sırasını izler.
 
 ## Sürüm Notları
+
+### 2.21.0 — Görev Öngörüsü & Digest Sonuçları, Dalga 4 (2026-07-11)
+
+- **Task Forecast:** sonraki 7 günün zamanlı koşuları + kuyruk + çalışanlar, her koşuda 30g medyan süre/başarı; tahmini ajan-süresi. Tasks başlığındaki takvim ikonu. Bkz. [Görev Öngörüsü](#gorev-ongorusu-forecast).
+- **Günlük digest'e görev sonuçları:** günlük özet kartına "Bugün biten: X✓ Y✗ — hata: …" satırı.
+- Dolar-maliyet tahmini bilinçli ertelendi (görev başına token maliyeti izlenmiyor); forecast süre/başarı öngörür. **Tasks yol haritası (Dalga 1-4) tamamlandı.**
 
 ### 2.20.0 — Paralel Adımlar & Fan-in, Dalga 3b (2026-07-11)
 

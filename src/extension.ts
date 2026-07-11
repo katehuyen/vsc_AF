@@ -60,6 +60,7 @@ import { SecretsVault } from './core/secrets';
 import { contextWindowFor, DEFAULT_PRICING, PriceRule, PricingEngine, totalTokens } from './core/pricing';
 import { QualityStore, sampleQuality } from './core/quality';
 import { buildDailyDigest, buildFleetReport, buildOutputsDigest } from './core/report';
+import { buildForecast, renderForecastMarkdown } from './core/forecast';
 import { SessionIndex, SessionInfo } from './core/sessions';
 import {
     applySuggestionToClaudeMd, collectUserMessages, scanCorrections, SuggestionStore
@@ -769,7 +770,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 sum + a.duties.filter(d => !d.paused && watchStatus(d.watch)?.pending).length, 0),
             runningTasks: taskManager.tasks.filter(t => t.status === 'running').length,
             queuedTasks: taskManager.tasks.filter(t => t.status === 'queued').length,
-            mediaCostToday: mediaCostSince(taskManager.outputsDir, 24 * 3600 * 1000)
+            mediaCostToday: mediaCostSince(taskManager.outputsDir, 24 * 3600 * 1000),
+            taskOutcomesToday: (() => {
+                const startOfDay = new Date(now).setHours(0, 0, 0, 0);
+                const finishedToday = allTaskRecords().filter(t =>
+                    (t.status === 'done' || t.status === 'failed') && (t.endedAt ?? 0) >= startOfDay);
+                return {
+                    done: finishedToday.filter(t => t.status === 'done').length,
+                    failed: finishedToday.filter(t => t.status === 'failed').length,
+                    topFailures: finishedToday.filter(t => t.status === 'failed')
+                        .map(t => t.title.replace(/ \(retry \d+\)$/i, '')).slice(0, 3)
+                };
+            })()
         });
     };
     const sendDailyDigest = (manual: boolean): void => {
@@ -2503,6 +2515,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (pick) {
                 await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(path.join(dir, pick)));
             }
+        }),
+
+        vscode.commands.registerCommand('agentfarm.openForecast', async () => {
+            const forecast = buildForecast(
+                taskManager.schedules,
+                taskManager.tasks.map(t => ({
+                    title: t.title, agentName: t.agentName, status: t.status,
+                    deferredReason: t.deferredReason, startedAt: t.startedAt
+                })),
+                allTaskRecords(),
+                Date.now(),
+                cfg().get<number>('forecastDays', 7)
+            );
+            const doc = await vscode.workspace.openTextDocument({
+                language: 'markdown', content: renderForecastMarkdown(forecast)
+            });
+            await vscode.window.showTextDocument(doc, { preview: false });
         }),
 
         vscode.commands.registerCommand('agentfarm.saveTaskTemplate', async (node?: TaskNode) => {
