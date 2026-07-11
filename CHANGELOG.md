@@ -2,6 +2,12 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.34.0 — Codex & Gemini transcript adapters, wave E3b (2026-07-11)
+
+- **Sessions from Codex CLI and Gemini CLI now appear in the external-session history with real token usage.** Codex rollout transcripts (`~/.codex/sessions/**/rollout-*.jsonl`, archived ones included) are parsed for prompts, tool calls, model, cwd (→ agent assignment) and the cumulative `token_count` totals; Gemini chat files (`~/.gemini/tmp/<hash>/chats/*.json|jsonl`) for prompts, per-turn token usage and models — the project hash is matched against your agents' directory hashes to assign sessions to agents. Paths are configurable via `agentFarm.codexHome` / `agentFarm.geminiDir`.
+- **Costs are honest**: each external model's usage is priced through your `agentFarm.pricing` rules — add a rule (e.g. `"gpt-5"` or `"gemini-2\\.5-pro"`) and the dashboard line and session rows show real dollar values; without a rule the cost is $0 and the model appears in the existing unknown-models warning. Clicking an external session opens its raw transcript; claude-only analytics still never see these sessions (side-list architecture from 2.32.0).
+- Formats were implemented against the upstream sources (openai/codex protocol + gemini-cli, July 2026) and are fail-soft: an unrecognized file or line is skipped silently, and live-event lanes that overlap a parsed transcript are deduplicated (the transcript wins). Formats drift — if a session doesn't show up, it costs nothing.
+
 ## 2.33.0 — Long-job durability, wave F (2026-07-11)
 
 - **Media renders survive window reloads**: the moment a fal/Replicate job is queued, its poll URLs are persisted on the task. If the window closes mid-render, the next window **reattaches** — polling resumes, assets download, the gallery meta is written, and the workflow chain continues exactly where it left off (the archive notes the reattach). Jobs whose deadline already passed fall back to the resume offer below.

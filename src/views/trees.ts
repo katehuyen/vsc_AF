@@ -9,6 +9,7 @@ import {
 } from '../core/mcp';
 import { readAgentSkills, SkillDef, skillLastUsed, skillUsage } from '../core/skills';
 import { LiveMonitor, LiveStatus } from '../core/live';
+import { totalTokens } from '../core/pricing';
 import { SessionIndex, SessionInfo } from '../core/sessions';
 import { fmtTokens, fmtUSD, relTime, dayKey, safeReadFile } from '../core/util';
 
@@ -414,20 +415,29 @@ function openFileCommand(p: string): vscode.Command {
 }
 
 function sessionTreeItem(s: SessionInfo, index: SessionIndex, showAgent: boolean): vscode.TreeItem {
-    // E3: external-CLI sessions have no transcript file — no viewer, no
-    // rename/delete/resume menus; clicking opens the Live Timeline instead.
+    // E3: external-CLI sessions bypass the claude viewer and the
+    // rename/delete/resume menus. With a transcript on disk (E3b codex/gemini)
+    // the click opens the raw file; live-event lanes open the Live Timeline.
     if (s.source) {
         const item = new vscode.TreeItem(s.title, vscode.TreeItemCollapsibleState.None);
         item.contextValue = 'session-external';
         item.iconPath = new vscode.ThemeIcon('terminal');
         const parts: string[] = [];
         if (showAgent && s.agentName) { parts.push(s.agentName); }
-        parts.push(s.source, relTime(s.mtime));
+        parts.push(s.source);
+        if (s.cost > 0) { parts.push(fmtUSD(s.cost)); }
+        parts.push(relTime(s.mtime));
         item.description = parts.join(' • ');
-        item.tooltip = `${s.title}\nexternal CLI session (${s.source})\n` +
-            `${s.userTurns} prompts • ${s.toolCalls} tool calls — from live events; ` +
-            'no transcript, cost not tracked';
-        item.command = { command: 'agentfarm.openTimeline', title: 'Open Timeline' };
+        item.tooltip = `${s.title}\nexternal CLI session (${s.source})` +
+            (s.models.length ? `\n${s.models.join(', ')}` : '') +
+            `\n${s.userTurns} prompts • ${s.toolCalls} tool calls` +
+            (s.file
+                ? `\n${totalTokens(s.usage) ? `~${fmtTokens(totalTokens(s.usage))} tokens • ` : ''}` +
+                  `cost ${s.cost > 0 ? fmtUSD(s.cost) : '$0 (add an agentFarm.pricing rule for this model)'}`
+                : '\nfrom live events — no transcript, cost not tracked');
+        item.command = s.file
+            ? { command: 'vscode.open', title: 'Open Raw Transcript', arguments: [vscode.Uri.file(s.file)] }
+            : { command: 'agentfarm.openTimeline', title: 'Open Timeline' };
         return item;
     }
     // G6: nested subagent transcripts hang under their parent with a cost rollup.

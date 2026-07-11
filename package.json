@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.33.0",
+  "version": "2.34.0",
   "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
@@ -1541,6 +1541,16 @@
           "type": "string",
           "default": "",
           "description": "Override the Replicate API base URL (testing / self-hosted proxy). Empty = https://api.replicate.com."
+        },
+        "agentFarm.codexHome": {
+          "type": "string",
+          "default": "",
+          "description": "Codex CLI home whose sessions/ rollout transcripts feed the external-session history. Empty = ~/.codex."
+        },
+        "agentFarm.geminiDir": {
+          "type": "string",
+          "default": "",
+          "description": "Gemini CLI tmp dir whose chat files feed the external-session history. Empty = ~/.gemini/tmp."
         },
         "agentFarm.mediaBaseUrl": {
           "type": "string",

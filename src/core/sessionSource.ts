@@ -20,7 +20,25 @@ export function buildExternalSessions(sources: SessionSource[]): SessionInfo[] {
     for (const source of sources) {
         try { out.push(...source.scan()); } catch { /* fail-soft: skip source */ }
     }
-    return out;
+    return dedupeExternal(out);
+}
+
+/**
+ * A session opened via Start Session With… can appear twice: as a file-less
+ * live-events lane AND as the CLI's own transcript (E3b). When a transcript
+ * entry of the same CLI overlaps a lane in time (same agent, or either side
+ * unassigned), the transcript wins — it is the richer record.
+ */
+export function dedupeExternal(sessions: SessionInfo[]): SessionInfo[] {
+    const transcripts = sessions.filter(s => s.file);
+    const SLACK = 5 * 60_000;
+    return sessions.filter(s => {
+        if (s.file) { return true; }
+        return !transcripts.some(t =>
+            t.source === s.source &&
+            (!t.agentId || !s.agentId || t.agentId === s.agentId) &&
+            t.firstTs <= s.lastTs + SLACK && t.lastTs >= s.firstTs - SLACK);
+    });
 }
 
 /**

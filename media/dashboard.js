@@ -166,7 +166,7 @@
             : '';
         const extEntries = Object.entries(DATA.externalSessions || {});
         const externalNote = extEntries.length
-            ? `<p class="footnote">⌁ External CLI sessions (last ~31d): ${extEntries.map(([src, n]) => `${C.esc(src)} ×${n}`).join(' · ')} — tracked from live events; tokens/cost not included above.</p>`
+            ? `<p class="footnote">⌁ External CLI sessions: ${extEntries.map(([src, n]) => `${C.esc(src)} ×${n}`).join(' · ')} — kept out of the totals above; their costs use <code>agentFarm.pricing</code> rules when a model matches, otherwise $0.</p>`
             : '';
 
         document.getElementById('app').innerHTML = `

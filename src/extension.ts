@@ -14,6 +14,7 @@ import { speakText } from './core/briefing';
 import { buildOtlpTraces } from './core/otel';
 import { collectGalleryPacks } from './core/packgallery';
 import { RelayTailer } from './core/relay';
+import { codexSessionsSource, geminiSessionsSource } from './core/cliTranscripts';
 import { buildExternalSessions, liveEventsSource } from './core/sessionSource';
 import {
     createWorktree, isGitRepo, listAfWorktrees, mergeWorktree, removeWorktree, worktreeStatus
@@ -273,6 +274,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
 
     let triggerManagerRef: TriggerManager | undefined;
+    // cwd → agent mapping, shared by the live monitor and the external-CLI
+    // transcript sources (E3b). Pure extraction — behavior unchanged.
+    const resolveAgentByCwd = (cwd: string | undefined): { agentId?: string; agentName?: string } => {
+        if (!cwd) { return {}; }
+        const n = normPath(cwd);
+        let best: AgentInfo | undefined;
+        for (const a of agents) {
+            if (n === a.normDir || n.startsWith(a.normDir + '/')) {
+                if (!best || a.normDir.length > best.normDir.length) { best = a; }
+            }
+        }
+        if (!best) {
+            // J2: remote relay events carry another machine's paths — match by
+            // folder basename (the same agent usually lives under the same name).
+            const base = n.split('/').pop() ?? '';
+            best = agents.find(a => a.name.toLowerCase() === base);
+        }
+        return best ? { agentId: best.id, agentName: best.name } : {};
+    };
     const live = new LiveMonitor(
         () => ({
             enabled: cfg().get<boolean>('liveMonitor', true),
@@ -284,23 +304,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             forward: postForward,
             onTurnReady: fireTurnReady
         }),
-        (cwd) => {
-            if (!cwd) { return {}; }
-            const n = normPath(cwd);
-            let best: AgentInfo | undefined;
-            for (const a of agents) {
-                if (n === a.normDir || n.startsWith(a.normDir + '/')) {
-                    if (!best || a.normDir.length > best.normDir.length) { best = a; }
-                }
-            }
-            if (!best) {
-                // J2: remote relay events carry another machine's paths — match by
-                // folder basename (the same agent usually lives under the same name).
-                const base = n.split('/').pop() ?? '';
-                best = agents.find(a => a.name.toLowerCase() === base);
-            }
-            return best ? { agentId: best.id, agentName: best.name } : {};
-        },
+        resolveAgentByCwd,
         // B3 inbound: /trigger/<token> → webhook trigger (late-bound; manager is created below)
         (token, payload) => triggerManagerRef?.fireWebhook(token, payload) ?? false,
         path.join(context.globalStorageUri.fsPath, 'live-events.jsonl')
@@ -430,13 +434,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push({ dispose: () => clearTimeout(cliRebindTimer) });
 
     // ---- E3: external-CLI session history ----
-    // Built from the live-event store (`cli:` lanes) — no foreign log formats
-    // involved. Kept in the index's side list so claude analytics never see it;
-    // the sessions trees and dashboard opt in explicitly. Cost is honestly 0.
+    // Three fail-soft sources, all kept in the index's side list so claude
+    // analytics never see them; the sessions trees and dashboard opt in
+    // explicitly. E3a: the live-event store (`cli:` lanes). E3b: the CLIs' own
+    // transcripts — codex rollout JSONLs and gemini chat files — with real
+    // token usage; cost comes from agentFarm.pricing rules (no rule → $0 +
+    // unknown-models warning). Transcript entries win over overlapping lanes.
     const externalSessionSource = liveEventsSource(
         () => path.join(context.globalStorageUri.fsPath, 'live-events.jsonl'));
+    const codexSource = codexSessionsSource(
+        () => cfg().get<string>('codexHome', '').trim() || path.join(os.homedir(), '.codex'),
+        resolveAgentByCwd,
+        () => pricing);
+    const geminiSource = geminiSessionsSource(
+        () => cfg().get<string>('geminiDir', '').trim() || path.join(os.homedir(), '.gemini', 'tmp'),
+        () => agents,
+        () => pricing);
     const refreshExternalSessions = () =>
-        index.setExternal(buildExternalSessions([externalSessionSource]));
+        index.setExternal(buildExternalSessions([externalSessionSource, codexSource, geminiSource]));
     refreshExternalSessions();
     let externalSessTimer: NodeJS.Timeout | undefined;
     context.subscriptions.push(live.onDidUpdate(() => {
