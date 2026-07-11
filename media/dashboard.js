@@ -173,6 +173,7 @@
                         ${[7, 14, 30, 90, 180, 365].map(r => `<button data-range="${r}" class="${r === range ? 'sel' : ''}">${r}d</button>`).join('')}
                     </span>
                     <button class="secondary" id="refresh">Refresh</button>
+                    <button class="secondary" id="timeline">Live Timeline</button>
                     <button class="secondary" data-guide="dashboard">? Guide</button>
                 </div>
             </div>
@@ -213,6 +214,7 @@
         `;
 
         document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
+        document.getElementById('timeline').addEventListener('click', () => vscode.postMessage({ type: 'openTimeline' }));
         document.querySelectorAll('[data-range]').forEach(b =>
             b.addEventListener('click', () => { range = Number(b.dataset.range); render(); }));
         document.querySelectorAll('[data-detail]').forEach(b =>

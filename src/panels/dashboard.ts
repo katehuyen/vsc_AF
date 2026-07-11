@@ -210,6 +210,9 @@ export class DashboardPanel {
             case 'openGuide':
                 vscode.commands.executeCommand('agentfarm.openGuide', msg.anchor);
                 break;
+            case 'openTimeline':
+                vscode.commands.executeCommand('agentfarm.openTimeline');
+                break;
             case 'refresh':
                 this.refresh();
                 break;

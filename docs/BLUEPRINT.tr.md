@@ -15,7 +15,7 @@ Tamamen yereldir: hiçbir veri makinenden çıkmaz, hiçbir sunucuya bağlanmaz.
 
 Hiç bilmiyorsan buradan başla. Bu bölüme her an komut paletinden (`Ctrl+Shift+P`) **Agent Farm: Quick Start** yazarak dönebilirsin.
 
-> Bu kılavuzun yanında bir de **Örnek Kullanımlar** belgesi var: gerçek çalıştırmalarla test edilmiş 11 adım-adım operasyon senaryosu (inbox nöbeti, devirli zincir, bağlam diyeti, vault karnesi…). Komut paleti → **Agent Farm: Open Examples**.
+> Bu kılavuzun yanında bir de **Örnek Kullanımlar** belgesi var: gerçek çalıştırmalarla test edilmiş 11 adım-adım operasyon senaryosu (inbox nöbeti, devirli zincir, bağlam diyeti, vault karnesi…). Komut paleti → **Agent Farm: Open Examples**. Medya/video üretim iş akışları (storyboard → görsel → video → kurgu) için durum ve gelişim yol haritası ayrı bir canlı belgede: [ROADMAP.media.tr.md](ROADMAP.media.tr.md).
 
 ### İlk 3 Dakika: Paneli Tanı
 
@@ -112,6 +112,7 @@ Filonun genel panosu. `Agent Farm: Open Dashboard` komutuyla veya durum çubuğu
 - **Activity heatmap**: haftanın günü × saat bazında mesaj yoğunluğu. Çalışma ritmini gösterir.
 - **Agent kartları**: durum, bugün/aralık maliyeti, mini trend çizgisi, bulgu rozetleri. Karta tıkla → detay sayfası.
 - **Top sessions by cost**: en pahalı oturumlar; satıra tıkla → transkript.
+- Üst satırda **Live Timeline** düğmesi (2.22.0): Refresh ile Guide arasında — panodan kulvar görünümüne tek tık.
 
 Dashboard, oturum kayıtları değiştikçe kendini otomatik günceller.
 
