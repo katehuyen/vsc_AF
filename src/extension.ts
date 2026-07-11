@@ -2855,9 +2855,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     if (!mInput) { continue; }
                     // Wave A: optional production/scene link (asked only when a manifest exists).
                     const mLink = await pickProductionScene('Tie produced assets to a production scene? (gallery grouping)');
+                    // Wave B2: optional vision QA — a vision model checks the asset; FAIL regenerates.
+                    const mQA = await vscode.window.showInputBox({
+                        prompt: 'Vision QA criteria (optional) — a vision model checks the asset; FAIL regenerates with feedback',
+                        placeHolder: 'örn. tek bir kişi, net yüz, altı parmak yok, storyboard tarifine uygun', ignoreFocusOut: true
+                    });
+                    if (mQA === undefined) { continue; }
+                    const mRetries = mQA.trim() ? await vscode.window.showInputBox({
+                        prompt: 'How many regeneration attempts on QA failure?', value: '1',
+                        validateInput: v => /^\d+$/.test(v.trim()) ? undefined : 'A number', ignoreFocusOut: true
+                    }) : undefined;
+                    if (mQA.trim() && mRetries === undefined) { continue; }
                     steps.push({
                         agentId: '', agentName: 'media', title: mTitle, prompt: '', mode: 'headless',
-                        media: { model: mModel, input: mInput, projectId: mLink?.projectId, sceneId: mLink?.sceneId }
+                        media: { model: mModel, input: mInput, projectId: mLink?.projectId, sceneId: mLink?.sceneId },
+                        ...(mQA.trim() ? { verify: { criteria: mQA.trim(), retries: Number(mRetries) || 1 } } : {})
                     });
                     continue;
                 }

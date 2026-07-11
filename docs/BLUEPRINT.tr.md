@@ -516,6 +516,7 @@ Workflow kurarken **Media step (fal.ai)** seç: adım, fal.ai'nin kuyruk API'si 
 - Üretilen **varlıklar (asset) indirilir ve arşivlenir**; yanıt JSON'u sonraki adımın devri olur (`{prev_json.images.0.url}` gibi).
 - Uzun video işleri dakikalarca sürebilir — adım `running` kalır, kuyruk durumu düzenli yoklanır (adım başına zaman aşımı ayarlanabilir).
 - Ön koşul: **FAL_KEY** sırrı (yukarıdaki adımlar). Anahtar yoksa adım koşmaz ve net bir mesajla failed olur; kredi bittiyse fal'ın hatası arşive düşer.
+- **Görsel kalite denetimi (vision QA — 2.25.0):** media adımına isteğe bağlı bir kalite ölçütü verirsin (sihirbaz sorar). Üretim biter bitmez **vision yetenekli bir model** (ucuz yargıç, varsayılan haiku) üretilen dosyayı **Read aracıyla açıp** inceler ve ölçüte göre PASS/FAIL + gerekçe döner. FAIL ise adım, gerekçeyi input'un `prompt` alanına ekleyip **kendini yeniden üretir** (ayarlanan deneme sayısına kadar); son denemede de geçemezse onFail uygulanır. Metin `verify` ölçütünün görsel karşılığıdır — "tek kişi, net yüz, altı parmak yok, tarife uygun" gibi. Yargıç çalışamazsa (model/izin) hattı bloke etmez, geçirir.
 
 ### Medya Galerisi
 

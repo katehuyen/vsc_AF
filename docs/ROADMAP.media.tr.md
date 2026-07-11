@@ -122,12 +122,12 @@ Token bütçe uyarıları var; medya maliyeti gösteriliyor ama **eşik aşımı
 - *Gerçekleşen dokunma riski: düşük — media meta formatı geriye uyumlu genişledi (eski sidecar'lar okunuyor, testle sabit).*
 - *Testler: 36/36 core (production/media/ingest) + 15/15 galeri webview DOM-stub.*
 
-### ◐ Dalga B — Görsel onay, seçim ve medya QA (B1 TAMAM 2.24.0; B2 kaldı)
+### ☑ Dalga B — Görsel onay, seçim ve medya QA — TAMAM (B1 2.24.0, B2 2.25.0)
 **Hedef:** İnsan seçimini akışın vatandaşı yapmak.
 - ✅ **B1 — Seçmeli görsel onay adımı** (`select` step): adım, run'ın o ana kadarki media asset'lerini galeri-picker panelinde (`SelectionPanel` + `media/selection.js`) açar; kullanıcı min-max aralığında seçer; **seçilen asset URL'leri handoff olur** (`{prev_json.selected.N}` / `{prev_text}`) → sonraki media/agent adımı yalnız seçilenlerle çalışır. KRİTİK: yerel dosya değil remote URL akar (downstream fal adımı tüketebilsin) — bunun için MediaMeta'ya `assetUrls` eklendi. Seçilen/reddedilen galeride `✓ kept`/`✗ dropped` rozetli (`recordSelection` → meta `selectedUrls`/`rejectedUrls`). Cancel → onFail. UI yoksa hepsi tutulur. Sihirbazda **Select assets (visual pick)** adımı. *Test: 19/19 core (mediaCandidates/recordSelection/runSelectStep handoff+cancel+auto+empty) + 11/11 selection webview (min/max/confirm/cancel).*
-- ☐ **B2 — Media verify adımı (vision QA):** vision-yetenekli ajan, asset dosyasını okuyup kritere göre PASS/FAIL + gerekçe döner; FAIL'de `verify` kalıbındaki gibi geri-bildirimli yeniden üretim (aynı media adımı, revize prompt). KODLANMADI — sıradaki iş.
-- ☐ "Regenerate with feedback" hızlı aksiyonu galeri kartında. KODLANMADI.
-- *Gerçekleşen dokunma riski (B1): orta — startWorkflowStep'e tek dispatch dalı + approval kalıbının ikizi runSelectStep; klasik approval/handoff aynen; media meta geriye uyumlu.*
+- ✅ **B2 — Media verify adımı (vision QA, 2.25.0):** media adımına `verify:{criteria,retries}` → üretim sonrası `runVisionJudge` (ucuz vision model, asset dosyasını Read ile açar) PASS/FAIL. FAIL → `verifyMediaThenAdvance` aynı media adımını `injectMediaFeedback` ile (gerekçe input.prompt'a eklenir) yeniden üretir (attempt takipli), tükenince onFail. finish()'te media+verify → vision yolu (metin yolu media'da agentId'siz retry'da çökerdi — düzeltildi). Fail-open. Sihirbazda media adımına QA ölçütü + deneme sayısı sorusu. *Test: 17/17 (injectMediaFeedback + PASS/FAIL-retry/exhausted/no-asset/finish-routing).*
+- ☐ "Regenerate with feedback" hızlı aksiyonu galeri kartında. KODLANMADI (küçük UI eklentisi — Dalga C öncesi/sonrası eklenebilir).
+- *Gerçekleşen dokunma riski: orta — B1 startWorkflowStep'e tek dispatch dalı + runSelectStep; B2 finish()'e media-verify dallanması + runMediaStep retry param; klasik approval/handoff/text-verify aynen; media meta geriye uyumlu.*
 
 ### ☐ Dalga C — Medya sağlayıcı soyutlaması
 **Hedef:** fal.ai tekelini kırmak, API'li platformları eşit vatandaş yapmak.

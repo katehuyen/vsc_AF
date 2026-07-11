@@ -2,6 +2,10 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.25.0 — Media vision QA, wave B2 (2026-07-11)
+
+- **Vision QA on media steps**: give a media step an optional quality criterion (the wizard asks). As soon as the asset is produced, a **vision-capable model** (the cheap judge, haiku by default) opens the file via its Read tool and rules PASS/FAIL with a reason. On FAIL the step **regenerates itself** — the reason is folded into the input's `prompt` field — up to the configured retry count; if it still fails, the step's onFail policy applies. It's the visual counterpart of the text `verify` gate ("one person, sharp face, no six fingers, matches the storyboard brief"). Fail-open: if the judge can't run, the pipeline is not blocked. This also fixes verify on media steps, which previously crashed on retry (media tasks have no agent). Completes wave B of the media roadmap.
+
 ## 2.24.0 — Visual selection step, wave B1 (2026-07-11)
 
 The heart of media production: pick a subset of generated candidates and continue only with those.

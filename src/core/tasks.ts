@@ -5,7 +5,7 @@ import * as vscode from 'vscode';
 import { AgentInfo } from './agents';
 import { buildBrowserPrompt, hostAllowed } from './browser';
 import {
-    DEFAULT_MEDIA_PRICING, downloadAsset, estimateMediaCost, extFromUrl,
+    DEFAULT_MEDIA_PRICING, downloadAsset, estimateMediaCost, extFromUrl, injectMediaFeedback,
     mediaCandidates, MediaMeta, MediaPriceRule, readMediaMetas, recordSelection, runFalJob
 } from './media';
 import { extractJson, sanitizePrompt } from './util';
@@ -615,7 +615,11 @@ export class TaskManager implements vscode.Disposable {
             const w = this.workflows.find(x => x.id === task.workflowId);
             const step = w?.steps[task.stepIndex];
             if (w && step?.verify && status === 'done' && task.outputFile) {
-                void this.verifyThenAdvance(task, w, step);
+                // Media steps get a VISION judge on the produced asset; regular
+                // steps get the text judge (which would crash retrying a media
+                // step, since media tasks have no agent).
+                if (step.media) { void this.verifyMediaThenAdvance(task, w, step); }
+                else { void this.verifyThenAdvance(task, w, step); }
                 return;
             }
             this.advanceWorkflow(task, status);
@@ -653,6 +657,74 @@ export class TaskManager implements vscode.Disposable {
                     resolve({ pass, reason: line.slice(0, 200) || '(no verdict)' });
                 });
         });
+    }
+
+    /**
+     * Wave B2 — vision judge: a vision-capable model opens the produced asset
+     * file (via its Read tool) and rules PASS/FAIL against the criteria. Runs in
+     * the outputs dir so the Read is inside the working directory. Fail-open if
+     * the judge can't run, so a misconfig never blocks the pipeline.
+     */
+    private runVisionJudge(assetFile: string, criteria: string): Promise<{ pass: boolean; reason: string }> {
+        return new Promise(resolve => {
+            const judgeArgs = (this.opts.judgeArgs?.() ?? '--model claude-haiku-4-5-20251001').trim();
+            const prompt = sanitizePrompt(
+                `Sen bir görsel kalite denetçisisin. "${path.basename(assetFile)}" dosyasındaki görseli/videoyu Read aracıyla aç ve incele. ` +
+                `Şu ÖLÇÜTü karşılıyor mu? ÖLÇÜT: ${criteria}. ` +
+                `Yalnızca tek satır cevap ver: ilk kelime PASS veya FAIL olsun, ardından kısa gerekçe yaz.`);
+            cp.exec(`claude ${judgeArgs} -p "${prompt}"`,
+                { cwd: this.outputsDir, timeout: 180_000, windowsHide: true },
+                (err, stdout) => {
+                    if (err && !stdout) {
+                        resolve({ pass: true, reason: 'vision judge unavailable — passed through (' + String(err.message).slice(0, 80) + ')' });
+                        return;
+                    }
+                    const line = String(stdout).trim().split('\n').filter(l => l.trim()).pop() ?? '';
+                    const pass = !/^\s*FAIL\b/i.test(line) && /PASS/i.test(line);
+                    resolve({ pass, reason: line.slice(0, 200) || '(no verdict)' });
+                });
+        });
+    }
+
+    /**
+     * Wave B2 — verify a media step's asset with the vision judge; on FAIL,
+     * re-run the SAME media step (feedback appended to its prompt) up to the
+     * configured retry count. Unlike the text path, the retry re-runs the media
+     * generator, not an agent task.
+     */
+    private async verifyMediaThenAdvance(task: FarmTask, w: FarmWorkflow, step: WorkflowStep): Promise<void> {
+        const meta = readMediaMetas(this.outputsDir).find(m => m.taskId === task.id);
+        const assetFile = meta?.assetFiles.find(f => fs.existsSync(f));
+        const attempt = task.attempt ?? 0;
+        const { pass, reason } = assetFile
+            ? await this.runVisionJudge(assetFile, step.verify!.criteria)
+            : { pass: true, reason: 'no downloaded asset to verify — passed through' };
+        try {
+            fs.appendFileSync(task.outputFile as string,
+                `\nVision verify (attempt ${attempt + 1}): ${pass ? 'PASS' : 'FAIL'} — ${reason}\n`, 'utf8');
+        } catch { /* archive gone */ }
+        task.verified = pass ? 'pass' : 'fail';
+
+        if (pass) {
+            this.save();
+            this.advanceWorkflow(task, 'done');
+            return;
+        }
+        const retries = step.verify!.retries ?? 1;
+        if (attempt < retries) {
+            this.save();
+            void vscode.window.showWarningMessage(
+                `Agent Farm: media "${task.title}" failed vision QA — regenerating (${attempt + 1}/${retries}).`);
+            const handoff = this.handoffs.get(task.workflowRunId ?? '') ?? {};
+            void this.runMediaStep(w, task.stepIndex as number, handoff, task.workflowRunId as string,
+                { attempt: attempt + 1, feedback: reason });
+            return;
+        }
+        task.status = 'failed';
+        this.save();
+        void vscode.window.showWarningMessage(
+            `Agent Farm: media "${task.title}" failed vision QA after ${attempt + 1} attempt(s).`);
+        this.advanceWorkflow(task, 'failed');
     }
 
     private async verifyThenAdvance(task: FarmTask, w: FarmWorkflow, step: WorkflowStep): Promise<void> {
@@ -1127,7 +1199,10 @@ export class TaskManager implements vscode.Disposable {
     }
 
     /** C1: a chain step that generates media via the fal.ai queue API. */
-    private async runMediaStep(w: FarmWorkflow, index: number, handoff: Handoff, runId: string): Promise<void> {
+    private async runMediaStep(
+        w: FarmWorkflow, index: number, handoff: Handoff, runId: string,
+        retry?: { attempt: number; feedback: string }
+    ): Promise<void> {
         const step = w.steps[index];
         const media = step.media!;
         const resolve = (s: string) => (this.opts.resolveTemplate ?? ((x: string) => x))(this.substitute(s, handoff));
@@ -1136,12 +1211,13 @@ export class TaskManager implements vscode.Disposable {
             id: newId(),
             agentId: '',
             agentName: 'media',
-            title: `${w.title} ${index + 1}/${w.steps.length}: ${step.title}`,
+            title: `${w.title} ${index + 1}/${w.steps.length}: ${step.title}` + (retry ? ` (retry ${retry.attempt})` : ''),
             prompt: `${media.model}`,
             mode: 'headless',
             status: 'running',
             createdAt: Date.now(),
             startedAt: Date.now(),
+            attempt: retry?.attempt,
             workflowId: w.id,
             workflowRunId: runId,
             stepIndex: index
@@ -1168,7 +1244,7 @@ export class TaskManager implements vscode.Disposable {
             return;
         }
 
-        const input = resolve(media.input);
+        const input = retry ? injectMediaFeedback(resolve(media.input), retry.feedback) : resolve(media.input);
         const result = await runFalJob(media.model, input, auth, {
             baseUrl: this.opts.mediaBaseUrl?.(),
             timeoutMs: (media.timeoutMin ?? 10) * 60_000

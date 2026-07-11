@@ -244,6 +244,24 @@ export function recordSelection(outputsDir: string, metas: MediaMeta[], selected
     }
 }
 
+/**
+ * Wave B2 — fold vision-QA feedback into a media input's "prompt" field so the
+ * regeneration addresses what failed. Strips the judge's PASS/FAIL prefix.
+ * Inputs without a string "prompt" (or non-JSON) pass through unchanged.
+ */
+export function injectMediaFeedback(inputJson: string, feedback: string): string {
+    const clean = feedback.replace(/^\s*(PASS|FAIL)\b[:\-\s]*/i, '').trim();
+    if (!clean) { return inputJson; }
+    try {
+        const obj = JSON.parse(inputJson) as Record<string, unknown>;
+        if (obj && typeof obj.prompt === 'string') {
+            obj.prompt = `${obj.prompt} (Önceki denemede şu sorun vardı: ${clean}. Bunu düzelt.)`;
+            return JSON.stringify(obj);
+        }
+    } catch { /* not JSON or no prompt — pass through */ }
+    return inputJson;
+}
+
 export function mediaCostSince(outputsDir: string, sinceMs: number): number {
     const cutoff = Date.now() - sinceMs;
     return readMediaMetas(outputsDir)
