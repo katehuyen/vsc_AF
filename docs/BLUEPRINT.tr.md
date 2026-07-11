@@ -154,7 +154,7 @@ Tüm filonun sağlık bulguları tek listede: ⛔ hata, ⚠ uyarı, ℹ bilgi. B
 
 ### Live Feed
 
-Filodaki son olayların canlı akışı: kullanıcı komutları (prompt), araç çağrıları ve hatalar, ajan adıyla birlikte. Oturum kayıtları değiştikçe kendiliğinden yenilenir. Bir olaya tıklayınca ait olduğu oturum açılır.
+Filodaki son olayların canlı akışı: kullanıcı komutları (prompt), araç çağrıları ve hatalar, ajan adıyla birlikte. Oturum kayıtları değiştikçe kendiliğinden yenilenir. Bir olaya tıklayınca ait olduğu oturum açılır ve görüntüleyici **tam o olayın mesajına kayar** (2.42.0 — timeline ve arama ile aynı mekanizma).
 
 ### Durum Çubuğu
 
@@ -284,6 +284,8 @@ Tasks görünümündeki takvim ikonuyla (**Add Scheduled Task**) tekrarlayan iş
 - **Daily** — her gün belirtilen saatte (örn. sabah 08:30 gün planı)
 - **Weekly** — haftanın belirli günü ve saati (örn. Pazar 21:00 haftalık rapor)
 - **Once** — tek seferlik, tarih+saat
+
+Kurulu bir zamanlamayı değiştirmek için sağ tık → **Edit Schedule…** (2.42.0): başlık, prompt, saat ve (haftalıkta) gün yerinde düzenlenir — eskiden sil + yeniden kur gerekiyordu.
 
 Zamanı gelen görev otomatik olarak kuyruğa eklenir, başlatılır ve bildirim düşer. Tek seferlikler çalıştıktan sonra kendini kapatır.
 
@@ -860,7 +862,8 @@ Filo büyüyünce dar boğaz sensin: kim izin bekliyor, hangi tarayıcı adımı
 
 1. 🛡️ **İzin bekleyen oturumlar** (canlı hook verisinden) — tek tıkla oturumu veya Timeline'ı aç.
 2. 🌐 **Onay bekleyen tarayıcı adımları** — kuyruktan doğrudan **Run / Reject**. Bildirim ile kuyruk yarışır; ilk karar kazanır. Bildirimi kaçırırsan istek kuyrukta bekler, workflow onayını alana kadar ilerlemez.
-3. ⏳ **Takılmış (stalled) oturumlar** · 💸 **bütçe aşımları** · ⇄ **Antigravity çakışmaları** (tek tık uzlaştırma) · 💡 **açık talimat önerileri** · 🕓 **park edilmiş görevler** (eşzamanlılık/kota) · 💬 **sırası sende** oturumları.
+3. ⛓ **Yarıda kalan workflow koşuları (2.42.0)** — pencere kapanışında kesilen zincirler artık yalnız açılış bildirimi değil: kuyrukta kalıcı bir satırdır, **Resume / Dismiss** düğmeleri satırın üstündedir ve karar verilene dek durum çubuğu rozetine sayılır. Açılıştaki toast'ı kaçırmak koşuyu kaybettirmez.
+4. ⏳ **Takılmış (stalled) oturumlar** · 💸 **bütçe aşımları** · ⇄ **Antigravity çakışmaları** (tek tık uzlaştırma) · 💡 **açık talimat önerileri** · 🕓 **park edilmiş görevler** (eşzamanlılık/kota) · 💬 **sırası sende** oturumları.
 
 Durum çubuğu artık bu kuyruğu sayar: `🔔 N need you` görünüyorsa tıklamak kuyruğu açar. İş engelleyen üç tür sayılır: izin, tarayıcı onayı, stalled.
 

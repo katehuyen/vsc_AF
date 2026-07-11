@@ -1313,6 +1313,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 id: t.id, title: t.title, agentName: t.agentName,
                 deferredReason: t.deferredReason, createdAt: t.createdAt
             })),
+        // F1: cut runs live in the queue too — the startup toast is easy to miss.
+        interruptedRuns: taskManager.interruptedRuns(),
         includeYourTurn: true
     });
 
@@ -1428,6 +1430,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 break;
             case 'open-board':
                 void vscode.commands.executeCommand('agentfarm.openBoard');
+                break;
+            case 'resume-run':
+                if (item.ref.runId) { taskManager.resumeInterrupted(item.ref.runId); }
+                break;
+            case 'dismiss-run':
+                if (item.ref.runId) { taskManager.dismissInterrupted(item.ref.runId); }
                 break;
         }
     };
@@ -2257,6 +2265,47 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }),
         vscode.commands.registerCommand('agentfarm.deleteSchedule', (node?: TaskNode) => {
             if (node?.kind === 'schedule') { taskManager.deleteSchedule(node.schedule); }
+        }),
+        // Parity with editTrigger — changing a schedule's time used to mean delete + recreate.
+        vscode.commands.registerCommand('agentfarm.editSchedule', async (node?: TaskNode) => {
+            if (node?.kind !== 'schedule') { return; }
+            const s = node.schedule;
+            const p2 = (n: number) => String(n).padStart(2, '0');
+            const title = await vscode.window.showInputBox({
+                prompt: 'Schedule title', value: s.title, ignoreFocusOut: true
+            });
+            if (!title) { return; }
+            const prompt = await vscode.window.showInputBox({
+                prompt: 'Prompt to send to claude', value: s.prompt, ignoreFocusOut: true
+            });
+            if (!prompt) { return; }
+            let { hour, minute, dow, onceAt } = s;
+            if (s.kind === 'once') {
+                const cur = onceAt ? new Date(onceAt) : new Date();
+                const when = await vscode.window.showInputBox({
+                    prompt: 'When? (YYYY-MM-DD HH:MM)', ignoreFocusOut: true,
+                    value: `${cur.getFullYear()}-${p2(cur.getMonth() + 1)}-${p2(cur.getDate())} ${p2(cur.getHours())}:${p2(cur.getMinutes())}`,
+                    validateInput: v => isNaN(Date.parse(v.replace(' ', 'T'))) ? 'Use YYYY-MM-DD HH:MM' : undefined
+                });
+                if (!when) { return; }
+                onceAt = Date.parse(when.replace(' ', 'T'));
+            } else {
+                const time = await vscode.window.showInputBox({
+                    prompt: 'Time of day (HH:MM)', value: `${p2(s.hour)}:${p2(s.minute)}`, ignoreFocusOut: true,
+                    validateInput: v => /^([01]?\d|2[0-3]):[0-5]\d$/.test(v) ? undefined : 'Use HH:MM (24h)'
+                });
+                if (!time) { return; }
+                [hour, minute] = time.split(':').map(Number);
+                if (s.kind === 'weekly') {
+                    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                    const dayPick = await vscode.window.showQuickPick(
+                        days.map((d, i) => ({ label: `${d}${i === s.dow ? ' (current)' : ''}`, dow: i })),
+                        { ignoreFocusOut: true, placeHolder: 'Which day?' });
+                    if (!dayPick) { return; }
+                    dow = dayPick.dow;
+                }
+            }
+            taskManager.updateSchedule(s.id, { title, prompt, hour, minute, dow, onceAt });
         }),
         vscode.commands.registerCommand('agentfarm.runScheduleNow', (node?: TaskNode) => {
             if (node?.kind === 'schedule') { taskManager.runScheduleNow(node.schedule); }

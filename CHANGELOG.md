@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.42.0 — Loop-closing sweep: no more dead ends (2026-07-12)
+
+A user-flow pass over every surface, hunting places where the extension shows something but offers no way to act on it (the Insights pattern):
+
+- **Interrupted workflow runs are now a Needs You row**, not just a startup toast: **Resume / Dismiss** buttons inline, counted in the status-bar badge until decided. Missing the toast no longer costs you the run (dismiss can now target a single run).
+- **Live Feed clicks jump to the exact event** — same click-through mechanism as the timeline and search. The Live-session card's *Open transcript* button now lands on the **latest activity** instead of the top of the file.
+- **Edit Schedule…** (right-click a schedule): title, prompt, time and weekday edited in place — changing a time used to mean delete + recreate (triggers already had this; schedules now match).
+- **Unknown-model pricing warning is clickable** — opens Settings filtered to `agentFarm.pricing` instead of naming the setting and leaving you to find it.
+- **Empty forecast now says what to do** — points at Add Scheduled Task / Set Up Example Automation instead of ending at "no scheduled runs".
+
 ## 2.41.0 — Insights become actionable: fix, delegate, dismiss, auto-delegate (2026-07-12)
 
 Insights used to be a read-only list — click opened a guide section and rows (like a cost anomaly) lingered forever. Every finding now has a closing path:

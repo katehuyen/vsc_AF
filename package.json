@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.41.0",
+  "version": "2.42.0",
   "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
@@ -178,6 +178,12 @@
         "title": "Restore Dismissed Insights…",
         "category": "Agent Farm",
         "icon": "$(eye)"
+      },
+      {
+        "command": "agentfarm.editSchedule",
+        "title": "Edit Schedule…",
+        "category": "Agent Farm",
+        "icon": "$(edit)"
       },
       {
         "command": "agentfarm.lapReset",
@@ -1356,6 +1362,11 @@
           "command": "agentfarm.deleteSchedule",
           "when": "view == agentfarm.tasks && viewItem =~ /schedule-(on|off)/",
           "group": "inline@2"
+        },
+        {
+          "command": "agentfarm.editSchedule",
+          "when": "view == agentfarm.tasks && viewItem =~ /schedule-(on|off)/",
+          "group": "1_sched@0"
         },
         {
           "command": "agentfarm.toggleSchedule",

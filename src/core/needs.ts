@@ -9,6 +9,7 @@
 export type NeedKind =
     | 'permission'        // a live session is blocked on a permission dialog
     | 'browser-approval'  // a browser workflow step waits for Run/Reject
+    | 'interrupted'       // a workflow run was cut by a window close — resume?
     | 'stalled'           // a working session stopped emitting events
     | 'budget'            // daily budget exceeded
     | 'conflict'          // Antigravity two-sided drift needs reconciling
@@ -29,6 +30,8 @@ export interface NeedRef {
     filePath?: string;
     agentId?: string;
     taskId?: string;
+    /** interrupted: the workflow run to resume/dismiss. */
+    runId?: string;
 }
 
 export interface NeedItem {
@@ -46,6 +49,7 @@ export interface NeedItem {
 const URGENCY: Record<NeedKind, number> = {
     'permission': 0,
     'browser-approval': 1,
+    'interrupted': 2,
     'stalled': 2,
     'budget': 3,
     'conflict': 4,
@@ -131,6 +135,13 @@ export interface NeedsInput {
         agentName: string;
         deferredReason?: string;
         createdAt: number;
+    }[];
+    /** F1: workflow runs cut by a window close, awaiting a resume decision. */
+    interruptedRuns?: {
+        runId: string;
+        workflowTitle: string;
+        stepIndex: number;
+        stepTitle: string;
     }[];
     /** Include waiting-input sessions as low-urgency "your turn" rows. */
     includeYourTurn?: boolean;
@@ -250,6 +261,23 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
         });
     }
 
+    // F1: cut workflow runs — resuming spends money, so the human decides here.
+    for (const r of input.interruptedRuns ?? []) {
+        items.push({
+            urgency: URGENCY.interrupted,
+            kind: 'interrupted',
+            agentName: 'workflow',
+            title: `Run interrupted — "${r.workflowTitle}"`,
+            detail: `cut at step ${r.stepIndex + 1} (${r.stepTitle}) when the window closed — Resume re-enters there with the previous handoff`,
+            ts: 0,
+            ref: { runId: r.runId },
+            actions: [
+                { id: 'resume-run', label: 'Resume' },
+                { id: 'dismiss-run', label: 'Dismiss' }
+            ]
+        });
+    }
+
     items.sort((a, b) => a.urgency - b.urgency || b.ts - a.ts);
     return items;
 }
@@ -257,5 +285,6 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
 /** Count of rows that actively block work (used for the status-bar badge). */
 export function blockingCount(items: NeedItem[]): number {
     return items.filter(i =>
-        i.kind === 'permission' || i.kind === 'browser-approval' || i.kind === 'stalled').length;
+        i.kind === 'permission' || i.kind === 'browser-approval'
+        || i.kind === 'stalled' || i.kind === 'interrupted').length;
 }

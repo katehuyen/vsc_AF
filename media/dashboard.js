@@ -186,7 +186,7 @@
             </details>` : '';
 
         const unknown = DATA.unknownModels.length
-            ? `<p class="footnote">⚠ No pricing rule matched: ${DATA.unknownModels.map(C.esc).join(', ')} — their cost is counted as $0. Add a rule in <code>agentFarm.pricing</code>.</p>`
+            ? `<p class="footnote">⚠ No pricing rule matched: ${DATA.unknownModels.map(C.esc).join(', ')} — their cost is counted as $0. <a data-status-kind="settings" data-status-value="agentFarm.pricing" style="cursor:pointer">Add a rule in agentFarm.pricing →</a></p>`
             : '';
         const extEntries = Object.entries(DATA.externalSessions || {});
         const externalNote = extEntries.length

@@ -316,7 +316,7 @@
                 <div class="sub" style="margin-top:4px">${s.lastPrompt ? '“' + C.esc(s.lastPrompt) + '”' : `<span class="muted">${s.source ? 'external CLI — lifecycle only' : 'no prompt yet'}</span>`}</div>
                 <div class="sub" style="margin-top:6px">${s.prompts} prompts · ${s.toolCalls} tools · ${s.compactions} compactions · ${s.subagentStops} subagents · last event ${relTime(s.lastEventTs)}</div>
                 ${turnChips(s.agentName)}
-                ${s.transcriptPath ? `<div class="btnrow"><button class="secondary" data-open="${C.esc(s.transcriptPath)}">Open transcript</button></div>` : ''}
+                ${s.transcriptPath ? `<div class="btnrow"><button class="secondary" data-open="${C.esc(s.transcriptPath)}" data-ts="${s.lastEventTs || 0}">Open transcript</button></div>` : ''}
             </div>`;
         }).join('');
 
@@ -396,7 +396,10 @@
         document.querySelectorAll('[data-guide]').forEach(b =>
             b.addEventListener('click', () => vscode.postMessage({ type: 'openGuide', anchor: b.dataset.guide })));
         document.querySelectorAll('[data-open]').forEach(b =>
-            b.addEventListener('click', () => vscode.postMessage({ type: 'openSession', file: b.dataset.open })));
+            b.addEventListener('click', () => vscode.postMessage({
+                // live card: land on the latest activity, not the top of the file
+                type: 'openSession', file: b.dataset.open, ts: Number(b.dataset.ts) || 0
+            })));
         document.querySelectorAll('.mark').forEach(el =>
             el.addEventListener('click', () => {
                 if (el.dataset.file) {

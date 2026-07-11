@@ -185,6 +185,8 @@ export function renderForecastMarkdown(f: Forecast): string {
     lines.push('## Zamanlanmış koşular');
     if (!f.upcoming.length) {
         lines.push('_Sonraki ' + f.days + ' günde zamanlanmış koşu yok._');
+        lines.push('');
+        lines.push('_Zamanlama kurmak için: Tasks görünümünde **Add Scheduled Task**, ya da tek tıkla hazır örnek için komut paletinden **Agent Farm: Set Up Example Automation…**_');
     } else {
         let curDay = '';
         for (const it of f.upcoming) {

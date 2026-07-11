@@ -520,8 +520,10 @@ export class TaskManager implements vscode.Disposable {
         this.routeToStep(w, r.stepIndex, this.rebuildHandoff(runId, r.stepIndex), runId);
     }
 
-    dismissInterrupted(): void {
-        this.interrupted = [];
+    /** Drop the resume offer — for one run, or all of them when runId is omitted. */
+    dismissInterrupted(runId?: string): void {
+        this.interrupted = runId ? this.interrupted.filter(r => r.runId !== runId) : [];
+        this.onDidChangeEmitter.fire();
     }
 
     get historyDir(): string {
@@ -1994,6 +1996,14 @@ export class TaskManager implements vscode.Disposable {
     }
 
     // ---------- schedules ----------
+
+    /** Edit-in-place (parity with editTrigger — schedules used to be delete+recreate). */
+    updateSchedule(id: string, patch: Partial<Omit<FarmSchedule, 'id'>>): void {
+        const s = this.schedules.find(x => x.id === id);
+        if (!s) { return; }
+        Object.assign(s, patch);
+        this.save();
+    }
 
     addSchedule(s: Omit<FarmSchedule, 'id'>): FarmSchedule {
         const schedule: FarmSchedule = { ...s, id: newId() };

@@ -583,6 +583,8 @@ export interface FeedItem {
     icon: string;
     color?: string;
     sessionFile: string;
+    /** Event time — clicking opens the session viewer scrolled to this moment. */
+    ts?: number;
     tooltip: string;
 }
 
@@ -602,7 +604,7 @@ export class FeedTreeProvider implements vscode.TreeDataProvider<FeedItem> {
         item.command = {
             command: 'agentfarm.openSession',
             title: 'Open Session',
-            arguments: [e.sessionFile]
+            arguments: [e.sessionFile, e.ts]
         };
         return item;
     }
@@ -635,6 +637,7 @@ export class FeedTreeProvider implements vscode.TreeDataProvider<FeedItem> {
                         icon: meta.icon,
                         color: meta.color,
                         sessionFile: ev.transcriptPath ?? '',
+                        ts: ev.ts,
                         tooltip: `${agent} — ${meta.label}${ev.tool ? ` (${ev.tool})` : ''}\n${ev.detail ?? ''}\n${new Date(ev.ts).toLocaleString()}`
                     };
                 });
@@ -647,6 +650,7 @@ export class FeedTreeProvider implements vscode.TreeDataProvider<FeedItem> {
                     description: `${ev.detail} • ${relTime(ev.ts)}`,
                     icon: 'tools',
                     sessionFile: ev.sessionFile,
+                    ts: ev.ts,
                     tooltip: `${agent} used ${ev.tool}\n${ev.detail}\n${new Date(ev.ts).toLocaleString()}`
                 };
             }
@@ -657,6 +661,7 @@ export class FeedTreeProvider implements vscode.TreeDataProvider<FeedItem> {
                     icon: 'error',
                     color: 'errorForeground',
                     sessionFile: ev.sessionFile,
+                    ts: ev.ts,
                     tooltip: `${agent} tool error\n${new Date(ev.ts).toLocaleString()}`
                 };
             }
@@ -666,6 +671,7 @@ export class FeedTreeProvider implements vscode.TreeDataProvider<FeedItem> {
                 icon: 'comment',
                 color: 'charts.blue',
                 sessionFile: ev.sessionFile,
+                ts: ev.ts,
                 tooltip: `${agent} received prompt\n${ev.detail}\n${new Date(ev.ts).toLocaleString()}`
             };
         });
