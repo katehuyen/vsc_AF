@@ -72,6 +72,12 @@ export interface LiveConfig {
     notifyTurnEnd: boolean;
     /** B4: forward notifications to an external webhook (n8n → Telegram etc.). */
     forward?: (type: string, message: string) => void;
+    /**
+     * Fires once when a session crosses INTO 'waiting-input' (turn done / YOUR
+     * TURN). The host decides which per-agent actions (sound/focus/modal/toast)
+     * to run — see the swim-lane toggles in the timeline panel.
+     */
+    onTurnReady?: (s: LiveSession) => void;
 }
 
 // Detail views (≤8h) render from memory; longer ranges are bucketed from the
@@ -346,6 +352,7 @@ export class LiveMonitor implements vscode.Disposable {
         const now = Date.now();
         s.lastEventTs = now;
         s.notifiedStuck = false;
+        const prevStatus = s.status;
 
         switch (payload.hook_event_name) {
             case 'SessionStart':
@@ -410,6 +417,12 @@ export class LiveMonitor implements vscode.Disposable {
                 break;
             default:
                 this.push(s, 'notify', undefined, payload.hook_event_name);
+        }
+
+        // Edge into YOUR TURN: fire the per-agent turn-ready actions once per
+        // transition (covers both the Stop and the "waiting" Notification paths).
+        if (s.status === 'waiting-input' && prevStatus !== 'waiting-input') {
+            try { cfg.onTurnReady?.(s); } catch { /* best effort — never break event handling */ }
         }
 
         this.prune(now);

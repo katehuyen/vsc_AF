@@ -12,6 +12,18 @@
     let historyFetchedAt = 0;
     let historyRequested = 0;
 
+    // Per-agent "YOUR TURN" notification toggles, shown in the swim-lane gutter.
+    // Authoritative in the page once seeded from the host; edits round-trip back
+    // to globalState so they fire even when this panel is closed.
+    let turnActions = null;    // agentName -> array of action ids
+    const TURN_ACTIONS = [
+        { id: 'sound', glyph: '♪', label: 'Ses (bip)' },
+        { id: 'focus', glyph: '◎', label: 'Odak / öne getir' },
+        { id: 'modal', glyph: '▣', label: 'Modal uyarı kutusu' },
+        { id: 'toast', glyph: '▭', label: 'Toast (köşe bildirimi)' }
+    ];
+    function actionsFor(name) { return (turnActions && turnActions[name]) || []; }
+
     function isDensity() { return windowMin > DETAIL_MAX_MIN; }
 
     function requestHistory(force) {
@@ -120,7 +132,7 @@
     function lanesSvg(lanes, now, winMs) {
         const names = [...lanes.keys()];
         if (!names.length) { return '<p class="muted">No lanes yet.</p>'; }
-        const W = 900, labelW = 110, rowH = 40, padT = 22;
+        const W = 900, labelW = 168, rowH = 40, padT = 22;
         const H = padT + names.length * rowH + 10;
         const from = now - winMs;
         const x = ts => labelW + ((ts - from) / winMs) * (W - labelW - 8);
@@ -137,7 +149,18 @@
         names.forEach((name, i) => {
             const y = padT + i * rowH;
             const lane = lanes.get(name);
-            out += `<text x="${labelW - 10}" y="${y + rowH / 2 + 3}" font-size="11" font-weight="600" text-anchor="end" fill="currentColor" opacity="0.85">${C.esc(name.length > 14 ? name.slice(0, 13) + '…' : name)}</text>`;
+            // Per-agent YOUR-TURN toggles in the left gutter (♪ ◎ ▣ ▭).
+            const ty = y + rowH / 2 - 8;
+            TURN_ACTIONS.forEach((a, ai) => {
+                const gx = 4 + ai * 19;
+                const on = actionsFor(name).indexOf(a.id) !== -1;
+                out += `<g class="af-toggle" data-agent="${C.esc(name)}" data-action="${a.id}" style="cursor:pointer">` +
+                    `<rect x="${gx}" y="${ty}" width="16" height="16" rx="3" fill="${on ? 'var(--vscode-charts-blue, #3794ff)' : 'transparent'}" stroke="currentColor" stroke-opacity="${on ? '0' : '0.45'}" opacity="${on ? '0.95' : '1'}"/>` +
+                    `<text x="${gx + 8}" y="${ty + 12}" font-size="11" text-anchor="middle" fill="${on ? 'var(--vscode-editor-background, #fff)' : 'currentColor'}" opacity="${on ? '1' : '0.55'}" style="pointer-events:none">${a.glyph}</text>` +
+                    `<title>${C.esc(a.label)} — ${C.esc(name)} sıraya geçince</title></g>`;
+            });
+            const labelX = 4 + TURN_ACTIONS.length * 19 + 4;
+            out += `<text x="${labelX}" y="${y + rowH / 2 + 3}" font-size="11" font-weight="600" text-anchor="start" fill="currentColor" opacity="0.85">${C.esc(name.length > 11 ? name.slice(0, 10) + '…' : name)}</text>`;
             out += `<line x1="${labelW}" y1="${y + rowH / 2}" x2="${W - 8}" y2="${y + rowH / 2}" stroke="currentColor" opacity="0.1"/>`;
             for (const seg of lane.segments) {
                 const x1 = x(seg.start), x2 = Math.max(x(seg.end), x1 + 2);
@@ -255,6 +278,7 @@
         const now = Date.now();
         const winMs = windowMin * 60000;
         const listener = DATA.listener;
+        if (turnActions === null) { turnActions = Object.assign({}, DATA.turnActions || {}); }
 
         let listenerHtml;
         if (listener.state === 'listening') {
@@ -337,6 +361,7 @@
             </div>
             ${emptyHint}
             <h2>${density ? 'Activity density' : 'Swim lanes'}</h2>
+            ${density ? '' : `<div class="muted small" style="margin:-4px 0 6px">Sol kutucuklar — ajan <b>YOUR TURN</b>'e geçince: ${TURN_ACTIONS.map(a => a.glyph + ' ' + a.label.split(' ')[0].toLowerCase()).join(' · ')}. Ajan başına ayrı seç (panel kapalıyken de çalışır).</div>`}
             <div class="card chartbox">${lanesHtml}<div class="legend">${legend}</div></div>
             ${workflowRunsSvg(runsData, now, winMs)}
             <h2>Live sessions (${DATA.sessions.length})</h2>
@@ -359,6 +384,15 @@
         document.querySelectorAll('.mark').forEach(el =>
             el.addEventListener('click', () => {
                 if (el.dataset.file) { vscode.postMessage({ type: 'openSession', file: el.dataset.file }); }
+            }));
+        document.querySelectorAll('.af-toggle').forEach(el =>
+            el.addEventListener('click', () => {
+                const name = el.dataset.agent, act = el.dataset.action;
+                const cur = new Set(actionsFor(name));
+                if (cur.has(act)) { cur.delete(act); } else { cur.add(act); }
+                if (cur.size) { turnActions[name] = [...cur]; } else { delete turnActions[name]; }
+                vscode.postMessage({ type: 'setTurnActions', map: turnActions });
+                render();
             }));
     }
 

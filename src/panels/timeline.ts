@@ -7,6 +7,9 @@ export interface TimelineDeps {
     extensionUri: vscode.Uri;
     live: LiveMonitor;
     tasks: TaskManager;
+    /** Per-agent turn-ready notification actions (agentName → action ids). */
+    getTurnActions: () => Record<string, string[]>;
+    setTurnActions: (map: Record<string, string[]>) => void;
 }
 
 // Detail ranges (≤8h) render from this in-memory window; 24h+ density ranges
@@ -35,7 +38,8 @@ function buildData(deps: TimelineDeps): Record<string, unknown> {
             transcriptPath: s.transcriptPath
         })),
         events: deps.live.events(DATA_WINDOW_MS),
-        workflowRuns: deps.tasks.workflowRuns(DATA_WINDOW_MS)
+        workflowRuns: deps.tasks.workflowRuns(DATA_WINDOW_MS),
+        turnActions: deps.getTurnActions()
     };
 }
 
@@ -100,6 +104,11 @@ export class TimelinePanel {
                 break;
             case 'refresh':
                 this.refresh();
+                break;
+            case 'setTurnActions':
+                if (msg.map && typeof msg.map === 'object') {
+                    this.deps.setTurnActions(msg.map as Record<string, string[]>);
+                }
                 break;
             case 'history': {
                 // Long ranges: per-lane density buckets from the persistent event store.

@@ -44,7 +44,7 @@ import {
 import {
     hasOurHooks, installHooksInto, removeHooksFrom, userSettingsPath
 } from './core/hooksInstaller';
-import { LiveMonitor } from './core/live';
+import { LiveMonitor, LiveSession } from './core/live';
 import {
     addMcpServer, copyMcpServerTo, readServerRawDef, removeMcpServer, setServerDisabled, updateMcpServer
 } from './core/mcp';
@@ -273,7 +273,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             notifyPermission: cfg().get<boolean>('notifyPermission', true),
             notifyStuck: cfg().get<boolean>('notifyStuck', true),
             notifyTurnEnd: cfg().get<boolean>('notifyTurnEnd', false),
-            forward: postForward
+            forward: postForward,
+            onTurnReady: fireTurnReady
         }),
         (cwd) => {
             if (!cwd) { return {}; }
@@ -298,6 +299,67 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
     context.subscriptions.push(live);
     live.start();
+
+    // ---- Turn-ready notifications (per-agent, opt-in via timeline swim-lane toggles) ----
+    // The swim lane for each agent carries four toggles: ♪ sound, ◎ focus, ▣ modal,
+    // ▭ toast. Whatever an agent has selected fires when it crosses INTO YOUR TURN.
+    const TURN_ACTIONS_KEY = 'agentfarm.turnActions';
+    const getTurnActions = (): Record<string, string[]> =>
+        context.globalState.get<Record<string, string[]>>(TURN_ACTIONS_KEY, {});
+    const setTurnActions = (map: Record<string, string[]>): void => {
+        void context.globalState.update(TURN_ACTIONS_KEY, map);
+    };
+    const showTimeline = (): void => {
+        TimelinePanel.show({
+            extensionUri: context.extensionUri, live, tasks: taskManager,
+            getTurnActions, setTurnActions
+        });
+    };
+    const turnFireCooldown = new Map<string, number>();
+    const playTurnSound = (): void => {
+        try {
+            if (process.platform === 'win32') {
+                cp.exec('powershell -NoProfile -NonInteractive -Command "[console]::beep(880,150);[console]::beep(1245,170)"');
+            } else if (process.platform === 'darwin') {
+                cp.exec('afplay /System/Library/Sounds/Glass.aiff || osascript -e beep');
+            } else {
+                cp.exec('paplay /usr/share/sounds/freedesktop/stereo/complete.oga 2>/dev/null || printf "\\a"');
+            }
+        } catch { /* best effort — a missing player must never break the flow */ }
+    };
+    function fireTurnReady(s: LiveSession): void {
+        const name = s.agentName ?? s.sessionId.slice(0, 8);
+        const actions = getTurnActions()[name] ?? [];
+        if (!actions.length) { return; }
+        // Coalesce rapid re-entries into waiting-input so one turn = one alert.
+        const now = Date.now();
+        if (now - (turnFireCooldown.get(name) ?? 0) < 3000) { return; }
+        turnFireCooldown.set(name, now);
+
+        if (actions.includes('sound')) { playTurnSound(); }
+        if (actions.includes('focus')) {
+            showTimeline();
+            try { void vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup'); } catch { /* best effort */ }
+        }
+        const transcript = s.transcriptPath;
+        if (actions.includes('modal')) {
+            const buttons = transcript ? ['Transkripti aç'] : [];
+            void vscode.window.showInformationMessage(
+                `Agent Farm — Sıra sende: ${name}`, { modal: true }, ...buttons
+            ).then(choice => {
+                if (choice === 'Transkripti aç' && transcript) {
+                    void vscode.commands.executeCommand('agentfarm.openSession', transcript);
+                }
+            });
+        }
+        if (actions.includes('toast')) {
+            void vscode.window.showInformationMessage(
+                `Agent Farm: ${name} — sıra sende`, 'Open Timeline'
+            ).then(choice => {
+                if (choice === 'Open Timeline') { showTimeline(); }
+            });
+        }
+    }
 
     // J2: tail relay feed files from other machines into the live monitor.
     const relayTailer = new RelayTailer(
@@ -1221,7 +1283,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }),
 
         vscode.commands.registerCommand('agentfarm.openTimeline', () => {
-            TimelinePanel.show({ extensionUri: context.extensionUri, live, tasks: taskManager });
+            showTimeline();
         }),
 
         vscode.commands.registerCommand('agentfarm.openCapabilities', () => {
@@ -1357,7 +1419,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     'Open Timeline'
                 );
                 if (choice === 'Open Timeline') {
-                    TimelinePanel.show({ extensionUri: context.extensionUri, live, tasks: taskManager });
+                    showTimeline();
                 }
             }
         }),

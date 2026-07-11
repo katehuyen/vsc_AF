@@ -2,6 +2,10 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.22.0 — Per-agent "your turn" notifications (2026-07-11)
+
+- **Swim-lane turn-ready toggles**: each agent's lane in the Live Timeline now carries four toggles in the left gutter — **♪ sound · ◎ focus · ▣ modal · ▭ toast**. Whatever an agent has selected fires when it crosses INTO YOUR TURN (a turn finishes / it starts waiting for your input). Independent per agent; click to toggle. Selections persist in `globalState` and the firing runs host-side, so it works even when the timeline panel is closed. Sound = a short beep (PowerShell on Windows); Focus = reveals the timeline panel; Modal = a blocking "Sıra sende: <agent>" dialog with an Open-transcript button; Toast = the corner notification. One alert per turn (3s per-agent coalescing). This is separate from the global `agentFarm.notifyTurnEnd` toast.
+
 ## 2.21.0 — Task forecast & digest outcomes, wave 4 (2026-07-11)
 
 - **Task Forecast** (calendar icon in the Tasks view title): a markdown projection of what runs next — each schedule's fire times over the next `forecastDays` (default 7), grouped by day, annotated with the same job's 30-day median duration and success rate (from task-history analytics); plus the current queue, running tasks, and an estimated total agent-time. Duration is computed from successful runs only.
