@@ -546,6 +546,15 @@ fal.ai dışı üretimler (Higgsfield/Flow'dan elle indirilen klip, Premiere exp
 
 `agentFarm.mediaPricing` kurallarıyla (görsel başına / saniye başına / istek başına USD) her işin tahmini maliyeti hesaplanır, galeriye ve Dashboard'daki **Media cost** kartına işlenir — metin + medya, tüm AI harcaman tek karnede. Varsayılan fiyatlar yer tutucudur: fal.ai fiyat sayfasından doğrula ve ayarla. **Aylık bütçe uyarısı:** `agentFarm.mediaBudgetMonthUSD` (0 = kapalı) — son 30 günün tahmini medya maliyeti eşiği aşınca ayda bir kez uyarır (webhook forward'a da düşer).
 
+### Kurgu Köprüsü — Premiere Sekansı (Dalga D)
+
+Sahneleri tek tek üretip onayladıktan sonra **"klasördeki klipler"i Premiere'de açılır bir sekansa** çevirirsin: `Agent Farm: Export Premiere Sequence` (ya da galeride prodüksiyon seçiliyken **Export sequence →** butonu).
+
+- Prodüksiyon manifestindeki **sahne sırasına** göre, her sahnenin varlığından bir klip dizilir. Seçim yaptıysan **tuttuğun (selected) video** tercih edilir; yoksa video, yoksa görsel; reddedilenler alınmaz; varlığı olmayan sahne atlanır.
+- İki dosya yazılır: **FCP7 XML** (`.xml` — Premiere `File → Import` ile açar; bin/klip yapısı sahne sırasını taşır) ve **CMX3600 EDL** (`.edl`). Kare hızı (24/25/30/60) ve sahne başına varsayılan klip süresi sorulur; süreler kurguda incelenir.
+- **Adlandırma konvansiyonu:** izlenen (ingest) klasöre bir prodüksiyon bağlıysa, dosya adındaki sahne belirteci (`…_s03_…` ya da `…_S3_…`) otomatik o sahneye bağlanır. Böylece Premiere export'unu `P01_S03_T02.mp4` gibi adlandırıp geri koyduğunda doğru sahneye düşer — döngü kapanır.
+- **Export watch:** render/export klasörünü `agentFarm.ingestFolders`'a ekleyip bir watch-trigger'a bağlayarak "export düştü → sonraki adım/görev" otomasyonu kurulabilir (mevcut tetik altyapısı).
+
 ### Reçeteler
 
 `Agent Farm: New Recipe Workflow…` hazır fabrika şablonları kurar: **Metin → Görsel**, **Metin → Görsel → Video**, **Ses → Metin (Whisper)**. Kurulan zincirdeki yer tutucuları (KONU, URL) düzenleyip çalıştırırsın — boş sayfa problemi yok.

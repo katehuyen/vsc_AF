@@ -37,7 +37,10 @@ export interface IngestScanResult {
 export async function scanIngestFolders(
     outputsDir: string,
     folders: IngestFolder[],
-    known?: Set<string>
+    known?: Set<string>,
+    /** Wave D: auto-link a scene from the filename when the folder has a project
+     *  but no fixed scene (naming convention, e.g. "…_s03_….mp4"). */
+    resolveScene?: (projectId: string, filename: string) => string | undefined
 ): Promise<IngestScanResult> {
     const registry = known ?? registeredAssetPaths(outputsDir);
     const registered: MediaMeta[] = [];
@@ -73,9 +76,11 @@ export async function scanIngestFolders(
                 continue;
             }
         } catch { continue; }
+        const sceneId = c.folder.sceneId
+            ?? (c.folder.projectId && resolveScene ? resolveScene(c.folder.projectId, c.file) : undefined);
         const meta = registerExternalAsset(outputsDir, c.file, {
             projectId: c.folder.projectId,
-            sceneId: c.folder.sceneId,
+            sceneId,
             source: 'external:' + (c.folder.label ?? path.basename(c.folder.path))
         }, registry);
         if (meta) { registered.push(meta); }
@@ -93,7 +98,8 @@ export class IngestWatcher {
         private outputsDir: string,
         private getFolders: () => IngestFolder[],
         private onRegistered: (metas: MediaMeta[]) => void,
-        private intervalMs = 30_000
+        private intervalMs = 30_000,
+        private resolveScene?: (projectId: string, filename: string) => string | undefined
     ) { }
 
     start(): void {
@@ -115,7 +121,7 @@ export class IngestWatcher {
         this.scanning = true;
         try {
             if (!this.registry) { this.registry = registeredAssetPaths(this.outputsDir); }
-            const res = await scanIngestFolders(this.outputsDir, this.getFolders(), this.registry);
+            const res = await scanIngestFolders(this.outputsDir, this.getFolders(), this.registry, this.resolveScene);
             if (res.registered.length) { this.onRegistered(res.registered); }
         } catch { /* never break the host on a bad folder */ }
         finally { this.scanning = false; }

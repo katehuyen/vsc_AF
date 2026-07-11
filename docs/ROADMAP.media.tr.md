@@ -138,13 +138,13 @@ Token bütçe uyarıları var; medya maliyeti gösteriliyor ama **eşik aşımı
 - ☐ Sağlayıcı-bazlı maliyet kuralları/rozetleri (mevcut `mediaPricing` regex'i model-id'ye — `replicate:` önekli — çalışıyor; ayrı rozet yok).
 - *Gerçekleşen dokunma riski: düşük-orta — runMediaStep tek çağrı noktasından provider'a geçti; fal round-trip mevcut testlerle + provider testiyle sabit; TaskManagerOptions.mediaAuth/mediaBaseUrl imzası (providerId) aldı (geriye uyumlu: 0-arg impl atanabilir).*
 
-### ☐ Dalga D — Kurgu köprüsü (Premiere)
+### ☑ Dalga D — Kurgu köprüsü (Premiere) — TAMAM (2.28.0)
 **Hedef:** "Klasördeki klipler"den "Premiere'de açılır sekans"a.
-- **Sekans üretici görev tipi:** proje manifestindeki sahne sırası + seçili asset'lerden **FCP7 XML** (Premiere import eder) ve **EDL** üretimi; bin yapısı = sahne yapısı. (Saf dosya üretimi — ajan görevi olarak da koşabilir, deterministik üretici olarak core'da da.)
-- Adlandırma konvansiyonu: `P01_S03_T02_approved.mp4` deseni; ingest watcher bu deseni tanıyıp sahneye otomatik bağlar.
-- Premiere export klasörü için hazır watch-trigger şablonu ("export düştü → sonraki bölüm/yayın görevi").
-- (Sonraki faz, ayrı karar: UXP paneli — maliyetli, XML yolu doyduktan sonra değerlendirilecek.)
-- *Dokunma riski: düşük — tamamen ekleme.*
+- ✅ **Sekans üretici** (`core/premiere.ts`, saf/deterministik): `pickSequenceAssets(production,metas)` sahne sırasında sahne başına 1 klip (selected-video > video > image; rejected hariç; boş sahne atlanır); `buildFcpXml` (xmeml v4, sıralı clipitem'lar, file://localhost pathurl, sahne bin) + `buildEdl` (CMX3600, timecode'lar). Komut `agentfarm.exportSequence` (fps 24/25/30/60 + klip süresi sorar → .xml + .edl yazar, reveal/aç) + galeride 'Export sequence →' butonu.
+- ✅ **Adlandırma konvansiyonu:** `detectSceneId(filename,production)` sahne-id token'ı (`…_s03_…`) veya `S<n>` indeksini tanır; ingest watcher'a `resolveScene` callback'iyle bağlı — projeli klasöre düşen dosya adındaki sahne otomatik atanır (`P01_S03_T02.mp4` → s03).
+- ✅ **Export watch:** mevcut `ingestFolders` + watch-trigger altyapısıyla kurulabilir (yeni makine gerekmedi; belgede reçete).
+- ◦ UXP paneli: bilinçli ERTELENDİ (maliyetli; XML/EDL yolu doyduktan sonra ayrı karar).
+- *Test: 28/28 (framesToTc/pathToFileUrl + pickSequenceAssets selected/rejected/empty + buildFcpXml yapı/escape + buildEdl + detectSceneId + ingest auto-scene). Gerçekleşen dokunma riski: düşük — tamamen ekleme; ingest'e opsiyonel callback (geriye uyumlu).*
 
 ### ☐ Dalga E — Çoklu-CLI oturumları (ayrıntı §5)
 **Hedef:** Kullanıcının seçtiği başka bir CLI/modelle sezon açıp aynı panelden izleyebilmesi — **claude yoluna dokunmadan**.

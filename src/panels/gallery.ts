@@ -173,6 +173,10 @@ export class GalleryPanel {
             case 'newProduction':
                 void vscode.commands.executeCommand('agentfarm.newProduction');
                 break;
+            case 'exportSequence':
+                void vscode.commands.executeCommand('agentfarm.exportSequence',
+                    typeof msg.projectId === 'string' && msg.projectId ? { projectId: msg.projectId } : undefined);
+                break;
             case 'openGuide':
                 void vscode.commands.executeCommand('agentfarm.openGuide', msg.anchor);
                 break;

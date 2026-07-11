@@ -84,7 +84,8 @@
                 <td class="num"><strong>${row.total || ''}</strong></td>
             </tr>`;
         }).join('');
-        return `<h2>${C.esc(p.title)} <span class="muted small">(${C.esc(p.agentName)})</span></h2>
+        return `<div class="spread"><h2>${C.esc(p.title)} <span class="muted small">(${C.esc(p.agentName)})</span></h2>
+        <button class="secondary" id="exportseq" title="Export an FCP7 XML + EDL for Premiere">Export sequence →</button></div>
         <div class="tablewrap"><table>
             <tr><th>Scene</th><th>Status</th><th class="num">img</th><th class="num">vid</th><th class="num">aud</th><th class="num">other</th><th class="num">total</th></tr>
             ${rows || '<tr><td colspan="7" class="muted">No scenes in production.json.</td></tr>'}
@@ -138,6 +139,8 @@
         wire('fsource', ev => { fSource = ev.target.value; render(); });
         const newprod = document.getElementById('newprod');
         if (newprod) { newprod.addEventListener('click', () => vscode.postMessage({ type: 'newProduction' })); }
+        const exportseq = document.getElementById('exportseq');
+        if (exportseq) { exportseq.addEventListener('click', () => vscode.postMessage({ type: 'exportSequence', projectId: fProject })); }
         document.querySelectorAll('[data-open]').forEach(el =>
             el.addEventListener('click', () => vscode.postMessage({ type: 'openAsset', path: el.dataset.open })));
         document.querySelectorAll('[data-rerun]').forEach(el =>

@@ -58,6 +58,7 @@ import {
 } from './core/media';
 import { IngestFolder, IngestWatcher } from './core/ingest';
 import { discoverProductions, newProduction, PRODUCTION_FILENAME, writeProduction } from './core/production';
+import { buildEdl, buildFcpXml, detectSceneId, pickSequenceAssets } from './core/premiere';
 import {
     applyMergedContent, buildMergeDraft, findDuplicateGroups, syncGroup
 } from './core/memorySync';
@@ -505,6 +506,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             ).then(choice => {
                 if (choice === 'Open Gallery') { void vscode.commands.executeCommand('agentfarm.openGallery'); }
             });
+        },
+        undefined,
+        // Wave D: auto-link an ingested file to a scene by naming convention.
+        (projectId, filename) => {
+            const p = discoverProductions(agents).find(x => x.production.id === projectId);
+            return p ? detectSceneId(filename, p.production) : undefined;
         }
     );
     context.subscriptions.push(ingest);
@@ -1991,6 +1998,52 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 'Open file', 'Open Gallery');
             if (choice === 'Open file') { void vscode.window.showTextDocument(vscode.Uri.file(file)); }
             if (choice === 'Open Gallery') { void vscode.commands.executeCommand('agentfarm.openGallery'); }
+        }),
+
+        // Wave D: export a production as an editor sequence (FCP7 XML + EDL).
+        vscode.commands.registerCommand('agentfarm.exportSequence', async (arg?: { projectId?: string }) => {
+            const productions = discoverProductions(agents);
+            if (!productions.length) {
+                void vscode.window.showInformationMessage(
+                    'Agent Farm: no production.json found — create one with "Agent Farm: New Production".');
+                return;
+            }
+            let target = arg?.projectId ? productions.find(p => p.production.id === arg.projectId) : undefined;
+            if (!target) {
+                const pick = await vscode.window.showQuickPick(
+                    productions.map(p => ({ label: p.production.title, description: `${p.agentName} · ${p.production.scenes.length} scene(s)`, p })),
+                    { placeHolder: 'Which production to export?', ignoreFocusOut: true });
+                if (!pick) { return; }
+                target = pick.p;
+            }
+            const clips = pickSequenceAssets(target.production, readMediaMetas(taskManager.outputsDir));
+            if (!clips.length) {
+                void vscode.window.showWarningMessage(
+                    `Agent Farm: "${target.production.title}" has no scene assets to place — assign assets to scenes first.`);
+                return;
+            }
+            const fpsStr = await vscode.window.showQuickPick(['30', '25', '24', '60'],
+                { placeHolder: 'Sequence frame rate (fps)', ignoreFocusOut: true });
+            if (!fpsStr) { return; }
+            const secStr = await vscode.window.showInputBox({
+                prompt: 'Default clip length in seconds (per scene, editor refines later)', value: '5',
+                validateInput: v => /^\d+(\.\d+)?$/.test(v.trim()) ? undefined : 'A number', ignoreFocusOut: true });
+            if (secStr === undefined) { return; }
+            const opts = { fps: Number(fpsStr), clipSeconds: Number(secStr) || 5, title: target.production.title };
+            const safe = target.production.id.replace(/[^\w.-]+/g, '-');
+            const uri = await vscode.window.showSaveDialog({
+                defaultUri: vscode.Uri.file(path.join(path.dirname(target.file), `${safe}.xml`)),
+                filters: { 'FCP7 XML': ['xml'] }, saveLabel: 'Export sequence'
+            });
+            if (!uri) { return; }
+            fs.writeFileSync(uri.fsPath, buildFcpXml(clips, opts), 'utf8');
+            const edlPath = uri.fsPath.replace(/\.xml$/i, '') + '.edl';
+            fs.writeFileSync(edlPath, buildEdl(clips, opts), 'utf8');
+            const choice = await vscode.window.showInformationMessage(
+                `Agent Farm: exported ${clips.length} clip(s) → ${path.basename(uri.fsPath)} (+ .edl). Import the XML in Premiere: File → Import.`,
+                'Reveal', 'Open XML');
+            if (choice === 'Reveal') { void vscode.commands.executeCommand('revealFileInOS', uri); }
+            if (choice === 'Open XML') { void vscode.window.showTextDocument(uri); }
         }),
 
         // Wave A: register hand-downloaded / locally produced files as gallery assets.

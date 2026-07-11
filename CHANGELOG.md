@@ -2,6 +2,12 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.28.0 — Premiere bridge (sequence export), wave D (2026-07-11)
+
+- **Export a production as an editor sequence**: `Agent Farm: Export Premiere Sequence` (or the **Export sequence →** button in the gallery when a production is selected) turns a production manifest + its assets into an **FCP7 XML** (Premiere imports it via File → Import) and a **CMX3600 EDL**. One clip per scene in manifest order — a video you kept in a selection step wins, else any video, else an image; rejected assets are skipped; scenes with no asset are omitted. Pick the frame rate (24/25/30/60) and a default per-scene clip length.
+- **Naming-convention auto-linking**: when an ingest folder is tied to a production, a scene token in the filename (`…_s03_…` or `…_S3_…`) auto-assigns the ingested file to that scene — so re-importing a `P01_S03_T02.mp4` export lands on the right scene and closes the loop.
+- Completes wave D of the media roadmap. A UXP Premiere panel is intentionally deferred until the XML/EDL path is exhausted.
+
 ## 2.27.0 — Webhook poll mode (generic queue client), wave C (2026-07-11)
 
 - **Webhook step: auth headers + poll mode**. The webhook step can now carry an auth header (`Authorization: Bearer {secret:TOKEN}`, `{secret:}` substituted) and, more importantly, a **poll mode** that turns it into a submit→poll queue client for *any* queued API — no bespoke media provider needed. The wizard asks for a JSON path to the poll URL in the submit response (e.g. `urls.get`, `status_url`), a status field, and a "done" regex; the step then polls until the job finishes and hands off the final response. This covers Gemini's long-running media operations, self-hosted queues, and anything else with a submit-then-poll shape. Auth headers are carried into the poll requests; interval and timeout are configurable. Completes wave C of the media roadmap.
