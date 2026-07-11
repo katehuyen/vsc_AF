@@ -60,6 +60,8 @@ export interface PendingApproval {
     url: string;
     goal: string;
     createdAt: number;
+    /** 'browser' = a browser step wants to run; 'approval' = a workflow human-gate. */
+    kind?: 'browser' | 'approval';
 }
 
 /**
@@ -76,11 +78,14 @@ export class ApprovalQueue {
         return [...this.pending.values()].map(p => p.info);
     }
 
-    add(info: { title: string; url: string; goal: string }): { id: string; promise: Promise<boolean> } {
+    add(info: { title: string; url?: string; goal?: string; kind?: 'browser' | 'approval' }): { id: string; promise: Promise<boolean> } {
         const id = `ap${++this.seq}-${Date.now().toString(36)}`;
         const promise = new Promise<boolean>(resolve => {
             this.pending.set(id, {
-                info: { id, title: info.title, url: info.url, goal: info.goal, createdAt: Date.now() },
+                info: {
+                    id, title: info.title, url: info.url ?? '', goal: info.goal ?? '',
+                    createdAt: Date.now(), kind: info.kind ?? 'browser'
+                },
                 resolve
             });
         });
@@ -179,16 +184,17 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
     }
 
     for (const a of input.approvals) {
+        const isStep = a.kind === 'approval';
         items.push({
             urgency: URGENCY['browser-approval'],
             kind: 'browser-approval',
-            agentName: 'browser',
-            title: `Browser step "${a.title}" wants to run`,
-            detail: `${a.url} — ${a.goal}`,
+            agentName: isStep ? 'workflow' : 'browser',
+            title: isStep ? `Approval needed — "${a.title}"` : `Browser step "${a.title}" wants to run`,
+            detail: isStep ? (a.goal || 'waiting for your approval') : `${a.url} — ${a.goal}`,
             ts: a.createdAt,
             ref: { approvalId: a.id },
             actions: [
-                { id: 'approve', label: 'Run' },
+                { id: 'approve', label: isStep ? 'Approve' : 'Run' },
                 { id: 'reject', label: 'Reject' }
             ]
         });

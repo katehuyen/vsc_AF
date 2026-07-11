@@ -2,6 +2,10 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.19.0 — Workflow approval step, wave 3a (2026-07-11)
+
+- **Approval gate step**: drop a human-in-the-loop gate into any multi-agent workflow (New Workflow → *Approval gate*). When the chain reaches it, it pauses and waits for your sign-off — no agent, no model call. The request appears both as a notification and in the **Needs You** panel (first settle wins). **Approve** passes the previous step's output straight through to the next step; **Reject** applies the step's onFail policy (stop by default). The gate shows as an `approval` row in the Tasks tree with an APPROVED/REJECTED stamp in its output archive. Runs only while VS Code is open; the headless service auto-approves so unattended chains never hang. (First half of wave 3 — parallel/fan-in steps are a separate wave.)
+
 ## 2.18.0 — Task lifecycle ergonomics, wave 2 (2026-07-11)
 
 Managing delegated work is now one click from the Tasks tree.

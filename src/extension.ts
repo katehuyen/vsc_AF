@@ -390,6 +390,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     }
                 });
                 return promise;
+            },
+            confirmApproval: ({ title, message }) => {
+                // Workflow human-gate: notification + Needs You panel race, first settle wins.
+                const { id, promise } = approvalQueue.add({ title, goal: message, kind: 'approval' });
+                void vscode.window.showWarningMessage(
+                    `Agent Farm: workflow approval needed — "${title}"${message ? ' — ' + message : ''}`,
+                    'Approve', 'Reject', 'Open Needs You'
+                ).then(choice => {
+                    if (choice === 'Approve' || choice === 'Reject') {
+                        approvalQueue.settle(id, choice === 'Approve');
+                    } else if (choice === 'Open Needs You') {
+                        void vscode.commands.executeCommand('agentfarm.openNeeds');
+                    }
+                });
+                return promise;
             }
         }
     );
@@ -2548,11 +2563,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     [
                         // Finish sits on top once there is something to save — bottom of a long
                         // agent list is invisible, and Esc used to silently discard everything.
-                        ...(steps.length ? [{ label: '$(check) Finish & save workflow', description: `save "${title}" with ${steps.length} step(s)`, agent: undefined as AgentInfo | undefined, isWebhook: false, isMedia: false, isBrowser: false }] : []),
-                        ...agents.map(a => ({ label: a.name, description: a.dir, agent: a as AgentInfo | undefined, isWebhook: false, isMedia: false, isBrowser: false })),
-                        { label: '$(globe) Webhook step', description: 'HTTP call to n8n/Make/any URL — no agent', agent: undefined as AgentInfo | undefined, isWebhook: true, isMedia: false, isBrowser: false },
-                        { label: '$(device-camera-video) Media step (fal.ai)', description: 'image/video/audio generation — needs FAL_KEY secret', agent: undefined as AgentInfo | undefined, isWebhook: false, isMedia: true, isBrowser: false },
-                        { label: '$(browser) Browser step', description: 'agent drives its browser MCP — allowlist + approval enforced', agent: undefined as AgentInfo | undefined, isWebhook: false, isMedia: false, isBrowser: true }
+                        ...(steps.length ? [{ label: '$(check) Finish & save workflow', description: `save "${title}" with ${steps.length} step(s)`, agent: undefined as AgentInfo | undefined, isWebhook: false, isMedia: false, isBrowser: false, isApproval: false }] : []),
+                        ...agents.map(a => ({ label: a.name, description: a.dir, agent: a as AgentInfo | undefined, isWebhook: false, isMedia: false, isBrowser: false, isApproval: false })),
+                        { label: '$(globe) Webhook step', description: 'HTTP call to n8n/Make/any URL — no agent', agent: undefined as AgentInfo | undefined, isWebhook: true, isMedia: false, isBrowser: false, isApproval: false },
+                        { label: '$(device-camera-video) Media step (fal.ai)', description: 'image/video/audio generation — needs FAL_KEY secret', agent: undefined as AgentInfo | undefined, isWebhook: false, isMedia: true, isBrowser: false, isApproval: false },
+                        { label: '$(browser) Browser step', description: 'agent drives its browser MCP — allowlist + approval enforced', agent: undefined as AgentInfo | undefined, isWebhook: false, isMedia: false, isBrowser: true, isApproval: false },
+                        { label: '$(check) Approval gate', description: 'pause the chain for human sign-off — no agent, no model call', agent: undefined as AgentInfo | undefined, isWebhook: false, isMedia: false, isBrowser: false, isApproval: true }
                     ],
                     { placeHolder: `Step ${stepNo}: which agent? (Esc = ${steps.length ? 'finish' : 'cancel'})`, ignoreFocusOut: true }
                 );
@@ -2618,6 +2634,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     steps.push({
                         agentId: '', agentName: 'media', title: mTitle, prompt: '', mode: 'headless',
                         media: { model: mModel, input: mInput }
+                    });
+                    continue;
+                }
+                if (agentPick.isApproval) {
+                    const aTitle = await vscode.window.showInputBox({
+                        prompt: `Step ${stepNo} title (approval gate)`, value: 'İnsan onayı bekle', ignoreFocusOut: true
+                    });
+                    if (!aTitle) { continue; }
+                    const aMsg = await vscode.window.showInputBox({
+                        prompt: 'Message shown when asking for approval (optional) — {prev_text}/{prev_json.x} are substituted',
+                        placeHolder: 'örn. Yayına çıkmadan önce çıktıyı gözden geçir', ignoreFocusOut: true
+                    });
+                    if (aMsg === undefined) { continue; }
+                    steps.push({
+                        agentId: '', agentName: 'approval', title: aTitle, prompt: '', mode: 'headless',
+                        approval: { message: aMsg.trim() || undefined }
                     });
                     continue;
                 }
@@ -2778,6 +2810,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         { label: 'Browser goal', description: step.browser.goal.slice(0, 50), id: 'bGoal' },
                         { label: 'Browser allowed hosts', description: (step.browser.allowHosts ?? []).join(', ') || '(global list)', id: 'bHosts' }
                     ] : []),
+                    ...(step.approval ? [
+                        { label: 'Approval message', description: (step.approval.message ?? '(none)').slice(0, 50), id: 'apMsg' }
+                    ] : []),
                     { label: 'Prompt', description: step.prompt.slice(0, 60), id: 'prompt' },
                     { label: 'Agent', description: step.agentName, id: 'agent' },
                     { label: 'Mode', description: step.mode, id: 'mode' },
@@ -2814,6 +2849,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 case 'mInput': {
                     const v = await vscode.window.showInputBox({ prompt: 'JSON input template', value: step.media!.input, ignoreFocusOut: true });
                     if (v) { taskManager.updateWorkflowStep(w, node.index, { media: { ...step.media!, input: v } }); }
+                    break;
+                }
+                case 'apMsg': {
+                    const v = await vscode.window.showInputBox({ prompt: 'Approval message (empty = none)', value: step.approval!.message ?? '', ignoreFocusOut: true });
+                    if (v === undefined) { return; }
+                    taskManager.updateWorkflowStep(w, node.index, { approval: { message: v.trim() || undefined } });
                     break;
                 }
                 case 'bUrl': {

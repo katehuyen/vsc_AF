@@ -112,6 +112,12 @@ export interface WorkflowStep {
      * Host allowlist is enforced before launch; empty allowlist = refuse.
      */
     browser?: { url: string; goal: string; allowHosts?: string[] };
+    /**
+     * Human-in-the-loop gate: the chain pauses here until the user approves.
+     * On approve the upstream handoff passes through unchanged; on reject the
+     * step's onFail policy applies. No agent, no model call.
+     */
+    approval?: { message?: string };
 }
 
 /** What one step passes to the next. */
@@ -245,6 +251,8 @@ export interface TaskManagerOptions {
     browserAllowHosts?: () => string[];
     /** Resolve to true to run the browser step; false cancels it. */
     confirmBrowser?: (info: { title: string; url: string; goal: string }) => Promise<boolean>;
+    /** Human-in-the-loop workflow gate; resolve true to continue the chain, false to fail the step. */
+    confirmApproval?: (info: { title: string; message: string }) => Promise<boolean>;
 }
 
 export class TaskManager implements vscode.Disposable {
@@ -1005,6 +1013,10 @@ export class TaskManager implements vscode.Disposable {
             void this.runBrowserStep(w, index, handoff, runId);
             return;
         }
+        if (step.approval) {
+            void this.runApprovalStep(w, index, handoff, runId);
+            return;
+        }
         const agent = this.getAgents().find(a => a.id === step.agentId);
         if (!agent) {
             void vscode.window.showWarningMessage(
@@ -1191,6 +1203,48 @@ export class TaskManager implements vscode.Disposable {
         const task = this.addTask(agent, `${w.title} ${index + 1}/${w.steps.length}: ${step.title}`,
             prompt, 'headless', { workflowId: w.id, workflowRunId: runId, stepIndex: index });
         this.startTask(task);
+    }
+
+    /**
+     * Human-in-the-loop gate: a visible task row parks the run until the user
+     * approves. On approve the UPSTREAM handoff passes through (not the approval
+     * note); on reject the step's onFail policy applies.
+     */
+    private async runApprovalStep(w: FarmWorkflow, index: number, handoff: Handoff, runId: string): Promise<void> {
+        const step = w.steps[index];
+        const message = this.substitute(step.approval!.message ?? '', handoff);
+        const task: FarmTask = {
+            id: newId(), agentId: '', agentName: 'approval',
+            title: `${w.title} ${index + 1}/${w.steps.length}: ${step.title}`,
+            prompt: message || '(waiting for approval)', mode: 'headless', status: 'running',
+            createdAt: Date.now(), startedAt: Date.now(),
+            workflowId: w.id, workflowRunId: runId, stepIndex: index
+        };
+        this.tasks.push(task);
+        fs.mkdirSync(this.outputsDir, { recursive: true });
+        const outFile = path.join(this.outputsDir, `${task.id}.md`);
+        task.outputFile = outFile;
+        this.save();
+
+        // No gate wired (headless service / tests) = auto-approve so chains don't hang.
+        const ok = this.opts.confirmApproval
+            ? await this.opts.confirmApproval({ title: step.title, message })
+            : true;
+        try {
+            fs.writeFileSync(outFile,
+                `# ${task.title}\n\n- Approval step\n` + (message ? `- Message: ${message}\n` : '') +
+                `\n---\n\n${ok ? 'APPROVED' : 'REJECTED'} at ${new Date().toLocaleString()}\n\n---\n` +
+                `Finished: ${new Date().toLocaleString()} · ${ok ? 'OK' : 'REJECTED'}\n`, 'utf8');
+        } catch { /* archive gone */ }
+        task.status = ok ? 'done' : 'failed';
+        task.endedAt = Date.now();
+        this.save();
+        this.pump();
+        if (ok) {
+            this.routeToStep(w, index + 1, handoff, runId);
+        } else {
+            this.advanceWorkflow(task, 'failed');
+        }
     }
 
     /** Gallery Re-run/Vary: run a single media job outside any stored workflow. */

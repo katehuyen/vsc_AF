@@ -383,6 +383,16 @@ Görev satırında `verify pass/fail` rozeti görünür. Hakem çağrıları da 
 3. Sonraki adımda `{prev_json.alan}` (iç içe: `{prev_json.a.b}`) gerçek değerle değiştirilir.
 4. Koşullarda `json:alan~regex` sözdizimi: `runIf: json:durum~ALARM` — metin tesadüflerine takılmadan alan üstünden dallanır.
 
+### Onay Adımı (İnsan Kapısı)
+
+Zincire bir **Approval gate** koyarsın (2.19.0): o adıma gelince zincir DURUR ve senin onayını bekler — ajan yok, model çağrısı yok. New Workflow sihirbazında **$(check) Approval gate** seçeneği; isteğe bağlı bir mesaj sorar (`{prev_text}`/`{prev_json.x}` çözülür).
+
+- Onay isteği hem bildirim olarak hem de **Needs You** panelinde çıkar (aynı istek, ilk cevap kazanır) — Approve/Reject.
+- **Approve:** bir önceki adımın çıktısı (handoff) olduğu gibi sonraki adıma geçer — onay notu araya girmez.
+- **Reject:** adımın **onFail** politikası uygulanır (varsayılan: zinciri durdur; Edit Step ile continue/jump yapabilirsin).
+- Onay adımı Tasks ağacında görünür bir satırdır (`approval`), çıktı arşivine APPROVED/REJECTED damgası düşer.
+- **Uyarı:** onay kapısı yalnızca VS Code açıkken çalışır; headless serviste (sen yokken) kapı otomatik onaylanır ki zincir asılı kalmasın.
+
 ### Workflow Düzenleme
 
 Kurulu bir zinciri silip yeniden kurmana gerek yok (0.7.0):
@@ -1180,6 +1190,10 @@ Tamamlanan fazlar (hepsi 2026-07-08):
 **Bundan sonrası ayrı ve ayrıntılı bir belgede yaşıyor:** komut paletinden **Agent Farm: Open Development Plan** — uzak görüşlü gelişim planı: olay tetikleyicileri, doğrulayıcı adımlar, MCP paneli, n8n/webhook köprüsü, multimedya üretim hattı (Kling/Seedance/Nano Banana sınıfı modellerle içerik fabrikası), zeki gözetim, çoklu makine ve vizyoner ufuk. Kodlama o plandaki öncelik sırasını izler.
 
 ## Sürüm Notları
+
+### 2.19.0 — Workflow Onay Adımı, Dalga 3a (2026-07-11)
+
+- **Approval gate (insan kapısı):** workflow zincirine onay adımı — o adımda zincir durur, Needs You panelinde/bildirimle onay bekler. Approve → önceki çıktı olduğu gibi geçer; Reject → onFail. Ajan/model yok. Bkz. [Onay Adımı](#onay-adimi-insan-kapisi). (Dalga 3'ün ilk yarısı; paralel adım/fan-in ayrı dalga.)
 
 ### 2.18.0 — Görev Yaşam Döngüsü Ergonomisi, Dalga 2 (2026-07-11)
 
