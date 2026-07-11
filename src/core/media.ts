@@ -84,6 +84,25 @@ export async function jsonFetch(url: string, init: RequestInit): Promise<{ ok: b
     return { ok: res.ok, status: res.status, json, text };
 }
 
+/**
+ * F3: poll-side fetch with transient-failure tolerance — an hour-long render
+ * must survive a network blip. Network errors, 5xx and 429 are retried with
+ * growing waits; anything else returns immediately. Never throws. NOT for
+ * submit calls: retrying a submit could queue (and charge) the job twice.
+ */
+export async function resilientFetch(
+    url: string, init: RequestInit, pollMs = 3000, retries = 3
+): Promise<{ ok: boolean; status: number; json: unknown; text: string }> {
+    for (let attempt = 0; ; attempt++) {
+        let res: { ok: boolean; status: number; json: unknown; text: string };
+        try { res = await jsonFetch(url, init); }
+        catch (e) { res = { ok: false, status: 0, json: undefined, text: String(e) }; }
+        const transient = !res.ok && (res.status === 0 || res.status >= 500 || res.status === 429);
+        if (!transient || attempt >= retries) { return res; }
+        await new Promise(r => setTimeout(r, Math.min(pollMs * 2 ** attempt, 30_000)));
+    }
+}
+
 /** Submit to the fal queue and poll until completion. baseUrl override = tests. */
 export async function runFalJob(
     model: string,
@@ -103,7 +122,11 @@ export async function runFalJob(
         return { ok: false, error: `input is not valid JSON: ${inputJson.slice(0, 120)}`, assetUrls: [] };
     }
 
-    const submit = await jsonFetch(`${base}/${model}`, { method: 'POST', headers, body });
+    // Submit is deliberately NOT retried (a retry could queue the job — and its
+    // cost — twice), but a network throw becomes an honest failure, not a crash.
+    let submit: { ok: boolean; status: number; json: unknown; text: string };
+    try { submit = await jsonFetch(`${base}/${model}`, { method: 'POST', headers, body }); }
+    catch (e) { return { ok: false, error: `submit failed: ${String(e).slice(0, 300)}`, assetUrls: [] }; }
     if (!submit.ok) {
         return { ok: false, error: `submit HTTP ${submit.status}: ${submit.text.slice(0, 300)}`, assetUrls: [] };
     }
@@ -140,14 +163,14 @@ export async function pollFalResult(
             return { ok: false, error: `timed out after ${Math.round(timeoutMs / 60000)} min`, assetUrls: [] };
         }
         await new Promise(r => setTimeout(r, pollMs));
-        const st = await jsonFetch(statusUrl, { headers });
+        const st = await resilientFetch(statusUrl, { headers }, pollMs);
         const status = (st.json as { status?: string })?.status ?? '';
         if (status === 'COMPLETED') { break; }
         if (!st.ok || status === 'FAILED' || status === 'ERROR' || status === 'CANCELLED') {
             return { ok: false, error: `job ${status || 'HTTP ' + st.status}: ${st.text.slice(0, 300)}`, assetUrls: [] };
         }
     }
-    const result = await jsonFetch(responseUrl, { headers });
+    const result = await resilientFetch(responseUrl, { headers }, pollMs);
     if (!result.ok) {
         return { ok: false, error: `result HTTP ${result.status}: ${result.text.slice(0, 300)}`, assetUrls: [] };
     }

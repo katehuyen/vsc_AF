@@ -1,4 +1,4 @@
-import { findAssetUrls, jsonFetch, MediaResult, runFalJob } from './media';
+import { findAssetUrls, jsonFetch, MediaResult, resilientFetch, runFalJob } from './media';
 
 /**
  * Wave C — media provider abstraction. The media step no longer hard-codes
@@ -104,7 +104,7 @@ export async function pollWebhookResult(
             return { ok: false, error: `poll timed out after ${Math.round(timeoutMs / 60000)} min` };
         }
         await new Promise(r => setTimeout(r, pollMs));
-        const st = await jsonFetch(pollUrl, { headers });
+        const st = await resilientFetch(pollUrl, { headers }, pollMs);
         if (cfg.statusField) {
             const status = String(jsonPath(st.json, cfg.statusField) ?? '');
             if (status && failRe.test(status)) { return { ok: false, error: `job ${status}`, response: st.json }; }
@@ -148,7 +148,11 @@ export async function runReplicateJob(
     const submitUrl = version ? `${base}/v1/predictions` : `${base}/v1/models/${modelPath}/predictions`;
     const body = JSON.stringify(version ? { version, input } : { input });
 
-    const submit = await jsonFetch(submitUrl, { method: 'POST', headers, body });
+    // F3: submits are never retried (double-charge risk) — but a network throw
+    // becomes an honest failure instead of an unhandled rejection.
+    let submit: { ok: boolean; status: number; json: unknown; text: string };
+    try { submit = await jsonFetch(submitUrl, { method: 'POST', headers, body }); }
+    catch (e) { return { ok: false, error: `submit failed: ${String(e).slice(0, 300)}`, assetUrls: [] }; }
     if (!submit.ok) {
         return { ok: false, error: `submit HTTP ${submit.status}: ${submit.text.slice(0, 300)}`, assetUrls: [] };
     }
@@ -184,7 +188,7 @@ export async function pollReplicateResult(
             return { ok: false, error: `timed out after ${Math.round(timeoutMs / 60000)} min`, assetUrls: [] };
         }
         await new Promise(r => setTimeout(r, pollMs));
-        const st = await jsonFetch(getUrl, { headers });
+        const st = await resilientFetch(getUrl, { headers }, pollMs);
         const status = (st.json as ReplicatePrediction)?.status ?? '';
         if (status === 'succeeded') { return replicateResult(st.json as ReplicatePrediction); }
         if (!st.ok || status === 'failed' || status === 'canceled') {

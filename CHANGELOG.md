@@ -2,6 +2,11 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.35.0 — Poll retry & crash-proofing, wave F3 (2026-07-11)
+
+- **A network blip no longer kills a long render.** All media/webhook poll loops (fal, Replicate, webhook poll mode) now tolerate transient failures — network errors, 5xx and 429 are retried with growing waits before the job is declared failed; permanent errors (4xx) still fail fast. **Submits are deliberately never retried** — a duplicate submit could queue (and charge) the job twice.
+- **No more silently stuck media steps**: a network error during submit or polling used to surface as an unhandled rejection, leaving the task "running" forever with the chain dead. Every provider call is now fenced — any unexpected error fails the step honestly through the normal `onFail` routing, and the reattach path is fenced the same way.
+
 ## 2.34.0 — Codex & Gemini transcript adapters, wave E3b (2026-07-11)
 
 - **Sessions from Codex CLI and Gemini CLI now appear in the external-session history with real token usage.** Codex rollout transcripts (`~/.codex/sessions/**/rollout-*.jsonl`, archived ones included) are parsed for prompts, tool calls, model, cwd (→ agent assignment) and the cumulative `token_count` totals; Gemini chat files (`~/.gemini/tmp/<hash>/chats/*.json|jsonl`) for prompts, per-turn token usage and models — the project hash is matched against your agents' directory hashes to assign sessions to agents. Paths are configurable via `agentFarm.codexHome` / `agentFarm.geminiDir`.

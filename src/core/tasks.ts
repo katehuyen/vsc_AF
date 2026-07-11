@@ -1364,21 +1364,28 @@ export class TaskManager implements vscode.Disposable {
         }
 
         const timeoutMs = (media.timeoutMin ?? 10) * 60_000;
-        const result = await provider.run(media.model, input, auth, {
-            baseUrl: this.opts.mediaBaseUrl?.(provider.id),
-            timeoutMs,
-            pollMs: this.opts.mediaPollMs?.(),
-            // F2: persist the poll URLs the moment the job is queued, so a
-            // window close mid-render reattaches instead of losing the job.
-            onQueued: job => {
-                task.mediaJob = {
-                    provider: provider.id, statusUrl: job.statusUrl, responseUrl: job.responseUrl,
-                    deadline: Date.now() + timeoutMs + 60_000,
-                    input: input.slice(0, 2000)
-                };
-                this.save();
-            }
-        });
+        let result: MediaResult;
+        try {
+            result = await provider.run(media.model, input, auth, {
+                baseUrl: this.opts.mediaBaseUrl?.(provider.id),
+                timeoutMs,
+                pollMs: this.opts.mediaPollMs?.(),
+                // F2: persist the poll URLs the moment the job is queued, so a
+                // window close mid-render reattaches instead of losing the job.
+                onQueued: job => {
+                    task.mediaJob = {
+                        provider: provider.id, statusUrl: job.statusUrl, responseUrl: job.responseUrl,
+                        deadline: Date.now() + timeoutMs + 60_000,
+                        input: input.slice(0, 2000)
+                    };
+                    this.save();
+                }
+            });
+        } catch (e) {
+            // F3: a provider crash must fail the step honestly — never leave the
+            // task stuck 'running' with the chain silently dead.
+            result = { ok: false, error: `provider error: ${String(e).slice(0, 300)}`, assetUrls: [] };
+        }
         await this.completeMediaTask(task, info, result);
     }
 
@@ -1469,9 +1476,14 @@ export class TaskManager implements vscode.Disposable {
         }
         const remaining = Math.max(60_000, job.deadline - Date.now());
         const pollMs = this.opts.mediaPollMs?.();
-        const result = job.provider === 'replicate'
-            ? await pollReplicateResult(job.statusUrl, auth, { timeoutMs: remaining, pollMs })
-            : await pollFalResult(job.statusUrl, job.responseUrl, auth, { timeoutMs: remaining, pollMs });
+        let result: MediaResult;
+        try {
+            result = job.provider === 'replicate'
+                ? await pollReplicateResult(job.statusUrl, auth, { timeoutMs: remaining, pollMs })
+                : await pollFalResult(job.statusUrl, job.responseUrl, auth, { timeoutMs: remaining, pollMs });
+        } catch (e) {
+            result = { ok: false, error: `reattach poll error: ${String(e).slice(0, 300)}`, assetUrls: [] };
+        }
         await this.completeMediaTask(task, info, result);
     }
 
