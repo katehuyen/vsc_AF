@@ -310,7 +310,7 @@
             const meta = STATUS_META[s.status] || STATUS_META.idle;
             return `<div class="card" style="border-left:3px solid ${meta.color}">
                 <div class="spread">
-                    <h3 style="margin:0">${C.esc(s.agentName)}${s.source ? ` <span class="badge" title="external CLI — lifecycle only (open/closed); no live activity or cost">${C.esc(s.source)}</span>` : ''}</h3>
+                    <h3 style="margin:0">${C.esc(s.agentName)}${s.source ? ` <span class="badge" title="external CLI — open/closed tracked; richer events only if the CLI is wired to the hook bridge (Copy CLI Hook Bridge Command); no cost tracking">${C.esc(s.source)}</span>` : ''}</h3>
                     <span class="badge" style="color:${meta.color};border-color:${meta.color}">${meta.label}${s.currentTool ? ' · ' + C.esc(s.currentTool) : ''}</span>
                 </div>
                 <div class="sub" style="margin-top:4px">${s.lastPrompt ? '“' + C.esc(s.lastPrompt) + '”' : `<span class="muted">${s.source ? 'external CLI — lifecycle only' : 'no prompt yet'}</span>`}</div>

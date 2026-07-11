@@ -35,6 +35,8 @@ export interface SessionInfo {
     parentSessionId?: string;
     /** E1: which machine's claudeDir this session came from (undefined = this machine). */
     machine?: string;
+    /** E3: external CLI id (gemini/codex/…) — set only by external SessionSources, never by the claude scan. */
+    source?: string;
     agentId?: string;
     agentName?: string;
     cwd?: string;
@@ -494,6 +496,31 @@ export class SessionIndex implements vscode.Disposable {
 
     forAgent(agentId: string): SessionInfo[] {
         return this.all().filter(s => s.agentId === agentId);
+    }
+
+    // ---- E3: externally-sourced sessions (other CLIs) ----
+    // Deliberately a side list: all()/forAgent() stay claude-only, so the many
+    // claude-specific consumers (health, mcp/skill/memory usage, reports,
+    // search, OTLP, …) structurally never see foreign sessions. UI surfaces
+    // that want them ask for external() explicitly.
+
+    private externalList: SessionInfo[] = [];
+    private externalSig = '';
+
+    setExternal(sessions: SessionInfo[]): void {
+        const sig = sessions.map(s => `${s.sessionId}:${s.lastTs}:${s.userTurns}:${s.toolCalls}`).join('|');
+        if (sig === this.externalSig) { return; }
+        this.externalSig = sig;
+        this.externalList = sessions;
+        this.onDidUpdateEmitter.fire();
+    }
+
+    external(): SessionInfo[] {
+        return this.externalList;
+    }
+
+    externalForAgent(agentId: string): SessionInfo[] {
+        return this.externalList.filter(s => s.agentId === agentId);
     }
 
     isSessionActive(s: SessionInfo, now = Date.now()): boolean {

@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.32.0 — External sessions in history views, wave E3a (2026-07-11)
+
+- **External-CLI sessions now have a history presence**: they appear in the Sessions tree and under each agent's Sessions section (terminal icon, CLI badge, prompt/tool counts, "no transcript" tooltip; clicking opens the Live Timeline), and the dashboard shows an honest one-liner ("External CLI sessions: gemini ×3 · codex ×1 — tokens/cost not included above"). Data comes from the live event store (`cli:` lanes, ~31 days) — **no foreign log-format guessing**, and cost stays honestly at 0 until real transcript adapters exist.
+- Architecture: a new `SessionSource` seam (`core/sessionSource.ts`) normalizes foreign sessions to `SessionInfo`, but they live in a **side list** on the index — `all()`/`forAgent()` stay claude-only, so claude-specific analytics (context health, cache efficiency, skill/MCP/memory usage, reports, search, OTLP export) structurally never see them. Sources are fail-soft: a broken source contributes nothing.
+
+## 2.31.0 — Hook bridge for external CLI events, wave E2b (2026-07-11)
+
+- **Any external CLI can now feed rich events onto its timeline lane.** Terminals opened via *Start Session With…* carry `AGENT_FARM_SESSION` / `AGENT_FARM_CWD` / `AGENT_FARM_EVENT_PORT` / `AGENT_FARM_HOOK` env vars, and the extension ships a tiny bridge script (`cliHook.js`): wire it into the CLI's notify/hook mechanism (e.g. codex `notify`) or a wrapper, and prompts/tools/turn-ends appear live on the session's lane — `node "$AGENT_FARM_HOOK" --event Stop`, `--event PreToolUse --tool Bash`, or pipe the CLI's notify JSON to `--json` (known types like `agent-turn-complete` are mapped automatically). **Agent Farm: Copy CLI Hook Bridge Command** puts a ready-to-paste invocation on the clipboard.
+- Fail-soft by design: the bridge always exits 0, never blocks the CLI, and is inert when the listener is off. Without a session env var, events from the same folder fold into a stable `cli:external:<folder>` lane. Claude terminals get no env vars — the Claude hook path is untouched. Cost tracking for external CLIs remains honestly absent (transcript adapters are the next step).
+
 ## 2.30.0 — External CLI session lifecycle on the timeline, wave E2a (2026-07-11)
 
 - **Sessions opened with another CLI now show up on the Live Timeline**: starting a gemini/codex/… session via *Start Session With…* adds an `idle` lane row the moment the terminal opens and marks it `ended` when the terminal closes. The card carries a CLI badge and an honest "external CLI — lifecycle only" note — external CLIs emit no hooks, so intermediate states (working/tool), prompts and cost are not tracked (that's the event-feeder / transcript-adapter roadmap steps). Session ids are namespaced (`cli:<cliId>:…`) so they can never collide with Claude's session ids; **the Claude hook path is untouched**.

@@ -14,6 +14,7 @@ import { speakText } from './core/briefing';
 import { buildOtlpTraces } from './core/otel';
 import { collectGalleryPacks } from './core/packgallery';
 import { RelayTailer } from './core/relay';
+import { buildExternalSessions, liveEventsSource } from './core/sessionSource';
 import {
     createWorktree, isGitRepo, listAfWorktrees, mergeWorktree, removeWorktree, worktreeStatus
 } from './core/worktree';
@@ -427,6 +428,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
     }, 5000);
     context.subscriptions.push({ dispose: () => clearTimeout(cliRebindTimer) });
+
+    // ---- E3: external-CLI session history ----
+    // Built from the live-event store (`cli:` lanes) — no foreign log formats
+    // involved. Kept in the index's side list so claude analytics never see it;
+    // the sessions trees and dashboard opt in explicitly. Cost is honestly 0.
+    const externalSessionSource = liveEventsSource(
+        () => path.join(context.globalStorageUri.fsPath, 'live-events.jsonl'));
+    const refreshExternalSessions = () =>
+        index.setExternal(buildExternalSessions([externalSessionSource]));
+    refreshExternalSessions();
+    let externalSessTimer: NodeJS.Timeout | undefined;
+    context.subscriptions.push(live.onDidUpdate(() => {
+        if (externalSessTimer) { clearTimeout(externalSessTimer); }
+        externalSessTimer = setTimeout(refreshExternalSessions, 15_000);
+    }));
+    context.subscriptions.push({ dispose: () => { if (externalSessTimer) { clearTimeout(externalSessTimer); } } });
 
     const state = {
         getAgents: () => agents,
@@ -1313,13 +1330,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      *  (their lifecycle is tracked via terminal close events). */
     // Returns the created terminal (undefined in external-terminal mode) so the
     // E2a lifecycle watcher can track external-CLI sessions; existing callers
-    // ignore the return value, so claude behaviour is unchanged.
-    const launchClaudeTerminal = (name: string, cwd: string | undefined, command: string): vscode.Terminal | undefined => {
+    // ignore the return value, so claude behaviour is unchanged. `env` (E2b)
+    // is only passed for external-CLI sessions — claude terminals get none.
+    const launchClaudeTerminal = (
+        name: string, cwd: string | undefined, command: string,
+        env?: Record<string, string>
+    ): vscode.Terminal | undefined => {
         if (cfg().get<boolean>('externalTerminal', false)) {
             openExternalTerminal(cwd, command);
             return undefined;
         }
-        const terminal = vscode.window.createTerminal({ name, cwd });
+        const terminal = vscode.window.createTerminal({ name, cwd, env });
         terminal.show();
         terminal.sendText(command, true);
         return terminal;
@@ -1630,12 +1651,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const command = pick.profile
                 ? (buildCliCommand(pick.profile.interactive ?? pick.profile.headless, '', '') || pick.profile.name)
                 : 'claude';
-            const term = launchClaudeTerminal(`${pick.id}: ${agent.name}`, agent.dir, command);
             // E2a: claude sessions report themselves via hooks; external CLIs
             // don't, so track the terminal lifecycle instead. In external-terminal
             // mode there is no terminal object — lifecycle honestly untracked.
-            if (pick.profile && term) {
-                const sessionId = `cli:${pick.id}:${agent.id}:${Date.now()}`;
+            // E2b: the terminal carries AGENT_FARM_* env vars so a hook/notify
+            // wired inside it (see cliHook.js) can feed richer events onto the
+            // same timeline lane without any per-CLI code here.
+            const sessionId = pick.profile ? `cli:${pick.id}:${agent.id}:${Date.now()}` : undefined;
+            const env = sessionId ? {
+                AGENT_FARM_SESSION: sessionId,
+                AGENT_FARM_CWD: agent.dir,
+                AGENT_FARM_EVENT_PORT: String(cfg().get<number>('livePort', 8377)),
+                AGENT_FARM_HOOK: vscode.Uri.joinPath(context.extensionUri, 'out', 'service', 'cliHook.js').fsPath
+            } : undefined;
+            const term = launchClaudeTerminal(`${pick.id}: ${agent.name}`, agent.dir, command, env);
+            if (sessionId && term) {
                 cliTerminals.set(term, { sessionId, cwd: agent.dir });
                 live.handle({ session_id: sessionId, cwd: agent.dir, hook_event_name: 'SessionStart', source: pick.id });
             }
@@ -4523,6 +4553,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 'Agent Farm: relay script saved. On the other machine run: ' +
                 `node farmRelay.js --claude %USERPROFILE%\\.claude --out <syncedFolder>\\relay-laptop.jsonl --machine laptop — ` +
                 'then add that synced file here via agentFarm.relayFeeds.');
+        }),
+
+        // E2b: hand the user a ready-to-paste hook bridge invocation for an
+        // external CLI's notify/hook config (codex notify, wrapper scripts, …).
+        vscode.commands.registerCommand('agentfarm.copyCliHookCommand', async () => {
+            const hook = path.join(context.extensionPath, 'out', 'service', 'cliHook.js');
+            if (!fs.existsSync(hook)) {
+                void vscode.window.showErrorMessage('Agent Farm: cliHook.js missing from the extension build.');
+                return;
+            }
+            await vscode.env.clipboard.writeText(`node "${hook}" --json`);
+            void vscode.window.showInformationMessage(
+                'Agent Farm: hook bridge command copied. Wire it into your CLI\'s notify/hook config ' +
+                '(it reads JSON from stdin; or use --event/--tool/--prompt args). Inside a "Start Session With…" ' +
+                'terminal the AGENT_FARM_SESSION/CWD/EVENT_PORT env vars route events onto that session\'s lane; ' +
+                'you can also reference the script as %AGENT_FARM_HOOK% there.');
         }),
 
         vscode.commands.registerCommand('agentfarm.farmServiceStatus', () => {

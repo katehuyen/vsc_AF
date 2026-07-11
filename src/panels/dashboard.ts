@@ -148,7 +148,16 @@ function buildData(deps: DashboardDeps): Record<string, unknown> {
             warning: insights.filter(i => i.severity === 'warning').length,
             info: insights.filter(i => i.severity === 'info').length
         },
-        unknownModels: [...deps.getPricing().unknownModels]
+        unknownModels: [...deps.getPricing().unknownModels],
+        // E3: external-CLI sessions (side list — excluded from every cost/usage
+        // figure above; surfaced as an honest one-liner).
+        externalSessions: (() => {
+            const bySource: Record<string, number> = {};
+            for (const s of deps.index.external()) {
+                if (s.source) { bySource[s.source] = (bySource[s.source] ?? 0) + 1; }
+            }
+            return bySource;
+        })()
     };
 }
 

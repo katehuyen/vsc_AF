@@ -380,8 +380,11 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
                 }));
             }
             if (node.section === 'sessions') {
-                return this.state.index.forAgent(node.agent.id)
-                    .filter(s => !s.parentSessionId)
+                // E3: external-CLI sessions interleave by recency, badge'd in the item.
+                return [
+                    ...this.state.index.forAgent(node.agent.id).filter(s => !s.parentSessionId),
+                    ...this.state.index.externalForAgent(node.agent.id)
+                ]
                     .sort((a, b) => b.mtime - a.mtime)
                     .slice(0, 15)
                     .map(session => ({ kind: 'session' as const, session }));
@@ -411,6 +414,22 @@ function openFileCommand(p: string): vscode.Command {
 }
 
 function sessionTreeItem(s: SessionInfo, index: SessionIndex, showAgent: boolean): vscode.TreeItem {
+    // E3: external-CLI sessions have no transcript file — no viewer, no
+    // rename/delete/resume menus; clicking opens the Live Timeline instead.
+    if (s.source) {
+        const item = new vscode.TreeItem(s.title, vscode.TreeItemCollapsibleState.None);
+        item.contextValue = 'session-external';
+        item.iconPath = new vscode.ThemeIcon('terminal');
+        const parts: string[] = [];
+        if (showAgent && s.agentName) { parts.push(s.agentName); }
+        parts.push(s.source, relTime(s.mtime));
+        item.description = parts.join(' • ');
+        item.tooltip = `${s.title}\nexternal CLI session (${s.source})\n` +
+            `${s.userTurns} prompts • ${s.toolCalls} tool calls — from live events; ` +
+            'no transcript, cost not tracked';
+        item.command = { command: 'agentfarm.openTimeline', title: 'Open Timeline' };
+        return item;
+    }
     // G6: nested subagent transcripts hang under their parent with a cost rollup.
     const children = index.childrenOf(s.sessionId);
     const item = new vscode.TreeItem(s.title, children.length
@@ -460,7 +479,7 @@ export class SessionsTreeProvider implements vscode.TreeDataProvider<SessionInfo
 
     getChildren(node?: SessionInfo): SessionInfo[] {
         if (node) { return this.state.index.childrenOf(node.sessionId); }
-        return this.state.index.topLevel()
+        return [...this.state.index.topLevel(), ...this.state.index.external()]
             .sort((a, b) => b.mtime - a.mtime)
             .slice(0, 30);
     }

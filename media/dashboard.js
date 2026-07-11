@@ -164,6 +164,10 @@
         const unknown = DATA.unknownModels.length
             ? `<p class="footnote">⚠ No pricing rule matched: ${DATA.unknownModels.map(C.esc).join(', ')} — their cost is counted as $0. Add a rule in <code>agentFarm.pricing</code>.</p>`
             : '';
+        const extEntries = Object.entries(DATA.externalSessions || {});
+        const externalNote = extEntries.length
+            ? `<p class="footnote">⌁ External CLI sessions (last ~31d): ${extEntries.map(([src, n]) => `${C.esc(src)} ×${n}`).join(' · ')} — tracked from live events; tokens/cost not included above.</p>`
+            : '';
 
         document.getElementById('app').innerHTML = `
             <div class="spread">
@@ -210,6 +214,7 @@
                 ${top || '<tr><td colspan="6" class="muted">No sessions yet.</td></tr>'}
             </table></div>
             ${unknown}
+            ${externalNote}
             <p class="footnote">Costs are API-equivalent values computed from token usage — on a subscription plan this is not your bill, it is the value you extracted. Sessions are matched to agents by their working directory under your agent roots.</p>
         `;
 

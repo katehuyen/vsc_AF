@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.30.0",
+  "version": "2.32.0",
   "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
@@ -847,6 +847,11 @@
       {
         "command": "agentfarm.exportRelayScript",
         "title": "Save Relay Script for Another Machine…",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.copyCliHookCommand",
+        "title": "Copy CLI Hook Bridge Command (external CLI events)",
         "category": "Agent Farm"
       }
     ],
