@@ -89,11 +89,13 @@ export async function runFalJob(
     model: string,
     inputJson: string,
     auth: string,
-    opts: { baseUrl?: string; timeoutMs?: number; pollMs?: number } = {}
+    opts: {
+        baseUrl?: string; timeoutMs?: number; pollMs?: number;
+        /** F2: fires once the job is queued — the caller persists the poll URLs for reattach. */
+        onQueued?: (job: { statusUrl: string; responseUrl: string }) => void;
+    } = {}
 ): Promise<MediaResult> {
     const base = (opts.baseUrl ?? 'https://queue.fal.run').replace(/\/$/, '');
-    const timeoutMs = opts.timeoutMs ?? 10 * 60_000;
-    const pollMs = opts.pollMs ?? 3000;
     const headers = { Authorization: auth, 'Content-Type': 'application/json' };
 
     let body: string;
@@ -114,6 +116,24 @@ export async function runFalJob(
 
     const statusUrl = queued.status_url as string;
     const responseUrl = (queued.response_url ?? statusUrl.replace(/\/status$/, '')) as string;
+    opts.onQueued?.({ statusUrl, responseUrl });
+    return pollFalResult(statusUrl, responseUrl, auth, opts);
+}
+
+/**
+ * F2: poll an already-submitted fal queue job until completion. Split out of
+ * runFalJob so a reload can REATTACH to an in-flight job from its persisted
+ * poll URLs instead of losing (and re-paying) the render.
+ */
+export async function pollFalResult(
+    statusUrl: string,
+    responseUrl: string,
+    auth: string,
+    opts: { timeoutMs?: number; pollMs?: number } = {}
+): Promise<MediaResult> {
+    const timeoutMs = opts.timeoutMs ?? 10 * 60_000;
+    const pollMs = opts.pollMs ?? 3000;
+    const headers = { Authorization: auth, 'Content-Type': 'application/json' };
     const t0 = Date.now();
     for (;;) {
         if (Date.now() - t0 > timeoutMs) {

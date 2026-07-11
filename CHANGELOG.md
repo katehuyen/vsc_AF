@@ -2,6 +2,12 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.33.0 — Long-job durability, wave F (2026-07-11)
+
+- **Media renders survive window reloads**: the moment a fal/Replicate job is queued, its poll URLs are persisted on the task. If the window closes mid-render, the next window **reattaches** — polling resumes, assets download, the gallery meta is written, and the workflow chain continues exactly where it left off (the archive notes the reattach). Jobs whose deadline already passed fall back to the resume offer below.
+- **Interrupted workflow runs are detected and offered for resume**: workflow steps that were running when the window closed used to become zombie "queued" rows that silently killed the chain. They are now honestly marked *cancelled* (excluded from success-rate analytics), the archive gets an "Interrupted" note, and at startup one notification offers **Resume** — re-entering each run at its earliest interrupted step with the previous step's handoff rebuilt from disk (parallel groups re-fan from the group start). Declining keeps the per-task Resume buttons.
+- Provider poll loops were split into reusable `pollFalResult` / `pollReplicateResult` (submit behavior unchanged, verified against the existing mock-server suite). Provider retry/backoff policies remain a separate roadmap item.
+
 ## 2.32.0 — External sessions in history views, wave E3a (2026-07-11)
 
 - **External-CLI sessions now have a history presence**: they appear in the Sessions tree and under each agent's Sessions section (terminal icon, CLI badge, prompt/tool counts, "no transcript" tooltip; clicking opens the Live Timeline), and the dashboard shows an honest one-liner ("External CLI sessions: gemini ×3 · codex ×1 — tokens/cost not included above"). Data comes from the live event store (`cli:` lanes, ~31 days) — **no foreign log-format guessing**, and cost stays honestly at 0 until real transcript adapters exist.

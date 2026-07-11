@@ -6,9 +6,9 @@ import { AgentInfo } from './agents';
 import { buildBrowserPrompt, hostAllowed } from './browser';
 import {
     DEFAULT_MEDIA_PRICING, downloadAsset, estimateMediaCost, extFromUrl, injectMediaFeedback,
-    mediaCandidates, MediaMeta, MediaPriceRule, readMediaMetas, recordSelection
+    mediaCandidates, MediaMeta, MediaPriceRule, MediaResult, pollFalResult, readMediaMetas, recordSelection
 } from './media';
-import { pollWebhookResult, providerFor, WebhookPollConfig } from './mediaProviders';
+import { pollReplicateResult, pollWebhookResult, providerFor, WebhookPollConfig } from './mediaProviders';
 import { extractJson, sanitizePrompt } from './util';
 
 export type TaskStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
@@ -49,6 +49,8 @@ export interface FarmTask {
     cli?: string;
     /** Launch priority; higher runs sooner. Unset = 0. Ages up while queued so nothing starves. */
     priority?: number;
+    /** F2: in-flight media job poll info — lets a reload reattach to the render instead of losing it. */
+    mediaJob?: { provider: string; statusUrl: string; responseUrl: string; deadline: number; input?: string };
 }
 
 export type ScheduleKind = 'daily' | 'weekly' | 'once';
@@ -265,6 +267,8 @@ export interface TaskManagerOptions {
     mediaAuth?: (providerId: string) => string;              // full Authorization header, e.g. "Key <FAL_KEY>" / "Bearer <token>"
     mediaBaseUrl?: (providerId: string) => string | undefined; // override for tests / self-hosted proxies
     mediaPricing?: () => MediaPriceRule[]; // C3 cost estimation rules
+    /** F2: media poll interval override (tests); undefined = provider default (3s). */
+    mediaPollMs?: () => number;
     /** I5: model policy — extra --model args (and reason) for a task launch. */
     modelArgsFor?: (task: FarmTask) => { args: string; reason: string } | undefined;
     /** J5: alternative CLI profiles ({prompt}/{args} templates). */
@@ -316,6 +320,14 @@ export class TaskManager implements vscode.Disposable {
         private opts: TaskManagerOptions = {}
     ) {
         this.load();
+        // F2: pick the persisted in-flight media jobs back up (fire-and-forget;
+        // each one finishes its task normally, so interrupted chains continue).
+        if (this.reattachQueue.length) {
+            void vscode.window.showInformationMessage(
+                `Agent Farm: reattached to ${this.reattachQueue.length} in-flight media job(s) from the previous window.`);
+            for (const t of this.reattachQueue) { void this.reattachMediaTask(t); }
+            this.reattachQueue = [];
+        }
         this.timer = setInterval(() => { this.tickSchedules(); this.pump(); }, 30_000);
 
         this.disposables.push(vscode.window.onDidCloseTerminal(terminal => {
@@ -368,11 +380,90 @@ export class TaskManager implements vscode.Disposable {
             this.templates = Array.isArray(json.templates) ? json.templates : [];
             this.workflows = Array.isArray(json.workflows) ? json.workflows : [];
             this.triggers = Array.isArray(json.triggers) ? json.triggers : [];
-            // Anything marked running from a previous window is stale.
+            // Anything marked running from a previous window is stale. Plain
+            // tasks go back to the queue; workflow members are cancelled — their
+            // process/poll died with the window, and a zombie 'queued' row could
+            // never launch for media/approval steps (agentId '') while silently
+            // killing the chain. The run is remembered so the host can offer to
+            // resume it (F1).
+            let staleChanged = false;
             for (const t of this.tasks) {
-                if (t.status === 'running') { t.status = 'queued'; t.startedAt = undefined; }
+                if (t.status !== 'running') { continue; }
+                // F2: an in-flight media job with a live deadline is NOT stale —
+                // its poll URLs were persisted at submit, so we reattach and the
+                // render (and the chain behind it) survives the reload.
+                if (t.mediaJob && Date.now() < t.mediaJob.deadline) {
+                    this.reattachQueue.push(t);
+                    continue;
+                }
+                staleChanged = true;
+                if (t.workflowRunId !== undefined && t.stepIndex !== undefined) {
+                    t.status = 'cancelled';
+                    t.endedAt = Date.now();
+                    if (t.outputFile) {
+                        try {
+                            fs.appendFileSync(t.outputFile,
+                                '\n\n---\nInterrupted: the VS Code window closed mid-run; the step was cancelled. The run can be resumed.\n');
+                        } catch { /* archive gone */ }
+                    }
+                    const known = this.interrupted.find(r => r.runId === t.workflowRunId);
+                    if (!known) {
+                        this.interrupted.push({
+                            runId: t.workflowRunId, workflowId: t.workflowId ?? '',
+                            stepIndex: t.stepIndex, taskId: t.id
+                        });
+                    } else if (t.stepIndex < known.stepIndex) {
+                        // Parallel group cut mid-flight: resume from the earliest
+                        // step so routeToStep re-fans the whole group.
+                        known.stepIndex = t.stepIndex;
+                        known.taskId = t.id;
+                    }
+                } else {
+                    t.status = 'queued';
+                    t.startedAt = undefined;
+                }
             }
+            // Persist the corrections right away so the interrupted-run offer is
+            // one-shot; the cancelled rows keep their manual Resume affordance.
+            if (staleChanged) { this.save(); }
         } catch { /* first run */ }
+    }
+
+    // ---------- F1: interrupted workflow runs ----------
+
+    private interrupted: { runId: string; workflowId: string; stepIndex: number; taskId: string }[] = [];
+
+    /**
+     * Workflow runs cut mid-flight by the last window close (detected at load).
+     * Runs whose workflow no longer exists (ad-hoc media runs) are not offered —
+     * there is nothing to resume them into.
+     */
+    interruptedRuns(): { runId: string; workflowTitle: string; stepIndex: number; stepTitle: string }[] {
+        const out = [];
+        for (const r of this.interrupted) {
+            const w = this.workflows.find(x => x.id === r.workflowId);
+            if (!w) { continue; }
+            out.push({
+                runId: r.runId,
+                workflowTitle: w.title,
+                stepIndex: r.stepIndex,
+                stepTitle: w.steps[r.stepIndex]?.title ?? `step ${r.stepIndex + 1}`
+            });
+        }
+        return out;
+    }
+
+    /** Resume an interrupted run from its earliest interrupted step. */
+    resumeInterrupted(runId: string): void {
+        const r = this.interrupted.find(x => x.runId === runId);
+        if (!r) { return; }
+        this.interrupted = this.interrupted.filter(x => x.runId !== runId);
+        const task = this.tasks.find(t => t.id === r.taskId);
+        if (task) { this.resumeWorkflowFromTask(task); }
+    }
+
+    dismissInterrupted(): void {
+        this.interrupted = [];
     }
 
     get historyDir(): string {
@@ -1257,28 +1348,67 @@ export class TaskManager implements vscode.Disposable {
 
         const provider = providerFor(media.model);
         const auth = (this.opts.mediaAuth?.(provider.id) ?? '').trim();
-        const finishWith = (ok: boolean, detail: string, response?: unknown, assets: string[] = [], estCost = 0) => {
+        const input = retry ? injectMediaFeedback(resolve(media.input), retry.feedback) : resolve(media.input);
+        const info = {
+            model: media.model, stepTitle: step.title, workflowTitle: w.title,
+            input, projectId: media.projectId, sceneId: media.sceneId
+        };
+
+        if (!auth || auth.includes('{secret:')) {
+            await this.completeMediaTask(task, info, {
+                ok: false,
+                error: `Media auth missing — store your ${provider.label} key with "Agent Farm: Set Secret…" as ${provider.secretHint}.`,
+                assetUrls: []
+            });
+            return;
+        }
+
+        const timeoutMs = (media.timeoutMin ?? 10) * 60_000;
+        const result = await provider.run(media.model, input, auth, {
+            baseUrl: this.opts.mediaBaseUrl?.(provider.id),
+            timeoutMs,
+            pollMs: this.opts.mediaPollMs?.(),
+            // F2: persist the poll URLs the moment the job is queued, so a
+            // window close mid-render reattaches instead of losing the job.
+            onQueued: job => {
+                task.mediaJob = {
+                    provider: provider.id, statusUrl: job.statusUrl, responseUrl: job.responseUrl,
+                    deadline: Date.now() + timeoutMs + 60_000,
+                    input: input.slice(0, 2000)
+                };
+                this.save();
+            }
+        });
+        await this.completeMediaTask(task, info, result);
+    }
+
+    /**
+     * F2: shared media completion tail (normal runs AND reattached runs) —
+     * downloads assets, writes the archive + gallery meta, finishes the task.
+     * finish() then drives the workflow chain as usual.
+     */
+    private async completeMediaTask(
+        task: FarmTask,
+        info: {
+            model: string; stepTitle: string; workflowTitle?: string; input: string;
+            projectId?: string; sceneId?: string; note?: string;
+        },
+        result: MediaResult
+    ): Promise<void> {
+        task.mediaJob = undefined;
+        const outFile = task.outputFile as string;
+        const writeOut = (ok: boolean, detail: string, response?: unknown, assets: string[] = [], estCost = 0) => {
             fs.writeFileSync(outFile,
-                `# ${task.title}\n\n- Media model: ${media.model}\n- Started: ${new Date(task.startedAt!).toLocaleString()}\n` +
+                `# ${task.title}\n\n- Media model: ${info.model}\n- Started: ${new Date(task.startedAt!).toLocaleString()}\n` +
+                (info.note ? `- Note: ${info.note}\n` : '') +
                 (assets.length ? `- Assets: ${assets.map(a => path.basename(a)).join(', ')}\n` : '') +
                 (estCost ? `- Est. cost: $${estCost.toFixed(3)}\n` : '') +
                 `\n---\n\n${response ? JSON.stringify(response, null, 2).slice(0, 20_000) : detail}\n\n---\n` +
                 `Finished: ${new Date().toLocaleString()} · ${ok ? 'OK' : 'FAILED'}\n`, 'utf8');
             this.finish(task, ok ? 'done' : 'failed');
         };
-
-        if (!auth || auth.includes('{secret:')) {
-            finishWith(false, `Media auth missing — store your ${provider.label} key with "Agent Farm: Set Secret…" as ${provider.secretHint}.`);
-            return;
-        }
-
-        const input = retry ? injectMediaFeedback(resolve(media.input), retry.feedback) : resolve(media.input);
-        const result = await provider.run(media.model, input, auth, {
-            baseUrl: this.opts.mediaBaseUrl?.(provider.id),
-            timeoutMs: (media.timeoutMin ?? 10) * 60_000
-        });
         if (!result.ok) {
-            finishWith(false, `[media error] ${result.error ?? 'unknown'}`);
+            writeOut(false, `[media error] ${result.error ?? 'unknown'}`);
             return;
         }
 
@@ -1288,27 +1418,61 @@ export class TaskManager implements vscode.Disposable {
             const file = path.join(this.outputsDir, `${task.id}-${i + 1}.${extFromUrl(url)}`);
             if (await downloadAsset(url, file)) { assets.push(file); assetUrls.push(url); }
         }
-        const estCost = estimateMediaCost(media.model, result.response,
+        const estCost = estimateMediaCost(info.model, result.response,
             this.opts.mediaPricing?.() ?? DEFAULT_MEDIA_PRICING);
         task.mediaCost = estCost;
 
         const meta: MediaMeta = {
             taskId: task.id,
-            title: step.title,
-            model: media.model,
-            input: input.slice(0, 2000),
+            title: info.stepTitle,
+            model: info.model,
+            input: info.input.slice(0, 2000),
             assetFiles: assets,
             assetUrls,
             estCost,
             ts: Date.now(),
-            workflowTitle: w.title,
-            projectId: media.projectId,
-            sceneId: media.sceneId,
+            workflowTitle: info.workflowTitle,
+            projectId: info.projectId,
+            sceneId: info.sceneId,
             source: 'fal'
         };
         fs.writeFileSync(path.join(this.outputsDir, `${task.id}.media.json`),
             JSON.stringify(meta, null, 2), 'utf8');
-        finishWith(true, '', result.response, assets, estCost);
+        writeOut(true, '', result.response, assets, estCost);
+    }
+
+    /** F2: tasks whose media job survived the reload (collected at load, polled from the ctor). */
+    private reattachQueue: FarmTask[] = [];
+
+    /** F2: resume polling a media job whose window died mid-render. */
+    private async reattachMediaTask(task: FarmTask): Promise<void> {
+        const job = task.mediaJob!;
+        const w = this.workflows.find(x => x.id === task.workflowId);
+        const step = task.stepIndex !== undefined ? w?.steps[task.stepIndex] : undefined;
+        const info = {
+            model: step?.media?.model ?? task.prompt,
+            stepTitle: step?.title ?? task.title,
+            workflowTitle: w?.title,
+            input: job.input ?? '(reattached after reload)',
+            projectId: step?.media?.projectId,
+            sceneId: step?.media?.sceneId,
+            note: 'reattached after a window reload — polling resumed from the persisted job URLs'
+        };
+        try { fs.appendFileSync(task.outputFile as string, `\nReattached after reload — polling ${job.provider} job.\n`); }
+        catch { /* archive gone */ }
+        const auth = (this.opts.mediaAuth?.(job.provider) ?? '').trim();
+        if (!auth || auth.includes('{secret:')) {
+            await this.completeMediaTask(task, info, {
+                ok: false, error: 'media auth unavailable after reload — could not reattach', assetUrls: []
+            });
+            return;
+        }
+        const remaining = Math.max(60_000, job.deadline - Date.now());
+        const pollMs = this.opts.mediaPollMs?.();
+        const result = job.provider === 'replicate'
+            ? await pollReplicateResult(job.statusUrl, auth, { timeoutMs: remaining, pollMs })
+            : await pollFalResult(job.statusUrl, job.responseUrl, auth, { timeoutMs: remaining, pollMs });
+        await this.completeMediaTask(task, info, result);
     }
 
     /** F3: browser step — allowlist gate + optional approval, then a normal agent task. */

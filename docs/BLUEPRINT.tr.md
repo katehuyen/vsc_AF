@@ -262,6 +262,14 @@ Biten veya bekleyen görevlerde tek tıkla (2.18.0):
 
 **Öncelik ve yaşlanma:** kuyruk artık salt ekleme sırası değil — yüksek öncelikli önce başlar, eşitlikte eski görev önce. Bekleyen her görev her 30 dakikada +1 öncelik kazanır (yaşlanma), böylece sürekli yüksek-öncelikli iş gelse bile eskiler aç kalmaz.
 
+### Uzun İş Dayanıklılığı (Dalga F)
+
+Saatlik render'lar ve gece koşuları pencere kapanışına dayanır (2.33.0):
+
+- **Medya reattach:** fal/Replicate işi kuyruğa girdiği anda poll URL'leri göreve yazılır (diske persist). Pencere render ortasında kapanırsa bir sonraki pencere işe **yeniden bağlanır** — poll kaldığı yerden sürer, asset'ler iner, galeri meta'sı yazılır ve zincir olduğu adımdan devam eder (arşivde "reattached" notu düşer). Süresi dolmuş işler aşağıdaki resume teklifine düşer.
+- **Yarıda kalan run tespiti + resume teklifi:** pencere kapanırken koşan workflow adımları eskiden sonsuza dek bekleyen zombi satırlara dönüşür, zincir sessizce ölürdü. Artık dürüstçe *cancelled* işaretlenirler (başarı oranı analitiğine girmezler, arşive "Interrupted" notu düşer) ve açılışta tek bildirim **Resume** teklif eder: her run, yarıda kalan en erken adımından, önceki adımın çıktısı diskten yeniden kurularak devam eder (paralel gruplar grup başından yeniden fan-out olur — fan-in durumu bellekteydi, dürüst sınır). Reddedersen görev satırlarındaki Resume butonları her zaman durur; teklif tek seferliktir.
+- Ad-hoc medya koşuları (kalıcı workflow'u olmayanlar) resume teklif edilmez — reattach penceresi geçtiyse yeniden üretmek için galeriden **Re-run** kullan.
+
 ### Zamanlanmış Görevler
 
 Tasks görünümündeki takvim ikonuyla (**Add Scheduled Task**) tekrarlayan işler kurarsın:

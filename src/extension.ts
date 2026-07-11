@@ -548,6 +548,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     taskManagerRef = taskManager;
     context.subscriptions.push(taskManager);
 
+    // F1: workflow runs cut by the last window close — offer to pick them up.
+    // Not automatic: a resumed run can spend money/agent time, so the user decides.
+    const interruptedRuns = taskManager.interruptedRuns();
+    if (interruptedRuns.length) {
+        const list = interruptedRuns
+            .map(r => `"${r.workflowTitle}" (step ${r.stepIndex + 1}: ${r.stepTitle})`).join(', ');
+        void vscode.window.showWarningMessage(
+            `Agent Farm: ${interruptedRuns.length} workflow run(s) were interrupted when the window closed — ${list}.`,
+            'Resume', 'Dismiss'
+        ).then(choice => {
+            if (choice === 'Resume') {
+                for (const r of interruptedRuns) { taskManager.resumeInterrupted(r.runId); }
+            } else if (choice === 'Dismiss') {
+                taskManager.dismissInterrupted();
+            }
+        });
+    }
+
     // Wave A (media roadmap): watched ingest folders → assets registered into
     // the gallery in place (downloads from web platforms, editor exports…).
     const ingest = new IngestWatcher(

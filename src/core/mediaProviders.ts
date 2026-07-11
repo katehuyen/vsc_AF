@@ -8,7 +8,11 @@ import { findAssetUrls, jsonFetch, MediaResult, runFalJob } from './media';
  * host (per provider) and passed through, so a provider only speaks its API.
  */
 
-export interface MediaRunOpts { baseUrl?: string; timeoutMs?: number; pollMs?: number; }
+export interface MediaRunOpts {
+    baseUrl?: string; timeoutMs?: number; pollMs?: number;
+    /** F2: fires once the job is queued — the caller persists the poll URLs for reattach. */
+    onQueued?: (job: { statusUrl: string; responseUrl: string }) => void;
+}
 
 export interface MediaProvider {
     id: string;
@@ -148,29 +152,49 @@ export async function runReplicateJob(
     if (!submit.ok) {
         return { ok: false, error: `submit HTTP ${submit.status}: ${submit.text.slice(0, 300)}`, assetUrls: [] };
     }
-    let pred = submit.json as ReplicatePrediction;
+    const pred = submit.json as ReplicatePrediction;
     const getUrl = pred?.urls?.get;
 
     // Prefer:wait / sync endpoints may answer already completed.
     if (getUrl && pred.status !== 'succeeded' && pred.status !== 'failed' && pred.status !== 'canceled') {
-        const t0 = Date.now();
-        for (;;) {
-            if (Date.now() - t0 > timeoutMs) {
-                return { ok: false, error: `timed out after ${Math.round(timeoutMs / 60000)} min`, assetUrls: [] };
-            }
-            await new Promise(r => setTimeout(r, pollMs));
-            const st = await jsonFetch(getUrl, { headers });
-            const status = (st.json as ReplicatePrediction)?.status ?? '';
-            if (status === 'succeeded') { pred = st.json as ReplicatePrediction; break; }
-            if (!st.ok || status === 'failed' || status === 'canceled') {
-                const p = st.json as ReplicatePrediction;
-                return { ok: false, error: `prediction ${status || 'HTTP ' + st.status}: ${String(p?.error ?? st.text).slice(0, 300)}`, assetUrls: [] };
-            }
-        }
-    } else if (pred.status === 'failed' || pred.status === 'canceled') {
+        opts.onQueued?.({ statusUrl: getUrl, responseUrl: getUrl });
+        return pollReplicateResult(getUrl, authHeader, { timeoutMs, pollMs });
+    }
+    if (pred.status === 'failed' || pred.status === 'canceled') {
         return { ok: false, error: `prediction ${pred.status}: ${String(pred.error ?? '').slice(0, 300)}`, assetUrls: [] };
     }
+    return replicateResult(pred);
+}
 
+/**
+ * F2: poll an already-submitted Replicate prediction until completion. Split
+ * out of runReplicateJob so a reload can REATTACH to an in-flight prediction
+ * from its persisted poll URL instead of losing (and re-paying) the render.
+ */
+export async function pollReplicateResult(
+    getUrl: string, authHeader: string,
+    opts: { timeoutMs?: number; pollMs?: number } = {}
+): Promise<MediaResult> {
+    const timeoutMs = opts.timeoutMs ?? 10 * 60_000;
+    const pollMs = opts.pollMs ?? 3000;
+    const headers = { Authorization: authHeader, 'Content-Type': 'application/json' };
+    const t0 = Date.now();
+    for (;;) {
+        if (Date.now() - t0 > timeoutMs) {
+            return { ok: false, error: `timed out after ${Math.round(timeoutMs / 60000)} min`, assetUrls: [] };
+        }
+        await new Promise(r => setTimeout(r, pollMs));
+        const st = await jsonFetch(getUrl, { headers });
+        const status = (st.json as ReplicatePrediction)?.status ?? '';
+        if (status === 'succeeded') { return replicateResult(st.json as ReplicatePrediction); }
+        if (!st.ok || status === 'failed' || status === 'canceled') {
+            const p = st.json as ReplicatePrediction;
+            return { ok: false, error: `prediction ${status || 'HTTP ' + st.status}: ${String(p?.error ?? st.text).slice(0, 300)}`, assetUrls: [] };
+        }
+    }
+}
+
+function replicateResult(pred: ReplicatePrediction): MediaResult {
     const out = pred.output;
     const assetUrls = typeof out === 'string' && /^https?:\/\//.test(out)
         ? [out]

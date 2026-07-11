@@ -156,12 +156,12 @@ Token bütçe uyarıları var; medya maliyeti gösteriliyor ama **eşik aşımı
 - 📄 **E2/E3 devir notu (ayrıntılı teknik):** [HANDOFF_E2E3.tr.md](HANDOFF_E2E3.tr.md) — mimari dikişler (LiveMonitor/RelayTailer/SessionIndex/PricingEngine), adım adım plan, test/paket disiplini.
 - *Gerçekleşen dokunma riski (E1): sıfıra yakın — yeni komut + globalState; mevcut launchClaudeTerminal yeniden kullanıldı, claude yolu değişmedi. (E2a): sıfıra yakın — launchClaudeTerminal artık terminali döndürüyor (mevcut çağıranlar yok sayar, davranış aynı); LiveSession'a opsiyonel `source` alanı (yalnız `cli:` id'lerde dolar, claude oturumlarında hep boş). E2b-E3 ekleme, fail-soft.*
 
-### ☐ Dalga F — Uzun iş dayanıklılığı
+### ◐ Dalga F — Uzun iş dayanıklılığı (F1+F2 TAMAM 2.33.0; F3 kaldı)
 **Hedef:** Saatlik render'lar ve gece koşuları VS Code yeniden başlatmalarına dayansın.
-- Workflow run durumunun (aktif adım, paralel grup fan-in beklemeleri, media jobId'leri) diske yazılması; açılışta **resume** teklifi.
-- Media job'ları için "reattach": jobId kalıcıysa poll kaldığı yerden sürer.
-- Sağlayıcı retry/backoff politikaları.
-- *Dokunma riski: yüksek dikkat — tasks.ts'in kalbi; küçük, izole PR'lar + mevcut 4 test takımı (lifecycle/approval/parallel/taskstats) yeşil kalmak zorunda.*
+- ✅ **F1 — Yarıda kalan run tespiti + resume teklifi** (2.33.0): load()'da koşan workflow üyeleri `cancelled` işaretlenir (eski davranış zombi `queued` satırlar bırakıp zinciri sessizce öldürüyordu; iptal, başarı-oranı analitiğine girmez) + arşive "Interrupted" notu; açılışta tek bildirim Resume teklif eder → mevcut `resumeWorkflowFromTask` altyapısıyla en erken kesilen adımdan, handoff diskten yeniden kurulup devam edilir. Paralel gruplar grup başından yeniden fan-out (fan-in durumu bellekteydi — dürüst sınır). Ad-hoc medya (workflow'suz) teklif edilmez. Teklif tek seferlik (load persist eder); satır bazlı Resume butonları kalıcı. *Test: 15/15.*
+- ✅ **F2 — Medya reattach** (2.33.0): `onQueued` callback'i submit anında poll URL'lerini `FarmTask.mediaJob`'a persist eder (deadline = timeout+60sn, input da saklanır → galeri Re-run bozulmaz); load()'da deadline geçmemiş medya görevi İPTAL EDİLMEZ — `pollFalResult`/`pollReplicateResult` (runFal/runReplicate'ten davranış birebir korunarak çıkarıldı) kaldığı yerden poll'lar, asset iner, meta yazılır, `finish()` zinciri normal sürdürür. Süresi geçmiş iş F1 yoluna düşer. *Test: 16/16 (mock sunucuya karşı uçtan uca reattach + zincir devamı + expired fallback); provider suite 21/21 regresyonsuz.*
+- ☐ **F3 — Sağlayıcı retry/backoff:** poll döngüsünde geçici HTTP hatalarına tolerans (submit'te retry YOK — çifte ücret riski). KODLANMADI.
+- *Dokunma riski: yüksek dikkat — tasks.ts'in kalbi; küçük, izole PR'lar + mevcut 4 test takımı (lifecycle/approval/parallel/taskstats) yeşil kalmak zorunda. (F1+F2'de tüm suite 376 yeşil.)*
 
 ---
 
