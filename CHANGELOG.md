@@ -2,6 +2,17 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.23.0 — Media asset pipeline, wave A (2026-07-11)
+
+First wave of the media/video-production roadmap (`docs/ROADMAP.media.tr.md`): make every asset — generated or hand-downloaded — trackable by production scene.
+
+- **Production manifests**: a `production.json` in an agent's folder describes a scene-by-scene project (title → scenes, each with a status: draft/generating/review/approved). Create one via `Agent Farm: New Production`; edit by hand anytime. Parsed fail-soft.
+- **Gallery scene board + filters**: the Media Gallery now groups by production. Filter by production / scene / source; a scene status board (rows = scenes, columns = image/video/audio/other) shows where each scene stands — click a cell to filter, click a status badge to change it. Assign any asset to a scene with the new **Scene…** button.
+- **Asset ingest** (`agentFarm.ingestFolders`): watched folders (downloads, render exports…) are scanned every 30s; new media files are registered into the gallery **in place** (no copy), tagged `external:<label>`, with a size-stability check (skips half-downloaded files) and a 48h backfill limit. `Agent Farm: Register Media Asset(s)…` does the same by hand. External assets show an `external:` badge and skip Re-run/Vary.
+- **Media step scene linking**: media steps (and gallery Re-run/Vary) carry `projectId/sceneId`; the workflow wizard asks which scene produced assets belong to when a manifest exists.
+- **Monthly media budget alert**: `agentFarm.mediaBudgetMonthUSD` (0 = off) warns once per month when the last 30 days' estimated media cost crosses the threshold (also forwarded to the webhook).
+- **Fix — Live sessions blank after reload**: reopening VS Code showed agents in the timeline swim lanes but "no sessions tracked" in the Live sessions list until a new prompt arrived. The session cards are now rebuilt from the persisted event store on startup (statuses replayed; ended sessions stay gone; stale mid-work ones are marked stalled quietly).
+
 ## 2.22.0 — Per-agent "your turn" notifications (2026-07-11)
 
 - **Swim-lane turn-ready toggles**: each agent's lane in the Live Timeline now carries four toggles in the left gutter — **♪ sound · ◎ focus · ▣ modal · ▭ toast**. Whatever an agent has selected fires when it crosses INTO YOUR TURN (a turn finishes / it starts waiting for your input). Independent per agent; click to toggle. Selections persist in `globalState` and the firing runs host-side, so it works even when the timeline panel is closed. Sound = a short beep (PowerShell on Windows); Focus = reveals the timeline panel; Modal = a blocking "Sıra sende: <agent>" dialog with an Open-transcript button; Toast = the corner notification. One alert per turn (3s per-agent coalescing). This is separate from the global `agentFarm.notifyTurnEnd` toast.

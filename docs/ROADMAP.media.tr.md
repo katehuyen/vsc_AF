@@ -112,14 +112,15 @@ Token bütçe uyarıları var; medya maliyeti gösteriliyor ama **eşik aşımı
 
 > Sıralama ilkesi: önce **bugünkü fal.ai yolunu uçtan uca güçlendir** (asset hattı + görsel seçim — en yüksek değer/emek oranı), sonra sağlayıcı genişlet, sonra kurgu köprüsü, en son platform-özel reçeteler. Çoklu-CLI (Dalga E) bağımsızdır, araya alınabilir.
 
-### ☐ Dalga A — Asset hattı temelleri (proje/sahne modeli + ingest)
+### ☑ Dalga A — Asset hattı temelleri (proje/sahne modeli + ingest) — TAMAM (2.23.0)
 **Hedef:** Üretilen ve dışarıdan gelen her asset'in proje/sahne bağlamıyla izlenmesi.
-- `production.json` proje manifesti (proje → sahneler → çekimler; her düğümde durum: `draft/generating/review/approved`). Konum: ajanın çalışma klasörü; eklenti okur-yazar.
-- **Asset ingest watcher:** ayarlanan klasörler (ör. `downloads/`, `renders/`) izlenir; yeni medya dosyası, yanına `.media.json` sidecar yazılarak galeriye kaydedilir (model="external", kaynak klasör etiketiyle). Elle indirilen Higgsfield/Flow çıktıları böylece sisteme girer.
-- Galeri: proje/sahne/kaynak filtreleri + sahne durum matrisi görünümü (satır=sahne, sütun=aşama; hücre = asset sayısı/durum).
-- Media adımı meta'sına `projectId/sceneId` alanları (workflow adımında opsiyonel).
-- **Medya bütçe uyarısı** (aylık eşik → toast + forward).
-- *Dokunma riski: düşük — mevcut media meta formatı geriye uyumlu genişler.*
+- ✅ `production.json` proje manifesti (proje → sahneler; her sahnede durum: `draft/generating/review/approved`). Konum: ajanın klasörü; `core/production.ts` okur-yazar, fail-soft; `Agent Farm: New Production` sihirbazı.
+- ✅ **Asset ingest watcher** (`core/ingest.ts`, `agentFarm.ingestFolders`): klasörler 30 sn'de bir taranır; yeni medya dosyası galeriye **yerinde** kaydedilir (kopya yok), `.media.json` sidecar + `source: external:<label>`, boyut-stabilite kontrolü (yarım indirme atlanır), 48 saat backfill sınırı. Elle indirilen çıktılar böylece girer. `Register Media Asset(s)…` komutuyla elle kayıt da var.
+- ✅ Galeri: proje/sahne/kaynak filtreleri + **sahne durum panosu** (satır=sahne, sütun=varlık türü; hücre tık→süz, durum rozeti tık→durum değiştir).
+- ✅ Media adımı meta'sına `projectId/sceneId/source` alanları (workflow media adımı + adhoc re-run/vary link taşır; sihirbazda opsiyonel sahne bağlama).
+- ✅ **Medya bütçe uyarısı** (`agentFarm.mediaBudgetMonthUSD`, aylık eşik → toast + forward).
+- *Gerçekleşen dokunma riski: düşük — media meta formatı geriye uyumlu genişledi (eski sidecar'lar okunuyor, testle sabit).*
+- *Testler: 36/36 core (production/media/ingest) + 15/15 galeri webview DOM-stub.*
 
 ### ☐ Dalga B — Görsel onay, seçim ve medya QA
 **Hedef:** İnsan seçimini akışın vatandaşı yapmak.

@@ -507,11 +507,26 @@ Workflow kurarken **Media step (fal.ai)** seç: adım, fal.ai'nin kuyruk API'si 
 
 ### Medya Galerisi
 
-`Agent Farm: Open Media Gallery` (Tasks başlığındaki kamera ikonu): üretilmiş tüm görsel/video/sesler — önizleme, model, girdi, tahmini maliyet, hangi zincirden geldiği. **Re-run** aynı parametrelerle yeniden üretir; **Vary…** girdiyi düzenletip üretir. Tıkla → dosya açılır.
+`Agent Farm: Open Media Gallery` (Tasks başlığındaki kamera ikonu): üretilmiş tüm görsel/video/sesler — önizleme, model, girdi, tahmini maliyet, hangi zincirden geldiği. **Re-run** aynı parametrelerle yeniden üretir; **Vary…** girdiyi düzenletip üretir. **Scene…** varlığı bir prodüksiyon sahnesine bağlar/çözer. Tıkla → dosya açılır.
 
-### Medya Maliyeti
+### Prodüksiyon Sahneleri (Dalga A)
 
-`agentFarm.mediaPricing` kurallarıyla (görsel başına / saniye başına / istek başına USD) her işin tahmini maliyeti hesaplanır, galeriye ve Dashboard'daki **Media cost** kartına işlenir — metin + medya, tüm AI harcaman tek karnede. Varsayılan fiyatlar yer tutucudur: fal.ai fiyat sayfasından doğrula ve ayarla.
+Sahne-sahne ilerleyen üretimler (storyboard → görsel → video → kurgu) için **prodüksiyon manifesti**: ajanın klasöründe `production.json` — proje başlığı + sahneler (her sahnenin durumu: `draft / generating / review / approved`). Elle düzenlenebilir; `Agent Farm: New Production` sihirbazıyla da kurulur (başlık + virgüllü sahne listesi).
+
+- Galeride üstteki **prodüksiyon / sahne / kaynak** filtreleriyle varlıkları süzersin.
+- Seçili prodüksiyonun **sahne durum panosu**: satır = sahne, sütun = varlık türü (görsel/video/ses/diğer); hücreye tıkla → o sahneyi süz, durum rozetine tıkla → durumu değiştir (`production.json`'a yazılır).
+- Media adımı sihirbazında (manifest varsa) üretilen varlıklar bir sahneye bağlanabilir; galeriden **Scene…** ile sonradan da atanır.
+
+### Harici Varlık Alımı (Ingest — Dalga A)
+
+fal.ai dışı üretimler (Higgsfield/Flow'dan elle indirilen klip, Premiere export'u, ComfyUI çıktısı) da sisteme girer:
+
+- **İzlenen klasörler** (`agentFarm.ingestFolders`): her 30 sn'de bir taranır; yeni görsel/video/ses dosyaları galeriye **yerinde** kaydedilir (kopya yok — video büyük). İndirme sürerken dosya büyümesi tamamlanana kadar beklenir; 48 saatten eski dosyalar taranmaz. Klasöre proje/sahne ön-ataması yapılabilir.
+- **Elle kayıt:** `Agent Farm: Register Media Asset(s)…` — dosya(lar) seç, istersen sahneye bağla. Harici varlıklar galeride `external:` rozetiyle işaretlenir; Re-run/Vary onlara uygulanmaz (kaynak parametre yok).
+
+### Medya Maliyeti ve Bütçesi
+
+`agentFarm.mediaPricing` kurallarıyla (görsel başına / saniye başına / istek başına USD) her işin tahmini maliyeti hesaplanır, galeriye ve Dashboard'daki **Media cost** kartına işlenir — metin + medya, tüm AI harcaman tek karnede. Varsayılan fiyatlar yer tutucudur: fal.ai fiyat sayfasından doğrula ve ayarla. **Aylık bütçe uyarısı:** `agentFarm.mediaBudgetMonthUSD` (0 = kapalı) — son 30 günün tahmini medya maliyeti eşiği aşınca ayda bir kez uyarır (webhook forward'a da düşer).
 
 ### Reçeteler
 

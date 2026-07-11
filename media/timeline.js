@@ -24,6 +24,21 @@
     ];
     function actionsFor(name) { return (turnActions && turnActions[name]) || []; }
 
+    // HTML toggle chips for the Live sessions cards — same state/handler as the
+    // swim-lane SVG toggles (shared .af-toggle class + data-agent/data-action).
+    function turnChips(name) {
+        const on = actionsFor(name);
+        const chips = TURN_ACTIONS.map(a => {
+            const sel = on.indexOf(a.id) !== -1;
+            const style = sel
+                ? 'background:var(--vscode-charts-blue,#3794ff);color:var(--vscode-editor-background,#fff);border-color:var(--vscode-charts-blue,#3794ff)'
+                : 'opacity:0.6';
+            return `<span class="af-toggle badge" data-agent="${C.esc(name)}" data-action="${a.id}" title="${C.esc(a.label)} — sıra gelince" style="cursor:pointer;padding:1px 6px;${style}">${a.glyph}</span>`;
+        }).join(' ');
+        return `<div class="sub" style="margin-top:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">` +
+            `<span class="muted small">sıra gelince uyar:</span>${chips}</div>`;
+    }
+
     function isDensity() { return windowMin > DETAIL_MAX_MIN; }
 
     function requestHistory(force) {
@@ -300,6 +315,7 @@
                 </div>
                 <div class="sub" style="margin-top:4px">${s.lastPrompt ? '“' + C.esc(s.lastPrompt) + '”' : '<span class="muted">no prompt yet</span>'}</div>
                 <div class="sub" style="margin-top:6px">${s.prompts} prompts · ${s.toolCalls} tools · ${s.compactions} compactions · ${s.subagentStops} subagents · last event ${relTime(s.lastEventTs)}</div>
+                ${turnChips(s.agentName)}
                 ${s.transcriptPath ? `<div class="btnrow"><button class="secondary" data-open="${C.esc(s.transcriptPath)}">Open transcript</button></div>` : ''}
             </div>`;
         }).join('');
