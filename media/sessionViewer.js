@@ -402,6 +402,8 @@
                     <button class="secondary" id="exportmd" title="Exports what you see: active filters apply; unticked turns are left out">⬇ Export MD${exportOff.size ? ` (${includedTurnCount()}/${(DATA.turns || []).length} turns)` : ''}</button>
                     <button class="secondary" id="refresh">Refresh</button>
                     <button class="secondary" id="raw">Open raw JSONL</button>
+                    <button class="secondary" id="dashboard">Dashboard</button>
+                    <button class="secondary" id="timeline">Live Timeline</button>
                     <button class="secondary" data-guide="oturum-goruntuleyici">? Guide</button>
                 </div>
             </div>
@@ -444,6 +446,8 @@
 
         document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
         document.getElementById('raw').addEventListener('click', () => vscode.postMessage({ type: 'openRaw' }));
+        document.getElementById('dashboard').addEventListener('click', () => vscode.postMessage({ type: 'openDashboard' }));
+        document.getElementById('timeline').addEventListener('click', () => vscode.postMessage({ type: 'openTimeline' }));
         document.getElementById('resume').addEventListener('click', () =>
             vscode.postMessage({ type: 'resume', cwd: DATA.cwd }));
         document.getElementById('exportmd').addEventListener('click', () =>
