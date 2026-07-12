@@ -35,8 +35,8 @@ const sandbox = {
         AFCharts: { esc: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') },
         __DATA__: {
             listener: { state: 'listening', port: 1 },
-            sessions: [{ agentName: 'dev', status: 'waiting-input', prompts: 1, toolCalls: 0, compactions: 0, subagentStops: 0, lastEventTs: Date.now() }],
-            events: [], workflowRuns: [], turnActions: { dev: ['sound'] }
+            sessions: [{ sessionId: 'S1', agentName: 'dev', label: 'dev', status: 'waiting-input', prompts: 1, toolCalls: 0, compactions: 0, subagentStops: 0, startedAt: Date.now() - 60000, lastEventTs: Date.now() }],
+            events: [], workflowRuns: [], turnActions: { dev: ['sound'] }, sessionTurnActions: {}
         },
         addEventListener() { }
     },

@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
 
+## 2.45.0 — One agent, many sessions: the timeline is now multi-session aware (2026-07-12)
+
+Opening the same agent in two sessions at once used to half-work: the Live-sessions list showed two cards, but the swim lanes merged everything into one row and the turn-ready alert toggles applied to both sessions as one. Fixed end to end:
+
+- **Swim lanes: one row per concurrent session.** An agent's sessions are packed into tracks — overlapping sessions get their own rows (`dev #1`, `dev #2`), sequential ones still share a row, so lane count doesn't balloon. Marks and tool segments land in the row of the session that produced them.
+- **Turn-ready alerts: agent default + per-session override.** The swim-lane toggles (♪ ◎ ▣ ▭) remain the persistent *agent default* and are now drawn once per agent. Each Live-sessions card's chips edit *that session only* — turning everything off mutes one session while the default keeps working for the others; a "session override — reset" link returns to the default. Overrides are stored per session id and cleaned up automatically when sessions go away.
+- **Alerts fire per session**: the alert cooldown is keyed by session (two sessions finishing near-simultaneously both alert), and notifications, the modal ("Your turn: dev #2"), toast, permission/stalled warnings and the Needs You queue all use the disambiguated `#k` label.
+- **Session cards** show the session's start time and the `#k` label in the title, so two cards of the same agent are tellable apart.
+- **Agents tree** shows `×n` next to the live status when an agent has several tracked sessions.
+
 ## 2.44.0 — UI language sweep: English only (2026-07-12)
 
 The interface had Turkish leaking into an otherwise English UI (most visibly the swim-lane turn-ready toggle tooltips and the hint line above them). A full sweep fixed every surface:

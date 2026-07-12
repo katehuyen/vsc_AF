@@ -16,7 +16,10 @@
     // Per-agent "YOUR TURN" notification toggles, shown in the swim-lane gutter.
     // Authoritative in the page once seeded from the host; edits round-trip back
     // to globalState so they fire even when this panel is closed.
-    let turnActions = null;    // agentName -> array of action ids
+    let turnActions = null;    // agentName -> array of action ids (agent DEFAULT)
+    // Per-session overrides edited on the Live-sessions cards: sessionId -> ids.
+    // An explicit [] means "mute this session"; a missing key follows the default.
+    let sessionActions = null;
     const TURN_ACTIONS = [
         { id: 'sound', glyph: '♪', label: 'Sound (beep)' },
         { id: 'focus', glyph: '◎', label: 'Focus / bring forward' },
@@ -25,19 +28,24 @@
     ];
     function actionsFor(name) { return (turnActions && turnActions[name]) || []; }
 
-    // HTML toggle chips for the Live sessions cards — same state/handler as the
-    // swim-lane SVG toggles (shared .af-toggle class + data-agent/data-action).
-    function turnChips(name) {
-        const on = actionsFor(name);
+    // HTML toggle chips for one Live-sessions card. Same .af-toggle class as the
+    // swim-lane SVG toggles, but carrying data-session: clicks change only THIS
+    // session, so two open sessions of one agent alert independently.
+    function turnChips(s) {
+        const override = sessionActions ? sessionActions[s.sessionId] : undefined;
+        const on = override !== undefined ? override : actionsFor(s.agentName);
         const chips = TURN_ACTIONS.map(a => {
             const sel = on.indexOf(a.id) !== -1;
             const style = sel
                 ? 'background:var(--vscode-charts-blue,#3794ff);color:var(--vscode-editor-background,#fff);border-color:var(--vscode-charts-blue,#3794ff)'
                 : 'opacity:0.6';
-            return `<span class="af-toggle badge" data-agent="${C.esc(name)}" data-action="${a.id}" title="${C.esc(a.label)} — when it's your turn" style="cursor:pointer;padding:1px 6px;${style}">${a.glyph}</span>`;
+            return `<span class="af-toggle badge" data-agent="${C.esc(s.agentName)}" data-session="${C.esc(s.sessionId)}" data-action="${a.id}" title="${C.esc(a.label)} — when it's this session's turn (changes this session only; the swim-lane toggles set the agent default)" style="cursor:pointer;padding:1px 6px;${style}">${a.glyph}</span>`;
         }).join(' ');
+        const mode = override !== undefined
+            ? `<span class="af-reset muted small" data-session="${C.esc(s.sessionId)}" style="cursor:pointer;text-decoration:underline" title="Drop this session's override and follow the agent default again">session override — reset</span>`
+            : `<span class="muted small">(agent default)</span>`;
         return `<div class="sub" style="margin-top:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">` +
-            `<span class="muted small">alert on your turn:</span>${chips}</div>`;
+            `<span class="muted small">alert on your turn:</span>${chips} ${mode}</div>`;
     }
 
     function isDensity() { return windowMin > DETAIL_MAX_MIN; }
@@ -97,39 +105,86 @@
         return Math.round(m / 60) + 'h ago';
     }
 
+    // One row per CONCURRENT session: each agent's sessions are packed into
+    // tracks — sessions that overlap in time get separate rows ("dev #1",
+    // "dev #2"), sequential ones share a row, so two open sessions of the same
+    // agent no longer draw on top of each other.
     function buildLanes(events, now, winMs) {
         const from = now - winMs;
-        const lanes = new Map(); // agentName -> {segments, marks}
-        const open = new Map();  // sessionId -> {start, tool, lane}
+        const bySession = new Map(); // sessionId -> {agent, first, last, live, segments, marks}
+        const open = new Map();      // sessionId -> {start, tool, file}
 
-        const laneOf = name => {
-            if (!lanes.has(name)) { lanes.set(name, { segments: [], marks: [] }); }
-            return lanes.get(name);
+        const sessOf = (id, agent, ts) => {
+            let s = bySession.get(id);
+            if (!s) {
+                s = { agent, first: ts, last: ts, live: false, segments: [], marks: [] };
+                bySession.set(id, s);
+            }
+            s.first = Math.min(s.first, ts);
+            s.last = Math.max(s.last, ts);
+            return s;
         };
 
-        // Seed lanes with live sessions so quiet agents still show a row.
-        for (const s of DATA.sessions) { laneOf(s.agentName); }
+        // Live sessions always get a row, stretched to "now" so concurrent ones
+        // can never share a track even while quiet.
+        for (const ls of DATA.sessions) {
+            const s = sessOf(ls.sessionId, ls.agentName, ls.startedAt || now);
+            s.last = now;
+            s.live = true;
+        }
 
         for (const e of events) {
-            const name = e.agentName || e.sessionId.slice(0, 8);
-            const lane = laneOf(name);
+            const s = sessOf(e.sessionId, e.agentName || e.sessionId.slice(0, 8), e.ts);
             if (e.kind === 'toolStart') {
-                open.set(e.sessionId, { start: e.ts, tool: e.tool || '?', lane, file: e.transcriptPath || '' });
+                open.set(e.sessionId, { start: e.ts, tool: e.tool || '?', file: e.transcriptPath || '' });
             } else if (e.kind === 'toolEnd') {
                 const o = open.get(e.sessionId);
                 if (o) {
                     open.delete(e.sessionId);
                     if (e.ts >= from) {
-                        o.lane.segments.push({ start: Math.max(o.start, from), end: e.ts, tool: o.tool, file: o.file });
+                        s.segments.push({ start: Math.max(o.start, from), end: e.ts, tool: o.tool, file: o.file });
                     }
                 }
             } else if (e.ts >= from) {
-                lane.marks.push({ ts: e.ts, kind: e.kind, detail: e.detail || '', tool: e.tool || '', file: e.transcriptPath || '' });
+                s.marks.push({ ts: e.ts, kind: e.kind, detail: e.detail || '', tool: e.tool || '', file: e.transcriptPath || '' });
             }
         }
         // Tools still running: draw to "now".
-        for (const o of open.values()) {
-            o.lane.segments.push({ start: Math.max(o.start, from), end: now, tool: o.tool, live: true, file: o.file });
+        for (const [sid, o] of open) {
+            const s = bySession.get(sid);
+            if (s) {
+                s.segments.push({ start: Math.max(o.start, from), end: now, tool: o.tool, live: true, file: o.file });
+                s.last = now;
+            }
+        }
+
+        // Group visible sessions per agent (keep first-seen agent order), then
+        // pack each agent's sessions into tracks: reuse a track only when the
+        // previous session on it ended before this one starts.
+        const byAgent = new Map();
+        for (const s of bySession.values()) {
+            if (!s.live && s.last < from) { continue; } // nothing to show in range
+            if (!byAgent.has(s.agent)) { byAgent.set(s.agent, []); }
+            byAgent.get(s.agent).push(s);
+        }
+        const lanes = [];
+        for (const [agent, list] of byAgent) {
+            list.sort((a, b) => a.first - b.first);
+            const tracks = [];
+            for (const s of list) {
+                let t = tracks.find(tr => tr.end <= s.first);
+                if (!t) { t = { end: 0, segments: [], marks: [] }; tracks.push(t); }
+                t.end = Math.max(t.end, s.last);
+                t.segments.push(...s.segments);
+                t.marks.push(...s.marks);
+            }
+            tracks.forEach((t, i) => lanes.push({
+                agent,
+                name: tracks.length > 1 ? `${agent} #${i + 1}` : agent,
+                firstOfAgent: i === 0,
+                segments: t.segments,
+                marks: t.marks
+            }));
         }
         return lanes;
     }
@@ -146,10 +201,9 @@
     };
 
     function lanesSvg(lanes, now, winMs) {
-        const names = [...lanes.keys()];
-        if (!names.length) { return '<p class="muted">No lanes yet.</p>'; }
+        if (!lanes.length) { return '<p class="muted">No lanes yet.</p>'; }
         const W = 900, labelW = 100, rowH = 46, padT = 22;
-        const H = padT + names.length * rowH + 10;
+        const H = padT + lanes.length * rowH + 10;
         const from = now - winMs;
         const x = ts => labelW + ((ts - from) / winMs) * (W - labelW - 8);
         let out = '';
@@ -162,21 +216,22 @@
                 `<text x="${xx}" y="${padT - 10}" font-size="9" text-anchor="middle" fill="currentColor" opacity="0.55">${fmtClock(ts)}</text>`;
         }
 
-        names.forEach((name, i) => {
+        lanes.forEach((lane, i) => {
             const y = padT + i * rowH;
-            const lane = lanes.get(name);
-            // Gutter: agent name on top, the per-agent YOUR-TURN toggles (♪ ◎ ▣ ▭)
-            // stacked on their own row beneath it — the lane is tall enough for both.
+            const name = lane.name;
+            // Gutter: row label on top; the agent-default YOUR-TURN toggles
+            // (♪ ◎ ▣ ▭) only on the agent's FIRST row — they cover every session
+            // of that agent (per-session overrides live on the session cards).
             out += `<text x="4" y="${y + 14}" font-size="11" font-weight="600" text-anchor="start" fill="currentColor" opacity="0.85">${C.esc(name.length > 14 ? name.slice(0, 13) + '…' : name)}</text>`;
             const ty = y + 23;
-            TURN_ACTIONS.forEach((a, ai) => {
+            if (lane.firstOfAgent) { TURN_ACTIONS.forEach((a, ai) => {
                 const gx = 4 + ai * 18;
-                const on = actionsFor(name).indexOf(a.id) !== -1;
-                out += `<g class="af-toggle" data-agent="${C.esc(name)}" data-action="${a.id}" style="cursor:pointer">` +
+                const on = actionsFor(lane.agent).indexOf(a.id) !== -1;
+                out += `<g class="af-toggle" data-agent="${C.esc(lane.agent)}" data-action="${a.id}" style="cursor:pointer">` +
                     `<rect x="${gx}" y="${ty}" width="15" height="15" rx="3" fill="${on ? 'var(--vscode-charts-blue, #3794ff)' : 'transparent'}" stroke="currentColor" stroke-opacity="${on ? '0' : '0.45'}" opacity="${on ? '0.95' : '1'}"/>` +
                     `<text x="${gx + 7.5}" y="${ty + 11.5}" font-size="10.5" text-anchor="middle" fill="${on ? 'var(--vscode-editor-background, #fff)' : 'currentColor'}" opacity="${on ? '1' : '0.55'}" style="pointer-events:none">${a.glyph}</text>` +
-                    `<title>${C.esc(a.label)} — when ${C.esc(name)} hits YOUR TURN</title></g>`;
-            });
+                    `<title>${C.esc(a.label)} — agent default for every ${C.esc(lane.agent)} session hitting YOUR TURN (override one session on its card below)</title></g>`;
+            }); }
             out += `<line x1="${labelW}" y1="${y + rowH / 2}" x2="${W - 8}" y2="${y + rowH / 2}" stroke="currentColor" opacity="0.1"/>`;
             for (const seg of lane.segments) {
                 const x1 = x(seg.start), x2 = Math.max(x(seg.end), x1 + 2);
@@ -295,6 +350,7 @@
         const winMs = windowMin * 60000;
         const listener = DATA.listener;
         if (turnActions === null) { turnActions = Object.assign({}, DATA.turnActions || {}); }
+        if (sessionActions === null) { sessionActions = Object.assign({}, DATA.sessionTurnActions || {}); }
 
         let listenerHtml;
         if (listener.state === 'listening') {
@@ -311,12 +367,12 @@
             const meta = STATUS_META[s.status] || STATUS_META.idle;
             return `<div class="card" style="border-left:3px solid ${meta.color}">
                 <div class="spread">
-                    <h3 style="margin:0">${C.esc(s.agentName)}${s.source ? ` <span class="badge" title="external CLI — open/closed tracked; richer events only if the CLI is wired to the hook bridge (Copy CLI Hook Bridge Command); no cost tracking">${C.esc(s.source)}</span>` : ''}</h3>
+                    <h3 style="margin:0">${C.esc(s.label || s.agentName)}${s.source ? ` <span class="badge" title="external CLI — open/closed tracked; richer events only if the CLI is wired to the hook bridge (Copy CLI Hook Bridge Command); no cost tracking">${C.esc(s.source)}</span>` : ''}</h3>
                     <span class="badge" style="color:${meta.color};border-color:${meta.color}">${meta.label}${s.currentTool ? ' · ' + C.esc(s.currentTool) : ''}</span>
                 </div>
                 <div class="sub" style="margin-top:4px">${s.lastPrompt ? '“' + C.esc(s.lastPrompt) + '”' : `<span class="muted">${s.source ? 'external CLI — lifecycle only' : 'no prompt yet'}</span>`}</div>
-                <div class="sub" style="margin-top:6px">${s.prompts} prompts · ${s.toolCalls} tools · ${s.compactions} compactions · ${s.subagentStops} subagents · last event ${relTime(s.lastEventTs)}</div>
-                ${turnChips(s.agentName)}
+                <div class="sub" style="margin-top:6px">started ${fmtClock(s.startedAt)} · ${s.prompts} prompts · ${s.toolCalls} tools · ${s.compactions} compactions · ${s.subagentStops} subagents · last event ${relTime(s.lastEventTs)}</div>
+                ${turnChips(s)}
                 ${s.transcriptPath ? `<div class="btnrow"><button class="secondary" data-open="${C.esc(s.transcriptPath)}" data-ts="${s.lastEventTs || 0}">Open transcript</button></div>` : ''}
             </div>`;
         }).join('');
@@ -379,7 +435,7 @@
             </div>
             ${emptyHint}
             <h2>${density ? 'Activity density' : 'Swim lanes'}</h2>
-            ${density ? '' : `<div class="muted small" style="margin:-4px 0 6px">Left toggles — when an agent hits <b>YOUR TURN</b>: ${TURN_ACTIONS.map(a => a.glyph + ' ' + a.label.split(' ')[0].toLowerCase()).join(' · ')}. Pick per agent (they fire even while this panel is closed).</div>`}
+            ${density ? '' : `<div class="muted small" style="margin:-4px 0 6px">Left toggles — when an agent hits <b>YOUR TURN</b>: ${TURN_ACTIONS.map(a => a.glyph + ' ' + a.label.split(' ')[0].toLowerCase()).join(' · ')}. Agent default for all of its sessions (fires even while this panel is closed); override a single session on its card below. Concurrent sessions of one agent get their own #1/#2 rows.</div>`}
             <div class="card chartbox">${lanesHtml}<div class="legend">${legend}</div></div>
             ${workflowRunsSvg(runsData, now, winMs)}
             <h2>Live sessions (${DATA.sessions.length})</h2>
@@ -413,11 +469,31 @@
             }));
         document.querySelectorAll('.af-toggle').forEach(el =>
             el.addEventListener('click', () => {
-                const name = el.dataset.agent, act = el.dataset.action;
-                const cur = new Set(actionsFor(name));
-                if (cur.has(act)) { cur.delete(act); } else { cur.add(act); }
-                if (cur.size) { turnActions[name] = [...cur]; } else { delete turnActions[name]; }
-                vscode.postMessage({ type: 'setTurnActions', map: turnActions });
+                const act = el.dataset.action;
+                if (el.dataset.session) {
+                    // Card chip: session-only override (an empty set is kept —
+                    // it means "mute this session despite the agent default").
+                    const sid = el.dataset.session;
+                    const base = sessionActions[sid] !== undefined
+                        ? sessionActions[sid] : actionsFor(el.dataset.agent);
+                    const cur = new Set(base);
+                    if (cur.has(act)) { cur.delete(act); } else { cur.add(act); }
+                    sessionActions[sid] = [...cur];
+                    vscode.postMessage({ type: 'setSessionTurnActions', map: sessionActions });
+                } else {
+                    // Swim-lane toggle: the agent default.
+                    const name = el.dataset.agent;
+                    const cur = new Set(actionsFor(name));
+                    if (cur.has(act)) { cur.delete(act); } else { cur.add(act); }
+                    if (cur.size) { turnActions[name] = [...cur]; } else { delete turnActions[name]; }
+                    vscode.postMessage({ type: 'setTurnActions', map: turnActions });
+                }
+                render();
+            }));
+        document.querySelectorAll('.af-reset').forEach(el =>
+            el.addEventListener('click', () => {
+                delete sessionActions[el.dataset.session];
+                vscode.postMessage({ type: 'setSessionTurnActions', map: sessionActions });
                 render();
             }));
     }

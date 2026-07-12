@@ -78,7 +78,8 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
             const parts: string[] = [];
             if (liveStatus && liveStatus.status !== 'idle' && liveStatus.status !== 'ended') {
                 parts.push(LIVE_STATUS_LABEL[liveStatus.status] +
-                    (liveStatus.tool ? ` (${liveStatus.tool})` : ''));
+                    (liveStatus.tool ? ` (${liveStatus.tool})` : '') +
+                    (liveStatus.sessions > 1 ? ` ×${liveStatus.sessions}` : ''));
             } else {
                 parts.push(active ? 'ACTIVE' : (latest ? relTime(latest.mtime) : 'no sessions'));
             }

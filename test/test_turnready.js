@@ -38,7 +38,8 @@ const cfg = {
     notifyPermission: false, notifyStuck: false, notifyTurnEnd: false,
     onTurnReady: (s) => fires.push(s.agentName || s.sessionId)
 };
-const live = new LiveMonitor(() => cfg, () => ({ agentId: 'a1', agentName: 'dev' }));
+const live = new LiveMonitor(() => cfg, (cwd) =>
+    cwd === '/solo' ? { agentId: 'b1', agentName: 'solo' } : { agentId: 'a1', agentName: 'dev' });
 
 const ev = (name, extra) => live.handle(Object.assign({ session_id: 'S1', cwd: '/x', hook_event_name: name }, extra));
 
@@ -71,6 +72,22 @@ ev2('SessionStart', {});
 ev2('UserPromptSubmit', { prompt: 'q' });
 ev2('Notification', { message: 'idle — waiting for input' });
 eq('waiting notification fires', fires.length, 3);
+
+// ---- multi-session of the same agent: labels + aggregate session count ----
+// S1 and S2 both resolve to agent 'dev' → labelOf must disambiguate with #k
+// (ordered by start time), and agentStatus must report how many are tracked.
+const sess = live.sessions();
+const s1 = sess.find(s => s.sessionId === 'S1');
+const s2 = sess.find(s => s.sessionId === 'S2');
+eq('labelOf adds #1 for the older session', live.labelOf(s1), 'dev #1');
+eq('labelOf adds #2 for the newer session', live.labelOf(s2), 'dev #2');
+eq('agentStatus counts sessions', live.agentStatus('a1').sessions, 2);
+
+// An agent with a single session keeps its plain name (no #1 noise).
+live.handle({ session_id: 'S3', cwd: '/solo', hook_event_name: 'SessionStart' });
+const s3 = live.sessions().find(s => s.sessionId === 'S3');
+eq('single session keeps plain label', live.labelOf(s3), 'solo');
+eq('solo agentStatus counts one', live.agentStatus('b1').sessions, 1);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 Module._load = origLoad;

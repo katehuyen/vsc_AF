@@ -338,17 +338,38 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // ---- Turn-ready notifications (per-agent, opt-in via timeline swim-lane toggles) ----
     // The swim lane for each agent carries four toggles: ♪ sound, ◎ focus, ▣ modal,
     // ▭ toast. Whatever an agent has selected fires when it crosses INTO YOUR TURN.
+    // Those are the AGENT DEFAULT; a Live-sessions card can override them for one
+    // session only (keyed by sessionId — an empty override means "mute this session").
     const AGENT_CLI_KEY = 'agentfarm.agentCli'; // E1: last CLI used per agent for "Start Session With…"
     const TURN_ACTIONS_KEY = 'agentfarm.turnActions';
+    const TURN_ACTIONS_SESSION_KEY = 'agentfarm.turnActionsSession';
     const getTurnActions = (): Record<string, string[]> =>
         context.globalState.get<Record<string, string[]>>(TURN_ACTIONS_KEY, {});
     const setTurnActions = (map: Record<string, string[]>): void => {
         void context.globalState.update(TURN_ACTIONS_KEY, map);
     };
+    const getSessionTurnActions = (): Record<string, string[]> =>
+        context.globalState.get<Record<string, string[]>>(TURN_ACTIONS_SESSION_KEY, {});
+    const pruneSessionTurnActions = (map: Record<string, string[]>): Record<string, string[]> => {
+        // Session ids are ephemeral — keep only overrides for sessions still tracked.
+        const alive = new Set(live.sessions().map(s => s.sessionId));
+        const pruned: Record<string, string[]> = {};
+        for (const [id, acts] of Object.entries(map)) {
+            if (alive.has(id) && Array.isArray(acts)) { pruned[id] = acts; }
+        }
+        return pruned;
+    };
+    const setSessionTurnActions = (map: Record<string, string[]>): void => {
+        void context.globalState.update(TURN_ACTIONS_SESSION_KEY, pruneSessionTurnActions(map));
+    };
+    // Sweep once after the live store has rebuilt its sessions (reload path).
+    const turnPruneTimer = setTimeout(
+        () => setSessionTurnActions(getSessionTurnActions()), 8000);
+    context.subscriptions.push({ dispose: () => clearTimeout(turnPruneTimer) });
     const showTimeline = (): void => {
         TimelinePanel.show({
             extensionUri: context.extensionUri, live, tasks: taskManager,
-            getTurnActions, setTurnActions
+            getTurnActions, setTurnActions, getSessionTurnActions, setSessionTurnActions
         });
     };
     const turnFireCooldown = new Map<string, number>();
@@ -364,13 +385,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         } catch { /* best effort — a missing player must never break the flow */ }
     };
     function fireTurnReady(s: LiveSession): void {
-        const name = s.agentName ?? s.sessionId.slice(0, 8);
-        const actions = getTurnActions()[name] ?? [];
+        const name = live.labelOf(s);
+        // Session override wins (an explicit [] mutes this session); otherwise
+        // the agent default set on the swim-lane toggles applies.
+        const actions = getSessionTurnActions()[s.sessionId]
+            ?? getTurnActions()[s.agentName ?? s.sessionId.slice(0, 8)] ?? [];
         if (!actions.length) { return; }
         // Coalesce rapid re-entries into waiting-input so one turn = one alert.
+        // Keyed by session — two sessions of the same agent alert independently.
         const now = Date.now();
-        if (now - (turnFireCooldown.get(name) ?? 0) < 3000) { return; }
-        turnFireCooldown.set(name, now);
+        if (now - (turnFireCooldown.get(s.sessionId) ?? 0) < 3000) { return; }
+        turnFireCooldown.set(s.sessionId, now);
 
         if (actions.includes('sound')) { playTurnSound(); }
         if (actions.includes('focus')) {
@@ -1304,7 +1329,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // G1: the Needs You queue is assembled from live state + approvals + insights + parked tasks.
     const buildNeeds = (): NeedItem[] => buildNeedsQueue({
-        liveSessions: live.sessions(),
+        // labelOf adds "#k" when one agent runs several sessions, so two
+        // waiting sessions of the same agent stay tellable apart in the queue.
+        liveSessions: live.sessions().map(s => ({ ...s, agentName: live.labelOf(s) })),
         approvals: approvalQueue.list(),
         insights,
         deferredTasks: taskManager.tasks

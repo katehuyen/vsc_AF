@@ -10,6 +10,9 @@ export interface TimelineDeps {
     /** Per-agent turn-ready notification actions (agentName → action ids). */
     getTurnActions: () => Record<string, string[]>;
     setTurnActions: (map: Record<string, string[]>) => void;
+    /** Per-session overrides (sessionId → action ids; [] = mute that session). */
+    getSessionTurnActions: () => Record<string, string[]>;
+    setSessionTurnActions: (map: Record<string, string[]>) => void;
 }
 
 // Detail ranges (≤24h — the monitor keeps 24h in memory) render from this
@@ -27,6 +30,8 @@ function buildData(deps: TimelineDeps): Record<string, unknown> {
         sessions: deps.live.sessions().map(s => ({
             sessionId: s.sessionId,
             agentName: s.agentName ?? s.sessionId.slice(0, 8),
+            // "name #k" when the agent runs several sessions at once.
+            label: deps.live.labelOf(s),
             source: s.source,
             status: s.status,
             currentTool: s.currentTool,
@@ -41,7 +46,8 @@ function buildData(deps: TimelineDeps): Record<string, unknown> {
         })),
         events: deps.live.events(DATA_WINDOW_MS),
         workflowRuns: deps.tasks.workflowRuns(DATA_WINDOW_MS),
-        turnActions: deps.getTurnActions()
+        turnActions: deps.getTurnActions(),
+        sessionTurnActions: deps.getSessionTurnActions()
     };
 }
 
@@ -115,6 +121,11 @@ export class TimelinePanel {
             case 'setTurnActions':
                 if (msg.map && typeof msg.map === 'object') {
                     this.deps.setTurnActions(msg.map as Record<string, string[]>);
+                }
+                break;
+            case 'setSessionTurnActions':
+                if (msg.map && typeof msg.map === 'object') {
+                    this.deps.setSessionTurnActions(msg.map as Record<string, string[]>);
                 }
                 break;
             case 'history': {

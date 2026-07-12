@@ -370,6 +370,24 @@ export class LiveMonitor implements vscode.Disposable {
 
     // ---------- Event handling ----------
 
+    /**
+     * Display label for a session: the agent name, plus a "#k" ordinal when the
+     * same agent has more than one tracked session (ordered by start time), so
+     * concurrent sessions of one agent stay distinguishable in notifications,
+     * session cards and the needs queue.
+     */
+    labelOf(s: LiveSession): string {
+        const name = s.agentName ?? s.sessionId.slice(0, 8);
+        const key = s.agentId ?? s.agentName;
+        if (!key) { return name; }
+        const siblings = [...this.sessionsMap.values()]
+            .filter(o => (o.agentId ?? o.agentName) === key)
+            .sort((a, b) => a.startedAt - b.startedAt || a.sessionId.localeCompare(b.sessionId));
+        if (siblings.length < 2) { return name; }
+        const idx = siblings.findIndex(o => o.sessionId === s.sessionId);
+        return idx >= 0 ? `${name} #${idx + 1}` : name;
+    }
+
     private session(payload: HookPayload): LiveSession {
         const id = payload.session_id ?? 'unknown';
         let s = this.sessionsMap.get(id);
@@ -457,9 +475,9 @@ export class LiveMonitor implements vscode.Disposable {
                 if (/permission|approv|allow/i.test(msg)) {
                     s.status = 'waiting-permission';
                     this.push(s, 'permission', undefined, truncate(msg, 90));
-                    cfg.forward?.('permission', `${s.agentName ?? s.sessionId.slice(0, 8)}: ${truncate(msg, 120)}`);
+                    cfg.forward?.('permission', `${this.labelOf(s)}: ${truncate(msg, 120)}`);
                     if (cfg.notifyPermission) {
-                        this.notify('warn', `${s.agentName ?? s.sessionId.slice(0, 8)} is waiting for permission`, msg);
+                        this.notify('warn', `${this.labelOf(s)} is waiting for permission`, msg);
                     }
                 } else if (/waiting|input|idle/i.test(msg)) {
                     s.status = 'waiting-input';
@@ -474,7 +492,7 @@ export class LiveMonitor implements vscode.Disposable {
                 s.currentTool = undefined;
                 this.push(s, 'stop');
                 if (cfg.notifyTurnEnd) {
-                    this.notify('info', `${s.agentName ?? s.sessionId.slice(0, 8)} finished its turn`, s.lastPrompt ?? '');
+                    this.notify('info', `${this.labelOf(s)} finished its turn`, s.lastPrompt ?? '');
                 }
                 break;
             case 'SubagentStop':
@@ -524,12 +542,12 @@ export class LiveMonitor implements vscode.Disposable {
                 if (!s.notifiedStuck) {
                     s.notifiedStuck = true;
                     cfg.forward?.('stalled',
-                        `${s.agentName ?? s.sessionId.slice(0, 8)} looks stalled` +
+                        `${this.labelOf(s)} looks stalled` +
                         (s.currentTool ? ` (last tool: ${s.currentTool})` : ''));
                     if (cfg.notifyStuck) {
                         this.notify(
                             'warn',
-                            `${s.agentName ?? s.sessionId.slice(0, 8)} looks stalled`,
+                            `${this.labelOf(s)} looks stalled`,
                             `No hook events for ${Math.round((now - s.lastEventTs) / 60000)} min` +
                             (s.currentTool ? ` (last tool: ${s.currentTool})` : '')
                         );
@@ -568,18 +586,20 @@ export class LiveMonitor implements vscode.Disposable {
         return !!last && Date.now() - last.ts < windowMs;
     }
 
-    /** Aggregated live status for one agent (highest urgency wins). */
-    agentStatus(agentId: string): { status: LiveStatus; tool?: string } | undefined {
+    /** Aggregated live status for one agent (highest urgency wins); `sessions` = how many are tracked. */
+    agentStatus(agentId: string): { status: LiveStatus; tool?: string; sessions: number } | undefined {
         const rank: Record<LiveStatus, number> = {
             'waiting-permission': 0, stalled: 1, tool: 2, working: 3,
             'waiting-input': 4, idle: 5, ended: 6
         };
         let best: LiveSession | undefined;
+        let count = 0;
         for (const s of this.sessionsMap.values()) {
             if (s.agentId !== agentId) { continue; }
+            count++;
             if (!best || rank[s.status] < rank[best.status]) { best = s; }
         }
-        return best ? { status: best.status, tool: best.currentTool } : undefined;
+        return best ? { status: best.status, tool: best.currentTool, sessions: count } : undefined;
     }
 
     waitingCount(): number {
