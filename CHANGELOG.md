@@ -1,6 +1,16 @@
 # Changelog
 
-All notable changes to Agent Farm. Detailed Turkish release notes live in the built-in guide (`Agent Farm: Open Guide` → Sürüm Notları).
+All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
+
+## 2.46.0 — Bilingual guide: English by default, Türkçe selectable (2026-07-12)
+
+The in-app help — the surfaces a user actually opens — is now bilingual, English first. The UI was already English-only; this brings the *help documents* the guide renders into the same default while keeping Turkish one click away, and leaves room for more languages.
+
+- **Guide, Quick Start and Examples are bilingual.** New `docs/BLUEPRINT.en.md` and `docs/ORNEKLER.en.md` are full English translations of the Turkish originals. The guide resolves the doc by language (`BLUEPRINT.<lang>.md`, falling back to Turkish if a translation is missing), so `Open Guide` / `Quick Start` / `Open Examples` all follow the chosen language.
+- **New setting `agentFarm.guideLanguage`** (`en` / `tr`, default `en`) plus an **EN | TR toggle inside the guide panel** — clicking it persists the choice globally and re-renders in place. Adding a language later is: author `BLUEPRINT.<lang>.md`, extend the doc registry + the setting enum.
+- **Stable deep-link anchors across languages.** `renderMarkdown` now supports an explicit `{#id}` on a heading. The ~27 tokens the code deep-links to (health insight `guideAnchor`s, panel `openGuide` calls, `quickStart`) are pinned in the English doc with `{#token}`; the Turkish original is untouched and keeps resolving them by natural slug. New regression test `test_guide_anchors.js` guards the contract (32 files · 599 passed).
+- **Getting-started walkthrough is English by default.** The five walkthrough pages are wired to `.en.md` in `package.json` (VS Code walkthrough media is static, so it can't switch per user); the Turkish originals are preserved untouched as `*.tr.md` siblings.
+- **The Turkish documents are untouched** — English versions are added alongside, never in place. Dev-internal docs that a user doesn't reach in normal use (Development Plan, Ultra Roadmap, media roadmap, handoff) stay Turkish-only.
 
 ## 2.45.0 — One agent, many sessions: the timeline is now multi-session aware (2026-07-12)
 

@@ -2344,8 +2344,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         vscode.commands.registerCommand('agentfarm.openExamples', (anchor?: string) => {
             GuidePanel.show(context.extensionUri,
-                typeof anchor === 'string' ? anchor : undefined,
-                'ORNEKLER.tr.md', 'Agent Farm — Örnek Kullanımlar');
+                typeof anchor === 'string' ? anchor : undefined, 'examples');
         }),
 
         vscode.commands.registerCommand('agentfarm.openRoadmap', (anchor?: string) => {

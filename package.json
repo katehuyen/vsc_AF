@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.45.0",
+  "version": "2.46.0",
   "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
@@ -89,7 +89,7 @@
             "title": "1 · Introduce your agents",
             "description": "Agent Farm treats every folder with a CLAUDE.md under your root folders as an agent.\n[Add Agent Root](command:agentfarm.addAgentRoot)",
             "media": {
-              "markdown": "docs/walkthrough/01-agents.md"
+              "markdown": "docs/walkthrough/01-agents.en.md"
             },
             "completionEvents": [
               "onCommand:agentfarm.addAgentRoot"
@@ -100,7 +100,7 @@
             "title": "2 · Install the live hooks",
             "description": "Hooks forward every agent event (prompt, tool, permission wait) to the local listener — the timeline and notifications run on them.\n[Install Live Hooks](command:agentfarm.installHooks)",
             "media": {
-              "markdown": "docs/walkthrough/02-hooks.md"
+              "markdown": "docs/walkthrough/02-hooks.en.md"
             },
             "completionEvents": [
               "onCommand:agentfarm.installHooks"
@@ -111,7 +111,7 @@
             "title": "3 · Open the Dashboard",
             "description": "Costs, health and the Farm Status card — which subsystem is dormant, at a glance.\n[Open Dashboard](command:agentfarm.openDashboard)",
             "media": {
-              "markdown": "docs/walkthrough/03-dashboard.md"
+              "markdown": "docs/walkthrough/03-dashboard.en.md"
             },
             "completionEvents": [
               "onCommand:agentfarm.openDashboard"
@@ -122,7 +122,7 @@
             "title": "4 · Set up your first automation",
             "description": "A working example in one click: an inbox duty, a morning briefing or a two-agent chain.\n[Set Up Example Automation](command:agentfarm.setupExample)",
             "media": {
-              "markdown": "docs/walkthrough/04-example.md"
+              "markdown": "docs/walkthrough/04-example.en.md"
             },
             "completionEvents": [
               "onCommand:agentfarm.setupExample"
@@ -131,9 +131,9 @@
           {
             "id": "guide",
             "title": "5 · Explore the guide",
-            "description": "The built-in guide (Turkish, 25 scenarios): media pipeline, webhook bridge, multi-agent chains…\n[Open Guide](command:agentfarm.openGuide)",
+            "description": "The built-in guide (English by default, Türkçe selectable; 25 scenarios): media pipeline, webhook bridge, multi-agent chains…\n[Open Guide](command:agentfarm.openGuide)",
             "media": {
-              "markdown": "docs/walkthrough/05-guide.md"
+              "markdown": "docs/walkthrough/05-guide.en.md"
             },
             "completionEvents": [
               "onCommand:agentfarm.openGuide"
@@ -1528,6 +1528,19 @@
     "configuration": {
       "title": "Agent Farm",
       "properties": {
+        "agentFarm.guideLanguage": {
+          "type": "string",
+          "enum": [
+            "en",
+            "tr"
+          ],
+          "enumDescriptions": [
+            "English",
+            "Türkçe"
+          ],
+          "default": "en",
+          "description": "Language for the in-app help surfaces (Guide, Quick Start, Examples). English by default; choose Türkçe for Turkish. You can also switch from the language toggle inside the guide panel. More languages can be added over time."
+        },
         "agentFarm.agentRoots": {
           "type": "array",
           "items": {
