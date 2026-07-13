@@ -167,7 +167,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
                 msgTokens = totalTokens(u);
                 msgCost = typeof line.costUSD === 'number'
                     ? line.costUSD
-                    : deps.getPricing().costFor(msg.model ?? '', u);
+                    : deps.getPricing().costFor(msg.model ?? '', u, ts);
                 cost += msgCost;
                 if (inTurn > 0 && (msgTokens || msgCost)) {
                     const t = turnTotals[inTurn] ?? (turnTotals[inTurn] = { tokens: 0, cost: 0 });

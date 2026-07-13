@@ -7,7 +7,7 @@ import { indexedMemoryNames, memoryUsage } from '../core/memusage';
 import { readAgentSkills, skillUsage } from '../core/skills';
 import { buildAgentTaskStats, TaskRecord } from '../core/taskstats';
 import { SessionIndex } from '../core/sessions';
-import { totalTokens } from '../core/pricing';
+import { PriceRule, PricingEngine, totalTokens } from '../core/pricing';
 import { safeReadFile } from '../core/util';
 import { htmlShell } from './base';
 
@@ -16,6 +16,7 @@ export interface AgentDetailDeps {
     getAgents(): AgentInfo[];
     index: SessionIndex;
     getInsights(): Insight[];
+    getPricing(): PricingEngine;
     contextBudget(): number;
     /** live task list merged with the task-history archive (see taskstats). */
     taskRecords(): TaskRecord[];
@@ -138,6 +139,8 @@ function buildData(agent: AgentInfo, deps: AgentDetailDeps): Record<string, unkn
         daily,
         tools,
         models,
+        // Global model pricing (USD / 1M tokens) — editable from this page.
+        pricing: deps.getPricing().currentRules(),
         insights: deps.getInsights()
             .filter(i => i.agentId === agent.id)
             .map(i => ({
@@ -249,6 +252,26 @@ export class AgentDetailPanel {
             case 'openGuide':
                 vscode.commands.executeCommand('agentfarm.openGuide', msg.anchor);
                 break;
+            case 'savePricing': {
+                // Sanitise the rows and write them to the current-rules setting.
+                // The config-change listener records a dated history entry, so
+                // this only re-prices sessions from now on — past costs stay put.
+                const raw = Array.isArray(msg.rules) ? msg.rules as Record<string, unknown>[] : [];
+                const rules: PriceRule[] = raw
+                    .map(r => ({
+                        match: String(r.match ?? '').trim(),
+                        input: Number(r.input) || 0,
+                        output: Number(r.output) || 0,
+                        cacheWrite: Number(r.cacheWrite) || 0,
+                        cacheRead: Number(r.cacheRead) || 0
+                    }))
+                    .filter(r => r.match);
+                void vscode.workspace.getConfiguration('agentFarm')
+                    .update('pricing', rules, vscode.ConfigurationTarget.Global)
+                    .then(() => vscode.window.showInformationMessage(
+                        'Agent Farm: model rates saved — new sessions use them; earlier costs stay as recorded.'));
+                break;
+            }
         }
     }
 

@@ -4,9 +4,12 @@
     const vscode = acquireVsCodeApi();
     const C = window.AFCharts;
     let DATA = window.__DATA__;
+    // While the pricing editor is open we skip background re-renders so live
+    // refreshes don't wipe half-typed rates. DATA still updates silently.
+    let suspendRender = false;
 
     window.addEventListener('message', ev => {
-        if (ev.data.type === 'data') { DATA = ev.data.data; render(); }
+        if (ev.data.type === 'data') { DATA = ev.data.data; if (!suspendRender) render(); }
     });
 
     function relTime(ts) {
@@ -145,6 +148,46 @@
                 <td class="num"><strong>${C.fmtUSD(s.cost)}</strong></td>
             </tr>`).join('');
 
+        // Model pricing editor — global rates in USD per 1M tokens. Editing
+        // here applies to new sessions; earlier costs stay frozen at the rate
+        // they were recorded with.
+        const rules = DATA.pricing || [];
+        const matches = (m, pat) => { try { return new RegExp(pat, 'i').test(m); } catch (e) { return false; } };
+        const unpriced = Object.keys(DATA.models || {})
+            .filter(m => !rules.some(r => matches(m, r.match)));
+        const priceRows = rules.map((r, i) => `
+            <tr data-prow="${i}">
+                <td><input class="pmatch" value="${C.esc(r.match)}"></td>
+                <td class="num"><input class="pnum" data-k="input" type="number" min="0" step="0.01" value="${r.input}"></td>
+                <td class="num"><input class="pnum" data-k="output" type="number" min="0" step="0.01" value="${r.output}"></td>
+                <td class="num"><input class="pnum" data-k="cacheWrite" type="number" min="0" step="0.01" value="${r.cacheWrite}"></td>
+                <td class="num"><input class="pnum" data-k="cacheRead" type="number" min="0" step="0.01" value="${r.cacheRead}"></td>
+                <td><button class="secondary prm" title="Remove">✕</button></td>
+            </tr>`).join('');
+        const pricingHtml = `
+            <style>
+                #pricingBox input{background:var(--vscode-input-background);color:var(--vscode-input-foreground);
+                    border:1px solid var(--vscode-input-border,var(--vscode-contrastBorder,#3c3c3c));
+                    border-radius:3px;padding:2px 5px;font:inherit}
+                #pricingBox input.pnum{width:78px;text-align:right}
+                #pricingBox input.pmatch{width:150px}
+                #pricingBox summary{cursor:pointer;padding:4px 0;font-weight:600}
+            </style>
+            <h2>Model pricing <span class="muted small">— global · USD per 1M tokens</span></h2>
+            <details class="card" id="pricingBox">
+                <summary>Edit rates — applied to new sessions; past costs stay frozen</summary>
+                <div class="tablewrap"><table>
+                    <tr><th>Model (regex)</th><th class="num">Input</th><th class="num">Output</th><th class="num">Cache write</th><th class="num">Cache read</th><th></th></tr>
+                    ${priceRows || '<tr><td colspan="6" class="muted">No rules — add one below.</td></tr>'}
+                </table></div>
+                ${unpriced.length ? `<div class="sub" style="color:var(--vscode-charts-yellow,#cca700)">Seen here with no rule (counted as $0): ${unpriced.map(C.esc).join(', ')}</div>` : ''}
+                <div class="btnrow" style="margin-top:8px">
+                    <button class="secondary" id="paddrow">Add model</button>
+                    <button id="psave">Save rates</button>
+                </div>
+                <div class="sub muted">First matching rule wins. Saving records the new rate as of now — earlier sessions keep the rate they were billed at, and this is remembered next time.</div>
+            </details>`;
+
         const t = DATA.totals;
         document.getElementById('app').innerHTML = `
             <div class="spread">
@@ -177,6 +220,7 @@
                 ${healthHtml}
                 ${taskHtml}
             </div>
+            ${pricingHtml}
             <h2>Standing duties <a data-guide="nobet-gorevleri">?</a></h2>
             <div class="spread">
                 <p class="muted small" style="margin:4px 0">Recurring watch-and-act agreements — the agent reads DUTIES.md every session.</p>
@@ -223,6 +267,46 @@
             el.addEventListener('click', () => vscode.postMessage({ type: 'openSession', file: el.dataset.session })));
         document.querySelectorAll('[data-guide]').forEach(el =>
             el.addEventListener('click', ev => { ev.stopPropagation(); vscode.postMessage({ type: 'openGuide', anchor: el.dataset.guide }); }));
+
+        // Pricing editor wiring.
+        const pbox = document.getElementById('pricingBox');
+        // Read every row (no filtering) so array indices line up with the DOM
+        // rows for add/remove. Empty-match rows are dropped when saving (the
+        // extension sanitises them).
+        const readRows = () => Array.from(document.querySelectorAll('[data-prow]')).map(tr => {
+            const rule = { match: tr.querySelector('.pmatch').value.trim() };
+            tr.querySelectorAll('.pnum').forEach(inp => { rule[inp.dataset.k] = parseFloat(inp.value) || 0; });
+            return rule;
+        });
+        // Keep local edits (add/remove rows) without losing what's typed, and
+        // re-open the editor after the local re-render.
+        const localEdit = mutate => {
+            const current = readRows();
+            mutate(current);
+            DATA.pricing = current;
+            render();
+            const b = document.getElementById('pricingBox');
+            if (b) { b.open = true; suspendRender = true; }
+        };
+        if (pbox) {
+            pbox.addEventListener('toggle', () => { suspendRender = pbox.open; });
+        }
+        const paddrow = document.getElementById('paddrow');
+        if (paddrow) {
+            paddrow.addEventListener('click', () =>
+                localEdit(rs => rs.push({ match: '', input: 0, output: 0, cacheWrite: 0, cacheRead: 0 })));
+        }
+        document.querySelectorAll('.prm').forEach(btn => btn.addEventListener('click', () => {
+            const i = Number(btn.closest('[data-prow]').dataset.prow);
+            localEdit(rs => rs.splice(i, 1));
+        }));
+        const psave = document.getElementById('psave');
+        if (psave) {
+            psave.addEventListener('click', () => {
+                vscode.postMessage({ type: 'savePricing', rules: readRows() });
+                suspendRender = false;
+            });
+        }
     }
 
     render();

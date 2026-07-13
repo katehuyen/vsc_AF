@@ -219,7 +219,7 @@ function parseCodexFile(file: string, resolveAgent: (cwd?: string) => { agentId?
     info.models = [...models];
     // Multi-model rollouts are rare; attribute the session's usage to the last
     // active model. No matching pricing rule → $0 + unknown-models warning.
-    if (lastModel) { info.cost = pricing().costFor(lastModel, info.usage); }
+    if (lastModel) { info.cost = pricing().costFor(lastModel, info.usage, info.lastTs); }
     const agent = resolveAgent(info.cwd);
     info.agentId = agent.agentId;
     info.agentName = agent.agentName;

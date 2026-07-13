@@ -2,6 +2,15 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 2.47.0 — Editable model rates that don't rewrite the past (2026-07-13)
+
+Cost has always been the token count times the per-model `agentFarm.pricing` rate — but that rate was applied *live*, so editing it silently re-priced every past session too. Now a rate change is dated and only bites going forward.
+
+- **Edit rates on the agent page.** The Agent Detail page has a new **Model pricing** editor — the global rules in USD per 1M tokens (input / output / cache-write / cache-read), with add/remove per model and a live "seen here with no rule" hint. No more hand-editing JSON. Saving writes the `agentFarm.pricing` setting (still hand-editable, and remembered across restarts).
+- **Past costs stay frozen.** Every rate change is appended to a dated history (`agentfarm.pricingHistory` in globalState) and `costFor(model, usage, ts)` prices each message at the rate in effect at its timestamp. So changing a price only affects sessions from that moment on; sessions already recorded keep the rate they were billed at — even a session spanning the change is split correctly per message.
+- **Consistent across surfaces.** The claude session index, the transcript viewer and codex sessions all pass the message/session time, so the same session shows the same frozen cost wherever you look. A plain rule set (`new PricingEngine(rules)`) still behaves exactly as before — the timestamp is optional.
+- **Tests:** new `test_pricing_history.js` (19) covers the freeze semantics and end-to-end pricing through `parseSessionFile`. Full suite: 33 files · 618 passed.
+
 ## 2.46.0 — Bilingual guide: English by default, Türkçe selectable (2026-07-12)
 
 The in-app help — the surfaces a user actually opens — is now bilingual, English first. The UI was already English-only; this brings the *help documents* the guide renders into the same default while keeping Turkish one click away, and leaves room for more languages.

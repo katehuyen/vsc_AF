@@ -261,7 +261,7 @@ export function parseSessionFile(
                 msgTokens = totalTokens(u);
                 msgCost = typeof line.costUSD === 'number'
                     ? line.costUSD
-                    : pricing.costFor(msg.model ?? '', u);
+                    : pricing.costFor(msg.model ?? '', u, ts);
                 info.cost += msgCost;
 
                 if (ts) {

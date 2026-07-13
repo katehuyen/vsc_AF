@@ -20,21 +20,74 @@ export const DEFAULT_PRICING: PriceRule[] = [
     { match: 'haiku', input: 1, output: 5, cacheWrite: 1.25, cacheRead: 0.1 }
 ];
 
+/** One dated snapshot of the pricing rules. An entry's rules apply to token
+ *  usage timestamped at or after `effectiveFrom` (until the next entry). */
+export interface PricingVersion {
+    effectiveFrom: number; // ms epoch
+    rules: PriceRule[];
+}
+
+interface CompiledVersion {
+    from: number;
+    rules: PriceRule[];
+    compiled: { re: RegExp; rule: PriceRule }[];
+}
+
 export class PricingEngine {
-    private compiled: { re: RegExp; rule: PriceRule }[] = [];
+    /** Dated rule versions, sorted ascending by `from`; always ≥ 1 entry. */
+    private versions: CompiledVersion[];
     /** Models seen that matched no pricing rule (cost counted as 0). */
     readonly unknownModels = new Set<string>();
 
     constructor(rules: PriceRule[]) {
-        for (const rule of rules) {
-            try {
-                this.compiled.push({ re: new RegExp(rule.match, 'i'), rule });
-            } catch { /* invalid user regex — skip rule */ }
-        }
+        // A plain rule set is a single version effective from the beginning of
+        // time — costFor(model, u) then behaves exactly as before.
+        this.versions = [PricingEngine.compile(0, rules)];
     }
 
-    costFor(model: string, u: Usage): number {
-        const hit = this.compiled.find(c => c.re.test(model));
+    private static compile(from: number, rules: PriceRule[]): CompiledVersion {
+        const compiled: { re: RegExp; rule: PriceRule }[] = [];
+        for (const rule of rules) {
+            try {
+                compiled.push({ re: new RegExp(rule.match, 'i'), rule });
+            } catch { /* invalid user regex — skip rule */ }
+        }
+        return { from, rules, compiled };
+    }
+
+    /** Build from a timestamped history of rule sets. This is what freezes past
+     *  costs: editing rates appends a new entry stamped "now", so only usage
+     *  from that point forward is re-priced — sessions already recorded keep the
+     *  rates that were in effect at the time. */
+    static fromHistory(history: PricingVersion[]): PricingEngine {
+        const engine = new PricingEngine([]);
+        const sorted = (history ?? [])
+            .filter(v => v && Array.isArray(v.rules))
+            .sort((a, b) => a.effectiveFrom - b.effectiveFrom);
+        engine.versions = sorted.length
+            ? sorted.map(v => PricingEngine.compile(v.effectiveFrom, v.rules))
+            : [PricingEngine.compile(0, DEFAULT_PRICING)];
+        return engine;
+    }
+
+    /** The rules in effect now (the most recent version). */
+    currentRules(): PriceRule[] {
+        return this.versions[this.versions.length - 1].rules;
+    }
+
+    private versionAt(atTs?: number): CompiledVersion {
+        // No usable timestamp → price at the current rate.
+        if (!atTs || atTs <= 0) { return this.versions[this.versions.length - 1]; }
+        // Latest version whose `from` <= atTs (versions are sorted ascending).
+        let hit = this.versions[0];
+        for (const v of this.versions) {
+            if (v.from <= atTs) { hit = v; } else { break; }
+        }
+        return hit;
+    }
+
+    costFor(model: string, u: Usage, atTs?: number): number {
+        const hit = this.versionAt(atTs).compiled.find(c => c.re.test(model));
         if (!hit) {
             if (model && model !== '<synthetic>') { this.unknownModels.add(model); }
             return 0;

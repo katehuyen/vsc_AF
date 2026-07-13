@@ -1103,6 +1103,8 @@ Token usage is read from local logs and priced with the `agentFarm.pricing` rule
 
 **Important:** On a subscription plan (Pro/Max) these numbers aren't a bill — they're the **API-equivalent value** of your usage. It's the answer to "how much value did I get out of my subscription this month?". If the price list is updated, correct it in the settings; unmatched models are listed as a warning at the bottom of the Dashboard and counted as $0.
 
+You can edit these rates without touching JSON: open any agent's detail page and use the **Model pricing** editor. A change applies **going forward only** — sessions already recorded keep the rate they were billed at, so updating a price never rewrites past costs. The rates are remembered next time (stored in the `agentFarm.pricing` setting), while a dated history behind the scenes lets each message be priced at the rate in effect when it ran (2.47.0).
+
 **The 5-hour window:** On subscription plans, the quota works in ~5-hour rolling windows. The Dashboard shows the token total for the last 5 hours; if you write your plan limit into the `agentFarm.windowTokenLimit` setting you get a percentage bar.
 
 ### Budget Alerts {#butce-uyarilari}

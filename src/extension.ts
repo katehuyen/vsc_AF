@@ -72,7 +72,7 @@ import {
     applyMergedContent, buildMergeDraft, findDuplicateGroups, syncGroup
 } from './core/memorySync';
 import { SecretsVault } from './core/secrets';
-import { contextWindowFor, DEFAULT_PRICING, PriceRule, PricingEngine, totalTokens } from './core/pricing';
+import { contextWindowFor, DEFAULT_PRICING, PriceRule, PricingEngine, PricingVersion, totalTokens } from './core/pricing';
 import { QualityStore, sampleQuality } from './core/quality';
 import { buildDailyDigest, buildFleetReport, buildOutputsDigest } from './core/report';
 import { buildForecast, renderForecastMarkdown } from './core/forecast';
@@ -136,7 +136,31 @@ const MEMORY_MD_TEMPLATE = `# Memory Index
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     let agents: AgentInfo[] = [];
     let insights: Insight[] = [];
-    let pricing = new PricingEngine(cfg().get<PriceRule[]>('pricing', DEFAULT_PRICING));
+    // Pricing history: a timestamped log of rule sets so past costs stay frozen
+    // when rates change. The `agentFarm.pricing` setting holds the *current*
+    // rules (editable from the agent page or by hand); each change appends a
+    // dated entry here, and costFor(model, u, ts) prices each message at the
+    // rate in effect at its time — only usage after a change is re-priced.
+    const PRICING_HISTORY_KEY = 'agentfarm.pricingHistory';
+    const loadPricingHistory = (): PricingVersion[] => {
+        const stored = context.globalState.get<PricingVersion[]>(PRICING_HISTORY_KEY);
+        if (stored && stored.length) { return stored; }
+        // Seed from the current setting, effective from the beginning of time so
+        // every existing session keeps today's rates.
+        const seed: PricingVersion[] = [
+            { effectiveFrom: 0, rules: cfg().get<PriceRule[]>('pricing', DEFAULT_PRICING) }
+        ];
+        void context.globalState.update(PRICING_HISTORY_KEY, seed);
+        return seed;
+    };
+    const recordPricingChange = (rules: PriceRule[]): void => {
+        const history = loadPricingHistory();
+        const latest = history[history.length - 1];
+        if (JSON.stringify(latest.rules) === JSON.stringify(rules)) { return; }
+        history.push({ effectiveFrom: Date.now(), rules });
+        void context.globalState.update(PRICING_HISTORY_KEY, history);
+    };
+    let pricing = PricingEngine.fromHistory(loadPricingHistory());
 
     // B2: secrets vault (OS keychain via SecretStorage), cached for sync use.
     const vault = new SecretsVault(context.secrets, context.globalState);
@@ -1410,6 +1434,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         getAgents: () => agents,
         index,
         getInsights: () => insights,
+        getPricing: () => pricing,
         contextBudget: () => cfg().get<number>('contextBudgetTokens', 8000),
         taskRecords: () => allTaskRecords()
     };
@@ -5351,7 +5376,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.workspace.onDidChangeConfiguration(e => {
             if (!e.affectsConfiguration('agentFarm')) { return; }
             if (e.affectsConfiguration('agentFarm.pricing')) {
-                pricing = new PricingEngine(cfg().get<PriceRule[]>('pricing', DEFAULT_PRICING));
+                // Any edit — from the agent page or by hand — becomes a new dated
+                // entry so earlier sessions keep the rate they were billed at.
+                recordPricingChange(cfg().get<PriceRule[]>('pricing', DEFAULT_PRICING));
+                pricing = PricingEngine.fromHistory(loadPricingHistory());
                 index.updatePricing(pricing);
                 void index.scanAll().then(() => index.reassignAgents());
             }

@@ -1103,6 +1103,8 @@ Token kullanımı yerel kayıtlardan okunur ve `agentFarm.pricing` kurallarıyla
 
 **Önemli:** Abonelik planında (Pro/Max) bu rakamlar fatura değildir — kullanımının **API karşılığı değeridir**. "Bu ay aboneliğimden ne kadar değer çıkardım?" sorusunun cevabıdır. Fiyat listesi güncellenirse ayarlardan düzelt; eşleşmeyen modeller Dashboard'un altında uyarı olarak listelenir ve 0$ sayılır.
 
+Bu oranları JSON'a dokunmadan düzenleyebilirsin: bir ajanın detay sayfasını aç ve **Model pricing** editörünü kullan. Değişiklik **yalnızca ileriye** uygulanır — daha önce kaydedilmiş oturumlar faturalandıkları oranı korur, yani bir fiyatı güncellemek geçmiş maliyetleri asla yeniden yazmaz. Oranlar bir dahaki açılışta hatırlanır (`agentFarm.pricing` ayarında tutulur); arka planda tutulan tarihli geçmiş sayesinde her mesaj, çalıştığı andaki oranla fiyatlanır (2.47.0).
+
 **5 saatlik pencere:** Abonelik planlarında kota ~5 saatlik yuvarlanan pencerelerle işler. Dashboard son 5 saatteki token toplamını gösterir; `agentFarm.windowTokenLimit` ayarına plan limitini yazarsan yüzde çubuğu görürsün.
 
 ### Bütçe Uyarıları
