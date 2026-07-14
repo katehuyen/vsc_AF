@@ -2,6 +2,17 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 2.48.0 — Turn accordion in the Session Viewer (2026-07-15)
+
+Long transcripts are now foldable per turn — the colored turn bands double as accordion headers.
+
+- **Click a turn band to fold/unfold it.** A folded turn keeps only its highlighted band (with a ▸/▾ caret, its message count and the usual tokens/cost); the band's own controls — export checkbox, ↑ ↓ jump arrows — still work without toggling the fold.
+- **Expand all / Collapse all.** A new `Turns:` control row sits above the message list. Collapse all reduces the whole session to its band list — a clickable table of contents — and you reopen just the turns you need.
+- **Single-open mode.** The third button in the row switches the accordion to one-turn-at-a-time: expanding a turn folds the previously open one (and the view re-anchors on the turn you opened). Off by default — in the normal mode every turn you open stays open. The choice persists across tab switches and reopens.
+- **Jumps unfold their target.** The turn-breakdown row click, the ↑ ↓ band arrows and the timeline / search / feed click-through all auto-unfold a folded target turn first, so a jump never lands on hidden content. Folding is display-only: filters, replay and Export MD are unaffected.
+- **Fix:** the All / None / Invert export-selection buttons in the Turn breakdown box were also caught by the Show-filter chip handler, silently corrupting the role filter and blanking the message list until a Show chip was clicked again.
+- **Tests:** new `test_viewer_accordion.js` (26). Full suite: 34 files · 644 passed.
+
 ## 2.47.0 — Editable model rates that don't rewrite the past (2026-07-13)
 
 Cost has always been the token count times the per-model `agentFarm.pricing` rate — but that rate was applied *live*, so editing it silently re-priced every past session too. Now a rate change is dated and only bites going forward.

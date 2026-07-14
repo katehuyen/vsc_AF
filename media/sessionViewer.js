@@ -17,6 +17,12 @@
     let roleSel = new Set();
     // Turns unticked in their band are left out of Export MD (default: all included).
     const exportOff = new Set();
+    // Accordion: collapsed turns show only their band (session-local, display-only —
+    // export/filters ignore it). singleOpen = expanding a turn folds all the others;
+    // persisted in webview state so the mode survives tab switches.
+    const collapsed = new Set();
+    let singleOpen = !!(((typeof vscode.getState === 'function' && vscode.getState()) || {}).singleOpen);
+    let turnCounts = null; // per-turn message counts, rebuilt when DATA changes
     // G4 replay state: play messages 0..pos step by step over the *filtered* list,
     // honoring real gaps.
     const replay = { active: false, playing: false, pos: 0, speed: 2, timer: null, msgs: [] };
@@ -25,6 +31,7 @@
         if (ev.data.type === 'focus') { focusAt(ev.data.ts); return; }
         if (ev.data.type !== 'data') { return; }
         DATA = ev.data.data;
+        turnCounts = null;
         if (ev.data.auto && replay.active) {
             // live update while replaying: keep position/controls, just refresh the counter.
             updateReplayUi();
@@ -62,6 +69,30 @@
         return (DATA.turns || []).find(x => x.n === n);
     }
 
+    function turnMsgCount(n) {
+        if (!turnCounts) {
+            turnCounts = {};
+            (DATA.messages || []).forEach(m => { if (m.turn) { turnCounts[m.turn] = (turnCounts[m.turn] || 0) + 1; } });
+        }
+        return turnCounts[n] || 0;
+    }
+
+    /** Expand a turn, honoring single-open mode (which folds every other turn). */
+    function expandTurn(n) {
+        if (singleOpen) { (DATA.turns || []).forEach(t => { if (t.n !== n) { collapsed.add(t.n); } }); }
+        collapsed.delete(n);
+    }
+
+    /** Single click on a turn band folds/unfolds that turn's messages. */
+    function toggleTurn(n) {
+        const opening = collapsed.has(n);
+        if (opening) { expandTurn(n); } else { collapsed.add(n); }
+        render({ keepScroll: true });
+        // single-open folds turns above the clicked one, shifting the layout —
+        // re-anchor so the freshly opened turn is what the user is looking at
+        if (opening && singleOpen) { scrollToTurn(n); }
+    }
+
     function turnHdrHtml(m) {
         if (!m.turnStart || !m.turn) { return ''; }
         const t = (DATA.turnTotals || {})[m.turn];
@@ -69,12 +100,14 @@
             ? `${C.fmtTok(t.tokens)} tok · ${C.fmtUSD(t.cost)}`
             : '';
         const info = turnInfo(m.turn);
-        return `<div class="turnhdr" data-turn="${m.turn}">
+        const closed = collapsed.has(m.turn);
+        return `<div class="turnhdr${closed ? ' closed' : ''}" data-turn="${m.turn}" title="Click to ${closed ? 'expand' : 'collapse'} this turn">
+            <span class="tcaret">${closed ? '▸' : '▾'}</span>
             <label class="turnsel" title="Include this turn in Export MD">
                 <input type="checkbox" data-turnsel="${m.turn}"${exportOff.has(m.turn) ? '' : ' checked'}></label>
             <span class="turnnum">Turn ${m.turn}/${DATA.turnCount || '?'}</span>
             <span class="turnlabel">${C.esc((info && info.label) || '')}</span>
-            <span class="turnstats">${total}</span>
+            <span class="turnstats">${closed ? `${turnMsgCount(m.turn)} msgs${total ? ' · ' : ''}` : ''}${total}</span>
             <span class="turnnav">
                 <button class="tnav" data-tnav="prev" data-from="${m.turn}" title="Jump to previous turn">↑</button>
                 <button class="tnav" data-tnav="next" data-from="${m.turn}" title="Jump to next turn">↓</button>
@@ -94,6 +127,8 @@
      *  why upward jumps must anchor on the band's first message (in normal flow)
      *  and offset by the band height. */
     function scrollToTurn(n) {
+        // jumping to a folded turn means the user wants to read it — unfold first
+        if (collapsed.has(n)) { expandTurn(n); render({ keepScroll: true }); }
         const el = document.querySelector(`.turnhdr[data-turn="${n}"]`);
         if (!el) { return; }
         const anchor = el.nextElementSibling || el;
@@ -106,13 +141,15 @@
     function focusAt(ts) {
         if (!ts) { return; }
         if (replay.active) { stopTimer(); replay.active = false; render(); }
-        let best = -1, bestDist = Infinity;
+        let best = -1, bestDist = Infinity, bestMsg = null;
         visibleMsgs().forEach((m, i) => {
             if (!m.ts) { return; }
             const d = Math.abs(m.ts - ts);
-            if (d < bestDist) { bestDist = d; best = i; }
+            if (d < bestDist) { bestDist = d; best = i; bestMsg = m; }
         });
         if (best < 0) { return; }
+        // the target may sit inside a folded turn — unfold it or the scroll lands nowhere
+        if (bestMsg && bestMsg.turn && collapsed.has(bestMsg.turn)) { expandTurn(bestMsg.turn); render({ keepScroll: true }); }
         const el = document.querySelector(`#msgs [data-idx="${best}"]`);
         if (!el) { return; }
         el.scrollIntoView({ block: 'center' });
@@ -137,7 +174,8 @@
 
     function messageHtml(m, idx) {
         const roleLabel = { user: 'USER', assistant: 'ASSISTANT', tool: 'TOOL CALL', toolResult: 'TOOL RESULT', system: 'SYSTEM' }[m.role];
-        const cls = m.role + (m.isError ? ' error' : '');
+        const hide = m.turn && collapsed.has(m.turn) ? ' tclosed' : '';
+        const cls = m.role + (m.isError ? ' error' : '') + hide;
         const meta = [
             roleLabel + (m.tool ? ` · ${C.esc(m.tool)}` : ''),
             m.ts ? new Date(m.ts).toLocaleTimeString() : '',
@@ -149,7 +187,7 @@
         ].filter(Boolean).join(' · ');
 
         if (m.role === 'tool') {
-            return `<div class="msg tool" data-idx="${idx}"><div class="meta">${meta}</div>
+            return `<div class="msg tool${hide}" data-idx="${idx}"><div class="meta">${meta}</div>
                 <details><summary>input</summary><pre>${C.esc(m.input || '')}</pre></details></div>`;
         }
         if (m.role === 'toolResult') {
@@ -295,6 +333,18 @@
         return (DATA.turns || []).filter(t => !exportOff.has(t.n)).length;
     }
 
+    function turnCtlHtml() {
+        const turns = DATA.turns || [];
+        if (!turns.length) { return ''; }
+        return `<div class="chiprow">
+            <span class="muted small">Turns:</span>
+            <button class="chip" id="t-expandall" title="Expand all turns">Expand all</button>
+            <button class="chip" id="t-collapseall" title="Fold every turn down to its band — open just the ones you need">Collapse all</button>
+            <button class="chip${singleOpen ? ' on' : ''}" id="t-singleopen" title="Only one turn open at a time: expanding a turn folds the previously open one">Single-open</button>
+            <span class="muted small">— click a turn band to fold/unfold it</span>
+        </div>`;
+    }
+
     function turnBoxHtml() {
         const turns = DATA.turns || [];
         if (!turns.length) { return ''; }
@@ -349,6 +399,7 @@
                 /* Turn band: full-width, tinted and sticky — turn boundaries must stay
                    obvious while scrolling fast through a long transcript. */
                 .turnhdr { display:flex; align-items:center; gap:10px; margin:26px 0 10px;
+                    cursor:pointer;
                     padding:7px 12px; border-radius:4px; font-size:13px;
                     background:var(--vscode-editor-inactiveSelectionBackground, #3a3d41);
                     background:color-mix(in srgb, var(--vscode-textLink-foreground) 14%, var(--vscode-editor-background));
@@ -368,6 +419,11 @@
                     border:1px solid var(--vscode-widget-border, #4444);
                     color:var(--vscode-foreground); }
                 .turnhdr .tnav:hover { opacity:1; }
+                /* Accordion: folded turns keep only their band; stack them tighter
+                   so collapse-all reads as a compact turn list. */
+                .turnhdr .tcaret { flex:none; width:12px; text-align:center; font-size:10px; opacity:.75; }
+                .turnhdr.closed { margin:8px 0; }
+                .msg.tclosed { display:none; }
                 .selrow { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:8px 0 2px; }
                 .turnbox .selcell { white-space:nowrap; }
                 .turnbox .only { font-size:10px; margin-left:6px; padding:0 6px; cursor:pointer;
@@ -437,6 +493,7 @@
                 <button id="filterclear" class="clearbtn" title="Clear filter" style="display:${filter ? '' : 'none'}">✕</button>
             </div>`}
             ${chipRowHtml()}
+            ${turnCtlHtml()}
             ${DATA.truncatedCount ? `<p class="muted small">Showing last ${DATA.messages.length} of ${DATA.messageCount} messages (${DATA.truncatedCount} older hidden — raise <code>agentFarm.maxTranscriptMessages</code> to see more).</p>` : ''}
             <div id="msgs">${replay.active
                 ? listHtml(replay.msgs.slice(0, replay.pos + 1))
@@ -458,11 +515,39 @@
             if (cb) { setTurnExport(Number(cb.dataset.turnsel), cb.checked); }
         });
         document.getElementById('msgs').addEventListener('click', ev => {
-            const btn = ev.target && ev.target.closest ? ev.target.closest('button[data-tnav]') : null;
-            if (btn) { jumpTurn(Number(btn.dataset.from), btn.dataset.tnav); }
+            const t = ev.target && ev.target.closest ? ev.target : null;
+            if (!t) { return; }
+            const btn = t.closest('button[data-tnav]');
+            if (btn) { jumpTurn(Number(btn.dataset.from), btn.dataset.tnav); return; }
+            // band click = fold/unfold; the band's own controls (export checkbox,
+            // jump arrows) must not also trigger the toggle
+            const hdr = t.closest('.turnhdr[data-turn]');
+            if (hdr && !t.closest('input,button,label')) { toggleTurn(Number(hdr.dataset.turn)); }
         });
         document.querySelectorAll('[data-guide]').forEach(el =>
             el.addEventListener('click', () => vscode.postMessage({ type: 'openGuide', anchor: el.dataset.guide })));
+
+        const tExpand = document.getElementById('t-expandall');
+        if (tExpand) {
+            tExpand.addEventListener('click', () => { collapsed.clear(); render({ keepScroll: true }); });
+            document.getElementById('t-collapseall').addEventListener('click', () => {
+                (DATA.turns || []).forEach(t => collapsed.add(t.n));
+                render({ keepScroll: true });
+            });
+            document.getElementById('t-singleopen').addEventListener('click', () => {
+                singleOpen = !singleOpen;
+                if (singleOpen) {
+                    // entering the mode: keep only the first currently-open turn open
+                    (DATA.turns || []).filter(t => !collapsed.has(t.n)).slice(1)
+                        .forEach(t => collapsed.add(t.n));
+                }
+                if (typeof vscode.setState === 'function') {
+                    const st = (typeof vscode.getState === 'function' && vscode.getState()) || {};
+                    vscode.setState(Object.assign({}, st, { singleOpen }));
+                }
+                render({ keepScroll: true });
+            });
+        }
 
         const turnbox = document.getElementById('turnbox');
         if (turnbox) {
@@ -506,7 +591,10 @@
             }
             render({ keepScroll: true });
         };
-        document.querySelectorAll('.chip').forEach(chip => chip.addEventListener('click', () => {
+        // only the role chips — .chip is also worn by the turnbox All/None/Invert
+        // buttons and the turn accordion controls, which have their own handlers
+        // (a bare '.chip' here used to push `undefined` into roleSel and blank the list)
+        document.querySelectorAll('.chip[data-chip],.chip[data-preset]').forEach(chip => chip.addEventListener('click', () => {
             if (chip.dataset.preset === 'all') { roleSel = new Set(); }
             else if (chip.dataset.preset === 'dialog') { roleSel = new Set(['user', 'assistant']); }
             else {
