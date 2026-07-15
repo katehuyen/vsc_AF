@@ -297,6 +297,7 @@
                     <button class="secondary" id="refresh">Refresh</button>
                     <button class="secondary" id="timeline">Live Timeline</button>
                     <button class="secondary" id="opensearch" title="Search across the whole farm">⌕ Search</button>
+                    <button class="secondary" id="opensettings" title="All agentFarm settings in one page, with saveable setting sets">⚙ Settings</button>
                     <button class="secondary" data-guide="dashboard">? Guide</button>
                 </div>
             </div>
@@ -350,6 +351,7 @@
         document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
         document.getElementById('timeline').addEventListener('click', () => vscode.postMessage({ type: 'openTimeline' }));
         document.getElementById('opensearch').addEventListener('click', () => vscode.postMessage({ type: 'openSearch' }));
+        document.getElementById('opensettings').addEventListener('click', () => vscode.postMessage({ type: 'openFarmSettings' }));
         document.querySelectorAll('[data-range]').forEach(b =>
             b.addEventListener('click', () => { range = Number(b.dataset.range); render(); }));
         document.querySelectorAll('[data-detail]').forEach(b =>

@@ -849,6 +849,7 @@ Sinyal yorgunluğuna karşı: on ayrı uyarı yerine haftada bir, üç cümlelik
 - **Aç:** `Agent Farm: Search Transcripts…`, Recent Sessions başlığındaki 🔍, ya da Dashboard / Ajan Detay / Oturum Görüntüleyicideki **⌕ Search** düğmeleri (2.53.0) — son ikisi paneli o ajana / o oturuma **ön-kapsamlı** açar; kapsam rozetindeki ✕ tekrar tüm filoya genişletir.
 - **Ne taranır (2.53.0):** varsayılan **Dialog** — senin isteklerin + ajan cevapları. Chip satırı kapsamı **araç girdilerine** (dosya yolları, komutlar, kod — "bu dosyaya hangi seansta dokunuldu?") ve **araç sonuçlarına** (çıktılar, hata mesajları) genişletir; *Everything* dördünü de kapsar. ~95 MB'lık filoda tam everything-taraması ~1.5 sn altında ölçüldü. İki ek kaynak kendi kutusuyla eşlik eder: ajanların **hafıza notları** (`memory/*.md`, isabet dosyayı açar) ve **öksüz canlı olaylar** — transkripti artık var olmayan olaylar (harici CLI'lar, budanmış oturumlar); transkripti duran olaylar bilerek dışarıda, onları transkript taraması zaten kapsıyor.
 - Seçenekler: ajan filtresi, `regex` kutusu (düz metin varsayılan, büyük/küçük harf duyarsız), `match case`.
+- **Arama kendiliğinden yeniden koşar** (2.54.0): herhangi bir kontrolü değiştirmek — ajan, chip'ler, kaynaklar, regex/case — aramayı anında yeniler (ölçümle ucuz; geçersiz kalan aramanın sonucu atılır). Yalnız semantik mod Enter bekler, çünkü her semantik sorgu ücretli bir embedding çağrısıdır.
 - **Sonuçlar oturum başına gruplu, tur alt-başlıklı** (2.53.0): her oturum tek blok (başlığa tık → oturumu aç), içindeki isabetler `Turn 3 — <açılış komutu>` etiketli; araç isabetleri araç adını taşır. İsabete tıklayınca oturum görüntüleyici açılır ve **tam eşleşen mesaja kayar** (2.40.0) — kısa süreliğine çerçeveyle vurgulanır.
 - Sonuçlar oturum başına 3, toplam 150 ile sınırlıdır (tek-oturum kapsamında sınırlar çok daha yüksektir) — taşarsa sorguyu daralt. Azgın bir regex **10 sn'lik süre bütçesiyle** kesilir; kısmi sonuç dürüstçe söylenir.
 
@@ -1128,6 +1129,16 @@ Bütçe "bugün"e bakar; trend uyarısı **haftalık gidişata** bakar. Bir ajan
 Gürültü koruması: önceki hafta 0.50$'ın, bu hafta 1$'ın altındaysa uyarı üretilmez (küçük rakamlarda kat sayısı anlamsızdır). `trendAlertFactor: 0` tamamen kapatır. Bu uyarı "kötü" demek değildir — bazen yoğun bir proje haftasıdır; amacı sessiz maliyet sürünmesini erken göstermektir.
 
 ## Ayarlar
+
+### Farm Settings sayfası (2.54.0)
+
+VS Code'un ayar arayüzünde kazı yapmana gerek yok: **Agent Farm: Farm Settings** (Dashboard'daki **⚙ Settings** düğmesi de) **tüm `agentFarm.*` ayarlarını** tek sayfada açar — alana göre gruplu (Core, Live Monitoring, Cost, Tasks, Media, Search, Multi-CLI, Health, Reports), filtre kutulu; her ayarın açıklaması adının altında, tam anahtar + varsayılan değeri tooltip'te. Boolean'lar onay kutusu, enum'lar açılır liste, liste/nesneler doğrulamalı JSON editörü — bozuk değer yazılmaz, satırın altında hatayla reddedilir. Varsayılandan farklı ayarlar işaretlidir ve tek tıkla **↺ reset** edilir. Değişiklikler anında kullanıcı ayarlarına kaydedilir; başka yerden yapılan düzenlemeler sayfaya canlı yansır.
+
+Sayfa **şema-güdümlüdür**: eklenti manifestinin bildirdiği her şeyi çizer — gelecekte eklenen bir ayar kendiliğinden görünür.
+
+**Ayar setleri:** mevcut varsayılan-dışı değerleri adlı bir set olarak kaydet (*Save current as…*), sonra **Apply** ile geri yükle — set uygulanırken setin anmadığı değiştirilmiş ayarlar da varsayılana döner, yani set bir katman değil **tam bir durumdur** (onay penceresi tam kaç değerin değişeceğini söyler). Setler **JSON dosyasına aktarılıp geri alınabilir** — makineler arası taşınabilir.
+
+### Referans tablosu
 
 | Ayar | Varsayılan | Ne işe yarar |
 | --- | --- | --- |

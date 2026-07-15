@@ -2,6 +2,14 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 2.54.0 — Farm Settings page + live search (2026-07-15)
+
+- **Farm Settings — every setting on one page.** `Agent Farm: Farm Settings` (or **⚙ Settings** on the Dashboard) lists all 71 `agentFarm.*` settings grouped by area, with a filter box, per-setting descriptions and full-key/default tooltips. Booleans, enums, numbers and strings edit in place; lists/objects get a validated JSON editor (bad values are rejected inline, never written). Modified settings carry a marker and a one-click **↺ reset to default**. The page is **schema-driven** — a setting added in a future version shows up with zero extra code — and refreshes live when settings change elsewhere.
+- **Setting sets.** Save the current non-default values as a named set, apply it back later (applying resets modified settings the set doesn't mention — a set is a complete state, with a confirmation stating exactly what changes), delete, and **export/import as JSON** for other machines.
+- **Search re-runs on any control change.** Switching agent, chips, sources or regex/case no longer waits for the Search button — measured cheap (~1.4 s worst case on 95 MB) and race-safe: results of a superseded search are dropped (`seq` guard). Semantic mode still waits for Enter (each query is a paid embedding call).
+- The search panel's "semantic mode is off" hint now links straight to the right setting on the Farm Settings page (deep-link focuses and flashes it).
+- **Tests:** new `test_settingsops.js` (34) — category coverage against the real manifest, value sanitizing, profile snapshot/apply-plan/import, page rendering and edit routing. Full suite: 38 files · 762 passed.
+
 ## 2.53.0 — Search grows up: tool traffic, scopes, turn grouping, memory & events (2026-07-15)
 
 The search architecture report (S1–S5) implemented in one go. Until now search saw only user prompts + assistant text — **about 10% of the text a fleet actually produces**. Measured on a real ~95 MB corpus:

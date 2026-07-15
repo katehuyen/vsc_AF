@@ -849,6 +849,7 @@ Against signal fatigue: instead of ten separate warnings, once a week a three-se
 - **Open:** `Agent Farm: Search Transcripts…`, the 🔍 on the Recent Sessions header, or the **⌕ Search** buttons on the Dashboard, an Agent Detail page and the Session Viewer (2.53.0) — the latter two open the panel **pre-scoped** to that agent / that session, and the ✕ on the scope pill widens back to the whole fleet.
 - **What is searched (2.53.0):** the default is **Dialog** — your requests + agent replies. The chip row widens it to **tool inputs** (file paths, commands, code — "which session touched this file?") and **tool results** (outputs, error messages); *Everything* covers all four. Measured on a ~95 MB fleet, a full everything-scan stays under ~1.5 s. Two extra sources ride along, each with its own tick: the agents' **memory notes** (`memory/*.md`, hits open the file) and **orphaned live events** — events whose transcript no longer exists (external CLIs, pruned sessions); events still backed by a transcript are deliberately excluded, the transcript scan already covers them.
 - Options: agent filter, `regex` box (plain text by default, case-insensitive), `match case`.
+- **The search re-runs by itself** (2.54.0): changing any control — agent, chips, sources, regex/case — re-searches immediately (measured cheap, and a superseded search's results are dropped). Only semantic mode still waits for Enter, since each semantic query is a paid embedding call.
 - **Results are grouped per session with turn sub-headers** (2.53.0): each session is one block (header click → open the session), hits inside it are labeled `Turn 3 — <its opening prompt>`; tool hits carry the tool name. Clicking a hit opens the session viewer and scrolls to **the exact matching message** (2.40.0) — briefly highlighted with a frame.
 - Results are limited to 3 per session, 150 total (a session-scoped search gets much higher caps) — narrow the query if it overflows. A runaway regex is cut by a **10 s time budget**; partial results say so honestly.
 
@@ -1128,6 +1129,16 @@ A budget looks at "today"; a trend alert looks at the **weekly trajectory**. If 
 Noise protection: if the previous week is below $0.50 and this week below $1, no warning is produced (the multiplier is meaningless at small numbers). `trendAlertFactor: 0` turns it off entirely. This warning doesn't mean "bad" — sometimes it's a busy project week; its purpose is to show silent cost creep early.
 
 ## Settings
+
+### Farm Settings page (2.54.0)
+
+You don't have to dig through VS Code's settings UI: **Agent Farm: Farm Settings** (also the **⚙ Settings** button on the Dashboard) opens a single page with **every `agentFarm.*` setting**, grouped by area (Core, Live Monitoring, Cost, Tasks, Media, Search, Multi-CLI, Health, Reports), with a filter box, each setting's description under its name and the full key + default in the tooltip. Booleans are checkboxes, enums are dropdowns, lists/objects get a JSON editor with validation — a bad value is rejected with an inline error instead of being written. Settings changed from their default carry a marker and a one-click **↺ reset**. Changes save immediately to your user settings; edits made elsewhere show up here live.
+
+The page is **schema-driven**: it renders whatever the extension manifest declares, so a setting added in a future version appears automatically.
+
+**Setting sets:** save the current non-default values as a named set (*Save current as…*), then **Apply** restores it later — applying a set also resets modified settings the set doesn't mention, so a set is a complete state, not an overlay (a confirmation tells you exactly how many values change). Sets can be **exported to / imported from a JSON file** — portable across machines.
+
+### Reference table
 
 | Setting | Default | What it does |
 | --- | --- | --- |

@@ -9,6 +9,10 @@
     let semStatus = DATA.semantic || { provider: 'off', sessions: 0, chunks: 0 };
     let searching = false;
     let timer;
+    // Auto-search: every control change re-runs the search (measured: a full
+    // everything-scan is ~1.4s on a 95MB fleet, and a 10s engine time budget
+    // bounds the worst case). seq lets us drop superseded results.
+    let seq = 0;
     // Scope preset pushed by the opener (viewer → one session, agent page → one
     // agent). Cleared with the ✕ pill; fleet-wide otherwise.
     let preset = DATA.preset || null;
@@ -35,7 +39,7 @@
 
     function semLine() {
         if (semStatus.provider === 'off') {
-            return 'Semantic mode is off — set <code>agentFarm.embeddingsProvider</code> (gemini, or openai-compatible incl. local Ollama).';
+            return 'Semantic mode is off — <a id="semsettings">enable it in Farm Settings</a> (gemini, or openai-compatible incl. local Ollama).';
         }
         return `Semantic index (<b>${C.esc(semStatus.provider)}</b>): ${semStatus.sessions} session(s), ${semStatus.chunks} chunk(s) · <a id="build">update index</a>`;
     }
@@ -117,6 +121,7 @@
             vscode.postMessage({
                 type: 'search',
                 query,
+                seq: ++seq,
                 semantic: semBox.checked,
                 regex: document.getElementById('regex').checked,
                 caseSensitive: document.getElementById('case').checked,
@@ -127,13 +132,20 @@
                 events: document.getElementById('srcevents').checked
             });
         };
+        // Any control change re-searches after a short debounce — but never in
+        // semantic mode, where each query is a paid embedding call.
+        const scheduleRun = () => {
+            clearTimeout(timer);
+            if (!semBox.checked && q.value.trim()) { timer = setTimeout(run, 250); }
+        };
         document.getElementById('go').addEventListener('click', run);
         q.addEventListener('keydown', ev => { if (ev.key === 'Enter') run(); });
         q.addEventListener('input', () => {
             clearTimeout(timer);
-            // semantic queries cost an embedding call — no auto-search there
             if (!semBox.checked && q.value.trim().length >= 3) { timer = setTimeout(run, 500); }
         });
+        ['agent', 'regex', 'case', 'srcmem', 'srcevents'].forEach(id =>
+            document.getElementById(id).addEventListener('change', scheduleRun));
         semBox.addEventListener('change', () => {
             document.getElementById('regexLbl').style.opacity = semBox.checked ? '0.4' : '1';
             document.getElementById('caseLbl').style.opacity = semBox.checked ? '0.4' : '1';
@@ -164,6 +176,8 @@
             a.addEventListener('click', () => vscode.postMessage({ type: 'openGuide', anchor: a.dataset.guide })));
         const build = document.getElementById('build');
         if (build) { build.addEventListener('click', () => vscode.postMessage({ type: 'buildIndex' })); }
+        const sem = document.getElementById('semsettings');
+        if (sem) { sem.addEventListener('click', () => vscode.postMessage({ type: 'openFarmSettings', focus: 'agentFarm.embeddingsProvider' })); }
     }
 
     function hitLine(h, i) {
@@ -265,6 +279,8 @@
             return;
         }
         if (ev.data.type === 'results') {
+            // a newer search is already in flight — drop this stale result
+            if (ev.data.seq && ev.data.seq !== seq) { return; }
             searching = false;
             lastResult = ev.data.result;
             if (ev.data.semanticStatus) {

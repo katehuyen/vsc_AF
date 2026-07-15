@@ -107,6 +107,9 @@ export class SearchPanel {
                 }
                 void this.panel.webview.postMessage({
                     type: 'results', result, query: msg.query,
+                    // echoed back so the page can drop results of a superseded
+                    // search (auto-search fires on every control change)
+                    seq: typeof msg.seq === 'number' ? msg.seq : 0,
                     semanticStatus: this.deps.semanticStatus()
                 });
                 break;
@@ -126,6 +129,10 @@ export class SearchPanel {
                 break;
             case 'buildIndex':
                 void vscode.commands.executeCommand('agentfarm.buildSemanticIndex');
+                break;
+            case 'openFarmSettings':
+                void vscode.commands.executeCommand('agentfarm.openFarmSettings',
+                    typeof msg.focus === 'string' ? { focus: msg.focus } : undefined);
                 break;
             case 'openGuide':
                 void vscode.commands.executeCommand('agentfarm.openGuide', msg.anchor);

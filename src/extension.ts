@@ -96,6 +96,7 @@ import { GuidePanel } from './panels/guide';
 import { KanbanPanel } from './panels/kanban';
 import { NeedsPanel } from './panels/needsPanel';
 import { SearchPanel } from './panels/searchPanel';
+import { FarmSettingsPanel } from './panels/settingsPanel';
 import { SelectionPanel } from './panels/selectionPanel';
 import { SessionViewerPanel } from './panels/sessionViewer';
 import { TimelinePanel } from './panels/timeline';
@@ -4316,6 +4317,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     semanticSearch,
                     semanticStatus
                 }, preset && typeof preset === 'object' ? preset : undefined);
+            }),
+
+        vscode.commands.registerCommand('agentfarm.openFarmSettings',
+            (arg?: { focus?: string }) => {
+                FarmSettingsPanel.show({
+                    extensionUri: context.extensionUri,
+                    schema: () => {
+                        // live schema from our own manifest — a new setting shows
+                        // up on this page with zero extra code
+                        const pkg = context.extension.packageJSON as {
+                            contributes?: { configuration?: { properties?: Record<string, never> } | { properties?: Record<string, never> }[] };
+                        };
+                        const conf = pkg.contributes?.configuration;
+                        if (Array.isArray(conf)) {
+                            return Object.assign({}, ...conf.map(c => c.properties ?? {}));
+                        }
+                        return conf?.properties ?? {};
+                    },
+                    getProfiles: () => context.globalState.get('agentfarm.settingsProfiles', []),
+                    setProfiles: (list) => context.globalState.update('agentfarm.settingsProfiles', list)
+                }, arg && typeof arg === 'object' ? arg.focus : undefined);
             }),
 
         vscode.commands.registerCommand('agentfarm.buildSemanticIndex', async () => {

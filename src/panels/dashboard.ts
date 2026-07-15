@@ -256,6 +256,9 @@ export class DashboardPanel {
             case 'openSearch':
                 vscode.commands.executeCommand('agentfarm.searchTranscripts');
                 break;
+            case 'openFarmSettings':
+                vscode.commands.executeCommand('agentfarm.openFarmSettings');
+                break;
             case 'refresh':
                 this.refresh();
                 break;
