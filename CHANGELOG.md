@@ -2,6 +2,17 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 2.50.0 — One Sessions table: sortable, active-aware, with per-turn fold-outs (2026-07-15)
+
+The dashboard's *Top sessions by cost* and *Recent sessions* tables (2.49.0) were the same table with different sorts — so they are now **one table** that does more:
+
+- **Sort by selector.** Recent (default) · Cost · Tokens · Duration · Turns. Whichever criterion you pick, the genuine farm-wide top 12 is shown — the data pool is the union of each criterion's true top rows, not one list re-sorted. The choice is remembered.
+- **Active sessions are marked.** A green ● in front of the agent name flags sessions with activity right now (same threshold as the agent cards).
+- **Fold a session open into its turns.** The ▸ at the start of each row unfolds that session's turn list — every turn's title with its per-turn tokens and cost, parsed on demand from the transcript (and re-fetched automatically when a live session moves on). Clicking the row itself still opens the full transcript.
+- **Accordion controls, same as the Session Viewer.** Expand all / Collapse all, plus a **Single-open** mode where unfolding one session folds the previous one; the mode persists.
+- A **Turns column** joins the table (also sortable — "which sessions had the most back-and-forth?").
+- **Tests:** `test_dashboard_sessions.js` (28) replaces the 2.49.0 table test. Full suite: 35 files · 672 passed.
+
 ## 2.49.0 — Recent sessions table on the Dashboard (2026-07-15)
 
 - **Recent sessions.** Right below *Top sessions by cost* the dashboard now shows the same table sorted by last activity — the twelve sessions you touched most recently, newest first (sessions without a timestamp fall back to file mtime). Same columns, same click-to-open-transcript rows.

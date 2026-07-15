@@ -112,8 +112,7 @@ Filonun genel panosu. `Agent Farm: Open Dashboard` komutuyla veya durum çubuğu
 - **Token types**: input / output / cache write / cache read dağılımı. Cache read oranın yüksekse prompt cache verimli çalışıyor demektir — bu iyidir.
 - **Activity heatmap**: haftanın günü × saat bazında mesaj yoğunluğu. Çalışma ritmini gösterir.
 - **Agent kartları**: durum, bugün/aralık maliyeti, mini trend çizgisi, bulgu rozetleri. Karta tıkla → detay sayfası.
-- **Top sessions by cost**: en pahalı oturumlar; satıra tıkla → transkript.
-- **Recent sessions (2.49.0)**: hemen altında aynı tablo, bu kez son etkinliğe göre sıralı — en son dokunduğun oturumlar; satıra tıkla → transkript.
+- **Sessions tablosu (2.50.0 — eski Top/Recent tabloları birleşti)**: tek tablo, **Sort by** seçicisiyle — Recent (varsayılan) · Cost · Tokens · Duration · Turns; hangi kriteri seçersen seç çiftliğin gerçek zirvesi gösterilir, seçim hatırlanır. Yeşil **●** o an aktif oturumları işaretler. Satır başındaki **▸** o oturumun **tur listesini** açar — her turun başlığı, tur başına token ve maliyetiyle; transkriptten istek anında hesaplanır. Tur kontrolleri görüntüleyicideki akordeonla aynı: **Expand all / Collapse all / Single-open** (aynı anda tek oturumun turları açık, hatırlanır). Satırın kendisine tıklamak yine transkripti açar.
 - Üst satırda **Live Timeline** düğmesi (2.22.0): Refresh ile Guide arasında — panodan kulvar görünümüne tek tık.
 
 Dashboard, oturum kayıtları değiştikçe kendini otomatik günceller.

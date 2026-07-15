@@ -7,6 +7,7 @@ import { PricingEngine, totalTokens } from '../core/pricing';
 import { SubsystemStatus } from '../core/farmstatus';
 import { dayKey } from '../core/util';
 import { htmlShell } from './base';
+import { buildData as buildViewerData } from './sessionViewer';
 
 export interface DashboardDeps {
     extensionUri: vscode.Uri;
@@ -45,26 +46,39 @@ interface AgentSummary {
     qualityCount: number;
 }
 
-/** The two session tables share one row shape: the N most expensive sessions
- *  ("Top sessions by cost") and the same N sorted by last activity
- *  ("Recent sessions"). Exported for tests. */
-export function pickSessionRows(sessions: SessionInfo[]): { topSessions: unknown[]; recentSessions: unknown[] } {
-    const row = (s: SessionInfo) => ({
+/** One row per session for the dashboard Sessions table. The webview sorts
+ *  client-side by any criterion and shows the top N — so instead of shipping
+ *  every session, the pool is the union of the true top-N per sortable
+ *  criterion (recency, cost, tokens, duration, turns): whatever sort the user
+ *  picks, its genuine top N is guaranteed to be present. Exported for tests. */
+export const SESSION_TABLE_N = 12;
+export function sessionRowPool(
+    sessions: SessionInfo[],
+    isActive?: (s: SessionInfo) => boolean
+): unknown[] {
+    const rows = sessions.map(s => ({
         file: s.file,
         agent: (s.agentName ?? '?') + (s.machine ? ` ⇄ ${s.machine}` : ''),
         title: s.title,
-        ts: s.lastTs,
+        ts: s.lastTs || s.mtime || 0,
         durationMin: s.firstTs && s.lastTs ? Math.round((s.lastTs - s.firstTs) / 60000) : 0,
+        turns: s.userTurns,
         tokens: totalTokens(s.usage),
         cost: s.cost,
-        sidechain: s.isSidechain
-    });
-    return {
-        topSessions: sessions.slice().sort((a, b) => b.cost - a.cost).slice(0, 12).map(row),
-        recentSessions: sessions.slice()
-            .sort((a, b) => (b.lastTs || b.mtime || 0) - (a.lastTs || a.mtime || 0))
-            .slice(0, 12).map(row)
-    };
+        sidechain: s.isSidechain,
+        active: isActive ? isActive(s) : false
+    }));
+    type Row = typeof rows[number];
+    const keys: ((r: Row) => number)[] = [
+        r => r.ts, r => r.cost, r => r.tokens, r => r.durationMin, r => r.turns
+    ];
+    const pool = new Set<Row>();
+    for (const key of keys) {
+        rows.slice().sort((a, b) => key(b) - key(a)).slice(0, SESSION_TABLE_N)
+            .forEach(r => pool.add(r));
+    }
+    // newest first — the webview re-sorts anyway; this is just a stable wire order
+    return [...pool].sort((a, b) => b.ts - a.ts);
 }
 
 function buildData(deps: DashboardDeps): Record<string, unknown> {
@@ -140,7 +154,7 @@ function buildData(deps: DashboardDeps): Record<string, unknown> {
         for (let i = 0; i < 168; i++) { heat[i] += s.heat[i]; }
     }
 
-    const { topSessions, recentSessions } = pickSessionRows(sessions);
+    const sessionRows = sessionRowPool(sessions, s => deps.index.isSessionActive(s, now));
 
     const win = deps.index.windowUsage(now);
 
@@ -151,8 +165,8 @@ function buildData(deps: DashboardDeps): Record<string, unknown> {
         modelTotals,
         tokenTypes,
         heat,
-        topSessions,
-        recentSessions,
+        sessionRows,
+        sessionTableN: SESSION_TABLE_N,
         window: { ...win, limit: deps.windowTokenLimit() },
         fleetBudget: deps.budgets()['*'] ?? 0,
         mediaCost: deps.mediaCost(),
@@ -239,6 +253,27 @@ export class DashboardPanel {
             case 'refresh':
                 this.refresh();
                 break;
+            case 'sessionTurns': {
+                // On-demand per-turn breakdown for an expanded session row.
+                // Only files the index actually lists are readable from here —
+                // the webview must not be able to point us at arbitrary paths.
+                const file = typeof msg.file === 'string' ? msg.file : '';
+                if (!file || !this.deps.index.all().some(s => s.file === file)) { break; }
+                let turns: unknown = [];
+                try {
+                    // reuse the session viewer's proven transcript parse; we only
+                    // keep the turn table (maxMessages 1 keeps the throwaway
+                    // message payload minimal — turns are computed before the cut)
+                    turns = buildViewerData(file, {
+                        extensionUri: this.deps.extensionUri,
+                        getPricing: () => this.deps.getPricing(),
+                        maxMessages: () => 1,
+                        contextLimitFor: () => 0
+                    }).turns;
+                } catch { /* fail-soft: an unreadable file shows an empty turn list */ }
+                void this.panel.webview.postMessage({ type: 'sessionTurns', file, turns });
+                break;
+            }
             case 'statusAction': {
                 // Farm Status card buttons. Commands are whitelisted — the
                 // webview must not be able to run arbitrary commands.

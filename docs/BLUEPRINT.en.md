@@ -112,8 +112,7 @@ The fleet's overview board. Opens with the `Agent Farm: Open Dashboard` command 
 - **Token types**: input / output / cache write / cache read distribution. A high cache-read ratio means prompt caching is working efficiently — that's good.
 - **Activity heatmap**: message density by day-of-week × hour. Shows your work rhythm.
 - **Agent cards**: status, today/range cost, mini trend line, finding badges. Click a card → detail page.
-- **Top sessions by cost**: the most expensive sessions; click a row → transcript.
-- **Recent sessions (2.49.0)**: the same table right below, sorted by last activity — the sessions you touched most recently; click a row → transcript.
+- **Sessions table (2.50.0 — merges the former Top/Recent tables)**: one table with a **Sort by** selector — Recent (default) · Cost · Tokens · Duration · Turns; whichever criterion you pick, the genuine farm-wide top rows are shown, and the choice is remembered. A green **●** marks sessions active right now. The **▸** on a row unfolds that session's **turn list** — each turn's title with its per-turn tokens and cost, parsed on demand from the transcript. The Turns controls work like the viewer accordion: **Expand all / Collapse all / Single-open** (one session's turns open at a time, remembered). Clicking the row itself still opens the transcript.
 - A **Live Timeline** button in the top row (2.22.0): between Refresh and Guide — one click from the board to the swim-lane view.
 
 The Dashboard updates itself automatically as session logs change.
