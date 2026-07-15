@@ -66,6 +66,64 @@
         </div>`;
     }
 
+    // ---- Claude Code (claude CLI) settings — curated + raw JSON ----
+
+    function ccControl(it) {
+        const id = `cc-${it.id}`;
+        if (it.kind === 'flag' || it.kind === 'boolean') {
+            const on = it.kind === 'flag' ? String(it.value) === '1' : it.value === true;
+            return `<input type="checkbox" id="${id}" data-ccset="${it.id}"${on ? ' checked' : ''}>`;
+        }
+        if (it.kind === 'enum') {
+            return `<select id="${id}" data-ccset="${it.id}">
+                <option value=""${it.set ? '' : ' selected'}>(not set — Claude default)</option>
+                ${it.enum.map(o => `<option value="${C.esc(o)}"${String(it.value) === o ? ' selected' : ''}>${C.esc(o)}</option>`).join('')}
+            </select>`;
+        }
+        const t = it.kind === 'number' ? 'number' : 'text';
+        return `<input type="${t}" id="${id}" data-ccset="${it.id}" value="${C.esc(it.set ? String(it.value) : '')}"
+            placeholder="(not set — Claude default)" style="width:${t === 'number' ? '130px' : '100%'}; max-width:420px">`;
+    }
+
+    function ccItemHtml(it) {
+        const err = errors['cc:' + it.id];
+        return `<div class="setitem${it.set ? ' modified' : ''}" data-item="cc:${it.id}"
+            title="${C.esc(it.label)} — not set = Claude Code's own default">
+            <div class="sethead">
+                <span class="setname">${C.esc(it.label)}</span>
+                ${it.set ? `<span class="moddot" title="Set in settings.json"></span>
+                    <button class="reset" data-ccclear="${it.id}" title="Remove from settings.json — Claude's own default takes over">↺</button>` : ''}
+            </div>
+            <div class="setdesc">${C.esc(it.description)}</div>
+            <div class="setctl">${ccControl(it)}</div>
+            ${err ? `<div class="seterr">⚠ ${C.esc(err)}</div>` : ''}
+        </div>`;
+    }
+
+    function claudeSection() {
+        const cc = DATA.claude;
+        if (!cc) { return ''; }
+        const items = cc.items.filter(it => !filter || (it.label + ' ' + it.description).toLowerCase().includes(filter));
+        if (filter && !items.length) { return ''; }
+        const rawErr = errors['cc:__raw__'];
+        return `
+            <h2 class="cat" id="cat-claude">Claude Code (claude CLI) <span class="muted small">${items.length}</span></h2>
+            <p class="muted small" style="max-width:760px">These are <b>claude's own settings</b>, not Agent Farm's — the file behind terminal tips like
+            “Set CLAUDE_CODE_USE_POWERSHELL_TOOL=1 …”. Edits write to <code>${C.esc(cc.file)}</code>
+            (a one-time <code>.agentfarm-backup</code> copy is kept next to it) and apply to <b>new</b> claude sessions.
+            <a id="ccopen">Open the file</a></p>
+            ${cc.parseError ? `<div class="seterr">⚠ settings.json could not be parsed (${C.esc(cc.parseError)}) — fix it in the raw editor below; edits are blocked until then.</div>` : ''}
+            ${items.map(ccItemHtml).join('')}
+            <details class="setitem" style="margin-top:10px">
+                <summary style="cursor:pointer">Raw settings.json — everything else (hooks, statusLine, permissions lists…)</summary>
+                <div class="setdesc">Full contents of the file. Validated before writing — broken JSON is rejected, never saved.</div>
+                <textarea id="ccraw" rows="${Math.min(18, Math.max(4, String(cc.raw).split('\n').length))}" spellcheck="false"
+                    style="width:100%; font-family:var(--vscode-editor-font-family); font-size:11px">${C.esc(cc.raw)}</textarea>
+                <button class="secondary small" id="ccrawapply">Apply raw JSON</button>
+                ${rawErr ? `<div class="seterr">⚠ ${C.esc(rawErr)}</div>` : ''}
+            </details>`;
+    }
+
     function profileBar() {
         const opts = DATA.profiles.map(p =>
             `<option value="${C.esc(p.name)}">${C.esc(p.name)} (${p.count})</option>`).join('');
@@ -129,11 +187,12 @@
             <div class="searchbar" style="margin:10px 0; position:relative">
                 <input id="filter" type="text" placeholder="Filter settings… (name or description)" value="${C.esc(filter)}" style="width:100%; max-width:420px; padding:6px 8px">
             </div>
-            <div class="catnav">${cats.map(c => `<a data-cat="${c.id}">${C.esc(c.label)}</a>`).join('')}</div>
+            <div class="catnav">${cats.map(c => `<a data-cat="${c.id}">${C.esc(c.label)}</a>`).join('')}${DATA.claude ? '<a data-cat="claude">Claude Code</a>' : ''}</div>
             ${cats.map(c => `
                 <h2 class="cat" id="cat-${c.id}">${C.esc(c.label)} <span class="muted small">${c.items.length}</span></h2>
                 ${c.items.map(itemHtml).join('')}`).join('')
-            || '<p class="muted">No settings match the filter.</p>'}
+            || (claudeSection() ? '' : '<p class="muted">No settings match the filter.</p>')}
+            ${claudeSection()}
         `;
 
         // -- wiring --
@@ -171,6 +230,29 @@
                 delete errors[btn.dataset.reset];
                 vscode.postMessage({ type: 'reset', key: btn.dataset.reset });
             }));
+
+        // Claude Code section
+        document.querySelectorAll('[data-ccset]').forEach(el =>
+            el.addEventListener('change', () => {
+                delete errors['cc:' + el.dataset.ccset];
+                const value = el.type === 'checkbox' ? el.checked : el.value;
+                vscode.postMessage({ type: 'ccSet', id: el.dataset.ccset, value });
+            }));
+        document.querySelectorAll('[data-ccclear]').forEach(btn =>
+            btn.addEventListener('click', () => {
+                delete errors['cc:' + btn.dataset.ccclear];
+                vscode.postMessage({ type: 'ccClear', id: btn.dataset.ccclear });
+            }));
+        const ccOpen = document.getElementById('ccopen');
+        if (ccOpen) { ccOpen.addEventListener('click', () => vscode.postMessage({ type: 'ccOpenFile' })); }
+        const ccApply = document.getElementById('ccrawapply');
+        if (ccApply) {
+            ccApply.addEventListener('click', () => {
+                delete errors['cc:__raw__'];
+                const ta = document.getElementById('ccraw');
+                vscode.postMessage({ type: 'ccRaw', text: ta ? ta.value : '' });
+            });
+        }
 
         // profiles
         const sel = document.getElementById('profsel');
@@ -234,6 +316,12 @@
             errors[ev.data.key] = ev.data.error;
             render();
             focusKey(ev.data.key);
+            return;
+        }
+        if (ev.data.type === 'ccError') {
+            errors['cc:' + ev.data.id] = ev.data.error;
+            render();
+            focusKey('cc:' + ev.data.id);
             return;
         }
         if (ev.data.type === 'focus') { focusKey(ev.data.key); }

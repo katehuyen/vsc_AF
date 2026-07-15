@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo, discoverAgents } from './core/agents';
-import { openExternalTerminal } from './core/extTerminal';
+import { focusExternalTerminal, openExternalTerminal } from './core/extTerminal';
 import {
     applyPackFiles, buildAgentPack, readAgentPack, rebindPack, writeAgentPack
 } from './core/agentpack';
@@ -1595,7 +1595,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         env?: Record<string, string>
     ): vscode.Terminal | undefined => {
         if (cfg().get<boolean>('externalTerminal', false)) {
-            openExternalTerminal(cwd, command);
+            // title pinned so agentfarm.focusSessionTerminal can find the window later
+            openExternalTerminal(cwd, command, name);
             return undefined;
         }
         const terminal = vscode.window.createTerminal({ name, cwd, env });
@@ -4319,6 +4320,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }, preset && typeof preset === 'object' ? preset : undefined);
             }),
 
+        vscode.commands.registerCommand('agentfarm.focusSessionTerminal',
+            (arg?: { agentName?: string; cwd?: string }) => {
+                // Resolve the agent: by name, or by the session's working folder.
+                let name = arg?.agentName ?? '';
+                if (!name && arg?.cwd) {
+                    const norm = normPath(arg.cwd);
+                    const hit = agents.find(a => norm === a.normDir || norm.startsWith(a.normDir + '/'));
+                    name = hit?.name ?? '';
+                }
+                // 1) integrated terminals — ours are named "claude: <agent>" / "<cli>: <agent>"
+                const match = vscode.window.terminals.filter(t =>
+                    name ? (t.name === `claude: ${name}` || t.name.endsWith(`: ${name}`))
+                        : t.name.startsWith('claude: '));
+                if (match.length) {
+                    match[match.length - 1].show(); // most recent wins
+                    return;
+                }
+                // 2) external window (Windows Terminal — title pinned at launch)
+                focusExternalTerminal(
+                    name ? [`claude: ${name}`, name] : ['claude'],
+                    found => {
+                        if (!found) {
+                            void vscode.window.showInformationMessage(
+                                `Agent Farm: no open terminal found${name ? ` for "${name}"` : ''} — integrated terminals are matched by name, external windows by their pinned title (sessions started before this feature can't be found).`);
+                        }
+                    });
+            }),
+
         vscode.commands.registerCommand('agentfarm.openFarmSettings',
             (arg?: { focus?: string }) => {
                 FarmSettingsPanel.show({
@@ -4336,7 +4365,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         return conf?.properties ?? {};
                     },
                     getProfiles: () => context.globalState.get('agentfarm.settingsProfiles', []),
-                    setProfiles: (list) => context.globalState.update('agentfarm.settingsProfiles', list)
+                    setProfiles: (list) => context.globalState.update('agentfarm.settingsProfiles', list),
+                    claudeSettingsFile: () => userSettingsPath(claudeDir())
                 }, arg && typeof arg === 'object' ? arg.focus : undefined);
             }),
 

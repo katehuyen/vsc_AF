@@ -427,6 +427,10 @@ export class SessionViewerPanel {
                 vscode.commands.executeCommand('agentfarm.searchTranscripts',
                     { file: this.file, title: typeof msg.title === 'string' ? msg.title : undefined });
                 break;
+            case 'focusTerminal':
+                vscode.commands.executeCommand('agentfarm.focusSessionTerminal',
+                    { cwd: typeof msg.cwd === 'string' ? msg.cwd : undefined });
+                break;
             case 'openGuide':
                 vscode.commands.executeCommand('agentfarm.openGuide', msg.anchor);
                 break;

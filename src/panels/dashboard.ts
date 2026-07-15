@@ -59,6 +59,7 @@ export function sessionRowPool(
     const rows = sessions.map(s => ({
         file: s.file,
         agent: (s.agentName ?? '?') + (s.machine ? ` ⇄ ${s.machine}` : ''),
+        agentName: s.agentName ?? '',
         title: s.title,
         ts: s.lastTs || s.mtime || 0,
         durationMin: s.firstTs && s.lastTs ? Math.round((s.lastTs - s.firstTs) / 60000) : 0,
@@ -258,6 +259,10 @@ export class DashboardPanel {
                 break;
             case 'openFarmSettings':
                 vscode.commands.executeCommand('agentfarm.openFarmSettings');
+                break;
+            case 'focusTerminal':
+                vscode.commands.executeCommand('agentfarm.focusSessionTerminal',
+                    { agentName: typeof msg.agentName === 'string' ? msg.agentName : undefined });
                 break;
             case 'refresh':
                 this.refresh();

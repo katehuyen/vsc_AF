@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.54.0",
+  "version": "2.55.0",
   "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
@@ -769,6 +769,12 @@
         "title": "Farm Settings (all settings, setting sets)",
         "category": "Agent Farm",
         "icon": "$(settings-gear)"
+      },
+      {
+        "command": "agentfarm.focusSessionTerminal",
+        "title": "Focus Session Terminal",
+        "category": "Agent Farm",
+        "icon": "$(terminal)"
       },
       {
         "command": "agentfarm.sampleQualityNow",

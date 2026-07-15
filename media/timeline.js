@@ -373,7 +373,10 @@
                 <div class="sub" style="margin-top:4px">${s.lastPrompt ? '“' + C.esc(s.lastPrompt) + '”' : `<span class="muted">${s.source ? 'external CLI — lifecycle only' : 'no prompt yet'}</span>`}</div>
                 <div class="sub" style="margin-top:6px">started ${fmtClock(s.startedAt)} · ${s.prompts} prompts · ${s.toolCalls} tools · ${s.compactions} compactions · ${s.subagentStops} subagents · last event ${relTime(s.lastEventTs)}</div>
                 ${turnChips(s)}
-                ${s.transcriptPath ? `<div class="btnrow"><button class="secondary" data-open="${C.esc(s.transcriptPath)}" data-ts="${s.lastEventTs || 0}">Open transcript</button></div>` : ''}
+                <div class="btnrow">
+                    <button class="secondary" data-focusterm="${C.esc(s.agentName)}" title="Jump to this session's terminal window">⌨ Terminal</button>
+                    ${s.transcriptPath ? `<button class="secondary" data-open="${C.esc(s.transcriptPath)}" data-ts="${s.lastEventTs || 0}">Open transcript</button>` : ''}
+                </div>
             </div>`;
         }).join('');
 
@@ -455,6 +458,10 @@
             b.addEventListener('click', () => { windowMin = Number(b.dataset.win); render(); }));
         document.querySelectorAll('[data-guide]').forEach(b =>
             b.addEventListener('click', () => vscode.postMessage({ type: 'openGuide', anchor: b.dataset.guide })));
+        document.querySelectorAll('[data-focusterm]').forEach(b =>
+            b.addEventListener('click', () => vscode.postMessage({
+                type: 'focusTerminal', agentName: b.dataset.focusterm
+            })));
         document.querySelectorAll('[data-open]').forEach(b =>
             b.addEventListener('click', () => vscode.postMessage({
                 // live card: land on the latest activity, not the top of the file

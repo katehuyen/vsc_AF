@@ -4,6 +4,10 @@ import {
     buildSettingsModel, sanitizeValue, snapshotProfile, profileApplyPlan,
     parseImportedProfiles, SettingsProfile, SettingsCategory
 } from '../core/settingsops';
+import {
+    CC_CATALOG, buildClaudeModel, coerceClaudeValue, patchClaudeSettings,
+    validateRawClaudeSettings
+} from '../core/claudesettings';
 import { htmlShell } from './base';
 
 export interface FarmSettingsDeps {
@@ -12,6 +16,8 @@ export interface FarmSettingsDeps {
     schema(): Record<string, { type?: unknown; enum?: unknown; default?: unknown; description?: string; markdownDescription?: string }>;
     getProfiles(): SettingsProfile[];
     setProfiles(list: SettingsProfile[]): Thenable<void>;
+    /** Claude Code's own ~/.claude/settings.json (honors agentFarm.claudeDir). */
+    claudeSettingsFile(): string;
 }
 
 const CONFIG_SECTION = 'agentFarm';
@@ -58,12 +64,47 @@ export class FarmSettingsPanel {
         return buildSettingsModel(this.deps.schema(), key => cfg.get(key));
     }
 
+    /** Read Claude Code's settings.json — missing file is a valid empty state. */
+    private readClaude(): { json: Record<string, unknown>; raw: string; parseError: string } {
+        const file = this.deps.claudeSettingsFile();
+        let raw = '';
+        try { raw = fs.readFileSync(file, 'utf8'); } catch { /* not created yet */ }
+        if (!raw.trim()) { return { json: {}, raw: '{}', parseError: '' }; }
+        const v = validateRawClaudeSettings(raw);
+        return v.ok
+            ? { json: v.json, raw, parseError: '' }
+            : { json: {}, raw, parseError: v.error };
+    }
+
+    /** Write it back — pretty JSON, with a one-time .agentfarm-backup of the
+     *  original next to it (live product: an edit must always be undoable). */
+    private writeClaude(json: Record<string, unknown>): string {
+        const file = this.deps.claudeSettingsFile();
+        try {
+            const backup = file + '.agentfarm-backup';
+            if (fs.existsSync(file) && !fs.existsSync(backup)) {
+                fs.copyFileSync(file, backup);
+            }
+            fs.writeFileSync(file, JSON.stringify(json, null, 2) + '\n', 'utf8');
+            return '';
+        } catch (e) {
+            return String((e as Error).message).slice(0, 200);
+        }
+    }
+
     private buildData(): Record<string, unknown> {
+        const cc = this.readClaude();
         return {
             categories: this.categories(),
             profiles: this.deps.getProfiles().map(p => ({
                 name: p.name, savedAt: p.savedAt, count: Object.keys(p.values).length
-            }))
+            })),
+            claude: {
+                file: this.deps.claudeSettingsFile(),
+                items: buildClaudeModel(cc.json),
+                raw: cc.raw,
+                parseError: cc.parseError
+            }
         };
     }
 
@@ -170,6 +211,48 @@ export class FarmSettingsPanel {
                 void vscode.window.showInformationMessage(`Agent Farm: imported ${imported.length} setting set(s).`);
                 break;
             }
+            case 'ccSet': {
+                const item = CC_CATALOG.find(i => i.id === msg.id);
+                if (!item) { break; }
+                const cc = this.readClaude();
+                if (cc.parseError) {
+                    void this.panel.webview.postMessage({ type: 'ccError', id: item.id, error: 'settings.json is not valid JSON — fix it in the raw editor first' });
+                    break;
+                }
+                const coerced = coerceClaudeValue(item, msg.value);
+                if (!coerced.ok) {
+                    void this.panel.webview.postMessage({ type: 'ccError', id: item.id, error: coerced.error });
+                    break;
+                }
+                const err = this.writeClaude(patchClaudeSettings(cc.json, item.path, coerced.value));
+                if (err) { void vscode.window.showErrorMessage('Agent Farm: could not write settings.json — ' + err); }
+                this.refresh();
+                break;
+            }
+            case 'ccClear': {
+                const item = CC_CATALOG.find(i => i.id === msg.id);
+                if (!item) { break; }
+                const cc = this.readClaude();
+                if (!cc.parseError) {
+                    this.writeClaude(patchClaudeSettings(cc.json, item.path, undefined));
+                }
+                this.refresh();
+                break;
+            }
+            case 'ccRaw': {
+                const v = validateRawClaudeSettings(String(msg.text ?? ''));
+                if (!v.ok) {
+                    void this.panel.webview.postMessage({ type: 'ccError', id: '__raw__', error: v.error });
+                    break;
+                }
+                const err = this.writeClaude(v.json);
+                if (err) { void vscode.window.showErrorMessage('Agent Farm: could not write settings.json — ' + err); }
+                this.refresh();
+                break;
+            }
+            case 'ccOpenFile':
+                void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(this.deps.claudeSettingsFile()));
+                break;
             case 'openGuide':
                 void vscode.commands.executeCommand('agentfarm.openGuide', msg.anchor);
                 break;
