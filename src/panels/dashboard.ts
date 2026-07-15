@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
 import { watchStatus } from '../core/duties';
 import { Insight } from '../core/health';
-import { SessionIndex } from '../core/sessions';
+import { SessionIndex, SessionInfo } from '../core/sessions';
 import { PricingEngine, totalTokens } from '../core/pricing';
 import { SubsystemStatus } from '../core/farmstatus';
 import { dayKey } from '../core/util';
@@ -43,6 +43,28 @@ interface AgentSummary {
     pendingDuties: number;
     quality?: number;
     qualityCount: number;
+}
+
+/** The two session tables share one row shape: the N most expensive sessions
+ *  ("Top sessions by cost") and the same N sorted by last activity
+ *  ("Recent sessions"). Exported for tests. */
+export function pickSessionRows(sessions: SessionInfo[]): { topSessions: unknown[]; recentSessions: unknown[] } {
+    const row = (s: SessionInfo) => ({
+        file: s.file,
+        agent: (s.agentName ?? '?') + (s.machine ? ` ⇄ ${s.machine}` : ''),
+        title: s.title,
+        ts: s.lastTs,
+        durationMin: s.firstTs && s.lastTs ? Math.round((s.lastTs - s.firstTs) / 60000) : 0,
+        tokens: totalTokens(s.usage),
+        cost: s.cost,
+        sidechain: s.isSidechain
+    });
+    return {
+        topSessions: sessions.slice().sort((a, b) => b.cost - a.cost).slice(0, 12).map(row),
+        recentSessions: sessions.slice()
+            .sort((a, b) => (b.lastTs || b.mtime || 0) - (a.lastTs || a.mtime || 0))
+            .slice(0, 12).map(row)
+    };
 }
 
 function buildData(deps: DashboardDeps): Record<string, unknown> {
@@ -118,20 +140,7 @@ function buildData(deps: DashboardDeps): Record<string, unknown> {
         for (let i = 0; i < 168; i++) { heat[i] += s.heat[i]; }
     }
 
-    const topSessions = sessions
-        .slice()
-        .sort((a, b) => b.cost - a.cost)
-        .slice(0, 12)
-        .map(s => ({
-            file: s.file,
-            agent: (s.agentName ?? '?') + (s.machine ? ` ⇄ ${s.machine}` : ''),
-            title: s.title,
-            ts: s.lastTs,
-            durationMin: s.firstTs && s.lastTs ? Math.round((s.lastTs - s.firstTs) / 60000) : 0,
-            tokens: totalTokens(s.usage),
-            cost: s.cost,
-            sidechain: s.isSidechain
-        }));
+    const { topSessions, recentSessions } = pickSessionRows(sessions);
 
     const win = deps.index.windowUsage(now);
 
@@ -143,6 +152,7 @@ function buildData(deps: DashboardDeps): Record<string, unknown> {
         tokenTypes,
         heat,
         topSessions,
+        recentSessions,
         window: { ...win, limit: deps.windowTokenLimit() },
         fleetBudget: deps.budgets()['*'] ?? 0,
         mediaCost: deps.mediaCost(),

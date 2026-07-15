@@ -2,6 +2,11 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 2.49.0 — Recent sessions table on the Dashboard (2026-07-15)
+
+- **Recent sessions.** Right below *Top sessions by cost* the dashboard now shows the same table sorted by last activity — the twelve sessions you touched most recently, newest first (sessions without a timestamp fall back to file mtime). Same columns, same click-to-open-transcript rows.
+- **Tests:** new `test_dashboard_recent.js` (15) covers the ordering/cap/row shape and the rendered tables. Full suite: 35 files · 659 passed.
+
 ## 2.48.0 — Turn accordion in the Session Viewer (2026-07-15)
 
 Long transcripts are now foldable per turn — the colored turn bands double as accordion headers.

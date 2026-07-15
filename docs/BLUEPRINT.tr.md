@@ -113,6 +113,7 @@ Filonun genel panosu. `Agent Farm: Open Dashboard` komutuyla veya durum çubuğu
 - **Activity heatmap**: haftanın günü × saat bazında mesaj yoğunluğu. Çalışma ritmini gösterir.
 - **Agent kartları**: durum, bugün/aralık maliyeti, mini trend çizgisi, bulgu rozetleri. Karta tıkla → detay sayfası.
 - **Top sessions by cost**: en pahalı oturumlar; satıra tıkla → transkript.
+- **Recent sessions (2.49.0)**: hemen altında aynı tablo, bu kez son etkinliğe göre sıralı — en son dokunduğun oturumlar; satıra tıkla → transkript.
 - Üst satırda **Live Timeline** düğmesi (2.22.0): Refresh ile Guide arasında — panodan kulvar görünümüne tek tık.
 
 Dashboard, oturum kayıtları değiştikçe kendini otomatik günceller.

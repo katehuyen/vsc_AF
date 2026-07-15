@@ -151,7 +151,8 @@
             </div>`;
         }).join('');
 
-        const top = DATA.topSessions.map(s => `
+        // Top-by-cost and most-recent share the exact same row shape/markup.
+        const sessionRows = list => (list || []).map(s => `
             <tr class="click" data-session="${C.esc(s.file)}">
                 <td>${C.esc(s.agent)}${s.sidechain ? ' <span class="badge">sub</span>' : ''}</td>
                 <td>${C.esc(s.title)}</td>
@@ -160,6 +161,9 @@
                 <td class="num">${C.fmtTok(s.tokens)}</td>
                 <td class="num"><strong>${C.fmtUSD(s.cost)}</strong></td>
             </tr>`).join('');
+        const top = sessionRows(DATA.topSessions);
+        const recent = sessionRows(DATA.recentSessions);
+        const sessionHead = '<tr><th>Agent</th><th>Title</th><th class="num">When</th><th class="num">Duration</th><th class="num">Tokens</th><th class="num">Cost</th></tr>';
 
         // Z1: Farm Status — which subsystems are live/idle/never-used, one
         // wake-up action each. Opens expanded only while something is dormant.
@@ -235,8 +239,13 @@
             <p class="muted small">Cache eff. = cache-read share of prompt tokens (higher is cheaper). Err % = tool errors / tool calls. Quality = judge average of sampled sessions (14d) <a data-guide="kalite-karnesi">?</a> · <a data-guide="filo-raporu">Export a Markdown report ?</a></p>
             <h2>Top sessions by cost</h2>
             <div class="tablewrap"><table>
-                <tr><th>Agent</th><th>Title</th><th class="num">When</th><th class="num">Duration</th><th class="num">Tokens</th><th class="num">Cost</th></tr>
+                ${sessionHead}
                 ${top || '<tr><td colspan="6" class="muted">No sessions yet.</td></tr>'}
+            </table></div>
+            <h2>Recent sessions</h2>
+            <div class="tablewrap"><table>
+                ${sessionHead}
+                ${recent || '<tr><td colspan="6" class="muted">No sessions yet.</td></tr>'}
             </table></div>
             ${unknown}
             ${externalNote}

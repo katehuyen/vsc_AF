@@ -113,6 +113,7 @@ The fleet's overview board. Opens with the `Agent Farm: Open Dashboard` command 
 - **Activity heatmap**: message density by day-of-week × hour. Shows your work rhythm.
 - **Agent cards**: status, today/range cost, mini trend line, finding badges. Click a card → detail page.
 - **Top sessions by cost**: the most expensive sessions; click a row → transcript.
+- **Recent sessions (2.49.0)**: the same table right below, sorted by last activity — the sessions you touched most recently; click a row → transcript.
 - A **Live Timeline** button in the top row (2.22.0): between Refresh and Guide — one click from the board to the swim-lane view.
 
 The Dashboard updates itself automatically as session logs change.
