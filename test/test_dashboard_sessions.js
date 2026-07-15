@@ -55,6 +55,40 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     ok('missing lastTs falls back to mtime for ts', p2[0].ts === 777);
 }
 
+// ---------- part 1b: the viewer's turn table carries ts (the deep-link contract) ----------
+{
+    const Module = require('module');
+    const origLoad = Module._load;
+    Module._load = function (request) {
+        if (request === 'vscode') {
+            return { Uri: {}, window: {}, workspace: { getConfiguration: () => ({ get: (_k, d) => d }) }, ViewColumn: {}, ConfigurationTarget: {}, env: {} };
+        }
+        return origLoad.apply(this, arguments);
+    };
+    const viewer = require(path.join(__dirname, '..', 'out', 'panels', 'sessionViewer.js'));
+    Module._load = origLoad;
+
+    const t1 = '2026-07-15T10:00:00.000Z', t2 = '2026-07-15T10:05:00.000Z';
+    const lines = [
+        { type: 'user', timestamp: t1, message: { content: 'first ask' } },
+        { type: 'assistant', timestamp: t1, message: { id: 'a1', model: 'claude-x', content: [{ type: 'text', text: 'hi' }], usage: { input_tokens: 10, output_tokens: 5 } } },
+        { type: 'user', timestamp: t2, message: { content: 'second ask' } },
+        { type: 'assistant', timestamp: t2, message: { id: 'a2', model: 'claude-x', content: [{ type: 'text', text: 'yo' }], usage: { input_tokens: 20, output_tokens: 1 } } }
+    ].map(l => JSON.stringify(l)).join('\n');
+    const tmp = path.join(require('os').tmpdir(), `af-turnts-${Date.now()}.jsonl`);
+    fs.writeFileSync(tmp, lines);
+    const data = viewer.buildData(tmp, {
+        extensionUri: {}, getPricing: () => ({ costFor: () => 0.5 }),
+        maxMessages: () => 1, contextLimitFor: () => 0
+    });
+    fs.unlinkSync(tmp);
+
+    ok('turn table exposes each turn opening timestamp', data.turns.length === 2
+        && data.turns[0].ts === Date.parse(t1) && data.turns[1].ts === Date.parse(t2));
+    ok('turn table still carries label/tokens/cost', data.turns[0].label === 'first ask' && data.turns[0].tokens === 15 && data.turns[0].cost === 0.5);
+    ok('turns are computed before the maxMessages cut', data.messages.length === 1 && data.turnCount === 2);
+}
+
 // ---------- part 2: webview — sort select, active dot, turn accordion ----------
 {
     const code = fs.readFileSync(path.resolve(__dirname, '../media/dashboard.js'), 'utf8');
@@ -75,21 +109,32 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
         return els[id];
     }
 
-    let foldEls = [];
+    let foldEls = [], turnJumpEls = [];
     function elsForSelector(sel) {
-        if (sel !== '[data-fold]') { return []; }
         const list = [];
-        const re = /data-fold="([^"]*)"/g;
-        let m;
-        while ((m = re.exec(lastHtml))) {
-            const el = { dataset: { fold: m[1] } };
-            el.addEventListener = (_e, fn) => { el._click = fn; };
-            list.push(el);
+        if (sel === '[data-fold]') {
+            const re = /data-fold="([^"]*)"/g;
+            let m;
+            while ((m = re.exec(lastHtml))) {
+                const el = { dataset: { fold: m[1] } };
+                el.addEventListener = (_e, fn) => { el._click = fn; };
+                list.push(el);
+            }
+            foldEls = list;
+        } else if (sel === '[data-turnjump]') {
+            const re = /data-turnjump="([^"]*)" data-turnts="([^"]*)"/g;
+            let m;
+            while ((m = re.exec(lastHtml))) {
+                const el = { dataset: { turnjump: m[1], turnts: m[2] } };
+                el.addEventListener = (_e, fn) => { el._click = fn; };
+                list.push(el);
+            }
+            turnJumpEls = list;
         }
-        foldEls = list;
         return list;
     }
-    const evStub = { stopPropagation() { } };
+    let stopped = 0;
+    const evStub = { stopPropagation() { stopped++; } };
     const clickFold = (file) => foldEls.find(e => e.dataset.fold === file)._click(evStub);
 
     const now = Date.now();
@@ -140,6 +185,8 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     ok('active session carries the green dot', /dot on[^>]*><\/span> dev/.test(lastHtml) && lastHtml.split('dot on').length - 1 === 1);
     ok('turns column rendered', lastHtml.includes('<th class="num">Turns</th>') && lastHtml.includes('<td class="num">40</td>'));
     ok('every row folds', foldEls.length === 3);
+    ok('session rows are tinted apart from nested turn content',
+        lastHtml.split('class="click sessrow"').length - 1 === 3 && lastHtml.includes('tr.sessrow > td { background:'));
 
     // sort by cost → most expensive first; by turns → mid first
     getEl('sesssort').listeners.change({ target: { value: 'cost' } });
@@ -154,8 +201,19 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     clickFold('old.jsonl');
     ok('fold click requests the turn breakdown', posted.length === 1 && posted[0].type === 'sessionTurns' && posted[0].file === 'old.jsonl');
     ok('open row shows loading state', lastHtml.includes('Loading turns…') && lastHtml.includes('class="sessturns"'));
-    msgHandler({ data: { type: 'sessionTurns', file: 'old.jsonl', turns: [{ n: 1, label: 'first ask', tokens: 700, cost: 30 }, { n: 2, label: 'second ask', tokens: 299, cost: 12 }] } });
+    ok('open row is marked for the accent edge', /class="click sessrow open" data-session="old\.jsonl"/.test(lastHtml));
+    msgHandler({ data: { type: 'sessionTurns', file: 'old.jsonl', turns: [{ n: 1, label: 'first ask', ts: 111, tokens: 700, cost: 30 }, { n: 2, label: 'second ask', ts: 222, tokens: 299, cost: 12 }] } });
     ok('turn breakdown rendered with label + cost', lastHtml.includes('first ask') && lastHtml.includes('$30') && lastHtml.includes('second ask'));
+
+    // turn row → open the transcript AT that turn (viewer reveals + scrolls)
+    posted = [];
+    const before = stopped;
+    turnJumpEls.find(e => e.dataset.turnts === '222')._click(evStub);
+    ok('turn row click posts openSession with the turn timestamp',
+        posted.length === 1 && posted[0].type === 'openSession' && posted[0].file === 'old.jsonl' && posted[0].ts === 222);
+    ok('…and does not also trigger the session row underneath', stopped === before + 1);
+    ok('every turn row is a jump target', turnJumpEls.length === 2 && turnJumpEls[0].dataset.turnts === '111');
+
     posted = [];
     clickFold('new.jsonl');
     ok('second fold stays open alongside (multi mode)', lastHtml.split('class="sessturns"').length - 1 === 2);

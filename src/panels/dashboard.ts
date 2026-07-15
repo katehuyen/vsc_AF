@@ -239,7 +239,10 @@ export class DashboardPanel {
                 vscode.commands.executeCommand('agentfarm.openAgentDetail', { agentId: msg.agentId });
                 break;
             case 'openSession':
-                vscode.commands.executeCommand('agentfarm.openSession', msg.file);
+                // ts (optional) = the clicked turn's opening prompt — the viewer
+                // reveals an already-open panel and scrolls it right there.
+                vscode.commands.executeCommand('agentfarm.openSession', msg.file,
+                    typeof msg.ts === 'number' && msg.ts > 0 ? msg.ts : undefined);
                 break;
             case 'startSession':
                 vscode.commands.executeCommand('agentfarm.startSession', { agentId: msg.agentId });

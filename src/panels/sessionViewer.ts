@@ -205,19 +205,23 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
     // where usage from non-rendering assistant lines is still visible).
     let turnNo = 0;
     const turnLabels: Record<number, string> = {};
+    const turnTs: Record<number, number> = {};
     for (const m of messages) {
         if (m.role === 'user' && !m.sidechain) {
             turnNo++;
             m.turnStart = true;
             turnLabels[turnNo] = promptLabel(m.text ?? '');
+            turnTs[turnNo] = m.ts;
         }
         if (turnNo > 0) { m.turn = turnNo; }
     }
-    // Flat per-turn table for the "Turn breakdown" box.
-    const turns: { n: number; label: string; tokens: number; cost: number }[] = [];
+    // Flat per-turn table for the "Turn breakdown" box. `ts` (the opening prompt's
+    // time) lets other surfaces deep-link into a turn via openSession(file, focusTs).
+    const turns: { n: number; label: string; ts: number; tokens: number; cost: number }[] = [];
     for (let n = 1; n <= turnNo; n++) {
         turns.push({
             n, label: turnLabels[n] ?? '',
+            ts: turnTs[n] ?? 0,
             tokens: turnTotals[n]?.tokens ?? 0,
             cost: turnTotals[n]?.cost ?? 0
         });

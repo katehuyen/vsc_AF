@@ -2,6 +2,13 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 2.51.0 — Dashboard turn rows jump into the transcript (2026-07-15)
+
+- **Click a turn → the transcript opens at that turn.** The turn rows under an expanded session row are now click-through, just like the session row itself: the viewer scrolls to that turn's opening prompt and flashes it. If that session's viewer is **already open, it isn't opened again** — the existing tab is revealed and scrolled to the turn (the same mechanism the timeline, search and feed use). A folded turn band in the viewer unfolds itself on arrival.
+- **Session rows are tinted and accent-edged**, so an expanded row's turn list reads as nested content instead of blending into the next session. The open row's accent edge and tint deepen.
+- Under the hood the viewer's turn table now carries each turn's opening timestamp, which is what makes the deep link possible.
+- **Tests:** `test_dashboard_sessions.js` 28 → 36 (turn-row jump carries the right timestamp and doesn't trigger the row underneath; end-to-end check that a real transcript parse exposes turn timestamps). Full suite: 35 files · 680 passed.
+
 ## 2.50.0 — One Sessions table: sortable, active-aware, with per-turn fold-outs (2026-07-15)
 
 The dashboard's *Top sessions by cost* and *Recent sessions* tables (2.49.0) were the same table with different sorts — so they are now **one table** that does more:

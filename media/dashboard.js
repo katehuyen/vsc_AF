@@ -201,7 +201,8 @@
             if (!c.turns.length) { return '<span class="muted small">No turns recorded.</span>'; }
             return `<table class="turnmini">
                 <tr><th>#</th><th>prompt</th><th class="num">tokens</th><th class="num">cost</th></tr>
-                ${c.turns.map(t => `<tr>
+                ${c.turns.map(t => `<tr class="click" data-turnjump="${C.esc(r.file)}" data-turnts="${t.ts || 0}"
+                    title="Open the transcript at turn ${t.n}">
                     <td class="num">${t.n}</td><td>${C.esc(t.label || '—')}</td>
                     <td class="num">${t.tokens ? C.fmtTok(t.tokens) : '—'}</td>
                     <td class="num">${t.cost ? C.fmtUSD(t.cost) : '—'}</td>
@@ -210,7 +211,7 @@
         };
         const sessRowsHtml = sessTop.map(r => {
             const open = sessOpen.has(r.file);
-            return `<tr class="click" data-session="${C.esc(r.file)}">
+            return `<tr class="click sessrow${open ? ' open' : ''}" data-session="${C.esc(r.file)}">
                 <td class="foldcell"><button class="fold" data-fold="${C.esc(r.file)}" title="${open ? 'Hide' : 'List'} this session's turns">${open ? '▾' : '▸'}</button></td>
                 <td>${r.active ? '<span class="dot on" title="Active now"></span> ' : ''}${C.esc(r.agent)}${r.sidechain ? ' <span class="badge">sub</span>' : ''}</td>
                 <td>${C.esc(r.title)}</td>
@@ -267,9 +268,18 @@
                     background:transparent; opacity:.7; border:1px solid var(--vscode-widget-border, #4444);
                     color:var(--vscode-foreground); }
                 .fold:hover { opacity:1; }
-                tr.sessturns > td { background:color-mix(in srgb, var(--vscode-textLink-foreground) 6%, transparent); }
-                .turnmini { margin:4px 0 8px; font-size:11px; }
+                /* Session rows are tinted and accent-edged so that once a row is
+                   expanded, its turn list can't be misread as another session. */
+                tr.sessrow > td { background:color-mix(in srgb, var(--vscode-textLink-foreground) 8%, transparent);
+                    border-bottom-color:var(--vscode-widget-border, #4443); }
+                tr.sessrow > td:first-child { box-shadow:inset 3px 0 0 color-mix(in srgb, var(--vscode-textLink-foreground) 45%, transparent); }
+                tr.sessrow.open > td { background:color-mix(in srgb, var(--vscode-textLink-foreground) 18%, transparent); }
+                tr.sessrow.open > td:first-child { box-shadow:inset 3px 0 0 var(--vscode-textLink-foreground); }
+                /* the turn list is nested content: no tint, indented under its row */
+                tr.sessturns > td { padding-left:12px; }
+                .turnmini { margin:4px 0 10px; font-size:11px; width:auto; min-width:340px; }
                 .turnmini th { font-size:10px; opacity:.7; }
+                .turnmini td { border-bottom-color:var(--vscode-widget-border, #1111); }
             </style>
             <div class="spread">
                 <div><h1>Agent Farm</h1><div class="muted small">Generated ${new Date(DATA.generatedAt).toLocaleString()} · data: local Claude Code transcripts</div></div>
@@ -341,6 +351,15 @@
             card.addEventListener('click', () => vscode.postMessage({ type: 'openAgent', agentId: card.dataset.agent })));
         document.querySelectorAll('[data-session]').forEach(row =>
             row.addEventListener('click', () => vscode.postMessage({ type: 'openSession', file: row.dataset.session })));
+        // Turn row → open the transcript AT that turn (an already-open viewer is
+        // revealed and scrolled there rather than opened again).
+        document.querySelectorAll('[data-turnjump]').forEach(row =>
+            row.addEventListener('click', ev => {
+                ev.stopPropagation();
+                vscode.postMessage({
+                    type: 'openSession', file: row.dataset.turnjump, ts: Number(row.dataset.turnts) || 0
+                });
+            }));
         document.querySelectorAll('[data-agent-row]').forEach(row =>
             row.addEventListener('click', () => vscode.postMessage({ type: 'openAgent', agentId: row.dataset.agentRow })));
         document.querySelectorAll('[data-guide]').forEach(a =>
