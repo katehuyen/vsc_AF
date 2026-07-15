@@ -249,6 +249,11 @@ export class AgentDetailPanel {
             case 'openTimeline':
                 vscode.commands.executeCommand('agentfarm.openTimeline');
                 break;
+            case 'openSearch':
+                // pre-scoped to this agent; ✕ in the panel widens to fleet
+                vscode.commands.executeCommand('agentfarm.searchTranscripts',
+                    { agentName: this.agent()?.name });
+                break;
             case 'openGuide':
                 vscode.commands.executeCommand('agentfarm.openGuide', msg.anchor);
                 break;

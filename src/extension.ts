@@ -4304,15 +4304,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         // ---------- Phase D commands ----------
 
-        vscode.commands.registerCommand('agentfarm.searchTranscripts', () => {
-            SearchPanel.show({
-                extensionUri: context.extensionUri,
-                index,
-                getAgentNames: () => agents.map(a => a.name),
-                semanticSearch,
-                semanticStatus
-            });
-        }),
+        vscode.commands.registerCommand('agentfarm.searchTranscripts',
+            (preset?: { agentName?: string; file?: string; title?: string }) => {
+                SearchPanel.show({
+                    extensionUri: context.extensionUri,
+                    index,
+                    getAgentNames: () => agents.map(a => a.name),
+                    getMemoryFiles: () => agents.flatMap(a =>
+                        a.memoryFiles.map(f => ({ file: f.path, agentName: a.name }))),
+                    liveEventsFile: () => path.join(context.globalStorageUri.fsPath, 'live-events.jsonl'),
+                    semanticSearch,
+                    semanticStatus
+                }, preset && typeof preset === 'object' ? preset : undefined);
+            }),
 
         vscode.commands.registerCommand('agentfarm.buildSemanticIndex', async () => {
             if (embeddingsCfg().provider === 'off') {

@@ -201,6 +201,7 @@
                     <button class="secondary" id="reveal">Reveal folder</button>
                     <button class="secondary" id="dashboard">Dashboard</button>
                     <button class="secondary" id="timeline">Live Timeline</button>
+                    <button class="secondary" id="searchagent" title="Search all of this agent's sessions">⌕ Search</button>
                     <button class="secondary" data-guide="ajan-detay-sayfasi">? Guide</button>
                 </div>
             </div>
@@ -261,6 +262,7 @@
         document.getElementById('reveal').addEventListener('click', () => vscode.postMessage({ type: 'reveal' }));
         document.getElementById('dashboard').addEventListener('click', () => vscode.postMessage({ type: 'openDashboard' }));
         document.getElementById('timeline').addEventListener('click', () => vscode.postMessage({ type: 'openTimeline' }));
+        document.getElementById('searchagent').addEventListener('click', () => vscode.postMessage({ type: 'openSearch' }));
         document.querySelectorAll('[data-file]').forEach(el =>
             el.addEventListener('click', () => vscode.postMessage({ type: 'openFile', path: el.dataset.file })));
         document.querySelectorAll('[data-session]').forEach(el =>

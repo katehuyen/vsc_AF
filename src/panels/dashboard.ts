@@ -253,6 +253,9 @@ export class DashboardPanel {
             case 'openTimeline':
                 vscode.commands.executeCommand('agentfarm.openTimeline');
                 break;
+            case 'openSearch':
+                vscode.commands.executeCommand('agentfarm.searchTranscripts');
+                break;
             case 'refresh':
                 this.refresh();
                 break;

@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 2.53.0 — Search grows up: tool traffic, scopes, turn grouping, memory & events (2026-07-15)
+
+The search architecture report (S1–S5) implemented in one go. Until now search saw only user prompts + assistant text — **about 10% of the text a fleet actually produces**. Measured on a real ~95 MB corpus:
+
+- **Tool inputs and tool results are searchable (S1).** "Which session touched this file?" finally has an answer — file paths, commands, code and outputs live in tool traffic (~90% of all transcript text). The new **Search in** chip row picks what to scan: **Dialog** (default — same behavior as before), individual kinds, or **Everything**. A full everything-scan of 95 MB measures ~1.4 s; still no index needed.
+- **Scopes (S2):** the engine takes a session-file set and a time window (a turn is a time window), and every hit is tagged with its **turn number and the turn's opening prompt**.
+- **Search buttons where you are (S3):** Dashboard (fleet-wide), Agent Detail (that agent) and Session Viewer (that session) all carry **⌕ Search**; the panel opens pre-scoped with a pill, ✕ widens back to the fleet. A session-scoped search raises the per-file hit caps so nothing relevant is hidden.
+- **Grouped results (S4):** hits are grouped per session with `Turn N — <prompt>` sub-headers; the group header opens the session, a hit opens it **at the exact message**. Tool hits show the tool name.
+- **Two more sources (S5):** the agents' **memory notes** (`memory/*.md` — a hit opens the file) and **orphaned live events** — events whose transcript is gone (external CLIs, pruned sessions). Events still backed by a transcript are deliberately not duplicated. Both are on by default, each with its own tick.
+- **Regex safety net:** a scan is cut after a 10 s time budget and the partial result says so — a catastrophic regex can no longer hang the search.
+- **Tests:** new `test_search_scopes.js` (30) — roles/turns/scopes/budget/sources plus the grouped webview. Full suite: 37 files · 728 passed.
+
 ## 2.52.0 — Per-turn model, Dialog by default (2026-07-15)
 
 - **Every turn shows which model served it.** The turn band, the Turn breakdown table, the dashboard's per-session turn list and the Markdown export now carry the model — because the model **changes mid-session in about 1 of 4 real sessions**, so a single per-session model line was hiding the truth.

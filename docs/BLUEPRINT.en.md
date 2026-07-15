@@ -846,11 +846,11 @@ Against signal fatigue: instead of ten separate warnings, once a week a three-se
 
 "I discussed this with an agent, but which one?" — as the fleet grows, your memory panel is on the job.
 
-- **Open:** `Agent Farm: Search Transcripts…` or the 🔍 on the Recent Sessions header.
-- **User requests + agent replies** are searched across all session logs; the newest sessions come first.
+- **Open:** `Agent Farm: Search Transcripts…`, the 🔍 on the Recent Sessions header, or the **⌕ Search** buttons on the Dashboard, an Agent Detail page and the Session Viewer (2.53.0) — the latter two open the panel **pre-scoped** to that agent / that session, and the ✕ on the scope pill widens back to the whole fleet.
+- **What is searched (2.53.0):** the default is **Dialog** — your requests + agent replies. The chip row widens it to **tool inputs** (file paths, commands, code — "which session touched this file?") and **tool results** (outputs, error messages); *Everything* covers all four. Measured on a ~95 MB fleet, a full everything-scan stays under ~1.5 s. Two extra sources ride along, each with its own tick: the agents' **memory notes** (`memory/*.md`, hits open the file) and **orphaned live events** — events whose transcript no longer exists (external CLIs, pruned sessions); events still backed by a transcript are deliberately excluded, the transcript scan already covers them.
 - Options: agent filter, `regex` box (plain text by default, case-insensitive), `match case`.
-- Clicking a result opens the session viewer and scrolls to **the exact matching message** (2.40.0) — the message is briefly highlighted with a frame.
-- Results are limited to 3 per session, 150 total — narrow the query if it overflows.
+- **Results are grouped per session with turn sub-headers** (2.53.0): each session is one block (header click → open the session), hits inside it are labeled `Turn 3 — <its opening prompt>`; tool hits carry the tool name. Clicking a hit opens the session viewer and scrolls to **the exact matching message** (2.40.0) — briefly highlighted with a frame.
+- Results are limited to 3 per session, 150 total (a session-scoped search gets much higher caps) — narrow the query if it overflows. A runaway regex is cut by a **10 s time budget**; partial results say so honestly.
 
 **Semantic mode (meaning-based search):** searches meaning, not words — for questions like *"where I talked with the agent about low motivation"*. Tick the **semantic** box in the panel.
 

@@ -846,11 +846,11 @@ Sinyal yorgunluğuna karşı: on ayrı uyarı yerine haftada bir, üç cümlelik
 
 "Bunu bir ajanla konuşmuştum ama hangisiyle?" — filo büyüyünce hafıza panelin işidir.
 
-- **Aç:** `Agent Farm: Search Transcripts…` veya Recent Sessions başlığındaki 🔍.
-- Tüm oturum kayıtlarında **kullanıcı istekleri + ajan cevapları** taranır; en yeni oturumlar önce gelir.
+- **Aç:** `Agent Farm: Search Transcripts…`, Recent Sessions başlığındaki 🔍, ya da Dashboard / Ajan Detay / Oturum Görüntüleyicideki **⌕ Search** düğmeleri (2.53.0) — son ikisi paneli o ajana / o oturuma **ön-kapsamlı** açar; kapsam rozetindeki ✕ tekrar tüm filoya genişletir.
+- **Ne taranır (2.53.0):** varsayılan **Dialog** — senin isteklerin + ajan cevapları. Chip satırı kapsamı **araç girdilerine** (dosya yolları, komutlar, kod — "bu dosyaya hangi seansta dokunuldu?") ve **araç sonuçlarına** (çıktılar, hata mesajları) genişletir; *Everything* dördünü de kapsar. ~95 MB'lık filoda tam everything-taraması ~1.5 sn altında ölçüldü. İki ek kaynak kendi kutusuyla eşlik eder: ajanların **hafıza notları** (`memory/*.md`, isabet dosyayı açar) ve **öksüz canlı olaylar** — transkripti artık var olmayan olaylar (harici CLI'lar, budanmış oturumlar); transkripti duran olaylar bilerek dışarıda, onları transkript taraması zaten kapsıyor.
 - Seçenekler: ajan filtresi, `regex` kutusu (düz metin varsayılan, büyük/küçük harf duyarsız), `match case`.
-- Sonuca tıklayınca oturum görüntüleyici açılır ve **tam eşleşen mesaja kayar** (2.40.0) — mesaj kısa süreliğine çerçeveyle vurgulanır.
-- Sonuçlar oturum başına 3, toplam 150 ile sınırlıdır — taşarsa sorguyu daralt.
+- **Sonuçlar oturum başına gruplu, tur alt-başlıklı** (2.53.0): her oturum tek blok (başlığa tık → oturumu aç), içindeki isabetler `Turn 3 — <açılış komutu>` etiketli; araç isabetleri araç adını taşır. İsabete tıklayınca oturum görüntüleyici açılır ve **tam eşleşen mesaja kayar** (2.40.0) — kısa süreliğine çerçeveyle vurgulanır.
+- Sonuçlar oturum başına 3, toplam 150 ile sınırlıdır (tek-oturum kapsamında sınırlar çok daha yüksektir) — taşarsa sorguyu daralt. Azgın bir regex **10 sn'lik süre bütçesiyle** kesilir; kısmi sonuç dürüstçe söylenir.
 
 **Semantik mod (anlamsal arama):** kelime değil anlam arar — *"ajanla motivasyon düşüklüğünü konuştuğum yer"* gibi sorular için. Paneldeki **semantic** kutusunu işaretle.
 

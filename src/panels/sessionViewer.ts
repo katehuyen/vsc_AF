@@ -422,6 +422,11 @@ export class SessionViewerPanel {
             case 'openTimeline':
                 vscode.commands.executeCommand('agentfarm.openTimeline');
                 break;
+            case 'openSearch':
+                // pre-scoped to this session; ✕ in the panel widens to fleet
+                vscode.commands.executeCommand('agentfarm.searchTranscripts',
+                    { file: this.file, title: typeof msg.title === 'string' ? msg.title : undefined });
+                break;
             case 'openGuide':
                 vscode.commands.executeCommand('agentfarm.openGuide', msg.anchor);
                 break;
