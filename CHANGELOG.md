@@ -2,6 +2,15 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 2.52.0 — Per-turn model, Dialog by default (2026-07-15)
+
+- **Every turn shows which model served it.** The turn band, the Turn breakdown table, the dashboard's per-session turn list and the Markdown export now carry the model — because the model **changes mid-session in about 1 of 4 real sessions**, so a single per-session model line was hiding the truth.
+- **Model names are read verbatim — no lookup tables, no maintenance.** Whatever the transcript says is what you see (the `claude-` prefix is trimmed for width). A model released tomorrow shows up on its own; only *pricing* needs a rule, and that has been user-editable since 2.47.0.
+- **Effort/reasoning labels: the hook is in, the data isn't.** Claude Code records no effort field today (probed across 40 real transcripts: zero hits), so nothing is shown rather than something invented. If such a field starts being written, it appears automatically and its value is shown verbatim whatever it says.
+- **Dialog is now the session viewer's default view** — you + the assistant, tool traffic one chip away. Note that Export MD still exports *what you see*, so tool traffic is out of the default export.
+- **A jump can never be hidden by the filter.** Clicking a tool event in the timeline (or any deep link into filtered-out content) now clears the filter so the target is actually reachable — the same rule as the turn accordion auto-unfolding.
+- **Tests:** new `test_viewer_model_dialog.js` (18). Full suite: 36 files · 698 passed.
+
 ## 2.51.0 — Dashboard turn rows jump into the transcript (2026-07-15)
 
 - **Click a turn → the transcript opens at that turn.** The turn rows under an expanded session row are now click-through, just like the session row itself: the viewer scrolls to that turn's opening prompt and flashes it. If that session's viewer is **already open, it isn't opened again** — the existing tab is revealed and scrolled to the turn (the same mechanism the timeline, search and feed use). A folded turn band in the viewer unfolds itself on arrival.

@@ -14,7 +14,10 @@
         { id: 'toolResult', label: 'Results', match: m => m.role === 'toolResult' },
         { id: 'error', label: 'Errors', match: m => m.isError }
     ];
-    let roleSel = new Set();
+    // Dialog (you + assistant) is the default view: the conversation is what you
+    // came to read. Tool traffic is one chip away — and a deep link (focusTs)
+    // pointing at a tool message clears the filter so it can never hide a jump.
+    let roleSel = new Set(['user', 'assistant']);
     // Turns unticked in their band are left out of Export MD (default: all included).
     const exportOff = new Set();
     // Accordion: collapsed turns show only their band (session-local, display-only —
@@ -69,6 +72,14 @@
         return (DATA.turns || []).find(x => x.n === n);
     }
 
+    /** Model ids + any run attributes (effort, …) exactly as the transcript
+     *  recorded them — never a lookup table, so new names just work. */
+    function turnTags(info) {
+        if (!info) { return []; }
+        return (info.models || []).map(m => m.replace(/^claude-/, ''))
+            .concat(Object.values(info.attrs || {}));
+    }
+
     function turnMsgCount(n) {
         if (!turnCounts) {
             turnCounts = {};
@@ -107,6 +118,7 @@
                 <input type="checkbox" data-turnsel="${m.turn}"${exportOff.has(m.turn) ? '' : ' checked'}></label>
             <span class="turnnum">Turn ${m.turn}/${DATA.turnCount || '?'}</span>
             <span class="turnlabel">${C.esc((info && info.label) || '')}</span>
+            <span class="turntags">${turnTags(info).map(t => `<span class="tag">${C.esc(t)}</span>`).join('')}</span>
             <span class="turnstats">${closed ? `${turnMsgCount(m.turn)} msgs${total ? ' · ' : ''}` : ''}${total}</span>
             <span class="turnnav">
                 <button class="tnav" data-tnav="prev" data-from="${m.turn}" title="Jump to previous turn">↑</button>
@@ -141,15 +153,24 @@
     function focusAt(ts) {
         if (!ts) { return; }
         if (replay.active) { stopTimer(); replay.active = false; render(); }
-        let best = -1, bestDist = Infinity, bestMsg = null;
-        visibleMsgs().forEach((m, i) => {
+        // Nearest among ALL messages, not just the visible ones: a jump must reach
+        // its target even when the current filters (Dialog by default) hide it.
+        let target = null, bestDist = Infinity;
+        (DATA.messages || []).forEach(m => {
             if (!m.ts) { return; }
             const d = Math.abs(m.ts - ts);
-            if (d < bestDist) { bestDist = d; best = i; bestMsg = m; }
+            if (d < bestDist) { bestDist = d; target = m; }
         });
-        if (best < 0) { return; }
+        if (!target) { return; }
+        if (!matchesRole(target) || !matchesText(target)) {
+            roleSel = new Set();
+            filter = '';
+            render({ keepScroll: true });
+        }
         // the target may sit inside a folded turn — unfold it or the scroll lands nowhere
-        if (bestMsg && bestMsg.turn && collapsed.has(bestMsg.turn)) { expandTurn(bestMsg.turn); render({ keepScroll: true }); }
+        if (target.turn && collapsed.has(target.turn)) { expandTurn(target.turn); render({ keepScroll: true }); }
+        const best = visibleMsgs().indexOf(target);
+        if (best < 0) { return; }
         const el = document.querySelector(`#msgs [data-idx="${best}"]`);
         if (!el) { return; }
         el.scrollIntoView({ block: 'center' });
@@ -289,7 +310,9 @@
             if (m.turnStart && m.turn) {
                 const t = (DATA.turnTotals || {})[m.turn];
                 const info = turnInfo(m.turn);
-                const stats = t && (t.tokens || t.cost) ? ` · ${C.fmtTok(t.tokens)} tok · ${C.fmtUSD(t.cost)}` : '';
+                const tags = turnTags(info);
+                const stats = (tags.length ? ` · ${tags.join(' · ')}` : '') +
+                    (t && (t.tokens || t.cost) ? ` · ${C.fmtTok(t.tokens)} tok · ${C.fmtUSD(t.cost)}` : '');
                 lines.push('', `## Turn ${m.turn}/${DATA.turnCount || '?'}${info && info.label ? ' — ' + info.label : ''}${stats}`);
             }
             const bits = [
@@ -360,10 +383,11 @@
                 <span class="muted small">— or use the checkboxes here / on the turn bands (they stay in sync); "only" exports just that turn</span>
             </div>
             <div class="tablewrap"><table>
-                <thead><tr><th>md</th><th>#</th><th>prompt</th><th class="num">tokens</th><th class="num">cost</th></tr></thead>
+                <thead><tr><th>md</th><th>#</th><th>prompt</th><th>model</th><th class="num">tokens</th><th class="num">cost</th></tr></thead>
                 <tbody>${turns.map(t => `<tr class="click" data-turn="${t.n}">
                     <td class="selcell"><input type="checkbox" data-turnsel="${t.n}"${exportOff.has(t.n) ? '' : ' checked'} title="Include in Export MD"><button class="only" data-only="${t.n}" title="Export only this turn">only</button></td>
                     <td>${t.n}</td><td>${C.esc(t.label || '—')}</td>
+                    <td>${turnTags(t).map(x => `<span class="tag">${C.esc(x)}</span>`).join('') || '—'}</td>
                     <td class="num">${t.tokens ? C.fmtTok(t.tokens) : '—'}</td>
                     <td class="num">${t.cost ? C.fmtUSD(t.cost) : '—'}</td>
                 </tr>`).join('')}</tbody>
@@ -411,6 +435,11 @@
                     white-space:nowrap; opacity:.9; }
                 .turnhdr .turnstats { white-space:nowrap; font-size:11px;
                     color:var(--vscode-descriptionForeground); }
+                /* Model / effort labels: rendered verbatim from the transcript. */
+                .turnhdr .turntags, .turnbox .tag { white-space:nowrap; }
+                .tag { font-size:10px; padding:1px 6px; margin-right:4px; border-radius:8px;
+                    background:var(--vscode-badge-background); color:var(--vscode-badge-foreground);
+                    opacity:.85; }
                 .turnhdr .turnsel { display:flex; align-items:center; cursor:pointer; }
                 .turnhdr .turnsel input { cursor:pointer; margin:0; }
                 .turnhdr .turnnav { display:flex; gap:4px; }

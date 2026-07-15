@@ -41,6 +41,35 @@ interface ViewMessage {
 
 const TEXT_LIMIT = 4000;
 
+/** Run-attribute keys we look for next to the model (effort / reasoning level /
+ *  service tier …). Claude Code does not record any of these today — probed
+ *  across 40 real transcripts, zero hits — so this normally yields nothing and
+ *  the UI stays clean.
+ *
+ *  The values are never interpreted: whatever string the transcript holds is
+ *  shown verbatim, exactly like the model id. So a NEW model ("claude-nova-9")
+ *  or a NEW effort level ("ultra") needs no code change ever — only a brand-new
+ *  *key name* would, and that is one string in this list. */
+const ATTR_KEYS = [
+    'effort', 'reasoning_effort', 'reasoningEffort', 'thinking_effort',
+    'reasoning', 'service_tier', 'serviceTier'
+];
+
+/** Pull run attributes out of a transcript line (message level first, then the
+ *  line itself). Scalars only — an object value would be config, not a label. */
+function readAttrs(line: Record<string, unknown>, msg: Record<string, unknown>): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const src of [msg, line]) {
+        for (const k of ATTR_KEYS) {
+            const v = src?.[k];
+            if (v === undefined || v === null || typeof v === 'object') { continue; }
+            const s = String(v).trim();
+            if (s && out[k] === undefined) { out[k] = s.slice(0, 40); }
+        }
+    }
+    return out;
+}
+
 function clip(s: string): string {
     return s.length > TEXT_LIMIT ? s.slice(0, TEXT_LIMIT) + `\n… [truncated, ${s.length} chars total]` : s;
 }
@@ -90,6 +119,10 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
     // never renders (e.g. thinking-only stream lines) must still bill to the open turn.
     let inTurn = 0;
     const turnTotals: Record<number, { tokens: number; cost: number }> = {};
+    // Which model(s) served each turn — the model can change mid-session (it does
+    // in ~1 of 4 real sessions), so this is per turn, not per session.
+    const turnModels: Record<number, Set<string>> = {};
+    const turnAttrs: Record<number, Record<string, string>> = {};
 
     for (const lineText of raw.split('\n')) {
         if (!lineText.trim()) { continue; }
@@ -144,6 +177,17 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
         if (line.type === 'assistant' && line.message) {
             const msg = line.message;
             if (msg.model && msg.model !== '<synthetic>') { models.add(msg.model); }
+            if (inTurn > 0) {
+                if (msg.model && msg.model !== '<synthetic>') {
+                    (turnModels[inTurn] ?? (turnModels[inTurn] = new Set())).add(msg.model);
+                }
+                const attrs = readAttrs(
+                    line as unknown as Record<string, unknown>,
+                    msg as unknown as Record<string, unknown>);
+                for (const [k, v] of Object.entries(attrs)) {
+                    (turnAttrs[inTurn] ?? (turnAttrs[inTurn] = {}))[k] = v;
+                }
+            }
             if (msg.usage) {
                 ctxTokens = (msg.usage.input_tokens ?? 0) + (msg.usage.cache_read_input_tokens ?? 0) +
                     (msg.usage.cache_creation_input_tokens ?? 0) + (msg.usage.output_tokens ?? 0);
@@ -217,13 +261,19 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
     }
     // Flat per-turn table for the "Turn breakdown" box. `ts` (the opening prompt's
     // time) lets other surfaces deep-link into a turn via openSession(file, focusTs).
-    const turns: { n: number; label: string; ts: number; tokens: number; cost: number }[] = [];
+    // `models`/`attrs` are verbatim transcript values — see ATTR_KEYS.
+    const turns: {
+        n: number; label: string; ts: number; tokens: number; cost: number;
+        models: string[]; attrs: Record<string, string>;
+    }[] = [];
     for (let n = 1; n <= turnNo; n++) {
         turns.push({
             n, label: turnLabels[n] ?? '',
             ts: turnTs[n] ?? 0,
             tokens: turnTotals[n]?.tokens ?? 0,
-            cost: turnTotals[n]?.cost ?? 0
+            cost: turnTotals[n]?.cost ?? 0,
+            models: [...(turnModels[n] ?? [])],
+            attrs: turnAttrs[n] ?? {}
         });
     }
 

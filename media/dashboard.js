@@ -199,11 +199,16 @@
             const c = turnCache[r.file];
             if (!c || c.turns === null) { return '<span class="muted small">Loading turns…</span>'; }
             if (!c.turns.length) { return '<span class="muted small">No turns recorded.</span>'; }
+            // model ids / run attributes come straight from the transcript — no
+            // name table here, so tomorrow's model shows up on its own
+            const tags = t => (t.models || []).map(m => m.replace(/^claude-/, ''))
+                .concat(Object.values(t.attrs || {}));
             return `<table class="turnmini">
-                <tr><th>#</th><th>prompt</th><th class="num">tokens</th><th class="num">cost</th></tr>
+                <tr><th>#</th><th>prompt</th><th>model</th><th class="num">tokens</th><th class="num">cost</th></tr>
                 ${c.turns.map(t => `<tr class="click" data-turnjump="${C.esc(r.file)}" data-turnts="${t.ts || 0}"
                     title="Open the transcript at turn ${t.n}">
                     <td class="num">${t.n}</td><td>${C.esc(t.label || '—')}</td>
+                    <td>${tags(t).map(x => `<span class="tag">${C.esc(x)}</span>`).join('') || '—'}</td>
                     <td class="num">${t.tokens ? C.fmtTok(t.tokens) : '—'}</td>
                     <td class="num">${t.cost ? C.fmtUSD(t.cost) : '—'}</td>
                 </tr>`).join('')}
@@ -279,6 +284,8 @@
                 tr.sessturns > td { padding-left:12px; }
                 .turnmini { margin:4px 0 10px; font-size:11px; width:auto; min-width:340px; }
                 .turnmini th { font-size:10px; opacity:.7; }
+                .tag { font-size:10px; padding:1px 6px; margin-right:4px; border-radius:8px; white-space:nowrap;
+                    background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); opacity:.85; }
                 .turnmini td { border-bottom-color:var(--vscode-widget-border, #1111); }
             </style>
             <div class="spread">

@@ -54,7 +54,9 @@ function makeSandbox(opts) {
                 turns: [{ n: 1, label: 'one' }, { n: 2, label: 'two' }, { n: 3, label: 'three' }],
                 messageCount: 7, truncatedCount: 0,
                 messages: [
-                    { role: 'system', ts: 500, text: 'preamble sys' },
+                    // turnless preamble (arrives before the first prompt); assistant
+                    // so the default Dialog filter keeps it on screen
+                    { role: 'assistant', ts: 500, text: 'preamble sys' },
                     { role: 'user', ts: 1000, text: 'ask one', turn: 1, turnStart: true },
                     { role: 'assistant', ts: 2000, text: 'ans one', turn: 1 },
                     { role: 'user', ts: 3000, text: 'ask two', turn: 2, turnStart: true },
@@ -116,7 +118,7 @@ function makeSandbox(opts) {
     html = t.appHtml();
     ok('collapse all folds every band', count(html, 'class="turnhdr closed"') === 3);
     ok('…hides every turn message', count(html, ' tclosed"') === 6);
-    ok('…but not the turnless preamble', html.includes('class="msg system"') && !html.includes('class="msg system tclosed"'));
+    ok('…but not the turnless preamble', html.includes('class="msg assistant" data-idx="0"'));
     ok('folded bands carry a ▸ caret', count(html, '▸') === 3 && count(html, '▾') === 0);
     ok('folded band shows its message count', html.includes('2 msgs'));
     ok('folded band tooltip flips to expand', html.includes('Click to expand this turn'));
