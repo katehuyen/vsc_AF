@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { AgentInfo, discoverAgents } from './core/agents';
+import { AgentInfo, discoverAgents, scanRoots } from './core/agents';
 import { focusExternalTerminal, openExternalTerminal } from './core/extTerminal';
 import {
     applyPackFiles, buildAgentPack, readAgentPack, rebindPack, writeAgentPack
@@ -291,7 +291,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
 
     const refreshAgents = () => {
-        agents = discoverAgents(cfg().get<string[]>('agentRoots', []));
+        agents = discoverAgents(
+            cfg().get<string[]>('agentRoots', []),
+            cfg().get<string[]>('excludeAgentDirs', []));
         insights = applyInsightDismiss(buildInsights(agents, index, healthConfig()));
         // I1: snapshot changed CLAUDE.md files into the version history.
         for (const a of agents) {
@@ -4321,7 +4323,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (!picked?.length) { return; }
             const roots = cfg().get<string[]>('agentRoots', []);
             const newRoot = picked[0].fsPath.replace(/\\/g, '/');
-            if (!roots.includes(newRoot)) {
+            // case/slash-insensitive dedupe — two spellings of one folder in the
+            // list used to double-scan it and distort discovery
+            if (!roots.some(r => normPath(r) === normPath(newRoot))) {
                 await cfg().update('agentRoots', [...roots, newRoot], vscode.ConfigurationTarget.Global);
             }
             refreshAll();
@@ -4445,7 +4449,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     },
                     getProfiles: () => context.globalState.get('agentfarm.settingsProfiles', []),
                     setProfiles: (list) => context.globalState.update('agentfarm.settingsProfiles', list),
-                    claudeSettingsFile: () => userSettingsPath(claudeDir())
+                    claudeSettingsFile: () => userSettingsPath(claudeDir()),
+                    // Agent folders section: a fresh scan per render, so badges and
+                    // the per-root agent lists always match what discovery would do.
+                    agentFolders: () => ({
+                        reports: scanRoots(
+                            cfg().get<string[]>('agentRoots', []),
+                            cfg().get<string[]>('excludeAgentDirs', [])
+                        ).reports.map(r => ({
+                            root: r.root, kind: r.kind, duplicate: r.duplicate,
+                            candidates: r.candidates.map(c => ({
+                                dir: c.dir, name: c.name, excluded: c.excluded,
+                                agentId: agents.find(a => a.normDir === normPath(c.dir))?.id ?? ''
+                            }))
+                        })),
+                        excludes: cfg().get<string[]>('excludeAgentDirs', [])
+                    })
                 }, arg && typeof arg === 'object' ? arg.focus : undefined);
             }),
 
@@ -5524,7 +5543,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     index.watch();
                 });
             }
-            if (e.affectsConfiguration('agentFarm.agentRoots')) {
+            if (e.affectsConfiguration('agentFarm.agentRoots') ||
+                e.affectsConfiguration('agentFarm.excludeAgentDirs')) {
                 refreshAll();
                 index.reassignAgents();
             }

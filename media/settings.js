@@ -66,6 +66,83 @@
         </div>`;
     }
 
+    // ---- Agent folders — where agents live: roots, nest/single badges, exclude ----
+
+    function pnorm(p) { return String(p).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase(); }
+
+    function rootBadge(r) {
+        if (r.duplicate) { return '<span class="rootbadge warn">duplicate entry</span>'; }
+        if (r.kind === 'missing') { return '<span class="rootbadge warn">folder missing</span>'; }
+        const live = r.candidates.filter(c => !c.excluded).length;
+        const ex = r.candidates.length - live;
+        const tail = ex ? ` · ${ex} excluded` : '';
+        if (r.kind === 'nest') { return `<span class="rootbadge">nest · ${live} agent(s)${tail}</span>`; }
+        if (r.kind === 'single-agent') { return `<span class="rootbadge">single agent${live ? '' : ' · excluded'}</span>`; }
+        return `<span class="rootbadge">${live} agent(s)${tail}</span>`;
+    }
+
+    function rootDesc(r) {
+        if (r.duplicate) { return 'Same folder as an earlier entry (case/slash differences ignored) — safe to clean up.'; }
+        if (r.kind === 'missing') { return 'This path does not exist on this machine — fix the spelling or remove the entry.'; }
+        if (r.kind === 'nest') { return 'A nest: the subfolders below are the agents. The root’s own CLAUDE.md is shared instructions they all load — not an agent of its own.'; }
+        if (r.kind === 'single-agent') { return 'This folder is one agent by itself (it has no agent-like subfolders).'; }
+        return r.candidates.length ? 'The subfolders below are the agents.' : 'No agent folders found here yet — a subfolder becomes an agent once it has a CLAUDE.md, .claude or memory/.';
+    }
+
+    function agentChip(c) {
+        if (c.excluded) {
+            return `<span class="agchip agexcl" title="${C.esc(c.dir)} — excluded, never treated as an agent">${C.esc(c.name)}
+                <a data-include="${C.esc(c.dir)}" title="Treat this folder as an agent again">Include</a></span>`;
+        }
+        const name = c.agentId
+            ? `<a data-openagent="${C.esc(c.agentId)}" title="Open this agent's page">${C.esc(c.name)}</a>`
+            : C.esc(c.name);
+        return `<span class="agchip" title="${C.esc(c.dir)}">${name}
+            <a class="agex" data-exclude="${C.esc(c.dir)}" title="Never treat this folder as an agent (undo any time with Include)">Exclude</a></span>`;
+    }
+
+    function rootItemHtml(r) {
+        return `<div class="setitem${r.kind === 'missing' || r.duplicate ? '' : ' modified'}" data-item="root:${C.esc(r.root)}">
+            <div class="sethead" style="flex-wrap:wrap">
+                <span class="setname">${C.esc(r.root)}</span>
+                ${rootBadge(r)}
+                <span style="flex:1"></span>
+                ${r.kind === 'missing' || r.duplicate ? '' : `<button class="reset" data-rootreveal="${C.esc(r.root)}" title="Show this folder in the file explorer">Reveal</button>`}
+                <button class="reset" data-rootremove="${C.esc(r.root)}" title="Stop scanning this root (the folder itself is not touched)">Remove</button>
+            </div>
+            <div class="setdesc">${rootDesc(r)}</div>
+            ${r.candidates.length ? `<div class="aglist">${r.candidates.map(agentChip).join('')}</div>` : ''}
+        </div>`;
+    }
+
+    function foldersSection() {
+        const f = DATA.folders;
+        if (!f) { return ''; }
+        const reports = f.reports.filter(r => !filter ||
+            (r.root + ' ' + r.candidates.map(c => c.name).join(' ')).toLowerCase().includes(filter));
+        if (filter && !reports.length) { return ''; }
+        const dupes = f.reports.some(r => r.duplicate);
+        const agentCount = f.reports.reduce((a, r) => a + (r.duplicate ? 0 : r.candidates.filter(c => !c.excluded).length), 0);
+        // excludes that no current root explains — stale leftovers, offered for removal
+        const known = new Set(f.reports.flatMap(r => r.candidates.map(c => pnorm(c.dir))));
+        const stale = (f.excludes || []).filter(x => !known.has(pnorm(x)));
+        return `
+            <h2 class="cat" id="cat-folders">Agent folders <span class="muted small">${f.reports.length} root(s) · ${agentCount} agent(s)</span></h2>
+            <p class="muted small" style="max-width:760px">Where your agents live. Each root folder is scanned: subfolders with a
+            <code>CLAUDE.md</code>, <code>.claude</code> or <code>memory/</code> become agents; a root whose subfolders are agents is a
+            <b>nest</b> (its own CLAUDE.md = shared instructions); a root with no agent-like subfolders is one agent itself.
+            <b>Exclude</b> keeps a folder out of the farm entirely — it stops being an agent everywhere (views, analytics, session
+            ownership) until you Include it back. <button class="secondary small" id="rootadd" title="Pick a folder to scan for agents">+ Add root…</button></p>
+            ${dupes ? `<div class="seterr">⚠ The roots list contains the same folder more than once (case/slash spelling differs) — this distorts discovery. <a id="afcleandupes">Clean duplicates</a></div>` : ''}
+            ${reports.map(rootItemHtml).join('')}
+            ${stale.length ? `<div class="setitem">
+                <div class="sethead"><span class="setname">Excluded, but not under any root</span></div>
+                <div class="setdesc">Leftover exclude entries that match nothing anymore — safe to remove.</div>
+                <div class="aglist">${stale.map(x =>
+                    `<span class="agchip agexcl" title="${C.esc(x)}">${C.esc(x)} <a data-include="${C.esc(x)}" title="Remove this stale entry">Remove</a></span>`).join('')}</div>
+            </div>` : ''}`;
+    }
+
     // ---- Claude Code (claude CLI) settings — curated + raw JSON ----
 
     function ccControl(it) {
@@ -177,6 +254,18 @@
                 .setctl button.small { font-size:10px; margin-top:4px; }
                 .seterr { font-size:11px; color:var(--vscode-errorForeground); margin-top:4px; }
                 .setitem.flash { outline:2px solid var(--vscode-textLink-foreground); outline-offset:2px; }
+                .rootbadge { font-size:10px; padding:1px 8px; border-radius:8px; white-space:nowrap;
+                    background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); }
+                .rootbadge.warn { background:var(--vscode-inputValidation-warningBackground, #664d00);
+                    color:var(--vscode-foreground); }
+                .aglist { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
+                .agchip { font-size:11px; padding:2px 10px; border-radius:10px; white-space:nowrap;
+                    border:1px solid var(--vscode-widget-border, #4444); }
+                .agchip a { cursor:pointer; }
+                .agchip .agex, .agchip.agexcl a { margin-left:6px; font-size:10px; opacity:.75; }
+                .agchip .agex:hover, .agchip.agexcl a:hover { opacity:1; }
+                .agchip.agexcl { opacity:.55; text-decoration:line-through; }
+                .agchip.agexcl a { text-decoration:none; }
             </style>
             ${window.AFHeader.html({
                 page: 'settings',
@@ -188,11 +277,12 @@
             <div class="searchbar" style="margin:10px 0; position:relative">
                 <input id="filter" type="text" placeholder="Filter settings… (name or description)" value="${C.esc(filter)}" style="width:100%; max-width:420px; padding:6px 8px">
             </div>
-            <div class="catnav">${cats.map(c => `<a data-cat="${c.id}">${C.esc(c.label)}</a>`).join('')}${DATA.claude ? '<a data-cat="claude">Claude Code</a>' : ''}</div>
+            <div class="catnav">${DATA.folders ? '<a data-cat="folders">Agent folders</a>' : ''}${cats.map(c => `<a data-cat="${c.id}">${C.esc(c.label)}</a>`).join('')}${DATA.claude ? '<a data-cat="claude">Claude Code</a>' : ''}</div>
+            ${foldersSection()}
             ${cats.map(c => `
                 <h2 class="cat" id="cat-${c.id}">${C.esc(c.label)} <span class="muted small">${c.items.length}</span></h2>
                 ${c.items.map(itemHtml).join('')}`).join('')
-            || (claudeSection() ? '' : '<p class="muted">No settings match the filter.</p>')}
+            || (claudeSection() || foldersSection() ? '' : '<p class="muted">No settings match the filter.</p>')}
             ${claudeSection()}
         `;
 
@@ -232,6 +322,22 @@
                 delete errors[btn.dataset.reset];
                 vscode.postMessage({ type: 'reset', key: btn.dataset.reset });
             }));
+
+        // Agent folders section
+        const rootAdd = document.getElementById('rootadd');
+        if (rootAdd) { rootAdd.addEventListener('click', () => vscode.postMessage({ type: 'rootAdd' })); }
+        const cleanDupes = document.getElementById('afcleandupes');
+        if (cleanDupes) { cleanDupes.addEventListener('click', () => vscode.postMessage({ type: 'rootCleanDupes' })); }
+        document.querySelectorAll('[data-rootremove]').forEach(btn =>
+            btn.addEventListener('click', () => vscode.postMessage({ type: 'rootRemove', root: btn.dataset.rootremove })));
+        document.querySelectorAll('[data-rootreveal]').forEach(btn =>
+            btn.addEventListener('click', () => vscode.postMessage({ type: 'rootReveal', root: btn.dataset.rootreveal })));
+        document.querySelectorAll('[data-exclude]').forEach(a =>
+            a.addEventListener('click', () => vscode.postMessage({ type: 'agentExclude', dir: a.dataset.exclude })));
+        document.querySelectorAll('[data-include]').forEach(a =>
+            a.addEventListener('click', () => vscode.postMessage({ type: 'agentInclude', dir: a.dataset.include })));
+        document.querySelectorAll('[data-openagent]').forEach(a =>
+            a.addEventListener('click', () => vscode.postMessage({ type: 'openAgent', agentId: a.dataset.openagent })));
 
         // Claude Code section
         document.querySelectorAll('[data-ccset]').forEach(el =>

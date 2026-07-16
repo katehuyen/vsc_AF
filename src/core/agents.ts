@@ -134,29 +134,83 @@ function readAgent(dir: string): AgentInfo {
     return agent;
 }
 
-/** Scan the configured root folders for agent directories. */
-export function discoverAgents(roots: string[]): AgentInfo[] {
+/** One agent-like folder found under a root — kept even when excluded, so the
+ *  settings page can show it greyed out with an "Include" way back. */
+export interface AgentCandidate {
+    dir: string;
+    name: string;
+    excluded: boolean;
+}
+
+/** What one configured root turned out to be. */
+export interface RootScan {
+    root: string;
+    /** 'nest' = agent-like children are the agents; the root's own CLAUDE.md is
+     *  shared instructions loaded by every child session, not an agent of its own.
+     *  'single-agent' = the root itself is one agent (agent-like, no agent-like
+     *  children). 'plain' = an ordinary folder whose children are the agents. */
+    kind: 'nest' | 'single-agent' | 'plain' | 'missing';
+    /** This entry repeats an earlier root (case/slash-insensitive) and was skipped. */
+    duplicate: boolean;
+    candidates: AgentCandidate[];
+}
+
+/** Scan the configured roots. Roots are deduped case/slash-insensitively (two
+ *  spellings of one folder must not double-scan — that accident used to decide
+ *  whether child agents were discovered at all). `excludes` folders are never
+ *  agents, however agent-like they look. */
+export function scanRoots(roots: string[], excludes: string[] = []): { agents: AgentInfo[]; reports: RootScan[] } {
+    const excludeSet = new Set(excludes.map(normPath));
     const agents: AgentInfo[] = [];
-    const seen = new Set<string>();
+    const reports: RootScan[] = [];
+    const seenRoots = new Set<string>();
+    const seenAgents = new Set<string>();
+
+    const admit = (c: AgentCandidate) => {
+        if (c.excluded || seenAgents.has(normPath(c.dir))) { return; }
+        seenAgents.add(normPath(c.dir));
+        agents.push(readAgent(c.dir));
+    };
+
     for (const root of roots) {
-        if (!root || !fs.existsSync(root)) { continue; }
-        // The root itself may be a single agent folder.
-        if (isAgentDir(root) && !seen.has(normPath(root))) {
-            seen.add(normPath(root));
-            agents.push(readAgent(root));
-            continue;
-        }
+        if (!root) { continue; }
+        const report: RootScan = { root, kind: 'plain', duplicate: false, candidates: [] };
+        reports.push(report);
+        if (seenRoots.has(normPath(root))) { report.duplicate = true; continue; }
+        seenRoots.add(normPath(root));
+        if (!fs.existsSync(root)) { report.kind = 'missing'; continue; }
+
         let entries: fs.Dirent[] = [];
-        try { entries = fs.readdirSync(root, { withFileTypes: true }); } catch { continue; }
+        try { entries = fs.readdirSync(root, { withFileTypes: true }); } catch { /* unreadable — treated as childless */ }
         for (const e of entries) {
             if (!e.isDirectory() || e.name.startsWith('.')) { continue; }
             const dir = path.join(root, e.name);
-            if (isAgentDir(dir) && !seen.has(normPath(dir))) {
-                seen.add(normPath(dir));
-                agents.push(readAgent(dir));
+            if (isAgentDir(dir)) {
+                report.candidates.push({ dir, name: e.name, excluded: excludeSet.has(normPath(dir)) });
             }
         }
+        // Root-is-agent only without agent-like children: a root that HAS them is
+        // a nest — its own CLAUDE.md is the children's shared config (that's how
+        // Claude Code itself loads parent CLAUDE.md files), never a sibling agent.
+        if (isAgentDir(root)) {
+            if (report.candidates.length) {
+                report.kind = 'nest';
+            } else {
+                report.kind = 'single-agent';
+                report.candidates.push({
+                    dir: root, name: path.basename(root),
+                    excluded: excludeSet.has(normPath(root))
+                });
+            }
+        }
+        report.candidates.sort((a, b) => a.name.localeCompare(b.name));
+        report.candidates.forEach(admit);
     }
     agents.sort((a, b) => a.name.localeCompare(b.name));
-    return agents;
+    return { agents, reports };
+}
+
+/** Scan the configured root folders for agent directories. */
+export function discoverAgents(roots: string[], excludes: string[] = []): AgentInfo[] {
+    return scanRoots(roots, excludes).agents;
 }

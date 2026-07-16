@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 2.61.0 — Agent folders: nests, excludes and a real management UI (2026-07-16)
+
+Where agents live used to be a one-time setup question, a raw JSON array, and one hidden trap. All three fixed:
+
+- **Nest rule in discovery.** A root folder whose subfolders are agents is now a **nest**: its own `CLAUDE.md` counts as shared instructions all its agents load (exactly how Claude Code treats parent `CLAUDE.md` files) — it no longer shows up as an agent itself. A root with no agent-like subfolders is still a single agent, unchanged. This makes the natural "constitution at the root" layout work with zero configuration.
+- **Roots are deduped case/slash-insensitively.** The same folder spelled twice in `agentFarm.agentRoots` used to double-scan and silently decide *which* discovery branch ran — whether your child agents appeared at all could depend on a stray lowercase drive letter. Now duplicates are skipped, flagged on the settings page, and cleaned up in one click.
+- **`agentFarm.excludeAgentDirs`** — folders that are never agents, however agent-like they look. An excluded folder leaves the farm everywhere: views, analytics, session ownership. Comparison is case- and slash-insensitive.
+- **Farm Settings → Agent folders section.** Every root as a row with an honest badge (*nest · N agents*, *single agent*, *N agents*, *folder missing*, *duplicate entry*), its agents as chips — click a name to open the agent page, **Exclude**/**Include** to toggle a folder out of/into the farm (excluded ones stay visible, greyed, so the way back is one click), **+ Add root…** with a folder picker, **Remove** with a confirmation that states the impact, **Reveal** in the file explorer, and one-click cleanup for duplicate roots and stale exclude entries.
+- **Tests:** new `test_agents_discovery.js` (18) — nest/single/plain kinds, duplicate-root regression (the old accident, now a rule), exclude insensitivity, missing-root fail-soft; the settings webview test grows an Agent folders block (badges, chip actions, filter). Full suite: 41 files · 876 passed.
+
 ## 2.60.0 — ⌂ to the owner agent + pick any agent combination in Search (2026-07-16)
 
 - **⌂ \<agent\> in the Session Viewer.** A new button right next to *Open raw JSONL* names the session's **owner agent** and opens that agent's page in one click — no more working out whose session you're reading and hunting for its page. Ownership comes from the session index (cwd → agent), with the live monitor's resolver as fallback; sessions outside the agent roots have no owner and show no button.

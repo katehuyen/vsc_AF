@@ -8,7 +8,7 @@ Agent Farm, bilgisayarında yaşayan **Claude Code ajanlarının komuta merkezi*
 
 Tamamen yereldir: hiçbir veri makinenden çıkmaz, hiçbir sunucuya bağlanmaz. İki veri kaynağını okur:
 
-1. **Ajan klasörlerin** (`agentFarm.agentRoots` ayarındaki kökler) — içinde `CLAUDE.md` olan her klasör bir ajandır. Kimlik, hafıza, araç ve izin dosyaları buradan okunur.
+1. **Ajan klasörlerin** (`agentFarm.agentRoots` ayarındaki kökler) — içinde `CLAUDE.md`, `.claude` ya da `memory/` olan alt klasörler ajanlardır; kimlik, hafıza, araç ve izin dosyaları oradan okunur. Alt klasörleri ajan olan bir kök **yuvadır** — kökün kendi `CLAUDE.md`'si tüm ajanlarının yüklediği ortak talimat sayılır (Claude Code'un üst `CLAUDE.md` dosyalarını ele alışıyla birebir aynı), ajan sayılmaz. Ajan-görünümlü alt klasörü olmayan kök ise tek başına bir ajandır. Kökler ve klasör dışlamaları Farm Settings'teki **Agent folders** bölümünden yönetilir (2.61.0).
 2. **Claude Code oturum kayıtların** (`~/.claude/projects/*/*.jsonl`) — her oturumun modeli, token kullanımı, araç çağrıları ve zaman damgaları buradan okunur. Oturumlar, çalışma dizinlerine bakılarak ajanlarla eşleştirilir.
 
 ## Hızlı Başlangıç
@@ -1144,13 +1144,16 @@ Sayfa **şema-güdümlüdür**: eklenti manifestinin bildirdiği her şeyi çize
 
 **Ayar setleri:** mevcut varsayılan-dışı değerleri adlı bir set olarak kaydet (*Save current as…*), sonra **Apply** ile geri yükle — set uygulanırken setin anmadığı değiştirilmiş ayarlar da varsayılana döner, yani set bir katman değil **tam bir durumdur** (onay penceresi tam kaç değerin değişeceğini söyler). Setler **JSON dosyasına aktarılıp geri alınabilir** — makineler arası taşınabilir.
 
+**Agent folders bölümü (2.61.0):** sayfanın ilk bölümü **ajanların nerede yaşadığını** yönetir — eskiden bir kerelik kurulum sorusu ve ham JSON dizisi olan parça. `agentFarm.agentRoots`'taki her kök bir satırdır; rozeti, keşfin o kökten ne anladığını söyler: **nest · N agents** (ajanlar alt klasörlerdir; kökün kendi `CLAUDE.md`'si ortak talimattır, ajan değildir), **single agent**, düz **N agents**, **folder missing** ya da **duplicate entry** (aynı klasörün iki farklı yazımı — tek tıkla temizlenir; büyük/küçük harf ve eğik çizgi farkları artık keşfi bozamaz). Her satır ajanlarını çip olarak listeler: ada tıklayınca o ajanın sayfası açılır; **Exclude** klasörü çiftlikten tamamen çıkarır — görünümler, analitik, oturum sahipliği dahil her yerde ajan olmaktan çıkar, **Include** ile geri gelir; dışlananlar soluk görünmeye devam eder ki geri dönüş hep tek tık olsun. **+ Add root…** klasör seçici açar; **Remove** kökü taramayı bırakır (onay penceresi kaç ajanın görünümlerden çıkacağını açıkça söyler; klasörün kendisine asla dokunulmaz); **Reveal** dosya gezgininde gösterir. Artık hiçbir şeye denk gelmeyen bayat dışlama kayıtları ayrı listelenir, tek tıkla silinir. Bölüm arka planda `agentFarm.agentRoots` / `agentFarm.excludeAgentDirs` ayarlarını düzenler — elle yapılan düzenlemeler ve ayar setleri sayfayla senkron kalır.
+
 **Claude Code (claude CLI) bölümü (2.55.0):** aynı sayfa **claude'un kendi** `~/.claude/settings.json` dosyasını da düzenler — terminaldeki *"Set CLAUDE_CODE_USE_POWERSHELL_TOOL=1 …"* gibi ipuçlarının arkasındaki dosya. Açıklamalı seçilmiş katalog: varsayılan model, izin varsayılan modu, co-authored-by, transkript saklama süresi (`cleanupPeriodDays` — Agent Farm'ın arama ve analitiğinin ne kadar geriye görebildiğini sınırlar), output style ve bilinen env anahtarları (PowerShell tool önizlemesi, thinking/çıktı token tavanları, bash zaman aşımı, oto-güncelleme/telemetri kapatmaları). Bir değeri temizlemek anahtarı dosyadan siler — Claude'un kendi varsayılanı devreye girer. Geri kalan her şey kataloğun altındaki doğrulamalı **ham JSON editöründen** düzenlenir — bozuk JSON asla kaydedilmez, dosyanın yanında bir kerelik `.agentfarm-backup` kopyası tutulur. Değişiklikler **yeni** claude oturumlarına uygulanır.
 
 ### Referans tablosu
 
 | Ayar | Varsayılan | Ne işe yarar |
 | --- | --- | --- |
-| `agentFarm.agentRoots` | `["D:/zone/agent/ajanlar"]` | Ajan klasörlerinin tarandığı kökler |
+| `agentFarm.agentRoots` | `["D:/zone/agent/ajanlar"]` | Ajan klasörlerinin tarandığı kökler (bkz. Agent folders bölümü) |
+| `agentFarm.excludeAgentDirs` | [] | Ajan gibi görünse de asla ajan sayılmayacak klasörler |
 | `agentFarm.claudeDir` | boş (`~/.claude`) | Claude Code veri dizini |
 | `agentFarm.extraClaudeDirs` | [] | Diğer makinelerin senkronlu `.claude` klasörleri (`{name, dir}`) |
 | `agentFarm.activeThresholdSeconds` | 150 | Bu süre içinde kaydı değişen oturum "aktif" sayılır |
@@ -1287,7 +1290,9 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 
 ## SSS
 
-**Ajanım listede yok.** Klasöründe `CLAUDE.md` var mı? `agentFarm.agentRoots` doğru mu? Sonra **Refresh**.
+**Ajanım listede yok.** Klasöründe `CLAUDE.md` (ya da `.claude` / `memory/`) var mı? Farm Settings → **Agent folders** bölümüne bak: kökü listede mi, klasör orada dışlanmış mı, kök missing/duplicate olarak mı işaretli? Sonra **Refresh**.
+
+**Bir klasör ajan olarak görünüyor ama ajan değil.** Farm Settings → **Agent folders**'ta o klasöre **Exclude** de. Not: alt klasörleri ajan olan bir kök hiçbir zaman kendisi ajan olarak görünmez — `CLAUDE.md`'si ortak talimat (yuva) sayılır.
 
 **Maliyetler 0 görünüyor.** Model, fiyat kurallarından hiçbiriyle eşleşmemiş olabilir — Dashboard'un altındaki uyarıya bak ve `agentFarm.pricing`'e kural ekle.
 

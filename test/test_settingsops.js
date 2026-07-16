@@ -185,5 +185,121 @@ const SO = require(path.join(__dirname, '..', 'out', 'core', 'settingsops.js'));
     ok('focus message scrolls + flashes the setting', flashed && flashed.key === 'agentFarm.livePort' && flashed.scrolled === true);
 }
 
+// ---------- settings page: Agent folders section ----------
+{
+    const code = fs.readFileSync(path.resolve(__dirname, '../media/pageHeader.js'), 'utf8') + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/settings.js'), 'utf8');
+    let posted = [];
+    const els = {};
+    function getEl(id) {
+        if (!els[id]) {
+            els[id] = {
+                id, listeners: {}, style: {}, value: '', checked: false, _html: '',
+                addEventListener(ev, fn) { this.listeners[ev] = fn; },
+                focus() { }, setSelectionRange() { },
+                set innerHTML(v) { this._html = v; }, get innerHTML() { return this._html; }
+            };
+        }
+        return els[id];
+    }
+    const wired = {}; // selector-ish key -> [{dataset, _fn}]
+    const sandbox = {
+        acquireVsCodeApi: () => ({ postMessage: (m) => posted.push(m), getState() { }, setState() { } }),
+        window: {
+            AFCharts: { esc: (s) => String(s) },
+            __DATA__: {
+                focus: '', profiles: [], categories: [],
+                folders: {
+                    reports: [
+                        {
+                            root: 'D:/zone/agent/ajanlar', kind: 'nest', duplicate: false,
+                            candidates: [
+                                { dir: 'D:/zone/agent/ajanlar/dev', name: 'dev', excluded: false, agentId: 'id-dev' },
+                                { dir: 'D:/zone/agent/ajanlar/psikolog', name: 'psikolog', excluded: true, agentId: '' }
+                            ]
+                        },
+                        { root: 'd:/zone/agent/ajanlar', kind: 'plain', duplicate: true, candidates: [] },
+                        { root: 'D:/gone', kind: 'missing', duplicate: false, candidates: [] },
+                        {
+                            root: 'D:/solo', kind: 'single-agent', duplicate: false,
+                            candidates: [{ dir: 'D:/solo', name: 'solo', excluded: false, agentId: 'id-solo' }]
+                        }
+                    ],
+                    excludes: ['D:\\zone\\agent\\ajanlar\\PSIKOLOG', 'D:/stale/old']
+                }
+            },
+            addEventListener() { }
+        },
+        document: {
+            getElementById: getEl,
+            querySelector: () => null,
+            querySelectorAll: (sel) => {
+                const app = getEl('app');
+                const m = /^\[data-(rootremove|rootreveal|exclude|include|openagent)\]$/.exec(sel);
+                if (!m) { return []; }
+                const key = m[1];
+                const list = [];
+                const re = new RegExp(`data-${key}="([^"]*)"`, 'g');
+                let hit;
+                while ((hit = re.exec(app._html))) {
+                    const el = { dataset: { [key]: hit[1] } };
+                    el.addEventListener = (_e, fn) => { el._fn = fn; };
+                    list.push(el);
+                }
+                wired[key] = list;
+                return list;
+            }
+        },
+        setTimeout: () => 0, clearTimeout: () => { }, console, Date
+    };
+    sandbox.globalThis = sandbox;
+    vm.createContext(sandbox);
+    vm.runInContext(code, sandbox); // render()
+
+    const html = getEl('app')._html;
+    ok('folders section + nav link rendered', html.includes('id="cat-folders"') && html.includes('data-cat="folders"'));
+    ok('nest badge counts live + excluded', html.includes('nest · 1 agent(s) · 1 excluded'));
+    ok('nest explanation says shared instructions, not an agent', html.includes('shared instructions'));
+    ok('duplicate root warns + offers cleanup', html.includes('duplicate entry') && html.includes('id="afcleandupes"'));
+    ok('missing root badged', html.includes('folder missing'));
+    ok('single-agent root badged', html.includes('single agent'));
+    ok('excluded agent greyed with Include', /class="agchip agexcl"[^>]*psikolog/.test(html.replace(/\n/g, ' '))
+        && html.includes('data-include="D:/zone/agent/ajanlar/psikolog"'));
+    ok('live agent links to its page + offers Exclude', html.includes('data-openagent="id-dev"')
+        && html.includes('data-exclude="D:/zone/agent/ajanlar/dev"'));
+    ok('stale exclude listed for removal (norm-insensitive match keeps psikolog out)',
+        html.includes('D:/stale/old') && !html.includes('data-include="D:\\zone\\agent\\ajanlar\\PSIKOLOG"'));
+
+    // click routing
+    posted = [];
+    getEl('rootadd').listeners.click();
+    ok('+ Add root posts rootAdd', posted[0] && posted[0].type === 'rootAdd');
+    posted = [];
+    getEl('afcleandupes').listeners.click();
+    ok('Clean duplicates posts rootCleanDupes', posted[0] && posted[0].type === 'rootCleanDupes');
+    posted = [];
+    wired.rootremove.find(e => e.dataset.rootremove === 'D:/gone')._fn();
+    ok('Remove posts rootRemove with the root', posted[0] && posted[0].type === 'rootRemove' && posted[0].root === 'D:/gone');
+    posted = [];
+    wired.exclude.find(e => e.dataset.exclude === 'D:/zone/agent/ajanlar/dev')._fn();
+    ok('Exclude posts agentExclude with the dir', posted[0] && posted[0].type === 'agentExclude' && posted[0].dir === 'D:/zone/agent/ajanlar/dev');
+    posted = [];
+    wired.include.find(e => e.dataset.include === 'D:/stale/old')._fn();
+    ok('stale Remove posts agentInclude', posted[0] && posted[0].type === 'agentInclude' && posted[0].dir === 'D:/stale/old');
+    posted = [];
+    wired.openagent.find(e => e.dataset.openagent === 'id-dev')._fn();
+    ok('agent name opens the agent page', posted[0] && posted[0].type === 'openAgent' && posted[0].agentId === 'id-dev');
+    posted = [];
+    wired.rootreveal.find(e => e.dataset.rootreveal === 'D:/solo')._fn();
+    ok('Reveal posts rootReveal', posted[0] && posted[0].type === 'rootReveal' && posted[0].root === 'D:/solo');
+
+    // filter narrows to matching roots/agents only
+    const filterEl = getEl('filter');
+    filterEl.value = 'psikolog';
+    filterEl.listeners.input();
+    const fhtml = getEl('app')._html;
+    ok('filter keeps the root containing the match, drops others',
+        fhtml.includes('D:/zone/agent/ajanlar') && !fhtml.includes('D:/solo'));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

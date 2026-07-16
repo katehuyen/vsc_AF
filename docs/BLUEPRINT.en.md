@@ -8,7 +8,7 @@ Agent Farm is the **command center for the Claude Code agents** that live on you
 
 It is fully local: no data leaves your machine, no server is contacted. It reads two data sources:
 
-1. **Your agent folders** (the roots in the `agentFarm.agentRoots` setting) — any folder containing a `CLAUDE.md` is an agent. Identity, memory, tool and permission files are read from here.
+1. **Your agent folders** (the roots in the `agentFarm.agentRoots` setting) — subfolders containing a `CLAUDE.md`, `.claude` or `memory/` are the agents; identity, memory, tool and permission files are read from there. A root whose subfolders are agents is a **nest** — its own `CLAUDE.md` counts as shared instructions all its agents load (that's exactly how Claude Code treats parent `CLAUDE.md` files), not as an agent. A root with no agent-like subfolders is a single agent itself. Roots and per-folder exclusions are managed in the **Agent folders** section of Farm Settings (2.61.0).
 2. **Your Claude Code session logs** (`~/.claude/projects/*/*.jsonl`) — each session's model, token usage, tool calls and timestamps are read from here. Sessions are matched to agents by their working directory.
 
 ## Quick Start {#hizli-baslangic}
@@ -1144,6 +1144,8 @@ The page is **schema-driven**: it renders whatever the extension manifest declar
 
 **Setting sets:** save the current non-default values as a named set (*Save current as…*), then **Apply** restores it later — applying a set also resets modified settings the set doesn't mention, so a set is a complete state, not an overlay (a confirmation tells you exactly how many values change). Sets can be **exported to / imported from a JSON file** — portable across machines.
 
+**Agent folders section (2.61.0):** the page's first section manages **where agents live** — the piece that used to be a one-time setup question and then a raw JSON array. Every root in `agentFarm.agentRoots` is a row with a badge saying what discovery made of it: **nest · N agents** (its subfolders are the agents; the root's own `CLAUDE.md` is shared instructions, not an agent), **single agent**, plain **N agents**, **folder missing** or **duplicate entry** (the same folder spelled twice — one click cleans it up, spelling differences in case or slashes no longer distort discovery). Each row lists its agents as chips: click a name to open that agent's page, or **Exclude** to keep a folder out of the farm entirely — it stops being an agent everywhere (views, analytics, session ownership) until you **Include** it back; excluded folders stay visible, greyed out, so the way back is always one click. **+ Add root…** opens a folder picker; **Remove** stops scanning a root after a confirmation that states how many agents leave the views (the folder itself is never touched); **Reveal** shows it in the file explorer. Stale exclude entries that no longer match anything are listed separately for one-click removal. Under the hood these edit `agentFarm.agentRoots` / `agentFarm.excludeAgentDirs`, so hand edits and setting sets stay in sync with the page.
+
 **Claude Code (claude CLI) section (2.55.0):** the same page also edits **claude's own** `~/.claude/settings.json` — the file behind terminal tips like *"Set CLAUDE_CODE_USE_POWERSHELL_TOOL=1 …"*. A curated, explained catalog covers the default model, permission default mode, co-authored-by, transcript retention (`cleanupPeriodDays` — bounds how far back Agent Farm's search and analytics can see), output style and the well-known env switches (PowerShell tool preview, thinking/output token caps, bash timeouts, auto-update/telemetry opt-outs). Clearing a value removes the key so Claude's own default takes over. Everything else is editable in the validated **raw JSON editor** below the catalog — broken JSON is never saved, and a one-time `.agentfarm-backup` copy is kept next to the file. Changes apply to **new** claude sessions.
 
 ### Reference table
@@ -1151,7 +1153,8 @@ The page is **schema-driven**: it renders whatever the extension manifest declar
 | Setting | Default | What it does |
 | --- | --- | --- |
 | `agentFarm.guideLanguage` | en | Language for the in-app help (Guide, Quick Start, Examples): en / tr |
-| `agentFarm.agentRoots` | `["D:/zone/agent/ajanlar"]` | The roots scanned for agent folders |
+| `agentFarm.agentRoots` | `["D:/zone/agent/ajanlar"]` | The roots scanned for agent folders (see the Agent folders section) |
+| `agentFarm.excludeAgentDirs` | [] | Folders never treated as agents, even when they look like one |
 | `agentFarm.claudeDir` | empty (`~/.claude`) | Claude Code data directory |
 | `agentFarm.extraClaudeDirs` | [] | Other machines' synced `.claude` folders (`{name, dir}`) |
 | `agentFarm.activeThresholdSeconds` | 150 | A session whose log changed within this window is "active" |
@@ -1288,7 +1291,9 @@ All in the command palette with the `Agent Farm:` prefix:
 
 ## FAQ
 
-**My agent isn't in the list.** Is there a `CLAUDE.md` in its folder? Is `agentFarm.agentRoots` correct? Then **Refresh**.
+**My agent isn't in the list.** Is there a `CLAUDE.md` (or `.claude` / `memory/`) in its folder? Check the **Agent folders** section of Farm Settings: is its root listed, is the folder excluded there, is the root flagged missing/duplicate? Then **Refresh**.
+
+**A folder shows up as an agent but isn't one.** Open Farm Settings → **Agent folders** and click **Exclude** on it. Note that a root whose subfolders are agents never appears as an agent itself — its `CLAUDE.md` is treated as shared instructions (a nest).
 
 **Costs show 0.** The model may not have matched any pricing rule — look at the warning at the bottom of the Dashboard and add a rule to `agentFarm.pricing`.
 

@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.60.0",
+  "version": "2.61.0",
   "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
@@ -1571,7 +1571,15 @@
           "default": [
             "D:/zone/agent/ajanlar"
           ],
-          "description": "Root folders scanned for agent directories (a folder containing CLAUDE.md is treated as an agent)."
+          "description": "Root folders scanned for agent directories. Subfolders containing CLAUDE.md, .claude or memory/ become agents. A root whose subfolders are agents is a nest — its own CLAUDE.md counts as shared instructions, not an agent; a root with no agent-like subfolders is one agent itself. Manage this comfortably in the Agent folders section of Farm Settings."
+        },
+        "agentFarm.excludeAgentDirs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Folders that are never treated as agents, even when they look like one. Compared case- and slash-insensitively. Easiest managed via Exclude/Include in the Agent folders section of Farm Settings."
         },
         "agentFarm.claudeDir": {
           "type": "string",

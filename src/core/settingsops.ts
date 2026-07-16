@@ -31,7 +31,7 @@ export interface SettingsCategory {
 /** key (without the agentFarm. prefix) → category id. */
 const CATEGORY_OF: Record<string, string> = {
     // core
-    agentRoots: 'core', claudeDir: 'core', extraClaudeDirs: 'core',
+    agentRoots: 'core', excludeAgentDirs: 'core', claudeDir: 'core', extraClaudeDirs: 'core',
     includeUnmatchedProjects: 'core', guideLanguage: 'core',
     // live monitoring & alerts
     liveMonitor: 'live', livePort: 'live', activeThresholdSeconds: 'live',

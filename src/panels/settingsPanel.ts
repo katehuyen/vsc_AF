@@ -8,7 +8,16 @@ import {
     CC_CATALOG, buildClaudeModel, coerceClaudeValue, patchClaudeSettings,
     validateRawClaudeSettings
 } from '../core/claudesettings';
+import { normPath } from '../core/util';
 import { handleAfNav, htmlShell } from './base';
+
+/** Webview-ready snapshot of one agent root for the Agent folders section. */
+export interface AgentFolderReport {
+    root: string;
+    kind: 'nest' | 'single-agent' | 'plain' | 'missing';
+    duplicate: boolean;
+    candidates: { dir: string; name: string; excluded: boolean; agentId: string }[];
+}
 
 export interface FarmSettingsDeps {
     extensionUri: vscode.Uri;
@@ -18,6 +27,8 @@ export interface FarmSettingsDeps {
     setProfiles(list: SettingsProfile[]): Thenable<void>;
     /** Claude Code's own ~/.claude/settings.json (honors agentFarm.claudeDir). */
     claudeSettingsFile(): string;
+    /** Live root scan + excludes for the Agent folders section. */
+    agentFolders?(): { reports: AgentFolderReport[]; excludes: string[] };
 }
 
 const CONFIG_SECTION = 'agentFarm';
@@ -95,6 +106,7 @@ export class FarmSettingsPanel {
     private buildData(): Record<string, unknown> {
         const cc = this.readClaude();
         return {
+            folders: this.deps.agentFolders?.() ?? null,
             categories: this.categories(),
             profiles: this.deps.getProfiles().map(p => ({
                 name: p.name, savedAt: p.savedAt, count: Object.keys(p.values).length
@@ -252,6 +264,74 @@ export class FarmSettingsPanel {
             }
             case 'ccOpenFile':
                 void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(this.deps.claudeSettingsFile()));
+                break;
+            // ---- Agent folders section ----
+            // Every write below lands in settings.json; onDidChangeConfiguration
+            // then re-scans and refreshes this page (and every other surface).
+            case 'rootAdd':
+                await vscode.commands.executeCommand('agentfarm.addAgentRoot');
+                break;
+            case 'rootRemove': {
+                const root = String(msg.root ?? '');
+                if (!root) { break; }
+                const rep = this.deps.agentFolders?.().reports.find(r => r.root === root);
+                const n = rep ? rep.candidates.filter(c => !c.excluded).length : 0;
+                const pick = await vscode.window.showWarningMessage(
+                    `Remove agent root "${root}"?` +
+                    (n ? ` Its ${n} agent(s) leave the farm views.` : '') +
+                    ' The folder itself is not touched.',
+                    { modal: true }, 'Remove');
+                if (pick !== 'Remove') { break; }
+                const cfg = vscode.workspace.getConfiguration();
+                await cfg.update('agentFarm.agentRoots',
+                    cfg.get<string[]>('agentFarm.agentRoots', []).filter(r => r !== root),
+                    vscode.ConfigurationTarget.Global);
+                break;
+            }
+            case 'rootReveal':
+                if (typeof msg.root === 'string' && msg.root) {
+                    void vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(msg.root));
+                }
+                break;
+            case 'rootCleanDupes': {
+                const cfg = vscode.workspace.getConfiguration();
+                const roots = cfg.get<string[]>('agentFarm.agentRoots', []);
+                const seen = new Set<string>();
+                const clean = roots.filter(r => {
+                    if (seen.has(normPath(r))) { return false; }
+                    seen.add(normPath(r));
+                    return true;
+                });
+                if (clean.length !== roots.length) {
+                    await cfg.update('agentFarm.agentRoots', clean, vscode.ConfigurationTarget.Global);
+                    void vscode.window.showInformationMessage(
+                        `Agent Farm: ${roots.length - clean.length} duplicate root entry(ies) removed.`);
+                }
+                break;
+            }
+            case 'agentExclude': {
+                const dir = String(msg.dir ?? '');
+                if (!dir) { break; }
+                const cfg = vscode.workspace.getConfiguration();
+                const list = cfg.get<string[]>('agentFarm.excludeAgentDirs', []);
+                if (!list.some(x => normPath(x) === normPath(dir))) {
+                    await cfg.update('agentFarm.excludeAgentDirs', [...list, dir], vscode.ConfigurationTarget.Global);
+                }
+                break;
+            }
+            case 'agentInclude': {
+                const dir = String(msg.dir ?? '');
+                if (!dir) { break; }
+                const cfg = vscode.workspace.getConfiguration();
+                const next = cfg.get<string[]>('agentFarm.excludeAgentDirs', [])
+                    .filter(x => normPath(x) !== normPath(dir));
+                await cfg.update('agentFarm.excludeAgentDirs', next, vscode.ConfigurationTarget.Global);
+                break;
+            }
+            case 'openAgent':
+                if (typeof msg.agentId === 'string' && msg.agentId) {
+                    void vscode.commands.executeCommand('agentfarm.openAgentDetail', { agentId: msg.agentId });
+                }
                 break;
             case 'openGuide':
                 void vscode.commands.executeCommand('agentfarm.openGuide', msg.anchor);
