@@ -194,17 +194,13 @@
                 .dead { color: var(--vscode-charts-yellow, #cca700); font-size: 9px; vertical-align: middle; }
                 .chips .badge { margin-left: 6px; font-weight: 400; }
             </style>
-            <div class="spread">
-                <div>
-                    <h1>Capability Matrix</h1>
-                    <div class="muted small">who has which skill / MCP server, and what is actually used (last 30 days) ·
-                        green = used, ✓ = installed but unused, ⏻ = disabled, ＋ = click to copy onto that agent</div>
-                </div>
-                <div class="btnrow">
-                    <button class="secondary" id="refresh">Refresh</button>
-                    <button class="secondary" id="guide">? Guide</button>
-                </div>
-            </div>
+            ${window.AFHeader.html({
+                page: 'capabilities',
+                title: 'Capability Matrix',
+                sub: `who has which skill / MCP server, and what is actually used (last 30 days) ·
+                        green = used, ✓ = installed but unused, ⏻ = disabled, ＋ = click to copy onto that agent`,
+                guide: 'yetenek-matrisi'
+            })}
             ${matrix(DATA.skills, 'skill', 'Skills', 'Scaffold one from the Agents tree: Skills → +.')}
             ${matrix(DATA.mcp, 'mcp', 'MCP servers', 'Add one from the Agents tree: MCP → +.')}
             ${matrix(DATA.memory || [], 'memory', 'Memory files', 'Create one from the Agents tree: Memory → +.')}
@@ -213,8 +209,7 @@
             <p class="footnote">Counts come from real session transcripts: Skill tool calls, typed /commands, mcp__server__tool calls and explicit memory-file reads. Memory cells with an orange ring have DIVERGED from the newest copy. Copying installs into the target agent (skills/.mcp.json/memory+index/DUTIES.md); new claude sessions pick it up. Task rows group repeated runs of the same job (retry/date noise collapsed): green = all succeeded, red = all failed, orange ring = mixed — click for the full task history.</p>
         `;
 
-        document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
-        document.getElementById('guide').addEventListener('click', () => vscode.postMessage({ type: 'openGuide' }));
+        window.AFHeader.wire(vscode);
         document.querySelectorAll('[data-taskhist]').forEach(b =>
             b.addEventListener('click', () => vscode.postMessage({ type: 'openTaskHistory' })));
         document.querySelectorAll('[data-open]').forEach(b =>

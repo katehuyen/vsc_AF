@@ -51,6 +51,9 @@ export interface SearchOptions {
     caseSensitive?: boolean;
     /** restrict to one agent (exact name). */
     agentName?: string;
+    /** restrict to this agent set (exact names). undefined = every agent incl.
+     *  unassigned sessions; [] = none (an all-unticked picker finds nothing). */
+    agentNames?: string[];
     /** restrict to these transcript files (session / selection scope). */
     files?: string[];
     /** only hits inside this time window (a turn is a window). 0/undefined = open. */
@@ -142,11 +145,13 @@ export function searchTranscripts(
     const maxPerFile = opts.maxPerFile ?? 3;
     const roles = new Set(opts.roles && opts.roles.length ? opts.roles : DEFAULT_ROLES);
     const fileSet = opts.files && opts.files.length ? new Set(opts.files) : null;
+    const agentSet = opts.agentNames ? new Set(opts.agentNames) : null;
     const tsFrom = opts.tsFrom ?? 0;
     const tsTo = opts.tsTo ?? 0;
     const deadline = Date.now() + (opts.timeBudgetMs ?? DEFAULT_TIME_BUDGET_MS);
     const ordered = sessions
         .filter(s => (!opts.agentName || s.agentName === opts.agentName) &&
+            (!agentSet || agentSet.has(s.agentName ?? '')) &&
             (!fileSet || fileSet.has(s.file)))
         .sort((a, b) => b.mtime - a.mtime);
 
@@ -252,9 +257,11 @@ export function searchMemory(
     const matcher = buildMatcher(query, opts);
     if (typeof matcher === 'string') { return []; }
     const maxPerFile = opts.maxPerFile ?? 3;
+    const agentSet = opts.agentNames ? new Set(opts.agentNames) : null;
     const hits: SearchHit[] = [];
     for (const f of files) {
         if (opts.agentName && f.agentName !== opts.agentName) { continue; }
+        if (agentSet && !agentSet.has(f.agentName)) { continue; }
         let raw = '';
         let mtime = 0;
         try {
@@ -297,6 +304,7 @@ export function searchLiveEvents(
     let raw = '';
     try { raw = fs.readFileSync(storeFile, 'utf8'); } catch { return []; }
     const transcriptExists = new Map<string, boolean>();
+    const agentSet = opts.agentNames ? new Set(opts.agentNames) : null;
     const hits: SearchHit[] = [];
     const maxHits = opts.maxHits ?? 50;
     for (const lineText of raw.split('\n')) {
@@ -310,6 +318,7 @@ export function searchLiveEvents(
         const text = [ev.tool, ev.detail].filter(Boolean).join(' ');
         if (!text) { continue; }
         if (opts.agentName && ev.agentName !== opts.agentName) { continue; }
+        if (agentSet && !agentSet.has(ev.agentName ?? '')) { continue; }
         const tp = ev.transcriptPath ?? '';
         if (tp) {
             if (!transcriptExists.has(tp)) {

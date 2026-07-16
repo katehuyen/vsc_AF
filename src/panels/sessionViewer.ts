@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { PricingEngine, totalTokens, Usage } from '../core/pricing';
-import { htmlShell } from './base';
+import { handleAfNav, htmlShell } from './base';
 
 export interface ViewerDeps {
     extensionUri: vscode.Uri;
@@ -20,6 +20,9 @@ export interface ViewerDeps {
     setLastExportDir?(dir: string): void;
     /** Resume honors agentFarm.externalTerminal when provided by the extension host. */
     launchTerminal?(name: string, cwd: string | undefined, command: string, sessionId?: string): void;
+    /** Owner agent of a session (index lookup, cwd fallback) — powers the header's
+     *  "⌂ <agent>" button. undefined = the session lives outside the agent roots. */
+    agentForSession?(file: string, cwd?: string): { agentId: string; agentName: string } | undefined;
 }
 
 interface ViewMessage {
@@ -335,7 +338,7 @@ export class SessionViewerPanel {
         private deps: ViewerDeps,
         focusTs?: number
     ) {
-        const data = buildData(file, deps);
+        const data = this.viewData();
         if (focusTs) { data.focusTs = focusTs; }
         panel.webview.html = htmlShell(
             panel.webview,
@@ -349,6 +352,17 @@ export class SessionViewerPanel {
         this.watchFile();
     }
 
+    /** buildData + the owner agent (webview data only — buildData itself stays pure). */
+    private viewData(): Record<string, unknown> {
+        const data = buildData(this.file, this.deps);
+        const owner = this.deps.agentForSession?.(this.file, (data.cwd as string) || undefined);
+        if (owner) {
+            data.agentId = owner.agentId;
+            data.agentName = owner.agentName;
+        }
+        return data;
+    }
+
     /** Live refresh: push fresh data (KPIs, context gauge, new messages) while the session is still running. */
     private watchFile(): void {
         try {
@@ -360,7 +374,7 @@ export class SessionViewerPanel {
                     this.pushTimer = undefined;
                     if (!fs.existsSync(this.file)) { return; }
                     void this.panel.webview.postMessage(
-                        { type: 'data', data: buildData(this.file, this.deps), auto: true });
+                        { type: 'data', data: this.viewData(), auto: true });
                 }, 800);
             });
         } catch { /* watch unavailable — Refresh stays manual */ }
@@ -388,8 +402,19 @@ export class SessionViewerPanel {
                 break;
             }
             case 'refresh':
-                this.panel.webview.postMessage({ type: 'data', data: buildData(this.file, this.deps) });
+                this.panel.webview.postMessage({ type: 'data', data: this.viewData() });
                 break;
+            case 'openAgent': {
+                const owner = this.deps.agentForSession?.(this.file,
+                    typeof msg.cwd === 'string' && msg.cwd ? msg.cwd : undefined);
+                if (owner) {
+                    void vscode.commands.executeCommand('agentfarm.openAgentDetail', { agentId: owner.agentId });
+                } else {
+                    void vscode.window.showInformationMessage(
+                        'Agent Farm: this session does not belong to a known agent.');
+                }
+                break;
+            }
             case 'exportMd': {
                 if (typeof msg.md !== 'string' || !msg.md) { break; }
                 const md = msg.md;
@@ -423,10 +448,11 @@ export class SessionViewerPanel {
             case 'openTimeline':
                 vscode.commands.executeCommand('agentfarm.openTimeline');
                 break;
-            case 'openSearch':
-                // pre-scoped to this session; ✕ in the panel widens to fleet
-                vscode.commands.executeCommand('agentfarm.searchTranscripts',
-                    { file: this.file, title: typeof msg.title === 'string' ? msg.title : undefined });
+            case 'afnav':
+                if (msg.to === 'search') {
+                    // pre-scoped to this session; ✕ in the panel widens to fleet
+                    vscode.commands.executeCommand('agentfarm.searchTranscripts', { file: this.file });
+                } else { handleAfNav(msg.to); }
                 break;
             case 'focusTerminal':
                 vscode.commands.executeCommand('agentfarm.focusSessionTerminal', {

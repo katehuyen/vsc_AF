@@ -112,6 +112,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 // test_sessions_table.js; here we prove the dashboard page loads the component
 // with its rows/columns and routes its messages both ways.
 {
+    const headerCode = fs.readFileSync(path.resolve(__dirname, '../media/pageHeader.js'), 'utf8');
     const sessCode = fs.readFileSync(path.resolve(__dirname, '../media/sessionsTable.js'), 'utf8');
     const code = fs.readFileSync(path.resolve(__dirname, '../media/dashboard.js'), 'utf8');
     let posted = [];
@@ -191,8 +192,9 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     };
     sandbox.globalThis = sandbox;
     vm.createContext(sandbox);
-    vm.runInContext(sessCode, sandbox); // htmlShell loads the component first
-    vm.runInContext(code, sandbox);     // runs render() once
+    vm.runInContext(headerCode, sandbox); // htmlShell loads the shared components first
+    vm.runInContext(sessCode, sandbox);
+    vm.runInContext(code, sandbox);       // runs render() once
 
     const order = () => ['new.jsonl', 'mid.jsonl', 'old.jsonl']
         .map(f => [f, sessHtml().indexOf(`data-session="${f}"`)])

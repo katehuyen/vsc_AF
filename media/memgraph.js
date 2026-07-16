@@ -130,23 +130,18 @@
                 .linkish { background:none;border:none;color:var(--vscode-textLink-foreground,#3794ff);cursor:pointer;padding:0;font:inherit }
                 .linkish:hover { text-decoration:underline }
             </style>
-            <div class="spread">
-                <div>
-                    <h1>Memory Graph</h1>
-                    <div class="muted small">[[wikilink]] structure of each agent's memory — hubs, islands, broken targets · recall coloring from real transcripts (30d)</div>
-                </div>
-                <div class="btnrow">
-                    <span class="seg">${seg}</span>
-                    <button class="secondary" id="refresh">Refresh</button>
-                    <button class="secondary" id="guide">? Guide</button>
-                </div>
-            </div>
+            ${window.AFHeader.html({
+                page: 'memgraph',
+                title: 'Memory Graph',
+                sub: '[[wikilink]] structure of each agent\'s memory — hubs, islands, broken targets · recall coloring from real transcripts (30d)',
+                controls: `<span class="seg">${seg}</span>`,
+                guide: 'hafiza-grafigi'
+            })}
             ${body}
             <p class="footnote">Scanned on open/refresh (file contents are read fresh each time). MEMORY.md is the index, not a node.</p>
         `;
 
-        document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
-        document.getElementById('guide').addEventListener('click', () => vscode.postMessage({ type: 'openGuide' }));
+        window.AFHeader.wire(vscode);
         const fix = document.getElementById('fixindex');
         if (fix) { fix.addEventListener('click', () => vscode.postMessage({ type: 'fixIndex', agentId })); }
         document.querySelectorAll('[data-agent]').forEach(b =>

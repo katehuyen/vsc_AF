@@ -190,22 +190,16 @@
 
         const t = DATA.totals;
         document.getElementById('app').innerHTML = `
-            <div class="spread">
-                <div>
-                    <h1><span class="dot ${a.active ? 'on' : 'off'}"></span> ${C.esc(a.name)}</h1>
-                    <div class="muted small">${C.esc(a.dir)} · permissions: ${C.esc(a.permissionSummary)}</div>
-                </div>
-                <div class="btnrow">
-                    <!-- toolbar canon: page actions · Refresh · nav (Dashboard → Live Timeline) · ⌕ Search · ? Guide last -->
-                    <button id="start">Start session</button>
+            ${window.AFHeader.html({
+                page: 'agent',
+                title: `<span class="dot ${a.active ? 'on' : 'off'}"></span> ${C.esc(a.name)}`,
+                sub: `${C.esc(a.dir)} · permissions: ${C.esc(a.permissionSummary)}`,
+                actions: `<button id="start">Start session</button>
                     <button class="secondary" id="continue">Continue latest</button>
-                    <button class="secondary" id="reveal">Reveal folder</button>
-                    <button class="secondary" id="dashboard">Dashboard</button>
-                    <button class="secondary" id="timeline">Live Timeline</button>
-                    <button class="secondary" id="searchagent" title="Search all of this agent's sessions">⌕ Search</button>
-                    <button class="secondary" data-guide="ajan-detay-sayfasi">? Guide</button>
-                </div>
-            </div>
+                    <button class="secondary" id="reveal">Reveal folder</button>`,
+                searchTitle: "Search all of this agent's sessions",
+                guide: 'ajan-detay-sayfasi'
+            })}
             <div class="row">
                 <div class="card"><div class="label">Total cost</div><div class="kpi">${C.fmtUSD(t.cost)}</div><div class="sub">avg ${C.fmtUSD(t.avgCostPerSession)} / session</div></div>
                 <div class="card"><div class="label">Sessions</div><div class="kpi">${t.sessions}</div></div>
@@ -254,13 +248,11 @@
             <div id="sessblock"></div>
         `;
 
+        window.AFHeader.wire(vscode);
         document.getElementById('addDuty').addEventListener('click', () => vscode.postMessage({ type: 'addDuty' }));
         document.getElementById('start').addEventListener('click', () => vscode.postMessage({ type: 'startSession' }));
         document.getElementById('continue').addEventListener('click', () => vscode.postMessage({ type: 'continueSession' }));
         document.getElementById('reveal').addEventListener('click', () => vscode.postMessage({ type: 'reveal' }));
-        document.getElementById('dashboard').addEventListener('click', () => vscode.postMessage({ type: 'openDashboard' }));
-        document.getElementById('timeline').addEventListener('click', () => vscode.postMessage({ type: 'openTimeline' }));
-        document.getElementById('searchagent').addEventListener('click', () => vscode.postMessage({ type: 'openSearch' }));
         document.querySelectorAll('[data-file]').forEach(el =>
             el.addEventListener('click', () => vscode.postMessage({ type: 'openFile', path: el.dataset.file })));
         document.querySelectorAll('[data-guide]').forEach(el =>

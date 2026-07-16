@@ -155,7 +155,8 @@ function runWebview(file, data) {
     sandbox.window.window = sandbox.window;
     vm.createContext(sandbox);
     vm.runInContext(fs.readFileSync(path.join(ROOT, 'media/charts.js'), 'utf8'), sandbox);
-    // htmlShell ships the shared sessions-table component to every page
+    // htmlShell ships the shared header + sessions-table components to every page
+    vm.runInContext(fs.readFileSync(path.join(ROOT, 'media/pageHeader.js'), 'utf8'), sandbox);
     vm.runInContext(fs.readFileSync(path.join(ROOT, 'media/sessionsTable.js'), 'utf8'), sandbox);
     vm.runInContext(fs.readFileSync(path.join(ROOT, file), 'utf8'), sandbox);
     return dom.app._html;

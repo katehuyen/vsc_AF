@@ -419,24 +419,16 @@
               `<span><i style="background:var(--vscode-charts-green,#4caf50);width:16px;border-radius:3px"></i>tool run</span>`;
 
         document.getElementById('app').innerHTML = `
-            <div class="spread">
-                <div>
-                    <h1>Live Timeline</h1>
-                    <div class="muted small">${listenerHtml} · fed by Claude Code hooks · detail ≤24h live, 3d+ from persisted history (kept 31 days)</div>
-                </div>
-                <div class="btnrow">
-                    <!-- toolbar canon: page controls/actions · Refresh · nav (Dashboard) · ? Guide last -->
-                    <span class="seg">
-                        ${[15, 60, 240, 480, 960, 1440, 4320, 10080, 43200].map(m => {
-                            const label = m < 60 ? m + 'm' : m <= 1440 ? (m / 60) + 'h' : (m / 1440) + 'd';
-                            return `<button data-win="${m}" class="${m === windowMin ? 'sel' : ''}">${label}</button>`;
-                        }).join('')}
-                    </span>
-                    <button class="secondary" id="refresh">Refresh</button>
-                    <button class="secondary" id="dashboard">Dashboard</button>
-                    <button class="secondary" data-guide="canli-gozlem">? Guide</button>
-                </div>
-            </div>
+            ${window.AFHeader.html({
+                page: 'timeline',
+                title: 'Live Timeline',
+                sub: `${listenerHtml} · fed by Claude Code hooks · detail ≤24h live, 3d+ from persisted history (kept 31 days)`,
+                controls: `<span class="seg">${[15, 60, 240, 480, 960, 1440, 4320, 10080, 43200].map(m => {
+                    const label = m < 60 ? m + 'm' : m <= 1440 ? (m / 60) + 'h' : (m / 1440) + 'd';
+                    return `<button data-win="${m}" class="${m === windowMin ? 'sel' : ''}">${label}</button>`;
+                }).join('')}</span>`,
+                guide: 'canli-gozlem'
+            })}
             ${emptyHint}
             <h2>${density ? 'Activity density' : 'Swim lanes'}</h2>
             ${density ? '' : `<div class="muted small" style="margin:-4px 0 6px">Left toggles — when an agent hits <b>YOUR TURN</b>: ${TURN_ACTIONS.map(a => a.glyph + ' ' + a.label.split(' ')[0].toLowerCase()).join(' · ')}. Agent default for all of its sessions (fires even while this panel is closed); override a single session on its card below. Concurrent sessions of one agent get their own #1/#2 rows.</div>`}
@@ -449,12 +441,13 @@
 
         const install = document.getElementById('install');
         if (install) { install.addEventListener('click', () => vscode.postMessage({ type: 'installHooks' })); }
-        document.getElementById('refresh').addEventListener('click', () => {
-            if (isDensity()) { requestHistory(true); }
-            vscode.postMessage({ type: 'refresh' });
+        window.AFHeader.wire(vscode, {
+            // density mode also re-requests the persisted history window
+            onRefresh: () => {
+                if (isDensity()) { requestHistory(true); }
+                vscode.postMessage({ type: 'refresh' });
+            }
         });
-        document.getElementById('dashboard').addEventListener('click', () =>
-            vscode.postMessage({ type: 'openDashboard' }));
         document.querySelectorAll('[data-win]').forEach(b =>
             b.addEventListener('click', () => { windowMin = Number(b.dataset.win); render(); }));
         document.querySelectorAll('[data-guide]').forEach(b =>

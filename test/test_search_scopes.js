@@ -79,6 +79,39 @@ const TS = (m) => Date.parse(T(m));
     ok('invalid regex reports an error', !!r4.error && r4.hits.length === 0);
 }
 
+// ---------- engine: multi-agent set scope (agentNames) ----------
+{
+    const f1 = tfile('c1.jsonl', [{ type: 'user', timestamp: T(1), message: { content: 'needle in c1' } }]);
+    const f2 = tfile('c2.jsonl', [{ type: 'user', timestamp: T(2), message: { content: 'needle in c2' } }]);
+    const f3 = tfile('c3.jsonl', [{ type: 'user', timestamp: T(3), message: { content: 'needle in c3' } }]);
+    const sessions = [
+        { file: f1, agentName: 'dev', title: 'c1', mtime: 1 },
+        { file: f2, agentName: 'ops', title: 'c2', mtime: 2 },
+        { file: f3, title: 'c3', mtime: 3 } // unassigned ("Other projects")
+    ];
+    const r1 = S.searchTranscripts(sessions, 'needle', { agentNames: ['dev', 'ops'] });
+    ok('agent set keeps exactly the picked agents', r1.hits.length === 2
+        && r1.hits.every(h => h.agentName === 'dev' || h.agentName === 'ops'));
+    const r2 = S.searchTranscripts(sessions, 'needle');
+    ok('no set = every agent incl. unassigned sessions', r2.hits.length === 3);
+    const r3 = S.searchTranscripts(sessions, 'needle', { agentNames: [] });
+    ok('empty set matches nothing, honestly', r3.hits.length === 0 && r3.filesScanned === 0);
+
+    const md = path.join(tmpdir, 'note-set.md');
+    fs.writeFileSync(md, 'note about needle');
+    ok('memory respects the agent set',
+        S.searchMemory([{ file: md, agentName: 'dev' }], 'needle', { agentNames: ['ops'] }).length === 0
+        && S.searchMemory([{ file: md, agentName: 'dev' }], 'needle', { agentNames: ['dev', 'ops'] }).length === 1);
+
+    const store2 = path.join(tmpdir, 'live-events-set.jsonl');
+    fs.writeFileSync(store2, [
+        JSON.stringify({ ts: 1, kind: 'prompt', detail: 'needle a', agentName: 'dev' }),
+        JSON.stringify({ ts: 2, kind: 'prompt', detail: 'needle b', agentName: 'ops' })
+    ].join('\n'));
+    const ev2 = S.searchLiveEvents(store2, 'needle', { agentNames: ['ops'] });
+    ok('live events respect the agent set', ev2.length === 1 && ev2[0].agentName === 'ops');
+}
+
 // ---------- memory + live-event sources ----------
 {
     const md = path.join(tmpdir, 'note.md');
@@ -104,7 +137,7 @@ const TS = (m) => Date.parse(T(m));
 
 // ---------- webview: grouped rendering, scope pill, click routing ----------
 {
-    const code = fs.readFileSync(path.resolve(__dirname, '../media/search.js'), 'utf8');
+    const code = fs.readFileSync(path.resolve(__dirname, '../media/pageHeader.js'), 'utf8') + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/search.js'), 'utf8');
     let posted = [];
     let msgHandler = null;
     const els = {};
@@ -199,6 +232,88 @@ const TS = (m) => Date.parse(T(m));
     posted = [];
     out['_open-session'][0]._click();
     ok('group header opens the session', posted[0] && posted[0].type === 'openSession' && posted[0].file === 'D:/t/sess1.jsonl');
+}
+
+// ---------- webview: agent picker (checkbox dropdown, fleet scope) ----------
+{
+    const code = fs.readFileSync(path.resolve(__dirname, '../media/pageHeader.js'), 'utf8') + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/search.js'), 'utf8');
+    let posted = [];
+    let msgHandler = null;
+    const els = {};
+    function getEl(id) {
+        if (!els[id]) {
+            els[id] = {
+                id, listeners: {}, style: {}, value: '', checked: false, _html: '',
+                addEventListener(ev, fn) { this.listeners[ev] = fn; },
+                focus() { },
+                set innerHTML(v) { this._html = v; }, get innerHTML() { return this._html; }
+            };
+        }
+        return els[id];
+    }
+    const sandbox = {
+        acquireVsCodeApi: () => ({ postMessage: (m) => posted.push(m), getState() { }, setState() { } }),
+        window: {
+            AFCharts: { esc: (s) => String(s) },
+            __DATA__: {
+                agents: ['dev', 'ops', 'psy'],
+                semantic: { provider: 'off', sessions: 0, chunks: 0 },
+                preset: null
+            },
+            addEventListener: (ev, fn) => { if (ev === 'message') { msgHandler = fn; } }
+        },
+        document: { getElementById: getEl, querySelectorAll: () => [] },
+        setTimeout: () => 0, clearTimeout: () => { }, console, Date
+    };
+    sandbox.globalThis = sandbox;
+    vm.createContext(sandbox);
+    vm.runInContext(code, sandbox); // shell()
+
+    const app = getEl('app');
+    ok('picker defaults to all agents', app._html.includes('Agents: all ▾')
+        && (app._html.match(/data-agent="[^"]+" checked>/g) || []).length === 3);
+
+    const setBoxes = (dev, ops, psy) => {
+        getEl('ag-0').checked = dev; getEl('ag-1').checked = ops; getEl('ag-2').checked = psy;
+    };
+    // untick one agent → subset is sent as an explicit array
+    setBoxes(true, false, true);
+    getEl('ag-1').listeners.change();
+    ok('subset label counts the pick', getEl('agbtn').textContent === 'Agents: 2/3 ▾');
+    getEl('q').value = 'needle';
+    posted = [];
+    getEl('go').listeners.click();
+    let sm = posted.find(p => p.type === 'search');
+    ok('subset search carries exactly the ticked agents', sm && JSON.stringify(sm.agents) === '["dev","psy"]');
+
+    // Clear → empty set (finds nothing, honestly); Select all → null (no filter)
+    getEl('agnone').listeners.click();
+    ok('Clear unticks everything', getEl('agbtn').textContent === 'Agents: none ▾'
+        && !getEl('ag-0').checked && !getEl('ag-2').checked);
+    posted = [];
+    getEl('go').listeners.click();
+    sm = posted.find(p => p.type === 'search');
+    ok('none-selected search sends an empty set', sm && JSON.stringify(sm.agents) === '[]');
+    getEl('agall').listeners.click();
+    ok('Select all restores the no-filter state', getEl('agbtn').textContent === 'Agents: all ▾' && getEl('ag-1').checked);
+    posted = [];
+    getEl('go').listeners.click();
+    sm = posted.find(p => p.type === 'search');
+    ok('all-selected search sends no agent filter', sm && sm.agents === null);
+
+    // agent preset → only that agent ticked, single-agent label
+    msgHandler({ data: { type: 'preset', preset: { agentName: 'ops' } } });
+    ok('agent preset ticks only that agent', app._html.includes('Agent: ops ▾')
+        && /id="ag-1" data-agent="ops" checked>/.test(app._html)
+        && /id="ag-0" data-agent="dev">/.test(app._html));
+    ok('agent preset shows the scope pill', app._html.includes('Agent: ops') && app._html.includes('id="clearscope"'));
+
+    // widening the pick retires the stale "Agent: X" pill
+    getEl('scope')._html = 'PILL'; // pre-seed: proves dropStaleAgentPreset really clears it
+    setBoxes(true, true, false);
+    getEl('ag-0').listeners.change();
+    ok('changed pick retires the agent pill', getEl('scope')._html === ''
+        && getEl('agbtn').textContent === 'Agents: 2/3 ▾');
 }
 
 fs.rmSync(tmpdir, { recursive: true, force: true });

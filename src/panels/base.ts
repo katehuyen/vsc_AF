@@ -29,6 +29,22 @@ export function jsonForScript(data: unknown): string {
         .split(paraSep).join('\\u2029');
 }
 
+/** One router for the shared header's cross-navigation cluster
+ *  (media/pageHeader.js posts {type:'afnav', to}). Pages with a scoped
+ *  ⌕ Search intercept to === 'search' before delegating here. */
+export function handleAfNav(to: unknown): void {
+    const commands: Record<string, string> = {
+        dashboard: 'agentfarm.openDashboard',
+        timeline: 'agentfarm.openTimeline',
+        needs: 'agentfarm.openNeeds',
+        board: 'agentfarm.openBoard',
+        search: 'agentfarm.searchTranscripts',
+        settings: 'agentfarm.openFarmSettings'
+    };
+    const cmd = commands[String(to)];
+    if (cmd) { void vscode.commands.executeCommand(cmd); }
+}
+
 /**
  * Standard HTML shell for Agent Farm webviews: strict CSP, shared CSS,
  * injected data object, shared chart helpers + a page script from /media.
@@ -44,8 +60,9 @@ export function htmlShell(
     const nonce = getNonce();
     const css = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'common.css'));
     const charts = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'charts.js'));
-    // shared Sessions-table component (dashboard + agent detail); tiny, so it
-    // ships to every page rather than growing htmlShell a per-page script list
+    // shared components (page header/toolbar + sessions table); tiny, so they
+    // ship to every page rather than growing htmlShell a per-page script list
+    const header = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'pageHeader.js'));
     const sessTable = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'sessionsTable.js'));
     const script = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', scriptFile));
     return `<!DOCTYPE html>
@@ -62,6 +79,7 @@ export function htmlShell(
 ${bodyHtml}
 <script nonce="${nonce}">window.__DATA__ = ${jsonForScript(data)};</script>
 <script nonce="${nonce}" src="${charts}"></script>
+<script nonce="${nonce}" src="${header}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>
 <script nonce="${nonce}" src="${script}"></script>
 </body>

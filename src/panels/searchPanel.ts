@@ -4,7 +4,7 @@ import {
     SearchResult, SearchRole
 } from '../core/search';
 import { SessionIndex } from '../core/sessions';
-import { htmlShell } from './base';
+import { handleAfNav, htmlShell } from './base';
 
 export interface SearchDeps {
     extensionUri: vscode.Uri;
@@ -69,7 +69,11 @@ export class SearchPanel {
         switch (msg.type) {
             case 'search': {
                 const query = String(msg.query ?? '');
-                const agentName = typeof msg.agent === 'string' && msg.agent ? msg.agent : undefined;
+                // Agent picker: null/absent = all agents (no filter — unassigned
+                // sessions included); an array = exactly that set ([] = none).
+                const agentNames = Array.isArray(msg.agents)
+                    ? (msg.agents as unknown[]).filter((a): a is string => typeof a === 'string')
+                    : undefined;
                 const file = typeof msg.file === 'string' && msg.file ? msg.file : undefined;
                 const roles = Array.isArray(msg.roles) && msg.roles.length
                     ? msg.roles.filter((r): r is SearchRole =>
@@ -77,7 +81,14 @@ export class SearchPanel {
                     : undefined;
                 let result: SearchResult;
                 if (msg.semantic) {
-                    result = await this.deps.semanticSearch(query, agentName);
+                    // the semantic layer filters by a single agent; a multi-agent
+                    // pick is applied to its hits afterwards
+                    result = await this.deps.semanticSearch(query,
+                        agentNames && agentNames.length === 1 ? agentNames[0] : undefined);
+                    if (agentNames && agentNames.length !== 1) {
+                        const set = new Set(agentNames);
+                        result.hits = result.hits.filter(h => set.has(h.agentName));
+                    }
                 } else {
                     const sessions = this.deps.index.all().map(s => ({
                         file: s.file,
@@ -88,7 +99,7 @@ export class SearchPanel {
                     const opts = {
                         regex: !!msg.regex,
                         caseSensitive: !!msg.caseSensitive,
-                        agentName,
+                        agentNames,
                         roles,
                         files: file ? [file] : undefined,
                         // a single session can take many more hits than a fleet scan
@@ -136,6 +147,9 @@ export class SearchPanel {
                 break;
             case 'openGuide':
                 void vscode.commands.executeCommand('agentfarm.openGuide', msg.anchor);
+                break;
+            case 'afnav':
+                handleAfNav(msg.to);
                 break;
         }
     }

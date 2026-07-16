@@ -3,7 +3,7 @@ import { AgentInfo } from '../core/agents';
 import { buildMemoryGraph } from '../core/memgraph';
 import { memoryUsage } from '../core/memusage';
 import { SessionIndex } from '../core/sessions';
-import { htmlShell } from './base';
+import { handleAfNav, htmlShell } from './base';
 
 /**
  * Memory Graph: makes the [[wikilink]] structure of each agent's memory
@@ -85,6 +85,9 @@ export class MemoryGraphPanel {
                 break;
             case 'openGuide':
                 void vscode.commands.executeCommand('agentfarm.openGuide', 'hafiza-grafigi');
+                break;
+            case 'afnav':
+                handleAfNav(msg.to);
                 break;
         }
     }

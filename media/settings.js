@@ -178,11 +178,12 @@
                 .seterr { font-size:11px; color:var(--vscode-errorForeground); margin-top:4px; }
                 .setitem.flash { outline:2px solid var(--vscode-textLink-foreground); outline-offset:2px; }
             </style>
-            <div class="spread">
-                <div><h1>Farm Settings</h1>
-                <div class="muted small">Every <code>agentFarm.*</code> setting — schema-driven, so new settings appear here automatically. ${total} settings · ${modified} changed from default. Changes save immediately to your user settings.</div></div>
-                <div class="btnrow"><button class="secondary" data-guide="dashboard">? Guide</button></div>
-            </div>
+            ${window.AFHeader.html({
+                page: 'settings',
+                title: 'Farm Settings',
+                sub: `Every <code>agentFarm.*</code> setting — schema-driven, so new settings appear here automatically. ${total} settings · ${modified} changed from default. Changes save immediately to your user settings.`,
+                guide: 'dashboard'
+            })}
             ${profileBar()}
             <div class="searchbar" style="margin:10px 0; position:relative">
                 <input id="filter" type="text" placeholder="Filter settings… (name or description)" value="${C.esc(filter)}" style="width:100%; max-width:420px; padding:6px 8px">
@@ -196,6 +197,7 @@
         `;
 
         // -- wiring --
+        window.AFHeader.wire(vscode);
         const filterEl = document.getElementById('filter');
         filterEl.addEventListener('input', () => {
             filter = filterEl.value.toLowerCase();

@@ -1451,7 +1451,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         lastExportDir: () => context.globalState.get<string>('agentfarm.lastExportDir'),
         setLastExportDir: (dir: string) => { void context.globalState.update('agentfarm.lastExportDir', dir); },
         launchTerminal: (name: string, cwd: string | undefined, command: string, sessionId?: string) =>
-            launchClaudeTerminal(name, cwd, command, undefined, sessionId)
+            launchClaudeTerminal(name, cwd, command, undefined, sessionId),
+        // Owner agent for the viewer's "⌂ <agent>" button: the index's assignment
+        // is authoritative; the cwd fallback covers sessions the index hasn't
+        // scanned yet (same resolver the live monitor uses).
+        agentForSession: (file: string, cwd?: string): { agentId: string; agentName: string } | undefined => {
+            const s = index.all().find(x => x.file === file);
+            let agent = s?.agentId ? agents.find(a => a.id === s.agentId) : undefined;
+            if (!agent) {
+                const r = resolveAgentByCwd(cwd ?? s?.cwd);
+                agent = r.agentId ? agents.find(a => a.id === r.agentId) : undefined;
+            }
+            return agent ? { agentId: agent.id, agentName: agent.name } : undefined;
+        }
     };
 
     // ---------- G1/G5: Needs You queue + kanban board ----------

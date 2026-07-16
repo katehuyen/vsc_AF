@@ -5,7 +5,7 @@ import { AgentInfo } from '../core/agents';
 import { assetKind, readMediaMetas, updateMediaMeta } from '../core/media';
 import { discoverProductions, SCENE_STATUSES, sceneMatrix, SceneStatus, setSceneStatus, writeProduction } from '../core/production';
 import { TaskManager } from '../core/tasks';
-import { htmlShell } from './base';
+import { handleAfNav, htmlShell } from './base';
 
 export interface GalleryDeps {
     extensionUri: vscode.Uri;
@@ -184,6 +184,12 @@ export class GalleryPanel {
                 break;
             case 'openGuide':
                 void vscode.commands.executeCommand('agentfarm.openGuide', msg.anchor);
+                break;
+            case 'afnav':
+                handleAfNav(msg.to);
+                break;
+            case 'refresh':
+                this.refresh();
                 break;
         }
     }

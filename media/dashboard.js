@@ -197,20 +197,13 @@
             : '';
 
         document.getElementById('app').innerHTML = `
-            <div class="spread">
-                <div><h1>Agent Farm</h1><div class="muted small">Generated ${new Date(DATA.generatedAt).toLocaleString()} · data: local Claude Code transcripts</div></div>
-                <div class="btnrow">
-                    <!-- toolbar canon: page controls/actions · Refresh · nav (Dashboard → Live Timeline) · ⌕ Search · ⚙ Settings · ? Guide last -->
-                    <span class="seg">
-                        ${[7, 14, 30, 90, 180, 365].map(r => `<button data-range="${r}" class="${r === range ? 'sel' : ''}">${r}d</button>`).join('')}
-                    </span>
-                    <button class="secondary" id="refresh">Refresh</button>
-                    <button class="secondary" id="timeline">Live Timeline</button>
-                    <button class="secondary" id="opensearch" title="Search across the whole farm">⌕ Search</button>
-                    <button class="secondary" id="opensettings" title="All agentFarm settings in one page, with saveable setting sets">⚙ Settings</button>
-                    <button class="secondary" data-guide="dashboard">? Guide</button>
-                </div>
-            </div>
+            ${window.AFHeader.html({
+                page: 'dashboard',
+                title: 'Agent Farm',
+                sub: `Generated ${new Date(DATA.generatedAt).toLocaleString()} · data: local Claude Code transcripts`,
+                controls: `<span class="seg">${[7, 14, 30, 90, 180, 365].map(r => `<button data-range="${r}" class="${r === range ? 'sel' : ''}">${r}d</button>`).join('')}</span>`,
+                guide: 'dashboard'
+            })}
             ${kpis}
             ${statusCard}
             ${charts}
@@ -246,10 +239,7 @@
             <p class="footnote">Costs are API-equivalent values computed from token usage — on a subscription plan this is not your bill, it is the value you extracted. Sessions are matched to agents by their working directory under your agent roots.</p>
         `;
 
-        document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
-        document.getElementById('timeline').addEventListener('click', () => vscode.postMessage({ type: 'openTimeline' }));
-        document.getElementById('opensearch').addEventListener('click', () => vscode.postMessage({ type: 'openSearch' }));
-        document.getElementById('opensettings').addEventListener('click', () => vscode.postMessage({ type: 'openFarmSettings' }));
+        window.AFHeader.wire(vscode);
         document.querySelectorAll('[data-range]').forEach(b =>
             b.addEventListener('click', () => { range = Number(b.dataset.range); render(); }));
         document.querySelectorAll('[data-detail]').forEach(b =>

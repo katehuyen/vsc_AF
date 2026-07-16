@@ -108,13 +108,11 @@
             : '';
 
         document.getElementById('app').innerHTML = `
-            <div class="spread">
-                <div>
-                    <h1>Media Gallery</h1>
-                    <div class="muted small">${items.length}/${DATA.items.length} item(s) · total est. media cost ${C.fmtUSD(DATA.totalCost)} · assets live in the task-outputs archive (external ones in place)</div>
-                </div>
-                <div class="btnrow">
-                    ${productions.length ? `<select id="fproj" title="production">
+            ${window.AFHeader.html({
+                page: 'gallery',
+                title: 'Media Gallery',
+                sub: `${items.length}/${DATA.items.length} item(s) · total est. media cost ${C.fmtUSD(DATA.totalCost)} · assets live in the task-outputs archive (external ones in place)`,
+                controls: `${productions.length ? `<select id="fproj" title="production">
                         <option value="">all productions</option>
                         ${productions.map(p => `<option value="${C.esc(p.id)}"${fProject === p.id ? ' selected' : ''}>${C.esc(p.title)}</option>`).join('')}
                     </select>` : ''}
@@ -122,11 +120,10 @@
                     ${sources.length > 1 ? `<select id="fsource" title="source">
                         <option value="">all sources</option>
                         ${sources.map(s => `<option value="${C.esc(s)}"${fSource === s ? ' selected' : ''}>${C.esc(s)}</option>`).join('')}
-                    </select>` : ''}
-                    <button class="secondary" id="newprod">${productions.length ? 'New Production' : '＋ New Production'}</button>
-                    <button class="secondary" data-guide="medya-uretim-hatti">? Guide</button>
-                </div>
-            </div>
+                    </select>` : ''}`,
+                actions: `<button class="secondary" id="newprod">${productions.length ? 'New Production' : '＋ New Production'}</button>`,
+                guide: 'medya-uretim-hatti'
+            })}
             ${proj ? matrixHtml(proj) : ''}
             ${items.length
                 ? `<div class="grid">${items.map(card).join('')}</div>`
@@ -134,6 +131,7 @@
                     ? '<div class="card"><p class="muted">Nothing matches the current filters.</p></div>'
                     : '<div class="card"><h3>No media yet</h3><p class="muted">Add a 🎬 Media step to a workflow (or run a recipe) — generated images/videos land here with their prompt, model and cost. Files dropped into watched ingest folders (agentFarm.ingestFolders) are registered automatically.</p></div>'}
         `;
+        window.AFHeader.wire(vscode);
         const wire = (id, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener('change', fn); } };
         wire('fproj', ev => { fProject = ev.target.value; fScene = ''; render(); });
         wire('fscene', ev => { fScene = ev.target.value; render(); });

@@ -8,7 +8,7 @@ import {
     CC_CATALOG, buildClaudeModel, coerceClaudeValue, patchClaudeSettings,
     validateRawClaudeSettings
 } from '../core/claudesettings';
-import { htmlShell } from './base';
+import { handleAfNav, htmlShell } from './base';
 
 export interface FarmSettingsDeps {
     extensionUri: vscode.Uri;
@@ -255,6 +255,12 @@ export class FarmSettingsPanel {
                 break;
             case 'openGuide':
                 void vscode.commands.executeCommand('agentfarm.openGuide', msg.anchor);
+                break;
+            case 'afnav':
+                handleAfNav(msg.to);
+                break;
+            case 'refresh':
+                this.refresh();
                 break;
         }
     }

@@ -54,22 +54,18 @@
                 .tag { font-size:10px; opacity:.7; border:1px solid var(--vscode-panel-border);
                     border-radius:3px; padding:1px 5px; margin-left:6px; vertical-align:middle; }
             </style>
-            <div class="spread">
-                <div>
-                    <h1>Needs You</h1>
-                    <div class="muted small">${items.length} item(s) · ${urgent} urgent · ${new Date(DATA.generatedAt).toLocaleTimeString()}</div>
-                </div>
-                <div class="btnrow">
-                    <button class="secondary" id="refresh">Refresh</button>
-                    <button class="secondary" id="guide">? Guide</button>
-                </div>
-            </div>
+            ${window.AFHeader.html({
+                page: 'needs',
+                title: 'Needs You',
+                sub: `${items.length} item(s) · ${urgent} urgent · ${new Date(DATA.generatedAt).toLocaleTimeString()}`,
+                related: [{ nav: 'board', label: 'Board' }],
+                guide: 'onay-kuyrugu'
+            })}
             ${items.length
                 ? items.map(rowHtml).join('')
                 : '<p class="muted" style="margin-top:24px">🎉 Nothing needs you right now — the farm is running on its own.</p>'}
         `;
-        document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
-        document.getElementById('guide').addEventListener('click', () => vscode.postMessage({ type: 'openGuide' }));
+        window.AFHeader.wire(vscode);
         document.querySelectorAll('[data-action]').forEach(el =>
             el.addEventListener('click', () => vscode.postMessage({
                 type: 'action',

@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 2.60.0 — ⌂ to the owner agent + pick any agent combination in Search (2026-07-16)
+
+- **⌂ \<agent\> in the Session Viewer.** A new button right next to *Open raw JSONL* names the session's **owner agent** and opens that agent's page in one click — no more working out whose session you're reading and hunting for its page. Ownership comes from the session index (cwd → agent), with the live monitor's resolver as fallback; sessions outside the agent roots have no owner and show no button.
+- **Search: the agent filter is now a checkbox dropdown.** The old all-or-one select becomes `Agents: all ▾` — tick **any combination** (two agents, everything except one…), with **Select all / Clear** for bulk moves. Everything is ticked by default, so "all agents" needs no special mode and a newly added agent joins the scan automatically. The pick applies to transcripts, memory notes and live events alike; changing it re-runs the search; an all-unticked pick honestly returns nothing. Opening Search from an Agent Detail page pre-ticks just that agent, and widening the pick retires the stale agent pill. In semantic mode a single ticked agent narrows the query itself; other subsets filter its results.
+- **Tests:** engine `agentNames` scope (transcripts/memory/events, empty-set honesty) + the picker webview (labels, subset payloads, preset round-trip) + the viewer's ⌂ button. Full suite: 40 files · 840 passed.
+
+## 2.59.0 — One shared header on every page (2026-07-16)
+
+2.58.x tried to fix toolbar chaos by re-sorting buttons page by page — treating the symptom. The disease was that **every page hand-rolled its own header**, so alignment, spacing, button presence and order all drifted. Cured structurally:
+
+- **One shared header component** (`media/pageHeader.js`) now renders the top bar of **all eleven pages** (Dashboard, Live Timeline, Agent Detail, Session Viewer, Board, Needs You, Capability Matrix, Memory Graph, Media Gallery, Farm Settings, Search). Title + subtitle left; one right-aligned toolbar with two halves split by a thin divider: the page's own controls/actions on the left, and the **global cluster** on the right.
+- **The global cluster is identical on every page** — *Dashboard · Live Timeline · (related panel) · ⌕ Search · ⚙ Settings · Refresh · ? Guide* — minus only the page you're on. That means pages that never had them get them now: Timeline gains Search/Settings, Agent Detail gains Settings/Refresh, Board/Needs/Capabilities/Memory Graph/Gallery gain full cross-navigation, Search gains navigation. ⌕ Search stays pre-scoped on Agent Detail (this agent) and the Session Viewer (this session).
+- One shared `afnav` route on the extension side serves all panels — a future page gets the whole cluster with one line, and a new global button lands on every page at once.
+
 ## 2.58.0 — ⌨ reachable everywhere + one toolbar canon (2026-07-16)
 
 - **⌨ on every session row, not just active ones.** A terminal window is often open while its session idles between turns — the Dashboard/Agent-Detail tables now carry the ⌨ jump-to-terminal button on **all** rows (the green ● alone marks activity). If no window is found, the honest message still applies.

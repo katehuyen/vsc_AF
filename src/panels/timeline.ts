@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { LiveMonitor } from '../core/live';
 import { TaskManager } from '../core/tasks';
-import { htmlShell } from './base';
+import { handleAfNav, htmlShell } from './base';
 
 export interface TimelineDeps {
     extensionUri: vscode.Uri;
@@ -120,6 +120,9 @@ export class TimelinePanel {
                 break;
             case 'openDashboard':
                 void vscode.commands.executeCommand('agentfarm.openDashboard');
+                break;
+            case 'afnav':
+                handleAfNav(msg.to);
                 break;
             case 'refresh':
                 this.refresh();

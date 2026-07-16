@@ -8,7 +8,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 
 // ---------- part 1: timeline.js — marks/segments carry data-ts + click posts ts ----------
 {
-    const code = fs.readFileSync(require('path').resolve(__dirname, '../media/timeline.js'), 'utf8');
+    const code = fs.readFileSync(require('path').resolve(__dirname, '../media/pageHeader.js'), 'utf8') + '\n' + fs.readFileSync(require('path').resolve(__dirname, '../media/timeline.js'), 'utf8');
     let posted = [];
     let lastHtml = '';
     let markEls = [];
@@ -74,7 +74,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 
 // ---------- part 2: sessionViewer.js — focusTs scroll/flash + filter clear ----------
 {
-    const code = fs.readFileSync(require('path').resolve(__dirname, '../media/sessionViewer.js'), 'utf8');
+    const code = fs.readFileSync(require('path').resolve(__dirname, '../media/pageHeader.js'), 'utf8') + '\n' + fs.readFileSync(require('path').resolve(__dirname, '../media/sessionViewer.js'), 'utf8');
     let posted = [];
     let focused = null;
     let msgHandler = null;
@@ -161,6 +161,23 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     ok('clear restores all messages', getEl('msgs')._html.indexOf('answer mid') !== -1);
     ok('clear hides itself again', clear.style.display === 'none');
     ok('clear refocuses the input', input.focused === true);
+
+    // ⌂ agent button: absent while the session has no owner agent; a data push
+    // with an owner renders it; clicking posts openAgent with the session cwd.
+    ok('no agent button without an owner agent', getEl('app')._html.indexOf('id="agentpage"') === -1);
+    msgHandler({
+        data: {
+            type: 'data',
+            data: Object.assign({}, sandbox.window.__DATA__, {
+                agentId: 'd:/a/developer', agentName: 'developer', cwd: 'D:/a/developer'
+            })
+        }
+    });
+    ok('agent button names the owner agent', getEl('app')._html.indexOf('⌂ developer') !== -1);
+    posted = [];
+    getEl('agentpage').listeners.click();
+    ok('agent button posts openAgent with the session cwd',
+        posted[0] && posted[0].type === 'openAgent' && posted[0].cwd === 'D:/a/developer');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

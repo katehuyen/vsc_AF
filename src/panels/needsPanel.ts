@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { NeedItem } from '../core/needs';
-import { htmlShell } from './base';
+import { handleAfNav, htmlShell } from './base';
 
 /**
  * G1 — "Needs You" panel: the single urgency-sorted queue of everything
@@ -62,6 +62,7 @@ export class NeedsPanel {
 
     private async onMessage(msg: { type: string; actionId?: string; item?: NeedItem }): Promise<void> {
         if (msg.type === 'refresh') { this.refresh(); return; }
+        if (msg.type === 'afnav') { handleAfNav((msg as { to?: unknown }).to); return; }
         if (msg.type === 'openGuide') {
             void vscode.commands.executeCommand('agentfarm.openGuide', 'onay-kuyrugu');
             return;

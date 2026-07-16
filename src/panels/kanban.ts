@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { NeedItem } from '../core/needs';
 import { FarmTask, TaskManager } from '../core/tasks';
-import { htmlShell } from './base';
+import { handleAfNav, htmlShell } from './base';
 
 /**
  * G5 — Kanban task board (the "Manager surface"): Inbox / Parked / Running /
@@ -180,6 +180,9 @@ export class KanbanPanel {
                 break;
             case 'open-needs':
                 void vscode.commands.executeCommand('agentfarm.openNeeds');
+                break;
+            case 'afnav':
+                handleAfNav(msg.to);
                 break;
             case 'openGuide':
                 void vscode.commands.executeCommand('agentfarm.openGuide', 'kanban-panosu');

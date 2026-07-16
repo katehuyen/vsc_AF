@@ -9,7 +9,7 @@ import { buildAgentTaskStats, TaskRecord } from '../core/taskstats';
 import { SessionIndex } from '../core/sessions';
 import { PriceRule, PricingEngine, totalTokens } from '../core/pricing';
 import { safeReadFile } from '../core/util';
-import { htmlShell } from './base';
+import { handleAfNav, htmlShell } from './base';
 import { sessionRowPool } from './dashboard';
 import { buildData as buildViewerData } from './sessionViewer';
 
@@ -276,10 +276,15 @@ export class AgentDetailPanel {
             case 'openTimeline':
                 vscode.commands.executeCommand('agentfarm.openTimeline');
                 break;
-            case 'openSearch':
-                // pre-scoped to this agent; ✕ in the panel widens to fleet
-                vscode.commands.executeCommand('agentfarm.searchTranscripts',
-                    { agentName: this.agent()?.name });
+            case 'afnav':
+                if (msg.to === 'search') {
+                    // pre-scoped to this agent; ✕ in the panel widens to fleet
+                    vscode.commands.executeCommand('agentfarm.searchTranscripts',
+                        { agentName: this.agent()?.name });
+                } else { handleAfNav(msg.to); }
+                break;
+            case 'refresh':
+                this.refresh();
                 break;
             case 'openGuide':
                 vscode.commands.executeCommand('agentfarm.openGuide', msg.anchor);

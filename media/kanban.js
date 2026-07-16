@@ -86,18 +86,14 @@
                 button.mini { font-size:10px; padding:1px 6px; }
                 .kb-col-body.dragover { background:rgba(128,128,255,.08); border-radius:6px; }
             </style>
-            <div class="spread">
-                <div><h1>Board</h1>
-                    <div class="muted small">drag cards between columns · updated ${new Date(d.generatedAt).toLocaleTimeString()}</div>
-                </div>
-                <div class="btnrow">
-                    <!-- toolbar canon: page actions · Refresh · nav · ⌕ Search · ? Guide last -->
-                    <button class="secondary" id="add">+ Task</button>
-                    <button class="secondary" id="refresh">Refresh</button>
-                    <button class="secondary" id="needs">Needs You</button>
-                    <button class="secondary" id="guide">? Guide</button>
-                </div>
-            </div>
+            ${window.AFHeader.html({
+                page: 'board',
+                title: 'Board',
+                sub: `drag cards between columns · updated ${new Date(d.generatedAt).toLocaleTimeString()}`,
+                actions: '<button class="secondary" id="add">+ Task</button>',
+                related: [{ nav: 'needs', label: 'Needs You' }],
+                guide: 'kanban-panosu'
+            })}
             <div class="kb-bar">
                 <input id="cmd" type="text" placeholder="🚀 Natural-language command… (e.g. 'run the psikolog weekly analysis tomorrow at 09:00')" ${pendingCommand ? 'disabled' : ''}>
                 <button id="cmdgo" ${pendingCommand ? 'disabled' : ''}>${pendingCommand ? 'planning…' : 'Plan'}</button>
@@ -111,10 +107,8 @@
             </div>
         `;
 
-        document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
+        window.AFHeader.wire(vscode);
         document.getElementById('add').addEventListener('click', () => vscode.postMessage({ type: 'add-task' }));
-        document.getElementById('needs').addEventListener('click', () => vscode.postMessage({ type: 'open-needs' }));
-        document.getElementById('guide').addEventListener('click', () => vscode.postMessage({ type: 'openGuide' }));
 
         const cmd = document.getElementById('cmd');
         const go = () => {

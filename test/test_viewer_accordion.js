@@ -8,7 +8,7 @@ const vm = require('vm');
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
-const code = fs.readFileSync(require('path').resolve(__dirname, '../media/sessionViewer.js'), 'utf8');
+const code = fs.readFileSync(require('path').resolve(__dirname, '../media/pageHeader.js'), 'utf8') + '\n' + fs.readFileSync(require('path').resolve(__dirname, '../media/sessionViewer.js'), 'utf8');
 
 const count = (html, needle) => html.split(needle).length - 1;
 

@@ -6,7 +6,7 @@ import { SessionIndex, SessionInfo } from '../core/sessions';
 import { PricingEngine, totalTokens } from '../core/pricing';
 import { SubsystemStatus } from '../core/farmstatus';
 import { dayKey } from '../core/util';
-import { htmlShell } from './base';
+import { handleAfNav, htmlShell } from './base';
 import { buildData as buildViewerData } from './sessionViewer';
 
 export interface DashboardDeps {
@@ -269,6 +269,9 @@ export class DashboardPanel {
                 break;
             case 'openFarmSettings':
                 vscode.commands.executeCommand('agentfarm.openFarmSettings');
+                break;
+            case 'afnav':
+                handleAfNav(msg.to);
                 break;
             case 'focusTerminal':
                 vscode.commands.executeCommand('agentfarm.focusSessionTerminal', {

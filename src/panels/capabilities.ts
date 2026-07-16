@@ -10,7 +10,7 @@ import { copySkillTo, readAgentSkills, skillLastUsed, skillUsage } from '../core
 import { buildTaskFamilies, TaskRecord } from '../core/taskstats';
 import { SessionIndex } from '../core/sessions';
 import { hashString, safeReadFile } from '../core/util';
-import { htmlShell } from './base';
+import { handleAfNav, htmlShell } from './base';
 
 /**
  * Capability Matrix: skills × agents and MCP servers × agents in one glance —
@@ -213,6 +213,9 @@ export class CapabilitiesPanel {
                 break;
             case 'openGuide':
                 void vscode.commands.executeCommand('agentfarm.openGuide', 'yetenek-matrisi');
+                break;
+            case 'afnav':
+                handleAfNav(msg.to);
                 break;
             case 'openTaskHistory':
                 void vscode.commands.executeCommand('agentfarm.openTaskHistory');
