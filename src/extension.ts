@@ -1450,8 +1450,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         titleFor: (sessionId: string) => sessionTitles()[sessionId],
         lastExportDir: () => context.globalState.get<string>('agentfarm.lastExportDir'),
         setLastExportDir: (dir: string) => { void context.globalState.update('agentfarm.lastExportDir', dir); },
-        launchTerminal: (name: string, cwd: string | undefined, command: string) =>
-            launchClaudeTerminal(name, cwd, command)
+        launchTerminal: (name: string, cwd: string | undefined, command: string, sessionId?: string) =>
+            launchClaudeTerminal(name, cwd, command, undefined, sessionId)
     };
 
     // ---------- G1/G5: Needs You queue + kanban board ----------
@@ -1583,6 +1583,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     let pendingMerge: { name: string; files: string[] } | undefined;
 
     type AgentArg = { agentId?: string; agent?: AgentInfo } | undefined;
+
+    /** One record per session launch — lets Focus Session Terminal land on the
+     *  exact window instead of guessing by agent name (two concurrent sessions
+     *  of one agent share the name). Integrated terminals are held by object;
+     *  external windows by their pinned, per-launch-unique wt title. sessionId
+     *  is bound right at launch when known (resume / external CLI), otherwise
+     *  by the live monitor when a new session with the same cwd shows up. */
+    interface TermBinding { title: string; cwd?: string; term?: vscode.Terminal; launchedAt: number; sessionId?: string }
+    const termBindings: TermBinding[] = [];
+    // persisted so a fresh "#n" never collides with a window from the previous run
+    let launchSeq = context.globalState.get<number>('agentfarm.termLaunchSeq', 0);
+
     /** Claude session terminals (start/continue/resume) honor agentFarm.externalTerminal —
      *  long TUI sessions can escape xterm.js rendering glitches. Farm tasks stay integrated
      *  (their lifecycle is tracked via terminal close events). */
@@ -1592,18 +1604,44 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // is only passed for external-CLI sessions — claude terminals get none.
     const launchClaudeTerminal = (
         name: string, cwd: string | undefined, command: string,
-        env?: Record<string, string>
+        env?: Record<string, string>, sessionId?: string
     ): vscode.Terminal | undefined => {
+        launchSeq += 1;
+        void context.globalState.update('agentfarm.termLaunchSeq', launchSeq);
+        // "#n" makes the terminal/window title unique per launch — "claude: dev"
+        // alone can't tell session #1's window from session #3's.
+        const title = `${name} #${launchSeq}`;
+        if (termBindings.length > 200) { termBindings.splice(0, termBindings.length - 200); }
         if (cfg().get<boolean>('externalTerminal', false)) {
             // title pinned so agentfarm.focusSessionTerminal can find the window later
-            openExternalTerminal(cwd, command, name);
+            openExternalTerminal(cwd, command, title);
+            termBindings.push({ title, cwd, launchedAt: Date.now(), sessionId });
             return undefined;
         }
-        const terminal = vscode.window.createTerminal({ name, cwd, env });
+        const terminal = vscode.window.createTerminal({ name: title, cwd, env });
+        termBindings.push({ title, cwd, term: terminal, launchedAt: Date.now(), sessionId });
         terminal.show();
         terminal.sendText(command, true);
         return terminal;
     };
+
+    // Claude only announces its session id via hook events after the terminal is
+    // already running — bind each new live session to the launch it came from:
+    // same cwd, session started after the launch (5 min window absorbs slow
+    // starts but keeps stale launch records from grabbing later sessions),
+    // oldest unbound launch wins (FIFO for same-cwd bursts).
+    live.onDidUpdate(() => {
+        const bound = new Set(termBindings.map(b => b.sessionId).filter(Boolean));
+        const unbound = live.sessions()
+            .filter(s => s.cwd && !bound.has(s.sessionId))
+            .sort((a, b) => a.startedAt - b.startedAt);
+        for (const s of unbound) {
+            const n = normPath(s.cwd!);
+            const hit = termBindings.find(b => !b.sessionId && b.cwd && normPath(b.cwd) === n
+                && s.startedAt >= b.launchedAt - 5000 && s.startedAt <= b.launchedAt + 300000);
+            if (hit) { hit.sessionId = s.sessionId; }
+        }
+    }, null, context.subscriptions);
 
     const resolveAgent = async (arg: AgentArg): Promise<AgentInfo | undefined> => {
         if (arg?.agent) { return arg.agent; }
@@ -1899,7 +1937,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (!s?.sessionId) { return; }
                 const cwd = s.cwd && fs.existsSync(s.cwd) ? s.cwd : undefined;
                 launchClaudeTerminal(`claude: ${s.agentName ?? s.sessionId.slice(0, 8)}`, cwd,
-                    `claude --resume ${s.sessionId}`);
+                    `claude --resume ${s.sessionId}`, undefined, s.sessionId);
             }),
 
         vscode.commands.registerCommand('agentfarm.renameSession',
@@ -2146,7 +2184,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 AGENT_FARM_EVENT_PORT: String(cfg().get<number>('livePort', 8377)),
                 AGENT_FARM_HOOK: vscode.Uri.joinPath(context.extensionUri, 'out', 'service', 'cliHook.js').fsPath
             } : undefined;
-            const term = launchClaudeTerminal(`${pick.id}: ${agent.name}`, agent.dir, command, env);
+            const term = launchClaudeTerminal(`${pick.id}: ${agent.name}`, agent.dir, command, env, sessionId);
             if (sessionId && term) {
                 cliTerminals.set(term, { sessionId, cwd: agent.dir });
                 live.handle({ session_id: sessionId, cwd: agent.dir, hook_event_name: 'SessionStart', source: pick.id });
@@ -4321,25 +4359,43 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }),
 
         vscode.commands.registerCommand('agentfarm.focusSessionTerminal',
-            (arg?: { agentName?: string; cwd?: string }) => {
-                // Resolve the agent: by name, or by the session's working folder.
-                let name = arg?.agentName ?? '';
-                if (!name && arg?.cwd) {
-                    const norm = normPath(arg.cwd);
-                    const hit = agents.find(a => norm === a.normDir || norm.startsWith(a.normDir + '/'));
-                    name = hit?.name ?? '';
+            (arg?: { sessionId?: string; agentName?: string; cwd?: string }) => {
+                // 1) exact hit — the terminal this very session was launched in
+                //    (bound at launch or by the live monitor via cwd; see termBindings)
+                const sid = arg?.sessionId;
+                const binding = sid ? termBindings.find(b => b.sessionId === sid) : undefined;
+                if (binding?.term && vscode.window.terminals.includes(binding.term)) {
+                    binding.term.show();
+                    return;
                 }
-                // 1) integrated terminals — ours are named "claude: <agent>" / "<cli>: <agent>"
-                const match = vscode.window.terminals.filter(t =>
-                    name ? (t.name === `claude: ${name}` || t.name.endsWith(`: ${name}`))
-                        : t.name.startsWith('claude: '));
-                if (match.length) {
+                // 2) agent-level fallback. Index rows can carry pseudo-names
+                //    ("Other projects"), so only trust a name that is a real agent;
+                //    resolveAgentByCwd includes the basename fallback, matching
+                //    sessions that run outside the agent roots. The live monitor
+                //    knows the cwd of sessions we didn't launch ourselves.
+                const cwd = arg?.cwd
+                    || (sid ? live.sessions().find(s => s.sessionId === sid)?.cwd : undefined);
+                let name = arg?.agentName && agents.some(a => a.name === arg.agentName)
+                    ? arg.agentName : '';
+                if (!name) { name = resolveAgentByCwd(cwd).agentName ?? ''; }
+                // integrated terminals — named "claude: <agent> #n" since 2.56.0,
+                // "claude: <agent>" / "<cli>: <agent>" before
+                const escRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const namePat = name
+                    ? new RegExp(`^[^:]+: ${escRe(name)}( #\\d+)?$`)
+                    : /^claude: /;
+                const match = vscode.window.terminals.filter(t => namePat.test(t.name));
+                if (!(binding && !binding.term) && match.length) {
                     match[match.length - 1].show(); // most recent wins
                     return;
                 }
-                // 2) external window (Windows Terminal — title pinned at launch)
+                // 3) external window (Windows Terminal — title pinned at launch).
+                //    The session's own pinned title goes first (exact); the plain
+                //    agent titles still prefix-match older/suffixed windows.
+                const titles = binding && !binding.term ? [binding.title] : [];
+                titles.push(...(name ? [`claude: ${name}`, name] : ['claude']));
                 focusExternalTerminal(
-                    name ? [`claude: ${name}`, name] : ['claude'],
+                    titles,
                     found => {
                         if (!found) {
                             void vscode.window.showInformationMessage(

@@ -19,7 +19,7 @@ export interface ViewerDeps {
     lastExportDir?(): string | undefined;
     setLastExportDir?(dir: string): void;
     /** Resume honors agentFarm.externalTerminal when provided by the extension host. */
-    launchTerminal?(name: string, cwd: string | undefined, command: string): void;
+    launchTerminal?(name: string, cwd: string | undefined, command: string, sessionId?: string): void;
 }
 
 interface ViewMessage {
@@ -378,7 +378,8 @@ export class SessionViewerPanel {
                 const name = `claude: ${sessionId.slice(0, 8)}`;
                 const command = `claude --resume ${sessionId}`;
                 if (this.deps.launchTerminal) {
-                    this.deps.launchTerminal(name, cwd, command);
+                    // sessionId known up front (--resume) — the ⌨ button binds instantly
+                    this.deps.launchTerminal(name, cwd, command, sessionId);
                     break;
                 }
                 const terminal = vscode.window.createTerminal({ name, cwd });
@@ -428,8 +429,10 @@ export class SessionViewerPanel {
                     { file: this.file, title: typeof msg.title === 'string' ? msg.title : undefined });
                 break;
             case 'focusTerminal':
-                vscode.commands.executeCommand('agentfarm.focusSessionTerminal',
-                    { cwd: typeof msg.cwd === 'string' ? msg.cwd : undefined });
+                vscode.commands.executeCommand('agentfarm.focusSessionTerminal', {
+                    sessionId: path.basename(this.file, '.jsonl'),
+                    cwd: typeof msg.cwd === 'string' ? msg.cwd : undefined
+                });
                 break;
             case 'openGuide':
                 vscode.commands.executeCommand('agentfarm.openGuide', msg.anchor);

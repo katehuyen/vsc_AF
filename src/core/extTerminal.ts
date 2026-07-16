@@ -13,6 +13,9 @@ import * as cp from 'child_process';
 export function openExternalTerminal(cwd: string | undefined, command: string, title?: string): void {
     if (process.platform === 'win32') {
         const wtArgs = [
+            // own window per session: as a tab in a shared window the pinned
+            // title hides behind the active tab's — AppActivate can't find it
+            '-w', 'new',
             ...(title ? ['--title', title, '--suppressApplicationTitle'] : []),
             ...(cwd ? ['-d', cwd] : []),
             'cmd', '/k', command

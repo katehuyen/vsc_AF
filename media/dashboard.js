@@ -218,7 +218,7 @@
             const open = sessOpen.has(r.file);
             return `<tr class="click sessrow${open ? ' open' : ''}" data-session="${C.esc(r.file)}">
                 <td class="foldcell"><button class="fold" data-fold="${C.esc(r.file)}" title="${open ? 'Hide' : 'List'} this session's turns">${open ? '▾' : '▸'}</button></td>
-                <td>${r.active ? `<span class="dot on" title="Active now"></span> ` : ''}${C.esc(r.agent)}${r.sidechain ? ' <span class="badge">sub</span>' : ''}${r.active ? ` <button class="fold" data-term="${C.esc(r.agentName || '')}" title="Jump to this session's terminal window">⌨</button>` : ''}</td>
+                <td>${r.active ? `<span class="dot on" title="Active now"></span> ` : ''}${C.esc(r.agent)}${r.sidechain ? ' <span class="badge">sub</span>' : ''}${r.active ? ` <button class="fold" data-term="${C.esc(r.agentName || '')}" data-sid="${C.esc(r.sessionId || '')}" data-cwd="${C.esc(r.cwd || '')}" title="Jump to this session's terminal window">⌨</button>` : ''}</td>
                 <td>${C.esc(r.title)}</td>
                 <td class="num">${relTime(r.ts)}</td>
                 <td class="num">${r.durationMin}m</td>
@@ -411,7 +411,11 @@
             document.querySelectorAll('[data-term]').forEach(b =>
                 b.addEventListener('click', ev => {
                     ev.stopPropagation(); // the row click underneath opens the transcript
-                    vscode.postMessage({ type: 'focusTerminal', agentName: b.dataset.term });
+                    // sessionId picks the exact terminal of THIS row; name/cwd are fallbacks
+                    vscode.postMessage({
+                        type: 'focusTerminal', sessionId: b.dataset.sid || '',
+                        agentName: b.dataset.term, cwd: b.dataset.cwd || ''
+                    });
                 }));
             document.querySelectorAll('[data-fold]').forEach(b =>
                 b.addEventListener('click', ev => {

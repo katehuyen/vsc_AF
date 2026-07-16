@@ -31,6 +31,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     for (let i = 1; i <= 30; i++) {
         sessions.push({
             file: `f${i}`, agentName: 'dev', machine: i === 1 ? 'laptop' : undefined,
+            sessionId: `sid${i}`, cwd: i === 1 ? 'D:/agents/dev' : undefined,
             title: `t${i}`, firstTs: 1000, lastTs: 1000 + i * 60000, mtime: 900,
             usage: usage(i), cost: 30 - i, isSidechain: false,
             userTurns: i === 15 ? 99 : 1
@@ -46,6 +47,9 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     ok('mid sessions outside every top-12 stay out', !files.includes('f13') && !files.includes('f14'));
     const r1 = pool.find(r => r.file === 'f1');
     ok('machine suffix kept', r1.agent === 'dev ⇄ laptop');
+    // the ⌨ focus button needs the session's identity, not just the agent name
+    ok('sessionId carried for terminal focus', r1.sessionId === 'sid1');
+    ok('cwd carried (empty when unknown)', r1.cwd === 'D:/agents/dev' && pool.find(r => r.file === 'f30').cwd === '');
     ok('turns carried from userTurns', pool.find(r => r.file === 'f15').turns === 99);
     ok('active flag from callback', pool.find(r => r.file === 'f30').active === true && r1.active === false);
     ok('wire order is newest first', files[0] === 'f30');

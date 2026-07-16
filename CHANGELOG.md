@@ -2,6 +2,13 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 2.56.0 — ⌨ finds the exact session terminal (2026-07-16)
+
+- **Session-exact focus.** The ⌨ buttons (Session Viewer, Dashboard active rows, Timeline live cards) now land on **that session's own terminal**, not blindly on the agent's most recent one: every session launch (Start / Continue / Resume / external CLI) is registered, and the live monitor binds the session id reported by hooks back to the launching terminal via its cwd. Two concurrent sessions of one agent (`dev #1` / `dev #3` on the Timeline) each focus their own window now.
+- **Unique terminal titles.** Session terminals are named `claude: <agent> #n` (persistent launch counter) — the integrated-terminal dropdown and external `wt` window titles are unambiguous, so title-based focus can't hit a sibling session. External sessions also open with `wt -w new`: a session is never a tab hiding behind another tab's title (only the active tab's title is the window title AppActivate can see).
+- **Dashboard/Viewer "no open terminal found" fixed.** Sessions living outside the agent roots used to send a pseudo-name ("Other projects") or a cwd the resolver didn't recognize, so the ⌨ button gave up. The command now ignores pseudo-names, resolves the cwd with the same folder-basename fallback the live monitor uses, and when it only has a session id it asks the live monitor for the cwd.
+- **Tests:** dashboard session rows carry `sessionId`/`cwd` for the ⌨ button (asserted in `test_dashboard_sessions.js`). Full suite: 39 files · 795 passed.
+
 ## 2.55.0 — Jump to the terminal + Claude Code's own settings (2026-07-16)
 
 - **⌨ one click back to the session's terminal.** Wherever you're reading about a session — the Session Viewer's top bar, an active row in the Dashboard sessions table, a live-session card on the Timeline — a ⌨ button focuses that session's terminal so you never hunt for the window again. Integrated terminals are found by name; **external Windows Terminal windows are found by title**, which new sessions now pin at launch (`wt --title "claude: <agent>" --suppressApplicationTitle`). If nothing is found you get an honest message — sessions started before this version can't be located by title. Also available as the `Focus Session Terminal` command.

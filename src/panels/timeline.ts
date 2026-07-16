@@ -110,8 +110,10 @@ export class TimelinePanel {
                 }
                 break;
             case 'focusTerminal':
-                void vscode.commands.executeCommand('agentfarm.focusSessionTerminal',
-                    { agentName: typeof msg.agentName === 'string' ? msg.agentName : undefined });
+                void vscode.commands.executeCommand('agentfarm.focusSessionTerminal', {
+                    sessionId: typeof msg.sessionId === 'string' && msg.sessionId ? msg.sessionId : undefined,
+                    agentName: typeof msg.agentName === 'string' ? msg.agentName : undefined
+                });
                 break;
             case 'openGuide':
                 void vscode.commands.executeCommand('agentfarm.openGuide', msg.anchor);
