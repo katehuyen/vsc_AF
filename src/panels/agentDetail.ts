@@ -10,6 +10,11 @@ import { SessionIndex } from '../core/sessions';
 import { PriceRule, PricingEngine, totalTokens } from '../core/pricing';
 import { safeReadFile } from '../core/util';
 import { htmlShell } from './base';
+import { sessionRowPool } from './dashboard';
+import { buildData as buildViewerData } from './sessionViewer';
+
+/** The agent page shows more sessions than the dashboard's fleet-wide table. */
+const AGENT_SESSION_TABLE_N = 50;
 
 export interface AgentDetailDeps {
     extensionUri: vscode.Uri;
@@ -147,20 +152,11 @@ function buildData(agent: AgentInfo, deps: AgentDetailDeps): Record<string, unkn
                 severity: i.severity, category: i.category,
                 message: i.message, filePath: i.filePath, anchor: i.guideAnchor
             })),
-        sessions: sessions.slice(0, 50).map(s => ({
-            file: s.file,
-            title: s.title,
-            ts: s.lastTs,
-            durationMin: s.firstTs && s.lastTs ? Math.round((s.lastTs - s.firstTs) / 60000) : 0,
-            models: s.models,
-            tokens: totalTokens(s.usage),
-            cost: s.cost,
-            turns: s.userTurns,
-            toolCalls: s.toolCalls,
-            errors: s.errors,
-            sidechain: s.isSidechain,
-            active: deps.index.isSessionActive(s)
-        }))
+        // same advanced table as the dashboard (same row shape / component):
+        // union of the true top-N per sortable criterion, sorted client-side
+        sessions: sessionRowPool(sessions,
+            s => deps.index.isSessionActive(s), AGENT_SESSION_TABLE_N),
+        sessionTableN: AGENT_SESSION_TABLE_N
     };
 }
 
@@ -228,7 +224,38 @@ export class AgentDetailPanel {
                 vscode.commands.executeCommand('vscode.open', vscode.Uri.file(String(msg.path)));
                 break;
             case 'openSession':
-                vscode.commands.executeCommand('agentfarm.openSession', msg.file);
+                // ts (optional) = the clicked turn's opening prompt — the viewer
+                // reveals an already-open panel and scrolls it right there.
+                vscode.commands.executeCommand('agentfarm.openSession', msg.file,
+                    typeof msg.ts === 'number' && msg.ts > 0 ? msg.ts : undefined);
+                break;
+            case 'sessionTurns': {
+                // On-demand per-turn breakdown for an expanded session row.
+                // Only this agent's own session files are readable from here —
+                // the webview must not be able to point us at arbitrary paths.
+                const file = typeof msg.file === 'string' ? msg.file : '';
+                if (!file || !this.deps.index.forAgent(this.agentId).some(s => s.file === file)) { break; }
+                let turns: unknown = [];
+                try {
+                    // reuse the session viewer's proven transcript parse; we only
+                    // keep the turn table (maxMessages 1 keeps the throwaway
+                    // message payload minimal — turns are computed before the cut)
+                    turns = buildViewerData(file, {
+                        extensionUri: this.deps.extensionUri,
+                        getPricing: () => this.deps.getPricing(),
+                        maxMessages: () => 1,
+                        contextLimitFor: () => 0
+                    }).turns;
+                } catch { /* fail-soft: an unreadable file shows an empty turn list */ }
+                void this.panel.webview.postMessage({ type: 'sessionTurns', file, turns });
+                break;
+            }
+            case 'focusTerminal':
+                vscode.commands.executeCommand('agentfarm.focusSessionTerminal', {
+                    sessionId: typeof msg.sessionId === 'string' && msg.sessionId ? msg.sessionId : undefined,
+                    agentName: typeof msg.agentName === 'string' ? msg.agentName : undefined,
+                    cwd: typeof msg.cwd === 'string' && msg.cwd ? msg.cwd : undefined
+                });
                 break;
             case 'startSession':
                 vscode.commands.executeCommand('agentfarm.startSession', { agentId: this.agentId });

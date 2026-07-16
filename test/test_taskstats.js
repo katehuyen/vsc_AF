@@ -123,16 +123,23 @@ check('describe: runs + rate + duration', /5 runs/.test(d) && /50% ok/.test(d) &
 
 // ---- 8. Webview smoke: capabilities.js Tasks grid ----
 function makeDom() {
+    // every element carries no-op selector queries so the shared sessions-table
+    // component (sessionsTable.js) can wire itself against its container stub
     const el = () => ({
         _html: '', listeners: {}, dataset: {},
         set innerHTML(v) { this._html = v; }, get innerHTML() { return this._html; },
-        addEventListener(ev, cb) { this.listeners[ev] = cb; }
+        addEventListener(ev, cb) { this.listeners[ev] = cb; },
+        querySelector: () => ({ addEventListener() { } }),
+        querySelectorAll: () => []
     });
     const app = el();
+    const others = {};
     return {
         app,
         document: {
-            getElementById: () => app,
+            // 'app' is the page; other ids (e.g. the sessions container) get
+            // their own element so the component can't clobber the page html
+            getElementById: id => id === 'app' ? app : (others[id] || (others[id] = el())),
             querySelectorAll: () => []
         }
     };
@@ -148,6 +155,8 @@ function runWebview(file, data) {
     sandbox.window.window = sandbox.window;
     vm.createContext(sandbox);
     vm.runInContext(fs.readFileSync(path.join(ROOT, 'media/charts.js'), 'utf8'), sandbox);
+    // htmlShell ships the shared sessions-table component to every page
+    vm.runInContext(fs.readFileSync(path.join(ROOT, 'media/sessionsTable.js'), 'utf8'), sandbox);
     vm.runInContext(fs.readFileSync(path.join(ROOT, file), 'utf8'), sandbox);
     return dom.app._html;
 }

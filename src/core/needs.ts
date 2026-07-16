@@ -162,6 +162,9 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
                 ts: s.lastEventTs,
                 ref: { sessionId: s.sessionId, transcriptPath: s.transcriptPath },
                 actions: [
+                    // the answer to a permission dialog lives in the terminal —
+                    // jumping there is the fastest way to unblock the agent
+                    { id: 'focus-terminal', label: '⌨ Terminal' },
                     { id: 'open-session', label: 'Open Session' },
                     { id: 'open-timeline', label: 'Timeline' }
                 ]
@@ -176,6 +179,7 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
                 ts: s.lastEventTs,
                 ref: { sessionId: s.sessionId, transcriptPath: s.transcriptPath },
                 actions: [
+                    { id: 'focus-terminal', label: '⌨ Terminal' },
                     { id: 'open-session', label: 'Open Session' },
                     { id: 'open-timeline', label: 'Timeline' }
                 ]
@@ -189,7 +193,10 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
                 detail: s.lastPrompt ?? '',
                 ts: s.lastEventTs,
                 ref: { sessionId: s.sessionId, transcriptPath: s.transcriptPath },
-                actions: [{ id: 'open-session', label: 'Open Session' }]
+                actions: [
+                    { id: 'focus-terminal', label: '⌨ Terminal' },
+                    { id: 'open-session', label: 'Open Session' }
+                ]
             });
         }
     }

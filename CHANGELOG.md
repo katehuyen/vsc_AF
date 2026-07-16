@@ -2,6 +2,19 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 2.58.0 — ⌨ reachable everywhere + one toolbar canon (2026-07-16)
+
+- **⌨ on every session row, not just active ones.** A terminal window is often open while its session idles between turns — the Dashboard/Agent-Detail tables now carry the ⌨ jump-to-terminal button on **all** rows (the green ● alone marks activity). If no window is found, the honest message still applies.
+- **⌨ in the sidebar trees.** Session rows in the Agents and Sessions views get a terminal icon on hover plus a **Focus Session Terminal** right-click entry — no need to open a panel first.
+- **⌨ in the Needs You queue and the Board's Waiting column.** Permission-wait, stalled and your-turn items get a ⌨ Terminal action — the answer to a permission dialog lives in the terminal, so the unblock is now one click.
+- **One toolbar order on every page.** The top-right button rows grew organically and each page had its own idea of ordering. Now a single canon applies everywhere, left to right: *page controls/actions → Refresh → cross-navigation (Dashboard → Live Timeline → …) → ⌕ Search → ⚙ Settings → ? Guide always rightmost.* Session Viewer and Board were reordered to match; the canon is documented in the guide and pinned as a comment at every toolbar for future buttons.
+
+## 2.57.0 — One Sessions table everywhere + Ctx now (2026-07-16)
+
+- **The Agent Detail page gets the Dashboard's advanced Sessions table — the exact same component.** The plain session list is gone; in its place: a **Sort by** selector (remembered per page), the **▸ turn accordion** with per-turn model/tokens/cost and click-to-jump into the transcript **at that turn**, **Expand all / Collapse all / Single-open**, tinted+accent-edged rows so expanded turns read as nested content, and a green **●** + **⌨ jump-to-terminal** on active rows. It shows the agent's top **50** per criterion (Dashboard shows 12), and the top-N-per-criterion pool guarantee applies on both pages. Extracted into a shared component (`media/sessionsTable.js`) rather than copied — one implementation, two pages, and it re-renders only its own block, so an open pricing editor on the agent page is never clobbered by a fold click.
+- **"Ctx now" in every Sessions table — and it's a sort criterion.** A new column shows the approximate context in the model window after the session's last reply (input + cache + output of that request; — when the transcript didn't record it), on the Dashboard and the Agent Detail page alike. Sorting by **Ctx now** answers "which session is close to compact time?" in one click; the shipped row pool includes the true ctx champions, so the sort is honest fleet-wide. Dashboard rows also gained the Tools/Err columns the agent page already had — the two tables now share one column set.
+- **Tests:** new `test_sessions_table.js` (26) — sorting incl. Ctx now, turn accordion round-trip, single-open/expand/collapse, ⌨ identity, state persistence + legacy fallback; the dashboard webview test now proves the page↔component integration. Full suite: 40 files · 821 passed.
+
 ## 2.56.0 — ⌨ finds the exact session terminal (2026-07-16)
 
 - **Session-exact focus.** The ⌨ buttons (Session Viewer, Dashboard active rows, Timeline live cards) now land on **that session's own terminal**, not blindly on the agent's most recent one: every session launch (Start / Continue / Resume / external CLI) is registered, and the live monitor binds the session id reported by hooks back to the launching terminal via its cwd. Two concurrent sessions of one agent (`dev #1` / `dev #3` on the Timeline) each focus their own window now.

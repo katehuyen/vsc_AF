@@ -40,7 +40,9 @@
         const actions = isApproval
             ? `<button class="mini" data-approve="${C.esc(w.ref.approvalId)}">Run</button>
                <button class="mini secondary" data-rejectid="${C.esc(w.ref.approvalId)}">Reject</button>`
-            : (w.ref.transcriptPath ? `<button class="mini secondary" data-session="${C.esc(w.ref.transcriptPath)}">Open</button>` : '');
+            // session-backed waits: the unblock usually happens in the terminal
+            : (w.ref.sessionId ? `<button class="mini secondary" data-termsid="${C.esc(w.ref.sessionId)}" title="Jump to this session's terminal window">⌨</button> ` : '')
+              + (w.ref.transcriptPath ? `<button class="mini secondary" data-session="${C.esc(w.ref.transcriptPath)}">Open</button>` : '');
         return `<div class="kb-card urgent" data-wait="${i}">
             <div class="kb-title">${w.kind === 'permission' ? '🛡️' : isApproval ? '🌐' : '⏳'} ${C.esc(w.title)}</div>
             ${w.detail ? `<div class="kb-detail">${C.esc(w.detail)}</div>` : ''}
@@ -89,9 +91,10 @@
                     <div class="muted small">drag cards between columns · updated ${new Date(d.generatedAt).toLocaleTimeString()}</div>
                 </div>
                 <div class="btnrow">
+                    <!-- toolbar canon: page actions · Refresh · nav · ⌕ Search · ? Guide last -->
                     <button class="secondary" id="add">+ Task</button>
-                    <button class="secondary" id="needs">Needs You</button>
                     <button class="secondary" id="refresh">Refresh</button>
+                    <button class="secondary" id="needs">Needs You</button>
                     <button class="secondary" id="guide">? Guide</button>
                 </div>
             </div>
@@ -133,6 +136,8 @@
             el.addEventListener('click', () => vscode.postMessage({ type: 'approve', approvalId: el.dataset.rejectid, ok: false })));
         document.querySelectorAll('[data-session]').forEach(el =>
             el.addEventListener('click', () => vscode.postMessage({ type: 'open-session', transcriptPath: el.dataset.session })));
+        document.querySelectorAll('[data-termsid]').forEach(el =>
+            el.addEventListener('click', () => vscode.postMessage({ type: 'focus-terminal', sessionId: el.dataset.termsid })));
 
         document.querySelectorAll('.kb-card[data-output]').forEach(el =>
             el.addEventListener('dblclick', () => vscode.postMessage({ type: 'open-output', file: el.dataset.output })));

@@ -44,6 +44,9 @@ export function htmlShell(
     const nonce = getNonce();
     const css = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'common.css'));
     const charts = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'charts.js'));
+    // shared Sessions-table component (dashboard + agent detail); tiny, so it
+    // ships to every page rather than growing htmlShell a per-page script list
+    const sessTable = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'sessionsTable.js'));
     const script = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', scriptFile));
     return `<!DOCTYPE html>
 <html lang="en">
@@ -59,6 +62,7 @@ export function htmlShell(
 ${bodyHtml}
 <script nonce="${nonce}">window.__DATA__ = ${jsonForScript(data)};</script>
 <script nonce="${nonce}" src="${charts}"></script>
+<script nonce="${nonce}" src="${sessTable}"></script>
 <script nonce="${nonce}" src="${script}"></script>
 </body>
 </html>`;

@@ -1,0 +1,201 @@
+// DOM-stub test for the shared Sessions table (media/sessionsTable.js):
+// sorting (incl. the Ctx-now criterion), the turn accordion (fold → host
+// request → turn rows → turn jump), single-open mode, expand/collapse,
+// the ⌨ jump-to-terminal button, and per-page state persistence.
+const fs = require('fs');
+const vm = require('vm');
+const path = require('path');
+
+const code = fs.readFileSync(path.resolve(__dirname, '../media/sessionsTable.js'), 'utf8');
+let pass = 0, fail = 0;
+const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
+
+// ---------- fake DOM: one container per id, selector queries via regex ----------
+function makeContainer() {
+    const c = {
+        _html: '', _els: {},
+        set innerHTML(v) { this._html = v; this._els = {}; },
+        get innerHTML() { return this._html; },
+        querySelector(sel) { return this.querySelectorAll(sel)[0] || null; },
+        querySelectorAll(sel) {
+            if (this._els[sel]) { return this._els[sel]; }
+            const mk = ds => { const e = { dataset: ds }; e.addEventListener = (_t, fn) => { e._fn = fn; }; return e; };
+            const list = [];
+            const grab = (re, map) => { let m; while ((m = re.exec(this._html))) { list.push(mk(map(m))); } };
+            if (['.af-sort', '.af-expand', '.af-collapse', '.af-single'].includes(sel)) {
+                if (this._html.includes(sel.slice(1))) { list.push(mk({})); }
+            } else if (sel === '[data-session]') {
+                grab(/data-session="([^"]*)"/g, m => ({ session: m[1] }));
+            } else if (sel === '[data-fold]') {
+                grab(/data-fold="([^"]*)"/g, m => ({ fold: m[1] }));
+            } else if (sel === '[data-term]') {
+                grab(/data-term="([^"]*)" data-sid="([^"]*)" data-cwd="([^"]*)"/g,
+                    m => ({ term: m[1], sid: m[2], cwd: m[3] }));
+            } else if (sel === '[data-turnjump]') {
+                grab(/data-turnjump="([^"]*)" data-turnts="(\d+)"/g,
+                    m => ({ turnjump: m[1], turnts: m[2] }));
+            }
+            this._els[sel] = list;
+            return list;
+        }
+    };
+    return c;
+}
+
+const containers = {};
+let posted = [];
+let state = {};
+const sandbox = {
+    window: {},
+    document: { getElementById: id => containers[id] || (containers[id] = makeContainer()) },
+    console
+};
+sandbox.globalThis = sandbox;
+vm.createContext(sandbox);
+vm.runInContext(code, sandbox);
+
+const vscodeStub = {
+    postMessage: m => posted.push(m),
+    getState: () => state,
+    setState: s => { state = s; }
+};
+const C = {
+    esc: s => String(s === undefined || s === null ? '' : s).replace(/</g, '&lt;'),
+    fmtTok: v => v + 't',
+    fmtUSD: v => '$' + v
+};
+const ev = () => ({ stopPropagation() { } });
+const click = el => el._fn(ev());
+
+const NOW = Date.now();
+const mkRow = (i, extra) => Object.assign({
+    file: 'f' + i, agent: 'dev', agentName: 'dev', sessionId: 'sid' + i, cwd: 'D:/a/dev',
+    title: 'title' + i, ts: NOW - i * 60000, durationMin: i, turns: i,
+    toolCalls: i * 2, errors: 0, tokens: i * 100, ctx: 0, cost: i,
+    sidechain: false, active: false
+}, extra);
+
+// ---------- part 1: rendering, Ctx column, sorting ----------
+{
+    posted = []; state = {};
+    const t = sandbox.window.AFSessionsTable.create({
+        vscode: vscodeStub, C, containerId: 'dash',
+        columns: ['agent', 'title', 'when', 'duration', 'turns', 'tools', 'errors', 'tokens', 'ctx', 'cost'],
+        stateKey: 'dash'
+    });
+    const rows = [mkRow(1), mkRow(2, { ctx: 180000, active: true }), mkRow(3), mkRow(4), mkRow(5)];
+    t.setRows(rows, 3);
+    const html = () => containers.dash.innerHTML;
+
+    ok('agent column rendered', html().includes('<th>Agent</th>'));
+    ok('Ctx now header + sort option present',
+        html().includes('>Ctx now</th>') && html().includes('<option value="ctx"'));
+    ok('ctx cell formatted (~) when known, — when not',
+        html().includes('~180000t') && html().includes('>—</td>'));
+    ok('tableN respected: 3 of 5 rows shown',
+        containers.dash.querySelectorAll('[data-fold]').length === 3);
+    ok('default recent sort: newest first',
+        html().indexOf('title1') >= 0 && html().indexOf('title1') < html().indexOf('title2'));
+    // a terminal can be open while the session idles — every row gets ⌨,
+    // the ● dot alone marks the active one
+    ok('⌨ on every row', (html().match(/data-term=/g) || []).length === 3);
+    ok('● only on the active row', (html().match(/dot on/g) || []).length === 1);
+
+    // sort by Ctx now → the ctx champion (f2) leads and the state persists
+    const sel = containers.dash.querySelector('.af-sort');
+    sel._fn({ target: { value: 'ctx' } });
+    ok('ctx sort puts the champion first',
+        html().indexOf('title2') < html().indexOf('title1'));
+    ok('sort persisted under the page key', state.afSess && state.afSess.dash.sort === 'ctx');
+
+    // ⌨ posts the session identity, not just the agent name
+    click(containers.dash.querySelectorAll('[data-term]')[0]);
+    const term = posted.find(p => p.type === 'focusTerminal');
+    ok('⌨ posts sessionId + cwd + agent', term && term.sessionId === 'sid2' && term.cwd === 'D:/a/dev' && term.agentName === 'dev');
+
+    // row click opens the transcript
+    click(containers.dash.querySelectorAll('[data-session]')[0]);
+    ok('row click posts openSession', posted.some(p => p.type === 'openSession' && p.file === 'f2'));
+}
+
+// ---------- part 2: turn accordion — fold, host round-trip, turn jump ----------
+{
+    posted = []; state = {};
+    const t = sandbox.window.AFSessionsTable.create({
+        vscode: vscodeStub, C, containerId: 'acc',
+        columns: ['title', 'when', 'tokens', 'ctx', 'cost'], stateKey: 'agent'
+    });
+    t.setRows([mkRow(1), mkRow(2)], 10);
+    const html = () => containers.acc.innerHTML;
+
+    ok('no Agent column on the agent page variant', !html().includes('<th>Agent</th>'));
+    click(containers.acc.querySelectorAll('[data-fold]')[0]); // f1
+    ok('fold requests turns from the host',
+        posted.some(p => p.type === 'sessionTurns' && p.file === 'f1'));
+    ok('loading placeholder shown', html().includes('Loading turns…'));
+
+    const handled = t.onMessage({ data: { type: 'sessionTurns', file: 'f1', turns: [{ n: 1, label: 'fix the bug', ts: 777, models: ['claude-x'], tokens: 5, cost: 1 }] } });
+    ok('sessionTurns message consumed', handled === true);
+    ok('turn row rendered with model tag', html().includes('fix the bug') && html().includes('>x</span>'));
+    ok('foreign messages not consumed', t.onMessage({ data: { type: 'data' } }) === false);
+
+    click(containers.acc.querySelectorAll('[data-turnjump]')[0]);
+    const jump = posted.filter(p => p.type === 'openSession').pop();
+    ok('turn jump opens the transcript at the turn', jump && jump.file === 'f1' && jump.ts === 777);
+}
+
+// ---------- part 3: single-open, expand all, collapse all ----------
+{
+    posted = []; state = {};
+    const t = sandbox.window.AFSessionsTable.create({
+        vscode: vscodeStub, C, containerId: 'modes',
+        columns: ['title', 'cost'], stateKey: 'dash'
+    });
+    t.setRows([mkRow(1), mkRow(2), mkRow(3)], 10);
+    const cont = containers.modes;
+    const openCount = () => (cont.innerHTML.match(/sessrow open/g) || []).length;
+
+    click(cont.querySelectorAll('[data-fold]')[0]);
+    click(cont.querySelectorAll('[data-fold]')[1]);
+    ok('two rows open without single-open', openCount() === 2);
+
+    click(cont.querySelector('.af-single'));
+    ok('entering single-open keeps only the first open row', openCount() === 1);
+    click(cont.querySelectorAll('[data-fold]')[2]);
+    ok('single-open: unfolding a session folds the previous one',
+        openCount() === 1 && cont.innerHTML.includes('data-fold="f3" title="Hide'));
+
+    click(cont.querySelector('.af-expand'));
+    ok('expand all opens every shown row', openCount() === 3);
+    click(cont.querySelector('.af-collapse'));
+    ok('collapse all closes everything', openCount() === 0);
+}
+
+// ---------- part 4: persisted state round-trip + legacy fallback ----------
+{
+    posted = [];
+    state = { afSess: { dash: { sort: 'cost', single: true } } };
+    const t = sandbox.window.AFSessionsTable.create({
+        vscode: vscodeStub, C, containerId: 'persist',
+        columns: ['title', 'cost'], stateKey: 'dash'
+    });
+    t.setRows([mkRow(1), mkRow(3), mkRow(2)], 10);
+    const html = containers.persist.innerHTML;
+    ok('persisted sort restored (cost-desc)', html.indexOf('title3') < html.indexOf('title1'));
+    ok('persisted single-open restored', html.includes('af-single on'));
+
+    // pre-2.57 dashboards persisted sessSort/sessSingle at the top level
+    state = { sessSort: 'turns', sessSingle: true };
+    const t2 = sandbox.window.AFSessionsTable.create({
+        vscode: vscodeStub, C, containerId: 'legacy',
+        columns: ['title', 'turns', 'cost'], stateKey: 'dash',
+        fallbackSort: state.sessSort, fallbackSingle: state.sessSingle
+    });
+    t2.setRows([mkRow(1), mkRow(9), mkRow(2)], 10);
+    const html2 = containers.legacy.innerHTML;
+    ok('legacy fallback sort honored (turns-desc)', html2.indexOf('title9') < html2.indexOf('title1'));
+    ok('legacy fallback single-open honored', html2.includes('af-single on'));
+}
+
+console.log(`\n${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);

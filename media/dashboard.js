@@ -5,44 +5,21 @@
     const C = window.AFCharts;
     let DATA = window.__DATA__;
     let range = 14;
-    // Sessions table: sort criterion + turn-accordion state. Sort and the
-    // single-open mode persist in webview state; open rows are session-local.
-    const SESS_SORTS = [
-        { id: 'recent', label: 'Recent', key: r => r.ts || 0 },
-        { id: 'cost', label: 'Cost', key: r => r.cost || 0 },
-        { id: 'tokens', label: 'Tokens', key: r => r.tokens || 0 },
-        { id: 'duration', label: 'Duration', key: r => r.durationMin || 0 },
-        { id: 'turns', label: 'Turns', key: r => r.turns || 0 }
-    ];
+    // Shared advanced Sessions table (sort box, turn accordion, single-open,
+    // ⌨ jump-to-terminal) — the same component the agent detail page uses.
+    // fallbackSort/-Single carry over the state persisted by pre-2.57 versions.
     const persisted = (typeof vscode.getState === 'function' && vscode.getState()) || {};
-    let sessSort = SESS_SORTS.some(s => s.id === persisted.sessSort) ? persisted.sessSort : 'recent';
-    let sessSingle = !!persisted.sessSingle;
-    const sessOpen = new Set();
-    const turnCache = {}; // file -> { ts, turns|null } (null = request in flight)
-
-    function saveSessState() {
-        if (typeof vscode.setState === 'function') {
-            const st = (typeof vscode.getState === 'function' && vscode.getState()) || {};
-            vscode.setState(Object.assign({}, st, { sessSort, sessSingle }));
-        }
-    }
-
-    /** Ask the host for a session's per-turn breakdown unless the cache is
-     *  still fresh (row.ts unchanged — a live session invalidates itself). */
-    function ensureTurns(r) {
-        const c = turnCache[r.file];
-        if (c && c.ts === r.ts) { return; }
-        turnCache[r.file] = { ts: r.ts, turns: null };
-        vscode.postMessage({ type: 'sessionTurns', file: r.file });
-    }
+    const sessTable = window.AFSessionsTable.create({
+        vscode, C,
+        containerId: 'sessblock',
+        columns: ['agent', 'title', 'when', 'duration', 'turns', 'tools', 'errors', 'tokens', 'ctx', 'cost'],
+        stateKey: 'dash',
+        fallbackSort: persisted.sessSort,
+        fallbackSingle: persisted.sessSingle
+    });
 
     window.addEventListener('message', ev => {
-        if (ev.data.type === 'sessionTurns') {
-            const c = turnCache[ev.data.file];
-            turnCache[ev.data.file] = { ts: c ? c.ts : 0, turns: ev.data.turns || [] };
-            render();
-            return;
-        }
+        if (sessTable.onMessage(ev)) { return; }
         if (ev.data.type === 'data') { DATA = ev.data.data; render(); }
     });
 
@@ -187,47 +164,6 @@
             </div>`;
         }).join('');
 
-        // Sessions table: one pool, sorted client-side by the picked criterion.
-        // Each row folds open (▸) into that session's per-turn breakdown.
-        const sortDef = SESS_SORTS.find(s => s.id === sessSort) || SESS_SORTS[0];
-        const sessTop = (DATA.sessionRows || []).slice()
-            .sort((a, b) => sortDef.key(b) - sortDef.key(a))
-            .slice(0, DATA.sessionTableN || 12);
-        sessTop.forEach(r => { if (sessOpen.has(r.file)) { ensureTurns(r); } });
-
-        const turnPanelHtml = (r) => {
-            const c = turnCache[r.file];
-            if (!c || c.turns === null) { return '<span class="muted small">Loading turns…</span>'; }
-            if (!c.turns.length) { return '<span class="muted small">No turns recorded.</span>'; }
-            // model ids / run attributes come straight from the transcript — no
-            // name table here, so tomorrow's model shows up on its own
-            const tags = t => (t.models || []).map(m => m.replace(/^claude-/, ''))
-                .concat(Object.values(t.attrs || {}));
-            return `<table class="turnmini">
-                <tr><th>#</th><th>prompt</th><th>model</th><th class="num">tokens</th><th class="num">cost</th></tr>
-                ${c.turns.map(t => `<tr class="click" data-turnjump="${C.esc(r.file)}" data-turnts="${t.ts || 0}"
-                    title="Open the transcript at turn ${t.n}">
-                    <td class="num">${t.n}</td><td>${C.esc(t.label || '—')}</td>
-                    <td>${tags(t).map(x => `<span class="tag">${C.esc(x)}</span>`).join('') || '—'}</td>
-                    <td class="num">${t.tokens ? C.fmtTok(t.tokens) : '—'}</td>
-                    <td class="num">${t.cost ? C.fmtUSD(t.cost) : '—'}</td>
-                </tr>`).join('')}
-            </table>`;
-        };
-        const sessRowsHtml = sessTop.map(r => {
-            const open = sessOpen.has(r.file);
-            return `<tr class="click sessrow${open ? ' open' : ''}" data-session="${C.esc(r.file)}">
-                <td class="foldcell"><button class="fold" data-fold="${C.esc(r.file)}" title="${open ? 'Hide' : 'List'} this session's turns">${open ? '▾' : '▸'}</button></td>
-                <td>${r.active ? `<span class="dot on" title="Active now"></span> ` : ''}${C.esc(r.agent)}${r.sidechain ? ' <span class="badge">sub</span>' : ''}${r.active ? ` <button class="fold" data-term="${C.esc(r.agentName || '')}" data-sid="${C.esc(r.sessionId || '')}" data-cwd="${C.esc(r.cwd || '')}" title="Jump to this session's terminal window">⌨</button>` : ''}</td>
-                <td>${C.esc(r.title)}</td>
-                <td class="num">${relTime(r.ts)}</td>
-                <td class="num">${r.durationMin}m</td>
-                <td class="num">${r.turns || 0}</td>
-                <td class="num">${C.fmtTok(r.tokens)}</td>
-                <td class="num"><strong>${C.fmtUSD(r.cost)}</strong></td>
-            </tr>` + (open ? `<tr class="sessturns"><td></td><td colspan="7">${turnPanelHtml(r)}</td></tr>` : '');
-        }).join('');
-
         // Z1: Farm Status — which subsystems are live/idle/never-used, one
         // wake-up action each. Opens expanded only while something is dormant.
         const st = DATA.farmStatus || [];
@@ -261,36 +197,10 @@
             : '';
 
         document.getElementById('app').innerHTML = `
-            <style>
-                .chiprow { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:8px 0; }
-                .chip { font-size:11px; padding:2px 10px; border-radius:10px; cursor:pointer;
-                    background:transparent; color:var(--vscode-foreground); opacity:.75;
-                    border:1px solid var(--vscode-widget-border, #4444); }
-                .chip.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground);
-                    border-color:transparent; opacity:1; }
-                .foldcell { width:22px; }
-                .fold { font-size:10px; padding:0 6px; line-height:16px; cursor:pointer; border-radius:3px;
-                    background:transparent; opacity:.7; border:1px solid var(--vscode-widget-border, #4444);
-                    color:var(--vscode-foreground); }
-                .fold:hover { opacity:1; }
-                /* Session rows are tinted and accent-edged so that once a row is
-                   expanded, its turn list can't be misread as another session. */
-                tr.sessrow > td { background:color-mix(in srgb, var(--vscode-textLink-foreground) 8%, transparent);
-                    border-bottom-color:var(--vscode-widget-border, #4443); }
-                tr.sessrow > td:first-child { box-shadow:inset 3px 0 0 color-mix(in srgb, var(--vscode-textLink-foreground) 45%, transparent); }
-                tr.sessrow.open > td { background:color-mix(in srgb, var(--vscode-textLink-foreground) 18%, transparent); }
-                tr.sessrow.open > td:first-child { box-shadow:inset 3px 0 0 var(--vscode-textLink-foreground); }
-                /* the turn list is nested content: no tint, indented under its row */
-                tr.sessturns > td { padding-left:12px; }
-                .turnmini { margin:4px 0 10px; font-size:11px; width:auto; min-width:340px; }
-                .turnmini th { font-size:10px; opacity:.7; }
-                .tag { font-size:10px; padding:1px 6px; margin-right:4px; border-radius:8px; white-space:nowrap;
-                    background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); opacity:.85; }
-                .turnmini td { border-bottom-color:var(--vscode-widget-border, #1111); }
-            </style>
             <div class="spread">
                 <div><h1>Agent Farm</h1><div class="muted small">Generated ${new Date(DATA.generatedAt).toLocaleString()} · data: local Claude Code transcripts</div></div>
                 <div class="btnrow">
+                    <!-- toolbar canon: page controls/actions · Refresh · nav (Dashboard → Live Timeline) · ⌕ Search · ⚙ Settings · ? Guide last -->
                     <span class="seg">
                         ${[7, 14, 30, 90, 180, 365].map(r => `<button data-range="${r}" class="${r === range ? 'sel' : ''}">${r}d</button>`).join('')}
                     </span>
@@ -330,19 +240,7 @@
             </table></div>
             <p class="muted small">Cache eff. = cache-read share of prompt tokens (higher is cheaper). Err % = tool errors / tool calls. Quality = judge average of sampled sessions (14d) <a data-guide="kalite-karnesi">?</a> · <a data-guide="filo-raporu">Export a Markdown report ?</a></p>
             <h2>Sessions</h2>
-            <div class="chiprow">
-                <span class="muted small">Sort by:</span>
-                <select id="sesssort">${SESS_SORTS.map(s => `<option value="${s.id}"${s.id === sessSort ? ' selected' : ''}>${s.label}</option>`).join('')}</select>
-                <span class="muted small">Turns:</span>
-                <button class="chip" id="s-expandall" title="List every shown session's turns">Expand all</button>
-                <button class="chip" id="s-collapseall" title="Hide all turn lists">Collapse all</button>
-                <button class="chip${sessSingle ? ' on' : ''}" id="s-singleopen" title="Only one session's turns open at a time: unfolding a session folds the previous one">Single-open</button>
-                <span class="muted small">— ▸ lists a session's turns with per-turn tokens/cost · ● = active now</span>
-            </div>
-            <div class="tablewrap"><table>
-                <tr><th></th><th>Agent</th><th>Title</th><th class="num">When</th><th class="num">Duration</th><th class="num">Turns</th><th class="num">Tokens</th><th class="num">Cost</th></tr>
-                ${sessRowsHtml || '<tr><td colspan="8" class="muted">No sessions yet.</td></tr>'}
-            </table></div>
+            <div id="sessblock"></div>
             ${unknown}
             ${externalNote}
             <p class="footnote">Costs are API-equivalent values computed from token usage — on a subscription plan this is not your bill, it is the value you extracted. Sessions are matched to agents by their working directory under your agent roots.</p>
@@ -360,17 +258,6 @@
             b.addEventListener('click', ev => { ev.stopPropagation(); vscode.postMessage({ type: 'startSession', agentId: b.dataset.start }); }));
         document.querySelectorAll('.agent-card').forEach(card =>
             card.addEventListener('click', () => vscode.postMessage({ type: 'openAgent', agentId: card.dataset.agent })));
-        document.querySelectorAll('[data-session]').forEach(row =>
-            row.addEventListener('click', () => vscode.postMessage({ type: 'openSession', file: row.dataset.session })));
-        // Turn row → open the transcript AT that turn (an already-open viewer is
-        // revealed and scrolled there rather than opened again).
-        document.querySelectorAll('[data-turnjump]').forEach(row =>
-            row.addEventListener('click', ev => {
-                ev.stopPropagation();
-                vscode.postMessage({
-                    type: 'openSession', file: row.dataset.turnjump, ts: Number(row.dataset.turnts) || 0
-                });
-            }));
         document.querySelectorAll('[data-agent-row]').forEach(row =>
             row.addEventListener('click', () => vscode.postMessage({ type: 'openAgent', agentId: row.dataset.agentRow })));
         document.querySelectorAll('[data-guide]').forEach(a =>
@@ -380,58 +267,9 @@
                 type: 'statusAction', kind: b.dataset.statusKind, value: b.dataset.statusValue
             })));
 
-        // Sessions table controls (sort + turn accordion). sessTop is closed
-        // over from this render pass — it is exactly what's on screen.
-        const sortSel = document.getElementById('sesssort');
-        if (sortSel) {
-            sortSel.addEventListener('change', e => {
-                sessSort = e.target.value;
-                saveSessState();
-                render();
-            });
-            document.getElementById('s-expandall').addEventListener('click', () => {
-                sessTop.forEach(r => { sessOpen.add(r.file); ensureTurns(r); });
-                render();
-            });
-            document.getElementById('s-collapseall').addEventListener('click', () => {
-                sessOpen.clear();
-                render();
-            });
-            document.getElementById('s-singleopen').addEventListener('click', () => {
-                sessSingle = !sessSingle;
-                if (sessSingle && sessOpen.size > 1) {
-                    // entering the mode: keep only the first open row in view order
-                    const keep = sessTop.find(r => sessOpen.has(r.file));
-                    sessOpen.clear();
-                    if (keep) { sessOpen.add(keep.file); }
-                }
-                saveSessState();
-                render();
-            });
-            document.querySelectorAll('[data-term]').forEach(b =>
-                b.addEventListener('click', ev => {
-                    ev.stopPropagation(); // the row click underneath opens the transcript
-                    // sessionId picks the exact terminal of THIS row; name/cwd are fallbacks
-                    vscode.postMessage({
-                        type: 'focusTerminal', sessionId: b.dataset.sid || '',
-                        agentName: b.dataset.term, cwd: b.dataset.cwd || ''
-                    });
-                }));
-            document.querySelectorAll('[data-fold]').forEach(b =>
-                b.addEventListener('click', ev => {
-                    ev.stopPropagation(); // the row click underneath opens the transcript
-                    const file = b.dataset.fold;
-                    if (sessOpen.has(file)) {
-                        sessOpen.delete(file);
-                    } else {
-                        if (sessSingle) { sessOpen.clear(); }
-                        sessOpen.add(file);
-                        const r = sessTop.find(x => x.file === file);
-                        if (r) { ensureTurns(r); }
-                    }
-                    render();
-                }));
-        }
+        // The shared component fills its container and wires its own controls
+        // (sort box, turn accordion, single-open, ⌨) — after every full render.
+        sessTable.setRows(DATA.sessionRows || [], DATA.sessionTableN || 12);
     }
 
     render();

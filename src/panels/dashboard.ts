@@ -46,15 +46,17 @@ interface AgentSummary {
     qualityCount: number;
 }
 
-/** One row per session for the dashboard Sessions table. The webview sorts
- *  client-side by any criterion and shows the top N — so instead of shipping
- *  every session, the pool is the union of the true top-N per sortable
- *  criterion (recency, cost, tokens, duration, turns): whatever sort the user
- *  picks, its genuine top N is guaranteed to be present. Exported for tests. */
+/** One row per session for the Sessions tables (dashboard + agent detail).
+ *  The webview sorts client-side by any criterion and shows the top N — so
+ *  instead of shipping every session, the pool is the union of the true top-N
+ *  per sortable criterion (recency, cost, tokens, ctx-now, duration, turns):
+ *  whatever sort the user picks, its genuine top N is guaranteed to be
+ *  present. Exported for tests and reused by the agent detail page. */
 export const SESSION_TABLE_N = 12;
 export function sessionRowPool(
     sessions: SessionInfo[],
-    isActive?: (s: SessionInfo) => boolean
+    isActive?: (s: SessionInfo) => boolean,
+    n = SESSION_TABLE_N
 ): unknown[] {
     const rows = sessions.map(s => ({
         file: s.file,
@@ -68,18 +70,22 @@ export function sessionRowPool(
         ts: s.lastTs || s.mtime || 0,
         durationMin: s.firstTs && s.lastTs ? Math.round((s.lastTs - s.firstTs) / 60000) : 0,
         turns: s.userTurns,
+        toolCalls: s.toolCalls,
+        errors: s.errors,
         tokens: totalTokens(s.usage),
+        // "Ctx now" — approximate context after the session's last reply
+        ctx: s.lastCtxTokens ?? 0,
         cost: s.cost,
         sidechain: s.isSidechain,
         active: isActive ? isActive(s) : false
     }));
     type Row = typeof rows[number];
     const keys: ((r: Row) => number)[] = [
-        r => r.ts, r => r.cost, r => r.tokens, r => r.durationMin, r => r.turns
+        r => r.ts, r => r.cost, r => r.tokens, r => r.ctx, r => r.durationMin, r => r.turns
     ];
     const pool = new Set<Row>();
     for (const key of keys) {
-        rows.slice().sort((a, b) => key(b) - key(a)).slice(0, SESSION_TABLE_N)
+        rows.slice().sort((a, b) => key(b) - key(a)).slice(0, n)
             .forEach(r => pool.add(r));
     }
     // newest first — the webview re-sorts anyway; this is just a stable wire order

@@ -8,7 +8,19 @@
     // refreshes don't wipe half-typed rates. DATA still updates silently.
     let suspendRender = false;
 
+    // Shared advanced Sessions table (sort box, turn accordion, single-open,
+    // ⌨ jump-to-terminal) — the same component the dashboard uses. It re-renders
+    // only its own container, so an open pricing editor is never clobbered.
+    const sessTable = window.AFSessionsTable.create({
+        vscode, C,
+        containerId: 'sessblock',
+        columns: ['title', 'when', 'duration', 'turns', 'tools', 'errors', 'tokens', 'ctx', 'cost'],
+        tableN: 50,
+        stateKey: 'agent'
+    });
+
     window.addEventListener('message', ev => {
+        if (sessTable.onMessage(ev)) { return; }
         if (ev.data.type === 'data') { DATA = ev.data.data; if (!suspendRender) render(); }
     });
 
@@ -136,18 +148,6 @@
                 ${taskBody}
             </div>`;
 
-        const sessHtml = DATA.sessions.map(s => `
-            <tr class="click" data-session="${C.esc(s.file)}">
-                <td>${s.active ? '<span class="dot on"></span> ' : ''}${C.esc(s.title)}${s.sidechain ? ' <span class="badge">sub</span>' : ''}</td>
-                <td class="num">${relTime(s.ts)}</td>
-                <td class="num">${s.durationMin}m</td>
-                <td class="num">${s.turns}</td>
-                <td class="num">${s.toolCalls}</td>
-                <td class="num">${s.errors || ''}</td>
-                <td class="num">${C.fmtTok(s.tokens)}</td>
-                <td class="num"><strong>${C.fmtUSD(s.cost)}</strong></td>
-            </tr>`).join('');
-
         // Model pricing editor — global rates in USD per 1M tokens. Editing
         // here applies to new sessions; earlier costs stay frozen at the rate
         // they were recorded with.
@@ -196,6 +196,7 @@
                     <div class="muted small">${C.esc(a.dir)} · permissions: ${C.esc(a.permissionSummary)}</div>
                 </div>
                 <div class="btnrow">
+                    <!-- toolbar canon: page actions · Refresh · nav (Dashboard → Live Timeline) · ⌕ Search · ? Guide last -->
                     <button id="start">Start session</button>
                     <button class="secondary" id="continue">Continue latest</button>
                     <button class="secondary" id="reveal">Reveal folder</button>
@@ -250,10 +251,7 @@
                 ${memHtml || '<tr><td colspan="5" class="muted">No memory files.</td></tr>'}
             </table></div>
             <h2>Sessions</h2>
-            <div class="tablewrap"><table>
-                <tr><th>Title</th><th class="num">When</th><th class="num">Dur</th><th class="num">Turns</th><th class="num">Tools</th><th class="num">Err</th><th class="num">Tokens</th><th class="num">Cost</th></tr>
-                ${sessHtml || '<tr><td colspan="8" class="muted">No sessions yet.</td></tr>'}
-            </table></div>
+            <div id="sessblock"></div>
         `;
 
         document.getElementById('addDuty').addEventListener('click', () => vscode.postMessage({ type: 'addDuty' }));
@@ -265,8 +263,6 @@
         document.getElementById('searchagent').addEventListener('click', () => vscode.postMessage({ type: 'openSearch' }));
         document.querySelectorAll('[data-file]').forEach(el =>
             el.addEventListener('click', () => vscode.postMessage({ type: 'openFile', path: el.dataset.file })));
-        document.querySelectorAll('[data-session]').forEach(el =>
-            el.addEventListener('click', () => vscode.postMessage({ type: 'openSession', file: el.dataset.session })));
         document.querySelectorAll('[data-guide]').forEach(el =>
             el.addEventListener('click', ev => { ev.stopPropagation(); vscode.postMessage({ type: 'openGuide', anchor: el.dataset.guide }); }));
 
@@ -309,6 +305,10 @@
                 suspendRender = false;
             });
         }
+
+        // The shared component fills its container and wires its own controls
+        // (sort box, turn accordion, single-open, ⌨) — after every full render.
+        sessTable.setRows(DATA.sessions || [], DATA.sessionTableN || 50);
     }
 
     render();

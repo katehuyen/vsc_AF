@@ -120,7 +120,7 @@ export class KanbanPanel {
 
     private async onMessage(msg: {
         type: string; taskId?: string; to?: string; text?: string;
-        approvalId?: string; ok?: boolean; file?: string; transcriptPath?: string;
+        approvalId?: string; ok?: boolean; file?: string; transcriptPath?: string; sessionId?: string;
     }): Promise<void> {
         const m = this.deps.manager;
         switch (msg.type) {
@@ -162,6 +162,10 @@ export class KanbanPanel {
                 if (msg.transcriptPath) {
                     void vscode.commands.executeCommand('agentfarm.openSession', msg.transcriptPath);
                 }
+                break;
+            case 'focus-terminal':
+                void vscode.commands.executeCommand('agentfarm.focusSessionTerminal',
+                    { sessionId: typeof msg.sessionId === 'string' ? msg.sessionId : undefined });
                 break;
             case 'approve':
                 if (msg.approvalId) { this.deps.settleApproval(msg.approvalId, msg.ok === true); }

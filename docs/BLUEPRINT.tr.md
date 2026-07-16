@@ -97,6 +97,7 @@ Ajan üzerinde sağ tık menüsü: **Start Claude Session**, **Continue Latest S
 Oturum satırında sağ tık menüsü (2.7.0):
 
 - **Resume Session in Terminal** — o oturumun klasöründe terminal açıp `claude --resume <oturum-id>` çalıştırır: **herhangi bir geçmiş oturuma** kaldığın yerden devam edersin (Continue Latest yalnızca en son oturumu sürdürür). Satırın üzerine gelince çıkan ⏵ ikonu da aynısını yapar. Oturum Görüntüleyicinin sağ üstündeki **⏵ Resume** düğmesi de aynı işi görür.
+- **Focus Session Terminal (2.58.0)** — üzerine gelince çıkan ⌨/terminal ikonu (ve sağ tık menüsü) doğrudan o oturumun terminal penceresine atlar. Aynı ⌨, oturumun göründüğü **her** yüzeyde var: Dashboard ve Ajan Detay tablo satırları, Timeline canlı kartları, Oturum Görüntüleyicinin üst çubuğu ve Needs You maddeleri.
 - **Rename Session…** — oturuma kendi adını ver (hatırlamak için); boş bırakırsan otomatik başlık geri gelir. Adlar kalıcıdır, transcript dosyasına dokunulmaz.
 
 Oturum başlıkları 2.7.0'dan itibaren konuşmadan türetilir: `/compact` gibi komutlar, `<...>` harness blokları ve `!` kabuk satırları artık başlık olmaz — ilk gerçek kullanıcı cümlesi başlıktır.
@@ -105,6 +106,8 @@ Oturum başlıkları 2.7.0'dan itibaren konuşmadan türetilir: `/compact` gibi 
 
 Filonun genel panosu. `Agent Farm: Open Dashboard` komutuyla veya durum çubuğuna tıklayarak açılır.
 
+**Araç çubuğu sırası — her sayfada aynı mantık (2.58.0):** her panelin sağ üstteki düğme satırı tek bir kanonu izler, soldan sağa: **sayfa kontrolleri/eylemleri** (aralık/pencere seçicileri, Start/Resume/⌨/Export…) → **Refresh** → sabit sırayla **çapraz gezinme** (**Dashboard → Live Timeline** → diğerleri) → **⌕ Search** → **⚙ Settings** → **? Guide** her zaman en sağda. Sayfaların düğmeleri aynı değil ama sırası aynı — el tek düzene alışır.
+
 - **KPI kartları**: aktif ajan sayısı, bugünkü maliyet, seçili aralık maliyeti, oturum sayısı, 5 saatlik pencere, toplam bulgu sayısı.
 - **Farm Status kartı (2.39.0):** KPI'ların hemen altında, alt sistem başına dürüst bir aktivasyon satırı — **yeşil nokta = canlı kullanımda, mavi = kurulu ama boşta, gri = hiç kullanılmamış.** Dokuz satır: canlı izleme, görevler/zamanlama, tetikleyiciler, iş akışları, medya hattı, harici CLI'lar, varlık alımı (ingest), zeki gözetim, sır kasası. Uyuyan her satırın yanında **tek tık uyandırma** düğmesi vardır (örnek kurulum, anahtar ekleme, ilgili ayar/kılavuz). Bir şey uyuyorsa kart açık gelir; her şey canlıysa tek satır özete katlanır. Harici CLI satırı adaptörlerin fail-soft doğasını da hatırlatır: profil var ama hiç oturum görünmüyorsa bu bir format kayması işareti olabilir.
 - **Daily cost by agent**: ajan bazında yığılmış maliyet grafiği. Aralık seçici (2.13.0 ile genişledi): **7 / 14 / 30 / 90 / 180 / 365 gün**. 120 günü aşan aralıklarda çubuklar okunur kalsın diye günlükler otomatik **haftalık gruplanır** (başlıkta "weekly buckets" notu). Tüm günlük veri zaten oturum kayıtlarından geldiği için 1 yıllık görünüm ek yük getirmez.
@@ -112,7 +115,7 @@ Filonun genel panosu. `Agent Farm: Open Dashboard` komutuyla veya durum çubuğu
 - **Token types**: input / output / cache write / cache read dağılımı. Cache read oranın yüksekse prompt cache verimli çalışıyor demektir — bu iyidir.
 - **Activity heatmap**: haftanın günü × saat bazında mesaj yoğunluğu. Çalışma ritmini gösterir.
 - **Agent kartları**: durum, bugün/aralık maliyeti, mini trend çizgisi, bulgu rozetleri. Karta tıkla → detay sayfası.
-- **Sessions tablosu (2.50.0 — eski Top/Recent tabloları birleşti)**: tek tablo, **Sort by** seçicisiyle — Recent (varsayılan) · Cost · Tokens · Duration · Turns; hangi kriteri seçersen seç çiftliğin gerçek zirvesi gösterilir, seçim hatırlanır. Yeşil **●** o an aktif oturumları işaretler. Satır başındaki **▸** o oturumun **tur listesini** açar — her turun başlığı, tur başına token ve maliyetiyle; transkriptten istek anında hesaplanır. Oturum satırları tonlu ve vurgu kenarlıdır, böylece açılan satırın turları iç içe içerik olarak okunur. Tur kontrolleri görüntüleyicideki akordeonla aynı: **Expand all / Collapse all / Single-open** (aynı anda tek oturumun turları açık, hatırlanır). Satırın kendisine tıklamak transkripti açar; **tur satırına tıklamak transkripti tam o turdan açar** (2.51.0) — görüntüleyici zaten açıksa ikincisi açılmaz, o sekme öne getirilip tura kaydırılır.
+- **Sessions tablosu (2.50.0 — eski Top/Recent tabloları birleşti; 2.57.0'dan beri Ajan Detay sayfasıyla ortak)**: tek tablo, **Sort by** seçicisiyle — Recent (varsayılan) · Cost · Tokens · **Ctx now** (2.57.0) · Duration · Turns; hangi kriteri seçersen seç çiftliğin gerçek zirvesi gösterilir, seçim hatırlanır. Kolonlarda araç/hata sayıları ve **Ctx now** var — oturumun son cevabından sonra model penceresindeki yaklaşık bağlam, "hangi oturum compact zamanına yaklaştı?" sorusunun anlık cevabı (— ise transkript kaydetmemiş demektir). Yeşil **●** o an aktif oturumları işaretler; **her satırda ⌨ düğmesi var** (2.58.0) — oturum boşta beklerken de terminal penceresi açık olabilir; ⌨ o oturumun terminaline atlar, pencere bulunamazsa dürüstçe söyler. Satır başındaki **▸** o oturumun **tur listesini** açar — her turun başlığı, tur başına token ve maliyetiyle; transkriptten istek anında hesaplanır. Oturum satırları tonlu ve vurgu kenarlıdır, böylece açılan satırın turları iç içe içerik olarak okunur. Tur kontrolleri görüntüleyicideki akordeonla aynı: **Expand all / Collapse all / Single-open** (aynı anda tek oturumun turları açık, hatırlanır). Satırın kendisine tıklamak transkripti açar; **tur satırına tıklamak transkripti tam o turdan açar** (2.51.0) — görüntüleyici zaten açıksa ikincisi açılmaz, o sekme öne getirilip tura kaydırılır.
 - Üst satırda **Live Timeline** düğmesi (2.22.0): Refresh ile Guide arasında — panodan kulvar görünümüne tek tık.
 
 Dashboard, oturum kayıtları değiştikçe kendini otomatik günceller.
@@ -129,7 +132,7 @@ Tek bir ajanın komuta ekranı:
 - **Health & optimization**: bu ajana özel bulgular; satıra tıklayınca ilgili dosya açılır.
 - **Task health** kartı: bu ajana delege edilen işlerin 30 günlük karnesi — detay için [Görev Sağlığı](#gorev-sagligi).
 - **Memory files**: boyut, token ve tazelik bilgisiyle hafıza tablosu.
-- **Sessions**: tüm oturum listesi; süre, tur, araç, hata, token, maliyet kolonlarıyla.
+- **Sessions (2.57.0'dan beri Dashboard'un gelişmiş tablosu)**: bu ajanın oturumları, Dashboard'daki Sessions tablosuyla **birebir aynı bileşende** — Sort by (Recent · Cost · Tokens · **Ctx now** · Duration · Turns, sayfa başına hatırlanır), tur başına token/maliyet gösteren ve tıklayınca transkripti tam o turdan açan **▸ tur akordeonu**, **Expand all / Collapse all / Single-open**, aktif satırlarda yeşil ● + **her satırda ⌨ terminale atla** (2.58.0), süre/tur/araç/hata/token/**Ctx now**/maliyet kolonları. Dashboard'un 12'sine karşılık kriter başına ajanın ilk 50'si gösterilir.
 
 ### Oturum Görüntüleyici
 

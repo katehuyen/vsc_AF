@@ -1472,6 +1472,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             case 'open-timeline':
                 void vscode.commands.executeCommand('agentfarm.openTimeline');
                 break;
+            case 'focus-terminal':
+                void vscode.commands.executeCommand('agentfarm.focusSessionTerminal',
+                    { sessionId: item.ref.sessionId });
+                break;
             case 'open-dashboard':
                 void vscode.commands.executeCommand('agentfarm.openDashboard');
                 break;
@@ -4359,7 +4363,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }),
 
         vscode.commands.registerCommand('agentfarm.focusSessionTerminal',
-            (arg?: { sessionId?: string; agentName?: string; cwd?: string }) => {
+            (rawArg?: { sessionId?: string; agentName?: string; cwd?: string }
+                | { session?: SessionInfo } | SessionInfo) => {
+                // Tree rows pass a SessionInfo (or a {session} wrapper node),
+                // webviews pass a plain {sessionId, agentName, cwd} object —
+                // all three shapes carry the same three fields.
+                const arg = rawArg && 'session' in rawArg && rawArg.session
+                    ? rawArg.session
+                    : rawArg as { sessionId?: string; agentName?: string; cwd?: string } | undefined;
                 // 1) exact hit — the terminal this very session was launched in
                 //    (bound at launch or by the live monitor via cwd; see termBindings)
                 const sid = arg?.sessionId;

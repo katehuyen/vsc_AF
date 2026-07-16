@@ -425,6 +425,7 @@
                     <div class="muted small">${listenerHtml} · fed by Claude Code hooks · detail ≤24h live, 3d+ from persisted history (kept 31 days)</div>
                 </div>
                 <div class="btnrow">
+                    <!-- toolbar canon: page controls/actions · Refresh · nav (Dashboard) · ? Guide last -->
                     <span class="seg">
                         ${[15, 60, 240, 480, 960, 1440, 4320, 10080, 43200].map(m => {
                             const label = m < 60 ? m + 'm' : m <= 1440 ? (m / 60) + 'h' : (m / 1440) + 'd';

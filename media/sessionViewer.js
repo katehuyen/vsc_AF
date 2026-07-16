@@ -482,15 +482,16 @@
                     <div class="muted small">${C.esc(DATA.cwd || '')} · ${C.esc(DATA.sessionId)} · ${DATA.permissionMode ? 'mode: ' + C.esc(DATA.permissionMode) : ''}</div>
                 </div>
                 <div class="btnrow">
+                    <!-- toolbar canon: page actions · Refresh · nav (Dashboard → Live Timeline) · ⌕ Search · ? Guide last -->
                     <button id="resume">⏵ Resume</button>
                     <button class="secondary" id="focusterm" title="Jump to this session's terminal window (if one is open)">⌨ Terminal</button>
                     <button class="secondary" id="replaytoggle">${replay.active ? '✕ Exit replay' : '▶ Replay'}</button>
                     <button class="secondary" id="exportmd" title="Exports what you see: active filters apply; unticked turns are left out">⬇ Export MD${exportOff.size ? ` (${includedTurnCount()}/${(DATA.turns || []).length} turns)` : ''}</button>
-                    <button class="secondary" id="refresh">Refresh</button>
                     <button class="secondary" id="raw">Open raw JSONL</button>
-                    <button class="secondary" id="searchsess" title="Search inside this session (tool traffic too)">⌕ Search</button>
+                    <button class="secondary" id="refresh">Refresh</button>
                     <button class="secondary" id="dashboard">Dashboard</button>
                     <button class="secondary" id="timeline">Live Timeline</button>
+                    <button class="secondary" id="searchsess" title="Search inside this session (tool traffic too)">⌕ Search</button>
                     <button class="secondary" data-guide="oturum-goruntuleyici">? Guide</button>
                 </div>
             </div>
