@@ -17,16 +17,35 @@
     // form model survives re-renders
     const form = {
         title: '', goal: '', leadAgentId: '', workdir: '', plannerModel: '',
-        team: {}, roles: {},
+        team: {}, roles: {}, models: {},
         maxRounds: '', maxTasks: '', maxCostUSD: '', maxMinutes: '', maxParallel: '',
         approvalMode: 'each-round'
     };
+    // suggestions for the model inputs — free text still allowed
+    const MODEL_SUGGESTIONS = ['haiku', 'sonnet', 'opus', 'claude-haiku-4-5-20251001', 'claude-sonnet-5', 'claude-opus-4-8'];
+    const modelDatalist = `<datalist id="modelopts">${MODEL_SUGGESTIONS.map(m => `<option value="${m}">`).join('')}</datalist>`;
 
     const spec = (run) => DATA.specs.find(s => s.id === run.specId) || {
         title: run.specId, goal: '', team: [], limits: DATA.defaults, approvalMode: 'each-round', leadAgentName: '?'
     };
     const fmtTime = (ts) => ts ? new Date(ts).toLocaleString() : '—';
     const usd = (n) => '$' + (n || 0).toFixed(2);
+    const elapsed = (since) => {
+        const s = Math.max(0, Math.floor((Date.now() - since) / 1000));
+        return s < 60 ? s + 's' : Math.floor(s / 60) + 'm ' + (s % 60) + 's';
+    };
+    // 1s ticker for the live "now" strip — pure DOM text update, no re-render
+    let tickTimer = null;
+    function tick() {
+        document.querySelectorAll('[data-since]').forEach(el => {
+            el.textContent = elapsed(Number(el.dataset.since));
+        });
+    }
+    function armTicker(on) {
+        if (typeof setInterval !== 'function') { return; }
+        if (on && !tickTimer) { tickTimer = setInterval(tick, 1000); }
+        if (!on && tickTimer) { clearInterval(tickTimer); tickTimer = null; }
+    }
 
     const STATUS_LABEL = {
         'running': 'running', 'waiting-approval': 'waiting for approval',
@@ -51,6 +70,9 @@
                 <label><input type="checkbox" id="tm-${i}" data-team="${C.esc(a.id)}"${form.team[a.id] ? ' checked' : ''}> ${C.esc(a.name)}</label>
                 <input type="text" id="rl-${i}" data-role="${C.esc(a.id)}" placeholder="role (optional — e.g. coder, reviewer)"
                     value="${C.esc(form.roles[a.id] || '')}" ${form.team[a.id] ? '' : 'disabled'}>
+                <input type="text" id="md-${i}" class="mdl" data-model="${C.esc(a.id)}" list="modelopts"
+                    placeholder="model (optional)" title="Model for this member's delegations — empty = the agent's own default / model policy"
+                    value="${C.esc(form.models[a.id] || '')}" ${form.team[a.id] ? '' : 'disabled'}>
             </div>`).join('');
         const lim = (key, label, hint) => `
             <label class="limfield" title="${C.esc(hint)}">${label}
@@ -77,7 +99,9 @@
                 ${lim('maxParallel', 'Max parallel', 'Delegations per wave')}
             </div>
             <div class="frow"><label>Planner model
-                <input type="text" id="f-planner" placeholder="(optional) model for the LEAD's planning calls only — e.g. opus; delegates keep their own" value="${C.esc(form.plannerModel)}"></label></div>
+                <input type="text" id="f-planner" list="modelopts" placeholder="(optional) model for the LEAD's planning calls only — e.g. opus; delegates keep their own" value="${C.esc(form.plannerModel)}"></label>
+                <span class="muted small">Who runs on what: planner = this field (else the lead's own default) · each delegation = the member's model field (else that agent's default / your model-policy rules in Farm Settings).</span></div>
+            ${modelDatalist}
             <div class="frow"><label>Approval
                 <select id="f-approval">
                     <option value="each-round"${form.approvalMode !== 'auto' ? ' selected' : ''}>each round — approve every delegation round (recommended)</option>
@@ -100,6 +124,7 @@
         DATA.agents.forEach((a, i) => {
             form.team[a.id] = !!document.getElementById('tm-' + i).checked;
             form.roles[a.id] = document.getElementById('rl-' + i).value;
+            form.models[a.id] = document.getElementById('md-' + i).value;
         });
         ['maxRounds', 'maxTasks', 'maxCostUSD', 'maxMinutes', 'maxParallel'].forEach(k => {
             form[k] = document.getElementById('lim-' + k).value;
@@ -116,7 +141,7 @@
                 title: form.title, goal: form.goal, leadAgentId: form.leadAgentId,
                 workdir: form.workdir, plannerModel: form.plannerModel,
                 team: DATA.agents.filter(a => form.team[a.id])
-                    .map(a => ({ agentId: a.id, role: form.roles[a.id] || '' })),
+                    .map(a => ({ agentId: a.id, role: form.roles[a.id] || '', model: form.models[a.id] || '' })),
                 maxRounds: form.maxRounds, maxTasks: form.maxTasks, maxCostUSD: form.maxCostUSD,
                 maxMinutes: form.maxMinutes, maxParallel: form.maxParallel,
                 approvalMode: form.approvalMode
@@ -160,22 +185,36 @@
         const pct = Math.min(100, Math.round(pctRaw));
         const pendingQ = (DATA.pending.questions || []).find(q => q.runId === run.id);
         const pendingAp = (DATA.pending.approvals || []).includes(run.id);
-        const canPause = run.status === 'running';
-        const canResume = run.status === 'paused';
         const active = run.status !== 'done' && run.status !== 'failed' && run.status !== 'cancelled';
+        const canPause = active && run.status !== 'paused';
+        const canResume = run.status === 'paused';
+        // the Pause request is visible and withdrawable: the button stays
+        // pressed ("Pausing…") until the engine actually parks the run
+        const pauseBtn = !canPause ? ''
+            : run.pausePending
+                ? `<button class="secondary pressed" id="d-unpause" aria-pressed="true"
+                       title="Pause was requested — it takes effect before the next planner round. Click to withdraw and keep running.">⏸ Pausing… (undo)</button>`
+                : `<button class="secondary" id="d-pause" aria-pressed="false"
+                       title="Finish the current activity, then hold before the next planner round">Pause</button>`;
+        const nowStrip = active && run.now && !run.pausePending
+            ? `<div class="nowstrip"><span class="nowdot"></span> ${C.esc(run.now.what)}
+                <span class="muted small">— <span data-since="${run.now.since}">${elapsed(run.now.since)}</span></span></div>`
+            : '';
         return `<div class="card" id="mdetail">
             <div class="dethead">
                 <h2 style="margin:0">${C.esc(sp.title)}</h2>
                 ${chip(run.status)}
                 <span style="flex:1"></span>
-                ${canPause ? `<button class="secondary" id="d-pause" title="Finish the current wave, then hold before the next planner round">Pause</button>` : ''}
+                ${pauseBtn}
                 ${canResume ? `<button id="d-resume">Resume</button>` : ''}
                 ${active ? `<button class="secondary" id="d-cancel" title="Cancel the mission and its running delegations">Cancel</button>` : ''}
             </div>
-            <div class="muted small">lead <b>${C.esc(sp.leadAgentName)}</b> · team ${sp.team.map(m =>
-                `<span class="mchip team">${C.esc(m.agentName)}${m.role ? ` — ${C.esc(m.role)}` : ''}</span>`).join(' ')}
+            <div class="muted small">lead <b>${C.esc(sp.leadAgentName)}</b>${sp.plannerModel ? ` <span class="mchip mdl" title="planner model">${C.esc(sp.plannerModel)}</span>` : ''} · team ${sp.team.map(m =>
+                `<span class="mchip team">${C.esc(m.agentName)}${m.role ? ` — ${C.esc(m.role)}` : ''}${m.model ? ` <i class="mdl" title="delegation model">${C.esc(m.model)}</i>` : ''}</span>`).join(' ')}
                 ${sp.workdir ? ` · workdir <code>${C.esc(sp.workdir)}</code>` : ''} · approval: ${C.esc(sp.approvalMode)}</div>
             <div class="goal">${C.esc(sp.goal)}</div>
+            ${nowStrip}
+            ${run.pausePending ? `<div class="nowstrip paused"><span class="nowdot hold"></span> pausing — the current activity finishes first, then the run holds</div>` : ''}
             <div class="budget" title="Spent ${usd(run.totalCostUSD)} of the ${usd(sp.limits.maxCostUSD)} budget">
                 <div class="budgetbar"><div class="budgetfill${pctRaw >= 90 ? ' hot' : ''}" style="width:${pct}%"></div></div>
                 <span class="muted small">${usd(run.totalCostUSD)} / ${usd(sp.limits.maxCostUSD)} · ${run.rounds.length}/${sp.limits.maxRounds} rounds · started ${fmtTime(run.startedAt)}</span>
@@ -186,11 +225,14 @@
             ${pendingQ ? `<div class="waitbox">Question: ${C.esc(pendingQ.question)}<br>
                 <input type="text" id="d-answer" placeholder="your answer…" style="width:60%">
                 <button id="d-send" data-run="${C.esc(run.id)}">Send</button></div>` : ''}
-            ${run.rounds.map(roundCard).join('') || '<p class="muted">Planning the first round…</p>'}
+            ${run.rounds.map(roundCard).join('') || (active ? '' : '<p class="muted">No rounds ran.</p>')}
             ${run.result ? `<div class="resultbox ${run.result.verdict}">
                 <b>${C.esc(run.result.verdict.toUpperCase())}</b> — ${C.esc(run.result.summary)}
                 <div class="muted small">total ${usd(run.totalCostUSD)} · ended ${fmtTime(run.endedAt)}</div></div>` : ''}
-            ${run.note ? `<p class="muted small">note: ${C.esc(run.note)}</p>` : ''}
+            ${run.status === 'failed' && !run.result && run.note ? `<div class="resultbox failed">
+                <b>FAILED</b> — ${C.esc(run.note)}
+                <div class="muted small">ended ${fmtTime(run.endedAt)} · tracked cost ${usd(run.totalCostUSD)} (a killed planner call's spend is not in this number)</div></div>` : ''}
+            ${run.note && !(run.status === 'failed' && !run.result) ? `<p class="muted small">note: ${C.esc(run.note)}</p>` : ''}
         </div>`;
     }
 
@@ -226,6 +268,20 @@
                 .mchip.live { background:var(--vscode-textLink-foreground); color:var(--vscode-editor-background); }
                 .mchip.wait { background:var(--vscode-inputValidation-warningBackground, #664d00); color:var(--vscode-foreground); }
                 .mchip.team, .mchip.ro { opacity:.85; }
+                .mchip.mdl, .mchip.team i.mdl { font-style:normal; opacity:.75; font-size:9px;
+                    border:1px solid var(--vscode-widget-border, #5555); border-radius:6px; padding:0 4px; margin-left:3px; }
+                .nowstrip { display:flex; align-items:center; gap:7px; margin:8px 0; padding:7px 10px;
+                    border-radius:5px; font-size:12px;
+                    border:1px solid color-mix(in srgb, var(--vscode-textLink-foreground) 40%, transparent);
+                    background:color-mix(in srgb, var(--vscode-textLink-foreground) 7%, transparent); }
+                .nowstrip.paused { border-color:var(--vscode-inputValidation-warningBorder, #b89500);
+                    background:var(--vscode-inputValidation-warningBackground, #664d0033); }
+                .nowdot { width:8px; height:8px; border-radius:50%; background:var(--vscode-textLink-foreground);
+                    animation:afpulse 1.2s ease-in-out infinite; flex:none; }
+                .nowdot.hold { background:var(--vscode-inputValidation-warningBorder, #b89500); animation:none; }
+                @keyframes afpulse { 0%,100% { opacity:.35 } 50% { opacity:1 } }
+                button.pressed { outline:2px solid var(--vscode-inputValidation-warningBorder, #b89500);
+                    background:var(--vscode-inputValidation-warningBackground, #664d0033); }
                 .mtable { width:100%; border-collapse:collapse; margin-top:8px; }
                 .mtable th { text-align:left; font-size:11px; opacity:.7; padding:4px 8px; }
                 .mtable td { padding:4px 8px; border-top:1px solid var(--vscode-widget-border, #3333); font-size:12px; }
@@ -313,6 +369,7 @@
             if (el) { el.addEventListener('click', fn); }
         };
         wire('d-pause', () => vscode.postMessage({ type: 'control', action: 'pause', runId: selected }));
+        wire('d-unpause', () => vscode.postMessage({ type: 'control', action: 'unpause', runId: selected }));
         wire('d-resume', () => vscode.postMessage({ type: 'control', action: 'resume', runId: selected }));
         wire('d-cancel', () => vscode.postMessage({ type: 'control', action: 'cancel', runId: selected }));
         wire('d-approve', () => vscode.postMessage({ type: 'approve', runId: selected }));
@@ -334,6 +391,8 @@
                 if (pendingData) { DATA = pendingData; pendingData = null; render(); }
             });
         }
+
+        armTicker(document.querySelectorAll('[data-since]').length > 0);
     }
 
     window.addEventListener('message', ev => {

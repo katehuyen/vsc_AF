@@ -19,9 +19,10 @@ Hiç bilmiyorsan buradan başla. Bu bölüme her an komut paletinden (`Ctrl+Shif
 
 ### İlk 3 Dakika: Paneli Tanı
 
-1. Sol kenardaki Activity Bar'da **dört düğümlü ağ ikonuna** tıkla — Agent Farm paneli açılır. Beş bölüm görürsün:
+1. Sol kenardaki Activity Bar'da **dört düğümlü ağ ikonuna** tıkla — Agent Farm paneli açılır. Altı bölüm görürsün:
    - **Agents** — ajanların; yeşil nokta = şu anda çalışıyor. Ajanı genişlet: kimliği, nöbet görevleri, hafızası, izinleri, oturumları.
    - **Tasks** — ajanlara sıraya koyduğun işler, zamanlanmış görevler, şablonlar ve iş akışları.
+   - **Missions** — çok-ajanlı misyonlar: her koşu tur ve delegasyonlarıyla ağaçta; onay/soru bekleyenler satırdan yanıtlanır. ([detay](#missions))
    - **Recent Sessions** — filodaki son oturumlar; tıkla → okunur transkript.
    - **Insights** — sağlık bulguları: ne şişmiş, ne kopmuş, ne bayatlamış.
    - **Live Feed** — filodaki son olaylar.
@@ -51,6 +52,7 @@ Arayüzde gördüğün her **?** düğmesi seni bu kılavuzun ilgili bölümüne
 | Ajana iş sırala | Tasks → **+** Add Task (Interactive/Headless) |
 | Her sabah 08:30 otomatik iş | Tasks → takvim ikonu → Daily 08:30 ([VS Code kapalıyken de olsun mu?](#vs-code-disinda-zamanlama-windows)) |
 | Ajanları zincirle çalıştır | Tasks → `New Multi-Agent Workflow…` — `{prev_output}` ile devir ([koşullar](#kosullu-dallanma)) |
+| Hedef ver, lead ajan tur tur yönetsin | Sol paneldeki **Missions** bölümü → **+**, ya da her sayfanın üstündeki **Missions** düğmesi ([detay](#missions)) |
 | "Şuraya her tur bak" anlaşması | Duties → Add Standing Duty ([detay](#nobet-gorevleri)) |
 | Ajanlardaki kopya hafızaları eşitle | Komut paleti → `Sync Shared Memory…` |
 | Haftalık karne / vault raporu | `Export Fleet Report` veya otomatik: `autoReport` ayarı |
@@ -478,7 +480,7 @@ Live Timeline'da artık **Workflow runs** bölümü var: son 4 saatte koşan her
 
 İş akışları önceden çizilir: her adım, dal ve sıçrama koşu başlamadan sabittir. **Mission** (2.62.0) bunun tersidir — bir **hedef**, bir **lead ajan** ve bir **ekip** verirsin; sıradaki adımın ne olacağına **çalışma anında**, tur tur, önceki sonuçlara bakılarak karar verilir. "Orkestratör analiz eder, coder yazar, reviewer inceler, tester testleri koşar, lead hepsini birleştirir" — bunu önce DAG olarak çizmeden. Başarısız bir delegasyon misyonu öldürmez; lead'in üzerine yeniden plan kurduğu bilgidir.
 
-**Nasıl çalışır.** `Agent Farm: Missions` (ya da Dashboard'daki **Missions** düğmesi) → **+ New Mission**. Eklenti sonra bir planlayıcı döngüsü sürer:
+**Nasıl çalışır.** `Agent Farm: Missions` (her sayfanın üst araç çubuğundaki **Missions** düğmesi ya da sol paneldeki **Missions** bölümü — 2.63.0) → **+ New Mission**. Eklenti sonra bir planlayıcı döngüsü sürer:
 
 1. **Lead ajan** headless çağrılır; brifing: hedef, ekip listesi (adlar + senin rol etiketlerin + her ajanın kendi CLAUDE.md'sinden bir kimlik satırı), kalan bütçe ve katı bir JSON karar şeması.
 2. Lead her turda tek kararla yanıt verir: **delegate** (ekip ajanlarına işler; her biri kendi kendine yeten prompt + başarı ölçütüyle), **ask_user** (sana bir soru) ya da **finish/abort** (hüküm + özet).
@@ -492,11 +494,21 @@ Live Timeline'da artık **Workflow runs** bölümü var: son 4 saatte koşan her
 
 **Workdir emniyeti.** Misyona bir workdir ver — her delegasyon onun içinde koşar ve **iki yazıcı asla paralel koşmaz**: planlayıcının `readonly` işaretlediği adımlar (araştırma, inceleme) aynı dalgayı paylaşabilir, yazıcılar sıraya alınır.
 
-**Kesintiler.** Pencere yeniden yüklenirse koşan misyonlar *paused* olarak park edilir; Needs You **Resume** sunar — delegasyon durumları görev kayıtlarından yeniden toplanır ve lead kendi oturumunda devam eder. Panelden her an Pause / Cancel; iptal, koşan delegasyonları da iptal eder.
+**Planlayıcı planlar — işi yapmaz (2.64.0).** Lead'in planlama çağrısı bir *karardır*, çalışma oturumu değil; ve bu güvene değil mekaniğe bağlanmıştır: planlayıcı çağrılarında yazma araçları (Edit/Write/Bash/…) kapalıdır, keşfe dalıp kaybolan lead'i sert bir tur tavanı durdurur (tur düşmeden önce aynı oturumda bir kez "ŞİMDİ karar ver" dürtmesi denenir) ve zaman aşımına uğrayan çağrı gerçekten öldürülür — süreç ağacıyla birlikte — arka planda faturaya devam etmez. Brifing aynı şeyi sözle de söyler: *eforu hedefe göre ölçekle; küçük hedef = tek kısa tur.* Derin araştırma gerekiyorsa `readonly` delegasyon olur — orada izlenir ve bütçelenir.
+
+**Kim hangi modelle koşar (2.64.0).** Üç katman, en özel olan kazanır: **Planner model** alanı lead'in planlama çağrılarını sabitler; her ekip üyesinin **model** alanı o üyenin delegasyonlarını sabitler; boş bırakılan her şey önce genel **model-policy kurallarına** (Farm Settings), en son ajanın kendi varsayılanına düşer. "Akıllı model planlasın, ucuz modeller çalışsın" tek formluk iş — seçilen modeller koşunun ekip çiplerinde ve her görevin çıktı başlığında görünür.
+
+**Nefes aldığını görürsün.** Koşu aktifken sayfada canlı bir **now şeridi** vardır — *lead is planning round 2 · 1m 40s*, *round 2: running coder + reviewer (wave 1/2)* — motorun zaten yazdığı durum olaylarından beslenir (koşuya sıfır ek yük). Sol paneldeki koşu satırı da aynı satırı taşır.
+
+**Dürüst geri bildirimli Pause.** Pause hiçbir zaman aktiviteyi ortasından kesmez — süren planlayıcı çağrısı ya da dalga önce biter. 2.64.0'dan beri isteğin kendisi görünürdür: düğme basılı **Pausing… (undo)** hâline geçer, bir bekleme şeridi ne olacağını anlatır; tekrar tıklamak isteği geri çeker. Park edildikten sonra **Resume**, toplanan sonuçları lead'in kendi oturumuna geri besler.
+
+**Kesintiler ve hatalar.** Pencere yeniden yüklenirse koşan misyonlar *paused* olarak park edilir; Needs You **Resume** sunar — delegasyon durumları görev kayıtlarından yeniden toplanır ve lead kendi oturumunda devam eder. İptal her an mümkündür; iptal, koşan delegasyonları da iptal eder. **Başarısız** biten koşu asla sessizce düşmez: neden (zaman aşımı, geçersiz planlayıcı cevabı, bütçe durdurması…) kapanış bildiriminde, koşu sayfasındaki kırmızı bantta ve sol paneldeki tooltip'te yazar.
 
 **İyi bir lead'i ne yapar:** CLAUDE.md'si işi kendisi yapmak yerine planlayıp delege ettiğini söyleyen bir ajan — ör. *"Çok-ajanlı misyonları yönetirsin: hedefi parçala, kendi kendine yeten prompt'lar ve kabul ölçütleriyle delege et, sonuçları şüpheyle değerlendir, bütçeyi yakmaktansa kısmi sonuçla bitirmeyi tercih et."* Ekip üyelerinin yanına yazdığın rol etiketleri ("coder", "reviewer", "tester", "researcher", "git") lead'e ipucu olarak ulaşır.
 
 Panel her koşuyu tur tur gösterir — lead'in gerekçesi, delegasyon tablosu (durum / maliyet / çıktı bağlantıları), soru-cevaplar, bütçe barı ve nihai hüküm. Kapanış özeti bildirim ve `mission` webhook olayı olarak da dışarı gider.
+
+**Sol paneldeki Missions bölümü (2.63.0)** aynı takibin ağaç hâlidir — Tasks ile Recent Sessions arasında. Her koşu durum/hüküm ikonu, tur sayısı (`R3/8`), harcanan dolar ve yaşıyla listelenir; genişletince turlar ve her turun delegasyonları (durum, maliyet — tıkla → arşivlenmiş çıktı) görünür. Onay bekleyen tur ve lead'in sorusu **eyleme dönük satırlar** olarak en üste düşer: Approve/Reject ve Answer doğrudan satırdan. Satır eylemleri: Pause / Resume / Cancel, **Run again** (aynı hedef-ekip-limitlerle yeni koşu, onaylı) ve **Delete run**. Koşuya tıklamak tam Missions sayfasını açar.
 
 ## MCP Yönetimi
 

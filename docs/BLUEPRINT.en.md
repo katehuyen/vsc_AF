@@ -19,9 +19,10 @@ If you're brand new, start here. You can return to this section any time from th
 
 ### The First 3 Minutes: Meet the Panel
 
-1. Click the **four-node network icon** in the Activity Bar on the left — the Agent Farm panel opens. You'll see five sections:
+1. Click the **four-node network icon** in the Activity Bar on the left — the Agent Farm panel opens. You'll see six sections:
    - **Agents** — your agents; a green dot = running right now. Expand an agent: identity, standing duties, memory, permissions, sessions.
    - **Tasks** — the jobs you've queued for agents, scheduled tasks, templates and workflows.
+   - **Missions** — multi-agent missions: every run as a tree of rounds and delegations; pending approvals/questions are answered right on the row. ([details](#missions))
    - **Recent Sessions** — the fleet's most recent sessions; click → readable transcript.
    - **Insights** — health findings: what has bloated, what has broken, what has gone stale.
    - **Live Feed** — the fleet's most recent events.
@@ -51,6 +52,7 @@ Every **?** button you see in the UI brings you to the relevant section of this 
 | Queue a job for an agent | Tasks → **+** Add Task (Interactive/Headless) |
 | An automatic job every morning at 08:30 | Tasks → calendar icon → Daily 08:30 ([should it run even when VS Code is closed?](#scheduling-outside-vscode)) |
 | Run agents chained together | Tasks → `New Multi-Agent Workflow…` — handoff via `{prev_output}` ([conditions](#conditional-branching)) |
+| Give a goal, let a lead agent run it round by round | The **Missions** section in the sidebar → **+**, or the **Missions** button on top of every page ([details](#missions)) |
 | A "check here every turn" agreement | Duties → Add Standing Duty ([details](#nobet-gorevleri)) |
 | Sync duplicate memories across agents | Command palette → `Sync Shared Memory…` |
 | Weekly scorecard / vault report | `Export Fleet Report` or automatic: the `autoReport` setting |
@@ -478,7 +480,7 @@ The Live Timeline now has a **Workflow runs** section: every chain run in the la
 
 Workflows are pre-drawn: every step, branch and jump is fixed before the run starts. A **Mission** (2.62.0) is the opposite — you give a **goal**, a **lead agent** and a **team**, and the next step is decided **at run time**, round by round, from the previous results. "An orchestrator analyzes, the coder implements, the reviewer reviews, the tester runs the tests, and the lead merges it all" — without drawing that as a DAG first. A failed delegation doesn't kill the mission; it's information the lead re-plans on.
 
-**How it runs.** `Agent Farm: Missions` (or the **Missions** button on the Dashboard) → **+ New Mission**. The extension then drives a planner loop:
+**How it runs.** `Agent Farm: Missions` (the **Missions** button in every page's top toolbar, or the **Missions** section in the sidebar — 2.63.0) → **+ New Mission**. The extension then drives a planner loop:
 
 1. The **lead agent** is called headlessly with a briefing: the goal, the team roster (names + your role labels + one identity line from each agent's own CLAUDE.md), the remaining budget, and a strict JSON decision schema.
 2. The lead answers with one decision per round: **delegate** (tasks aimed at team agents, each with a self-contained prompt and success criteria), **ask_user** (a question for you), or **finish/abort** (verdict + summary).
@@ -492,11 +494,21 @@ Workflows are pre-drawn: every step, branch and jump is fixed before the run sta
 
 **Workdir safety.** Give the mission a workdir and every delegation runs inside it — and **two writers never run in parallel**: steps the planner marks `readonly` (research, review) may share a wave, writers are serialized.
 
-**Interruptions.** A window reload parks running missions as *paused*; Needs You offers **Resume** — delegation states are re-collected from the task records and the lead continues in its own session. Pause / Cancel any time from the panel; cancelling also cancels the running delegations.
+**The planner plans — it does not work (2.64.0).** The lead's planning call is a *decision*, not a work session, and that is enforced mechanically, not by trust: write-tools (Edit/Write/Bash/…) are disabled on planner calls, a hard turn cap stops a lead that wanders off exploring (one "decide NOW" nudge is retried in the same session before the round fails), and a timed-out call is genuinely killed — process tree and all — instead of billing on in the background. The briefing says the same thing in words: *scale your effort to the goal; a small goal is one short round.* Deep digging is delegated as a `readonly` task, where it's tracked and budgeted like everything else.
+
+**Who runs on which model (2.64.0).** Three layers, most specific wins: the **Planner model** field pins the lead's planning calls; each team member's **model** field pins that member's delegations; anything left empty falls to your global **model-policy rules** (Farm Settings) and finally the agent's own default. So "smart model plans, cheap models execute" is one form away — and the chosen models are visible on the run's team chips and in each task's output header.
+
+**You can see it breathe.** While a run is active the page shows a live **now strip** — *lead is planning round 2 · 1m 40s*, *round 2: running coder + reviewer (wave 1/2)* — fed by the same state events the engine writes anyway (zero extra load on the run). The sidebar run row carries the same line.
+
+**Pause with honest feedback.** Pause never interrupts mid-activity — the current planner call or wave finishes first. Since 2.64.0 the request itself is visible: the button flips to a pressed **Pausing… (undo)** state and a hold strip explains what happens; clicking again withdraws the request. Once parked, **Resume** feeds the collected results back into the lead's own session.
+
+**Interruptions and failures.** A window reload parks running missions as *paused*; Needs You offers **Resume** — delegation states are re-collected from the task records and the lead continues in its own session. Cancel any time; cancelling also cancels the running delegations. A run that **fails** never fails silently: the reason (timeout, invalid planner replies, budget stop…) is in the closing notification, in a red banner on the run's page, and in the run's tooltip in the sidebar.
 
 **What makes a good lead:** an agent whose CLAUDE.md says it plans and delegates instead of doing the work itself — e.g. *"You lead multi-agent missions: decompose the goal, delegate with self-contained prompts and acceptance criteria, judge results skeptically, and prefer finishing with a partial result over burning the budget."* The role labels you type next to team members ("coder", "reviewer", "tester", "researcher", "git") reach the lead as hints.
 
 The panel shows each run round by round — the lead's reasoning, the delegation table (status / cost / output links), question-and-answers, the budget bar, and the final verdict. The closing summary also goes out as a notification and the `mission` webhook event.
+
+**The Missions section in the sidebar (2.63.0)** is the tree twin of the same tracking — between Tasks and Recent Sessions. Each run is listed with its status/verdict icon, round count (`R3/8`), spent dollars and age; expand it for the rounds and each round's delegations (status, cost — click one to open its archived output). A round awaiting approval and the lead's question surface as **actionable rows** at the top: Approve/Reject and Answer right on the row. Row actions: Pause / Resume / Cancel, **Run again** (a fresh run of the same goal-team-limits, confirmed first) and **Delete run**. Clicking a run opens the full Missions page.
 
 ## MCP Management {#mcp-yonetimi}
 

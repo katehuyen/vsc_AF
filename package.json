@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.62.0",
+  "version": "2.64.0",
   "icon": "media/icon.png",
   "publisher": "miropharm",
   "license": "MIT",
@@ -48,6 +48,11 @@
           "icon": "media/agentfarm.svg"
         },
         {
+          "id": "agentfarm.missions",
+          "name": "Missions",
+          "icon": "media/agentfarm.svg"
+        },
+        {
           "id": "agentfarm.sessions",
           "name": "Recent Sessions",
           "icon": "media/agentfarm.svg"
@@ -72,6 +77,10 @@
       {
         "view": "agentfarm.tasks",
         "contents": "Queue work for your agents and schedule recurring runs.\n[Set Up a Working Example](command:agentfarm.setupExample)\nOne click creates a real inbox trigger, morning schedule or two-agent chain — edit or remove it anytime.\n[Add Task](command:agentfarm.addTask)\n[Add Scheduled Task](command:agentfarm.addSchedule)\nTasks open a terminal in the agent's folder and run claude with your prompt.\n[Open Guide](command:agentfarm.openGuide)"
+      },
+      {
+        "view": "agentfarm.missions",
+        "contents": "Give a goal to a lead agent and a team — the lead plans round by round, delegates, and finishes with an honest verdict.\n[New Mission](command:agentfarm.newMission)\nRuns, rounds and delegations are tracked here; approvals and questions appear as actionable rows.\n[Open Missions Page](command:agentfarm.openMissions)"
       },
       {
         "view": "agentfarm.insights",
@@ -159,7 +168,61 @@
         "command": "agentfarm.newMission",
         "title": "New Mission…",
         "category": "Agent Farm",
-        "icon": "$(rocket)"
+        "icon": "$(add)"
+      },
+      {
+        "command": "agentfarm.missionApprove",
+        "title": "Approve Round",
+        "category": "Agent Farm",
+        "icon": "$(check)"
+      },
+      {
+        "command": "agentfarm.missionReject",
+        "title": "Reject Round",
+        "category": "Agent Farm",
+        "icon": "$(close)"
+      },
+      {
+        "command": "agentfarm.missionAnswer",
+        "title": "Answer Mission Question…",
+        "category": "Agent Farm",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "agentfarm.missionPause",
+        "title": "Pause Mission",
+        "category": "Agent Farm",
+        "icon": "$(debug-pause)"
+      },
+      {
+        "command": "agentfarm.missionResume",
+        "title": "Resume Mission",
+        "category": "Agent Farm",
+        "icon": "$(debug-start)"
+      },
+      {
+        "command": "agentfarm.missionCancel",
+        "title": "Cancel Mission",
+        "category": "Agent Farm",
+        "icon": "$(circle-slash)"
+      },
+      {
+        "command": "agentfarm.missionRerun",
+        "title": "Run Mission Again",
+        "category": "Agent Farm",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "agentfarm.missionDelete",
+        "title": "Delete Mission Run",
+        "category": "Agent Farm",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "agentfarm.missionStepOutput",
+        "title": "Open Delegation Output",
+        "category": "Agent Farm",
+        "icon": "$(output)"
       },
       {
         "command": "agentfarm.setupExample",
@@ -1091,6 +1154,16 @@
           "group": "navigation@3"
         },
         {
+          "command": "agentfarm.newMission",
+          "when": "view == agentfarm.missions",
+          "group": "navigation@1"
+        },
+        {
+          "command": "agentfarm.openMissions",
+          "when": "view == agentfarm.missions",
+          "group": "navigation@2"
+        },
+        {
           "command": "agentfarm.addTrigger",
           "when": "view == agentfarm.tasks",
           "group": "overflow@0"
@@ -1421,6 +1494,96 @@
           "command": "agentfarm.saveTaskTemplate",
           "when": "view == agentfarm.tasks && viewItem =~ /task-/",
           "group": "2_extra@1"
+        },
+        {
+          "command": "agentfarm.missionApprove",
+          "when": "view == agentfarm.missions && viewItem =~ /mission-(run-waiting-approval|wait-approval)/",
+          "group": "inline@1"
+        },
+        {
+          "command": "agentfarm.missionReject",
+          "when": "view == agentfarm.missions && viewItem =~ /mission-(run-waiting-approval|wait-approval)/",
+          "group": "inline@2"
+        },
+        {
+          "command": "agentfarm.missionAnswer",
+          "when": "view == agentfarm.missions && viewItem =~ /mission-(run-waiting-user|wait-question)/",
+          "group": "inline@1"
+        },
+        {
+          "command": "agentfarm.missionPause",
+          "when": "view == agentfarm.missions && viewItem == mission-run-running",
+          "group": "inline@1"
+        },
+        {
+          "command": "agentfarm.missionResume",
+          "when": "view == agentfarm.missions && viewItem == mission-run-paused",
+          "group": "inline@1"
+        },
+        {
+          "command": "agentfarm.missionCancel",
+          "when": "view == agentfarm.missions && viewItem == mission-run-paused",
+          "group": "inline@2"
+        },
+        {
+          "command": "agentfarm.missionRerun",
+          "when": "view == agentfarm.missions && viewItem == mission-run-final",
+          "group": "inline@1"
+        },
+        {
+          "command": "agentfarm.missionDelete",
+          "when": "view == agentfarm.missions && viewItem == mission-run-final",
+          "group": "inline@2"
+        },
+        {
+          "command": "agentfarm.missionStepOutput",
+          "when": "view == agentfarm.missions && viewItem == mission-step-out",
+          "group": "inline@1"
+        },
+        {
+          "command": "agentfarm.missionApprove",
+          "when": "view == agentfarm.missions && viewItem =~ /mission-(run-waiting-approval|wait-approval)/",
+          "group": "1_mission@1"
+        },
+        {
+          "command": "agentfarm.missionReject",
+          "when": "view == agentfarm.missions && viewItem =~ /mission-(run-waiting-approval|wait-approval)/",
+          "group": "1_mission@2"
+        },
+        {
+          "command": "agentfarm.missionAnswer",
+          "when": "view == agentfarm.missions && viewItem =~ /mission-(run-waiting-user|wait-question)/",
+          "group": "1_mission@1"
+        },
+        {
+          "command": "agentfarm.missionPause",
+          "when": "view == agentfarm.missions && viewItem == mission-run-running",
+          "group": "1_mission@1"
+        },
+        {
+          "command": "agentfarm.missionResume",
+          "when": "view == agentfarm.missions && viewItem == mission-run-paused",
+          "group": "1_mission@1"
+        },
+        {
+          "command": "agentfarm.missionCancel",
+          "when": "view == agentfarm.missions && viewItem =~ /mission-run-(running|waiting-approval|waiting-user|paused)/",
+          "group": "1_mission@3"
+        },
+        {
+          "command": "agentfarm.missionRerun",
+          "when": "view == agentfarm.missions && viewItem == mission-run-final",
+          "group": "1_mission@1"
+        },
+        {
+          "command": "agentfarm.missionDelete",
+          "when": "view == agentfarm.missions && viewItem == mission-run-final",
+          "group": "1_mission@2"
+        },
+        {
+          "command": "agentfarm.missionStepOutput",
+          "when": "view == agentfarm.missions && viewItem == mission-step-out",
+          "group": "1_step@1"
         },
         {
           "command": "agentfarm.runTemplate",

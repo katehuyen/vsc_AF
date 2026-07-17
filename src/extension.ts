@@ -91,6 +91,7 @@ import {
     parsePlannerEnvelope, PlannerResult, remainingBudget
 } from './core/missions';
 import { MissionsPanel } from './panels/missionsPanel';
+import { MissionNode, MissionsTreeProvider } from './views/missionsTree';
 import { TriggerManager } from './core/triggers';
 import { dayKey, fmtTokens, fmtUSD, normPath, relTime } from './core/util';
 import { AgentDetailPanel } from './panels/agentDetail';
@@ -1373,6 +1374,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             r.status = 'paused';
             r.note = 'interrupted by window reload';
         }
+        // transient live-state must not survive a reload
+        r.now = undefined;
+        r.pausePending = false;
     }
     missionStore.save();
     const missionEngines = new Map<string, MissionEngine>();
@@ -1407,10 +1411,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return waits;
     };
 
+    // The planner is a DECISION call, not a work session: write-tools are cut
+    // off mechanically (the briefing says so too) and a hard turn cap stops a
+    // lead that wanders off exploring — that combination is what keeps a
+    // simple mission's planning cheap and fast.
+    const MISSION_PLANNER_DISALLOWED_TOOLS =
+        'Bash,PowerShell,Edit,MultiEdit,Write,NotebookEdit,Task,Agent';
+    const MISSION_PLANNER_MAX_TURNS = 15;
+    const MISSION_PLANNER_TIMEOUT_MIN = 10;
+
     /** One headless planner call. The prompt goes via stdin (multi-line briefings
      *  must survive the Windows shell); --resume keeps the lead's context. */
-    const runMissionPlanner = (spec: MissionSpec) =>
-        (prompt: string, resumeSessionId?: string): Promise<PlannerResult> =>
+    const missionPlannerCallOnce = (spec: MissionSpec) =>
+        (prompt: string, resumeSessionId?: string): Promise<PlannerResult & { subtype?: string }> =>
             new Promise(resolve => {
                 const lead = agents.find(a => a.id === spec.leadAgentId);
                 const extra = cfg().get<string>('taskExtraArgs', '').trim();
@@ -1418,9 +1431,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // form value can never smuggle shell syntax into the command line
                 const model = spec.plannerModel && /^[\w.:-]+$/.test(spec.plannerModel)
                     ? `--model ${spec.plannerModel} ` : '';
-                const command = `claude ${extra ? extra + ' ' : ''}${model}${resumeSessionId ? `--resume ${resumeSessionId} ` : ''}-p --output-format json`;
+                const command = `claude ${extra ? extra + ' ' : ''}${model}` +
+                    `--disallowedTools "${MISSION_PLANNER_DISALLOWED_TOOLS}" ` +
+                    `--max-turns ${MISSION_PLANNER_MAX_TURNS} ` +
+                    `${resumeSessionId ? `--resume ${resumeSessionId} ` : ''}-p --output-format json`;
                 let settled = false;
-                const done = (r: PlannerResult) => { if (!settled) { settled = true; resolve(r); } };
+                const done = (r: PlannerResult & { subtype?: string }) => {
+                    if (!settled) { settled = true; resolve(r); }
+                };
                 try {
                     const child = cp.spawn(command, {
                         cwd: lead?.dir ?? os.homedir(),
@@ -1429,9 +1447,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     });
                     let out = '', err = '';
                     const timer = setTimeout(() => {
-                        try { child.kill(); } catch { /* already gone */ }
-                        done({ ok: false, error: 'planner call timed out (10 min)' });
-                    }, 10 * 60_000);
+                        // shell:true wraps claude in cmd.exe — child.kill() alone
+                        // leaves the real process running (and billing) forever.
+                        try {
+                            if (process.platform === 'win32' && child.pid) {
+                                cp.exec(`taskkill /pid ${child.pid} /T /F`);
+                            } else { child.kill(); }
+                        } catch { /* already gone */ }
+                        done({
+                            ok: false,
+                            error: `planner call timed out (${MISSION_PLANNER_TIMEOUT_MIN} min) — the call was killed. ` +
+                                'The lead probably wandered into doing work itself; check its latest transcript on the agent page.'
+                        });
+                    }, MISSION_PLANNER_TIMEOUT_MIN * 60_000);
                     child.stdout.on('data', d => { out += String(d); });
                     child.stderr.on('data', d => { err += String(d); });
                     child.on('error', e => { clearTimeout(timer); done({ ok: false, error: String(e).slice(0, 200) }); });
@@ -1447,7 +1475,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             raw: env.result,
                             sessionId: env.sessionId,
                             costUSD: env.costUSD,
-                            error: env.isError ? env.result.slice(0, 300) : undefined
+                            subtype: env.subtype,
+                            error: env.isError ? (env.result || env.subtype || 'planner error').slice(0, 300) : undefined
                         });
                     });
                     child.stdin.write(prompt);
@@ -1456,6 +1485,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     done({ ok: false, error: String(e).slice(0, 200) });
                 }
             });
+
+    /** Planner call with one built-in recovery: a lead that burns its turn cap
+     *  on tools gets a single "decide NOW" nudge in the same session before the
+     *  round is declared failed. */
+    const runMissionPlanner = (spec: MissionSpec) => {
+        const call = missionPlannerCallOnce(spec);
+        return async (prompt: string, resumeSessionId?: string): Promise<PlannerResult> => {
+            const first = await call(prompt, resumeSessionId);
+            if (!first.ok && first.subtype === 'error_max_turns' && (first.sessionId ?? resumeSessionId)) {
+                const nudge = await call(
+                    'You hit the turn cap — stop using tools. Reply NOW with ONLY the JSON decision object, based on what you already know.',
+                    first.sessionId ?? resumeSessionId);
+                if (nudge.ok) { return nudge; }
+                return { ...nudge, error: `planner hit the ${MISSION_PLANNER_MAX_TURNS}-turn cap and the retry failed — ${nudge.error ?? ''}` };
+            }
+            return first;
+        };
+    };
 
     /** Run one wave of delegations as ordinary FarmTasks and wait them out. */
     const missionDelegateWave = (spec: MissionSpec) =>
@@ -1471,6 +1518,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     }
                     const task = taskManager.addTask(agent, `[Mission] ${step.title}`, step.prompt, 'headless');
                     task.missionId = run.id;
+                    const member = spec.team.find(m => m.agentId === step.agentId)
+                        ?? spec.team.find(m => m.agentName === step.agentName);
+                    if (member?.model) { task.model = member.model; }
                     if (spec.workdir) { task.workDir = spec.workdir; }
                     step.taskId = task.id;
                     step.status = 'running';
@@ -1604,10 +1654,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (r && (r.status === 'done' || r.status === 'failed' || r.status === 'cancelled')) {
                 const line = `Mission "${spec.title}" ${r.status}` +
                     (r.result ? ` — ${r.result.verdict}: ${r.result.summary.slice(0, 200)}` : '') +
+                    // a failure without a verdict MUST say why (timeouts, bad
+                    // planner replies…) — a bare "failed" toast is useless
+                    (!r.result && r.note ? ` — ${r.note.slice(0, 260)}` : '') +
                     ` ($${r.totalCostUSD.toFixed(2)})`;
                 postForward('mission', line);
-                void vscode.window.showInformationMessage(`Agent Farm: ${line}`, 'Open Missions')
-                    .then(c => { if (c === 'Open Missions') { void vscode.commands.executeCommand('agentfarm.openMissions'); } });
+                const show = r.status === 'failed'
+                    ? vscode.window.showErrorMessage.bind(vscode.window)
+                    : vscode.window.showInformationMessage.bind(vscode.window);
+                void show(`Agent Farm: ${line}`, 'Open Missions')
+                    .then((c: string | undefined) => { if (c === 'Open Missions') { void vscode.commands.executeCommand('agentfarm.openMissions'); } });
             }
         });
     };
@@ -1628,6 +1684,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const run = missionStore.run(runId);
         const spec = run ? missionStore.spec(run.specId) : undefined;
         if (!run || !spec || run.status !== 'paused' || missionEngines.has(runId)) { return; }
+        const resumeHead = run.note === 'interrupted by window reload'
+            ? undefined // default wording
+            : 'The mission was paused by the user and has been resumed.';
         run.note = undefined;
         // pause time must not eat the wall clock
         const lastActivity = run.rounds.length ? run.rounds[run.rounds.length - 1].at : run.startedAt;
@@ -1653,9 +1712,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     step,
                     excerpt: step.outputFile ? outputExcerpt(missionReadBody(step.outputFile)) : ''
                 })),
-                remainingBudget(spec, run, Date.now()));
+                remainingBudget(spec, run, Date.now()), resumeHead);
         } else if (run.rounds.length || run.plannerSessionId) {
-            initialMsg = buildResumeMessage(run, [], remainingBudget(spec, run, Date.now()))
+            initialMsg = buildResumeMessage(run, [], remainingBudget(spec, run, Date.now()), resumeHead)
                 + (last?.action === 'ask_user' && !last.answer
                     ? `\nYour earlier question ("${last.question}") was never answered — ask again if it still matters.`
                     : '');
@@ -1689,15 +1748,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (!goal) { return 'Goal is required.'; }
         const lead = agents.find(a => a.id === String(input.leadAgentId ?? ''));
         if (!lead) { return 'Pick a lead agent.'; }
-        const teamIn = Array.isArray(input.team) ? input.team as { agentId?: unknown; role?: unknown }[] : [];
+        const modelOk = (m: string) => /^[\w.:-]+$/.test(m);
+        const teamIn = Array.isArray(input.team) ? input.team as { agentId?: unknown; role?: unknown; model?: unknown }[] : [];
         const team: MissionSpec['team'] = [];
         for (const t of teamIn) {
             const a = agents.find(x => x.id === String(t.agentId ?? ''));
             if (a && !team.some(m => m.agentId === a.id)) {
-                team.push({ agentId: a.id, agentName: a.name, role: String(t.role ?? '').trim() || undefined });
+                const model = String(t.model ?? '').trim().slice(0, 60);
+                if (model && !modelOk(model)) { return `Model "${model}" (${a.name}) has illegal characters — use a plain model id/alias.`; }
+                team.push({
+                    agentId: a.id, agentName: a.name,
+                    role: String(t.role ?? '').trim() || undefined,
+                    model: model || undefined
+                });
             }
         }
         if (!team.length) { return 'Pick at least one team agent.'; }
+        const plannerModel = String(input.plannerModel ?? '').trim().slice(0, 60);
+        if (plannerModel && !modelOk(plannerModel)) { return `Planner model "${plannerModel}" has illegal characters — use a plain model id/alias.`; }
         const workdir = String(input.workdir ?? '').trim();
         if (workdir && !fs.existsSync(workdir)) { return `Workdir does not exist: ${workdir}`; }
         const num = (v: unknown, d: number, min: number, max: number) => {
@@ -1719,7 +1787,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             leadAgentName: lead.name,
             team,
             workdir: workdir || undefined,
-            plannerModel: String(input.plannerModel ?? '').trim().slice(0, 60) || undefined,
+            plannerModel: plannerModel || undefined,
             limits,
             approvalMode: input.approvalMode === 'auto' ? 'auto' : 'each-round',
             createdAt: Date.now()
@@ -1746,8 +1814,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         }),
         create: createMission,
-        control: (action: 'pause' | 'resume' | 'cancel', runId: string) => {
-            if (action === 'pause') { missionEngines.get(runId)?.pause(); missionChanged(); }
+        control: (action: 'pause' | 'unpause' | 'resume' | 'cancel', runId: string) => {
+            if (action === 'pause') {
+                const engine = missionEngines.get(runId);
+                if (engine) { engine.pause(); }
+                else {
+                    // stale 'running' without an engine (shouldn't happen) — park it honestly
+                    const run = missionStore.run(runId);
+                    if (run && (run.status === 'running' || run.status === 'waiting-approval' || run.status === 'waiting-user')) {
+                        run.status = 'paused';
+                        run.now = undefined;
+                    }
+                }
+                missionChanged();
+            }
+            else if (action === 'unpause') { missionEngines.get(runId)?.unpause(); missionChanged(); }
             else if (action === 'resume') { resumeMission(runId); }
             else { cancelMission(runId); }
         },
@@ -1765,6 +1846,89 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         onDidChange: missionEmitter.event
     };
+
+    // Sidebar twin of the Missions page: same store, same change event — runs
+    // with their rounds/steps as a tree, pending waits as actionable rows.
+    const missionsTree = new MissionsTreeProvider({
+        runs: () => [...missionStore.runs].sort((a, b) => b.startedAt - a.startedAt),
+        spec: id => missionStore.spec(id),
+        question: runId => missionQuestions.get(runId)?.question,
+        awaitingApproval: runId => missionApprovals.has(runId),
+        onDidChange: missionEmitter.event
+    });
+    const missionNodeRun = (node?: MissionNode): MissionRun | undefined =>
+        node && 'run' in node ? node.run : undefined;
+    context.subscriptions.push(
+        vscode.window.registerTreeDataProvider('agentfarm.missions', missionsTree),
+        vscode.commands.registerCommand('agentfarm.missionApprove', (node?: MissionNode) => {
+            const run = missionNodeRun(node);
+            const id = run ? missionApprovals.get(run.id) : undefined;
+            if (id) { approvalQueue.settle(id, true); }
+        }),
+        vscode.commands.registerCommand('agentfarm.missionReject', (node?: MissionNode) => {
+            const run = missionNodeRun(node);
+            const id = run ? missionApprovals.get(run.id) : undefined;
+            if (id) { approvalQueue.settle(id, false); }
+        }),
+        vscode.commands.registerCommand('agentfarm.missionAnswer', (node?: MissionNode) => {
+            const run = missionNodeRun(node);
+            if (run) { void answerMissionQuestion(run.id); }
+        }),
+        vscode.commands.registerCommand('agentfarm.missionPause', (node?: MissionNode) => {
+            const run = missionNodeRun(node);
+            if (!run) { return; }
+            // second click withdraws a pause that hasn't taken effect yet
+            const engine = missionEngines.get(run.id);
+            if (run.pausePending) { engine?.unpause(); } else { engine?.pause(); }
+            missionChanged();
+        }),
+        vscode.commands.registerCommand('agentfarm.missionResume', (node?: MissionNode) => {
+            const run = missionNodeRun(node);
+            if (run) { resumeMission(run.id); }
+        }),
+        vscode.commands.registerCommand('agentfarm.missionCancel', async (node?: MissionNode) => {
+            const run = missionNodeRun(node);
+            if (!run) { return; }
+            const pick = await vscode.window.showWarningMessage(
+                'Cancel this mission? Running delegations are cancelled too.',
+                { modal: true }, 'Cancel mission');
+            if (pick === 'Cancel mission') { cancelMission(run.id); }
+        }),
+        vscode.commands.registerCommand('agentfarm.missionRerun', async (node?: MissionNode) => {
+            const run = missionNodeRun(node);
+            const spec = run ? missionStore.spec(run.specId) : undefined;
+            if (!run || !spec) { return; }
+            const pick = await vscode.window.showWarningMessage(
+                `Run mission "${spec.title}" again? Same goal, team and limits (max $${spec.limits.maxCostUSD}).`,
+                { modal: true }, 'Run again');
+            if (pick !== 'Run again') { return; }
+            const rerun: MissionRun = {
+                id: newMissionId(), specId: spec.id, status: 'running',
+                rounds: [], ledger: [], totalCostUSD: 0, startedAt: Date.now()
+            };
+            missionStore.runs.push(rerun);
+            missionChanged();
+            launchMission(spec, rerun);
+        }),
+        vscode.commands.registerCommand('agentfarm.missionDelete', async (node?: MissionNode) => {
+            const run = missionNodeRun(node);
+            if (!run || (run.status !== 'done' && run.status !== 'failed' && run.status !== 'cancelled')) { return; }
+            const spec = missionStore.spec(run.specId);
+            const pick = await vscode.window.showWarningMessage(
+                `Delete mission run "${spec?.title ?? run.id}" from the history? Archived task outputs stay.`,
+                { modal: true }, 'Delete');
+            if (pick !== 'Delete') { return; }
+            missionStore.runs = missionStore.runs.filter(r => r.id !== run.id);
+            if (spec && !missionStore.runs.some(r => r.specId === spec.id)) {
+                missionStore.specs = missionStore.specs.filter(s => s.id !== spec.id);
+            }
+            missionChanged();
+        }),
+        vscode.commands.registerCommand('agentfarm.missionStepOutput', (node?: MissionNode) => {
+            const file = node?.kind === 'step' ? node.step.outputFile : undefined;
+            if (file) { void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(file)); }
+        })
+    );
 
     // G1: the Needs You queue is assembled from live state + approvals + insights + parked tasks.
     const buildNeeds = (): NeedItem[] => buildNeedsQueue({

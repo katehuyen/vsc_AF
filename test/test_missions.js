@@ -338,6 +338,70 @@ const HINTS = [{ name: 'coder', role: 'implements', hint: 'writes code' }, { nam
         ok('mission waits count as blocking', N.blockingCount(items) === 2);
     }
 
+    // ---------- planner discipline in the briefing ----------
+    {
+        const b = M.buildBriefing(spec(), HINTS, { rounds: 8, tasks: 12, costUSD: 5, minutes: 120 });
+        ok('briefing forbids the lead from doing the work itself',
+            b.includes("NEVER do the mission's work yourself"));
+        ok('briefing tells the lead to scale effort to the goal size',
+            b.includes('Scale your effort') && b.includes('ONE round'));
+    }
+
+    // ---------- pause feedback: pending flag → park → flags cleared ----------
+    {
+        let engine;
+        const seen = { pendingDuringRun: false, nowValues: [] };
+        const h = makeDeps([
+            { raw: { action: 'delegate', tasks: [{ agent: 'coder', title: 'slow', prompt: 'work' }] } },
+            { raw: { action: 'finish', verdict: 'success', summary: 'never reached' } }
+        ], { cancelDuringWave: () => engine.pause() });
+        h.deps.onUpdate = (r) => {
+            if (r.pausePending) { seen.pendingDuringRun = true; }
+            if (r.now) { seen.nowValues.push(r.now.what); }
+        };
+        const run = newRun();
+        engine = new M.MissionEngine(spec(), run, HINTS, h.deps);
+        await engine.execute();
+        ok('pause shows pausePending immediately and parks before the next round',
+            seen.pendingDuringRun && run.status === 'paused' && run.pausePending === false);
+        ok('live "now" cleared once parked', run.now === undefined);
+        ok('live "now" reported the planning and running phases',
+            seen.nowValues.some(w => w.includes('planning round 1'))
+            && seen.nowValues.some(w => w.includes('running coder')));
+    }
+
+    // ---------- unpause withdraws a not-yet-effective pause ----------
+    {
+        let engine;
+        const { deps } = makeDeps([
+            { raw: { action: 'delegate', tasks: [{ agent: 'coder', title: 'w', prompt: 'p' }] } },
+            { raw: { action: 'finish', verdict: 'success', summary: 'done' } }
+        ], { cancelDuringWave: () => { engine.pause(); engine.unpause(); } });
+        const run = newRun();
+        engine = new M.MissionEngine(spec(), run, HINTS, deps);
+        await engine.execute();
+        ok('withdrawn pause keeps the mission running to the end',
+            run.status === 'done' && run.pausePending === false);
+    }
+
+    // ---------- envelope subtype (max-turns recovery hook) ----------
+    {
+        const env = M.parsePlannerEnvelope(JSON.stringify({
+            type: 'result', subtype: 'error_max_turns', is_error: true, result: '', session_id: 'sX'
+        }));
+        ok('envelope exposes the error subtype and session for the retry nudge',
+            env && env.isError === true && env.subtype === 'error_max_turns' && env.sessionId === 'sX');
+    }
+
+    // ---------- resume message custom head (manual pause vs reload) ----------
+    {
+        const run = newRun();
+        const msg = M.buildResumeMessage(run, [], { rounds: 5, tasks: 5, costUSD: 3, minutes: 60 },
+            'The mission was paused by the user and has been resumed.');
+        ok('resume message honours a custom head',
+            msg.includes('paused by the user') && !msg.includes('window reload'));
+    }
+
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })();

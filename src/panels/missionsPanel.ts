@@ -9,7 +9,7 @@ export interface MissionsDeps {
     data(): Record<string, unknown>;
     /** Validate + start a new mission; error string when the form is bad. */
     create(input: Record<string, unknown>): string | undefined;
-    control(action: 'pause' | 'resume' | 'cancel', runId: string): void;
+    control(action: 'pause' | 'unpause' | 'resume' | 'cancel', runId: string): void;
     answer(runId: string, text: string): void;
     settleApproval(runId: string, ok: boolean): void;
     pickFolder(): Thenable<string | undefined>;
@@ -74,7 +74,7 @@ export class MissionsPanel {
             case 'control': {
                 const action = String(msg.action ?? '');
                 const runId = String(msg.runId ?? '');
-                if (!runId || (action !== 'pause' && action !== 'resume' && action !== 'cancel')) { break; }
+                if (!runId || (action !== 'pause' && action !== 'unpause' && action !== 'resume' && action !== 'cancel')) { break; }
                 if (action === 'cancel') {
                     const pick = await vscode.window.showWarningMessage(
                         'Cancel this mission? Running delegations are cancelled too.',

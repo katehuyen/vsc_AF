@@ -2,6 +2,25 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 2.64.0 — Missions: the planner plans, you see everything (2026-07-17)
+
+The first real mission exposed five failures at once; this release fixes all of them at the root.
+
+- **The planner can no longer do the work itself.** The first live mission burned minutes and credits because the lead — a full-tool headless claude — started *implementing* instead of deciding, blew the 10-minute timeout, and the "kill" didn't even kill it (on Windows, `child.kill()` on a `shell:true` process leaves the real claude running and billing in the background). Now: planner calls run with **write-tools disabled** (`Edit/Write/Bash/…`), a **hard turn cap** (a lead that burns it gets one "decide NOW" nudge in the same session before the round fails), a timeout kill that takes the **whole process tree** down, and a briefing that says it in words too: *you are the planner, not the worker; scale your effort to the goal — a small goal is one short round.*
+- **Model control, per role.** Who runs on what is now yours to decide, three layers deep: **Planner model** pins the lead's planning calls, each team member's new **model** field pins that member's delegations, and anything left empty falls through to your model-policy rules and the agent's own default. Chosen models show on the run's team chips; every explicit choice is validated (strict charset) and printed in the task's output header.
+- **Live "now" strip.** An active run shows what is happening *right now* — "lead is planning round 2 · 1m 40s", "round 2: running coder + reviewer (wave 1/2)" — on the run page and in the sidebar row. Fed entirely by state events the engine already writes: zero extra load on the run.
+- **Pause finally answers back.** Clicking Pause flips the button to a pressed **Pausing… (undo)** state with a hold strip explaining that the current activity finishes first; clicking again withdraws the request. The sidebar shows "⏸ pausing…" on the row. Resuming a user-paused run tells the lead it was paused, not "interrupted".
+- **Failures explain themselves.** A failed mission's reason (timeout, invalid planner replies, budget stop…) now rides in the closing notification (an error toast, not an info one), in a red FAILED banner on the run page — including the honest note that a killed planner call's spend isn't in the tracked total — and in the sidebar tooltip.
+- Full suite: 43 files · 968 passed.
+
+## 2.63.0 — Missions everywhere: global toolbar button + sidebar section (2026-07-17)
+
+2.62.0 shipped Missions but parked its button on the Dashboard alone — the one global shortcut that wasn't global. Fixed structurally, plus a sidebar home:
+
+- **Missions joins the global header cluster.** The shared page header's cluster is now *Dashboard · Live Timeline · Missions · (related panel) · ⌕ Search · ⚙ Settings · Refresh · ? Guide* — so the Missions button appears on **every** page (minus the Missions page itself), exactly like every other global shortcut. The Dashboard's one-off "related" button is gone; one line in `pageHeader.js` did the whole rollout, as designed in 2.59.0.
+- **New "Missions" sidebar section** between Tasks and Recent Sessions — the tree twin of the Missions page, fed by the same store and live events. Each run shows a status/verdict icon (partial verdicts glance yellow), round count vs limit, spent $, age; expand for rounds → delegations (status, cost; click a delegation to open its archived output; click the run to open the full page). Pending waits surface as **actionable rows**: Approve/Reject a waiting round, Answer the lead's question — no page-hopping. Row actions: Pause / Resume / Cancel (confirmed), **Run again** (fresh run of the same spec, confirmed — it costs money), **Delete run** (final runs; prunes the spec when orphaned). Empty state links New Mission / Open Missions Page.
+- Full suite: 43 files · 952 passed.
+
 ## 2.62.0 — Missions: dynamic multi-agent orchestration (2026-07-17)
 
 Workflows are pre-drawn DAGs; a **Mission** decides the next step at run time. You give a goal, a **lead agent** and a **team** — the lead plans round by round, delegates, reads the results and re-plans, until it finishes with an honest verdict. "Orchestrator → coder → reviewer → tester → merge" without drawing it first; a failed delegation is information to re-plan on, not the end.

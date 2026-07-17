@@ -32,6 +32,9 @@ export interface MissionTeamMember {
     agentName: string;
     /** Free-text role hint shown to the planner ("coder", "reviewer"…). */
     role?: string;
+    /** Optional model override for THIS member's delegations; empty = the
+     *  agent's own model chain / model policy. */
+    model?: string;
 }
 
 export interface MissionLimits {
@@ -121,6 +124,12 @@ export interface MissionRun {
     endedAt?: number;
     /** Milliseconds spent waiting on the user — excluded from the wall clock. */
     waitedMs?: number;
+    /** Live activity strip: what the engine is doing right now (planning /
+     *  running a wave / waiting). Cleared when the run settles. */
+    now?: { what: string; since: number };
+    /** Pause was clicked but the current activity is still finishing — the UI
+     *  shows the button pressed; clicking again withdraws the request. */
+    pausePending?: boolean;
     result?: MissionResult;
     note?: string;
 }
@@ -249,6 +258,8 @@ const DECISION_SCHEMA = `Reply with ONLY one JSON object (no prose around it):
   "verdict": "success" | "partial" | "failed",  "summary": "only for finish/abort — what was achieved, what remains"
 }
 Rules:
+- You are the PLANNER, not the worker. NEVER do the mission's work yourself — do not edit files, run builds or produce the deliverable. Your entire output is the JSON decision; all work happens through delegations. (Write-tools are disabled for you.)
+- Scale your effort to the goal. A small, clear goal deserves a small plan: often ONE round with one delegation, then finish. Do not research, explore or read beyond what the next decision strictly needs — deep digging is itself a delegation ("readonly": true).
 - Delegate ONLY to the team agents listed above, by exact name.
 - Each task prompt must be self-contained: the delegate sees nothing but that prompt (plus its own instructions). Include paths, context and acceptance criteria.
 - Mark a task "readonly": true when it does not modify the working folder (research, review, reading tests' output). Writers must be "readonly": false.
@@ -314,8 +325,10 @@ export function finishOnlyNote(reason: string): string {
     return `\nIMPORTANT: ${reason} — "delegate" is no longer allowed. Reply with "finish" (or "abort"), an honest verdict and a summary of what was and was not achieved.`;
 }
 
-export function buildResumeMessage(run: MissionRun, results: StepResult[], rem: RemainingBudget): string {
-    const head = 'The mission was interrupted (window reload) and has been resumed.';
+export function buildResumeMessage(
+    run: MissionRun, results: StepResult[], rem: RemainingBudget,
+    head = 'The mission was interrupted (window reload) and has been resumed.'
+): string {
     if (!results.length) {
         return `${head} No delegations were pending. ${remLine(rem)}\nDecide the next round. Reply with ONLY the JSON decision object.`;
     }
@@ -376,7 +389,7 @@ export function dupKey(agent: string, prompt: string): string {
  * Tolerates leading noise lines; null = not an envelope at all.
  */
 export function parsePlannerEnvelope(stdout: string): {
-    result: string; sessionId?: string; costUSD?: number; isError: boolean;
+    result: string; sessionId?: string; costUSD?: number; isError: boolean; subtype?: string;
 } | null {
     const asObj = (s: string): Record<string, unknown> | undefined => {
         const j = tryParseJson(s);
@@ -395,7 +408,8 @@ export function parsePlannerEnvelope(stdout: string): {
         result: o.result,
         sessionId: typeof o.session_id === 'string' ? o.session_id : undefined,
         costUSD: typeof o.total_cost_usd === 'number' ? o.total_cost_usd : undefined,
-        isError: o.is_error === true || (typeof o.subtype === 'string' && o.subtype.startsWith('error'))
+        isError: o.is_error === true || (typeof o.subtype === 'string' && o.subtype.startsWith('error')),
+        subtype: typeof o.subtype === 'string' ? o.subtype : undefined
     };
 }
 
@@ -487,11 +501,29 @@ export class MissionEngine {
     ) { }
 
     cancel(): void { this.cancelRequested = true; }
-    pause(): void { this.pauseRequested = true; }
+    /** Sets the pause flag and shows it immediately (pausePending) — the run
+     *  actually pauses before the NEXT planner round; the current activity
+     *  finishes first. unpause() withdraws a not-yet-effective request. */
+    pause(): void {
+        this.pauseRequested = true;
+        this.run.pausePending = true;
+        this.deps.onUpdate(this.run);
+    }
+    unpause(): void {
+        this.pauseRequested = false;
+        this.run.pausePending = false;
+        this.deps.onUpdate(this.run);
+    }
+
+    private setNow(what?: string): void {
+        this.run.now = what ? { what, since: this.deps.now() } : undefined;
+    }
 
     private end(status: MissionRunStatus, result?: MissionResult, note?: string): void {
         this.run.status = status;
         this.run.endedAt = this.deps.now();
+        this.setNow();
+        this.run.pausePending = false;
         if (result) { this.run.result = result; }
         if (note) { this.run.note = note; }
         this.deps.onUpdate(this.run);
@@ -517,7 +549,13 @@ export class MissionEngine {
 
         while (true) {
             if (this.cancelRequested) { this.end('cancelled'); return; }
-            if (this.pauseRequested) { run.status = 'paused'; deps.onUpdate(run); return; }
+            if (this.pauseRequested) {
+                run.status = 'paused';
+                run.pausePending = false;
+                this.setNow();
+                deps.onUpdate(run);
+                return;
+            }
             if (++plannerCalls > hardCallCap(spec)) {
                 this.end('failed', undefined, 'hard planner-call cap reached — possible planning loop');
                 return;
@@ -532,6 +570,7 @@ export class MissionEngine {
             roundMsg = undefined;
 
             run.status = 'running';
+            this.setNow(`lead is planning round ${run.rounds.length + 1}`);
             deps.onUpdate(run);
             let pr = await deps.runPlanner(prompt, run.plannerSessionId);
             if (!pr.ok && run.plannerSessionId) {
@@ -597,6 +636,7 @@ export class MissionEngine {
                 round.question = d.question;
                 run.rounds.push(round);
                 run.status = 'waiting-user';
+                this.setNow('waiting for your answer');
                 deps.onUpdate(run);
                 const waitFrom = deps.now();
                 const answer = await deps.askUser(run, d.question);
@@ -649,6 +689,7 @@ export class MissionEngine {
 
             if (spec.approvalMode === 'each-round') {
                 run.status = 'waiting-approval';
+                this.setNow(`waiting for your approval (round ${round.n})`);
                 deps.onUpdate(run);
                 const waitFrom = deps.now();
                 const ok = await deps.requestApproval(run, round);
@@ -665,12 +706,14 @@ export class MissionEngine {
             }
 
             run.status = 'running';
-            deps.onUpdate(run);
             const waves = planWaves(tasks, !!spec.workdir, spec.limits.maxParallel);
             let cursor = 0;
-            for (const wave of waves) {
-                const steps = round.steps.slice(cursor, cursor + wave.length);
-                cursor += wave.length;
+            for (let w = 0; w < waves.length; w++) {
+                const steps = round.steps.slice(cursor, cursor + waves[w].length);
+                cursor += waves[w].length;
+                this.setNow(`round ${round.n}: running ${steps.map(s => s.agentName).join(' + ')}`
+                    + (waves.length > 1 ? ` (wave ${w + 1}/${waves.length})` : ''));
+                deps.onUpdate(run);
                 await deps.delegateWave(run, steps);
                 deps.onUpdate(run);
                 if (this.cancelRequested) { this.end('cancelled'); return; }

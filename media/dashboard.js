@@ -202,7 +202,6 @@
                 title: 'Agent Farm',
                 sub: `Generated ${new Date(DATA.generatedAt).toLocaleString()} · data: local Claude Code transcripts`,
                 controls: `<span class="seg">${[7, 14, 30, 90, 180, 365].map(r => `<button data-range="${r}" class="${r === range ? 'sel' : ''}">${r}d</button>`).join('')}</span>`,
-                related: [{ nav: 'missions', label: 'Missions' }],
                 guide: 'dashboard'
             })}
             ${kpis}

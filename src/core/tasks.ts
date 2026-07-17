@@ -47,6 +47,9 @@ export interface FarmTask {
     workDir?: string;
     /** Set when this task is a mission delegation (Missions panel links through it). */
     missionId?: string;
+    /** Explicit model for THIS task (e.g. a mission's per-member override).
+     *  Beats the model-policy engine; empty = policy/agent default. */
+    model?: string;
     /** J5: named CLI profile (agentFarm.cliProfiles); empty = claude. */
     cli?: string;
     /** Launch priority; higher runs sooner. Unset = 0. Ages up while queued so nothing starves. */
@@ -755,7 +758,7 @@ export class TaskManager implements vscode.Disposable {
             if (profile) {
                 command = buildCliCommand(profile.interactive ?? profile.headless, task.prompt, extra);
             } else {
-                const policy = this.opts.modelArgsFor?.(task);
+                const policy = this.modelArgs(task);
                 if (policy) { extra = (extra ? extra + ' ' : '') + policy.args; }
                 command = `claude ${extra ? extra + ' ' : ''}"${p}"`;
             }
@@ -772,6 +775,15 @@ export class TaskManager implements vscode.Disposable {
         return true;
     }
 
+    /** Explicit per-task model (mission member override) beats the policy engine.
+     *  Strict charset: a stored value can never smuggle shell syntax. */
+    private modelArgs(task: FarmTask): { args: string; reason: string } | undefined {
+        if (task.model && /^[\w.:-]+$/.test(task.model)) {
+            return { args: `--model ${task.model}`, reason: `explicit override (${task.model})` };
+        }
+        return this.opts.modelArgsFor?.(task);
+    }
+
     /** J5: resolve the task's CLI profile (undefined = the default claude executor). */
     private cliProfileFor(task: FarmTask): CliProfile | undefined {
         if (!task.cli) { return undefined; }
@@ -784,7 +796,7 @@ export class TaskManager implements vscode.Disposable {
         const outFile = path.join(this.outputsDir, `${task.id}.md`);
         task.outputFile = outFile;
         const profile = this.cliProfileFor(task);
-        const policy = profile ? undefined : this.opts.modelArgsFor?.(task);
+        const policy = profile ? undefined : this.modelArgs(task);
         const header = `# ${task.title}\n\n` +
             `- Agent: ${task.agentName}\n` +
             `- Started: ${new Date().toLocaleString()}\n` +

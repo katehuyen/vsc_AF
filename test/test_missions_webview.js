@@ -179,5 +179,63 @@ ok('created closes the form', !html().includes('id="mform"'));
 msgHandler({ data: { type: 'openForm' } });
 ok('openForm message reopens the form (New Mission command)', html().includes('id="mform"'));
 
+// ---------- per-member model override in the form ----------
+ok('team rows carry a model field with suggestions',
+    html().includes('id="md-1"') && html().includes('list="modelopts"') && html().includes('id="modelopts"'));
+getEl('f-goal').value = 'Ship the docs site';
+getEl('f-lead').value = 'a0';
+getEl('tm-1').checked = true;
+getEl('md-1').value = 'haiku';
+posted = [];
+getEl('f-start').listeners.click();
+const created2 = posted.find(p => p.type === 'create');
+ok('member model rides along in the create payload',
+    created2 && created2.input.team.length === 1 && created2.input.team[0].model === 'haiku');
+msgHandler({ data: { type: 'created' } });
+
+// ---------- live "now" strip ----------
+msgHandler({
+    data: {
+        type: 'data', data: {
+            ...DATA, pending: { questions: [], approvals: [] },
+            runs: [{ ...RUN, status: 'running', now: { what: 'lead is planning round 3', since: 100 } }]
+        }
+    }
+});
+ok('running run shows the live now strip with elapsed ticker hook',
+    html().includes('lead is planning round 3') && html().includes('data-since="100"'));
+posted = [];
+getEl('d-pause').listeners.click();
+ok('Pause posts control/pause', posted[0] && posted[0].type === 'control' && posted[0].action === 'pause' && posted[0].runId === 'run1');
+
+// ---------- pause feedback: pressed button + withdraw ----------
+msgHandler({
+    data: {
+        type: 'data', data: {
+            ...DATA, pending: { questions: [], approvals: [] },
+            runs: [{ ...RUN, status: 'running', pausePending: true }]
+        }
+    }
+});
+ok('pending pause renders the pressed Pausing… button and the hold strip',
+    html().includes('id="d-unpause"') && html().includes('Pausing…') && html().includes('pausing — the current activity finishes first'));
+ok('no plain Pause button while a pause is pending', !html().includes('id="d-pause"'));
+posted = [];
+getEl('d-unpause').listeners.click();
+ok('clicking the pressed button withdraws the pause (control/unpause)',
+    posted[0] && posted[0].type === 'control' && posted[0].action === 'unpause' && posted[0].runId === 'run1');
+
+// ---------- failed run without a verdict: the reason is front and center ----------
+msgHandler({
+    data: {
+        type: 'data', data: {
+            ...DATA, pending: { questions: [], approvals: [] },
+            runs: [{ ...RUN, status: 'failed', endedAt: 9500, note: 'planner call timed out (10 min) — the call was killed.' }]
+        }
+    }
+});
+ok('failed run without result shows a FAILED banner with the reason',
+    html().includes('FAILED') && html().includes('planner call timed out'));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
