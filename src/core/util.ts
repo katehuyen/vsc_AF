@@ -46,6 +46,27 @@ export function safeReadFile(p: string): string | undefined {
     try { return fs.readFileSync(p, 'utf8'); } catch { return undefined; }
 }
 
+/** Last `maxBytes` of a file without reading the whole thing — live-tail views
+ *  poll this on growing task outputs, so it must stay O(maxBytes). */
+export function readFileTail(p: string, maxBytes = 8192): { text: string; size: number } | undefined {
+    try {
+        const st = fs.statSync(p);
+        const start = Math.max(0, st.size - maxBytes);
+        const fd = fs.openSync(p, 'r');
+        try {
+            const buf = Buffer.alloc(Math.min(maxBytes, st.size));
+            fs.readSync(fd, buf, 0, buf.length, start);
+            let text = buf.toString('utf8');
+            if (start > 0) {
+                // drop the partial first line a mid-file cut leaves behind
+                const nl = text.indexOf('\n');
+                if (nl >= 0 && nl < 300) { text = text.slice(nl + 1); }
+            }
+            return { text, size: st.size };
+        } finally { fs.closeSync(fd); }
+    } catch { return undefined; }
+}
+
 export function safeStat(p: string): fs.Stats | undefined {
     try { return fs.statSync(p); } catch { return undefined; }
 }

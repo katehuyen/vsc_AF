@@ -87,13 +87,13 @@ import {
 } from './core/tasks';
 import {
     buildResumeMessage, DEFAULT_MISSION_LIMITS, MissionEngine, MissionEngineDeps,
-    MissionLimits, MissionRun, MissionSpec, MissionStore, newMissionId, outputExcerpt,
-    parsePlannerEnvelope, PlannerResult, remainingBudget
+    MissionLimits, missionLiveSlice, MissionRun, MissionSpec, MissionStore, newMissionId,
+    outputExcerpt, parsePlannerEnvelope, PlannerResult, remainingBudget
 } from './core/missions';
 import { MissionsPanel } from './panels/missionsPanel';
 import { MissionNode, MissionsTreeProvider } from './views/missionsTree';
 import { TriggerManager } from './core/triggers';
-import { dayKey, fmtTokens, fmtUSD, normPath, relTime } from './core/util';
+import { dayKey, fmtTokens, fmtUSD, normPath, readFileTail, relTime } from './core/util';
 import { AgentDetailPanel } from './panels/agentDetail';
 import { CapabilitiesPanel } from './panels/capabilities';
 import { MemoryGraphPanel } from './panels/memoryGraph';
@@ -1801,6 +1801,43 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (missionEngines.size) { missionEmitter.fire(); }
     }, null, context.subscriptions);
 
+    /** Mission-scoped live block for the panel: agent statuses + hook events of
+     *  the ACTIVE runs' participants only. undefined while nothing runs, so an
+     *  idle Missions page costs nothing. */
+    const missionLiveBlock = () => {
+        const activeRuns = missionStore.runs.filter(r =>
+            r.status === 'running' || r.status === 'waiting-approval' || r.status === 'waiting-user');
+        if (!activeRuns.length) { return undefined; }
+        const ids = new Set<string>();
+        for (const r of activeRuns) {
+            const sp = missionStore.spec(r.specId);
+            if (sp) {
+                ids.add(sp.leadAgentId);
+                sp.team.forEach(m => ids.add(m.agentId));
+            }
+        }
+        const byAgent: Record<string, { status: string; tool?: string; sessions: number }> = {};
+        for (const id of ids) {
+            const st = live.agentStatus(id);
+            if (st) { byAgent[id] = st; }
+        }
+        const since = Math.min(...activeRuns.map(r => r.startedAt));
+        return { agents: byAgent, events: missionLiveSlice(live.events(12 * 3600 * 1000), ids, since, 60) };
+    };
+
+    /** runId → planner-session transcript file, when the index has seen it —
+     *  one click from the run header into the full lead conversation. */
+    const missionPlannerTranscripts = () => {
+        const map: Record<string, string> = {};
+        if (!missionStore.runs.some(r => r.plannerSessionId)) { return map; }
+        const byId = new Map(index.all().map(s => [s.sessionId, s.file]));
+        for (const r of missionStore.runs) {
+            const f = r.plannerSessionId ? byId.get(r.plannerSessionId) : undefined;
+            if (f) { map[r.id] = f; }
+        }
+        return map;
+    };
+
     const missionsPanelDeps = {
         extensionUri: context.extensionUri,
         data: () => ({
@@ -1811,7 +1848,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             pending: {
                 questions: [...missionQuestions.entries()].map(([runId, q]) => ({ runId, question: q.question })),
                 approvals: [...missionApprovals.keys()]
-            }
+            },
+            live: missionLiveBlock(),
+            plannerTranscripts: missionPlannerTranscripts()
         }),
         create: createMission,
         control: (action: 'pause' | 'unpause' | 'resume' | 'cancel', runId: string) => {
@@ -1844,8 +1883,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             });
             return picked?.[0]?.fsPath;
         },
+        // guarded to the extension's own storage — the page can only tail
+        // archived task outputs, never arbitrary paths
+        readTail: (file: string) =>
+            normPath(file).startsWith(normPath(context.globalStorageUri.fsPath))
+                ? readFileTail(file, 8192)
+                : undefined,
         onDidChange: missionEmitter.event
     };
+
+    // Hook events (tool starts, prompts, permissions…) repaint the OPEN Missions
+    // page while a mission is in flight — throttled to 1/s, and gated on
+    // missionEngines so an idle farm never pays for it.
+    let missionLiveTimer: NodeJS.Timeout | undefined;
+    live.onDidUpdate(() => {
+        if (!missionEngines.size || missionLiveTimer) { return; }
+        missionLiveTimer = setTimeout(() => {
+            missionLiveTimer = undefined;
+            MissionsPanel.refreshIfOpen();
+        }, 1000);
+    }, null, context.subscriptions);
+    context.subscriptions.push({ dispose: () => { if (missionLiveTimer) { clearTimeout(missionLiveTimer); } } });
 
     // Sidebar twin of the Missions page: same store, same change event — runs
     // with their rounds/steps as a tree, pending waits as actionable rows.

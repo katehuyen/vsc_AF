@@ -298,6 +298,29 @@ export interface StepResult {
     durationMin?: number;
 }
 
+/** One hook event as the Missions page's live-activity feed sees it —
+ *  structurally a subset of live.ts's LiveEvent, kept separate so this module
+ *  stays UI-framework-free and unit-testable. */
+export interface MissionLiveEvent {
+    ts: number;
+    agentId?: string;
+    agentName?: string;
+    kind: string;
+    tool?: string;
+    detail?: string;
+    transcriptPath?: string;
+}
+
+/** Mission-scoped slice of the global live-event stream: only the given agents,
+ *  only since the run started, capped to the newest `cap` events. Pure — the
+ *  extension host feeds it live.events(), tests feed it arrays. */
+export function missionLiveSlice(
+    events: MissionLiveEvent[], agentIds: Set<string>, since: number, cap = 60
+): MissionLiveEvent[] {
+    const hit = events.filter(e => e.ts >= since && !!e.agentId && agentIds.has(e.agentId));
+    return hit.length > cap ? hit.slice(-cap) : hit;
+}
+
 /** Head+tail excerpt so huge outputs stay bounded but keep the ending (verdicts live there). */
 export function outputExcerpt(body: string, head = 2000, tail = 1500): string {
     const t = body.trim();

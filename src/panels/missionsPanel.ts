@@ -13,6 +13,9 @@ export interface MissionsDeps {
     answer(runId: string, text: string): void;
     settleApproval(runId: string, ok: boolean): void;
     pickFolder(): Thenable<string | undefined>;
+    /** Live-tail of an archived task output (last KBs only) for the expanded
+     *  step's output box; undefined = file unreadable/outside the outputs dir. */
+    readTail(file: string): { text: string; size: number } | undefined;
     /** Fires on any mission/task state change — the page refreshes live. */
     onDidChange: vscode.Event<void>;
 }
@@ -106,6 +109,24 @@ export class MissionsPanel {
             case 'openFile':
                 if (typeof msg.file === 'string' && msg.file) {
                     void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(msg.file));
+                }
+                break;
+            case 'tail': {
+                // polled by the expanded running step — answer even when the
+                // file is gone so the box can say so instead of spinning
+                const file = String(msg.file ?? '');
+                if (!file) { break; }
+                const t = this.deps.readTail(file);
+                void this.panel.webview.postMessage({
+                    type: 'tail', file, text: t?.text ?? '', size: t?.size ?? 0, missing: !t
+                });
+                break;
+            }
+            case 'openSession':
+                // deep-link into the session viewer (planner transcript / live feed rows)
+                if (typeof msg.file === 'string' && msg.file) {
+                    void vscode.commands.executeCommand('agentfarm.openSession', msg.file,
+                        typeof msg.ts === 'number' && msg.ts > 0 ? msg.ts : undefined);
                 }
                 break;
             case 'openAgent':

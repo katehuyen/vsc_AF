@@ -500,6 +500,14 @@ Live Timeline'da artık **Workflow runs** bölümü var: son 4 saatte koşan her
 
 **Nefes aldığını görürsün.** Koşu aktifken sayfada canlı bir **now şeridi** vardır — *lead is planning round 2 · 1m 40s*, *round 2: running coder + reviewer (wave 1/2)* — motorun zaten yazdığı durum olaylarından beslenir (koşuya sıfır ek yük). Sol paneldeki koşu satırı da aynı satırı taşır.
 
+**Mission control — her şey tek yerden (2.67.0).** Koşu sayfası, misyon uçuştayken tam bir gözlem odasıdır; tamamı eklentinin zaten elinde olan veriden kurulur (hook olayları, görev çıktıları, oturum index'i — yeni poller yok):
+
+- **Live activity** (açılır-kapanır, now şeridinin altında): başlıkta katılımcı-başına durum çipleri — *lead (lead): working · coder: tool (Edit) · reviewer: quiet* — altında misyona-özel hook olay akışı (prompt'lar, araç başlangıç/bitişleri, **izin beklemeleri vurgulu**), en yenisi üstte, sadece bu koşunun ajanları ve bu koşunun başlangıcından itibaren. Transkripti olan her satır **tek tıkla oturum görüntüleyicide tam o âna** gider. Açık sayfa saniyede en fazla bir kez tazelenir; boşta duran çiftlik hiçbir bedel ödemez.
+- **Adım akordeonu — kime ne dendi, ne cevap verdi:** herhangi bir delegasyon satırına tıkla: lead'in gönderdiği **tam prompt** (başarı ölçütleriyle) ve çıktı kutusu — adım koşarken **canlı tail** (3 sn'de bir tazelenir, host dosyanın sadece son KB'lerini okur), bitince son çıktının kuyruğu olur; yanında tam-dosya bağlantısı. Aynı anda tek adım açılır — tail sorgusu sınırlı kalır. Koşan adımın satırında ajanının canlı çipi de görünür (*tool (Bash)*).
+- **Planner transcript** bağlantısı koşu başlığında: lead'in tüm konuşması — brifingler, düşünceler, kararlar, tur sonuçları — oturum görüntüleyicide açılır.
+- **Ledger** (açılır-kapanır, turların altında): planlayıcının tur-başına-tek-satır sıkıştırılmış tarihi — resume edilen planlayıcıya yeniden verilen brifingin ta kendisi.
+- **Zengin bütçe satırı:** maliyet, tur, **görev ve dakika** harcanan/limit tek bakışta.
+
 **Dürüst geri bildirimli Pause.** Pause hiçbir zaman aktiviteyi ortasından kesmez — süren planlayıcı çağrısı ya da dalga önce biter. 2.64.0'dan beri isteğin kendisi görünürdür: düğme basılı **Pausing… (undo)** hâline geçer, bir bekleme şeridi ne olacağını anlatır; tekrar tıklamak isteği geri çeker. Park edildikten sonra **Resume**, toplanan sonuçları lead'in kendi oturumuna geri besler.
 
 **Kesintiler ve hatalar.** Pencere yeniden yüklenirse koşan misyonlar *paused* olarak park edilir; Needs You **Resume** sunar — delegasyon durumları görev kayıtlarından yeniden toplanır ve lead kendi oturumunda devam eder. İptal her an mümkündür; iptal, koşan delegasyonları da iptal eder. **Başarısız** biten koşu asla sessizce düşmez: neden (zaman aşımı, geçersiz planlayıcı cevabı, bütçe durdurması…) kapanış bildiriminde, koşu sayfasındaki kırmızı bantta ve sol paneldeki tooltip'te yazar.

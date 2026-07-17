@@ -402,6 +402,42 @@ const HINTS = [{ name: 'coder', role: 'implements', hint: 'writes code' }, { nam
             msg.includes('paused by the user') && !msg.includes('window reload'));
     }
 
+    // ---------- missionLiveSlice (mission-scoped live feed) ----------
+    {
+        const evs = [
+            { ts: 100, agentId: 'a1', kind: 'prompt' },              // before the run
+            { ts: 900, agentId: 'zz', kind: 'toolStart' },           // outsider agent
+            { ts: 1000, agentId: 'a1', kind: 'toolStart', tool: 'Edit' },
+            { ts: 1100, kind: 'notify' },                            // no agent — dropped
+            { ts: 1200, agentId: 'a2', kind: 'stop' },
+            { ts: 1300, agentId: 'a1', kind: 'toolEnd', tool: 'Edit' }
+        ];
+        const out = M.missionLiveSlice(evs, new Set(['a1', 'a2']), 500);
+        ok('live slice keeps only team events since the run started',
+            out.length === 3 && out[0].ts === 1000 && out[2].ts === 1300);
+        const capped = M.missionLiveSlice(
+            Array.from({ length: 10 }, (_, i) => ({ ts: 1000 + i, agentId: 'a1', kind: 'stop' })),
+            new Set(['a1']), 0, 4);
+        ok('live slice caps to the newest N events',
+            capped.length === 4 && capped[0].ts === 1006 && capped[3].ts === 1009);
+    }
+
+    // ---------- readFileTail (live output tail for the step accordion) ----------
+    {
+        const U = require(path.join(__dirname, '..', 'out', 'core', 'util.js'));
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-tail-'));
+        const f = path.join(dir, 'out.md');
+        fs.writeFileSync(f, 'short output', 'utf8');
+        const small = U.readFileTail(f, 100);
+        ok('tail of a small file is the whole file', small && small.text === 'short output' && small.size === 12);
+        fs.writeFileSync(f, 'x'.repeat(500) + '\nline-A\nline-B tail-end', 'utf8');
+        const big = U.readFileTail(f, 20);
+        ok('tail of a big file keeps only the end and drops the partial first line',
+            big && big.text.includes('tail-end') && !big.text.includes('xxxx') && big.text.indexOf('line-B') === 0);
+        ok('unreadable file → undefined (fail-soft)', U.readFileTail(path.join(dir, 'missing.md')) === undefined);
+        fs.rmSync(dir, { recursive: true, force: true });
+    }
+
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })();

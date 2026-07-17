@@ -70,7 +70,9 @@ const sandbox = {
             const spec = sel === '.mrow' ? { attr: 'data-run', key: 'run' }
                 : sel === '[data-openfile]' ? { attr: 'data-openfile', key: 'openfile' }
                     : sel === '[data-guide]' ? { attr: 'data-guide', key: 'guide' }
-                        : null;
+                        : sel === '[data-step]' ? { attr: 'data-step', key: 'step' }
+                            : sel === '[data-opensession]' ? { attr: 'data-opensession', key: 'opensession' }
+                                : null;
             if (!spec) { return []; }
             const re = new RegExp(`${spec.attr}="([^"]*)"`, 'g');
             let m;
@@ -236,6 +238,95 @@ msgHandler({
 });
 ok('failed run without result shows a FAILED banner with the reason',
     html().includes('FAILED') && html().includes('planner call timed out'));
+
+// ---------- mission-control observation layer ----------
+// live activity + planner transcript + richer budget line
+msgHandler({
+    data: {
+        type: 'data', data: {
+            ...DATA, pending: { questions: [], approvals: [] },
+            runs: [{ ...RUN, status: 'running', now: { what: 'round 1: running coder', since: 100 } }],
+            plannerTranscripts: { run1: 'D:/cc/S1.jsonl' },
+            live: {
+                agents: { a1: { status: 'tool', tool: 'Edit', sessions: 1 }, a0: { status: 'working', sessions: 1 } },
+                events: [
+                    { ts: 600, agentId: 'a0', agentName: 'lead', kind: 'prompt', detail: 'brief-payload-600', transcriptPath: 'D:/cc/S1.jsonl' },
+                    { ts: 700, agentId: 'a1', agentName: 'coder', kind: 'toolStart', tool: 'Edit', detail: 'parser.ts', transcriptPath: 'D:/cc/C1.jsonl' },
+                    { ts: 800, agentId: 'zz', agentName: 'outsider', kind: 'prompt' }
+                ]
+            }
+        }
+    }
+});
+ok('live activity renders per-agent status chips (lead + team)',
+    html().includes('Live activity') && html().includes('lead (lead): working')
+    && html().includes('coder: tool (Edit)') && html().includes('reviewer: quiet'));
+ok('live feed lists mission agents only, newest first',
+    html().includes('parser.ts') && html().includes('brief-payload-600') && !html().includes('outsider')
+    && html().indexOf('parser.ts') < html().indexOf('brief-payload-600'));
+ok('planner transcript link renders when the session is indexed', html().includes('planner transcript'));
+ok('budget line carries tasks and minutes', html().includes('2/12 tasks') && html().includes('/120 min'));
+posted = [];
+wired.opensession[0]._click();
+ok('transcript / feed row click posts openSession',
+    posted[0] && posted[0].type === 'openSession' && String(posted[0].file).includes('.jsonl'));
+
+// running step row carries its agent's live chip
+msgHandler({
+    data: {
+        type: 'data', data: {
+            ...DATA, pending: { questions: [], approvals: [] },
+            runs: [{
+                ...RUN, status: 'running',
+                rounds: [{ ...RUN.rounds[0], steps: [{ ...RUN.rounds[0].steps[0], status: 'running' }] }]
+            }],
+            live: { agents: { a1: { status: 'tool', tool: 'Bash', sessions: 1 } }, events: [] }
+        }
+    }
+});
+ok('running step row shows its agent\'s live tool chip', html().includes('tool (Bash)'));
+
+// ---------- step accordion: full prompt + output tail ----------
+msgHandler({ data: { type: 'data', data: { ...DATA, pending: { questions: [], approvals: [] }, runs: [RUN] } } });
+posted = [];
+wired.step[0]._click();          // expand s1 (done, has an output file)
+ok('step expands to the full prompt + output box',
+    html().includes('Prompt sent to') && html().includes('id="tailbox"'));
+const tailReq = posted.find(p => p.type === 'tail');
+ok('expanding a step requests the output tail', tailReq && tailReq.file === 'D:/out/s1.md');
+msgHandler({ data: { type: 'tail', file: 'D:/out/s1.md', text: 'ran 12 tests — all green', size: 24 } });
+ok('tail reply lands in the output box',
+    getEl('tailbox').textContent === 'ran 12 tests — all green');
+wired.step[0]._click();          // collapse
+ok('second click collapses the step', !html().includes('id="tailbox"'));
+
+// ---------- ledger toggle ----------
+msgHandler({
+    data: {
+        type: 'data', data: {
+            ...DATA, pending: { questions: [], approvals: [] },
+            runs: [{ ...RUN, ledger: ['R1 delegate 2 task(s) — done', 'R2 ask_user'] }]
+        }
+    }
+});
+ok('ledger header renders with the line count', html().includes('Ledger') && html().includes('2 line(s)'));
+getEl('lg-toggle').listeners.click();
+ok('ledger opens to the compressed history', html().includes('R1 delegate 2 task(s)'));
+
+// ---------- live section toggle ----------
+msgHandler({
+    data: {
+        type: 'data', data: {
+            ...DATA, pending: { questions: [], approvals: [] },
+            runs: [{ ...RUN, status: 'running' }],
+            live: { agents: {}, events: [{ ts: 900, agentId: 'a1', agentName: 'coder', kind: 'stop' }] }
+        }
+    }
+});
+ok('live body lists the event while open', html().includes('turn end'));
+getEl('lv-toggle').listeners.click();
+ok('collapsing live keeps the header chips but hides the rows',
+    html().includes('Live activity') && !html().includes('turn end'));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -500,6 +500,14 @@ Workflows are pre-drawn: every step, branch and jump is fixed before the run sta
 
 **You can see it breathe.** While a run is active the page shows a live **now strip** — *lead is planning round 2 · 1m 40s*, *round 2: running coder + reviewer (wave 1/2)* — fed by the same state events the engine writes anyway (zero extra load on the run). The sidebar run row carries the same line.
 
+**Mission control — everything in one place (2.67.0).** The run page is a full observation room while a mission is in flight, built entirely from data the extension already has (hook events, task outputs, session index — no new pollers):
+
+- **Live activity** (collapsible, under the now strip): a header of per-participant status chips — *lead (lead): working · coder: tool (Edit) · reviewer: quiet* — over a mission-scoped feed of hook events (prompts, tool starts/ends, **permission waits highlighted**), newest first, only this run's agents since this run started. Any row with a transcript is a **click away from that exact moment in the session viewer**. The open page repaints at most once a second; an idle farm pays nothing.
+- **Step accordion — who was told what, and what they answered:** click any delegation row to open it: the **full prompt** the lead sent (with the success criteria), and the output box — a **live tail while the step runs** (auto-refreshes every 3 s, host reads only the file's last KBs) that becomes the final output's tail when it's done, plus the open-full-file link. One step opens at a time, so the tail polling is bounded. A running step's row also carries its agent's live chip (*tool (Bash)*).
+- **Planner transcript** link in the run header: the lead's entire conversation — briefings, thoughts, decisions, round results — opens in the session viewer.
+- **Ledger** (collapsible, after the rounds): the planner's compressed one-line-per-round history — also exactly what a resumed planner is re-briefed with.
+- **Richer budget line:** spent/limit for cost, rounds, **tasks and minutes** at a glance.
+
 **Pause with honest feedback.** Pause never interrupts mid-activity — the current planner call or wave finishes first. Since 2.64.0 the request itself is visible: the button flips to a pressed **Pausing… (undo)** state and a hold strip explains what happens; clicking again withdraws the request. Once parked, **Resume** feeds the collected results back into the lead's own session.
 
 **Interruptions and failures.** A window reload parks running missions as *paused*; Needs You offers **Resume** — delegation states are re-collected from the task records and the lead continues in its own session. Cancel any time; cancelling also cancels the running delegations. A run that **fails** never fails silently: the reason (timeout, invalid planner replies, budget stop…) is in the closing notification, in a red banner on the run's page, and in the run's tooltip in the sidebar.

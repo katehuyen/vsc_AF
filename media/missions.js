@@ -14,6 +14,12 @@
     // background refreshes must not wipe an in-progress edit (2.47 lesson)
     let editing = false;
     let pendingData = null;
+    // ---- mission-control observation state ----
+    let liveOpen = true;              // "Live activity" section (hook events)
+    let ledgerOpen = false;           // planner ledger section
+    let expandedStep = null;          // step id opened in the accordion (one at a time)
+    let tail = { file: '', text: '', size: 0, missing: false };
+    let tailTimer = null;
     // form model survives re-renders
     const form = {
         title: '', goal: '', leadAgentId: '', workdir: '', plannerModel: '',
@@ -46,6 +52,35 @@
         if (on && !tickTimer) { tickTimer = setInterval(tick, 1000); }
         if (!on && tickTimer) { clearInterval(tickTimer); tickTimer = null; }
     }
+
+    // Tail of the expanded step's output file. One request on expand; a 3s poll
+    // only while that step is RUNNING — the host reads just the last KBs.
+    function armTail(file, poll) {
+        if (tailTimer) { clearInterval(tailTimer); tailTimer = null; }
+        if (!file) { return; }
+        if (tail.file !== file) { tail = { file, text: '', size: 0, missing: false }; }
+        vscode.postMessage({ type: 'tail', file });
+        if (poll && typeof setInterval === 'function') {
+            tailTimer = setInterval(() => vscode.postMessage({ type: 'tail', file }), 3000);
+        }
+    }
+
+    const relT = (ts) => {
+        const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+        return s < 60 ? s + 's' : s < 3600 ? Math.round(s / 60) + 'm' : Math.round(s / 3600) + 'h';
+    };
+
+    // live-session status labels (mirrors the Agents view wording)
+    const LIVE_LABEL = {
+        working: 'working', tool: 'tool', 'waiting-permission': '⚠ permission',
+        'waiting-input': 'your turn', stalled: '⚠ stalled', idle: 'idle', ended: 'ended'
+    };
+    // hook-event labels (mirrors the Live Feed view)
+    const EV_LABEL = {
+        prompt: 'prompt', toolStart: 'tool', toolEnd: 'done', permission: '⚠ PERMISSION',
+        notify: 'notify', stop: 'turn end', subagent: 'subagent done', compact: 'compaction',
+        start: 'session start', end: 'session end'
+    };
 
     const STATUS_LABEL = {
         'running': 'running', 'waiting-approval': 'waiting for approval',
@@ -151,20 +186,94 @@
 
     // ---------------- run detail ----------------
 
+    /** Live status chip for a running step's agent (from the hook listener). */
+    function stepLive(s) {
+        if (s.status !== 'running' || !DATA.live || !DATA.live.agents) { return ''; }
+        const st = DATA.live.agents[s.agentId];
+        if (!st) { return ''; }
+        const label = (LIVE_LABEL[st.status] || st.status) + (st.tool ? ` (${st.tool})` : '');
+        const cls = st.status === 'waiting-permission' || st.status === 'stalled' ? 'alert' : 'busy';
+        return ` <span class="lchip ${cls}" title="Live session status from Claude Code hooks">${C.esc(label)}</span>`;
+    }
+
+    function stepDetail(s) {
+        const running = s.status === 'running';
+        const body = tail.file === s.outputFile
+            ? (tail.missing ? '(output file not readable yet)' : (tail.text || '(empty so far)'))
+            : '(loading…)';
+        return `<tr class="sdetail"><td colspan="6">
+            <div class="sdlabel">Prompt sent to <b>${C.esc(s.agentName)}</b>${s.expect ? ` · success criteria: <i>${C.esc(s.expect)}</i>` : ''}</div>
+            <pre class="sdpre">${C.esc(s.prompt)}</pre>
+            ${s.outputFile ? `
+            <div class="sdlabel">${running ? '<span class="nowdot small"></span> Output — live tail, updates every 3s' : 'Output — last part'}
+                · <a data-openfile="${C.esc(s.outputFile)}" title="Open the full archived output">open full file</a></div>
+            <pre class="sdpre tailpre" id="tailbox">${C.esc(body)}</pre>`
+            : `<p class="muted small">No output file yet${s.status === 'queued' ? ' — the task has not started' : ''}.</p>`}
+        </td></tr>`;
+    }
+
     function stepRow(s) {
-        return `<tr>
-            <td>${C.esc(s.agentName)}</td>
+        const open = expandedStep === s.id;
+        return `<tr class="srow" data-step="${C.esc(s.id)}" title="Click to open this delegation: full prompt + live output">
+            <td class="stoggle">${open ? '▾' : '▸'}</td>
+            <td>${C.esc(s.agentName)}${stepLive(s)}</td>
             <td>${C.esc(s.title)}${s.readonly ? ' <span class="mchip ro">read-only</span>' : ''}${s.note ? ` <span class="muted small">(${C.esc(s.note)})</span>` : ''}</td>
             <td>${chip(s.status)}</td>
             <td>${s.costUSD !== undefined ? usd(s.costUSD) : '—'}</td>
             <td>${s.outputFile ? `<a data-openfile="${C.esc(s.outputFile)}" title="Open the archived output">output</a>` : ''}</td>
-        </tr>`;
+        </tr>` + (open ? stepDetail(s) : '');
+    }
+
+    /** Mission-scoped live activity: this run's agents only — status chips in
+     *  the header (always visible), hook events newest-first when open. */
+    function liveSection(run, sp) {
+        const L = DATA.live;
+        const active = run.status === 'running' || run.status === 'waiting-approval' || run.status === 'waiting-user';
+        if (!L || !active) { return ''; }
+        const ids = [sp.leadAgentId].concat(sp.team.map(m => m.agentId));
+        const names = {};
+        names[sp.leadAgentId] = sp.leadAgentName + ' (lead)';
+        sp.team.forEach(m => { if (!names[m.agentId]) { names[m.agentId] = m.agentName; } });
+        const chips = ids.map(id => {
+            const st = (L.agents || {})[id];
+            const cls = !st ? 'quiet'
+                : st.status === 'working' || st.status === 'tool' ? 'busy'
+                    : st.status === 'waiting-permission' || st.status === 'stalled' ? 'alert' : 'quiet';
+            const label = st ? (LIVE_LABEL[st.status] || st.status) + (st.tool ? ` (${st.tool})` : '') : 'quiet';
+            return `<span class="lchip ${cls}">${C.esc(names[id] || id)}: ${C.esc(label)}</span>`;
+        }).join(' ');
+        const evs = (L.events || []).filter(e => ids.indexOf(e.agentId) >= 0).slice(-40).reverse();
+        const rows = evs.map(e => {
+            const label = (EV_LABEL[e.kind] || e.kind) + (e.tool ? ` (${C.esc(e.tool)})` : '');
+            const link = e.transcriptPath ? ` data-opensession="${C.esc(e.transcriptPath)}" data-ts="${e.ts}"` : '';
+            return `<div class="lerow${e.kind === 'permission' ? ' alert' : ''}"${link}${e.transcriptPath ? ' title="Open this moment in the session viewer"' : ''}>
+                <span class="muted small">${relT(e.ts)}</span> <b>${C.esc(e.agentName || '?')}</b> ${label}${e.detail ? ` <span class="muted">${C.esc(String(e.detail).slice(0, 110))}</span>` : ''}</div>`;
+        }).join('');
+        return `<div class="colsec">
+            <div class="colhead" id="lv-toggle" title="What every participant is doing right now — live session status + hook events (prompts, tools, permission waits), newest first">
+                <span class="carets">${liveOpen ? '▾' : '▸'}</span> <b>Live activity</b>
+                <span class="lvchips">${chips}</span>
+            </div>
+            ${liveOpen ? `<div class="lvbody">${rows || '<p class="muted small">No hook events yet — they appear the moment a participant starts working.</p>'}</div>` : ''}
+        </div>`;
+    }
+
+    /** The planner's compressed round-by-round history (also its resume seed). */
+    function ledgerSection(run) {
+        if (!run.ledger || !run.ledger.length) { return ''; }
+        return `<div class="colsec">
+            <div class="colhead" id="lg-toggle" title="One compressed line per round — this is also what a resumed planner is re-briefed with">
+                <span class="carets">${ledgerOpen ? '▾' : '▸'}</span> <b>Ledger</b>
+                <span class="muted small">${run.ledger.length} line(s)</span>
+            </div>
+            ${ledgerOpen ? `<pre class="ledgerpre">${C.esc(run.ledger.join('\n'))}</pre>` : ''}
+        </div>`;
     }
 
     function roundCard(r) {
         let body = '';
         if (r.action === 'delegate') {
-            body = `<table class="mtable"><thead><tr><th>Agent</th><th>Task</th><th>Status</th><th>Cost</th><th></th></tr></thead>
+            body = `<table class="mtable"><thead><tr><th></th><th>Agent</th><th>Task</th><th>Status</th><th>Cost</th><th></th></tr></thead>
                 <tbody>${r.steps.map(stepRow).join('')}</tbody></table>
                 ${r.rejectedReason ? `<div class="muted small">✕ ${C.esc(r.rejectedReason)} — the planner re-planned</div>` : ''}`;
         } else if (r.action === 'ask_user') {
@@ -200,6 +309,9 @@
             ? `<div class="nowstrip"><span class="nowdot"></span> ${C.esc(run.now.what)}
                 <span class="muted small">— <span data-since="${run.now.since}">${elapsed(run.now.since)}</span></span></div>`
             : '';
+        const pt = (DATA.plannerTranscripts || {})[run.id];
+        const tasksUsed = run.rounds.reduce((a, r) => a + r.steps.length, 0);
+        const wallMin = Math.max(0, Math.round(((run.endedAt || Date.now()) - run.startedAt - (run.waitedMs || 0)) / 60000));
         return `<div class="card" id="mdetail">
             <div class="dethead">
                 <h2 style="margin:0">${C.esc(sp.title)}</h2>
@@ -211,13 +323,14 @@
             </div>
             <div class="muted small">lead <b>${C.esc(sp.leadAgentName)}</b>${sp.plannerModel ? ` <span class="mchip mdl" title="planner model">${C.esc(sp.plannerModel)}</span>` : ''} · team ${sp.team.map(m =>
                 `<span class="mchip team">${C.esc(m.agentName)}${m.role ? ` — ${C.esc(m.role)}` : ''}${m.model ? ` <i class="mdl" title="delegation model">${C.esc(m.model)}</i>` : ''}</span>`).join(' ')}
-                ${sp.workdir ? ` · workdir <code>${C.esc(sp.workdir)}</code>` : ''} · approval: ${C.esc(sp.approvalMode)}</div>
+                ${sp.workdir ? ` · workdir <code>${C.esc(sp.workdir)}</code>` : ''} · approval: ${C.esc(sp.approvalMode)}${pt ? ` · <a data-opensession="${C.esc(pt)}" title="Open the lead's full planner conversation (briefings, thoughts, decisions) in the session viewer">planner transcript</a>` : ''}</div>
             <div class="goal">${C.esc(sp.goal)}</div>
             ${nowStrip}
             ${run.pausePending ? `<div class="nowstrip paused"><span class="nowdot hold"></span> pausing — the current activity finishes first, then the run holds</div>` : ''}
+            ${liveSection(run, sp)}
             <div class="budget" title="Spent ${usd(run.totalCostUSD)} of the ${usd(sp.limits.maxCostUSD)} budget">
                 <div class="budgetbar"><div class="budgetfill${pctRaw >= 90 ? ' hot' : ''}" style="width:${pct}%"></div></div>
-                <span class="muted small">${usd(run.totalCostUSD)} / ${usd(sp.limits.maxCostUSD)} · ${run.rounds.length}/${sp.limits.maxRounds} rounds · started ${fmtTime(run.startedAt)}</span>
+                <span class="muted small">${usd(run.totalCostUSD)} / ${usd(sp.limits.maxCostUSD)} · ${run.rounds.length}/${sp.limits.maxRounds} rounds · ${tasksUsed}/${sp.limits.maxTasks} tasks · ${wallMin}/${sp.limits.maxMinutes} min · started ${fmtTime(run.startedAt)}</span>
             </div>
             ${pendingAp ? `<div class="waitbox">This round needs your approval.
                 <button id="d-approve" data-run="${C.esc(run.id)}">Approve</button>
@@ -226,6 +339,7 @@
                 <input type="text" id="d-answer" placeholder="your answer…" style="width:60%">
                 <button id="d-send" data-run="${C.esc(run.id)}">Send</button></div>` : ''}
             ${run.rounds.map(roundCard).join('') || (active ? '' : '<p class="muted">No rounds ran.</p>')}
+            ${ledgerSection(run)}
             ${run.result ? `<div class="resultbox ${run.result.verdict}">
                 <b>${C.esc(run.result.verdict.toUpperCase())}</b> — ${C.esc(run.result.summary)}
                 <div class="muted small">total ${usd(run.totalCostUSD)} · ended ${fmtTime(run.endedAt)}</div></div>` : ''}
@@ -320,6 +434,34 @@
                 .limfield input { width:90px; display:block; margin-top:3px; }
                 .ferr { color:var(--vscode-errorForeground); font-size:12px; margin:8px 0; }
                 #f-browse { margin-top:4px; }
+                /* ---- mission-control observation ---- */
+                .colsec { margin:8px 0; }
+                .colhead { display:flex; gap:8px; align-items:center; cursor:pointer; user-select:none;
+                    font-size:12px; margin:6px 0 4px; flex-wrap:wrap; }
+                .colhead .carets { width:12px; opacity:.7; flex:none; }
+                .lvchips { display:flex; gap:6px; flex-wrap:wrap; margin-left:4px; }
+                .lchip { font-size:10px; padding:1px 7px; border-radius:8px;
+                    border:1px solid var(--vscode-widget-border, #5555); white-space:nowrap; }
+                .lchip.busy { border-color:var(--vscode-textLink-foreground); color:var(--vscode-textLink-foreground); }
+                .lchip.alert { border-color:var(--vscode-inputValidation-warningBorder, #b89500);
+                    color:var(--vscode-inputValidation-warningBorder, #d0a500); }
+                .lchip.quiet { opacity:.6; }
+                .lvbody { max-height:220px; overflow:auto; border:1px solid var(--vscode-widget-border, #3333);
+                    border-radius:5px; padding:4px 8px; }
+                .lerow { font-size:11px; padding:2px 0; border-bottom:1px dotted var(--vscode-widget-border, #2a2a2a); cursor:pointer; }
+                .lerow:hover { background:var(--vscode-list-hoverBackground); }
+                .lerow.alert { color:var(--vscode-inputValidation-warningBorder, #d0a500); }
+                .srow { cursor:pointer; }
+                .stoggle { width:14px; opacity:.7; }
+                .sdetail td { background:color-mix(in srgb, var(--vscode-textLink-foreground) 4%, transparent); }
+                .sdlabel { font-size:11px; opacity:.85; margin:6px 0 3px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+                .sdpre { font-family:var(--vscode-editor-font-family, monospace); font-size:11px; white-space:pre-wrap;
+                    max-height:200px; overflow:auto; margin:0 0 6px; padding:6px 8px;
+                    border:1px solid var(--vscode-widget-border, #3333); border-radius:4px; }
+                .tailpre { max-height:260px; }
+                .nowdot.small { width:6px; height:6px; }
+                .ledgerpre { font-size:11px; white-space:pre-wrap; padding:6px 8px; margin:4px 0;
+                    border:1px solid var(--vscode-widget-border, #3333); border-radius:4px; max-height:200px; overflow:auto; }
             </style>
             ${window.AFHeader.html({
                 page: 'missions',
@@ -363,6 +505,21 @@
                 if (ev && ev.stopPropagation) { ev.stopPropagation(); }
                 vscode.postMessage({ type: 'openFile', file: a.dataset.openfile });
             }));
+        // deep links into the session viewer (planner transcript, live-feed rows)
+        document.querySelectorAll('[data-opensession]').forEach(a =>
+            a.addEventListener('click', ev => {
+                if (ev && ev.stopPropagation) { ev.stopPropagation(); }
+                vscode.postMessage({
+                    type: 'openSession', file: a.dataset.opensession,
+                    ts: a.dataset.ts ? Number(a.dataset.ts) : undefined
+                });
+            }));
+        // step accordion: one delegation open at a time (bounds the tail polling)
+        document.querySelectorAll('[data-step]').forEach(row =>
+            row.addEventListener('click', () => {
+                expandedStep = expandedStep === row.dataset.step ? null : row.dataset.step;
+                render();
+            }));
 
         const wire = (id, fn) => {
             const el = document.getElementById(id);
@@ -378,6 +535,23 @@
             const inp = document.getElementById('d-answer');
             vscode.postMessage({ type: 'answer', runId: selected, text: inp ? inp.value : '' });
         });
+        wire('lv-toggle', () => { liveOpen = !liveOpen; render(); });
+        wire('lg-toggle', () => { ledgerOpen = !ledgerOpen; render(); });
+
+        // (re)arm the output tail for the expanded step; clears when none is open
+        let tailFile = '', tailPoll = false;
+        const selRun = DATA.runs.find(r => r.id === selected);
+        if (selRun && expandedStep) {
+            for (const r of selRun.rounds) {
+                for (const s of r.steps) {
+                    if (s.id === expandedStep && s.outputFile) {
+                        tailFile = s.outputFile;
+                        tailPoll = s.status === 'running';
+                    }
+                }
+            }
+        }
+        armTail(tailFile, tailPoll);
 
         // hold refreshes while typing in the form / answer box
         const app = document.getElementById('app');
@@ -418,6 +592,19 @@
         } else if (m.type === 'openForm') {
             formOpen = true;
             render();
+        } else if (m.type === 'tail') {
+            // direct DOM update — no re-render, so reading the tail never
+            // fights the 1s live refresh or a scroll position
+            if (tail.file && m.file === tail.file) {
+                tail = { file: m.file, text: m.text || '', size: m.size || 0, missing: !!m.missing };
+                const box = document.getElementById('tailbox');
+                if (box) {
+                    box.textContent = tail.missing
+                        ? '(output file not readable yet)'
+                        : (tail.text || '(empty so far)');
+                    if (typeof box.scrollHeight === 'number') { box.scrollTop = box.scrollHeight; }
+                }
+            }
         }
     });
 
