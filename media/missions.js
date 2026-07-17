@@ -19,6 +19,20 @@
     let openNewest = false;           // after Start: open the freshly created run
     const closedRounds = new Set();   // "runId:n" keys of folded round bands
     let roundSingle = false;          // single-open mode for round bands
+    // ---- run-list sorting (the sessions table's Sort-by pattern) ----
+    let runSort = 'recent';
+    let runSortAsc = false;           // numeric sorts default newest/biggest first
+    // sort + direction survive reloads, like the sessions table's state
+    {
+        const saved = (typeof vscode.getState === 'function' && vscode.getState()) || {};
+        if (saved.mSort) { runSort = saved.mSort; }
+        if (typeof saved.mSortAsc === 'boolean') { runSortAsc = saved.mSortAsc; }
+    }
+    const saveUiState = () => {
+        if (typeof vscode.setState !== 'function') { return; }
+        const st = (typeof vscode.getState === 'function' && vscode.getState()) || {};
+        vscode.setState({ ...st, mSort: runSort, mSortAsc: runSortAsc });
+    };
     // ---- mission-control observation state ----
     let liveOpen = true;              // "Live activity" section (hook events)
     let ledgerOpen = false;           // planner ledger section
@@ -281,6 +295,37 @@
         return { total, failed };
     }
 
+    // ---- sorting: every column and then some, sessions-table style ----
+    const RUN_STATUS_RANK = {
+        running: 6, 'waiting-approval': 5, 'waiting-user': 4,
+        paused: 3, done: 2, failed: 1, cancelled: 0
+    };
+    const VERDICT_RANK = { success: 3, partial: 2, failed: 1 };
+    const RUN_SORTS = [
+        { id: 'recent', label: 'Recent', key: r => r.startedAt || 0 },
+        { id: 'status', label: 'Status (active first)', key: r => RUN_STATUS_RANK[r.status] || 0 },
+        { id: 'verdict', label: 'Verdict', key: r => (r.result && VERDICT_RANK[r.result.verdict]) || 0 },
+        { id: 'title', label: 'Mission A–Z', key: r => spec(r).title, str: true },
+        { id: 'lead', label: 'Lead A–Z', key: r => spec(r).leadAgentName, str: true },
+        { id: 'team', label: 'Team size', key: r => spec(r).team.length },
+        { id: 'rounds', label: 'Rounds', key: r => r.rounds.length },
+        { id: 'tasks', label: 'Tasks', key: r => runSteps(r).total },
+        { id: 'failed', label: 'Failed tasks', key: r => runSteps(r).failed },
+        { id: 'tokens', label: 'Tokens', key: r => runTokens(r) },
+        { id: 'cost', label: 'Cost', key: r => r.totalCostUSD || 0 },
+        { id: 'duration', label: 'Duration', key: r => (r.endedAt || Date.now()) - r.startedAt - (r.waitedMs || 0) }
+    ];
+
+    function sortedRuns(rows) {
+        const def = RUN_SORTS.find(s => s.id === runSort) || RUN_SORTS[0];
+        return rows.slice().sort((a, b) => {
+            const d = def.str
+                ? String(def.key(a)).localeCompare(String(def.key(b)))
+                : def.key(a) - def.key(b);
+            return runSortAsc ? d : -d;
+        });
+    }
+
     /** Rich row tooltip: everything characterizing the run at a glance. */
     function runTooltip(r, sp) {
         const st = runSteps(r);
@@ -451,6 +496,10 @@
     function runCtlHtml() {
         if (!DATA.runs.length) { return ''; }
         return `<div class="chiprow">
+            <span class="muted small">Sort by:</span>
+            <select id="m-sort">${RUN_SORTS.map(s =>
+                `<option value="${s.id}"${s.id === runSort ? ' selected' : ''}>${s.label}</option>`).join('')}</select>
+            <button class="chip" id="m-sortdir" title="Flip the sort direction">${runSortAsc ? '▲ asc' : '▼ desc'}</button>
             <span class="muted small">Runs:</span>
             <button class="chip" id="r-expandall" title="Open every run's detail">Expand all</button>
             <button class="chip" id="r-collapseall" title="Fold the list back to plain rows">Collapse all</button>
@@ -465,7 +514,7 @@
         if (!DATA.runs.length) {
             return '<p class="muted">No missions yet — <a id="firstmission">start the first one</a>.</p>';
         }
-        const rows = DATA.runs.map(r => {
+        const rows = sortedRuns(DATA.runs).map(r => {
             const sp = spec(r);
             const open = openRuns.has(r.id);
             const tok = runTokens(r);
@@ -664,6 +713,18 @@
                 }
                 render();
             }));
+        // sort select + direction: string sorts start A–Z, numeric biggest-first
+        const sortSel = document.getElementById('m-sort');
+        if (sortSel && sortSel.addEventListener) {
+            sortSel.addEventListener('change', e => {
+                runSort = e.target.value;
+                const def = RUN_SORTS.find(s => s.id === runSort);
+                runSortAsc = !!(def && def.str);
+                saveUiState();
+                render();
+            });
+        }
+        wire('m-sortdir', () => { runSortAsc = !runSortAsc; saveUiState(); render(); });
         wire('r-expandall', () => { DATA.runs.forEach(r => openRuns.add(r.id)); runSingle = false; render(); });
         wire('r-collapseall', () => { openRuns.clear(); render(); });
         wire('r-singleopen', () => {

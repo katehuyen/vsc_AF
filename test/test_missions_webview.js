@@ -408,5 +408,35 @@ ok('Single-open folds back to a single detail', detailCount() === 1);
 getEl('r-collapseall').listeners.click();
 ok('Collapse all folds the whole list', detailCount() === 0);
 
+// ---------- run-list sorting (sessions-table pattern) ----------
+{
+    // RUN: cost 1.25 / started 500 · RUN3: cost 9 / started 100 / title 'Alpha'
+    const RUN3 = {
+        ...RUN, id: 'run3', specId: 'spec3',
+        rounds: [], totalCostUSD: 9, startedAt: 100, plannerSessionId: undefined
+    };
+    const SPEC3 = { ...DATA.specs[0], id: 'spec3', title: 'Alpha build', leadAgentName: 'zeta' };
+    msgHandler({
+        data: {
+            type: 'data', data: {
+                ...DATA, pending: { questions: [], approvals: [] },
+                specs: [DATA.specs[0], SPEC3], runs: [RUN, RUN3]
+            }
+        }
+    });
+    const rowPos = (id) => html().indexOf(`data-run="${id}"`);
+    ok('sort control renders with the criteria list',
+        html().includes('id="m-sort"') && html().includes('Failed tasks') && html().includes('Team size'));
+    ok('default sort = recent (newest first)', rowPos('run1') < rowPos('run3'));
+    getEl('m-sort').listeners.change({ target: { value: 'cost' } });
+    ok('cost sort puts the expensive run first', rowPos('run3') < rowPos('run1'));
+    getEl('m-sortdir').listeners.click(); // asc
+    ok('direction flip reverses the order', rowPos('run1') < rowPos('run3'));
+    getEl('m-sort').listeners.change({ target: { value: 'title' } });
+    ok('string sort defaults A–Z', rowPos('run3') < rowPos('run1')); // Alpha before Parser
+    getEl('m-sort').listeners.change({ target: { value: 'recent' } }); // numeric pick resets to desc
+    msgHandler({ data: { type: 'data', data: { ...DATA, pending: { questions: [], approvals: [] }, specs: DATA.specs, runs: [RUN] } } });
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
