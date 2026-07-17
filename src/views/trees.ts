@@ -10,7 +10,7 @@ import {
 } from '../core/mcp';
 import { readAgentSkills, SkillDef, skillLastUsed, skillUsage } from '../core/skills';
 import { LiveMonitor, LiveStatus } from '../core/live';
-import { totalTokens } from '../core/pricing';
+import { emptyUsage, totalTokens } from '../core/pricing';
 import { SessionIndex, SessionInfo } from '../core/sessions';
 import { fmtTokens, fmtUSD, relTime, dayKey, safeReadFile } from '../core/util';
 
@@ -66,6 +66,7 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
             const urgent = liveStatus &&
                 (liveStatus.status === 'waiting-permission' || liveStatus.status === 'stalled');
             const todayCost = this.todayCost(agent.id);
+            const todayTokens = this.todayTokens(agent.id);
             const item = new vscode.TreeItem(agent.name, vscode.TreeItemCollapsibleState.Collapsed);
             item.contextValue = 'agent';
             item.id = agent.id;
@@ -83,7 +84,12 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
             } else {
                 parts.push(active ? 'ACTIVE' : (latest ? relTime(latest.mtime) : 'no sessions'));
             }
-            if (todayCost > 0) { parts.push(fmtUSD(todayCost) + ' today'); }
+            const costUnit = vscode.workspace.getConfiguration('agentFarm').get<string>('agentRowCostUnit', 'tokens');
+            if (costUnit === 'cost') {
+                if (todayCost > 0) { parts.push(fmtUSD(todayCost) + ' today'); }
+            } else if (todayTokens > 0) {
+                parts.push(fmtTokens(todayTokens) + ' tok today');
+            }
             item.description = parts.join(' • ');
             item.tooltip = new vscode.MarkdownString(
                 `**${agent.name}**\n\n` +
@@ -410,6 +416,12 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
         const today = dayKey(Date.now());
         return this.state.index.forAgent(agentId)
             .reduce((sum, s) => sum + (s.daily[today]?.cost ?? 0), 0);
+    }
+
+    private todayTokens(agentId: string): number {
+        const today = dayKey(Date.now());
+        return this.state.index.forAgent(agentId)
+            .reduce((sum, s) => sum + totalTokens(s.daily[today]?.usage ?? emptyUsage()), 0);
     }
 }
 

@@ -40,7 +40,7 @@ const CATEGORY_OF: Record<string, string> = {
     // cost & budgets
     pricing: 'cost', budgets: 'cost', windowTokenLimit: 'cost',
     mediaBudgetMonthUSD: 'cost', mediaPricing: 'cost', trendAlertFactor: 'cost',
-    costAnomalyMinUsd: 'cost', forecastDays: 'cost',
+    costAnomalyMinUsd: 'cost', forecastDays: 'cost', agentRowCostUnit: 'cost',
     // tasks & automation
     taskExtraArgs: 'tasks', externalTerminal: 'tasks', maxConcurrentTasks: 'tasks',
     maxConcurrentPerAgent: 'tasks', quotaGuardPercent: 'tasks', queueAutoAdvance: 'tasks',

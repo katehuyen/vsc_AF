@@ -1240,6 +1240,7 @@ The page is **schema-driven**: it renders whatever the extension manifest declar
 | `agentFarm.browserAllowHosts` | [] | Global domain allowlist for browser steps |
 | `agentFarm.browserApproval` | ask | Approval before a browser step: ask / auto |
 | `agentFarm.costAnomalyMinUsd` | 1 | Cost-anomaly detector floor (USD); 0 turns it off |
+| `agentFarm.agentRowCostUnit` | tokens | Daily-usage unit on each agent row in the Agents view: tokens / cost |
 | `agentFarm.evalRunArgs` | --model haiku… | CLI arguments for eval runs; empty = the agent's default model |
 | `agentFarm.permissionLint` | true | Guardrail audit of permission rules (Insights) |
 | `agentFarm.pulse` | off | Synthetic pulse check: off / nightly / weekly |

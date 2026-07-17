@@ -1239,6 +1239,7 @@ Sayfa **şema-güdümlüdür**: eklenti manifestinin bildirdiği her şeyi çize
 | `agentFarm.browserAllowHosts` | [] | Tarayıcı adımları için global alan adı allowlist'i |
 | `agentFarm.browserApproval` | ask | Tarayıcı adımı öncesi onay: ask / auto |
 | `agentFarm.costAnomalyMinUsd` | 1 | Maliyet anomali dedektörü tabanı (USD); 0 kapatır |
+| `agentFarm.agentRowCostUnit` | tokens | Agents görünümünde her ajan satırındaki günlük kullanım birimi: tokens / cost |
 | `agentFarm.evalRunArgs` | --model haiku… | Eval koşularının CLI argümanları; boş = ajanın varsayılan modeli |
 | `agentFarm.permissionLint` | true | İzin kurallarının guardrail denetimi (Insights) |
 | `agentFarm.pulse` | off | Sentetik nabız kontrolü: off / nightly / weekly |

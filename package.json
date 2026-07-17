@@ -2298,6 +2298,19 @@
           "default": 1,
           "description": "Statistical cost-anomaly detector (median + MAD over 14 days): ignore days below this USD level. 0 disables the detector."
         },
+        "agentFarm.agentRowCostUnit": {
+          "type": "string",
+          "enum": [
+            "tokens",
+            "cost"
+          ],
+          "enumDescriptions": [
+            "Token count, e.g. \"123.4k tok today\"",
+            "Dollar cost, e.g. \"$12.34 today\""
+          ],
+          "default": "tokens",
+          "description": "Unit for the daily-usage suffix shown on each agent's row in the Agents view. Tokens by default since cost reads $0 until an agentFarm.pricing rule matches the model."
+        },
         "agentFarm.evalRunArgs": {
           "type": "string",
           "default": "--model claude-haiku-4-5-20251001",
