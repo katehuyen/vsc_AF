@@ -382,6 +382,21 @@ getEl('rd-expandall-run1').listeners.click();
     msgHandler({ data: { type: 'data', data: { ...DATA, pending: { questions: [], approvals: [] }, runs: [RUN] } } });
 }
 
+// ---------- rich run row + token shares ----------
+ok('run row carries the team size next to the lead', html().includes('lead <span class="muted small">+2</span>'));
+ok('run row shows rounds as used/max', html().includes('R2/8'));
+ok('run row shows delegation count with the failed badge',
+    html().includes('Tasks') && html().includes('1✕'));
+ok('run row tooltip characterizes the mission (goal, team, limits, tokens)',
+    html().includes('goal: Fix the parser and prove it')
+    && html().includes('team: coder — implements, reviewer')
+    && html().includes('limits: $5 · 8 rounds')
+    && html().includes('delegations: 2 (1 failed)'));
+ok('detail shows the per-agent token share line',
+    html().includes('tokens by agent:') && html().includes('coder <b>71%</b>') && html().includes('lead (lead) <b>29%</b>'));
+ok('token share tooltip carries the raw amounts',
+    html().includes('coder 12.0k') && html().includes('lead (lead) 5.0k'));
+
 // ---------- run accordion controls ----------
 const RUN2 = { ...RUN, id: 'run2', rounds: [], totalCostUSD: 0.5, plannerSessionId: undefined };
 msgHandler({ data: { type: 'data', data: { ...DATA, pending: { questions: [], approvals: [] }, runs: [RUN, RUN2] } } });

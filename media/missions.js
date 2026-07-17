@@ -251,6 +251,54 @@
         return planner + steps;
     }
 
+    /** Who ate the tokens: per-agent totals as shares of the run's whole.
+     *  Planner tokens belong to the lead; steps to their delegate agents. */
+    function tokenShares(r, sp) {
+        const by = {};
+        let planner = 0;
+        r.rounds.forEach(rd => {
+            planner += rd.plannerTokens || 0;
+            rd.steps.forEach(s => { if (s.tokens) { by[s.agentName] = (by[s.agentName] || 0) + s.tokens; } });
+        });
+        if (!planner && r.plannerSessionTokens) { planner = r.plannerSessionTokens; }
+        if (planner) {
+            const lead = sp.leadAgentName + ' (lead)';
+            by[lead] = (by[lead] || 0) + planner;
+        }
+        const total = Object.keys(by).reduce((a, k) => a + by[k], 0);
+        if (!total) { return []; }
+        return Object.keys(by).map(name => ({ name, tok: by[name], pct: Math.round(100 * by[name] / total) }))
+            .sort((a, b) => b.tok - a.tok);
+    }
+
+    /** Delegation totals of a run: steps overall + how many failed. */
+    function runSteps(r) {
+        let total = 0, failed = 0;
+        r.rounds.forEach(rd => rd.steps.forEach(s => {
+            total++;
+            if (s.status === 'failed') { failed++; }
+        }));
+        return { total, failed };
+    }
+
+    /** Rich row tooltip: everything characterizing the run at a glance. */
+    function runTooltip(r, sp) {
+        const st = runSteps(r);
+        const mins = Math.max(0, Math.round(((r.endedAt || Date.now()) - r.startedAt - (r.waitedMs || 0)) / 60000));
+        const shares = tokenShares(r, sp);
+        const lines = [
+            `goal: ${sp.goal}`,
+            `lead: ${sp.leadAgentName}${sp.plannerModel ? ` (planner: ${sp.plannerModel})` : ''}`,
+            `team: ${sp.team.map(m => m.agentName + (m.role ? ` — ${m.role}` : '') + (m.model ? ` [${m.model}]` : '')).join(', ')}`,
+            `limits: $${sp.limits.maxCostUSD} · ${sp.limits.maxRounds} rounds · ${sp.limits.maxTasks} tasks · ${sp.limits.maxMinutes} min · ${sp.limits.maxParallel} parallel`,
+            `delegations: ${st.total}${st.failed ? ` (${st.failed} failed)` : ''} · ${mins} min${sp.workdir ? ` · workdir: ${sp.workdir}` : ''} · approval: ${sp.approvalMode}`
+        ];
+        if (shares.length) { lines.push(`tokens: ${shares.map(x => `${x.name} ${x.pct}%`).join(' · ')}`); }
+        if (r.result) { lines.push(`${r.result.verdict}: ${r.result.summary.slice(0, 200)}`); }
+        if (r.note) { lines.push(`note: ${r.note.slice(0, 160)}`); }
+        return lines.join('\n');
+    }
+
     /** Mission-scoped live activity: this run's agents only — status chips in
      *  the header (always visible), hook events newest-first when open. */
     function liveSection(run, sp) {
@@ -368,6 +416,12 @@
                 <div class="budgetbar"><div class="budgetfill${pctRaw >= 90 ? ' hot' : ''}" style="width:${pct}%"></div></div>
                 <span class="muted small">${usd(run.totalCostUSD)} / ${usd(sp.limits.maxCostUSD)}${runTokens(run) ? ` · ${C.fmtTok(runTokens(run))} tok` : ''} · ${run.rounds.length}/${sp.limits.maxRounds} rounds · ${tasksUsed}/${sp.limits.maxTasks} tasks · ${wallMin}/${sp.limits.maxMinutes} min · started ${fmtTime(run.startedAt)}</span>
             </div>
+            ${(() => {
+                const shares = tokenShares(run, sp);
+                return shares.length ? `<div class="muted small tokshare"
+                    title="${C.esc(shares.map(x => `${x.name} ${C.fmtTok(x.tok)}`).join(' · '))}">tokens by agent:
+                    ${shares.map(x => `${C.esc(x.name)} <b>${x.pct}%</b>`).join(' · ')}</div>` : '';
+            })()}
             ${pendingAp ? `<div class="waitbox">This round needs your approval.
                 <button id="d-approve-${C.esc(run.id)}">Approve</button>
                 <button class="secondary" id="d-reject-${C.esc(run.id)}">Reject</button></div>` : ''}
@@ -415,19 +469,24 @@
             const sp = spec(r);
             const open = openRuns.has(r.id);
             const tok = runTokens(r);
-            return `<tr class="mrow${open ? ' sel' : ''}" data-run="${C.esc(r.id)}" title="Click to ${open ? 'fold' : 'open'} this run">
+            const st = runSteps(r);
+            // a non-success verdict deserves its own glanceable chip next to "done"
+            const verdict = r.result && r.result.verdict !== 'success'
+                ? ` <span class="mchip ${r.result.verdict === 'failed' ? 'bad' : 'wait'}">${C.esc(r.result.verdict)}</span>` : '';
+            return `<tr class="mrow${open ? ' sel' : ''}" data-run="${C.esc(r.id)}" title="${C.esc(runTooltip(r, sp))}">
                 <td class="stoggle">${open ? '▾' : '▸'}</td>
                 <td>${C.esc(sp.title)}</td>
-                <td>${C.esc(sp.leadAgentName)}</td>
-                <td>${chip(r.status)}</td>
-                <td>${r.rounds.length}</td>
+                <td>${C.esc(sp.leadAgentName)} <span class="muted small">+${sp.team.length}</span></td>
+                <td>${chip(r.status)}${verdict}</td>
+                <td>R${r.rounds.length}/${sp.limits.maxRounds}</td>
+                <td>${st.total ? `${st.total}${st.failed ? ` <span class="mchip bad">${st.failed}✕</span>` : ''}` : '—'}</td>
                 <td class="num">${tok ? C.fmtTok(tok) : '—'}</td>
                 <td class="num">${usd(r.totalCostUSD)}</td>
                 <td class="muted small">${fmtTime(r.startedAt)}</td>
-            </tr>` + (open ? `<tr class="rundetail"><td colspan="8">${detailHtml(r)}</td></tr>` : '');
+            </tr>` + (open ? `<tr class="rundetail"><td colspan="9">${detailHtml(r)}</td></tr>` : '');
         }).join('');
         return runCtlHtml() + `<table class="mtable" id="mlist"><thead>
-            <tr><th></th><th>Mission</th><th>Lead</th><th>Status</th><th>Rounds</th><th class="num">Tokens</th><th class="num">Cost</th><th>Started</th></tr>
+            <tr><th></th><th>Mission</th><th>Lead + team</th><th>Status</th><th>Rounds</th><th>Tasks</th><th class="num">Tokens</th><th class="num">Cost</th><th>Started</th></tr>
         </thead><tbody>${rows}</tbody></table>`;
     }
 
@@ -475,7 +534,9 @@
                 .dethead { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
                 .goal { margin:8px 0; padding:8px 10px; border-left:3px solid var(--vscode-textLink-foreground);
                     background:color-mix(in srgb, var(--vscode-textLink-foreground) 6%, transparent); white-space:pre-wrap; }
-                .budget { margin:6px 0 12px; }
+                .budget { margin:6px 0 4px; }
+                .tokshare { margin:0 0 12px; }
+                .tokshare b { font-weight:600; color:var(--vscode-textLink-foreground); }
                 .budgetbar { height:6px; border-radius:3px; background:var(--vscode-widget-border, #4444); overflow:hidden; margin-bottom:3px; }
                 .budgetfill { height:100%; background:var(--vscode-textLink-foreground); }
                 .budgetfill.hot { background:var(--vscode-errorForeground, #f66); }
