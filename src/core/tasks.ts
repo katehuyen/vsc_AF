@@ -45,6 +45,8 @@ export interface FarmTask {
     autoStart?: boolean;
     /** J1: run in this directory instead of the agent folder (worktree runs). */
     workDir?: string;
+    /** Set when this task is a mission delegation (Missions panel links through it). */
+    missionId?: string;
     /** J5: named CLI profile (agentFarm.cliProfiles); empty = claude. */
     cli?: string;
     /** Launch priority; higher runs sooner. Unset = 0. Ages up while queued so nothing starves. */
@@ -1091,6 +1093,7 @@ export class TaskManager implements vscode.Disposable {
         copy.outputContract = task.outputContract;
         copy.cli = task.cli;
         copy.workDir = task.workDir;
+        copy.missionId = task.missionId;
         this.startTask(copy);
         return copy;
     }

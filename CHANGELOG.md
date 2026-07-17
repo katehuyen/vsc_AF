@@ -2,6 +2,19 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 2.62.0 — Missions: dynamic multi-agent orchestration (2026-07-17)
+
+Workflows are pre-drawn DAGs; a **Mission** decides the next step at run time. You give a goal, a **lead agent** and a **team** — the lead plans round by round, delegates, reads the results and re-plans, until it finishes with an honest verdict. "Orchestrator → coder → reviewer → tester → merge" without drawing it first; a failed delegation is information to re-plan on, not the end.
+
+- **Planner loop with real session continuity.** Each round calls the lead headlessly; results are fed back into the **same planner session** (`claude -p --resume`) so the lead keeps its context (and prompt cache). If a resume dies, a compact ledger reseeds a fresh session. The reply is a strict JSON decision — `delegate` / `ask_user` / `finish` / `abort`; an invalid reply gets exactly one retry with the error fed back.
+- **Delegations are ordinary headless tasks** — visible in the Tasks view, archived, cost-metered, quota/concurrency-guarded, cancellable. The Missions panel links each step to its output.
+- **Hard limits, never the model's goodwill:** max cost / rounds / tasks / minutes / parallel per mission. Exhausting one forces a **finish-only round** (delegating refused, honest summary required). A planning-loop guard blocks repeated identical delegations; an absolute planner-call cap backstops everything.
+- **Approval modes:** default **each round** — delegations land in Needs You + a toast with Approve/Reject, a rejection makes the lead re-plan; **auto** skips the gates (limits still apply). `ask_user` questions land in Needs You and the panel; waiting on you doesn't burn the mission clock.
+- **Workdir safety:** with a target folder set, **two writers never run in parallel** — planner-marked `readonly` steps may share a wave, writers serialize.
+- **Reload-proof:** a window reload parks running missions as paused; **Resume** (Needs You / panel) re-collects delegation states from the task records and continues in the same planner session.
+- **Missions panel:** run list, round-by-round timeline (the lead's reasoning + delegation table with statuses/costs/output links + Q&A), budget bar, Pause/Resume/Cancel, inline Approve/Reject and answer box, and the New Mission form (goal, lead, team with role labels, workdir picker, limits, approval mode). Reachable from the Dashboard and the command palette.
+- **Tests:** new `test_missions.js` (58) — decision parsing, wave planning, budget guards/finish-only, duplicate lock, ask_user, resume-fallback, cancel, hard cap, envelope parsing, store pruning, Needs items; new `test_missions_webview.js` (24) — list/detail/waits/controls/form round-trip. Full suite: 43 files · 951 passed.
+
 ## 2.61.0 — Agent folders: nests, excludes and a real management UI (2026-07-16)
 
 Where agents live used to be a one-time setup question, a raw JSON array, and one hidden trap. All three fixed:

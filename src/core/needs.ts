@@ -15,7 +15,8 @@ export type NeedKind =
     | 'conflict'          // Antigravity two-sided drift needs reconciling
     | 'suggestion'        // proposed CLAUDE.md rule awaiting review
     | 'deferred'          // a task start is parked (concurrency / quota)
-    | 'your-turn';        // session finished its turn, waiting for input
+    | 'your-turn'         // session finished its turn, waiting for input
+    | 'mission';          // a mission waits on the human (question / interrupted)
 
 export interface NeedAction {
     id: string;
@@ -32,6 +33,8 @@ export interface NeedRef {
     taskId?: string;
     /** interrupted: the workflow run to resume/dismiss. */
     runId?: string;
+    /** mission: the mission run waiting on the human. */
+    missionRunId?: string;
 }
 
 export interface NeedItem {
@@ -48,6 +51,7 @@ export interface NeedItem {
 
 const URGENCY: Record<NeedKind, number> = {
     'permission': 0,
+    'mission': 1,
     'browser-approval': 1,
     'interrupted': 2,
     'stalled': 2,
@@ -143,6 +147,14 @@ export interface NeedsInput {
         stepIndex: number;
         stepTitle: string;
     }[];
+    /** Missions blocked on the human: an open question or an interrupted run. */
+    missionWaits?: {
+        runId: string;
+        missionTitle: string;
+        flavor: 'question' | 'interrupted';
+        detail: string;
+        ts: number;
+    }[];
     /** Include waiting-input sessions as low-urgency "your turn" rows. */
     includeYourTurn?: boolean;
 }
@@ -199,6 +211,24 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
                 ]
             });
         }
+    }
+
+    for (const m of input.missionWaits ?? []) {
+        items.push({
+            urgency: URGENCY.mission,
+            kind: 'mission',
+            agentName: 'mission',
+            title: m.flavor === 'question'
+                ? `Mission "${m.missionTitle}" has a question`
+                : `Mission "${m.missionTitle}" was interrupted`,
+            detail: m.detail,
+            ts: m.ts,
+            ref: { missionRunId: m.runId },
+            actions: m.flavor === 'question'
+                ? [{ id: 'mission-answer', label: 'Answer…' }, { id: 'open-missions', label: 'Missions' }]
+                : [{ id: 'mission-resume', label: 'Resume' }, { id: 'mission-dismiss', label: 'Dismiss' },
+                   { id: 'open-missions', label: 'Missions' }]
+        });
     }
 
     for (const a of input.approvals) {
@@ -293,5 +323,5 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
 export function blockingCount(items: NeedItem[]): number {
     return items.filter(i =>
         i.kind === 'permission' || i.kind === 'browser-approval'
-        || i.kind === 'stalled' || i.kind === 'interrupted').length;
+        || i.kind === 'stalled' || i.kind === 'interrupted' || i.kind === 'mission').length;
 }

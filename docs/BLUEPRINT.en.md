@@ -474,6 +474,30 @@ You don't need to delete and rebuild an installed chain (0.7.0):
 
 The Live Timeline now has a **Workflow runs** section: every chain run in the last 4 hours in its own strip, with steps as numbered blocks — green = done, blue = running, red = failed. Hover over a block: step name, agent and duration. You literally watch one agent hand work off to another.
 
+## Missions {#missions}
+
+Workflows are pre-drawn: every step, branch and jump is fixed before the run starts. A **Mission** (2.62.0) is the opposite — you give a **goal**, a **lead agent** and a **team**, and the next step is decided **at run time**, round by round, from the previous results. "An orchestrator analyzes, the coder implements, the reviewer reviews, the tester runs the tests, and the lead merges it all" — without drawing that as a DAG first. A failed delegation doesn't kill the mission; it's information the lead re-plans on.
+
+**How it runs.** `Agent Farm: Missions` (or the **Missions** button on the Dashboard) → **+ New Mission**. The extension then drives a planner loop:
+
+1. The **lead agent** is called headlessly with a briefing: the goal, the team roster (names + your role labels + one identity line from each agent's own CLAUDE.md), the remaining budget, and a strict JSON decision schema.
+2. The lead answers with one decision per round: **delegate** (tasks aimed at team agents, each with a self-contained prompt and success criteria), **ask_user** (a question for you), or **finish/abort** (verdict + summary).
+3. Delegations run as **ordinary headless tasks** — they appear in the Tasks view, outputs are archived, costs are metered, quota/concurrency guards apply. Nothing is reinvented.
+4. Results (status, cost, an excerpt of each output, the full archive's path) are fed back into the **same planner session** (`claude -p --resume`) — the lead keeps its context and prompt cache across rounds. If a resume ever dies, a compact extension-side ledger reseeds a fresh session.
+5. Repeat, until the lead finishes — or a limit forces it to.
+
+**Hard limits — never the model's goodwill.** Every mission carries a budget: max cost, rounds, tasks, minutes (time spent waiting on you doesn't count) and parallel delegations. When one is spent the planner gets a **finish-only round**: delegating is refused, it must wrap up with an honest verdict (`success / partial / failed`). Sending the same work to the same agent twice is blocked (planning-loop guard), and an absolute planner-call cap backstops everything.
+
+**Approval modes.** Default **each round**: the round's delegations land in **Needs You** (and a toast) with Approve/Reject — a rejection is fed back and the lead re-plans. **auto** runs without gates; the hard limits still apply. `ask_user` questions also land in Needs You (Answer…) and in the panel; the wall clock pauses until you answer.
+
+**Workdir safety.** Give the mission a workdir and every delegation runs inside it — and **two writers never run in parallel**: steps the planner marks `readonly` (research, review) may share a wave, writers are serialized.
+
+**Interruptions.** A window reload parks running missions as *paused*; Needs You offers **Resume** — delegation states are re-collected from the task records and the lead continues in its own session. Pause / Cancel any time from the panel; cancelling also cancels the running delegations.
+
+**What makes a good lead:** an agent whose CLAUDE.md says it plans and delegates instead of doing the work itself — e.g. *"You lead multi-agent missions: decompose the goal, delegate with self-contained prompts and acceptance criteria, judge results skeptically, and prefer finishing with a partial result over burning the budget."* The role labels you type next to team members ("coder", "reviewer", "tester", "researcher", "git") reach the lead as hints.
+
+The panel shows each run round by round — the lead's reasoning, the delegation table (status / cost / output links), question-and-answers, the budget bar, and the final verdict. The closing summary also goes out as a notification and the `mission` webhook event.
+
 ## MCP Management {#mcp-yonetimi}
 
 Your agents' tool gateways to the outside world — MCP servers — now show up in the panel (0.9.0). Each agent's **MCP** section in the Agents tree:
@@ -1243,6 +1267,7 @@ All in the command palette with the `Agent Farm:` prefix:
 - **New Recipe Workflow…** — ready-made factory templates
 - **New Multi-Agent Workflow… / Run Workflow** — multi-agent chains
 - **Edit Step… / Add Step / Rename Workflow** — editing an installed chain
+- **Missions / New Mission…** — dynamic orchestration: a lead agent plans round by round and delegates to a team (see [Missions](#missions))
 - **Save as Template / New Task from Template** — task templates
 - **Open Task Output** — the headless task output archive
 - **Export as Windows Scheduled Task…** — scheduling independent of VS Code

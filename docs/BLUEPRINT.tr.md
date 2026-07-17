@@ -474,6 +474,30 @@ Kurulu bir zinciri silip yeniden kurmana gerek yok (0.7.0):
 
 Live Timeline'da artık **Workflow runs** bölümü var: son 4 saatte koşan her zincir kendi şeridinde, adımlar numaralı bloklar halinde — yeşil = bitti, mavi = çalışıyor, kırmızı = başarısız. Bloğun üzerine gel: adım adı, ajan ve süre. İki ajanın birbirine iş devrettiğini kelimenin tam anlamıyla izlersin.
 
+## Missions {#missions}
+
+İş akışları önceden çizilir: her adım, dal ve sıçrama koşu başlamadan sabittir. **Mission** (2.62.0) bunun tersidir — bir **hedef**, bir **lead ajan** ve bir **ekip** verirsin; sıradaki adımın ne olacağına **çalışma anında**, tur tur, önceki sonuçlara bakılarak karar verilir. "Orkestratör analiz eder, coder yazar, reviewer inceler, tester testleri koşar, lead hepsini birleştirir" — bunu önce DAG olarak çizmeden. Başarısız bir delegasyon misyonu öldürmez; lead'in üzerine yeniden plan kurduğu bilgidir.
+
+**Nasıl çalışır.** `Agent Farm: Missions` (ya da Dashboard'daki **Missions** düğmesi) → **+ New Mission**. Eklenti sonra bir planlayıcı döngüsü sürer:
+
+1. **Lead ajan** headless çağrılır; brifing: hedef, ekip listesi (adlar + senin rol etiketlerin + her ajanın kendi CLAUDE.md'sinden bir kimlik satırı), kalan bütçe ve katı bir JSON karar şeması.
+2. Lead her turda tek kararla yanıt verir: **delegate** (ekip ajanlarına işler; her biri kendi kendine yeten prompt + başarı ölçütüyle), **ask_user** (sana bir soru) ya da **finish/abort** (hüküm + özet).
+3. Delegasyonlar **sıradan headless görev** olarak koşar — Tasks görünümünde görünür, çıktıları arşivlenir, maliyetleri ölçülür, kota/eşzamanlılık frenleri uygulanır. Hiçbir şey yeniden icat edilmez.
+4. Sonuçlar (durum, maliyet, her çıktının özü, tam arşivin yolu) **aynı planlayıcı oturumuna** geri beslenir (`claude -p --resume`) — lead bağlamını ve prompt cache'ini turlar boyunca korur. Resume ölürse eklenti tarafındaki kompakt defter taze oturumu yeniden tohumlar.
+5. Lead bitirene — ya da bir limit bitirtene — kadar tekrar.
+
+**Katı limitler — asla modelin insafına değil.** Her misyonun bütçesi vardır: azami maliyet, tur, görev, dakika (seni beklerken geçen süre sayılmaz) ve paralel delegasyon. Biri tükenince planlayıcıya **yalnız-bitir turu** verilir: delegate reddedilir, dürüst bir hükümle (`success / partial / failed`) kapanmak zorundadır. Aynı işi aynı ajana ikinci kez göndermek engellenir (planlama-döngüsü kilidi); mutlak bir planlayıcı-çağrı tavanı her şeyi yedekler.
+
+**Onay modları.** Varsayılan **each round**: turun delegasyonları **Needs You**'ya (ve bir toast'a) Approve/Reject ile düşer — ret, lead'e geri beslenir ve yeniden planlar. **auto** kapısız koşar; katı limitler yine geçerlidir. `ask_user` soruları da Needs You'ya (Answer…) ve panele düşer; sen yanıtlayana kadar duvar saati durur.
+
+**Workdir emniyeti.** Misyona bir workdir ver — her delegasyon onun içinde koşar ve **iki yazıcı asla paralel koşmaz**: planlayıcının `readonly` işaretlediği adımlar (araştırma, inceleme) aynı dalgayı paylaşabilir, yazıcılar sıraya alınır.
+
+**Kesintiler.** Pencere yeniden yüklenirse koşan misyonlar *paused* olarak park edilir; Needs You **Resume** sunar — delegasyon durumları görev kayıtlarından yeniden toplanır ve lead kendi oturumunda devam eder. Panelden her an Pause / Cancel; iptal, koşan delegasyonları da iptal eder.
+
+**İyi bir lead'i ne yapar:** CLAUDE.md'si işi kendisi yapmak yerine planlayıp delege ettiğini söyleyen bir ajan — ör. *"Çok-ajanlı misyonları yönetirsin: hedefi parçala, kendi kendine yeten prompt'lar ve kabul ölçütleriyle delege et, sonuçları şüpheyle değerlendir, bütçeyi yakmaktansa kısmi sonuçla bitirmeyi tercih et."* Ekip üyelerinin yanına yazdığın rol etiketleri ("coder", "reviewer", "tester", "researcher", "git") lead'e ipucu olarak ulaşır.
+
+Panel her koşuyu tur tur gösterir — lead'in gerekçesi, delegasyon tablosu (durum / maliyet / çıktı bağlantıları), soru-cevaplar, bütçe barı ve nihai hüküm. Kapanış özeti bildirim ve `mission` webhook olayı olarak da dışarı gider.
+
 ## MCP Yönetimi
 
 Ajanlarının dış dünyaya açılan araç kapıları — MCP sunucuları — artık panelde görünür (0.9.0). Agents ağacında her ajanın **MCP** bölümü:
@@ -1242,6 +1266,7 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 - **New Recipe Workflow…** — hazır fabrika şablonları
 - **New Multi-Agent Workflow… / Run Workflow** — çoklu-ajan zincirleri
 - **Edit Step… / Add Step / Rename Workflow** — kurulu zinciri düzenleme
+- **Missions / New Mission…** — dinamik orkestrasyon: lead ajan tur tur planlar, ekibe delege eder (bkz. [Missions](#missions))
 - **Save as Template / New Task from Template** — görev şablonları
 - **Open Task Output** — headless görev çıktı arşivi
 - **Export as Windows Scheduled Task…** — VS Code'dan bağımsız zamanlama

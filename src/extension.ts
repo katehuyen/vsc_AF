@@ -82,9 +82,15 @@ import {
 } from './core/suggest';
 import { buildWeeklyFactsText, generateWeeklySummary, isoWeek, WeeklyFacts } from './core/summary';
 import {
-    buildCliCommand, CliProfile, FarmSchedule, FarmTrigger, newId, PREV_OUTPUT_PLACEHOLDER, sanitizePrompt,
-    ScheduleKind, TaskManager, TaskMode, WorkflowStep
+    archivedOutputBody, buildCliCommand, CliProfile, FarmSchedule, FarmTrigger, newId,
+    PREV_OUTPUT_PLACEHOLDER, sanitizePrompt, ScheduleKind, TaskManager, TaskMode, WorkflowStep
 } from './core/tasks';
+import {
+    buildResumeMessage, DEFAULT_MISSION_LIMITS, MissionEngine, MissionEngineDeps,
+    MissionLimits, MissionRun, MissionSpec, MissionStore, newMissionId, outputExcerpt,
+    parsePlannerEnvelope, PlannerResult, remainingBudget
+} from './core/missions';
+import { MissionsPanel } from './panels/missionsPanel';
 import { TriggerManager } from './core/triggers';
 import { dayKey, fmtTokens, fmtUSD, normPath, relTime } from './core/util';
 import { AgentDetailPanel } from './panels/agentDetail';
@@ -1354,6 +1360,412 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         needsEmitter.fire();
     }, null, context.subscriptions);
 
+    // ---------- Missions: dynamic multi-agent orchestration ----------
+    // The engine loop lives in core/missions.ts; this block supplies the world:
+    // planner calls (headless claude, resumable), delegations (ordinary
+    // FarmTasks), approval/question waits (Needs You + toasts) and persistence.
+    const missionStore = new MissionStore(path.join(context.globalStorageUri.fsPath, 'missions.json'));
+    missionStore.load();
+    // A window reload kills the in-memory loops: park those runs honestly,
+    // they resume from Needs You / the Missions panel.
+    for (const r of missionStore.runs) {
+        if (r.status === 'running' || r.status === 'waiting-approval' || r.status === 'waiting-user') {
+            r.status = 'paused';
+            r.note = 'interrupted by window reload';
+        }
+    }
+    missionStore.save();
+    const missionEngines = new Map<string, MissionEngine>();
+    const missionQuestions = new Map<string, { question: string; askedAt: number; resolve: (a: string | undefined) => void }>();
+    const missionApprovals = new Map<string, string>(); // runId → approvalQueue id
+    const missionEmitter = new vscode.EventEmitter<void>();
+    context.subscriptions.push(missionEmitter);
+    const missionChanged = () => {
+        missionStore.save();
+        missionEmitter.fire();
+        needsEmitter.fire();
+    };
+
+    const missionWaits = () => {
+        const waits: { runId: string; missionTitle: string; flavor: 'question' | 'interrupted'; detail: string; ts: number }[] = [];
+        for (const [runId, q] of missionQuestions) {
+            const run = missionStore.run(runId);
+            const spec = run ? missionStore.spec(run.specId) : undefined;
+            waits.push({ runId, missionTitle: spec?.title ?? runId, flavor: 'question', detail: q.question, ts: q.askedAt });
+        }
+        for (const run of missionStore.runs) {
+            if (run.status === 'paused' && run.note === 'interrupted by window reload') {
+                waits.push({
+                    runId: run.id,
+                    missionTitle: missionStore.spec(run.specId)?.title ?? run.id,
+                    flavor: 'interrupted',
+                    detail: 'the window closed mid-mission — resume to continue',
+                    ts: run.startedAt
+                });
+            }
+        }
+        return waits;
+    };
+
+    /** One headless planner call. The prompt goes via stdin (multi-line briefings
+     *  must survive the Windows shell); --resume keeps the lead's context. */
+    const runMissionPlanner = (spec: MissionSpec) =>
+        (prompt: string, resumeSessionId?: string): Promise<PlannerResult> =>
+            new Promise(resolve => {
+                const lead = agents.find(a => a.id === spec.leadAgentId);
+                const extra = cfg().get<string>('taskExtraArgs', '').trim();
+                // model override rides only on planner calls; strict charset so a
+                // form value can never smuggle shell syntax into the command line
+                const model = spec.plannerModel && /^[\w.:-]+$/.test(spec.plannerModel)
+                    ? `--model ${spec.plannerModel} ` : '';
+                const command = `claude ${extra ? extra + ' ' : ''}${model}${resumeSessionId ? `--resume ${resumeSessionId} ` : ''}-p --output-format json`;
+                let settled = false;
+                const done = (r: PlannerResult) => { if (!settled) { settled = true; resolve(r); } };
+                try {
+                    const child = cp.spawn(command, {
+                        cwd: lead?.dir ?? os.homedir(),
+                        shell: true, windowsHide: true,
+                        stdio: ['pipe', 'pipe', 'pipe']
+                    });
+                    let out = '', err = '';
+                    const timer = setTimeout(() => {
+                        try { child.kill(); } catch { /* already gone */ }
+                        done({ ok: false, error: 'planner call timed out (10 min)' });
+                    }, 10 * 60_000);
+                    child.stdout.on('data', d => { out += String(d); });
+                    child.stderr.on('data', d => { err += String(d); });
+                    child.on('error', e => { clearTimeout(timer); done({ ok: false, error: String(e).slice(0, 200) }); });
+                    child.on('close', code => {
+                        clearTimeout(timer);
+                        const env = parsePlannerEnvelope(out);
+                        if (!env) {
+                            done({ ok: false, error: `planner exited ${code}: ${(err || out).trim().slice(0, 300)}` });
+                            return;
+                        }
+                        done({
+                            ok: !env.isError,
+                            raw: env.result,
+                            sessionId: env.sessionId,
+                            costUSD: env.costUSD,
+                            error: env.isError ? env.result.slice(0, 300) : undefined
+                        });
+                    });
+                    child.stdin.write(prompt);
+                    child.stdin.end();
+                } catch (e) {
+                    done({ ok: false, error: String(e).slice(0, 200) });
+                }
+            });
+
+    /** Run one wave of delegations as ordinary FarmTasks and wait them out. */
+    const missionDelegateWave = (spec: MissionSpec) =>
+        (run: MissionRun, steps: MissionRun['rounds'][number]['steps']): Promise<void> =>
+            new Promise(resolve => {
+                for (const step of steps) {
+                    const agent = agents.find(a => a.id === step.agentId)
+                        ?? agents.find(a => a.name === step.agentName);
+                    if (!agent) {
+                        step.status = 'failed';
+                        step.note = 'agent not found';
+                        continue;
+                    }
+                    const task = taskManager.addTask(agent, `[Mission] ${step.title}`, step.prompt, 'headless');
+                    task.missionId = run.id;
+                    if (spec.workdir) { task.workDir = spec.workdir; }
+                    step.taskId = task.id;
+                    step.status = 'running';
+                    taskManager.startTask(task);
+                }
+                if (!steps.some(s => s.taskId)) { resolve(); return; }
+                let finished = false;
+                const check = () => {
+                    if (finished) { return; }
+                    let allDone = true;
+                    for (const step of steps) {
+                        if (!step.taskId) { continue; }
+                        const t = taskManager.tasks.find(x => x.id === step.taskId);
+                        if (!t) { step.status = 'failed'; step.note = 'task record lost'; continue; }
+                        step.costUSD = t.costUSD;
+                        step.outputFile = t.outputFile;
+                        if (t.status === 'done' || t.status === 'failed' || t.status === 'cancelled') {
+                            step.status = t.status;
+                        } else {
+                            allDone = false; // queued (deferred) or running — keep waiting
+                        }
+                    }
+                    if (allDone) {
+                        finished = true;
+                        sub.dispose();
+                        clearInterval(poll);
+                        resolve();
+                    }
+                };
+                const sub = taskManager.onDidChange(check);
+                const poll = setInterval(check, 15_000); // safety net for missed events
+                check();
+            });
+
+    const missionRequestApproval = (spec: MissionSpec) =>
+        (run: MissionRun, round: MissionRun['rounds'][number]): Promise<boolean> => {
+            const lines = round.steps.map(s => `${s.agentName}: ${s.title}`).join(' · ');
+            const { id, promise } = approvalQueue.add({
+                title: `Mission "${spec.title}" — round ${round.n} (${round.steps.length} delegation(s))`,
+                goal: lines,
+                kind: 'approval'
+            });
+            missionApprovals.set(run.id, id);
+            missionChanged();
+            void vscode.window.showInformationMessage(
+                `Agent Farm mission "${spec.title}" wants to run round ${round.n}: ${lines.slice(0, 140)}`,
+                'Approve', 'Reject', 'Open Missions'
+            ).then(choice => {
+                if (choice === 'Approve') { approvalQueue.settle(id, true); }
+                else if (choice === 'Reject') { approvalQueue.settle(id, false); }
+                else if (choice === 'Open Missions') { void vscode.commands.executeCommand('agentfarm.openMissions'); }
+            });
+            return promise.finally(() => {
+                missionApprovals.delete(run.id);
+                missionChanged();
+            });
+        };
+
+    const missionAskUser = (spec: MissionSpec) =>
+        (run: MissionRun, question: string): Promise<string | undefined> =>
+            new Promise<string | undefined>(resolve => {
+                missionQuestions.set(run.id, {
+                    question, askedAt: Date.now(),
+                    resolve: a => {
+                        missionQuestions.delete(run.id);
+                        missionChanged();
+                        resolve(a);
+                    }
+                });
+                missionChanged();
+                void vscode.window.showInformationMessage(
+                    `Mission "${spec.title}" asks: ${question}`, 'Answer…', 'Skip'
+                ).then(async choice => {
+                    const pending = missionQuestions.get(run.id);
+                    if (!pending) { return; } // already answered elsewhere
+                    if (choice === 'Answer…') {
+                        const a = await vscode.window.showInputBox({ prompt: question, ignoreFocusOut: true });
+                        missionQuestions.get(run.id)?.resolve(a);
+                    } else if (choice === 'Skip') {
+                        missionQuestions.get(run.id)?.resolve(undefined);
+                    }
+                    // toast dismissed without a pick: the wait stays in Needs You
+                });
+            });
+
+    const answerMissionQuestion = async (runId: string, answer?: string): Promise<void> => {
+        const pending = missionQuestions.get(runId);
+        if (!pending) { return; }
+        const a = answer !== undefined
+            ? answer
+            : await vscode.window.showInputBox({ prompt: pending.question, ignoreFocusOut: true });
+        missionQuestions.get(runId)?.resolve(a);
+    };
+
+    const missionTeamHints = (spec: MissionSpec) => spec.team.map(m => {
+        const a = agents.find(x => x.id === m.agentId);
+        let hint = '';
+        try {
+            hint = a?.claudeMdPath
+                ? fs.readFileSync(a.claudeMdPath, 'utf8').replace(/^#.*$/m, '').replace(/\s+/g, ' ').trim().slice(0, 160)
+                : '';
+        } catch { /* unreadable identity — hint stays empty */ }
+        return { name: m.agentName, role: m.role, hint };
+    });
+
+    const missionReadBody = (file: string): string => {
+        try { return archivedOutputBody(fs.readFileSync(file, 'utf8')); } catch { return ''; }
+    };
+
+    const missionDepsFor = (spec: MissionSpec): MissionEngineDeps => ({
+        runPlanner: runMissionPlanner(spec),
+        delegateWave: missionDelegateWave(spec),
+        readOutputBody: missionReadBody,
+        requestApproval: missionRequestApproval(spec),
+        askUser: missionAskUser(spec),
+        onUpdate: () => missionChanged(),
+        now: () => Date.now()
+    });
+
+    const launchMission = (spec: MissionSpec, run: MissionRun, initialMsg?: string): void => {
+        const engine = new MissionEngine(spec, run, missionTeamHints(spec), missionDepsFor(spec));
+        missionEngines.set(run.id, engine);
+        void engine.execute(initialMsg).catch(e => {
+            run.status = 'failed';
+            run.note = 'engine error: ' + String(e).slice(0, 200);
+            run.endedAt = Date.now();
+        }).finally(() => {
+            missionEngines.delete(run.id);
+            missionChanged();
+            const r = missionStore.run(run.id);
+            if (r && (r.status === 'done' || r.status === 'failed' || r.status === 'cancelled')) {
+                const line = `Mission "${spec.title}" ${r.status}` +
+                    (r.result ? ` — ${r.result.verdict}: ${r.result.summary.slice(0, 200)}` : '') +
+                    ` ($${r.totalCostUSD.toFixed(2)})`;
+                postForward('mission', line);
+                void vscode.window.showInformationMessage(`Agent Farm: ${line}`, 'Open Missions')
+                    .then(c => { if (c === 'Open Missions') { void vscode.commands.executeCommand('agentfarm.openMissions'); } });
+            }
+        });
+    };
+
+    const startMission = (spec: MissionSpec): MissionRun => {
+        missionStore.specs.push(spec);
+        const run: MissionRun = {
+            id: newMissionId(), specId: spec.id, status: 'running',
+            rounds: [], ledger: [], totalCostUSD: 0, startedAt: Date.now()
+        };
+        missionStore.runs.push(run);
+        missionChanged();
+        launchMission(spec, run);
+        return run;
+    };
+
+    const resumeMission = (runId: string): void => {
+        const run = missionStore.run(runId);
+        const spec = run ? missionStore.spec(run.specId) : undefined;
+        if (!run || !spec || run.status !== 'paused' || missionEngines.has(runId)) { return; }
+        run.note = undefined;
+        // pause time must not eat the wall clock
+        const lastActivity = run.rounds.length ? run.rounds[run.rounds.length - 1].at : run.startedAt;
+        run.waitedMs = (run.waitedMs ?? 0) + Math.max(0, Date.now() - lastActivity);
+        const last = run.rounds[run.rounds.length - 1];
+        let initialMsg: string | undefined;
+        if (last && last.action === 'delegate' && last.steps.length && !last.rejectedReason) {
+            // whatever was in flight when the window died: settle from task records
+            for (const step of last.steps) {
+                const t = step.taskId ? taskManager.tasks.find(x => x.id === step.taskId) : undefined;
+                if (t && (t.status === 'done' || t.status === 'failed' || t.status === 'cancelled')) {
+                    step.status = t.status;
+                    step.costUSD = t.costUSD;
+                    step.outputFile = t.outputFile;
+                } else if (step.status === 'running' || step.status === 'queued') {
+                    step.status = 'failed';
+                    step.note = 'interrupted by reload';
+                    if (t) { step.outputFile = t.outputFile; }
+                }
+            }
+            initialMsg = buildResumeMessage(run,
+                last.steps.map(step => ({
+                    step,
+                    excerpt: step.outputFile ? outputExcerpt(missionReadBody(step.outputFile)) : ''
+                })),
+                remainingBudget(spec, run, Date.now()));
+        } else if (run.rounds.length || run.plannerSessionId) {
+            initialMsg = buildResumeMessage(run, [], remainingBudget(spec, run, Date.now()))
+                + (last?.action === 'ask_user' && !last.answer
+                    ? `\nYour earlier question ("${last.question}") was never answered — ask again if it still matters.`
+                    : '');
+        } // else: interrupted before round 1 — plain fresh start with the briefing
+        launchMission(spec, run, initialMsg);
+        missionChanged();
+    };
+
+    const cancelMission = (runId: string): void => {
+        const run = missionStore.run(runId);
+        if (!run) { return; }
+        missionEngines.get(runId)?.cancel();
+        const apId = missionApprovals.get(runId);
+        if (apId) { approvalQueue.settle(apId, false); }
+        missionQuestions.get(runId)?.resolve(undefined);
+        for (const t of taskManager.tasks) {
+            if (t.missionId === runId && (t.status === 'running' || t.status === 'queued')) {
+                taskManager.cancelTask(t);
+            }
+        }
+        if (!missionEngines.has(runId) &&
+            run.status !== 'done' && run.status !== 'failed' && run.status !== 'cancelled') {
+            run.status = 'cancelled';
+            run.endedAt = Date.now();
+        }
+        missionChanged();
+    };
+
+    const createMission = (input: Record<string, unknown>): string | undefined => {
+        const goal = String(input.goal ?? '').trim();
+        if (!goal) { return 'Goal is required.'; }
+        const lead = agents.find(a => a.id === String(input.leadAgentId ?? ''));
+        if (!lead) { return 'Pick a lead agent.'; }
+        const teamIn = Array.isArray(input.team) ? input.team as { agentId?: unknown; role?: unknown }[] : [];
+        const team: MissionSpec['team'] = [];
+        for (const t of teamIn) {
+            const a = agents.find(x => x.id === String(t.agentId ?? ''));
+            if (a && !team.some(m => m.agentId === a.id)) {
+                team.push({ agentId: a.id, agentName: a.name, role: String(t.role ?? '').trim() || undefined });
+            }
+        }
+        if (!team.length) { return 'Pick at least one team agent.'; }
+        const workdir = String(input.workdir ?? '').trim();
+        if (workdir && !fs.existsSync(workdir)) { return `Workdir does not exist: ${workdir}`; }
+        const num = (v: unknown, d: number, min: number, max: number) => {
+            const n = Number(v);
+            return Number.isFinite(n) ? Math.min(max, Math.max(min, Math.round(n * 100) / 100)) : d;
+        };
+        const limits: MissionLimits = {
+            maxRounds: num(input.maxRounds, DEFAULT_MISSION_LIMITS.maxRounds, 1, 30),
+            maxTasks: num(input.maxTasks, DEFAULT_MISSION_LIMITS.maxTasks, 1, 60),
+            maxCostUSD: num(input.maxCostUSD, DEFAULT_MISSION_LIMITS.maxCostUSD, 0.1, 500),
+            maxMinutes: num(input.maxMinutes, DEFAULT_MISSION_LIMITS.maxMinutes, 5, 24 * 60),
+            maxParallel: num(input.maxParallel, DEFAULT_MISSION_LIMITS.maxParallel, 1, 6)
+        };
+        startMission({
+            id: newMissionId(),
+            title: String(input.title ?? '').trim().slice(0, 80) || goal.slice(0, 60),
+            goal,
+            leadAgentId: lead.id,
+            leadAgentName: lead.name,
+            team,
+            workdir: workdir || undefined,
+            plannerModel: String(input.plannerModel ?? '').trim().slice(0, 60) || undefined,
+            limits,
+            approvalMode: input.approvalMode === 'auto' ? 'auto' : 'each-round',
+            createdAt: Date.now()
+        });
+        return undefined;
+    };
+
+    // Step statuses move on task events while a wave runs — mirror those into
+    // the panel without a store write.
+    taskManager.onDidChange(() => {
+        if (missionEngines.size) { missionEmitter.fire(); }
+    }, null, context.subscriptions);
+
+    const missionsPanelDeps = {
+        extensionUri: context.extensionUri,
+        data: () => ({
+            specs: missionStore.specs,
+            runs: [...missionStore.runs].sort((a, b) => b.startedAt - a.startedAt),
+            agents: agents.map(a => ({ id: a.id, name: a.name })),
+            defaults: DEFAULT_MISSION_LIMITS,
+            pending: {
+                questions: [...missionQuestions.entries()].map(([runId, q]) => ({ runId, question: q.question })),
+                approvals: [...missionApprovals.keys()]
+            }
+        }),
+        create: createMission,
+        control: (action: 'pause' | 'resume' | 'cancel', runId: string) => {
+            if (action === 'pause') { missionEngines.get(runId)?.pause(); missionChanged(); }
+            else if (action === 'resume') { resumeMission(runId); }
+            else { cancelMission(runId); }
+        },
+        answer: (runId: string, text: string) => { void answerMissionQuestion(runId, text); },
+        settleApproval: (runId: string, ok: boolean) => {
+            const id = missionApprovals.get(runId);
+            if (id) { approvalQueue.settle(id, ok); }
+        },
+        pickFolder: async () => {
+            const picked = await vscode.window.showOpenDialog({
+                canSelectFolders: true, canSelectFiles: false, canSelectMany: false,
+                openLabel: 'Use as mission workdir'
+            });
+            return picked?.[0]?.fsPath;
+        },
+        onDidChange: missionEmitter.event
+    };
+
     // G1: the Needs You queue is assembled from live state + approvals + insights + parked tasks.
     const buildNeeds = (): NeedItem[] => buildNeedsQueue({
         // labelOf adds "#k" when one agent runs several sessions, so two
@@ -1369,6 +1781,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             })),
         // F1: cut runs live in the queue too — the startup toast is easy to miss.
         interruptedRuns: taskManager.interruptedRuns(),
+        missionWaits: missionWaits(),
         includeYourTurn: true
     });
 
@@ -1507,6 +1920,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 break;
             case 'dismiss-run':
                 if (item.ref.runId) { taskManager.dismissInterrupted(item.ref.runId); }
+                break;
+            case 'mission-answer':
+                if (item.ref.missionRunId) { await answerMissionQuestion(item.ref.missionRunId); }
+                break;
+            case 'mission-resume':
+                if (item.ref.missionRunId) { resumeMission(item.ref.missionRunId); }
+                break;
+            case 'mission-dismiss': {
+                const run = item.ref.missionRunId ? missionStore.run(item.ref.missionRunId) : undefined;
+                if (run && run.status === 'paused') {
+                    run.status = 'cancelled';
+                    run.endedAt = Date.now();
+                    run.note = 'dismissed after interruption';
+                    missionChanged();
+                }
+                break;
+            }
+            case 'open-missions':
+                void vscode.commands.executeCommand('agentfarm.openMissions');
                 break;
         }
     };
@@ -1714,6 +2146,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(
         vscode.commands.registerCommand('agentfarm.openDashboard', () => {
             DashboardPanel.show(dashboardDeps);
+        }),
+
+        vscode.commands.registerCommand('agentfarm.openMissions', () => {
+            MissionsPanel.show(missionsPanelDeps);
+        }),
+
+        vscode.commands.registerCommand('agentfarm.newMission', () => {
+            if (!agents.length) {
+                void vscode.window.showWarningMessage('Agent Farm: no agents found — add an agent root folder first.');
+                return;
+            }
+            MissionsPanel.show(missionsPanelDeps, { newForm: true });
         }),
 
         vscode.commands.registerCommand('agentfarm.openGuide', (anchor?: string) => {

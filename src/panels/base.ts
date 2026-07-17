@@ -38,6 +38,7 @@ export function handleAfNav(to: unknown): void {
         timeline: 'agentfarm.openTimeline',
         needs: 'agentfarm.openNeeds',
         board: 'agentfarm.openBoard',
+        missions: 'agentfarm.openMissions',
         search: 'agentfarm.searchTranscripts',
         settings: 'agentfarm.openFarmSettings'
     };
