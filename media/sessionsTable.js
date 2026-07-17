@@ -16,6 +16,21 @@
         { id: 'turns', label: 'Turns', key: r => r.turns || 0 }
     ];
 
+    // min–max range filters run over the same figures the sorts use (and then some)
+    const FRANGES = [
+        { id: 'tokens', label: 'Tokens', get: r => r.tokens || 0 },
+        { id: 'cost', label: 'Cost $', get: r => r.cost || 0 },
+        { id: 'ctx', label: 'Ctx', get: r => r.ctx || 0 },
+        { id: 'duration', label: 'Minutes', get: r => r.durationMin || 0 },
+        { id: 'turns', label: 'Turns', get: r => r.turns || 0 },
+        { id: 'tools', label: 'Tools', get: r => r.toolCalls || 0 },
+        { id: 'errors', label: 'Errors', get: r => r.errors || 0 }
+    ];
+    const FDEF = () => ({
+        text: '', agent: '', activeOnly: false, errorsOnly: false, mainOnly: false,
+        from: '', to: '', ranges: {}
+    });
+
     const STYLE = `<style>
         .chiprow { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:8px 0; }
         .chip { font-size:11px; padding:2px 10px; border-radius:10px; cursor:pointer;
@@ -23,6 +38,13 @@
             border:1px solid var(--vscode-widget-border, #4444); }
         .chip.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground);
             border-color:transparent; opacity:1; }
+        .af-fpanel { display:flex; flex-direction:column; gap:6px; margin:2px 0 8px;
+            padding:8px 10px; border:1px solid var(--vscode-widget-border, #3333); border-radius:5px; }
+        .af-frow { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+        .af-frange { font-size:11px; display:flex; gap:3px; align-items:center; white-space:nowrap; }
+        .af-frange input[type=number] { width:64px; padding:1px 4px; }
+        .af-frange input[type=date] { padding:1px 4px; }
+        .af-ftext { width:180px; padding:2px 6px; }
         .foldcell { width:22px; }
         .fold { font-size:10px; padding:0 6px; line-height:16px; cursor:pointer; border-radius:3px;
             background:transparent; opacity:.7; border:1px solid var(--vscode-widget-border, #4444);
@@ -81,6 +103,8 @@
         let sort = SORTS.some(s => s.id === saved.sort) ? saved.sort
             : (SORTS.some(s => s.id === opts.fallbackSort) ? opts.fallbackSort : 'recent');
         let single = saved.single !== undefined ? !!saved.single : !!opts.fallbackSingle;
+        let filters = Object.assign(FDEF(), saved.filters || {});
+        let filtersOpen = !!saved.filtersOpen;
         const open = new Set();
         const turnCache = {}; // file -> { ts, turns|null } (null = request in flight)
         let shown = [];       // exactly what's on screen, set by the last render
@@ -89,8 +113,75 @@
             if (typeof vscode.setState !== 'function') { return; }
             const st = (typeof vscode.getState === 'function' && vscode.getState()) || {};
             const all = Object.assign({}, st.afSess);
-            all[opts.stateKey] = { sort, single };
+            all[opts.stateKey] = { sort, single, filters, filtersOpen };
             vscode.setState(Object.assign({}, st, { afSess: all }));
+        }
+
+        function activeFilterCount() {
+            let n = (filters.text ? 1 : 0) + (filters.agent ? 1 : 0)
+                + (filters.activeOnly ? 1 : 0) + (filters.errorsOnly ? 1 : 0) + (filters.mainOnly ? 1 : 0)
+                + (filters.from ? 1 : 0) + (filters.to ? 1 : 0);
+            FRANGES.forEach(k => {
+                const rg = filters.ranges[k.id];
+                if (rg) { n += (rg.min !== undefined ? 1 : 0) + (rg.max !== undefined ? 1 : 0); }
+            });
+            return n;
+        }
+
+        function filterRows(list) {
+            const text = (filters.text || '').toLowerCase();
+            return list.filter(r => {
+                if (text && ((r.title || '') + ' ' + (r.agent || '')).toLowerCase().indexOf(text) < 0) { return false; }
+                if (filters.agent && r.agentName !== filters.agent) { return false; }
+                if (filters.activeOnly && !r.active) { return false; }
+                if (filters.errorsOnly && !(r.errors > 0)) { return false; }
+                if (filters.mainOnly && r.sidechain) { return false; }
+                if (filters.from) {
+                    const t = Date.parse(filters.from);
+                    if (!isNaN(t) && r.ts < t) { return false; }
+                }
+                if (filters.to) {
+                    const t = Date.parse(filters.to);
+                    if (!isNaN(t) && r.ts >= t + 24 * 3600 * 1000) { return false; } // inclusive end day
+                }
+                for (const k of FRANGES) {
+                    const rg = filters.ranges[k.id];
+                    if (!rg) { continue; }
+                    const v = k.get(r);
+                    if (rg.min !== undefined && v < rg.min) { return false; }
+                    if (rg.max !== undefined && v > rg.max) { return false; }
+                }
+                return true;
+            });
+        }
+
+        function filterPanelHtml() {
+            if (!filtersOpen) { return ''; }
+            const agents = [];
+            rows.forEach(r => { if (r.agentName && agents.indexOf(r.agentName) < 0) { agents.push(r.agentName); } });
+            agents.sort();
+            const flag = (cls, label, on, tip) =>
+                `<button class="chip ${cls}${on ? ' on' : ''}" title="${tip}">${label}</button>`;
+            const ranges = FRANGES.map(k => {
+                const rg = filters.ranges[k.id] || {};
+                return `<label class="af-frange">${k.label}
+                    <input type="number" class="af-fr-${k.id}-min" placeholder="min" value="${rg.min !== undefined ? rg.min : ''}">–<input type="number" class="af-fr-${k.id}-max" placeholder="max" value="${rg.max !== undefined ? rg.max : ''}">
+                </label>`;
+            }).join('');
+            return `<div class="af-fpanel">
+                <div class="af-frow">
+                    <input type="text" class="af-ftext" placeholder="title contains…" value="${C.esc(filters.text)}">
+                    ${hasAgentCol && agents.length > 1 ? `<span class="muted small">Agent:</span>
+                        <select class="af-fagent"><option value="">all</option>${agents.map(a =>
+                            `<option value="${C.esc(a)}"${filters.agent === a ? ' selected' : ''}>${C.esc(a)}</option>`).join('')}</select>` : ''}
+                    ${flag('af-factive', 'Active now', filters.activeOnly, 'Only sessions with a live terminal working right now')}
+                    ${flag('af-ferrors', 'Has errors', filters.errorsOnly, 'Only sessions with at least one tool error')}
+                    ${flag('af-fmain', 'Main only', filters.mainOnly, 'Hide subagent (sidechain) sessions')}
+                </div>
+                <div class="af-frow">${ranges}
+                    <label class="af-frange">When <input type="date" class="af-ffrom" value="${C.esc(filters.from)}">–<input type="date" class="af-fto" value="${C.esc(filters.to)}"></label>
+                    <button class="chip af-fclear" title="Reset every filter">Clear</button></div>
+            </div>`;
         }
 
         /** Ask the host for a session's per-turn breakdown unless the cache is
@@ -160,7 +251,9 @@
 
         function sectionHtml() {
             const def = SORTS.find(s => s.id === sort) || SORTS[0];
-            shown = rows.slice().sort((a, b) => def.key(b) - def.key(a)).slice(0, tableN);
+            const pool = filterRows(rows);
+            const nf = activeFilterCount();
+            shown = pool.slice().sort((a, b) => def.key(b) - def.key(a)).slice(0, tableN);
             shown.forEach(r => { if (open.has(r.file)) { ensureTurns(r); } });
             const rowsHtml = shown.map(r => {
                 const o = open.has(r.file);
@@ -177,11 +270,13 @@
                 <button class="chip af-expand" title="List every shown session's turns">Expand all</button>
                 <button class="chip af-collapse" title="Hide all turn lists">Collapse all</button>
                 <button class="chip af-single${single ? ' on' : ''}" title="Only one session's turns open at a time: unfolding a session folds the previous one">Single-open</button>
-                <span class="muted small">— ▸ lists a session's turns with per-turn tokens/cost · ● = active now · ctx = context after the last reply</span>
+                <button class="chip af-filter${nf ? ' on' : ''}" title="Filter the sessions by text, agent, flags, ranges and dates">Filters${nf ? ` (${nf})` : ''}</button>
+                <span class="muted small">${nf ? `${pool.length}/${rows.length} sessions` : '— ▸ lists a session\'s turns with per-turn tokens/cost · ● = active now · ctx = context after the last reply'}</span>
             </div>
+            ${filterPanelHtml()}
             <div class="tablewrap"><table>
                 <tr><th></th>${cols.map(c => HEAD[c]).join('')}</tr>
-                ${rowsHtml || `<tr><td colspan="${cols.length + 1}" class="muted">No sessions yet.</td></tr>`}
+                ${rowsHtml || `<tr><td colspan="${cols.length + 1}" class="muted">${nf ? 'No sessions match the filters.' : 'No sessions yet.'}</td></tr>`}
             </table></div>`;
         }
 
@@ -217,6 +312,41 @@
                 saveState();
                 renderSection();
             });
+            // ---- filter panel ----
+            const fchip = root.querySelector('.af-filter');
+            if (fchip) {
+                fchip.addEventListener('click', () => {
+                    filtersOpen = !filtersOpen;
+                    saveState();
+                    renderSection();
+                });
+            }
+            const apply = () => { saveState(); renderSection(); };
+            const wireEl = (sel, ev, fn) => {
+                const el = root.querySelector(sel);
+                if (el) { el.addEventListener(ev, () => fn(el)); }
+            };
+            if (filtersOpen) {
+                wireEl('.af-ftext', 'change', el => { filters.text = el.value || ''; apply(); });
+                wireEl('.af-fagent', 'change', el => { filters.agent = el.value || ''; apply(); });
+                wireEl('.af-factive', 'click', () => { filters.activeOnly = !filters.activeOnly; apply(); });
+                wireEl('.af-ferrors', 'click', () => { filters.errorsOnly = !filters.errorsOnly; apply(); });
+                wireEl('.af-fmain', 'click', () => { filters.mainOnly = !filters.mainOnly; apply(); });
+                wireEl('.af-ffrom', 'change', el => { filters.from = el.value || ''; apply(); });
+                wireEl('.af-fto', 'change', el => { filters.to = el.value || ''; apply(); });
+                FRANGES.forEach(k => {
+                    const bound = (b) => (el) => {
+                        const n = el.value === '' || el.value === undefined ? NaN : Number(el.value);
+                        const rg = filters.ranges[k.id] || (filters.ranges[k.id] = {});
+                        rg[b] = isNaN(n) ? undefined : n;
+                        if (rg.min === undefined && rg.max === undefined) { delete filters.ranges[k.id]; }
+                        apply();
+                    };
+                    wireEl(`.af-fr-${k.id}-min`, 'change', bound('min'));
+                    wireEl(`.af-fr-${k.id}-max`, 'change', bound('max'));
+                });
+                wireEl('.af-fclear', 'click', () => { filters = FDEF(); apply(); });
+            }
             root.querySelectorAll('[data-session]').forEach(row =>
                 row.addEventListener('click', () =>
                     vscode.postMessage({ type: 'openSession', file: row.dataset.session })));

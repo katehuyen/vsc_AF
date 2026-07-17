@@ -92,6 +92,42 @@ export function sessionRowPool(
     return [...pool].sort((a, b) => b.ts - a.ts);
 }
 
+/** Aggregate one agent's sessions inside [from, to] for the comparison table.
+ *  Two precision tiers, honestly separated:
+ *  - windows starting within the last 24h sum recentMsgs (48h retention,
+ *    per-message timestamps) → hour-exact;
+ *  - anything older falls back to the daily buckets → whole-day granularity
+ *    (from/to are treated as local day boundaries).
+ *  Exported pure for tests. */
+export function agentWindowTotals(
+    sessions: Pick<SessionInfo, 'firstTs' | 'lastTs' | 'daily' | 'recentMsgs'>[],
+    from: number, to: number, now = Date.now()
+): { sessions: number; cost: number; tokens: number; msgs: number; exact: boolean } {
+    const out = { sessions: 0, cost: 0, tokens: 0, msgs: 0, exact: from >= now - 24 * 3600 * 1000 };
+    for (const s of sessions) {
+        if (s.firstTs > 0 && s.lastTs >= from && s.firstTs <= to) { out.sessions++; }
+        if (out.exact) {
+            for (const m of s.recentMsgs) {
+                if (m.ts >= from && m.ts <= to) {
+                    out.cost += m.cost;
+                    out.tokens += m.tokens;
+                    out.msgs++;
+                }
+            }
+        } else {
+            for (const [day, b] of Object.entries(s.daily)) {
+                const dayStart = new Date(day + 'T00:00:00').getTime();
+                if (isNaN(dayStart) || dayStart + 24 * 3600 * 1000 <= from || dayStart > to) { continue; }
+                out.cost += b.cost;
+                out.tokens += totalTokens(b.usage);
+                out.msgs += b.assistantMsgs;
+            }
+        }
+    }
+    out.cost = Math.round(out.cost * 10000) / 10000;
+    return out;
+}
+
 function buildData(deps: DashboardDeps): Record<string, unknown> {
     const now = Date.now();
     const agents = deps.getAgents();
@@ -302,6 +338,19 @@ export class DashboardPanel {
                     }).turns;
                 } catch { /* fail-soft: an unreadable file shows an empty turn list */ }
                 void this.panel.webview.postMessage({ type: 'sessionTurns', file, turns });
+                break;
+            }
+            case 'compareWindow': {
+                // Agent-comparison window: per-agent totals inside [from, to].
+                const from = typeof msg.from === 'number' ? msg.from : 0;
+                const to = typeof msg.to === 'number' ? msg.to : Date.now();
+                if (!(from >= 0) || !(to > from)) { break; }
+                const rows = this.deps.getAgents().map(a => ({
+                    id: a.id,
+                    name: a.name,
+                    ...agentWindowTotals(this.deps.index.forAgent(a.id), from, to)
+                }));
+                void this.panel.webview.postMessage({ type: 'compareWindow', from, to, rows });
                 break;
             }
             case 'statusAction': {

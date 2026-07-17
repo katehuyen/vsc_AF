@@ -18,9 +18,50 @@
         fallbackSingle: persisted.sessSingle
     });
 
+    // ---- Agent comparison window state ----
+    const H = 3600e3, D = 24 * H;
+    const CMP_WINDOWS = [
+        { id: '1h', label: '1 hour', ms: H }, { id: '2h', label: '2 hours', ms: 2 * H },
+        { id: '6h', label: '6 hours', ms: 6 * H }, { id: '12h', label: '12 hours', ms: 12 * H },
+        { id: '16h', label: '16 hours', ms: 16 * H },
+        { id: '1d', label: '1 day', ms: D }, { id: '2d', label: '2 days', ms: 2 * D },
+        { id: '3d', label: '3 days', ms: 3 * D }, { id: '4d', label: '4 days', ms: 4 * D },
+        { id: '5d', label: '5 days', ms: 5 * D },
+        { id: '1w', label: '1 week', ms: 7 * D }, { id: '2w', label: '2 weeks', ms: 14 * D },
+        { id: '3w', label: '3 weeks', ms: 21 * D }, { id: '4w', label: '4 weeks', ms: 28 * D },
+        { id: '1mo', label: '1 month', ms: 30 * D }, { id: '2mo', label: '2 months', ms: 60 * D },
+        { id: '3mo', label: '3 months', ms: 90 * D }, { id: '6mo', label: '6 months', ms: 180 * D },
+        { id: '9mo', label: '9 months', ms: 270 * D },
+        { id: '1y', label: '1 year', ms: 365 * D }, { id: '2y', label: '2 years', ms: 730 * D },
+        { id: '3y', label: '3 years', ms: 1095 * D },
+        { id: 'all', label: 'All time' },
+        { id: 'custom', label: 'Custom range…' }
+    ];
+    let cmpWin = 'all';                  // selected window id (default: all time)
+    let cmpFrom = '', cmpTo = '';        // custom-range dates (yyyy-mm-dd)
+    let cmpRows = null;                  // host reply for a window; null = all-time mode
+    let cmpSort = 'cost', cmpAsc = false;
+
+    function requestCmp() {
+        const w = CMP_WINDOWS.find(x => x.id === cmpWin);
+        if (!w || cmpWin === 'all') { cmpRows = null; return; }
+        if (cmpWin === 'custom') {
+            const f = Date.parse(cmpFrom), t = Date.parse(cmpTo);
+            if (isNaN(f) || isNaN(t) || t < f) { return; } // wait until both dates are sane
+            vscode.postMessage({ type: 'compareWindow', from: f, to: t + D - 1 }); // inclusive end day
+            return;
+        }
+        vscode.postMessage({ type: 'compareWindow', from: Date.now() - w.ms, to: Date.now() });
+    }
+
     window.addEventListener('message', ev => {
         if (sessTable.onMessage(ev)) { return; }
-        if (ev.data.type === 'data') { DATA = ev.data.data; render(); }
+        if (ev.data.type === 'compareWindow') { cmpRows = ev.data.rows || []; render(); return; }
+        if (ev.data.type === 'data') {
+            DATA = ev.data.data;
+            render();
+            if (cmpWin !== 'all') { requestCmp(); } // refresh the windowed figures too
+        }
     });
 
     function dayKeysBack(n) {
@@ -51,6 +92,98 @@
             if (bucket) total += bucket[field];
         }
         return total;
+    }
+
+    // ---- Agent comparison: sortable, over any window ----
+    const CMP_SORTS_ALL = [
+        { id: 'name', label: 'Agent A–Z', str: true, key: a => a.name },
+        { id: 'sessions', label: 'Sessions', key: a => a.sessions },
+        { id: 'cost', label: 'Cost', key: a => a.totalCost },
+        { id: 'tokens', label: 'Tokens', key: a => a.totalTokens },
+        { id: 'tools', label: 'Tools', key: a => a.toolCalls },
+        { id: 'errpct', label: 'Err %', key: a => a.toolCalls ? a.errors / a.toolCalls : 0 },
+        { id: 'quality', label: 'Quality', key: a => a.quality || 0 },
+        { id: 'cache', label: 'Cache eff.', key: a => { const p = a.usage.input + a.usage.cacheRead + a.usage.cacheWrite; return p ? a.usage.cacheRead / p : 0; } },
+        { id: 'ctxload', label: 'Ctx load', key: a => a.contextLoad }
+    ];
+    const CMP_SORTS_WIN = [
+        { id: 'name', label: 'Agent A–Z', str: true, key: r => r.name },
+        { id: 'sessions', label: 'Sessions', key: r => r.sessions },
+        { id: 'cost', label: 'Cost', key: r => r.cost },
+        { id: 'tokens', label: 'Tokens', key: r => r.tokens },
+        { id: 'msgs', label: 'Msgs', key: r => r.msgs }
+    ];
+
+    function cmpSorted(list, defs) {
+        const def = defs.find(s => s.id === cmpSort) || defs.find(s => s.id === 'cost') || defs[0];
+        return list.slice().sort((a, b) => {
+            const d = def.str
+                ? String(def.key(a)).localeCompare(String(def.key(b)))
+                : def.key(a) - def.key(b);
+            return cmpAsc ? d : -d;
+        });
+    }
+
+    function cmpControls(defs) {
+        return `<span class="cmpctl">
+            <select id="cmp-window" title="The period the comparison covers">${CMP_WINDOWS.map(x =>
+                `<option value="${x.id}"${x.id === cmpWin ? ' selected' : ''}>${x.label}</option>`).join('')}</select>
+            ${cmpWin === 'custom' ? `<input type="date" id="cmp-from" value="${C.esc(cmpFrom)}"> – <input type="date" id="cmp-to" value="${C.esc(cmpTo)}">` : ''}
+            <select id="cmp-sort" title="Sort the comparison rows">${defs.map(s =>
+                `<option value="${s.id}"${s.id === cmpSort ? ' selected' : ''}>${s.label}</option>`).join('')}</select>
+            <button class="chip" id="cmp-dir" title="Flip the sort direction">${cmpAsc ? '▲' : '▼'}</button>
+        </span>`;
+    }
+
+    function cmpSection() {
+        const style = `<style>
+            .cmph { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+            .cmpctl { display:inline-flex; gap:6px; align-items:center; font-size:12px; font-weight:400; }
+            .cmpctl input[type=date] { padding:1px 4px; }
+        </style>`;
+        if (cmpRows) {
+            // windowed mode: figures the host computed for [from, to]
+            const rows = cmpSorted(cmpRows, CMP_SORTS_WIN);
+            const exact = rows.length && rows[0].exact;
+            return style + `<h2 class="cmph">Agent comparison ${cmpControls(CMP_SORTS_WIN)}</h2>
+            <div class="tablewrap"><table>
+                <tr><th>Agent</th><th class="num">Sessions</th><th class="num">Cost</th><th class="num">Tokens</th><th class="num">Msgs</th></tr>
+                ${rows.map(r => `<tr class="click" data-agent-row="${C.esc(r.id)}">
+                    <td><strong>${C.esc(r.name)}</strong></td>
+                    <td class="num">${r.sessions}</td>
+                    <td class="num">${C.fmtUSD(r.cost)}</td>
+                    <td class="num">${C.fmtTok(r.tokens)}</td>
+                    <td class="num">${r.msgs}</td>
+                </tr>`).join('')}
+            </table></div>
+            <p class="muted small">${exact
+                ? 'Hour-exact — summed from the per-message log (retained 48h).'
+                : 'Day granularity — summed from daily buckets; hours inside a day are not sliced.'} Sessions = sessions overlapping the window.</p>`;
+        }
+        const rows = cmpSorted(DATA.agents, CMP_SORTS_ALL);
+        return style + `<h2 class="cmph">Agent comparison ${cmpControls(CMP_SORTS_ALL)}</h2>
+        <div class="tablewrap"><table>
+            <tr><th>Agent</th><th class="num">Sessions</th><th class="num">Cost</th><th class="num">Tokens</th><th class="num">Tools</th><th class="num">Err %</th><th class="num">Quality</th><th class="num">Cache eff.</th><th class="num">Ctx load</th></tr>
+            ${rows.map(a => {
+                const promptTok = a.usage.input + a.usage.cacheRead + a.usage.cacheWrite;
+                const cacheEff = promptTok ? Math.round(100 * a.usage.cacheRead / promptTok) + '%' : '—';
+                const errPct = a.toolCalls ? Math.round(100 * a.errors / a.toolCalls) + '%' : '—';
+                const quality = a.quality !== undefined && a.quality !== null
+                    ? `<span title="${a.qualityCount} sampled session(s), last 14 days">${a.quality.toFixed(1)}/5</span>` : '—';
+                return `<tr class="click" data-agent-row="${C.esc(a.id)}">
+                    <td><strong>${C.esc(a.name)}</strong></td>
+                    <td class="num">${a.sessions}</td>
+                    <td class="num">${C.fmtUSD(a.totalCost)}</td>
+                    <td class="num">${C.fmtTok(a.totalTokens)}</td>
+                    <td class="num">${a.toolCalls}</td>
+                    <td class="num">${errPct}</td>
+                    <td class="num">${quality}</td>
+                    <td class="num">${cacheEff}</td>
+                    <td class="num">~${C.fmtTok(a.contextLoad)}</td>
+                </tr>`;
+            }).join('')}
+        </table></div>
+        <p class="muted small">Cache eff. = cache-read share of prompt tokens (higher is cheaper). Err % = tool errors / tool calls. Quality = judge average of sampled sessions (14d) <a data-guide="kalite-karnesi">?</a> · <a data-guide="filo-raporu">Export a Markdown report ?</a></p>`;
     }
 
     function render() {
@@ -209,29 +342,7 @@
             ${charts}
             <h2>Agents</h2>
             <div class="grid">${cards}</div>
-            <h2>Agent comparison (all time)</h2>
-            <div class="tablewrap"><table>
-                <tr><th>Agent</th><th class="num">Sessions</th><th class="num">Cost</th><th class="num">Tokens</th><th class="num">Tools</th><th class="num">Err %</th><th class="num">Quality</th><th class="num">Cache eff.</th><th class="num">Ctx load</th></tr>
-                ${agents.map(a => {
-                    const promptTok = a.usage.input + a.usage.cacheRead + a.usage.cacheWrite;
-                    const cacheEff = promptTok ? Math.round(100 * a.usage.cacheRead / promptTok) + '%' : '—';
-                    const errPct = a.toolCalls ? Math.round(100 * a.errors / a.toolCalls) + '%' : '—';
-                    const quality = a.quality !== undefined && a.quality !== null
-                        ? `<span title="${a.qualityCount} sampled session(s), last 14 days">${a.quality.toFixed(1)}/5</span>` : '—';
-                    return `<tr class="click" data-agent-row="${C.esc(a.id)}">
-                        <td><strong>${C.esc(a.name)}</strong></td>
-                        <td class="num">${a.sessions}</td>
-                        <td class="num">${C.fmtUSD(a.totalCost)}</td>
-                        <td class="num">${C.fmtTok(a.totalTokens)}</td>
-                        <td class="num">${a.toolCalls}</td>
-                        <td class="num">${errPct}</td>
-                        <td class="num">${quality}</td>
-                        <td class="num">${cacheEff}</td>
-                        <td class="num">~${C.fmtTok(a.contextLoad)}</td>
-                    </tr>`;
-                }).join('')}
-            </table></div>
-            <p class="muted small">Cache eff. = cache-read share of prompt tokens (higher is cheaper). Err % = tool errors / tool calls. Quality = judge average of sampled sessions (14d) <a data-guide="kalite-karnesi">?</a> · <a data-guide="filo-raporu">Export a Markdown report ?</a></p>
+            ${cmpSection()}
             <h2>Sessions</h2>
             <div id="sessblock"></div>
             ${unknown}
@@ -256,6 +367,27 @@
             b.addEventListener('click', () => vscode.postMessage({
                 type: 'statusAction', kind: b.dataset.statusKind, value: b.dataset.statusValue
             })));
+
+        // ---- Agent comparison controls ----
+        const wireCmp = (id, ev, fn) => {
+            const el = document.getElementById(id);
+            if (el && el.addEventListener) { el.addEventListener(ev, () => fn(el)); }
+        };
+        wireCmp('cmp-window', 'change', el => {
+            cmpWin = el.value;
+            if (cmpWin === 'all') { cmpRows = null; render(); }
+            else { render(); requestCmp(); } // custom shows its date inputs first
+        });
+        wireCmp('cmp-from', 'change', el => { cmpFrom = el.value; requestCmp(); });
+        wireCmp('cmp-to', 'change', el => { cmpTo = el.value; requestCmp(); });
+        wireCmp('cmp-sort', 'change', el => {
+            cmpSort = el.value;
+            const defs = cmpRows ? CMP_SORTS_WIN : CMP_SORTS_ALL;
+            const def = defs.find(s => s.id === cmpSort);
+            cmpAsc = !!(def && def.str);
+            render();
+        });
+        wireCmp('cmp-dir', 'click', () => { cmpAsc = !cmpAsc; render(); });
 
         // The shared component fills its container and wires its own controls
         // (sort box, turn accordion, single-open, ⌨) — after every full render.

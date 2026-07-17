@@ -247,5 +247,41 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     ok('data refresh re-renders the table', sess().querySelectorAll('[data-fold]').length === 3);
 }
 
+// ---------- part 3: agentWindowTotals — hour-exact vs day-granularity ----------
+{
+    const { agentWindowTotals } = require(path.join(__dirname, '..', 'out', 'panels', 'dashboard.js'));
+    const now = Date.now();
+    const u = t => ({ input: t, output: 0, cacheWrite: 0, cacheRead: 0 });
+    const dayKey = ts => {
+        const d = new Date(ts);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+    const sessions = [
+        { // live-ish session: today's daily bucket + per-message log
+            firstTs: now - 2 * 3600e3, lastTs: now - 300e3,
+            daily: { [dayKey(now)]: { cost: 5, usage: u(5000), assistantMsgs: 9 } },
+            recentMsgs: [
+                { ts: now - 90 * 60e3, tokens: 1000, cost: 1 },
+                { ts: now - 30 * 60e3, tokens: 200, cost: 0.5 }
+            ]
+        },
+        { // old session, 9-10 days back — only daily buckets left
+            firstTs: now - 10 * 86400e3, lastTs: now - 9 * 86400e3,
+            daily: { [dayKey(now - 9.5 * 86400e3)]: { cost: 3, usage: u(3000), assistantMsgs: 4 } },
+            recentMsgs: []
+        }
+    ];
+    const hour = agentWindowTotals(sessions, now - 3600e3, now, now);
+    ok('1h window is hour-exact from the message log',
+        hour.exact === true && hour.tokens === 200 && hour.cost === 0.5 && hour.msgs === 1);
+    ok('1h window counts only overlapping sessions', hour.sessions === 1);
+    const twoW = agentWindowTotals(sessions, now - 14 * 86400e3, now, now);
+    ok('2w window sums daily buckets at day granularity',
+        twoW.exact === false && twoW.tokens === 8000 && twoW.msgs === 13 && twoW.sessions === 2);
+    const oldOnly = agentWindowTotals(sessions, now - 14 * 86400e3, now - 5 * 86400e3, now);
+    ok('a bounded old window keeps only its own days and sessions',
+        oldOnly.exact === false && oldOnly.tokens === 3000 && oldOnly.sessions === 1);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

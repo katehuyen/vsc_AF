@@ -22,7 +22,7 @@ function makeContainer() {
             const mk = ds => { const e = { dataset: ds }; e.addEventListener = (_t, fn) => { e._fn = fn; }; return e; };
             const list = [];
             const grab = (re, map) => { let m; while ((m = re.exec(this._html))) { list.push(mk(map(m))); } };
-            if (['.af-sort', '.af-expand', '.af-collapse', '.af-single'].includes(sel)) {
+            if (sel.startsWith('.af-')) { // any component control class (sort, chips, filter inputs…)
                 if (this._html.includes(sel.slice(1))) { list.push(mk({})); }
             } else if (sel === '[data-session]') {
                 grab(/data-session="([^"]*)"/g, m => ({ session: m[1] }));
@@ -195,6 +195,51 @@ const mkRow = (i, extra) => Object.assign({
     const html2 = containers.legacy.innerHTML;
     ok('legacy fallback sort honored (turns-desc)', html2.indexOf('title9') < html2.indexOf('title1'));
     ok('legacy fallback single-open honored', html2.includes('af-single on'));
+}
+
+// ---------- part: advanced filters (text, agent, flags, ranges, dates) ----------
+{
+    posted = []; state = {};
+    const t = sandbox.window.AFSessionsTable.create({
+        vscode: vscodeStub, C, containerId: 'flt',
+        columns: ['agent', 'title', 'when', 'tokens', 'cost'], stateKey: 'flt'
+    });
+    const rows = [
+        mkRow(1, { errors: 2, tokens: 100 }),
+        mkRow(2, { agentName: 'psy', agent: 'psy', active: true, tokens: 90000 }),
+        mkRow(3, { sidechain: true })
+    ];
+    t.setRows(rows, 10);
+    const html = () => containers.flt.innerHTML;
+    const q = sel => containers.flt.querySelector(sel);
+
+    ok('Filters chip renders in the chip row', html().includes('af-filter'));
+    click(q('.af-filter'));
+    ok('filter panel opens with text, agent, flags, ranges and dates',
+        html().includes('af-ftext') && html().includes('af-fagent') && html().includes('af-factive')
+        && html().includes('af-fr-tokens-min') && html().includes('af-ffrom') && html().includes('af-fclear'));
+    click(q('.af-factive'));
+    ok('Active-now flag narrows to the live session and shows the count',
+        html().includes('title2') && !html().includes('title1') && html().includes('1/3 sessions'));
+    click(q('.af-factive'));
+    click(q('.af-ferrors'));
+    ok('Has-errors flag keeps only erroring sessions', html().includes('title1') && !html().includes('title2'));
+    click(q('.af-ferrors'));
+    click(q('.af-fmain'));
+    ok('Main-only hides sidechain sessions', !html().includes('title3') && html().includes('title1'));
+    click(q('.af-fmain'));
+    const txt = q('.af-ftext'); txt.value = 'title2'; txt._fn(ev());
+    ok('text filter matches the title', html().includes('title2') && !html().includes('title1'));
+    click(q('.af-fclear'));
+    const min = q('.af-fr-tokens-min'); min.value = '5000'; min._fn(ev());
+    ok('token min-range hides small sessions', html().includes('title2') && !html().includes('title1'));
+    ok('filter state persisted under the page key',
+        state.afSess && state.afSess.flt.filters.ranges.tokens.min === 5000);
+    const ag = q('.af-fagent'); ag.value = 'dev'; ag._fn(ev());
+    ok('agent selection combines with the range (nothing matches → honest row)',
+        html().includes('No sessions match the filters.'));
+    click(q('.af-fclear'));
+    ok('Clear restores every row', html().includes('title1') && html().includes('title2') && html().includes('title3'));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
