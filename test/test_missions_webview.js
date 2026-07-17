@@ -438,5 +438,44 @@ ok('Collapse all folds the whole list', detailCount() === 0);
     msgHandler({ data: { type: 'data', data: { ...DATA, pending: { questions: [], approvals: [] }, specs: DATA.specs, runs: [RUN] } } });
 }
 
+// ---------- advanced filters: selections + ranges ----------
+{
+    // RUN: waiting-approval · 17k tok · $1.25  —  RUNF: done/success · 0 tok · $0.4
+    const RUNF = {
+        ...RUN, id: 'runF', status: 'done', endedAt: 2000,
+        result: { verdict: 'success', summary: 'ok' },
+        rounds: [], totalCostUSD: 0.4, plannerSessionId: undefined
+    };
+    msgHandler({ data: { type: 'data', data: { ...DATA, pending: { questions: [], approvals: [] }, runs: [RUN, RUNF] } } });
+    getEl('m-filters').listeners.click();
+    ok('filter panel opens with selection chips + range inputs + dates',
+        html().includes('id="fs-done"') && html().includes('id="fv-success"')
+        && html().includes('id="fr-tokens-min"') && html().includes('id="f-from"') && html().includes('id="f-clear"'));
+    getEl('fs-done').listeners.click();
+    ok('status selection narrows the list and shows the N/M count',
+        html().includes('data-run="runF"') && !html().includes('data-run="run1"') && html().includes('1/2 runs'));
+    getEl('fs-done').listeners.click(); // off again
+    ok('unpicking the status restores both rows',
+        html().includes('data-run="run1"') && html().includes('data-run="runF"'));
+    getEl('fv-success').listeners.click();
+    ok('verdict selection keeps only runs with that verdict',
+        html().includes('data-run="runF"') && !html().includes('data-run="run1"'));
+    getEl('fv-success').listeners.click();
+    const minEl = getEl('fr-tokens-min');
+    minEl.value = '10000';
+    minEl.listeners.change();
+    ok('token min-range hides runs under the bound',
+        html().includes('data-run="run1"') && !html().includes('data-run="runF"'));
+    getEl('f-clear').listeners.click();
+    ok('Clear resets every filter', html().includes('data-run="run1"') && html().includes('data-run="runF"'));
+    const fromEl = getEl('f-from');
+    fromEl.value = '2100-01-01';
+    fromEl.listeners.change();
+    ok('start-date range can empty the list honestly', html().includes('No runs match the filters.'));
+    getEl('f-clear').listeners.click();
+    getEl('m-filters').listeners.click(); // close the panel
+    msgHandler({ data: { type: 'data', data: { ...DATA, pending: { questions: [], approvals: [] }, runs: [RUN] } } });
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

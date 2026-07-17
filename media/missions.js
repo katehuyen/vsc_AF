@@ -22,16 +22,29 @@
     // ---- run-list sorting (the sessions table's Sort-by pattern) ----
     let runSort = 'recent';
     let runSortAsc = false;           // numeric sorts default newest/biggest first
-    // sort + direction survive reloads, like the sessions table's state
+    // ---- run-list filters: selections + ranges over the sort criteria ----
+    const FILTER_DEFAULTS = () => ({
+        status: [],                   // picked statuses (empty = all)
+        verdict: [],                  // picked verdicts (empty = all)
+        lead: '',                     // lead agent name ('' = all)
+        agent: '',                    // team member name ('' = all)
+        from: '', to: '',             // started-date range (yyyy-mm-dd)
+        ranges: {}                    // key → {min?, max?} for tokens/cost/rounds/tasks/duration
+    });
+    let filters = FILTER_DEFAULTS();
+    let filtersOpen = false;
+    // sort + direction + filters survive reloads, like the sessions table's state
     {
         const saved = (typeof vscode.getState === 'function' && vscode.getState()) || {};
         if (saved.mSort) { runSort = saved.mSort; }
         if (typeof saved.mSortAsc === 'boolean') { runSortAsc = saved.mSortAsc; }
+        if (saved.mFilters) { filters = { ...FILTER_DEFAULTS(), ...saved.mFilters }; }
+        if (typeof saved.mFiltersOpen === 'boolean') { filtersOpen = saved.mFiltersOpen; }
     }
     const saveUiState = () => {
         if (typeof vscode.setState !== 'function') { return; }
         const st = (typeof vscode.getState === 'function' && vscode.getState()) || {};
-        vscode.setState({ ...st, mSort: runSort, mSortAsc: runSortAsc });
+        vscode.setState({ ...st, mSort: runSort, mSortAsc: runSortAsc, mFilters: filters, mFiltersOpen: filtersOpen });
     };
     // ---- mission-control observation state ----
     let liveOpen = true;              // "Live activity" section (hook events)
@@ -326,6 +339,91 @@
         });
     }
 
+    // ---- filtering: same criteria as the sorts — selections + min/max ranges ----
+    const RUN_STATUSES = ['running', 'waiting-approval', 'waiting-user', 'paused', 'done', 'failed', 'cancelled'];
+    const VERDICTS = ['success', 'partial', 'failed'];
+    /** value getters the range filters run over (duration in minutes). */
+    const RANGE_KEYS = [
+        { id: 'tokens', label: 'Tokens', get: r => runTokens(r) },
+        { id: 'cost', label: 'Cost $', get: r => r.totalCostUSD || 0 },
+        { id: 'rounds', label: 'Rounds', get: r => r.rounds.length },
+        { id: 'tasks', label: 'Tasks', get: r => runSteps(r).total },
+        { id: 'duration', label: 'Minutes', get: r => Math.round(((r.endedAt || Date.now()) - r.startedAt - (r.waitedMs || 0)) / 60000) }
+    ];
+
+    function activeFilterCount() {
+        let n = filters.status.length + filters.verdict.length
+            + (filters.lead ? 1 : 0) + (filters.agent ? 1 : 0)
+            + (filters.from ? 1 : 0) + (filters.to ? 1 : 0);
+        RANGE_KEYS.forEach(k => {
+            const rg = filters.ranges[k.id];
+            if (rg) { n += (rg.min !== undefined ? 1 : 0) + (rg.max !== undefined ? 1 : 0); }
+        });
+        return n;
+    }
+
+    function filteredRuns(rows) {
+        return rows.filter(r => {
+            const sp = spec(r);
+            if (filters.status.length && filters.status.indexOf(r.status) < 0) { return false; }
+            if (filters.verdict.length && !(r.result && filters.verdict.indexOf(r.result.verdict) >= 0)) { return false; }
+            if (filters.lead && sp.leadAgentName !== filters.lead) { return false; }
+            if (filters.agent && !sp.team.some(m => m.agentName === filters.agent)) { return false; }
+            if (filters.from) {
+                const t = Date.parse(filters.from);
+                if (!isNaN(t) && r.startedAt < t) { return false; }
+            }
+            if (filters.to) {
+                const t = Date.parse(filters.to);
+                if (!isNaN(t) && r.startedAt >= t + 24 * 3600 * 1000) { return false; } // inclusive end day
+            }
+            for (const k of RANGE_KEYS) {
+                const rg = filters.ranges[k.id];
+                if (!rg) { continue; }
+                const v = k.get(r);
+                if (rg.min !== undefined && v < rg.min) { return false; }
+                if (rg.max !== undefined && v > rg.max) { return false; }
+            }
+            return true;
+        });
+    }
+
+    /** Filter panel: selection chips + range inputs, viewer/settings idiom. */
+    function filterPanelHtml() {
+        if (!filtersOpen) { return ''; }
+        const leads = [];
+        const agents = [];
+        DATA.runs.forEach(r => {
+            const sp = spec(r);
+            if (leads.indexOf(sp.leadAgentName) < 0) { leads.push(sp.leadAgentName); }
+            sp.team.forEach(m => { if (agents.indexOf(m.agentName) < 0) { agents.push(m.agentName); } });
+        });
+        leads.sort(); agents.sort();
+        const selChip = (id, label, on) =>
+            `<button class="chip${on ? ' on' : ''}" id="${id}">${C.esc(label)}</button>`;
+        const rangeInputs = RANGE_KEYS.map(k => {
+            const rg = filters.ranges[k.id] || {};
+            return `<label class="fltrange">${k.label}
+                <input type="number" id="fr-${k.id}-min" placeholder="min" value="${rg.min !== undefined ? rg.min : ''}">–<input type="number" id="fr-${k.id}-max" placeholder="max" value="${rg.max !== undefined ? rg.max : ''}">
+            </label>`;
+        }).join('');
+        return `<div class="fltpanel">
+            <div class="fltrow"><span class="muted small">Status:</span>
+                ${RUN_STATUSES.map(s => selChip('fs-' + s, STATUS_LABEL[s] || s, filters.status.indexOf(s) >= 0)).join(' ')}</div>
+            <div class="fltrow"><span class="muted small">Verdict:</span>
+                ${VERDICTS.map(v => selChip('fv-' + v, v, filters.verdict.indexOf(v) >= 0)).join(' ')}
+                <span class="muted small">Lead:</span>
+                <select id="f-lead"><option value="">all</option>${leads.map(l =>
+                    `<option value="${C.esc(l)}"${filters.lead === l ? ' selected' : ''}>${C.esc(l)}</option>`).join('')}</select>
+                <span class="muted small">Team has:</span>
+                <select id="f-agent"><option value="">any</option>${agents.map(a =>
+                    `<option value="${C.esc(a)}"${filters.agent === a ? ' selected' : ''}>${C.esc(a)}</option>`).join('')}</select></div>
+            <div class="fltrow">${rangeInputs}
+                <label class="fltrange">Started <input type="date" id="f-from" value="${C.esc(filters.from)}">–<input type="date" id="f-to" value="${C.esc(filters.to)}"></label>
+                <button class="chip" id="f-clear" title="Reset every filter">Clear</button></div>
+        </div>`;
+    }
+
     /** Rich row tooltip: everything characterizing the run at a glance. */
     function runTooltip(r, sp) {
         const st = runSteps(r);
@@ -493,19 +591,21 @@
 
     /** Same accordion controls as the session viewer's turns: expand/collapse
      *  all + a Single-open mode chip. */
-    function runCtlHtml() {
+    function runCtlHtml(shownCount) {
         if (!DATA.runs.length) { return ''; }
+        const nf = activeFilterCount();
         return `<div class="chiprow">
             <span class="muted small">Sort by:</span>
             <select id="m-sort">${RUN_SORTS.map(s =>
                 `<option value="${s.id}"${s.id === runSort ? ' selected' : ''}>${s.label}</option>`).join('')}</select>
             <button class="chip" id="m-sortdir" title="Flip the sort direction">${runSortAsc ? '▲ asc' : '▼ desc'}</button>
+            <button class="chip${nf ? ' on' : ''}" id="m-filters" title="Filter the list by status, verdict, agents, ranges and dates">Filters${nf ? ` (${nf})` : ''}</button>
             <span class="muted small">Runs:</span>
             <button class="chip" id="r-expandall" title="Open every run's detail">Expand all</button>
             <button class="chip" id="r-collapseall" title="Fold the list back to plain rows">Collapse all</button>
             <button class="chip${runSingle ? ' on' : ''}" id="r-singleopen" title="Only one run open at a time: opening a run folds the previously open one">Single-open</button>
-            <span class="muted small">— click a row to open/fold that run</span>
-        </div>`;
+            <span class="muted small">${nf ? `${shownCount}/${DATA.runs.length} runs` : '— click a row to open/fold that run'}</span>
+        </div>` + filterPanelHtml();
     }
 
     /** Runs as an accordion list: plain rows until clicked, the full detail
@@ -514,7 +614,8 @@
         if (!DATA.runs.length) {
             return '<p class="muted">No missions yet — <a id="firstmission">start the first one</a>.</p>';
         }
-        const rows = sortedRuns(DATA.runs).map(r => {
+        const pool = filteredRuns(DATA.runs);
+        const rows = sortedRuns(pool).map(r => {
             const sp = spec(r);
             const open = openRuns.has(r.id);
             const tok = runTokens(r);
@@ -534,9 +635,9 @@
                 <td class="muted small">${fmtTime(r.startedAt)}</td>
             </tr>` + (open ? `<tr class="rundetail"><td colspan="9">${detailHtml(r)}</td></tr>` : '');
         }).join('');
-        return runCtlHtml() + `<table class="mtable" id="mlist"><thead>
+        return runCtlHtml(pool.length) + `<table class="mtable" id="mlist"><thead>
             <tr><th></th><th>Mission</th><th>Lead + team</th><th>Status</th><th>Rounds</th><th>Tasks</th><th class="num">Tokens</th><th class="num">Cost</th><th>Started</th></tr>
-        </thead><tbody>${rows}</tbody></table>`;
+        </thead><tbody>${rows || `<tr><td colspan="9" class="muted">No runs match the filters.</td></tr>`}</tbody></table>`;
     }
 
     function render() {
@@ -615,6 +716,12 @@
                 .chip:hover { opacity:1; }
                 .chip.on { border-color:var(--vscode-textLink-foreground); color:var(--vscode-textLink-foreground); opacity:1; }
                 .rundetail > td { padding:8px 12px 14px; }
+                .fltpanel { display:flex; flex-direction:column; gap:6px; margin:2px 0 8px;
+                    padding:8px 10px; border:1px solid var(--vscode-widget-border, #3333); border-radius:5px; }
+                .fltrow { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+                .fltrange { font-size:11px; display:flex; gap:3px; align-items:center; white-space:nowrap; }
+                .fltrange input[type=number] { width:64px; padding:1px 4px; }
+                .fltrange input[type=date] { padding:1px 4px; }
                 .mdetail { border-left:3px solid var(--vscode-widget-border, #3333); padding-left:12px; }
                 .thought { font-size:12px; font-style:italic; opacity:.85; margin:4px 0; }
                 .qa { font-size:12px; margin-top:4px; }
@@ -725,6 +832,40 @@
             });
         }
         wire('m-sortdir', () => { runSortAsc = !runSortAsc; saveUiState(); render(); });
+        wire('m-filters', () => { filtersOpen = !filtersOpen; saveUiState(); render(); });
+        if (filtersOpen) {
+            const applyFlt = () => { saveUiState(); render(); };
+            RUN_STATUSES.forEach(s => wire('fs-' + s, () => {
+                const i = filters.status.indexOf(s);
+                if (i >= 0) { filters.status.splice(i, 1); } else { filters.status.push(s); }
+                applyFlt();
+            }));
+            VERDICTS.forEach(v => wire('fv-' + v, () => {
+                const i = filters.verdict.indexOf(v);
+                if (i >= 0) { filters.verdict.splice(i, 1); } else { filters.verdict.push(v); }
+                applyFlt();
+            }));
+            const wireInput = (id, fn) => {
+                const el = document.getElementById(id);
+                if (el && el.addEventListener) { el.addEventListener('change', () => fn(el)); }
+            };
+            wireInput('f-lead', el => { filters.lead = el.value; applyFlt(); });
+            wireInput('f-agent', el => { filters.agent = el.value; applyFlt(); });
+            wireInput('f-from', el => { filters.from = el.value; applyFlt(); });
+            wireInput('f-to', el => { filters.to = el.value; applyFlt(); });
+            RANGE_KEYS.forEach(k => {
+                const setBound = (bound) => (el) => {
+                    const n = el.value === '' ? undefined : Number(el.value);
+                    const rg = filters.ranges[k.id] || (filters.ranges[k.id] = {});
+                    rg[bound] = (n === undefined || isNaN(n)) ? undefined : n;
+                    if (rg.min === undefined && rg.max === undefined) { delete filters.ranges[k.id]; }
+                    applyFlt();
+                };
+                wireInput(`fr-${k.id}-min`, setBound('min'));
+                wireInput(`fr-${k.id}-max`, setBound('max'));
+            });
+            wire('f-clear', () => { filters = FILTER_DEFAULTS(); applyFlt(); });
+        }
         wire('r-expandall', () => { DATA.runs.forEach(r => openRuns.add(r.id)); runSingle = false; render(); });
         wire('r-collapseall', () => { openRuns.clear(); render(); });
         wire('r-singleopen', () => {
