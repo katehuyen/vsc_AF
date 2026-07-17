@@ -82,6 +82,8 @@ export interface MissionStep {
     taskId?: string;
     status: MissionStepStatus;
     costUSD?: number;
+    /** Total tokens of the delegate's session (attached when cost attribution matches). */
+    tokens?: number;
     outputFile?: string;
     note?: string;
 }
@@ -98,6 +100,8 @@ export interface MissionRound {
     /** Set when the user rejected this round's delegations. */
     rejectedReason?: string;
     plannerCostUSD: number;
+    /** Total tokens of the planner call that produced this round. */
+    plannerTokens?: number;
     at: number;
 }
 
@@ -412,7 +416,7 @@ export function dupKey(agent: string, prompt: string): string {
  * Tolerates leading noise lines; null = not an envelope at all.
  */
 export function parsePlannerEnvelope(stdout: string): {
-    result: string; sessionId?: string; costUSD?: number; isError: boolean; subtype?: string;
+    result: string; sessionId?: string; costUSD?: number; tokens?: number; isError: boolean; subtype?: string;
 } | null {
     const asObj = (s: string): Record<string, unknown> | undefined => {
         const j = tryParseJson(s);
@@ -427,10 +431,19 @@ export function parsePlannerEnvelope(stdout: string): {
         }
     }
     if (!o || typeof o.result !== 'string') { return null; }
+    // usage: {input_tokens, output_tokens, cache_*_input_tokens} — sum = call total
+    let tokens: number | undefined;
+    if (o.usage && typeof o.usage === 'object') {
+        const u = o.usage as Record<string, unknown>;
+        const n = ['input_tokens', 'output_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens']
+            .reduce((a, k) => a + (typeof u[k] === 'number' ? u[k] as number : 0), 0);
+        if (n > 0) { tokens = n; }
+    }
     return {
         result: o.result,
         sessionId: typeof o.session_id === 'string' ? o.session_id : undefined,
         costUSD: typeof o.total_cost_usd === 'number' ? o.total_cost_usd : undefined,
+        tokens,
         isError: o.is_error === true || (typeof o.subtype === 'string' && o.subtype.startsWith('error')),
         subtype: typeof o.subtype === 'string' ? o.subtype : undefined
     };
@@ -486,6 +499,8 @@ export interface PlannerResult {
     raw?: string;
     sessionId?: string;
     costUSD?: number;
+    /** Total tokens of the planner call (from the envelope's usage). */
+    tokens?: number;
     error?: string;
 }
 
@@ -644,6 +659,7 @@ export class MissionEngine {
                 action: d.action,
                 steps: [],
                 plannerCostUSD: pr.costUSD ?? 0,
+                plannerTokens: pr.tokens,
                 at: deps.now()
             };
 

@@ -58,6 +58,8 @@ export interface FarmTask {
     mediaJob?: { provider: string; statusUrl: string; responseUrl: string; deadline: number; input?: string };
     /** Z4: API-equivalent token cost of the task's matched transcript (headless runs). */
     costUSD?: number;
+    /** Z4: total tokens of the matched transcript (rides along with the cost). */
+    tokens?: number;
     /** Z4: the transcript the cost came from (opens in the session viewer). */
     costSessionFile?: string;
 }
@@ -492,11 +494,12 @@ export class TaskManager implements vscode.Disposable {
         return out;
     }
 
-    /** Z4: attach the matched transcript's cost to a finished task (idempotent). */
-    setTaskCost(taskId: string, costUSD: number, sessionFile: string): void {
+    /** Z4: attach the matched transcript's cost + tokens to a finished task (idempotent). */
+    setTaskCost(taskId: string, costUSD: number, sessionFile: string, tokens?: number): void {
         const t = this.tasks.find(x => x.id === taskId);
         if (!t || t.costUSD !== undefined) { return; }
         t.costUSD = costUSD;
+        t.tokens = tokens;
         t.costSessionFile = sessionFile;
         this.save();
     }

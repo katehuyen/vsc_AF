@@ -8,12 +8,16 @@
     const C = window.AFCharts;
     let DATA = window.__DATA__;
 
-    let selected = null;              // runId shown in the detail block
     let formOpen = !!DATA.newForm;
     let formErr = '';
     // background refreshes must not wipe an in-progress edit (2.47 lesson)
     let editing = false;
     let pendingData = null;
+    // ---- run-list accordion (same language as the session viewer's turns) ----
+    const openRuns = new Set();       // run ids with their detail expanded inline
+    let runSingle = true;             // single-open mode (viewer's Single-open chip)
+    let openNewest = false;           // after Start: open the freshly created run
+    const closedRounds = new Set();   // "runId:n" keys of folded round bands
     // ---- mission-control observation state ----
     let liveOpen = true;              // "Live activity" section (hook events)
     let ledgerOpen = false;           // planner ledger section
@@ -201,7 +205,7 @@
         const body = tail.file === s.outputFile
             ? (tail.missing ? '(output file not readable yet)' : (tail.text || '(empty so far)'))
             : '(loading…)';
-        return `<tr class="sdetail"><td colspan="6">
+        return `<tr class="sdetail"><td colspan="7">
             <div class="sdlabel">Prompt sent to <b>${C.esc(s.agentName)}</b>${s.expect ? ` · success criteria: <i>${C.esc(s.expect)}</i>` : ''}</div>
             <pre class="sdpre">${C.esc(s.prompt)}</pre>
             ${s.outputFile ? `
@@ -219,9 +223,27 @@
             <td>${C.esc(s.agentName)}${stepLive(s)}</td>
             <td>${C.esc(s.title)}${s.readonly ? ' <span class="mchip ro">read-only</span>' : ''}${s.note ? ` <span class="muted small">(${C.esc(s.note)})</span>` : ''}</td>
             <td>${chip(s.status)}</td>
-            <td>${s.costUSD !== undefined ? usd(s.costUSD) : '—'}</td>
+            <td class="num">${s.tokens ? C.fmtTok(s.tokens) : '—'}</td>
+            <td class="num">${s.costUSD !== undefined ? usd(s.costUSD) : '—'}</td>
             <td>${s.outputFile ? `<a data-openfile="${C.esc(s.outputFile)}" title="Open the archived output">output</a>` : ''}</td>
         </tr>` + (open ? stepDetail(s) : '');
+    }
+
+    /** Planner + delegate totals of one round — the turn-band stats. */
+    function roundStats(r) {
+        const tok = (r.plannerTokens || 0) + r.steps.reduce((a, s) => a + (s.tokens || 0), 0);
+        const cost = (r.plannerCostUSD || 0) + r.steps.reduce((a, s) => a + (s.costUSD || 0), 0);
+        return (tok ? C.fmtTok(tok) + ' tok · ' : '') + usd(cost);
+    }
+
+    /** Display-only run totals (planner rounds + delegate sessions). */
+    function runTokens(r) {
+        let n = 0;
+        r.rounds.forEach(rd => {
+            n += rd.plannerTokens || 0;
+            rd.steps.forEach(s => { n += s.tokens || 0; });
+        });
+        return n;
     }
 
     /** Mission-scoped live activity: this run's agents only — status chips in
@@ -250,7 +272,7 @@
                 <span class="muted small">${relT(e.ts)}</span> <b>${C.esc(e.agentName || '?')}</b> ${label}${e.detail ? ` <span class="muted">${C.esc(String(e.detail).slice(0, 110))}</span>` : ''}</div>`;
         }).join('');
         return `<div class="colsec">
-            <div class="colhead" id="lv-toggle" title="What every participant is doing right now — live session status + hook events (prompts, tools, permission waits), newest first">
+            <div class="colhead" id="lv-toggle-${C.esc(run.id)}" title="What every participant is doing right now — live session status + hook events (prompts, tools, permission waits), newest first">
                 <span class="carets">${liveOpen ? '▾' : '▸'}</span> <b>Live activity</b>
                 <span class="lvchips">${chips}</span>
             </div>
@@ -262,7 +284,7 @@
     function ledgerSection(run) {
         if (!run.ledger || !run.ledger.length) { return ''; }
         return `<div class="colsec">
-            <div class="colhead" id="lg-toggle" title="One compressed line per round — this is also what a resumed planner is re-briefed with">
+            <div class="colhead" id="lg-toggle-${C.esc(run.id)}" title="One compressed line per round — this is also what a resumed planner is re-briefed with">
                 <span class="carets">${ledgerOpen ? '▾' : '▸'}</span> <b>Ledger</b>
                 <span class="muted small">${run.ledger.length} line(s)</span>
             </div>
@@ -270,22 +292,30 @@
         </div>`;
     }
 
-    function roundCard(r) {
+    /** Round = the mission's "turn": same band language as the session viewer
+     *  (caret + tinted band + right-aligned token/cost stats, click to fold). */
+    function roundCard(r, run) {
+        const key = run.id + ':' + r.n;
+        const closed = closedRounds.has(key);
         let body = '';
         if (r.action === 'delegate') {
-            body = `<table class="mtable"><thead><tr><th></th><th>Agent</th><th>Task</th><th>Status</th><th>Cost</th><th></th></tr></thead>
+            body = `<table class="mtable"><thead><tr><th></th><th>Agent</th><th>Task</th><th>Status</th><th class="num">Tokens</th><th class="num">Cost</th><th></th></tr></thead>
                 <tbody>${r.steps.map(stepRow).join('')}</tbody></table>
                 ${r.rejectedReason ? `<div class="muted small">✕ ${C.esc(r.rejectedReason)} — the planner re-planned</div>` : ''}`;
         } else if (r.action === 'ask_user') {
             body = `<div class="qa"><b>Q:</b> ${C.esc(r.question || '')}<br><b>A:</b> ${C.esc(r.answer || '(pending)')}</div>`;
-        } else {
-            body = '';
         }
-        return `<div class="roundcard">
-            <div class="roundhead"><b>Round ${r.n}</b> — ${C.esc(r.action)} · <span class="muted small">${fmtTime(r.at)} · planner ${usd(r.plannerCostUSD)}</span></div>
+        const closedSummary = closed && r.steps.length ? `${r.steps.length} delegation(s) · ` : '';
+        return `<div class="turnhdr${closed ? ' closed' : ''}" data-round="${C.esc(key)}" title="Click to ${closed ? 'expand' : 'collapse'} this round">
+            <span class="tcaret">${closed ? '▸' : '▾'}</span>
+            <span class="turnnum">R${r.n}</span>
+            <span class="tag">${C.esc(r.action)}</span>
+            <span class="turnlabel">${C.esc(r.thought || r.question || '')}</span>
+            <span class="turnstats">${closedSummary}${roundStats(r)} · ${fmtTime(r.at)}</span>
+        </div>` + (closed ? '' : `<div class="roundbody">
             ${r.thought ? `<div class="thought">${C.esc(r.thought)}</div>` : ''}
             ${body}
-        </div>`;
+        </div>`);
     }
 
     function detailHtml(run) {
@@ -301,9 +331,9 @@
         // pressed ("Pausing…") until the engine actually parks the run
         const pauseBtn = !canPause ? ''
             : run.pausePending
-                ? `<button class="secondary pressed" id="d-unpause" aria-pressed="true"
+                ? `<button class="secondary pressed" id="d-unpause-${C.esc(run.id)}" aria-pressed="true"
                        title="Pause was requested — it takes effect before the next planner round. Click to withdraw and keep running.">⏸ Pausing… (undo)</button>`
-                : `<button class="secondary" id="d-pause" aria-pressed="false"
+                : `<button class="secondary" id="d-pause-${C.esc(run.id)}" aria-pressed="false"
                        title="Finish the current activity, then hold before the next planner round">Pause</button>`;
         const nowStrip = active && run.now && !run.pausePending
             ? `<div class="nowstrip"><span class="nowdot"></span> ${C.esc(run.now.what)}
@@ -312,14 +342,14 @@
         const pt = (DATA.plannerTranscripts || {})[run.id];
         const tasksUsed = run.rounds.reduce((a, r) => a + r.steps.length, 0);
         const wallMin = Math.max(0, Math.round(((run.endedAt || Date.now()) - run.startedAt - (run.waitedMs || 0)) / 60000));
-        return `<div class="card" id="mdetail">
+        return `<div class="mdetail">
             <div class="dethead">
                 <h2 style="margin:0">${C.esc(sp.title)}</h2>
                 ${chip(run.status)}
                 <span style="flex:1"></span>
                 ${pauseBtn}
-                ${canResume ? `<button id="d-resume">Resume</button>` : ''}
-                ${active ? `<button class="secondary" id="d-cancel" title="Cancel the mission and its running delegations">Cancel</button>` : ''}
+                ${canResume ? `<button id="d-resume-${C.esc(run.id)}">Resume</button>` : ''}
+                ${active ? `<button class="secondary" id="d-cancel-${C.esc(run.id)}" title="Cancel the mission and its running delegations">Cancel</button>` : ''}
             </div>
             <div class="muted small">lead <b>${C.esc(sp.leadAgentName)}</b>${sp.plannerModel ? ` <span class="mchip mdl" title="planner model">${C.esc(sp.plannerModel)}</span>` : ''} · team ${sp.team.map(m =>
                 `<span class="mchip team">${C.esc(m.agentName)}${m.role ? ` — ${C.esc(m.role)}` : ''}${m.model ? ` <i class="mdl" title="delegation model">${C.esc(m.model)}</i>` : ''}</span>`).join(' ')}
@@ -330,15 +360,15 @@
             ${liveSection(run, sp)}
             <div class="budget" title="Spent ${usd(run.totalCostUSD)} of the ${usd(sp.limits.maxCostUSD)} budget">
                 <div class="budgetbar"><div class="budgetfill${pctRaw >= 90 ? ' hot' : ''}" style="width:${pct}%"></div></div>
-                <span class="muted small">${usd(run.totalCostUSD)} / ${usd(sp.limits.maxCostUSD)} · ${run.rounds.length}/${sp.limits.maxRounds} rounds · ${tasksUsed}/${sp.limits.maxTasks} tasks · ${wallMin}/${sp.limits.maxMinutes} min · started ${fmtTime(run.startedAt)}</span>
+                <span class="muted small">${usd(run.totalCostUSD)} / ${usd(sp.limits.maxCostUSD)}${runTokens(run) ? ` · ${C.fmtTok(runTokens(run))} tok` : ''} · ${run.rounds.length}/${sp.limits.maxRounds} rounds · ${tasksUsed}/${sp.limits.maxTasks} tasks · ${wallMin}/${sp.limits.maxMinutes} min · started ${fmtTime(run.startedAt)}</span>
             </div>
             ${pendingAp ? `<div class="waitbox">This round needs your approval.
-                <button id="d-approve" data-run="${C.esc(run.id)}">Approve</button>
-                <button class="secondary" id="d-reject" data-run="${C.esc(run.id)}">Reject</button></div>` : ''}
+                <button id="d-approve-${C.esc(run.id)}">Approve</button>
+                <button class="secondary" id="d-reject-${C.esc(run.id)}">Reject</button></div>` : ''}
             ${pendingQ ? `<div class="waitbox">Question: ${C.esc(pendingQ.question)}<br>
-                <input type="text" id="d-answer" placeholder="your answer…" style="width:60%">
-                <button id="d-send" data-run="${C.esc(run.id)}">Send</button></div>` : ''}
-            ${run.rounds.map(roundCard).join('') || (active ? '' : '<p class="muted">No rounds ran.</p>')}
+                <input type="text" id="d-answer-${C.esc(run.id)}" placeholder="your answer…" style="width:60%">
+                <button id="d-send-${C.esc(run.id)}">Send</button></div>` : ''}
+            ${run.rounds.map(r => roundCard(r, run)).join('') || (active ? '' : '<p class="muted">No rounds ran.</p>')}
             ${ledgerSection(run)}
             ${run.result ? `<div class="resultbox ${run.result.verdict}">
                 <b>${C.esc(run.result.verdict.toUpperCase())}</b> — ${C.esc(run.result.summary)}
@@ -350,37 +380,65 @@
         </div>`;
     }
 
+    /** Same accordion controls as the session viewer's turns: expand/collapse
+     *  all + a Single-open mode chip. */
+    function runCtlHtml() {
+        if (!DATA.runs.length) { return ''; }
+        return `<div class="chiprow">
+            <span class="muted small">Runs:</span>
+            <button class="chip" id="r-expandall" title="Open every run's detail">Expand all</button>
+            <button class="chip" id="r-collapseall" title="Fold the list back to plain rows">Collapse all</button>
+            <button class="chip${runSingle ? ' on' : ''}" id="r-singleopen" title="Only one run open at a time: opening a run folds the previously open one">Single-open</button>
+            <span class="muted small">— click a row to open/fold that run</span>
+        </div>`;
+    }
+
+    /** Runs as an accordion list: plain rows until clicked, the full detail
+     *  expands inline under the row (nothing opens on its own). */
     function listHtml() {
         if (!DATA.runs.length) {
             return '<p class="muted">No missions yet — <a id="firstmission">start the first one</a>.</p>';
         }
         const rows = DATA.runs.map(r => {
             const sp = spec(r);
-            return `<tr class="mrow${r.id === selected ? ' sel' : ''}" data-run="${C.esc(r.id)}">
+            const open = openRuns.has(r.id);
+            const tok = runTokens(r);
+            return `<tr class="mrow${open ? ' sel' : ''}" data-run="${C.esc(r.id)}" title="Click to ${open ? 'fold' : 'open'} this run">
+                <td class="stoggle">${open ? '▾' : '▸'}</td>
                 <td>${C.esc(sp.title)}</td>
                 <td>${C.esc(sp.leadAgentName)}</td>
                 <td>${chip(r.status)}</td>
                 <td>${r.rounds.length}</td>
-                <td>${usd(r.totalCostUSD)}</td>
+                <td class="num">${tok ? C.fmtTok(tok) : '—'}</td>
+                <td class="num">${usd(r.totalCostUSD)}</td>
                 <td class="muted small">${fmtTime(r.startedAt)}</td>
-            </tr>`;
+            </tr>` + (open ? `<tr class="rundetail"><td colspan="8">${detailHtml(r)}</td></tr>` : '');
         }).join('');
-        return `<table class="mtable" id="mlist"><thead>
-            <tr><th>Mission</th><th>Lead</th><th>Status</th><th>Rounds</th><th>Cost</th><th>Started</th></tr>
+        return runCtlHtml() + `<table class="mtable" id="mlist"><thead>
+            <tr><th></th><th>Mission</th><th>Lead</th><th>Status</th><th>Rounds</th><th class="num">Tokens</th><th class="num">Cost</th><th>Started</th></tr>
         </thead><tbody>${rows}</tbody></table>`;
     }
 
     function render() {
-        if (!selected && DATA.runs.length) { selected = DATA.runs[0].id; }
-        const run = DATA.runs.find(r => r.id === selected);
+        // after Start: the freshly created run (newest row) opens itself once
+        if (openNewest && DATA.runs.length) {
+            openNewest = false;
+            if (runSingle) { openRuns.clear(); }
+            openRuns.add(DATA.runs[0].id);
+        }
         document.getElementById('app').innerHTML = `
             <style>
                 .mchip { font-size:10px; padding:1px 8px; border-radius:8px; white-space:nowrap;
                     background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); }
-                .mchip.ok { background:var(--vscode-testing-iconPassed, #2d7d46); color:#fff; }
-                .mchip.bad { background:var(--vscode-inputValidation-errorBackground, #a1260d); color:#fff; }
-                .mchip.live { background:var(--vscode-textLink-foreground); color:var(--vscode-editor-background); }
-                .mchip.wait { background:var(--vscode-inputValidation-warningBackground, #664d00); color:var(--vscode-foreground); }
+                /* Status chips are OUTLINE style: colored border + colored text on the
+                   page background — readable in light and dark themes alike (a solid
+                   theme-color background with hardcoded white text is not). */
+                .mchip.ok, .mchip.bad, .mchip.live, .mchip.wait {
+                    background:transparent; border:1px solid currentColor; }
+                .mchip.ok { color:var(--vscode-testing-iconPassed, #2d7d46); }
+                .mchip.bad { color:var(--vscode-errorForeground, #d13438); }
+                .mchip.live { color:var(--vscode-textLink-foreground); }
+                .mchip.wait { color:var(--vscode-editorWarning-foreground, #b58900); }
                 .mchip.team, .mchip.ro { opacity:.85; }
                 .mchip.mdl, .mchip.team i.mdl { font-style:normal; opacity:.75; font-size:9px;
                     border:1px solid var(--vscode-widget-border, #5555); border-radius:6px; padding:0 4px; margin-left:3px; }
@@ -409,8 +467,31 @@
                 .budgetbar { height:6px; border-radius:3px; background:var(--vscode-widget-border, #4444); overflow:hidden; margin-bottom:3px; }
                 .budgetfill { height:100%; background:var(--vscode-textLink-foreground); }
                 .budgetfill.hot { background:var(--vscode-errorForeground, #f66); }
-                .roundcard { margin:10px 0; padding:8px 12px; border:1px solid var(--vscode-widget-border, #3333); border-radius:5px; }
-                .roundhead { font-size:12px; }
+                /* Round band — the session viewer's turn band, verbatim language:
+                   caret + tinted band + colored round number + right-aligned stats. */
+                .turnhdr { display:flex; align-items:center; gap:10px; margin:12px 0 6px; cursor:pointer;
+                    padding:6px 10px; border-radius:4px; font-size:12px;
+                    background:var(--vscode-editor-inactiveSelectionBackground, #3a3d41);
+                    background:color-mix(in srgb, var(--vscode-textLink-foreground) 14%, var(--vscode-editor-background));
+                    border-left:4px solid var(--vscode-textLink-foreground); }
+                .turnhdr .tcaret { flex:none; width:12px; text-align:center; font-size:10px; opacity:.75; }
+                .turnhdr .turnnum { font-weight:700; white-space:nowrap; color:var(--vscode-textLink-foreground); }
+                .turnhdr .turnlabel { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; opacity:.9; }
+                .turnhdr .turnstats { white-space:nowrap; font-size:11px; color:var(--vscode-descriptionForeground); }
+                .turnhdr.closed { margin:6px 0; }
+                .tag { font-size:10px; padding:1px 6px; border-radius:8px; white-space:nowrap;
+                    background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); opacity:.85; }
+                .roundbody { margin:0 0 10px 16px; }
+                .num { text-align:right; }
+                /* Accordion controls — the viewer's chip row, verbatim. */
+                .chiprow { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:10px 0 4px; }
+                .chip { font-size:11px; padding:2px 10px; cursor:pointer; border-radius:10px;
+                    background:transparent; color:var(--vscode-foreground);
+                    border:1px solid var(--vscode-widget-border, #4444); opacity:.85; }
+                .chip:hover { opacity:1; }
+                .chip.on { border-color:var(--vscode-textLink-foreground); color:var(--vscode-textLink-foreground); opacity:1; }
+                .rundetail > td { padding:8px 12px 14px; }
+                .mdetail { border-left:3px solid var(--vscode-widget-border, #3333); padding-left:12px; }
                 .thought { font-size:12px; font-style:italic; opacity:.85; margin:4px 0; }
                 .qa { font-size:12px; margin-top:4px; }
                 .waitbox { margin:10px 0; padding:10px 12px; border-radius:5px; font-size:12px;
@@ -472,10 +553,13 @@
             })}
             ${formOpen ? formHtml() : ''}
             ${listHtml()}
-            ${run ? detailHtml(run) : ''}
         `;
 
         window.AFHeader.wire(vscode);
+        const wire = (id, fn) => {
+            const el = document.getElementById(id);
+            if (el) { el.addEventListener('click', fn); }
+        };
         document.querySelectorAll('[data-guide]').forEach(el =>
             el.addEventListener('click', () => vscode.postMessage({ type: 'openGuide', anchor: el.dataset.guide })));
         const nm = document.getElementById('newmission');
@@ -497,7 +581,30 @@
         document.querySelectorAll('.mrow').forEach(row =>
             row.addEventListener('click', () => {
                 if (formOpen) { readForm(); } // keep typed values across the re-render
-                selected = row.dataset.run;
+                const id = row.dataset.run;
+                if (openRuns.has(id)) { openRuns.delete(id); }
+                else {
+                    if (runSingle) { openRuns.clear(); }
+                    openRuns.add(id);
+                }
+                render();
+            }));
+        wire('r-expandall', () => { DATA.runs.forEach(r => openRuns.add(r.id)); runSingle = false; render(); });
+        wire('r-collapseall', () => { openRuns.clear(); render(); });
+        wire('r-singleopen', () => {
+            runSingle = !runSingle;
+            if (runSingle && openRuns.size > 1) {
+                const keep = DATA.runs.find(r => openRuns.has(r.id));
+                openRuns.clear();
+                if (keep) { openRuns.add(keep.id); }
+            }
+            render();
+        });
+        // round bands fold/unfold like the viewer's turn bands
+        document.querySelectorAll('[data-round]').forEach(band =>
+            band.addEventListener('click', () => {
+                const key = band.dataset.round;
+                if (closedRounds.has(key)) { closedRounds.delete(key); } else { closedRounds.add(key); }
                 render();
             }));
         document.querySelectorAll('[data-openfile]').forEach(a =>
@@ -521,32 +628,35 @@
                 render();
             }));
 
-        const wire = (id, fn) => {
-            const el = document.getElementById(id);
-            if (el) { el.addEventListener('click', fn); }
-        };
-        wire('d-pause', () => vscode.postMessage({ type: 'control', action: 'pause', runId: selected }));
-        wire('d-unpause', () => vscode.postMessage({ type: 'control', action: 'unpause', runId: selected }));
-        wire('d-resume', () => vscode.postMessage({ type: 'control', action: 'resume', runId: selected }));
-        wire('d-cancel', () => vscode.postMessage({ type: 'control', action: 'cancel', runId: selected }));
-        wire('d-approve', () => vscode.postMessage({ type: 'approve', runId: selected }));
-        wire('d-reject', () => vscode.postMessage({ type: 'reject', runId: selected }));
-        wire('d-send', () => {
-            const inp = document.getElementById('d-answer');
-            vscode.postMessage({ type: 'answer', runId: selected, text: inp ? inp.value : '' });
+        // controls live INSIDE each open run's inline detail — ids are suffixed
+        // with the run id so several open runs never fight over an element
+        DATA.runs.filter(r => openRuns.has(r.id)).forEach(r => {
+            const id = r.id;
+            wire('d-pause-' + id, () => vscode.postMessage({ type: 'control', action: 'pause', runId: id }));
+            wire('d-unpause-' + id, () => vscode.postMessage({ type: 'control', action: 'unpause', runId: id }));
+            wire('d-resume-' + id, () => vscode.postMessage({ type: 'control', action: 'resume', runId: id }));
+            wire('d-cancel-' + id, () => vscode.postMessage({ type: 'control', action: 'cancel', runId: id }));
+            wire('d-approve-' + id, () => vscode.postMessage({ type: 'approve', runId: id }));
+            wire('d-reject-' + id, () => vscode.postMessage({ type: 'reject', runId: id }));
+            wire('d-send-' + id, () => {
+                const inp = document.getElementById('d-answer-' + id);
+                vscode.postMessage({ type: 'answer', runId: id, text: inp ? inp.value : '' });
+            });
+            wire('lv-toggle-' + id, () => { liveOpen = !liveOpen; render(); });
+            wire('lg-toggle-' + id, () => { ledgerOpen = !ledgerOpen; render(); });
         });
-        wire('lv-toggle', () => { liveOpen = !liveOpen; render(); });
-        wire('lg-toggle', () => { ledgerOpen = !ledgerOpen; render(); });
 
         // (re)arm the output tail for the expanded step; clears when none is open
         let tailFile = '', tailPoll = false;
-        const selRun = DATA.runs.find(r => r.id === selected);
-        if (selRun && expandedStep) {
-            for (const r of selRun.rounds) {
-                for (const s of r.steps) {
-                    if (s.id === expandedStep && s.outputFile) {
-                        tailFile = s.outputFile;
-                        tailPoll = s.status === 'running';
+        if (expandedStep) {
+            for (const r of DATA.runs) {
+                if (!openRuns.has(r.id)) { continue; }
+                for (const rd of r.rounds) {
+                    for (const s of rd.steps) {
+                        if (s.id === expandedStep && s.outputFile) {
+                            tailFile = s.outputFile;
+                            tailPoll = s.status === 'running';
+                        }
                     }
                 }
             }
@@ -584,7 +694,7 @@
             formOpen = false;
             formErr = '';
             form.title = ''; form.goal = '';
-            selected = null; // newest run auto-selects on next data render
+            openNewest = true; // the fresh run's row opens itself on the next data render
             render();
         } else if (m.type === 'folder') {
             form.workdir = m.path;

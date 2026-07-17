@@ -46,6 +46,14 @@ export function safeReadFile(p: string): string | undefined {
     try { return fs.readFileSync(p, 'utf8'); } catch { return undefined; }
 }
 
+/** Rewrite stored absolute paths after a publisher/extension-id rename:
+ *  any `<oldPublisher>.agent-farm` globalStorage segment becomes the current
+ *  one, so task/mission records keep pointing at their output files. Pure —
+ *  callers read the JSON file, pass it through, and write back on change. */
+export function remapStorageIds(text: string, currentBase: string): string {
+    return text.replace(/[\w-]+\.agent-farm/g, currentBase);
+}
+
 /** Last `maxBytes` of a file without reading the whole thing — live-tail views
  *  poll this on growing task outputs, so it must stay O(maxBytes). */
 export function readFileTail(p: string, maxBytes = 8192): { text: string; size: number } | undefined {

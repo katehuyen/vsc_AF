@@ -93,7 +93,7 @@ import {
 import { MissionsPanel } from './panels/missionsPanel';
 import { MissionNode, MissionsTreeProvider } from './views/missionsTree';
 import { TriggerManager } from './core/triggers';
-import { dayKey, fmtTokens, fmtUSD, normPath, readFileTail, relTime } from './core/util';
+import { dayKey, fmtTokens, fmtUSD, normPath, readFileTail, relTime, remapStorageIds } from './core/util';
 import { AgentDetailPanel } from './panels/agentDetail';
 import { CapabilitiesPanel } from './panels/capabilities';
 import { MemoryGraphPanel } from './panels/memoryGraph';
@@ -176,6 +176,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // D1/D2: file-backed stores for quality scores and instruction suggestions.
     fs.mkdirSync(context.globalStorageUri.fsPath, { recursive: true });
+
+    // Publisher/extension-id rename migration: stored task & mission records
+    // carry absolute output paths under the OLD globalStorage id — rewrite them
+    // once before anything loads, or every "output" link 404s.
+    {
+        const base = path.basename(context.globalStorageUri.fsPath);
+        for (const name of ['farm-tasks.json', 'missions.json']) {
+            const file = path.join(context.globalStorageUri.fsPath, name);
+            try {
+                const raw = fs.readFileSync(file, 'utf8');
+                const fixed = remapStorageIds(raw, base);
+                if (fixed !== raw) { fs.writeFileSync(file, fixed, 'utf8'); }
+            } catch { /* not created yet */ }
+        }
+    }
     const qualityStore = new QualityStore(path.join(context.globalStorageUri.fsPath, 'quality.json'));
     const suggestionStore = new SuggestionStore(path.join(context.globalStorageUri.fsPath, 'suggestions.json'));
     const judgeArgs = () => cfg().get<string>('judgeArgs', '--model claude-haiku-4-5-20251001');
@@ -702,7 +717,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         for (const [id, p] of costPending) {
             const hit = matchTaskSession(p, index.forAgent(p.agentId));
             if (hit) {
-                taskManager.setTaskCost(id, hit.cost, hit.file);
+                taskManager.setTaskCost(id, hit.cost, hit.file, totalTokens(hit.usage));
                 costPending.delete(id);
             } else if (++p.tries > 60 || Date.now() - p.endedAt > 15 * 60_000) {
                 costPending.delete(id); // transcript never appeared or stayed ambiguous
@@ -1536,6 +1551,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         const t = taskManager.tasks.find(x => x.id === step.taskId);
                         if (!t) { step.status = 'failed'; step.note = 'task record lost'; continue; }
                         step.costUSD = t.costUSD;
+                        step.tokens = t.tokens;
                         step.outputFile = t.outputFile;
                         if (t.status === 'done' || t.status === 'failed' || t.status === 'cancelled') {
                             step.status = t.status;
@@ -1700,6 +1716,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (t && (t.status === 'done' || t.status === 'failed' || t.status === 'cancelled')) {
                     step.status = t.status;
                     step.costUSD = t.costUSD;
+                    step.tokens = t.tokens;
                     step.outputFile = t.outputFile;
                 } else if (step.status === 'running' || step.status === 'queued') {
                     step.status = 'failed';
@@ -1838,11 +1855,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return map;
     };
 
+    /** Cost/token attribution lands on the TASK up to a minute after a step
+     *  finishes — refresh each step from its task record at render time so the
+     *  page shows the settled numbers without rewriting the store. */
+    const missionRunsForPanel = () => {
+        const byTask = new Map(taskManager.tasks.map(t => [t.id, t]));
+        return [...missionStore.runs].sort((a, b) => b.startedAt - a.startedAt).map(run => ({
+            ...run,
+            rounds: run.rounds.map(round => ({
+                ...round,
+                steps: round.steps.map(step => {
+                    const t = step.taskId ? byTask.get(step.taskId) : undefined;
+                    return t ? {
+                        ...step,
+                        costUSD: step.costUSD ?? t.costUSD,
+                        tokens: step.tokens ?? t.tokens,
+                        outputFile: step.outputFile ?? t.outputFile
+                    } : step;
+                })
+            }))
+        }));
+    };
+
     const missionsPanelDeps = {
         extensionUri: context.extensionUri,
         data: () => ({
             specs: missionStore.specs,
-            runs: [...missionStore.runs].sort((a, b) => b.startedAt - a.startedAt),
+            runs: missionRunsForPanel(),
             agents: agents.map(a => ({ id: a.id, name: a.name })),
             defaults: DEFAULT_MISSION_LIMITS,
             pending: {

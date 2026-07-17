@@ -31,9 +31,9 @@ const RUN = {
     plannerSessionId: 'S1',
     rounds: [
         {
-            n: 1, thought: 'split the work', action: 'delegate', plannerCostUSD: 0.11, at: 1000,
+            n: 1, thought: 'split the work', action: 'delegate', plannerCostUSD: 0.11, plannerTokens: 5000, at: 1000,
             steps: [
-                { id: 's1', round: 1, agentId: 'a1', agentName: 'coder', title: 'fix parser', prompt: 'p', status: 'done', costUSD: 0.3, outputFile: 'D:/out/s1.md' },
+                { id: 's1', round: 1, agentId: 'a1', agentName: 'coder', title: 'fix parser', prompt: 'p', status: 'done', costUSD: 0.3, tokens: 12000, outputFile: 'D:/out/s1.md' },
                 { id: 's2', round: 1, agentId: 'a2', agentName: 'reviewer', title: 'review', prompt: 'p', readonly: true, status: 'failed', note: 'agent said no' }
             ]
         },
@@ -58,7 +58,11 @@ const DATA = {
 const sandbox = {
     acquireVsCodeApi: () => ({ postMessage: (m) => posted.push(m), getState() { }, setState() { } }),
     window: {
-        AFCharts: { esc: (s) => String(s) },
+        AFCharts: {
+            esc: (s) => String(s),
+            fmtTok: (n) => (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n)),
+            fmtUSD: (v) => '$' + v.toFixed(2)
+        },
         __DATA__: DATA,
         addEventListener: (ev, fn) => { if (ev === 'message') { msgHandler = fn; } }
     },
@@ -72,7 +76,8 @@ const sandbox = {
                     : sel === '[data-guide]' ? { attr: 'data-guide', key: 'guide' }
                         : sel === '[data-step]' ? { attr: 'data-step', key: 'step' }
                             : sel === '[data-opensession]' ? { attr: 'data-opensession', key: 'opensession' }
-                                : null;
+                                : sel === '[data-round]' ? { attr: 'data-round', key: 'round' }
+                                    : null;
             if (!spec) { return []; }
             const re = new RegExp(`${spec.attr}="([^"]*)"`, 'g');
             let m;
@@ -95,20 +100,24 @@ const html = () => getEl('app')._html;
 
 // ---------- list + detail rendering ----------
 ok('run list renders the mission row', html().includes('Parser mission') && html().includes('data-run="run1"'));
-ok('newest run auto-selected → detail shown', html().includes('id="mdetail"') && html().includes('Fix the parser and prove it'));
+ok('list starts folded — no detail opens on its own', !html().includes('class="mdetail"'));
+ok('accordion controls render (viewer chip row)',
+    html().includes('id="r-expandall"') && html().includes('id="r-collapseall"') && html().includes('id="r-singleopen"'));
+wired.run[0]._click(); // open run1 — the rest of the suite works inside its inline detail
+ok('clicking a row opens the inline detail', html().includes('class="mdetail"') && html().includes('Fix the parser and prove it'));
 ok('budget line shows spent/limit', html().includes('$1.25 / $5.00') && html().includes('2/8 rounds'));
 ok('round card lists steps with status + note', html().includes('fix parser') && html().includes('agent said no'));
 ok('readonly step badged', html().includes('read-only'));
 ok('ask_user round shows Q and A', html().includes('which branch?') && html().includes('main'));
-ok('pending approval renders the wait box', html().includes('needs your approval') && html().includes('id="d-approve"'));
+ok('pending approval renders the wait box', html().includes('needs your approval') && html().includes('id="d-approve-run1"'));
 ok('team chips carry roles', html().includes('coder — implements'));
 
 // ---------- click routing ----------
 posted = [];
-getEl('d-approve').listeners.click();
+getEl('d-approve-run1').listeners.click();
 ok('Approve posts approve with the run id', posted[0] && posted[0].type === 'approve' && posted[0].runId === 'run1');
 posted = [];
-getEl('d-cancel').listeners.click();
+getEl('d-cancel-run1').listeners.click();
 ok('Cancel posts control/cancel', posted[0] && posted[0].type === 'control' && posted[0].action === 'cancel' && posted[0].runId === 'run1');
 posted = [];
 wired.openfile[0]._click();
@@ -124,17 +133,17 @@ msgHandler({
         }
     }
 });
-ok('question wait box renders with an answer field', html().includes('deploy too?') && html().includes('id="d-answer"'));
-getEl('d-answer').value = 'no, just build';
+ok('question wait box renders with an answer field', html().includes('deploy too?') && html().includes('id="d-answer-run1"'));
+getEl('d-answer-run1').value = 'no, just build';
 posted = [];
-getEl('d-send').listeners.click();
+getEl('d-send-run1').listeners.click();
 ok('Send posts the typed answer', posted[0] && posted[0].type === 'answer' && posted[0].text === 'no, just build');
 
 // ---------- paused → Resume ----------
 msgHandler({ data: { type: 'data', data: { ...DATA, runs: [{ ...RUN, status: 'paused', note: 'interrupted by window reload' }], pending: { questions: [], approvals: [] } } } });
-ok('paused run offers Resume + shows the note', html().includes('id="d-resume"') && html().includes('interrupted by window reload'));
+ok('paused run offers Resume + shows the note', html().includes('id="d-resume-run1"') && html().includes('interrupted by window reload'));
 posted = [];
-getEl('d-resume').listeners.click();
+getEl('d-resume-run1').listeners.click();
 ok('Resume posts control/resume', posted[0] && posted[0].type === 'control' && posted[0].action === 'resume');
 
 // ---------- result box ----------
@@ -147,7 +156,7 @@ msgHandler({
     }
 });
 ok('finished run shows verdict + summary', html().includes('SUCCESS') && html().includes('parser fixed, 12 tests green'));
-ok('finished run has no Pause/Cancel controls', !html().includes('id="d-cancel"') && !html().includes('id="d-pause"'));
+ok('finished run has no Pause/Cancel controls', !html().includes('id="d-cancel-run1"') && !html().includes('id="d-pause-run1"'));
 
 // ---------- new-mission form ----------
 posted = [];
@@ -207,7 +216,7 @@ msgHandler({
 ok('running run shows the live now strip with elapsed ticker hook',
     html().includes('lead is planning round 3') && html().includes('data-since="100"'));
 posted = [];
-getEl('d-pause').listeners.click();
+getEl('d-pause-run1').listeners.click();
 ok('Pause posts control/pause', posted[0] && posted[0].type === 'control' && posted[0].action === 'pause' && posted[0].runId === 'run1');
 
 // ---------- pause feedback: pressed button + withdraw ----------
@@ -220,10 +229,10 @@ msgHandler({
     }
 });
 ok('pending pause renders the pressed Pausing… button and the hold strip',
-    html().includes('id="d-unpause"') && html().includes('Pausing…') && html().includes('pausing — the current activity finishes first'));
-ok('no plain Pause button while a pause is pending', !html().includes('id="d-pause"'));
+    html().includes('id="d-unpause-run1"') && html().includes('Pausing…') && html().includes('pausing — the current activity finishes first'));
+ok('no plain Pause button while a pause is pending', !html().includes('id="d-pause-run1"'));
 posted = [];
-getEl('d-unpause').listeners.click();
+getEl('d-unpause-run1').listeners.click();
 ok('clicking the pressed button withdraws the pause (control/unpause)',
     posted[0] && posted[0].type === 'control' && posted[0].action === 'unpause' && posted[0].runId === 'run1');
 
@@ -310,7 +319,7 @@ msgHandler({
     }
 });
 ok('ledger header renders with the line count', html().includes('Ledger') && html().includes('2 line(s)'));
-getEl('lg-toggle').listeners.click();
+getEl('lg-toggle-run1').listeners.click();
 ok('ledger opens to the compressed history', html().includes('R1 delegate 2 task(s)'));
 
 // ---------- live section toggle ----------
@@ -324,9 +333,33 @@ msgHandler({
     }
 });
 ok('live body lists the event while open', html().includes('turn end'));
-getEl('lv-toggle').listeners.click();
+getEl('lv-toggle-run1').listeners.click();
 ok('collapsing live keeps the header chips but hides the rows',
     html().includes('Live activity') && !html().includes('turn end'));
+
+// ---------- tokens everywhere + round bands (viewer style) ----------
+msgHandler({ data: { type: 'data', data: { ...DATA, pending: { questions: [], approvals: [] }, runs: [RUN] } } });
+ok('run row carries the token total (planner + steps)', html().includes('17.0k'));
+ok('step row carries its session tokens', html().includes('12.0k'));
+ok('round renders as a viewer-style turn band with stats',
+    html().includes('turnhdr') && html().includes('data-round="run1:1"') && html().includes('tok · $'));
+ok('budget line includes the run token total', html().includes('17.0k tok'));
+wired.round[0]._click();      // fold round 1
+ok('clicking the round band folds its body (steps hidden, summary shown)',
+    !html().includes('fix parser') && html().includes('2 delegation(s)'));
+wired.round[0]._click();      // unfold
+ok('clicking again unfolds the round', html().includes('fix parser'));
+
+// ---------- run accordion controls ----------
+const RUN2 = { ...RUN, id: 'run2', rounds: [], totalCostUSD: 0.5, plannerSessionId: undefined };
+msgHandler({ data: { type: 'data', data: { ...DATA, pending: { questions: [], approvals: [] }, runs: [RUN, RUN2] } } });
+const detailCount = () => html().split('class="mdetail"').length - 1;
+getEl('r-expandall').listeners.click();
+ok('Expand all opens every run', detailCount() === 2);
+getEl('r-singleopen').listeners.click();  // back ON — folds down to one
+ok('Single-open folds back to a single detail', detailCount() === 1);
+getEl('r-collapseall').listeners.click();
+ok('Collapse all folds the whole list', detailCount() === 0);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

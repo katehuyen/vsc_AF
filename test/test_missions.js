@@ -422,6 +422,27 @@ const HINTS = [{ name: 'coder', role: 'implements', hint: 'writes code' }, { nam
             capped.length === 4 && capped[0].ts === 1006 && capped[3].ts === 1009);
     }
 
+    // ---------- envelope usage → tokens ----------
+    {
+        const env = M.parsePlannerEnvelope(JSON.stringify({
+            type: 'result', result: '{}', session_id: 's1', total_cost_usd: 0.2,
+            usage: { input_tokens: 100, output_tokens: 50, cache_read_input_tokens: 1000, cache_creation_input_tokens: 10 }
+        }));
+        ok('envelope sums usage into total tokens', env && env.tokens === 1160);
+        const none = M.parsePlannerEnvelope(JSON.stringify({ type: 'result', result: '{}' }));
+        ok('missing usage → tokens undefined', none && none.tokens === undefined);
+    }
+
+    // ---------- remapStorageIds (publisher rename migration) ----------
+    {
+        const U = require(path.join(__dirname, '..', 'out', 'core', 'util.js'));
+        const raw = '{"outputFile":"c:\\\\Users\\\\x\\\\globalStorage\\\\miropharm.agent-farm\\\\task-outputs\\\\t1.md"}';
+        const fixed = U.remapStorageIds(raw, 'muvusoft.agent-farm');
+        ok('storage-id remap rewrites old publisher paths',
+            fixed.includes('muvusoft.agent-farm') && !fixed.includes('miropharm'));
+        ok('remap leaves current-id text unchanged', U.remapStorageIds(fixed, 'muvusoft.agent-farm') === fixed);
+    }
+
     // ---------- readFileTail (live output tail for the step accordion) ----------
     {
         const U = require(path.join(__dirname, '..', 'out', 'core', 'util.js'));
