@@ -18,6 +18,7 @@
     let runSingle = true;             // single-open mode (viewer's Single-open chip)
     let openNewest = false;           // after Start: open the freshly created run
     const closedRounds = new Set();   // "runId:n" keys of folded round bands
+    let roundSingle = false;          // single-open mode for round bands
     // ---- mission-control observation state ----
     let liveOpen = true;              // "Live activity" section (hook events)
     let ledgerOpen = false;           // planner ledger section
@@ -229,21 +230,25 @@
         </tr>` + (open ? stepDetail(s) : '');
     }
 
-    /** Planner + delegate totals of one round — the turn-band stats. */
+    /** Planner + delegate totals of one round — always "N tok · $x" together,
+     *  exactly like the session viewer's turn bands. */
     function roundStats(r) {
         const tok = (r.plannerTokens || 0) + r.steps.reduce((a, s) => a + (s.tokens || 0), 0);
         const cost = (r.plannerCostUSD || 0) + r.steps.reduce((a, s) => a + (s.costUSD || 0), 0);
-        return (tok ? C.fmtTok(tok) + ' tok · ' : '') + usd(cost);
+        return (tok || cost) ? `${C.fmtTok(tok)} tok · ${usd(cost)}` : '';
     }
 
-    /** Display-only run totals (planner rounds + delegate sessions). */
+    /** Display-only run totals. Pre-2.68 runs carry no per-round planner
+     *  tokens — the host backfills the whole planner session's total as
+     *  plannerSessionTokens, use it when the rounds have nothing. */
     function runTokens(r) {
-        let n = 0;
+        let planner = 0, steps = 0;
         r.rounds.forEach(rd => {
-            n += rd.plannerTokens || 0;
-            rd.steps.forEach(s => { n += s.tokens || 0; });
+            planner += rd.plannerTokens || 0;
+            rd.steps.forEach(s => { steps += s.tokens || 0; });
         });
-        return n;
+        if (!planner && r.plannerSessionTokens) { planner = r.plannerSessionTokens; }
+        return planner + steps;
     }
 
     /** Mission-scoped live activity: this run's agents only — status chips in
@@ -306,12 +311,13 @@
             body = `<div class="qa"><b>Q:</b> ${C.esc(r.question || '')}<br><b>A:</b> ${C.esc(r.answer || '(pending)')}</div>`;
         }
         const closedSummary = closed && r.steps.length ? `${r.steps.length} delegation(s) · ` : '';
+        const stats = roundStats(r);
         return `<div class="turnhdr${closed ? ' closed' : ''}" data-round="${C.esc(key)}" title="Click to ${closed ? 'expand' : 'collapse'} this round">
             <span class="tcaret">${closed ? '▸' : '▾'}</span>
             <span class="turnnum">R${r.n}</span>
             <span class="tag">${C.esc(r.action)}</span>
             <span class="turnlabel">${C.esc(r.thought || r.question || '')}</span>
-            <span class="turnstats">${closedSummary}${roundStats(r)} · ${fmtTime(r.at)}</span>
+            <span class="turnstats">${closedSummary}${stats ? stats + ' · ' : ''}${fmtTime(r.at)}</span>
         </div>` + (closed ? '' : `<div class="roundbody">
             ${r.thought ? `<div class="thought">${C.esc(r.thought)}</div>` : ''}
             ${body}
@@ -368,6 +374,12 @@
             ${pendingQ ? `<div class="waitbox">Question: ${C.esc(pendingQ.question)}<br>
                 <input type="text" id="d-answer-${C.esc(run.id)}" placeholder="your answer…" style="width:60%">
                 <button id="d-send-${C.esc(run.id)}">Send</button></div>` : ''}
+            ${run.rounds.length > 1 ? `<div class="chiprow">
+                <span class="muted small">Rounds:</span>
+                <button class="chip" id="rd-expandall-${C.esc(run.id)}" title="Expand every round of this run">Expand all</button>
+                <button class="chip" id="rd-collapseall-${C.esc(run.id)}" title="Fold every round down to its band">Collapse all</button>
+                <button class="chip${roundSingle ? ' on' : ''}" id="rd-singleopen-${C.esc(run.id)}" title="Only one round open at a time: expanding a round folds the others">Single-open</button>
+            </div>` : ''}
             ${run.rounds.map(r => roundCard(r, run)).join('') || (active ? '' : '<p class="muted">No rounds ran.</p>')}
             ${ledgerSection(run)}
             ${run.result ? `<div class="resultbox ${run.result.verdict}">
@@ -482,7 +494,9 @@
                 .tag { font-size:10px; padding:1px 6px; border-radius:8px; white-space:nowrap;
                     background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); opacity:.85; }
                 .roundbody { margin:0 0 10px 16px; }
-                .num { text-align:right; }
+                /* .mtable th's text-align:left must not beat .num — headers and
+                   values right-align TOGETHER or the columns look shifted */
+                .mtable .num { text-align:right; }
                 /* Accordion controls — the viewer's chip row, verbatim. */
                 .chiprow { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:10px 0 4px; }
                 .chip { font-size:11px; padding:2px 10px; cursor:pointer; border-radius:10px;
@@ -600,11 +614,24 @@
             }
             render();
         });
-        // round bands fold/unfold like the viewer's turn bands
+        // round bands fold/unfold like the viewer's turn bands; single-open
+        // mode folds the siblings of the round being expanded
         document.querySelectorAll('[data-round]').forEach(band =>
             band.addEventListener('click', () => {
                 const key = band.dataset.round;
-                if (closedRounds.has(key)) { closedRounds.delete(key); } else { closedRounds.add(key); }
+                if (closedRounds.has(key)) {
+                    closedRounds.delete(key);
+                    if (roundSingle) {
+                        const runId = key.slice(0, key.lastIndexOf(':'));
+                        const run = DATA.runs.find(x => x.id === runId);
+                        if (run) {
+                            run.rounds.forEach(rd => {
+                                const k2 = runId + ':' + rd.n;
+                                if (k2 !== key) { closedRounds.add(k2); }
+                            });
+                        }
+                    }
+                } else { closedRounds.add(key); }
                 render();
             }));
         document.querySelectorAll('[data-openfile]').forEach(a =>
@@ -644,6 +671,25 @@
             });
             wire('lv-toggle-' + id, () => { liveOpen = !liveOpen; render(); });
             wire('lg-toggle-' + id, () => { ledgerOpen = !ledgerOpen; render(); });
+            // round-level accordion controls (mirror of the run-level chips)
+            wire('rd-expandall-' + id, () => {
+                r.rounds.forEach(rd => closedRounds.delete(id + ':' + rd.n));
+                roundSingle = false;
+                render();
+            });
+            wire('rd-collapseall-' + id, () => {
+                r.rounds.forEach(rd => closedRounds.add(id + ':' + rd.n));
+                render();
+            });
+            wire('rd-singleopen-' + id, () => {
+                roundSingle = !roundSingle;
+                if (roundSingle) {
+                    // keep only the newest open round of this run
+                    const open = r.rounds.filter(rd => !closedRounds.has(id + ':' + rd.n));
+                    open.slice(0, -1).forEach(rd => closedRounds.add(id + ':' + rd.n));
+                }
+                render();
+            });
         });
 
         // (re)arm the output tail for the expanded step; clears when none is open

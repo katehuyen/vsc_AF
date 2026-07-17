@@ -1857,24 +1857,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     /** Cost/token attribution lands on the TASK up to a minute after a step
      *  finishes — refresh each step from its task record at render time so the
-     *  page shows the settled numbers without rewriting the store. */
+     *  page shows the settled numbers without rewriting the store. Steps and
+     *  runs recorded before tokens existed are backfilled from the session
+     *  index (the delegate's matched transcript / the planner's own session). */
     const missionRunsForPanel = () => {
         const byTask = new Map(taskManager.tasks.map(t => [t.id, t]));
-        return [...missionStore.runs].sort((a, b) => b.startedAt - a.startedAt).map(run => ({
-            ...run,
-            rounds: run.rounds.map(round => ({
-                ...round,
-                steps: round.steps.map(step => {
-                    const t = step.taskId ? byTask.get(step.taskId) : undefined;
-                    return t ? {
-                        ...step,
-                        costUSD: step.costUSD ?? t.costUSD,
-                        tokens: step.tokens ?? t.tokens,
-                        outputFile: step.outputFile ?? t.outputFile
-                    } : step;
-                })
-            }))
-        }));
+        const sessions = index.all();
+        const bySessionFile = new Map(sessions.map(s => [s.file, s]));
+        const bySessionId = new Map(sessions.map(s => [s.sessionId, s]));
+        return [...missionStore.runs].sort((a, b) => b.startedAt - a.startedAt).map(run => {
+            const ps = run.plannerSessionId ? bySessionId.get(run.plannerSessionId) : undefined;
+            return {
+                ...run,
+                /** whole-planner-session total — the run-level fallback when
+                 *  rounds carry no per-round planner tokens (pre-2.68 runs). */
+                plannerSessionTokens: ps ? totalTokens(ps.usage) : undefined,
+                rounds: run.rounds.map(round => ({
+                    ...round,
+                    steps: round.steps.map(step => {
+                        const t = step.taskId ? byTask.get(step.taskId) : undefined;
+                        if (!t) { return step; }
+                        const sess = t.costSessionFile ? bySessionFile.get(t.costSessionFile) : undefined;
+                        return {
+                            ...step,
+                            costUSD: step.costUSD ?? t.costUSD,
+                            tokens: step.tokens ?? t.tokens ?? (sess ? totalTokens(sess.usage) : undefined),
+                            outputFile: step.outputFile ?? t.outputFile
+                        };
+                    })
+                }))
+            };
+        });
     };
 
     const missionsPanelDeps = {

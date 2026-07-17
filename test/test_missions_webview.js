@@ -350,6 +350,38 @@ ok('clicking the round band folds its body (steps hidden, summary shown)',
 wired.round[0]._click();      // unfold
 ok('clicking again unfolds the round', html().includes('fix parser'));
 
+// ---------- round-level accordion controls ----------
+ok('round chip row renders when a run has several rounds',
+    html().includes('id="rd-expandall-run1"') && html().includes('id="rd-collapseall-run1"') && html().includes('id="rd-singleopen-run1"'));
+ok('viewer-style both-figures stats even when a round has no tokens',
+    html().includes('0 tok · $0.05')); // round 2 (ask_user): only planner cost, tokens 0
+getEl('rd-collapseall-run1').listeners.click();
+// folded bands keep their label; the BODIES (steps table / Q-A block) disappear
+ok('Collapse all folds every round of the run',
+    !html().includes('fix parser') && !html().includes('<b>Q:</b>'));
+getEl('rd-expandall-run1').listeners.click();
+ok('Expand all reopens every round', html().includes('fix parser') && html().includes('<b>Q:</b>'));
+getEl('rd-singleopen-run1').listeners.click(); // ON — keeps only the newest round open
+ok('Single-open keeps one round open', !html().includes('fix parser') && html().includes('<b>Q:</b>'));
+wired.round[0]._click(); // expand R1 → single-open folds R2
+ok('expanding a round in single-open folds its sibling',
+    html().includes('fix parser') && !html().includes('<b>Q:</b>'));
+getEl('rd-singleopen-run1').listeners.click(); // OFF again for the tests below
+getEl('rd-expandall-run1').listeners.click();
+
+// ---------- planner-session token fallback (pre-2.68 runs) ----------
+{
+    const OLD = {
+        ...RUN, id: 'run1',
+        rounds: [{ n: 1, thought: 't', action: 'delegate', plannerCostUSD: 0.2, at: 1000,
+            steps: [{ id: 'sx', round: 1, agentId: 'a1', agentName: 'coder', title: 'old work', prompt: 'p', status: 'done', costUSD: 0.1 }] }],
+        plannerSessionTokens: 44000
+    };
+    msgHandler({ data: { type: 'data', data: { ...DATA, pending: { questions: [], approvals: [] }, runs: [OLD] } } });
+    ok('run totals fall back to the planner session tokens', html().includes('44.0k'));
+    msgHandler({ data: { type: 'data', data: { ...DATA, pending: { questions: [], approvals: [] }, runs: [RUN] } } });
+}
+
 // ---------- run accordion controls ----------
 const RUN2 = { ...RUN, id: 'run2', rounds: [], totalCostUSD: 0.5, plannerSessionId: undefined };
 msgHandler({ data: { type: 'data', data: { ...DATA, pending: { questions: [], approvals: [] }, runs: [RUN, RUN2] } } });
