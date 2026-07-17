@@ -48,8 +48,8 @@ Token usage is read from Claude Code's local JSONL transcripts and priced with t
 
 The extension is publish-ready: `LICENSE`, `CHANGELOG.md`, icon, and this README. To release:
 
-1. Create a publisher on [marketplace.visualstudio.com/manage](https://marketplace.visualstudio.com/manage) matching `"publisher": "miropharm"` and get a Personal Access Token.
-2. `npx vsce login miropharm`, then `npx vsce publish` (add `repository` to package.json once the repo is public).
+1. Create a publisher on [marketplace.visualstudio.com/manage](https://marketplace.visualstudio.com/manage) matching `"publisher": "muvusoft"` and get a Personal Access Token.
+2. `npx vsce login muvusoft`, then `npx vsce publish` (add `repository` to package.json once the repo is public).
 3. Optionally publish to Open VSX: `npx ovsx publish -p <token>`.
 
 ## License
