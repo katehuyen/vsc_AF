@@ -89,6 +89,19 @@
         return r.candidates.length ? 'The subfolders below are the agents.' : 'No agent folders found here yet — a subfolder becomes an agent once it has a CLAUDE.md, .claude or memory/.';
     }
 
+    // Per-agent default model — the aliases plus whatever full id the folder
+    // already carries (e.g. a pinned claude-haiku-…), so nothing is clobbered.
+    const MODEL_ALIASES = ['haiku', 'sonnet', 'opus'];
+    function agentModelSel(c) {
+        const cur = c.model || '';
+        const opts = cur && MODEL_ALIASES.indexOf(cur) < 0 ? [cur].concat(MODEL_ALIASES) : MODEL_ALIASES;
+        return `<select class="agmodel" data-agmodel="${C.esc(c.dir)}"
+            title="Default model for this agent's sessions — written to the agent's .claude/settings.local.json. Full model ids can be typed into that file directly.">
+            <option value=""${cur ? '' : ' selected'}>model: CLI default</option>
+            ${opts.map(m => `<option value="${C.esc(m)}"${cur === m ? ' selected' : ''}>${C.esc(m)}</option>`).join('')}
+        </select>`;
+    }
+
     function agentChip(c) {
         if (c.excluded) {
             return `<span class="agchip agexcl" title="${C.esc(c.dir)} — excluded, never treated as an agent">${C.esc(c.name)}
@@ -98,6 +111,7 @@
             ? `<a data-openagent="${C.esc(c.agentId)}" title="Open this agent's page">${C.esc(c.name)}</a>`
             : C.esc(c.name);
         return `<span class="agchip" title="${C.esc(c.dir)}">${name}
+            ${agentModelSel(c)}
             <a class="agex" data-exclude="${C.esc(c.dir)}" title="Never treat this folder as an agent (undo any time with Include)">Exclude</a></span>`;
     }
 
@@ -132,7 +146,9 @@
             <code>CLAUDE.md</code>, <code>.claude</code> or <code>memory/</code> become agents; a root whose subfolders are agents is a
             <b>nest</b> (its own CLAUDE.md = shared instructions); a root with no agent-like subfolders is one agent itself.
             <b>Exclude</b> keeps a folder out of the farm entirely — it stops being an agent everywhere (views, analytics, session
-            ownership) until you Include it back. <button class="secondary small" id="rootadd" title="Pick a folder to scan for agents">+ Add root…</button></p>
+            ownership) until you Include it back. Each agent chip carries a <b>model</b> dropdown — the default model for that agent's
+            sessions, written to its <code>.claude/settings.local.json</code>; new agents are seeded from <code>agentFarm.newAgentModel</code>.
+            <button class="secondary small" id="rootadd" title="Pick a folder to scan for agents">+ Add root…</button></p>
             ${dupes ? `<div class="seterr">⚠ The roots list contains the same folder more than once (case/slash spelling differs) — this distorts discovery. <a id="afcleandupes">Clean duplicates</a></div>` : ''}
             ${reports.map(rootItemHtml).join('')}
             ${stale.length ? `<div class="setitem">
@@ -266,6 +282,7 @@
                 .agchip .agex:hover, .agchip.agexcl a:hover { opacity:1; }
                 .agchip.agexcl { opacity:.55; text-decoration:line-through; }
                 .agchip.agexcl a { text-decoration:none; }
+                .agchip .agmodel { font-size:10px; margin-left:6px; padding:0 2px; max-width:150px; }
             </style>
             ${window.AFHeader.html({
                 page: 'settings',
@@ -338,6 +355,9 @@
             a.addEventListener('click', () => vscode.postMessage({ type: 'agentInclude', dir: a.dataset.include })));
         document.querySelectorAll('[data-openagent]').forEach(a =>
             a.addEventListener('click', () => vscode.postMessage({ type: 'openAgent', agentId: a.dataset.openagent })));
+        document.querySelectorAll('[data-agmodel]').forEach(el =>
+            el.addEventListener('change', () =>
+                vscode.postMessage({ type: 'agentModel', dir: el.dataset.agmodel, model: el.value })));
 
         // Claude Code section
         document.querySelectorAll('[data-ccset]').forEach(el =>

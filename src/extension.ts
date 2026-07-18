@@ -82,8 +82,9 @@ import {
 } from './core/suggest';
 import { buildWeeklyFactsText, generateWeeklySummary, isoWeek, WeeklyFacts } from './core/summary';
 import {
-    archivedOutputBody, buildCliCommand, CliProfile, FarmSchedule, FarmTrigger, newId,
-    PREV_OUTPUT_PLACEHOLDER, sanitizePrompt, ScheduleKind, TaskManager, TaskMode, WorkflowStep
+    archivedOutputBody, buildCliCommand, CliProfile, FarmSchedule, FarmTrigger, MissedPolicy,
+    newId, PREV_OUTPUT_PLACEHOLDER, previousOccurrenceKey, sanitizePrompt, ScheduleKind,
+    TaskManager, TaskMode, WorkflowStep
 } from './core/tasks';
 import {
     buildResumeMessage, DEFAULT_MISSION_LIMITS, MissionEngine, MissionEngineDeps,
@@ -140,6 +141,25 @@ const MEMORY_MD_TEMPLATE = `# Memory Index
 
 <!-- One line per memory file: - [Title](file.md) — short hook -->
 `;
+
+/** Missed-time policy choices for daily/weekly schedules (add + edit flows). */
+const MISSED_POLICY_PICKS: { label: string; description: string; missed: MissedPolicy }[] = [
+    {
+        label: 'Skip missed runs',
+        description: 'If no VS Code window was open at the time, that occurrence is lost (late runs still happen on the same day)',
+        missed: 'skip'
+    },
+    {
+        label: 'Catch up at first opportunity',
+        description: 'A fully missed occurrence fires as soon as a VS Code window is back — no questions asked',
+        missed: 'run'
+    },
+    {
+        label: 'Ask before catching up',
+        description: 'A missed occurrence is offered with Run now / Skip buttons',
+        missed: 'ask'
+    }
+];
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     let agents: AgentInfo[] = [];
@@ -3036,12 +3056,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 { ignoreFocusOut: true, placeHolder: 'Run mode' }
             );
             if (!mode) { return; }
+            // daily/weekly: what happens when the time passes with VS Code closed
+            let missed: MissedPolicy | undefined;
+            if (kindPick.sched !== 'once') {
+                const missedPick = await vscode.window.showQuickPick(MISSED_POLICY_PICKS,
+                    { ignoreFocusOut: true, placeHolder: 'If the scheduled time is missed (no VS Code window open)?' });
+                if (!missedPick) { return; }
+                missed = missedPick.missed;
+            }
             taskManager.addSchedule({
                 agentId: agent.id, agentName: agent.name, title, prompt,
-                mode: mode.mode, kind: kindPick.sched, hour, minute, dow, onceAt, enabled: true
+                mode: mode.mode, kind: kindPick.sched, hour, minute, dow, onceAt, enabled: true, missed
             });
             void vscode.window.showInformationMessage(
-                `Agent Farm: schedule "${title}" created (runs while VS Code is open).`);
+                `Agent Farm: schedule "${title}" created (runs while VS Code is open` +
+                (missed === 'run' ? '; a missed time is caught up in the next window' : '') + ').');
         }),
 
         vscode.commands.registerCommand('agentfarm.startTask', (node?: TaskNode) => {
@@ -3133,7 +3162,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     dow = dayPick.dow;
                 }
             }
-            taskManager.updateSchedule(s.id, { title, prompt, hour, minute, dow, onceAt });
+            let missed = s.missed;
+            if (s.kind !== 'once') {
+                const cur = s.missed ?? 'skip';
+                const missedPick = await vscode.window.showQuickPick(
+                    MISSED_POLICY_PICKS.map(p => ({ ...p, label: `${p.label}${p.missed === cur ? ' (current)' : ''}` })),
+                    { ignoreFocusOut: true, placeHolder: 'If the scheduled time is missed (no VS Code window open)?' });
+                if (!missedPick) { return; }
+                missed = missedPick.missed;
+            }
+            const patch: Partial<FarmSchedule> = { title, prompt, hour, minute, dow, onceAt, missed };
+            // switching catch-up ON settles the past first — otherwise the edit
+            // itself would instantly fire an occurrence from before the choice
+            if (missed !== (s.missed ?? 'skip') && missed !== 'skip') {
+                patch.lastRunKey = previousOccurrenceKey({ kind: s.kind, dow }, new Date());
+            }
+            taskManager.updateSchedule(s.id, patch);
         }),
         vscode.commands.registerCommand('agentfarm.runScheduleNow', (node?: TaskNode) => {
             if (node?.kind === 'schedule') { taskManager.runScheduleNow(node.schedule); }
@@ -5074,9 +5118,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             fs.mkdirSync(path.join(dir, '.claude'), { recursive: true });
             fs.writeFileSync(path.join(dir, 'CLAUDE.md'), CLAUDE_MD_TEMPLATE.replace('{NAME}', name), 'utf8');
             fs.writeFileSync(path.join(dir, 'memory', 'MEMORY.md'), MEMORY_MD_TEMPLATE, 'utf8');
-            fs.writeFileSync(path.join(dir, '.claude', 'settings.local.json'), '{}\n', 'utf8');
+            // seed the agent's default model from agentFarm.newAgentModel
+            // (empty = write no model, the Claude CLI default applies)
+            const newModel = cfg().get<string>('newAgentModel', 'sonnet').trim();
+            fs.writeFileSync(path.join(dir, '.claude', 'settings.local.json'),
+                JSON.stringify(newModel ? { model: newModel } : {}, null, 2) + '\n', 'utf8');
             refreshAll();
-            void vscode.window.showInformationMessage(`Agent Farm: agent "${name}" created.`);
+            void vscode.window.showInformationMessage(
+                `Agent Farm: agent "${name}" created${newModel ? ` (default model: ${newModel})` : ''}.`);
             await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(path.join(dir, 'CLAUDE.md')));
         }),
 
@@ -5170,19 +5219,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     claudeSettingsFile: () => userSettingsPath(claudeDir()),
                     // Agent folders section: a fresh scan per render, so badges and
                     // the per-root agent lists always match what discovery would do.
-                    agentFolders: () => ({
-                        reports: scanRoots(
-                            cfg().get<string[]>('agentRoots', []),
-                            cfg().get<string[]>('excludeAgentDirs', [])
-                        ).reports.map(r => ({
-                            root: r.root, kind: r.kind, duplicate: r.duplicate,
-                            candidates: r.candidates.map(c => ({
-                                dir: c.dir, name: c.name, excluded: c.excluded,
-                                agentId: agents.find(a => a.normDir === normPath(c.dir))?.id ?? ''
-                            }))
-                        })),
-                        excludes: cfg().get<string[]>('excludeAgentDirs', [])
-                    })
+                    agentFolders: () => {
+                        // effective default model of an agent folder — what the claude
+                        // CLI would pick up (settings.local.json overrides settings.json)
+                        const modelOf = (dir: string): string => {
+                            for (const f of ['settings.local.json', 'settings.json']) {
+                                try {
+                                    const j = JSON.parse(fs.readFileSync(path.join(dir, '.claude', f), 'utf8')) as { model?: unknown };
+                                    if (typeof j.model === 'string' && j.model) { return j.model; }
+                                } catch { /* missing or invalid — keep looking */ }
+                            }
+                            return '';
+                        };
+                        return {
+                            reports: scanRoots(
+                                cfg().get<string[]>('agentRoots', []),
+                                cfg().get<string[]>('excludeAgentDirs', [])
+                            ).reports.map(r => ({
+                                root: r.root, kind: r.kind, duplicate: r.duplicate,
+                                candidates: r.candidates.map(c => ({
+                                    dir: c.dir, name: c.name, excluded: c.excluded,
+                                    agentId: agents.find(a => a.normDir === normPath(c.dir))?.id ?? '',
+                                    model: c.excluded ? '' : modelOf(c.dir)
+                                }))
+                            })),
+                            excludes: cfg().get<string[]>('excludeAgentDirs', [])
+                        };
+                    }
                 }, arg && typeof arg === 'object' ? arg.focus : undefined);
             }),
 

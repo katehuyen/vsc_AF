@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import {
     buildSettingsModel, sanitizeValue, snapshotProfile, profileApplyPlan,
@@ -16,7 +17,9 @@ export interface AgentFolderReport {
     root: string;
     kind: 'nest' | 'single-agent' | 'plain' | 'missing';
     duplicate: boolean;
-    candidates: { dir: string; name: string; excluded: boolean; agentId: string }[];
+    /** model = the folder's effective default model (settings.local.json,
+     *  falling back to settings.json); '' when none is set. */
+    candidates: { dir: string; name: string; excluded: boolean; agentId: string; model: string }[];
 }
 
 export interface FarmSettingsDeps {
@@ -326,6 +329,39 @@ export class FarmSettingsPanel {
                 const next = cfg.get<string[]>('agentFarm.excludeAgentDirs', [])
                     .filter(x => normPath(x) !== normPath(dir));
                 await cfg.update('agentFarm.excludeAgentDirs', next, vscode.ConfigurationTarget.Global);
+                break;
+            }
+            case 'agentModel': {
+                // Per-agent default model → the agent's .claude/settings.local.json
+                // ('' clears the key, the CLI default takes over). Only scanned
+                // agent folders are writable from here — the webview must not be
+                // able to point us at arbitrary paths.
+                const dir = String(msg.dir ?? '');
+                const model = String(msg.model ?? '').trim();
+                const known = this.deps.agentFolders?.().reports
+                    .some(r => r.candidates.some(c => c.dir === dir));
+                if (!dir || !known) { break; }
+                const file = path.join(dir, '.claude', 'settings.local.json');
+                let json: Record<string, unknown> = {};
+                try {
+                    const v = validateRawClaudeSettings(fs.readFileSync(file, 'utf8'));
+                    if (!v.ok) {
+                        void vscode.window.showErrorMessage(
+                            `Agent Farm: ${file} is not valid JSON — fix the file first.`);
+                        break;
+                    }
+                    json = v.json;
+                } catch { /* not created yet — start empty */ }
+                try {
+                    fs.mkdirSync(path.dirname(file), { recursive: true });
+                    fs.writeFileSync(file,
+                        JSON.stringify(patchClaudeSettings(json, ['model'], model || undefined), null, 2) + '\n',
+                        'utf8');
+                } catch (e) {
+                    void vscode.window.showErrorMessage(
+                        'Agent Farm: could not write ' + file + ' — ' + String((e as Error).message));
+                }
+                this.refresh();
                 break;
             }
             case 'openAgent':

@@ -66,6 +66,12 @@ export interface FarmTask {
 
 export type ScheduleKind = 'daily' | 'weekly' | 'once';
 
+/** What happens when a scheduled time passes while no VS Code window was open:
+ *  'skip' (default, the old behavior) = that occurrence is lost — the schedule
+ *  only fires on its own day; 'run' = the missed occurrence fires at the first
+ *  opportunity, no questions asked; 'ask' = it is offered with Run/Skip buttons. */
+export type MissedPolicy = 'skip' | 'run' | 'ask';
+
 export interface FarmSchedule {
     id: string;
     agentId: string;
@@ -80,6 +86,7 @@ export interface FarmSchedule {
     onceAt?: number;   // epoch ms, once only
     enabled: boolean;
     lastRunKey?: string;
+    missed?: MissedPolicy;
 }
 
 export interface FarmTemplate {
@@ -215,8 +222,25 @@ export function buildCliCommand(template: string, prompt: string, args: string):
         .trim();
 }
 
-/** Pure due-check so the scheduler is testable. */
-export function scheduleDue(s: FarmSchedule, now: Date): { due: boolean; runKey: string } {
+/** The day-key of the last scheduled occurrence strictly before today (daily:
+ *  yesterday; weekly: the previous matching weekday). Stamped as lastRunKey
+ *  when a catch-up policy is configured so the past counts as settled — only
+ *  occurrences missed AFTER that point are caught up. */
+export function previousOccurrenceKey(s: Pick<FarmSchedule, 'kind' | 'dow'>, now: Date): string {
+    const prev = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    do { prev.setDate(prev.getDate() - 1); }
+    while (s.kind === 'weekly' && prev.getDay() !== s.dow);
+    return `${prev.getFullYear()}-${prev.getMonth() + 1}-${prev.getDate()}`;
+}
+
+/** Pure due-check so the scheduler is testable. `missedKey`/`missedAt` mark a
+ *  scheduled occurrence from a previous day that never ran (no VS Code window
+ *  was open at the time) and the schedule's missed-policy wants handled:
+ *  policy 'run' also sets due (fires with runKey = the missed key), policy
+ *  'ask' leaves due false — the scheduler offers it with Run/Skip buttons. */
+export function scheduleDue(
+    s: FarmSchedule, now: Date
+): { due: boolean; runKey: string; missedKey?: string; missedAt?: number } {
     if (!s.enabled) { return { due: false, runKey: '' }; }
     if (s.kind === 'once') {
         return {
@@ -227,9 +251,20 @@ export function scheduleDue(s: FarmSchedule, now: Date): { due: boolean; runKey:
     const dayKey = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
     const minutes = now.getHours() * 60 + now.getMinutes();
     const target = s.hour * 60 + s.minute;
-    if (minutes < target) { return { due: false, runKey: dayKey }; }
-    if (s.kind === 'weekly' && now.getDay() !== s.dow) { return { due: false, runKey: dayKey }; }
-    return { due: s.lastRunKey !== dayKey, runKey: dayKey };
+    const runDay = s.kind !== 'weekly' || now.getDay() === s.dow;
+    if (runDay && minutes >= target) {
+        // the scheduled day itself — fires on time, or late the same day
+        return { due: s.lastRunKey !== dayKey, runKey: dayKey };
+    }
+    if (s.missed === 'run' || s.missed === 'ask') {
+        const prevKey = previousOccurrenceKey(s, now);
+        if (s.lastRunKey !== prevKey) {
+            const [y, m, d] = prevKey.split('-').map(Number);
+            const missedAt = new Date(y, m - 1, d, s.hour, s.minute).getTime();
+            return { due: s.missed === 'run', runKey: prevKey, missedKey: prevKey, missedAt };
+        }
+    }
+    return { due: false, runKey: dayKey };
 }
 
 export { extractJson, sanitizePrompt, tryParseJson } from './util';
@@ -2025,6 +2060,13 @@ export class TaskManager implements vscode.Disposable {
 
     addSchedule(s: Omit<FarmSchedule, 'id'>): FarmSchedule {
         const schedule: FarmSchedule = { ...s, id: newId() };
+        // catch-up policies settle the past at creation: without this stamp a
+        // brand-new schedule would immediately "catch up" an occurrence from
+        // before it even existed
+        if (schedule.kind !== 'once' && (schedule.missed === 'run' || schedule.missed === 'ask')
+            && schedule.lastRunKey === undefined) {
+            schedule.lastRunKey = previousOccurrenceKey(schedule, new Date());
+        }
         this.schedules.push(schedule);
         this.save();
         return schedule;
@@ -2050,19 +2092,42 @@ export class TaskManager implements vscode.Disposable {
         this.startTask(task);
     }
 
+    /** 'ask' policy: (schedule.id + missedKey) pairs already offered in THIS
+     *  window — in-memory on purpose, so a dismissed toast comes back in the
+     *  next window instead of the occurrence silently dying. */
+    private askedMissed = new Set<string>();
+
     private tickSchedules(): void {
         if (!this.runner()) { return; } // B11: only the runner window fires schedules
         const now = new Date();
         for (const s of this.schedules) {
-            const { due, runKey } = scheduleDue(s, now);
-            if (!due) { continue; }
+            const { due, runKey, missedKey, missedAt } = scheduleDue(s, now);
+            if (!due) {
+                if (missedKey && s.missed === 'ask' && !this.askedMissed.has(s.id + missedKey)) {
+                    this.askedMissed.add(s.id + missedKey);
+                    void vscode.window.showWarningMessage(
+                        `Agent Farm: schedule "${s.title}" (${s.agentName}) missed its time` +
+                        (missedAt ? ` (${new Date(missedAt).toLocaleString()})` : '') +
+                        ' — no VS Code window was open. Run it now?',
+                        'Run now', 'Skip this one'
+                    ).then(pick => {
+                        // dismissed (undefined): decide nothing — the next window asks again
+                        if (!pick || !this.schedules.includes(s)) { return; }
+                        s.lastRunKey = missedKey;
+                        this.save();
+                        if (pick === 'Run now') { this.runScheduleNow(s); }
+                    });
+                }
+                continue;
+            }
             s.lastRunKey = runKey;
             if (s.kind === 'once') { s.enabled = false; }
             const agent = this.getAgents().find(a => a.id === s.agentId);
             if (!agent) { continue; }
             const task = this.addTask(agent, s.title, s.prompt, s.mode, { fromSchedule: s.id });
             void vscode.window.showInformationMessage(
-                `Agent Farm: scheduled task started — "${s.title}" (${s.agentName})`);
+                `Agent Farm: scheduled task started — "${s.title}" (${s.agentName})` +
+                (missedKey ? ' — caught up; the scheduled time passed while VS Code was closed.' : ''));
             this.startTask(task);
         }
     }

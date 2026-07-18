@@ -305,7 +305,9 @@ Kurulu bir zamanlamayı değiştirmek için sağ tık → **Edit Schedule…** (
 
 Zamanı gelen görev otomatik olarak kuyruğa eklenir, başlatılır ve bildirim düşer. Tek seferlikler çalıştıktan sonra kendini kapatır.
 
-**Önemli sınır:** Bu zamanlayıcı VS Code açıkken çalışır — kapalıysa o çalıştırma atlanır (gün içinde açarsan o günün görevi gecikmeli tetiklenir). VS Code'dan bağımsız çalışması gerekenler için bir sonraki bölüme bak.
+**Kaçırılan zaman politikası (2.75.0):** Günlük/haftalık zamanlama kurarken (ve Edit Schedule'da) üçüncü bir soru sorulur — *saat geldiğinde hiçbir VS Code penceresi açık değilse ne olsun?* **Skip missed runs** (varsayılan, eski davranış): o sefer yanar; aynı gün içinde geç açarsan yine tetiklenir ama gün tamamen kaçtıysa kaçmıştır. **Catch up at first opportunity:** tamamen kaçan sefer, bir sonraki VS Code penceresi açılır açılmaz sormadan koşar (bildirim "caught up" der); o günün kendi seferi ayrıca saatinde çalışır. **Ask before catching up:** kaçan sefer **Run now / Skip this one** düğmeli bir uyarıyla sana sorulur — uyarıyı kapatırsan bir sonraki pencerede tekrar sorulur, sessizce ölmez. Politika kurulduğu anda geçmiş "kapanmış" sayılır: yeni kurulan bir catch-up zamanlaması dünün seferini koşmaya kalkmaz, yalnız kurulumdan SONRA kaçanlar yakalanır.
+
+**Önemli sınır:** Bu zamanlayıcı VS Code açıkken çalışır — kapalıysa o çalıştırma atlanır (gün içinde açarsan o günün görevi gecikmeli tetiklenir; tamamen kaçan günler için yukarıdaki catch-up politikası var). VS Code'dan bağımsız çalışması gerekenler için bir sonraki bölüme bak.
 
 ### VS Code Dışında Zamanlama (Windows)
 
@@ -1201,6 +1203,8 @@ Sayfa **şema-güdümlüdür**: eklenti manifestinin bildirdiği her şeyi çize
 
 **Agent folders bölümü (2.61.0):** sayfanın ilk bölümü **ajanların nerede yaşadığını** yönetir — eskiden bir kerelik kurulum sorusu ve ham JSON dizisi olan parça. `agentFarm.agentRoots`'taki her kök bir satırdır; rozeti, keşfin o kökten ne anladığını söyler: **nest · N agents** (ajanlar alt klasörlerdir; kökün kendi `CLAUDE.md`'si ortak talimattır, ajan değildir), **single agent**, düz **N agents**, **folder missing** ya da **duplicate entry** (aynı klasörün iki farklı yazımı — tek tıkla temizlenir; büyük/küçük harf ve eğik çizgi farkları artık keşfi bozamaz). Her satır ajanlarını çip olarak listeler: ada tıklayınca o ajanın sayfası açılır; **Exclude** klasörü çiftlikten tamamen çıkarır — görünümler, analitik, oturum sahipliği dahil her yerde ajan olmaktan çıkar, **Include** ile geri gelir; dışlananlar soluk görünmeye devam eder ki geri dönüş hep tek tık olsun. **+ Add root…** klasör seçici açar; **Remove** kökü taramayı bırakır (onay penceresi kaç ajanın görünümlerden çıkacağını açıkça söyler; klasörün kendisine asla dokunulmaz); **Reveal** dosya gezgininde gösterir. Artık hiçbir şeye denk gelmeyen bayat dışlama kayıtları ayrı listelenir, tek tıkla silinir. Bölüm arka planda `agentFarm.agentRoots` / `agentFarm.excludeAgentDirs` ayarlarını düzenler — elle yapılan düzenlemeler ve ayar setleri sayfayla senkron kalır.
 
+**Ajan başına varsayılan model (2.75.0):** her ajan çipinde bir **model** açılır kutusu var — o ajanın oturumlarının varsayılan modeli (haiku / sonnet / opus takma adları; klasörde zaten tam bir model id'si yazılıysa o da listede korunur). Seçim ajanın `.claude/settings.local.json` dosyasındaki `model` anahtarına yazılır; **CLI default** seçmek anahtarı siler, claude'un kendi varsayılanı devreye girer. Tam model id'si gerekiyorsa dosyaya elle yazılabilir — kutu onu görüntüler ve bozmadan korur. Yeni ajanlar içinse `agentFarm.newAgentModel` ayarı (varsayılan **sonnet**) vardır: **New Agent** ile açılan her ajanın `settings.local.json`'ına bu model otomatik yazılır; boş bırakılırsa model yazılmaz.
+
 **Claude Code (claude CLI) bölümü (2.55.0):** aynı sayfa **claude'un kendi** `~/.claude/settings.json` dosyasını da düzenler — terminaldeki *"Set CLAUDE_CODE_USE_POWERSHELL_TOOL=1 …"* gibi ipuçlarının arkasındaki dosya. Açıklamalı seçilmiş katalog: varsayılan model, izin varsayılan modu, co-authored-by, transkript saklama süresi (`cleanupPeriodDays` — Agent Farm'ın arama ve analitiğinin ne kadar geriye görebildiğini sınırlar), output style ve bilinen env anahtarları (PowerShell tool önizlemesi, thinking/çıktı token tavanları, bash zaman aşımı, oto-güncelleme/telemetri kapatmaları). Bir değeri temizlemek anahtarı dosyadan siler — Claude'un kendi varsayılanı devreye girer. Geri kalan her şey kataloğun altındaki doğrulamalı **ham JSON editöründen** düzenlenir — bozuk JSON asla kaydedilmez, dosyanın yanında bir kerelik `.agentfarm-backup` kopyası tutulur. Değişiklikler **yeni** claude oturumlarına uygulanır.
 
 ### Referans tablosu
@@ -1209,6 +1213,7 @@ Sayfa **şema-güdümlüdür**: eklenti manifestinin bildirdiği her şeyi çize
 | --- | --- | --- |
 | `agentFarm.agentRoots` | `["D:/zone/agent/ajanlar"]` | Ajan klasörlerinin tarandığı kökler (bkz. Agent folders bölümü) |
 | `agentFarm.excludeAgentDirs` | [] | Ajan gibi görünse de asla ajan sayılmayacak klasörler |
+| `agentFarm.newAgentModel` | `sonnet` | New Agent ile açılan ajanın `settings.local.json`'ına yazılacak varsayılan model (boş = yazma) |
 | `agentFarm.claudeDir` | boş (`~/.claude`) | Claude Code veri dizini |
 | `agentFarm.extraClaudeDirs` | [] | Diğer makinelerin senkronlu `.claude` klasörleri (`{name, dir}`) |
 | `agentFarm.activeThresholdSeconds` | 150 | Bu süre içinde kaydı değişen oturum "aktif" sayılır |
