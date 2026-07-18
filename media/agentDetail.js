@@ -15,6 +15,7 @@
         vscode, C,
         containerId: 'sessblock',
         columns: ['title', 'when', 'duration', 'turns', 'tools', 'errors', 'tokens', 'ctx', 'cost'],
+        tableN: 50, // agent-page default; the All chip toggles back to this
         stateKey: 'agent'
     });
 

@@ -10,7 +10,7 @@ import { SessionIndex } from '../core/sessions';
 import { PriceRule, PricingEngine, totalTokens } from '../core/pricing';
 import { safeReadFile } from '../core/util';
 import { handleAfNav, htmlShell } from './base';
-import { SESSION_TABLE_N, sessionRowPool } from './dashboard';
+import { AGENT_SESSION_TABLE_N, sessionRowPool } from './dashboard';
 import { buildData as buildViewerData } from './sessionViewer';
 
 export interface AgentDetailDeps {
@@ -24,7 +24,7 @@ export interface AgentDetailDeps {
     taskRecords(): TaskRecord[];
 }
 
-function buildData(agent: AgentInfo, deps: AgentDetailDeps, tableN = SESSION_TABLE_N): Record<string, unknown> {
+function buildData(agent: AgentInfo, deps: AgentDetailDeps, tableN = AGENT_SESSION_TABLE_N): Record<string, unknown> {
     const sessions = deps.index.forAgent(agent.id).sort((a, b) => b.mtime - a.mtime);
     const daily: Record<string, { cost: number; tokens: number; msgs: number }> = {};
     const tools: Record<string, number> = {};
@@ -162,7 +162,7 @@ export class AgentDetailPanel {
     private static open = new Map<string, AgentDetailPanel>();
     private disposables: vscode.Disposable[] = [];
     /** Sessions-table row count chosen in the webview's Show box (0 = all). */
-    private tableN = SESSION_TABLE_N;
+    private tableN = AGENT_SESSION_TABLE_N;
 
     static show(agentId: string, deps: AgentDetailDeps): void {
         const existing = AgentDetailPanel.open.get(agentId);

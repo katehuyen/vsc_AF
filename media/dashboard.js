@@ -13,6 +13,7 @@
         vscode, C,
         containerId: 'sessblock',
         columns: ['agent', 'title', 'when', 'duration', 'turns', 'tools', 'errors', 'tokens', 'ctx', 'cost'],
+        tableN: 20, // dashboard default; the All chip toggles back to this
         stateKey: 'dash',
         fallbackSort: persisted.sessSort,
         fallbackSingle: persisted.sessSingle

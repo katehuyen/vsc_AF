@@ -179,7 +179,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
                 generatedAt: now, today: '2026-07-15', agents: [],
                 modelTotals: {}, tokenTypes: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 },
                 heat: new Array(168).fill(0),
-                sessionRows: rows, sessionTableN: 12,
+                sessionRows: rows, sessionTableN: 20,
                 window: { tokens: 0, msgs: 0, cost: 0, limit: 0 },
                 fleetBudget: 0, mediaCost: { today: 0, month: 0 },
                 insightTotals: { error: 0, warning: 0, info: 0 },
@@ -250,7 +250,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     ok('data refresh re-renders the table', sess().querySelectorAll('[data-fold]').length === 3);
 
     // ---- Show box: All → host round-trip (the host rebuilds the pool) ----
-    ok('Show box renders with the shipped N', sessHtml().includes('class="af-count"') && sessHtml().includes('value="12"'));
+    ok('Show box renders with the shipped N', sessHtml().includes('class="af-count"') && sessHtml().includes('value="20"'));
     posted = [];
     sess().querySelector('.af-allrows')._click(evStub);
     ok('All posts setTableN 0 to the host', posted.some(p => p.type === 'setTableN' && p.n === 0));

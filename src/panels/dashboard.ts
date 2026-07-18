@@ -55,6 +55,10 @@ interface AgentSummary {
  *  n = 0 means "all" — every session ships and the union shortcut is moot.
  *  Exported for tests and reused by the agent detail page. */
 export const SESSION_TABLE_N = 12;
+/** Default row counts of the two Sessions tables (the Show box seeds these).
+ *  The dashboard is a fleet-wide glance; the agent page is that agent's log. */
+export const DASHBOARD_SESSION_TABLE_N = 20;
+export const AGENT_SESSION_TABLE_N = 50;
 export function sessionRowPool(
     sessions: SessionInfo[],
     isActive?: (s: SessionInfo) => boolean,
@@ -133,7 +137,7 @@ export function agentWindowTotals(
     return out;
 }
 
-function buildData(deps: DashboardDeps, tableN = SESSION_TABLE_N): Record<string, unknown> {
+function buildData(deps: DashboardDeps, tableN = DASHBOARD_SESSION_TABLE_N): Record<string, unknown> {
     const now = Date.now();
     const agents = deps.getAgents();
     const sessions = deps.index.all();
@@ -245,7 +249,7 @@ export class DashboardPanel {
     private static current: DashboardPanel | undefined;
     private disposables: vscode.Disposable[] = [];
     /** Sessions-table row count chosen in the webview's Show box (0 = all). */
-    private tableN = SESSION_TABLE_N;
+    private tableN = DASHBOARD_SESSION_TABLE_N;
 
     static show(deps: DashboardDeps): void {
         if (DashboardPanel.current) {
