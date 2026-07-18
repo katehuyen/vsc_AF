@@ -59,9 +59,11 @@
         maxRounds: '', maxTasks: '', maxCostUSD: '', maxMinutes: '', maxParallel: '',
         approvalMode: 'each-round'
     };
-    // suggestions for the model inputs — free text still allowed
-    const MODEL_SUGGESTIONS = ['haiku', 'sonnet', 'opus', 'claude-haiku-4-5-20251001', 'claude-sonnet-5', 'claude-opus-4-8'];
-    const modelDatalist = `<datalist id="modelopts">${MODEL_SUGGESTIONS.map(m => `<option value="${m}">`).join('')}</datalist>`;
+    // suggestions for the model inputs — the user's agentFarm.modelAliases
+    // knowledge base (add a name once, every picker knows it); free text still allowed
+    const modelSuggestions = () =>
+        (DATA.modelAliases && DATA.modelAliases.length) ? DATA.modelAliases : ['haiku', 'sonnet', 'opus', 'fable'];
+    const modelDatalist = () => `<datalist id="modelopts">${modelSuggestions().map(m => `<option value="${C.esc(m)}">`).join('')}</datalist>`;
 
     const spec = (run) => DATA.specs.find(s => s.id === run.specId) || {
         title: run.specId, goal: '', team: [], limits: DATA.defaults, approvalMode: 'each-round', leadAgentName: '?'
@@ -168,7 +170,7 @@
             <div class="frow"><label>Planner model
                 <input type="text" id="f-planner" list="modelopts" placeholder="(optional) model for the LEAD's planning calls only — e.g. opus; delegates keep their own" value="${C.esc(form.plannerModel)}"></label>
                 <span class="muted small">Who runs on what: planner = this field (else the lead's own default) · each delegation = the member's model field (else that agent's default / your model-policy rules in Farm Settings).</span></div>
-            ${modelDatalist}
+            ${modelDatalist()}
             <div class="frow"><label>Approval
                 <select id="f-approval">
                     <option value="each-round"${form.approvalMode !== 'auto' ? ' selected' : ''}>each round — approve every delegation round (recommended)</option>

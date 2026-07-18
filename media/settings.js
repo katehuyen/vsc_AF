@@ -89,16 +89,28 @@
         return r.candidates.length ? 'The subfolders below are the agents.' : 'No agent folders found here yet — a subfolder becomes an agent once it has a CLAUDE.md, .claude or memory/.';
     }
 
-    // Per-agent default model — the aliases plus whatever full id the folder
-    // already carries (e.g. a pinned claude-haiku-…), so nothing is clobbered.
-    const MODEL_ALIASES = ['haiku', 'sonnet', 'opus', 'fable'];
+    // Per-agent default model — options come from the user's model-name
+    // knowledge base (agentFarm.modelAliases: add a name once, it appears in
+    // every picker permanently), plus whatever full id the folder already
+    // carries, plus a free-text "custom…" entry for anything not listed.
+    const modelAliases = () =>
+        (DATA.modelAliases && DATA.modelAliases.length) ? DATA.modelAliases : ['haiku', 'sonnet', 'opus', 'fable'];
+    let customModelDir = ''; // the chip whose custom-model input is open
+
     function agentModelSel(c) {
         const cur = c.model || '';
-        const opts = cur && MODEL_ALIASES.indexOf(cur) < 0 ? [cur].concat(MODEL_ALIASES) : MODEL_ALIASES;
+        if (customModelDir === c.dir) {
+            return `<input type="text" class="agmodel agcustom" data-agcustom="${C.esc(c.dir)}" value="${C.esc(cur)}"
+                placeholder="model id — Enter saves, Esc cancels"
+                title="Free-text model id, written to the agent's .claude/settings.local.json. To keep a name for every picker, add it to agentFarm.modelAliases.">`;
+        }
+        const aliases = modelAliases();
+        const opts = cur && aliases.indexOf(cur) < 0 ? [cur].concat(aliases) : aliases;
         return `<select class="agmodel" data-agmodel="${C.esc(c.dir)}"
-            title="Default model for this agent's sessions — written to the agent's .claude/settings.local.json. Full model ids can be typed into that file directly.">
+            title="Default model for this agent's sessions — written to the agent's .claude/settings.local.json. The list is your agentFarm.modelAliases knowledge base; custom… takes any free-text id.">
             <option value=""${cur ? '' : ' selected'}>model: CLI default</option>
             ${opts.map(m => `<option value="${C.esc(m)}"${cur === m ? ' selected' : ''}>${C.esc(m)}</option>`).join('')}
+            <option value="__custom__">custom…</option>
         </select>`;
     }
 
@@ -283,6 +295,7 @@
                 .agchip.agexcl { opacity:.55; text-decoration:line-through; }
                 .agchip.agexcl a { text-decoration:none; }
                 .agchip .agmodel { font-size:10px; margin-left:6px; padding:0 2px; max-width:150px; }
+                .agchip .agcustom { width:200px; max-width:200px; padding:1px 4px; }
             </style>
             ${window.AFHeader.html({
                 page: 'settings',
@@ -356,8 +369,26 @@
         document.querySelectorAll('[data-openagent]').forEach(a =>
             a.addEventListener('click', () => vscode.postMessage({ type: 'openAgent', agentId: a.dataset.openagent })));
         document.querySelectorAll('[data-agmodel]').forEach(el =>
-            el.addEventListener('change', () =>
-                vscode.postMessage({ type: 'agentModel', dir: el.dataset.agmodel, model: el.value })));
+            el.addEventListener('change', () => {
+                if (el.value === '__custom__') {
+                    customModelDir = el.dataset.agmodel;
+                    render();
+                    const inp = document.querySelector('[data-agcustom]');
+                    if (inp && inp.focus) { inp.focus(); }
+                    return;
+                }
+                vscode.postMessage({ type: 'agentModel', dir: el.dataset.agmodel, model: el.value });
+            }));
+        document.querySelectorAll('[data-agcustom]').forEach(el =>
+            el.addEventListener('keydown', ev => {
+                if (ev.key === 'Enter') {
+                    customModelDir = '';
+                    vscode.postMessage({ type: 'agentModel', dir: el.dataset.agcustom, model: el.value.trim() });
+                } else if (ev.key === 'Escape') {
+                    customModelDir = '';
+                    render();
+                }
+            }));
 
         // Claude Code section
         document.querySelectorAll('[data-ccset]').forEach(el =>

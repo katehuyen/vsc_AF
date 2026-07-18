@@ -81,10 +81,11 @@ import {
     applySuggestionToClaudeMd, collectUserMessages, scanCorrections, SuggestionStore
 } from './core/suggest';
 import { buildWeeklyFactsText, generateWeeklySummary, isoWeek, WeeklyFacts } from './core/summary';
+import { argStr, BridgeRegistry, need, optStr, parseBridgeRequest } from './core/bridge';
 import {
-    archivedOutputBody, buildCliCommand, CliProfile, FarmSchedule, FarmTrigger, MissedPolicy,
-    newId, PREV_OUTPUT_PLACEHOLDER, previousOccurrenceKey, sanitizePrompt, ScheduleKind,
-    TaskManager, TaskMode, WorkflowStep
+    archivedOutputBody, buildCliCommand, CliProfile, FarmSchedule, FarmTask, FarmTrigger,
+    FarmWorkflow, MissedPolicy, newId, parseSeedSchedules, PREV_OUTPUT_PLACEHOLDER,
+    previousOccurrenceKey, sanitizePrompt, ScheduleKind, TaskManager, TaskMode, WorkflowStep
 } from './core/tasks';
 import {
     buildResumeMessage, DEFAULT_MISSION_LIMITS, MissionEngine, MissionEngineDeps,
@@ -1852,6 +1853,246 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (missionEngines.size) { missionEmitter.fire(); }
     }, null, context.subscriptions);
 
+    // ---------- Farm Bridge: agents use the farm through request files ----------
+    // The user directs an agent in chat; the agent drops <name>.request.json in
+    // <globalStorage>/bridge/ and the RUNNER executes it through the same code
+    // paths the UI uses. `farm.ops` self-describes the catalog, so agents (and
+    // future features) discover instead of hardcoding. See core/bridge.ts.
+    const bridge = new BridgeRegistry();
+    const findAgent = (ref: string): AgentInfo => {
+        const a = agents.find(x => x.id === normPath(ref))
+            ?? agents.find(x => x.name.toLowerCase() === ref.toLowerCase());
+        need(a, `Agent "${ref}" not found — agents.list shows the current farm.`);
+        return a as AgentInfo;
+    };
+    bridge.register([
+        {
+            op: 'agents.list',
+            describe: 'The farm roster: id, name, dir, active-now, session count. args: none',
+            handler: () => agents.map(a => ({
+                id: a.id, name: a.name, dir: a.dir,
+                active: index.isAgentActive(a.id),
+                sessions: index.forAgent(a.id).length
+            }))
+        },
+        {
+            op: 'tasks.list',
+            describe: 'Current task queue/board rows. args: none',
+            handler: () => taskManager.tasks.map(t => ({
+                id: t.id, title: t.title, agent: t.agentName, status: t.status,
+                mode: t.mode, createdAt: t.createdAt, costUSD: t.costUSD
+            }))
+        },
+        {
+            op: 'tasks.add',
+            describe: 'Queue (and by default start) a task. args: agent (name|id), title, prompt, mode? (headless|interactive, default headless), start? (default true)',
+            handler: (args) => {
+                const agent = findAgent(argStr(args, 'agent'));
+                const task = taskManager.addTask(agent, argStr(args, 'title'), argStr(args, 'prompt'),
+                    optStr(args, 'mode') === 'interactive' ? 'interactive' : 'headless');
+                if (args.start !== false) { taskManager.startTask(task); }
+                return { id: task.id, status: task.status };
+            }
+        },
+        {
+            op: 'tasks.cancel',
+            describe: 'Cancel a queued/running task. args: id',
+            handler: (args) => {
+                const t = taskManager.tasks.find(x => x.id === argStr(args, 'id'));
+                need(t, 'Task not found — tasks.list shows current ids.');
+                taskManager.cancelTask(t as FarmTask);
+                return { id: (t as FarmTask).id, status: (t as FarmTask).status };
+            }
+        },
+        {
+            op: 'schedules.list',
+            describe: 'Installed schedules. args: none',
+            handler: () => taskManager.schedules.map(s => ({
+                id: s.id, title: s.title, agent: s.agentName, kind: s.kind,
+                hour: s.hour, minute: s.minute, dow: s.dow, enabled: s.enabled, missed: s.missed
+            }))
+        },
+        {
+            op: 'schedules.add',
+            describe: 'Install a schedule. args: agent (name|id), title, prompt, kind? (daily|weekly|once), hour?, minute?, dow?, onceAt?, mode?, missed? (skip|run|ask)',
+            handler: (args) => {
+                const agent = findAgent(argStr(args, 'agent'));
+                const seeds = parseSeedSchedules(JSON.stringify([
+                    { ...args, agentId: agent.id, agentName: agent.name }]));
+                need(seeds.length, 'Invalid schedule — title and prompt are required.');
+                need(!taskManager.schedules.some(s => s.title === seeds[0].title),
+                    `A schedule titled "${seeds[0].title}" already exists.`);
+                const s = taskManager.addSchedule(seeds[0]);
+                return { id: s.id, title: s.title };
+            }
+        },
+        {
+            op: 'schedules.delete',
+            describe: 'Remove a schedule. args: id or title',
+            handler: (args) => {
+                const ref = optStr(args, 'id') || argStr(args, 'title');
+                const s = taskManager.schedules.find(x => x.id === ref || x.title === ref);
+                need(s, 'Schedule not found — schedules.list shows current ones.');
+                taskManager.deleteSchedule(s as FarmSchedule);
+                return { deleted: (s as FarmSchedule).title };
+            }
+        },
+        {
+            op: 'schedules.toggle',
+            describe: 'Enable/disable a schedule. args: id or title',
+            handler: (args) => {
+                const ref = optStr(args, 'id') || argStr(args, 'title');
+                const s = taskManager.schedules.find(x => x.id === ref || x.title === ref);
+                need(s, 'Schedule not found — schedules.list shows current ones.');
+                taskManager.toggleSchedule(s as FarmSchedule);
+                return { title: (s as FarmSchedule).title, enabled: (s as FarmSchedule).enabled };
+            }
+        },
+        {
+            op: 'workflows.list',
+            describe: 'Defined workflows. args: none',
+            handler: () => taskManager.workflows.map(w => ({
+                id: w.id, title: w.title, steps: w.steps.length
+            }))
+        },
+        {
+            op: 'workflows.run',
+            describe: 'Run a workflow now. args: id or title',
+            handler: (args) => {
+                const ref = optStr(args, 'id') || argStr(args, 'title');
+                const w = taskManager.workflows.find(x => x.id === ref || x.title === ref);
+                need(w, 'Workflow not found — workflows.list shows current ones.');
+                taskManager.runWorkflow(w as FarmWorkflow);
+                return { started: (w as FarmWorkflow).title };
+            }
+        },
+        {
+            op: 'missions.list',
+            describe: 'Mission runs, newest first. args: none',
+            handler: () => missionStore.runs.slice().reverse().map(r => {
+                const sp = missionStore.spec(r.specId);
+                return {
+                    id: r.id, title: sp?.title ?? r.specId, status: r.status,
+                    verdict: r.result?.verdict, rounds: r.rounds.length,
+                    costUSD: Math.round(r.totalCostUSD * 100) / 100, startedAt: r.startedAt
+                };
+            })
+        },
+        {
+            op: 'missions.start',
+            describe: 'Start a mission. args: goal, lead (name|id), team ([{agent, role?, model?}]), title?, workdir?, plannerModel?, approvalMode? (each-round|auto), maxRounds?, maxTasks?, maxCostUSD?, maxMinutes?, maxParallel?',
+            handler: (args) => {
+                const lead = findAgent(argStr(args, 'lead'));
+                const teamIn = Array.isArray(args.team) ? args.team as Record<string, unknown>[] : [];
+                need(teamIn.length, 'team is required: [{ "agent": "<name|id>", "role"?: "...", "model"?: "..." }]');
+                const team = teamIn.map(t => ({
+                    agentId: findAgent(String(t.agent ?? '')).id, role: t.role, model: t.model
+                }));
+                const err = createMission({ ...args, leadAgentId: lead.id, team });
+                need(!err, err ?? '');
+                const run = missionStore.runs[missionStore.runs.length - 1];
+                return { runId: run.id, title: missionStore.spec(run.specId)?.title };
+            }
+        },
+        {
+            op: 'missions.status',
+            describe: 'One run in detail (rounds, steps, budget). args: id',
+            handler: (args) => {
+                const run = missionStore.run(argStr(args, 'id'));
+                need(run, 'Run not found — missions.list shows current ids.');
+                const r = run as MissionRun;
+                const sp = missionStore.spec(r.specId);
+                return {
+                    id: r.id, title: sp?.title, status: r.status, verdict: r.result?.verdict,
+                    summary: r.result?.summary, costUSD: r.totalCostUSD,
+                    rounds: r.rounds.map(rd => ({
+                        n: rd.n, action: rd.action, thought: rd.thought?.slice(0, 200),
+                        steps: rd.steps.map(s => ({ agent: s.agentName, title: s.title, status: s.status }))
+                    }))
+                };
+            }
+        },
+        {
+            op: 'insights.list',
+            describe: 'Current health & optimization findings. args: none',
+            handler: () => insights.map(i => ({
+                severity: i.severity, category: i.category, agent: i.agentName, message: i.message
+            }))
+        },
+        {
+            op: 'triggers.list',
+            describe: 'Installed triggers (watch/hook/webhook). args: none',
+            handler: () => taskManager.triggers.map(t => ({
+                id: t.id, title: t.title, type: t.type, enabled: t.enabled
+            }))
+        },
+        {
+            op: 'sessions.recent',
+            describe: 'Most recent sessions farm-wide. args: limit? (default 10)',
+            handler: (args) => {
+                const limit = typeof args.limit === 'number' && args.limit > 0 ? Math.floor(args.limit) : 10;
+                return index.all()
+                    .slice().sort((a, b) => (b.lastTs || b.mtime) - (a.lastTs || a.mtime))
+                    .slice(0, limit)
+                    .map(s => ({
+                        agent: s.agentName, title: s.title, lastTs: s.lastTs,
+                        turns: s.userTurns, cost: Math.round(s.cost * 100) / 100
+                    }));
+            }
+        }
+    ]);
+
+    const bridgeDir = path.join(context.globalStorageUri.fsPath, 'bridge');
+    let bridgeBusy = false;
+    const processBridge = async (): Promise<void> => {
+        if (!taskRunner || bridgeBusy) { return; }
+        bridgeBusy = true;
+        try {
+            fs.mkdirSync(bridgeDir, { recursive: true });
+            for (const name of fs.readdirSync(bridgeDir)) {
+                if (name.endsWith('.response.json')) {
+                    // prune day-old responses nobody collected
+                    try {
+                        const f = path.join(bridgeDir, name);
+                        if (Date.now() - fs.statSync(f).mtimeMs > 24 * 3600e3) { fs.unlinkSync(f); }
+                    } catch { /* gone */ }
+                    continue;
+                }
+                if (!name.endsWith('.request.json')) { continue; }
+                const reqFile = path.join(bridgeDir, name);
+                const resFile = path.join(bridgeDir, name.replace(/\.request\.json$/, '.response.json'));
+                let outcome: { ok: boolean; result?: unknown; error?: string };
+                let opName = '?';
+                try {
+                    const parsed = parseBridgeRequest(fs.readFileSync(reqFile, 'utf8'));
+                    if ('error' in parsed) {
+                        outcome = { ok: false, error: parsed.error };
+                    } else {
+                        opName = parsed.op;
+                        outcome = await bridge.dispatch(parsed.op, parsed.args);
+                    }
+                } catch (e) {
+                    outcome = { ok: false, error: String((e as Error).message).slice(0, 300) };
+                }
+                try { fs.writeFileSync(resFile, JSON.stringify(outcome, null, 2), 'utf8'); } catch { /* best-effort */ }
+                try { fs.unlinkSync(reqFile); } catch { /* re-processed next pass; dispatch is idempotent-ish, accept */ }
+                void vscode.window.showInformationMessage(
+                    `Agent Farm bridge: ${opName} — ${outcome.ok ? 'ok' : 'error: ' + outcome.error}`);
+            }
+        } catch { /* dir unavailable — try next pass */ }
+        bridgeBusy = false;
+    };
+    try {
+        fs.mkdirSync(bridgeDir, { recursive: true });
+        const bridgeWatcher = fs.watch(bridgeDir, () => {
+            setTimeout(() => void processBridge(), 300); // let the writer finish
+        });
+        context.subscriptions.push({ dispose: () => { try { bridgeWatcher.close(); } catch { /* closed */ } } });
+    } catch { /* fs.watch unavailable — the interval below still polls */ }
+    const bridgeTimer = setInterval(() => void processBridge(), 30_000);
+    context.subscriptions.push({ dispose: () => clearInterval(bridgeTimer) });
+    void processBridge();
+
     /** Mission-scoped live block for the panel: agent statuses + hook events of
      *  the ACTIVE runs' participants only. undefined while nothing runs, so an
      *  idle Missions page costs nothing. */
@@ -1930,6 +2171,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             specs: missionStore.specs,
             runs: missionRunsForPanel(),
             agents: agents.map(a => ({ id: a.id, name: a.name })),
+            // the user's model-name knowledge base feeds the model inputs
+            modelAliases: cfg().get<string[]>('modelAliases', ['haiku', 'sonnet', 'opus', 'fable']),
             defaults: DEFAULT_MISSION_LIMITS,
             pending: {
                 questions: [...missionQuestions.entries()].map(([runId, q]) => ({ runId, question: q.question })),

@@ -109,6 +109,9 @@ export class FarmSettingsPanel {
     private buildData(): Record<string, unknown> {
         const cc = this.readClaude();
         return {
+            // the user's model-name knowledge base — feeds every model picker
+            modelAliases: vscode.workspace.getConfiguration()
+                .get<string[]>('agentFarm.modelAliases', ['haiku', 'sonnet', 'opus', 'fable']),
             folders: this.deps.agentFolders?.() ?? null,
             categories: this.categories(),
             profiles: this.deps.getProfiles().map(p => ({
