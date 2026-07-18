@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import { expandDeep, PortableRoot, tokenizeDeep } from './portablePaths';
 import { extractJson, tryParseJson } from './util';
 
 /**
@@ -460,11 +461,15 @@ export class MissionStore {
     specs: MissionSpec[] = [];
     runs: MissionRun[] = [];
 
-    constructor(private file: string) { }
+    /** portableRoots: saved strings carry ${claudeDir}/${globalStorage}/${home}
+     *  tokens instead of machine paths — the git-synced store travels. */
+    constructor(private file: string, private portableRoots: () => PortableRoot[] = () => []) { }
 
     load(): void {
         try {
-            const raw = JSON.parse(fs.readFileSync(this.file, 'utf8')) as { specs?: MissionSpec[]; runs?: MissionRun[] };
+            const raw = expandDeep(
+                JSON.parse(fs.readFileSync(this.file, 'utf8')) as { specs?: MissionSpec[]; runs?: MissionRun[] },
+                this.portableRoots());
             this.specs = Array.isArray(raw.specs) ? raw.specs : [];
             this.runs = Array.isArray(raw.runs) ? raw.runs : [];
         } catch { /* first run / unreadable — start empty */ }
@@ -481,8 +486,10 @@ export class MissionStore {
             const used = new Set(this.runs.map(r => r.specId));
             this.specs = this.specs.filter((s, i) => used.has(s.id) || i >= this.specs.length - MAX_STORED_SPECS);
         }
-        try { fs.writeFileSync(this.file, JSON.stringify({ specs: this.specs, runs: this.runs }, null, 2), 'utf8'); }
-        catch { /* best-effort */ }
+        try {
+            fs.writeFileSync(this.file, JSON.stringify(
+                tokenizeDeep({ specs: this.specs, runs: this.runs }, this.portableRoots()), null, 2), 'utf8');
+        } catch { /* best-effort */ }
     }
 
     spec(id: string): MissionSpec | undefined { return this.specs.find(s => s.id === id); }

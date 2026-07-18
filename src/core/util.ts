@@ -1,8 +1,23 @@
 import * as fs from 'fs';
+import * as os from 'os';
 
 /** Rough token estimate: ~4 chars per token. */
 export function estimateTokens(text: string): number {
     return Math.ceil(text.length / 4);
+}
+
+/** Expand %VAR%, ${env:VAR} and a leading ~ in a user-supplied path setting —
+ *  git-synced settings can say %USERPROFILE%\.claude instead of hardcoding
+ *  C:\Users\<name>. Unknown variables are left as written (visible, not
+ *  silently dropped). */
+export function expandEnvPath(p: string): string {
+    let out = p
+        .replace(/\$\{env:([^}]+)\}/gi, (m, v) => process.env[String(v)] ?? m)
+        .replace(/%([^%]+)%/g, (m, v) => process.env[String(v)] ?? m);
+    if (out === '~' || out.startsWith('~/') || out.startsWith('~\\')) {
+        out = os.homedir() + out.slice(1);
+    }
+    return out;
 }
 
 export function fmtUSD(v: number): string {

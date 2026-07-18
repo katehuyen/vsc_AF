@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { Duty, readDuties } from './duties';
-import { estimateTokens, normPath, safeReadFile, safeStat } from './util';
+import { estimateTokens, expandEnvPath, normPath, safeReadFile, safeStat } from './util';
 
 export interface FileMeta {
     path: string;
@@ -160,6 +160,11 @@ export interface RootScan {
  *  whether child agents were discovered at all). `excludes` folders are never
  *  agents, however agent-like they look. */
 export function scanRoots(roots: string[], excludes: string[] = []): { agents: AgentInfo[]; reports: RootScan[] } {
+    // %VAR% / ${env:VAR} / ~ in roots and excludes expand here — the single
+    // choke point every discovery path goes through, so git-synced settings
+    // can express machine-specific folders portably
+    roots = roots.map(expandEnvPath);
+    excludes = excludes.map(expandEnvPath);
     const excludeSet = new Set(excludes.map(normPath));
     const agents: AgentInfo[] = [];
     const reports: RootScan[] = [];

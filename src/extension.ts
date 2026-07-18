@@ -91,10 +91,11 @@ import {
     MissionLimits, missionLiveSlice, MissionRun, MissionSpec, MissionStore, newMissionId,
     outputExcerpt, parsePlannerEnvelope, PlannerResult, remainingBudget
 } from './core/missions';
+import { standardRoots } from './core/portablePaths';
 import { MissionsPanel } from './panels/missionsPanel';
 import { MissionNode, MissionsTreeProvider } from './views/missionsTree';
 import { TriggerManager } from './core/triggers';
-import { dayKey, fmtTokens, fmtUSD, normPath, readFileTail, relTime, remapStorageIds } from './core/util';
+import { dayKey, expandEnvPath, fmtTokens, fmtUSD, normPath, readFileTail, relTime, remapStorageIds } from './core/util';
 import { AgentDetailPanel } from './panels/agentDetail';
 import { CapabilitiesPanel } from './panels/capabilities';
 import { MemoryGraphPanel } from './panels/memoryGraph';
@@ -120,7 +121,8 @@ function cfg() {
 
 function claudeDir(): string {
     const custom = cfg().get<string>('claudeDir', '');
-    return custom && custom.trim() ? custom : path.join(os.homedir(), '.claude');
+    // %VAR% / ${env:VAR} / ~ expand, so a git-synced settings.json stays portable
+    return custom && custom.trim() ? expandEnvPath(custom.trim()) : path.join(os.homedir(), '.claude');
 }
 
 const CLAUDE_MD_TEMPLATE = `# {NAME}
@@ -266,7 +268,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // E1: synced claude dirs from other machines, labeled by machine name.
         () => cfg().get<{ name?: string; dir?: string }[]>('extraClaudeDirs', [])
             .filter(d => d && typeof d.dir === 'string' && d.dir.trim())
-            .map(d => ({ name: (d.name ?? '').trim() || 'remote', dir: (d.dir as string).trim() })),
+            .map(d => ({ name: (d.name ?? '').trim() || 'remote', dir: expandEnvPath((d.dir as string).trim()) })),
         pricing,
         () => agents,
         () => cfg().get<boolean>('includeUnmatchedProjects', false),
@@ -560,11 +562,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const externalSessionSource = liveEventsSource(
         () => path.join(context.globalStorageUri.fsPath, 'live-events.jsonl'));
     const codexSource = codexSessionsSource(
-        () => cfg().get<string>('codexHome', '').trim() || path.join(os.homedir(), '.codex'),
+        () => expandEnvPath(cfg().get<string>('codexHome', '').trim()) || path.join(os.homedir(), '.codex'),
         resolveAgentByCwd,
         () => pricing);
     const geminiSource = geminiSessionsSource(
-        () => cfg().get<string>('geminiDir', '').trim() || path.join(os.homedir(), '.gemini', 'tmp'),
+        () => expandEnvPath(cfg().get<string>('geminiDir', '').trim()) || path.join(os.homedir(), '.gemini', 'tmp'),
         () => agents,
         () => pricing);
     const refreshExternalSessions = () =>
@@ -602,12 +604,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     let taskRunner = taskLease.tryClaim();
     let followerWarnedAt = 0;
 
+    // Machine roots for portable stores — saved paths become ${claudeDir} /
+    // ${globalStorage} / ${home} tokens so the git-synced store files work on
+    // every machine (and legacy absolute paths heal on load).
+    const portableRoots = () => standardRoots({
+        claudeDir: claudeDir(),
+        globalStorage: context.globalStorageUri.fsPath,
+        home: os.homedir()
+    });
+
     const taskManager = new TaskManager(
         path.join(context.globalStorageUri.fsPath, 'farm-tasks.json'),
         () => agents,
         () => cfg().get<boolean>('queueAutoAdvance', false),
         () => cfg().get<string>('taskExtraArgs', ''),
         {
+            portableRoots,
             judgeArgs: () => cfg().get<string>('judgeArgs', '--model claude-haiku-4-5-20251001'),
             maxConcurrent: () => cfg().get<number>('maxConcurrentTasks', 2),
             maxConcurrentPerAgent: () => cfg().get<number>('maxConcurrentPerAgent', 1),
@@ -780,7 +792,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const ingest = new IngestWatcher(
         taskManager.outputsDir,
         () => cfg().get<IngestFolder[]>('ingestFolders', [])
-            .filter(f => f && typeof f.path === 'string' && !!f.path.trim()),
+            .filter(f => f && typeof f.path === 'string' && !!f.path.trim())
+            .map(f => ({ ...f, path: expandEnvPath(f.path.trim()) })),
         (metas) => {
             GalleryPanel.refreshIfOpen();
             const sources = [...new Set(metas.map(m => m.source ?? 'external'))].join(', ');
@@ -900,7 +913,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // Automatic fleet reports (e.g. into an Obsidian vault folder), checked hourly.
     const checkAutoReport = () => {
         const cadence = cfg().get<string>('autoReport', 'off');
-        const folder = cfg().get<string>('autoReportFolder', '');
+        const folder = expandEnvPath(cfg().get<string>('autoReportFolder', ''));
         if (cadence === 'off' || !folder || !fs.existsSync(folder)) { return; }
         const now = new Date();
         const stampStr = cadence === 'weekly' ? isoWeek(now) : now.toISOString().slice(0, 10);
@@ -1105,7 +1118,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const weekKey = isoWeek(new Date());
             await context.globalState.update('agentfarm.weeklySummaryKey', weekKey);
             postForward('summary', text);
-            const folder = cfg().get<string>('autoReportFolder', '');
+            const folder = expandEnvPath(cfg().get<string>('autoReportFolder', ''));
             if (folder && fs.existsSync(folder)) {
                 try {
                     fs.writeFileSync(path.join(folder, `AgentFarm-Weekly-Summary-${weekKey}.md`),
@@ -1400,7 +1413,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // The engine loop lives in core/missions.ts; this block supplies the world:
     // planner calls (headless claude, resumable), delegations (ordinary
     // FarmTasks), approval/question waits (Needs You + toasts) and persistence.
-    const missionStore = new MissionStore(path.join(context.globalStorageUri.fsPath, 'missions.json'));
+    const missionStore = new MissionStore(
+        path.join(context.globalStorageUri.fsPath, 'missions.json'), portableRoots);
     missionStore.load();
     // A window reload kills the in-memory loops: park those runs honestly,
     // they resume from Needs You / the Missions panel.
@@ -5041,7 +5055,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (!period) { return; }
             const md = buildOutputsDigest(taskManager.tasks, period.ms);
             const roots = cfg().get<string[]>('agentRoots', []);
-            const defaultDir = cfg().get<string>('autoReportFolder', '') ||
+            const defaultDir = expandEnvPath(cfg().get<string>('autoReportFolder', '')) ||
                 roots.find(r => fs.existsSync(r)) || os.homedir();
             const target = await vscode.window.showSaveDialog({
                 defaultUri: vscode.Uri.file(path.join(defaultDir,
@@ -5095,7 +5109,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }),
 
         vscode.commands.registerCommand('agentfarm.newAgent', async () => {
-            const roots = cfg().get<string[]>('agentRoots', []).filter(r => fs.existsSync(r));
+            const roots = cfg().get<string[]>('agentRoots', []).map(expandEnvPath).filter(r => fs.existsSync(r));
             if (!roots.length) {
                 void vscode.window.showWarningMessage('Agent Farm: configure an agent root folder first.');
                 return;
@@ -5983,8 +5997,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         vscode.commands.registerCommand('agentfarm.speakDigest', async () => {
             const model = cfg().get<string>('digestTtsModel', '');
-            const folder = cfg().get<string>('digestTtsFolder', '') ||
-                cfg().get<string>('autoReportFolder', '');
+            const folder = expandEnvPath(cfg().get<string>('digestTtsFolder', '')) ||
+                expandEnvPath(cfg().get<string>('autoReportFolder', ''));
             const secretName = cfg().get<string>('mediaAuthSecret', 'FAL_KEY');
             const key = vault.get(secretName);
             const text = buildDigestText();
@@ -6226,7 +6240,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 void vscode.window.showErrorMessage(`Agent Farm: cannot import — ${error}.`);
                 return;
             }
-            const roots = cfg().get<string[]>('agentRoots', []).filter(r => fs.existsSync(r));
+            const roots = cfg().get<string[]>('agentRoots', []).map(expandEnvPath).filter(r => fs.existsSync(r));
             if (!roots.length) {
                 void vscode.window.showWarningMessage('Agent Farm: configure an agent root folder first.');
                 return;

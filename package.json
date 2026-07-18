@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.75.0",
+  "version": "2.76.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -1759,7 +1759,7 @@
         "agentFarm.newAgentModel": {
           "type": "string",
           "default": "sonnet",
-          "description": "Default model written into a new agent's .claude/settings.local.json when the agent is created via Agent Farm — an alias (haiku, sonnet, opus) or a full model id. Empty = write no model, the Claude CLI default applies. Existing agents' models are managed per agent in the Agent folders section of Farm Settings."
+          "description": "Default model written into a new agent's .claude/settings.local.json when the agent is created via Agent Farm — an alias (haiku, sonnet, opus, fable) or a full model id. Empty = write no model, the Claude CLI default applies. Existing agents' models are managed per agent in the Agent folders section of Farm Settings."
         },
         "agentFarm.claudeDir": {
           "type": "string",

@@ -9,6 +9,7 @@ import {
     mediaCandidates, MediaMeta, MediaPriceRule, MediaResult, pollFalResult, readMediaMetas, recordSelection
 } from './media';
 import { pollReplicateResult, pollWebhookResult, providerFor, WebhookPollConfig } from './mediaProviders';
+import { expandDeep, PortableRoot, tokenizeDeep } from './portablePaths';
 import { extractJson, sanitizePrompt } from './util';
 
 export type TaskStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
@@ -344,6 +345,10 @@ export interface TaskManagerOptions {
     isRunner?: () => boolean;
     /** Called when a write was blocked in follower mode. */
     onFollowerWrite?: () => void;
+    /** Machine roots for portable stores: saved strings carry ${claudeDir} /
+     *  ${globalStorage} / ${home} tokens instead of absolute machine paths,
+     *  so the git-synced store works on every machine (see portablePaths). */
+    portableRoots?: () => PortableRoot[];
 }
 
 export class TaskManager implements vscode.Disposable {
@@ -434,10 +439,15 @@ export class TaskManager implements vscode.Disposable {
         return this.opts.isRunner ? this.opts.isRunner() : true;
     }
 
+    /** Machine roots for portable-path token save/load. */
+    private proots(): PortableRoot[] {
+        return this.opts.portableRoots?.() ?? [];
+    }
+
     private load(): void {
         try {
             const raw = fs.readFileSync(this.storageFile, 'utf8');
-            const json = JSON.parse(raw) as Partial<StoreShape>;
+            const json = expandDeep(JSON.parse(raw) as Partial<StoreShape>, this.proots());
             this.tasks = Array.isArray(json.tasks) ? json.tasks : [];
             this.schedules = Array.isArray(json.schedules) ? json.schedules : [];
             this.templates = Array.isArray(json.templates) ? json.templates : [];
@@ -586,7 +596,7 @@ export class TaskManager implements vscode.Disposable {
             }
             for (const [month, list] of byMonth) {
                 fs.appendFileSync(path.join(this.historyDir, `${month}.jsonl`),
-                    list.map(t => JSON.stringify(t)).join('\n') + '\n', 'utf8');
+                    list.map(t => JSON.stringify(tokenizeDeep(t, this.proots()))).join('\n') + '\n', 'utf8');
             }
         } catch { /* history is best-effort */ }
     }
@@ -631,7 +641,9 @@ export class TaskManager implements vscode.Disposable {
                 this.followerReloadTimer = setTimeout(() => {
                     this.followerReloadTimer = undefined;
                     try {
-                        const json = JSON.parse(fs.readFileSync(this.storageFile, 'utf8')) as Partial<StoreShape>;
+                        const json = expandDeep(
+                            JSON.parse(fs.readFileSync(this.storageFile, 'utf8')) as Partial<StoreShape>,
+                            this.proots());
                         this.tasks = Array.isArray(json.tasks) ? json.tasks : [];
                         this.schedules = Array.isArray(json.schedules) ? json.schedules : [];
                         this.templates = Array.isArray(json.templates) ? json.templates : [];
@@ -694,13 +706,15 @@ export class TaskManager implements vscode.Disposable {
                 const drop = new Set(dropped.map(t => t.id));
                 this.tasks = this.tasks.filter(t => !drop.has(t.id));
             }
-            fs.writeFileSync(this.storageFile, JSON.stringify({
+            // absolute machine paths leave as ${claudeDir}/${globalStorage}/${home}
+            // tokens — the git-synced store stays valid on every machine
+            fs.writeFileSync(this.storageFile, JSON.stringify(tokenizeDeep({
                 tasks: this.tasks,
                 schedules: this.schedules,
                 templates: this.templates,
                 workflows: this.workflows,
                 triggers: this.triggers
-            }, null, 2), 'utf8');
+            }, this.proots()), null, 2), 'utf8');
         } catch { /* storage is best-effort */ }
         this.pruneOutputs();
         this.onDidChangeEmitter.fire();

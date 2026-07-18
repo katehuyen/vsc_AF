@@ -91,7 +91,7 @@
 
     // Per-agent default model — the aliases plus whatever full id the folder
     // already carries (e.g. a pinned claude-haiku-…), so nothing is clobbered.
-    const MODEL_ALIASES = ['haiku', 'sonnet', 'opus'];
+    const MODEL_ALIASES = ['haiku', 'sonnet', 'opus', 'fable'];
     function agentModelSel(c) {
         const cur = c.model || '';
         const opts = cur && MODEL_ALIASES.indexOf(cur) < 0 ? [cur].concat(MODEL_ALIASES) : MODEL_ALIASES;
