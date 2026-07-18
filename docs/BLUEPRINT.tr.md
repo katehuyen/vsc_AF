@@ -323,7 +323,7 @@ Bir zamanlanmış görevi **Windows Görev Zamanlayıcı**'ya taşıyabilirsin: 
 
 Kullanıcı bir ajana sohbette talimat verir; ajan Agent Farm'ı **takım arkadaşı gibi** kullanır — görev kuyruğa atar, zamanlama kurar, workflow koşturur, misyon başlatır, sağlık bulgularını okur. Kapı dosya-tabanlıdır, port keşfi gerekmez:
 
-- **İstek:** `<globalStorage>/bridge/<ad>.request.json` → `{ "op": "tasks.add", "args": { "agent": "developer", "title": "…", "prompt": "…" } }`
+- **İstek:** `<globalStorage>/bridge/<ad>.request.json` → `{ "op": "tasks.add", "args": { "agent": "developer", "title": "…", "prompt": "…" } }` (UTF-8 BOM ve baştaki/sondaki boşluk tolere edilir — 2.79.0; PowerShell'in `Set-Content -Encoding utf8` çıktısı doğrudan çalışır)
 - **Yanıt:** aynı ad `.response.json` → `{ "ok": true, "result": … }` ya da `{ "ok": false, "error": "…" }`. İstek dosyası işlenince silinir; toplanmayan yanıtlar 24 saat sonra temizlenir. VS Code kapalıysa istek bekler — bir sonraki RUNNER penceresi işler (çağıran taraf makul bir zaman aşımıyla dürüstçe pes etmeli).
 - **Katalog kendini anlatır:** `{ "op": "farm.ops" }` o günkü sürümün TÜM operasyonlarını tek satırlık sözleşmeleriyle döndürür — ajan listeyi ezberlemez, **keşfeder**; yarın eklenen bir özellik kataloğa tek `register` satırıyla düşer. Bugünkü set: `agents.list` · `tasks.list/add/cancel` · `schedules.list/add/delete/toggle` · `workflows.list/run` · `missions.list/start/status` · `insights.list` · `triggers.list` · `sessions.recent` · `farm.ops`.
 - Her işlenen istek **bildirimle görünür** — ajanın farm'da ne yaptığı sessiz kalmaz. Hatalı istek dürüst hata mesajı alır (kataloğa yönlendirir).

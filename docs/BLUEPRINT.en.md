@@ -323,7 +323,7 @@ You can move a scheduled task to the **Windows Task Scheduler**: right-click the
 
 The user directs an agent in chat; the agent uses Agent Farm **like a teammate** — queues tasks, installs schedules, runs workflows, starts missions, reads health findings. The gate is file-based, no port discovery needed:
 
-- **Request:** `<globalStorage>/bridge/<name>.request.json` → `{ "op": "tasks.add", "args": { "agent": "developer", "title": "…", "prompt": "…" } }`
+- **Request:** `<globalStorage>/bridge/<name>.request.json` → `{ "op": "tasks.add", "args": { "agent": "developer", "title": "…", "prompt": "…" } }` (a UTF-8 BOM and surrounding whitespace are tolerated — 2.79.0; PowerShell's `Set-Content -Encoding utf8` output works as-is)
 - **Response:** same name `.response.json` → `{ "ok": true, "result": … }` or `{ "ok": false, "error": "…" }`. The request file is deleted once processed; uncollected responses are pruned after 24 h. With VS Code closed the request waits — the next RUNNER window processes it (the caller should time out honestly).
 - **The catalog describes itself:** `{ "op": "farm.ops" }` returns EVERY operation of that day's build with a one-line contract — an agent **discovers** instead of memorizing, and a feature added tomorrow joins the catalog with a single `register` line. Today's set: `agents.list` · `tasks.list/add/cancel` · `schedules.list/add/delete/toggle` · `workflows.list/run` · `missions.list/start/status` · `insights.list` · `triggers.list` · `sessions.recent` · `farm.ops`.
 - Every processed request **shows as a notification** — what an agent does on the farm is never silent. A bad request gets an honest error pointing at the catalog.

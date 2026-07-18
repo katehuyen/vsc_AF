@@ -74,8 +74,12 @@ export class BridgeRegistry {
 
 /** Validate a request file's content. Errors are messages for the response. */
 export function parseBridgeRequest(text: string): { op: string; args: Record<string, unknown> } | { error: string } {
+    // Strip a UTF-8 BOM — PowerShell's `Set-Content -Encoding utf8` (the natural
+    // way a Windows agent writes the file) prepends one, and JSON.parse rejects
+    // it. The bridge must accept what the callers actually produce.
+    const clean = text.replace(/^\uFEFF/, '').trim();
     let parsed: unknown;
-    try { parsed = JSON.parse(text); } catch (e) {
+    try { parsed = JSON.parse(clean); } catch (e) {
         return { error: 'Request is not valid JSON: ' + String((e as Error).message).slice(0, 120) };
     }
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {

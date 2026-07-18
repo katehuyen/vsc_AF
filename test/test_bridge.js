@@ -21,6 +21,12 @@ const { BridgeRegistry, parseBridgeRequest, need, argStr, optStr } =
     ok('broken JSON yields a helpful error', /valid JSON/.test(parseBridgeRequest('{nope').error));
     ok('non-object rejected', /JSON object/.test(parseBridgeRequest('[1,2]').error));
     ok('missing op points at the catalog', /farm\.ops/.test(parseBridgeRequest('{"args":{}}').error));
+    // a Windows agent writing with PowerShell's `Set-Content -Encoding utf8`
+    // prepends a UTF-8 BOM — the bridge must accept it, not reject it
+    ok('UTF-8 BOM tolerated (PowerShell utf8 output)',
+        parseBridgeRequest('﻿{"op":"farm.ops"}').op === 'farm.ops');
+    ok('surrounding whitespace tolerated',
+        parseBridgeRequest('\n  {"op":"tasks.list"}  \n').op === 'tasks.list');
 }
 
 // ---------- registry: register, catalog, dispatch ----------
