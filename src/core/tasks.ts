@@ -234,6 +234,44 @@ export function previousOccurrenceKey(s: Pick<FarmSchedule, 'kind' | 'dow'>, now
     return `${prev.getFullYear()}-${prev.getMonth() + 1}-${prev.getDate()}`;
 }
 
+/** Validate the content of a seed-schedules.json (external one-shot schedule
+ *  seeding — see applySeedFile). Bad entries are dropped, sane defaults fill
+ *  the gaps. Exported pure for tests. */
+export function parseSeedSchedules(text: string): Omit<FarmSchedule, 'id'>[] {
+    let parsed: unknown;
+    try { parsed = JSON.parse(text); } catch { return []; }
+    if (!Array.isArray(parsed)) { return []; }
+    const out: Omit<FarmSchedule, 'id'>[] = [];
+    for (const raw of parsed) {
+        if (!raw || typeof raw !== 'object') { continue; }
+        const o = raw as Record<string, unknown>;
+        if (typeof o.title !== 'string' || !o.title.trim()) { continue; }
+        if (typeof o.prompt !== 'string' || !o.prompt.trim()) { continue; }
+        if (typeof o.agentId !== 'string' || !o.agentId) { continue; }
+        const kind: ScheduleKind = o.kind === 'weekly' || o.kind === 'once' ? o.kind : 'daily';
+        const int = (v: unknown, lo: number, hi: number, def: number) => {
+            const n = typeof v === 'number' ? Math.floor(v) : NaN;
+            return isFinite(n) && n >= lo && n <= hi ? n : def;
+        };
+        out.push({
+            agentId: o.agentId,
+            agentName: typeof o.agentName === 'string' ? o.agentName : '',
+            title: o.title.trim(),
+            prompt: o.prompt,
+            mode: o.mode === 'interactive' ? 'interactive' : 'headless',
+            kind,
+            hour: int(o.hour, 0, 23, 9),
+            minute: int(o.minute, 0, 59, 0),
+            dow: kind === 'weekly' ? int(o.dow, 0, 6, 1) : undefined,
+            onceAt: kind === 'once' && typeof o.onceAt === 'number' ? o.onceAt : undefined,
+            enabled: o.enabled !== false,
+            missed: o.missed === 'run' || o.missed === 'ask' || o.missed === 'skip' ? o.missed : undefined,
+            lastRunKey: typeof o.lastRunKey === 'string' ? o.lastRunKey : undefined
+        });
+    }
+    return out;
+}
+
 /** Pure due-check so the scheduler is testable. `missedKey`/`missedAt` mark a
  *  scheduled occurrence from a previous day that never ran (no VS Code window
  *  was open at the time) and the schedule's missed-policy wants handled:
@@ -382,6 +420,7 @@ export class TaskManager implements vscode.Disposable {
         private opts: TaskManagerOptions = {}
     ) {
         this.load();
+        this.applySeedFile();
         // F2: pick the persisted in-flight media jobs back up (fire-and-forget;
         // each one finishes its task normally, so interrupted chains continue).
         if (this.reattachQueue.length) {
@@ -442,6 +481,29 @@ export class TaskManager implements vscode.Disposable {
     /** Machine roots for portable-path token save/load. */
     private proots(): PortableRoot[] {
         return this.opts.portableRoots?.() ?? [];
+    }
+
+    /** One-shot external seeding: a `seed-schedules.json` dropped next to the
+     *  store (by an agent, a setup script, another machine) is merged by the
+     *  RUNNER — deduped by title — then deleted. Writing farm-tasks.json from
+     *  outside races with the runner's saves and loses; this file is the
+     *  race-free way in. Checked at startup and on every runner takeover. */
+    private applySeedFile(): void {
+        if (!this.runner()) { return; }
+        const file = path.join(path.dirname(this.storageFile), 'seed-schedules.json');
+        let text = '';
+        try { text = fs.readFileSync(file, 'utf8'); } catch { return; }
+        let added = 0;
+        for (const seed of parseSeedSchedules(text)) {
+            if (this.schedules.some(s => s.title === seed.title)) { continue; }
+            this.addSchedule(seed);
+            added++;
+        }
+        try { fs.unlinkSync(file); } catch { /* stays; title dedupe keeps retries safe */ }
+        if (added) {
+            void vscode.window.showInformationMessage(
+                `Agent Farm: ${added} schedule(s) installed from seed-schedules.json.`);
+        }
     }
 
     private load(): void {
@@ -677,6 +739,7 @@ export class TaskManager implements vscode.Disposable {
     becomeRunner(): void {
         this.stopFollowerWatch();
         this.load();
+        this.applySeedFile();
         if (this.reattachQueue.length) {
             void vscode.window.showInformationMessage(
                 `Agent Farm: reattached to ${this.reattachQueue.length} in-flight media job(s) from the previous window.`);

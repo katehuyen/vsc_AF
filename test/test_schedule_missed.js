@@ -21,7 +21,7 @@ Module._load = function (request) {
     }
     return origLoad.apply(this, arguments);
 };
-const { scheduleDue, previousOccurrenceKey } = require(path.join(__dirname, '..', 'out', 'core', 'tasks.js'));
+const { scheduleDue, previousOccurrenceKey, parseSeedSchedules } = require(path.join(__dirname, '..', 'out', 'core', 'tasks.js'));
 Module._load = origLoad;
 
 const key = d => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
@@ -95,6 +95,26 @@ const daily = extra => Object.assign({
     const fresh = daily({ missed: 'run', lastRunKey: previousOccurrenceKey({ kind: 'daily' }, at(15, 3, 0)) });
     ok('stamped fresh schedule: quiet before its first time', !scheduleDue(fresh, at(15, 3, 0)).due);
     ok('stamped fresh schedule: fires normally at its time', scheduleDue(fresh, at(15, 5, 0)).due);
+}
+
+// ---------- parseSeedSchedules: the race-free external seeding gate ----------
+{
+    const seeds = parseSeedSchedules(JSON.stringify([
+        {
+            agentId: 'd:/a/basit', agentName: 'basit', title: ' Daily backup ',
+            prompt: 'commit it', kind: 'daily', hour: 5, minute: 0, missed: 'run'
+        },
+        { title: 'no prompt/agent — dropped' },
+        { agentId: 'd:/a/x', title: 'weird numbers', prompt: 'p', kind: 'weekly', hour: 99, minute: -3, dow: 42 },
+        'not-an-object'
+    ]));
+    ok('valid seed parsed with defaults', seeds.length === 2
+        && seeds[0].title === 'Daily backup' && seeds[0].hour === 5 && seeds[0].missed === 'run'
+        && seeds[0].mode === 'headless' && seeds[0].enabled === true);
+    ok('out-of-range numbers fall back to sane defaults',
+        seeds[1].hour === 9 && seeds[1].minute === 0 && seeds[1].dow === 1);
+    ok('garbage input yields nothing', parseSeedSchedules('not json').length === 0
+        && parseSeedSchedules('{"a":1}').length === 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
