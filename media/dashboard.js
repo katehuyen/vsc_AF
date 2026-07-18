@@ -41,6 +41,8 @@
     let cmpFrom = '', cmpTo = '';        // custom-range dates (yyyy-mm-dd)
     let cmpRows = null;                  // host reply for a window; null = all-time mode
     let cmpSort = 'cost', cmpAsc = false;
+    const CMP_SHOW_DEFAULT = 12;
+    let cmpShow = CMP_SHOW_DEFAULT;      // rows listed after sorting (0 = all)
 
     function requestCmp() {
         const w = CMP_WINDOWS.find(x => x.id === cmpWin);
@@ -132,18 +134,30 @@
             <select id="cmp-sort" title="Sort the comparison rows">${defs.map(s =>
                 `<option value="${s.id}"${s.id === cmpSort ? ' selected' : ''}>${s.label}</option>`).join('')}</select>
             <button class="chip" id="cmp-dir" title="Flip the sort direction">${cmpAsc ? '▲' : '▼'}</button>
+            <span class="muted small">Show:</span>
+            <input type="number" id="cmp-count" min="1" step="1" value="${cmpShow > 0 ? cmpShow : ''}" placeholder="all" title="How many agents to list after sorting — empty means all">
+            <button class="chip${cmpShow === 0 ? ' on' : ''}" id="cmp-all" title="List every agent (click again to go back to ${CMP_SHOW_DEFAULT})">All</button>
         </span>`;
     }
+
+    /** Top-N slice for the comparison table (cmpShow = 0 → everything). */
+    function cmpShown(list) {
+        return cmpShow > 0 ? list.slice(0, cmpShow) : list;
+    }
+    const cmpMoreNote = (shownLen, total) =>
+        shownLen < total ? ` Showing ${shownLen} of ${total} agents.` : '';
 
     function cmpSection() {
         const style = `<style>
             .cmph { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
             .cmpctl { display:inline-flex; gap:6px; align-items:center; font-size:12px; font-weight:400; }
             .cmpctl input[type=date] { padding:1px 4px; }
+            .cmpctl input[type=number] { width:52px; padding:1px 4px; }
         </style>`;
         if (cmpRows) {
             // windowed mode: figures the host computed for [from, to]
-            const rows = cmpSorted(cmpRows, CMP_SORTS_WIN);
+            const all = cmpSorted(cmpRows, CMP_SORTS_WIN);
+            const rows = cmpShown(all);
             const exact = rows.length && rows[0].exact;
             return style + `<h2 class="cmph">Agent comparison ${cmpControls(CMP_SORTS_WIN)}</h2>
             <div class="tablewrap"><table>
@@ -158,9 +172,10 @@
             </table></div>
             <p class="muted small">${exact
                 ? 'Hour-exact — summed from the per-message log (retained 48h).'
-                : 'Day granularity — summed from daily buckets; hours inside a day are not sliced.'} Sessions = sessions overlapping the window.</p>`;
+                : 'Day granularity — summed from daily buckets; hours inside a day are not sliced.'} Sessions = sessions overlapping the window.${cmpMoreNote(rows.length, all.length)}</p>`;
         }
-        const rows = cmpSorted(DATA.agents, CMP_SORTS_ALL);
+        const all = cmpSorted(DATA.agents, CMP_SORTS_ALL);
+        const rows = cmpShown(all);
         return style + `<h2 class="cmph">Agent comparison ${cmpControls(CMP_SORTS_ALL)}</h2>
         <div class="tablewrap"><table>
             <tr><th>Agent</th><th class="num">Sessions</th><th class="num">Cost</th><th class="num">Tokens</th><th class="num">Tools</th><th class="num">Err %</th><th class="num">Quality</th><th class="num">Cache eff.</th><th class="num">Ctx load</th></tr>
@@ -183,7 +198,7 @@
                 </tr>`;
             }).join('')}
         </table></div>
-        <p class="muted small">Cache eff. = cache-read share of prompt tokens (higher is cheaper). Err % = tool errors / tool calls. Quality = judge average of sampled sessions (14d) <a data-guide="kalite-karnesi">?</a> · <a data-guide="filo-raporu">Export a Markdown report ?</a></p>`;
+        <p class="muted small">Cache eff. = cache-read share of prompt tokens (higher is cheaper). Err % = tool errors / tool calls. Quality = judge average of sampled sessions (14d) <a data-guide="kalite-karnesi">?</a> · <a data-guide="filo-raporu">Export a Markdown report ?</a>${cmpMoreNote(rows.length, all.length)}</p>`;
     }
 
     function render() {
@@ -388,10 +403,17 @@
             render();
         });
         wireCmp('cmp-dir', 'click', () => { cmpAsc = !cmpAsc; render(); });
+        wireCmp('cmp-count', 'change', el => {
+            const v = parseInt(el.value, 10);
+            cmpShow = isFinite(v) && v >= 1 ? v : 0;
+            render();
+        });
+        wireCmp('cmp-all', 'click', () => { cmpShow = cmpShow === 0 ? CMP_SHOW_DEFAULT : 0; render(); });
 
         // The shared component fills its container and wires its own controls
-        // (sort box, turn accordion, single-open, ⌨) — after every full render.
-        sessTable.setRows(DATA.sessionRows || [], DATA.sessionTableN || 12);
+        // (sort box, Show box, turn accordion, single-open, ⌨) — after every
+        // full render. sessionTableN echoes the Show box (0 = all).
+        sessTable.setRows(DATA.sessionRows || [], DATA.sessionTableN);
     }
 
     render();

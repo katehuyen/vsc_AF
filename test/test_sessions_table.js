@@ -197,6 +197,42 @@ const mkRow = (i, extra) => Object.assign({
     ok('legacy fallback single-open honored', html2.includes('af-single on'));
 }
 
+// ---------- part: Show box — row count control (number / All, host round-trip) ----------
+{
+    posted = []; state = {};
+    const t = sandbox.window.AFSessionsTable.create({
+        vscode: vscodeStub, C, containerId: 'cnt',
+        columns: ['title', 'cost'], stateKey: 'cnt'
+    });
+    t.setRows([mkRow(1), mkRow(2), mkRow(3), mkRow(4), mkRow(5)], 3);
+    const html = () => containers.cnt.innerHTML;
+    const q = sel => containers.cnt.querySelector(sel);
+    const shownRows = () => containers.cnt.querySelectorAll('[data-fold]').length;
+
+    ok('Show box renders with the host-shipped N', html().includes('class="af-count"') && html().includes('value="3"'));
+    ok('All chip present and off while a count is set', html().includes('af-allrows') && !html().includes('af-allrows on'));
+
+    const inp = q('.af-count'); inp.value = '2'; inp._fn(ev());
+    ok('typing a count narrows the table at once', shownRows() === 2);
+    ok('…and asks the host to rebuild the pool for that N',
+        posted.some(p => p.type === 'setTableN' && p.n === 2));
+
+    posted = [];
+    click(q('.af-allrows'));
+    ok('All shows every row and posts n=0', shownRows() === 5
+        && posted.some(p => p.type === 'setTableN' && p.n === 0));
+    ok('All chip lights up, count box empties to its "all" placeholder',
+        html().includes('af-allrows on') && html().includes('placeholder="all"') && !html().includes('value="2"'));
+
+    posted = [];
+    click(q('.af-allrows'));
+    ok('clicking All again returns to the default N', posted.some(p => p.type === 'setTableN' && p.n === 12));
+
+    // host-shipped 0 (e.g. restored panel) also means "all"
+    t.setRows([mkRow(1), mkRow(2), mkRow(3), mkRow(4), mkRow(5)], 0);
+    ok('setRows with n=0 keeps every row visible', shownRows() === 5 && html().includes('af-allrows on'));
+}
+
 // ---------- part: advanced filters (text, agent, flags, ranges, dates) ----------
 {
     posted = []; state = {};

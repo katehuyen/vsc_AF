@@ -2,8 +2,11 @@
 // One pool of rows, sorted client-side by the picked criterion; each row folds
 // open (▸) into that session's per-turn breakdown (fetched on demand from the
 // host via a 'sessionTurns' message); active rows carry a ⌨ jump-to-terminal
-// button. The component owns exactly one container div and re-renders only
-// that, so host-page state (e.g. an open pricing editor) is never clobbered.
+// button. A Show box picks how many rows to list (empty / All = every one);
+// changing it posts 'setTableN' so the host rebuilds the row pool for the new
+// N — hosts must answer that message. The component owns exactly one container
+// div and re-renders only that, so host-page state (e.g. an open pricing
+// editor) is never clobbered.
 (function () {
     'use strict';
 
@@ -45,6 +48,7 @@
         .af-frange input[type=number] { width:64px; padding:1px 4px; }
         .af-frange input[type=date] { padding:1px 4px; }
         .af-ftext { width:180px; padding:2px 6px; }
+        .af-count { width:52px; padding:1px 4px; }
         .foldcell { width:22px; }
         .fold { font-size:10px; padding:0 6px; line-height:16px; cursor:pointer; border-radius:3px;
             background:transparent; opacity:.7; border:1px solid var(--vscode-widget-border, #4444);
@@ -82,19 +86,21 @@
      *   vscode, C,           // acquired VS Code API + AFCharts helpers
      *   containerId,         // the div this component owns
      *   columns,             // subset of: agent,title,when,duration,turns,tools,errors,tokens,ctx,cost
-     *   tableN,              // rows shown after sorting (default 12)
+     *   tableN,              // rows shown after sorting (default 12; 0 = all)
      *   stateKey,            // persistence namespace ('dash', 'agent', …)
      *   fallbackSort, fallbackSingle  // initial state when nothing persisted
      * }
      * returns { setRows(rows, tableN?), onMessage(ev) -> handled? }
-     * Host must answer 'sessionTurns' and handle 'openSession'/'focusTerminal'.
+     * Host must answer 'sessionTurns' and 'setTableN' (rebuild the pool with
+     * the requested N) and handle 'openSession'/'focusTerminal'.
      */
     function create(opts) {
         const vscode = opts.vscode, C = opts.C;
         const cols = opts.columns;
         const hasAgentCol = cols.indexOf('agent') >= 0;
+        const defaultN = opts.tableN || 12;
         let rows = [];
-        let tableN = opts.tableN || 12;
+        let tableN = defaultN; // 0 = all rows
 
         // sort + single-open persist per page (namespaced so several tables can
         // coexist in one webview state); open rows are session-local
@@ -253,7 +259,8 @@
             const def = SORTS.find(s => s.id === sort) || SORTS[0];
             const pool = filterRows(rows);
             const nf = activeFilterCount();
-            shown = pool.slice().sort((a, b) => def.key(b) - def.key(a)).slice(0, tableN);
+            shown = pool.slice().sort((a, b) => def.key(b) - def.key(a));
+            if (tableN > 0) { shown = shown.slice(0, tableN); }
             shown.forEach(r => { if (open.has(r.file)) { ensureTurns(r); } });
             const rowsHtml = shown.map(r => {
                 const o = open.has(r.file);
@@ -266,6 +273,9 @@
             <div class="chiprow">
                 <span class="muted small">Sort by:</span>
                 <select class="af-sort">${SORTS.map(s => `<option value="${s.id}"${s.id === sort ? ' selected' : ''}>${s.label}</option>`).join('')}</select>
+                <span class="muted small">Show:</span>
+                <input type="number" class="af-count" min="1" step="1" value="${tableN > 0 ? tableN : ''}" placeholder="all" title="How many sessions to list after sorting — empty means all">
+                <button class="chip af-allrows${tableN === 0 ? ' on' : ''}" title="List every session (click again to go back to ${defaultN})">All</button>
                 <span class="muted small">Turns:</span>
                 <button class="chip af-expand" title="List every shown session's turns">Expand all</button>
                 <button class="chip af-collapse" title="Hide all turn lists">Collapse all</button>
@@ -312,6 +322,18 @@
                 saveState();
                 renderSection();
             });
+            // ---- Show box: how many rows to list (empty / All = every one) ----
+            const cnt = root.querySelector('.af-count');
+            if (cnt) {
+                cnt.addEventListener('change', () => {
+                    const v = parseInt(cnt.value, 10);
+                    setCount(isFinite(v) && v >= 1 ? v : 0);
+                });
+            }
+            const allBtn = root.querySelector('.af-allrows');
+            if (allBtn) {
+                allBtn.addEventListener('click', () => setCount(tableN === 0 ? defaultN : 0));
+            }
             // ---- filter panel ----
             const fchip = root.querySelector('.af-filter');
             if (fchip) {
@@ -384,9 +406,19 @@
                 }));
         }
 
+        /** Show-box change: re-render at once from the local pool, then ask the
+         *  host to rebuild the pool for the new N (0 = all) so whatever sort is
+         *  picked, its genuine top-N arrives with the next data message. */
+        function setCount(n) {
+            if (n === tableN) { return; }
+            tableN = n;
+            vscode.postMessage({ type: 'setTableN', n });
+            renderSection();
+        }
+
         function setRows(r, n) {
             rows = r || [];
-            if (n) { tableN = n; }
+            if (n !== undefined && n !== null) { tableN = n; }
             renderSection();
         }
 

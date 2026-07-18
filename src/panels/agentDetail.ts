@@ -10,11 +10,8 @@ import { SessionIndex } from '../core/sessions';
 import { PriceRule, PricingEngine, totalTokens } from '../core/pricing';
 import { safeReadFile } from '../core/util';
 import { handleAfNav, htmlShell } from './base';
-import { sessionRowPool } from './dashboard';
+import { SESSION_TABLE_N, sessionRowPool } from './dashboard';
 import { buildData as buildViewerData } from './sessionViewer';
-
-/** The agent page shows more sessions than the dashboard's fleet-wide table. */
-const AGENT_SESSION_TABLE_N = 50;
 
 export interface AgentDetailDeps {
     extensionUri: vscode.Uri;
@@ -27,7 +24,7 @@ export interface AgentDetailDeps {
     taskRecords(): TaskRecord[];
 }
 
-function buildData(agent: AgentInfo, deps: AgentDetailDeps): Record<string, unknown> {
+function buildData(agent: AgentInfo, deps: AgentDetailDeps, tableN = SESSION_TABLE_N): Record<string, unknown> {
     const sessions = deps.index.forAgent(agent.id).sort((a, b) => b.mtime - a.mtime);
     const daily: Record<string, { cost: number; tokens: number; msgs: number }> = {};
     const tools: Record<string, number> = {};
@@ -153,16 +150,19 @@ function buildData(agent: AgentInfo, deps: AgentDetailDeps): Record<string, unkn
                 message: i.message, filePath: i.filePath, anchor: i.guideAnchor
             })),
         // same advanced table as the dashboard (same row shape / component):
-        // union of the true top-N per sortable criterion, sorted client-side
+        // union of the true top-N per sortable criterion, sorted client-side;
+        // N follows the webview's Show box (0 = all sessions ship)
         sessions: sessionRowPool(sessions,
-            s => deps.index.isSessionActive(s), AGENT_SESSION_TABLE_N),
-        sessionTableN: AGENT_SESSION_TABLE_N
+            s => deps.index.isSessionActive(s), tableN),
+        sessionTableN: tableN
     };
 }
 
 export class AgentDetailPanel {
     private static open = new Map<string, AgentDetailPanel>();
     private disposables: vscode.Disposable[] = [];
+    /** Sessions-table row count chosen in the webview's Show box (0 = all). */
+    private tableN = SESSION_TABLE_N;
 
     static show(agentId: string, deps: AgentDetailDeps): void {
         const existing = AgentDetailPanel.open.get(agentId);
@@ -207,7 +207,7 @@ export class AgentDetailPanel {
             this.panel.webview,
             this.deps.extensionUri,
             `Agent ${agent.name}`,
-            buildData(agent, this.deps),
+            buildData(agent, this.deps, this.tableN),
             'agentDetail.js'
         );
     }
@@ -215,7 +215,7 @@ export class AgentDetailPanel {
     refresh(): void {
         const agent = this.agent();
         if (!agent) { return; }
-        this.panel.webview.postMessage({ type: 'data', data: buildData(agent, this.deps) });
+        this.panel.webview.postMessage({ type: 'data', data: buildData(agent, this.deps, this.tableN) });
     }
 
     private onMessage(msg: { type: string; [k: string]: unknown }): void {
@@ -229,6 +229,15 @@ export class AgentDetailPanel {
                 vscode.commands.executeCommand('agentfarm.openSession', msg.file,
                     typeof msg.ts === 'number' && msg.ts > 0 ? msg.ts : undefined);
                 break;
+            case 'setTableN': {
+                // Sessions-table Show box (0 = all). The pool is rebuilt host-side
+                // so the requested top-N is genuine, not a re-slice of the old pool.
+                const n = typeof msg.n === 'number' && isFinite(msg.n) ? Math.floor(msg.n) : -1;
+                if (n < 0) { break; }
+                this.tableN = n;
+                this.refresh();
+                break;
+            }
             case 'sessionTurns': {
                 // On-demand per-turn breakdown for an expanded session row.
                 // Only this agent's own session files are readable from here —

@@ -15,7 +15,6 @@
         vscode, C,
         containerId: 'sessblock',
         columns: ['title', 'when', 'duration', 'turns', 'tools', 'errors', 'tokens', 'ctx', 'cost'],
-        tableN: 50,
         stateKey: 'agent'
     });
 
@@ -300,7 +299,8 @@
 
         // The shared component fills its container and wires its own controls
         // (sort box, turn accordion, single-open, ⌨) — after every full render.
-        sessTable.setRows(DATA.sessions || [], DATA.sessionTableN || 50);
+        // sessionTableN echoes the Show box (0 = all) — pass it through as-is
+        sessTable.setRows(DATA.sessions || [], DATA.sessionTableN);
     }
 
     render();

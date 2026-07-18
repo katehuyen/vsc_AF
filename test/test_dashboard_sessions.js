@@ -64,6 +64,9 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     ok('custom n honored: top-2 of recency/cost/ctx present',
         small.includes('f30') && small.includes('f29') && small.includes('f1') && small.includes('f2') && small.includes('f14'));
     ok('custom n honored: mid rows stay out', !small.includes('f10') && small.length <= 12);
+    // Show box "All" (n=0) and any n covering the list ship every session
+    ok('n=0 ships every session (Show → All)', sessionRowPool(sessions, undefined, 0).length === 30);
+    ok('n beyond the list ships every session', sessionRowPool(sessions, undefined, 500).length === 30);
     ok('turns carried from userTurns', pool.find(r => r.file === 'f15').turns === 99);
     ok('active flag from callback', pool.find(r => r.file === 'f30').active === true && r1.active === false);
     ok('wire order is newest first', files[0] === 'f30');
@@ -138,7 +141,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
                     const mk = ds => { const e = { dataset: ds }; e.addEventListener = (_t, fn) => { e._click = fn; }; return e; };
                     const list = [];
                     const grab = (re, map) => { let m; while ((m = re.exec(this._html))) { list.push(mk(map(m))); } };
-                    if (['.af-sort', '.af-expand', '.af-collapse', '.af-single'].includes(sel)) {
+                    if (['.af-sort', '.af-expand', '.af-collapse', '.af-single', '.af-count', '.af-allrows'].includes(sel)) {
                         if (this._html.includes(sel.slice(1))) { list.push(mk({})); }
                     } else if (sel === '[data-session]') { grab(/data-session="([^"]*)"/g, m => ({ session: m[1] })); }
                     else if (sel === '[data-fold]') { grab(/data-fold="([^"]*)"/g, m => ({ fold: m[1] })); }
@@ -245,6 +248,34 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     // a data refresh re-feeds the component (rows survive the full re-render)
     msgHandler({ data: { type: 'data', data: sandbox.window.__DATA__ } });
     ok('data refresh re-renders the table', sess().querySelectorAll('[data-fold]').length === 3);
+
+    // ---- Show box: All → host round-trip (the host rebuilds the pool) ----
+    ok('Show box renders with the shipped N', sessHtml().includes('class="af-count"') && sessHtml().includes('value="12"'));
+    posted = [];
+    sess().querySelector('.af-allrows')._click(evStub);
+    ok('All posts setTableN 0 to the host', posted.some(p => p.type === 'setTableN' && p.n === 0));
+    msgHandler({ data: { type: 'data', data: Object.assign({}, sandbox.window.__DATA__, { sessionTableN: 0 }) } });
+    ok('host echo n=0 lights the All chip', sessHtml().includes('af-allrows on'));
+
+    // ---- Agent comparison: Show box slices the sorted rows (client-side) ----
+    const mkAgent = i => ({
+        id: 'm' + i, name: 'agent' + i, active: false, lastActivity: now,
+        contextLoad: 0, memoryFiles: 0, sessions: i, daily: {},
+        totalCost: i, totalTokens: i * 10, errors: 0, toolCalls: 0,
+        usage: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 },
+        insightCounts: { error: 0, warning: 0, info: 0 },
+        duties: 0, pendingDuties: 0, qualityCount: 0
+    });
+    const agents14 = []; for (let i = 1; i <= 14; i++) { agents14.push(mkAgent(i)); }
+    msgHandler({ data: { type: 'data', data: Object.assign({}, sandbox.window.__DATA__, { agents: agents14 }) } });
+    const cmpRows = () => (lastHtml.match(/data-agent-row=/g) || []).length;
+    ok('comparison defaults to 12 of 14 with an honest note',
+        cmpRows() === 12 && lastHtml.includes('Showing 12 of 14 agents.'));
+    ok('default cost sort keeps the true top rows', lastHtml.includes('data-agent-row="m14"') && !lastHtml.includes('data-agent-row="m2"'));
+    getEl('cmp-all').listeners.click();
+    ok('comparison All lists every agent', cmpRows() === 14 && !lastHtml.includes('Showing 14 of 14'));
+    const cc = getEl('cmp-count'); cc.value = '5'; cc.listeners.change();
+    ok('comparison count box narrows to the top 5', cmpRows() === 5 && lastHtml.includes('Showing 5 of 14 agents.'));
 }
 
 // ---------- part 3: agentWindowTotals — hour-exact vs day-granularity ----------

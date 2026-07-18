@@ -51,7 +51,9 @@ interface AgentSummary {
  *  instead of shipping every session, the pool is the union of the true top-N
  *  per sortable criterion (recency, cost, tokens, ctx-now, duration, turns):
  *  whatever sort the user picks, its genuine top N is guaranteed to be
- *  present. Exported for tests and reused by the agent detail page. */
+ *  present. N follows the user's Show box (webview 'setTableN' message);
+ *  n = 0 means "all" — every session ships and the union shortcut is moot.
+ *  Exported for tests and reused by the agent detail page. */
 export const SESSION_TABLE_N = 12;
 export function sessionRowPool(
     sessions: SessionInfo[],
@@ -80,6 +82,9 @@ export function sessionRowPool(
         active: isActive ? isActive(s) : false
     }));
     type Row = typeof rows[number];
+    if (!(n > 0) || n >= rows.length) {
+        return rows.sort((a, b) => b.ts - a.ts);
+    }
     const keys: ((r: Row) => number)[] = [
         r => r.ts, r => r.cost, r => r.tokens, r => r.ctx, r => r.durationMin, r => r.turns
     ];
@@ -128,7 +133,7 @@ export function agentWindowTotals(
     return out;
 }
 
-function buildData(deps: DashboardDeps): Record<string, unknown> {
+function buildData(deps: DashboardDeps, tableN = SESSION_TABLE_N): Record<string, unknown> {
     const now = Date.now();
     const agents = deps.getAgents();
     const sessions = deps.index.all();
@@ -201,7 +206,7 @@ function buildData(deps: DashboardDeps): Record<string, unknown> {
         for (let i = 0; i < 168; i++) { heat[i] += s.heat[i]; }
     }
 
-    const sessionRows = sessionRowPool(sessions, s => deps.index.isSessionActive(s, now));
+    const sessionRows = sessionRowPool(sessions, s => deps.index.isSessionActive(s, now), tableN);
 
     const win = deps.index.windowUsage(now);
 
@@ -213,7 +218,7 @@ function buildData(deps: DashboardDeps): Record<string, unknown> {
         tokenTypes,
         heat,
         sessionRows,
-        sessionTableN: SESSION_TABLE_N,
+        sessionTableN: tableN,
         window: { ...win, limit: deps.windowTokenLimit() },
         fleetBudget: deps.budgets()['*'] ?? 0,
         mediaCost: deps.mediaCost(),
@@ -239,6 +244,8 @@ function buildData(deps: DashboardDeps): Record<string, unknown> {
 export class DashboardPanel {
     private static current: DashboardPanel | undefined;
     private disposables: vscode.Disposable[] = [];
+    /** Sessions-table row count chosen in the webview's Show box (0 = all). */
+    private tableN = SESSION_TABLE_N;
 
     static show(deps: DashboardDeps): void {
         if (DashboardPanel.current) {
@@ -271,13 +278,13 @@ export class DashboardPanel {
             this.panel.webview,
             this.deps.extensionUri,
             'Agent Farm Dashboard',
-            buildData(this.deps),
+            buildData(this.deps, this.tableN),
             'dashboard.js'
         );
     }
 
     refresh(): void {
-        this.panel.webview.postMessage({ type: 'data', data: buildData(this.deps) });
+        this.panel.webview.postMessage({ type: 'data', data: buildData(this.deps, this.tableN) });
     }
 
     private onMessage(msg: { type: string; [k: string]: unknown }): void {
@@ -319,6 +326,15 @@ export class DashboardPanel {
             case 'refresh':
                 this.refresh();
                 break;
+            case 'setTableN': {
+                // Sessions-table Show box (0 = all). The pool is rebuilt host-side
+                // so the requested top-N is genuine, not a re-slice of the old pool.
+                const n = typeof msg.n === 'number' && isFinite(msg.n) ? Math.floor(msg.n) : -1;
+                if (n < 0) { break; }
+                this.tableN = n;
+                this.refresh();
+                break;
+            }
             case 'sessionTurns': {
                 // On-demand per-turn breakdown for an expanded session row.
                 // Only files the index actually lists are readable from here —
