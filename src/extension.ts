@@ -102,6 +102,7 @@ import { CapabilitiesPanel } from './panels/capabilities';
 import { buildToolboxInventory, ToolboxInventory } from './core/toolbox';
 import { registerToolboxOps } from './core/toolboxBridge';
 import { ToolboxPanel } from './panels/toolboxPanel';
+import { SecretsPanel } from './panels/secretsPanel';
 import { registerTurnsOps } from './core/turns';
 import { TurnsPanel } from './panels/turnsPanel';
 import { ToolboxTreeProvider } from './views/toolboxTree';
@@ -638,7 +639,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const pct = 100 * index.windowUsage().tokens / limit;
                 return pct >= guard ? `quota guard (${Math.round(pct)}% of 5h window)` : undefined;
             },
-            getEnv: () => vault.env(),
+            getEnv: (agentId) => vault.env(agentId),
             resolveTemplate: (s) => vault.substitute(s),
             forward: postForward,
             // J5: alternative CLI executors (gemini / codex / …).
@@ -3026,6 +3027,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             });
         }),
 
+        vscode.commands.registerCommand('agentfarm.openSecrets', () => {
+            SecretsPanel.show({
+                extensionUri: context.extensionUri,
+                vault,
+                getAgents: () => agents
+            });
+        }),
+
         vscode.commands.registerCommand('agentfarm.openTurns', () => {
             TurnsPanel.show({
                 extensionUri: context.extensionUri,
@@ -3942,6 +3951,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             });
             if (value === undefined) { return; }
             await vault.set(name, value);
+            SecretsPanel.refreshIfOpen();
             void vscode.window.showInformationMessage(
                 `Agent Farm: secret "${name}" stored in the OS keychain (injected into tasks as env + {secret:${name}}).`);
         }),
@@ -3955,6 +3965,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const pick = await vscode.window.showQuickPick(names, { ignoreFocusOut: true, placeHolder: 'Delete which secret?' });
             if (!pick) { return; }
             await vault.delete(pick);
+            SecretsPanel.refreshIfOpen();
             void vscode.window.showInformationMessage(`Agent Farm: secret "${pick}" deleted.`);
         }),
 

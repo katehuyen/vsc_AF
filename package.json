@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.81.2",
+  "version": "2.82.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -808,6 +808,12 @@
         "icon": "$(tools)"
       },
       {
+        "command": "agentfarm.openSecrets",
+        "title": "Manage Secrets (keychain vault)",
+        "category": "Agent Farm",
+        "icon": "$(lock)"
+      },
+      {
         "command": "agentfarm.openTurns",
         "title": "Open Turns (every turn across the farm)",
         "category": "Agent Farm",
@@ -1084,6 +1090,11 @@
           "command": "agentfarm.openToolbox",
           "when": "view == agentfarm.toolbox",
           "group": "navigation@1"
+        },
+        {
+          "command": "agentfarm.openSecrets",
+          "when": "view == agentfarm.toolbox",
+          "group": "navigation@2"
         },
         {
           "command": "agentfarm.refresh",

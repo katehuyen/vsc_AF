@@ -301,7 +301,7 @@
                 page: 'toolbox',
                 title: 'Toolbox',
                 sub: `${total} installed extensions across user + agent scope · inventory, details and management for everything that extends claude`,
-                related: [{ nav: 'capabilities', label: 'Capability Matrix' }],
+                related: [{ nav: 'capabilities', label: 'Capability Matrix' }, { nav: 'secrets', label: '🔑 Secrets' }],
                 guide: 'toolbox'
             })}
             <div class="btnrow" style="margin-bottom:10px">${tabBar}</div>

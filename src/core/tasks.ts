@@ -342,8 +342,9 @@ export interface TaskManagerOptions {
     /** Return a reason string to defer auto work (e.g. quota window nearly full), or undefined. */
     quotaCheck?: () => string | undefined;
     outputsMaxMB?: () => number;
-    /** Secrets injected as environment variables into spawned tasks. */
-    getEnv?: () => Record<string, string>;
+    /** Secrets injected as environment variables into spawned tasks. The
+     *  agent id lets the vault withhold secrets scoped to other agents. */
+    getEnv?: (agentId?: string) => Record<string, string>;
     /** {secret:NAME} substitution for webhook templates. */
     resolveTemplate?: (s: string) => string;
     /** Outbound notification forwarding (B4). */
@@ -880,7 +881,7 @@ export class TaskManager implements vscode.Disposable {
             const terminal = vscode.window.createTerminal({
                 name: `AF: ${task.title.slice(0, 30)}`,
                 cwd: task.workDir ?? agent.dir,
-                env: this.opts.getEnv?.()
+                env: this.opts.getEnv?.(agent.id)
             });
             terminal.show();
             terminal.sendText(command, true);
@@ -936,7 +937,7 @@ export class TaskManager implements vscode.Disposable {
             shell: true,
             windowsHide: true,
             stdio: ['ignore', 'pipe', 'pipe'], // closed stdin: claude won't wait 3s for piped input
-            env: { ...process.env, ...this.opts.getEnv?.() }
+            env: { ...process.env, ...this.opts.getEnv?.(agent.id) }
         });
         this.processes.set(task.id, child);
         child.stdout?.on('data', chunk => stream.write(chunk));

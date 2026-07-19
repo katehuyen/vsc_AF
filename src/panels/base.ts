@@ -71,6 +71,7 @@ export function handleAfNav(to: unknown): void {
         settings: 'agentfarm.openFarmSettings',
         capabilities: 'agentfarm.openCapabilities',
         toolbox: 'agentfarm.openToolbox',
+        secrets: 'agentfarm.openSecrets',
         turns: 'agentfarm.openTurns'
     };
     const cmd = commands[String(to)];
