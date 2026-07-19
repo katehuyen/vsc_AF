@@ -20,14 +20,18 @@
 
     function cellHtml(row, agent, cell, kind) {
         if (!cell || !cell.present) {
-            // Find a donor agent so the click can copy the capability here.
-            const donor = DATA.agents.find(a => row.cells[a.id] && row.cells[a.id].present);
-            if (!donor || row.scope === 'user') {
+            // The host resolves the copy source: it compares every agent's copy
+            // and asks the user to pick one whenever the copies differ.
+            const donors = DATA.agents.filter(a => row.cells[a.id] && row.cells[a.id].present);
+            if (!donors.length || row.scope === 'user') {
                 return '<td class="c absent"><span title="not installed">—</span></td>';
             }
-            return `<td class="c absent"><button class="copyhere" title="not installed — copy from ${C.esc(donor.name)}" ` +
+            const tip = donors.length === 1
+                ? `not installed — copy from ${donors[0].name}`
+                : `not installed — copy here (${donors.length} agents have it; if their copies differ, you pick the source)`;
+            return `<td class="c absent"><button class="copyhere" title="${C.esc(tip)}" ` +
                 `data-kind="${kind}" data-name="${C.esc(row.name)}" data-scope="${C.esc(row.scope || '')}" ` +
-                `data-from="${C.esc(donor.id)}" data-to="${C.esc(agent.id)}">＋</button></td>`;
+                `data-to="${C.esc(agent.id)}">＋</button></td>`;
         }
         const tipParts = [];
         if (cell.disabled) { tipParts.push('DISABLED for this agent'); }
@@ -54,10 +58,13 @@
 
     function dutyCellHtml(row, agent, cell) {
         if (!cell) {
-            const donor = DATA.agents.find(a => row.cells[a.id]);
-            if (!donor) { return '<td class="c absent"><span title="no duty">—</span></td>'; }
-            return `<td class="c absent"><button class="copyhere" title="no such duty — copy from ${C.esc(donor.name)}" ` +
-                `data-kind="duty" data-name="${C.esc(row.title)}" data-from="${C.esc(donor.id)}" data-to="${C.esc(agent.id)}">＋</button></td>`;
+            const donors = DATA.agents.filter(a => row.cells[a.id]);
+            if (!donors.length) { return '<td class="c absent"><span title="no duty">—</span></td>'; }
+            const tip = donors.length === 1
+                ? `no such duty — copy from ${donors[0].name}`
+                : `no such duty — copy here (${donors.length} agents have it; if their definitions differ, you pick the source)`;
+            return `<td class="c absent"><button class="copyhere" title="${C.esc(tip)}" ` +
+                `data-kind="duty" data-name="${C.esc(row.title)}" data-to="${C.esc(agent.id)}">＋</button></td>`;
         }
         const tip = `${row.title} [${cell.cadence}${cell.paused ? ', paused' : ''}]` +
             (cell.watch ? '\nWatch: ' + cell.watch : '') +
@@ -198,7 +205,7 @@
                 page: 'capabilities',
                 title: 'Capability Matrix',
                 sub: `who has which skill / MCP server, and what is actually used (last 30 days) ·
-                        green = used, ✓ = installed but unused, ⏻ = disabled, ＋ = click to copy onto that agent`,
+                        green = used, ✓ = installed but unused, ⏻ = disabled, ＋ = copy onto that agent (when copies differ, you pick the source)`,
                 related: [{ nav: 'toolbox', label: 'Toolbox' }],
                 guide: 'yetenek-matrisi'
             })}
@@ -207,7 +214,7 @@
             ${matrix(DATA.memory || [], 'memory', 'Memory files', 'Create one from the Agents tree: Memory → +.')}
             ${dutyMatrix(DATA.duties || [])}
             ${taskMatrix(DATA.tasks || [])}
-            <p class="footnote">Counts come from real session transcripts: Skill tool calls, typed /commands, mcp__server__tool calls and explicit memory-file reads. Memory cells with an orange ring have DIVERGED from the newest copy. Copying installs into the target agent (skills/.mcp.json/memory+index/DUTIES.md); new claude sessions pick it up. Task rows group repeated runs of the same job (retry/date noise collapsed): green = all succeeded, red = all failed, orange ring = mixed — click for the full task history.</p>
+            <p class="footnote">Counts come from real session transcripts: Skill tool calls, typed /commands, mcp__server__tool calls and explicit memory-file reads — memory recalls only count reads of the agent's OWN memory/ folder, so a fresh copy always starts at zero. Memory cells with an orange ring have DIVERGED from the newest copy. ＋ copying compares every agent's copy first: identical everywhere → one confirm naming the source; differing → you pick the source from a list (newest first, differences marked). It installs into the target agent (skills/.mcp.json/memory+index/DUTIES.md); new claude sessions pick it up. Task rows group repeated runs of the same job (retry/date noise collapsed): green = all succeeded, red = all failed, orange ring = mixed — click for the full task history.</p>
         `;
 
         window.AFHeader.wire(vscode);
@@ -220,12 +227,13 @@
         const COPY_MSG = { skill: 'copySkill', mcp: 'copyMcp', memory: 'copyMemory', duty: 'copyDuty' };
         document.querySelectorAll('.copyhere').forEach(b =>
             b.addEventListener('click', () => {
+                // No source here on purpose — the host compares every agent's
+                // copy and lets the user pick when they differ.
                 vscode.postMessage({
                     type: COPY_MSG[b.dataset.kind] || 'copyMcp',
                     name: b.dataset.name,
                     title: b.dataset.name,
                     scope: b.dataset.scope,
-                    fromAgentId: b.dataset.from,
                     toAgentId: b.dataset.to
                 });
             }));

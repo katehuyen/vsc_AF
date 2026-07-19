@@ -102,6 +102,8 @@ import { CapabilitiesPanel } from './panels/capabilities';
 import { buildToolboxInventory, ToolboxInventory } from './core/toolbox';
 import { registerToolboxOps } from './core/toolboxBridge';
 import { ToolboxPanel } from './panels/toolboxPanel';
+import { registerTurnsOps } from './core/turns';
+import { TurnsPanel } from './panels/turnsPanel';
 import { ToolboxTreeProvider } from './views/toolboxTree';
 import { MemoryGraphPanel } from './panels/memoryGraph';
 import { DashboardPanel } from './panels/dashboard';
@@ -2067,6 +2069,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         getAgents: () => agents,
         cacheFile: toolboxProbeCacheFile
     });
+    // Turns ops (§19.C): the Turns page's rows as data.
+    registerTurnsOps(bridge, {
+        sessions: () => index.all(),
+        isActive: s => index.isSessionActive(s, Date.now())
+    });
 
     const bridgeDir = path.join(context.globalStorageUri.fsPath, 'bridge');
     let bridgeBusy = false;
@@ -3016,6 +3023,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 index,
                 cacheFile: toolboxProbeCacheFile,
                 refreshTrees: refreshAll
+            });
+        }),
+
+        vscode.commands.registerCommand('agentfarm.openTurns', () => {
+            TurnsPanel.show({
+                extensionUri: context.extensionUri,
+                index,
+                getPricing: () => pricing
             });
         }),
 

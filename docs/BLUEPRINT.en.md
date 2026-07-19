@@ -122,6 +122,7 @@ The fleet's overview board. Opens with the `Agent Farm: Open Dashboard` command 
 - **Sessions-table filters (2.72.0):** a **Filters** chip next to the sort box (shared component — the Agent Detail page gets it too) opens a panel over the row's own figures: **title-contains text**, an **agent dropdown** (dashboard variant), **Active now / Has errors / Main only** flags, **min–max ranges** for tokens, cost, ctx, minutes, turns, tools and errors, and a **date range**. Freely combinable, live `N/M sessions` count, honest "No sessions match" row, one-click Clear — all remembered per page.
 - **Agent comparison over any window (2.72.0):** the comparison table's fixed "all time" became a **period selector** — 1/2/6/12/16 hours, 1–5 days, 1–4 weeks, 1/2/3/6/9 months, 1/2/3 years, **All time** (default) and **Custom range** (two dates, inclusive). Windows starting within the last 24 h are **hour-exact** (summed from the 48-hour per-message log); longer windows sum the daily buckets at day granularity — the footnote says which. Windowed mode shows Sessions · Cost · Tokens · Msgs per agent; a **sort box + direction flip** orders the table by any column in both modes.
 - **You decide how many rows (2.73.0, defaults tuned 2.74.0):** the Sessions tables (Dashboard + Agent Detail) grew a **Show** box next to the sort selector — the Dashboard defaults to **20**, the Agent Detail page to **50**; type a number to list exactly that many, and the **All** chip (or an empty box) lists every session. Changing it rebuilds the row pool host-side, so whatever sort you pick, the shown rows are that criterion's *genuine* top N — not a re-slice of the old pool. The **Agent comparison** table gets the same control: 12 agents by default, a Show box + All, and an honest `Showing N of M agents` footnote when the list is cut.
+- **Toolbox & Turns in the header (2.81.0):** the Dashboard's global cluster carries two extra shortcuts between Missions and ⌕ Search — **Toolbox** (the extension console) and **Turns** (the farm-wide turn table, below).
 
 The Dashboard updates itself automatically as session logs change.
 
@@ -160,6 +161,16 @@ Turns a session's raw JSONL log into a readable conversation:
 - **⌂ \<agent\> (2.60.0):** the button right next to it names the session's **owner agent** and opens that agent's page in one click — no more "whose session was this again?" detours through the Dashboard. Sessions that live outside the agent roots have no owner, so they show no button.
 - For very long sessions the last N messages are shown (`agentFarm.maxTranscriptMessages`, default 1500).
 - **▶ Replay** plays the session step by step — see [Session Replay](#session-replay) for detail.
+
+### Turns Page {#turlar-sayfasi}
+
+**Agent Farm: Open Turns** (or the **Turns** button in the Dashboard header) — the whole farm unrolled to **one row per user turn** (2.81.0). The Sessions table answers "which session?"; this page answers "which *turn*, in any session, farm-wide?". Turn rollups are collected while transcripts are indexed, so the page opens instantly and refreshes itself as logs change.
+
+- The header carries **the exact same seven-button global cluster as an agent page**, in the same order: Dashboard · Live Timeline · Missions · ⌕ Search · ⚙ Settings · Refresh · ? Guide.
+- **Columns:** Agent (● active dot, `sub` badge, ⌨ jump-to-terminal) · **Turn** — the opening prompt, the row's identity (typed /commands show as the command name) · **Session** — short, with the full title in the tooltip · `n/N` turn number · model tag(s) · when · duration (until the next turn opened; last turn: until the session's end) · tools · errors · tokens · cost. Tokens and cost are what that turn **actually consumed** — subagent work bills to the turn that spawned it, so the numbers match the viewer's turn table exactly.
+- **The Sessions tables' controls, adapted to turns:** Sort by (Recent · Cost · Tokens · Duration · Tools · Errors · Turn #), a **Show** box (default 50) + **All** chip, **Expand all / Collapse all / Single-open**, and a **Filters** chip. The filter panel has **two text boxes** — one over **turn prompts**, one over **session titles** — plus agent and **model** dropdowns, Active now / Has errors / Main only flags, min–max ranges (tokens, cost, minutes, tools, errors, turn #) and a date range. Sort, filters and row count are remembered.
+- **▸ unfolds the turn's actual content** — the prompt, the assistant's replies and tool calls (with inputs), errors in red — parsed on demand from the transcript. **Clicking the row opens the Session Viewer at that exact turn.**
+- Bridge op (per the farm-bridge rule): **`turns.list`** — the same rows as data (`agent?`, `limit?`).
 
 ### Insights Tree
 
@@ -580,9 +591,10 @@ Your agents' taught abilities — Agent Skills (SKILL.md folders) — show up in
 
 - **Two matrices:** *Skills × Agents* and *MCP servers × Agents*. Row = capability, column = agent.
 - **Cells:** a filled green badge + number = used in the last 30 days (color intensity = call frequency); a faint ✓ = installed but unused; ⏻ = disabled on that agent; **＋** = not installed — clicking **copies** the capability from another agent **to that agent** (approved).
+- **＋ picks its source honestly (2.81.0):** before copying, the host compares **every agent's copy of the item** (file hash for skills/memory, definition for MCP/duties). Identical everywhere → one confirm naming the source. Differing → a **picker list** — newest first, each entry labeled `newest` / `= same as newest` / `≠ differs from newest` with change date, size and recall count — so **you** decide which variant spreads, never a silent "first agent found".
 - **Summary chips:** total / used (30d) / unused count per matrix. A row no agent used in 30 days is marked with a yellow ● — capabilities that could be cleaned up fleet-wide.
 - Clicking a row name or a filled cell opens the relevant SKILL.md / config file. The matrix refreshes itself after any copy/edit.
-- **Memory files matrix (2.16.0):** which agents have same-named memory files, with the 30-day recall count in the cell; **a cell with an orange ring = the copy has DIVERGED from the newest one** (different content — updated in one, old in another). Copy the file to that agent with ＋ (with an index row into the target MEMORY.md). Multi-agent rows are on top — sync/divergence matters most there.
+- **Memory files matrix (2.16.0):** which agents have same-named memory files, with the 30-day recall count in the cell; **a cell with an orange ring = the copy has DIVERGED from the newest one** (different content — updated in one, old in another). Copy the file to that agent with ＋ (with an index row into the target MEMORY.md). Multi-agent rows are on top — sync/divergence matters most there. **Recall counts are per-folder (2.81.0):** a cell counts only reads of *that agent's own* memory/ file — reading another agent's same-named file (or the `~/.claude` auto-memory) no longer inflates it, and a freshly copied file honestly starts at **0 recalls**.
 - **Duties matrix (2.16.0):** duty titles × agents; the cell shows a cadence abbreviation (`turn/start/daily/weekly/manual`), ⏸ = paused; the tooltip shows watch/do; ＋ copies the duty to that agent (if the target's CLAUDE.md has no DUTIES.md reference, it's added with approval).
 - **Tasks matrix (2.17.0):** task families × agents — the 30 busiest families of the last 30 days ([Task Health](#gorev-sagligi)). The cell shows the completed run count: green = all successful, red = all failed, orange ring = mixed (`2✓/1✗`); the row label says its source (`man/sch/trg/wf`), a family whose recent runs are all failed gets a red ●. Clicking a cell/row opens the full task history.
 
@@ -1327,6 +1339,7 @@ All in the command palette with the `Agent Farm:` prefix:
 - **Copy Skill to Agent… / Move Skill Between Agent/User Scope… / Reveal Skill Folder** — skill fleet management (right-click)
 - **Edit MCP Server… / Disable MCP Server / Enable MCP Server / Copy MCP Server to Agent…** — MCP management (right-click)
 - **Open Capability Matrix (Skills × MCP × Agents)** — the fleet's capability grid, usage density and one-click copy
+- **Open Turns (every turn across the farm)** — one row per user turn, farm-wide ([Turns Page](#turlar-sayfasi))
 - **Copy Webhook URL** — the secret address of a webhook trigger
 - **Open Media Gallery** — produced media (preview + Re-run/Vary)
 - **New Recipe Workflow…** — ready-made factory templates

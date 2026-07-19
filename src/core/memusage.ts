@@ -1,35 +1,54 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { SessionIndex } from './sessions';
+import { normPath } from './util';
 
 /**
  * Memory recall statistics — the memory counterpart of skill/MCP usage.
  * A "recall" is an explicit tool touch (Read/Edit/Write/…) of a file inside a
- * memory/ folder, counted per lowercase basename at transcript-parse time
- * (SessionInfo.memoryReads). Passive injection via system reminders is NOT
+ * memory/ folder, recorded per full normalized path at transcript-parse time
+ * (SessionInfo.memoryReads). Counts here are filtered to the agent's OWN
+ * memory/ folder before being keyed by basename — a session reading another
+ * agent's memory (or the ~/.claude auto-memory) must not count as a recall of
+ * this agent's same-named file. Passive injection via system reminders is NOT
  * visible in transcripts and therefore not counted — this measures what the
  * agent actively went and read.
  */
 
-/** Recall counts per memory file basename (lowercase) within the window. */
-export function memoryUsage(index: SessionIndex, agentId: string, sinceMs: number): Map<string, number> {
+/** Lowercase-basename picker for paths inside this agent's memory/ folder. */
+function ownBasename(agentDir: string): (recordedPath: string) => string | undefined {
+    const prefix = normPath(path.join(agentDir, 'memory')) + '/';
+    return recordedPath => {
+        const p = normPath(recordedPath);
+        if (!p.startsWith(prefix)) { return undefined; }
+        return p.slice(p.lastIndexOf('/') + 1);
+    };
+}
+
+/** Recall counts per memory file basename (lowercase) within the window —
+ *  only touches of files inside THIS agent's memory/ folder. */
+export function memoryUsage(index: SessionIndex, agentId: string, sinceMs: number, agentDir: string): Map<string, number> {
     const cutoff = Date.now() - sinceMs;
+    const own = ownBasename(agentDir);
     const usage = new Map<string, number>();
     for (const session of index.forAgent(agentId)) {
         if (session.lastTs < cutoff) { continue; }
-        for (const [name, count] of Object.entries(session.memoryReads)) {
-            usage.set(name, (usage.get(name) ?? 0) + count);
+        for (const [recordedPath, count] of Object.entries(session.memoryReads)) {
+            const name = own(recordedPath);
+            if (name) { usage.set(name, (usage.get(name) ?? 0) + count); }
         }
     }
     return usage;
 }
 
 /** Approximate last-recall time per memory file: newest session that touched it. */
-export function memoryLastUsed(index: SessionIndex, agentId: string): Map<string, number> {
+export function memoryLastUsed(index: SessionIndex, agentId: string, agentDir: string): Map<string, number> {
+    const own = ownBasename(agentDir);
     const last = new Map<string, number>();
     for (const session of index.forAgent(agentId)) {
-        for (const name of Object.keys(session.memoryReads)) {
-            last.set(name, Math.max(last.get(name) ?? 0, session.lastTs));
+        for (const recordedPath of Object.keys(session.memoryReads)) {
+            const name = own(recordedPath);
+            if (name) { last.set(name, Math.max(last.get(name) ?? 0, session.lastTs)); }
         }
     }
     return last;

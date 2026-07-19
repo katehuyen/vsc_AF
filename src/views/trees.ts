@@ -123,7 +123,7 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
                     const item = new vscode.TreeItem('Memory', vscode.TreeItemCollapsibleState.Collapsed);
                     item.iconPath = new vscode.ThemeIcon('database');
                     const totalTok = agent.memoryFiles.reduce((a, f) => a + f.tokens, 0);
-                    const usage = memoryUsage(this.state.index, agent.id, MCP_USAGE_WINDOW_MS);
+                    const usage = memoryUsage(this.state.index, agent.id, MCP_USAGE_WINDOW_MS, agent.dir);
                     const recalled = agent.memoryFiles.filter(f =>
                         f.name !== 'MEMORY.md' && (usage.get(f.name.toLowerCase()) ?? 0) > 0).length;
                     item.description = `${agent.memoryFiles.length} files • ~${fmtTokens(totalTok)} tok • ${recalled} recalled (30d)`;
@@ -371,8 +371,8 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
                 }));
             }
             if (node.section === 'memory') {
-                const usage = memoryUsage(this.state.index, node.agent.id, MCP_USAGE_WINDOW_MS);
-                const lastUsed = memoryLastUsed(this.state.index, node.agent.id);
+                const usage = memoryUsage(this.state.index, node.agent.id, MCP_USAGE_WINDOW_MS, node.agent.dir);
+                const lastUsed = memoryLastUsed(this.state.index, node.agent.id, node.agent.dir);
                 const indexed = node.agent.memoryIndexPath
                     ? indexedMemoryNames(safeReadFile(node.agent.memoryIndexPath) ?? '')
                     : undefined;

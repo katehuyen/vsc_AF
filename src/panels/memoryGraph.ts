@@ -26,7 +26,7 @@ function buildData(deps: MemoryGraphDeps): Record<string, unknown> {
         agents: agents.map(a => ({
             id: a.id,
             name: a.name,
-            graph: buildMemoryGraph(a, memoryUsage(deps.index, a.id, WINDOW_MS))
+            graph: buildMemoryGraph(a, memoryUsage(deps.index, a.id, WINDOW_MS, a.dir))
         }))
     };
 }

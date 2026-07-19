@@ -48,7 +48,7 @@ function blankInfo(file: string, sessionId: string, source: string, mtime: numbe
         models: [], usage: emptyUsage(), cost: 0,
         userTurns: 0, assistantMsgs: 0, toolCalls: 0, tools: {},
         skillCalls: {}, memoryReads: {}, errors: 0,
-        daily: {}, heat: new Array(168).fill(0), events: [], recentMsgs: []
+        daily: {}, heat: new Array(168).fill(0), events: [], recentMsgs: [], turns: []
     };
 }
 

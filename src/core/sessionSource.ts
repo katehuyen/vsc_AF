@@ -106,7 +106,8 @@ export function liveEventsSource(
                         daily: {},
                         heat: new Array(168).fill(0),
                         events: [],
-                        recentMsgs: []
+                        recentMsgs: [],
+                        turns: []
                     };
                     bySession.set(e.sessionId, s);
                 }

@@ -9,7 +9,7 @@ import { copyMemoryFileTo, memoryLastUsed, memoryUsage } from '../core/memusage'
 import { copySkillTo, readAgentSkills, skillLastUsed, skillUsage } from '../core/skills';
 import { buildTaskFamilies, TaskRecord } from '../core/taskstats';
 import { SessionIndex } from '../core/sessions';
-import { hashString, safeReadFile } from '../core/util';
+import { hashString, relTime, safeReadFile, safeStat } from '../core/util';
 import { handleAfNav, htmlShell } from './base';
 
 /**
@@ -93,8 +93,8 @@ function buildData(deps: CapabilitiesDeps): Record<string, unknown> {
         cells: Record<string, Cell & { tokens: number; mtime: number; hash: number; diverged?: boolean }>;
     }>();
     for (const agent of agents) {
-        const usage = memoryUsage(deps.index, agent.id, WINDOW_MS);
-        const lastUsed = memoryLastUsed(deps.index, agent.id);
+        const usage = memoryUsage(deps.index, agent.id, WINDOW_MS, agent.dir);
+        const lastUsed = memoryLastUsed(deps.index, agent.id, agent.dir);
         for (const f of agent.memoryFiles) {
             if (f.name.toLowerCase() === 'memory.md') { continue; }
             const key = f.name.toLowerCase();
@@ -206,6 +206,58 @@ export class CapabilitiesPanel {
         return this.deps.getAgents().find(a => a.id === id);
     }
 
+    /**
+     * Copy-source resolution. The webview's ＋ never decides where a copy comes
+     * from — the host lists every agent that has the item, compares the actual
+     * contents, and:
+     *  - identical everywhere → one confirm naming the source (newest copy);
+     *  - copies differ → a QuickPick so the USER picks the source, each entry
+     *    labeled with freshness and whether it matches the newest copy.
+     * Returns the chosen donor agent, or undefined when the user backs out.
+     */
+    private async chooseDonor(
+        itemLabel: string,
+        to: AgentInfo,
+        donors: { agent: AgentInfo; contentKey: string; mtime?: number; description: string; detail?: string }[],
+        confirmSuffix = ''
+    ): Promise<AgentInfo | undefined> {
+        if (!donors.length) { return undefined; }
+        donors = donors.slice().sort((a, b) => (b.mtime ?? 0) - (a.mtime ?? 0));
+        const allSame = donors.every(d => d.contentKey === donors[0].contentKey);
+        if (allSame) {
+            const src = donors[0];
+            const note = donors.length > 1 ? ` All ${donors.length} copies are identical.` : '';
+            const ok = await vscode.window.showInformationMessage(
+                `Copy ${itemLabel} from ${src.agent.name} to ${to.name}?${note}${confirmSuffix}`,
+                { modal: true }, 'Copy');
+            return ok === 'Copy' ? src.agent : undefined;
+        }
+        const newestKey = donors[0].contentKey;
+        // Freshness wording only when real mtimes exist — a duty has no file
+        // date of its own, so there "newest" would be a made-up claim.
+        const dated = donors[0].mtime !== undefined;
+        const cmpTag = (d: { contentKey: string }, i: number) =>
+            i === 0 ? (dated ? 'newest' : '')
+                : d.contentKey === newestKey ? (dated ? '= same as newest' : '= same as first')
+                : (dated ? '≠ differs from newest' : '≠ differs');
+        const pick = await vscode.window.showQuickPick(
+            donors.map((d, i) => ({
+                label: d.agent.name,
+                description: [cmpTag(d, i), d.description].filter(Boolean).join(' · '),
+                detail: d.detail,
+                donor: d.agent
+            })),
+            {
+                placeHolder: `Copies of ${itemLabel} differ between agents — pick the source to copy to ${to.name}`,
+                ignoreFocusOut: true
+            });
+        if (!pick) { return undefined; }
+        const ok = await vscode.window.showInformationMessage(
+            `Copy ${itemLabel} from ${pick.donor.name} to ${to.name}?${confirmSuffix}`,
+            { modal: true }, 'Copy');
+        return ok === 'Copy' ? pick.donor : undefined;
+    }
+
     private async onMessage(msg: { type: string; [k: string]: unknown }): Promise<void> {
         switch (msg.type) {
             case 'refresh':
@@ -227,15 +279,28 @@ export class CapabilitiesPanel {
                 break;
             case 'copySkill': {
                 const to = this.agentById(String(msg.toAgentId));
-                const from = this.agentById(String(msg.fromAgentId));
-                if (!to || !from) { return; }
-                const skill = readAgentSkills(from).find(s =>
-                    s.name === msg.name && s.scope === msg.scope);
+                if (!to) { return; }
+                const donors = this.deps.getAgents()
+                    .filter(a => a.id !== to.id)
+                    .map(a => ({
+                        agent: a,
+                        skill: readAgentSkills(a).find(s => s.name === msg.name && s.scope === msg.scope)
+                    }))
+                    .filter((x): x is { agent: AgentInfo; skill: NonNullable<typeof x.skill> } => !!x.skill)
+                    .map(x => {
+                        const mtime = safeStat(x.skill.source)?.mtimeMs;
+                        return {
+                            agent: x.agent,
+                            contentKey: String(hashString(safeReadFile(x.skill.source) ?? '')),
+                            mtime,
+                            description: mtime ? `changed ${relTime(mtime)}` : '',
+                            detail: x.skill.source
+                        };
+                    });
+                const from = await this.chooseDonor(`skill "${msg.name}"`, to, donors);
+                if (!from) { return; }
+                const skill = readAgentSkills(from).find(s => s.name === msg.name && s.scope === msg.scope);
                 if (!skill) { return; }
-                const ok = await vscode.window.showInformationMessage(
-                    `Copy skill "${skill.name}" from ${from.name} to ${to.name}?`,
-                    { modal: true }, 'Copy');
-                if (ok !== 'Copy') { return; }
                 try {
                     copySkillTo(skill, to);
                     this.deps.refreshTrees();
@@ -247,14 +312,29 @@ export class CapabilitiesPanel {
             }
             case 'copyMemory': {
                 const to = this.agentById(String(msg.toAgentId));
-                const from = this.agentById(String(msg.fromAgentId));
-                if (!to || !from) { return; }
-                const file = from.memoryFiles.find(f => f.name.toLowerCase() === String(msg.name).toLowerCase());
+                if (!to) { return; }
+                const name = String(msg.name).toLowerCase();
+                const donors = this.deps.getAgents()
+                    .filter(a => a.id !== to.id)
+                    .map(a => ({ agent: a, file: a.memoryFiles.find(f => f.name.toLowerCase() === name) }))
+                    .filter((x): x is { agent: AgentInfo; file: NonNullable<typeof x.file> } => !!x.file)
+                    .map(x => {
+                        const recalls = memoryUsage(this.deps.index, x.agent.id, WINDOW_MS, x.agent.dir)
+                            .get(name) ?? 0;
+                        return {
+                            agent: x.agent,
+                            contentKey: String(hashString(safeReadFile(x.file.path) ?? '')),
+                            mtime: x.file.mtime,
+                            description: `changed ${relTime(x.file.mtime)} · ~${x.file.tokens} tok`
+                                + (recalls ? ` · ${recalls} recalls (30d)` : ''),
+                            detail: x.file.path
+                        };
+                    });
+                const from = await this.chooseDonor(`memory "${msg.name}"`, to, donors,
+                    ' (it is also indexed in the target\'s MEMORY.md)');
+                if (!from) { return; }
+                const file = from.memoryFiles.find(f => f.name.toLowerCase() === name);
                 if (!file) { return; }
-                const ok = await vscode.window.showInformationMessage(
-                    `Copy memory "${file.name}" from ${from.name} to ${to.name}? (it is also indexed in the target's MEMORY.md)`,
-                    { modal: true }, 'Copy');
-                if (ok !== 'Copy') { return; }
                 try {
                     copyMemoryFileTo(file.path, to.dir);
                     this.deps.refreshTrees();
@@ -266,18 +346,27 @@ export class CapabilitiesPanel {
             }
             case 'copyDuty': {
                 const to = this.agentById(String(msg.toAgentId));
-                const from = this.agentById(String(msg.fromAgentId));
-                if (!to || !from) { return; }
-                const duty = from.duties.find(d => d.title.toLowerCase() === String(msg.title).toLowerCase());
+                if (!to) { return; }
+                const title = String(msg.title).toLowerCase();
+                const donors = this.deps.getAgents()
+                    .filter(a => a.id !== to.id)
+                    .map(a => ({ agent: a, duty: a.duties.find(d => d.title.toLowerCase() === title) }))
+                    .filter((x): x is { agent: AgentInfo; duty: NonNullable<typeof x.duty> } => !!x.duty)
+                    .map(x => ({
+                        agent: x.agent,
+                        contentKey: `${x.duty.cadence}|${x.duty.watch ?? ''}|${x.duty.action ?? ''}`,
+                        description: `[${x.duty.cadence}${x.duty.paused ? ', paused' : ''}]`
+                            + (x.duty.watch ? ` watch: ${x.duty.watch.slice(0, 60)}` : ''),
+                        detail: x.agent.dutiesPath
+                    }));
+                const from = await this.chooseDonor(`duty "${msg.title}"`, to, donors);
+                if (!from) { return; }
+                const duty = from.duties.find(d => d.title.toLowerCase() === title);
                 if (!duty) { return; }
                 if (to.duties.some(d => d.title === duty.title)) {
                     void vscode.window.showWarningMessage(`Agent Farm: ${to.name} already has a duty titled "${duty.title}".`);
                     return;
                 }
-                const ok = await vscode.window.showInformationMessage(
-                    `Copy duty "${duty.title}" from ${from.name} to ${to.name}?`,
-                    { modal: true }, 'Copy');
-                if (ok !== 'Copy') { return; }
                 addDuty(to.dir, { ...duty });
                 if (to.claudeMdPath) {
                     const claudeMd = fs.readFileSync(to.claudeMdPath, 'utf8');
@@ -296,14 +385,23 @@ export class CapabilitiesPanel {
             }
             case 'copyMcp': {
                 const to = this.agentById(String(msg.toAgentId));
-                const from = this.agentById(String(msg.fromAgentId));
-                if (!to || !from) { return; }
+                if (!to) { return; }
+                const donors = this.deps.getAgents()
+                    .filter(a => a.id !== to.id)
+                    .map(a => ({ agent: a, server: readAgentMcpServers(a).find(s => s.name === msg.name) }))
+                    .filter((x): x is { agent: AgentInfo; server: NonNullable<typeof x.server> } => !!x.server)
+                    .map(x => ({
+                        agent: x.agent,
+                        contentKey: `${x.server.transport} ${x.server.commandOrUrl}`,
+                        mtime: safeStat(x.server.source)?.mtimeMs,
+                        description: `${x.server.transport} · ${x.server.commandOrUrl.slice(0, 60)}`,
+                        detail: x.server.source
+                    }));
+                const from = await this.chooseDonor(`MCP server "${msg.name}"`, to, donors,
+                    ` (into ${to.name}'s .mcp.json)`);
+                if (!from) { return; }
                 const server = readAgentMcpServers(from).find(s => s.name === msg.name);
                 if (!server) { return; }
-                const ok = await vscode.window.showInformationMessage(
-                    `Copy MCP server "${server.name}" from ${from.name} to ${to.name}'s .mcp.json?`,
-                    { modal: true }, 'Copy');
-                if (ok !== 'Copy') { return; }
                 if (copyMcpServerTo(server, to)) {
                     this.deps.refreshTrees();
                     this.refresh();

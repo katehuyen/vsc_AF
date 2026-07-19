@@ -55,7 +55,7 @@ function buildData(agent: AgentInfo, deps: AgentDetailDeps, tableN = AGENT_SESSI
     const WINDOW_MS = 30 * 24 * 3600 * 1000;
     const STALE_MS = 45 * 24 * 3600 * 1000;
     const now = Date.now();
-    const memUsage = memoryUsage(deps.index, agent.id, WINDOW_MS);
+    const memUsage = memoryUsage(deps.index, agent.id, WINDOW_MS, agent.dir);
     const indexed = agent.memoryIndexPath
         ? indexedMemoryNames(safeReadFile(agent.memoryIndexPath) ?? '')
         : undefined;

@@ -122,6 +122,7 @@ Filonun genel panosu. `Agent Farm: Open Dashboard` komutuyla veya durum çubuğu
 - **Sessions tablosu filtreleri (2.72.0):** sort kutusunun yanındaki **Filters** chip'i (ortak bileşen — Ajan Detay sayfası da kazanır) satırın kendi rakamları üzerinde panel açar: **başlık-içerir metin**, **ajan dropdown'ı** (dashboard varyantı), **Active now / Has errors / Main only** bayrakları, token, maliyet, ctx, dakika, tur, araç ve hata için **min–max aralıkları** ve **tarih aralığı**. Serbestçe birleşir, canlı `N/M sessions` sayacı, dürüst "No sessions match" satırı, tek tık Clear — hepsi sayfa başına hatırlanır.
 - **Herhangi bir pencerede Agent comparison (2.72.0):** karşılaştırma tablosunun sabit "all time"ı **dönem seçicisi** oldu — 1/2/6/12/16 saat, 1–5 gün, 1–4 hafta, 1/2/3/6/9 ay, 1/2/3 yıl, **All time** (varsayılan) ve **Custom range** (iki tarih, uçlar dahil). Son 24 saat içinde başlayan pencereler **saat hassasiyetinde kesindir** (48 saatlik mesaj-bazlı kayıttan toplanır); daha uzun pencereler günlük bucket'ları gün hassasiyetinde toplar — dipnot hangisinin geçerli olduğunu söyler. Pencere modunda ajan başına Sessions · Cost · Tokens · Msgs görünür; **sort kutusu + yön çevirme** her iki modda tabloyu istediğin kolona göre sıralar.
 - **Kaç satır göstereceğine sen karar verirsin (2.73.0, varsayılanlar 2.74.0):** Sessions tablolarında (Dashboard + Ajan Detay) sort kutusunun yanında **Show** kutusu — Dashboard varsayılanı **20**, Ajan Detay varsayılanı **50**; sayı yaz, tablo o kadar satır listeler; **All** chip'i (ya da kutuyu boş bırakmak) hepsini gösterir. Sayı değişince satır havuzu host tarafında yeniden kurulur — hangi kriteri seçersen seç gösterilen, o kriterin *gerçek* ilk N'idir, eski havuzun yeniden dilimlenmişi değil. **Agent comparison** tablosu aynı kontrolü kazandı: varsayılan 12 ajan, Show kutusu + All; liste kesilmişse dipnot dürüstçe `Showing N of M agents` der.
+- **Başlıkta Toolbox ve Turns (2.81.0):** Dashboard'un global kümesinde Missions ile ⌕ Search arasında iki kısayol daha — **Toolbox** (eklenti konsolu) ve **Turns** (çiftlik çapında tur tablosu, aşağıda).
 
 Dashboard, oturum kayıtları değiştikçe kendini otomatik günceller.
 
@@ -160,6 +161,16 @@ Bir oturumun ham JSONL kaydını okunur konuşmaya çevirir:
 - **⌂ \<ajan\> (2.60.0):** hemen yanındaki düğme oturumun **sahibi olan ajanı** adıyla gösterir ve tek tıkla o ajanın sayfasını açar — "bu kimin oturumuydu?" diye Dashboard'a dönmek gerekmez. Ajan köklerinin dışında yaşayan oturumların sahibi yoktur, düğme de görünmez.
 - Çok uzun oturumlarda son N mesaj gösterilir (`agentFarm.maxTranscriptMessages` ayarı, varsayılan 1500).
 - **▶ Replay** oturumu adım adım oynatır — ayrıntı için [Oturum Replay](#oturum-replay).
+
+### Turlar Sayfası (Turns) {#turlar-sayfasi}
+
+**Agent Farm: Open Turns** (ya da Dashboard başlığındaki **Turns** düğmesi) — bütün çiftlik **kullanıcı turu başına bir satır** olacak şekilde açılır (2.81.0). Sessions tablosu "hangi oturum?" sorusuna cevaptır; bu sayfa "hangi *tur*, hangi oturumda olursa olsun, çiftlik çapında?" sorusuna. Tur özetleri transkriptler indekslenirken toplanır — sayfa anında açılır, kayıtlar değiştikçe kendini günceller.
+
+- Başlıkta **ajan sayfalarındaki yedi düğmelik global küme birebir aynı sırayla** durur: Dashboard · Live Timeline · Missions · ⌕ Search · ⚙ Settings · Refresh · ? Guide.
+- **Kolonlar:** Ajan (● aktif noktası, `sub` rozeti, ⌨ terminale atlama) · **Turn** — turu açan komut, satırın kimliği (yazılan /komutlar komut adı olarak görünür) · **Session** — kısa, tam başlık tooltip'te · `n/N` tur numarası · model etiket(ler)i · ne zaman · süre (sonraki tur açılana kadar; son tur: oturumun sonuna kadar) · araç · hata · token · maliyet. Token ve maliyet o turun **gerçekten harcadığıdır** — subagent işi kendisini doğuran tura yazılır, rakamlar görüntüleyicinin tur tablosuyla birebir tutar.
+- **Sessions tablolarının kontrolleri, tura uyarlanmış:** Sort by (Recent · Cost · Tokens · Duration · Tools · Errors · Turn #), **Show** kutusu (varsayılan 50) + **All** chip'i, **Expand all / Collapse all / Single-open** ve **Filters** chip'i. Filtre panelinde **iki metin kutusu** var — biri **tur komutları**, biri **oturum başlıkları** üzerinde — artı ajan ve **model** dropdown'ları, Active now / Has errors / Main only bayrakları, min–max aralıkları (token, maliyet, dakika, araç, hata, tur #) ve tarih aralığı. Sıralama, filtreler ve satır sayısı hatırlanır.
+- **▸ turun gerçek içeriğini açar** — komut, asistan cevapları ve araç çağrıları (girdileriyle), hatalar kırmızı — transkriptten istek anında okunur. **Satıra tıklamak Oturum Görüntüleyici'yi tam o turdan açar.**
+- Köprü operasyonu (farm-köprü kuralı gereği): **`turns.list`** — aynı satırlar veri olarak (`agent?`, `limit?`).
 
 ### Insights Ağacı
 
@@ -580,9 +591,10 @@ Ajanların öğretilmiş yetenekleri — Agent Skills (SKILL.md klasörleri) —
 
 - **İki matris:** *Skills × Ajanlar* ve *MCP sunucuları × Ajanlar*. Satır = yetenek, sütun = ajan.
 - **Hücreler:** yeşil dolu rozet + sayı = son 30 günde kullanılmış (renk yoğunluğu = çağrı sıklığı); soluk ✓ = kurulu ama kullanılmamış; ⏻ = o ajanda kapalı; **＋** = kurulu değil — tıklayınca yeteneği başka bir ajandan **o ajana kopyalar** (onaylı).
+- **＋ kaynağını dürüstçe seçer (2.81.0):** kopyalamadan önce host **her ajandaki kopyayı karşılaştırır** (skill/hafıza için dosya hash'i, MCP/nöbet için tanım). Hepsi aynıysa → kaynağı adıyla söyleyen tek onay. Farklılarsa → **seçim listesi** — en yenisi başta, her satırda `newest` / `= same as newest` / `≠ differs from newest` etiketi, değişme tarihi, boyut ve recall sayısı — hangi varyantın yayılacağına **sen** karar verirsin, asla sessizce "ilk bulunan ajan" değil.
 - **Özet çipleri:** her matriste toplam / kullanılan (30g) / kullanılmayan sayısı. Hiçbir ajanın 30 günde kullanmadığı satır sarı ● ile işaretlenir — filo genelinde temizlenebilecek yetenekler.
 - Satır adına ya da dolu bir hücreye tıklamak ilgili SKILL.md / config dosyasını açar. Herhangi bir kopyalama/düzenleme sonrası matris kendini tazeler.
-- **Memory files matrisi (2.16.0):** aynı adlı hafıza dosyalarının hangi ajanlarda olduğu, hücrede 30 günlük recall sayısı; **turuncu halkalı hücre = kopya en yenisinden SAPMIŞ** (içerik farklı — birinde güncellenmiş, diğeri eski). ＋ ile dosyayı o ajana kopyala (hedef MEMORY.md'ye indeks satırıyla). Çok-ajanlı satırlar üstte — senkron/diverjans asıl orada önemli.
+- **Memory files matrisi (2.16.0):** aynı adlı hafıza dosyalarının hangi ajanlarda olduğu, hücrede 30 günlük recall sayısı; **turuncu halkalı hücre = kopya en yenisinden SAPMIŞ** (içerik farklı — birinde güncellenmiş, diğeri eski). ＋ ile dosyayı o ajana kopyala (hedef MEMORY.md'ye indeks satırıyla). Çok-ajanlı satırlar üstte — senkron/diverjans asıl orada önemli. **Recall sayıları klasör-sahibine göre (2.81.0):** hücre yalnız *o ajanın kendi* memory/ dosyasının okunmasını sayar — başka ajanın aynı adlı dosyasını (ya da `~/.claude` oto-hafızasını) okumak artık sayacı şişirmez; yeni kopyalanan dosya dürüstçe **0 recall** ile başlar.
 - **Duties matrisi (2.16.0):** nöbet başlıkları × ajanlar; hücrede kadans kısaltması (`turn/start/daily/weekly/manual`), ⏸ = duraklatılmış; tooltip watch/do gösterir; ＋ ile nöbeti o ajana kopyala (hedefte CLAUDE.md DUTIES.md referansı yoksa onayla eklenir).
 - **Tasks matrisi (2.17.0):** görev aileleri × ajanlar — son 30 günün en yoğun 30 ailesi ([Görev Sağlığı](#gorev-sagligi)). Hücrede tamamlanmış koşu sayısı: yeşil = hepsi başarılı, kırmızı = hepsi başarısız, turuncu halka = karışık (`2✓/1✗`); satır etiketi kaynağını söyler (`man/sch/trg/wf`), son koşuları hep başarısız aile kırmızı ● alır. Hücreye/satıra tıklamak tam görev tarihçesini açar.
 
@@ -1326,6 +1338,7 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 - **Copy Skill to Agent… / Move Skill Between Agent/User Scope… / Reveal Skill Folder** — skill filo yönetimi (sağ tık)
 - **Edit MCP Server… / Disable MCP Server / Enable MCP Server / Copy MCP Server to Agent…** — MCP yönetimi (sağ tık)
 - **Open Capability Matrix (Skills × MCP × Agents)** — filonun yetenek ızgarası, kullanım yoğunluğu ve tek tıkla kopyalama
+- **Open Turns (every turn across the farm)** — çiftlik çapında kullanıcı turu başına bir satır ([Turlar Sayfası](#turlar-sayfasi))
 - **Copy Webhook URL** — webhook tetiğinin gizli adresi
 - **Open Media Gallery** — üretilen medyalar (önizleme + Re-run/Vary)
 - **New Recipe Workflow…** — hazır fabrika şablonları

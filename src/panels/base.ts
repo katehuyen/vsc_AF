@@ -42,7 +42,8 @@ export function handleAfNav(to: unknown): void {
         search: 'agentfarm.searchTranscripts',
         settings: 'agentfarm.openFarmSettings',
         capabilities: 'agentfarm.openCapabilities',
-        toolbox: 'agentfarm.openToolbox'
+        toolbox: 'agentfarm.openToolbox',
+        turns: 'agentfarm.openTurns'
     };
     const cmd = commands[String(to)];
     if (cmd) { void vscode.commands.executeCommand(cmd); }

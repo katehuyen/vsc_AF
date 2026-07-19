@@ -27,6 +27,26 @@ export interface RecentMsg {
     cost: number;
 }
 
+/** Per-turn rollup collected at parse time. A turn opens at each non-sidechain,
+ *  non-meta user text message — the same rule the session viewer uses, so turn
+ *  numbers and totals here match the viewer's turn table exactly. */
+export interface SessionTurn {
+    /** 1-based turn number within its session. */
+    n: number;
+    /** Opening prompt snippet; typed /commands show as the command name. */
+    label: string;
+    /** Opening prompt time — other surfaces deep-link via openSession(file, ts). */
+    ts: number;
+    tokens: number;
+    cost: number;
+    /** Tool calls answered inside this turn (sidechain work bills to the open turn). */
+    tools: number;
+    /** Tool errors inside this turn. */
+    errors: number;
+    /** Model(s) that served this turn — can change mid-session. */
+    models: string[];
+}
+
 export interface SessionInfo {
     file: string;
     sessionId: string;
@@ -55,7 +75,10 @@ export interface SessionInfo {
     tools: Record<string, number>;
     /** Skill invocations (Skill tool calls + typed /commands) by skill/command name. */
     skillCalls: Record<string, number>;
-    /** Explicit tool touches of memory/<file>.md, by lowercase basename (recall signal). */
+    /** Explicit tool touches of memory/<file>.md, by normPath'd full path (recall
+     *  signal). Full paths so recalls attribute to the agent whose memory/ folder
+     *  was actually read — a session reading ANOTHER agent's memory (or the
+     *  ~/.claude auto-memory) must not inflate its own matrix cell. */
     memoryReads: Record<string, number>;
     errors: number;
     version?: string;
@@ -70,6 +93,8 @@ export interface SessionInfo {
     heat: number[];
     events: FeedEvent[];
     recentMsgs: RecentMsg[];
+    /** Per-turn rollup, in order — powers the Turns page and the turns.list bridge op. */
+    turns: SessionTurn[];
 }
 
 interface JsonlLine {
@@ -119,6 +144,14 @@ function titleFromPrompt(text: string): string {
     return truncate(t, 80);
 }
 
+/** Turn label from its opening prompt: typed /commands show as the command
+ *  name, everything else as a whitespace-collapsed snippet (viewer semantics). */
+function turnLabel(text: string): string {
+    const cmd = /<command-name>([^<]+)<\/command-name>/.exec(text);
+    if (cmd) { return cmd[1].trim(); }
+    return truncate(text, 90);
+}
+
 function textOfContent(content: unknown): string {
     if (typeof content === 'string') { return content; }
     if (Array.isArray(content)) {
@@ -165,12 +198,23 @@ export function parseSessionFile(
         daily: {},
         heat: new Array(168).fill(0),
         events: [],
-        recentMsgs: []
+        recentMsgs: [],
+        turns: []
     };
 
     const seenUsageKeys = new Set<string>();
     const models = new Set<string>();
     const now = Date.now();
+    // Per-turn model sets, parallel to info.turns (materialized as arrays at the end).
+    const turnModelSets: Set<string>[] = [];
+    const openTurn = (text: string, tsIn: number) => {
+        info.turns.push({
+            n: info.turns.length + 1, label: turnLabel(text), ts: tsIn,
+            tokens: 0, cost: 0, tools: 0, errors: 0, models: []
+        });
+        turnModelSets.push(new Set());
+    };
+    const curTurn = () => info.turns.length ? info.turns[info.turns.length - 1] : undefined;
 
     for (const lineText of raw.split('\n')) {
         if (!lineText.trim()) { continue; }
@@ -213,12 +257,17 @@ export function parseSessionFile(
                 if (m) { info.skillCalls[m[1]] = (info.skillCalls[m[1]] ?? 0) + 1; }
             };
             if (typeof content === 'string') {
-                if (!line.isMeta && !content.startsWith('<')) { countPrompt(content); }
-                else if (!line.isMeta) { countCommand(content); }
+                if (!line.isMeta) {
+                    if (!line.isSidechain) { openTurn(content, ts); }
+                    if (!content.startsWith('<')) { countPrompt(content); }
+                    else { countCommand(content); }
+                }
             } else if (Array.isArray(content)) {
                 for (const block of content as { type?: string; is_error?: boolean; text?: string }[]) {
                     if (block?.type === 'tool_result' && block.is_error) {
                         info.errors++;
+                        const t = curTurn();
+                        if (t) { t.errors++; }
                         if (ts) {
                             info.events.push({
                                 ts, kind: 'error', detail: 'tool error', sessionFile: file
@@ -226,6 +275,7 @@ export function parseSessionFile(
                         }
                     } else if (block?.type === 'text' && block.text && !line.isMeta) {
                         // Newer transcripts carry user prompts as text blocks in an array.
+                        if (!line.isSidechain) { openTurn(block.text, ts); }
                         if (!block.text.startsWith('<')) { countPrompt(block.text); }
                         else { countCommand(block.text); }
                     }
@@ -236,7 +286,10 @@ export function parseSessionFile(
 
         if (line.type === 'assistant' && line.message) {
             const msg = line.message;
-            if (msg.model && msg.model !== '<synthetic>') { models.add(msg.model); }
+            if (msg.model && msg.model !== '<synthetic>') {
+                models.add(msg.model);
+                if (turnModelSets.length) { turnModelSets[turnModelSets.length - 1].add(msg.model); }
+            }
 
             if (msg.usage) {
                 info.lastCtxTokens = (msg.usage.input_tokens ?? 0) +
@@ -263,6 +316,13 @@ export function parseSessionFile(
                     ? line.costUSD
                     : pricing.costFor(msg.model ?? '', u, ts);
                 info.cost += msgCost;
+                const t = curTurn();
+                if (t && (msgTokens || msgCost)) {
+                    // Usage bills to the open turn — including sidechain work,
+                    // matching the viewer's turn-total accounting.
+                    t.tokens += msgTokens;
+                    t.cost += msgCost;
+                }
 
                 if (ts) {
                     const day = dayKey(ts);
@@ -287,6 +347,10 @@ export function parseSessionFile(
                     if (block?.type === 'tool_use' && block.name) {
                         info.toolCalls++;
                         info.tools[block.name] = (info.tools[block.name] ?? 0) + 1;
+                        {
+                            const t = curTurn();
+                            if (t) { t.tools++; }
+                        }
                         if (block.name === 'Skill') {
                             const skillName = String(block.input?.['skill'] ?? '').trim();
                             if (skillName) {
@@ -299,10 +363,11 @@ export function parseSessionFile(
                         }
                         // Memory recall signal: any tool explicitly touching a
                         // file inside a memory/ folder (Read/Edit/Write/…).
-                        const memMatch = /[\\/]memory[\\/]([^\\/]+\.md)$/i.exec(filePath);
-                        if (memMatch) {
-                            const memName = memMatch[1].toLowerCase();
-                            info.memoryReads[memName] = (info.memoryReads[memName] ?? 0) + 1;
+                        // Keyed by full normalized path — memusage attributes it
+                        // to the agent whose folder it is, not to whoever read it.
+                        if (/[\\/]memory[\\/][^\\/]+\.md$/i.test(filePath)) {
+                            const key = normPath(filePath);
+                            info.memoryReads[key] = (info.memoryReads[key] ?? 0) + 1;
                         }
                         if (ts) {
                             info.events.push({
@@ -324,6 +389,7 @@ export function parseSessionFile(
         info.events = info.events.slice(-MAX_EVENTS_PER_FILE);
     }
     info.models = [...models];
+    info.turns.forEach((t, i) => { t.models = [...turnModelSets[i]]; });
     return info;
 }
 
