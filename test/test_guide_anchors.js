@@ -51,7 +51,7 @@ const CALLER_TOKENS = [
     'saglik-baglam-yuku', 'saglik-hafiza-indeksi', 'saglik-kopya-hafiza', 'saglik-bayat-hafiza',
     'saglik-buyuk-dosya', 'saglik-kimlik', 'saglik-hata-orani', 'hafiza-yonetimi',
     'nobet-gorevleri', 'antigravity-uyumlulugu', 'guardrail-denetcisi', 'tetik-karnesi',
-    'gorev-sagligi', 'nabiz-kontrolu', 'mcp-yonetimi', 'skill-yonetimi', 'sir-kasasi',
+    'gorev-sagligi', 'nabiz-kontrolu', 'mcp-yonetimi', 'skill-yonetimi', 'sir-kasasi', 'toolbox',
     'trend-uyarilari', 'maliyet-anomalisi', 'kalite-karnesi', 'talimat-onerileri', 'butce-uyarilari',
 ];
 

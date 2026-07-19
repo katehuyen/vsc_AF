@@ -586,6 +586,19 @@ Your agents' taught abilities — Agent Skills (SKILL.md folders) — show up in
 - **Duties matrix (2.16.0):** duty titles × agents; the cell shows a cadence abbreviation (`turn/start/daily/weekly/manual`), ⏸ = paused; the tooltip shows watch/do; ＋ copies the duty to that agent (if the target's CLAUDE.md has no DUTIES.md reference, it's added with approval).
 - **Tasks matrix (2.17.0):** task families × agents — the 30 busiest families of the last 30 days ([Task Health](#gorev-sagligi)). The cell shows the completed run count: green = all successful, red = all failed, orange ring = mixed (`2✓/1✗`); the row label says its source (`man/sch/trg/wf`), a family whose recent runs are all failed gets a red ●. Clicking a cell/row opens the full task history.
 
+## Toolbox {#toolbox}
+
+**Agent Farm: Open Toolbox** (the Toolbox sidebar section, or the wrench icon in its header) — one console for EVERYTHING that extends a claude installation (2.80.0): Skills, Subagents, Commands, MCP servers, Hooks, Plugins, Output Styles and the settings files themselves — at **both** levels: **user scope** (`~/.claude` plus the MCP servers in `~/.claude.json`, shared by every agent and session on the machine) and **agent scope** (each agent folder's `.claude/`). The Capability Matrix answers "who USES what"; the Toolbox answers "what is INSTALLED where, what exactly is it, and how do I manage it".
+
+- **Sidebar section:** kind → scope → item, with per-kind counts (`2 user · 3 agent`); clicking an item opens its defining file, the header's tools icon opens the full management page.
+- **Overview tab:** a count card per kind with a one-line explainer of what that kind *is* — a map of the machine's whole extension surface, and a place to learn the vocabulary.
+- **Skills / Subagents / Commands / Styles tabs:** name, scope badge, frontmatter description, argument hints, model/tools facts, 30-day real usage (skills); actions: open, reveal in Explorer, **remove with backup** (the item moves to a sibling `.afbak` folder — nothing is lost), and **scaffold new** at either scope (a `:` in a command name nests it into folders, e.g. `git:cleanup`).
+- **MCP tab — with a real probe:** every server at both scopes with transport and masked definition. **Probe** actually connects to the server (stdio or streamable HTTP — the same handshake claude performs) and lists the **actual tools it exposes**: name, description, parameters (required ones starred). Results are cached on disk until you re-probe. Per-agent disable/enable (`disabledMcpjsonServers`), removal with backup — user-scope removals edit `~/.claude.json` surgically and leave everything else byte-for-byte alone.
+- **Hooks tab:** every lifecycle hook from user + agent settings files — event, matcher, command — and removal of a single hook without disturbing the rest of the file.
+- **Plugins tab:** installed marketplaces with their catalogs (name, category, author, description, homepage); enable/disable writes the `enabledPlugins` key in user settings.json — the same key claude honors, applied on the next session start.
+- **Files tab:** the config files themselves at both scopes (settings.json, settings.local.json, `.claude.json`, keybindings.json, CLAUDE.md) with their top-level keys and sizes — one click to open. Curated, explained editing of the most useful keys stays in Farm Settings → Claude Code.
+- **Bridge ops:** `toolbox.list`, `toolbox.inspect`, `toolbox.mcptools` — agents can query the same inventory and trigger the same probe through the farm bridge (`farm.ops` lists the contracts).
+
 ## Secret Vault {#sir-kasasi}
 
 So API keys don't wander around config files in plaintext (0.9.0): the **Set Secret…** command puts the value into the **OS keychain** (VS Code SecretStorage). Vaulted secrets enter the work in two ways:

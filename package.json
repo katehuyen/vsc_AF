@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.79.0",
+  "version": "2.80.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -50,6 +50,11 @@
         {
           "id": "agentfarm.missions",
           "name": "Missions",
+          "icon": "media/agentfarm.svg"
+        },
+        {
+          "id": "agentfarm.toolbox",
+          "name": "Toolbox",
           "icon": "media/agentfarm.svg"
         },
         {
@@ -797,6 +802,12 @@
         "icon": "$(table)"
       },
       {
+        "command": "agentfarm.openToolbox",
+        "title": "Open Toolbox (Skills · Subagents · Commands · MCP · Hooks · Plugins)",
+        "category": "Agent Farm",
+        "icon": "$(tools)"
+      },
+      {
         "command": "agentfarm.copyWebhookUrl",
         "title": "Copy Webhook URL",
         "category": "Agent Farm"
@@ -1064,8 +1075,13 @@
           "group": "navigation@3"
         },
         {
+          "command": "agentfarm.openToolbox",
+          "when": "view == agentfarm.toolbox",
+          "group": "navigation@1"
+        },
+        {
           "command": "agentfarm.refresh",
-          "when": "view == agentfarm.agents || view == agentfarm.sessions || view == agentfarm.insights || view == agentfarm.feed",
+          "when": "view == agentfarm.agents || view == agentfarm.sessions || view == agentfarm.insights || view == agentfarm.feed || view == agentfarm.toolbox",
           "group": "navigation@3"
         },
         {

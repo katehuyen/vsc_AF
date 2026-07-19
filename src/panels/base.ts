@@ -40,7 +40,9 @@ export function handleAfNav(to: unknown): void {
         board: 'agentfarm.openBoard',
         missions: 'agentfarm.openMissions',
         search: 'agentfarm.searchTranscripts',
-        settings: 'agentfarm.openFarmSettings'
+        settings: 'agentfarm.openFarmSettings',
+        capabilities: 'agentfarm.openCapabilities',
+        toolbox: 'agentfarm.openToolbox'
     };
     const cmd = commands[String(to)];
     if (cmd) { void vscode.commands.executeCommand(cmd); }

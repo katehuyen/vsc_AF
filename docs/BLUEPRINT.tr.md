@@ -586,6 +586,19 @@ Ajanların öğretilmiş yetenekleri — Agent Skills (SKILL.md klasörleri) —
 - **Duties matrisi (2.16.0):** nöbet başlıkları × ajanlar; hücrede kadans kısaltması (`turn/start/daily/weekly/manual`), ⏸ = duraklatılmış; tooltip watch/do gösterir; ＋ ile nöbeti o ajana kopyala (hedefte CLAUDE.md DUTIES.md referansı yoksa onayla eklenir).
 - **Tasks matrisi (2.17.0):** görev aileleri × ajanlar — son 30 günün en yoğun 30 ailesi ([Görev Sağlığı](#gorev-sagligi)). Hücrede tamamlanmış koşu sayısı: yeşil = hepsi başarılı, kırmızı = hepsi başarısız, turuncu halka = karışık (`2✓/1✗`); satır etiketi kaynağını söyler (`man/sch/trg/wf`), son koşuları hep başarısız aile kırmızı ● alır. Hücreye/satıra tıklamak tam görev tarihçesini açar.
 
+## Toolbox — Eklenti Envanteri {#toolbox}
+
+**Agent Farm: Open Toolbox** (kenar çubuğundaki Toolbox bölmesi ya da başlığındaki anahtar ikonu) — bir claude kurulumunu genişleten HER ŞEYİN tek konsolu (2.80.0): Skills, Subagent'lar, Komutlar, MCP sunucuları, Hook'lar, Plugin'ler, Output Style'lar ve ayar dosyalarının kendisi — **iki düzeyde birden**: **kullanıcı kapsamı** (`~/.claude` + `~/.claude.json` içindeki MCP sunucuları; makinedeki her ajan ve seans paylaşır) ve **ajan kapsamı** (her ajan klasörünün `.claude/`'u). Yetenek Matrisi "kim neyi KULLANIYOR" sorusuna, Toolbox "nerede ne KURULU, tam olarak nedir, nasıl yönetirim" sorusuna cevap verir.
+
+- **Kenar çubuğu bölmesi:** tür → kapsam → öğe, tür başına sayaçlarla (`2 user · 3 agent`); öğeye tıklamak tanım dosyasını açar, başlıktaki ikon tam yönetim sayfasını açar.
+- **Overview sekmesi:** her tür için sayı kartı + o türün *ne olduğunu* anlatan tek satır — makinenin bütün eklenti yüzeyinin haritası, kavramları öğrenme yeri.
+- **Skills / Subagents / Commands / Styles sekmeleri:** ad, kapsam rozeti, frontmatter açıklaması, argüman ipuçları, model/araç bilgileri, 30 günlük gerçek kullanım (skill'ler); aksiyonlar: aç, Explorer'da göster, **yedekli sil** (öğe yandaki `.afbak` klasörüne taşınır — hiçbir şey kaybolmaz), **iki kapsamda da yeni oluştur** (komut adındaki `:` klasöre yuvalar, ör. `git:cleanup`).
+- **MCP sekmesi — gerçek problu:** iki kapsamdaki tüm sunucular, taşıma türü ve maskeli tanımıyla. **Probe** sunucuya gerçekten bağlanır (stdio ya da streamable HTTP — claude'un yaptığı el sıkışmanın aynısı) ve **fiilen sunduğu araçları** listeler: ad, açıklama, parametreler (zorunlular yıldızlı). Sonuç diske cache'lenir, sen yenileyene kadar durur. Ajan başına aç/kapat (`disabledMcpjsonServers`), yedekli silme — kullanıcı kapsamındaki silme `~/.claude.json`'ı cerrahi düzenler, kalan her şeyi baytı baytına korur.
+- **Hooks sekmesi:** kullanıcı + ajan ayar dosyalarındaki tüm yaşam-döngüsü hook'ları — olay, eşleştirici, komut — ve dosyanın kalanına dokunmadan tek hook silme.
+- **Plugins sekmesi:** kurulu marketplace'ler ve katalogları (ad, kategori, yazar, açıklama, ana sayfa); etkinleştir/kapat, kullanıcı settings.json'daki `enabledPlugins` anahtarını yazar — claude'un tanıdığı anahtarın aynısı, bir sonraki seans başlangıcında uygulanır.
+- **Files sekmesi:** iki kapsamdaki ayar dosyalarının kendisi (settings.json, settings.local.json, `.claude.json`, keybindings.json, CLAUDE.md), üst düzey anahtarları ve boyutlarıyla — tek tıkla aç. En işe yarar anahtarların açıklamalı düzenlemesi Farm Settings → Claude Code bölümünde durmaya devam eder.
+- **Bridge op'ları:** `toolbox.list`, `toolbox.inspect`, `toolbox.mcptools` — ajanlar aynı envanteri sorgulayabilir, aynı probu tetikleyebilir (`farm.ops` sözleşmeleri listeler).
+
 ## Sır Kasası
 
 API anahtarları ayar dosyalarında düz metin gezmesin (0.9.0): **Set Secret…** komutu değeri **işletim sistemi anahtarlığına** (VS Code SecretStorage) koyar. Kasadaki sırlar iki yoldan işe karışır:

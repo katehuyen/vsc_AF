@@ -2,6 +2,19 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 2.80.0 — Toolbox: every Claude extension, both scopes, one console (2026-07-19)
+
+Until now the extension managed skills and MCP servers per agent only — the USER level (`~/.claude` + `~/.claude.json`, shared by every agent) was invisible, and five other extension kinds weren't shown at all. The Toolbox closes that hole end to end.
+
+- **New "Toolbox" sidebar section** (between Missions and Recent Sessions): Skills, Subagents, Commands, MCP Servers, Hooks, Plugins, Output Styles and Settings Files as kind → scope → item, with per-kind counts. Click an item to open its defining file; the header icon opens the full page.
+- **Toolbox page** (`Agent Farm: Open Toolbox`): an Overview map with per-kind explainers, then a management tab per kind — search/filter, scope badges, frontmatter details, 30-day real usage (skills/MCP), open/reveal, **remove with backup** (`.afbak` sibling — nothing is lost), scaffold new skills/commands/subagents at either scope.
+- **MCP probe:** "how many tools does this server actually have, and what are they?" — the page connects to the server itself (stdio or streamable HTTP, the same initialize → tools/list handshake claude does) and shows every tool with description and parameters. Cached on disk; re-probe on demand. Plus per-agent disable/enable and surgical user-scope removal from `~/.claude.json`.
+- **Hooks management:** every lifecycle hook across user + agent settings files, removable one at a time without touching the rest of the file.
+- **Plugins:** marketplaces + catalogs with enable/disable via the `enabledPlugins` settings key claude honors.
+- **Bridge ops (per the farm-bridge rule):** `toolbox.list`, `toolbox.inspect`, `toolbox.mcptools` — agents can query the inventory and probe servers through the bridge.
+- Secrets in displayed definitions are always masked (`••••` + tail); probes read the raw config only to connect, never to display.
+- New suite: `test_toolbox.js` — 50 checks, including a REAL stdio probe against a fixture MCP server and a REAL streamable-HTTP probe (SSE reply + session header) against an in-process endpoint.
+
 ## 2.64.0 — Missions: the planner plans, you see everything (2026-07-17)
 
 The first real mission exposed five failures at once; this release fixes all of them at the root.

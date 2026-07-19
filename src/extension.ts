@@ -99,6 +99,10 @@ import { TriggerManager } from './core/triggers';
 import { dayKey, expandEnvPath, fmtTokens, fmtUSD, normPath, readFileTail, relTime, remapStorageIds } from './core/util';
 import { AgentDetailPanel } from './panels/agentDetail';
 import { CapabilitiesPanel } from './panels/capabilities';
+import { buildToolboxInventory, ToolboxInventory } from './core/toolbox';
+import { registerToolboxOps } from './core/toolboxBridge';
+import { ToolboxPanel } from './panels/toolboxPanel';
+import { ToolboxTreeProvider } from './views/toolboxTree';
 import { MemoryGraphPanel } from './panels/memoryGraph';
 import { DashboardPanel } from './panels/dashboard';
 import { GalleryPanel } from './panels/gallery';
@@ -882,12 +886,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // B11: read-only badge while another window holds the runner lease.
         () => taskRunner);
 
+    // Toolbox inventory is a filesystem sweep (user ~/.claude + every agent
+    // folder); memoize briefly so expanding tree nodes doesn't rescan per node.
+    let toolboxCache: { at: number; inv: ToolboxInventory } | undefined;
+    const toolboxInventory = () => {
+        if (!toolboxCache || Date.now() - toolboxCache.at > 5000) {
+            toolboxCache = { at: Date.now(), inv: buildToolboxInventory(agents) };
+        }
+        return toolboxCache.inv;
+    };
+    const toolboxTree = new ToolboxTreeProvider({ inventory: toolboxInventory });
+    const toolboxProbeCacheFile = path.join(context.globalStorageUri.fsPath, 'toolbox-mcp-cache.json');
+
     context.subscriptions.push(
         vscode.window.registerTreeDataProvider('agentfarm.agents', agentsTree),
         vscode.window.registerTreeDataProvider('agentfarm.sessions', sessionsTree),
         vscode.window.registerTreeDataProvider('agentfarm.insights', insightsTree),
         vscode.window.registerTreeDataProvider('agentfarm.feed', feedTree),
-        vscode.window.registerTreeDataProvider('agentfarm.tasks', tasksTree)
+        vscode.window.registerTreeDataProvider('agentfarm.tasks', tasksTree),
+        vscode.window.registerTreeDataProvider('agentfarm.toolbox', toolboxTree)
     );
 
     const refreshAll = () => {
@@ -897,7 +914,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         insightsTree.refresh();
         feedTree.refresh();
         tasksTree.refresh();
+        toolboxCache = undefined;
+        toolboxTree.refresh();
         CapabilitiesPanel.refreshIfOpen();
+        ToolboxPanel.refreshIfOpen();
     };
 
     index.onDidUpdate(() => {
@@ -2041,6 +2061,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         }
     ]);
+    // Toolbox ops (constitution §19.C): the extension inventory, one item in
+    // detail, and the live MCP tools/list probe — same code paths as the page.
+    registerToolboxOps(bridge, {
+        getAgents: () => agents,
+        cacheFile: toolboxProbeCacheFile
+    });
 
     const bridgeDir = path.join(context.globalStorageUri.fsPath, 'bridge');
     let bridgeBusy = false;
@@ -2980,6 +3006,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 index,
                 refreshTrees: refreshAll,
                 taskRecords: () => allTaskRecords()
+            });
+        }),
+
+        vscode.commands.registerCommand('agentfarm.openToolbox', () => {
+            ToolboxPanel.show({
+                extensionUri: context.extensionUri,
+                getAgents: () => agents,
+                index,
+                cacheFile: toolboxProbeCacheFile,
+                refreshTrees: refreshAll
             });
         }),
 
