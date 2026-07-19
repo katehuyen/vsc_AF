@@ -97,7 +97,30 @@ eq('turn 1 duration runs to the next turn (min)', rows[1].durationMin, 5);
 ok('last turn duration runs to the session end', rows[0].durationMin >= 1 && rows[0].durationMin <= 2);
 ok('active flag from the callback', rows[0].active === true);
 
-// ---------- 4) turns.list bridge op ----------
+// ---------- 4) turns.js page contract (source-level regression guards) ----------
+// The page script is a webview module (needs a DOM); these guard the exact
+// layout/behavior the user specified without standing up a full DOM stub.
+{
+    const js = fs.readFileSync(path.join(__dirname, '..', 'media', 'turns.js'), 'utf8');
+    const cols = /const COLUMNS = \[([^\]]+)\]/.exec(js);
+    ok('COLUMNS list present', !!cols);
+    const order = cols ? cols[1].split(',').map(s => s.trim().replace(/'/g, '')) : [];
+    ok('Tokens sits between Model and When',
+        order.indexOf('tokens') === order.indexOf('models') + 1 &&
+        order.indexOf('when') === order.indexOf('tokens') + 1);
+    ok('default row count is 200', /DATA\.tableN \|\| 200/.test(js));
+    ok('Show chips exist with Dialog default',
+        /ROLE_DEFAULT = \['user', 'assistant'\]/.test(js) &&
+        /new Set\(Array\.isArray\(saved\.roles\) \? saved\.roles : ROLE_DEFAULT\)/.test(js) &&
+        /data-preset="dialog"/.test(js) && /data-chip=/.test(js));
+    ok('Turn column kept ~70% and Session ~40% of the old widths',
+        /LABEL_CHARS = 77/.test(js) && /SESSION_CHARS = 15/.test(js));
+    // the TS default must agree with the webview fallback
+    const panel = fs.readFileSync(path.join(__dirname, '..', 'out', 'panels', 'turnsPanel.js'), 'utf8');
+    ok('TURNS_TABLE_N default is 200 host-side', /TURNS_TABLE_N = 200/.test(panel));
+}
+
+// ---------- 5) turns.list bridge op ----------
 (async () => {
     const reg = new BridgeRegistry();
     registerTurnsOps(reg, { sessions: () => [info], isActive: () => false });

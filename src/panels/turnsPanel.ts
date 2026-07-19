@@ -19,8 +19,9 @@ export interface TurnsDeps {
     getPricing(): PricingEngine;
 }
 
-/** Default row count of the Turns table (the Show box seeds this). */
-export const TURNS_TABLE_N = 50;
+/** Default row count of the Turns table (the Show box seeds this). A turn is a
+ *  much finer unit than a session, so the page opens deep by default. */
+export const TURNS_TABLE_N = 200;
 
 function buildData(deps: TurnsDeps): Record<string, unknown> {
     const now = Date.now();

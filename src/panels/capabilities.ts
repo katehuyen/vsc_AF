@@ -207,12 +207,15 @@ export class CapabilitiesPanel {
     }
 
     /**
-     * Copy-source resolution. The webview's ＋ never decides where a copy comes
-     * from — the host lists every agent that has the item, compares the actual
-     * contents, and:
-     *  - identical everywhere → one confirm naming the source (newest copy);
-     *  - copies differ → a QuickPick so the USER picks the source, each entry
-     *    labeled with freshness and whether it matches the newest copy.
+     * Copy-source resolution, identical for every kind (skill · MCP · memory ·
+     * duty). The webview's ＋ never decides where a copy comes from — the host
+     * lists every agent that has the item and:
+     *  - exactly one donor → a confirm naming it;
+     *  - more than one donor → ALWAYS a picker, so the choice is the user's
+     *    even when the copies happen to match. Entries are newest first and
+     *    labeled with how they compare (identical / differs) plus freshness,
+     *    so "which variant spreads" is visible before the click. The pick is
+     *    the confirmation — no second dialog on top of it.
      * Returns the chosen donor agent, or undefined when the user backs out.
      */
     private async chooseDonor(
@@ -223,23 +226,23 @@ export class CapabilitiesPanel {
     ): Promise<AgentInfo | undefined> {
         if (!donors.length) { return undefined; }
         donors = donors.slice().sort((a, b) => (b.mtime ?? 0) - (a.mtime ?? 0));
-        const allSame = donors.every(d => d.contentKey === donors[0].contentKey);
-        if (allSame) {
-            const src = donors[0];
-            const note = donors.length > 1 ? ` All ${donors.length} copies are identical.` : '';
+        if (donors.length === 1) {
             const ok = await vscode.window.showInformationMessage(
-                `Copy ${itemLabel} from ${src.agent.name} to ${to.name}?${note}${confirmSuffix}`,
+                `Copy ${itemLabel} from ${donors[0].agent.name} to ${to.name}?${confirmSuffix}`,
                 { modal: true }, 'Copy');
-            return ok === 'Copy' ? src.agent : undefined;
+            return ok === 'Copy' ? donors[0].agent : undefined;
         }
+        const allSame = donors.every(d => d.contentKey === donors[0].contentKey);
         const newestKey = donors[0].contentKey;
         // Freshness wording only when real mtimes exist — a duty has no file
         // date of its own, so there "newest" would be a made-up claim.
         const dated = donors[0].mtime !== undefined;
-        const cmpTag = (d: { contentKey: string }, i: number) =>
-            i === 0 ? (dated ? 'newest' : '')
-                : d.contentKey === newestKey ? (dated ? '= same as newest' : '= same as first')
-                : (dated ? '≠ differs from newest' : '≠ differs');
+        const cmpTag = (d: { contentKey: string }, i: number) => {
+            if (allSame) { return 'identical everywhere'; }
+            if (i === 0) { return dated ? 'newest' : 'first'; }
+            if (d.contentKey === newestKey) { return dated ? '= same as newest' : '= same as first'; }
+            return dated ? '≠ differs from newest' : '≠ differs';
+        };
         const pick = await vscode.window.showQuickPick(
             donors.map((d, i) => ({
                 label: d.agent.name,
@@ -248,14 +251,12 @@ export class CapabilitiesPanel {
                 donor: d.agent
             })),
             {
-                placeHolder: `Copies of ${itemLabel} differ between agents — pick the source to copy to ${to.name}`,
+                placeHolder: allSame
+                    ? `${donors.length} agents have ${itemLabel} and their copies are identical — pick the source for ${to.name}`
+                    : `Copies of ${itemLabel} DIFFER between agents — pick the source to copy to ${to.name}`,
                 ignoreFocusOut: true
             });
-        if (!pick) { return undefined; }
-        const ok = await vscode.window.showInformationMessage(
-            `Copy ${itemLabel} from ${pick.donor.name} to ${to.name}?${confirmSuffix}`,
-            { modal: true }, 'Copy');
-        return ok === 'Copy' ? pick.donor : undefined;
+        return pick?.donor;
     }
 
     private async onMessage(msg: { type: string; [k: string]: unknown }): Promise<void> {
@@ -352,13 +353,19 @@ export class CapabilitiesPanel {
                     .filter(a => a.id !== to.id)
                     .map(a => ({ agent: a, duty: a.duties.find(d => d.title.toLowerCase() === title) }))
                     .filter((x): x is { agent: AgentInfo; duty: NonNullable<typeof x.duty> } => !!x.duty)
-                    .map(x => ({
-                        agent: x.agent,
-                        contentKey: `${x.duty.cadence}|${x.duty.watch ?? ''}|${x.duty.action ?? ''}`,
-                        description: `[${x.duty.cadence}${x.duty.paused ? ', paused' : ''}]`
-                            + (x.duty.watch ? ` watch: ${x.duty.watch.slice(0, 60)}` : ''),
-                        detail: x.agent.dutiesPath
-                    }));
+                    .map(x => {
+                        // A duty carries no date of its own; its file's date is
+                        // shown but never used to claim one duty is "newer".
+                        const fileTs = x.agent.dutiesPath ? safeStat(x.agent.dutiesPath)?.mtimeMs : undefined;
+                        return {
+                            agent: x.agent,
+                            contentKey: `${x.duty.cadence}|${x.duty.watch ?? ''}|${x.duty.action ?? ''}`,
+                            description: `[${x.duty.cadence}${x.duty.paused ? ', paused' : ''}]`
+                                + (fileTs ? ` DUTIES.md changed ${relTime(fileTs)}` : '')
+                                + (x.duty.watch ? ` · watch: ${x.duty.watch.slice(0, 50)}` : ''),
+                            detail: x.agent.dutiesPath
+                        };
+                    });
                 const from = await this.chooseDonor(`duty "${msg.title}"`, to, donors);
                 if (!from) { return; }
                 const duty = from.duties.find(d => d.title.toLowerCase() === title);

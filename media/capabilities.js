@@ -28,7 +28,7 @@
             }
             const tip = donors.length === 1
                 ? `not installed — copy from ${donors[0].name}`
-                : `not installed — copy here (${donors.length} agents have it; if their copies differ, you pick the source)`;
+                : `not installed — copy here (${donors.length} agents have it; you pick which one it is copied from)`;
             return `<td class="c absent"><button class="copyhere" title="${C.esc(tip)}" ` +
                 `data-kind="${kind}" data-name="${C.esc(row.name)}" data-scope="${C.esc(row.scope || '')}" ` +
                 `data-to="${C.esc(agent.id)}">＋</button></td>`;
@@ -62,7 +62,7 @@
             if (!donors.length) { return '<td class="c absent"><span title="no duty">—</span></td>'; }
             const tip = donors.length === 1
                 ? `no such duty — copy from ${donors[0].name}`
-                : `no such duty — copy here (${donors.length} agents have it; if their definitions differ, you pick the source)`;
+                : `no such duty — copy here (${donors.length} agents have it; you pick which one it is copied from)`;
             return `<td class="c absent"><button class="copyhere" title="${C.esc(tip)}" ` +
                 `data-kind="duty" data-name="${C.esc(row.title)}" data-to="${C.esc(agent.id)}">＋</button></td>`;
         }
@@ -214,7 +214,7 @@
             ${matrix(DATA.memory || [], 'memory', 'Memory files', 'Create one from the Agents tree: Memory → +.')}
             ${dutyMatrix(DATA.duties || [])}
             ${taskMatrix(DATA.tasks || [])}
-            <p class="footnote">Counts come from real session transcripts: Skill tool calls, typed /commands, mcp__server__tool calls and explicit memory-file reads — memory recalls only count reads of the agent's OWN memory/ folder, so a fresh copy always starts at zero. Memory cells with an orange ring have DIVERGED from the newest copy. ＋ copying compares every agent's copy first: identical everywhere → one confirm naming the source; differing → you pick the source from a list (newest first, differences marked). It installs into the target agent (skills/.mcp.json/memory+index/DUTIES.md); new claude sessions pick it up. Task rows group repeated runs of the same job (retry/date noise collapsed): green = all succeeded, red = all failed, orange ring = mixed — click for the full task history.</p>
+            <p class="footnote">Counts come from real session transcripts: Skill tool calls, typed /commands, mcp__server__tool calls and explicit memory-file reads — memory recalls only count reads of the agent's OWN memory/ folder, so a fresh copy always starts at zero. Memory cells with an orange ring have DIVERGED from the newest copy. ＋ copying never picks a source on its own: with one donor it asks for confirmation naming it, with several it always opens a picker (newest first, each entry marked identical / differs) — the same rule for skills, MCP servers, memory files and duties. It installs into the target agent (skills/.mcp.json/memory+index/DUTIES.md); new claude sessions pick it up. Task rows group repeated runs of the same job (retry/date noise collapsed): green = all succeeded, red = all failed, orange ring = mixed — click for the full task history.</p>
         `;
 
         window.AFHeader.wire(vscode);

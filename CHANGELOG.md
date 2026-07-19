@@ -2,6 +2,11 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 2.81.1 — Turns page polish + copy-source rule everywhere (2026-07-19)
+
+- **Turns page:** the row-count default is now **200** (a turn is far finer than a session); the **Tokens** column moved to sit right after **Model**; the **Turn** column is wider and the **Session** column narrower (the prompt is the row's identity, the session is context — both ellipsize with the full text in the tooltip); and a **Show row — All · Dialog · User · Assistant · Tool calls · Results · Errors** — now decides what an unfolded turn shows of its content, exactly like the Session Viewer, **defaulting to Dialog**. The selection is remembered.
+- **Capability Matrix — the copy-source rule now covers duties too, and always asks when there is a choice:** ＋ on any kind (skill · MCP · memory · **duty**) with more than one donor **always opens the picker**, even when the copies are identical, so the source is the user's choice; a single donor still just confirms. Duties previously fell through to the old silent "first agent found" path.
+
 ## 2.81.0 — Turns page + honest matrix copies (2026-07-19)
 
 - **New "Turns" page** (`Agent Farm: Open Turns`, or the new **Toolbox · Turns** buttons in the Dashboard header between Missions and ⌕ Search): the whole farm unrolled to **one row per user turn**. Columns: agent (● / sub / ⌨), the turn's opening prompt (the row's identity), the session it belongs to (short, full title in the tooltip), `n/N`, model tags, when, duration-to-next-turn, tools, errors, tokens, cost — per-turn figures match the viewer's turn table exactly (subagent work bills to the turn that spawned it). Controls are the Sessions tables' set adapted to turns: sort box, Show/All, Expand/Collapse/Single-open, and a filter panel with **two text boxes** (turn contains / session contains) plus agent & model dropdowns, flags, min–max ranges and dates. **▸ folds a turn open into its actual content** (prompt, replies, tool calls); clicking a row opens the transcript at that turn. The page header carries the exact same seven-button global cluster as the agent pages. Turn rollups are collected during transcript indexing — the page opens instantly and live-refreshes. Bridge op per §19.C: `turns.list`.

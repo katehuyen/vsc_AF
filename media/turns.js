@@ -3,7 +3,9 @@
 // accordion, single-open, filter panel), adapted to turns: the turn's opening
 // prompt is the row's identity, the session it belongs to is a short column
 // with the full title in the tooltip, and the filter panel carries TWO text
-// boxes — one over turn prompts, one over session titles.
+// boxes — one over turn prompts, one over session titles. An unfolded turn
+// shows its real messages, filtered by the same Show chips the session viewer
+// uses (Dialog by default) — what you want to read is your choice, not ours.
 (function () {
     'use strict';
     const vscode = acquireVsCodeApi();
@@ -34,6 +36,27 @@
         from: '', to: '', ranges: {}
     });
 
+    // Content filter of an unfolded turn — the session viewer's chip set, same
+    // semantics: empty selection = show everything; "Errors" matches the flag,
+    // not a role. Dialog (you + assistant) is the default: the conversation is
+    // what you came to read, tool traffic is one chip away.
+    const ROLE_CHIPS = [
+        { id: 'user', label: 'User', match: m => m.role === 'user' },
+        { id: 'assistant', label: 'Assistant', match: m => m.role === 'assistant' },
+        { id: 'tool', label: 'Tool calls', match: m => m.role === 'tool' },
+        { id: 'toolResult', label: 'Results', match: m => m.role === 'toolResult' },
+        { id: 'error', label: 'Errors', match: m => m.isError }
+    ];
+    const ROLE_DEFAULT = ['user', 'assistant'];
+
+    // Visible column order — Tokens sits right after Model, next to the figures
+    // that explain it. HEAD/CELL are keyed so the order lives in ONE list.
+    const COLUMNS = ['agent', 'label', 'session', 'n', 'models', 'tokens', 'when', 'duration', 'tools', 'errors', 'cost'];
+    // How much of a long text a cell shows before it is cut (the full string is
+    // always in the cell's tooltip). The CSS caps match these.
+    const LABEL_CHARS = 77;
+    const SESSION_CHARS = 15;
+
     const STYLE = `<style>
         .chiprow { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:8px 0; }
         .chip { font-size:11px; padding:2px 10px; border-radius:10px; cursor:pointer;
@@ -60,7 +83,11 @@
         tr.turnrow.open > td { background:color-mix(in srgb, var(--vscode-textLink-foreground) 18%, transparent); }
         tr.turnrow.open > td:first-child { box-shadow:inset 3px 0 0 var(--vscode-textLink-foreground); }
         tr.turnbody > td { padding-left:12px; }
-        .sesscol { opacity:.8; }
+        /* The turn prompt is the row's identity, so it keeps the widest cell;
+           the session is context, so it stays narrow — both cut with an
+           ellipsis and carry the full text in their tooltip. */
+        .turncol { max-width:77ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .sesscol { max-width:15ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; opacity:.8; }
         .tag { font-size:10px; padding:1px 6px; margin-right:4px; border-radius:8px; white-space:nowrap;
             background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); opacity:.85; }
         .badge { font-size:10px; padding:1px 6px; border-radius:8px;
@@ -89,12 +116,17 @@
     // ---- persisted state ----
     const persisted = (typeof vscode.getState === 'function' && vscode.getState()) || {};
     const saved = persisted.afTurns || {};
-    const DEFAULT_N = DATA.tableN || 50;
+    const DEFAULT_N = DATA.tableN || 200;
     let sort = SORTS.some(s => s.id === saved.sort) ? saved.sort : 'recent';
     let single = saved.single !== undefined ? !!saved.single : true;
     let filters = Object.assign(FDEF(), saved.filters || {});
     let filtersOpen = !!saved.filtersOpen;
-    let tableN = typeof saved.tableN === 'number' && saved.tableN >= 0 ? saved.tableN : DEFAULT_N;
+    // A remembered row count is honored only while the built-in default is
+    // unchanged — when a release moves the default, a stale saved value must
+    // not silently keep the old one.
+    let tableN = typeof saved.tableN === 'number' && saved.tableN >= 0 && saved.defaultN === DEFAULT_N
+        ? saved.tableN : DEFAULT_N;
+    let roleSel = new Set(Array.isArray(saved.roles) ? saved.roles : ROLE_DEFAULT);
     const open = new Set();
     const detailCache = {}; // key(file#n) -> { msgs|null } (null = in flight)
     let shown = [];
@@ -103,7 +135,7 @@
         if (typeof vscode.setState !== 'function') { return; }
         const st = (typeof vscode.getState === 'function' && vscode.getState()) || {};
         vscode.setState(Object.assign({}, st, {
-            afTurns: { sort, single, filters, filtersOpen, tableN }
+            afTurns: { sort, single, filters, filtersOpen, tableN, defaultN: DEFAULT_N, roles: [...roleSel] }
         }));
     }
 
@@ -212,11 +244,23 @@
 
     const ROLE_LABEL = { user: 'user', assistant: 'claude', tool: 'tool', toolResult: 'result', system: '' };
 
+    /** Show-chip test. The 'system' role is our own "… N more messages" note —
+     *  it is a statement about the data, so no filter may hide it. */
+    function matchesRole(m) {
+        if (m.role === 'system') { return true; }
+        if (!roleSel.size) { return true; }
+        return ROLE_CHIPS.some(c => roleSel.has(c.id) && c.match(m));
+    }
+
     function turnBodyHtml(r) {
         const c = detailCache[key(r)];
         if (!c || c.msgs === null) { return '<span class="muted small">Loading turn content…</span>'; }
         if (!c.msgs.length) { return '<span class="muted small">No content recorded for this turn.</span>'; }
-        return `<div class="turnbox">${c.msgs.map(m => {
+        const msgs = c.msgs.filter(matchesRole);
+        if (!msgs.length) {
+            return `<span class="muted small">This turn has ${c.msgs.length} message(s), none of them matching the Show filter above.</span>`;
+        }
+        return `<div class="turnbox">${msgs.map(m => {
             const cls = (m.isError ? 'err ' : '') + (m.role === 'tool' ? 'tool' : m.role === 'assistant' ? 'assistant' : '');
             const body = m.role === 'tool'
                 ? `${C.esc(m.tool)} ${C.esc((m.input || '').replace(/\s+/g, ' ').slice(0, 160))}`
@@ -230,6 +274,49 @@
     const subBadge = r => r.sidechain ? ' <span class="badge">sub</span>' : '';
     const termBtn = r =>
         ` <button class="fold" data-term="${C.esc(r.agentName || '')}" data-sid="${C.esc(r.sessionId || '')}" data-cwd="${C.esc(r.cwd || '')}" title="Jump to this session's terminal window (if one is open)">⌨</button>`;
+    const cut = (s, n) => (s || '').length > n ? s.slice(0, n - 1) + '…' : (s || '—');
+
+    const HEAD = {
+        agent: '<th>Agent</th>',
+        label: '<th>Turn</th>',
+        session: '<th title="The session this turn belongs to — hover a cell for the full title">Session</th>',
+        n: '<th class="num" title="turn number / the session\'s turn count">#</th>',
+        models: '<th>Model</th>',
+        tokens: '<th class="num">Tokens</th>',
+        when: '<th class="num">When</th>',
+        duration: '<th class="num" title="Until the next turn opened (last turn: until the session\'s end)">Duration</th>',
+        tools: '<th class="num">Tools</th>',
+        errors: '<th class="num">Err</th>',
+        cost: '<th class="num">Cost</th>'
+    };
+    const CELL = {
+        agent: r => `<td>${dot(r)}${C.esc(r.agent)}${subBadge(r)}${termBtn(r)}</td>`,
+        label: r => `<td class="turncol" title="${C.esc(r.label || '')}">${C.esc(cut(r.label, LABEL_CHARS))}</td>`,
+        session: r => `<td class="sesscol" title="${C.esc(r.session || '')}">${C.esc(cut(r.session, SESSION_CHARS))}</td>`,
+        n: r => `<td class="num" title="turn ${r.n} of ${r.of} in this session">${r.n}/${r.of}</td>`,
+        models: r => `<td>${(r.models || []).map(m =>
+            `<span class="tag">${C.esc(m.replace(/^claude-/, ''))}</span>`).join('') || '—'}</td>`,
+        tokens: r => `<td class="num">${r.tokens ? C.fmtTok(r.tokens) : '—'}</td>`,
+        when: r => `<td class="num">${relTime(r.ts)}</td>`,
+        duration: r => `<td class="num">${r.durationMin || 0}m</td>`,
+        tools: r => `<td class="num">${r.tools || 0}</td>`,
+        errors: r => `<td class="num">${r.errors || ''}</td>`,
+        cost: r => `<td class="num"><strong>${r.cost ? C.fmtUSD(r.cost) : '—'}</strong></td>`
+    };
+
+    /** Show chips for the content of unfolded turns (the session viewer's set). */
+    function contentChipsHtml() {
+        const all = !roleSel.size;
+        const dialog = roleSel.size === 2 && roleSel.has('user') && roleSel.has('assistant');
+        return `<div class="chiprow">
+            <span class="muted small" title="What an unfolded turn (▸) shows of its content">Show:</span>
+            <button class="chip${all ? ' on' : ''}" data-preset="all" title="Show every message of an unfolded turn">All</button>
+            <button class="chip${dialog ? ' on' : ''}" data-preset="dialog" title="Only you + claude — tool traffic hidden (the default)">Dialog</button>
+            ${ROLE_CHIPS.map(c =>
+                `<button class="chip${roleSel.has(c.id) ? ' on' : ''}" data-chip="${c.id}">${c.label}</button>`).join('')}
+            <span class="muted small">— applies to every turn you unfold</span>
+        </div>`;
+    }
 
     function tableHtml() {
         const rows = DATA.rows || [];
@@ -243,44 +330,31 @@
         const rowsHtml = shown.map(r => {
             const k = key(r);
             const o = open.has(k);
-            const modelTags = (r.models || []).map(m =>
-                `<span class="tag">${C.esc(m.replace(/^claude-/, ''))}</span>`).join('') || '—';
-            const sessShort = (r.session || '').length > 38 ? r.session.slice(0, 37) + '…' : (r.session || '—');
-            const labelShort = (r.label || '').length > 110 ? r.label.slice(0, 109) + '…' : (r.label || '—');
             return `<tr class="click turnrow${o ? ' open' : ''}" data-turn="${C.esc(r.file)}" data-ts="${r.ts || 0}">
                 <td class="foldcell"><button class="fold" data-fold="${C.esc(k)}" title="${o ? 'Hide' : 'Show'} this turn's content">${o ? '▾' : '▸'}</button></td>
-                <td>${dot(r)}${C.esc(r.agent)}${subBadge(r)}${termBtn(r)}</td>
-                <td title="${C.esc(r.label || '')}">${C.esc(labelShort)}</td>
-                <td class="sesscol" title="${C.esc(r.session || '')}">${C.esc(sessShort)}</td>
-                <td class="num" title="turn ${r.n} of ${r.of} in this session">${r.n}/${r.of}</td>
-                <td>${modelTags}</td>
-                <td class="num">${relTime(r.ts)}</td>
-                <td class="num">${r.durationMin || 0}m</td>
-                <td class="num">${r.tools || 0}</td>
-                <td class="num">${r.errors || ''}</td>
-                <td class="num">${r.tokens ? C.fmtTok(r.tokens) : '—'}</td>
-                <td class="num"><strong>${r.cost ? C.fmtUSD(r.cost) : '—'}</strong></td>
-            </tr>` + (o ? `<tr class="turnbody"><td></td><td colspan="11">${turnBodyHtml(r)}</td></tr>` : '');
+                ${COLUMNS.map(c => CELL[c](r)).join('')}
+            </tr>` + (o ? `<tr class="turnbody"><td></td><td colspan="${COLUMNS.length}">${turnBodyHtml(r)}</td></tr>` : '');
         }).join('');
 
         return `
         <div class="chiprow">
             <span class="muted small">Sort by:</span>
             <select class="af-sort">${SORTS.map(s => `<option value="${s.id}"${s.id === sort ? ' selected' : ''}>${s.label}</option>`).join('')}</select>
-            <span class="muted small">Show:</span>
+            <span class="muted small">List:</span>
             <input type="number" class="af-count" min="1" step="1" value="${tableN > 0 ? tableN : ''}" placeholder="all" title="How many turns to list after sorting — empty means all">
             <button class="chip af-allrows${tableN === 0 ? ' on' : ''}" title="List every turn (click again to go back to ${DEFAULT_N})">All</button>
-            <span class="muted small">Content:</span>
-            <button class="chip af-expand" title="Show every listed turn's content (reads each transcript once)">Expand all</button>
-            <button class="chip af-collapse" title="Hide all turn contents">Collapse all</button>
-            <button class="chip af-single${single ? ' on' : ''}" title="Only one turn's content open at a time: unfolding a turn folds the previous one">Single-open</button>
+            <span class="muted small">Turns:</span>
+            <button class="chip af-expand" title="Unfold every listed turn (reads each transcript once)">Expand all</button>
+            <button class="chip af-collapse" title="Fold all turns closed">Collapse all</button>
+            <button class="chip af-single${single ? ' on' : ''}" title="Only one turn open at a time: unfolding a turn folds the previous one">Single-open</button>
             <button class="chip af-filter${nf ? ' on' : ''}" title="Filter the turns by prompt text, session, agent, model, flags, ranges and dates">Filters${nf ? ` (${nf})` : ''}</button>
             <span class="muted small">${nf ? `${pool.length}/${rows.length} turns` : `${rows.length} turns — ▸ shows a turn's content · row click opens the transcript at that turn · ● = active now`}</span>
         </div>
+        ${contentChipsHtml()}
         ${filterPanelHtml()}
         <div class="tablewrap"><table>
-            <tr><th></th><th>Agent</th><th>Turn</th><th title="The session this turn belongs to — hover a cell for the full title">Session</th><th class="num" title="turn number / session's turn count">#</th><th>Model</th><th class="num">When</th><th class="num" title="Until the next turn opened (last turn: until the session's end)">Duration</th><th class="num">Tools</th><th class="num">Err</th><th class="num">Tokens</th><th class="num">Cost</th></tr>
-            ${rowsHtml || `<tr><td colspan="12" class="muted">${nf ? 'No turns match the filters.' : 'No turns yet.'}</td></tr>`}
+            <tr><th></th>${COLUMNS.map(c => HEAD[c]).join('')}</tr>
+            ${rowsHtml || `<tr><td colspan="${COLUMNS.length + 1}" class="muted">${nf ? 'No turns match the filters.' : 'No turns yet.'}</td></tr>`}
         </table></div>`;
     }
 
@@ -337,6 +411,19 @@
         });
         root.querySelector('.af-allrows').addEventListener('click', () =>
             setCount(tableN === 0 ? DEFAULT_N : 0));
+        // Content Show chips — the session viewer's role filter, applied to every
+        // unfolded turn. Presets set the whole selection; individual chips toggle.
+        root.querySelectorAll('.chip[data-preset],.chip[data-chip]').forEach(chip =>
+            chip.addEventListener('click', () => {
+                if (chip.dataset.preset === 'all') { roleSel = new Set(); }
+                else if (chip.dataset.preset === 'dialog') { roleSel = new Set(ROLE_DEFAULT); }
+                else {
+                    const id = chip.dataset.chip;
+                    if (roleSel.has(id)) { roleSel.delete(id); } else { roleSel.add(id); }
+                }
+                saveState();
+                render();
+            }));
         root.querySelector('.af-filter').addEventListener('click', () => {
             filtersOpen = !filtersOpen;
             saveState();
