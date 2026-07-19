@@ -3030,7 +3030,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             TurnsPanel.show({
                 extensionUri: context.extensionUri,
                 index,
-                getPricing: () => pricing
+                getPricing: () => pricing,
+                lastExportDir: () => context.globalState.get<string>('agentfarm.lastExportDir'),
+                setLastExportDir: (dir: string) => { void context.globalState.update('agentfarm.lastExportDir', dir); }
             });
         }),
 

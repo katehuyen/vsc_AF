@@ -232,28 +232,39 @@ export class CapabilitiesPanel {
                 { modal: true }, 'Copy');
             return ok === 'Copy' ? donors[0].agent : undefined;
         }
-        const allSame = donors.every(d => d.contentKey === donors[0].contentKey);
-        const newestKey = donors[0].contentKey;
-        // Freshness wording only when real mtimes exist — a duty has no file
-        // date of its own, so there "newest" would be a made-up claim.
+        // Group donors by identical content so the picker says WHICH copies match
+        // and which stand apart — "three agents share variant A, one has B" — not
+        // just a flat newest/differs. Variants are lettered by size then recency
+        // (A = the largest / newest group), so the common version is A.
+        const groups = new Map<string, typeof donors>();
+        for (const d of donors) {
+            (groups.get(d.contentKey) ?? groups.set(d.contentKey, []).get(d.contentKey)!).push(d);
+        }
+        const newestOf = (g: typeof donors) => Math.max(...g.map(x => x.mtime ?? 0));
+        const ordered = [...groups.values()].sort((a, b) => b.length - a.length || newestOf(b) - newestOf(a));
+        const variant = new Map<string, string>();
+        ordered.forEach((g, i) => variant.set(g[0].contentKey, String.fromCharCode(65 + i)));
+        const allSame = groups.size === 1;
+        // Freshness wording only when real mtimes exist — a duty carries no date
+        // of its own, so there a "variant" letter is shown without a newest tag.
         const dated = donors[0].mtime !== undefined;
-        const cmpTag = (d: { contentKey: string }, i: number) => {
-            if (allSame) { return 'identical everywhere'; }
-            if (i === 0) { return dated ? 'newest' : 'first'; }
-            if (d.contentKey === newestKey) { return dated ? '= same as newest' : '= same as first'; }
-            return dated ? '≠ differs from newest' : '≠ differs';
+        const variantTag = (d: { contentKey: string }) => {
+            if (allSame) { return `identical on all ${donors.length}`; }
+            const v = variant.get(d.contentKey)!;
+            const share = groups.get(d.contentKey)!.length;
+            return `variant ${v}` + (share > 1 ? ` (shared by ${share})` : ' (unique)');
         };
         const pick = await vscode.window.showQuickPick(
-            donors.map((d, i) => ({
+            donors.map(d => ({
                 label: d.agent.name,
-                description: [cmpTag(d, i), d.description].filter(Boolean).join(' · '),
+                description: [variantTag(d), d.description].filter(Boolean).join(' · '),
                 detail: d.detail,
                 donor: d.agent
             })),
             {
                 placeHolder: allSame
-                    ? `${donors.length} agents have ${itemLabel} and their copies are identical — pick the source for ${to.name}`
-                    : `Copies of ${itemLabel} DIFFER between agents — pick the source to copy to ${to.name}`,
+                    ? `${donors.length} agents have ${itemLabel}, all identical — pick the source for ${to.name}`
+                    : `${itemLabel}: ${groups.size} different versions across ${donors.length} agents${dated ? ' (A = most common/newest)' : ' (A = most common)'} — pick the source for ${to.name}`,
                 ignoreFocusOut: true
             });
         return pick?.donor;

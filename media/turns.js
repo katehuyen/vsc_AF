@@ -365,6 +365,7 @@
                 page: 'turns',
                 title: 'Turns',
                 sub: `every user turn across the farm, sessions unrolled · generated ${new Date(DATA.generatedAt).toLocaleString()}`,
+                actions: `<button class="secondary" id="exportmd" title="Export the listed turns to Markdown — asks whether to save the current view (folding/Show applied) or everything">⬇ Export MD</button>`,
                 guide: 'turlar-sayfasi'
             })}
             <div id="turnsblock">${tableHtml()}</div>
@@ -372,6 +373,19 @@
         `;
         window.AFHeader.wire(vscode);
         wire(document.getElementById('turnsblock'));
+        // Export MD lives in the header (outside #turnsblock). It sends the exact
+        // turns currently listed, which are unfolded, and the content Show
+        // selection; the host asks the view/everything + folded-titles questions
+        // and builds the Markdown.
+        const ex = document.getElementById('exportmd');
+        if (ex) {
+            ex.addEventListener('click', () => vscode.postMessage({
+                type: 'exportChoose',
+                shown: shown.map(r => ({ file: r.file, n: r.n })),
+                open: shown.filter(r => open.has(key(r))).map(r => key(r)),
+                roles: [...roleSel]
+            }));
+        }
     }
 
     function wire(root) {

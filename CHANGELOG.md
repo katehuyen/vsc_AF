@@ -2,6 +2,12 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 2.81.2 — Export MD choices + variant-grouped copy picker (2026-07-19)
+
+- **Export MD now asks what to include — on the Session Viewer AND the new Turns page.** Clicking ⬇ Export MD opens a prompt: **Current view** (the on-screen state applied — filters, the content Show selection, and crucially the **fold/collapse accordion**, which the export used to ignore) or **Everything** (the full content regardless of the view). When you pick *Current view* and something is folded, a second question decides whether folded turns are **omitted** (default) or kept as **titles only**. The Turns page's Export writes one `## agent · turn n/N — prompt` section per listed turn, with session/model/tokens/cost, and the open turns' content filtered by the Show row.
+- **Capability Matrix copy picker groups by content.** When several agents have an item, the picker now buckets identical copies into lettered **variants** (`A` = most common / newest): a row reads `variant A (shared by 3)` vs `variant B (unique)`, so you see which agents agree and which stands apart before choosing the source — instead of a flat newest/differs label.
+- `test_turns.js` grew Export-MD coverage (view vs everything, folded-titles on/off, Show-row filtering) — 46 checks; suite still 48 files green.
+
 ## 2.81.1 — Turns page polish + copy-source rule everywhere (2026-07-19)
 
 - **Turns page:** the row-count default is now **200** (a turn is far finer than a session); the **Tokens** column moved to sit right after **Model**; the **Turn** column is wider and the **Session** column narrower (the prompt is the row's identity, the session is context — both ellipsize with the full text in the tooltip); and a **Show row — All · Dialog · User · Assistant · Tool calls · Results · Errors** — now decides what an unfolded turn shows of its content, exactly like the Session Viewer, **defaulting to Dialog**. The selection is remembered.

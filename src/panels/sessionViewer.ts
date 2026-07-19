@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { PricingEngine, totalTokens, Usage } from '../core/pricing';
-import { handleAfNav, htmlShell } from './base';
+import { askExportOptions, handleAfNav, htmlShell } from './base';
 
 export interface ViewerDeps {
     extensionUri: vscode.Uri;
@@ -413,6 +413,17 @@ export class SessionViewerPanel {
                     void vscode.window.showInformationMessage(
                         'Agent Farm: this session does not belong to a known agent.');
                 }
+                break;
+            }
+            case 'exportChoose': {
+                // Ask the two Export-MD questions, then tell the webview to build
+                // the markdown with the chosen options (it holds all the messages).
+                void askExportOptions('collapsed turns', !!msg.hasFolded).then(opts => {
+                    if (!opts) { return; }
+                    void this.panel.webview.postMessage({
+                        type: 'exportBuild', view: opts.view, foldedTitles: opts.foldedTitles
+                    });
+                });
                 break;
             }
             case 'exportMd': {

@@ -32,6 +32,15 @@
 
     window.addEventListener('message', ev => {
         if (ev.data.type === 'focus') { focusAt(ev.data.ts); return; }
+        if (ev.data.type === 'exportBuild') {
+            // host answered the Export MD prompt — build with the chosen options
+            vscode.postMessage({
+                type: 'exportMd',
+                md: exportMarkdown({ view: ev.data.view, foldedTitles: ev.data.foldedTitles }),
+                cwd: DATA.cwd
+            });
+            return;
+        }
         if (ev.data.type !== 'data') { return; }
         DATA = ev.data.data;
         turnCounts = null;
@@ -285,28 +294,59 @@
         render();
     }
 
-    // ---------- Markdown export (exports exactly the current view) ----------
+    // ---------- Markdown export ----------
+    // opts.view (default true): honor the on-screen state — role/text filters,
+    //   replay position, the turn checkboxes AND the fold accordion. When false,
+    //   export the full transcript, nothing applied.
+    // opts.foldedTitles (default false, only meaningful with view): a collapsed
+    //   turn contributes just its "## Turn N" header, not its body.
 
     function mdFence(s) {
         return s.includes('```') ? '````' : '```';
     }
 
-    function exportMarkdown() {
-        const source = replay.active ? replay.msgs.slice(0, replay.pos + 1) : visibleMsgs();
-        const msgs = source.filter(m => !m.turn || !exportOff.has(m.turn));
+    function exportMarkdown(opts) {
+        opts = opts || {};
+        const view = opts.view !== false;
+        const foldedTitles = !!opts.foldedTitles;
+        // Each entry: the message + whether only its turn header should render
+        // (a collapsed turn kept for its title). rows drive the loop below.
+        const rows = [];
+        if (!view) {
+            for (const m of DATA.messages) { rows.push({ m, headerOnly: false }); }
+        } else {
+            const source = replay.active ? replay.msgs.slice(0, replay.pos + 1) : visibleMsgs();
+            for (const m of source) {
+                if (m.turn && exportOff.has(m.turn)) { continue; }
+                if (m.turn && collapsed.has(m.turn)) {
+                    // folded turn: title only (once, on its opening message) or gone
+                    if (foldedTitles && m.turnStart) { rows.push({ m, headerOnly: true }); }
+                    continue;
+                }
+                rows.push({ m, headerOnly: false });
+            }
+        }
         const lines = [`# ${DATA.title}`, ''];
         lines.push(`- Session: \`${DATA.sessionId}\``);
         if (DATA.cwd) { lines.push(`- Folder: \`${DATA.cwd}\``); }
         lines.push(`- Span: ${fmtTime(DATA.firstTs)} → ${fmtTime(DATA.lastTs)}`);
         lines.push(`- Total: ${C.fmtTok(DATA.totalTokens)} tok · ${C.fmtUSD(DATA.cost)} · ${DATA.turnCount || 0} turns · ${DATA.toolCalls} tool calls`);
-        const view = [];
-        if (roleSel.size) { view.push('show: ' + [...roleSel].join(', ')); }
-        if (filter) { view.push(`text filter: "${filter}"`); }
-        if (exportOff.size) { view.push(`excluded turns: ${[...exportOff].sort((a, b) => a - b).join(', ')}`); }
-        if (replay.active) { view.push(`replay position: ${replay.pos + 1}/${replay.msgs.length}`); }
-        if (view.length) { view.push(`${msgs.length} of ${DATA.messages.length} messages`); lines.push(`- View: ${view.join(' · ')}`); }
+        if (!view) {
+            lines.push(`- Export: everything — the full transcript (${DATA.messages.length} messages), ignoring the on-screen filters and folding`);
+        } else {
+            const v = [];
+            if (roleSel.size) { v.push('show: ' + [...roleSel].join(', ')); }
+            if (filter) { v.push(`text filter: "${filter}"`); }
+            if (exportOff.size) { v.push(`excluded turns: ${[...exportOff].sort((a, b) => a - b).join(', ')}`); }
+            if (collapsed.size) { v.push(foldedTitles ? `${collapsed.size} folded turn(s): titles only` : `${collapsed.size} folded turn(s) omitted`); }
+            if (replay.active) { v.push(`replay position: ${replay.pos + 1}/${replay.msgs.length}`); }
+            const shownCount = rows.filter(r => !r.headerOnly).length;
+            v.push(`${shownCount} of ${DATA.messages.length} messages`);
+            lines.push(`- Export: current view · ${v.join(' · ')}`);
+        }
         lines.push('', '---');
-        for (const m of msgs) {
+        for (const row of rows) {
+            const m = row.m;
             if (m.turnStart && m.turn) {
                 const t = (DATA.turnTotals || {})[m.turn];
                 const info = turnInfo(m.turn);
@@ -315,6 +355,7 @@
                     (t && (t.tokens || t.cost) ? ` · ${C.fmtTok(t.tokens)} tok · ${C.fmtUSD(t.cost)}` : '');
                 lines.push('', `## Turn ${m.turn}/${DATA.turnCount || '?'}${info && info.label ? ' — ' + info.label : ''}${stats}`);
             }
+            if (row.headerOnly) { continue; } // folded turn: title only, skip body
             const bits = [
                 m.ts ? new Date(m.ts).toLocaleTimeString() : '',
                 m.model ? m.model.replace(/^claude-/, '') : '',
@@ -483,7 +524,7 @@
                 actions: `<button id="resume">⏵ Resume</button>
                     <button class="secondary" id="focusterm" title="Jump to this session's terminal window (if one is open)">⌨ Terminal</button>
                     <button class="secondary" id="replaytoggle">${replay.active ? '✕ Exit replay' : '▶ Replay'}</button>
-                    <button class="secondary" id="exportmd" title="Exports what you see: active filters apply; unticked turns are left out">⬇ Export MD${exportOff.size ? ` (${includedTurnCount()}/${(DATA.turns || []).length} turns)` : ''}</button>
+                    <button class="secondary" id="exportmd" title="Export to Markdown — asks whether to save the current view (filters/folding applied) or everything">⬇ Export MD${exportOff.size ? ` (${includedTurnCount()}/${(DATA.turns || []).length} turns)` : ''}</button>
                     <button class="secondary" id="raw">Open raw JSONL</button>${DATA.agentName ? `
                     <button class="secondary" id="agentpage" title="This session belongs to ${C.esc(DATA.agentName)} — open the agent page">⌂ ${C.esc(DATA.agentName)}</button>` : ''}`,
                 searchTitle: 'Search inside this session (tool traffic too)',
@@ -537,8 +578,11 @@
             vscode.postMessage({ type: 'focusTerminal', cwd: DATA.cwd }));
         document.getElementById('resume').addEventListener('click', () =>
             vscode.postMessage({ type: 'resume', cwd: DATA.cwd }));
+        // Export MD asks first (current view vs everything, + folded-title choice
+        // when turns are collapsed); the host replies with 'exportBuild' carrying
+        // the picked options, and we build the markdown then.
         document.getElementById('exportmd').addEventListener('click', () =>
-            vscode.postMessage({ type: 'exportMd', md: exportMarkdown(), cwd: DATA.cwd }));
+            vscode.postMessage({ type: 'exportChoose', hasFolded: collapsed.size > 0 }));
         // Delegated: turn-band controls survive the filter box re-rendering #msgs.
         document.getElementById('msgs').addEventListener('change', ev => {
             const cb = ev.target && ev.target.closest ? ev.target.closest('input[data-turnsel]') : null;

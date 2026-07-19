@@ -28,6 +28,7 @@ const { parseSessionFile } = require(path.join(__dirname, '..', 'out', 'core', '
 const { memoryUsage, memoryLastUsed } = require(path.join(__dirname, '..', 'out', 'core', 'memusage.js'));
 const { buildTurnRows, registerTurnsOps } = require(path.join(__dirname, '..', 'out', 'core', 'turns.js'));
 const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'bridge.js'));
+const { buildTurnsMarkdown } = require(path.join(__dirname, '..', 'out', 'panels', 'turnsPanel.js'));
 Module._load = origLoad;
 
 // ---------- fixture transcript: 2 turns + sidechain noise ----------
@@ -120,7 +121,43 @@ ok('active flag from the callback', rows[0].active === true);
     ok('TURNS_TABLE_N default is 200 host-side', /TURNS_TABLE_N = 200/.test(panel));
 }
 
-// ---------- 5) turns.list bridge op ----------
+// ---------- 5) Export MD (buildTurnsMarkdown): view/everything + folded titles ----------
+{
+    // a tiny index stub over the single fixture session
+    const idx = { all: () => [info], isSessionActive: () => false };
+    const depsStub = {
+        extensionUri: {}, index: idx, getPricing: () => pricing
+    };
+    const shown = [ { file, n: 2 }, { file, n: 1 } ]; // as the page lists them
+    const bothKeys = new Set([`${file}#2`, `${file}#1`]);
+    const oneOpen = new Set([`${file}#1`]); // only turn 1 unfolded
+
+    // view mode, both open, Dialog roles → headers + only user/assistant lines
+    const viewBoth = buildTurnsMarkdown(depsStub, shown, bothKeys, ['user', 'assistant'],
+        { view: true, foldedTitles: false });
+    ok('view export names both turns', /turn 2\/2/.test(viewBoth) && /turn 1\/2/.test(viewBoth));
+    ok('view export carries the prompt as the turn heading', /fix the login bug please/.test(viewBoth));
+    ok('Dialog roles keep the assistant reply', /on it/.test(viewBoth));
+    ok('Dialog roles drop tool calls/results', !/TOOL CALL/.test(viewBoth) && !/TOOL RESULT/.test(viewBoth));
+
+    // view mode, only turn 1 open, folded titles OFF → turn 2 omitted entirely
+    const foldedOff = buildTurnsMarkdown(depsStub, shown, oneOpen, [], { view: true, foldedTitles: false });
+    ok('folded turn omitted when titles off', !/turn 2\/2/.test(foldedOff) && /turn 1\/2/.test(foldedOff));
+
+    // view mode, only turn 1 open, folded titles ON → turn 2 as a header, no body
+    const foldedOn = buildTurnsMarkdown(depsStub, shown, oneOpen, [], { view: true, foldedTitles: true });
+    ok('folded turn kept as a title when titles on', /turn 2\/2/.test(foldedOn));
+    ok('folded turn shows no body (deploy content absent)', !/deployed/.test(foldedOn));
+    ok('the open turn still shows its body', /on it/.test(foldedOn));
+
+    // everything mode ignores fold + roles → both turns, tool traffic included
+    const everything = buildTurnsMarkdown(depsStub, shown, new Set(), ['user'], { view: false, foldedTitles: false });
+    ok('everything exports both turns fully', /turn 2\/2/.test(everything) && /turn 1\/2/.test(everything));
+    ok('everything ignores the Show filter (tool call present)', /TOOL CALL/.test(everything));
+    ok('everything header states the mode', /Export: everything/.test(everything));
+}
+
+// ---------- 6) turns.list bridge op ----------
 (async () => {
     const reg = new BridgeRegistry();
     registerTurnsOps(reg, { sessions: () => [info], isActive: () => false });

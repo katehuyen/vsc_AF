@@ -29,6 +29,34 @@ export function jsonForScript(data: unknown): string {
         .split(paraSep).join('\\u2029');
 }
 
+/**
+ * Shared Export-MD options prompt (session viewer + Turns page). Two questions,
+ * native QuickPick so it reads like the rest of the extension:
+ *  1. scope — the current VIEW (filters/folding applied, the default) or
+ *     EVERYTHING (the full content, ignoring the on-screen state);
+ *  2. only when scope=view AND something is folded — whether folded items
+ *     contribute their TITLE (header only) or are omitted entirely (default).
+ * `foldedNoun` names the folded unit for the wording ("collapsed turns" /
+ * "folded turns"). Returns undefined if the user dismisses either step.
+ */
+export async function askExportOptions(
+    foldedNoun: string,
+    hasFolded: boolean
+): Promise<{ view: boolean; foldedTitles: boolean } | undefined> {
+    const scope = await vscode.window.showQuickPick([
+        { label: '$(eye) Current view', description: 'export what you see — filters and folding applied (default)', v: true },
+        { label: '$(list-flat) Everything', description: 'the full content, ignoring filters and folding', v: false }
+    ], { placeHolder: 'Export MD — what should the file contain?', ignoreFocusOut: true });
+    if (!scope) { return undefined; }
+    if (!scope.v || !hasFolded) { return { view: scope.v, foldedTitles: false }; }
+    const folded = await vscode.window.showQuickPick([
+        { label: `Omit ${foldedNoun}`, description: 'folded items are left out entirely (default)', v: false },
+        { label: `Include ${foldedNoun} — titles only`, description: 'folded items appear as their header, without their content', v: true }
+    ], { placeHolder: `Export MD — folded ${foldedNoun}?`, ignoreFocusOut: true });
+    if (!folded) { return undefined; }
+    return { view: true, foldedTitles: folded.v };
+}
+
 /** One router for the shared header's cross-navigation cluster
  *  (media/pageHeader.js posts {type:'afnav', to}). Pages with a scoped
  *  ⌕ Search intercept to === 'search' before delegating here. */
