@@ -26,6 +26,7 @@ import { modelArgsFor as policyModelArgs, ModelPolicyRule } from './core/modelpo
 import {
     AGENTS_MD_NAME, antigravityStatus, syncToAntigravity, syncToClaude, SyncResult
 } from './core/antigravity';
+import { syncCodexExtras } from './core/codex';
 import { describePlan, FarmPlan, interpretCommand } from './core/commandbar';
 import { DispatchRule, dispatchText } from './core/dispatch';
 import { EmbeddingsConfig, EmbeddingsProvider, embedTexts } from './core/embeddings';
@@ -2061,6 +2062,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         agent: s.agentName, title: s.title, lastTs: s.lastTs,
                         turns: s.userTurns, cost: Math.round(s.cost * 100) / 100
                     }));
+            }
+        },
+        {
+            op: 'agents.sync',
+            describe: 'Cross-engine sync for one agent: CLAUDE.md → AGENTS.md (the shared instruction file read by BOTH Antigravity and Codex) + duty workflows + a Codex MCP TOML snippet when .mcp.json exists. Non-destructive: if AGENTS.md diverged from CLAUDE.md (conflict / foreign / antigravity-ahead) it reports the state and changes nothing unless force=true. args: agent (name|id), force? (default false)',
+            handler: (args) => {
+                const agent = findAgent(argStr(args, 'agent'));
+                const st = antigravityStatus(agent.dir);
+                // Divergence that needs a human decision — surface it, don't clobber.
+                if ((st.state === 'conflict' || st.state === 'foreign' || st.state === 'antigravity-ahead')
+                    && args.force !== true) {
+                    return {
+                        agent: agent.name, state: st.state, synced: false,
+                        note: 'AGENTS.md diverged from CLAUDE.md — resolve with the "Sync Agent with Antigravity + Codex" command, or pass force=true to overwrite from CLAUDE.md.'
+                    };
+                }
+                const ag = syncToAntigravity(agent.dir, agent.duties, { force: true });
+                const cx = syncCodexExtras(agent.dir);
+                return {
+                    agent: agent.name, state: 'in-sync', synced: true,
+                    written: [...ag.written, ...cx.written],
+                    notes: [...ag.notes, ...cx.notes]
+                };
             }
         }
     ]);
@@ -6412,7 +6436,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     : `Agent Farm dispatch: no agent matched — ${result.reason}`);
         }),
 
-        // ---------- Antigravity compatibility (directional sync) ----------
+        // ---------- Cross-engine compatibility (Antigravity + Codex sync) ----------
+        // One command, two engines. The Antigravity core owns CLAUDE.md ↔ AGENTS.md
+        // (the shared instruction file Codex also reads); withCodex() layers the
+        // Codex-only extras (MCP TOML snippet) on top without touching that core.
 
         vscode.commands.registerCommand('agentfarm.syncAntigravity', async (arg?: AgentArg) => {
             const agent = await resolveAgent(arg);
@@ -6422,6 +6449,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return;
             }
             const agentsPath = path.join(agent.dir, AGENTS_MD_NAME);
+            // Merge Codex extras into any Antigravity result: whenever AGENTS.md is
+            // produced/updated, refresh Codex's MCP snippet from the same folder.
+            const withCodex = (r: SyncResult): SyncResult => {
+                const cx = syncCodexExtras(agent.dir);
+                return {
+                    written: [...r.written, ...cx.written],
+                    skipped: [...r.skipped, ...cx.skipped],
+                    backups: [...r.backups, ...cx.backups],
+                    notes: [...r.notes, ...cx.notes]
+                };
+            };
             const showResult = (title: string, r: SyncResult) => {
                 refreshAll();
                 void vscode.window.showInformationMessage(
@@ -6441,13 +6479,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             switch (status.state) {
                 case 'none': {
                     const ok = await vscode.window.showInformationMessage(
-                        `Make "${agent.name}" Antigravity-compatible?\n\n` +
-                        `Creates AGENTS.md (from CLAUDE.md), .agents/workflows/ from active duties, ` +
-                        `and an MCP merge suggestion if .mcp.json exists.\n\n` +
+                        `Make "${agent.name}" Antigravity + Codex compatible?\n\n` +
+                        `Creates AGENTS.md (from CLAUDE.md) — read by BOTH Antigravity and Codex — ` +
+                        `.agents/workflows/ from active duties, and MCP merge suggestions if .mcp.json exists ` +
+                        `(JSON for Antigravity, TOML for Codex).\n\n` +
                         `memory/ is shared as-is — no conversion. From now on, edits on either side are detected and can be synced back.`,
                         { modal: true }, 'Create');
                     if (ok !== 'Create') { return; }
-                    showResult('Antigravity files created', syncToAntigravity(agent.dir, agent.duties));
+                    showResult('Antigravity + Codex files created', withCodex(syncToAntigravity(agent.dir, agent.duties)));
                     return;
                 }
                 case 'foreign': {
@@ -6456,16 +6495,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         `Overwrite it with CLAUDE.md content? (a timestamped .afbak backup is kept)`,
                         { modal: true }, 'Overwrite');
                     if (ok !== 'Overwrite') { return; }
-                    showResult('AGENTS.md replaced', syncToAntigravity(agent.dir, agent.duties, { force: true }));
+                    showResult('AGENTS.md replaced', withCodex(syncToAntigravity(agent.dir, agent.duties, { force: true })));
                     return;
                 }
                 case 'in-sync': {
                     // Refresh duty workflows anyway — duties may have changed independently.
-                    showResult('already in sync (duty workflows refreshed)', syncToAntigravity(agent.dir, agent.duties));
+                    showResult('already in sync (duty workflows refreshed)', withCodex(syncToAntigravity(agent.dir, agent.duties)));
                     return;
                 }
                 case 'claude-ahead': {
-                    showResult('CLAUDE.md → AGENTS.md synced', syncToAntigravity(agent.dir, agent.duties));
+                    showResult('CLAUDE.md → AGENTS.md synced', withCodex(syncToAntigravity(agent.dir, agent.duties)));
                     return;
                 }
                 case 'antigravity-ahead': {
@@ -6474,13 +6513,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         `(CLAUDE.md gets a timestamped .afbak backup)`,
                         { modal: true }, 'Apply to CLAUDE.md', 'Show Diff', 'Overwrite with CLAUDE.md');
                     if (choice === 'Apply to CLAUDE.md') {
-                        showResult('AGENTS.md → CLAUDE.md synced', syncToClaude(agent.dir));
+                        showResult('AGENTS.md → CLAUDE.md synced', withCodex(syncToClaude(agent.dir)));
                     } else if (choice === 'Show Diff') {
                         await vscode.commands.executeCommand('vscode.diff',
                             vscode.Uri.file(agent.claudeMdPath), vscode.Uri.file(agentsPath),
                             `${agent.name}: CLAUDE.md ↔ AGENTS.md`);
                     } else if (choice === 'Overwrite with CLAUDE.md') {
-                        showResult('AGENTS.md overwritten from CLAUDE.md', syncToAntigravity(agent.dir, agent.duties));
+                        showResult('AGENTS.md overwritten from CLAUDE.md', withCodex(syncToAntigravity(agent.dir, agent.duties)));
                     }
                     return;
                 }
@@ -6496,9 +6535,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     } else if (choice === 'Claude wins') {
                         const b = path.join(agent.dir, AGENTS_MD_NAME);
                         try { fs.copyFileSync(b, `${b}.${Date.now()}.afbak`); } catch { /* best effort */ }
-                        showResult('resolved: CLAUDE.md → AGENTS.md', syncToAntigravity(agent.dir, agent.duties, { force: true }));
+                        showResult('resolved: CLAUDE.md → AGENTS.md', withCodex(syncToAntigravity(agent.dir, agent.duties, { force: true })));
                     } else if (choice === 'Antigravity wins') {
-                        showResult('resolved: AGENTS.md → CLAUDE.md', syncToClaude(agent.dir));
+                        showResult('resolved: AGENTS.md → CLAUDE.md', withCodex(syncToClaude(agent.dir)));
                     }
                     return;
                 }

@@ -2,6 +2,15 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 2.83.0 — One command, two engines: Antigravity + Codex cross-engine sync (2026-07-19)
+
+The "Sync Agent with Antigravity" command now makes an agent compatible with **both** Antigravity **and** OpenAI Codex in a single action — because both engines read the very same `AGENTS.md` the sync already generates from `CLAUDE.md`. Codex needs no second instruction file, no second sidecar, and shares `memory/` as-is; standing duties reach Codex through the AGENTS.md prose that points at DUTIES.md.
+
+- **Renamed to "Sync Agent with Antigravity + Codex…"** — same command, same non-destructive state machine (none / foreign / claude-ahead / antigravity-ahead / conflict, each with `.afbak` backups). The Antigravity core (`CLAUDE.md ↔ AGENTS.md`) is untouched; the Codex layer is added on top of every forward/reverse sync, so **the Claude Code path and existing Antigravity behavior are unchanged**.
+- **Codex MCP bridging.** The one real format gap between the engines is MCP: Antigravity reads JSON, Codex reads TOML (`[mcp_servers.*]` in `config.toml`). When an agent has a `.mcp.json`, the sync now also drops a merge-ready `.agents/codex/mcp.suggested.toml` (Windows paths as TOML literal strings, `env`/`http_headers` sub-tables — matching how Codex serializes its own config). Agent Farm never edits your live `~/.codex/config.toml` — you own the merge, exactly as with the Antigravity MCP suggestion.
+- **Bridge op `agents.sync` (§19.C).** Agents can now drive the cross-engine forward sync themselves: `CLAUDE.md → AGENTS.md` + Codex MCP snippet. Non-destructive — if `AGENTS.md` diverged from `CLAUDE.md` (conflict / foreign / antigravity-ahead) it reports the state and changes nothing unless `force=true`. This also closes a pre-existing gap where the Antigravity sync had no bridge op at all.
+- New suite `test_codex_sync.js` (TOML emitter for stdio + http servers, additive `syncCodexExtras`, CLAUDE.md/AGENTS.md left untouched) and an `agents.sync` dispatch-contract test in `test_bridge.js`. Suite: 50 files, 1264 checks green.
+
 ## 2.81.2 — Export MD choices + variant-grouped copy picker (2026-07-19)
 
 - **Export MD now asks what to include — on the Session Viewer AND the new Turns page.** Clicking ⬇ Export MD opens a prompt: **Current view** (the on-screen state applied — filters, the content Show selection, and crucially the **fold/collapse accordion**, which the export used to ignore) or **Everything** (the full content regardless of the view). When you pick *Current view* and something is folded, a second question decides whether folded turns are **omitted** (default) or kept as **titles only**. The Turns page's Export writes one `## agent · turn n/N — prompt` section per listed turn, with session/model/tokens/cost, and the open turns' content filtered by the Show row.

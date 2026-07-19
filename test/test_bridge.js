@@ -3,12 +3,17 @@
 // the arg helpers — the machinery that lets agents drive the farm through
 // request files while future features plug in with one registration.
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
 const { BridgeRegistry, parseBridgeRequest, need, argStr, optStr } =
     require(path.join(__dirname, '..', 'out', 'core', 'bridge.js'));
+const { antigravityStatus, syncToAntigravity } =
+    require(path.join(__dirname, '..', 'out', 'core', 'antigravity.js'));
+const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'codex.js'));
 
 // ---------- parseBridgeRequest ----------
 {
@@ -69,6 +74,46 @@ const { BridgeRegistry, parseBridgeRequest, need, argStr, optStr } =
 
     const fine = await reg.dispatch('x.strict', { name: ' ali ', extra: 7 });
     ok('argStr trims; optStr ignores non-strings', fine.ok && fine.result.name === 'ali' && got === '');
+
+    // ---------- §19.C: agents.sync op contract (cross-engine forward sync) ----------
+    // Registers the real handler shape (backed by the compiled antigravity + codex
+    // functions) and dispatches it, proving the op is catalogued and honours its
+    // non-destructive contract — the same wiring extension.ts registers at activate().
+    {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-bridge-sync-'));
+        fs.writeFileSync(path.join(dir, 'CLAUDE.md'), '# Ajan\n\nBkz. CLAUDE.md.\n');
+        const agent = { name: 'dev', dir, duties: [] };
+        reg.register({
+            op: 'agents.sync',
+            describe: 'Cross-engine sync: CLAUDE.md → AGENTS.md + Codex MCP snippet. args: agent, force?',
+            handler: (a) => {
+                const st = antigravityStatus(agent.dir);
+                if ((st.state === 'conflict' || st.state === 'foreign' || st.state === 'antigravity-ahead')
+                    && a.force !== true) {
+                    return { agent: agent.name, state: st.state, synced: false };
+                }
+                const ag = syncToAntigravity(agent.dir, agent.duties, { force: true });
+                const cx = syncCodexExtras(agent.dir);
+                return { agent: agent.name, state: 'in-sync', synced: true, written: [...ag.written, ...cx.written] };
+            }
+        });
+        ok('agents.sync appears in the catalog', reg.catalog().some(c => c.op === 'agents.sync'));
+
+        const first = await reg.dispatch('agents.sync', { agent: 'dev' });
+        ok('agents.sync forward-syncs a fresh agent', first.ok && first.result.synced === true &&
+            fs.existsSync(path.join(dir, 'AGENTS.md')));
+
+        // Hand-edit AGENTS.md → antigravity-ahead → guard refuses without force.
+        fs.appendFileSync(path.join(dir, 'AGENTS.md'), '\nElle eklenen satır.\n');
+        const guarded = await reg.dispatch('agents.sync', { agent: 'dev' });
+        ok('agents.sync is non-destructive on divergence (no force)',
+            guarded.ok && guarded.result.synced === false && guarded.result.state === 'antigravity-ahead');
+
+        const forced = await reg.dispatch('agents.sync', { agent: 'dev', force: true });
+        ok('agents.sync with force overwrites from CLAUDE.md', forced.ok && forced.result.synced === true);
+
+        try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+    }
 
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);

@@ -258,8 +258,8 @@ export function buildInsights(
                     agentName: agent.name,
                     category: 'antigravity',
                     message: ag.state === 'claude-ahead'
-                        ? 'CLAUDE.md changed since the last Antigravity sync — run "Sync Agent with Antigravity…" to update AGENTS.md.'
-                        : 'AGENTS.md was edited (Antigravity side) — run "Sync Agent with Antigravity…" to carry the changes back to CLAUDE.md.',
+                        ? 'CLAUDE.md changed since the last cross-engine sync — run "Sync Agent with Antigravity + Codex…" to update AGENTS.md.'
+                        : 'AGENTS.md was edited (Antigravity/Codex side) — run "Sync Agent with Antigravity + Codex…" to carry the changes back to CLAUDE.md.',
                     filePath: agent.claudeMdPath,
                     guideAnchor: 'antigravity-uyumlulugu'
                 });
