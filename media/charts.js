@@ -155,9 +155,12 @@
         return `<svg viewBox="0 0 ${width} ${height}" style="max-width:${width}px" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="var(--vscode-charts-blue, #3794ff)" stroke-width="1.5"/></svg>`;
     }
 
-    // The AI participant's display name, derived from a message's model id
-    // (never a hardcoded engine name — a Gemini/Codex turn labels itself).
-    // Mirrors src/core/speaker.ts; keep the two copies in sync.
+    // ---- AI speaker label (mirrors src/core/speaker.ts — keep in sync) ----
+    // The label is derived from a message's model id (never a hardcoded engine
+    // name) and composed via a user template in window.__AFUI__ (Farm Settings).
+    const DEFAULT_SPEAKER = { template: '{ai}', casing: 'page', fallback: 'agent' };
+    const SPEAKER_FAMILIES = ['opus', 'sonnet', 'haiku', 'flash', 'pro', 'gpt', 'codex'];
+
     function aiName(rawModel) {
         const m = String(rawModel == null ? '' : rawModel).toLowerCase();
         if (!m || m === '<synthetic>') { return ''; }
@@ -166,12 +169,54 @@
         if (m.indexOf('gpt') === 0 || m.indexOf('o1') === 0 || m.indexOf('o3') === 0 || m.indexOf('o4') === 0 || m.indexOf('codex') >= 0) { return 'codex'; }
         return '';
     }
-    // What the pages print for an AI message: the engine name, or 'agent' when
-    // unknown (this is an agent, not an "assistant"); upper where role labels are.
-    function aiLabel(rawModel, upper) {
-        const name = aiName(rawModel) || 'agent';
-        return upper ? name.toUpperCase() : name;
+    function speakerVersion(m) {
+        const dotted = m.match(/\d+\.\d+/);
+        if (dotted) { return dotted[0]; }
+        const nums = [];
+        m.split(/[^a-z0-9]+/i).forEach(function (tok) {
+            if (!tok || /^\d{6,}$/.test(tok)) { return; }
+            const lead = tok.match(/^(\d+)/);
+            if (lead) { nums.push(lead[1]); }
+        });
+        return nums.slice(0, 2).join('.');
+    }
+    function parseModel(rawModel) {
+        const m = String(rawModel == null ? '' : rawModel).toLowerCase().trim();
+        if (!m || m === '<synthetic>') { return { ai: '', model: '', version: '', raw: '' }; }
+        const ai = aiName(m);
+        const raw = ai === 'claude' ? m.replace(/^claude-/, '') : m;
+        let model = '';
+        for (let i = 0; i < SPEAKER_FAMILIES.length; i++) { if (m.indexOf(SPEAKER_FAMILIES[i]) >= 0) { model = SPEAKER_FAMILIES[i]; break; } }
+        if (!model && ai === 'codex') { const o = m.match(/\bo[1-9]\b/); if (o) { model = o[0]; } }
+        return { ai: ai, model: model, version: speakerVersion(m), raw: raw };
+    }
+    function normalizeSpeaker(o) {
+        o = (o && typeof o === 'object') ? o : {};
+        const casing = ['page', 'upper', 'lower', 'asis'].indexOf(o.casing) >= 0 ? o.casing : 'page';
+        const template = (typeof o.template === 'string' && o.template.trim()) ? o.template : DEFAULT_SPEAKER.template;
+        const fallback = (typeof o.fallback === 'string' && o.fallback.trim()) ? o.fallback : DEFAULT_SPEAKER.fallback;
+        return { template: template, casing: casing, fallback: fallback };
+    }
+    function renderSpeaker(rawModel, pageUpper, cfg) {
+        cfg = normalizeSpeaker(cfg);
+        const p = parseModel(rawModel);
+        let out = cfg.template
+            .replace(/\{ai\}/g, p.ai).replace(/\{model\}/g, p.model)
+            .replace(/\{version\}/g, p.version).replace(/\{raw\}/g, p.raw)
+            .replace(/\(\s*\)|\[\s*\]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .replace(/^[\s\-·,/|]+|[\s\-·,/|]+$/g, '')
+            .trim();
+        if (!out) { out = cfg.fallback; }
+        if (cfg.casing === 'upper') { return out.toUpperCase(); }
+        if (cfg.casing === 'lower') { return out.toLowerCase(); }
+        if (cfg.casing === 'asis') { return out; }
+        return pageUpper ? out.toUpperCase() : out.toLowerCase();
+    }
+    // What the pages call: reads the live user config from window.__AFUI__.
+    function aiLabel(rawModel, pageUpper) {
+        return renderSpeaker(rawModel, pageUpper, (window.__AFUI__ || {}).speaker);
     }
 
-    window.AFCharts = { stackedBars, donut, hbars, heatmap, sparkline, esc, fmtUSD, fmtTok, aiName, aiLabel, PALETTE };
+    window.AFCharts = { stackedBars, donut, hbars, heatmap, sparkline, esc, fmtUSD, fmtTok, aiName, parseModel, renderSpeaker, aiLabel, PALETTE };
 })();

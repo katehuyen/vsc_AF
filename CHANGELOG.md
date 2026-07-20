@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 2.85.0 — You decide how the AI speaker is labelled (Farm Settings) (2026-07-21)
+
+The data-derived AI label from 2.84.0 is now **fully yours to shape**, in a new **Display & Labels** section of Farm Settings — three settings, live-applied (the open Turns / Session Viewer pages re-render the moment you change them):
+
+- **`speakerLabelTemplate`** — compose the label from tokens filled from each message's model id: `{ai}` (claude · gemini · codex), `{model}` (opus · sonnet · haiku · gpt · …), `{version}` (4.8 · 3.5 · …), `{raw}` (opus-4-8). Anything else is literal, so `MyBot` is a fixed label and `{ai} {model} ({version})` → *Claude Opus (4.8)*. Empty parens / dangling separators from an absent token are cleaned up. Default `{ai}` — the current behaviour.
+- **`speakerLabelCase`** — `page` (Sessions upper like `USER`, Turns lower like `user` — the default), or force `upper` / `lower`, or `asis` to keep a fixed label's own case verbatim.
+- **`speakerLabelFallback`** — what shows when the model id yields nothing (unknown engine, `<synthetic>`). Default `agent` — never "assistant".
+
+One shared renderer (`src/core/speaker.ts`, mirrored in `media/charts.js`; config reaches the webviews via `window.__AFUI__` in the HTML shell) drives all four sites — Turns screen + export, Session Viewer screen + export — so the label reads identically everywhere. `test_speaker.js` grew to cover model parsing (family + version, dated ids), the template composer, casing and config coercion. Suite green: 51 files, 1307 checks.
+
 ## 2.84.0 — The AI speaker is labelled from its model, not a hardcoded name (2026-07-21)
 
 Everywhere a conversation is shown used to hardcode the AI participant's name — the Turns page printed a lowercase `claude`, the Session Viewer an `ASSISTANT`. Both were wrong-in-waiting: the day a Gemini or Codex session is read, a fixed `claude`/`ASSISTANT` would mislabel it. The label is now **derived from the model id each message carries**, so it is always a fact about the data.

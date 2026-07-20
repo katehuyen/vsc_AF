@@ -98,6 +98,17 @@ export function htmlShell(
     const header = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'pageHeader.js'));
     const sessTable = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'sessionsTable.js'));
     const script = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', scriptFile));
+    // Global UI config shared by every page (not page data): the user's AI
+    // speaker-label template/case/fallback, read live so a settings change is
+    // picked up on the next page render. See src/core/speaker.ts.
+    const cfg = vscode.workspace.getConfiguration('agentFarm');
+    const afui = {
+        speaker: {
+            template: cfg.get<string>('speakerLabelTemplate', '{ai}'),
+            casing: cfg.get<string>('speakerLabelCase', 'page'),
+            fallback: cfg.get<string>('speakerLabelFallback', 'agent')
+        }
+    };
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -110,7 +121,7 @@ export function htmlShell(
 </head>
 <body>
 ${bodyHtml}
-<script nonce="${nonce}">window.__DATA__ = ${jsonForScript(data)};</script>
+<script nonce="${nonce}">window.__DATA__ = ${jsonForScript(data)}; window.__AFUI__ = ${jsonForScript(afui)};</script>
 <script nonce="${nonce}" src="${charts}"></script>
 <script nonce="${nonce}" src="${header}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>

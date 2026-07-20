@@ -5,7 +5,7 @@ import * as vscode from 'vscode';
 import { PricingEngine } from '../core/pricing';
 import { SessionIndex } from '../core/sessions';
 import { buildTurnRows, TurnRow } from '../core/turns';
-import { aiLabel } from '../core/speaker';
+import { normalizeSpeakerConfig, renderSpeaker } from '../core/speaker';
 import { askExportOptions, handleAfNav, htmlShell } from './base';
 import { buildData as buildViewerData } from './sessionViewer';
 
@@ -109,6 +109,12 @@ export function buildTurnsMarkdown(
     for (const r of buildTurnRows(deps.index.all(), s => deps.index.isSessionActive(s, now))) {
         rowByKey.set(r.file + '#' + r.n, r);
     }
+    const sc = vscode.workspace.getConfiguration('agentFarm');
+    const speakerCfg = normalizeSpeakerConfig({
+        template: sc.get('speakerLabelTemplate'),
+        casing: sc.get('speakerLabelCase'),
+        fallback: sc.get('speakerLabelFallback')
+    });
     const lines: string[] = ['# Agent Farm — Turns export', ''];
     lines.push(`- Generated: ${new Date().toLocaleString()}`);
     lines.push(opts.view
@@ -151,7 +157,7 @@ export function buildTurnsMarkdown(
                 lines.push('', `**TOOL RESULT**${bits ? ' (' + bits + ')' : ''}`, '', f, m.text || '(empty result)', f);
             } else {
                 const roleLabel = m.role === 'assistant'
-                    ? aiLabel(m.model, true)
+                    ? renderSpeaker(m.model, true, speakerCfg)
                     : ({ user: 'USER', system: 'NOTE' } as Record<string, string>)[m.role] || m.role.toUpperCase();
                 lines.push('', `**${roleLabel}**${bits ? ' (' + bits + ')' : ''}`, '', m.text || '');
             }
@@ -192,6 +198,17 @@ export class TurnsPanel {
         panel.onDidDispose(() => this.dispose(), null, this.disposables);
         panel.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
         this.deps.index.onDidUpdate(() => this.refresh(), null, this.disposables);
+        // The speaker-label config lives in the HTML shell (window.__AFUI__), so a
+        // settings change needs a re-render, not just a data refresh.
+        vscode.workspace.onDidChangeConfiguration(e => {
+            if (e.affectsConfiguration('agentFarm.speakerLabelTemplate')
+                || e.affectsConfiguration('agentFarm.speakerLabelCase')
+                || e.affectsConfiguration('agentFarm.speakerLabelFallback')) {
+                this.panel.webview.html = htmlShell(
+                    this.panel.webview, this.deps.extensionUri, 'Agent Farm Turns',
+                    buildData(this.deps), 'turns.js');
+            }
+        }, null, this.disposables);
     }
 
     refresh(): void {

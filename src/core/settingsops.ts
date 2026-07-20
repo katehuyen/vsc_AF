@@ -34,6 +34,8 @@ const CATEGORY_OF: Record<string, string> = {
     agentRoots: 'core', excludeAgentDirs: 'core', claudeDir: 'core', extraClaudeDirs: 'core',
     includeUnmatchedProjects: 'core', guideLanguage: 'core', newAgentModel: 'core',
     modelAliases: 'core',
+    // display & labels
+    speakerLabelTemplate: 'display', speakerLabelCase: 'display', speakerLabelFallback: 'display',
     // live monitoring & alerts
     liveMonitor: 'live', livePort: 'live', activeThresholdSeconds: 'live',
     stuckThresholdSeconds: 'live', notifyPermission: 'live', notifyStuck: 'live',
@@ -70,6 +72,7 @@ const CATEGORY_OF: Record<string, string> = {
 
 export const CATEGORY_LABELS: [string, string][] = [
     ['core', 'Core & Agents'],
+    ['display', 'Display & Labels'],
     ['live', 'Live Monitoring & Alerts'],
     ['cost', 'Cost & Budgets'],
     ['tasks', 'Tasks & Automation'],

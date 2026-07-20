@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.84.0",
+  "version": "2.85.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -1806,6 +1806,33 @@
             "fable"
           ],
           "description": "Your model name knowledge base: the names/ids offered in every model picker (the per-agent model dropdown in Agent folders, the mission model suggestions). Add a new model name here ONCE and it appears in every picker permanently — model names change over time, this list is yours to keep current. Every picker also accepts a custom free-text entry for anything not listed."
+        },
+        "agentFarm.speakerLabelTemplate": {
+          "type": "string",
+          "default": "{ai}",
+          "markdownDescription": "How the AI participant is labelled in conversations (Turns page, Session Viewer, and their Markdown exports) — where it used to say `ASSISTANT`/`claude`. The label is **derived from each message's model id**, so a Gemini or Codex turn labels itself correctly. Compose it from these tokens; anything else is literal text, so a template with no tokens is a fixed label of your own:\n\n- `{ai}` — engine: `claude` · `gemini` · `codex`\n- `{model}` — model family: `opus` · `sonnet` · `haiku` · `gpt` · …\n- `{version}` — version: `4.8` · `3.5` · …\n- `{raw}` — raw model id (`opus-4-8`, vendor prefix stripped)\n\nExamples: `{ai}` → CLAUDE · `{model} {version}` → OPUS 4.8 · `{ai} {model} ({version})` → Claude Opus (4.8) · `MyBot` → a fixed label. Empty = `{ai}`. Case is set by `speakerLabelCase`; `speakerLabelFallback` covers unknown models."
+        },
+        "agentFarm.speakerLabelCase": {
+          "type": "string",
+          "enum": [
+            "page",
+            "upper",
+            "lower",
+            "asis"
+          ],
+          "enumDescriptions": [
+            "Match the page — Session Viewer upper (like USER), Turns lower (like user/tool). The current default.",
+            "Force UPPER CASE everywhere",
+            "Force lower case everywhere",
+            "As-is — leave the template's own case untouched (use for a fixed brand label)"
+          ],
+          "default": "page",
+          "description": "Case applied to the AI speaker label (see agentFarm.speakerLabelTemplate)."
+        },
+        "agentFarm.speakerLabelFallback": {
+          "type": "string",
+          "default": "agent",
+          "description": "AI speaker label shown when the model id yields nothing to fill the template (unknown engine, <synthetic>, or missing). Never 'assistant' — this is an agent."
         },
         "agentFarm.claudeDir": {
           "type": "string",

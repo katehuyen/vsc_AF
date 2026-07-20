@@ -350,6 +350,17 @@ export class SessionViewerPanel {
         panel.onDidDispose(() => this.dispose(), null, this.disposables);
         panel.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
         this.watchFile();
+        // Speaker-label config lives in the HTML shell (window.__AFUI__), so a
+        // settings change needs a re-render, not just a data push.
+        vscode.workspace.onDidChangeConfiguration(e => {
+            if (e.affectsConfiguration('agentFarm.speakerLabelTemplate')
+                || e.affectsConfiguration('agentFarm.speakerLabelCase')
+                || e.affectsConfiguration('agentFarm.speakerLabelFallback')) {
+                this.panel.webview.html = htmlShell(
+                    this.panel.webview, this.deps.extensionUri, 'Session Viewer',
+                    this.viewData(), 'sessionViewer.js');
+            }
+        }, null, this.disposables);
     }
 
     /** buildData + the owner agent (webview data only — buildData itself stays pure). */
