@@ -2,6 +2,15 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 2.84.0 — The AI speaker is labelled from its model, not a hardcoded name (2026-07-21)
+
+Everywhere a conversation is shown used to hardcode the AI participant's name — the Turns page printed a lowercase `claude`, the Session Viewer an `ASSISTANT`. Both were wrong-in-waiting: the day a Gemini or Codex session is read, a fixed `claude`/`ASSISTANT` would mislabel it. The label is now **derived from the model id each message carries**, so it is always a fact about the data.
+
+- **`ASSISTANT` / `claude` → the engine's own name**, upper-cased on the Session Viewer (to match `USER`), lower-cased on the Turns page (to match `user` / `tool`) — nothing else about the format, font or meta line changes. `claude-opus-4-8` → **CLAUDE**; a `gemini-*` turn → **GEMINI**; an OpenAI / Codex id (`gpt-*`, `o1` / `o3` / `o4`, `*codex*`) → **CODEX**. The model itself (`opus-4-8`) still shows in the meta exactly as before.
+- **`agent` when the model is unknown** (missing id, `<synthetic>`) — never "assistant" again; this is an agent.
+- One shared derivation drives all four sites — Turns screen + export and Session Viewer screen + export — so the label reads identically everywhere. Host copy in `src/core/speaker.ts`, webview mirror in `media/charts.js` (`aiName` / `aiLabel`).
+- New suite `test_speaker.js` (vendor detection incl. old dated ids, case-insensitivity, `agent` fallback, mirror-present guard). Suite green: 51 files, 1287 checks.
+
 ## 2.83.0 — One command, two engines: Antigravity + Codex cross-engine sync (2026-07-19)
 
 The "Sync Agent with Antigravity" command now makes an agent compatible with **both** Antigravity **and** OpenAI Codex in a single action — because both engines read the very same `AGENTS.md` the sync already generates from `CLAUDE.md`. Codex needs no second instruction file, no second sidecar, and shares `memory/` as-is; standing duties reach Codex through the AGENTS.md prose that points at DUTIES.md.

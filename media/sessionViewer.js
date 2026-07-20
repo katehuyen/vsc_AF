@@ -203,7 +203,9 @@
     }
 
     function messageHtml(m, idx) {
-        const roleLabel = { user: 'USER', assistant: 'ASSISTANT', tool: 'TOOL CALL', toolResult: 'TOOL RESULT', system: 'SYSTEM' }[m.role];
+        const roleLabel = m.role === 'assistant'
+            ? C.aiLabel(m.model, true)
+            : { user: 'USER', tool: 'TOOL CALL', toolResult: 'TOOL RESULT', system: 'SYSTEM' }[m.role];
         const hide = m.turn && collapsed.has(m.turn) ? ' tclosed' : '';
         const cls = m.role + (m.isError ? ' error' : '') + hide;
         const meta = [
@@ -371,7 +373,9 @@
                 const f = mdFence(m.text || '');
                 lines.push('', `**TOOL RESULT**${bits ? ' (' + bits + ')' : ''}`, '', f, m.text || '(empty result)', f);
             } else {
-                const roleLabel = { user: 'USER', assistant: 'ASSISTANT', system: 'SYSTEM' }[m.role] || m.role.toUpperCase();
+                const roleLabel = m.role === 'assistant'
+                    ? C.aiLabel(m.model, true)
+                    : ({ user: 'USER', system: 'SYSTEM' }[m.role] || m.role.toUpperCase());
                 lines.push('', `**${roleLabel}**${bits ? ' (' + bits + ')' : ''}`, '', m.text || '');
             }
         }

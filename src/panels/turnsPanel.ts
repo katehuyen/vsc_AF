@@ -5,6 +5,7 @@ import * as vscode from 'vscode';
 import { PricingEngine } from '../core/pricing';
 import { SessionIndex } from '../core/sessions';
 import { buildTurnRows, TurnRow } from '../core/turns';
+import { aiLabel } from '../core/speaker';
 import { askExportOptions, handleAfNav, htmlShell } from './base';
 import { buildData as buildViewerData } from './sessionViewer';
 
@@ -149,7 +150,9 @@ export function buildTurnsMarkdown(
                 const f = mdFence(m.text || '');
                 lines.push('', `**TOOL RESULT**${bits ? ' (' + bits + ')' : ''}`, '', f, m.text || '(empty result)', f);
             } else {
-                const roleLabel = { user: 'USER', assistant: 'ASSISTANT', system: 'NOTE' }[m.role] || m.role.toUpperCase();
+                const roleLabel = m.role === 'assistant'
+                    ? aiLabel(m.model, true)
+                    : ({ user: 'USER', system: 'NOTE' } as Record<string, string>)[m.role] || m.role.toUpperCase();
                 lines.push('', `**${roleLabel}**${bits ? ' (' + bits + ')' : ''}`, '', m.text || '');
             }
         }

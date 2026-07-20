@@ -100,7 +100,8 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
         acquireVsCodeApi: () => ({ postMessage() { }, getState() { }, setState() { } }),
         window: {
             AFCharts: {
-                esc: (s) => String(s), fmtTok: (n) => String(n || 0), fmtUSD: (n) => '$' + (n || 0)
+                esc: (s) => String(s), fmtTok: (n) => String(n || 0), fmtUSD: (n) => '$' + (n || 0),
+                aiLabel: (m, u) => { const n = /^claude/i.test(m || '') ? 'claude' : /^gemini/i.test(m || '') ? 'gemini' : /^gpt|codex/i.test(m || '') ? 'codex' : 'agent'; return u ? n.toUpperCase() : n; }
             },
             __DATA__: {
                 title: 't', sessionId: 's', cwd: '', permissionMode: '',

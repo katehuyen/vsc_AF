@@ -155,5 +155,23 @@
         return `<svg viewBox="0 0 ${width} ${height}" style="max-width:${width}px" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="var(--vscode-charts-blue, #3794ff)" stroke-width="1.5"/></svg>`;
     }
 
-    window.AFCharts = { stackedBars, donut, hbars, heatmap, sparkline, esc, fmtUSD, fmtTok, PALETTE };
+    // The AI participant's display name, derived from a message's model id
+    // (never a hardcoded engine name — a Gemini/Codex turn labels itself).
+    // Mirrors src/core/speaker.ts; keep the two copies in sync.
+    function aiName(rawModel) {
+        const m = String(rawModel == null ? '' : rawModel).toLowerCase();
+        if (!m || m === '<synthetic>') { return ''; }
+        if (m.indexOf('claude') === 0) { return 'claude'; }
+        if (m.indexOf('gemini') === 0) { return 'gemini'; }
+        if (m.indexOf('gpt') === 0 || m.indexOf('o1') === 0 || m.indexOf('o3') === 0 || m.indexOf('o4') === 0 || m.indexOf('codex') >= 0) { return 'codex'; }
+        return '';
+    }
+    // What the pages print for an AI message: the engine name, or 'agent' when
+    // unknown (this is an agent, not an "assistant"); upper where role labels are.
+    function aiLabel(rawModel, upper) {
+        const name = aiName(rawModel) || 'agent';
+        return upper ? name.toUpperCase() : name;
+    }
+
+    window.AFCharts = { stackedBars, donut, hbars, heatmap, sparkline, esc, fmtUSD, fmtTok, aiName, aiLabel, PALETTE };
 })();

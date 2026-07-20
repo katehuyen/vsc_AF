@@ -242,7 +242,9 @@
         vscode.postMessage({ type: 'turnDetail', file: r.file, n: r.n });
     }
 
-    const ROLE_LABEL = { user: 'user', assistant: 'claude', tool: 'tool', toolResult: 'result', system: '' };
+    // AI rows are labelled from the message's model (data-derived — see the
+    // assistant branch in turnBodyHtml); the rest are fixed role words.
+    const ROLE_LABEL = { user: 'user', tool: 'tool', toolResult: 'result', system: '' };
 
     /** Show-chip test. The 'system' role is our own "… N more messages" note —
      *  it is a statement about the data, so no filter may hide it. */
@@ -265,7 +267,10 @@
             const body = m.role === 'tool'
                 ? `${C.esc(m.tool)} ${C.esc((m.input || '').replace(/\s+/g, ' ').slice(0, 160))}`
                 : C.esc(m.text || '');
-            const roleTxt = (ROLE_LABEL[m.role] !== undefined ? ROLE_LABEL[m.role] : m.role) + (m.sidechain ? ' ·sub' : '');
+            const base = m.role === 'assistant'
+                ? C.aiLabel(m.model, false)
+                : (ROLE_LABEL[m.role] !== undefined ? ROLE_LABEL[m.role] : m.role);
+            const roleTxt = base + (m.sidechain ? ' ·sub' : '');
             return `<div class="tmsg ${cls}"><span class="trole">${C.esc(roleTxt)}</span><span class="ttext">${body}</span></div>`;
         }).join('')}</div>`;
     }

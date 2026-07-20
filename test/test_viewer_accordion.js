@@ -42,7 +42,8 @@ function makeSandbox(opts) {
             AFCharts: {
                 esc: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'),
                 fmtTok: (n) => String(n || 0),
-                fmtUSD: (n) => '$' + (n || 0)
+                fmtUSD: (n) => '$' + (n || 0),
+                aiLabel: (m, u) => { const n = /^claude/i.test(m || '') ? 'claude' : /^gemini/i.test(m || '') ? 'gemini' : /^gpt|codex/i.test(m || '') ? 'codex' : 'agent'; return u ? n.toUpperCase() : n; }
             },
             __DATA__: {
                 title: 't', sessionId: 'sess', cwd: '', permissionMode: '',
