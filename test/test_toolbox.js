@@ -157,6 +157,15 @@ const agent = { id: 'dev', name: 'dev', dir: agentDir };
     ok('tool summary marks required params', tool.params.join(',') === 'path*,limit' && tool.name === 'read');
 }
 
+// ---------- ${VAR} expansion (portable ~/.claude.json entries) ----------
+{
+    ok('expandVars resolves a set var', P.expandVars('a/${FOO}/b', { FOO: 'X' }) === 'a/X/b');
+    ok('expandVars ${VAR:-default} falls back when unset', P.expandVars('${NOPE:-def}/x', {}) === 'def/x');
+    ok('expandVars keeps the literal when unset + no default', P.expandVars('${NOPE}', {}) === '${NOPE}');
+    const ex = P.expandMcpConfig({ command: 'node', args: ['${H}/i.js', '--config', '${H}/c.json'], env: { K: '${H}/e' } }, { H: '/home/x' });
+    ok('expandMcpConfig expands command/args/env', ex.args[0] === '/home/x/i.js' && ex.args[2] === '/home/x/c.json' && ex.env.K === '/home/x/e');
+}
+
 // ---------- REAL probes + bridge (async) ----------
 const mcpServerScript = path.join(root, 'fixture-mcp.js');
 w(mcpServerScript, `
@@ -183,6 +192,13 @@ rl.on('line', l => {
     ok('stdio probe succeeds against fixture server', r1.ok === true);
     ok('stdio probe returns the tool list', r1.tools.length === 2 && r1.tools[0].name === 'alpha' && r1.tools[0].params[0] === 'p*');
     ok('stdio probe carries serverInfo', r1.serverName === 'fixture-server' && r1.serverVersion === '9.9');
+
+    // ${VAR} end-to-end: a tokenized arg must be EXPANDED before spawn — the exact
+    // failure that broke the real airtable probe (${USERPROFILE} reached cmd.exe raw).
+    process.env.AF_FIXTURE_MCP = mcpServerScript;
+    const rtok = await P.probeMcpServer({ command: 'node', args: ['${AF_FIXTURE_MCP}'] }, 20000);
+    ok('probe expands ${VAR} in args before spawning', rtok.ok === true && rtok.tools.length === 2);
+    delete process.env.AF_FIXTURE_MCP;
 
     // HTTP probe against an in-process streamable server (SSE reply for tools/list)
     const httpSrv = http.createServer((req, res) => {

@@ -89,7 +89,41 @@ export function summarizeTool(raw: Record<string, unknown>): McpToolInfo {
     };
 }
 
+// ---------------------------------------------------------------- ${VAR} expansion
+
+/**
+ * Expand ${VAR} and ${VAR:-default} the same way Claude Code does when it spawns
+ * an MCP server, reading from THIS process's environment. Agent Farm writes some
+ * entries (e.g. the Airtable engine) with a ${USERPROFILE}/${HOME} home prefix so
+ * ~/.claude.json stays machine-portable — but Agent Farm's OWN probe spawns the
+ * server too, and neither child_process nor cmd.exe expands ${VAR}. So every
+ * consumer here must expand first, or the literal "${USERPROFILE}" reaches node
+ * as a path and the probe fails. Unset vars with no default keep their literal so
+ * the failure is legible rather than a silently-wrong path.
+ */
+export function expandVars(s: string, env: NodeJS.ProcessEnv = process.env): string {
+    return String(s).replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}/g, (whole, name: string, def?: string) => {
+        const v = env[name];
+        if (v !== undefined && v !== '') { return v; }
+        return def !== undefined ? def : whole;
+    });
+}
+
+/** Expand ${VAR} across every field of a server config before it is spawned/called. */
+export function expandMcpConfig(cfg: McpServerConfig, env: NodeJS.ProcessEnv = process.env): McpServerConfig {
+    const ex = (s?: string) => (s === undefined ? s : expandVars(s, env));
+    const exObj = (o?: Record<string, string>) =>
+        o ? Object.fromEntries(Object.entries(o).map(([k, v]) => [k, expandVars(v, env)])) : o;
+    return { ...cfg, command: ex(cfg.command), args: cfg.args?.map(a => expandVars(a, env)), env: exObj(cfg.env), url: ex(cfg.url), headers: exObj(cfg.headers) };
+}
+
 // ---------------------------------------------------------------- stdio transport
+
+/** cmd.exe (spawn shell:true on Windows) does no arg quoting — quote anything with
+ *  spaces/metacharacters so a path like C:\Users\John Doe\… survives. */
+function shellQuoteArg(s: string): string {
+    return /[\s"&|<>^()%!]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
 
 function killTree(pid: number | undefined): void {
     if (!pid) { return; }
@@ -112,12 +146,22 @@ async function probeStdio(cfg: McpServerConfig, timeoutMs: number): Promise<McpP
         const pending = new Map<number, (msg: Record<string, unknown>) => void>();
         let nextId = 1;
 
-        const child = spawn(cfg.command ?? '', cfg.args ?? [], {
-            env: { ...process.env, ...(cfg.env ?? {}) },
-            shell: process.platform === 'win32', // npx & friends are .cmd shims on Windows
-            windowsHide: true,
-            stdio: ['pipe', 'pipe', 'pipe']
-        });
+        // On Windows we go through cmd.exe (npx & friends are .cmd shims). Build ONE
+        // quoted command line (command + args) and pass empty args — this both quotes
+        // paths with spaces AND avoids Node's DEP0190 (shell:true + args array). On
+        // POSIX we spawn the exe directly with its args (no shell, no quoting needed).
+        const useShell = process.platform === 'win32';
+        const command = cfg.command ?? '';
+        const args = cfg.args ?? [];
+        const child = spawn(
+            useShell ? [command, ...args].map(shellQuoteArg).join(' ') : command,
+            useShell ? [] : args,
+            {
+                env: { ...process.env, ...(cfg.env ?? {}) },
+                shell: useShell,
+                windowsHide: true,
+                stdio: ['pipe', 'pipe', 'pipe']
+            });
 
         const finish = (r: Omit<McpProbeResult, 'probedAt' | 'ms'>) => {
             if (settled) { return; }
@@ -318,7 +362,10 @@ async function probeHttp(cfg: McpServerConfig, timeoutMs: number): Promise<McpPr
 
 // ---------------------------------------------------------------- entry + cache
 
-export async function probeMcpServer(cfg: McpServerConfig, timeoutMs = 15000): Promise<McpProbeResult> {
+export async function probeMcpServer(rawCfg: McpServerConfig, timeoutMs = 15000): Promise<McpProbeResult> {
+    // Expand ${VAR}/${VAR:-default} the way Claude Code does before we spawn/call —
+    // otherwise a portable "${USERPROFILE}/…" entry reaches node/cmd.exe literally.
+    const cfg = expandMcpConfig(rawCfg);
     if (cfg.url) { return probeHttp(cfg, timeoutMs); }
     if (cfg.command) { return probeStdio(cfg, timeoutMs); }
     return { ok: false, tools: [], probedAt: Date.now(), error: 'server definition has neither url nor command' };
