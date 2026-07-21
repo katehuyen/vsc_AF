@@ -3,6 +3,8 @@
 // end-to-end (save → search → delete against a running instance) lives in the
 // manual smoke script test/airtable_smoke.mjs.
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
@@ -93,8 +95,39 @@ const R = (p) => require(path.join(__dirname, '..', 'out', p));
     ok('other servers preserved', r.json.mcpServers.obsidian.url === 'http://x');
 }
 
+// ---------- portable path tokenization (machine-independent ~/.claude.json entry) ----------
+{
+    const { tokenizePath, homeToken } = R('core/airtableRegisterCore.js');
+    ok('home token per platform', homeToken('win32') === '${USERPROFILE}' && homeToken('linux') === '${HOME}');
+    ok('home-relative path tokenized',
+        tokenizePath('C:\\Users\\bob\\AppData\\Roaming\\x\\index.js', 'C:\\Users\\bob', 'win32') === '${USERPROFILE}/AppData/Roaming/x/index.js');
+    ok('the home dir itself tokenizes', tokenizePath('C:\\Users\\bob', 'C:\\Users\\bob', 'win32') === '${USERPROFILE}');
+    ok('out-of-home (drive) path left alone, forward-slashed', tokenizePath('W:\\zome\\db', 'C:\\Users\\bob', 'win32') === 'W:/zome/db');
+    ok('home match is case-insensitive on windows', tokenizePath('c:\\users\\bob\\x', 'C:\\Users\\Bob', 'win32') === '${USERPROFILE}/x');
+    ok('unix home tokenized with ${HOME}', tokenizePath('/home/bob/.claude/x.js', '/home/bob', 'linux') === '${HOME}/.claude/x.js');
+}
+
 // ---------- bridge ops (§19.C): catalogued + dispatch against a fixture registry ----------
 (async () => {
+    // ---------- instance discovery + drive localization (no HTTP) ----------
+    {
+        const { EngineRegistry } = R('mcp/airtable/engine.js');
+        const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'at-eng-'));
+        const inst = path.join(tmp, 'db', 'myinst');
+        fs.mkdirSync(inst, { recursive: true });
+        fs.writeFileSync(path.join(inst, 'config.json'),
+            JSON.stringify({ server: { port: 4321, host: 'localhost' }, ui: { branding: { title: 'Fixture' } } }));
+        const base = { instances: [], defaultInstance: 'myinst', defaultLang: 'TR', host: 'localhost', mediaRoots: [], requestTimeoutMs: 500 };
+        const reg = new EngineRegistry({ ...base, roots: [path.join(tmp, 'db')] });
+        const list = await reg.instances({ healthCheck: false });
+        ok('discovers an instance from an existing root', list.length === 1 && list[0].name === 'myinst' && list[0].port === 4321 && list[0].title === 'Fixture');
+        // a missing drive-form root must localize gracefully to nothing (no crash, no invented instance)
+        const reg2 = new EngineRegistry({ ...base, roots: ['Z:/no-such-xyz-987/db'] });
+        const empty = await reg2.instances({ force: true, healthCheck: false });
+        ok('missing drive-form root → empty, no crash', Array.isArray(empty) && empty.length === 0);
+        fs.rmSync(tmp, { recursive: true, force: true });
+    }
+
     const { BridgeRegistry } = R('core/bridge.js');
     const { registerAirtableOps } = R('core/airtableBridge.js');
 

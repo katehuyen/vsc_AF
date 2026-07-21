@@ -100,8 +100,15 @@ function startServer(registry: EngineRegistry): void {
     log(`ready — ${tools.length} tools`);
 }
 
+function argValue(flag: string): string | undefined {
+    const i = process.argv.indexOf(flag);
+    return i >= 0 && i + 1 < process.argv.length ? process.argv[i + 1] : undefined;
+}
+
 async function main(): Promise<void> {
-    const cfg = loadEngineConfig();
+    // Config path comes as a --config arg (Agent Farm tokenizes it as ${USERPROFILE}/…
+    // so the ~/.claude.json entry stays machine-portable) or the AIRTABLE_MCP_CONFIG env.
+    const cfg = loadEngineConfig(argValue('--config'));
     const registry = new EngineRegistry(cfg);
     if (process.argv.includes('--doctor')) {
         await runDoctor(cfg, registry);

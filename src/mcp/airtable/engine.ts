@@ -88,9 +88,34 @@ export class EngineRegistry {
 
     // --- Discovery -----------------------------------------------------------
 
+    /**
+     * Localize the configured roots to THIS machine. A root like "W:/zome/db"
+     * may live on a different drive on another machine (the user's layout keeps
+     * the "…/zome/db" tail stable but the drive letter varies). If the configured
+     * root is missing, we look for the same tail on every existing drive so the
+     * engine is found without machine-specific configuration. Existing roots are
+     * used as-is; nothing is invented when neither the root nor a variant exists.
+     */
+    private candidateRoots(): string[] {
+        const out = new Set<string>();
+        for (const r of this.cfg.roots) {
+            const norm = String(r || '').replace(/\\/g, '/');
+            if (!norm) { continue; }
+            if (fs.existsSync(norm)) { out.add(norm); continue; }
+            const m = /^([A-Za-z]):(\/.*)$/.exec(norm); // <drive>:/tail
+            if (m) {
+                for (const d of 'CDEFGHIJKLMNOPQRSTUVWXYZ') {
+                    const cand = `${d}:${m[2]}`;
+                    if (fs.existsSync(cand)) { out.add(cand); }
+                }
+            }
+        }
+        return [...out];
+    }
+
     private scanRoots(): Instance[] {
         const found = new Map<string, Instance>();
-        for (const root of this.cfg.roots) {
+        for (const root of this.candidateRoots()) {
             let entries: fs.Dirent[] = [];
             try { entries = fs.readdirSync(root, { withFileTypes: true }); } catch { continue; }
             for (const ent of entries) {
