@@ -64,7 +64,7 @@ import {
     addMemoryFile, applyIndexFixes, archiveMemoryFile, copyMemoryFileTo, MEMORY_TYPES, planIndexFixes
 } from './core/memusage';
 import {
-    DEFAULT_MEDIA_PRICING, MediaPriceRule, injectMediaFeedback, mediaCostSince, readMediaMetas, registerExternalAsset
+    DEFAULT_MEDIA_PRICING, MediaPriceRule, MediaMeta, injectMediaFeedback, mediaCostSince, readMediaMetas, registerExternalAsset
 } from './core/media';
 import { IngestFolder, IngestWatcher } from './core/ingest';
 import { discoverProductions, newProduction, PRODUCTION_FILENAME, writeProduction } from './core/production';
@@ -102,6 +102,10 @@ import { AgentDetailPanel } from './panels/agentDetail';
 import { CapabilitiesPanel } from './panels/capabilities';
 import { buildToolboxInventory, ToolboxInventory } from './core/toolbox';
 import { registerToolboxOps } from './core/toolboxBridge';
+import { registerAirtableOps } from './core/airtableBridge';
+import { airtableSettings, newAirtableRegistry } from './core/airtableConfig';
+import { syncAirtableRegistration, registerAirtableMcp, unregisterAirtableMcp } from './core/airtableRegister';
+import { autoRecordMetas } from './core/airtableLink';
 import { ToolboxPanel } from './panels/toolboxPanel';
 import { SecretsPanel } from './panels/secretsPanel';
 import { registerTurnsOps } from './core/turns';
@@ -805,6 +809,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             .map(f => ({ ...f, path: expandEnvPath(f.path.trim()) })),
         (metas) => {
             GalleryPanel.refreshIfOpen();
+            // Deep link: also record ingested assets into the Airtable engine (no-op unless autoRecord is on).
+            void autoRecordMetas(metas);
             const sources = [...new Set(metas.map(m => m.source ?? 'external'))].join(', ');
             void vscode.window.showInformationMessage(
                 `Agent Farm: ${metas.length} media asset(s) registered from ${sources}`, 'Open Gallery'
@@ -2094,6 +2100,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         getAgents: () => agents,
         cacheFile: toolboxProbeCacheFile
     });
+    // Airtable engine ops (constitution §19.C): instance discovery, media/knowledge
+    // save, folder ingest — the same shared engine client the airtable_* MCP tools use.
+    registerAirtableOps(bridge, { getRegistry: newAirtableRegistry });
+    // Register the airtable MCP at user scope when enabled + self-heal the versioned
+    // script path on updates; reconcile whenever the airtable.* settings change.
+    syncAirtableRegistration(context);
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
+        if (e.affectsConfiguration('agentFarm.airtable')) { syncAirtableRegistration(context); }
+    }));
     // Turns ops (§19.C): the Turns page's rows as data.
     registerTurnsOps(bridge, {
         sessions: () => index.all(),
@@ -3854,10 +3869,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const link = await pickProductionScene('Assign the file(s) to a production scene?');
             if (link === undefined) { return; }
             let n = 0;
+            const newMetas: MediaMeta[] = [];
             for (const uri of picked) {
-                if (registerExternalAsset(taskManager.outputsDir, uri.fsPath,
-                    { ...link, source: 'external:manual' })) { n++; }
+                const meta = registerExternalAsset(taskManager.outputsDir, uri.fsPath,
+                    { ...link, source: 'external:manual' });
+                if (meta) { n++; newMetas.push(meta); }
             }
+            // Deep link: mirror manually-registered assets into the Airtable engine (no-op unless autoRecord is on).
+            void autoRecordMetas(newMetas);
             GalleryPanel.refreshIfOpen();
             void vscode.window.showInformationMessage(
                 `Agent Farm: ${n} asset(s) registered` +
@@ -3866,6 +3885,47 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             ).then(choice => {
                 if (choice === 'Open Gallery') { void vscode.commands.executeCommand('agentfarm.openGallery'); }
             });
+        }),
+
+        vscode.commands.registerCommand('agentfarm.airtableRegister', async () => {
+            await airtableSettings().update('enabled', true, vscode.ConfigurationTarget.Global);
+            const outcome = registerAirtableMcp(context);
+            void vscode.window.showInformationMessage(outcome === 'skipped'
+                ? 'Airtable Engine: ~/.claude.json could not be parsed — left unchanged.'
+                : `Airtable Engine: MCP ${outcome} at user scope (~/.claude.json). New agent sessions will see the airtable_* tools.`);
+        }),
+
+        vscode.commands.registerCommand('agentfarm.airtableUnregister', async () => {
+            await airtableSettings().update('enabled', false, vscode.ConfigurationTarget.Global);
+            const outcome = unregisterAirtableMcp();
+            void vscode.window.showInformationMessage(`Airtable Engine: MCP ${outcome} from ~/.claude.json.`);
+        }),
+
+        vscode.commands.registerCommand('agentfarm.airtableDiscover', async () => {
+            try {
+                const list = await newAirtableRegistry().instances({ force: true });
+                if (!list.length) {
+                    void vscode.window.showWarningMessage('Airtable Engine: no instances found under the configured roots (agentFarm.airtable.roots).');
+                    return;
+                }
+                const lines = list.map(i => `${i.live ? 'live   ' : 'offline'}  ${i.name}  :${i.port}  ${i.title}`).join('\n');
+                void vscode.window.showInformationMessage('Airtable Engine instances\n\n' + lines, { modal: true });
+            } catch (e) {
+                void vscode.window.showErrorMessage('Airtable Engine discover failed: ' + (e as Error).message);
+            }
+        }),
+
+        vscode.commands.registerCommand('agentfarm.airtableIngest', async () => {
+            const picked = await vscode.window.showOpenDialog({
+                canSelectFolders: true, canSelectFiles: false, canSelectMany: false,
+                openLabel: 'Ingest folder → draft records'
+            });
+            if (!picked?.length) { return; }
+            const outcome = await bridge.dispatch('airtable.ingestFolder', { folder: picked[0].fsPath });
+            if (!outcome.ok) { void vscode.window.showErrorMessage('Airtable Engine ingest: ' + outcome.error); return; }
+            const r = outcome.result as { instance: string; saved: number; new_files: number };
+            void vscode.window.showInformationMessage(
+                `Airtable Engine: ${r.saved}/${r.new_files} new file(s) saved as draft records in '${r.instance}'. Enrich them with an agent (airtable_media_update).`);
         }),
 
         vscode.commands.registerCommand('agentfarm.rerunMedia', async (taskId?: string, vary?: boolean, withFeedback?: boolean) => {

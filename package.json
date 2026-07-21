@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.85.0",
+  "version": "2.86.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -1067,6 +1067,29 @@
         "command": "agentfarm.copyCliHookCommand",
         "title": "Copy CLI Hook Bridge Command (external CLI events)",
         "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.airtableRegister",
+        "title": "Airtable Engine: Register MCP for All Agents",
+        "category": "Agent Farm",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "agentfarm.airtableUnregister",
+        "title": "Airtable Engine: Unregister MCP",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.airtableDiscover",
+        "title": "Airtable Engine: Discover Instances",
+        "category": "Agent Farm",
+        "icon": "$(search)"
+      },
+      {
+        "command": "agentfarm.airtableIngest",
+        "title": "Airtable Engine: Ingest Folder → Draft Records…",
+        "category": "Agent Farm",
+        "icon": "$(cloud-upload)"
       }
     ],
     "menus": {
@@ -2465,6 +2488,61 @@
               "cacheRead": 0.1
             }
           ]
+        },
+        "agentFarm.airtable.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Register the bundled Airtable engine MCP (airtable_* tools) at user scope so every agent Agent Farm launches can read/write your W:/zome/db knowledge & media engine. The server path self-heals on extension updates. Turn on once."
+        },
+        "agentFarm.airtable.roots": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "W:/zome/db"
+          ],
+          "description": "Folders whose immediate subdirectories are Airtable engine instances (each has a config.json with server.port). Discovery scans these. Supports %VAR% / ${env:VAR}."
+        },
+        "agentFarm.airtable.mediaRoots": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "D:/zome/media"
+          ],
+          "description": "Roots where media asset files live; used to resolve relative media paths before saving. Supports %VAR% / ${env:VAR}."
+        },
+        "agentFarm.airtable.defaultInstance": {
+          "type": "string",
+          "default": "stem",
+          "description": "Instance used when a tool/op does not name one."
+        },
+        "agentFarm.airtable.defaultLang": {
+          "type": "string",
+          "default": "TR",
+          "description": "Language tree (TR/EN) used when unspecified."
+        },
+        "agentFarm.airtable.host": {
+          "type": "string",
+          "default": "localhost",
+          "description": "Host for engine instances discovered without an explicit host."
+        },
+        "agentFarm.airtable.requestTimeoutMs": {
+          "type": "number",
+          "default": 8000,
+          "description": "HTTP timeout (ms) for engine requests."
+        },
+        "agentFarm.airtable.instances": {
+          "type": "array",
+          "default": [],
+          "description": "Optional explicit instances merged over discovery, e.g. [{ \"name\": \"stem\", \"host\": \"localhost\", \"port\": 3003 }]. Use for instances outside a scanned root."
+        },
+        "agentFarm.airtable.autoRecord": {
+          "type": "boolean",
+          "default": false,
+          "description": "When Agent Farm ingests a media file (watched folders) or you run Register Asset, also create a DRAFT record for it in the default Airtable instance (referenced in place; enrich topic/tags/provenance later with an agent). Off by default."
         }
       }
     }
