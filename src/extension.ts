@@ -116,6 +116,7 @@ import { DashboardPanel } from './panels/dashboard';
 import { GalleryPanel } from './panels/gallery';
 import { GuidePanel } from './panels/guide';
 import { KanbanPanel } from './panels/kanban';
+import { TasksPanel, TasksPanelDeps } from './panels/tasksPage';
 import { NeedsPanel } from './panels/needsPanel';
 import { SearchPanel } from './panels/searchPanel';
 import { FarmSettingsPanel } from './panels/settingsPanel';
@@ -2685,9 +2686,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         onDidChangeNeeds: needsEmitter.event
     };
 
+    const tasksDeps: TasksPanelDeps = {
+        ...kanbanDeps,
+        triggerStat: (t) => {
+            const stat = buildTriggerStats([t], taskManager.tasks)[0];
+            return stat && (stat.fireCountTotal || stat.tasks7d) ? describeTriggerStat(stat) : undefined;
+        }
+    };
+
     needsEmitter.event(() => {
         NeedsPanel.refreshIfOpen();
         KanbanPanel.refreshIfOpen();
+        TasksPanel.refreshIfOpen();
     }, null, context.subscriptions);
 
     let pendingMerge: { name: string; files: string[] } | undefined;
@@ -5796,6 +5806,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         vscode.commands.registerCommand('agentfarm.openBoard', () => {
             KanbanPanel.show(kanbanDeps);
+        }),
+
+        vscode.commands.registerCommand('agentfarm.openTasks', () => {
+            TasksPanel.show(tasksDeps);
         }),
 
         // ---------- G2: cost anomaly report ----------
