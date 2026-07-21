@@ -19,21 +19,6 @@ import { handleAfNav, htmlShell } from './base';
  * actions (open, reveal, create, remove-with-backup, enable/disable).
  */
 
-/** Airtable engine — a permanent, functional config section in the Toolbox overview:
- *  register for all agents + manage the engine folders (add / remove / list with counts). */
-export interface AirtableToolboxDeps {
-    status(): { registered: boolean; serverExists: boolean; folders: { path: string; instances: number }[] };
-    register(): 'added' | 'updated' | 'unchanged' | 'skipped';
-    unregister(): 'removed' | 'absent' | 'skipped';
-    discover(): Promise<{ name: string; port: number; live: boolean; title: string }[]>;
-    /** Folder picker → validate on disk → append to agentFarm.airtable.roots. */
-    addFolder(): Promise<{ added?: string; instances?: number; error?: string } | null>;
-    /** Remove one folder from agentFarm.airtable.roots. */
-    removeFolder(path: string): void;
-    /** Open the native Settings UI filtered to the Airtable engine settings. */
-    openSettings(): void;
-}
-
 export interface ToolboxPanelDeps {
     extensionUri: vscode.Uri;
     getAgents(): AgentInfo[];
@@ -42,8 +27,6 @@ export interface ToolboxPanelDeps {
     cacheFile: string;
     refreshTrees(): void;
     home?: string;
-    /** optional — the Airtable engine module registration card */
-    airtable?: AirtableToolboxDeps;
 }
 
 const USAGE_WINDOW_MS = 30 * 24 * 3600 * 1000;
@@ -75,8 +58,7 @@ function buildData(deps: ToolboxPanelDeps): Record<string, unknown> {
         paths: {
             userClaudeDir: userClaudeDir(deps.home),
             userConfigJson: userConfigJson(deps.home)
-        },
-        airtable: deps.airtable ? deps.airtable.status() : null
+        }
     };
 }
 
@@ -178,48 +160,6 @@ export class ToolboxPanel {
                 if (!agent || !server) { return; }
                 setServerDisabled(agent, server, msg.disabled === true);
                 this.changed();
-                break;
-            }
-            case 'airtableRegister': {
-                if (!this.deps.airtable) { return; }
-                const outcome = this.deps.airtable.register();
-                void vscode.window.showInformationMessage(outcome === 'skipped'
-                    ? 'Agent Farm: ~/.claude.json could not be parsed — Airtable engine left unregistered.'
-                    : `Agent Farm: Airtable engine ${outcome} for all agents (user scope). New agent sessions will see the airtable_* tools.`);
-                this.refresh();
-                break;
-            }
-            case 'airtableUnregister': {
-                if (!this.deps.airtable) { return; }
-                const outcome = this.deps.airtable.unregister();
-                void vscode.window.showInformationMessage(`Agent Farm: Airtable engine ${outcome} from ~/.claude.json.`);
-                this.refresh();
-                break;
-            }
-            case 'airtableAddFolder': {
-                if (!this.deps.airtable) { return; }
-                const r = await this.deps.airtable.addFolder();
-                if (r?.error) { this.warn(r.error); }
-                else if (r?.added) {
-                    void vscode.window.showInformationMessage(
-                        `Agent Farm: engine folder added — ${r.added} (${r.instances ?? 0} instance(s) found).`);
-                }
-                this.refresh();
-                break;
-            }
-            case 'airtableRemoveFolder':
-                this.deps.airtable?.removeFolder(String(msg.path ?? ''));
-                this.refresh();
-                break;
-            case 'airtableOpenSettings':
-                this.deps.airtable?.openSettings();
-                break;
-            case 'airtableDiscover': {
-                if (!this.deps.airtable) { return; }
-                const list = await this.deps.airtable.discover();
-                if (!list.length) { this.warn('Airtable engine: no instances found under the configured roots (agentFarm.airtable.roots).'); break; }
-                const lines = list.map(i => `${i.live ? 'live   ' : 'offline'}  ${i.name}  :${i.port}  ${i.title}`).join('\n');
-                void vscode.window.showInformationMessage('Airtable engine instances\n\n' + lines, { modal: true });
                 break;
             }
         }

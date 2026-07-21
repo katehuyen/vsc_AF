@@ -67,11 +67,7 @@ const CATEGORY_OF: Record<string, string> = {
     dailyDigest: 'reports', weeklySummary: 'reports', autoReport: 'reports',
     autoReportFolder: 'reports', autoReportDays: 'reports', autoReportIncludeOutputs: 'reports',
     digestTtsModel: 'reports', digestTtsFolder: 'reports',
-    notifyWebhookUrl: 'reports', notifyWebhookEvents: 'reports',
-    // airtable engine (W:/zome/db knowledge & media)
-    'airtable.roots': 'airtable', 'airtable.mediaRoots': 'airtable',
-    'airtable.defaultInstance': 'airtable', 'airtable.defaultLang': 'airtable', 'airtable.host': 'airtable',
-    'airtable.requestTimeoutMs': 'airtable', 'airtable.instances': 'airtable', 'airtable.autoRecord': 'airtable'
+    notifyWebhookUrl: 'reports', notifyWebhookEvents: 'reports'
 };
 
 export const CATEGORY_LABELS: [string, string][] = [
@@ -85,7 +81,6 @@ export const CATEGORY_LABELS: [string, string][] = [
     ['cli', 'Multi-CLI'],
     ['health', 'Health & Insights'],
     ['reports', 'Reports & Digest'],
-    ['airtable', 'Airtable Engine'],
     ['other', 'Other']
 ];
 

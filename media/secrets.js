@@ -94,7 +94,7 @@
                 page: 'secrets',
                 title: '🔑 Secrets',
                 sub: esc(sub),
-                related: [],
+                related: [{ nav: 'toolbox', label: 'Toolbox' }],
                 actions: `<button class="mini add" data-act="add">+ Add secret</button>`
             })}
             <div class="card sec-intro" style="margin-bottom:10px">
