@@ -1,8 +1,7 @@
 // Toolbox webview — the Airtable Engine card (media/toolbox.js). Runs the real
-// page script in a vm sandbox (like test_settingsops does for settings.js) and
-// checks the card renders per state and its buttons post the right messages.
-// This is what catches a typo in the card HTML, a wrong data-at name, or a
-// broken hide/show branch without needing a live VS Code.
+// page script in a vm sandbox and checks the card renders per state and its
+// buttons post the right messages. The card is a PERMANENT, functional config
+// section (folder manager: add / remove / list with counts) — no Hide.
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -27,6 +26,18 @@ function run(airtable) {
         return els[id];
     }
     let wiredAt = [];
+    // capture the FULL data-* set on each matched tag (so data-path etc. survive)
+    function parseEls(html, key) {
+        const out = [];
+        const tagRe = new RegExp(`<[a-z]+[^>]*\\bdata-${key}="[^"]*"[^>]*>`, 'g');
+        let t;
+        while ((t = tagRe.exec(html))) {
+            const ds = {}; let a; const aRe = /data-([a-z]+)="([^"]*)"/g;
+            while ((a = aRe.exec(t[0]))) { ds[a[1]] = a[2]; }
+            out.push({ dataset: ds, addEventListener(_e, f) { this._fn = f; } });
+        }
+        return out;
+    }
     const sandbox = {
         acquireVsCodeApi: () => ({ postMessage: (m) => posted.push(m), getState() { }, setState() { } }),
         window: {
@@ -42,19 +53,10 @@ function run(airtable) {
             getElementById: getEl,
             querySelector: () => null,
             querySelectorAll: (sel) => {
-                const app = getEl('app');
                 const m = /^\[data-(at|tab|afnav|act|new|exp)\]$/.exec(sel);
                 if (!m) { return []; }
-                const key = m[1];
-                const list = [];
-                const re = new RegExp(`data-${key}="([^"]*)"`, 'g');
-                let hit;
-                while ((hit = re.exec(app._html))) {
-                    const el = { dataset: { [key]: hit[1] } };
-                    el.addEventListener = (_e, fn) => { el._fn = fn; };
-                    list.push(el);
-                }
-                if (key === 'at') { wiredAt = list; }
+                const list = parseEls(getEl('app')._html, m[1]);
+                if (m[1] === 'at') { wiredAt = list; }
                 return list;
             }
         },
@@ -62,37 +64,48 @@ function run(airtable) {
     };
     sandbox.globalThis = sandbox;
     vm.createContext(sandbox);
-    vm.runInContext(code, sandbox); // render() + wire()
+    vm.runInContext(code, sandbox);
     return { html: getEl('app')._html, posted: () => posted, at: (name) => wiredAt.find((e) => e.dataset.at === name) };
 }
 
-// not registered → Register + Discover + Hide + Add-folder + Settings, no Unregister
+// not registered → folder manager + Register + Discover + Add-folder + Settings, NO Hide
 {
-    const r = run({ registered: false, hidden: false, serverExists: true, defaultInstance: '', roots: ['W:/zome/db'] });
-    ok('card renders (not hidden)', r.html.includes('Airtable Engine') && r.html.includes('data-at="register"'));
-    ok('shows discover + hide + add-folder + settings, not unregister',
-        r.html.includes('data-at="discover"') && r.html.includes('data-at="hide"') &&
-        r.html.includes('data-at="addfolder"') && r.html.includes('data-at="opensettings"') &&
-        !r.html.includes('data-at="unregister"'));
-    ok('configured engine folder shown', r.html.includes('W:/zome/db'));
+    const r = run({ registered: false, serverExists: true, folders: [{ path: 'W:/zome/db', instances: 5 }] });
+    ok('card renders', r.html.includes('Airtable Engine') && r.html.includes('data-at="register"'));
+    ok('shows discover + add-folder + settings, not unregister',
+        r.html.includes('data-at="discover"') && r.html.includes('data-at="addfolder"') &&
+        r.html.includes('data-at="opensettings"') && !r.html.includes('data-at="unregister"'));
+    ok('NO Hide/Show on the functional card', !r.html.includes('data-at="hide"') && !r.html.includes('data-at="show"'));
+    ok('lists the engine folder with its instance count', r.html.includes('W:/zome/db') && r.html.includes('5 instance'));
+    ok('folder has a Remove button carrying its path', r.html.includes('data-at="removefolder"') && r.html.includes('data-path="W:/zome/db"'));
     r.at('register')._fn();
-    ok('Register posts airtableRegister', r.posted()[0] && r.posted()[0].type === 'airtableRegister');
+    ok('Register posts airtableRegister', r.posted().some(m => m.type === 'airtableRegister'));
     r.at('addfolder')._fn();
     ok('Add folder posts airtableAddFolder', r.posted().some(m => m.type === 'airtableAddFolder'));
+    r.at('removefolder')._fn();
+    ok('Remove posts airtableRemoveFolder WITH the path', r.posted().some(m => m.type === 'airtableRemoveFolder' && m.path === 'W:/zome/db'));
     r.at('opensettings')._fn();
     ok('Settings posts airtableOpenSettings', r.posted().some(m => m.type === 'airtableOpenSettings'));
 }
 
-// no engine folder configured (product default = empty roots) → prompt, NO hardcoded path
+// multiple folders in different places → each listed with its own count + Remove
 {
-    const r = run({ registered: false, hidden: false, serverExists: true, defaultInstance: '', roots: [] });
-    ok('no folder set → warns + offers add', /No engine folder set/i.test(r.html) && r.html.includes('data-at="addfolder"'));
-    ok('does NOT invent a default path (no W:/zome/db hardcode in UI)', !r.html.includes('W:/zome/db'));
+    const r = run({ registered: true, serverExists: true, folders: [{ path: 'W:/zome/db', instances: 5 }, { path: 'X:/other/engines', instances: 2 }] });
+    ok('both folders listed with counts', r.html.includes('W:/zome/db') && r.html.includes('5 instance') && r.html.includes('X:/other/engines') && r.html.includes('2 instance'));
+    ok('one Remove button per folder', (r.html.match(/data-at="removefolder"/g) || []).length === 2);
+    ok('remove buttons carry each path', r.html.includes('data-path="W:/zome/db"') && r.html.includes('data-path="X:/other/engines"'));
+}
+
+// no engine folder configured (product default) → clear add prompt, NO hardcoded path
+{
+    const r = run({ registered: false, serverExists: true, folders: [] });
+    ok('no folder → warns + offers add', /No engine folder yet/i.test(r.html) && r.html.includes('data-at="addfolder"'));
+    ok('does NOT invent a default path', !r.html.includes('W:/zome/db'));
 }
 
 // registered → Unregister, not Register
 {
-    const r = run({ registered: true, hidden: false, serverExists: true, defaultInstance: '', roots: ['W:/zome/db'] });
+    const r = run({ registered: true, serverExists: true, folders: [{ path: 'W:/zome/db', instances: 5 }] });
     ok('registered shows unregister + status, not register',
         r.html.includes('data-at="unregister"') && r.html.includes('registered') && !r.html.includes('data-at="register"'));
     r.at('unregister')._fn();
@@ -101,30 +114,9 @@ function run(airtable) {
     ok('Discover posts airtableDiscover', r.posted().some(m => m.type === 'airtableDiscover'));
 }
 
-// hide button posts hidden:true
-{
-    const r = run({ registered: false, hidden: false, serverExists: true, defaultInstance: '', roots: [] });
-    r.at('hide')._fn();
-    ok('Hide posts airtableHide hidden:true', r.posted()[0] && r.posted()[0].type === 'airtableHide' && r.posted()[0].hidden === true);
-}
-
-// hidden + not registered → minimized with Show
-{
-    const r = run({ registered: false, hidden: true, serverExists: true, defaultInstance: '', roots: [] });
-    ok('hidden+unregistered minimized with show', r.html.includes('data-at="show"') && !r.html.includes('data-at="register"'));
-    r.at('show')._fn();
-    ok('Show posts airtableHide hidden:false', r.posted()[0] && r.posted()[0].type === 'airtableHide' && r.posted()[0].hidden === false);
-}
-
-// hidden + registered → still shows the full card (they use it)
-{
-    const r = run({ registered: true, hidden: true, serverExists: true, defaultInstance: '', roots: ['W:/zome/db'] });
-    ok('hidden+registered still shows status', r.html.includes('data-at="unregister"') && !r.html.includes('data-at="show"'));
-}
-
 // server module missing → warning + disabled Register
 {
-    const r = run({ registered: false, hidden: false, serverExists: false, defaultInstance: '', roots: ['W:/zome/db'] });
+    const r = run({ registered: false, serverExists: false, folders: [{ path: 'W:/zome/db', instances: 5 }] });
     ok('missing module warns + disables register',
         /module missing/.test(r.html) && /data-at="register"[^>]*disabled/.test(r.html));
 }

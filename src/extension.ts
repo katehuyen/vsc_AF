@@ -104,7 +104,8 @@ import { buildToolboxInventory, ToolboxInventory } from './core/toolbox';
 import { registerToolboxOps } from './core/toolboxBridge';
 import { registerAirtableOps } from './core/airtableBridge';
 import { newAirtableRegistry } from './core/airtableConfig';
-import { syncAirtableRegistration, registerAirtableMcp, unregisterAirtableMcp, isAirtableRegistered, serverScriptPath } from './core/airtableRegister';
+import { syncAirtableRegistration, registerAirtableMcp, unregisterAirtableMcp, isAirtableRegistered, serverScriptPath, writeResolvedConfig } from './core/airtableRegister';
+import { resolveEngineRoot, countEngineInstancesUnder } from './mcp/airtable/engine';
 import { autoRecordMetas } from './core/airtableLink';
 import { ToolboxPanel } from './panels/toolboxPanel';
 import { SecretsPanel } from './panels/secretsPanel';
@@ -2112,37 +2113,46 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
         if (e.affectsConfiguration('agentFarm.airtable')) { syncAirtableRegistration(context); }
     }));
-    const AIRTABLE_HIDDEN_KEY = 'airtable.tbHidden';
+    const airtableRootsSetting = () => vscode.workspace.getConfiguration().get<string[]>('agentFarm.airtable.roots', []);
+    const normRoot = (s: string) => s.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+    const setAirtableRoots = async (roots: string[]) => {
+        await vscode.workspace.getConfiguration().update('agentFarm.airtable.roots', roots, vscode.ConfigurationTarget.Global);
+        try { writeResolvedConfig(context); } catch { /* the config-change watcher also refreshes it */ }
+    };
     const airtableToolboxDeps = {
         status: () => ({
             registered: isAirtableRegistered(),
-            hidden: context.globalState.get<boolean>(AIRTABLE_HIDDEN_KEY, false),
             serverExists: fs.existsSync(serverScriptPath(context)),
-            defaultInstance: newAirtableRegistry().cfg.defaultInstance,
-            roots: newAirtableRegistry().cfg.roots
+            // count instances by scanning each folder on disk (fast, fs-only, no HTTP)
+            folders: airtableRootsSetting().map(r => ({ path: r, instances: countEngineInstancesUnder(expandEnvPath(r)) }))
         }),
         register: () => registerAirtableMcp(context),
         unregister: () => unregisterAirtableMcp(),
-        setHidden: (h: boolean) => { void context.globalState.update(AIRTABLE_HIDDEN_KEY, h); },
         discover: async () => (await newAirtableRegistry().instances({ force: true }))
             .map(i => ({ name: i.name, port: i.port, live: i.live !== false, title: i.title })),
         addFolder: async () => {
             const picked = await vscode.window.showOpenDialog({
                 canSelectFolders: true, canSelectFiles: false, canSelectMany: false,
                 openLabel: 'Use as engine folder',
-                title: 'Pick the folder that CONTAINS your engine instances (subfolders with a config.json)'
+                title: 'Pick your engine folder — the folder that CONTAINS your instances, or an instance folder itself'
             });
             if (!picked?.length) { return null; }
-            const folder = picked[0].fsPath.replace(/\\/g, '/');
-            const conf = vscode.workspace.getConfiguration();
-            const cur = conf.get<string[]>('agentFarm.airtable.roots', []);
-            if (!cur.some(r => r.replace(/\\/g, '/').toLowerCase() === folder.toLowerCase())) {
-                await conf.update('agentFarm.airtable.roots', [...cur, folder], vscode.ConfigurationTarget.Global);
+            // Validate against the DISK directly (never rely on a just-written setting):
+            // resolve the pick to a real root (parent-of-instances) and count them.
+            const resolved = resolveEngineRoot(picked[0].fsPath);
+            if (!resolved) {
+                return { error: `No engine instance found in "${picked[0].fsPath}". Pick the folder that CONTAINS your instances (each is a subfolder with a config.json), or an instance folder itself.` };
             }
-            // the config-change watcher rewrites the staged config; count what we now see
-            let instances = 0;
-            try { instances = (await newAirtableRegistry().instances({ force: true })).length; } catch { /* ignore */ }
-            return { added: folder, instances };
+            const cur = airtableRootsSetting();
+            if (!cur.some(r => normRoot(expandEnvPath(r)) === normRoot(resolved.root))) {
+                await setAirtableRoots([...cur, resolved.root]);
+            }
+            return { added: resolved.root, instances: resolved.instances };
+        },
+        removeFolder: (p: string) => {
+            const cur = airtableRootsSetting();
+            const next = cur.filter(r => normRoot(expandEnvPath(r)) !== normRoot(p));
+            if (next.length !== cur.length) { void setAirtableRoots(next); }
         },
         openSettings: () => { void vscode.commands.executeCommand('workbench.action.openSettings', 'agentFarm.airtable'); }
     };
@@ -3936,7 +3946,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         vscode.commands.registerCommand('agentfarm.airtableRegister', () => {
             const outcome = registerAirtableMcp(context);
-            void context.globalState.update(AIRTABLE_HIDDEN_KEY, false);
             ToolboxPanel.refreshIfOpen();
             void vscode.window.showInformationMessage(outcome === 'skipped'
                 ? 'Airtable Engine: ~/.claude.json could not be parsed — left unchanged.'

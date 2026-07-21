@@ -77,6 +77,45 @@ export interface Instance {
     title: string; root: string | null; live?: boolean;
 }
 
+// --- Folder helpers (pure fs; used by the Toolbox "Add engine folder" flow) ---
+
+/** True if <dir>/config.json declares a server.port — the mark of an instance. */
+export function isEngineInstanceDir(dir: string): boolean {
+    try {
+        const j = JSON.parse(fs.readFileSync(path.join(dir, 'config.json'), 'utf8')) as Dict;
+        return !!((j.server as Dict | undefined)?.port);
+    } catch { return false; }
+}
+
+/** Count engine instances directly under <root> (immediate subdirs with config.json+port). */
+export function countEngineInstancesUnder(root: string): number {
+    let n = 0;
+    try {
+        for (const e of fs.readdirSync(root, { withFileTypes: true })) {
+            if (e.isDirectory() && isEngineInstanceDir(path.join(root, e.name))) { n++; }
+        }
+    } catch { /* not a readable dir */ }
+    return n;
+}
+
+/**
+ * Resolve a folder the user picked to a valid engine ROOT (a folder that HOLDS
+ * instances): the folder itself when it holds instances, or its parent when the
+ * folder IS an instance. Scans the disk directly — it never depends on a settings
+ * value having propagated yet. Returns null when neither interpretation finds one.
+ */
+export function resolveEngineRoot(picked: string): { root: string; instances: number } | null {
+    const p = String(picked || '').replace(/\\/g, '/').replace(/\/+$/, '');
+    if (!p) { return null; }
+    const direct = countEngineInstancesUnder(p);
+    if (direct > 0) { return { root: p, instances: direct }; }
+    if (isEngineInstanceDir(p)) {
+        const parent = p.replace(/\/[^/]+$/, '') || p;
+        return { root: parent, instances: countEngineInstancesUnder(parent) || 1 };
+    }
+    return null;
+}
+
 interface FetchOpts { method?: string; body?: unknown; timeoutMs?: number; }
 
 export class EngineError extends Error {

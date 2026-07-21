@@ -89,31 +89,28 @@
     function airtableCard() {
         const a = DATA.airtable;
         if (!a) { return ''; }
-        if (a.hidden && !a.registered) {
-            return `<div class="card at-card at-min"><span class="muted small">Airtable Engine card hidden.</span>
-                <button class="mini" data-at="show">show</button></div>`;
-        }
         const status = a.registered
             ? '<span class="tag on">registered · user scope</span>'
             : '<span class="tag off">not registered</span>';
         const warn = a.serverExists ? ''
             : '<div class="small warn-t">⚠ engine module missing from this build (out/mcp/airtable) — reinstall the extension.</div>';
-        const roots = (a.roots || []).filter(Boolean);
-        const foldersLine = roots.length
-            ? `<div class="small at-folders"><b>Engine folder(s):</b> ${roots.map(r => `<code>${esc(r)}</code>`).join(' ')}</div>`
-            : '<div class="small warn-t at-folders">No engine folder set yet — add the folder that contains your instances to begin.</div>';
+        const folders = a.folders || [];
+        const foldersBlock = folders.length
+            ? `<div class="at-folders"><div class="small" style="opacity:.75;margin-bottom:2px">Engine folders</div>${folders.map(f =>
+                `<div class="at-frow"><code>${esc(f.path)}</code> <span class="muted small">${f.instances} instance(s)</span>
+                    <button class="mini danger" data-at="removefolder" data-path="${esc(f.path)}" title="remove this folder">Remove</button></div>`).join('')}</div>`
+            : '<div class="small warn-t at-folders">No engine folder yet — add the folder that CONTAINS your instances (each is a subfolder with a config.json).</div>';
         const regBtn = a.registered
             ? '<button class="mini danger" data-at="unregister">Unregister</button>'
             : `<button class="mini add" data-at="register"${a.serverExists ? '' : ' disabled'}>Register for all agents</button>`;
         return `<div class="card at-card">
-            <div class="at-head"><b>Airtable Engine</b> ${status}
-                <button class="mini" data-at="hide" title="hide this card (configure later from Settings)">hide</button></div>
+            <div class="at-head"><b>Airtable Engine</b> ${status}</div>
             <div class="muted small at-desc">Let any agent record media &amp; knowledge into your engine via the
-                <code>airtable_*</code> tools. Point it at your engine folder(s) below, then register so every agent session sees the tools.</div>
-            ${foldersLine}
+                <code>airtable_*</code> tools. Add your engine folder(s) below, then register so every agent session sees the tools.</div>
+            ${foldersBlock}
             ${warn}
             <div class="at-actions">
-                <button class="mini add" data-at="addfolder">+ Add engine folder…</button>
+                <button class="mini add" data-at="addfolder">+ Add folder…</button>
                 <button class="mini" data-at="discover">Discover instances</button>
                 ${regBtn}
                 <button class="mini" data-at="opensettings">Settings</button></div></div>`;
@@ -330,10 +327,13 @@
                 .newrow select { max-width: 180px; }
                 .searchbar input { width: 280px; }
                 .at-card { border-left: 3px solid var(--vscode-charts-blue, #3794ff); margin-bottom: 10px; }
-                .at-card.at-min { border-left-color: var(--vscode-widget-border, #666); display: flex; align-items: center; gap: 8px; }
                 .at-head { display: flex; align-items: center; gap: 8px; }
                 .at-head b { font-size: 14px; }
                 .at-desc { margin: 6px 0; line-height: 1.4; }
+                .at-folders { margin: 6px 0; }
+                .at-frow { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+                .at-frow code { word-break: break-all; }
+                .at-actions { margin-top: 8px; }
                 .at-actions .mini { margin-left: 0; margin-right: 6px; }
                 .mini[disabled] { opacity: .5; cursor: not-allowed; }
             </style>
@@ -397,9 +397,8 @@
                 else if (a === 'unregister') { post({ type: 'airtableUnregister' }); }
                 else if (a === 'discover') { post({ type: 'airtableDiscover' }); }
                 else if (a === 'addfolder') { post({ type: 'airtableAddFolder' }); }
+                else if (a === 'removefolder') { post({ type: 'airtableRemoveFolder', path: b.dataset.path }); }
                 else if (a === 'opensettings') { post({ type: 'airtableOpenSettings' }); }
-                else if (a === 'hide') { post({ type: 'airtableHide', hidden: true }); }
-                else if (a === 'show') { post({ type: 'airtableHide', hidden: false }); }
             }));
     }
 

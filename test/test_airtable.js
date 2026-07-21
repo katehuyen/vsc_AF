@@ -107,6 +107,29 @@ const R = (p) => require(path.join(__dirname, '..', 'out', p));
     ok('unix home tokenized with ${HOME}', tokenizePath('/home/bob/.claude/x.js', '/home/bob', 'linux') === '${HOME}/.claude/x.js');
 }
 
+// ---------- engine folder resolution (the "Add engine folder" flow) ----------
+{
+    const { resolveEngineRoot, countEngineInstancesUnder, isEngineInstanceDir } = R('mcp/airtable/engine.js');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'at-folders-'));
+    const db = path.join(tmp, 'db');
+    const inst = path.join(db, 'stem');
+    fs.mkdirSync(inst, { recursive: true });
+    fs.writeFileSync(path.join(inst, 'config.json'), JSON.stringify({ server: { port: 3003 } }));
+    fs.mkdirSync(path.join(db, 'acu'), { recursive: true });
+    fs.writeFileSync(path.join(db, 'acu', 'config.json'), JSON.stringify({ server: { port: 3002 } }));
+    const fwd = p => p.replace(/\\/g, '/');
+    ok('isEngineInstanceDir true for config.json+port dir', isEngineInstanceDir(inst) === true);
+    ok('isEngineInstanceDir false for a plain parent dir', isEngineInstanceDir(db) === false);
+    ok('countEngineInstancesUnder counts subdir instances', countEngineInstancesUnder(db) === 2);
+    ok('resolveEngineRoot: picking the PARENT-of-instances works',
+        (() => { const r = resolveEngineRoot(db); return r && r.instances === 2 && fwd(r.root) === fwd(db); })());
+    ok('resolveEngineRoot: picking an INSTANCE folder resolves to its parent (forgiving)',
+        (() => { const r = resolveEngineRoot(inst); return r && r.instances === 2 && fwd(r.root) === fwd(db); })());
+    ok('resolveEngineRoot: grandparent (no instances at this level) → null', resolveEngineRoot(tmp) === null);
+    ok('resolveEngineRoot: unrelated folder → null', resolveEngineRoot(path.join(tmp, 'nope')) === null);
+    fs.rmSync(tmp, { recursive: true, force: true });
+}
+
 // ---------- bridge ops (§19.C): catalogued + dispatch against a fixture registry ----------
 (async () => {
     // ---------- instance discovery + drive localization (no HTTP) ----------

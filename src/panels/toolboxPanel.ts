@@ -19,16 +19,18 @@ import { handleAfNav, htmlShell } from './base';
  * actions (open, reveal, create, remove-with-backup, enable/disable).
  */
 
-/** Airtable engine card on the Toolbox overview — register + configure the engine folders. */
+/** Airtable engine — a permanent, functional config section in the Toolbox overview:
+ *  register for all agents + manage the engine folders (add / remove / list with counts). */
 export interface AirtableToolboxDeps {
-    status(): { registered: boolean; hidden: boolean; serverExists: boolean; defaultInstance: string; roots: string[] };
+    status(): { registered: boolean; serverExists: boolean; folders: { path: string; instances: number }[] };
     register(): 'added' | 'updated' | 'unchanged' | 'skipped';
     unregister(): 'removed' | 'absent' | 'skipped';
-    setHidden(hidden: boolean): void;
     discover(): Promise<{ name: string; port: number; live: boolean; title: string }[]>;
-    /** Folder picker → append to agentFarm.airtable.roots. Returns what changed (or null if cancelled). */
+    /** Folder picker → validate on disk → append to agentFarm.airtable.roots. */
     addFolder(): Promise<{ added?: string; instances?: number; error?: string } | null>;
-    /** Open Farm Settings focused on the Airtable Engine section. */
+    /** Remove one folder from agentFarm.airtable.roots. */
+    removeFolder(path: string): void;
+    /** Open the native Settings UI filtered to the Airtable engine settings. */
     openSettings(): void;
 }
 
@@ -194,22 +196,21 @@ export class ToolboxPanel {
                 this.refresh();
                 break;
             }
-            case 'airtableHide':
-                this.deps.airtable?.setHidden(msg.hidden === true);
-                this.refresh();
-                break;
             case 'airtableAddFolder': {
                 if (!this.deps.airtable) { return; }
                 const r = await this.deps.airtable.addFolder();
                 if (r?.error) { this.warn(r.error); }
                 else if (r?.added) {
                     void vscode.window.showInformationMessage(
-                        `Agent Farm: engine folder added — ${r.added}` +
-                        (r.instances !== undefined ? ` (${r.instances} instance(s) found).` : '.'));
+                        `Agent Farm: engine folder added — ${r.added} (${r.instances ?? 0} instance(s) found).`);
                 }
                 this.refresh();
                 break;
             }
+            case 'airtableRemoveFolder':
+                this.deps.airtable?.removeFolder(String(msg.path ?? ''));
+                this.refresh();
+                break;
             case 'airtableOpenSettings':
                 this.deps.airtable?.openSettings();
                 break;
