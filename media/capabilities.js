@@ -206,7 +206,7 @@
                 title: 'Capability Matrix',
                 sub: `who has which skill / MCP server, and what is actually used (last 30 days) ·
                         green = used, ✓ = installed but unused, ⏻ = disabled, ＋ = copy onto that agent (when copies differ, you pick the source)`,
-                related: [{ nav: 'toolbox', label: 'Toolbox' }],
+                related: [],
                 guide: 'yetenek-matrisi'
             })}
             ${matrix(DATA.skills, 'skill', 'Skills', 'Scaffold one from the Agents tree: Skills → +.')}

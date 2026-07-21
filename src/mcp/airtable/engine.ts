@@ -32,13 +32,16 @@ export interface EngineConfig {
     requestTimeoutMs: number;
 }
 
+// Product defaults — no machine- or user-specific paths. Engine folders are
+// configured per machine (agentFarm.airtable.roots); empty here means "discover
+// nothing until configured", which is the correct behaviour on a fresh install.
 export const DEFAULT_CONFIG: EngineConfig = {
-    roots: ['W:/zome/db'],
+    roots: [],
     instances: [],
-    defaultInstance: 'stem',
+    defaultInstance: '',
     defaultLang: 'TR',
     host: 'localhost',
-    mediaRoots: ['D:/zome/media'],
+    mediaRoots: [],
     requestTimeoutMs: 8000,
 };
 
@@ -178,14 +181,21 @@ export class EngineRegistry {
 
     async resolveInstance(nameOrNull?: string): Promise<Instance> {
         const list = await this.instances();
-        const name = nameOrNull || this.cfg.defaultInstance;
-        let inst = list.find((i) => i.name === name);
-        if (!inst && !nameOrNull && list.length === 1) { inst = list[0]; }
-        if (!inst) {
-            const names = list.map((i) => `${i.name}(${i.port}${i.live ? '' : ', offline'})`).join(', ') || '(none found)';
-            throw new EngineError(`instance '${name}' not found. Known: ${names}`);
+        const known = () => list.map((i) => `${i.name}(${i.port}${i.live ? '' : ', offline'})`).join(', ');
+        const wanted = (nameOrNull || this.cfg.defaultInstance || '').trim();
+        if (wanted) {
+            const inst = list.find((i) => i.name === wanted);
+            if (inst) { return inst; }
+            throw new EngineError(`instance '${wanted}' not found. Known: ${known() || '(none discovered)'}`);
         }
-        return inst;
+        // No name and no default: use the only instance, or the only live one.
+        if (list.length === 1) { return list[0]; }
+        const live = list.filter((i) => i.live !== false);
+        if (live.length === 1) { return live[0]; }
+        if (!list.length) {
+            throw new EngineError('No engine instances found — add your engine folder in Toolbox → Airtable Engine (or set agentFarm.airtable.roots).');
+        }
+        throw new EngineError(`No default instance set — name one of: ${known()}`);
     }
 
     // --- HTTP core -----------------------------------------------------------

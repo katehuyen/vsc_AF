@@ -2117,13 +2117,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             registered: isAirtableRegistered(),
             hidden: context.globalState.get<boolean>(AIRTABLE_HIDDEN_KEY, false),
             serverExists: fs.existsSync(serverScriptPath(context)),
-            defaultInstance: newAirtableRegistry().cfg.defaultInstance
+            defaultInstance: newAirtableRegistry().cfg.defaultInstance,
+            roots: newAirtableRegistry().cfg.roots
         }),
         register: () => registerAirtableMcp(context),
         unregister: () => unregisterAirtableMcp(),
         setHidden: (h: boolean) => { void context.globalState.update(AIRTABLE_HIDDEN_KEY, h); },
         discover: async () => (await newAirtableRegistry().instances({ force: true }))
-            .map(i => ({ name: i.name, port: i.port, live: i.live !== false, title: i.title }))
+            .map(i => ({ name: i.name, port: i.port, live: i.live !== false, title: i.title })),
+        addFolder: async () => {
+            const picked = await vscode.window.showOpenDialog({
+                canSelectFolders: true, canSelectFiles: false, canSelectMany: false,
+                openLabel: 'Use as engine folder',
+                title: 'Pick the folder that CONTAINS your engine instances (subfolders with a config.json)'
+            });
+            if (!picked?.length) { return null; }
+            const folder = picked[0].fsPath.replace(/\\/g, '/');
+            const conf = vscode.workspace.getConfiguration();
+            const cur = conf.get<string[]>('agentFarm.airtable.roots', []);
+            if (!cur.some(r => r.replace(/\\/g, '/').toLowerCase() === folder.toLowerCase())) {
+                await conf.update('agentFarm.airtable.roots', [...cur, folder], vscode.ConfigurationTarget.Global);
+            }
+            // the config-change watcher rewrites the staged config; count what we now see
+            let instances = 0;
+            try { instances = (await newAirtableRegistry().instances({ force: true })).length; } catch { /* ignore */ }
+            return { added: folder, instances };
+        },
+        openSettings: () => { void vscode.commands.executeCommand('workbench.action.openSettings', 'agentFarm.airtable'); }
     };
     // Turns ops (§19.C): the Turns page's rows as data.
     registerTurnsOps(bridge, {

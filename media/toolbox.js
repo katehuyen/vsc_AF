@@ -98,18 +98,25 @@
             : '<span class="tag off">not registered</span>';
         const warn = a.serverExists ? ''
             : '<div class="small warn-t">⚠ engine module missing from this build (out/mcp/airtable) — reinstall the extension.</div>';
-        const actions = a.registered
+        const roots = (a.roots || []).filter(Boolean);
+        const foldersLine = roots.length
+            ? `<div class="small at-folders"><b>Engine folder(s):</b> ${roots.map(r => `<code>${esc(r)}</code>`).join(' ')}</div>`
+            : '<div class="small warn-t at-folders">No engine folder set yet — add the folder that contains your instances to begin.</div>';
+        const regBtn = a.registered
             ? '<button class="mini danger" data-at="unregister">Unregister</button>'
             : `<button class="mini add" data-at="register"${a.serverExists ? '' : ' disabled'}>Register for all agents</button>`;
         return `<div class="card at-card">
             <div class="at-head"><b>Airtable Engine</b> ${status}
-                <button class="mini" data-at="hide" title="hide this card (register later from the command palette)">hide</button></div>
-            <div class="muted small at-desc">Let any agent record media &amp; knowledge into your local
-                <code>${esc(a.defaultInstance || 'W:/zome/db')}</code> engine (the <code>airtable_*</code> tools). Registering writes one entry to
-                <code>~/.claude.json</code> at user scope so every agent session sees it; the versioned path self-heals on updates.</div>
+                <button class="mini" data-at="hide" title="hide this card (configure later from Settings)">hide</button></div>
+            <div class="muted small at-desc">Let any agent record media &amp; knowledge into your engine via the
+                <code>airtable_*</code> tools. Point it at your engine folder(s) below, then register so every agent session sees the tools.</div>
+            ${foldersLine}
             ${warn}
-            <div class="at-actions">${actions}
-                <button class="mini" data-at="discover">Discover instances</button></div></div>`;
+            <div class="at-actions">
+                <button class="mini add" data-at="addfolder">+ Add engine folder…</button>
+                <button class="mini" data-at="discover">Discover instances</button>
+                ${regBtn}
+                <button class="mini" data-at="opensettings">Settings</button></div></div>`;
     }
 
     function overviewTab() {
@@ -389,6 +396,8 @@
                 if (a === 'register') { post({ type: 'airtableRegister' }); }
                 else if (a === 'unregister') { post({ type: 'airtableUnregister' }); }
                 else if (a === 'discover') { post({ type: 'airtableDiscover' }); }
+                else if (a === 'addfolder') { post({ type: 'airtableAddFolder' }); }
+                else if (a === 'opensettings') { post({ type: 'airtableOpenSettings' }); }
                 else if (a === 'hide') { post({ type: 'airtableHide', hidden: true }); }
                 else if (a === 'show') { post({ type: 'airtableHide', hidden: false }); }
             }));

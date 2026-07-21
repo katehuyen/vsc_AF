@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.90.0",
+  "version": "2.91.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -2494,50 +2494,46 @@
           "items": {
             "type": "string"
           },
-          "default": [
-            "W:/zome/db"
-          ],
-          "description": "Folders whose immediate subdirectories are Airtable engine instances (each has a config.json with server.port). Discovery scans these. Supports %VAR% / ${env:VAR}."
+          "default": [],
+          "description": "Engine folders on THIS machine. Add the folder that CONTAINS your engine instances — each instance is a subfolder holding a config.json with a server.port (for example a folder that contains 'stem', 'acupuncture'). Empty means nothing is discovered until you add one. Easiest way: Toolbox → Airtable Engine card → 'Add engine folder'. Paths may use %VAR%, ${env:VAR} or ~. If the same folder lives on a different drive on another machine, its '…/tail' is auto-located on existing drives."
         },
         "agentFarm.airtable.mediaRoots": {
           "type": "array",
           "items": {
             "type": "string"
           },
-          "default": [
-            "D:/zome/media"
-          ],
-          "description": "Roots where media asset files live; used to resolve relative media paths before saving. Supports %VAR% / ${env:VAR}."
+          "default": [],
+          "description": "Optional. Folders where your media asset FILES (images/videos) live. Used only to resolve a RELATIVE file path an agent passes — absolute paths always work without this. Supports %VAR%, ${env:VAR}, ~."
         },
         "agentFarm.airtable.defaultInstance": {
           "type": "string",
-          "default": "stem",
-          "description": "Instance used when a tool/op does not name one."
+          "default": "",
+          "description": "Instance name to use when a tool or command doesn't name one. Leave empty to auto-use the only running instance. Names are your instance subfolder names; see them in Toolbox → Airtable Engine → 'Discover instances'."
         },
         "agentFarm.airtable.defaultLang": {
           "type": "string",
           "default": "TR",
-          "description": "Language tree (TR/EN) used when unspecified."
+          "description": "The language SUBFOLDER inside your engine where records are stored (for example TR or EN). This is your DATA's language tree — NOT the extension's UI language (the UI is always English). Set it to a language folder that exists in your engine."
         },
         "agentFarm.airtable.host": {
           "type": "string",
           "default": "localhost",
-          "description": "Host for engine instances discovered without an explicit host."
+          "description": "Host for instances discovered without an explicit host. Almost always 'localhost' (the engine runs on your own machine)."
         },
         "agentFarm.airtable.requestTimeoutMs": {
           "type": "number",
           "default": 8000,
-          "description": "HTTP timeout (ms) for engine requests."
+          "description": "How long to wait (in milliseconds) for an engine HTTP response before giving up."
         },
         "agentFarm.airtable.instances": {
           "type": "array",
           "default": [],
-          "description": "Optional explicit instances merged over discovery, e.g. [{ \"name\": \"stem\", \"host\": \"localhost\", \"port\": 3003 }]. Use for instances outside a scanned root."
+          "description": "Advanced. Declare instances explicitly instead of (or in addition to) folder discovery: [{ \"name\": \"stem\", \"host\": \"localhost\", \"port\": 3003 }]. Use only when an instance is not inside one of your engine folders."
         },
         "agentFarm.airtable.autoRecord": {
           "type": "boolean",
           "default": false,
-          "description": "When Agent Farm ingests a media file (watched folders) or you run Register Asset, also create a DRAFT record for it in the default Airtable instance (referenced in place; enrich topic/tags/provenance later with an agent). Off by default."
+          "description": "When Agent Farm ingests a media file (a watched folder) or you run 'Register Asset', ALSO create a draft record for it in your default instance (the file is referenced in place; enrich topic/tags/provenance later with an agent). Off by default."
         }
       }
     }
