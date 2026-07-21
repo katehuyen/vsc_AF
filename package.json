@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.86.0",
+  "version": "2.87.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -2488,11 +2488,6 @@
               "cacheRead": 0.1
             }
           ]
-        },
-        "agentFarm.airtable.enabled": {
-          "type": "boolean",
-          "default": false,
-          "description": "Register the bundled Airtable engine MCP (airtable_* tools) at user scope so every agent Agent Farm launches can read/write your W:/zome/db knowledge & media engine. The server path self-heals on extension updates. Turn on once."
         },
         "agentFarm.airtable.roots": {
           "type": "array",

@@ -19,6 +19,15 @@ import { handleAfNav, htmlShell } from './base';
  * actions (open, reveal, create, remove-with-backup, enable/disable).
  */
 
+/** Airtable engine card on the Toolbox overview — one-click register/hide, command fallback. */
+export interface AirtableToolboxDeps {
+    status(): { registered: boolean; hidden: boolean; serverExists: boolean; defaultInstance: string };
+    register(): 'added' | 'updated' | 'unchanged' | 'skipped';
+    unregister(): 'removed' | 'absent' | 'skipped';
+    setHidden(hidden: boolean): void;
+    discover(): Promise<{ name: string; port: number; live: boolean; title: string }[]>;
+}
+
 export interface ToolboxPanelDeps {
     extensionUri: vscode.Uri;
     getAgents(): AgentInfo[];
@@ -27,6 +36,8 @@ export interface ToolboxPanelDeps {
     cacheFile: string;
     refreshTrees(): void;
     home?: string;
+    /** optional — the Airtable engine module registration card */
+    airtable?: AirtableToolboxDeps;
 }
 
 const USAGE_WINDOW_MS = 30 * 24 * 3600 * 1000;
@@ -58,7 +69,8 @@ function buildData(deps: ToolboxPanelDeps): Record<string, unknown> {
         paths: {
             userClaudeDir: userClaudeDir(deps.home),
             userConfigJson: userConfigJson(deps.home)
-        }
+        },
+        airtable: deps.airtable ? deps.airtable.status() : null
     };
 }
 
@@ -160,6 +172,34 @@ export class ToolboxPanel {
                 if (!agent || !server) { return; }
                 setServerDisabled(agent, server, msg.disabled === true);
                 this.changed();
+                break;
+            }
+            case 'airtableRegister': {
+                if (!this.deps.airtable) { return; }
+                const outcome = this.deps.airtable.register();
+                void vscode.window.showInformationMessage(outcome === 'skipped'
+                    ? 'Agent Farm: ~/.claude.json could not be parsed — Airtable engine left unregistered.'
+                    : `Agent Farm: Airtable engine ${outcome} for all agents (user scope). New agent sessions will see the airtable_* tools.`);
+                this.refresh();
+                break;
+            }
+            case 'airtableUnregister': {
+                if (!this.deps.airtable) { return; }
+                const outcome = this.deps.airtable.unregister();
+                void vscode.window.showInformationMessage(`Agent Farm: Airtable engine ${outcome} from ~/.claude.json.`);
+                this.refresh();
+                break;
+            }
+            case 'airtableHide':
+                this.deps.airtable?.setHidden(msg.hidden === true);
+                this.refresh();
+                break;
+            case 'airtableDiscover': {
+                if (!this.deps.airtable) { return; }
+                const list = await this.deps.airtable.discover();
+                if (!list.length) { this.warn('Airtable engine: no instances found under the configured roots (agentFarm.airtable.roots).'); break; }
+                const lines = list.map(i => `${i.live ? 'live   ' : 'offline'}  ${i.name}  :${i.port}  ${i.title}`).join('\n');
+                void vscode.window.showInformationMessage('Airtable engine instances\n\n' + lines, { modal: true });
                 break;
             }
         }

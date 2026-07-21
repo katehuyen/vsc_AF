@@ -69,7 +69,7 @@ const CATEGORY_OF: Record<string, string> = {
     digestTtsModel: 'reports', digestTtsFolder: 'reports',
     notifyWebhookUrl: 'reports', notifyWebhookEvents: 'reports',
     // airtable engine (W:/zome/db knowledge & media)
-    'airtable.enabled': 'airtable', 'airtable.roots': 'airtable', 'airtable.mediaRoots': 'airtable',
+    'airtable.roots': 'airtable', 'airtable.mediaRoots': 'airtable',
     'airtable.defaultInstance': 'airtable', 'airtable.defaultLang': 'airtable', 'airtable.host': 'airtable',
     'airtable.requestTimeoutMs': 'airtable', 'airtable.instances': 'airtable', 'airtable.autoRecord': 'airtable'
 };

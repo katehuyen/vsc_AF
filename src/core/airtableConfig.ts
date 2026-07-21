@@ -14,7 +14,6 @@ export function airtableSettings(): vscode.WorkspaceConfiguration {
     return vscode.workspace.getConfiguration('agentFarm.airtable');
 }
 
-export function airtableEnabled(): boolean { return airtableSettings().get<boolean>('enabled', false); }
 export function airtableAutoRecord(): boolean { return airtableSettings().get<boolean>('autoRecord', false); }
 
 function expandList(arr: string[] | undefined): string[] {

@@ -103,8 +103,8 @@ import { CapabilitiesPanel } from './panels/capabilities';
 import { buildToolboxInventory, ToolboxInventory } from './core/toolbox';
 import { registerToolboxOps } from './core/toolboxBridge';
 import { registerAirtableOps } from './core/airtableBridge';
-import { airtableSettings, newAirtableRegistry } from './core/airtableConfig';
-import { syncAirtableRegistration, registerAirtableMcp, unregisterAirtableMcp } from './core/airtableRegister';
+import { newAirtableRegistry } from './core/airtableConfig';
+import { syncAirtableRegistration, registerAirtableMcp, unregisterAirtableMcp, isAirtableRegistered, serverScriptPath } from './core/airtableRegister';
 import { autoRecordMetas } from './core/airtableLink';
 import { ToolboxPanel } from './panels/toolboxPanel';
 import { SecretsPanel } from './panels/secretsPanel';
@@ -2103,12 +2103,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // Airtable engine ops (constitution §19.C): instance discovery, media/knowledge
     // save, folder ingest — the same shared engine client the airtable_* MCP tools use.
     registerAirtableOps(bridge, { getRegistry: newAirtableRegistry });
-    // Register the airtable MCP at user scope when enabled + self-heal the versioned
-    // script path on updates; reconcile whenever the airtable.* settings change.
+    // Self-heal an EXISTING airtable registration's versioned path + keep its
+    // resolved config fresh; reconcile when the airtable.* settings change. The
+    // ~/.claude.json entry is the source of truth — no VS Code setting is written,
+    // so this never throws "not a registered configuration".
     syncAirtableRegistration(context);
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
         if (e.affectsConfiguration('agentFarm.airtable')) { syncAirtableRegistration(context); }
     }));
+    const AIRTABLE_HIDDEN_KEY = 'airtable.tbHidden';
+    const airtableToolboxDeps = {
+        status: () => ({
+            registered: isAirtableRegistered(),
+            hidden: context.globalState.get<boolean>(AIRTABLE_HIDDEN_KEY, false),
+            serverExists: fs.existsSync(serverScriptPath(context)),
+            defaultInstance: newAirtableRegistry().cfg.defaultInstance
+        }),
+        register: () => registerAirtableMcp(context),
+        unregister: () => unregisterAirtableMcp(),
+        setHidden: (h: boolean) => { void context.globalState.update(AIRTABLE_HIDDEN_KEY, h); },
+        discover: async () => (await newAirtableRegistry().instances({ force: true }))
+            .map(i => ({ name: i.name, port: i.port, live: i.live !== false, title: i.title }))
+    };
     // Turns ops (§19.C): the Turns page's rows as data.
     registerTurnsOps(bridge, {
         sessions: () => index.all(),
@@ -3062,7 +3078,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 getAgents: () => agents,
                 index,
                 cacheFile: toolboxProbeCacheFile,
-                refreshTrees: refreshAll
+                refreshTrees: refreshAll,
+                airtable: airtableToolboxDeps
             });
         }),
 
@@ -3887,17 +3904,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             });
         }),
 
-        vscode.commands.registerCommand('agentfarm.airtableRegister', async () => {
-            await airtableSettings().update('enabled', true, vscode.ConfigurationTarget.Global);
+        vscode.commands.registerCommand('agentfarm.airtableRegister', () => {
             const outcome = registerAirtableMcp(context);
+            void context.globalState.update(AIRTABLE_HIDDEN_KEY, false);
+            ToolboxPanel.refreshIfOpen();
             void vscode.window.showInformationMessage(outcome === 'skipped'
                 ? 'Airtable Engine: ~/.claude.json could not be parsed — left unchanged.'
                 : `Airtable Engine: MCP ${outcome} at user scope (~/.claude.json). New agent sessions will see the airtable_* tools.`);
         }),
 
-        vscode.commands.registerCommand('agentfarm.airtableUnregister', async () => {
-            await airtableSettings().update('enabled', false, vscode.ConfigurationTarget.Global);
+        vscode.commands.registerCommand('agentfarm.airtableUnregister', () => {
             const outcome = unregisterAirtableMcp();
+            ToolboxPanel.refreshIfOpen();
             void vscode.window.showInformationMessage(`Airtable Engine: MCP ${outcome} from ~/.claude.json.`);
         }),
 

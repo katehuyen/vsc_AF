@@ -272,7 +272,11 @@ export class EngineRegistry {
         throw new EngineError(`file not found: ${raw} (looked in: ${candidates.join(' | ')})`);
     }
 
-    private static normPath(p: string): string { return String(p || '').replace(/\\/g, '/').toLowerCase(); }
+    // Collapse backslashes AND the stray double-slash the panel sometimes writes
+    // (e.g. ".../raw//file.png") so dedup matches panel-made records too.
+    private static normPath(p: string): string {
+        return String(p || '').replace(/\\/g, '/').replace(/\/{2,}/g, '/').toLowerCase();
+    }
 
     /** Find an existing media record that references this file (idempotency). */
     async findMediaByFilePath(inst: Instance, absPath: string, lang?: string): Promise<string | null> {
@@ -366,7 +370,8 @@ export class EngineRegistry {
         const now = new Date();
         const idInfo = await this.collectionNextId(inst, 'sentences', { dateStr: dateStrFromDate(now), lang });
         const id = (idInfo?.nextId as string) || `sent_${dateStrFromDate(now)}_${Date.now()}`;
-        const record = buildSentenceRecord({ id, lang, ...(args as object) } as SentenceRecordArgs);
+        // args first, then id/lang so the computed identity always wins.
+        const record = buildSentenceRecord({ ...(args as object), id, lang } as SentenceRecordArgs);
         const rel = `db/sentences/${monthSegmentFromDate(now)}/${id}.json`;
         const result = await this.createFile(inst, { rel, item: record, lang });
         return { ok: true, id, rel, instance: inst.name, lang, word_count: record.word_count, version: (result?.version as number) ?? 1 };

@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { airtableConfigFromSettings, airtableEnabled } from './airtableConfig';
+import { airtableConfigFromSettings } from './airtableConfig';
 import { SERVER_KEY, McpEntry, upsertServer } from './airtableRegisterCore';
 
 export { SERVER_KEY } from './airtableRegisterCore';
@@ -74,20 +74,27 @@ export function unregisterAirtableMcp(): 'removed' | 'absent' | 'skipped' {
     return 'removed';
 }
 
-const REG_MIRROR_KEY = 'airtable.regMirror';
+/** Is the airtable server currently registered in ~/.claude.json? (state = the entry itself) */
+export function isAirtableRegistered(): boolean {
+    const file = claudeJsonPath();
+    if (!fs.existsSync(file)) { return false; }
+    try {
+        const json = JSON.parse(fs.readFileSync(file, 'utf8')) as Dict;
+        const servers = json.mcpServers as Dict | undefined;
+        return !!(servers && servers[SERVER_KEY]);
+    } catch { return false; }
+}
 
 /**
- * On activation / config change: keep the resolved config fresh, self-heal the
- * registration when enabled, and remove it only on the enabled→disabled edge
- * (tracked via globalState) so we never clobber an entry the user manages by hand.
+ * On activation / config change: keep the resolved config fresh and self-heal an
+ * EXISTING registration (fix the versioned script path after an extension update).
+ * Never auto-registers — the user opts in via the Toolbox button or command, and
+ * the ~/.claude.json entry itself is the source of truth for "registered". No VS
+ * Code setting is written, so this can never throw "not a registered configuration".
  */
 export function syncAirtableRegistration(context: vscode.ExtensionContext): void {
     try {
         writeResolvedConfig(context);
-        const enabled = airtableEnabled();
-        const prev = context.globalState.get<boolean>(REG_MIRROR_KEY, false);
-        if (enabled) { registerAirtableMcp(context); }
-        else if (prev) { unregisterAirtableMcp(); }
-        void context.globalState.update(REG_MIRROR_KEY, enabled);
+        if (isAirtableRegistered()) { registerAirtableMcp(context); }
     } catch { /* never break activation */ }
 }
