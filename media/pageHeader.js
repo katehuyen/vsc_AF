@@ -3,7 +3,7 @@
 // whose left half is the page's own scope controls and actions, and whose
 // right half — after a thin divider — is the GLOBAL cluster, identical on
 // every page (minus the page itself):
-//   Dashboard · Live Timeline · Missions · [related panel] · ⌕ Search · ⚙ Settings · Refresh · ? Guide
+//   Dashboard · Live Timeline · Missions · Toolbox · [related panel] · ⌕ Search · ⚙ Settings · Refresh · ? Guide
 // Pages differ only in their left half; the right half is muscle memory.
 // Alignment, gaps and wrapping come from here — pages must not hand-roll
 // their own header rows.
@@ -20,7 +20,8 @@
     const NAV = [
         { id: 'dashboard', label: 'Dashboard' },
         { id: 'timeline', label: 'Live Timeline' },
-        { id: 'missions', label: 'Missions' }
+        { id: 'missions', label: 'Missions' },
+        { id: 'toolbox', label: 'Toolbox' }
     ];
 
     /**
