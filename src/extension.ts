@@ -44,6 +44,7 @@ import {
 import { buildEvalReport, compareRuns, EvalCase, EvalStore, runEvalSet, summarizeRun } from './core/evals';
 import { buildInsights, Insight } from './core/health';
 import { ApprovalQueue, blockingCount, buildNeedsQueue, NeedItem } from './core/needs';
+import { NoticesStore, registerNoticesOps } from './core/notices';
 import { PulseStore, runPulseSweep } from './core/pulse';
 import { buildTriggerStats, describeTriggerStat, triggerAlerts } from './core/triggerstats';
 import {
@@ -118,6 +119,7 @@ import { GuidePanel } from './panels/guide';
 import { AirtablePanel } from './panels/airtablePanel';
 import { TasksPanel } from './panels/tasksPanel';
 import { NeedsPanel } from './panels/needsPanel';
+import { NoticesPanel } from './panels/noticesPanel';
 import { SearchPanel } from './panels/searchPanel';
 import { FarmSettingsPanel } from './panels/settingsPanel';
 import { SelectionPanel } from './panels/selectionPanel';
@@ -236,6 +238,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // H3: pulse (smoke) results.
     const pulseStore = new PulseStore(path.join(context.globalStorageUri.fsPath, 'pulse.json'));
+
+    // Notices — the agent→user notice board (core/notices.ts): a persisted,
+    // user-owned message channel every agent posts to via the `notices.post`
+    // bridge op. Dedicated page + a status-bar bell carrying the unread count.
+    const noticesStore = new NoticesStore(path.join(context.globalStorageUri.fsPath, 'notices.json'));
+    noticesStore.load();
+    const noticesBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 89);
+    noticesBar.command = 'agentfarm.openNotices';
+    context.subscriptions.push(noticesBar);
+    const updateNoticesBadge = () => {
+        const u = noticesStore.unread();
+        noticesBar.text = u > 0 ? `$(bell-dot) ${u}` : '$(bell)';
+        noticesBar.tooltip = u > 0
+            ? `${u} unread notice(s) — click to open the Notices board`
+            : 'Notices — agent→user messages & reminders';
+        noticesBar.show();
+    };
+    updateNoticesBadge();
 
     // I1: CLAUDE.md version history (per agent).
     const instrHistory = new InstructionHistory(path.join(context.globalStorageUri.fsPath, 'instr-history'));
@@ -2188,6 +2208,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     registerTurnsOps(bridge, {
         sessions: () => index.all(),
         isActive: s => index.isSessionActive(s, Date.now())
+    });
+
+    // Notices ops (§19.C): the agent→user notice board — every agent posts
+    // "you should know / remember this" here; the user reads them on the
+    // Notices page. This is the channel the manager agent's daily AI digest
+    // and any agent's reminders/results surface through.
+    registerNoticesOps(bridge, {
+        store: noticesStore,
+        onChange: () => { NoticesPanel.refreshIfOpen(); updateNoticesBadge(); },
+        onPost: (n) => {
+            if (n.level === 'alert') {
+                void vscode.window.showWarningMessage(`🔔 ${n.agentName}: ${n.title}`, 'Open Notices')
+                    .then(pick => { if (pick) { void vscode.commands.executeCommand('agentfarm.openNotices'); } });
+            }
+        }
     });
 
     // ---------- Airtable Engine module ----------
@@ -5880,6 +5915,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         vscode.commands.registerCommand('agentfarm.openNeeds', () => {
             NeedsPanel.show(needsDeps);
+        }),
+
+        vscode.commands.registerCommand('agentfarm.openNotices', () => {
+            NoticesPanel.show({
+                extensionUri: context.extensionUri,
+                store: noticesStore,
+                agentNames: () => agents.map(a => a.name),
+                onChange: () => updateNoticesBadge()
+            });
         }),
 
         vscode.commands.registerCommand('agentfarm.openTasks', () => {

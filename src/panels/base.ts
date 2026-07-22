@@ -65,6 +65,7 @@ export function handleAfNav(to: unknown): void {
         dashboard: 'agentfarm.openDashboard',
         timeline: 'agentfarm.openTimeline',
         needs: 'agentfarm.openNeeds',
+        notices: 'agentfarm.openNotices',
         board: 'agentfarm.openBoard',
         tasks: 'agentfarm.openTasks',
         airtable: 'agentfarm.openAirtable',

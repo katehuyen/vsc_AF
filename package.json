@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -953,6 +953,12 @@
       {
         "command": "agentfarm.openNeeds",
         "title": "Open Needs You (Approval Queue)",
+        "category": "Agent Farm",
+        "icon": "$(bell)"
+      },
+      {
+        "command": "agentfarm.openNotices",
+        "title": "Open Notices (Agent → You message board)",
         "category": "Agent Farm",
         "icon": "$(bell)"
       },
