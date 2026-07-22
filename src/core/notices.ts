@@ -21,8 +21,10 @@ import { argStr, BridgeRegistry, need, optStr } from './bridge';
  * (handled=true). Pure node module (fs only) so store + ops are unit-testable.
  */
 
-export type NoticeType = 'update' | 'reminder' | 'report' | 'question';
-export const NOTICE_TYPES: NoticeType[] = ['update', 'reminder', 'report', 'question'];
+export type NoticeType =
+    | 'update' | 'report' | 'result' | 'reminder' | 'suggestion' | 'warning' | 'question';
+export const NOTICE_TYPES: NoticeType[] =
+    ['update', 'report', 'result', 'reminder', 'suggestion', 'warning', 'question'];
 
 /** Importance: 1 routine · 2 medium · 3 important · 4 ultra (rare, critical). */
 export type NoticeLevel = 1 | 2 | 3 | 4;
@@ -62,6 +64,29 @@ export interface Notice {
     /** The asking agent processed the answer/decline. */
     handled?: boolean;
     handledAt?: number;
+    // --- user edits ---
+    edited?: boolean;
+    editedAt?: number;
+    /** Content snapshot before the first user edit (for diff). */
+    original?: NoticeSnapshot;
+}
+
+export interface NoticeSnapshot {
+    title: string;
+    type: NoticeType;
+    level: NoticeLevel;
+    body?: string;
+    sections?: NoticeSection[];
+    tags?: string[];
+}
+
+export interface NoticeEdit {
+    title?: string;
+    type?: string;
+    level?: number;
+    body?: string;
+    sections?: unknown;
+    tags?: string[] | string;
 }
 
 export interface NoticeInput {
@@ -257,6 +282,22 @@ export class NoticesStore {
         n.stars = coerceStars(stars); this.save(); return true;
     }
 
+    /** User edits content; the first edit snapshots the original for diff. */
+    edit(id: string, patch: NoticeEdit): boolean {
+        const n = this.find(id); if (!n) { return false; }
+        if (!n.edited) {
+            n.original = { title: n.title, type: n.type, level: n.level, body: n.body, sections: n.sections, tags: n.tags };
+        }
+        if (typeof patch.title === 'string' && patch.title.trim()) { n.title = patch.title.trim().slice(0, TITLE_MAX); }
+        if (patch.type !== undefined) { n.type = coerceType(patch.type); }
+        if (patch.level !== undefined) { n.level = coerceLevel(patch.level); }
+        if (patch.body !== undefined) { const b = String(patch.body).trim(); n.body = b ? b.slice(0, BODY_MAX) : undefined; }
+        if (patch.sections !== undefined) { n.sections = coerceSections(patch.sections); }
+        if (patch.tags !== undefined) { n.tags = coerceTags(patch.tags); }
+        n.edited = true; n.editedAt = Date.now();
+        this.save(); return true;
+    }
+
     /** User answers a question (UI). */
     answer(id: string, text: string): boolean {
         const n = this.find(id); if (!n || n.type !== 'question') { return false; }
@@ -300,6 +341,72 @@ export class NoticesStore {
     unread(): number { return unreadCount(this.notices); }
     openQuestions(): number { return openQuestionCount(this.notices); }
     list(f: NoticeFilter = {}): Notice[] { return filterNotices(this.notices, f); }
+}
+
+// ---------------------------------------------------------------------------
+// markdown export
+// ---------------------------------------------------------------------------
+
+export const TYPE_LABEL: Record<NoticeType, string> = {
+    update: 'Update', report: 'Report', result: 'Result', reminder: 'Reminder',
+    suggestion: 'Suggestion', warning: 'Warning', question: 'Question'
+};
+export const LEVEL_LABEL: Record<number, string> = { 1: 'Routine', 2: 'Medium', 3: 'Important', 4: 'Ultra' };
+
+/** One notice as a self-contained markdown block. */
+export function noticeMarkdown(n: Notice, headingLevel = 2): string {
+    const h = '#'.repeat(Math.min(6, Math.max(1, headingLevel)));
+    const secH = '#'.repeat(Math.min(6, headingLevel + 1));
+    const meta = [
+        TYPE_LABEL[n.type] ?? n.type,
+        `Level ${n.level} (${LEVEL_LABEL[n.level] ?? ''})`,
+        n.agentName,
+        new Date(n.ts).toLocaleString()
+    ];
+    if (n.stars) { meta.push('★'.repeat(n.stars)); }
+    if (n.edited) { meta.push('edited'); }
+    if (n.tags?.length) { meta.push(n.tags.map(t => '#' + t).join(' ')); }
+    const lines: string[] = [`${h} ${n.title}`, '', `_${meta.join(' · ')}_`, ''];
+    if (n.body) { lines.push(n.body, ''); }
+    for (const s of n.sections ?? []) { lines.push(`${secH} ${s.title}`, '', s.body, ''); }
+    if (n.type === 'question') {
+        const st = n.status ?? 'open';
+        if (st === 'answered') { lines.push(`**Answer:** ${n.answer ?? ''}`, ''); }
+        else if (st === 'declined') { lines.push('_Question dismissed without an answer._', ''); }
+        else { lines.push('_Question — awaiting your answer._', ''); }
+    }
+    if (n.dueAt) { lines.push(`_Due: ${new Date(n.dueAt).toLocaleString()}_`, ''); }
+    return lines.join('\n').trimEnd() + '\n';
+}
+
+export interface NoticesExportOpts { view: boolean; foldedTitles: boolean; }
+
+/** Page export. `shownIds` = ordered ids the user sees (post filter/sort/search);
+ *  `openIds` = expanded ones. view=false dumps every shown notice in full;
+ *  view=true dumps open ones in full and folded ones as a title (foldedTitles)
+ *  or omits them. */
+export function buildNoticesMarkdown(
+    all: Notice[], shownIds: string[], openIds: Set<string>, opts: NoticesExportOpts
+): string {
+    const byId = new Map(all.map(n => [n.id, n]));
+    const lines: string[] = ['# Agent Farm — Notices export', ''];
+    lines.push(`- Generated: ${new Date().toLocaleString()}`);
+    lines.push(opts.view
+        ? `- Export: current view · ${shownIds.length} listed · open notices in full · folded ${opts.foldedTitles ? 'as titles' : 'omitted'}`
+        : `- Export: current view · ${shownIds.length} listed · all in full`);
+    lines.push('');
+    let emitted = 0;
+    for (const id of shownIds) {
+        const n = byId.get(id);
+        if (!n) { continue; }
+        if (!opts.view || openIds.has(id)) { lines.push(noticeMarkdown(n, 2)); emitted++; }
+        else if (opts.foldedTitles) {
+            lines.push(`## ${n.title}`, '', `_(folded — ${TYPE_LABEL[n.type] ?? n.type} · Level ${n.level} · ${n.agentName})_`, '');
+            emitted++;
+        }
+    }
+    if (!emitted) { lines.push('_No notices matched the export selection._', ''); }
+    return lines.join('\n');
 }
 
 // ---------------------------------------------------------------------------

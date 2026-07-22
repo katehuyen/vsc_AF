@@ -10,7 +10,8 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 
 const {
     NoticesStore, makeNotice, filterNotices, capNotices, coerceType, coerceLevel,
-    coerceSections, coerceStars, unreadCount, openQuestionCount, registerNoticesOps
+    coerceSections, coerceStars, unreadCount, openQuestionCount, registerNoticesOps,
+    noticeMarkdown, buildNoticesMarkdown, NOTICE_TYPES
 } = require(path.join(__dirname, '..', 'out', 'core', 'notices.js'));
 const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'bridge.js'));
 
@@ -24,6 +25,8 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
     ok('type lowercased + validated', n.type === 'report');
     ok('level kept (3)', n.level === 3);
     ok('unknown type → update', coerceType('nope') === 'update');
+    ok('rich type set', ['update', 'report', 'result', 'reminder', 'suggestion', 'warning', 'question'].every(t => NOTICE_TYPES.includes(t)));
+    ok('new types coerce', coerceType('warning') === 'warning' && coerceType('result') === 'result' && coerceType('suggestion') === 'suggestion');
     ok('bad level → 1', coerceLevel(9) === 1 && coerceLevel('x') === 1 && coerceLevel(2) === 2);
     ok('stars clamp 0..3', coerceStars(5) === 0 && coerceStars(2) === 2 && coerceStars(-1) === 0);
     ok('sections parsed (title/heading/body/content)', n.sections.length === 2 && n.sections[0].title === 'S1' && n.sections[1].title === 'S2' && n.sections[1].body === 'c2');
@@ -67,6 +70,21 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
     ok('cap keeps pinned/open-question/starred', ['pin', 'q', 'star'].every(id => capped.some(n => n.id === id)));
 }
 
+// ---------- markdown export ----------
+{
+    const n = makeNotice({ title: 'Daily AI', type: 'update', level: 3, tags: 'ai-daily', sections: [{ title: 'Model X', body: 'Full summary.' }] });
+    const md = noticeMarkdown(n, 2);
+    ok('noticeMarkdown has title + section + meta', /## Daily AI/.test(md) && /### Model X/.test(md) && /Level 3/.test(md) && /#ai-daily/.test(md));
+    const q = makeNotice({ title: 'ask', type: 'question' });
+    ok('question markdown notes awaiting answer', /awaiting your answer/i.test(noticeMarkdown(q)));
+
+    const all = [n, q];
+    const full = buildNoticesMarkdown(all, [n.id, q.id], new Set([n.id]), { view: true, foldedTitles: true });
+    ok('page export: open in full, folded as title', /### Model X/.test(full) && /## ask/.test(full) && /folded/.test(full));
+    const allFull = buildNoticesMarkdown(all, [n.id, q.id], new Set(), { view: false, foldedTitles: false });
+    ok('page export view=false dumps all in full', /### Model X/.test(allFull) && /awaiting your answer/i.test(allFull));
+}
+
 // ---------- store lifecycle ----------
 {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-notices-'));
@@ -83,6 +101,15 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
     ok('setStars', store.setStars(a.id, 3) && store.notices.find(n => n.id === a.id).stars === 3);
     ok('setStars clamps', store.setStars(a.id, 9) && store.notices.find(n => n.id === a.id).stars === 0);
     ok('pin', store.pin(a.id, true) && store.list()[0].id === a.id);
+
+    // edit snapshots the original then updates
+    ok('edit updates + snapshots original', store.edit(a.id, { title: 'digest v2', tags: 'ai,news', body: 'new body' }) && (() => {
+        const n = store.notices.find(x => x.id === a.id);
+        return n.edited === true && n.title === 'digest v2' && n.body === 'new body' &&
+            n.tags.join(',') === 'ai,news' && n.original && n.original.title === 'digest';
+    })());
+    ok('second edit keeps first original', store.edit(a.id, { title: 'digest v3' }) &&
+        store.notices.find(x => x.id === a.id).original.title === 'digest');
 
     ok('answer sets status+answered', store.answer(q.id, '  yes go ahead ') && (() => { const n = store.notices.find(x => x.id === q.id); return n.status === 'answered' && n.answer === 'yes go ahead' && n.read; })());
     ok('answer refuses non-question', store.answer(a.id, 'x') === false);

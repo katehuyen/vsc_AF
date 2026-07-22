@@ -5927,7 +5927,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 extensionUri: context.extensionUri,
                 store: noticesStore,
                 agentNames: () => agents.map(a => a.name),
-                onChange: () => updateNoticesBadge()
+                onChange: () => updateNoticesBadge(),
+                lastExportDir: () => context.globalState.get<string>('agentfarm.lastExportDir'),
+                setLastExportDir: (dir: string) => { void context.globalState.update('agentfarm.lastExportDir', dir); }
             });
         }),
 
