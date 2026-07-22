@@ -187,8 +187,8 @@
                         ? `<code title="${esc(reg.currentPath || '')}">${esc((reg.current && reg.current.args && reg.current.args[0]) || '')}</code>`
                         : '<span class="muted small">— not registered</span>'}</div>
                 <div class="air-conn"><span class="muted small">module config</span>
-                    <a data-openconfig="${esc(DATA.configFile)}" title="the single source of truth — this page edits it, the MCP server re-reads it on every call"><code>${esc(DATA.configFile)}</code></a></div>
-                <div class="muted small" style="margin-top:8px">Changes on this page reach running agents on their next tool call — no restart needed.</div>
+                    <a data-openconfig="${esc(DATA.configFile)}" title="the single source of truth (${esc(DATA.configFile)}) — this page edits it, the MCP server re-reads it on every call; click to open"><code>${esc(DATA.configFileToken || DATA.configFile)}</code></a></div>
+                <div class="muted small" style="margin-top:8px">Paths use portable tokens (<code>\${APPDATA}</code>) — nothing here is hardcoded to this machine. Changes reach running agents on their next tool call — no restart needed.</div>
             </div>
         </div>`;
     }

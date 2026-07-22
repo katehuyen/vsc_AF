@@ -9,11 +9,20 @@
 // else may be written to it — diagnostics go to stderr); requests carry an id
 // and get exactly one response; notifications (no id) get none.
 
+import * as fs from 'fs';
+import * as path from 'path';
 import * as readline from 'readline';
 import { TOOLS } from './tools';
 
 const PROTOCOL_VERSION = '2025-06-18';
-const SERVER_INFO = { name: 'airtable-engine', version: '3.0.0' };
+// Version is read from the staged `.version` file next to this script (written
+// by the extension when it stages the server), so it never drifts from the
+// extension. Falls back to '0' when run from an unstaged checkout.
+function serverVersion(): string {
+    try { return fs.readFileSync(path.join(__dirname, '.version'), 'utf8').trim() || '0'; }
+    catch { return '0'; }
+}
+const SERVER_INFO = { name: 'airtable-engine', version: serverVersion() };
 
 type Dict = Record<string, unknown>;
 

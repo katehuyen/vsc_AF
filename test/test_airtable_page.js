@@ -44,7 +44,8 @@ const DATA = {
         current: { command: 'node', args: ['${APPDATA}/old/index.js'] }
     },
     staging: { dir: 'C:/store/mcp/airtable', version: '3.1.0', extensionVersion: '3.1.0' },
-    configFile: 'C:/store/airtable-config.json',
+    configFile: 'C:\\Users\\demo\\AppData\\Roaming\\Code\\User\\globalStorage\\muvusoft.agent-farm\\airtable-config.json',
+    configFileToken: '${APPDATA}\\Code\\User\\globalStorage\\muvusoft.agent-farm\\airtable-config.json',
     probe: { ok: true, tools: [{ name: 'airtable_media_save', description: 'CREATE a media record. More text here.' }], probedAt: Date.now() - 120000 },
     instances: [
         {
@@ -116,8 +117,12 @@ ok('down instance card: dimmed + start hint', html().includes('air-down')
 ok('live/total counter in the heading', html().includes('1 live / 2'));
 ok('engine folder row: raw token + instance count', html().includes('%USERPROFILE%\\zome\\db')
     && html().includes('2 instance(s) · 1 live'));
-ok('connection block shows registration + config file', html().includes('${APPDATA}/old/index.js')
-    && html().includes('C:/store/airtable-config.json'));
+ok('connection block shows registration path', html().includes('${APPDATA}/old/index.js'));
+ok('module config shown as a PORTABLE token, not a raw C:\\Users path',
+    html().includes('${APPDATA}\\Code\\User\\globalStorage\\muvusoft.agent-farm\\airtable-config.json')
+    && !/<code>[^<]*Users\\demo[^<]*airtable-config/.test(html()));
+ok('resolved config path still available for the open action + tooltip',
+    html().includes('data-openconfig="C:\\Users\\demo\\AppData\\Roaming\\Code\\User\\globalStorage\\muvusoft.agent-farm\\airtable-config.json"'));
 ok('agent access panel is live-verified', html().includes('live-verified')
     && html().includes('airtable_media_save'));
 ok('Repair + Unregister offered for a pinned registration',

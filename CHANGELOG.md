@@ -2,6 +2,19 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.1.1 — Airtable module: edge-case audit + real end-to-end verification (2026-07-22)
+
+An adversarial sweep of the whole Airtable stack (new `test_airtable_edge.js`, 67 checks) plus real verification through the actual claude CLI, fixing six defects:
+
+- **MCP now expands env tokens in root paths** (`discoverInstances`). The page expanded `%VAR%`/`${env:VAR}` before discovery but the MCP tool side used the raw root — a tokenized/portable config found instances in the UI yet failed for agents. Unified on one expander (`expandRoot`, also handling the `${VAR}` registration form and `~`); the page and the agents now agree.
+- **Two agent-facing guidance messages named removed things.** `NOT_CONFIGURED` and the multi-instance error still pointed at the old "Toolbox card" and the deleted `agentFarm.airtable.*` settings — an agent would have relayed instructions for UI that no longer exists. Both now point at "Open Airtable Engine → Add folder".
+- **`airtable_media_save` rejects a directory path** — it only checked existence (true for folders), so a folder path produced a bogus `unknown`-type record. Now requires a real file.
+- **The MCP server reports its real version** (read from the staged `.version`) instead of a hardcoded `3.0.0` that drifted.
+- **The Airtable page shows the config path as a portable token** (`${APPDATA}\…`) matching the registration line, with the resolved path in the tooltip and for the open action — no more alarming raw `C:\Users\…` under a "nothing here is machine-specific" label.
+- Config header comment corrected to describe the store-file architecture (not the removed settings mirror).
+
+Verified end-to-end on the real claude: `claude mcp list` connects the server (proves `${APPDATA}` expands in args); a haiku `airtable_instances` call returned live instances (proves the `AIRTABLE_MCP_CONFIG` env token expands and the config reads); a haiku `airtable_media_save` created a real record with correctly marshalled structured args, then hard-deleted and 404-verified (live data left pristine). Suite: 56 files, 1522 checks green; live smoke 10/10. Full technical report in the agent's raporlar/.
+
 ## 3.1.0 — Airtable Engine gets its own page; the store file becomes the single source of truth (2026-07-22)
 
 3.0.0's surface repeated shapes from the discarded line and its settings plumbing failed in the field — both fixed by redesign, not patching:

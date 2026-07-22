@@ -1,6 +1,8 @@
 // Airtable Engine access layer — pure node (no vscode imports), shared by the
 // MCP server (out/mcp/airtable/index.js, staged standalone) AND the extension
-// (Toolbox card, bridge ops import this same module — one source of truth).
+// (Airtable Engine page + bridge ops import this same module — one source of
+// truth). Self-contained on purpose: the staged MCP copy ships only these files,
+// so nothing here may reach into ../core (path helpers are duplicated below).
 //
 // The engine is the user's own data motor: an Express server per deploy
 // ("instance"), each instance a folder <root>/<name>/ with config.json
@@ -14,6 +16,7 @@
 // and deleted cleanly with DELETE /api/file (it also clears the search index).
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { AirtableMcpConfig } from './config';
 import {
@@ -32,6 +35,25 @@ export interface EngineInstance {
     host: string;
     port: number;
     configPath: string;
+}
+
+/**
+ * Expand env tokens in a configured root so a portable/hand-edited config works
+ * on the MCP side exactly as it does on the page. Covers all three syntaxes the
+ * project uses — %VAR%, ${env:VAR}, ${VAR} (the claude/registration form) — plus
+ * a leading ~. Unknown variables are left verbatim (visible, not dropped). This
+ * duplicates core/util.expandEnvPath because the staged MCP module cannot import
+ * from ../core; both must stay in sync.
+ */
+export function expandRoot(p: string): string {
+    let out = String(p || '')
+        .replace(/\$\{env:([^}]+)\}/gi, (m, v) => process.env[String(v)] ?? m)
+        .replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (m, v) => process.env[String(v)] ?? m)
+        .replace(/%([^%]+)%/g, (m, v) => process.env[String(v)] ?? m);
+    if (out === '~' || out.startsWith('~/') || out.startsWith('~\\')) {
+        out = os.homedir() + out.slice(1);
+    }
+    return out;
 }
 
 /** Read one folder as an instance, or undefined when it isn't one. */
@@ -61,7 +83,8 @@ export function discoverInstances(roots: string[]): EngineInstance[] {
         const key = inst && inst.dir.replace(/\\/g, '/').toLowerCase();
         if (inst && key && !seen.has(key)) { seen.add(key); out.push(inst); }
     };
-    for (const root of roots) {
+    for (const rawRoot of roots) {
+        const root = expandRoot(rawRoot);
         add(instanceAt(root));
         let entries: fs.Dirent[] = [];
         try { entries = fs.readdirSync(root, { withFileTypes: true }); } catch { continue; }
@@ -222,7 +245,7 @@ export async function resolveInstance(config: AirtableMcpConfig, name?: string):
             + 'Start one, or check airtable_instances.');
     }
     throw new Error(`${live.length} instances are running (${live.map(i => i.name).join(', ')}) — `
-        + 'say which one with the "instance" argument, or set agentFarm.airtable.defaultInstance.');
+        + 'say which one with the "instance" argument, or set a default instance on the Airtable Engine page.');
 }
 
 // ---------------------------------------------------------------- search
@@ -293,8 +316,11 @@ export interface MediaSaveArgs {
  *  metadata → next-id → skeleton (+ template) → POST /api/file. */
 export async function saveMedia(client: EngineClient, args: MediaSaveArgs): Promise<{ id: string; rel: string; record: Dict }> {
     const absPath = path.resolve(args.file);
-    if (!fs.existsSync(absPath)) {
-        throw new Error(`File not found: ${absPath} — the record must reference a real file.`);
+    let stat: fs.Stats;
+    try { stat = fs.statSync(absPath); }
+    catch { throw new Error(`File not found: ${absPath} — the record must reference a real file.`); }
+    if (!stat.isFile()) {
+        throw new Error(`Not a file: ${absPath} — a media record must reference a file, not a directory.`);
     }
     const fileMeta = await extractFileMetadata(absPath);
     const date = dateStrFromDate();

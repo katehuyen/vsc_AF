@@ -2,9 +2,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { AirtableMcpConfig, parseConfig, parseJsonFile } from '../mcp/airtable/config';
-import { checkInstances, discoverInstances, EngineClient, EngineInstance } from '../mcp/airtable/engine';
+import { checkInstances, discoverInstances, EngineClient, EngineInstance, expandRoot } from '../mcp/airtable/engine';
 import { addUserMcpServer, readUserMcpServerRaw, removeUserMcpServer, userConfigJson } from './toolbox';
-import { expandEnvPath } from './util';
 
 /**
  * Airtable Engine module — the extension half of the integration.
@@ -55,9 +54,10 @@ export function saveStore(storageDir: string, patch: Partial<AirtableStore>): Ai
     return next;
 }
 
-/** Stored paths may carry env tokens — expand for THIS machine. */
+/** Stored paths may carry env tokens — expand for THIS machine. Uses the same
+ *  expander the MCP discovery uses, so the page and the agents agree. */
 export function expandedDatabaseRoots(store: AirtableStore): string[] {
-    return store.databaseRoots.map(expandEnvPath);
+    return store.databaseRoots.map(expandRoot);
 }
 
 // ---------------------------------------------------------------- staging
@@ -118,9 +118,10 @@ export function tokenizeForClaude(p: string, env: NodeJS.ProcessEnv = process.en
     return p;
 }
 
-/** Expand ${VAR} (Claude's syntax) plus the settings syntaxes. */
-export function expandClaudeVars(s: string, env: NodeJS.ProcessEnv = process.env): string {
-    return expandEnvPath(s.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (m, v) => env[String(v)] ?? m));
+/** Expand ${VAR} (Claude's registration syntax) plus %VAR% / ${env:VAR} / ~.
+ *  Same expander the MCP uses, so a token compares equal on both sides. */
+export function expandClaudeVars(s: string): string {
+    return expandRoot(s);
 }
 
 export interface RegistrationDef {
@@ -187,7 +188,12 @@ export interface AirtablePageData {
     expandedRoots: string[];
     registration: RegistrationState;
     staging: { dir: string; version?: string; extensionVersion: string };
+    /** resolved absolute path — used to OPEN the file (this machine only) */
     configFile: string;
+    /** machine-independent form of the same path (${APPDATA}\…) — this is the
+     *  exact string the registration hands the server as AIRTABLE_MCP_CONFIG,
+     *  so the page shows one consistent, portable path, not a raw C:\Users\… */
+    configFileToken: string;
     /** filled asynchronously by the instance probe */
     instances?: AirtableInstanceRow[];
 }
@@ -216,7 +222,8 @@ export function airtablePageData(storageDir: string, extVersion: string, home = 
         expandedRoots: expandedDatabaseRoots(store),
         registration: registrationState(storageDir, home),
         staging: { dir, version: version ?? undefined, extensionVersion: extVersion },
-        configFile: storePath(storageDir)
+        configFile: storePath(storageDir),
+        configFileToken: tokenizeForClaude(storePath(storageDir))
     };
 }
 
@@ -240,7 +247,8 @@ export async function probeAirtableInstances(storageDir: string): Promise<Airtab
     }));
 }
 
-/** What does this folder hold? Instances inside it — or is it one itself? */
+/** What does this folder hold? Instances inside it — or is it one itself?
+ *  discoverInstances expands env tokens itself, so the raw folder is fine. */
 export function validateDatabaseRoot(folder: string): { instances: EngineInstance[] } {
-    return { instances: discoverInstances([expandEnvPath(folder)]) };
+    return { instances: discoverInstances([folder]) };
 }

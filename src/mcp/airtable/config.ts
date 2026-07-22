@@ -2,10 +2,11 @@
 //
 // The server never guesses machine-specific paths: everything comes from ONE
 // JSON file whose path arrives in the AIRTABLE_MCP_CONFIG environment variable.
-// Agent Farm owns that file — it mirrors the user's `agentFarm.airtable.*`
-// VS Code settings into it (paths already expanded to this machine) whenever
-// they change. The file is re-read on every tool call, so a settings change in
-// VS Code reaches a long-running server without a restart.
+// That file (<globalStorage>/airtable-config.json) is the module's single
+// source of truth — the Airtable Engine page writes it, this server re-reads it
+// on every tool call, so a change on the page reaches a long-running server
+// without a restart. Roots may carry env tokens (%VAR% / ${VAR}); they are
+// expanded at discovery time (see engine.expandRoot).
 
 import * as fs from 'fs';
 
@@ -67,6 +68,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AirtableMcpCon
 /** What an agent should tell the user when no database root is configured. */
 export const NOT_CONFIGURED =
     'No Airtable Engine database folder is configured yet. '
-    + 'Open VS Code → Agent Farm → Toolbox → "Airtable Engine" card and add the folder that holds '
-    + 'your engine instances (each instance is a subfolder with its own config.json), '
-    + 'or set `agentFarm.airtable.databaseRoots` in the settings directly.';
+    + 'In VS Code run "Agent Farm: Open Airtable Engine" (or Toolbox → Airtable Engine) '
+    + 'and use "Add folder" to point at the folder that holds your engine instances '
+    + '(the parent of your instances, or an instance folder itself).';
