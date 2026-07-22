@@ -280,6 +280,15 @@ export class NoticesStore {
         if (c) { this.save(); } return c;
     }
 
+    /** Bulk mark a set of ids read/unread (UI checkbox selection). */
+    markReadMany(ids: string[], read: boolean): number {
+        const set = new Set(ids); const now = Date.now(); let c = 0;
+        for (const n of this.notices) {
+            if (set.has(n.id) && !!n.read !== read) { n.read = read; n.readAt = read ? now : undefined; c++; }
+        }
+        if (c) { this.save(); } return c;
+    }
+
     pin(id: string, pinned: boolean): boolean {
         const n = this.find(id); if (!n) { return false; }
         n.pinned = pinned; this.save(); return true;
@@ -336,14 +345,37 @@ export class NoticesStore {
         this.save(); return true;
     }
 
-    /** Remove read, non-pinned, non-starred, non-open-question notices. */
-    clearRead(): number {
-        const before = this.notices.length;
-        this.notices = this.notices.filter(n =>
-            !n.read || n.pinned || (n.stars ?? 0) > 0
-            || (n.type === 'question' && (n.status ?? 'open') !== 'declined' && !n.handled));
-        const removed = before - this.notices.length;
-        if (removed) { this.save(); } return removed;
+    /** Bulk remove a set of ids; returns the removed notices (for UI undo). */
+    dismissMany(ids: string[]): Notice[] {
+        const set = new Set(ids);
+        const removed = this.notices.filter(n => set.has(n.id));
+        if (removed.length) { this.notices = this.notices.filter(n => !set.has(n.id)); this.save(); }
+        return removed;
+    }
+
+    /** Re-insert previously removed notices (UI undo). Skips ids still present. */
+    restore(list: Notice[]): number {
+        let c = 0;
+        for (const n of list) {
+            if (n && typeof n.id === 'string' && !this.notices.some(x => x.id === n.id)) { this.notices.unshift(n); c++; }
+        }
+        if (c) { this.save(); } return c;
+    }
+
+    /** Remove read, non-pinned, non-starred notices — returns them (for undo).
+     *  A question is the exception: its point is being ANSWERED, not read, so it
+     *  is protected here until the asking agent has HANDLED it. The user still
+     *  deletes a question manually (or the agent removes it after acting). */
+    clearRead(): Notice[] {
+        const removed = this.notices.filter(n =>
+            n.read && !n.pinned && (n.stars ?? 0) === 0
+            && !(n.type === 'question' && !n.handled));
+        if (removed.length) {
+            const gone = new Set(removed.map(n => n.id));
+            this.notices = this.notices.filter(n => !gone.has(n.id));
+            this.save();
+        }
+        return removed;
     }
 
     unread(): number { return unreadCount(this.notices); }
@@ -501,7 +533,7 @@ export function registerNoticesOps(bridge: BridgeRegistry, deps: NoticesOpsDeps)
             op: 'notices.dismiss',
             describe: 'Remove a notice. args: id — OR — clearRead:true (remove read, non-pinned, non-starred, non-open-question notices)',
             handler: (args) => {
-                if (args.clearRead === true) { const c = deps.store.clearRead(); changed(); return { removed: c }; }
+                if (args.clearRead === true) { const removed = deps.store.clearRead(); changed(); return { removed: removed.length }; }
                 need(deps.store.dismiss(argStr(args, 'id')), 'Notice not found — notices.list shows current ids.');
                 changed(); return { ok: true };
             }

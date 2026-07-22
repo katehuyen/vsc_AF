@@ -9,15 +9,18 @@
     let DATA = window.__DATA__;
 
     const st = (typeof vscode.getState === 'function' && vscode.getState()) || {};
-    const DEF = { fMode: 'all', fType: '', fLevel: 0, fAgent: '', sortKey: 'newest', query: '' };
+    const DEF = { fMode: 'all', fType: '', fLevel: 0, fAgent: '', fStatus: '', sortKey: 'newest', query: '', singleMode: false };
     let fMode = st.fMode || DEF.fMode;
     let fType = st.fType || DEF.fType;
     let fLevel = st.fLevel || DEF.fLevel;
     let fAgent = st.fAgent || DEF.fAgent;
+    let fStatus = st.fStatus || DEF.fStatus;   // '' | open | answered | declined (questions)
     let sortKey = st.sortKey || DEF.sortKey;
     let query = st.query || DEF.query;
+    let singleMode = st.singleMode !== undefined ? !!st.singleMode : DEF.singleMode;
     const expanded = new Set();     // open notice ids
     const openSec = new Set();      // "id#idx" open sections
+    const selected = new Set();     // checked notice ids (bulk actions)
     const drafts = {};              // id -> answer draft
     const editing = new Set();      // ids in edit mode
     const editDrafts = {};          // id -> {title,type,level,tags,body,sections:[{title,body}]}
@@ -40,7 +43,7 @@
         ['type', 'Type'], ['agent', 'Agent']
     ];
 
-    function saveState() { if (vscode.setState) { vscode.setState({ fMode, fType, fLevel, fAgent, sortKey, query }); } }
+    function saveState() { if (vscode.setState) { vscode.setState({ fMode, fType, fLevel, fAgent, fStatus, sortKey, query, singleMode }); } }
     function esc(s) { return C.esc(String(s == null ? '' : s)); }
     function tmeta(t) { return TYPES[t] || TYPES.update; }
     function lvl(n) { return n.level >= 1 && n.level <= 4 ? n.level : 1; }
@@ -101,6 +104,7 @@
             (!fType || n.type === fType) &&
             (!fLevel || lvl(n) === Number(fLevel)) &&
             (!fAgent || n.agentName === fAgent) &&
+            (!fStatus || (n.type === 'question' && (n.status || 'open') === fStatus)) &&
             matchesQuery(n));
         const by = {
             newest: (a, b) => b.ts - a.ts, oldest: (a, b) => a.ts - b.ts,
@@ -200,8 +204,9 @@
                     <button class="secondary" data-act="dismiss" data-id="${esc(n.id)}">${isQ ? 'Delete' : 'Dismiss'}</button>
                 </div>`;
         }
-        return `<div class="nt-card lvl-${L} ${n.read ? 'read' : 'unread'} ${n.pinned ? 'pinned' : ''}" data-id="${esc(n.id)}">
+        return `<div class="nt-card lvl-${L} ${n.read ? 'read' : 'unread'} ${n.pinned ? 'pinned' : ''} ${selected.has(n.id) ? 'sel' : ''}" data-id="${esc(n.id)}">
             <div class="nt-row" data-toggle="${esc(n.id)}">
+                <input type="checkbox" class="nt-cb" data-cb="${esc(n.id)}" ${selected.has(n.id) ? 'checked' : ''} title="Select for bulk actions">
                 <span class="nt-caret">${open ? '▾' : '▸'}</span>
                 <span class="nt-ico" title="${esc(t.label)}">${t.icon}</span>
                 <span class="nt-title" title="${esc(n.title)}">${esc(n.title)}</span>
@@ -224,6 +229,9 @@
         const typeOpts = ['<option value="">All types</option>'].concat(Object.keys(TYPES).map(k => `<option value="${k}" ${fType === k ? 'selected' : ''}>${TYPES[k].icon} ${TYPES[k].label}</option>`)).join('');
         const lvlOpts = ['<option value="0">All levels</option>'].concat([4, 3, 2, 1].map(k => `<option value="${k}" ${Number(fLevel) === k ? 'selected' : ''}>L${k} · ${LEVELS[k]}</option>`)).join('');
         const agentOpts = ['<option value="">All agents</option>'].concat((DATA.agents || []).map(a => `<option value="${esc(a)}" ${fAgent === a ? 'selected' : ''}>${esc(a)}</option>`)).join('');
+        const statusOpts = ['<option value="">Any status</option>'].concat(
+            [['open', '❓ Waiting'], ['answered', '✓ Answered'], ['declined', '✕ Declined']]
+                .map(([k, l]) => `<option value="${k}" ${fStatus === k ? 'selected' : ''}>${l}</option>`)).join('');
         const sortOpts = SORTS.map(([k, l]) => `<option value="${k}" ${sortKey === k ? 'selected' : ''}>Sort: ${l}</option>`).join('');
         return `<div class="nt-controls">
             <input id="nt-search" type="search" placeholder="🔍 search (text or #tag)" value="${esc(query)}">
@@ -233,14 +241,30 @@
             <select id="nt-type">${typeOpts}</select>
             <select id="nt-level">${lvlOpts}</select>
             <select id="nt-agent">${agentOpts}</select>
+            <select id="nt-status" title="Question status (answered / waiting / dismissed)">${statusOpts}</select>
             <select id="nt-sort">${sortOpts}</select>
             <button class="secondary" id="nt-reset" title="Reset filters, search and sort">↺ Reset</button>
         </div>`;
     }
     function actionsHtml() {
-        return `<button data-hact="export">⬇ Export MD</button>
-            <button class="secondary" data-hact="markAll">Mark all read</button>
-            <button class="secondary" data-hact="clearRead">Clear read</button>`;
+        const sel = selected.size, undo = DATA.undoable || 0;
+        return `<span class="nt-grp">
+                <button class="secondary" data-hact="expandAll" title="Open every shown notice">⊕ Expand all</button>
+                <button class="secondary" data-hact="collapseAll" title="Close all">⊖ Collapse all</button>
+                <button class="secondary ${singleMode ? 'on' : ''}" data-hact="single" title="Only one notice open at a time: opening one folds the previous">Single-open</button>
+            </span>
+            <span class="nt-grp nt-bulk">
+                <label class="nt-selall" title="Select / deselect all shown"><input type="checkbox" id="nt-selall"> all</label>
+                <button data-hact="bulkRead" title="Mark selected read (or all shown if none selected)">✓ Read</button>
+                <button class="secondary" data-hact="bulkUnread" title="Mark selected unread (or all shown)">○ Unread</button>
+                <button class="secondary danger" data-hact="bulkDelete" title="Delete selected (or all shown if none selected)">🗑 Delete</button>
+                <span class="muted small nt-selcount">${sel ? sel + ' selected' : ''}</span>
+            </span>
+            <span class="nt-grp">
+                <button class="secondary" data-hact="clearRead" title="Delete read notices — pinned, starred and unhandled questions are kept">Clear read</button>
+                <button data-hact="export">⬇ Export MD</button>
+                ${undo ? `<button class="secondary nt-undo" data-hact="undo" title="Restore the notice(s) just deleted">↶ Undo (${undo})</button>` : ''}
+            </span>`;
     }
 
     const STYLE = `<style>
@@ -258,6 +282,14 @@
         .nt-card.lvl-3 .nt-title, .nt-card.lvl-4 .nt-title { font-weight:700; }
         .nt-card.read .nt-title { font-weight:400; opacity:.78; }
         .nt-card.pinned { background:var(--vscode-editorWidget-background); }
+        .nt-card.sel { background:color-mix(in srgb, var(--vscode-button-background) 12%, transparent); }
+        .nt-cb { flex-shrink:0; margin:0; cursor:pointer; }
+        .nt-grp { display:inline-flex; gap:6px; align-items:center; padding-right:8px; margin-right:2px; border-right:1px solid var(--vscode-panel-border); }
+        .nt-grp:last-child { border-right:none; }
+        .nt-bulk .nt-selall { display:inline-flex; gap:3px; align-items:center; font-size:11px; opacity:.85; cursor:pointer; }
+        .nt-selcount { min-width:0; }
+        button.danger:hover { background:var(--vscode-inputValidation-errorBackground, #5a1d1d); border-color:var(--vscode-editorError-foreground, #e51400); }
+        .nt-undo { color:var(--vscode-charts-yellow, #e2c08d); }
         .nt-row { display:flex; gap:8px; align-items:center; padding:8px 10px; cursor:pointer; }
         .nt-row:hover { background:var(--vscode-list-hoverBackground); }
         .nt-caret { width:12px; opacity:.7; flex-shrink:0; }
@@ -340,19 +372,64 @@
         bind('nt-type', 'change', e => { fType = e.target.value; saveState(); render(); });
         bind('nt-level', 'change', e => { fLevel = Number(e.target.value) || 0; saveState(); render(); });
         bind('nt-agent', 'change', e => { fAgent = e.target.value; saveState(); render(); });
+        bind('nt-status', 'change', e => { fStatus = e.target.value; saveState(); render(); });
         bind('nt-sort', 'change', e => { sortKey = e.target.value; saveState(); render(); });
         bind('nt-search', 'input', e => { query = e.target.value; refocusSearch = true; saveState(); render(); });
-        bind('nt-reset', 'click', () => { fMode = DEF.fMode; fType = DEF.fType; fLevel = DEF.fLevel; fAgent = DEF.fAgent; sortKey = DEF.sortKey; query = DEF.query; saveState(); render(); });
+        bind('nt-reset', 'click', () => { fMode = DEF.fMode; fType = DEF.fType; fLevel = DEF.fLevel; fAgent = DEF.fAgent; fStatus = DEF.fStatus; sortKey = DEF.sortKey; query = DEF.query; saveState(); render(); });
 
+        // bulk actions run on the SELECTED ids, or — if nothing is checked — on
+        // everything currently shown (the active filter).
+        const bulkTargets = () => selected.size ? [...selected] : items.map(n => n.id);
         document.querySelectorAll('[data-hact]').forEach(b => b.addEventListener('click', () => {
             const a = b.dataset.hact;
-            if (a === 'markAll') { vscode.postMessage({ type: 'markAllRead' }); }
-            else if (a === 'clearRead') { vscode.postMessage({ type: 'clearRead' }); }
+            if (a === 'clearRead') { vscode.postMessage({ type: 'clearRead' }); }
             else if (a === 'export') { vscode.postMessage({ type: 'exportChoose', shown: items.map(n => n.id), open: [...expanded] }); }
+            else if (a === 'undo') { vscode.postMessage({ type: 'undo' }); }
+            else if (a === 'expandAll') { items.forEach(n => expanded.add(n.id)); render(); }
+            else if (a === 'collapseAll') { expanded.clear(); render(); }
+            else if (a === 'single') {
+                singleMode = !singleMode;
+                if (singleMode && expanded.size > 1) { const keep = items.find(n => expanded.has(n.id)); expanded.clear(); if (keep) { expanded.add(keep.id); } }
+                saveState(); render();
+            }
+            else if (a === 'bulkRead') { const ids = bulkTargets(); if (ids.length) { vscode.postMessage({ type: 'markReadMany', ids, read: true }); } }
+            else if (a === 'bulkUnread') { const ids = bulkTargets(); if (ids.length) { vscode.postMessage({ type: 'markReadMany', ids, read: false }); } }
+            else if (a === 'bulkDelete') { const ids = bulkTargets(); if (ids.length) { ids.forEach(id => expanded.delete(id)); selected.clear(); vscode.postMessage({ type: 'dismissMany', ids }); } }
         }));
 
+        // select-all reflects/controls the shown rows (classic tri-state header box)
+        const selAll = document.getElementById('nt-selall');
+        if (selAll) {
+            const visIds = items.map(n => n.id), selVis = visIds.filter(id => selected.has(id)).length;
+            selAll.checked = visIds.length > 0 && selVis === visIds.length;
+            selAll.indeterminate = selVis > 0 && selVis < visIds.length;
+            selAll.addEventListener('change', () => {
+                if (selAll.checked) { visIds.forEach(id => selected.add(id)); } else { visIds.forEach(id => selected.delete(id)); }
+                render();
+            });
+        }
+        // per-row checkbox: stop the row from toggling; update the selection
+        document.querySelectorAll('.nt-cb').forEach(cb => {
+            cb.addEventListener('click', ev => ev.stopPropagation());
+            cb.addEventListener('change', ev => {
+                ev.stopPropagation();
+                if (cb.checked) { selected.add(cb.dataset.cb); } else { selected.delete(cb.dataset.cb); }
+                render();
+            });
+        });
+
         document.querySelectorAll('[data-toggle]').forEach(row => row.addEventListener('click', () => {
-            const id = row.dataset.toggle; if (expanded.has(id)) { expanded.delete(id); } else { expanded.add(id); } render();
+            const id = row.dataset.toggle;
+            if (expanded.has(id)) { expanded.delete(id); }
+            else {
+                if (singleMode) { expanded.clear(); }
+                expanded.add(id);
+                // opening a notice marks it read automatically (a question's real
+                // state is answered/not — its read flag just clears the bell)
+                const n = (DATA.notices || []).find(x => x.id === id);
+                if (n && !n.read) { vscode.postMessage({ type: 'markRead', id, read: true }); }
+            }
+            render();
         }));
         document.querySelectorAll('[data-sec]').forEach(h => h.addEventListener('click', ev => {
             ev.stopPropagation(); const k = h.dataset.sec; if (openSec.has(k)) { openSec.delete(k); } else { openSec.add(k); } render();
@@ -401,6 +478,13 @@
         }));
     }
 
-    window.addEventListener('message', ev => { if (ev.data.type === 'data') { DATA = ev.data.data; render(); } });
+    window.addEventListener('message', ev => {
+        if (ev.data.type === 'data') {
+            DATA = ev.data.data;
+            const ids = new Set((DATA.notices || []).map(n => n.id));
+            [...selected].forEach(id => { if (!ids.has(id)) { selected.delete(id); } });
+            render();
+        }
+    });
     render();
 })();

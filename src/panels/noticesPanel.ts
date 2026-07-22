@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { askExportOptions, handleAfNav, htmlShell } from './base';
-import { buildNoticesMarkdown, noticeMarkdown, NoticesStore } from '../core/notices';
+import { buildNoticesMarkdown, Notice, noticeMarkdown, NoticesStore } from '../core/notices';
 
 /**
  * Notices page — the agent→user notice board (see core/notices.ts). Titles
@@ -37,6 +37,8 @@ function buildData(deps: NoticesDeps): Record<string, unknown> {
 export class NoticesPanel {
     private static current: NoticesPanel | undefined;
     private disposables: vscode.Disposable[] = [];
+    /** Last batch of notices removed from the UI (single-level undo). */
+    private lastRemoved?: Notice[];
 
     static show(deps: NoticesDeps): void {
         if (NoticesPanel.current) {
@@ -64,18 +66,23 @@ export class NoticesPanel {
         panel.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
     }
 
+    /** buildData + the panel-local undo count (kept out of the store). */
+    private data(): Record<string, unknown> {
+        return { ...buildData(this.deps), undoable: this.lastRemoved?.length ?? 0 };
+    }
+
     private render(): void {
         this.panel.webview.html = htmlShell(
             this.panel.webview,
             this.deps.extensionUri,
             'Agent Farm Notices',
-            buildData(this.deps),
+            this.data(),
             'notices.js'
         );
     }
 
     refresh(): void {
-        this.panel.webview.postMessage({ type: 'data', data: buildData(this.deps) });
+        this.panel.webview.postMessage({ type: 'data', data: this.data() });
     }
 
     private mutated(): void {
@@ -107,11 +114,37 @@ export class NoticesPanel {
                 if (typeof msg.id === 'string') { s.decline(msg.id); this.mutated(); }
                 break;
             case 'dismiss':
-                if (typeof msg.id === 'string') { s.dismiss(msg.id); this.mutated(); }
+                if (typeof msg.id === 'string') {
+                    const gone = s.list({ limit: 0 }).find(n => n.id === msg.id);
+                    if (s.dismiss(msg.id)) { this.lastRemoved = gone ? [gone] : undefined; }
+                    this.mutated();
+                }
                 break;
-            case 'clearRead':
-                s.clearRead();
+            case 'markReadMany':
+                if (Array.isArray(msg.ids)) {
+                    s.markReadMany(msg.ids.filter((x): x is string => typeof x === 'string'), msg.read !== false);
+                    this.mutated();
+                }
+                break;
+            case 'dismissMany':
+                if (Array.isArray(msg.ids)) {
+                    const removed = s.dismissMany(msg.ids.filter((x): x is string => typeof x === 'string'));
+                    if (removed.length) { this.lastRemoved = removed; }
+                    this.mutated();
+                }
+                break;
+            case 'clearRead': {
+                const removed = s.clearRead();
+                if (removed.length) { this.lastRemoved = removed; }
                 this.mutated();
+                break;
+            }
+            case 'undo':
+                if (this.lastRemoved && this.lastRemoved.length) {
+                    s.restore(this.lastRemoved);
+                    this.lastRemoved = undefined;
+                    this.mutated();
+                }
                 break;
             case 'edit':
                 if (typeof msg.id === 'string' && msg.patch && typeof msg.patch === 'object') {

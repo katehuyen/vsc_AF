@@ -131,6 +131,39 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
 }
 
+// ---------- bulk ops · question-safe clearRead · undo restore ----------
+{
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-notices-bulk-'));
+    const store = new NoticesStore(path.join(dir, 'notices.json')); store.load();
+    const a = store.add({ title: 'a', type: 'update' });
+    const b = store.add({ title: 'b', type: 'update' });
+    const c = store.add({ title: 'c', type: 'update' });
+    const qOpen = store.add({ title: 'q-open', type: 'question' });
+    const qAns = store.add({ title: 'q-ans', type: 'question' });
+    store.answer(qAns.id, 'reply');   // sets read=true, status=answered
+
+    ok('markReadMany marks the set', store.markReadMany([a.id, b.id], true) === 2 &&
+        store.notices.find(n => n.id === a.id).read && store.notices.find(n => n.id === b.id).read);
+    ok('markReadMany unread flips back', store.markReadMany([a.id], false) === 1 && !store.notices.find(n => n.id === a.id).read);
+
+    store.markReadMany([a.id, b.id, c.id], true);          // a,b,c read
+    const removed = store.clearRead();
+    ok('clearRead removes only plain read notices', removed.map(n => n.id).sort().join() === [a.id, b.id, c.id].sort().join());
+    ok('clearRead keeps unhandled questions (answered OR open)', store.notices.some(n => n.id === qOpen.id) && store.notices.some(n => n.id === qAns.id));
+
+    store.resolve(qAns.id);                                 // agent handled it
+    ok('handled+read question is now clearable', store.clearRead().some(n => n.id === qAns.id));
+
+    ok('restore re-adds removed (undo)', store.restore(removed) === 3 && [a.id, b.id, c.id].every(id => store.notices.some(n => n.id === id)));
+    ok('restore skips ids still present', store.restore([{ id: a.id, ts: Date.now(), agentName: 'x', type: 'update', level: 1, title: 'dup' }]) === 0);
+
+    const gone = store.dismissMany([a.id, b.id]);
+    ok('dismissMany removes + returns them', gone.length === 2 && !store.notices.some(n => n.id === a.id) && !store.notices.some(n => n.id === b.id));
+    ok('dismissMany is undoable via restore', store.restore(gone) === 2 && store.notices.some(n => n.id === a.id));
+
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+}
+
 // ---------- §19.C bridge ops ----------
 (async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-notices-bridge-'));
