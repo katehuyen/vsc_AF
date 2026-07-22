@@ -11,5 +11,5 @@
     "esModuleInterop": true,
     "resolveJsonModule": true
   },
-  "exclude": ["node_modules", "out", ".vscode-test"]
+  "exclude": ["node_modules", "out", ".vscode-test", "VERSION_4_27", "VERSION_4_35"]
 }

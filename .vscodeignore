@@ -8,3 +8,5 @@ tsconfig.json
 scratchpad/**
 test/**
 docs/info/**
+VERSION_4_27/**
+VERSION_4_35/**
