@@ -614,6 +614,22 @@ Your agents' taught abilities — Agent Skills (SKILL.md folders) — show up in
 - **Files tab:** the config files themselves at both scopes (settings.json, settings.local.json, `.claude.json`, keybindings.json, CLAUDE.md) with their top-level keys and sizes — one click to open. Curated, explained editing of the most useful keys stays in Farm Settings → Claude Code.
 - **Bridge ops:** `toolbox.list`, `toolbox.inspect`, `toolbox.mcptools` — agents can query the same inventory and trigger the same probe through the farm bridge (`farm.ops` lists the contracts).
 
+## Airtable Engine Module {#airtable-engine}
+
+Your own data engine (knowledge atoms + media records; each deploy an "instance" on its own port) is now a **built-in module** of the extension (3.0.0): it ships with the install, nothing separate to set up. Agents talk to the engine through the `airtable_*` MCP tools — search, save, update; media files are **referenced by absolute path**, never moved or copied.
+
+**Setup flow (all from the card on the Toolbox page):**
+
+1. **Toolbox → Airtable Engine card** — the module's configuration center. The card is permanent (not hideable); its status badges tell the whole story: MCP registered or not, staged server version, last probe result.
+2. **Engine folders** — add the folder that holds your engine instances with **+ Add folder** (each instance = a subfolder with its own `config.json`). The pick is validated; if no instance is found inside you are warned but may add it anyway. Several folders are fine; the value lives **visibly** in `agentFarm.airtable.databaseRoots` (hand-editable too, `%VAR%` tokens work).
+3. **Register MCP** — writes the user-scope registration into `~/.claude.json`; every NEW claude session (any agent) then sees the `airtable_*` tools. The registration points at a version-independent **staged copy** (under globalStorage) using `${APPDATA}` tokens — neither an extension update nor a machine change breaks it. If an old version-pinned registration is found, activation **self-heals** it with a notification.
+4. **Defaults** — the default instance (when a tool call names none; empty = the single running one), the language tree (TR/EN; empty = the engine's own default) and the request timeout.
+5. **Instances table** — every instance discovered under the folders, live health-checked: name, port, live/down, content counts; **Open UI** opens the engine's own panel, **Set default** promotes one. Ports are never assumed — they are discovered every time.
+
+**Agent tools (`airtable_*`):** `instances` (discovery + health — call first), `stats`, `search` (keyword/tag in a collection), `get` (full record), `media_templates`, `media_scan_folder` (new vs already-recorded files in a folder — the ingest loop's entry), `media_save` (the core: a full-schema record referencing the file by absolute path; provenance for AI output, quarantine+failure for kept trials), `media_update` (optimistic concurrency — a panel edit is never silently overwritten), `knowledge_save` (knowledge atom → sentences), `note_save` (free-form note → archive). On an unconfigured module the tools **guide** instead of erroring ("add a folder on the Toolbox card").
+
+**The technical chain:** VS Code settings → (auto on change) a mirror at `<globalStorage>/airtable-config.json` → the MCP process re-reads it on every call, so a settings change reaches running agents without a restart. **Bridge ops (§19.C):** `airtable.status`, `airtable.instances`, `airtable.config.get/set`, `airtable.register/unregister`.
+
 ## Secret Vault {#sir-kasasi}
 
 So API keys don't wander around config files in plaintext (0.9.0): the **Set Secret…** command puts the value into the **OS keychain** (VS Code SecretStorage). Vaulted secrets enter the work in two ways:

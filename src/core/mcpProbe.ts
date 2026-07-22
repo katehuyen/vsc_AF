@@ -45,6 +45,31 @@ export interface McpServerConfig {
 const PROTOCOL_VERSION = '2025-06-18';
 const MAX_TOOLS = 300;
 
+/**
+ * Expand environment tokens in a server definition before launching it —
+ * ${VAR} (the syntax claude itself expands in MCP configs, used by our
+ * machine-independent registrations), plus the settings syntaxes ${env:VAR}
+ * and %VAR%. Without this the probe would try to spawn a literal
+ * "${APPDATA}\…\index.js" and report a failure claude never sees.
+ * Unknown variables stay as written (visible, not silently dropped).
+ */
+export function expandMcpConfig(cfg: McpServerConfig, env: NodeJS.ProcessEnv = process.env): McpServerConfig {
+    const ex = (s: string): string => s
+        .replace(/\$\{env:([^}]+)\}/gi, (m, v) => env[String(v)] ?? m)
+        .replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (m, v) => env[String(v)] ?? m)
+        .replace(/%([^%]+)%/g, (m, v) => env[String(v)] ?? m);
+    const exRecord = (r?: Record<string, string>): Record<string, string> | undefined =>
+        r ? Object.fromEntries(Object.entries(r).map(([k, v]) => [k, ex(v)])) : undefined;
+    return {
+        ...cfg,
+        command: cfg.command !== undefined ? ex(cfg.command) : undefined,
+        args: cfg.args?.map(ex),
+        env: exRecord(cfg.env),
+        url: cfg.url !== undefined ? ex(cfg.url) : undefined,
+        headers: exRecord(cfg.headers)
+    };
+}
+
 // ---------------------------------------------------------------- pure helpers (unit-tested)
 
 /** Split a stdout buffer into complete JSON-RPC messages + the unfinished rest. */
@@ -318,7 +343,8 @@ async function probeHttp(cfg: McpServerConfig, timeoutMs: number): Promise<McpPr
 
 // ---------------------------------------------------------------- entry + cache
 
-export async function probeMcpServer(cfg: McpServerConfig, timeoutMs = 15000): Promise<McpProbeResult> {
+export async function probeMcpServer(rawCfg: McpServerConfig, timeoutMs = 15000): Promise<McpProbeResult> {
+    const cfg = expandMcpConfig(rawCfg);
     if (cfg.url) { return probeHttp(cfg, timeoutMs); }
     if (cfg.command) { return probeStdio(cfg, timeoutMs); }
     return { ok: false, tools: [], probedAt: Date.now(), error: 'server definition has neither url nor command' };

@@ -614,6 +614,22 @@ Ajanların öğretilmiş yetenekleri — Agent Skills (SKILL.md klasörleri) —
 - **Files sekmesi:** iki kapsamdaki ayar dosyalarının kendisi (settings.json, settings.local.json, `.claude.json`, keybindings.json, CLAUDE.md), üst düzey anahtarları ve boyutlarıyla — tek tıkla aç. En işe yarar anahtarların açıklamalı düzenlemesi Farm Settings → Claude Code bölümünde durmaya devam eder.
 - **Bridge op'ları:** `toolbox.list`, `toolbox.inspect`, `toolbox.mcptools` — ajanlar aynı envanteri sorgulayabilir, aynı probu tetikleyebilir (`farm.ops` sözleşmeleri listeler).
 
+## Airtable Engine Modülü {#airtable-engine}
+
+Kullanıcının kendi veri motoru (bilgi atomları + medya kayıtları; her deploy'u kendi portunda çalışan bir "instance") artık eklentinin **gömülü bir modülü** (3.0.0): eklenti kurulunca gelir, ayrı kurulum yoktur. Ajanlar motorla `airtable_*` MCP araçları üzerinden konuşur — arar, kaydeder, günceller; medya dosyaları **mutlak yolla referanslanır**, asla taşınmaz/kopyalanmaz.
+
+**Kurulum akışı (tamamı Toolbox sayfasındaki karttan):**
+
+1. **Toolbox → Airtable Engine kartı** — modülün yapılandırma merkezi. Kart kalıcıdır (gizlenmez); durum rozetleri her şeyi söyler: MCP kayıtlı mı, staged sunucu sürümü, prob sonucu.
+2. **Engine folders** — motor instance'larını barındıran klasörünü **+ Add folder** ile ekle (her instance = içinde `config.json` olan bir alt klasör). Klasör seçilince içi doğrulanır; instance bulunamazsa uyarır ama istersen yine ekler. Birden çok klasör olabilir; ayar `agentFarm.airtable.databaseRoots`'ta **görünür** durur (elle de düzenlenir, `%VAR%` jetonları çalışır).
+3. **Register MCP** — kullanıcı-kapsamı kaydı `~/.claude.json`'a yazar; her YENİ claude seansı (hangi ajan olursa olsun) `airtable_*` araçlarını görür. Kayıt, sürümden bağımsız **staged kopyaya** işaret eder (globalStorage altı) ve `${APPDATA}` jetonludur — ne eklenti güncellemesi ne makine değişimi kaydı kırar. Eski sürüm-pinli bir kayıt görülürse aktivasyonda bildirimle **kendini onarır**.
+4. **Defaults** — varsayılan instance (araç çağrısı isim vermezse; boş = çalışan tek instance), dil ağacı (TR/EN; boş = motorun kendi varsayılanı) ve zaman aşımı.
+5. **Instances tablosu** — klasörlerden keşfedilen tüm instance'lar canlı sağlık kontrolüyle: ad, port, canlı/kapalı, içerik sayıları; **Open UI** motorun kendi paneline açar, **Set default** varsayılan yapar. Portlar asla varsayılmaz — her seferinde keşfedilir.
+
+**Ajan araçları (`airtable_*`):** `instances` (keşif + sağlık — önce bu), `stats`, `search` (koleksiyonda anahtar kelime/tag), `get` (tam kayıt), `media_templates`, `media_scan_folder` (klasördeki yeni/kayıtlı dosya ayrımı — ingest döngüsünün girişi), `media_save` (çekirdek: dosyayı mutlak yolla referanslayan tam-şema kayıt; AI üretimiyse provenance, saklanan deneme ise quarantine+failure), `media_update` (iyimser eşzamanlılıkla güncelleme — panel düzenlemesi ezilmez), `knowledge_save` (bilgi atomu → sentences), `note_save` (serbest not → arşiv). Ayarlanmamış modülde araçlar hata yerine **yol gösterir** ("Toolbox'taki karttan klasör ekleyin").
+
+**Teknik zincir:** VS Code ayarları → (değişimde otomatik) `<globalStorage>/airtable-config.json` aynası → MCP süreci her çağrıda taze okur; yani ayar değişikliği çalışan ajanlara restart'sız ulaşır. **Bridge op'ları (§19.C):** `airtable.status`, `airtable.instances`, `airtable.config.get/set`, `airtable.register/unregister`.
+
 ## Sır Kasası
 
 API anahtarları ayar dosyalarında düz metin gezmesin (0.9.0): **Set Secret…** komutu değeri **işletim sistemi anahtarlığına** (VS Code SecretStorage) koyar. Kasadaki sırlar iki yoldan işe karışır:

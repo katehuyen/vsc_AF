@@ -1,6 +1,10 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
+import {
+    airtableCardData, probeAirtableInstances, registerMcp, stageMcpServer,
+    syncRuntimeConfig, unregisterMcp, validateDatabaseRoot
+} from '../core/airtable';
 import { mcpUsage, readAgentMcpServers, removeMcpServer, setServerDisabled } from '../core/mcp';
 import { loadProbeCache, McpServerConfig, probeMcpServer, saveProbeCache } from '../core/mcpProbe';
 import { skillUsage } from '../core/skills';
@@ -27,6 +31,9 @@ export interface ToolboxPanelDeps {
     cacheFile: string;
     refreshTrees(): void;
     home?: string;
+    /** globalStorage path + extension version — the Airtable Engine card */
+    storageDir: string;
+    extVersion: string;
 }
 
 const USAGE_WINDOW_MS = 30 * 24 * 3600 * 1000;
@@ -55,6 +62,7 @@ function buildData(deps: ToolboxPanelDeps): Record<string, unknown> {
         counts: inv.counts,
         items: inv.items,
         probeCache: loadProbeCache(deps.cacheFile),
+        airtable: airtableCardData(deps.storageDir, deps.extVersion, deps.home),
         paths: {
             userClaudeDir: userClaudeDir(deps.home),
             userConfigJson: userConfigJson(deps.home)
@@ -90,10 +98,22 @@ export class ToolboxPanel {
             panel.webview, deps.extensionUri, 'Toolbox', buildData(deps), 'toolbox.js');
         panel.onDidDispose(() => this.dispose(), null, this.disposables);
         panel.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
+        void this.probeInstances();
     }
 
     refresh(): void {
         void this.panel.webview.postMessage({ type: 'data', data: buildData(this.deps) });
+        void this.probeInstances();
+    }
+
+    /** Async half of the Airtable card: discovery + health checks + stats. */
+    private async probeInstances(): Promise<void> {
+        try {
+            const rows = await probeAirtableInstances();
+            void this.panel.webview.postMessage({ type: 'airtable-instances', rows });
+        } catch {
+            void this.panel.webview.postMessage({ type: 'airtable-instances', rows: [] });
+        }
     }
 
     private agentById(id: string): AgentInfo | undefined {
@@ -162,7 +182,115 @@ export class ToolboxPanel {
                 this.changed();
                 break;
             }
+            case 'airtable-add-root':
+                await this.airtableAddFolder('databaseRoots');
+                break;
+            case 'airtable-add-media':
+                await this.airtableAddFolder('mediaRoots');
+                break;
+            case 'airtable-remove-root':
+                await this.airtableRemoveFolder('databaseRoots', String(msg.value ?? ''));
+                break;
+            case 'airtable-remove-media':
+                await this.airtableRemoveFolder('mediaRoots', String(msg.value ?? ''));
+                break;
+            case 'airtable-set':
+                await this.airtableSet(String(msg.key ?? ''), msg.value);
+                break;
+            case 'airtable-register':
+                await this.airtableRegister();
+                break;
+            case 'airtable-unregister': {
+                const sure = await vscode.window.showWarningMessage(
+                    'Unregister the Airtable Engine MCP from ~/.claude.json? '
+                    + 'New claude sessions will no longer see the airtable_* tools (settings and data are untouched).',
+                    { modal: true }, 'Unregister');
+                if (sure !== 'Unregister') { return; }
+                if (unregisterMcp(this.deps.home)) { this.changed(); }
+                else { this.warn('could not update ~/.claude.json — is it readable?'); }
+                break;
+            }
+            case 'airtable-reprobe':
+                void this.probeInstances();
+                break;
         }
+    }
+
+    // ------------------------------------------------ Airtable Engine card
+
+    private airtableCfg() {
+        return vscode.workspace.getConfiguration('agentFarm.airtable');
+    }
+
+    private async airtableAddFolder(key: 'databaseRoots' | 'mediaRoots'): Promise<void> {
+        const picked = await vscode.window.showOpenDialog({
+            canSelectFiles: false, canSelectFolders: true, canSelectMany: false,
+            openLabel: key === 'databaseRoots' ? 'Add engine folder' : 'Add media folder',
+            title: key === 'databaseRoots'
+                ? 'Folder that holds your Airtable Engine instances (each instance = a subfolder with config.json)'
+                : 'Media library folder (records reference files here by absolute path)'
+        });
+        const folder = picked?.[0]?.fsPath;
+        if (!folder) { return; }
+        const current = (this.airtableCfg().get<string[]>(key) ?? []).filter(Boolean);
+        if (current.some(r => r.replace(/\\/g, '/').toLowerCase() === folder.replace(/\\/g, '/').toLowerCase())) {
+            this.warn(`that folder is already in ${key}.`);
+            return;
+        }
+        if (key === 'databaseRoots') {
+            const found = validateDatabaseRoot(folder).instances;
+            if (!found.length) {
+                const anyway = await vscode.window.showWarningMessage(
+                    `No engine instance found inside "${folder}" — an instance is a subfolder with its own config.json `
+                    + '(e.g. <folder>\\stem\\config.json). Add it anyway?',
+                    { modal: true }, 'Add anyway');
+                if (anyway !== 'Add anyway') { return; }
+            } else {
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: found ${found.length} engine instance(s) in the folder: ${found.map(i => i.name).join(', ')}.`);
+            }
+        }
+        await this.airtableCfg().update(key, [...current, folder], vscode.ConfigurationTarget.Global);
+        this.airtableSynced();
+    }
+
+    private async airtableRemoveFolder(key: 'databaseRoots' | 'mediaRoots', value: string): Promise<void> {
+        if (!value) { return; }
+        const current = (this.airtableCfg().get<string[]>(key) ?? []).filter(Boolean);
+        const next = current.filter(r => r !== value);
+        if (next.length === current.length) { return; }
+        await this.airtableCfg().update(key, next, vscode.ConfigurationTarget.Global);
+        this.airtableSynced();
+    }
+
+    private async airtableSet(key: string, value: unknown): Promise<void> {
+        if (!['defaultInstance', 'defaultLang', 'requestTimeoutMs'].includes(key)) { return; }
+        const v = key === 'requestTimeoutMs' ? Math.max(1000, Number(value) || 8000) : String(value ?? '').trim();
+        await this.airtableCfg().update(key, v, vscode.ConfigurationTarget.Global);
+        this.airtableSynced();
+    }
+
+    private async airtableRegister(): Promise<void> {
+        try {
+            stageMcpServer(this.deps.extensionUri.fsPath, this.deps.storageDir, this.deps.extVersion);
+            syncRuntimeConfig(this.deps.storageDir);
+            if (registerMcp(this.deps.storageDir, this.deps.home)) {
+                void vscode.window.showInformationMessage(
+                    'Agent Farm: Airtable Engine MCP registered at user scope — every NEW claude session '
+                    + '(any agent) now sees the airtable_* tools. Running sessions pick it up on restart.');
+                this.changed();
+            } else {
+                this.warn('could not write the MCP registration to ~/.claude.json.');
+            }
+        } catch (e) {
+            this.warn('register failed — ' + ((e as Error).message ?? String(e)));
+        }
+    }
+
+    /** After any airtable settings change: mirror to the MCP config file + redraw. */
+    private airtableSynced(): void {
+        try { syncRuntimeConfig(this.deps.storageDir); } catch { /* mirrored again on next activation */ }
+        this.changed();
     }
 
     private async probe(scope: string, agentId: string, server: string): Promise<void> {

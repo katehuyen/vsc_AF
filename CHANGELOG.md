@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.0.0 — Airtable Engine module · Tasks command page · global nav (2026-07-22)
+
+A ground-up rebuild of the three goals attempted in the discarded 2.86–2.93 line, this time designed first (the version jump to 3.0.0 marks the break — those numbers stay burned):
+
+- **Airtable Engine as a built-in module.** The user's own data engine (knowledge atoms + media records) ships inside the extension: a zero-dependency MCP server (`out/mcp/airtable`, 10 `airtable_*` tools) **staged** to globalStorage so the `~/.claude.json` registration survives every extension update, `${APPDATA}`-tokenized so it survives machine changes, and **entirely settings-driven** — no hardcoded paths anywhere; empty defaults; `agentFarm.airtable.*` settings visible, explained, and mirrored automatically into the MCP's config file (a settings change reaches agents without restart). A legacy hidden config is migrated INTO the settings with a notification; a version-pinned registration self-heals on activation. The **Toolbox card** is the configuration center: engine/media folder management with a real folder picker + validation, defaults, live-health-checked instances table (ports never assumed), register/unregister/probe. Unconfigured tools answer with guidance, not errors. Bridge ops `airtable.*` (§19.C).
+- **Tasks command page** (global nav, left of Missions): Board (the full Kanban with drag-and-drop, NL command bar, per-agent load strip vs concurrency limits), Automations (triggers with reliability scorecards + schedules with next-run, all row actions), Reusables (templates + workflows), Analytics (30d KPIs, daily throughput, per-agent scorecard, task families, alerts, forecast digest, History/Forecast bridges). The standalone Board page folded in; `openBoard` stays as an alias. New bridge ops: `triggers.toggle/fire`, `schedules.runNow`, `templates.list/run`.
+- **Global navigation**: Toolbox on every page right of Missions, Tasks left of it — one muscle-memory cluster, duplicate `related:` buttons removed (the double-Toolbox bug class is structurally gone).
+- **MCP probe expands `${VAR}`** (plus `${env:VAR}`/`%VAR%`) before launching — the Toolbox probe now starts exactly what claude starts, so tokenized registrations probe green.
+- New suites: `test_airtable_mcp.js` (46 checks — discovery, search, record assembly, full save/scan/update flows against a mock engine speaking the real API contract, and the stdio JSON-RPC server itself), `test_airtable_ext.js` (19 — tokenization, staging, registration state/repair on a fixture home), `test_airtable_card.js` (18 — card rendering + action routing), `test_tasks_webview.js` (47). Suite: 55 files, 1437 checks green.
+
 ## 2.85.0 — You decide how the AI speaker is labelled (Farm Settings) (2026-07-21)
 
 The data-derived AI label from 2.84.0 is now **fully yours to shape**, in a new **Display & Labels** section of Farm Settings — three settings, live-applied (the open Turns / Session Viewer pages re-render the moment you change them):

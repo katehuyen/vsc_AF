@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "2.85.0",
+  "version": "3.0.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -1882,6 +1882,37 @@
           "type": "number",
           "default": 7,
           "description": "How many days ahead the Task Forecast projects scheduled runs."
+        },
+        "agentFarm.airtable.databaseRoots": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Airtable Engine: folders that hold your engine **instances** — every direct subfolder with its own `config.json` counts as one instance (deploy). Example: `W:\\zome\\db`. Multiple folders are allowed; environment tokens like `%USERPROFILE%` or `${env:VAR}` work. Easiest way to manage this: **Toolbox → Airtable Engine card → Add folder**."
+        },
+        "agentFarm.airtable.mediaRoots": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Airtable Engine: your media library folders. Records reference media files here by absolute path (files are never moved or copied). Example: `D:\\zome\\media`. Environment tokens work."
+        },
+        "agentFarm.airtable.defaultInstance": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Airtable Engine: instance used when an agent's tool call doesn't name one (e.g. `stem`). Empty = when exactly one instance is running it is used automatically; with several running, the agent must name one."
+        },
+        "agentFarm.airtable.defaultLang": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Airtable Engine: language tree (e.g. `TR`, `EN`) used when a tool call doesn't specify one. Empty = the engine's own default (TR)."
+        },
+        "agentFarm.airtable.requestTimeoutMs": {
+          "type": "number",
+          "default": 8000,
+          "markdownDescription": "Airtable Engine: HTTP timeout for engine API calls, in milliseconds."
         },
         "agentFarm.windowTokenLimit": {
           "type": "number",

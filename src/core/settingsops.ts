@@ -57,6 +57,10 @@ const CATEGORY_OF: Record<string, string> = {
     // search & semantic
     embeddingsProvider: 'search', embeddingsModel: 'search', embeddingsBaseUrl: 'search',
     embeddingsSecret: 'search', semanticMaxSessions: 'search',
+    // airtable engine
+    'airtable.databaseRoots': 'airtable', 'airtable.mediaRoots': 'airtable',
+    'airtable.defaultInstance': 'airtable', 'airtable.defaultLang': 'airtable',
+    'airtable.requestTimeoutMs': 'airtable',
     // multi-CLI
     cliProfiles: 'cli', codexHome: 'cli', geminiDir: 'cli', relayFeeds: 'cli',
     // health & insights
@@ -77,6 +81,7 @@ export const CATEGORY_LABELS: [string, string][] = [
     ['cost', 'Cost & Budgets'],
     ['tasks', 'Tasks & Automation'],
     ['media', 'Media & Browser'],
+    ['airtable', 'Airtable Engine'],
     ['search', 'Search & Semantic'],
     ['cli', 'Multi-CLI'],
     ['health', 'Health & Insights'],
