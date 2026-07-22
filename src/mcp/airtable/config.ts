@@ -47,12 +47,18 @@ export function parseConfig(raw: unknown): AirtableMcpConfig {
     };
 }
 
+/** Parse JSON tolerating a UTF-8 BOM — the config file is hand/agent-editable
+ *  and PowerShell's `utf8` writes one, which plain JSON.parse rejects. */
+export function parseJsonFile(file: string): unknown {
+    return JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
+}
+
 /** Read the config file fresh (path from AIRTABLE_MCP_CONFIG). Never throws. */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AirtableMcpConfig {
     const file = env.AIRTABLE_MCP_CONFIG;
     if (!file) { return { ...EMPTY_CONFIG }; }
     try {
-        return parseConfig(JSON.parse(fs.readFileSync(file, 'utf8')));
+        return parseConfig(parseJsonFile(file));
     } catch {
         return { ...EMPTY_CONFIG };
     }

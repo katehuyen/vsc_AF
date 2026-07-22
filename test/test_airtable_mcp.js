@@ -52,6 +52,12 @@ ok('discovers instances with a valid port only', found.length === 2
 ok('host defaults to localhost', found.find(i => i.name === 'draft').host === 'localhost');
 ok('explicit host respected', found.find(i => i.name === 'stem').host === '127.0.0.1');
 
+// the user may pick the instance folder ITSELF instead of its parent — both work
+const direct = engine.discoverInstances([path.join(rootA, 'stem')]);
+ok('a root that IS an instance counts as one', direct.length === 1 && direct[0].name === 'stem');
+const both = engine.discoverInstances([rootA, path.join(rootA, 'stem')]);
+ok('parent + instance overlap dedupes', both.filter(i => i.name === 'stem').length === 1);
+
 // ---------------------------------------------------------------- search
 
 const items = [

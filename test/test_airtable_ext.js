@@ -1,8 +1,9 @@
-// Airtable module, extension half: machine-independent tokenization for the
-// ~/.claude.json registration, staging to globalStorage, registration state
-// detection (up-to-date vs version-pinned), register/unregister round-trip on
-// a fixture home, and the probe-side ${VAR} expansion that makes the Toolbox
-// probe launch exactly what claude would.
+// Airtable module, extension half: the store file as the SINGLE source of
+// truth (load/save round-trip, legacy-key tolerance, patch merge), machine-
+// independent tokenization for the ~/.claude.json registration, staging to
+// globalStorage, registration state detection (up-to-date vs version-pinned),
+// register/unregister round-trip on a fixture home, and the probe-side ${VAR}
+// expansion that makes the probe launch exactly what claude would.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -27,6 +28,23 @@ const air = require(path.resolve(__dirname, '../out/core/airtable.js'));
 const probe = require(path.resolve(__dirname, '../out/core/mcpProbe.js'));
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'af-airext-'));
+
+// ---------------------------------------------------------------- store (single source of truth)
+
+const storeDir = path.join(tmp, 'store');
+ok('missing store reads as empty', air.loadStore(storeDir).databaseRoots.length === 0);
+air.saveStore(storeDir, { databaseRoots: ['X:/data/engines'], defaultInstance: 'alpha' });
+const s1 = air.loadStore(storeDir);
+ok('save→load round-trips', s1.databaseRoots[0] === 'X:/data/engines' && s1.defaultInstance === 'alpha');
+air.saveStore(storeDir, { defaultLang: 'EN' });
+const s2 = air.loadStore(storeDir);
+ok('patch merges — earlier keys survive', s2.databaseRoots[0] === 'X:/data/engines' && s2.defaultLang === 'EN');
+fs.writeFileSync(path.join(storeDir, 'airtable-config.json'),
+    JSON.stringify({ roots: ['X:/old'], mediaRoots: ['Y:/m'] }));
+ok('legacy "roots" key still reads', air.loadStore(storeDir).databaseRoots[0] === 'X:/old');
+air.saveStore(storeDir, { databaseRoots: ['%USERPROFILE%\\data'] });
+ok('env tokens in stored roots expand on demand',
+    air.expandedDatabaseRoots(air.loadStore(storeDir))[0].toLowerCase() === (process.env.USERPROFILE + '\\data').toLowerCase());
 
 // ---------------------------------------------------------------- expandMcpConfig (probe side)
 

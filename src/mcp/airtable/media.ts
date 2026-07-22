@@ -5,8 +5,7 @@
 // with a large, section-based schema. The panel UI creates full records; to make
 // agent-created records indistinguishable from hand-made ones we start from a
 // canonical empty skeleton (verified field-for-field against a real published
-// record, W:/zome/db/stem/.../media_png_20260614_0001.json) and merge only the
-// meaningful fields on top.
+// record from a live deploy) and merge only the meaningful fields on top.
 //
 // Creation goes through POST /api/file (there is no POST /api/db); that endpoint
 // writes the file, sets version, and auto-updates the search index. It runs NO

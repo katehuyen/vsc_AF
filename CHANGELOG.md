@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.1.0 — Airtable Engine gets its own page; the store file becomes the single source of truth (2026-07-22)
+
+3.0.0's surface repeated shapes from the discarded line and its settings plumbing failed in the field — both fixed by redesign, not patching:
+
+- **Own page, not a card.** The fat block squatting on top of the Toolbox is gone. **Agent Farm: Open Airtable Engine** opens the module's control room: instance CARDS first (live light, counts, Open UI, Set default, start hint on down ones), then folders, defaults/connection, and an **Agent access** panel showing what agents can actually do (live-verified after a probe). Toolbox keeps a normal-sized module tile on Overview + a header button.
+- **Single source of truth.** On the user's machine a VS Code settings write silently failed and the folder list evaporated. The settings layer is REMOVED: the module's own store file (`<globalStorage>/airtable-config.json`) is the one config — the page edits it, the MCP re-reads it per call, and every failed write is reported. The `agentFarm.airtable.*` settings keys are gone.
+- **Folder picking without a wrong answer:** discovery now accepts a root that IS an instance (…\db\stem) as well as the parent (…\db) — `config.json` is looked for at both levels, deduped.
+- **Tasks page gets its pulse:** a permanent **NOW strip** (running vs limit, needs-you, queue, next scheduled run — clickable jumps) visible in every section, and section buttons with live counts (⚠ on Analytics when alerts exist).
+- Tests: engine root-as-instance + dedup, store round-trip/legacy-key/patch-merge, the new page webview suite (21), NOW-strip assertions. Suite: 55 files, 1453 checks green.
+
 ## 3.0.0 — Airtable Engine module · Tasks command page · global nav (2026-07-22)
 
 A ground-up rebuild of the three goals attempted in the discarded 2.86–2.93 line, this time designed first (the version jump to 3.0.0 marks the break — those numbers stay burned):

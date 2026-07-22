@@ -18,12 +18,14 @@ const ok = (n, c) => { if (c) { pass++; console.log('  ok ' + n); } else { fail+
 const OUT = path.resolve(__dirname, '../out/mcp/airtable');
 
 async function main() {
-    // Config: prefer the extension's mirrored config; fall back to W:/zome/db.
-    const mirrored = path.join(process.env.APPDATA ?? '', 'Code', 'User', 'globalStorage', 'muvusoft.agent-farm', 'airtable-config.json');
-    let cfgFile = mirrored;
-    if (!fs.existsSync(mirrored)) {
-        cfgFile = path.join(os.tmpdir(), 'af-live-smoke-config.json');
-        fs.writeFileSync(cfgFile, JSON.stringify({ databaseRoots: ['W:/zome/db'], requestTimeoutMs: 8000 }));
+    // Config comes ONLY from the module's real store — no assumed paths here:
+    // if the module isn't configured on this machine, the smoke says so and stops.
+    const cfgFile = path.join(process.env.APPDATA ?? '', 'Code', 'User', 'globalStorage', 'muvusoft.agent-farm', 'airtable-config.json');
+    let roots = [];
+    try { roots = JSON.parse(fs.readFileSync(cfgFile, 'utf8').replace(/^\uFEFF/, '')).databaseRoots || []; } catch { /* unreadable */ }
+    if (!roots.length) {
+        console.log('SKIP: no database folders configured — open the Airtable Engine page and add yours first.');
+        process.exit(0);
     }
     console.log('config:', cfgFile);
 

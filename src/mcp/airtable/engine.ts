@@ -34,27 +34,39 @@ export interface EngineInstance {
     configPath: string;
 }
 
+/** Read one folder as an instance, or undefined when it isn't one. */
+function instanceAt(dir: string): EngineInstance | undefined {
+    const configPath = path.join(dir, 'config.json');
+    try {
+        const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8')) as Dict;
+        const server = (cfg.server ?? {}) as Dict;
+        const port = Number(server.port);
+        if (!Number.isInteger(port) || port <= 0) { return undefined; }
+        return {
+            name: path.basename(dir), dir, configPath,
+            host: typeof server.host === 'string' && server.host ? server.host : 'localhost',
+            port
+        };
+    } catch { return undefined; }
+}
+
 /** Scan the configured roots: every direct subfolder with a readable
- *  config.json (server.port) is an instance. Order: as configured, then a-z. */
+ *  config.json (server.port) is an instance — and a root that IS an instance
+ *  itself (the user picked e.g. …\db\stem instead of …\db) counts too, so
+ *  either choice just works. Order: as configured, then a-z; dedup by dir. */
 export function discoverInstances(roots: string[]): EngineInstance[] {
     const out: EngineInstance[] = [];
+    const seen = new Set<string>();
+    const add = (inst: EngineInstance | undefined) => {
+        const key = inst && inst.dir.replace(/\\/g, '/').toLowerCase();
+        if (inst && key && !seen.has(key)) { seen.add(key); out.push(inst); }
+    };
     for (const root of roots) {
+        add(instanceAt(root));
         let entries: fs.Dirent[] = [];
         try { entries = fs.readdirSync(root, { withFileTypes: true }); } catch { continue; }
         for (const e of entries.filter(x => x.isDirectory()).sort((a, b) => a.name.localeCompare(b.name))) {
-            const dir = path.join(root, e.name);
-            const configPath = path.join(dir, 'config.json');
-            try {
-                const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8')) as Dict;
-                const server = (cfg.server ?? {}) as Dict;
-                const port = Number(server.port);
-                if (!Number.isInteger(port) || port <= 0) { continue; }
-                out.push({
-                    name: e.name, dir, configPath,
-                    host: typeof server.host === 'string' && server.host ? server.host : 'localhost',
-                    port
-                });
-            } catch { /* not an instance folder */ }
+            add(instanceAt(path.join(root, e.name)));
         }
     }
     return out;

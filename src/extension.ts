@@ -5,8 +5,8 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo, discoverAgents, scanRoots } from './core/agents';
 import {
-    airtableCardData, airtableSettings, migrateLegacyConfig, probeAirtableInstances,
-    registerMcp, registrationState, stageMcpServer, syncRuntimeConfig, unregisterMcp
+    airtablePageData, loadStore, probeAirtableInstances, registerMcp, registrationState,
+    saveStore, stageMcpServer, unregisterMcp
 } from './core/airtable';
 import { focusExternalTerminal, openExternalTerminal } from './core/extTerminal';
 import {
@@ -115,6 +115,7 @@ import { MemoryGraphPanel } from './panels/memoryGraph';
 import { DashboardPanel } from './panels/dashboard';
 import { GalleryPanel } from './panels/gallery';
 import { GuidePanel } from './panels/guide';
+import { AirtablePanel } from './panels/airtablePanel';
 import { TasksPanel } from './panels/tasksPanel';
 import { NeedsPanel } from './panels/needsPanel';
 import { SearchPanel } from './panels/searchPanel';
@@ -2161,76 +2162,62 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         isActive: s => index.isSessionActive(s, Date.now())
     });
 
-    // ---------- Airtable Engine module (settings-driven, machine-independent) ----------
+    // ---------- Airtable Engine module ----------
+    // Single source of truth: the module's own store file in globalStorage —
+    // the Airtable page edits it, the MCP server re-reads it per tool call.
 
     const airtableStorage = context.globalStorageUri.fsPath;
     const extVersion = String((context.extension.packageJSON as { version?: string }).version ?? '0.0.0');
-    void (async () => {
-        try {
-            const migrated = await migrateLegacyConfig(airtableStorage);
-            if (migrated) {
+    try {
+        stageMcpServer(context.extensionPath, airtableStorage, extVersion);
+        const reg = registrationState(airtableStorage);
+        if (reg.registered && !reg.upToDate) {
+            // Self-heal: an old registration pins a versioned extension path
+            // that dies on every update — repoint it to the staged copy.
+            if (registerMcp(airtableStorage)) {
                 void vscode.window.showInformationMessage(
-                    `Agent Farm: Airtable Engine — imported ${migrated.length} database folder(s) from the old hidden `
-                    + 'config into the visible settings (agentFarm.airtable.databaseRoots). Review them in Toolbox → Airtable Engine.');
+                    'Agent Farm: Airtable Engine MCP registration repointed to the version-independent staged copy '
+                    + `(was: ${reg.currentPath ?? 'unknown path'}). New claude sessions use the staged server.`);
             }
-            syncRuntimeConfig(airtableStorage);
-            stageMcpServer(context.extensionPath, airtableStorage, extVersion);
-            const reg = registrationState(airtableStorage);
-            if (reg.registered && !reg.upToDate) {
-                // Self-heal: an old registration pins a versioned extension path
-                // that dies on every update — repoint it to the staged copy.
-                if (registerMcp(airtableStorage)) {
-                    void vscode.window.showInformationMessage(
-                        'Agent Farm: Airtable Engine MCP registration repointed to the version-independent staged copy '
-                        + `(was: ${reg.currentPath ?? 'unknown path'}). New claude sessions use the staged server.`);
-                }
-            }
-        } catch (e) {
-            console.error('agentfarm: airtable module init failed', e);
         }
-    })();
-    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
-        if (e.affectsConfiguration('agentFarm.airtable')) {
-            try { syncRuntimeConfig(airtableStorage); } catch { /* mirrored again on next activation */ }
-            ToolboxPanel.refreshIfOpen();
-        }
-    }));
+    } catch (e) {
+        console.error('agentfarm: airtable module init failed', e);
+    }
 
-    // Airtable bridge ops (§19.C) — every card action, callable by agents.
+    // Airtable bridge ops (§19.C) — every page action, callable by agents.
     bridge.register([
         {
             op: 'airtable.status',
-            describe: 'Airtable Engine module state: settings, MCP registration, staged server version. args: none',
-            handler: () => airtableCardData(airtableStorage, extVersion)
+            describe: 'Airtable Engine module state: store (folders/defaults), MCP registration, staged server version. args: none',
+            handler: () => airtablePageData(airtableStorage, extVersion)
         },
         {
             op: 'airtable.instances',
             describe: 'Discover engine instances from the configured folders and health-check each (alive, port, stats). args: none',
-            handler: () => probeAirtableInstances()
+            handler: () => probeAirtableInstances(airtableStorage)
         },
         {
             op: 'airtable.config.get',
-            describe: 'Current agentFarm.airtable.* settings (raw + expanded paths). args: none',
-            handler: () => airtableSettings()
+            describe: 'The module store (databaseRoots, mediaRoots, defaults, timeout). args: none',
+            handler: () => loadStore(airtableStorage)
         },
         {
             op: 'airtable.config.set',
-            describe: 'Update Airtable settings (user-level). args: databaseRoots? (string[]), mediaRoots? (string[]), defaultInstance?, defaultLang?, requestTimeoutMs?',
-            handler: async (args) => {
-                const cfgAir = vscode.workspace.getConfiguration('agentFarm.airtable');
+            describe: 'Patch the module store. args: databaseRoots? (string[]), mediaRoots? (string[]), defaultInstance?, defaultLang?, requestTimeoutMs?',
+            handler: (args) => {
                 const strList = (v: unknown) => Array.isArray(v) ? v.map(String).filter(Boolean) : undefined;
-                const sets: [string, unknown][] = [];
+                const patch: Record<string, unknown> = {};
                 const dbRoots = strList(args.databaseRoots);
-                if (dbRoots) { sets.push(['databaseRoots', dbRoots]); }
+                if (dbRoots) { patch.databaseRoots = dbRoots; }
                 const mRoots = strList(args.mediaRoots);
-                if (mRoots) { sets.push(['mediaRoots', mRoots]); }
-                if (typeof args.defaultInstance === 'string') { sets.push(['defaultInstance', args.defaultInstance.trim()]); }
-                if (typeof args.defaultLang === 'string') { sets.push(['defaultLang', args.defaultLang.trim()]); }
-                if (typeof args.requestTimeoutMs === 'number') { sets.push(['requestTimeoutMs', Math.max(1000, args.requestTimeoutMs)]); }
-                need(sets.length, 'Nothing to set — pass at least one of the documented args.');
-                for (const [k, v] of sets) { await cfgAir.update(k, v, vscode.ConfigurationTarget.Global); }
-                syncRuntimeConfig(airtableStorage);
-                return { updated: sets.map(([k]) => k), settings: airtableSettings() };
+                if (mRoots) { patch.mediaRoots = mRoots; }
+                if (typeof args.defaultInstance === 'string') { patch.defaultInstance = args.defaultInstance.trim(); }
+                if (typeof args.defaultLang === 'string') { patch.defaultLang = args.defaultLang.trim(); }
+                if (typeof args.requestTimeoutMs === 'number') { patch.requestTimeoutMs = Math.max(1000, args.requestTimeoutMs); }
+                need(Object.keys(patch).length, 'Nothing to set — pass at least one of the documented args.');
+                const store = saveStore(airtableStorage, patch);
+                AirtablePanel.refreshIfOpen();
+                return { updated: Object.keys(patch), store };
             }
         },
         {
@@ -2238,16 +2225,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             describe: 'Register (or repoint) the user-scope airtable MCP in ~/.claude.json so every new claude session gets the airtable_* tools. args: none',
             handler: () => {
                 stageMcpServer(context.extensionPath, airtableStorage, extVersion);
-                syncRuntimeConfig(airtableStorage);
                 need(registerMcp(airtableStorage), 'Could not write ~/.claude.json.');
+                AirtablePanel.refreshIfOpen();
                 return registrationState(airtableStorage);
             }
         },
         {
             op: 'airtable.unregister',
-            describe: 'Remove the user-scope airtable MCP registration (settings and engine data untouched). args: none',
+            describe: 'Remove the user-scope airtable MCP registration (folders and engine data untouched). args: none',
             handler: () => {
                 need(unregisterMcp(), 'No airtable registration found (or ~/.claude.json not writable).');
+                AirtablePanel.refreshIfOpen();
                 return { registered: false };
             }
         }
@@ -3202,14 +3190,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             });
         }),
 
+        vscode.commands.registerCommand('agentfarm.openAirtable', () => {
+            AirtablePanel.show({
+                extensionUri: context.extensionUri,
+                storageDir: airtableStorage,
+                extVersion,
+                cacheFile: toolboxProbeCacheFile
+            });
+        }),
+
         vscode.commands.registerCommand('agentfarm.openToolbox', () => {
             ToolboxPanel.show({
                 extensionUri: context.extensionUri,
                 getAgents: () => agents,
                 index,
                 cacheFile: toolboxProbeCacheFile,
-                storageDir: airtableStorage,
-                extVersion,
                 refreshTrees: refreshAll
             });
         }),

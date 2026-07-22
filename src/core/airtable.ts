@@ -1,8 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import * as vscode from 'vscode';
-import { AirtableMcpConfig, parseConfig } from '../mcp/airtable/config';
+import { AirtableMcpConfig, parseConfig, parseJsonFile } from '../mcp/airtable/config';
 import { checkInstances, discoverInstances, EngineClient, EngineInstance } from '../mcp/airtable/engine';
 import { addUserMcpServer, readUserMcpServerRaw, removeUserMcpServer, userConfigJson } from './toolbox';
 import { expandEnvPath } from './util';
@@ -10,97 +9,55 @@ import { expandEnvPath } from './util';
 /**
  * Airtable Engine module — the extension half of the integration.
  *
- * Everything is settings-driven and machine-independent (a product, not a
- * one-machine hack):
- *  - `agentFarm.airtable.*` VS Code settings are the single source of truth
- *    the user sees and edits (paths may use %VAR% / ${env:VAR} tokens);
- *  - they are mirrored (expanded for THIS machine) into
- *    <globalStorage>/airtable-config.json, which the MCP server re-reads per
- *    call — so a settings change reaches agents without any restart;
- *  - the compiled MCP server is STAGED to <globalStorage>/mcp/airtable (a
- *    version-independent path) and ~/.claude.json registers that staged copy
- *    with ${APPDATA}/${USERPROFILE} tokens, so neither an extension update nor
- *    a machine change breaks the registration.
+ * ONE source of truth: the module's own store file
+ * `<globalStorage>/airtable-config.json`. The Airtable page edits it, the MCP
+ * server re-reads it on every tool call — extension writes, server reads,
+ * nothing in between. (The first build routed this through VS Code settings;
+ * on the user's machine a settings write silently failed and the folder list
+ * evaporated — a failure class this design removes entirely. Every write here
+ * THROWS on failure so the UI can say what went wrong, never lose data
+ * quietly.)
+ *
+ * Machine-independence is unchanged: stored paths may carry %VAR% / ${env:VAR}
+ * tokens (expanded on read), the compiled MCP server is STAGED to a
+ * version-independent globalStorage path, and the ~/.claude.json registration
+ * uses ${APPDATA}-style tokens — an extension update or a machine change
+ * breaks nothing.
  */
 
 export const MCP_SERVER_NAME = 'airtable';
 export const CONFIG_FILE_NAME = 'airtable-config.json';
 
-// ---------------------------------------------------------------- settings
+// ---------------------------------------------------------------- store
 
-export interface AirtableSettings extends AirtableMcpConfig {
-    /** roots exactly as written in settings (tokens intact) — shown in the UI */
-    rawDatabaseRoots: string[];
-    rawMediaRoots: string[];
-}
+export type AirtableStore = AirtableMcpConfig;
 
-const cleanList = (v: unknown): string[] =>
-    Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && !!x.trim()).map(x => x.trim()) : [];
-
-export function airtableSettings(): AirtableSettings {
-    const cfg = vscode.workspace.getConfiguration('agentFarm.airtable');
-    const rawDatabaseRoots = cleanList(cfg.get('databaseRoots'));
-    const rawMediaRoots = cleanList(cfg.get('mediaRoots'));
-    return {
-        rawDatabaseRoots,
-        rawMediaRoots,
-        databaseRoots: rawDatabaseRoots.map(expandEnvPath),
-        mediaRoots: rawMediaRoots.map(expandEnvPath),
-        defaultInstance: (cfg.get<string>('defaultInstance') ?? '').trim(),
-        defaultLang: (cfg.get<string>('defaultLang') ?? '').trim(),
-        requestTimeoutMs: cfg.get<number>('requestTimeoutMs') || 8000
-    };
-}
-
-// ---------------------------------------------------------------- runtime config file
-
-export function runtimeConfigPath(storageDir: string): string {
+export function storePath(storageDir: string): string {
     return path.join(storageDir, CONFIG_FILE_NAME);
 }
 
-/** Mirror the settings (expanded) into the MCP config file. */
-export function syncRuntimeConfig(storageDir: string): string {
-    const s = airtableSettings();
-    const file = runtimeConfigPath(storageDir);
-    const body: AirtableMcpConfig & { updatedAt: string } = {
-        databaseRoots: s.databaseRoots,
-        mediaRoots: s.mediaRoots,
-        defaultInstance: s.defaultInstance,
-        defaultLang: s.defaultLang,
-        requestTimeoutMs: s.requestTimeoutMs,
-        updatedAt: new Date().toISOString()
-    };
-    fs.mkdirSync(storageDir, { recursive: true });
-    fs.writeFileSync(file, JSON.stringify(body, null, 2) + '\n', 'utf8');
-    return file;
+/** Read the store (tolerates the legacy `roots` key and a BOM; missing file = empty). */
+export function loadStore(storageDir: string): AirtableStore {
+    try {
+        return parseConfig(parseJsonFile(storePath(storageDir)));
+    } catch {
+        return parseConfig(undefined);
+    }
 }
 
-/**
- * One-time migration: an earlier build kept the roots ONLY in the runtime
- * config file — invisible to the user ("how does it find my folders?!").
- * If the settings are still empty but that file has roots, lift them INTO the
- * settings, where they belong. Returns the migrated roots (caller notifies).
- */
-export async function migrateLegacyConfig(storageDir: string): Promise<string[] | undefined> {
-    const s = airtableSettings();
-    if (s.rawDatabaseRoots.length) { return undefined; }
-    let legacy: AirtableMcpConfig;
-    try {
-        legacy = parseConfig(JSON.parse(fs.readFileSync(runtimeConfigPath(storageDir), 'utf8')));
-    } catch { return undefined; }
-    if (!legacy.databaseRoots.length) { return undefined; }
-    const cfg = vscode.workspace.getConfiguration('agentFarm.airtable');
-    await cfg.update('databaseRoots', legacy.databaseRoots, vscode.ConfigurationTarget.Global);
-    if (legacy.mediaRoots.length && !s.rawMediaRoots.length) {
-        await cfg.update('mediaRoots', legacy.mediaRoots, vscode.ConfigurationTarget.Global);
-    }
-    if (legacy.defaultInstance && !s.defaultInstance) {
-        await cfg.update('defaultInstance', legacy.defaultInstance, vscode.ConfigurationTarget.Global);
-    }
-    if (legacy.defaultLang && !s.defaultLang) {
-        await cfg.update('defaultLang', legacy.defaultLang, vscode.ConfigurationTarget.Global);
-    }
-    return legacy.databaseRoots;
+/** Merge a patch into the store and write it. THROWS on write failure —
+ *  callers surface the reason instead of losing the change silently. */
+export function saveStore(storageDir: string, patch: Partial<AirtableStore>): AirtableStore {
+    const next = { ...loadStore(storageDir), ...patch };
+    fs.mkdirSync(storageDir, { recursive: true });
+    fs.writeFileSync(storePath(storageDir),
+        JSON.stringify({ ...next, updatedAt: new Date().toISOString() }, null, 2) + '\n', 'utf8');
+    return next;
+}
+
+/** Stored paths may carry env tokens — expand for THIS machine. */
+export function expandedDatabaseRoots(store: AirtableStore): string[] {
+    return store.databaseRoots.map(expandEnvPath);
 }
 
 // ---------------------------------------------------------------- staging
@@ -176,7 +133,7 @@ export function desiredRegistration(storageDir: string): RegistrationDef {
     return {
         command: 'node',
         args: [tokenizeForClaude(stagedIndexJs(storageDir))],
-        env: { AIRTABLE_MCP_CONFIG: tokenizeForClaude(runtimeConfigPath(storageDir)) }
+        env: { AIRTABLE_MCP_CONFIG: tokenizeForClaude(storePath(storageDir)) }
     };
 }
 
@@ -222,10 +179,12 @@ export function unregisterMcp(home = os.homedir()): boolean {
     return removeUserMcpServer(MCP_SERVER_NAME, home);
 }
 
-// ---------------------------------------------------------------- card data
+// ---------------------------------------------------------------- page data
 
-export interface AirtableCardData {
-    settings: AirtableSettings;
+export interface AirtablePageData {
+    store: AirtableStore;
+    /** databaseRoots with env tokens expanded (index-parallel to store's) */
+    expandedRoots: string[];
     registration: RegistrationState;
     staging: { dir: string; version?: string; extensionVersion: string };
     configFile: string;
@@ -246,40 +205,42 @@ export interface AirtableInstanceRow {
     url: string;
 }
 
-/** Everything the Toolbox card can know synchronously (no network). */
-export function airtableCardData(storageDir: string, extVersion: string, home = os.homedir()): AirtableCardData {
+/** Everything the Airtable page can know synchronously (no network). */
+export function airtablePageData(storageDir: string, extVersion: string, home = os.homedir()): AirtablePageData {
     const dir = stagingDir(storageDir);
     let version: string | undefined;
     try { version = fs.readFileSync(path.join(dir, '.version'), 'utf8').trim(); } catch { /* not staged */ }
+    const store = loadStore(storageDir);
     return {
-        settings: airtableSettings(),
+        store,
+        expandedRoots: expandedDatabaseRoots(store),
         registration: registrationState(storageDir, home),
         staging: { dir, version: version ?? undefined, extensionVersion: extVersion },
-        configFile: runtimeConfigPath(storageDir)
+        configFile: storePath(storageDir)
     };
 }
 
-/** Discover + health-check + stats for the card (async, network). */
-export async function probeAirtableInstances(): Promise<AirtableInstanceRow[]> {
-    const s = airtableSettings();
-    const found = discoverInstances(s.databaseRoots);
+/** Discover + health-check + stats for the page (async, network). */
+export async function probeAirtableInstances(storageDir: string): Promise<AirtableInstanceRow[]> {
+    const store = loadStore(storageDir);
+    const found = discoverInstances(expandedDatabaseRoots(store));
     const checked = await checkInstances(found);
     return Promise.all(checked.map(async i => {
         const row: AirtableInstanceRow = {
             name: i.name, dir: i.dir, host: i.host, port: i.port,
             alive: i.alive, title: i.title, error: i.error,
-            isDefault: !!s.defaultInstance && i.name.toLowerCase() === s.defaultInstance.toLowerCase(),
+            isDefault: !!store.defaultInstance && i.name.toLowerCase() === store.defaultInstance.toLowerCase(),
             url: `http://${i.host}:${i.port}/`
         };
         if (i.alive) {
-            try { row.stats = await new EngineClient(i, 2500).stats(s.defaultLang || undefined); }
-            catch { /* stats are cosmetic on the card */ }
+            try { row.stats = await new EngineClient(i, 2500).stats(store.defaultLang || undefined); }
+            catch { /* stats are cosmetic on the page */ }
         }
         return row;
     }));
 }
 
-/** Does the folder actually look like an engine root (≥1 instance inside)? */
+/** What does this folder hold? Instances inside it — or is it one itself? */
 export function validateDatabaseRoot(folder: string): { instances: EngineInstance[] } {
     return { instances: discoverInstances([expandEnvPath(folder)]) };
 }

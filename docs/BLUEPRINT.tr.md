@@ -618,17 +618,17 @@ Ajanların öğretilmiş yetenekleri — Agent Skills (SKILL.md klasörleri) —
 
 Kullanıcının kendi veri motoru (bilgi atomları + medya kayıtları; her deploy'u kendi portunda çalışan bir "instance") artık eklentinin **gömülü bir modülü** (3.0.0): eklenti kurulunca gelir, ayrı kurulum yoktur. Ajanlar motorla `airtable_*` MCP araçları üzerinden konuşur — arar, kaydeder, günceller; medya dosyaları **mutlak yolla referanslanır**, asla taşınmaz/kopyalanmaz.
 
-**Kurulum akışı (tamamı Toolbox sayfasındaki karttan):**
+**Modülün kendi sayfası var: Agent Farm: Open Airtable Engine** (Toolbox başlığındaki 🗄️ Airtable Engine düğmesi ya da Toolbox → Overview'daki modül karosu da açar). Sayfa bir kontrol odası gibi önem sırasıyla dizilir:
 
-1. **Toolbox → Airtable Engine kartı** — modülün yapılandırma merkezi. Kart kalıcıdır (gizlenmez); durum rozetleri her şeyi söyler: MCP kayıtlı mı, staged sunucu sürümü, prob sonucu.
-2. **Engine folders** — motor instance'larını barındıran klasörünü **+ Add folder** ile ekle (her instance = içinde `config.json` olan bir alt klasör). Klasör seçilince içi doğrulanır; instance bulunamazsa uyarır ama istersen yine ekler. Birden çok klasör olabilir; ayar `agentFarm.airtable.databaseRoots`'ta **görünür** durur (elle de düzenlenir, `%VAR%` jetonları çalışır).
-3. **Register MCP** — kullanıcı-kapsamı kaydı `~/.claude.json`'a yazar; her YENİ claude seansı (hangi ajan olursa olsun) `airtable_*` araçlarını görür. Kayıt, sürümden bağımsız **staged kopyaya** işaret eder (globalStorage altı) ve `${APPDATA}` jetonludur — ne eklenti güncellemesi ne makine değişimi kaydı kırar. Eski sürüm-pinli bir kayıt görülürse aktivasyonda bildirimle **kendini onarır**.
-4. **Defaults** — varsayılan instance (araç çağrısı isim vermezse; boş = çalışan tek instance), dil ağacı (TR/EN; boş = motorun kendi varsayılanı) ve zaman aşımı.
-5. **Instances tablosu** — klasörlerden keşfedilen tüm instance'lar canlı sağlık kontrolüyle: ad, port, canlı/kapalı, içerik sayıları; **Open UI** motorun kendi paneline açar, **Set default** varsayılan yapar. Portlar asla varsayılmaz — her seferinde keşfedilir.
+1. **Instances** (en üstte) — klasörlerden keşfedilen her deploy bir KART: canlı/kapalı ışığı, port, içerik sayıları (lessons/sentences/media); **Open UI** motorun kendi paneline, **Set default** varsayılana. Kapalı instance soluk görünür ve nasıl başlatılacağını söyler. Portlar asla varsayılmaz — her bakışta yeniden keşfedilir.
+2. **Folders** — **+ Add folder** ile motor klasörünü ekle: instance'ların üst klasörü de olur, bir instance klasörünün kendisi de (ikisi de çalışır — sistem `config.json`'ı iki seviyede arar). Klasör seçilince içi doğrulanır; instance yoksa uyarır ama istersen yine ekler. Çoklu klasör + tek tek çıkarma; `%VAR%` jetonları çalışır. Yanında medya kütüphanesi klasörleri.
+3. **Defaults & connection** — varsayılan instance (boş = çalışan tek instance), dil ağacı, zaman aşımı; kayıt satırı ve modül config dosyası tek tıkla açılır.
+4. **Register MCP** (başlık eylemleri) — kullanıcı-kapsamı kaydı `~/.claude.json`'a yazar; her YENİ claude seansı `airtable_*` araçlarını görür. Kayıt, sürümden bağımsız **staged kopyaya** işaret eder ve `${APPDATA}` jetonludur — ne eklenti güncellemesi ne makine değişimi kırar; sürüm-pinli eski kayıt aktivasyonda bildirimle **kendini onarır**. **Probe tools** kayıtlı sunucuya gerçekten bağlanıp araç listesini doğrular.
+5. **Agent access** — ajanların bu motorla fiilen ne yapabildiği: 10 aracın listesi (prob yapıldıysa canlı-doğrulanmış haliyle) + örnek kullanım cümlesi.
 
 **Ajan araçları (`airtable_*`):** `instances` (keşif + sağlık — önce bu), `stats`, `search` (koleksiyonda anahtar kelime/tag), `get` (tam kayıt), `media_templates`, `media_scan_folder` (klasördeki yeni/kayıtlı dosya ayrımı — ingest döngüsünün girişi), `media_save` (çekirdek: dosyayı mutlak yolla referanslayan tam-şema kayıt; AI üretimiyse provenance, saklanan deneme ise quarantine+failure), `media_update` (iyimser eşzamanlılıkla güncelleme — panel düzenlemesi ezilmez), `knowledge_save` (bilgi atomu → sentences), `note_save` (serbest not → arşiv). Ayarlanmamış modülde araçlar hata yerine **yol gösterir** ("Toolbox'taki karttan klasör ekleyin").
 
-**Teknik zincir:** VS Code ayarları → (değişimde otomatik) `<globalStorage>/airtable-config.json` aynası → MCP süreci her çağrıda taze okur; yani ayar değişikliği çalışan ajanlara restart'sız ulaşır. **Bridge op'ları (§19.C):** `airtable.status`, `airtable.instances`, `airtable.config.get/set`, `airtable.register/unregister`.
+**Teknik zincir — TEK doğruluk kaynağı:** modülün kendi store dosyası `<globalStorage>/airtable-config.json`. Sayfa onu düzenler, MCP süreci her araç çağrısında taze okur — arada başka katman yoktur; sayfadaki bir değişiklik çalışan ajanlara restart'sız ulaşır, her yazma hatası kullanıcıya AÇIKÇA bildirilir (sessiz kayıp yok). **Bridge op'ları (§19.C):** `airtable.status`, `airtable.instances`, `airtable.config.get/set`, `airtable.register/unregister`.
 
 ## Sır Kasası
 
@@ -995,7 +995,7 @@ Durum çubuğu artık bu kuyruğu sayar: `🔔 N need you` görünüyorsa tıkla
 
 ### Tasks Sayfası {#tasks-sayfasi}
 
-**Agent Farm: Open Tasks** (global gezinmede Missions'ın solundaki **Tasks** düğmesi; Tasks ağacı başlığındaki $(layout) simgesi de buraya açılır) — görev dünyasının tamamı tek zengin komuta sayfasında, dört bölüm:
+**Agent Farm: Open Tasks** (global gezinmede Missions'ın solundaki **Tasks** düğmesi; Tasks ağacı başlığındaki $(layout) simgesi de buraya açılır) — görev dünyasının tamamı tek zengin komuta sayfasında. Başlığın hemen altında **NOW şeridi** her bölümde görünür kalır: şu an çalışanlar (filo limitine karşı), onay bekleyenler (tıkla → Board), kuyruk sayısı ve **bir sonraki zamanlı koşu** — hangi sekmede olursan ol sayfanın nabzı gözünün önündedir. Bölüm düğmeleri de sayaç taşır (Analytics'te uyarı varsa ⚠). Dört bölüm:
 
 **Board** — kuyruğun yönetici yüzeyi (eski bağımsız Kanban sayfası buraya taşındı; `Open Task Board` komutu da bu bölümü açar):
 

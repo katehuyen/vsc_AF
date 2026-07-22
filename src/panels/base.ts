@@ -67,6 +67,7 @@ export function handleAfNav(to: unknown): void {
         needs: 'agentfarm.openNeeds',
         board: 'agentfarm.openBoard',
         tasks: 'agentfarm.openTasks',
+        airtable: 'agentfarm.openAirtable',
         missions: 'agentfarm.openMissions',
         search: 'agentfarm.searchTranscripts',
         settings: 'agentfarm.openFarmSettings',

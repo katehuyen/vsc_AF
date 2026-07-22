@@ -35,10 +35,6 @@
 
     window.addEventListener('message', ev => {
         if (ev.data.type === 'data') { DATA = ev.data.data; render(); }
-        if (ev.data.type === 'airtable-instances' && DATA.airtable) {
-            DATA.airtable.instances = ev.data.rows;
-            render();
-        }
     });
 
     const post = (m) => vscode.postMessage(m);
@@ -88,122 +84,6 @@
             <button class="mini add" data-new="${kind}">+ new ${kind}</button></span>`;
     }
 
-    // ------------------------------------------------- Airtable Engine card
-
-    function airInstanceRows(a) {
-        if (!a.instances) { return '<p class="muted small" style="margin:6px 0 0">Checking instances…</p>'; }
-        if (!a.instances.length) {
-            return `<p class="muted small" style="margin:6px 0 0">No instances found${a.settings.rawDatabaseRoots.length ? ' under the configured folders' : ' — add your engine folder first'}.</p>`;
-        }
-        const stat = (row) => {
-            if (!row.stats) { return ''; }
-            const s = row.stats;
-            const parts = [];
-            if (s.lessons !== undefined) { parts.push(s.lessons + ' lessons'); }
-            if (s.sentences !== undefined) { parts.push(s.sentences + ' sentences'); }
-            if (s.media !== undefined) { parts.push(s.media + ' media'); }
-            return parts.join(' · ');
-        };
-        return `<div class="tablewrap" style="margin-top:6px"><table class="tb air-tb">
-            <tr><th>Instance</th><th>Port</th><th>Status</th><th>Contents</th><th></th></tr>
-            ${a.instances.map(row => `<tr${row.alive ? '' : ' class="offrow"'}>
-                <td class="nm">${esc(row.name)}${row.isDefault ? ' <span class="tag on" title="used when a tool call names no instance">default</span>' : ''}
-                    ${row.title ? `<div class="muted small">${esc(row.title)}</div>` : ''}</td>
-                <td>${row.port}</td>
-                <td>${row.alive ? '<span class="tag on">live</span>' : `<span class="tag off" title="${esc(row.error || '')}">down</span>`}</td>
-                <td class="muted small">${esc(stat(row) || (row.alive ? '' : 'start it with start_admin.bat in its folder'))}</td>
-                <td class="act">
-                    ${row.alive ? `<button class="mini" data-air="open-ui" data-url="${esc(row.url)}" title="open the engine's own web panel">Open UI</button>` : ''}
-                    ${row.isDefault ? '' : `<button class="mini" data-air="set-default" data-name="${esc(row.name)}" title="use this instance when a tool call names none">Set default</button>`}
-                    <button class="mini" data-air="reveal-inst" data-dir="${esc(row.dir)}" title="reveal the instance folder">folder</button>
-                </td></tr>`).join('')}
-        </table></div>`;
-    }
-
-    function airFolderRows(list, expandedList, instances, removeMsg) {
-        if (!list.length) { return ''; }
-        const norm = (p) => String(p || '').replace(/\\/g, '/').toLowerCase();
-        return list.map((raw, idx) => {
-            // counting matches on the EXPANDED path — the raw one may hold %VAR% tokens
-            const expanded = (expandedList || [])[idx] || raw;
-            const inside = (instances || []).filter(i => norm(i.dir).startsWith(norm(expanded)));
-            const live = inside.filter(i => i.alive).length;
-            const info = instances === undefined ? ''
-                : inside.length ? `${inside.length} instance(s), ${live} live` : 'no instances inside';
-            return `<div class="air-folder"><code title="${esc(expanded)}">${esc(raw)}</code>
-                <span class="muted small">${esc(info)}</span>
-                <button class="mini danger" data-air="${removeMsg}" data-value="${esc(raw)}" title="remove from settings (nothing on disk is touched)">remove</button>
-            </div>`;
-        }).join('');
-    }
-
-    function airtableCard() {
-        const a = DATA.airtable;
-        if (!a) { return ''; }
-        const s = a.settings, reg = a.registration;
-        const probe = (DATA.probeCache || {})['user::airtable'];
-        const regBadge = !reg.registered
-            ? '<span class="tag off" title="agents cannot use the engine until the MCP is registered">MCP not registered</span>'
-            : reg.upToDate
-                ? '<span class="tag on" title="registered in ~/.claude.json, pointing at the version-independent staged copy">MCP registered</span>'
-                : `<span class="tag off" title="the registration points at ${esc(reg.currentPath || 'an old path')} — repoint it to the staged copy so extension updates never break it">MCP needs repair</span>`;
-        const regBtns = !reg.registered
-            ? '<button class="mini add" data-air="register" title="write the user-scope MCP registration — every NEW claude session then sees the airtable_* tools">Register MCP</button>'
-            : (reg.upToDate ? '' : '<button class="mini warn" data-air="register" title="repoint the registration to the staged copy">Repair registration</button>')
-              + '<button class="mini danger" data-air="unregister" title="remove the registration (settings and data stay)">Unregister</button>';
-        const probeInfo = probe && probe.ok
-            ? `<span class="muted small" title="live tools/list answer from the registered server">✓ ${probe.tools.length} tools verified ${relTime(probe.probedAt)}</span>`
-            : '';
-        return `<div class="card air-card">
-            <div class="spread">
-                <b>🗄️ Airtable Engine</b>
-                <span>
-                    ${regBadge}
-                    ${a.staging.version ? `<span class="tag" title="staged server copy in globalStorage (survives extension updates)">staged v${esc(a.staging.version)}</span>` : '<span class="tag off">not staged yet</span>'}
-                    ${probeInfo}
-                </span>
-                <span>
-                    ${regBtns}
-                    <button class="mini" data-air="probe" title="connect to the registered MCP server and list its actual tools">Probe tools</button>
-                    <button class="mini" data-air="reprobe" title="re-scan the folders and health-check every instance">Refresh instances</button>
-                </span>
-            </div>
-            <div class="muted small" style="margin:4px 0 8px">
-                Your personal data engine (knowledge + media records) as a built-in module: agents get the
-                <code>airtable_*</code> MCP tools to search, save and manage records for you — files are referenced by
-                absolute path, never moved. Instances are discovered from the folders below and health-checked live
-                (ports are never assumed).
-            </div>
-            <div class="air-sec"><b>Engine folders</b>
-                <span class="muted small">each subfolder with a config.json = one instance</span>
-                <button class="mini add" data-air="add-root">+ Add folder</button></div>
-            ${airFolderRows(s.rawDatabaseRoots, s.databaseRoots, a.instances, 'remove-root')
-                || '<p class="muted small" style="margin:4px 0">None yet — add the folder that holds your engine instances (agents are told to send you here until one is set).</p>'}
-            <div class="air-sec"><b>Media folders</b>
-                <span class="muted small">libraries whose files records point at</span>
-                <button class="mini add" data-air="add-media">+ Add folder</button></div>
-            ${airFolderRows(s.rawMediaRoots, s.mediaRoots, undefined, 'remove-media')
-                || '<p class="muted small" style="margin:4px 0">Optional — where your media library lives (for your own reference and future scans).</p>'}
-            <div class="air-sec"><b>Defaults</b>
-                <span class="muted small">used when an agent's tool call doesn't specify them</span></div>
-            <div class="air-defaults">
-                <label>instance
-                    <select id="air-definst" title="engine used when a tool call names none — empty: the single running one">
-                        <option value=""${s.defaultInstance ? '' : ' selected'}>(auto: the single live one)</option>
-                        ${(a.instances || []).map(i => `<option value="${esc(i.name)}"${i.name === s.defaultInstance ? ' selected' : ''}>${esc(i.name)}</option>`).join('')}
-                        ${s.defaultInstance && !(a.instances || []).some(i => i.name === s.defaultInstance)
-                            ? `<option value="${esc(s.defaultInstance)}" selected>${esc(s.defaultInstance)} (not found)</option>` : ''}
-                    </select></label>
-                <label>language <input id="air-deflang" type="text" size="4" value="${esc(s.defaultLang)}" placeholder="TR"
-                    title="language tree passed to the engine (TR/EN…) — empty: the engine's default"></label>
-                <label>timeout <input id="air-timeout" type="number" min="1000" step="500" value="${s.requestTimeoutMs}"
-                    title="HTTP timeout for engine calls (ms)"> ms</label>
-                <span class="muted small">config mirror: <code title="the MCP server reads this file — Agent Farm rewrites it whenever the settings change">${esc(a.configFile)}</code></span>
-            </div>
-            ${airInstanceRows(a)}
-        </div>`;
-    }
-
     // ---------------------------------------------------------------- tabs
 
     function overviewTab() {
@@ -215,7 +95,15 @@
                 <div class="muted small">${c.user} user · ${c.agent} agent</div>
                 <div class="muted small tb-exp">${EXPLAIN[t.id]}</div>
             </div>`;
-        }).join('');
+        }).join('')
+            // built-in modules ride in the same grid, same visual weight — they
+            // just navigate to their own page instead of a tab
+            + `<div class="card tb-card" data-modnav="airtable">
+                <div class="tb-num">🗄️</div>
+                <div class="tb-cat">Airtable Engine</div>
+                <div class="muted small">built-in module</div>
+                <div class="muted small tb-exp">Your data engine (knowledge + media records) with the airtable_* agent tools — instances, folders and registration live on its own page.</div>
+            </div>`;
         return `<div class="card" style="margin-bottom:10px">
             <b>Two scopes, one picture.</b> <span class="muted">USER scope lives in <code>${esc(DATA.paths.userClaudeDir)}</code>
             (plus MCP servers in <code>${esc(DATA.paths.userConfigJson)}</code>) and applies to <b>every</b> agent and session on this machine.
@@ -415,24 +303,14 @@
                 .tb-cat { font-weight: 600; margin: 2px 0; }
                 .tb-exp { margin-top: 6px; line-height: 1.35; }
                 .newrow select { max-width: 180px; }
-                .searchbar input { width: 280px; }
-                .air-card { margin-bottom: 12px; }
-                .air-sec { display: flex; gap: 10px; align-items: baseline; margin: 10px 0 4px; }
-                .air-folder { display: flex; gap: 10px; align-items: center; margin: 2px 0; }
-                .air-folder code { max-width: 480px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-                .air-defaults { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin: 4px 0 2px; }
-                .air-defaults label { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; }
-                .air-defaults input[type=number] { width: 76px; }
-                .air-tb th, .air-tb td { padding: 3px 8px; }
-            </style>
+                .searchbar input { width: 280px; }            </style>
             ${window.AFHeader.html({
                 page: 'toolbox',
                 title: 'Toolbox',
                 sub: `${total} installed extensions across user + agent scope · inventory, details and management for everything that extends claude`,
-                related: [{ nav: 'capabilities', label: 'Capability Matrix' }, { nav: 'secrets', label: '🔑 Secrets' }],
+                related: [{ nav: 'airtable', label: '🗄️ Airtable Engine' }, { nav: 'capabilities', label: 'Capability Matrix' }, { nav: 'secrets', label: '🔑 Secrets' }],
                 guide: 'toolbox'
             })}
-            ${airtableCard()}
             <div class="btnrow" style="margin-bottom:10px">${tabBar}</div>
             ${body}`;
 
@@ -479,23 +357,9 @@
                 else if (act === 'probe') { post({ type: 'probe', scope: it.scope, agentId: it.agentId || '', server: it.name }); }
                 else if (act === 'togglemcp') { post({ type: 'toggleMcp', agentId: it.agentId || '', server: it.name, disabled: it.detail.disabled !== true }); }
             }));
-        document.querySelectorAll('[data-air]').forEach(b =>
-            b.addEventListener('click', () => {
-                const act = b.dataset.air;
-                if (act === 'open-ui') { post({ type: 'openExternal', url: b.dataset.url }); }
-                else if (act === 'reveal-inst') { post({ type: 'reveal', path: b.dataset.dir }); }
-                else if (act === 'set-default') { post({ type: 'airtable-set', key: 'defaultInstance', value: b.dataset.name }); }
-                else if (act === 'probe') { post({ type: 'probe', scope: 'user', agentId: '', server: 'airtable' }); }
-                else if (act === 'remove-root' || act === 'remove-media') { post({ type: 'airtable-' + act, value: b.dataset.value }); }
-                else { post({ type: 'airtable-' + act }); }
-            }));
-        const airSet = (id, key, val) => {
-            const el = document.getElementById(id);
-            if (el) { el.addEventListener('change', () => post({ type: 'airtable-set', key, value: val(el) })); }
-        };
-        airSet('air-definst', 'defaultInstance', el => el.value);
-        airSet('air-deflang', 'defaultLang', el => el.value.trim());
-        airSet('air-timeout', 'requestTimeoutMs', el => Number(el.value));
+        // module tiles navigate to their own page (same handler the nav uses)
+        document.querySelectorAll('[data-modnav]').forEach(b =>
+            b.addEventListener('click', () => post({ type: 'afnav', to: b.dataset.modnav })));
     }
 
     render();

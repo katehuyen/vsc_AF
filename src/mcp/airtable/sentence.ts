@@ -2,7 +2,7 @@
 //
 // A "sentence" is one atomic piece of knowledge. The engine stores it under
 //   <instance>/<lang>/db/sentences/<YYYY-MM>/<id>.json
-// Shape verified against a real record (W:/zome/db/stem/.../sent_20251228_0001.json).
+// Shape verified against a real record from a live deploy.
 // Ids come from GET /api/collections/sentences/next-id; the write goes through
 // POST /api/file, exactly like media (no create-time validation).
 

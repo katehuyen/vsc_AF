@@ -154,6 +154,16 @@ const clickWired = (attr, value) => {
     if (el) { el._click({ stopPropagation() { } }); }
 };
 
+// ---------- NOW strip (visible in every section) ----------
+ok('NOW strip shows running vs limit with the task', html().includes('⚙️ 1/2')
+    && html().includes('live run') && html().includes('@psikolog'));
+ok('NOW strip flags waits as hot + queued count', html().includes('1 needs you')
+    && html().includes('2 queued'));
+ok('NOW strip announces the next scheduled run', html().includes('🕑')
+    && html().includes('daily digest'));
+ok('segment buttons carry counts + alert marker', html().includes('⚠1')
+    && /Board <span class="seg-n">3<\/span>/.test(html()));
+
 // ---------- board section (default) ----------
 ok('board renders all five columns', ['📥 Inbox', '🕓 Parked', '⚙️ Running', '🛡️ Needs Approval', '🏁 Done']
     .every(h => html().includes(h)));
@@ -186,6 +196,7 @@ ok('command bar posts the typed command', posted[0] && posted[0].type === 'comma
 
 // ---------- automations ----------
 clickWired('sec', 'automations');
+ok('NOW strip survives the section switch', html().includes('now-strip'));
 ok('triggers table renders with source → target', html().includes('Inbox factory')
     && html().includes('watch: …/inbox') && html().includes('task → psikolog'));
 ok('armed=false shows the path-missing badge', html().includes('path missing'));

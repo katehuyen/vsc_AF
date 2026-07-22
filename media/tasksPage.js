@@ -325,12 +325,46 @@
                 : '<p class="muted">No scheduled runs in the window.</p>'}</div>`;
     }
 
+    // ---------- NOW strip — the page's pulse, visible in every section ----------
+
+    function nowStripHtml(d) {
+        const run = d.board.running;
+        const waiting = d.board.waiting.length;
+        const queued = d.board.inbox.length + d.board.parked.length;
+        const next = d.automations.schedules
+            .filter(s => s.enabled && s.nextAt)
+            .sort((a, b) => a.nextAt - b.nextAt)[0];
+        const runTxt = run.length
+            ? run.slice(0, 3).map(t => `<b>${C.esc(t.title.length > 26 ? t.title.slice(0, 25) + '…' : t.title)}</b> <span class="muted">@${C.esc(t.agentName)}</span>`).join(' · ')
+              + (run.length > 3 ? ` <span class="muted">+${run.length - 3}</span>` : '')
+            : '<span class="muted">idle</span>';
+        return `<div class="now-strip">
+            <span class="now-cell" title="tasks running right now (vs the farm-wide limit)">⚙️ ${run.length}/${d.load.global.limit} ${runTxt}</span>
+            ${waiting ? `<span class="now-cell now-hot" data-goto="board" title="approvals and permission waits — click to jump to the board">🛡️ ${waiting} need${waiting > 1 ? '' : 's'} you</span>` : ''}
+            ${queued ? `<span class="now-cell" data-goto="board" title="queued + parked tasks">📥 ${queued} queued</span>` : ''}
+            <span class="now-cell" data-goto="automations" title="the next scheduled run">🕑 ${next ? `next: <b>${C.esc(next.title.length > 30 ? next.title.slice(0, 29) + '…' : next.title)}</b> ${C.esc(fmtNext(next.nextAt))}` : '<span class="muted">nothing scheduled</span>'}</span>
+        </div>`;
+    }
+
     // ---------- shell ----------
 
     function render() {
         const d = DATA;
-        const segButtons = SECTIONS.map(([id, label]) =>
-            `<button data-sec="${id}" class="${id === section ? 'sel' : ''}">${label}</button>`).join('');
+        const alertCount = (d.analytics.alerts || []).length;
+        const counts = {
+            board: d.board.inbox.length + d.board.parked.length + d.board.running.length,
+            automations: d.automations.triggers.filter(t => t.enabled).length
+                + d.automations.schedules.filter(s => s.enabled).length,
+            reusables: d.reusables.templates.length + d.reusables.workflows.length,
+            analytics: alertCount
+        };
+        const segButtons = SECTIONS.map(([id, label]) => {
+            const n = counts[id];
+            const suffix = id === 'analytics'
+                ? (n ? ` <span class="seg-warn">⚠${n}</span>` : '')
+                : (n ? ` <span class="seg-n">${n}</span>` : '');
+            return `<button data-sec="${id}" class="${id === section ? 'sel' : ''}">${label}${suffix}</button>`;
+        }).join('');
         const body = section === 'board' ? boardHtml(d)
             : section === 'automations' ? automationsHtml(d)
                 : section === 'reusables' ? reusablesHtml(d)
@@ -370,6 +404,15 @@
                 .rowbtns .mini { margin-left:3px; }
                 .wf-steps { margin:8px 0 0; padding-left:20px; }
                 .wf-steps li { margin:3px 0; font-size:12px; }
+                .now-strip { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:0 0 12px;
+                    padding:7px 10px; border:1px solid var(--vscode-widget-border,#4443); border-radius:8px;
+                    background:var(--vscode-editorWidget-background, rgba(128,128,128,.05)); font-size:12px; }
+                .now-cell { display:inline-flex; gap:6px; align-items:center; padding:1px 8px; }
+                .now-cell[data-goto] { cursor:pointer; border-radius:5px; }
+                .now-cell[data-goto]:hover { background:var(--vscode-list-hoverBackground); }
+                .now-hot { color:var(--vscode-editorWarning-foreground,#cca700); font-weight:600; }
+                .seg-n { opacity:.6; font-size:10px; }
+                .seg-warn { color:var(--vscode-editorWarning-foreground,#cca700); font-size:10px; }
             </style>
             ${window.AFHeader.html({
                 page: 'tasks',
@@ -379,11 +422,14 @@
                 actions: section === 'board' ? '<button class="secondary" id="add">+ Task</button>' : '',
                 guide: 'tasks-sayfasi'
             })}
+            ${nowStripHtml(d)}
             ${body}`;
 
         window.AFHeader.wire(vscode);
         document.querySelectorAll('[data-sec]').forEach(b =>
             b.addEventListener('click', () => setSection(b.dataset.sec)));
+        document.querySelectorAll('[data-goto]').forEach(el =>
+            el.addEventListener('click', () => setSection(el.dataset.goto)));
         const add = document.getElementById('add');
         if (add) { add.addEventListener('click', () => post({ type: 'add-task' })); }
         document.querySelectorAll('[data-add]').forEach(b =>
