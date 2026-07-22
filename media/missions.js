@@ -601,7 +601,7 @@
             <select id="m-sort">${RUN_SORTS.map(s =>
                 `<option value="${s.id}"${s.id === runSort ? ' selected' : ''}>${s.label}</option>`).join('')}</select>
             <button class="chip" id="m-sortdir" title="Flip the sort direction">${runSortAsc ? '▲ asc' : '▼ desc'}</button>
-            <button class="chip${nf ? ' on' : ''}" id="m-filters" title="Filter the list by status, verdict, agents, ranges and dates">Filters${nf ? ` (${nf})` : ''}</button>
+            <button class="chip${nf ? ' on' : ''}" id="m-filters" title="Filter the list by status, verdict, agents, ranges and dates${nf ? ` — ${nf} active` : ''}">Filters</button>
             <span class="muted small">Runs:</span>
             <button class="chip" id="r-expandall" title="Open every run's detail">Expand all</button>
             <button class="chip" id="r-collapseall" title="Fold the list back to plain rows">Collapse all</button>

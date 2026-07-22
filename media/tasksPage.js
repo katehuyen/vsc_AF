@@ -86,11 +86,14 @@
             return `<select data-tf="${id}:${c.key}" title="Filter by ${C.esc(c.label)}"><option value="">${C.esc(c.label)}: all</option>${vals.map(v => `<option value="${C.esc(v)}" ${s.filters[c.key] === v ? 'selected' : ''}>${C.esc(v)}</option>`).join('')}</select>`;
         }).join('');
         const active = q || s.sort || Object.values(s.filters).some(Boolean);
+        // Buttons stay put: reset is always present (disabled when idle) and the
+        // row count sits last, so nothing between the controls shifts them around.
         const bar = `<div class="tbl-tools">
             <input type="search" data-tq="${id}" value="${C.esc(s.q)}" placeholder="⌕ search">
-            ${selects}<span class="muted small">${rows.length}${rows.length !== allRows.length ? '/' + allRows.length : ''} row(s)</span>
-            ${active ? `<button class="mini secondary" data-treset="${id}" title="Clear search, filters and sort">↺ reset</button>` : ''}
-            <button class="mini secondary" data-texport="${id}" title="Export the visible rows as a Markdown table">⬇ MD</button></div>`;
+            ${selects}
+            <button class="mini secondary" data-treset="${id}" ${active ? '' : 'disabled'} title="Clear search, filters and sort">↺ reset</button>
+            <button class="mini secondary" data-texport="${id}" title="Export the visible rows as a Markdown table">⬇ MD</button>
+            <span class="muted small tbl-count">${rows.length}${rows.length !== allRows.length ? '/' + allRows.length : ''} row(s)</span></div>`;
         const th = (key, label, num) => { const on = s.sort === key; return `<th class="${num ? 'num ' : ''}tbl-sort" data-tsort="${id}:${key}" title="Sort by ${C.esc(label)}">${C.esc(label)}${on ? (s.asc ? ' ▲' : ' ▼') : ''}</th>`; };
         return { rows, bar, th };
     }

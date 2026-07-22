@@ -528,7 +528,7 @@
                 actions: `<button id="resume">⏵ Resume</button>
                     <button class="secondary" id="focusterm" title="Jump to this session's terminal window (if one is open)">⌨ Terminal</button>
                     <button class="secondary" id="replaytoggle">${replay.active ? '✕ Exit replay' : '▶ Replay'}</button>
-                    <button class="secondary" id="exportmd" title="Export to Markdown — asks whether to save the current view (filters/folding applied) or everything">⬇ Export MD${exportOff.size ? ` (${includedTurnCount()}/${(DATA.turns || []).length} turns)` : ''}</button>
+                    <button class="secondary" id="exportmd" title="Export to Markdown — asks whether to save the current view (filters/folding applied) or everything${exportOff.size ? ` · ${includedTurnCount()}/${(DATA.turns || []).length} turns currently shown` : ''}">⬇ Export MD</button>
                     <button class="secondary" id="raw">Open raw JSONL</button>${DATA.agentName ? `
                     <button class="secondary" id="agentpage" title="This session belongs to ${C.esc(DATA.agentName)} — open the agent page">⌂ ${C.esc(DATA.agentName)}</button>` : ''}`,
                 searchTitle: 'Search inside this session (tool traffic too)',

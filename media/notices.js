@@ -247,7 +247,7 @@
         </div>`;
     }
     function actionsHtml() {
-        const sel = selected.size, undo = DATA.undoable || 0;
+        const undo = DATA.undoable || 0;
         return `<span class="nt-grp">
                 <button class="secondary" data-hact="expandAll" title="Open every shown notice">⊕ Expand all</button>
                 <button class="secondary" data-hact="collapseAll" title="Close all">⊖ Collapse all</button>
@@ -258,12 +258,11 @@
                 <button data-hact="bulkRead" title="Mark selected read (or all shown if none selected)">✓ Read</button>
                 <button class="secondary" data-hact="bulkUnread" title="Mark selected unread (or all shown)">○ Unread</button>
                 <button class="secondary danger" data-hact="bulkDelete" title="Delete selected (or all shown if none selected)">🗑 Delete</button>
-                <span class="muted small nt-selcount">${sel ? sel + ' selected' : ''}</span>
             </span>
             <span class="nt-grp">
                 <button class="secondary" data-hact="clearRead" title="Delete read notices — pinned, starred and unhandled questions are kept">Clear read</button>
                 <button data-hact="export">⬇ Export MD</button>
-                ${undo ? `<button class="secondary nt-undo" data-hact="undo" title="Restore the notice(s) just deleted">↶ Undo (${undo})</button>` : ''}
+                <button class="secondary nt-undo" data-hact="undo" ${undo ? '' : 'disabled'} title="${undo ? 'Restore the ' + undo + ' notice(s) just deleted' : 'Nothing to undo'}">↶ Undo</button>
             </span>`;
     }
 
@@ -287,7 +286,6 @@
         .nt-grp { display:inline-flex; gap:6px; align-items:center; padding-right:8px; margin-right:2px; border-right:1px solid var(--vscode-panel-border); }
         .nt-grp:last-child { border-right:none; }
         .nt-bulk .nt-selall { display:inline-flex; gap:3px; align-items:center; font-size:11px; opacity:.85; cursor:pointer; }
-        .nt-selcount { min-width:0; }
         button.danger:hover { background:var(--vscode-inputValidation-errorBackground, #5a1d1d); border-color:var(--vscode-editorError-foreground, #e51400); }
         .nt-undo { color:var(--vscode-charts-yellow, #e2c08d); }
         .nt-row { display:flex; gap:8px; align-items:center; padding:8px 10px; cursor:pointer; }
@@ -346,7 +344,7 @@
         document.getElementById('app').innerHTML = `${STYLE}
             ${window.AFHeader.html({
                 page: 'notices', title: '🔔 Notices',
-                sub: `${(DATA.notices || []).length} total · ${DATA.unread || 0} unread · ${DATA.openQuestions || 0} open question(s) · showing ${items.length} · ${new Date(DATA.generatedAt).toLocaleTimeString()}`,
+                sub: `${(DATA.notices || []).length} total · ${DATA.unread || 0} unread · ${DATA.openQuestions || 0} open question(s) · showing ${items.length}${selected.size ? ` · ${selected.size} selected` : ''} · ${new Date(DATA.generatedAt).toLocaleTimeString()}`,
                 controls: controls(), actions: actionsHtml()
             })}
             ${listHtml}`;

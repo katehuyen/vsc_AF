@@ -40,9 +40,9 @@
                     <div class="muted small">${DATA.message ? C.esc(DATA.message) + ' · ' : ''}${DATA.candidates.length} candidate(s) · ${rangeText}</div>
                 </div>
                 <div class="btnrow">
-                    <span class="badge" style="${canConfirm ? 'color:var(--vscode-charts-green,#4caf50);border-color:var(--vscode-charts-green,#4caf50)' : ''}">${chosen.size} selected</span>
                     <button id="confirm" ${canConfirm ? '' : 'disabled'}>Use selected</button>
                     <button class="secondary" id="cancel">Cancel</button>
+                    <span class="badge" style="${canConfirm ? 'color:var(--vscode-charts-green,#4caf50);border-color:var(--vscode-charts-green,#4caf50)' : ''}">${chosen.size} selected</span>
                 </div>
             </div>
             ${DATA.candidates.length
