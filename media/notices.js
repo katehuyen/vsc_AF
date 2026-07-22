@@ -44,6 +44,7 @@
     function esc(s) { return C.esc(String(s == null ? '' : s)); }
     function tmeta(t) { return TYPES[t] || TYPES.update; }
     function lvl(n) { return n.level >= 1 && n.level <= 4 ? n.level : 1; }
+    function reportBase(p) { return String(p || '').split(/[\\/]/).pop(); }
 
     // ---- minimal safe markdown (escape first, then structural transforms) ----
     function mdInline(t) {
@@ -183,10 +184,14 @@
         let body = '';
         if (inEdit) { body = editForm(n); }
         else {
+            const reportBtn = n.reportPath ? `<div class="nt-report">
+                    <button data-act="openreport" data-id="${esc(n.id)}">📄 Tam raporu aç</button>
+                    <span class="muted small nt-reppath" title="${esc(n.reportPath)}">${esc(reportBase(n.reportPath))}</span>
+                </div>` : '';
             body = `<div class="muted small nt-sub">${esc(t.label)} · L${L} ${esc(LEVELS[L])}${n.edited ? ' · ✎ edited' + (n.editedAt ? ' ' + esc(new Date(n.editedAt).toLocaleString()) : '') : ''}</div>
                 ${due}
                 ${n.body ? `<div class="nt-md">${mdToHtml(n.body)}</div>` : (!n.sections && !isQ ? '<div class="muted small">(no details)</div>' : '')}
-                ${sectionsHtml(n)}${questionBlock(n)}${originalBlock(n)}
+                ${sectionsHtml(n)}${reportBtn}${questionBlock(n)}${originalBlock(n)}
                 <div class="btnrow nt-actions">
                     <button data-act="read" data-id="${esc(n.id)}" data-read="${n.read ? '0' : '1'}">${n.read ? 'Mark unread' : 'Mark read'}</button>
                     <button class="secondary" data-act="edit" data-id="${esc(n.id)}">Edit</button>
@@ -201,6 +206,7 @@
                 <span class="nt-ico" title="${esc(t.label)}">${t.icon}</span>
                 <span class="nt-title" title="${esc(n.title)}">${esc(n.title)}</span>
                 <span class="nt-lb lb-${L}" title="Level ${L} · ${esc(LEVELS[L])}">L${L}</span>
+                ${n.reportPath ? '<span class="nt-badge rep" title="Full report attached — click to open inside">📄</span>' : ''}
                 ${statusBadge(n)}${n.edited ? '<span class="nt-badge muted">✎</span>' : ''}
                 ${tags ? `<span class="nt-tags">${tags}</span>` : ''}
                 ${starsHtml(n)}
@@ -269,6 +275,9 @@
         .nt-badge { font-size:10px; border-radius:8px; padding:1px 7px; flex-shrink:0; border:1px solid var(--vscode-panel-border); }
         .nt-badge.ok { color:var(--vscode-charts-green, #89d185); }
         .nt-badge.warn { color:var(--vscode-charts-orange, #e9a700); border-color:var(--vscode-charts-orange, #e9a700); }
+        .nt-badge.rep { cursor:default; }
+        .nt-report { display:flex; gap:8px; align-items:center; margin:8px 0; padding:6px 8px; border-left:3px solid var(--vscode-textLink-foreground); background:var(--vscode-editorWidget-background); border-radius:4px; }
+        .nt-report .nt-reppath { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .nt-body { padding:2px 12px 12px 32px; border-top:1px solid var(--vscode-panel-border); }
         .nt-sub { margin:4px 0; text-transform:uppercase; letter-spacing:.04em; font-size:10px; }
         .nt-md { margin:4px 0; line-height:1.5; word-break:break-word; }
@@ -365,10 +374,11 @@
             else { d[f] = el.value; }
         }));
 
-        document.querySelectorAll('.nt-actions [data-act], .nt-qbox [data-act], .nt-edit [data-act]').forEach(b => b.addEventListener('click', ev => {
+        document.querySelectorAll('.nt-actions [data-act], .nt-qbox [data-act], .nt-edit [data-act], .nt-report [data-act]').forEach(b => b.addEventListener('click', ev => {
             ev.stopPropagation();
             const id = b.dataset.id, act = b.dataset.act;
             if (act === 'read') { vscode.postMessage({ type: 'markRead', id, read: b.dataset.read === '1' }); }
+            else if (act === 'openreport') { vscode.postMessage({ type: 'openReport', id }); }
             else if (act === 'dismiss') { expanded.delete(id); vscode.postMessage({ type: 'dismiss', id }); }
             else if (act === 'decline') { vscode.postMessage({ type: 'decline', id }); }
             else if (act === 'answer') { const t = (drafts[id] || '').trim(); if (t) { delete drafts[id]; vscode.postMessage({ type: 'answer', id, text: t }); } }

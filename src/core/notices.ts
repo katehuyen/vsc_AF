@@ -52,6 +52,10 @@ export interface Notice {
     sections?: NoticeSection[];
     tags?: string[];
     dueAt?: number;
+    /** The "second leg": absolute path to a full-length MD report file this
+     *  notice summarises. The body/sections stay a summary; the report holds
+     *  the depth. Clicking it in the UI opens the file. */
+    reportPath?: string;
     read?: boolean;
     readAt?: number;
     pinned?: boolean;
@@ -98,6 +102,8 @@ export interface NoticeInput {
     agentName?: string;
     tags?: string[] | string;
     dueAt?: number;
+    /** Absolute path to an already-written full report file (second leg). */
+    reportPath?: string;
 }
 
 export interface NoticeFilter {
@@ -183,6 +189,8 @@ export function makeNotice(input: NoticeInput, now = Date.now()): Notice {
         tags: coerceTags(input.tags),
         dueAt
     };
+    const reportPath = String(input.reportPath ?? '').trim();
+    if (reportPath) { n.reportPath = reportPath.slice(0, 500); }
     if (type === 'question') { n.status = 'open'; }
     return n;
 }
@@ -369,6 +377,7 @@ export function noticeMarkdown(n: Notice, headingLevel = 2): string {
     const lines: string[] = [`${h} ${n.title}`, '', `_${meta.join(' · ')}_`, ''];
     if (n.body) { lines.push(n.body, ''); }
     for (const s of n.sections ?? []) { lines.push(`${secH} ${s.title}`, '', s.body, ''); }
+    if (n.reportPath) { lines.push(`**Full report:** \`${n.reportPath}\``, ''); }
     if (n.type === 'question') {
         const st = n.status ?? 'open';
         if (st === 'answered') { lines.push(`**Answer:** ${n.answer ?? ''}`, ''); }
@@ -417,6 +426,10 @@ export interface NoticesOpsDeps {
     store: NoticesStore;
     onChange?: () => void;
     onPost?: (n: Notice) => void;
+    /** Second leg: persist a full-length MD report to the default report folder
+     *  (naming YYYY-MM-DD_<name>.md) and return its absolute path. Injected by
+     *  the host so this module stays vscode-free and unit-testable. */
+    writeReport?: (a: { title: string; name?: string; body: string; agentName?: string }) => string;
 }
 
 export function registerNoticesOps(bridge: BridgeRegistry, deps: NoticesOpsDeps): void {
@@ -424,21 +437,31 @@ export function registerNoticesOps(bridge: BridgeRegistry, deps: NoticesOpsDeps)
     bridge.register([
         {
             op: 'notices.post',
-            describe: 'Post ONE notice to the user\'s dashboard board (agent→user; the shared channel — post a single entry per thing you want to tell the user, never one per sub-item). args: title (required, the one-line root), type? (update|reminder|report|question, default update), level? (1 routine|2 medium|3 important|4 ultra, default 1), body? (markdown, shown on expand), sections? ([{title, body}] independently-collapsible sub-items, each a FULL self-contained summary — not a link-only teaser), agent? (poster name), tags? (string[]|csv), dueAt? (ms epoch). Use type=question to leave the user an async question (they answer in the UI); check & resolve your answered questions each turn.',
+            describe: 'Post ONE notice to the user\'s dashboard board (agent→user; the shared channel — post a single entry per thing you want to tell the user, never one per sub-item). args: title (required, the one-line root), type? (update|report|result|reminder|suggestion|warning|question, default update), level? (1 routine|2 medium|3 important|4 ultra, default 1 — ALWAYS pick honestly, never omit), body? (markdown, shown on expand), sections? ([{title, body}] independently-collapsible sub-items, each a FULL self-contained summary — not a link-only teaser), agent? (poster name), tags? (string[]|csv), dueAt? (ms epoch). SECOND LEG for substantial content (reports/digests/summaries/work outputs — anything the user may want in full): pass report? (the full markdown, written in Turkish with source URLs at the end) — the host saves it to the default report folder as YYYY-MM-DD_<name>.md and links it as a clickable "full report"; reportName? overrides the file name; OR pass reportPath? to link a file you already wrote. Keep body/sections a genuine SUMMARY; put the depth in the report. Use type=question to leave the user an async question (they answer in the UI); check & resolve your answered questions each turn.',
             handler: (args) => {
+                const title = argStr(args, 'title');
+                const agentName = optStr(args, 'agent') || undefined;
+                let reportPath = optStr(args, 'reportPath') || undefined;
+                const reportBody = optStr(args, 'report');
+                if (!reportPath && reportBody && deps.writeReport) {
+                    try {
+                        reportPath = deps.writeReport({ title, name: optStr(args, 'reportName') || undefined, body: reportBody, agentName });
+                    } catch { /* report write best-effort; the notice still posts */ }
+                }
                 const n = deps.store.add({
-                    title: argStr(args, 'title'),
+                    title,
                     type: optStr(args, 'type') || undefined,
                     level: typeof args.level === 'number' ? args.level : undefined,
                     body: optStr(args, 'body') || undefined,
                     sections: args.sections,
-                    agentName: optStr(args, 'agent') || undefined,
+                    agentName,
                     tags: (args.tags as string[] | string | undefined),
-                    dueAt: typeof args.dueAt === 'number' ? args.dueAt : undefined
+                    dueAt: typeof args.dueAt === 'number' ? args.dueAt : undefined,
+                    reportPath
                 });
                 try { deps.onPost?.(n); } catch { /* toast best-effort */ }
                 changed();
-                return { id: n.id, ts: n.ts, type: n.type, level: n.level, title: n.title, unread: deps.store.unread() };
+                return { id: n.id, ts: n.ts, type: n.type, level: n.level, title: n.title, reportPath: n.reportPath, unread: deps.store.unread() };
             }
         },
         {

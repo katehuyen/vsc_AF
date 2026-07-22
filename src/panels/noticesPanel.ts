@@ -125,6 +125,9 @@ export class NoticesPanel {
             case 'exportOne':
                 if (typeof msg.id === 'string') { void this.exportOne(msg.id); }
                 break;
+            case 'openReport':
+                if (typeof msg.id === 'string') { void this.openReport(msg.id); }
+                break;
             case 'openExternal':
                 // Only http(s) links from a notice body may open — never a file:// or command: uri.
                 if (typeof msg.url === 'string' && /^https?:\/\//i.test(msg.url)) {
@@ -160,6 +163,24 @@ export class NoticesPanel {
         const n = this.deps.store.list({ limit: 0 }).find(x => x.id === id);
         if (!n) { return; }
         await this.saveMarkdown(`# Agent Farm — Notice\n\n${noticeMarkdown(n, 2)}`, 'notice');
+    }
+
+    /** Open the linked full report (the "second leg") in an editor tab. The path
+     *  comes from the notice itself (never from the webview), so it can only be a
+     *  report an agent attached — no arbitrary file open. */
+    private async openReport(id: string): Promise<void> {
+        const n = this.deps.store.list({ limit: 0 }).find(x => x.id === id);
+        if (!n || !n.reportPath) { return; }
+        try {
+            if (!fs.existsSync(n.reportPath)) {
+                void vscode.window.showWarningMessage(`Agent Farm: report file not found — ${n.reportPath}`);
+                return;
+            }
+            const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(n.reportPath));
+            await vscode.window.showTextDocument(doc, { preview: true });
+        } catch (e) {
+            void vscode.window.showErrorMessage(`Agent Farm: could not open report — ${String(e)}`);
+        }
     }
 
     private async saveMarkdown(md: string, base: string): Promise<void> {

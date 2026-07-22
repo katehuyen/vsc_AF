@@ -33,6 +33,8 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
     ok('empty sections dropped', coerceSections([{ title: '', body: '' }]) === undefined);
     ok('question gets open status', makeNotice({ title: 'q', type: 'question' }).status === 'open');
     ok('non-question has no status', makeNotice({ title: 'u' }).status === undefined);
+    ok('reportPath linked when given', makeNotice({ title: 'r', reportPath: '  C:/x/y.md ' }).reportPath === 'C:/x/y.md');
+    ok('no reportPath when absent', makeNotice({ title: 'r' }).reportPath === undefined);
     let threw = false; try { makeNotice({ title: '  ' }); } catch { threw = true; }
     ok('empty title throws', threw);
 }
@@ -77,6 +79,7 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
     ok('noticeMarkdown has title + section + meta', /## Daily AI/.test(md) && /### Model X/.test(md) && /Level 3/.test(md) && /#ai-daily/.test(md));
     const q = makeNotice({ title: 'ask', type: 'question' });
     ok('question markdown notes awaiting answer', /awaiting your answer/i.test(noticeMarkdown(q)));
+    ok('report path shown in markdown', /Full report:.*rep\.md/.test(noticeMarkdown(makeNotice({ title: 'x', reportPath: 'D:/r/rep.md' }))));
 
     const all = [n, q];
     const full = buildNoticesMarkdown(all, [n.id, q.id], new Set([n.id]), { view: true, foldedTitles: true });
@@ -134,7 +137,13 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
     const store = new NoticesStore(path.join(dir, 'notices.json')); store.load();
     let changes = 0, posted = null;
     const reg = new BridgeRegistry();
-    registerNoticesOps(reg, { store, onChange: () => changes++, onPost: n => { posted = n; } });
+    const reportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-notices-report-'));
+    const writeReport = (a) => {
+        const file = path.join(reportDir, `2026-07-22_${(a.name || a.title).replace(/[\\/:*?"<>|]+/g, ' ').trim()}.md`);
+        fs.writeFileSync(file, a.body, 'utf8');
+        return file;
+    };
+    registerNoticesOps(reg, { store, writeReport, onChange: () => changes++, onPost: n => { posted = n; } });
 
     const cat = reg.catalog().map(c => c.op);
     ok('all five notices ops catalogued',
@@ -152,6 +161,19 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
 
     const empty = await reg.dispatch('notices.post', { body: 'x' });
     ok('post refuses missing title', !empty.ok && /title/i.test(empty.error));
+
+    // second leg: `report` content is written to a file and linked
+    const rep = await reg.dispatch('notices.post', {
+        title: 'Günlük AI özeti', type: 'report', level: 2,
+        body: 'Kısa özet — detay raporda.', reportName: 'AI-Ozet',
+        report: '# Günlük AI raporu\n\nDolu dolu içerik.\n\nKaynak: https://example.com'
+    });
+    ok('report leg returns a reportPath', rep.ok && typeof rep.result.reportPath === 'string' && /AI-Ozet\.md$/.test(rep.result.reportPath));
+    ok('report file actually written with full body', rep.ok && fs.existsSync(rep.result.reportPath) && /Dolu dolu/.test(fs.readFileSync(rep.result.reportPath, 'utf8')));
+    ok('notice stores reportPath', store.notices.find(n => n.id === rep.result.id).reportPath === rep.result.reportPath);
+    // pre-written file: reportPath links as-is (no writeReport call)
+    const rep2 = await reg.dispatch('notices.post', { title: 'linked', reportPath: 'D:/known/report.md' });
+    ok('reportPath passthrough', rep2.ok && store.notices.find(n => n.id === rep2.result.id).reportPath === 'D:/known/report.md');
 
     const byTag = await reg.dispatch('notices.list', { tag: 'ai-daily' });
     ok('list filters by tag', byTag.ok && byTag.result.length === 1);
@@ -171,6 +193,7 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
     ok('dismiss by id', dis.ok && dis.result.ok === true);
 
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+    try { fs.rmSync(reportDir, { recursive: true, force: true }); } catch {}
 
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);

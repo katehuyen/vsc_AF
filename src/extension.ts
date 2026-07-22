@@ -2214,8 +2214,35 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // "you should know / remember this" here; the user reads them on the
     // Notices page. This is the channel the manager agent's daily AI digest
     // and any agent's reminders/results surface through.
+    //
+    // Second leg — full reports: a notice carries a short summary; when the
+    // content is substantial the agent passes the full markdown via `report`,
+    // and this writes it to the report folder as YYYY-MM-DD_<name>.md (the
+    // vault's report convention) so the UI can open it. reportPath links a
+    // file the agent already wrote itself.
+    const reportDir = (): string => {
+        const cfg = vscode.workspace.getConfiguration('agentFarm').get<string>('reportDir');
+        return (cfg && cfg.trim())
+            || path.join('D:', 'zone', 'know', 'note', 'obsidian', '01_INBOX', '00_AGENT_AREA', '00_OUTPUT', '10_REPORT');
+    };
+    const writeReport = (a: { title: string; name?: string; body: string; agentName?: string }): string => {
+        const dir = reportDir();
+        fs.mkdirSync(dir, { recursive: true });
+        const d = new Date();
+        const p2 = (n: number) => String(n).padStart(2, '0');
+        const datePart = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+        // Keep Turkish letters + spaces (vault naming §13); strip only chars a
+        // Windows filename cannot hold.
+        const clean = (a.name || a.title).replace(/[\\/:*?"<>|\n\r\t]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'rapor';
+        let file = path.join(dir, `${datePart}_${clean}.md`);
+        for (let i = 2; fs.existsSync(file); i++) { file = path.join(dir, `${datePart}_${clean}-${i}.md`); }
+        const footer = a.agentName ? `\n\n---\n_${a.agentName} · ${d.toLocaleString()}_\n` : '';
+        fs.writeFileSync(file, a.body.trimEnd() + footer, 'utf8');
+        return file;
+    };
     registerNoticesOps(bridge, {
         store: noticesStore,
+        writeReport,
         onChange: () => { NoticesPanel.refreshIfOpen(); updateNoticesBadge(); },
         onPost: (n) => {
             // Ultra-important (level 4) warns; a question gently pings so it does

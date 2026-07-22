@@ -66,7 +66,7 @@ const CATEGORY_OF: Record<string, string> = {
     // reports, digest & outbound
     dailyDigest: 'reports', weeklySummary: 'reports', autoReport: 'reports',
     autoReportFolder: 'reports', autoReportDays: 'reports', autoReportIncludeOutputs: 'reports',
-    digestTtsModel: 'reports', digestTtsFolder: 'reports',
+    digestTtsModel: 'reports', digestTtsFolder: 'reports', reportDir: 'reports',
     notifyWebhookUrl: 'reports', notifyWebhookEvents: 'reports'
 };
 
