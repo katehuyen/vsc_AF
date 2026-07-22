@@ -951,6 +951,12 @@
         "icon": "$(bell)"
       },
       {
+        "command": "agentfarm.openTasks",
+        "title": "Open Tasks (Board · Automations · Reusables · Analytics)",
+        "category": "Agent Farm",
+        "icon": "$(layout)"
+      },
+      {
         "command": "agentfarm.openBoard",
         "title": "Open Task Board (Kanban)",
         "category": "Agent Farm",
@@ -1142,7 +1148,7 @@
           "group": "navigation@0"
         },
         {
-          "command": "agentfarm.openBoard",
+          "command": "agentfarm.openTasks",
           "when": "view == agentfarm.tasks",
           "group": "navigation@0"
         },

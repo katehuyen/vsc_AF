@@ -977,13 +977,32 @@ As the fleet grows, the bottleneck is you: who's waiting for permission, which b
 
 The status bar now counts this queue: if `🔔 N need you` shows, clicking it opens the queue. Three blocking kinds are counted: permission, browser approval, stalled.
 
-### Kanban Board {#kanban-panosu}
+### Tasks Page {#tasks-sayfasi}
 
-**Agent Farm: Open Task Board (Kanban)** (the $(layout) icon in the Tasks header) — the manager surface for the task queue:
+**Agent Farm: Open Tasks** (the **Tasks** button left of Missions in the global nav; the $(layout) icon in the Tasks tree header opens it too) — the whole task world on one rich command page, four sections:
+
+**Board** — the manager surface for the queue (the old standalone Kanban page folded in here; the `Open Task Board` command opens this section):
 
 - Columns: **📥 Inbox** (queued, to be started by hand) · **🕓 Parked** (waiting on capacity/quota) · **⚙️ Running** · **🛡️ Needs Approval** (permission + browser approvals, Run/Reject on the card) · **🏁 Done** (last 30).
 - **Drag and drop** cards: Inbox→Running = start, Running→Done = complete, Inbox→Done = cancel. The card shows agent, duration, verify badge, media cost; **double-click** a card that has an output archive = open the output.
 - Above the board is a **command bar**: type your natural-language sentence, a cheap model turns it into a plan, and it's set up with a preview approval (the same flow as Natural Language Command below).
+- Above the columns sits the **load strip**: fleet-wide `running/limit` (agentFarm.maxConcurrentTasks) plus per-agent `running/limit` and queue counts — an agent at its limit glows orange.
+
+**Automations** — triggers and schedules in one place:
+
+- **Triggers**: source (watch/webhook/hook) → target, armed/fired state, the **reliability scorecard** (7-day ✓/✗ + start delay), debounce/cooldown/hourly cap; row actions **enable/disable · fire · edit · delete**. A watch trigger whose path vanished shows a "path missing" badge.
+- **Schedules**: when (daily/weekly/once) + missed policy, the **next run time**; row actions **enable/disable · run now · edit · delete**.
+
+**Reusables**:
+
+- **Templates**: saved prompt templates — run/delete from the row (to save one: right-click a finished task in the Tasks tree → Save as template).
+- **Workflows**: cards with the step list (∥ = parallel step) — run, add step, rename, delete.
+
+**Analytics** — the task-health page:
+
+- 30-day KPIs (runs, success rate, median duration, verify retries, queue ETA) + alerts (failing agents, always-failing families/triggers).
+- The daily **throughput chart** (done/failed), the **per-agent scorecard** table, **task families** (repeated runs of the same job).
+- The **forecast digest**: the next N days of scheduled runs with their usual duration/success; one-click bridges to the full forecast document and the monthly task-history files.
 
 ### Cost Anomaly {#maliyet-anomalisi}
 

@@ -84,8 +84,8 @@ import {
 import { buildWeeklyFactsText, generateWeeklySummary, isoWeek, WeeklyFacts } from './core/summary';
 import { argStr, BridgeRegistry, need, optStr, parseBridgeRequest } from './core/bridge';
 import {
-    archivedOutputBody, buildCliCommand, CliProfile, FarmSchedule, FarmTask, FarmTrigger,
-    FarmWorkflow, MissedPolicy, newId, parseSeedSchedules, PREV_OUTPUT_PLACEHOLDER,
+    archivedOutputBody, buildCliCommand, CliProfile, FarmSchedule, FarmTask, FarmTemplate,
+    FarmTrigger, FarmWorkflow, MissedPolicy, newId, parseSeedSchedules, PREV_OUTPUT_PLACEHOLDER,
     previousOccurrenceKey, sanitizePrompt, ScheduleKind, TaskManager, TaskMode, WorkflowStep
 } from './core/tasks';
 import {
@@ -111,7 +111,7 @@ import { MemoryGraphPanel } from './panels/memoryGraph';
 import { DashboardPanel } from './panels/dashboard';
 import { GalleryPanel } from './panels/gallery';
 import { GuidePanel } from './panels/guide';
-import { KanbanPanel } from './panels/kanban';
+import { TasksPanel } from './panels/tasksPanel';
 import { NeedsPanel } from './panels/needsPanel';
 import { SearchPanel } from './panels/searchPanel';
 import { FarmSettingsPanel } from './panels/settingsPanel';
@@ -2051,6 +2051,63 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }))
         },
         {
+            op: 'triggers.toggle',
+            describe: 'Enable/disable a trigger. args: id or title',
+            handler: (args) => {
+                const ref = optStr(args, 'id') || argStr(args, 'title');
+                const t = taskManager.triggers.find(x => x.id === ref || x.title === ref);
+                need(t, 'Trigger not found — triggers.list shows current ones.');
+                taskManager.toggleTrigger(t as FarmTrigger);
+                return { title: (t as FarmTrigger).title, enabled: (t as FarmTrigger).enabled };
+            }
+        },
+        {
+            op: 'triggers.fire',
+            describe: 'Fire a trigger now (manual test run of its action). args: id or title',
+            handler: (args) => {
+                const ref = optStr(args, 'id') || argStr(args, 'title');
+                const t = taskManager.triggers.find(x => x.id === ref || x.title === ref);
+                need(t, 'Trigger not found — triggers.list shows current ones.');
+                triggerManager.fire(t as FarmTrigger, 'manual');
+                return { fired: (t as FarmTrigger).title };
+            }
+        },
+        {
+            op: 'schedules.runNow',
+            describe: 'Queue a schedule\'s task right now (out of schedule). args: id or title',
+            handler: (args) => {
+                const ref = optStr(args, 'id') || argStr(args, 'title');
+                const s = taskManager.schedules.find(x => x.id === ref || x.title === ref);
+                need(s, 'Schedule not found — schedules.list shows current ones.');
+                taskManager.runScheduleNow(s as FarmSchedule);
+                return { started: (s as FarmSchedule).title };
+            }
+        },
+        {
+            op: 'templates.list',
+            describe: 'Saved task templates. args: none',
+            handler: () => taskManager.templates.map(t => ({
+                id: t.id, title: t.title, agent: t.agentName ?? null, mode: t.mode
+            }))
+        },
+        {
+            op: 'templates.run',
+            describe: 'Run a template as a task now. args: id or title, agent? (name|id — required when the template is not bound to an agent)',
+            handler: (args) => {
+                const ref = optStr(args, 'id') || argStr(args, 'title');
+                const tpl = taskManager.templates.find(x => x.id === ref || x.title === ref);
+                need(tpl, 'Template not found — templates.list shows current ones.');
+                const t = tpl as FarmTemplate;
+                const agent = t.agentId
+                    ? agents.find(a => a.id === t.agentId)
+                    : findAgent(argStr(args, 'agent'));
+                need(agent, 'Agent not found for this template.');
+                const task = taskManager.addTask(agent as AgentInfo, t.title, t.prompt, t.mode);
+                taskManager.startTask(task);
+                return { id: task.id, status: task.status };
+            }
+        },
+        {
             op: 'sessions.recent',
             describe: 'Most recent sessions farm-wide. args: limit? (default 10)',
             handler: (args) => {
@@ -2624,19 +2681,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
     };
 
-    const kanbanDeps = {
+    const tasksDeps = {
         extensionUri: context.extensionUri,
         manager: taskManager,
+        getAgents: () => agents,
+        allRecords: allTaskRecords,
         buildWaiting: () => buildNeeds().filter(i =>
             i.kind === 'permission' || i.kind === 'browser-approval' || i.kind === 'stalled'),
         runCommandText: (text: string) => runCommandBar(text),
         settleApproval: (id: string, ok: boolean) => approvalQueue.settle(id, ok),
-        onDidChangeNeeds: needsEmitter.event
+        onDidChangeNeeds: needsEmitter.event,
+        triggerManager,
+        forecastDays: () => cfg().get<number>('forecastDays', 7),
+        limits: () => ({
+            global: cfg().get<number>('maxConcurrentTasks', 2),
+            perAgent: cfg().get<number>('maxConcurrentPerAgent', 1)
+        })
     };
 
     needsEmitter.event(() => {
         NeedsPanel.refreshIfOpen();
-        KanbanPanel.refreshIfOpen();
+        TasksPanel.refreshIfOpen();
     }, null, context.subscriptions);
 
     let pendingMerge: { name: string; files: string[] } | undefined;
@@ -5696,8 +5761,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             NeedsPanel.show(needsDeps);
         }),
 
+        vscode.commands.registerCommand('agentfarm.openTasks', () => {
+            TasksPanel.show(tasksDeps);
+        }),
+
+        // Alias kept for every pre-Tasks entry point (menus, notifications,
+        // needs page): the Board now lives as the Tasks page's first section.
         vscode.commands.registerCommand('agentfarm.openBoard', () => {
-            KanbanPanel.show(kanbanDeps);
+            TasksPanel.show(tasksDeps, 'board');
         }),
 
         // ---------- G2: cost anomaly report ----------

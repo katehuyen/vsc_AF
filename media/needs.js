@@ -58,7 +58,6 @@
                 page: 'needs',
                 title: 'Needs You',
                 sub: `${items.length} item(s) · ${urgent} urgent · ${new Date(DATA.generatedAt).toLocaleTimeString()}`,
-                related: [{ nav: 'board', label: 'Board' }],
                 guide: 'onay-kuyrugu'
             })}
             ${items.length

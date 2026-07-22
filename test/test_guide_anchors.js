@@ -47,7 +47,7 @@ ok('no literal {# leaks to html', !html.includes('{#'));
 // --- anchor contract: every token the code deep-links must resolve in the English doc ---
 // Tokens passed to agentfarm.openGuide from health.ts guideAnchors, panels, quickStart.
 const CALLER_TOKENS = [
-    'hizli-baslangic', 'yetenek-matrisi', 'hafiza-grafigi', 'kanban-panosu', 'onay-kuyrugu',
+    'hizli-baslangic', 'yetenek-matrisi', 'hafiza-grafigi', 'tasks-sayfasi', 'onay-kuyrugu',
     'saglik-baglam-yuku', 'saglik-hafiza-indeksi', 'saglik-kopya-hafiza', 'saglik-bayat-hafiza',
     'saglik-buyuk-dosya', 'saglik-kimlik', 'saglik-hata-orani', 'hafiza-yonetimi',
     'nobet-gorevleri', 'antigravity-uyumlulugu', 'guardrail-denetcisi', 'tetik-karnesi',

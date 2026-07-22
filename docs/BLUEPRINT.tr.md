@@ -977,13 +977,32 @@ Filo büyüyünce dar boğaz sensin: kim izin bekliyor, hangi tarayıcı adımı
 
 Durum çubuğu artık bu kuyruğu sayar: `🔔 N need you` görünüyorsa tıklamak kuyruğu açar. İş engelleyen üç tür sayılır: izin, tarayıcı onayı, stalled.
 
-### Kanban Panosu
+### Tasks Sayfası {#tasks-sayfasi}
 
-**Agent Farm: Open Task Board (Kanban)** (Tasks başlığındaki $(layout) simgesi) — görev kuyruğunun yönetici yüzeyi:
+**Agent Farm: Open Tasks** (global gezinmede Missions'ın solundaki **Tasks** düğmesi; Tasks ağacı başlığındaki $(layout) simgesi de buraya açılır) — görev dünyasının tamamı tek zengin komuta sayfasında, dört bölüm:
+
+**Board** — kuyruğun yönetici yüzeyi (eski bağımsız Kanban sayfası buraya taşındı; `Open Task Board` komutu da bu bölümü açar):
 
 - Kolonlar: **📥 Inbox** (kuyrukta, elle başlatılacak) · **🕓 Parked** (kapasite/kota bekleyen) · **⚙️ Running** · **🛡️ Needs Approval** (izin + tarayıcı onayları, kart üstünde Run/Reject) · **🏁 Done** (son 30).
 - Kartları **sürükle-bırak**: Inbox→Running = başlat, Running→Done = tamamla, Inbox→Done = iptal. Kart üstünde ajan, süre, verify rozeti, medya maliyeti; çıktı arşivi olan karta **çift tık** = çıktıyı aç.
 - Panonun üstünde **komuta çubuğu**: doğal dil cümleni yaz, ucuz model plana çevirir, önizleme onayıyla kurulur (aşağıdaki Doğal Dil Komuta ile aynı akış).
+- Kolonların üstünde **yük şeridi**: filo geneli `çalışan/limit` (agentFarm.maxConcurrentTasks) + ajan başına `çalışan/limit` ve kuyruk sayısı — limiti dolan ajan turuncu yanar.
+
+**Automations** — tetikleyiciler ve zamanlamalar tek yerde:
+
+- **Triggers**: kaynak (watch/webhook/hook) → hedef, kurulu/ateşlenmiş durumu, **güvenilirlik karnesi** (7 günlük ✓/✗ + başlama gecikmesi), debounce/cooldown/saat limiti; satırdan **enable/disable · fire · edit · delete**. Watch yolu kaybolan tetik "path missing" rozetiyle görünür.
+- **Schedules**: ne zaman (daily/weekly/once) + kaçırma politikası, **bir sonraki koşu zamanı**; satırdan **enable/disable · run now · edit · delete**.
+
+**Reusables** — tekrar kullanılabilirler:
+
+- **Templates**: kayıtlı istem şablonları — satırdan çalıştır/sil (şablon kaydetmek: Tasks ağacında biten göreve sağ tık → Save as template).
+- **Workflows**: adım listesiyle kartlar (∥ = paralel adım) — çalıştır, adım ekle, yeniden adlandır, sil.
+
+**Analytics** — görev sağlığının sayfası:
+
+- 30 günlük KPI'lar (koşu, başarı oranı, medyan süre, verify tekrarı, kuyruk ETA'sı) + uyarılar (çok başarısız ajan, hep başarısız aile/tetik).
+- Günlük **debi grafiği** (done/failed), **ajan karnesi** tablosu, **görev aileleri** (aynı işin tekrarları).
+- **Öngörü özeti**: sonraki N günün zamanlı koşuları, her birinin tipik süresi/başarısı; tam öngörü belgesi ve aylık görev tarihçesi dosyalarına tek tık köprü.
 
 ### Maliyet Anomalisi
 
