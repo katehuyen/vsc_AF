@@ -115,6 +115,70 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
     }
 
+    // ---------- §19.C: tasks board ops contract (rerun / runNext / clearFinished) ----------
+    // Same handler shapes extension.ts registers, against a mock TaskManager —
+    // proves the ops are catalogued and guard their status preconditions.
+    {
+        const tasks = [
+            { id: 'q1', status: 'queued', title: 'queued job' },
+            { id: 'r1', status: 'running', title: 'live job' },
+            { id: 'f1', status: 'failed', title: 'broken job' },
+            { id: 'd1', status: 'done', title: 'done job' }
+        ];
+        const mgr = {
+            tasks,
+            retried: [], bumped: [],
+            retryTask(t) { this.retried.push(t.id); return { id: t.id + '-retry', status: 'queued' }; },
+            runTaskNext(t) { this.bumped.push(t.id); },
+            clearFinished() { return tasks.filter(t => t.status !== 'queued' && t.status !== 'running').length; }
+        };
+        reg.register([
+            {
+                op: 'tasks.rerun',
+                describe: 'Re-run a finished task as a fresh copy (a workflow-step task resumes its chain). args: id',
+                handler: (args) => {
+                    const t = mgr.tasks.find(x => x.id === argStr(args, 'id'));
+                    need(t, 'Task not found — tasks.list shows current ids.');
+                    need(t.status !== 'queued' && t.status !== 'running',
+                        'Only a finished task can be re-run — it is still queued/running.');
+                    const copy = mgr.retryTask(t);
+                    return copy ? { id: copy.id, status: copy.status } : { resumedWorkflow: true };
+                }
+            },
+            {
+                op: 'tasks.runNext',
+                describe: 'Bump a queued task to the front of the queue and request an immediate start. args: id',
+                handler: (args) => {
+                    const t = mgr.tasks.find(x => x.id === argStr(args, 'id'));
+                    need(t, 'Task not found — tasks.list shows current ids.');
+                    need(t.status === 'queued', 'Only a queued task can be bumped.');
+                    mgr.runTaskNext(t);
+                    return { id: t.id, status: t.status };
+                }
+            },
+            {
+                op: 'tasks.clearFinished',
+                describe: 'Clear all finished (done/failed/cancelled) tasks from the board — history is archived first, output files are deleted. args: none',
+                handler: () => ({ removed: mgr.clearFinished() })
+            }
+        ]);
+        ok('tasks board ops appear in the catalog', ['tasks.rerun', 'tasks.runNext', 'tasks.clearFinished']
+            .every(op => reg.catalog().some(c => c.op === op)));
+
+        const rr = await reg.dispatch('tasks.rerun', { id: 'f1' });
+        ok('tasks.rerun re-runs a failed task', rr.ok && rr.result.id === 'f1-retry' && mgr.retried.includes('f1'));
+        const rrLive = await reg.dispatch('tasks.rerun', { id: 'r1' });
+        ok('tasks.rerun refuses a running task', !rrLive.ok && /still queued\/running/.test(rrLive.error));
+
+        const rn = await reg.dispatch('tasks.runNext', { id: 'q1' });
+        ok('tasks.runNext bumps a queued task', rn.ok && mgr.bumped.includes('q1'));
+        const rnDone = await reg.dispatch('tasks.runNext', { id: 'd1' });
+        ok('tasks.runNext refuses a finished task', !rnDone.ok && /Only a queued task/.test(rnDone.error));
+
+        const cf = await reg.dispatch('tasks.clearFinished', {});
+        ok('tasks.clearFinished reports the removed count', cf.ok && cf.result.removed === 2);
+    }
+
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })();

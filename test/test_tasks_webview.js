@@ -31,7 +31,8 @@ const wired = {};
 const NOW = Date.now();
 const task = (over) => ({
     id: 't1', title: 'weekly digest', agentName: 'psikolog', mode: 'headless',
-    status: 'queued', detail: '', when: NOW - 60000, hasOutput: false, ...over
+    status: 'queued', detail: '', when: NOW - 60000, hasOutput: false,
+    promptPreview: 'prompt of ' + (over && over.id || 't1'), ...over
 });
 const DATA = {
     generatedAt: NOW,
@@ -45,9 +46,13 @@ const DATA = {
             ref: { transcriptPath: 'D:/tr/s1.jsonl', sessionId: 'S1' }
         }],
         done: [
-            task({ id: 't4', title: 'done job', status: 'done', durMin: 7, hasOutput: true, outputFile: 'D:/out/t4.md' }),
+            task({
+                id: 't4', title: 'done job', status: 'done', durMin: 7, hasOutput: true, outputFile: 'D:/out/t4.md',
+                sourceKind: 'schedule', source: 'daily digest', costUSD: 0.42, sessionFile: 'D:/tr/t4.jsonl'
+            }),
             task({ id: 't5', title: 'broken job', status: 'failed' })
-        ]
+        ],
+        today: { done: 3, failed: 1 }
     },
     load: {
         global: { running: 2, limit: 2 },
@@ -141,7 +146,7 @@ const sandbox = {
             return list;
         }
     },
-    setTimeout: () => 0, clearTimeout: () => { }, console, Date
+    setTimeout: () => 0, clearTimeout: () => { }, setInterval: () => 0, clearInterval: () => { }, console, Date
 };
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
@@ -161,6 +166,8 @@ ok('NOW strip flags waits as hot + queued count', html().includes('1 needs you')
     && html().includes('2 queued'));
 ok('NOW strip announces the next scheduled run', html().includes('🕑')
     && html().includes('daily digest'));
+ok('NOW strip shows today\'s pulse and runs it hot on failures',
+    html().includes('🏁 today 3✓ 1✗') && /now-cell now-hot" data-goto="analytics"/.test(html()));
 ok('segment buttons carry counts + alert marker', html().includes('⚠1')
     && /Board <span class="seg-n">3<\/span>/.test(html()));
 
@@ -176,6 +183,18 @@ ok('busy agent chip with queue count, idle agents folded', html().includes('psik
 ok('NL command bar renders', html().includes('id="cmd"') && html().includes('id="cmdgo"'));
 ok('waiting card offers terminal + open session', html().includes('data-termsid="S1"')
     && html().includes('data-session="D:/tr/s1.jsonl"'));
+ok('card title carries the full prompt as tooltip', html().includes('title="prompt of t5"'));
+ok('provenance badge names the schedule behind the task',
+    html().includes('from schedule: daily digest'));
+ok('run cost badge renders', html().includes('$0.42'));
+ok('finished cards offer re-run, queued cards offer run-next, running cards a terminal',
+    html().includes('data-rerun="t5"') && html().includes('data-next="t1"')
+    && html().includes('data-term="t3"'));
+ok('output + transcript are explicit buttons, not just a hidden dblclick',
+    html().includes('data-openout="D:/out/t4.md"') && html().includes('data-transcript="D:/tr/t4.jsonl"'));
+ok('Done header offers clear all; single-item queues hide cancel all',
+    html().includes('data-clearall="1"') && !html().includes('data-cancelcol'));
+ok('filter input renders in the board bar', html().includes('id="flt"'));
 
 // global-nav contract: the four other global pages show; no Tasks button (own page)
 ok('global nav shows the other pages', ['data-afnav="dashboard"', 'data-afnav="timeline"',
@@ -188,6 +207,38 @@ ok('cancel posts cancel with the task id', posted[0] && posted[0].type === 'canc
 posted = [];
 clickWired('del', 't5');
 ok('✕ posts delete with the task id', posted[0] && posted[0].type === 'delete' && posted[0].taskId === 't5');
+posted = [];
+clickWired('rerun', 't5');
+ok('↻ posts rerun with the task id', posted[0] && posted[0].type === 'rerun' && posted[0].taskId === 't5');
+posted = [];
+clickWired('next', 't1');
+ok('▶ posts run-next with the task id', posted[0] && posted[0].type === 'run-next' && posted[0].taskId === 't1');
+posted = [];
+clickWired('term', 't3');
+ok('⌨ posts open-terminal with the task id', posted[0] && posted[0].type === 'open-terminal' && posted[0].taskId === 't3');
+posted = [];
+clickWired('openout', 'D:/out/t4.md');
+ok('📄 posts open-output with the file', posted[0] && posted[0].type === 'open-output'
+    && posted[0].file === 'D:/out/t4.md');
+posted = [];
+clickWired('transcript', 'D:/tr/t4.jsonl');
+ok('🗒 posts open-transcript with the file', posted[0] && posted[0].type === 'open-transcript'
+    && posted[0].file === 'D:/tr/t4.jsonl');
+posted = [];
+clickWired('clearall', '1');
+ok('clear all posts clear-finished', posted[0] && posted[0].type === 'clear-finished');
+
+// board filter: narrows every task column, keeps totals visible, never hides approvals
+getEl('flt').value = 'broken';
+getEl('flt').listeners.input();
+ok('filter narrows the board to matching cards', html().includes('broken job')
+    && !html().includes('done job') && !html().includes('weekly digest'));
+ok('filtered column shows shown/total', html().includes('<span class="muted">1/2</span>'));
+ok('approvals survive the filter', html().includes('needs a permission'));
+getEl('flt').value = '';
+getEl('flt').listeners.input();
+ok('clearing the filter restores the board', html().includes('done job') && html().includes('weekly digest'));
+
 posted = [];
 getEl('cmd').value = 'run the digest tomorrow at 9';
 getEl('cmdgo').listeners.click();
@@ -253,6 +304,19 @@ msgHandler({ data: { type: 'focus', section: 'board' } });
 ok('focus message switches back to the board', html().includes('id="cmd"'));
 msgHandler({ data: { type: 'data', data: { ...DATA, board: { ...DATA.board, running: [] } } } });
 ok('data message re-renders in place', html().includes('⚙️ Running') && !html().includes('live run'));
+
+// a queue column with several tasks grows a "cancel all"
+msgHandler({
+    data: {
+        type: 'data',
+        data: { ...DATA, board: { ...DATA.board, inbox: [task({ id: 't1' }), task({ id: 't6', title: 'second queued' })] } }
+    }
+});
+ok('two queued tasks surface cancel all on the column', html().includes('data-cancelcol="inbox"'));
+posted = [];
+clickWired('cancelcol', 'inbox');
+ok('cancel all posts cancel-all with the column', posted[0] && posted[0].type === 'cancel-all'
+    && posted[0].col === 'inbox');
 
 console.log(`${pass} passed, ${fail} failed`);
 if (fail) { process.exit(1); }

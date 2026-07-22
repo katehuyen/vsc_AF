@@ -14,6 +14,9 @@
         ['analytics', 'Analytics']
     ];
     let section = DATA.section || (vscode.getState() || {}).section || 'board';
+    let filter = '';       // board quick-filter (client-side, session-local)
+    let cmdText = '';      // NL command draft — survives re-renders and the live tick
+    let refocusFilter = false;
 
     window.addEventListener('message', ev => {
         if (ev.data.type === 'data') { DATA = ev.data.data; pendingCommand = false; render(); }
@@ -58,24 +61,40 @@
     // ---------- Board section ----------
 
     const STATUS_ICON = { done: '✅', failed: '❌', cancelled: '⊘' };
+    const SRC_ICON = { schedule: '🕑', trigger: '⚡', workflow: '🔗' };
 
     function taskCardHtml(t, draggable) {
         const badges = [];
+        if (t.sourceKind) {
+            badges.push(`<span class="tag" title="from ${C.esc(t.sourceKind)}: ${C.esc(t.source || '')}">${SRC_ICON[t.sourceKind]}</span>`);
+        }
         if (t.verified === 'pass') { badges.push('<span class="tag ok">verify ✓</span>'); }
         if (t.verified === 'fail') { badges.push('<span class="tag bad">verify ✗</span>'); }
         if (t.mode === 'headless') { badges.push('<span class="tag">headless</span>'); }
-        if (t.mediaCost) { badges.push(`<span class="tag">${C.fmtUSD(t.mediaCost)}</span>`); }
+        if (t.mediaCost) { badges.push(`<span class="tag" title="media cost (estimate)">${C.fmtUSD(t.mediaCost)}</span>`); }
+        if (t.costUSD) { badges.push(`<span class="tag" title="API-equivalent cost of the run">${C.fmtUSD(t.costUSD)}</span>`); }
         if (typeof t.durMin === 'number') { badges.push(`<span class="tag">${t.durMin}m</span>`); }
         const icon = STATUS_ICON[t.status] || '';
         const detail = t.detail ? `<div class="kb-detail">${C.esc(t.detail)}</div>` : '';
         const buttons = [];
-        if (t.status === 'queued' || t.status === 'running') {
+        if (t.outputFile) {
+            buttons.push(`<button class="mini secondary" data-openout="${C.esc(t.outputFile)}" title="Open the output document">📄</button>`);
+        }
+        if (t.sessionFile) {
+            buttons.push(`<button class="mini secondary" data-transcript="${C.esc(t.sessionFile)}" title="Open the run's transcript in the session viewer">🗒</button>`);
+        }
+        if (t.status === 'queued') {
+            buttons.push(`<button class="mini secondary" data-next="${t.id}" title="Run now — jumps the queue">▶</button>`);
+            buttons.push(`<button class="mini secondary" data-cancel="${t.id}">cancel</button>`);
+        } else if (t.status === 'running') {
+            buttons.push(`<button class="mini secondary" data-term="${t.id}" title="Jump to this task's terminal">⌨</button>`);
             buttons.push(`<button class="mini secondary" data-cancel="${t.id}">cancel</button>`);
         } else {
-            buttons.push(`<button class="mini secondary" data-del="${t.id}">✕</button>`);
+            buttons.push(`<button class="mini secondary" data-rerun="${t.id}" title="Re-run as a fresh copy — a workflow step resumes its chain">↻</button>`);
+            buttons.push(`<button class="mini secondary" data-del="${t.id}" title="Remove from the board">✕</button>`);
         }
         return `<div class="kb-card${t.status === 'failed' ? ' failed' : ''}" ${draggable ? 'draggable="true"' : ''} data-task="${t.id}" ${t.outputFile ? `data-output="${C.esc(t.outputFile)}"` : ''}>
-            <div class="kb-title">${icon ? icon + ' ' : ''}${C.esc(t.title)}</div>
+            <div class="kb-title" title="${C.esc(t.promptPreview || '')}">${icon ? icon + ' ' : ''}${C.esc(t.title)}</div>
             <div class="kb-meta">${C.esc(t.agentName)} · ${new Date(t.when).toLocaleTimeString()}</div>
             ${detail}
             <div class="kb-foot">${badges.join(' ')}<span class="kb-btns">${buttons.join(' ')}</span></div>
@@ -97,9 +116,12 @@
         </div>`;
     }
 
-    function columnHtml(key, label, cards) {
+    function columnHtml(key, label, cards, opts) {
+        const o = opts || {};
+        const count = o.total !== undefined && o.total !== cards.length
+            ? `${cards.length}/${o.total}` : `${cards.length}`;
         return `<div class="kb-col" data-col="${key}">
-            <div class="kb-col-head">${label} <span class="muted">${cards.length}</span></div>
+            <div class="kb-col-head"><span>${label} <span class="muted">${count}</span></span>${o.action || ''}</div>
             <div class="kb-col-body" data-drop="${key}">${cards.join('') || '<div class="kb-empty">—</div>'}</div>
         </div>`;
     }
@@ -122,18 +144,35 @@
     }
 
     function boardHtml(d) {
+        const f = filter.trim().toLowerCase();
+        const match = t => !f
+            || `${t.title} ${t.agentName} ${t.detail || ''} ${t.status}`.toLowerCase().includes(f);
+        const inbox = d.board.inbox.filter(match);
+        const parked = d.board.parked.filter(match);
+        const running = d.board.running.filter(match);
+        const done = d.board.done.filter(match);
+        // approvals are never filtered away — nothing that needs the user may hide
+        const cancelAll = (col, n) => n > 1
+            ? `<button class="mini secondary kb-colbtn" data-cancelcol="${col}" title="Cancel every queued task in this column">cancel all</button>` : '';
+        const clearAll = d.board.done.length
+            ? '<button class="mini secondary kb-colbtn" data-clearall="1" title="Clear all finished tasks — history is archived first, output files are deleted">clear all</button>' : '';
         return `
             ${loadStripHtml(d.load)}
             <div class="kb-bar">
-                <input id="cmd" type="text" placeholder="🚀 Natural-language command… (e.g. 'run the psikolog weekly analysis tomorrow at 09:00')" ${pendingCommand ? 'disabled' : ''}>
+                <input id="cmd" type="text" value="${C.esc(cmdText)}" placeholder="🚀 Natural-language command… (e.g. 'run the psikolog weekly analysis tomorrow at 09:00')" ${pendingCommand ? 'disabled' : ''}>
                 <button id="cmdgo" ${pendingCommand ? 'disabled' : ''}>${pendingCommand ? 'planning…' : 'Plan'}</button>
+                <input id="flt" type="text" value="${C.esc(filter)}" placeholder="⌕ filter" title="Filter the board by title, agent or status">
             </div>
             <div class="kb-board">
-                ${columnHtml('inbox', '📥 Inbox', d.board.inbox.map(t => taskCardHtml(t, true)))}
-                ${columnHtml('parked', '🕓 Parked', d.board.parked.map(t => taskCardHtml(t, true)))}
-                ${columnHtml('running', '⚙️ Running', d.board.running.map(t => taskCardHtml(t, true)))}
+                ${columnHtml('inbox', '📥 Inbox', inbox.map(t => taskCardHtml(t, true)),
+                    { total: d.board.inbox.length, action: cancelAll('inbox', d.board.inbox.length) })}
+                ${columnHtml('parked', '🕓 Parked', parked.map(t => taskCardHtml(t, true)),
+                    { total: d.board.parked.length, action: cancelAll('parked', d.board.parked.length) })}
+                ${columnHtml('running', '⚙️ Running', running.map(t => taskCardHtml(t, true)),
+                    { total: d.board.running.length })}
                 ${columnHtml('waiting', '🛡️ Needs Approval', d.board.waiting.map(waitingCardHtml))}
-                ${columnHtml('done', '🏁 Done', d.board.done.map(t => taskCardHtml(t, false)))}
+                ${columnHtml('done', '🏁 Done', done.map(t => taskCardHtml(t, false)),
+                    { total: d.board.done.length, action: clearAll })}
             </div>`;
     }
 
@@ -143,16 +182,45 @@
             const go = () => {
                 if (!cmd.value.trim() || pendingCommand) { return; }
                 pendingCommand = true;
+                cmdText = '';
                 post({ type: 'command', text: cmd.value });
                 render();
             };
+            cmd.addEventListener('input', () => { cmdText = cmd.value; });
             document.getElementById('cmdgo').addEventListener('click', go);
             cmd.addEventListener('keydown', e => { if (e.key === 'Enter') { go(); } });
+        }
+        const flt = document.getElementById('flt');
+        if (flt) {
+            flt.addEventListener('input', () => {
+                filter = flt.value;
+                refocusFilter = true;
+                render();
+            });
+            if (refocusFilter) {
+                refocusFilter = false;
+                flt.focus();
+                if (flt.setSelectionRange) { flt.setSelectionRange(flt.value.length, flt.value.length); }
+            }
         }
         document.querySelectorAll('[data-cancel]').forEach(el =>
             el.addEventListener('click', e => { e.stopPropagation(); post({ type: 'cancel', taskId: el.dataset.cancel }); }));
         document.querySelectorAll('[data-del]').forEach(el =>
             el.addEventListener('click', e => { e.stopPropagation(); post({ type: 'delete', taskId: el.dataset.del }); }));
+        document.querySelectorAll('[data-rerun]').forEach(el =>
+            el.addEventListener('click', e => { e.stopPropagation(); post({ type: 'rerun', taskId: el.dataset.rerun }); }));
+        document.querySelectorAll('[data-next]').forEach(el =>
+            el.addEventListener('click', e => { e.stopPropagation(); post({ type: 'run-next', taskId: el.dataset.next }); }));
+        document.querySelectorAll('[data-term]').forEach(el =>
+            el.addEventListener('click', e => { e.stopPropagation(); post({ type: 'open-terminal', taskId: el.dataset.term }); }));
+        document.querySelectorAll('[data-openout]').forEach(el =>
+            el.addEventListener('click', e => { e.stopPropagation(); post({ type: 'open-output', file: el.dataset.openout }); }));
+        document.querySelectorAll('[data-transcript]').forEach(el =>
+            el.addEventListener('click', e => { e.stopPropagation(); post({ type: 'open-transcript', file: el.dataset.transcript }); }));
+        document.querySelectorAll('[data-clearall]').forEach(el =>
+            el.addEventListener('click', () => post({ type: 'clear-finished' })));
+        document.querySelectorAll('[data-cancelcol]').forEach(el =>
+            el.addEventListener('click', () => post({ type: 'cancel-all', col: el.dataset.cancelcol })));
         document.querySelectorAll('[data-approve]').forEach(el =>
             el.addEventListener('click', () => post({ type: 'approve', approvalId: el.dataset.approve, ok: true })));
         document.querySelectorAll('[data-rejectid]').forEach(el =>
@@ -338,10 +406,12 @@
             ? run.slice(0, 3).map(t => `<b>${C.esc(t.title.length > 26 ? t.title.slice(0, 25) + '…' : t.title)}</b> <span class="muted">@${C.esc(t.agentName)}</span>`).join(' · ')
               + (run.length > 3 ? ` <span class="muted">+${run.length - 3}</span>` : '')
             : '<span class="muted">idle</span>';
+        const today = d.board.today || { done: 0, failed: 0 };
         return `<div class="now-strip">
             <span class="now-cell" title="tasks running right now (vs the farm-wide limit)">⚙️ ${run.length}/${d.load.global.limit} ${runTxt}</span>
             ${waiting ? `<span class="now-cell now-hot" data-goto="board" title="approvals and permission waits — click to jump to the board">🛡️ ${waiting} need${waiting > 1 ? '' : 's'} you</span>` : ''}
             ${queued ? `<span class="now-cell" data-goto="board" title="queued + parked tasks">📥 ${queued} queued</span>` : ''}
+            <span class="now-cell${today.failed ? ' now-hot' : ''}" data-goto="analytics" title="finished today (archive included) — click for analytics">🏁 today ${today.done}✓${today.failed ? ` ${today.failed}✗` : ''}</span>
             <span class="now-cell" data-goto="automations" title="the next scheduled run">🕑 ${next ? `next: <b>${C.esc(next.title.length > 30 ? next.title.slice(0, 29) + '…' : next.title)}</b> ${C.esc(fmtNext(next.nextAt))}` : '<span class="muted">nothing scheduled</span>'}</span>
         </div>`;
     }
@@ -373,11 +443,14 @@
             <style>
                 .kb-bar { display:flex; gap:8px; margin:8px 0 14px; }
                 .kb-bar input { flex:1; padding:6px 10px; }
+                .kb-bar #flt { flex:0 0 150px; }
+                .kb-colbtn { opacity:.7; }
+                .kb-colbtn:hover { opacity:1; }
                 .kb-board { display:flex; gap:10px; align-items:flex-start; overflow-x:auto; }
                 .kb-col { flex:1; min-width:190px; background:var(--vscode-sideBar-background, rgba(128,128,128,.06));
                     border:1px solid var(--vscode-panel-border); border-radius:8px; padding:8px; }
                 .kb-col-head { font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.5px;
-                    padding:2px 4px 8px; }
+                    padding:2px 4px 8px; display:flex; justify-content:space-between; align-items:center; gap:4px; }
                 .kb-col-body { min-height:60px; }
                 .kb-card { border:1px solid var(--vscode-panel-border); border-radius:6px; padding:8px;
                     margin-bottom:8px; background:var(--vscode-editor-background); cursor:grab; }
@@ -449,4 +522,14 @@
     }
 
     render();
+    // Live tick — relative times and running durations go stale between manager
+    // events. Re-render every 30s, but never under the user's fingers: skip when
+    // the tab is hidden or a board input is focused (drafts live in module state,
+    // so nothing is lost either way).
+    setInterval(() => {
+        if (document.hidden) { return; }
+        const a = document.activeElement;
+        if (a && (a.id === 'cmd' || a.id === 'flt')) { return; }
+        render();
+    }, 30000);
 })();

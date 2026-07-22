@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.2.0 — Tasks Board grows up: bulk actions, re-run, filter, live pulse (2026-07-22)
+
+The Board section looked like a monitor but managed like a viewer — every management verb the backend already had (retry, clear-finished, run-next, reveal-terminal) is now ON the page, plus the long-list ergonomics were missing:
+
+- **Bulk actions on columns.** Done gets **clear all** (confirm first; history archived, output files deleted — one click instead of one ✕ per card), multi-item Inbox/Parked get **cancel all** (confirm first).
+- **Every card carries its next action.** Finished cards: ↻ **re-run** (fresh copy; a workflow-step task resumes its chain — same engine as the tree's Retry). Queued cards: ▶ **run now** (jumps the queue). Running cards: ⌨ **jump to the terminal**. Cards with an output or a costed transcript get explicit 📄 open-output / 🗒 open-transcript buttons — the double-click shortcut stays but is no longer the only way in.
+- **The card tells its story.** Hovering the title shows the full prompt; a provenance badge says where the task came from (🕑 schedule · ⚡ trigger · 🔗 workflow, named in the tooltip); the run's API-equivalent cost shows next to the media cost.
+- **Board filter.** A filter box next to the command bar narrows every task column by title/agent/status; column headers show `shown/total`; Needs-Approval cards are never filtered away.
+- **Live pulse.** The NOW strip gains a **🏁 today** cell (done/failed since midnight, archive included — clearing the board doesn't zero the day; turns warning-hot on failures). Relative times and running durations re-render every 30s (never while you're typing; the command draft survives re-renders now).
+- **Bridge (§19.C):** new ops `tasks.rerun`, `tasks.runNext`, `tasks.clearFinished` — the board's new verbs are agent-reachable, with status-precondition guards.
+- Tests: board verbs, bulk buttons + confirm routing, filter narrowing/restore, today cell, tooltip/badges, bridge op contracts. Suite: 56 files, 1555 checks green.
+
 ## 3.1.1 — Airtable module: edge-case audit + real end-to-end verification (2026-07-22)
 
 An adversarial sweep of the whole Airtable stack (new `test_airtable_edge.js`, 67 checks) plus real verification through the actual claude CLI, fixing six defects:

@@ -56,26 +56,15 @@ interface BoardCard {
     mediaCost?: number;
     hasOutput: boolean;
     outputFile?: string;
-}
-
-function card(t: FarmTask): BoardCard {
-    const durMin = t.startedAt
-        ? Math.max(0, Math.round(((t.endedAt ?? Date.now()) - t.startedAt) / 60000))
-        : undefined;
-    return {
-        id: t.id,
-        title: t.title,
-        agentName: t.agentName,
-        mode: t.mode,
-        status: t.status,
-        detail: t.status === 'queued' && t.deferredReason ? t.deferredReason : '',
-        when: t.endedAt ?? t.startedAt ?? t.createdAt,
-        durMin,
-        verified: t.verified,
-        mediaCost: t.mediaCost,
-        hasOutput: !!t.outputFile,
-        outputFile: t.outputFile
-    };
+    /** full prompt (capped) — surfaces as the card tooltip so a title is never a mystery */
+    promptPreview: string;
+    /** where the task came from, when not hand-made */
+    sourceKind?: 'schedule' | 'trigger' | 'workflow';
+    source?: string;
+    /** API-equivalent cost of the matched transcript (headless runs) */
+    costUSD?: number;
+    /** transcript behind the cost figure — opens in the session viewer */
+    sessionFile?: string;
 }
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -196,6 +185,39 @@ function buildData(deps: TasksDeps, section?: TasksSection): Record<string, unkn
         .sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0))
         .slice(0, 30);
 
+    const schedTitles = new Map(m.schedules.map(s => [s.id, s.title]));
+    const trigTitles = new Map(m.triggers.map(t => [t.id, t.title]));
+    const wfTitles = new Map(m.workflows.map(w => [w.id, w.title]));
+    const card = (t: FarmTask): BoardCard => {
+        const durMin = t.startedAt
+            ? Math.max(0, Math.round(((t.endedAt ?? Date.now()) - t.startedAt) / 60000))
+            : undefined;
+        const src: [BoardCard['sourceKind'], string] | undefined =
+            t.fromSchedule ? ['schedule', schedTitles.get(t.fromSchedule) ?? 'schedule']
+                : t.fromTrigger ? ['trigger', trigTitles.get(t.fromTrigger) ?? 'trigger']
+                    : t.workflowId !== undefined ? ['workflow', wfTitles.get(t.workflowId) ?? 'workflow']
+                        : undefined;
+        return {
+            id: t.id,
+            title: t.title,
+            agentName: t.agentName,
+            mode: t.mode,
+            status: t.status,
+            detail: t.status === 'queued' && t.deferredReason ? t.deferredReason : '',
+            when: t.endedAt ?? t.startedAt ?? t.createdAt,
+            durMin,
+            verified: t.verified,
+            mediaCost: t.mediaCost,
+            hasOutput: !!t.outputFile,
+            outputFile: t.outputFile,
+            promptPreview: t.prompt.length > 400 ? t.prompt.slice(0, 399) + '…' : t.prompt,
+            sourceKind: src?.[0],
+            source: src?.[1],
+            costUSD: t.costUSD,
+            sessionFile: t.costSessionFile
+        };
+    };
+
     const limits = deps.limits();
     const load = {
         global: { running: tasks.filter(t => t.status === 'running').length, limit: limits.global },
@@ -207,8 +229,19 @@ function buildData(deps: TasksDeps, section?: TasksSection): Record<string, unkn
         }))
     };
 
-    const trigStats = buildTriggerStats(m.triggers, deps.allRecords(), { now });
+    const records = deps.allRecords();
+    const trigStats = buildTriggerStats(m.triggers, records, { now });
     const statById = new Map(trigStats.map(s => [s.id, s]));
+
+    // today's pulse for the NOW strip — archive included, so clearing the board
+    // never zeroes the day
+    const dayStart = new Date(now);
+    dayStart.setHours(0, 0, 0, 0);
+    const t0 = dayStart.getTime();
+    const today = {
+        done: records.filter(r => r.status === 'done' && (r.endedAt ?? 0) >= t0).length,
+        failed: records.filter(r => r.status === 'failed' && (r.endedAt ?? 0) >= t0).length
+    };
 
     return {
         generatedAt: now,
@@ -218,7 +251,8 @@ function buildData(deps: TasksDeps, section?: TasksSection): Record<string, unkn
             parked: tasks.filter(t => t.status === 'queued' && t.autoStart).map(card),
             running: tasks.filter(t => t.status === 'running').map(card),
             waiting: deps.buildWaiting(),
-            done: finished.map(card)
+            done: finished.map(card),
+            today
         },
         load,
         automations: {
@@ -333,6 +367,7 @@ export class TasksPanel {
     private async onMessage(msg: {
         type: string; taskId?: string; to?: string; text?: string; act?: string; id?: string;
         approvalId?: string; ok?: boolean; file?: string; transcriptPath?: string; sessionId?: string;
+        col?: string;
     }): Promise<void> {
         const m = this.deps.manager;
         const run = (cmd: string, ...args: unknown[]) => { void vscode.commands.executeCommand(cmd, ...args); };
@@ -365,6 +400,49 @@ export class TasksPanel {
             case 'delete': {
                 const t = this.task(msg.taskId);
                 if (t && t.status !== 'running') { m.deleteTask(t); }
+                this.refresh();
+                break;
+            }
+            case 'rerun': {
+                const t = this.task(msg.taskId);
+                if (t && t.status !== 'queued' && t.status !== 'running') { m.retryTask(t); }
+                this.refresh();
+                break;
+            }
+            case 'run-next': {
+                const t = this.task(msg.taskId);
+                if (t && t.status === 'queued') { m.runTaskNext(t); }
+                this.refresh();
+                break;
+            }
+            case 'open-terminal': {
+                const t = this.task(msg.taskId);
+                if (t) { m.revealTerminal(t); }
+                break;
+            }
+            case 'open-transcript':
+                if (msg.file) { run('agentfarm.openSession', msg.file); }
+                break;
+            case 'clear-finished': {
+                const n = m.tasks.filter(t => t.status !== 'queued' && t.status !== 'running').length;
+                if (!n) { break; }
+                if (await this.confirm(
+                    `Clear ${n} finished task(s) from the board? History is archived first; task output files are deleted.`,
+                    'Clear')) {
+                    m.clearFinished();
+                }
+                this.refresh();
+                break;
+            }
+            case 'cancel-all': {
+                const inParked = msg.col === 'parked';
+                const list = m.tasks.filter(t => t.status === 'queued' && !!t.autoStart === inParked);
+                if (!list.length) { break; }
+                if (await this.confirm(
+                    `Cancel ${list.length} queued task(s) in ${inParked ? 'Parked' : 'Inbox'}?`,
+                    'Cancel tasks')) {
+                    for (const t of list) { m.cancelTask(t); }
+                }
                 this.refresh();
                 break;
             }

@@ -1000,9 +1000,11 @@ Durum çubuğu artık bu kuyruğu sayar: `🔔 N need you` görünüyorsa tıkla
 **Board** — kuyruğun yönetici yüzeyi (eski bağımsız Kanban sayfası buraya taşındı; `Open Task Board` komutu da bu bölümü açar):
 
 - Kolonlar: **📥 Inbox** (kuyrukta, elle başlatılacak) · **🕓 Parked** (kapasite/kota bekleyen) · **⚙️ Running** · **🛡️ Needs Approval** (izin + tarayıcı onayları, kart üstünde Run/Reject) · **🏁 Done** (son 30).
-- Kartları **sürükle-bırak**: Inbox→Running = başlat, Running→Done = tamamla, Inbox→Done = iptal. Kart üstünde ajan, süre, verify rozeti, medya maliyeti; çıktı arşivi olan karta **çift tık** = çıktıyı aç.
-- Panonun üstünde **komuta çubuğu**: doğal dil cümleni yaz, ucuz model plana çevirir, önizleme onayıyla kurulur (aşağıdaki Doğal Dil Komuta ile aynı akış).
-- Kolonların üstünde **yük şeridi**: filo geneli `çalışan/limit` (agentFarm.maxConcurrentTasks) + ajan başına `çalışan/limit` ve kuyruk sayısı — limiti dolan ajan turuncu yanar.
+- Kartları **sürükle-bırak**: Inbox→Running = başlat, Running→Done = tamamla, Inbox→Done = iptal. Kart üstünde ajan, süre, verify rozeti, koşu/medya maliyeti ve köken rozeti (🕑 zamanlama · ⚡ tetik · 🔗 workflow); başlığın üzerine gelince **tam istem** görünür. Çıktı arşivi olan karta **çift tık** = çıktıyı aç.
+- **Her kart bir sonraki eylemini taşır**: kuyrukta = ▶ hemen koştur (sırayı atlar) + iptal · çalışan = ⌨ terminale atla + iptal · biten = ↻ **yeniden koştur** (workflow adımı zincirini kaldığı yerden sürdürür) + ✕ kaldır. Çıktısı/transcript'i olan kartta açık 📄/🗒 açma düğmeleri var.
+- **Kolon üstü toplu eylemler**: Done'da **clear all** (önce tarihçe arşivlenir, çıktı dosyaları silinir), çok elemanlı Inbox/Parked'ta **cancel all** — ikisi de onay sorar; 15 kartlık temizlik 15 tık değil tek tıktır.
+- Panonun üstünde **komuta çubuğu**: doğal dil cümleni yaz, ucuz model plana çevirir, önizleme onayıyla kurulur (aşağıdaki Doğal Dil Komuta ile aynı akış). Yanındaki **filtre kutusu** tüm görev kolonlarını başlık/ajan/duruma göre daraltır (onay bekleyenler asla gizlenmez); kolon başlığı `görünen/toplam` gösterir.
+- Kolonların üstünde **yük şeridi**: filo geneli `çalışan/limit` (agentFarm.maxConcurrentTasks) + ajan başına `çalışan/limit` ve kuyruk sayısı — limiti dolan ajan turuncu yanar. NOW şeridine **🏁 today** hücresi eklendi (gece yarısından beri biten/başarısız, arşiv dahil). Göreli zamanlar 30 sn'de bir kendiliğinden akar.
 
 **Automations** — tetikleyiciler ve zamanlamalar tek yerde:
 

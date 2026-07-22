@@ -1934,6 +1934,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            op: 'tasks.rerun',
+            describe: 'Re-run a finished task as a fresh copy (a workflow-step task resumes its chain). args: id',
+            handler: (args) => {
+                const t = taskManager.tasks.find(x => x.id === argStr(args, 'id'));
+                need(t, 'Task not found — tasks.list shows current ids.');
+                need((t as FarmTask).status !== 'queued' && (t as FarmTask).status !== 'running',
+                    'Only a finished task can be re-run — it is still queued/running.');
+                const copy = taskManager.retryTask(t as FarmTask);
+                return copy ? { id: copy.id, status: copy.status } : { resumedWorkflow: true };
+            }
+        },
+        {
+            op: 'tasks.runNext',
+            describe: 'Bump a queued task to the front of the queue and request an immediate start. args: id',
+            handler: (args) => {
+                const t = taskManager.tasks.find(x => x.id === argStr(args, 'id'));
+                need(t, 'Task not found — tasks.list shows current ids.');
+                need((t as FarmTask).status === 'queued', 'Only a queued task can be bumped.');
+                taskManager.runTaskNext(t as FarmTask);
+                return { id: (t as FarmTask).id, status: (t as FarmTask).status };
+            }
+        },
+        {
+            op: 'tasks.clearFinished',
+            describe: 'Clear all finished (done/failed/cancelled) tasks from the board — history is archived first, output files are deleted. args: none',
+            handler: () => ({ removed: taskManager.clearFinished() })
+        },
+        {
             op: 'schedules.list',
             describe: 'Installed schedules. args: none',
             handler: () => taskManager.schedules.map(s => ({

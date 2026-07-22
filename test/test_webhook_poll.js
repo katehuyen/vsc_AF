@@ -69,6 +69,9 @@ const server = http.createServer((req, res) => {
     ok('poll timeout → ok=false', r.ok === false && /timed out/.test(r.error));
 
     server.close();
+    server.unref();
     console.log(`\n${pass} passed, ${fail} failed`);
-    process.exit(fail ? 1 : 0);
+    // exitCode + natural drain: process.exit() during libuv handle close crashes
+    // flakily on this Node/Windows build (same fix as test_airtable_edge).
+    process.exitCode = fail ? 1 : 0;
 })();

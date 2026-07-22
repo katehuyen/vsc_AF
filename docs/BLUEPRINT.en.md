@@ -1000,9 +1000,11 @@ The status bar now counts this queue: if `🔔 N need you` shows, clicking it op
 **Board** — the manager surface for the queue (the old standalone Kanban page folded in here; the `Open Task Board` command opens this section):
 
 - Columns: **📥 Inbox** (queued, to be started by hand) · **🕓 Parked** (waiting on capacity/quota) · **⚙️ Running** · **🛡️ Needs Approval** (permission + browser approvals, Run/Reject on the card) · **🏁 Done** (last 30).
-- **Drag and drop** cards: Inbox→Running = start, Running→Done = complete, Inbox→Done = cancel. The card shows agent, duration, verify badge, media cost; **double-click** a card that has an output archive = open the output.
-- Above the board is a **command bar**: type your natural-language sentence, a cheap model turns it into a plan, and it's set up with a preview approval (the same flow as Natural Language Command below).
-- Above the columns sits the **load strip**: fleet-wide `running/limit` (agentFarm.maxConcurrentTasks) plus per-agent `running/limit` and queue counts — an agent at its limit glows orange.
+- **Drag and drop** cards: Inbox→Running = start, Running→Done = complete, Inbox→Done = cancel. The card shows agent, duration, verify badge, run/media cost and a provenance badge (🕑 schedule · ⚡ trigger · 🔗 workflow); hovering the title shows the **full prompt**. **Double-click** a card that has an output archive = open the output.
+- **Every card carries its next action**: queued = ▶ run-now (jumps the queue) + cancel · running = ⌨ jump to terminal + cancel · finished = ↻ **re-run** (a workflow step resumes its chain) + ✕ remove. Cards with an output/transcript get explicit 📄/🗒 open buttons.
+- **Bulk actions on the columns**: Done has **clear all** (history is archived first, output files are deleted), multi-item Inbox/Parked get **cancel all** — both behind a confirm, so a 15-card cleanup is one click, not fifteen.
+- Above the board is a **command bar**: type your natural-language sentence, a cheap model turns it into a plan, and it's set up with a preview approval (the same flow as Natural Language Command below). Next to it a **filter box** narrows every task column by title/agent/status (approvals never hide); column headers show `shown/total`.
+- Above the columns sits the **load strip**: fleet-wide `running/limit` (agentFarm.maxConcurrentTasks) plus per-agent `running/limit` and queue counts — an agent at its limit glows orange. The NOW strip adds a **🏁 today** cell (done/failed since midnight, archive included). Relative times tick every 30s on their own.
 
 **Automations** — triggers and schedules in one place:
 
