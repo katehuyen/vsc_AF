@@ -2848,7 +2848,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         limits: () => ({
             global: cfg().get<number>('maxConcurrentTasks', 2),
             perAgent: cfg().get<number>('maxConcurrentPerAgent', 1)
-        })
+        }),
+        lastExportDir: () => context.globalState.get<string>('agentfarm.lastExportDir'),
+        setLastExportDir: (dir: string) => { void context.globalState.update('agentfarm.lastExportDir', dir); }
     };
 
     needsEmitter.event(() => {

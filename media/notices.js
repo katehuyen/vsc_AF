@@ -199,7 +199,7 @@
             <div class="nt-row" data-toggle="${esc(n.id)}">
                 <span class="nt-caret">${open ? '▾' : '▸'}</span>
                 <span class="nt-ico" title="${esc(t.label)}">${t.icon}</span>
-                <span class="nt-title">${esc(n.title)}</span>
+                <span class="nt-title" title="${esc(n.title)}">${esc(n.title)}</span>
                 <span class="nt-lb lb-${L}" title="Level ${L} · ${esc(LEVELS[L])}">L${L}</span>
                 ${statusBadge(n)}${n.edited ? '<span class="nt-badge muted">✎</span>' : ''}
                 ${tags ? `<span class="nt-tags">${tags}</span>` : ''}

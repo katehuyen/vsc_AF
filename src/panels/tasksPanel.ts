@@ -1,3 +1,6 @@
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
 import { buildForecast, familyDurations, nextOccurrences } from '../core/forecast';
@@ -41,6 +44,9 @@ export interface TasksDeps {
     triggerManager?: TriggerManager;
     forecastDays(): number;
     limits(): { global: number; perAgent: number };
+    /** Export-MD remembers the last save folder (shared farm-wide). */
+    lastExportDir?: () => string | undefined;
+    setLastExportDir?: (dir: string) => void;
 }
 
 interface BoardCard {
@@ -367,7 +373,7 @@ export class TasksPanel {
     private async onMessage(msg: {
         type: string; taskId?: string; to?: string; text?: string; act?: string; id?: string;
         approvalId?: string; ok?: boolean; file?: string; transcriptPath?: string; sessionId?: string;
-        col?: string;
+        col?: string; content?: string; name?: string;
     }): Promise<void> {
         const m = this.deps.manager;
         const run = (cmd: string, ...args: unknown[]) => { void vscode.commands.executeCommand(cmd, ...args); };
@@ -535,12 +541,38 @@ export class TasksPanel {
                 run('agentfarm.openForecast');
                 break;
 
+            case 'export-md':
+                // A table's visible rows, built into Markdown client-side.
+                if (typeof msg.content === 'string' && msg.content.trim()) {
+                    void this.saveMarkdown(msg.content, typeof msg.name === 'string' ? msg.name : 'tasks');
+                }
+                break;
+
             case 'afnav':
                 handleAfNav(msg.to);
                 break;
             case 'openGuide':
                 run('agentfarm.openGuide', 'tasks-sayfasi');
                 break;
+        }
+    }
+
+    private async saveMarkdown(md: string, base: string): Promise<void> {
+        const dir = this.deps.lastExportDir?.() || os.homedir();
+        const d = new Date();
+        const p2 = (n: number) => String(n).padStart(2, '0');
+        const stamp = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}_${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}`;
+        const uri = await vscode.window.showSaveDialog({
+            defaultUri: vscode.Uri.file(path.join(dir, `${base.replace(/[^\w-]+/g, '-')}-${stamp}.md`)),
+            filters: { Markdown: ['md'] }
+        });
+        if (!uri) { return; }
+        try {
+            fs.writeFileSync(uri.fsPath, md, 'utf8');
+            this.deps.setLastExportDir?.(path.dirname(uri.fsPath));
+            void vscode.window.showTextDocument(uri);
+        } catch (e) {
+            void vscode.window.showErrorMessage(`Agent Farm: export failed — ${String(e)}`);
         }
     }
 

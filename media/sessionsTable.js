@@ -223,8 +223,8 @@
         const CELL = {
             agent: r => `<td>${dot(r)}${C.esc(r.agent)}${subBadge(r)}${termBtn(r)}</td>`,
             title: r => hasAgentCol
-                ? `<td>${C.esc(r.title)}</td>`
-                : `<td>${dot(r)}${C.esc(r.title)}${subBadge(r)}${termBtn(r)}</td>`,
+                ? `<td title="${C.esc(r.title)}">${C.esc(r.title)}</td>`
+                : `<td title="${C.esc(r.title)}">${dot(r)}${C.esc(r.title)}${subBadge(r)}${termBtn(r)}</td>`,
             when: r => `<td class="num">${relTime(r.ts)}</td>`,
             duration: r => `<td class="num">${r.durationMin || 0}m</td>`,
             turns: r => `<td class="num">${r.turns || 0}</td>`,
@@ -247,7 +247,7 @@
                 <tr><th>#</th><th>prompt</th><th>model</th><th class="num">tokens</th><th class="num">cost</th></tr>
                 ${c.turns.map(t => `<tr class="click" data-turnjump="${C.esc(r.file)}" data-turnts="${t.ts || 0}"
                     title="Open the transcript at turn ${t.n}">
-                    <td class="num">${t.n}</td><td>${C.esc(t.label || '—')}</td>
+                    <td class="num">${t.n}</td><td title="${C.esc(t.label || '')}">${C.esc(t.label || '—')}</td>
                     <td>${tags(t).map(x => `<span class="tag">${C.esc(x)}</span>`).join('') || '—'}</td>
                     <td class="num">${t.tokens ? C.fmtTok(t.tokens) : '—'}</td>
                     <td class="num">${t.cost ? C.fmtUSD(t.cost) : '—'}</td>
