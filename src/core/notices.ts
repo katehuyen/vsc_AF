@@ -2,72 +2,115 @@ import * as fs from 'fs';
 import { argStr, BridgeRegistry, need, optStr } from './bridge';
 
 /**
- * Notices — the farm's agent→user notice board. ANY agent (via the bridge op
- * `notices.post`) drops a titled, optionally bodied message here; the user
- * reads them on the dedicated Notices page (title first, click to expand the
- * body) and a status-bar bell keeps the unread count in view. This is the one
- * shared channel every agent uses for "you should know / remember this" —
- * daily AI-world digests, reminders, results worth surfacing, warnings.
+ * Notices — the farm's agent→user board (and, via the `question` type, the
+ * async question channel that replaces the old MESSAGING.md). ANY agent posts
+ * ONE notice per thing-it-wants-to-tell-the-user: a single root line (title)
+ * that expands into a rich body — optionally split into independently
+ * collapsible SECTIONS, each fully self-contained (a real summary, not a
+ * link-only teaser). The user reads them on the Notices page.
  *
- * Unlike the Needs You queue (needs.ts), which is COMPUTED from live farm state
- * and clears itself, notices are PERSISTED, user-owned messages: they stay
- * until read/dismissed. Pure node module (fs only, no vscode) so the store and
- * every operation are unit-testable; the panel + status bar are wired by the
- * extension host.
+ * Two orthogonal axes:
+ *   - TYPE  = what KIND of message (update / reminder / report / question)
+ *   - LEVEL = how IMPORTANT (1 routine · 2 medium · 3 important · 4 ultra)
+ * plus a user-owned STAR mark (0-3) for "come back to this".
+ *
+ * The `question` type carries an async lifecycle: an agent asks, the user
+ * ANSWERS in the UI (status→answered) or DISMISSES it (status→declined so the
+ * asking agent learns it was passed over). Each turn an agent checks its own
+ * questions, acts on the answers (save to memory / apply), then RESOLVES them
+ * (handled=true). Pure node module (fs only) so store + ops are unit-testable.
  */
 
-export type NoticeLevel = 'info' | 'success' | 'reminder' | 'warning' | 'alert';
-export const NOTICE_LEVELS: NoticeLevel[] = ['info', 'success', 'reminder', 'warning', 'alert'];
+export type NoticeType = 'update' | 'reminder' | 'report' | 'question';
+export const NOTICE_TYPES: NoticeType[] = ['update', 'reminder', 'report', 'question'];
+
+/** Importance: 1 routine · 2 medium · 3 important · 4 ultra (rare, critical). */
+export type NoticeLevel = 1 | 2 | 3 | 4;
+
+/** Question lifecycle (question type only). */
+export type NoticeStatus = 'open' | 'answered' | 'declined';
+
+export interface NoticeSection {
+    /** Sub-headline shown when the notice is opened; expands to `body`. */
+    title: string;
+    /** Full self-contained summary (markdown). */
+    body: string;
+}
 
 export interface Notice {
     id: string;
-    /** Created-at (ms epoch). */
     ts: number;
-    /** Posting agent's name; '' → 'system'. */
     agentName: string;
+    type: NoticeType;
     level: NoticeLevel;
-    /** Shown first, always. */
     title: string;
-    /** Markdown, revealed on expand. */
+    /** Intro / whole message (markdown), shown when opened. */
     body?: string;
+    /** Independently collapsible sub-items; each fully summarised. */
+    sections?: NoticeSection[];
     tags?: string[];
-    /** Optional reminder time (ms epoch) — surfaced, not scheduled here. */
     dueAt?: number;
     read?: boolean;
     readAt?: number;
     pinned?: boolean;
+    /** User's own mark, 0-3. */
+    stars?: number;
+    // --- question lifecycle ---
+    status?: NoticeStatus;
+    answer?: string;
+    answeredAt?: number;
+    /** The asking agent processed the answer/decline. */
+    handled?: boolean;
+    handledAt?: number;
 }
 
 export interface NoticeInput {
     title: string;
+    type?: string;
+    level?: number;
     body?: string;
+    sections?: unknown;
     agentName?: string;
-    level?: string;
     tags?: string[] | string;
     dueAt?: number;
 }
 
 export interface NoticeFilter {
-    unread?: boolean;
+    type?: string;
+    level?: number;
+    minLevel?: number;
     agent?: string;
-    level?: string;
+    unread?: boolean;
+    status?: string;
+    handled?: boolean;
+    minStars?: number;
     tag?: string;
-    /** 0 / absent = no limit. */
     limit?: number;
 }
 
-const MAX_NOTICES = 300;
+const MAX_NOTICES = 400;
 const TITLE_MAX = 200;
 const BODY_MAX = 20000;
 const TAGS_MAX = 12;
+const SECTIONS_MAX = 60;
 
 export function newNoticeId(): string {
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
 
-export function coerceLevel(v: unknown): NoticeLevel {
+export function coerceType(v: unknown): NoticeType {
     const s = String(v ?? '').toLowerCase();
-    return (NOTICE_LEVELS as string[]).includes(s) ? s as NoticeLevel : 'info';
+    return (NOTICE_TYPES as string[]).includes(s) ? s as NoticeType : 'update';
+}
+
+export function coerceLevel(v: unknown): NoticeLevel {
+    const n = typeof v === 'number' ? Math.round(v) : parseInt(String(v ?? ''), 10);
+    return (n === 2 || n === 3 || n === 4) ? n as NoticeLevel : 1;
+}
+
+export function coerceStars(v: unknown): number {
+    const n = typeof v === 'number' ? Math.round(v) : parseInt(String(v ?? ''), 10);
+    return isFinite(n) && n >= 0 && n <= 3 ? n : 0;
 }
 
 export function coerceTags(v: unknown): string[] | undefined {
@@ -78,39 +121,66 @@ export function coerceTags(v: unknown): string[] | undefined {
     return arr.length ? arr : undefined;
 }
 
+/** Accept [{title|heading, body|content}, …]; tolerant of loose shapes. */
+export function coerceSections(v: unknown): NoticeSection[] | undefined {
+    if (!Array.isArray(v)) { return undefined; }
+    const out: NoticeSection[] = [];
+    for (const s of v) {
+        if (!s || typeof s !== 'object') { continue; }
+        const o = s as Record<string, unknown>;
+        const title = String(o.title ?? o.heading ?? '').trim().slice(0, TITLE_MAX);
+        const body = String(o.body ?? o.content ?? o.text ?? '').trim().slice(0, BODY_MAX);
+        if (!title && !body) { continue; }
+        out.push({ title: title || '(untitled)', body });
+        if (out.length >= SECTIONS_MAX) { break; }
+    }
+    return out.length ? out : undefined;
+}
+
 /** Validate an input into a fresh Notice (throws on an empty title). */
 export function makeNotice(input: NoticeInput, now = Date.now()): Notice {
     const title = String(input.title ?? '').trim().slice(0, TITLE_MAX);
     need(!!title, 'a notice needs a non-empty "title"');
+    const type = coerceType(input.type);
     const bodyRaw = typeof input.body === 'string' ? input.body.trim() : '';
     const agentName = String(input.agentName ?? '').trim().slice(0, 60) || 'system';
     const dueAt = typeof input.dueAt === 'number' && isFinite(input.dueAt) && input.dueAt > 0
         ? input.dueAt : undefined;
-    return {
+    const n: Notice = {
         id: newNoticeId(),
         ts: now,
         agentName,
+        type,
         level: coerceLevel(input.level),
         title,
         body: bodyRaw ? bodyRaw.slice(0, BODY_MAX) : undefined,
+        sections: coerceSections(input.sections),
         tags: coerceTags(input.tags),
         dueAt
     };
+    if (type === 'question') { n.status = 'open'; }
+    return n;
 }
 
-/** Pinned first, then newest. */
+/** Pinned first, then newest. Client controls further sort. */
 export function sortNotices(list: Notice[]): Notice[] {
     return list.slice().sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || b.ts - a.ts);
 }
 
 export function filterNotices(list: Notice[], f: NoticeFilter): Notice[] {
+    const type = (f.type ?? '').toLowerCase();
     const agent = (f.agent ?? '').toLowerCase();
-    const level = (f.level ?? '').toLowerCase();
+    const status = (f.status ?? '').toLowerCase();
     const tag = (f.tag ?? '').toLowerCase();
     let out = sortNotices(list).filter(n =>
-        (!f.unread || !n.read) &&
+        (!type || n.type === type) &&
+        (!f.level || n.level === f.level) &&
+        (!f.minLevel || n.level >= f.minLevel) &&
         (!agent || n.agentName.toLowerCase() === agent) &&
-        (!level || n.level === level) &&
+        (!f.unread || !n.read) &&
+        (!status || (n.status ?? 'open') === status) &&
+        (f.handled === undefined || !!n.handled === f.handled) &&
+        (!f.minStars || (n.stars ?? 0) >= f.minStars) &&
         (!tag || (n.tags ?? []).some(t => t.toLowerCase() === tag)));
     if (f.limit && f.limit > 0) { out = out.slice(0, Math.floor(f.limit)); }
     return out;
@@ -120,12 +190,18 @@ export function unreadCount(list: Notice[]): number {
     return list.reduce((a, n) => a + (n.read ? 0 : 1), 0);
 }
 
-/** Cap the store without ever dropping pinned or unread messages — the newest
- *  read ones are trimmed first. */
+/** An open question is a pending ask — surfaced separately from unread. */
+export function openQuestionCount(list: Notice[]): number {
+    return list.reduce((a, n) => a + (n.type === 'question' && (n.status ?? 'open') === 'open' ? 1 : 0), 0);
+}
+
+/** Cap without ever dropping pinned / unread / unresolved questions. */
 export function capNotices(list: Notice[], max = MAX_NOTICES): Notice[] {
     if (list.length <= max) { return list; }
-    const keep = list.filter(n => n.pinned || !n.read);
-    const rest = list.filter(n => !(n.pinned || !n.read)).sort((a, b) => b.ts - a.ts);
+    const sticky = (n: Notice) =>
+        n.pinned || !n.read || (n.type === 'question' && !n.handled) || (n.stars ?? 0) > 0;
+    const keep = list.filter(sticky);
+    const rest = list.filter(n => !sticky(n)).sort((a, b) => b.ts - a.ts);
     const room = Math.max(0, max - keep.length);
     return sortNotices([...keep, ...rest.slice(0, room)]);
 }
@@ -140,7 +216,7 @@ export class NoticesStore {
             const raw = JSON.parse(fs.readFileSync(this.file, 'utf8')) as { notices?: Notice[] } | Notice[];
             const arr = Array.isArray(raw) ? raw : raw?.notices;
             this.notices = Array.isArray(arr) ? arr.filter(n => n && typeof n.id === 'string') : [];
-        } catch { this.notices = []; /* first run / unreadable */ }
+        } catch { this.notices = []; }
     }
 
     save(): void {
@@ -157,49 +233,72 @@ export class NoticesStore {
         return n;
     }
 
+    private find(id: string): Notice | undefined { return this.notices.find(x => x.id === id); }
+
     markRead(id: string, read = true): boolean {
-        const n = this.notices.find(x => x.id === id);
-        if (!n) { return false; }
-        n.read = read;
-        n.readAt = read ? Date.now() : undefined;
-        this.save();
-        return true;
+        const n = this.find(id); if (!n) { return false; }
+        n.read = read; n.readAt = read ? Date.now() : undefined;
+        this.save(); return true;
     }
 
     markAllRead(): number {
-        const now = Date.now();
-        let c = 0;
+        const now = Date.now(); let c = 0;
         for (const n of this.notices) { if (!n.read) { n.read = true; n.readAt = now; c++; } }
-        if (c) { this.save(); }
-        return c;
+        if (c) { this.save(); } return c;
     }
 
     pin(id: string, pinned: boolean): boolean {
-        const n = this.notices.find(x => x.id === id);
-        if (!n) { return false; }
-        n.pinned = pinned;
-        this.save();
-        return true;
+        const n = this.find(id); if (!n) { return false; }
+        n.pinned = pinned; this.save(); return true;
+    }
+
+    setStars(id: string, stars: number): boolean {
+        const n = this.find(id); if (!n) { return false; }
+        n.stars = coerceStars(stars); this.save(); return true;
+    }
+
+    /** User answers a question (UI). */
+    answer(id: string, text: string): boolean {
+        const n = this.find(id); if (!n || n.type !== 'question') { return false; }
+        const a = String(text ?? '').trim(); if (!a) { return false; }
+        n.answer = a.slice(0, BODY_MAX); n.answeredAt = Date.now();
+        n.status = 'answered'; n.read = true; n.readAt = n.readAt ?? Date.now();
+        this.save(); return true;
+    }
+
+    /** User dismisses a question without answering — the asker learns it was passed over. */
+    decline(id: string): boolean {
+        const n = this.find(id); if (!n || n.type !== 'question') { return false; }
+        n.status = 'declined'; n.read = true; n.readAt = n.readAt ?? Date.now();
+        this.save(); return true;
+    }
+
+    /** Asking agent processed the answer/decline. */
+    resolve(id: string): boolean {
+        const n = this.find(id); if (!n) { return false; }
+        n.handled = true; n.handledAt = Date.now();
+        this.save(); return true;
     }
 
     dismiss(id: string): boolean {
         const before = this.notices.length;
         this.notices = this.notices.filter(n => n.id !== id);
         if (this.notices.length === before) { return false; }
-        this.save();
-        return true;
+        this.save(); return true;
     }
 
-    /** Remove every read, non-pinned notice. */
+    /** Remove read, non-pinned, non-starred, non-open-question notices. */
     clearRead(): number {
         const before = this.notices.length;
-        this.notices = this.notices.filter(n => !n.read || n.pinned);
+        this.notices = this.notices.filter(n =>
+            !n.read || n.pinned || (n.stars ?? 0) > 0
+            || (n.type === 'question' && (n.status ?? 'open') !== 'declined' && !n.handled));
         const removed = before - this.notices.length;
-        if (removed) { this.save(); }
-        return removed;
+        if (removed) { this.save(); } return removed;
     }
 
     unread(): number { return unreadCount(this.notices); }
+    openQuestions(): number { return openQuestionCount(this.notices); }
     list(f: NoticeFilter = {}): Notice[] { return filterNotices(this.notices, f); }
 }
 
@@ -209,9 +308,7 @@ export class NoticesStore {
 
 export interface NoticesOpsDeps {
     store: NoticesStore;
-    /** Any mutation (post / read / dismiss) — extension refreshes panel + badge. */
     onChange?: () => void;
-    /** A fresh post — extension may toast for high-severity levels. */
     onPost?: (n: Notice) => void;
 }
 
@@ -220,50 +317,63 @@ export function registerNoticesOps(bridge: BridgeRegistry, deps: NoticesOpsDeps)
     bridge.register([
         {
             op: 'notices.post',
-            describe: 'Post a notice to the user\'s dashboard notice board (any agent → user; the shared channel for "you should know / remember this"). args: title (required), body? (markdown, shown on expand), agent? (poster name), level? (info|success|reminder|warning|alert), tags? (string[]|csv), dueAt? (ms epoch reminder time)',
+            describe: 'Post ONE notice to the user\'s dashboard board (agent→user; the shared channel — post a single entry per thing you want to tell the user, never one per sub-item). args: title (required, the one-line root), type? (update|reminder|report|question, default update), level? (1 routine|2 medium|3 important|4 ultra, default 1), body? (markdown, shown on expand), sections? ([{title, body}] independently-collapsible sub-items, each a FULL self-contained summary — not a link-only teaser), agent? (poster name), tags? (string[]|csv), dueAt? (ms epoch). Use type=question to leave the user an async question (they answer in the UI); check & resolve your answered questions each turn.',
             handler: (args) => {
                 const n = deps.store.add({
                     title: argStr(args, 'title'),
+                    type: optStr(args, 'type') || undefined,
+                    level: typeof args.level === 'number' ? args.level : undefined,
                     body: optStr(args, 'body') || undefined,
+                    sections: args.sections,
                     agentName: optStr(args, 'agent') || undefined,
-                    level: optStr(args, 'level') || undefined,
                     tags: (args.tags as string[] | string | undefined),
                     dueAt: typeof args.dueAt === 'number' ? args.dueAt : undefined
                 });
                 try { deps.onPost?.(n); } catch { /* toast best-effort */ }
                 changed();
-                return { id: n.id, ts: n.ts, level: n.level, title: n.title, unread: deps.store.unread() };
+                return { id: n.id, ts: n.ts, type: n.type, level: n.level, title: n.title, unread: deps.store.unread() };
             }
         },
         {
             op: 'notices.list',
-            describe: 'List notices, pinned/newest first. args: unread? (bool), agent?, level?, tag?, limit? (default 30)',
+            describe: 'List notices, pinned/newest first. args: type?, level?, minLevel?, agent?, unread? (bool), status? (open|answered|declined), handled? (bool), minStars?, tag?, limit? (default 30). To poll your answered questions: agent=<you>, type=question, handled=false.',
             handler: (args) => deps.store.list({
-                unread: args.unread === true,
+                type: optStr(args, 'type'),
+                level: typeof args.level === 'number' ? args.level : undefined,
+                minLevel: typeof args.minLevel === 'number' ? args.minLevel : undefined,
                 agent: optStr(args, 'agent'),
-                level: optStr(args, 'level'),
+                unread: args.unread === true ? true : undefined,
+                status: optStr(args, 'status'),
+                handled: typeof args.handled === 'boolean' ? args.handled : undefined,
+                minStars: typeof args.minStars === 'number' ? args.minStars : undefined,
                 tag: optStr(args, 'tag'),
                 limit: typeof args.limit === 'number' && args.limit > 0 ? args.limit : 30
             })
         },
         {
             op: 'notices.read',
-            describe: 'Mark a notice read. args: id — OR — all:true (mark every notice read)',
+            describe: 'Mark a notice read. args: id — OR — all:true',
             handler: (args) => {
                 if (args.all === true) { const c = deps.store.markAllRead(); changed(); return { markedRead: c }; }
                 need(deps.store.markRead(argStr(args, 'id'), true), 'Notice not found — notices.list shows current ids.');
-                changed();
-                return { ok: true, unread: deps.store.unread() };
+                changed(); return { ok: true, unread: deps.store.unread() };
+            }
+        },
+        {
+            op: 'notices.resolve',
+            describe: 'Mark a question handled after you (the asking agent) acted on the user\'s answer or decline — drops it from your pending list. args: id',
+            handler: (args) => {
+                need(deps.store.resolve(argStr(args, 'id')), 'Notice not found — notices.list shows current ids.');
+                changed(); return { ok: true };
             }
         },
         {
             op: 'notices.dismiss',
-            describe: 'Remove a notice. args: id — OR — clearRead:true (remove every read, non-pinned notice)',
+            describe: 'Remove a notice. args: id — OR — clearRead:true (remove read, non-pinned, non-starred, non-open-question notices)',
             handler: (args) => {
                 if (args.clearRead === true) { const c = deps.store.clearRead(); changed(); return { removed: c }; }
                 need(deps.store.dismiss(argStr(args, 'id')), 'Notice not found — notices.list shows current ids.');
-                changed();
-                return { ok: true };
+                changed(); return { ok: true };
             }
         }
     ]);

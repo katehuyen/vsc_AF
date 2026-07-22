@@ -23,6 +23,7 @@ function buildData(deps: NoticesDeps): Record<string, unknown> {
         generatedAt: Date.now(),
         notices: deps.store.list({ limit: 0 }),
         unread: deps.store.unread(),
+        openQuestions: deps.store.openQuestions(),
         agents: deps.agentNames()
     };
 }
@@ -88,6 +89,16 @@ export class NoticesPanel {
                 break;
             case 'pin':
                 if (typeof msg.id === 'string') { s.pin(msg.id, msg.pinned === true); this.mutated(); }
+                break;
+            case 'setStars':
+                if (typeof msg.id === 'string' && typeof msg.stars === 'number') { s.setStars(msg.id, msg.stars); this.mutated(); }
+                break;
+            case 'answer':
+                // User answers a question; the asking agent picks it up on its next turn.
+                if (typeof msg.id === 'string' && typeof msg.text === 'string') { s.answer(msg.id, msg.text); this.mutated(); }
+                break;
+            case 'decline':
+                if (typeof msg.id === 'string') { s.decline(msg.id); this.mutated(); }
                 break;
             case 'dismiss':
                 if (typeof msg.id === 'string') { s.dismiss(msg.id); this.mutated(); }

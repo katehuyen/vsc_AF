@@ -1,7 +1,6 @@
-// Notices — the agent→user notice board (compiled core/notices.js, pure):
-// the store's lifecycle (post/read/pin/dismiss/clear/cap) and the §19.C bridge
-// ops (notices.post/list/read/dismiss) dispatched through a real registry,
-// proving the channel every agent uses is catalogued and behaves.
+// Notices — agent→user board (compiled core/notices.js, pure): the store's
+// lifecycle (post/read/pin/star/answer/decline/resolve/dismiss/clear/cap), the
+// type+level+question model, and the §19.C bridge ops through a real registry.
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -10,118 +9,139 @@ let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
 const {
-    NoticesStore, makeNotice, filterNotices, sortNotices, capNotices,
-    coerceLevel, coerceTags, unreadCount, registerNoticesOps
+    NoticesStore, makeNotice, filterNotices, capNotices, coerceType, coerceLevel,
+    coerceSections, coerceStars, unreadCount, openQuestionCount, registerNoticesOps
 } = require(path.join(__dirname, '..', 'out', 'core', 'notices.js'));
 const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'bridge.js'));
 
 // ---------- makeNotice / coercion ----------
 {
-    const n = makeNotice({ title: '  Hello  ', body: '  world  ', agentName: ' manager ', level: 'WARNING', tags: 'a, b ,,c' });
-    ok('title/body/agent trimmed', n.title === 'Hello' && n.body === 'world' && n.agentName === 'manager');
-    ok('level lowercased + validated', n.level === 'warning');
-    ok('tags parsed from csv', Array.isArray(n.tags) && n.tags.join(',') === 'a,b,c');
-    ok('unknown level falls back to info', coerceLevel('nope') === 'info');
-    ok('empty tags → undefined', coerceTags('  ,, ') === undefined);
-    ok('agent defaults to system', makeNotice({ title: 'x' }).agentName === 'system');
-    let threw = false;
-    try { makeNotice({ title: '   ' }); } catch { threw = true; }
+    const n = makeNotice({
+        title: '  Hi  ', body: '  b  ', agentName: ' manager ', type: 'REPORT', level: 3,
+        tags: 'a, b', sections: [{ title: ' S1 ', body: ' c1 ' }, { heading: 'S2', content: 'c2' }, { title: '', body: '' }]
+    });
+    ok('title/body/agent trimmed', n.title === 'Hi' && n.body === 'b' && n.agentName === 'manager');
+    ok('type lowercased + validated', n.type === 'report');
+    ok('level kept (3)', n.level === 3);
+    ok('unknown type → update', coerceType('nope') === 'update');
+    ok('bad level → 1', coerceLevel(9) === 1 && coerceLevel('x') === 1 && coerceLevel(2) === 2);
+    ok('stars clamp 0..3', coerceStars(5) === 0 && coerceStars(2) === 2 && coerceStars(-1) === 0);
+    ok('sections parsed (title/heading/body/content)', n.sections.length === 2 && n.sections[0].title === 'S1' && n.sections[1].title === 'S2' && n.sections[1].body === 'c2');
+    ok('empty sections dropped', coerceSections([{ title: '', body: '' }]) === undefined);
+    ok('question gets open status', makeNotice({ title: 'q', type: 'question' }).status === 'open');
+    ok('non-question has no status', makeNotice({ title: 'u' }).status === undefined);
+    let threw = false; try { makeNotice({ title: '  ' }); } catch { threw = true; }
     ok('empty title throws', threw);
 }
 
-// ---------- sort / filter / cap ----------
+// ---------- filter ----------
 {
     const base = Date.now();
     const list = [
-        { id: 'a', ts: base + 1, agentName: 'dev', level: 'info', title: 'A', read: true },
-        { id: 'b', ts: base + 2, agentName: 'manager', level: 'alert', title: 'B' },
-        { id: 'c', ts: base + 3, agentName: 'dev', level: 'info', title: 'C', pinned: true },
-        { id: 'd', ts: base + 4, agentName: 'manager', level: 'warning', title: 'D', tags: ['ai'] }
+        { id: 'a', ts: base + 1, agentName: 'dev', type: 'update', level: 1, read: true },
+        { id: 'b', ts: base + 2, agentName: 'manager', type: 'question', level: 4, status: 'open' },
+        { id: 'c', ts: base + 3, agentName: 'dev', type: 'update', level: 3, pinned: true, stars: 2, tags: ['ai'] },
+        { id: 'd', ts: base + 4, agentName: 'manager', type: 'question', level: 2, status: 'answered', handled: false }
     ];
-    const sorted = sortNotices(list);
-    ok('pinned first, then newest', sorted[0].id === 'c' && sorted[1].id === 'd');
-    ok('unreadCount ignores read', unreadCount(list) === 3);
-    ok('filter unread drops read', filterNotices(list, { unread: true }).every(n => !n.read));
+    ok('pinned floats first', filterNotices(list, {})[0].id === 'c');
+    ok('filter by type', filterNotices(list, { type: 'question' }).length === 2);
+    ok('filter by exact level', filterNotices(list, { level: 4 }).map(n => n.id).join() === 'b');
+    ok('filter by minLevel', filterNotices(list, { minLevel: 3 }).map(n => n.id).sort().join() === 'b,c');
     ok('filter by agent', filterNotices(list, { agent: 'manager' }).length === 2);
-    ok('filter by level', filterNotices(list, { level: 'alert' }).map(n => n.id).join() === 'b');
-    ok('filter by tag', filterNotices(list, { tag: 'ai' }).map(n => n.id).join() === 'd');
-    ok('limit caps result', filterNotices(list, { limit: 2 }).length === 2);
-
-    // cap never drops pinned or unread; trims oldest read first
-    const many = [];
-    for (let i = 0; i < 10; i++) { many.push({ id: 'r' + i, ts: base + i, level: 'info', title: 'r', agentName: 'x', read: true }); }
-    many.push({ id: 'p', ts: base, level: 'info', title: 'p', agentName: 'x', pinned: true, read: true });
-    many.push({ id: 'u', ts: base, level: 'info', title: 'u', agentName: 'x' });
-    const capped = capNotices(many, 5);
-    ok('cap keeps pinned + unread', capped.some(n => n.id === 'p') && capped.some(n => n.id === 'u'));
-    ok('cap trims down to max', capped.length <= 5 || capped.filter(n => !n.pinned && n.read).length <= 3);
+    ok('filter by status', filterNotices(list, { status: 'answered' }).map(n => n.id).join() === 'd');
+    ok('filter by handled=false', filterNotices(list, { type: 'question', handled: false }).length === 2);
+    ok('filter by minStars', filterNotices(list, { minStars: 1 }).map(n => n.id).join() === 'c');
+    ok('filter by tag', filterNotices(list, { tag: 'ai' }).map(n => n.id).join() === 'c');
+    ok('unread + counts', unreadCount(list) === 3 && openQuestionCount(list) === 1);
+    ok('limit', filterNotices(list, { limit: 2 }).length === 2);
 }
 
-// ---------- NoticesStore lifecycle ----------
+// ---------- cap keeps sticky ----------
+{
+    const base = Date.now(); const many = [];
+    for (let i = 0; i < 12; i++) { many.push({ id: 'r' + i, ts: base + i, type: 'update', level: 1, read: true }); }
+    many.push({ id: 'pin', ts: base, type: 'update', level: 1, read: true, pinned: true });
+    many.push({ id: 'q', ts: base, type: 'question', level: 2, status: 'open', read: true });
+    many.push({ id: 'star', ts: base, type: 'update', level: 1, read: true, stars: 1 });
+    const capped = capNotices(many, 6);
+    ok('cap keeps pinned/open-question/starred', ['pin', 'q', 'star'].every(id => capped.some(n => n.id === id)));
+}
+
+// ---------- store lifecycle ----------
 {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-notices-'));
     const file = path.join(dir, 'notices.json');
-    const store = new NoticesStore(file);
-    store.load();
-    ok('fresh store is empty', store.notices.length === 0 && store.unread() === 0);
+    const store = new NoticesStore(file); store.load();
+    ok('fresh store empty', store.notices.length === 0 && store.unread() === 0);
 
-    const a = store.add({ title: 'first', agentName: 'manager' });
-    const b = store.add({ title: 'second', body: 'details', level: 'reminder' });
-    ok('add prepends (newest first)', store.notices[0].id === b.id);
-    ok('unread counts both', store.unread() === 2);
-    ok('persisted to disk', JSON.parse(fs.readFileSync(file, 'utf8')).notices.length === 2);
+    const a = store.add({ title: 'digest', type: 'update', level: 2, sections: [{ title: 'h1', body: 'full summary 1' }] });
+    const q = store.add({ title: 'may I ask', type: 'question', level: 3, agentName: 'developer' });
+    ok('add prepends', store.notices[0].id === q.id);
+    ok('openQuestions counts the question', store.openQuestions() === 1);
+    ok('sections persisted', JSON.parse(fs.readFileSync(file, 'utf8')).notices.find(n => n.id === a.id).sections.length === 1);
 
-    ok('markRead flips one', store.markRead(a.id) && store.unread() === 1);
-    ok('markRead unknown id → false', store.markRead('nope') === false);
-    ok('pin sorts to top', store.pin(a.id, true) && store.list()[0].id === a.id);
+    ok('setStars', store.setStars(a.id, 3) && store.notices.find(n => n.id === a.id).stars === 3);
+    ok('setStars clamps', store.setStars(a.id, 9) && store.notices.find(n => n.id === a.id).stars === 0);
+    ok('pin', store.pin(a.id, true) && store.list()[0].id === a.id);
 
-    // reload from disk keeps state
-    const store2 = new NoticesStore(file);
-    store2.load();
-    ok('reload restores notices + read/pin state',
-        store2.notices.length === 2 && store2.list()[0].id === a.id && store2.unread() === 1);
+    ok('answer sets status+answered', store.answer(q.id, '  yes go ahead ') && (() => { const n = store.notices.find(x => x.id === q.id); return n.status === 'answered' && n.answer === 'yes go ahead' && n.read; })());
+    ok('answer refuses non-question', store.answer(a.id, 'x') === false);
+    ok('resolve marks handled', store.resolve(q.id) && store.notices.find(n => n.id === q.id).handled === true);
+    ok('openQuestions now zero', store.openQuestions() === 0);
 
-    ok('markAllRead clears unread', store2.markAllRead() === 1 && store2.unread() === 0);
-    ok('dismiss removes', store2.dismiss(b.id) && store2.notices.length === 1);
-    ok('clearRead keeps pinned', store2.clearRead() >= 0 && store2.notices.some(n => n.id === a.id));
+    const q2 = store.add({ title: 'ignored?', type: 'question' });
+    ok('decline sets declined', store.decline(q2.id) && store.notices.find(n => n.id === q2.id).status === 'declined');
+    ok('decline refuses non-question', store.decline(a.id) === false);
+
+    const store2 = new NoticesStore(file); store2.load();
+    ok('reload restores state', store2.notices.length === 3 && store2.list()[0].id === a.id);
+    ok('markAllRead', store2.markAllRead() >= 0 && store2.unread() === 0);
+    ok('dismiss removes', store2.dismiss(a.id) === true && !store2.notices.some(n => n.id === a.id));
 
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
 }
 
-// ---------- §19.C: bridge ops catalogued + dispatched ----------
+// ---------- §19.C bridge ops ----------
 (async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-notices-bridge-'));
-    const store = new NoticesStore(path.join(dir, 'notices.json'));
-    store.load();
+    const store = new NoticesStore(path.join(dir, 'notices.json')); store.load();
     let changes = 0, posted = null;
     const reg = new BridgeRegistry();
     registerNoticesOps(reg, { store, onChange: () => changes++, onPost: n => { posted = n; } });
 
     const cat = reg.catalog().map(c => c.op);
-    ok('all four notices ops catalogued',
-        ['notices.post', 'notices.list', 'notices.read', 'notices.dismiss'].every(op => cat.includes(op)));
+    ok('all five notices ops catalogued',
+        ['notices.post', 'notices.list', 'notices.read', 'notices.resolve', 'notices.dismiss'].every(op => cat.includes(op)));
 
-    const post = await reg.dispatch('notices.post', { title: 'AI digest', body: '# heading', agent: 'manager', level: 'reminder', tags: ['ai-daily'] });
-    ok('notices.post returns id + unread', post.ok && typeof post.result.id === 'string' && post.result.unread === 1);
+    const post = await reg.dispatch('notices.post', {
+        title: 'AI digest', type: 'update', level: 2, tags: ['ai-daily'],
+        sections: [{ title: 'Model X released', body: 'Full summary with everything you need.' }]
+    });
+    ok('post returns id/type/level/unread', post.ok && post.result.type === 'update' && post.result.level === 2 && post.result.unread === 1);
     ok('onPost + onChange fired', posted && posted.title === 'AI digest' && changes >= 1);
 
-    const empty = await reg.dispatch('notices.post', { body: 'no title' });
-    ok('notices.post refuses missing title', !empty.ok && /title/i.test(empty.error));
+    const q = await reg.dispatch('notices.post', { title: 'need a decision', type: 'question', level: 3, agent: 'developer' });
+    ok('question posted with open status', q.ok && store.notices.find(n => n.id === q.result.id).status === 'open');
 
-    const list = await reg.dispatch('notices.list', { tag: 'ai-daily' });
-    ok('notices.list filters by tag', list.ok && list.result.length === 1 && list.result[0].title === 'AI digest');
+    const empty = await reg.dispatch('notices.post', { body: 'x' });
+    ok('post refuses missing title', !empty.ok && /title/i.test(empty.error));
 
-    const id = post.result.id;
-    const read = await reg.dispatch('notices.read', { id });
-    ok('notices.read marks read', read.ok && read.result.unread === 0);
-    const readBad = await reg.dispatch('notices.read', { id: 'nope' });
-    ok('notices.read unknown id errors', !readBad.ok && /not found/i.test(readBad.error));
+    const byTag = await reg.dispatch('notices.list', { tag: 'ai-daily' });
+    ok('list filters by tag', byTag.ok && byTag.result.length === 1);
+    const openQ = await reg.dispatch('notices.list', { type: 'question', handled: false });
+    ok('list finds unhandled questions', openQ.ok && openQ.result.length === 1 && openQ.result[0].title === 'need a decision');
 
-    await reg.dispatch('notices.post', { title: 'temp', level: 'info' });
-    const clear = await reg.dispatch('notices.dismiss', { clearRead: true });
-    ok('notices.dismiss clearRead removes read ones', clear.ok && clear.result.removed === 1);
-    const dis = await reg.dispatch('notices.dismiss', { id: store.notices[0].id });
-    ok('notices.dismiss by id removes', dis.ok && dis.result.ok === true);
+    // user answers in UI (store), agent resolves via bridge
+    store.answer(q.result.id, 'do option B');
+    const res = await reg.dispatch('notices.resolve', { id: q.result.id });
+    ok('resolve marks handled', res.ok && store.notices.find(n => n.id === q.result.id).handled === true);
+    const resBad = await reg.dispatch('notices.resolve', { id: 'nope' });
+    ok('resolve unknown id errors', !resBad.ok && /not found/i.test(resBad.error));
+
+    const read = await reg.dispatch('notices.read', { id: post.result.id });
+    ok('read marks read', read.ok);
+    const dis = await reg.dispatch('notices.dismiss', { id: post.result.id });
+    ok('dismiss by id', dis.ok && dis.result.ok === true);
 
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
 

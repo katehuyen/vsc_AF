@@ -2218,8 +2218,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         store: noticesStore,
         onChange: () => { NoticesPanel.refreshIfOpen(); updateNoticesBadge(); },
         onPost: (n) => {
-            if (n.level === 'alert') {
+            // Ultra-important (level 4) warns; a question gently pings so it does
+            // not sit unnoticed. Everything else stays quiet — the bell carries it.
+            if (n.level >= 4) {
                 void vscode.window.showWarningMessage(`🔔 ${n.agentName}: ${n.title}`, 'Open Notices')
+                    .then(pick => { if (pick) { void vscode.commands.executeCommand('agentfarm.openNotices'); } });
+            } else if (n.type === 'question') {
+                void vscode.window.showInformationMessage(`❓ ${n.agentName} asked: ${n.title}`, 'Open Notices')
                     .then(pick => { if (pick) { void vscode.commands.executeCommand('agentfarm.openNotices'); } });
             }
         }
