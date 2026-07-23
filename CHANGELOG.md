@@ -2,6 +2,14 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.12.1 — The /context breakdown is always reachable; whole-card click (2026-07-24)
+
+Found live within the hour: 3.12.0 hid the breakdown button entirely when the session had no `/context` capture — which is exactly the state most sessions are in, so the feature looked absent right where the user went looking for it. Also the button label was Turkish ("detay"), violating the UI-is-always-English rule.
+
+- **The whole Context now card is now the click target** (a small corner button was too easy to miss); the ⛁ glyph in the corner is the permanent affordance — always visible, brighter on hover, accent-colored while the popover is open. Card tooltip explains the click.
+- **No snapshot → the popover explains how to get one** (run `/context` in the session's terminal; on a live session the card refreshes itself within seconds). A discoverable empty state instead of a silently missing feature.
+- All UI text English. Behavior verified end-to-end in a DOM harness: open/toggle/inside-click/outside-click/Esc, live-push re-render, both states. Suite: 57 files, 1704 checks green (5 new).
+
 ## 3.12.0 — Session viewer: the /context breakdown, on the Context now card (2026-07-24)
 
 The terminal's `/context` shows a rich split — System prompt, System tools, MCP tools, Memory files, Skills, Messages, Free space, Autocompact buffer — but that detail was invisible in the extension; the Context now card only had the single live number. It turns out Claude Code records each `/context` run in the transcript (a `system`/`local_command` line), so the data was there all along, unread.

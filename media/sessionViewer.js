@@ -441,9 +441,19 @@
     }
 
     // Breakdown popover for the "Context now" card, built from the transcript's last
-    // /context run (DATA.contextReport). Empty string when the session has no snapshot.
+    // /context run (DATA.contextReport). Always rendered: with no snapshot it explains
+    // how to get one — a hidden feature the user can't discover helps nobody.
     function contextPopHtml(cr) {
-        if (!cr || !(cr.categories || []).length) { return ''; }
+        if (!cr || !(cr.categories || []).length) {
+            return `<div class="ctxpop" id="ctxpop" hidden>
+                <div class="ctxpop-hd"><span>Context breakdown</span></div>
+                <div class="ctxpop-ft">No <code>/context</code> snapshot in this session yet.<br><br>
+                Run <code>/context</code> in the session's terminal — Claude Code records its
+                output in the transcript, and the category breakdown (system prompt, tools,
+                MCP, memory, skills, messages, free space…) appears here. On a running
+                session the card refreshes live, no reopen needed.</div>
+            </div>`;
+        }
         const rows = cr.categories.map(c => {
             const isFree = /free space/i.test(c.label);
             const isBuf = /auto-?compact/i.test(c.label);
@@ -470,22 +480,28 @@
     function closeContextPop() {
         const pop = document.getElementById('ctxpop');
         if (pop && !pop.hasAttribute('hidden')) { pop.setAttribute('hidden', ''); }
-        const b = document.getElementById('ctxbreakdown');
-        if (b) { b.classList.remove('on'); }
+        const g = document.getElementById('ctxglyph');
+        if (g && g.classList) { g.classList.remove('on'); }
     }
 
-    // Corner button toggles the breakdown; outside-click / Esc close it. The
-    // document-level closers are attached once (re-render rebuilds the button, so a
-    // per-render document listener would leak) and look the elements up live.
+    // The whole Context-now card toggles the breakdown popover; outside-click / Esc
+    // close it. Clicks inside the OPEN popover must not toggle (it's a child of the
+    // card). The document-level closers are attached once (a re-render rebuilds the
+    // card, so a per-render document listener would leak) and look elements up live.
     function wireContextPop() {
-        const btn = document.getElementById('ctxbreakdown');
-        if (btn) {
-            btn.addEventListener('click', ev => {
-                ev.stopPropagation();
+        const card = document.getElementById('ctxcard');
+        if (card) {
+            card.addEventListener('click', ev => {
+                const t = ev.target;
+                if (t && t.closest && t.closest('#ctxpop')) { return; }
+                if (ev.stopPropagation) { ev.stopPropagation(); }
                 const pop = document.getElementById('ctxpop');
                 if (!pop) { return; }
-                if (pop.hasAttribute('hidden')) { pop.removeAttribute('hidden'); btn.classList.add('on'); }
-                else { closeContextPop(); }
+                if (pop.hasAttribute('hidden')) {
+                    pop.removeAttribute('hidden');
+                    const g = document.getElementById('ctxglyph');
+                    if (g && g.classList) { g.classList.add('on'); }
+                } else { closeContextPop(); }
             });
         }
         if (window.__afCtxWired || typeof document.addEventListener !== 'function') { return; }
@@ -494,7 +510,7 @@
             const pop = document.getElementById('ctxpop');
             if (!pop || pop.hasAttribute('hidden')) { return; }
             const t = ev.target;
-            if (t && t.closest && (t.closest('#ctxpop') || t.closest('#ctxbreakdown'))) { return; }
+            if (t && t.closest && t.closest('#ctxcard')) { return; }
             closeContextPop();
         });
         document.addEventListener('keydown', ev => { if (ev.key === 'Escape') { closeContextPop(); } });
@@ -581,17 +597,15 @@
                 /* Timeline click-through: briefly spotlight the message we jumped to. */
                 .msg.flash { outline:2px solid var(--vscode-textLink-foreground); outline-offset:2px; }
                 /* Context-breakdown popover: overlays the "Context now" card without
-                   reflowing the KPI row (card is position:relative, popover absolute). */
-                .ctxcard { position:relative; }
-                .ctxbtn { position:absolute; top:8px; right:8px; z-index:2;
-                    font-size:11px; line-height:1; padding:2px 7px; cursor:pointer;
-                    border-radius:4px; opacity:.5; background:transparent;
-                    border:1px solid var(--vscode-widget-border, #4444);
+                   reflowing the KPI row (card is position:relative, popover absolute).
+                   The WHOLE card is the click target (small corner buttons were too
+                   easy to miss); the ⛁ glyph is the always-visible affordance. */
+                .ctxcard { position:relative; cursor:pointer; }
+                .ctxglyph { position:absolute; top:9px; right:11px; z-index:2;
+                    font-size:13px; line-height:1; opacity:.45; pointer-events:none;
                     color:var(--vscode-foreground); }
-                .ctxcard:hover .ctxbtn { opacity:.85; }
-                .ctxbtn:hover { opacity:1; }
-                .ctxbtn.on { opacity:1; background:var(--vscode-button-background);
-                    color:var(--vscode-button-foreground); border-color:transparent; }
+                .ctxcard:hover .ctxglyph { opacity:.9; }
+                .ctxglyph.on { opacity:1; color:var(--vscode-textLink-foreground); }
                 .ctxpop { position:absolute; top:100%; right:0; margin-top:6px; z-index:50;
                     width:300px; max-width:80vw; padding:10px 12px; text-align:left;
                     background:var(--vscode-editorWidget-background, var(--vscode-editor-background));
@@ -627,11 +641,11 @@
                 <div class="card"><div class="label">Cost</div><div class="kpi">${C.fmtUSD(DATA.cost)}</div><div class="sub">API-equivalent</div></div>
                 <div class="card"><div class="label">Tokens</div><div class="kpi">${C.fmtTok(DATA.totalTokens)}</div>
                     <div class="sub">in ${C.fmtTok(DATA.usage.input)} · out ${C.fmtTok(DATA.usage.output)} · cacheR ${C.fmtTok(DATA.usage.cacheRead)} · cacheW ${C.fmtTok(DATA.usage.cacheWrite)}</div></div>
-                <div class="card${DATA.contextReport ? ' ctxcard' : ''}"><div class="label">Context now</div>
+                <div class="card ctxcard" id="ctxcard" title="Click for the /context breakdown by category"><div class="label">Context now</div>
                     <div class="kpi"${ctxColor ? ` style="color:${ctxColor}"` : ''}>${ctx.tokens > 0 ? C.fmtTok(ctx.tokens) : '—'}</div>
-                    <div class="sub"${ctxColor ? ` style="color:${ctxColor}"` : ''}>${ctxSub}</div>${DATA.contextReport ? `
-                    <button class="ctxbtn" id="ctxbreakdown" title="Show the /context breakdown by category (last captured snapshot)">⛁ detay</button>
-                    ${contextPopHtml(DATA.contextReport)}` : ''}</div>
+                    <div class="sub"${ctxColor ? ` style="color:${ctxColor}"` : ''}>${ctxSub}</div>
+                    <span class="ctxglyph" id="ctxglyph">⛁</span>
+                    ${contextPopHtml(DATA.contextReport)}</div>
                 <div class="card"><div class="label">Span</div><div class="kpi">${durMin}m</div><div class="sub">${fmtTime(DATA.firstTs)} → ${fmtTime(DATA.lastTs)}</div></div>
                 <div class="card"><div class="label">Activity</div><div class="kpi">${DATA.toolCalls}</div><div class="sub">tool calls · ${DATA.errors} errors · ${C.esc((DATA.models || []).map(m => m.replace(/^claude-/, '')).join(', '))}</div></div>
             </div>

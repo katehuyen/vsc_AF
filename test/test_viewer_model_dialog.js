@@ -155,6 +155,33 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     ok('deep link to a tool message clears the Dialog filter', html().includes('ls -la'));
     ok('…and lands on that message', focused && focused.idx === 2 && focused.classes.indexOf('flash') !== -1);
     ok('…leaving the view on All', /class="chip on" data-preset="all"/.test(html()));
+
+    // ---- Context-now card: the /context breakdown popover, both states ----
+    // No snapshot (this DATA has no contextReport): the card is still the click
+    // target with the ⛁ affordance, and the popover explains how to get one —
+    // the feature must be discoverable, never silently absent.
+    ok('ctx card is always the popover target', html().includes('id="ctxcard"') && html().includes('id="ctxglyph"'));
+    ok('no snapshot → popover carries the how-to hint',
+        html().includes('id="ctxpop"') && html().includes('No <code>/context</code> snapshot'));
+
+    // With a snapshot (a later live push): the popover lists the categories.
+    msgHandler({
+        data: {
+            type: 'data', data: Object.assign({}, sandbox.window.__DATA__, {
+                contextReport: {
+                    ts: 5000, tokens: 84700, limit: 967000, pct: 9,
+                    categories: [
+                        { label: 'System prompt', tokens: 9400, pct: 1 },
+                        { label: 'Free space', tokens: 849300, pct: 87.8 }
+                    ]
+                }
+            })
+        }
+    });
+    ok('snapshot → popover lists categories with tokens and bars',
+        html().includes('System prompt') && html().includes('849300') && html().includes('width:87.8%'));
+    ok('snapshot popover footer says how to refresh', html().includes('re-run <code>/context</code>'));
+    ok('popover starts hidden either way', /id="ctxpop" hidden/.test(html()));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
