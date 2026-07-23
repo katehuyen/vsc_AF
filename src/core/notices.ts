@@ -474,22 +474,28 @@ function cleanNamePart(s: string, max: number): string {
 /**
  * Build the report file stem (no directory, no `.md`) for the second-leg report
  * writer. Reports from every agent land in ONE shared folder, so the poster's
- * name must be visible in the filename (constitution §7). An explicit
- * `reportName` is used verbatim — the caller owns the whole name and is expected
- * to have already put the agent in it. Otherwise the auto name splices the
- * poster's agent name between the date and the title:
- *   reportName given → `YYYY-MM-DD_<reportName>`
+ * name must be visible in the filename — the user's naming decision is
+ * `YYYY-MM-DD_<agent>_<topic>` (constitution §7), and BOTH flows honour it:
+ * an explicit `reportName` is the TOPIC part only. Defensive: a leading date
+ * and/or agent the caller put into reportName anyway is stripped first, so
+ * nothing ever doubles.
+ *   reportName given → `YYYY-MM-DD_<agent>_<reportName>`
  *   auto (from title) → `YYYY-MM-DD_<agent>_<title>` (agent omitted if unknown)
  */
 export function reportFileStem(a: { title: string; name?: string; agentName?: string; date?: Date }): string {
     const d = a.date ?? new Date();
     const p2 = (n: number) => String(n).padStart(2, '0');
     const datePart = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
-    const name = cleanNamePart(a.name ?? '', 80);
-    if (name) { return `${datePart}_${name}`; }
-    const title = cleanNamePart(a.title ?? '', 80) || 'rapor';
     const agent = cleanNamePart(a.agentName ?? '', 40);
-    return agent ? `${datePart}_${agent}_${title}` : `${datePart}_${title}`;
+    let name = cleanNamePart(a.name ?? '', 80);
+    if (name) {
+        name = name.replace(/^\d{4}-\d{2}-\d{2}[_ ]+/, '');
+        if (agent && name.toLowerCase().startsWith(agent.toLowerCase() + '_')) {
+            name = name.slice(agent.length + 1);
+        }
+    }
+    const topic = name || cleanNamePart(a.title ?? '', 80) || 'rapor';
+    return agent ? `${datePart}_${agent}_${topic}` : `${datePart}_${topic}`;
 }
 
 export function registerNoticesOps(bridge: BridgeRegistry, deps: NoticesOpsDeps): void {

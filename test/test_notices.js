@@ -45,9 +45,17 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
     ok('auto name splices poster agent between date and title',
         reportFileStem({ title: 'Notices Sayaç Raporu', agentName: 'developer', date: d })
             === '2026-07-23_developer_Notices Sayaç Raporu');
-    ok('reportName is used verbatim — poster agent NOT inserted',
+    ok('reportName is the topic part — the poster agent is spliced in (constitution §7)',
         reportFileStem({ title: 'ignored', name: 'custom-name', agentName: 'developer', date: d })
-            === '2026-07-23_custom-name');
+            === '2026-07-23_developer_custom-name');
+    ok('a date the caller put into reportName anyway is stripped — no double date',
+        reportFileStem({ title: 'x', name: '2026-07-20_custom-name', agentName: 'developer', date: d })
+            === '2026-07-23_developer_custom-name');
+    ok('an agent prefix the caller put into reportName anyway is not doubled',
+        reportFileStem({ title: 'x', name: 'developer_custom-name', agentName: 'developer', date: d })
+            === '2026-07-23_developer_custom-name');
+    ok('reportName without a known agent stays date_name',
+        reportFileStem({ title: 'x', name: 'custom-name', date: d }) === '2026-07-23_custom-name');
     ok('no agent → falls back to date_title',
         reportFileStem({ title: 'Solo', date: d }) === '2026-07-23_Solo');
     ok('empty title with no name → rapor',

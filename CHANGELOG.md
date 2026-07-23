@@ -2,6 +2,10 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.11.1 — Report filenames: the poster agent is spliced in even with an explicit reportName (2026-07-24)
+
+The shared report folder's naming contract is `YYYY-MM-DD_<agent>_<topic>.md` — the agent's name is mandatory because every agent writes into ONE folder. The auto-name honoured it but an explicit `reportName` was used verbatim (agent lost), which contradicted the constitution's instruction "give only the short topic". Now `reportName` is the topic part and the host splices date + agent around it either way; a date or agent prefix the caller added anyway is stripped first so nothing doubles. (Found live: the v3.11.0 delivery report itself landed without `developer` in its name.)
+
 ## 3.11.0 — The bridge becomes a full control plane: duties.*, mission control, edit-in-place everywhere (2026-07-24)
 
 Closing every §19.C gap the manager's bridge audit found — and the ones it didn't. Functions the panels/palette had but the bridge couldn't reach are now ops, so an agent (above all the manager) can run the farm end-to-end programmatically:
