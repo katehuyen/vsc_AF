@@ -108,6 +108,63 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
         && data.turns[0].ts === Date.parse(t1) && data.turns[1].ts === Date.parse(t2));
     ok('turn table still carries label/tokens/cost', data.turns[0].label === 'first ask' && data.turns[0].tokens === 15 && data.turns[0].cost === 0.5);
     ok('turns are computed before the maxMessages cut', data.messages.length === 1 && data.turnCount === 2);
+
+    // ---- the /context breakdown captured from a system/local_command line ----
+    // Claude Code records `/context` as an ANSI-colored gauge; buildData strips the
+    // ANSI + glyph column and reads the labelled category rows on the right.
+    const cx1 = '2026-07-15T11:00:00.000Z', cx2 = '2026-07-15T11:30:00.000Z';
+    const esc = String.fromCharCode(27); // real ANSI escape (\u001b) — buildData must strip these
+    const ctxContent = '<local-command-stdout> ' + esc + '[1mContext Usage' + esc + '[22m\n'
+        + esc + '[38;2;153;153;153m⛁ ⛁ ⛁' + esc + '[39m   Sonnet 5\n'
+        + '⛶ ⛶ ⛶   84.7k/967k tokens (9%)\n'
+        + 'Estimated usage by category\n'
+        + esc + '[38;2;136;136;136m⛁' + esc + '[39m System prompt: 9.4k tokens (1.0%)\n'
+        + '⛁ MCP tools: 2.6k tokens (0.3%)\n'
+        + '⛁ Memory files: 23.4k tokens (2.4%)\n'
+        + '⛶ Free space: 849.3k (87.8%)\n'
+        + '⛝ Autocompact buffer: 33k tokens (3.4%)\n'
+        + 'Auto-compact window: 967k tokens\n'
+        + '</local-command-stdout>';
+    // Two snapshots — the LATEST one must win.
+    const ctxLines = [
+        { type: 'user', timestamp: cx1, message: { content: 'ask' } },
+        { type: 'system', subtype: 'local_command', timestamp: cx1,
+            content: ctxContent.replace('84.7k/967k tokens (9%)', '10k/967k tokens (1%)') },
+        { type: 'system', subtype: 'local_command', timestamp: cx2, content: ctxContent }
+    ].map(l => JSON.stringify(l)).join('\n');
+    const tmp2 = path.join(require('os').tmpdir(), `af-ctx-${Date.now()}.jsonl`);
+    fs.writeFileSync(tmp2, ctxLines);
+    const cdata = viewer.buildData(tmp2, {
+        extensionUri: {}, getPricing: () => ({ costFor: () => 0 }),
+        maxMessages: () => 50, contextLimitFor: () => 0
+    });
+    fs.unlinkSync(tmp2);
+
+    const cr = cdata.contextReport;
+    ok('contextReport parsed from the local_command line', !!cr);
+    ok('latest /context snapshot wins', cr && cr.tokens === 84700 && cr.pct === 9);
+    ok('total window parsed', cr && cr.limit === 967000);
+    ok('snapshot carries its own timestamp', cr && cr.ts === Date.parse(cx2));
+    const cat = l => cr && cr.categories.find(c => c.label === l);
+    ok('token suffixes decoded (k → thousands)',
+        cat('System prompt') && cat('System prompt').tokens === 9400
+        && cat('Memory files').tokens === 23400);
+    ok('rows without the word "tokens" still parse (Free space)',
+        cat('Free space') && cat('Free space').tokens === 849300 && cat('Free space').pct === 87.8);
+    ok('fractional percents preserved', cat('MCP tools') && cat('MCP tools').pct === 0.3);
+    ok('Auto-compact window line is not mistaken for a category', !cat('Auto-compact window'));
+    ok('exactly the five emitted rows captured, none spurious',
+        // System prompt, MCP tools, Memory files, Free space, Autocompact buffer
+        cr && cr.categories.length === 5 && !!cat('Autocompact buffer'));
+
+    // a session with no /context run leaves contextReport null (button hidden)
+    const tmp3 = path.join(require('os').tmpdir(), `af-noctx-${Date.now()}.jsonl`);
+    fs.writeFileSync(tmp3, JSON.stringify({ type: 'user', timestamp: cx1, message: { content: 'hi' } }));
+    const ndata = viewer.buildData(tmp3, {
+        extensionUri: {}, getPricing: () => ({ costFor: () => 0 }), maxMessages: () => 5, contextLimitFor: () => 0
+    });
+    fs.unlinkSync(tmp3);
+    ok('no /context run → contextReport is null', ndata.contextReport === null);
 }
 
 // ---------- part 2: webview — dashboard drives the shared sessions table ----------

@@ -440,6 +440,66 @@
         </details>`;
     }
 
+    // Breakdown popover for the "Context now" card, built from the transcript's last
+    // /context run (DATA.contextReport). Empty string when the session has no snapshot.
+    function contextPopHtml(cr) {
+        if (!cr || !(cr.categories || []).length) { return ''; }
+        const rows = cr.categories.map(c => {
+            const isFree = /free space/i.test(c.label);
+            const isBuf = /auto-?compact/i.test(c.label);
+            const color = isFree ? 'var(--vscode-widget-border, #666)'
+                : isBuf ? 'var(--vscode-editorWarning-foreground, #cca700)'
+                    : 'var(--vscode-charts-blue, var(--vscode-textLink-foreground))';
+            return `<div class="ctxrow">
+                <span class="lbl">${C.esc(c.label)}</span>
+                <span class="val">${c.tokens ? C.fmtTok(c.tokens) : '—'} · ${c.pct}%</span>
+                <div class="bar"><span style="width:${Math.min(100, c.pct)}%;background:${color}"></span></div>
+            </div>`;
+        }).join('');
+        const tot = cr.tokens
+            ? `${C.fmtTok(cr.tokens)}${cr.limit ? ' / ' + C.fmtTok(cr.limit) : ''}${cr.pct ? ' · ' + cr.pct + '%' : ''}`
+            : '';
+        const when = cr.ts ? fmtTime(cr.ts) : '';
+        return `<div class="ctxpop" id="ctxpop" hidden>
+            <div class="ctxpop-hd"><span>Context breakdown</span><span class="tot">${tot}</span></div>
+            ${rows}
+            <div class="ctxpop-ft">/context snapshot${when ? ' · ' + when : ''} — re-run <code>/context</code> in the terminal to refresh.</div>
+        </div>`;
+    }
+
+    function closeContextPop() {
+        const pop = document.getElementById('ctxpop');
+        if (pop && !pop.hasAttribute('hidden')) { pop.setAttribute('hidden', ''); }
+        const b = document.getElementById('ctxbreakdown');
+        if (b) { b.classList.remove('on'); }
+    }
+
+    // Corner button toggles the breakdown; outside-click / Esc close it. The
+    // document-level closers are attached once (re-render rebuilds the button, so a
+    // per-render document listener would leak) and look the elements up live.
+    function wireContextPop() {
+        const btn = document.getElementById('ctxbreakdown');
+        if (btn) {
+            btn.addEventListener('click', ev => {
+                ev.stopPropagation();
+                const pop = document.getElementById('ctxpop');
+                if (!pop) { return; }
+                if (pop.hasAttribute('hidden')) { pop.removeAttribute('hidden'); btn.classList.add('on'); }
+                else { closeContextPop(); }
+            });
+        }
+        if (window.__afCtxWired || typeof document.addEventListener !== 'function') { return; }
+        window.__afCtxWired = true;
+        document.addEventListener('click', ev => {
+            const pop = document.getElementById('ctxpop');
+            if (!pop || pop.hasAttribute('hidden')) { return; }
+            const t = ev.target;
+            if (t && t.closest && (t.closest('#ctxpop') || t.closest('#ctxbreakdown'))) { return; }
+            closeContextPop();
+        });
+        document.addEventListener('keydown', ev => { if (ev.key === 'Escape') { closeContextPop(); } });
+    }
+
     function render(opts) {
         const keepScroll = opts && opts.keepScroll;
         const prevScroll = keepScroll ? { x: window.scrollX, y: window.scrollY } : null;
@@ -520,6 +580,35 @@
                 .searchbar .clearbtn:hover { color:var(--vscode-foreground); }
                 /* Timeline click-through: briefly spotlight the message we jumped to. */
                 .msg.flash { outline:2px solid var(--vscode-textLink-foreground); outline-offset:2px; }
+                /* Context-breakdown popover: overlays the "Context now" card without
+                   reflowing the KPI row (card is position:relative, popover absolute). */
+                .ctxcard { position:relative; }
+                .ctxbtn { position:absolute; top:8px; right:8px; z-index:2;
+                    font-size:11px; line-height:1; padding:2px 7px; cursor:pointer;
+                    border-radius:4px; opacity:.5; background:transparent;
+                    border:1px solid var(--vscode-widget-border, #4444);
+                    color:var(--vscode-foreground); }
+                .ctxcard:hover .ctxbtn { opacity:.85; }
+                .ctxbtn:hover { opacity:1; }
+                .ctxbtn.on { opacity:1; background:var(--vscode-button-background);
+                    color:var(--vscode-button-foreground); border-color:transparent; }
+                .ctxpop { position:absolute; top:100%; right:0; margin-top:6px; z-index:50;
+                    width:300px; max-width:80vw; padding:10px 12px; text-align:left;
+                    background:var(--vscode-editorWidget-background, var(--vscode-editor-background));
+                    border:1px solid var(--vscode-widget-border, #4444); border-radius:8px;
+                    box-shadow:0 6px 22px rgba(0,0,0,.35); }
+                .ctxpop[hidden] { display:none; }
+                .ctxpop-hd { font-size:12px; font-weight:600; margin-bottom:8px;
+                    display:flex; justify-content:space-between; gap:8px; align-items:baseline; }
+                .ctxpop-hd .tot { font-weight:400; font-size:11px; opacity:.7; white-space:nowrap; }
+                .ctxrow { display:grid; grid-template-columns:1fr auto; gap:1px 8px; margin:7px 0; align-items:baseline; }
+                .ctxrow .lbl { font-size:12px; }
+                .ctxrow .val { font-size:11px; opacity:.75; white-space:nowrap; }
+                .ctxrow .bar { grid-column:1 / 3; height:5px; border-radius:3px; overflow:hidden;
+                    background:var(--vscode-widget-border, #4443); }
+                .ctxrow .bar > span { display:block; height:100%; border-radius:3px; }
+                .ctxpop-ft { margin-top:10px; font-size:10px; opacity:.6; line-height:1.5; }
+                .ctxpop-ft code { font-size:10px; }
             </style>
             ${window.AFHeader.html({
                 page: 'viewer',
@@ -538,9 +627,11 @@
                 <div class="card"><div class="label">Cost</div><div class="kpi">${C.fmtUSD(DATA.cost)}</div><div class="sub">API-equivalent</div></div>
                 <div class="card"><div class="label">Tokens</div><div class="kpi">${C.fmtTok(DATA.totalTokens)}</div>
                     <div class="sub">in ${C.fmtTok(DATA.usage.input)} · out ${C.fmtTok(DATA.usage.output)} · cacheR ${C.fmtTok(DATA.usage.cacheRead)} · cacheW ${C.fmtTok(DATA.usage.cacheWrite)}</div></div>
-                <div class="card"><div class="label">Context now</div>
+                <div class="card${DATA.contextReport ? ' ctxcard' : ''}"><div class="label">Context now</div>
                     <div class="kpi"${ctxColor ? ` style="color:${ctxColor}"` : ''}>${ctx.tokens > 0 ? C.fmtTok(ctx.tokens) : '—'}</div>
-                    <div class="sub"${ctxColor ? ` style="color:${ctxColor}"` : ''}>${ctxSub}</div></div>
+                    <div class="sub"${ctxColor ? ` style="color:${ctxColor}"` : ''}>${ctxSub}</div>${DATA.contextReport ? `
+                    <button class="ctxbtn" id="ctxbreakdown" title="Show the /context breakdown by category (last captured snapshot)">⛁ detay</button>
+                    ${contextPopHtml(DATA.contextReport)}` : ''}</div>
                 <div class="card"><div class="label">Span</div><div class="kpi">${durMin}m</div><div class="sub">${fmtTime(DATA.firstTs)} → ${fmtTime(DATA.lastTs)}</div></div>
                 <div class="card"><div class="label">Activity</div><div class="kpi">${DATA.toolCalls}</div><div class="sub">tool calls · ${DATA.errors} errors · ${C.esc((DATA.models || []).map(m => m.replace(/^claude-/, '')).join(', '))}</div></div>
             </div>
@@ -574,6 +665,7 @@
 
         window.AFHeader.wire(vscode);
         document.getElementById('raw').addEventListener('click', () => vscode.postMessage({ type: 'openRaw' }));
+        wireContextPop();
         if (DATA.agentName) {
             const ab = document.getElementById('agentpage');
             if (ab) { ab.addEventListener('click', () => vscode.postMessage({ type: 'openAgent', cwd: DATA.cwd })); }

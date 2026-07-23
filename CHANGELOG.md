@@ -2,6 +2,15 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.12.0 — Session viewer: the /context breakdown, on the Context now card (2026-07-24)
+
+The terminal's `/context` shows a rich split — System prompt, System tools, MCP tools, Memory files, Skills, Messages, Free space, Autocompact buffer — but that detail was invisible in the extension; the Context now card only had the single live number. It turns out Claude Code records each `/context` run in the transcript (a `system`/`local_command` line), so the data was there all along, unread.
+
+- **`⛁ detay` corner button on the Context now card** (fades in on hover; click toggles, outside-click / **Esc** close). It opens a popover — positioned absolutely so it overlays without reflowing the KPI row — listing every `/context` category with its tokens, percentage and a mini bar (Free space muted, Autocompact buffer in the warning tint).
+- **Real data, not a reconstruction.** `buildData` captures the latest `/context` snapshot from the transcript, strips the ANSI + the glyph gauge, and reads the labelled category rows verbatim — so a brand-new category label needs no code change. The popover footer carries the snapshot's **timestamp** and a reminder to re-run `/context` to refresh, since it can lag the live gauge (it belongs to the moment you ran `/context`, not the latest request).
+- If a session never ran `/context`, the button is hidden and the card is untouched.
+- Tests: 10 new parser/render checks (k/m suffix decoding, rows with/without the word "tokens", fractional percents, "Auto-compact window" not mistaken for a category, latest-snapshot-wins, null when absent) — verified against a real captured transcript. Suite: 57 files, 1699 checks green.
+
 ## 3.11.1 — Report filenames: the poster agent is spliced in even with an explicit reportName (2026-07-24)
 
 The shared report folder's naming contract is `YYYY-MM-DD_<agent>_<topic>.md` — the agent's name is mandatory because every agent writes into ONE folder. The auto-name honoured it but an explicit `reportName` was used verbatim (agent lost), which contradicted the constitution's instruction "give only the short topic". Now `reportName` is the topic part and the host splices date + agent around it either way; a date or agent prefix the caller added anyway is stripped first so nothing doubles. (Found live: the v3.11.0 delivery report itself landed without `developer` in its name.)

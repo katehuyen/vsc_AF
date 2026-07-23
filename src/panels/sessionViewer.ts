@@ -104,6 +104,62 @@ function contentToText(content: unknown): string {
     return '';
 }
 
+/** One row of the `/context` "usage by category" table (System prompt, MCP tools,
+ *  Memory files, Free space, Autocompact buffer …). */
+interface ContextCategory { label: string; tokens: number; pct: number; }
+/** Parsed snapshot of a `/context` run captured from the transcript. Reflects the
+ *  moment the user last ran /context in the terminal — carries its own timestamp so
+ *  the UI can say how fresh it is (it may lag the live "Context now" gauge). */
+interface ContextReport {
+    ts: number; tokens: number; limit: number; pct: number; categories: ContextCategory[];
+}
+
+/** "9.4k" → 9400, "849.3k" → 849300, "26k" → 26000, "967k" → 967000, "512" → 512. */
+function parseTok(s: string): number {
+    const m = /^([\d.]+)\s*([km])?$/i.exec(s.trim());
+    if (!m) { return 0; }
+    const n = parseFloat(m[1]);
+    if (!isFinite(n)) { return 0; }
+    const unit = (m[2] || '').toLowerCase();
+    return Math.round(unit === 'k' ? n * 1000 : unit === 'm' ? n * 1_000_000 : n);
+}
+
+/** Parse the transcript's captured `/context` output — a `system`/`local_command`
+ *  line whose content is the ANSI-colored gauge. We strip the ANSI + the glyph
+ *  gauge and read the labelled category lines on the right ("System prompt: 9.4k
+ *  tokens (1.0%)", "Free space: 849.3k (87.8%)" …). Returns null if the text is
+ *  not a recognizable context report, so a non-/context local command is ignored.
+ *
+ *  Fully format-driven: a brand-new category label needs no code change — whatever
+ *  "<Label>: <n> (<pct>%)" rows the CLI prints are shown verbatim. */
+function parseContextReport(content: string): ContextReport | null {
+    const clean = content
+        // eslint-disable-next-line no-control-regex
+        .replace(/\x1b\[[0-9;]*m/g, '')
+        .replace(/<\/?local-command-stdout>/g, '');
+    if (!/Context Usage/.test(clean)) { return null; }
+
+    let tokens = 0, limit = 0, pct = 0;
+    const totalM = /([\d.]+[km]?)\s*\/\s*([\d.]+[km]?)\s*tokens\s*\((\d+(?:\.\d+)?)%\)/i.exec(clean);
+    if (totalM) {
+        tokens = parseTok(totalM[1]);
+        limit = parseTok(totalM[2]);
+        pct = Math.round(parseFloat(totalM[3]));
+    }
+
+    // Category rows: "<Label>: <num>[ tokens] (<pct>%)". The glyph column shares
+    // the physical line, so we anchor on the label (letters/spaces) + colon and let
+    // the leftmost letter start the match — leading glyphs are skipped naturally.
+    const categories: ContextCategory[] = [];
+    const re = /([A-Za-z][A-Za-z ]*?):\s*([\d.]+[km]?)\s*(?:tokens\s*)?\((\d+(?:\.\d+)?)%\)/gi;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(clean)) !== null && categories.length < 24) {
+        categories.push({ label: m[1].trim(), tokens: parseTok(m[2]), pct: parseFloat(m[3]) });
+    }
+    if (!categories.length && !tokens) { return null; }
+    return { ts: 0, tokens, limit, pct, categories };
+}
+
 export function buildData(file: string, deps: ViewerDeps): Record<string, unknown> {
     let raw = '';
     try { raw = fs.readFileSync(file, 'utf8'); } catch { /* gone */ }
@@ -115,6 +171,8 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
     let cost = 0, errors = 0, toolCalls = 0, firstTs = 0, lastTs = 0;
     let ctxTokens = 0, ctxTs = 0;
     let ctxModel = '';
+    // Latest `/context` snapshot seen in the transcript (last one wins — most recent run).
+    let contextReport: ContextReport | null = null;
     let title = '';
     let cwd = '';
     let permissionMode = '';
@@ -130,7 +188,8 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
     for (const lineText of raw.split('\n')) {
         if (!lineText.trim()) { continue; }
         let line: {
-            type?: string; summary?: string; isMeta?: boolean; isSidechain?: boolean;
+            type?: string; subtype?: string; content?: string;
+            summary?: string; isMeta?: boolean; isSidechain?: boolean;
             timestamp?: string; cwd?: string; permissionMode?: string; requestId?: string;
             costUSD?: number; toolUseResult?: unknown;
             message?: {
@@ -148,6 +207,13 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
         if (line.cwd && !cwd) { cwd = line.cwd; }
         if (line.type === 'summary' && line.summary && !title) { title = line.summary; continue; }
         if (line.type === 'permission-mode' && line.permissionMode) { permissionMode = line.permissionMode; continue; }
+        // `/context` is recorded as a system/local_command line; capture the latest one.
+        if (line.type === 'system' && line.subtype === 'local_command'
+            && typeof line.content === 'string' && line.content.includes('Context Usage')) {
+            const parsed = parseContextReport(line.content);
+            if (parsed) { parsed.ts = ts || parsed.ts; contextReport = parsed; }
+            continue;
+        }
 
         if (line.type === 'user' && line.message) {
             const content = line.message.content;
@@ -299,6 +365,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
         errors,
         toolCalls,
         context: { tokens: ctxTokens, ts: ctxTs, limit: deps.contextLimitFor(ctxModel), model: ctxModel },
+        contextReport,
         turnCount: turnNo,
         turnTotals,
         turns,
