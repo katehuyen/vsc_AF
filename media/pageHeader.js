@@ -42,8 +42,15 @@
      */
     function html(o) {
         const cluster = [];
+        // 🔔 Notices carries the unread count in parentheses — "🔔 Notices (3)";
+        // the parens vanish once nothing is unread. Count is read live at render
+        // (window.__AFUI__.notices.unread, injected by htmlShell).
+        const unread = (window.__AFUI__ && window.__AFUI__.notices && window.__AFUI__.notices.unread) || 0;
         for (const n of NAV) {
-            if (n.id !== o.page) { cluster.push(`<button class="secondary" data-afnav="${n.id}">${n.label}</button>`); }
+            if (n.id !== o.page) {
+                const label = (n.id === 'notices' && unread > 0) ? `${n.label} (${unread})` : n.label;
+                cluster.push(`<button class="secondary" data-afnav="${n.id}">${label}</button>`);
+            }
         }
         for (const r of o.related || []) {
             cluster.push(`<button class="secondary" data-afnav="${r.nav}">${r.label}</button>`);

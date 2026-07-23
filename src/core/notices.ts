@@ -459,9 +459,37 @@ export interface NoticesOpsDeps {
     onChange?: () => void;
     onPost?: (n: Notice) => void;
     /** Second leg: persist a full-length MD report to the default report folder
-     *  (naming YYYY-MM-DD_<name>.md) and return its absolute path. Injected by
-     *  the host so this module stays vscode-free and unit-testable. */
+     *  (naming via reportFileStem — YYYY-MM-DD_<agent>_<name>.md) and return its
+     *  absolute path. Injected by the host so this module stays vscode-free and
+     *  unit-testable. */
     writeReport?: (a: { title: string; name?: string; body: string; agentName?: string }) => string;
+}
+
+/** Strip only what a Windows filename cannot hold; keep Turkish letters +
+ *  spaces (vault naming §13). Collapses whitespace and trims. */
+function cleanNamePart(s: string, max: number): string {
+    return String(s ?? '').replace(/[\\/:*?"<>|\n\r\t]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+/**
+ * Build the report file stem (no directory, no `.md`) for the second-leg report
+ * writer. Reports from every agent land in ONE shared folder, so the poster's
+ * name must be visible in the filename (constitution §7). An explicit
+ * `reportName` is used verbatim — the caller owns the whole name and is expected
+ * to have already put the agent in it. Otherwise the auto name splices the
+ * poster's agent name between the date and the title:
+ *   reportName given → `YYYY-MM-DD_<reportName>`
+ *   auto (from title) → `YYYY-MM-DD_<agent>_<title>` (agent omitted if unknown)
+ */
+export function reportFileStem(a: { title: string; name?: string; agentName?: string; date?: Date }): string {
+    const d = a.date ?? new Date();
+    const p2 = (n: number) => String(n).padStart(2, '0');
+    const datePart = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+    const name = cleanNamePart(a.name ?? '', 80);
+    if (name) { return `${datePart}_${name}`; }
+    const title = cleanNamePart(a.title ?? '', 80) || 'rapor';
+    const agent = cleanNamePart(a.agentName ?? '', 40);
+    return agent ? `${datePart}_${agent}_${title}` : `${datePart}_${title}`;
 }
 
 export function registerNoticesOps(bridge: BridgeRegistry, deps: NoticesOpsDeps): void {

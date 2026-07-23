@@ -1,5 +1,19 @@
 import * as vscode from 'vscode';
 
+/**
+ * The global nav's 🔔 Notices button shows the current unread count in
+ * parentheses (see media/pageHeader.js). htmlShell has no direct handle on the
+ * notices store, so the host registers a light provider here — same live-read
+ * pattern as the AF UI config below, read fresh on every page render (the
+ * status-bar bell carries the live count; a page's nav reflects the count as of
+ * its last render). Returns 0 until the host wires it in activate().
+ */
+let noticesUnreadProvider: (() => number) | undefined;
+export function setNoticesUnreadProvider(fn: () => number): void { noticesUnreadProvider = fn; }
+function currentUnread(): number {
+    try { return noticesUnreadProvider ? Math.max(0, Math.floor(noticesUnreadProvider())) : 0; } catch { return 0; }
+}
+
 export function getNonce(): string {
     let text = '';
     const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -110,7 +124,9 @@ export function htmlShell(
             template: cfg.get<string>('speakerLabelTemplate', '{ai}'),
             casing: cfg.get<string>('speakerLabelCase', 'page'),
             fallback: cfg.get<string>('speakerLabelFallback', 'agent')
-        }
+        },
+        // Unread notice count for the global nav's 🔔 Notices badge.
+        notices: { unread: currentUnread() }
     };
     return `<!DOCTYPE html>
 <html lang="en">

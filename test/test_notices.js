@@ -11,7 +11,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 const {
     NoticesStore, makeNotice, filterNotices, capNotices, coerceType, coerceLevel,
     coerceSections, coerceStars, unreadCount, openQuestionCount, registerNoticesOps,
-    noticeMarkdown, buildNoticesMarkdown, NOTICE_TYPES
+    noticeMarkdown, buildNoticesMarkdown, NOTICE_TYPES, reportFileStem
 } = require(path.join(__dirname, '..', 'out', 'core', 'notices.js'));
 const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'bridge.js'));
 
@@ -37,6 +37,23 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
     ok('no reportPath when absent', makeNotice({ title: 'r' }).reportPath === undefined);
     let threw = false; try { makeNotice({ title: '  ' }); } catch { threw = true; }
     ok('empty title throws', threw);
+}
+
+// ---------- report file naming (second leg, §7) ----------
+{
+    const d = new Date(2026, 6, 23);   // 2026-07-23 (month is 0-based)
+    ok('auto name splices poster agent between date and title',
+        reportFileStem({ title: 'Notices Sayaç Raporu', agentName: 'developer', date: d })
+            === '2026-07-23_developer_Notices Sayaç Raporu');
+    ok('reportName is used verbatim — poster agent NOT inserted',
+        reportFileStem({ title: 'ignored', name: 'custom-name', agentName: 'developer', date: d })
+            === '2026-07-23_custom-name');
+    ok('no agent → falls back to date_title',
+        reportFileStem({ title: 'Solo', date: d }) === '2026-07-23_Solo');
+    ok('empty title with no name → rapor',
+        reportFileStem({ title: '   ', date: d }) === '2026-07-23_rapor');
+    ok('filename-illegal chars stripped, Turkish letters kept',
+        reportFileStem({ title: 'a/b:c "çğ"', agentName: 'dev', date: d }) === '2026-07-23_dev_a b c çğ');
 }
 
 // ---------- filter ----------

@@ -44,7 +44,7 @@ import {
 import { buildEvalReport, compareRuns, EvalCase, EvalStore, runEvalSet, summarizeRun } from './core/evals';
 import { buildInsights, Insight } from './core/health';
 import { ApprovalQueue, blockingCount, buildNeedsQueue, NeedItem } from './core/needs';
-import { NoticesStore, registerNoticesOps } from './core/notices';
+import { NoticesStore, registerNoticesOps, reportFileStem } from './core/notices';
 import { PulseStore, runPulseSweep } from './core/pulse';
 import { buildTriggerStats, describeTriggerStat, triggerAlerts } from './core/triggerstats';
 import {
@@ -120,6 +120,7 @@ import { AirtablePanel } from './panels/airtablePanel';
 import { TasksPanel } from './panels/tasksPanel';
 import { NeedsPanel } from './panels/needsPanel';
 import { NoticesPanel } from './panels/noticesPanel';
+import { setNoticesUnreadProvider } from './panels/base';
 import { SearchPanel } from './panels/searchPanel';
 import { FarmSettingsPanel } from './panels/settingsPanel';
 import { SelectionPanel } from './panels/selectionPanel';
@@ -244,6 +245,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // bridge op. Dedicated page + a status-bar bell carrying the unread count.
     const noticesStore = new NoticesStore(path.join(context.globalStorageUri.fsPath, 'notices.json'));
     noticesStore.load();
+    // Feed the global nav's 🔔 Notices badge (read live at each page render).
+    setNoticesUnreadProvider(() => noticesStore.unread());
     const noticesBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 89);
     noticesBar.command = 'agentfarm.openNotices';
     context.subscriptions.push(noticesBar);
@@ -2229,13 +2232,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const dir = reportDir();
         fs.mkdirSync(dir, { recursive: true });
         const d = new Date();
-        const p2 = (n: number) => String(n).padStart(2, '0');
-        const datePart = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
-        // Keep Turkish letters + spaces (vault naming §13); strip only chars a
-        // Windows filename cannot hold.
-        const clean = (a.name || a.title).replace(/[\\/:*?"<>|\n\r\t]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'rapor';
-        let file = path.join(dir, `${datePart}_${clean}.md`);
-        for (let i = 2; fs.existsSync(file); i++) { file = path.join(dir, `${datePart}_${clean}-${i}.md`); }
+        // Naming (reportFileStem, §7): reportName is verbatim; the auto name
+        // splices the poster agent between date and title so shared-folder
+        // reports stay attributable — YYYY-MM-DD_<agent>_<title>.md.
+        const stem = reportFileStem({ title: a.title, name: a.name, agentName: a.agentName, date: d });
+        let file = path.join(dir, `${stem}.md`);
+        for (let i = 2; fs.existsSync(file); i++) { file = path.join(dir, `${stem}-${i}.md`); }
         const footer = a.agentName ? `\n\n---\n_${a.agentName} · ${d.toLocaleString()}_\n` : '';
         fs.writeFileSync(file, a.body.trimEnd() + footer, 'utf8');
         return file;
