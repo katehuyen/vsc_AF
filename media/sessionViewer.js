@@ -32,6 +32,7 @@
 
     window.addEventListener('message', ev => {
         if (ev.data.type === 'focus') { focusAt(ev.data.ts); return; }
+        if (ev.data.type === 'ctxCapture') { onCtxCaptureResult(ev.data); return; }
         if (ev.data.type === 'exportBuild') {
             // host answered the Export MD prompt — build with the chosen options
             vscode.postMessage({
@@ -443,15 +444,25 @@
     // Breakdown popover for the "Context now" card, built from the transcript's last
     // /context run (DATA.contextReport). Always rendered: with no snapshot it explains
     // how to get one — a hidden feature the user can't discover helps nobody.
+    // Shared tail of the popover: the Capture-now button + its status line.
+    // Capture asks the host to run `claude --resume <sid> -p "/context"` (a local
+    // command — no API cost) for a non-live session; for a live session the host
+    // answers 'live' and the status line points at the terminal instead.
+    function ctxCaptureHtml(label) {
+        return `<div class="ctxact">
+            <button id="ctxcap" data-label="${label}" title="Runs claude --resume <session> -p &quot;/context&quot; — a local command, no API cost">${label}</button>
+            <span class="ctxstatus" id="ctxstatus"></span>
+        </div>`;
+    }
+
     function contextPopHtml(cr) {
         if (!cr || !(cr.categories || []).length) {
             return `<div class="ctxpop" id="ctxpop" hidden>
                 <div class="ctxpop-hd"><span>Context breakdown</span></div>
-                <div class="ctxpop-ft">No <code>/context</code> snapshot in this session yet.<br><br>
-                Run <code>/context</code> in the session's terminal — Claude Code records its
-                output in the transcript, and the category breakdown (system prompt, tools,
-                MCP, memory, skills, messages, free space…) appears here. On a running
-                session the card refreshes live, no reopen needed.</div>
+                <div class="ctxpop-ft">No <code>/context</code> snapshot in this session yet.
+                Capture one now — or run <code>/context</code> in the session's terminal;
+                on a running session the card refreshes itself within seconds.</div>
+                ${ctxCaptureHtml('⟳ Capture now')}
             </div>`;
         }
         const rows = cr.categories.map(c => {
@@ -473,8 +484,35 @@
         return `<div class="ctxpop" id="ctxpop" hidden>
             <div class="ctxpop-hd"><span>Context breakdown</span><span class="tot">${tot}</span></div>
             ${rows}
-            <div class="ctxpop-ft">/context snapshot${when ? ' · ' + when : ''} — re-run <code>/context</code> in the terminal to refresh.</div>
+            <div class="ctxpop-ft">/context snapshot${when ? ' · ' + when : ''}</div>
+            ${ctxCaptureHtml('⟳ Refresh')}
         </div>`;
+    }
+
+    function openContextPop() {
+        const pop = document.getElementById('ctxpop');
+        if (pop && pop.hasAttribute('hidden')) { pop.removeAttribute('hidden'); }
+        const g = document.getElementById('ctxglyph');
+        if (g && g.classList) { g.classList.add('on'); }
+    }
+
+    // Host's answer to a Capture-now request. ok → fresh report, re-render with the
+    // popover kept open. live → the safe path is the session's own terminal.
+    function onCtxCaptureResult(d) {
+        if (d.status === 'ok' && d.report) {
+            DATA.contextReport = d.report;
+            render({ keepScroll: true });
+            openContextPop();
+            return;
+        }
+        const st = document.getElementById('ctxstatus');
+        if (st) {
+            st.textContent = d.status === 'live'
+                ? 'Session is live — type /context in its terminal; the card updates itself within seconds.'
+                : 'Capture failed: ' + (d.error || 'unknown error');
+        }
+        const cap = document.getElementById('ctxcap');
+        if (cap) { cap.disabled = false; cap.textContent = (cap.dataset && cap.dataset.label) || '⟳ Capture now'; }
     }
 
     function closeContextPop() {
@@ -497,11 +535,21 @@
                 if (ev.stopPropagation) { ev.stopPropagation(); }
                 const pop = document.getElementById('ctxpop');
                 if (!pop) { return; }
-                if (pop.hasAttribute('hidden')) {
-                    pop.removeAttribute('hidden');
-                    const g = document.getElementById('ctxglyph');
-                    if (g && g.classList) { g.classList.add('on'); }
-                } else { closeContextPop(); }
+                if (pop.hasAttribute('hidden')) { openContextPop(); }
+                else { closeContextPop(); }
+            });
+        }
+        const cap = document.getElementById('ctxcap');
+        if (cap) {
+            cap.addEventListener('click', () => {
+                cap.disabled = true;
+                cap.textContent = 'Capturing…';
+                const st = document.getElementById('ctxstatus');
+                if (st) { st.textContent = ''; }
+                vscode.postMessage({
+                    type: 'ctxCapture', cwd: DATA.cwd,
+                    model: (DATA.context || {}).model || ''
+                });
             });
         }
         if (window.__afCtxWired || typeof document.addEventListener !== 'function') { return; }
@@ -623,6 +671,14 @@
                 .ctxrow .bar > span { display:block; height:100%; border-radius:3px; }
                 .ctxpop-ft { margin-top:10px; font-size:10px; opacity:.6; line-height:1.5; }
                 .ctxpop-ft code { font-size:10px; }
+                .ctxact { margin-top:8px; display:flex; gap:8px; align-items:center; }
+                .ctxact button { font-size:11px; padding:2px 10px; cursor:pointer;
+                    border-radius:4px; background:var(--vscode-button-secondaryBackground, transparent);
+                    color:var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+                    border:1px solid var(--vscode-widget-border, #4444); }
+                .ctxact button:hover:not(:disabled) { background:var(--vscode-button-secondaryHoverBackground, var(--vscode-list-hoverBackground)); }
+                .ctxact button:disabled { opacity:.6; cursor:default; }
+                .ctxstatus { font-size:10px; opacity:.75; line-height:1.4; }
             </style>
             ${window.AFHeader.html({
                 page: 'viewer',

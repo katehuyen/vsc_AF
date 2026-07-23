@@ -3295,7 +3295,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 agent = r.agentId ? agents.find(a => a.id === r.agentId) : undefined;
             }
             return agent ? { agentId: agent.id, agentName: agent.name } : undefined;
-        }
+        },
+        // Capture-now guard: never `--resume` a transcript the live monitor says
+        // another claude process is still writing.
+        isSessionLive: (sessionId: string) => live.sessions().some(s => s.sessionId === sessionId)
     };
 
     // ---------- G1/G5: Needs You queue + kanban board ----------

@@ -1,3 +1,4 @@
+import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -23,6 +24,9 @@ export interface ViewerDeps {
     /** Owner agent of a session (index lookup, cwd fallback) — powers the header's
      *  "⌂ <agent>" button. undefined = the session lives outside the agent roots. */
     agentForSession?(file: string, cwd?: string): { agentId: string; agentName: string } | undefined;
+    /** True while the session has a live claude process (live monitor). Guards
+     *  Capture now: we never `--resume` a session that another process is writing. */
+    isSessionLive?(sessionId: string): boolean;
 }
 
 interface ViewMessage {
@@ -124,15 +128,18 @@ function parseTok(s: string): number {
     return Math.round(unit === 'k' ? n * 1000 : unit === 'm' ? n * 1_000_000 : n);
 }
 
-/** Parse the transcript's captured `/context` output — a `system`/`local_command`
- *  line whose content is the ANSI-colored gauge. We strip the ANSI + the glyph
- *  gauge and read the labelled category lines on the right ("System prompt: 9.4k
- *  tokens (1.0%)", "Free space: 849.3k (87.8%)" …). Returns null if the text is
- *  not a recognizable context report, so a non-/context local command is ignored.
+/** Parse `/context` output into a report. The CLI prints TWO different shapes:
  *
- *  Fully format-driven: a brand-new category label needs no code change — whatever
- *  "<Label>: <n> (<pct>%)" rows the CLI prints are shown verbatim. */
-function parseContextReport(content: string): ContextReport | null {
+ *  - interactive TUI (recorded to the transcript as a system/local_command line):
+ *    ANSI-colored glyph gauge with labelled rows — "System prompt: 9.4k tokens (1.0%)"
+ *  - print mode (`claude -p "/context"`, also what a Capture-now run returns):
+ *    a markdown table — "| System prompt | 6.6k | 3.3% |"
+ *
+ *  Both are handled here; returns null when the text is not a recognizable
+ *  context report (so an unrelated local command is ignored). Fully format-driven:
+ *  a brand-new category label needs no code change — whatever rows the CLI prints
+ *  are shown verbatim. */
+export function parseContextReport(content: string): ContextReport | null {
     const clean = content
         // eslint-disable-next-line no-control-regex
         .replace(/\x1b\[[0-9;]*m/g, '')
@@ -140,24 +147,83 @@ function parseContextReport(content: string): ContextReport | null {
     if (!/Context Usage/.test(clean)) { return null; }
 
     let tokens = 0, limit = 0, pct = 0;
-    const totalM = /([\d.]+[km]?)\s*\/\s*([\d.]+[km]?)\s*tokens\s*\((\d+(?:\.\d+)?)%\)/i.exec(clean);
+    // Total: TUI "84.7k/967k tokens (9%)" · print "**Tokens:** 20.2k / 200k (10%)"
+    const totalM = /([\d.]+[km]?)\s*\/\s*([\d.]+[km]?)\s*(?:tokens\s*)?\((\d+(?:\.\d+)?)%\)/i.exec(clean);
     if (totalM) {
         tokens = parseTok(totalM[1]);
         limit = parseTok(totalM[2]);
         pct = Math.round(parseFloat(totalM[3]));
     }
 
-    // Category rows: "<Label>: <num>[ tokens] (<pct>%)". The glyph column shares
-    // the physical line, so we anchor on the label (letters/spaces) + colon and let
-    // the leftmost letter start the match — leading glyphs are skipped naturally.
     const categories: ContextCategory[] = [];
-    const re = /([A-Za-z][A-Za-z ]*?):\s*([\d.]+[km]?)\s*(?:tokens\s*)?\((\d+(?:\.\d+)?)%\)/gi;
+
+    // Markdown-table rows first: "| <Label> | <num> | <pct>% |". Requiring cell 2
+    // to be a number and cell 3 a percent keeps out the header ("| Category |
+    // Tokens |…"), the divider row, and the per-tool MCP/Skills tables (their
+    // middle cell is a server/source name, not a number).
+    const mdRe = /^\|\s*([A-Za-z][^|]*?)\s*\|\s*([\d.]+[km]?)\s*\|\s*([\d.]+)%\s*\|/gim;
     let m: RegExpExecArray | null;
-    while ((m = re.exec(clean)) !== null && categories.length < 24) {
+    while ((m = mdRe.exec(clean)) !== null && categories.length < 24) {
         categories.push({ label: m[1].trim(), tokens: parseTok(m[2]), pct: parseFloat(m[3]) });
+    }
+
+    // TUI rows: "<Label>: <num>[ tokens] (<pct>%)". The glyph column shares the
+    // physical line, so we anchor on the label (letters/spaces) + colon and let
+    // the leftmost letter start the match — leading glyphs are skipped naturally.
+    // Only when the markdown table produced nothing: in the print shape this
+    // pattern would falsely match the "**Tokens:** a / b (c%)" total line.
+    if (!categories.length) {
+        const re = /([A-Za-z][A-Za-z ]*?):\s*([\d.]+[km]?)\s*(?:tokens\s*)?\((\d+(?:\.\d+)?)%\)/gi;
+        while ((m = re.exec(clean)) !== null && categories.length < 24) {
+            categories.push({ label: m[1].trim(), tokens: parseTok(m[2]), pct: parseFloat(m[3]) });
+        }
     }
     if (!categories.length && !tokens) { return null; }
     return { ts: 0, tokens, limit, pct, categories };
+}
+
+/** On-demand capture: run `claude --resume <sid> -p "/context"` in the session's
+ *  cwd and parse the stdout. /context is a LOCAL command — verified live: the run
+ *  makes no API call (no usage line, no cost) and appends only a harmless
+ *  system/local_command line to the same session file (no fork). `model` (the
+ *  session's last model, verbatim) sizes the context window correctly.
+ *  Only for NON-live sessions — the caller guards; racing a live TUI writer on
+ *  one transcript file is a risk we don't take. */
+export function runContextCapture(
+    file: string, cwd: string, model: string | undefined,
+    cb: (r: { ok: boolean; report?: ContextReport; error?: string }) => void
+): void {
+    const sid = path.basename(file, '.jsonl');
+    if (!/^[0-9a-fA-F-]{8,}$/.test(sid)) { cb({ ok: false, error: 'unrecognized session id' }); return; }
+    if (!cwd || !fs.existsSync(cwd)) {
+        cb({ ok: false, error: 'session folder no longer exists — /context needs the original cwd to resume' });
+        return;
+    }
+    const modelArg = model && /^[\w.-]+$/.test(model) ? ` --model ${model}` : '';
+    let child: cp.ChildProcess;
+    try {
+        // shell:true — `claude` is a .cmd shim on Windows. sid/model are validated
+        // above (uuid chars / word chars only), nothing user-typed reaches the line.
+        child = cp.spawn(`claude --resume ${sid}${modelArg} -p "/context"`,
+            { cwd, shell: true, windowsHide: true });
+    } catch (e) { cb({ ok: false, error: String(e) }); return; }
+    let out = '', err = '', done = false;
+    const finish = (r: { ok: boolean; report?: ContextReport; error?: string }): void => {
+        if (!done) { done = true; cb(r); }
+    };
+    const timer = setTimeout(() => {
+        try { child.kill(); } catch { /* already gone */ }
+        finish({ ok: false, error: 'claude timed out (90s)' });
+    }, 90_000);
+    child.stdout?.on('data', d => { out += String(d); });
+    child.stderr?.on('data', d => { err += String(d); });
+    child.on('error', e => { clearTimeout(timer); finish({ ok: false, error: String(e) }); });
+    child.on('close', code => {
+        clearTimeout(timer);
+        const report = parseContextReport(out);
+        if (report) { report.ts = Date.now(); finish({ ok: true, report }); return; }
+        finish({ ok: false, error: (err.trim() || out.trim() || `claude exited with code ${code}`).slice(0, 400) });
+    });
 }
 
 export function buildData(file: string, deps: ViewerDeps): Record<string, unknown> {
@@ -380,6 +446,10 @@ export class SessionViewerPanel {
     private disposables: vscode.Disposable[] = [];
     private watcher?: fs.FSWatcher;
     private pushTimer?: NodeJS.Timeout;
+    /** When our own Capture-now run last touched the file — its append must not
+     *  make the mtime-freshness check read the session as "live". */
+    private lastCaptureAt = 0;
+    private capturing = false;
 
     /** focusTs: scroll to (and flash) the message nearest this timestamp — the
      *  timeline passes the clicked mark's time so the viewer opens right there. */
@@ -458,11 +528,46 @@ export class SessionViewerPanel {
         } catch { /* watch unavailable — Refresh stays manual */ }
     }
 
+    /** Live check for Capture now: the live monitor is authoritative; a transcript
+     *  written to in the last 90s counts as live too (sessions the monitor can't
+     *  see, e.g. started outside Agent Farm) — unless the last writer was our own
+     *  capture run. */
+    private looksLive(): boolean {
+        if (this.deps.isSessionLive?.(path.basename(this.file, '.jsonl'))) { return true; }
+        try {
+            const m = fs.statSync(this.file).mtimeMs;
+            if (Date.now() - m < 90_000 && m > this.lastCaptureAt) { return true; }
+        } catch { /* file gone — not live */ }
+        return false;
+    }
+
     private onMessage(msg: { type: string; [k: string]: unknown }): void {
         switch (msg.type) {
             case 'openRaw':
                 vscode.commands.executeCommand('vscode.open', vscode.Uri.file(this.file));
                 break;
+            case 'ctxCapture': {
+                if (this.capturing) { break; }
+                if (this.looksLive()) {
+                    // A second writer racing the live TUI on one transcript file is
+                    // a risk we don't take — the live path is the terminal itself.
+                    void this.panel.webview.postMessage({ type: 'ctxCapture', status: 'live' });
+                    break;
+                }
+                this.capturing = true;
+                runContextCapture(
+                    this.file,
+                    typeof msg.cwd === 'string' ? msg.cwd : '',
+                    typeof msg.model === 'string' && msg.model ? msg.model : undefined,
+                    r => {
+                        this.capturing = false;
+                        this.lastCaptureAt = Date.now();
+                        void this.panel.webview.postMessage(r.ok
+                            ? { type: 'ctxCapture', status: 'ok', report: r.report }
+                            : { type: 'ctxCapture', status: 'error', error: r.error });
+                    });
+                break;
+            }
             case 'resume': {
                 const sessionId = path.basename(this.file, '.jsonl');
                 const cwd = typeof msg.cwd === 'string' && msg.cwd && fs.existsSync(msg.cwd)

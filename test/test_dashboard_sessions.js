@@ -165,6 +165,55 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     });
     fs.unlinkSync(tmp3);
     ok('no /context run → contextReport is null', ndata.contextReport === null);
+
+    // ---- the PRINT-mode shape (claude -p "/context" → markdown tables) ----
+    // This is what a Capture-now run returns on stdout AND what print mode writes
+    // into the transcript's system/local_command line — real fixture from a live run.
+    const mdOut = [
+        '## Context Usage', '',
+        '**Model:** claude-haiku-4-5-20251001  ',
+        '**Tokens:** 20.2k / 200k (10%)', '',
+        '### Estimated usage by category', '',
+        '| Category | Tokens | Percentage |',
+        '|----------|--------|------------|',
+        '| System prompt | 6.6k | 3.3% |',
+        '| MCP tools (deferred) | 6.9k | 3.4% |',
+        '| Messages | 8 | 0.0% |',
+        '| Free space | 179.8k | 89.9% |', '',
+        '### MCP Tools', '',
+        '| Tool | Server | Tokens |',
+        '|------|--------|--------|',
+        '| mcp__airtable__airtable_get | airtable | 188 |', '',
+        '### Skills', '',
+        '| Skill | Source | Tokens |',
+        '|-------|--------|--------|',
+        '| dataviz | Built-in | ~290 |'
+    ].join('\n');
+    const md = viewer.parseContextReport(mdOut);
+    ok('print-mode markdown parses', !!md && md.categories.length === 4);
+    const mcat = l => md && md.categories.find(c => c.label === l);
+    ok('md: labels with parentheses kept verbatim',
+        mcat('MCP tools (deferred)') && mcat('MCP tools (deferred)').tokens === 6900);
+    ok('md: plain-number token cell parses', mcat('Messages') && mcat('Messages').tokens === 8 && mcat('Messages').pct === 0);
+    ok('md: total from the **Tokens:** line', md && md.tokens === 20200 && md.limit === 200000 && md.pct === 10);
+    ok('md: header/divider rows not categories', !mcat('Category') && !md.categories.some(c => /^-/.test(c.label)));
+    ok('md: per-tool MCP + Skills tables excluded',
+        !md.categories.some(c => /^mcp__|dataviz/.test(c.label)));
+    ok('md: "Tokens" total line not miscounted as a category', !mcat('Tokens'));
+
+    // print-mode capture recorded in a transcript line parses through buildData too
+    const tmp4 = path.join(require('os').tmpdir(), `af-mdctx-${Date.now()}.jsonl`);
+    fs.writeFileSync(tmp4, JSON.stringify({
+        type: 'system', subtype: 'local_command', timestamp: cx2,
+        content: '<local-command-stdout>' + mdOut + '</local-command-stdout>'
+    }));
+    const mdata = viewer.buildData(tmp4, {
+        extensionUri: {}, getPricing: () => ({ costFor: () => 0 }), maxMessages: () => 5, contextLimitFor: () => 0
+    });
+    fs.unlinkSync(tmp4);
+    ok('buildData captures a print-mode transcript line',
+        mdata.contextReport && mdata.contextReport.categories.length === 4
+        && mdata.contextReport.ts === Date.parse(cx2));
 }
 
 // ---------- part 2: webview — dashboard drives the shared sessions table ----------

@@ -2,6 +2,15 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.13.0 — Capture now: the /context breakdown on demand (2026-07-24)
+
+3.12.x could only SHOW a breakdown if `/context` had been run inside the session — and a corpus scan showed that is almost never true (ONE recorded invocation across every transcript on the machine). The feature was correct and useless. Root-cause fix: produce the breakdown on demand.
+
+- **⟳ Capture now / Refresh button in the popover.** For a non-live session the host runs `claude --resume <sid> -p "/context"` in the session's cwd — verified live: `/context` is a local command (**no API call, zero cost**, no usage line), it appends only a harmless system/local_command snapshot to the SAME session file (no fork), and the stdout parses into the breakdown, which lands in the popover in seconds. The session's own model is passed so the context-window ceiling is correct.
+- **Print-mode shape learned.** `claude -p "/context"` emits markdown tables, not the TUI's ANSI gauge — the parser now recognizes both (header/divider rows and the per-tool MCP/Skills tables are excluded by shape, labels stay verbatim so new categories need no code change).
+- **Live sessions refuse Capture on purpose** — we never race a second writer against the live TUI on one transcript file. Guarded twice: the live monitor plus a 90s mtime-freshness check (our own capture's append is exempted). The status line points at the session's terminal instead — type `/context` there and the watcher fills the card by itself.
+- Verified end-to-end against the real CLI: a real capture run (9s, 7 categories, totals, guards) plus 10 new parser checks and a full webview click-flow harness (toggle/inside/outside/Esc/capture ok/live/error). Suite: 57 files, 1714 checks green.
+
 ## 3.12.1 — The /context breakdown is always reachable; whole-card click (2026-07-24)
 
 Found live within the hour: 3.12.0 hid the breakdown button entirely when the session had no `/context` capture — which is exactly the state most sessions are in, so the feature looked absent right where the user went looking for it. Also the button label was Turkish ("detay"), violating the UI-is-always-English rule.

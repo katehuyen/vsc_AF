@@ -89,6 +89,9 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
             els[id] = {
                 id, listeners: {}, style: {}, value: '', _html: '',
                 addEventListener(ev, fn) { this.listeners[ev] = fn; },
+                // the ctx popover open/close path touches these
+                hasAttribute() { return true; }, removeAttribute() { }, setAttribute() { },
+                classList: { add() { }, remove() { } },
                 querySelectorAll: () => [],
                 set innerHTML(v) { this._html = v; }, get innerHTML() { return this._html; },
                 focus() { this.focused = true; }
@@ -180,8 +183,25 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     });
     ok('snapshot → popover lists categories with tokens and bars',
         html().includes('System prompt') && html().includes('849300') && html().includes('width:87.8%'));
-    ok('snapshot popover footer says how to refresh', html().includes('re-run <code>/context</code>'));
     ok('popover starts hidden either way', /id="ctxpop" hidden/.test(html()));
+
+    // Capture now: the button is in both popover states, and the host's 'ok'
+    // answer re-renders with the fresh report (this is the on-demand path —
+    // the host runs `claude --resume <sid> -p "/context"`, a local no-cost command).
+    ok('capture button present with a snapshot (⟳ Refresh)', html().includes('id="ctxcap"') && html().includes('⟳ Refresh'));
+    msgHandler({
+        data: {
+            type: 'ctxCapture', status: 'ok', report: {
+                ts: 6000, tokens: 21400, limit: 200000, pct: 11,
+                categories: [
+                    { label: 'System tools', tokens: 12400, pct: 6.2 },
+                    { label: 'Free space', tokens: 178600, pct: 89.3 }
+                ]
+            }
+        }
+    });
+    ok('capture ok → fresh report rendered', html().includes('System tools') && html().includes('178600'));
+    ok('capture ok → totals updated', html().includes('21400') && html().includes('200000'));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
