@@ -251,7 +251,7 @@
         return `<span class="nt-grp">
                 <button class="secondary" data-hact="expandAll" title="Open every shown notice">⊕ Expand all</button>
                 <button class="secondary" data-hact="collapseAll" title="Close all">⊖ Collapse all</button>
-                <button class="secondary ${singleMode ? 'on' : ''}" data-hact="single" title="Only one notice open at a time: opening one folds the previous">Single-open</button>
+                <button class="secondary ${singleMode ? 'on' : ''}" data-hact="single" aria-pressed="${singleMode}" title="Only one notice open at a time: opening one folds the previous${singleMode ? ' — currently ON' : ''}">${singleMode ? '◉' : '◯'} Single-open</button>
             </span>
             <span class="nt-grp nt-bulk">
                 <label class="nt-selall" title="Select / deselect all shown"><input type="checkbox" id="nt-selall"> all</label>
@@ -272,6 +272,8 @@
         #nt-search { min-width:180px; }
         .af-chip { padding:3px 10px; border-radius:12px; }
         .af-chip.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground); }
+        button.secondary.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground); box-shadow:inset 0 0 0 1px var(--vscode-focusBorder, #007fd4); font-weight:600; }
+        button.secondary.on:hover { background:var(--vscode-button-hoverBackground); }
         .nt-card { border:1px solid var(--vscode-panel-border); border-left-width:3px; border-radius:6px; margin:6px 0; overflow:hidden; }
         .nt-card.lvl-1 { border-left-color:var(--vscode-panel-border); }
         .nt-card.lvl-2 { border-left-color:var(--vscode-charts-blue, #3794ff); }
