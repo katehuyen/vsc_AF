@@ -2,6 +2,19 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.11.0 — The bridge becomes a full control plane: duties.*, mission control, edit-in-place everywhere (2026-07-24)
+
+Closing every §19.C gap the manager's bridge audit found — and the ones it didn't. Functions the panels/palette had but the bridge couldn't reach are now ops, so an agent (above all the manager) can run the farm end-to-end programmatically:
+
+- **`duties.*` — the standing-vigilance system is finally bridge-manageable** (the audit's top finding: the pure API existed, the bridge was blind). `duties.list` (per agent or farm-wide, each duty with its LIVE watch status — is work waiting, how many files, since when), `duties.add` (cadence validated; warns when the agent's CLAUDE.md never references DUTIES.md — or appends the instruction itself with `ensureReference=true`), `duties.update` (patch semantics, `""` clears a field), `duties.delete`, `duties.togglePause`, `duties.move`, and `duties.automate` (duty → watch trigger, the same spec the palette command builds — extracted into one shared builder so they can't drift).
+- **Mission control from the bridge:** `missions.pause` / `missions.resume` (live engine unpauses in place, a parked/interrupted run relaunches with context) / `missions.cancel` (engine stops, in-flight delegated tasks cancelled, pending approval rejected) — plus the two waits that used to strand a mission until a human clicked: `missions.answer` (the planner's ask-user question) and `missions.approve` (each-round plan approval, ok=false rejects so the planner revises). `missions.status` now reports `pendingQuestion` + `awaitingApproval` so an agent knows which one to call.
+- **Edit-in-place everywhere:** `schedules.edit` (any field — title, prompt, agent, kind, time, dow, onceAt, missed policy, enabled — with the same settle-the-past stamp the UI applies when catch-up switches on; no more delete+recreate losing the id) and `triggers.edit` (title/prompt/agent/watch/hook fields/timing). `triggers.add` installs watch/hook/webhook triggers with UI-default timing (a webhook returns its POST url), `triggers.delete` removes them.
+- **Results are readable, not just startable:** `tasks.get` returns one task in full detail INCLUDING its archived output body (`tail` caps the chars) — before this an agent could queue work but never read what came back. `tasks.delete` removes a single row (running tasks refused — cancel first).
+- **Builder surfaces:** `workflows.add` (steps validated, advanced fields — runIf/onFail/verify/outputContract/webhook/media — pass through untouched) / `workflows.delete` · `templates.add` / `templates.delete`.
+- Duty edits refresh the trees/panels immediately; all ops re-read DUTIES.md from disk so bridge edits and hand-edits never race a stale cache.
+- Deliberately NOT bridged (security posture, like the secrets vault): the generic Needs-You approval queue (browser-automation and permission approvals stay human-only; mission approvals are bridged because `approvalMode:"auto"` already exists as an agent choice).
+- Tests: 44 new bridge-contract checks — duties lifecycle against the real compiled duties.js in a temp dir, schedule/trigger/workflow/template/task guards, mission-control flows. Suite: 57 files, 1686 checks green.
+
 ## 3.2.0 — Tasks Board grows up: bulk actions, re-run, filter, live pulse (2026-07-22)
 
 The Board section looked like a monitor but managed like a viewer — every management verb the backend already had (retry, clear-finished, run-next, reveal-terminal) is now ON the page, plus the long-list ergonomics were missing:

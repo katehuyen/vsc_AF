@@ -39,7 +39,8 @@ import { WebhookPollConfig } from './core/mediaProviders';
 import { chunkTranscript, SemanticIndex } from './core/semantic';
 import {
     addDuty, CADENCES, CLAUDE_MD_SNIPPET, claudeMdReferencesDuties, deleteDuty,
-    DUTIES_FILENAME, DUTY_TEMPLATES, moveDuty, togglePauseDuty, updateDuty, watchStatus
+    DUTIES_FILENAME, Duty, DUTY_TEMPLATES, moveDuty, readDuties, togglePauseDuty,
+    updateDuty, watchStatus
 } from './core/duties';
 import { buildEvalReport, compareRuns, EvalCase, EvalStore, runEvalSet, summarizeRun } from './core/evals';
 import { buildInsights, Insight } from './core/health';
@@ -1917,6 +1918,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         need(a, `Agent "${ref}" not found — agents.list shows the current farm.`);
         return a as AgentInfo;
     };
+    // Duties are keyed by title inside the agent's DUTIES.md — always re-read
+    // from disk so bridge edits and hand-edits never race a stale cache.
+    const findDuty = (agent: AgentInfo, title: string): Duty => {
+        const d = readDuties(agent.dir)?.duties.find(x => x.title === title);
+        need(d, `Duty "${title}" not found on ${agent.name} — duties.list shows current ones.`);
+        return d as Duty;
+    };
+    // One duty → one watch trigger: the SAME spec the "Automate Duty" command
+    // builds, so the palette and the bridge cannot drift apart.
+    const dutyTriggerSpec = (agent: AgentInfo, d: Duty): Omit<FarmTrigger, 'id'> => ({
+        title: `Duty: ${d.title}`,
+        type: 'watch',
+        watchPath: d.watch,
+        action: {
+            kind: 'task', agentId: agent.id, agentName: agent.name,
+            title: d.title,
+            prompt: `DUTIES.md'deki "${d.title}" görevini uygula. İzlenen hedef değişti: {watch}` +
+                (d.action ? ` Yapılacak iş: ${d.action}` : ''),
+            mode: 'headless'
+        },
+        debounceSec: 10, cooldownSec: 60, maxPerHour: 6, enabled: true
+    });
     bridge.register([
         {
             op: 'agents.list',
@@ -2076,7 +2099,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'missions.status',
-            describe: 'One run in detail (rounds, steps, budget). args: id',
+            describe: 'One run in detail (rounds, steps, budget, pending waits). args: id',
             handler: (args) => {
                 const run = missionStore.run(argStr(args, 'id'));
                 need(run, 'Run not found — missions.list shows current ids.');
@@ -2085,6 +2108,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return {
                     id: r.id, title: sp?.title, status: r.status, verdict: r.result?.verdict,
                     summary: r.result?.summary, costUSD: r.totalCostUSD,
+                    // a waiting run says WHAT it waits for, so an agent knows to
+                    // call missions.answer / missions.approve
+                    pendingQuestion: missionQuestions.get(r.id)?.question ?? null,
+                    awaitingApproval: missionApprovals.has(r.id),
                     rounds: r.rounds.map(rd => ({
                         n: rd.n, action: rd.action, thought: rd.thought?.slice(0, 200),
                         steps: rd.steps.map(s => ({ agent: s.agentName, title: s.title, status: s.status }))
@@ -2201,6 +2228,549 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         }
     ]);
+
+    // Duties ops (§19.C): the standing-vigilance system (DUTIES.md) is the
+    // constitution's backbone — the whole watch→do lifecycle is manageable
+    // from the bridge, so the manager agent can install, tune, pause and
+    // reorder any agent's duties without a human clicking through the wizard.
+    bridge.register([
+        {
+            op: 'duties.list',
+            describe: 'Standing duties (DUTIES.md) with live watch status (is work waiting?). args: agent? (name|id — omit for every agent)',
+            handler: (args) => {
+                const ref = optStr(args, 'agent');
+                return (ref ? [findAgent(ref)] : agents).map(a => {
+                    const info = readDuties(a.dir);
+                    return {
+                        agent: a.name,
+                        file: info?.file ?? null,
+                        duties: (info?.duties ?? []).map(d => ({
+                            title: d.title, cadence: d.cadence, paused: d.paused,
+                            watch: d.watch ?? null, do: d.action ?? null, note: d.note ?? null,
+                            watchStatus: watchStatus(d.watch) ?? null
+                        }))
+                    };
+                });
+            }
+        },
+        {
+            op: 'duties.add',
+            describe: `Add a standing duty to an agent's DUTIES.md. args: agent (name|id), title, cadence (${CADENCES.join('|')}), watch? (path or description), do? (what to do when the watch changes), note?, paused? (default false), ensureReference? (true = append the DUTIES.md instruction to CLAUDE.md when missing; default false — the result warns instead)`,
+            handler: (args) => {
+                const agent = findAgent(argStr(args, 'agent'));
+                const title = argStr(args, 'title');
+                const cadence = argStr(args, 'cadence');
+                need((CADENCES as readonly string[]).includes(cadence),
+                    `Unknown cadence "${cadence}" — use one of: ${CADENCES.join(', ')}.`);
+                need(!readDuties(agent.dir)?.duties.some(d => d.title === title),
+                    `${agent.name} already has a duty titled "${title}".`);
+                const file = addDuty(agent.dir, {
+                    title, cadence, paused: args.paused === true,
+                    watch: optStr(args, 'watch') || undefined,
+                    action: optStr(args, 'do') || undefined,
+                    note: optStr(args, 'note') || undefined
+                });
+                // A duty only lives if the agent's identity file points at it.
+                // The UI wizard asks with a modal; the bridge must not pop UI —
+                // it warns, or appends itself when explicitly asked to.
+                let referenced = true;
+                if (agent.claudeMdPath) {
+                    const md = fs.readFileSync(agent.claudeMdPath, 'utf8');
+                    referenced = claudeMdReferencesDuties(md);
+                    if (!referenced && args.ensureReference === true) {
+                        fs.writeFileSync(agent.claudeMdPath, md.replace(/\n*$/, '\n') + CLAUDE_MD_SNIPPET, 'utf8');
+                        referenced = true;
+                    }
+                }
+                refreshAll();
+                return {
+                    agent: agent.name, title, file, referenced,
+                    ...(referenced ? {} : {
+                        warning: `${agent.name}'s CLAUDE.md never mentions ${DUTIES_FILENAME} — the agent will not obey this duty. Re-run with ensureReference=true to append the instruction.`
+                    })
+                };
+            }
+        },
+        {
+            op: 'duties.update',
+            describe: 'Patch a duty in place. args: agent (name|id), title (current), then any of: newTitle?, cadence?, watch?, do?, note?, paused? — pass "" to clear watch/do/note',
+            handler: (args) => {
+                const agent = findAgent(argStr(args, 'agent'));
+                const title = argStr(args, 'title');
+                const cur = findDuty(agent, title);
+                const cadence = optStr(args, 'cadence') || cur.cadence;
+                need(cadence === cur.cadence || (CADENCES as readonly string[]).includes(cadence),
+                    `Unknown cadence "${cadence}" — use one of: ${CADENCES.join(', ')}.`);
+                // "" clears a field; absent keeps it — the tri-state a patch needs
+                const pick = (key: string, old?: string) =>
+                    typeof args[key] === 'string' ? ((args[key] as string).trim() || undefined) : old;
+                const next: Duty = {
+                    title: optStr(args, 'newTitle') || cur.title,
+                    cadence,
+                    paused: typeof args.paused === 'boolean' ? args.paused : cur.paused,
+                    watch: pick('watch', cur.watch),
+                    action: pick('do', cur.action),
+                    note: pick('note', cur.note)
+                };
+                updateDuty(agent.dir, title, next);
+                refreshAll();
+                return { agent: agent.name, duty: next };
+            }
+        },
+        {
+            op: 'duties.delete',
+            describe: 'Remove a duty from an agent\'s DUTIES.md. args: agent (name|id), title',
+            handler: (args) => {
+                const agent = findAgent(argStr(args, 'agent'));
+                const title = argStr(args, 'title');
+                findDuty(agent, title);
+                deleteDuty(agent.dir, title);
+                refreshAll();
+                return { agent: agent.name, deleted: title };
+            }
+        },
+        {
+            op: 'duties.togglePause',
+            describe: 'Pause/resume a duty (a paused duty is skipped by the agent). args: agent (name|id), title',
+            handler: (args) => {
+                const agent = findAgent(argStr(args, 'agent'));
+                const title = argStr(args, 'title');
+                const d = findDuty(agent, title);
+                togglePauseDuty(agent.dir, title);
+                refreshAll();
+                return { agent: agent.name, title, paused: !d.paused };
+            }
+        },
+        {
+            op: 'duties.move',
+            describe: 'Reorder a duty one slot up or down in DUTIES.md. args: agent (name|id), title, direction (up|down)',
+            handler: (args) => {
+                const agent = findAgent(argStr(args, 'agent'));
+                const title = argStr(args, 'title');
+                const direction = argStr(args, 'direction');
+                need(direction === 'up' || direction === 'down', 'direction must be "up" or "down".');
+                findDuty(agent, title);
+                moveDuty(agent.dir, title, direction === 'up' ? -1 : 1);
+                refreshAll();
+                return {
+                    agent: agent.name,
+                    order: readDuties(agent.dir)?.duties.map(d => d.title) ?? []
+                };
+            }
+        },
+        {
+            op: 'duties.automate',
+            describe: 'Create a watch trigger from a duty so it fires even while the agent is idle (the duty stays in DUTIES.md). Needs a watch pointing at a real file/folder. args: agent (name|id), title',
+            handler: (args) => {
+                const agent = findAgent(argStr(args, 'agent'));
+                const d = findDuty(agent, argStr(args, 'title'));
+                need(d.watch && fs.existsSync(d.watch),
+                    'This duty has no existing watch path — only duties watching a real file/folder can be automated as a trigger.');
+                const trigger = taskManager.addTrigger(dutyTriggerSpec(agent, d));
+                return { id: trigger.id, trigger: trigger.title, watch: d.watch };
+            }
+        }
+    ]);
+
+    // Control-plane completion (§19.C): every remaining manage-verb the panels
+    // and palette already had — edit instead of delete+recreate, read a task's
+    // result, drive triggers/workflows/templates, and steer a live mission.
+    bridge.register([
+        {
+            op: 'schedules.edit',
+            describe: 'Edit a schedule in place (id survives — no delete+recreate). args: id or title, then any of: newTitle?, prompt?, agent? (name|id), mode? (headless|interactive), kind? (daily|weekly|once), hour? (0-23), minute? (0-59), dow? (0-6, weekly), onceAt? ("YYYY-MM-DD HH:MM" or epoch ms, once), missed? (skip|run|ask), enabled? (boolean)',
+            handler: (args) => {
+                const ref = optStr(args, 'id') || argStr(args, 'title');
+                const s = taskManager.schedules.find(x => x.id === ref || x.title === ref);
+                need(s, 'Schedule not found — schedules.list shows current ones.');
+                const cur = s as FarmSchedule;
+                const patch: Partial<FarmSchedule> = {};
+                const newTitle = optStr(args, 'newTitle');
+                if (newTitle) {
+                    need(!taskManager.schedules.some(x => x.id !== cur.id && x.title === newTitle),
+                        `A schedule titled "${newTitle}" already exists.`);
+                    patch.title = newTitle;
+                }
+                if (optStr(args, 'prompt')) { patch.prompt = optStr(args, 'prompt'); }
+                if (optStr(args, 'agent')) {
+                    const a = findAgent(optStr(args, 'agent'));
+                    patch.agentId = a.id;
+                    patch.agentName = a.name;
+                }
+                const mode = optStr(args, 'mode');
+                if (mode) {
+                    need(mode === 'headless' || mode === 'interactive', 'mode must be headless | interactive.');
+                    patch.mode = mode as TaskMode;
+                }
+                const kind = optStr(args, 'kind');
+                if (kind) {
+                    need(kind === 'daily' || kind === 'weekly' || kind === 'once', 'kind must be daily | weekly | once.');
+                    patch.kind = kind as ScheduleKind;
+                }
+                const intArg = (key: 'hour' | 'minute' | 'dow', min: number, max: number) => {
+                    const v = args[key];
+                    if (v === undefined) { return; }
+                    need(typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max,
+                        `${key} must be an integer ${min}-${max}.`);
+                    patch[key] = v as number;
+                };
+                intArg('hour', 0, 23);
+                intArg('minute', 0, 59);
+                intArg('dow', 0, 6);
+                if (args.onceAt !== undefined) {
+                    const t = typeof args.onceAt === 'number'
+                        ? args.onceAt
+                        : Date.parse(String(args.onceAt).trim().replace(' ', 'T'));
+                    need(Number.isFinite(t), 'onceAt must be "YYYY-MM-DD HH:MM" or epoch ms.');
+                    patch.onceAt = t;
+                }
+                const missed = optStr(args, 'missed');
+                if (missed) {
+                    need(missed === 'skip' || missed === 'run' || missed === 'ask', 'missed must be skip | run | ask.');
+                    patch.missed = missed as MissedPolicy;
+                    // switching catch-up ON settles the past first — otherwise the
+                    // edit itself would instantly fire a pre-edit occurrence
+                    if (missed !== (cur.missed ?? 'skip') && missed !== 'skip') {
+                        patch.lastRunKey = previousOccurrenceKey(
+                            { kind: patch.kind ?? cur.kind, dow: patch.dow ?? cur.dow }, new Date());
+                    }
+                }
+                if (typeof args.enabled === 'boolean') { patch.enabled = args.enabled; }
+                need(Object.keys(patch).length, 'Nothing to edit — pass at least one documented field.');
+                const kindAfter = patch.kind ?? cur.kind;
+                need(kindAfter !== 'weekly' || (patch.dow ?? cur.dow) !== undefined,
+                    'A weekly schedule needs dow (0=Sunday … 6=Saturday).');
+                need(kindAfter !== 'once' || (patch.onceAt ?? cur.onceAt) !== undefined,
+                    'A once schedule needs onceAt.');
+                taskManager.updateSchedule(cur.id, patch);
+                return { id: cur.id, title: patch.title ?? cur.title, updated: Object.keys(patch) };
+            }
+        },
+        {
+            op: 'tasks.get',
+            describe: 'One task in detail, archived output included — the way to read what a task actually produced. args: id, tail? (max output chars, default 4000)',
+            handler: (args) => {
+                const t = taskManager.tasks.find(x => x.id === argStr(args, 'id'));
+                need(t, 'Task not found — tasks.list shows current ids.');
+                const task = t as FarmTask;
+                const tail = typeof args.tail === 'number' && args.tail > 0 ? Math.floor(args.tail) : 4000;
+                let output: string | null = null;
+                if (task.outputFile && fs.existsSync(task.outputFile)) {
+                    try {
+                        output = archivedOutputBody(fs.readFileSync(task.outputFile, 'utf8')).slice(-tail);
+                    } catch { /* unreadable output stays null */ }
+                }
+                return {
+                    id: task.id, title: task.title, agent: task.agentName, status: task.status,
+                    mode: task.mode, prompt: task.prompt, createdAt: task.createdAt,
+                    startedAt: task.startedAt ?? null, endedAt: task.endedAt ?? null,
+                    costUSD: task.costUSD ?? null, deferredReason: task.deferredReason ?? null,
+                    verified: task.verified ?? null, attempt: task.attempt ?? 0,
+                    fromSchedule: task.fromSchedule ?? null, fromTrigger: task.fromTrigger ?? null,
+                    missionId: task.missionId ?? null, workflowId: task.workflowId ?? null,
+                    outputFile: task.outputFile ?? null, output
+                };
+            }
+        },
+        {
+            op: 'tasks.delete',
+            describe: 'Delete one task row permanently (its archived output file too — tasks.get first if you need it). A running task must be cancelled first. args: id',
+            handler: (args) => {
+                const t = taskManager.tasks.find(x => x.id === argStr(args, 'id'));
+                need(t, 'Task not found — tasks.list shows current ids.');
+                need((t as FarmTask).status !== 'running', 'Task is running — tasks.cancel it first.');
+                taskManager.deleteTask(t as FarmTask);
+                return { deleted: (t as FarmTask).id };
+            }
+        },
+        {
+            op: 'triggers.add',
+            describe: 'Install a trigger. args: title, type (watch|hook|webhook), watch? (existing file/folder — watch type), hookEvent? (start|prompt|toolStart|toolEnd|permission|notify|stop|subagent|compact|end — hook type), hookAgent? (agent name filter, hook type), action ({kind:"task", agent, prompt, title?, mode?} | {kind:"dispatch", prompt, title?} | {kind:"workflow", workflow: id|title}), debounceSec?, cooldownSec?, maxPerHour? (0 = unlimited), enabled? (default true). Prompts may use {watch} and {payload}. A webhook trigger returns its POST url.',
+            handler: (args) => {
+                const title = argStr(args, 'title');
+                const typeIn = argStr(args, 'type');
+                need(typeIn === 'watch' || typeIn === 'hook' || typeIn === 'webhook', 'type must be watch | hook | webhook.');
+                const type = typeIn as FarmTrigger['type'];
+                let watchPath: string | undefined, hookEvent: string | undefined,
+                    hookAgent: string | undefined, token: string | undefined;
+                if (type === 'watch') {
+                    watchPath = argStr(args, 'watch');
+                    need(fs.existsSync(watchPath), `Watch path does not exist: ${watchPath}`);
+                } else if (type === 'hook') {
+                    hookEvent = argStr(args, 'hookEvent');
+                    const kinds = ['start', 'prompt', 'toolStart', 'toolEnd', 'permission',
+                        'notify', 'stop', 'subagent', 'compact', 'end'];
+                    need(kinds.includes(hookEvent), `Unknown hookEvent "${hookEvent}" — use one of: ${kinds.join(', ')}.`);
+                    hookAgent = optStr(args, 'hookAgent') ? findAgent(optStr(args, 'hookAgent')).name : undefined;
+                } else {
+                    token = newId() + newId();
+                }
+                const rec = args.action && typeof args.action === 'object' && !Array.isArray(args.action)
+                    ? args.action as Record<string, unknown>
+                    : undefined;
+                need(rec, 'action is required: {kind:"task"|"dispatch"|"workflow", ...}.');
+                const a = rec as Record<string, unknown>;
+                const kind = String(a.kind ?? '');
+                let action: FarmTrigger['action'];
+                if (kind === 'task') {
+                    const agent = findAgent(String(a.agent ?? ''));
+                    const prompt = String(a.prompt ?? '').trim();
+                    need(prompt, 'action.prompt is required for a task action.');
+                    action = {
+                        kind: 'task', agentId: agent.id, agentName: agent.name,
+                        title: String(a.title ?? '').trim() || title, prompt,
+                        mode: a.mode === 'interactive' ? 'interactive' : 'headless'
+                    };
+                } else if (kind === 'dispatch') {
+                    const prompt = String(a.prompt ?? '').trim();
+                    need(prompt, 'action.prompt is required for a dispatch action.');
+                    action = { kind: 'dispatch', title: String(a.title ?? '').trim() || title, prompt, mode: 'headless' };
+                } else if (kind === 'workflow') {
+                    const wref = String(a.workflow ?? '').trim();
+                    const w = taskManager.workflows.find(x => x.id === wref || x.title === wref);
+                    need(w, 'Workflow not found — workflows.list shows current ones.');
+                    action = { kind: 'workflow', workflowId: (w as FarmWorkflow).id };
+                } else {
+                    throw new Error('action.kind must be task | dispatch | workflow.');
+                }
+                const numArg = (key: string, def: number, min: number) => {
+                    const v = args[key];
+                    if (v === undefined) { return def; }
+                    need(typeof v === 'number' && Number.isFinite(v) && v >= min, `${key} must be a number ≥ ${min}.`);
+                    return Math.floor(v as number);
+                };
+                const trigger = taskManager.addTrigger({
+                    title, type, watchPath, hookEvent, hookAgent, token, action,
+                    debounceSec: numArg('debounceSec', type === 'watch' ? 10 : 1, 1),
+                    cooldownSec: numArg('cooldownSec', 60, 0),
+                    maxPerHour: numArg('maxPerHour', 6, 0),
+                    enabled: args.enabled !== false
+                });
+                return {
+                    id: trigger.id, title: trigger.title, type,
+                    ...(token ? { url: `http://127.0.0.1:${cfg().get<number>('livePort', 8377)}/trigger/${token}` } : {})
+                };
+            }
+        },
+        {
+            op: 'triggers.edit',
+            describe: 'Edit a trigger in place. args: id or title, then any of: newTitle?, prompt? (task/dispatch action), agent? (name|id — task action), watch? (watch type), hookEvent?/hookAgent? (hook type; hookAgent "" = any agent), debounceSec? (≥1), cooldownSec?, maxPerHour? (0 = unlimited)',
+            handler: (args) => {
+                const ref = optStr(args, 'id') || argStr(args, 'title');
+                const t = taskManager.triggers.find(x => x.id === ref || x.title === ref);
+                need(t, 'Trigger not found — triggers.list shows current ones.');
+                const tr = t as FarmTrigger;
+                const updated: string[] = [];
+                const newTitle = optStr(args, 'newTitle');
+                if (newTitle) {
+                    tr.title = newTitle;
+                    // parity with the palette editor: a task/dispatch action carries the title
+                    if (tr.action.kind !== 'workflow') { tr.action.title = newTitle; }
+                    updated.push('title');
+                }
+                if (optStr(args, 'prompt')) {
+                    need(tr.action.kind !== 'workflow', 'A workflow trigger has no prompt — edit the workflow instead.');
+                    if (tr.action.kind !== 'workflow') { tr.action.prompt = optStr(args, 'prompt'); }
+                    updated.push('prompt');
+                }
+                if (optStr(args, 'agent')) {
+                    need(tr.action.kind === 'task', 'Only a task action has a fixed agent.');
+                    const a = findAgent(optStr(args, 'agent'));
+                    if (tr.action.kind === 'task') {
+                        tr.action.agentId = a.id;
+                        tr.action.agentName = a.name;
+                    }
+                    updated.push('agent');
+                }
+                if (optStr(args, 'watch')) {
+                    need(tr.type === 'watch', 'Only a watch trigger has a watch path.');
+                    need(fs.existsSync(optStr(args, 'watch')), `Watch path does not exist: ${optStr(args, 'watch')}`);
+                    tr.watchPath = optStr(args, 'watch');
+                    updated.push('watch');
+                }
+                if (optStr(args, 'hookEvent')) {
+                    need(tr.type === 'hook', 'Only a hook trigger has a hookEvent.');
+                    tr.hookEvent = optStr(args, 'hookEvent');
+                    updated.push('hookEvent');
+                }
+                if (typeof args.hookAgent === 'string') {
+                    need(tr.type === 'hook', 'Only a hook trigger has a hookAgent filter.');
+                    tr.hookAgent = args.hookAgent.trim() ? findAgent(args.hookAgent.trim()).name : undefined;
+                    updated.push('hookAgent');
+                }
+                const numPatch = (key: 'debounceSec' | 'cooldownSec' | 'maxPerHour', min: number) => {
+                    const v = args[key];
+                    if (v === undefined) { return; }
+                    need(typeof v === 'number' && Number.isFinite(v) && v >= min, `${key} must be a number ≥ ${min}.`);
+                    tr[key] = Math.floor(v as number);
+                    updated.push(key);
+                };
+                numPatch('debounceSec', 1);
+                numPatch('cooldownSec', 0);
+                numPatch('maxPerHour', 0);
+                need(updated.length, 'Nothing to edit — pass at least one documented field.');
+                taskManager.updateTrigger(tr);
+                return { id: tr.id, title: tr.title, updated };
+            }
+        },
+        {
+            op: 'triggers.delete',
+            describe: 'Remove a trigger. args: id or title',
+            handler: (args) => {
+                const ref = optStr(args, 'id') || argStr(args, 'title');
+                const t = taskManager.triggers.find(x => x.id === ref || x.title === ref);
+                need(t, 'Trigger not found — triggers.list shows current ones.');
+                taskManager.deleteTrigger(t as FarmTrigger);
+                return { deleted: (t as FarmTrigger).title };
+            }
+        },
+        {
+            op: 'workflows.add',
+            describe: 'Create a workflow (step chain). args: title, steps ([{agent (name|id), title, prompt, mode? (headless|interactive), onFail? ("stop"|"continue"|1-based step), runIf?, outputContract? ("text"|"json"), verify? ({criteria, retries?})} — advanced webhook/media/browser fields pass through as in the builder])',
+            handler: (args) => {
+                const title = argStr(args, 'title');
+                need(!taskManager.workflows.some(w => w.title === title),
+                    `A workflow titled "${title}" already exists.`);
+                const stepsIn = Array.isArray(args.steps) ? args.steps as Record<string, unknown>[] : [];
+                need(stepsIn.length, 'steps is required — at least one step.');
+                const steps: WorkflowStep[] = stepsIn.map((raw, i) => {
+                    need(raw && typeof raw === 'object' && !Array.isArray(raw), `Step ${i + 1} must be an object.`);
+                    const agent = findAgent(String(raw.agent ?? ''));
+                    const stepTitle = String(raw.title ?? '').trim();
+                    need(stepTitle, `Step ${i + 1}: title is required.`);
+                    const prompt = String(raw.prompt ?? '').trim();
+                    need(prompt || raw.webhook || raw.media, `Step ${i + 1}: prompt is required.`);
+                    const { agent: _agentRef, ...passthrough } = raw;
+                    return {
+                        ...passthrough,
+                        agentId: agent.id, agentName: agent.name,
+                        title: stepTitle, prompt,
+                        mode: raw.mode === 'interactive' ? 'interactive' : 'headless'
+                    } as WorkflowStep;
+                });
+                const w = taskManager.addWorkflow(title, steps);
+                return { id: w.id, title: w.title, steps: w.steps.length };
+            }
+        },
+        {
+            op: 'workflows.delete',
+            describe: 'Remove a workflow definition (its triggers keep pointing nowhere — retarget or delete them). args: id or title',
+            handler: (args) => {
+                const ref = optStr(args, 'id') || argStr(args, 'title');
+                const w = taskManager.workflows.find(x => x.id === ref || x.title === ref);
+                need(w, 'Workflow not found — workflows.list shows current ones.');
+                taskManager.deleteWorkflow(w as FarmWorkflow);
+                return { deleted: (w as FarmWorkflow).title };
+            }
+        },
+        {
+            op: 'templates.add',
+            describe: 'Save a reusable task template. args: title, prompt, mode? (headless|interactive), agent? (name|id — omit for an unbound template that asks at run time)',
+            handler: (args) => {
+                const title = argStr(args, 'title');
+                need(!taskManager.templates.some(t => t.title === title),
+                    `A template titled "${title}" already exists.`);
+                const agent = optStr(args, 'agent') ? findAgent(optStr(args, 'agent')) : undefined;
+                const tpl = taskManager.addTemplate({
+                    title, prompt: argStr(args, 'prompt'),
+                    mode: optStr(args, 'mode') === 'interactive' ? 'interactive' : 'headless',
+                    agentId: agent?.id, agentName: agent?.name
+                });
+                return { id: tpl.id, title: tpl.title };
+            }
+        },
+        {
+            op: 'templates.delete',
+            describe: 'Remove a task template. args: id or title',
+            handler: (args) => {
+                const ref = optStr(args, 'id') || argStr(args, 'title');
+                const tpl = taskManager.templates.find(x => x.id === ref || x.title === ref);
+                need(tpl, 'Template not found — templates.list shows current ones.');
+                taskManager.deleteTemplate(tpl as FarmTemplate);
+                return { deleted: (tpl as FarmTemplate).title };
+            }
+        },
+        {
+            op: 'missions.pause',
+            describe: 'Pause a live mission run (the current wave finishes, then the planner waits). args: id',
+            handler: (args) => {
+                const runId = argStr(args, 'id');
+                const run = missionStore.run(runId);
+                need(run, 'Run not found — missions.list shows current ids.');
+                const engine = missionEngines.get(runId);
+                if (engine) { engine.pause(); }
+                else {
+                    const r = run as MissionRun;
+                    need(r.status === 'running' || r.status === 'waiting-approval' || r.status === 'waiting-user',
+                        `Run is ${r.status} — only a live run can be paused.`);
+                    r.status = 'paused';
+                    r.now = undefined;
+                }
+                missionChanged();
+                return { id: runId, status: (run as MissionRun).status };
+            }
+        },
+        {
+            op: 'missions.resume',
+            describe: 'Resume a paused mission — a live-paused engine continues in place; a parked/interrupted run relaunches with its context. args: id',
+            handler: (args) => {
+                const runId = argStr(args, 'id');
+                const run = missionStore.run(runId);
+                need(run, 'Run not found — missions.list shows current ids.');
+                const engine = missionEngines.get(runId);
+                if (engine) {
+                    engine.unpause();
+                    missionChanged();
+                } else {
+                    need((run as MissionRun).status === 'paused',
+                        `Run is ${(run as MissionRun).status} — only a paused run can be resumed.`);
+                    resumeMission(runId);
+                }
+                return { id: runId, status: (missionStore.run(runId) as MissionRun).status };
+            }
+        },
+        {
+            op: 'missions.cancel',
+            describe: 'Cancel a mission run — the engine stops, in-flight delegated tasks are cancelled, a pending approval is rejected. args: id',
+            handler: (args) => {
+                const runId = argStr(args, 'id');
+                const run = missionStore.run(runId);
+                need(run, 'Run not found — missions.list shows current ids.');
+                const r = run as MissionRun;
+                need(r.status !== 'done' && r.status !== 'failed' && r.status !== 'cancelled',
+                    `Run is already ${r.status}.`);
+                cancelMission(runId);
+                return { id: runId, status: (missionStore.run(runId) as MissionRun).status };
+            }
+        },
+        {
+            op: 'missions.answer',
+            describe: 'Answer the question a mission is waiting on (missions.status → pendingQuestion). args: id, answer (text) — or skip=true to decline it',
+            handler: (args) => {
+                const runId = argStr(args, 'id');
+                need(missionQuestions.has(runId),
+                    'No pending question on this run — missions.status shows what it is doing.');
+                if (args.skip === true) {
+                    missionQuestions.get(runId)?.resolve(undefined);
+                    return { id: runId, skipped: true };
+                }
+                missionQuestions.get(runId)?.resolve(argStr(args, 'answer'));
+                return { id: runId, answered: true };
+            }
+        },
+        {
+            op: 'missions.approve',
+            describe: 'Settle a mission round waiting for approval (approvalMode each-round). args: id, ok? (default true = approve the plan; false = reject and the planner revises)',
+            handler: (args) => {
+                const runId = argStr(args, 'id');
+                const apId = missionApprovals.get(runId);
+                need(apId, 'No pending approval on this run — missions.status shows its state.');
+                approvalQueue.settle(apId as string, args.ok !== false);
+                return { id: runId, approved: args.ok !== false };
+            }
+        }
+    ]);
+
     // Toolbox ops (constitution §19.C): the extension inventory, one item in
     // detail, and the live MCP tools/list probe — same code paths as the page.
     registerToolboxOps(bridge, {
@@ -3915,19 +4485,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 `Create a watch trigger from duty "${d.title}"? The duty stays in DUTIES.md (checked while the agent runs); the trigger ALSO fires a headless ${node.agent.name} task when ${d.watch} changes — even while the agent is idle.`,
                 { modal: true }, 'Create Trigger');
             if (confirmed !== 'Create Trigger') { return; }
-            taskManager.addTrigger({
-                title: `Duty: ${d.title}`,
-                type: 'watch',
-                watchPath: d.watch,
-                action: {
-                    kind: 'task', agentId: node.agent.id, agentName: node.agent.name,
-                    title: d.title,
-                    prompt: `DUTIES.md'deki "${d.title}" görevini uygula. İzlenen hedef değişti: {watch}` +
-                        (d.action ? ` Yapılacak iş: ${d.action}` : ''),
-                    mode: 'headless'
-                },
-                debounceSec: 10, cooldownSec: 60, maxPerHour: 6, enabled: true
-            });
+            taskManager.addTrigger(dutyTriggerSpec(node.agent, d));
             void vscode.window.showInformationMessage(
                 `Agent Farm: trigger "Duty: ${d.title}" armed (debounce 10s, cooldown 60s, max 6/h) — manage it in the Tasks view under Triggers.`);
         }),
