@@ -964,6 +964,7 @@ export class TaskManager implements vscode.Disposable {
         task.endedAt = Date.now();
         this.save();
         this.pump();
+        if (status === 'failed') { this.maybeScheduleLimitRetry(task); }
 
         // Workflow chaining takes precedence over plain queue auto-advance.
         if (task.workflowId !== undefined && task.stepIndex !== undefined) {
@@ -988,6 +989,39 @@ export class TaskManager implements vscode.Disposable {
                 this.startTask(next);
             }
         }
+    }
+
+    /** Session-limit resilience: a headless task that failed ONLY because the
+     *  Claude usage/session limit was hit (its output says so) is NOT a real
+     *  failure — the work was never attempted. Re-run it a little later so it is
+     *  not silently dropped; the limit clears within hours and a later attempt
+     *  succeeds. Capped so a persistent problem can't loop forever. Fires only
+     *  while VS Code stays open (the same constraint as every other automation). */
+    private maybeScheduleLimitRetry(task: FarmTask): void {
+        const CAP = 6;
+        const DELAY_MS = 40 * 60 * 1000;
+        if (task.mode !== 'headless' || !task.agentId || task.workflowId !== undefined) { return; }
+        let out = '';
+        try { if (task.outputFile) { out = fs.readFileSync(task.outputFile, 'utf8'); } } catch { /* no output yet */ }
+        if (!/hit your session limit|session limit[^.]*reset/i.test(out)) { return; }
+        const attempt = Number(/\(limit-retry (\d+)\)\s*$/.exec(task.title)?.[1] ?? 0);
+        if (attempt >= CAP) { return; }
+        const agent = this.getAgents().find(a => a.id === task.agentId);
+        if (!agent) { return; }
+        const baseTitle = task.title.replace(/\s*\(limit-retry \d+\)\s*$/, '');
+        const nextTitle = `${baseTitle} (limit-retry ${attempt + 1})`;
+        const prompt = task.prompt;
+        const mode = task.mode;
+        try {
+            if (task.outputFile) {
+                fs.appendFileSync(task.outputFile,
+                    `\n\n---\n[session limit] Bu is yalnizca oturum limiti dolu oldugu icin basarisiz oldu — gercek hata degil. ` +
+                    `~${Math.round(DELAY_MS / 60000)} dk sonra otomatik yeniden denenecek (deneme ${attempt + 1}/${CAP}); limit temizlenince kosacak.\n`);
+            }
+        } catch { /* best-effort note */ }
+        setTimeout(() => {
+            try { const t = this.addTask(agent, nextTitle, prompt, mode); this.startTask(t); } catch { /* ignore */ }
+        }, DELAY_MS);
     }
 
     // ---------- verification (A2) ----------
