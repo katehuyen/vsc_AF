@@ -12,7 +12,8 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 
 const {
     WorkQueueStore, makeWorkItem, filterItems, capItems, coerceStatus, coerceUrgency,
-    blockedCount, activeCount, isTerminal, registerQueueOps, QUEUE_STATUSES, TERMINAL_STATUSES
+    blockedCount, activeCount, isTerminal, registerQueueOps, QUEUE_STATUSES, TERMINAL_STATUSES,
+    groupSummaries
 } = require(path.join(__dirname, '..', 'out', 'core', 'workqueue.js'));
 const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'bridge.js'));
 
@@ -159,6 +160,29 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
 }
 
+// ---------- GAP-3: group summaries for batching maturity ----------
+{
+    const H = 3600000;
+    const now = 100 * 24 * H;   // fixed base
+    const list = [
+        { id: 'a', ts: now - 5 * H, author: 'user', text: 't', status: 'grouped', urgency: 'normal', groupId: 'g1', target: 'repoA' },
+        { id: 'b', ts: now - 2 * H, author: 'user', text: 't', status: 'delegated', urgency: 'urgent', groupId: 'g1', target: 'repoB' },
+        { id: 'c', ts: now - 1 * H, author: 'user', text: 't', status: 'grouped', urgency: 'normal', groupId: 'g2', target: 'repoA' },
+        { id: 'd', ts: now - 9 * H, author: 'user', text: 't', status: 'done', urgency: 'normal', groupId: 'g1' },  // terminal → excluded
+        { id: 'e', ts: now - 3 * H, author: 'user', text: 't', status: 'captured', urgency: 'normal' }              // ungrouped → excluded
+    ];
+    const gs = groupSummaries(list, now);
+    ok('only active grouped items summarised (2 groups)', gs.length === 2);
+    const g1 = gs.find(g => g.groupId === 'g1'), g2 = gs.find(g => g.groupId === 'g2');
+    ok('group count excludes the terminal member', g1.count === 2);
+    ok('oldest age comes from the oldest LIVE member', g1.oldestAgeHours === 5);
+    ok('targets deduped across the group', g1.targets.slice().sort().join() === 'repoA,repoB');
+    ok('status breakdown per group', g1.statuses.grouped === 1 && g1.statuses.delegated === 1);
+    ok('hasUrgent flags only the group with an urgent item', g1.hasUrgent === true && g2.hasUrgent === false);
+    ok('ripest (oldest) group sorts first', gs[0].groupId === 'g1');
+    ok('empty list → no groups', groupSummaries([], now).length === 0);
+}
+
 // ---------- §19.C bridge ops (+ cevap second leg + fromNotice cross-link) ----------
 (async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-queue-bridge-'));
@@ -184,7 +208,7 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
     registerQueueOps(reg, { store, notices, writeAnswer, onChange: () => changes++, onPost: n => { posted = n; } });
 
     const cat = reg.catalog().map(c => c.op);
-    ok('queue ops catalogued', ['queue.add', 'queue.list', 'queue.get', 'queue.group', 'queue.delegate', 'queue.stamp', 'queue.remove', 'queue.fromNotice', 'queue.answer'].every(op => cat.includes(op)));
+    ok('queue ops catalogued', ['queue.add', 'queue.list', 'queue.get', 'queue.group', 'queue.groups', 'queue.delegate', 'queue.stamp', 'queue.remove', 'queue.fromNotice', 'queue.answer'].every(op => cat.includes(op)));
 
     const add = await reg.dispatch('queue.add', { text: 'pad does not open on the second screen', target: 'repoA', urgency: 'soon', author: 'user' });
     ok('add returns id/status/active', add.ok && add.result.status === 'captured' && add.result.active === 1);
@@ -205,6 +229,12 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
     const add2 = await reg.dispatch('queue.add', { text: 'repoB crash on launch', target: 'repoB' });
     const grp = await reg.dispatch('queue.group', { ids: [add.result.id, add2.result.id] });
     ok('group via bridge', grp.ok && grp.result.count === 2);
+
+    // GAP-3: queue.groups digests the active batch
+    const grps = await reg.dispatch('queue.groups', {});
+    ok('queue.groups summarises the active batch', grps.ok && grps.result.length === 1
+        && grps.result[0].count === 2 && grps.result[0].groupId === grp.result.groupId
+        && typeof grps.result[0].oldestAgeHours === 'number');
 
     const del = await reg.dispatch('queue.delegate', { id: add.result.id, missionId: 'mABC' });
     ok('delegate via bridge', del.ok && del.result.delegated === 1 && store.get(add.result.id).status === 'delegated');

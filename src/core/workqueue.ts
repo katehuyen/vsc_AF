@@ -228,6 +228,51 @@ export function filterItems(list: WorkItem[], f: WorkItemFilter): WorkItem[] {
     return out;
 }
 
+/** One row of the active-groups digest (GAP-3). */
+export interface GroupSummary {
+    groupId: string;
+    /** Live (non-terminal) members in the group. */
+    count: number;
+    /** Age in hours of the group's oldest live member — the batching clock. */
+    oldestAgeHours: number;
+    /** Distinct routing targets the group spans. */
+    targets: string[];
+    /** Status → count breakdown of the live members. */
+    statuses: Record<string, number>;
+    /** Any member marked urgent — the batching short-circuit. */
+    hasUrgent: boolean;
+}
+
+/** GAP-3 — summarise the ACTIVE (non-terminal) batch groups so the manager reads
+ *  batching maturity DIRECTLY instead of re-deriving it from every item on each
+ *  scan: one row per group with size, the age of its oldest member, the targets
+ *  it spans, a status breakdown, and whether anything in it is urgent. Ripest
+ *  (oldest) group first — the order the manager wants to fire them in. */
+export function groupSummaries(list: WorkItem[], now = Date.now()): GroupSummary[] {
+    const by = new Map<string, WorkItem[]>();
+    for (const n of list) {
+        if (!n.groupId || isTerminal(n)) { continue; }
+        (by.get(n.groupId) ?? by.set(n.groupId, []).get(n.groupId)!).push(n);
+    }
+    const out: GroupSummary[] = [];
+    for (const [groupId, items] of by) {
+        const oldest = items.reduce((m, n) => Math.min(m, n.ts || now), now);
+        const targets = Array.from(new Set(items.map(n => n.target).filter((t): t is string => !!t)));
+        const statuses: Record<string, number> = {};
+        for (const n of items) { statuses[n.status] = (statuses[n.status] ?? 0) + 1; }
+        out.push({
+            groupId,
+            count: items.length,
+            oldestAgeHours: Math.round(((now - oldest) / 3600000) * 100) / 100,
+            targets,
+            statuses,
+            hasUrgent: items.some(n => n.urgency === 'urgent')
+        });
+    }
+    out.sort((a, b) => b.oldestAgeHours - a.oldestAgeHours);
+    return out;
+}
+
 /** Count of items still needing the USER (the only queue state that pings the
  *  attention bell — everything else is the manager's problem). */
 export function blockedCount(list: WorkItem[]): number {
@@ -390,6 +435,8 @@ export class WorkQueueStore {
 
     blocked(): number { return blockedCount(this.items); }
     active(): number { return activeCount(this.items); }
+    /** GAP-3 — digest of the active batch groups (see groupSummaries). */
+    groups(): GroupSummary[] { return groupSummaries(this.items); }
     list(f: WorkItemFilter = {}): WorkItem[] { return filterItems(this.items, f); }
 }
 
@@ -521,6 +568,11 @@ export function registerQueueOps(bridge: BridgeRegistry, deps: QueueOpsDeps): vo
                 const r = store.group(ids, optStr(args, 'groupId') || undefined);
                 changed(); return r;
             }
+        },
+        {
+            op: 'queue.groups',
+            describe: 'Digest of the ACTIVE batch groups in ONE shot — so the manager reads batching maturity directly instead of re-deriving it from every item each scan. Returns [{ groupId, count, oldestAgeHours, targets[], statuses {status:count}, hasUrgent }], ripest (oldest) group first. Compare count against agentFarm.queue.groupSize, oldestAgeHours against queue.maxAgeHours, and hasUrgent (the short-circuit) to pick the groups mature enough to delegate now. args: none.',
+            handler: () => store.groups()
         },
         {
             op: 'queue.delegate',
