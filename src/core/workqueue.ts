@@ -69,6 +69,10 @@ export interface WorkItem {
     status: QueueStatus;
     /** Batch membership (manager-assigned). */
     groupId?: string;
+    /** GAP-4 — ids of items this one must follow (a soft ordering hint the
+     *  manager reads when it sequences a batch's delegation). The queue only
+     *  stores/carries the field; the sequencing judgment lives in the manager. */
+    dependsOn?: string[];
     /** Delegation links — set when fired to an agent. */
     missionId?: string;
     taskId?: string;
@@ -112,6 +116,7 @@ export interface WorkItemInput {
     target?: string;
     tags?: string[] | string;
     urgency?: string;
+    dependsOn?: string[] | string;
     sourceNoticeId?: string;
     sourceNoticeTitle?: string;
 }
@@ -148,6 +153,7 @@ const TEXT_MAX = 8000;
 const NAME_MAX = 60;
 const TARGET_MAX = 60;
 const TAGS_MAX = 12;
+const DEPS_MAX = 20;
 const RESOLUTION_MAX = 12000;
 
 export function newItemId(): string {
@@ -176,6 +182,16 @@ export function coerceTags(v: unknown): string[] | undefined {
     return arr.length ? arr : undefined;
 }
 
+/** GAP-4 — normalise a dependsOn value (string[]|csv) into deduped item ids,
+ *  dropping empties and any self-reference. Returns undefined when empty. */
+export function coerceDeps(v: unknown, selfId?: string): string[] | undefined {
+    let arr: string[] = [];
+    if (Array.isArray(v)) { arr = v.map(x => String(x).trim()); }
+    else if (typeof v === 'string') { arr = v.split(',').map(x => x.trim()); }
+    arr = Array.from(new Set(arr.filter(x => x && x !== selfId))).slice(0, DEPS_MAX);
+    return arr.length ? arr : undefined;
+}
+
 export function isTerminal(item: WorkItem): boolean {
     return (TERMINAL_STATUSES as string[]).includes(item.status);
 }
@@ -195,6 +211,8 @@ export function makeWorkItem(input: WorkItemInput, now = Date.now()): WorkItem {
     };
     const target = String(input.target ?? '').trim().slice(0, TARGET_MAX);
     if (target) { item.target = target; }
+    const deps = coerceDeps(input.dependsOn, item.id);
+    if (deps) { item.dependsOn = deps; }
     const srcId = String(input.sourceNoticeId ?? '').trim();
     if (srcId) {
         item.sourceNoticeId = srcId.slice(0, 60);
@@ -327,13 +345,14 @@ export class WorkQueueStore {
 
     get(id: string): WorkItem | undefined { return this.find(id); }
 
-    /** Free-form field edits (text / target / urgency / tags). */
-    edit(id: string, patch: { text?: string; target?: string; urgency?: string; tags?: string[] | string }): boolean {
+    /** Free-form field edits (text / target / urgency / tags / dependsOn). */
+    edit(id: string, patch: { text?: string; target?: string; urgency?: string; tags?: string[] | string; dependsOn?: string[] | string }): boolean {
         const n = this.find(id); if (!n) { return false; }
         if (typeof patch.text === 'string' && patch.text.trim()) { n.text = patch.text.trim().slice(0, TEXT_MAX); }
         if (patch.target !== undefined) { const t = String(patch.target).trim(); n.target = t ? t.slice(0, TARGET_MAX) : undefined; }
         if (patch.urgency !== undefined) { n.urgency = coerceUrgency(patch.urgency); }
         if (patch.tags !== undefined) { n.tags = coerceTags(patch.tags); }
+        if (patch.dependsOn !== undefined) { n.dependsOn = coerceDeps(patch.dependsOn, n.id); }
         n.edited = true; n.editedAt = Date.now();
         this.save(); return true;
     }
@@ -446,6 +465,7 @@ function normalise(n: WorkItem): WorkItem {
     n.urgency = coerceUrgency(n.urgency);
     if (typeof n.author !== 'string' || !n.author) { n.author = 'user'; }
     if (typeof n.text !== 'string') { n.text = ''; }
+    if (n.dependsOn !== undefined) { n.dependsOn = coerceDeps(n.dependsOn, n.id); }
     return n;
 }
 
@@ -491,14 +511,15 @@ export function registerQueueOps(bridge: BridgeRegistry, deps: QueueOpsDeps): vo
     bridge.register([
         {
             op: 'queue.add',
-            describe: 'Drop ONE work item into the user\'s async work queue (user→agent; the low-friction capture channel — "fix this / do this" that does NOT deserve its own turn). Persists until HANDLED. args: text (required, the raw one-liner), target? (free-text routing hint: a repo/area or an agent name), urgency? (normal|soon|urgent; urgent short-circuits batching), tags? (string[]|csv), author? (defaults to the agent name for agent-queued items; "user" for user captures). The manager scans, groups and batch-delegates these.',
+            describe: 'Drop ONE work item into the user\'s async work queue (user→agent; the low-friction capture channel — "fix this / do this" that does NOT deserve its own turn). Persists until HANDLED. args: text (required, the raw one-liner), target? (free-text routing hint: a repo/area or an agent name), urgency? (normal|soon|urgent; urgent short-circuits batching), tags? (string[]|csv), dependsOn? (string[]|csv of item ids this one must FOLLOW — a soft ordering hint), author? (defaults to the agent name for agent-queued items; "user" for user captures). The manager scans, groups and batch-delegates these.',
             handler: (args) => {
                 const item = store.add({
                     text: argStr(args, 'text'),
                     author: optStr(args, 'author') || undefined,
                     target: optStr(args, 'target') || undefined,
                     urgency: optStr(args, 'urgency') || undefined,
-                    tags: (args.tags as string[] | string | undefined)
+                    tags: (args.tags as string[] | string | undefined),
+                    dependsOn: args.dependsOn !== undefined ? (args.dependsOn as string[] | string) : undefined
                 });
                 try { deps.onPost?.(item); } catch { /* best-effort */ }
                 changed();
@@ -531,13 +552,14 @@ export function registerQueueOps(bridge: BridgeRegistry, deps: QueueOpsDeps): vo
         },
         {
             op: 'queue.edit',
-            describe: 'Edit a work item\'s fields. args: id, text?, target?, urgency?, tags?',
+            describe: 'Edit a work item\'s fields. args: id, text?, target?, urgency?, tags?, dependsOn? (string[]|csv of item ids this one must FOLLOW — a soft ordering hint for the manager when it sequences a batch; pass [] or "" to clear).',
             handler: (args) => {
                 need(store.edit(argStr(args, 'id'), {
                     text: optStr(args, 'text') || undefined,
                     target: args.target !== undefined ? optStr(args, 'target') : undefined,
                     urgency: optStr(args, 'urgency') || undefined,
-                    tags: (args.tags as string[] | string | undefined)
+                    tags: (args.tags as string[] | string | undefined),
+                    dependsOn: args.dependsOn !== undefined ? (args.dependsOn as string[] | string) : undefined
                 }), 'Work item not found — queue.list shows current ids.');
                 changed(); return { ok: true };
             }

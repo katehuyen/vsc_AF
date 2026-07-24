@@ -13,7 +13,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 const {
     WorkQueueStore, makeWorkItem, filterItems, capItems, coerceStatus, coerceUrgency,
     blockedCount, activeCount, isTerminal, registerQueueOps, QUEUE_STATUSES, TERMINAL_STATUSES,
-    groupSummaries
+    groupSummaries, coerceDeps
 } = require(path.join(__dirname, '..', 'out', 'core', 'workqueue.js'));
 const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'bridge.js'));
 
@@ -160,6 +160,35 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
 }
 
+// ---------- GAP-4: item dependency (dependsOn) ----------
+{
+    ok('coerceDeps parses csv + array, dedups, drops empties',
+        coerceDeps('x, y ,x, ').join() === 'x,y' && coerceDeps(['a', 'a', 'b', '']).join() === 'a,b');
+    ok('coerceDeps drops self-reference', coerceDeps(['a', 'self', 'b'], 'self').join() === 'a,b');
+    ok('coerceDeps empty → undefined', coerceDeps('') === undefined && coerceDeps([]) === undefined);
+
+    ok('makeWorkItem carries dependsOn', makeWorkItem({ text: 'x', dependsOn: 'p, q' }).dependsOn.join() === 'p,q');
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-queue-deps-'));
+    const file = path.join(dir, 'work-queue.json');
+    const store = new WorkQueueStore(file); store.load();
+    const a = store.add({ text: 'first' });
+    const b = store.add({ text: 'second' });
+    ok('edit sets dependsOn (b follows a)', store.edit(b.id, { dependsOn: [a.id] }) && store.get(b.id).dependsOn.join() === a.id);
+    ok('list returns dependsOn', store.list({ status: 'captured' }).find(n => n.id === b.id).dependsOn.join() === a.id);
+    ok('edit filters a self-dependency', store.edit(b.id, { dependsOn: [a.id, b.id] }) && store.get(b.id).dependsOn.join() === a.id);
+    ok('edit clears dependsOn with empty array', store.edit(b.id, { dependsOn: [] }) && store.get(b.id).dependsOn === undefined);
+
+    // normalise repairs a csv-string dependsOn (+ strips self) on reload
+    store.edit(b.id, { dependsOn: [a.id] });
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+    raw.items.find(n => n.id === b.id).dependsOn = `${a.id}, ${b.id}, ${a.id}`;   // messy on-disk value
+    fs.writeFileSync(file, JSON.stringify(raw), 'utf8');
+    const reload = new WorkQueueStore(file); reload.load();
+    ok('normalise coerces + self-strips dependsOn on load', reload.get(b.id).dependsOn.join() === a.id);
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+}
+
 // ---------- GAP-3: group summaries for batching maturity ----------
 {
     const H = 3600000;
@@ -235,6 +264,10 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
     ok('queue.groups summarises the active batch', grps.ok && grps.result.length === 1
         && grps.result[0].count === 2 && grps.result[0].groupId === grp.result.groupId
         && typeof grps.result[0].oldestAgeHours === 'number');
+
+    // GAP-4: queue.edit sets a dependsOn ordering hint
+    const edDep = await reg.dispatch('queue.edit', { id: add2.result.id, dependsOn: [add.result.id] });
+    ok('queue.edit sets dependsOn', edDep.ok && store.get(add2.result.id).dependsOn.join() === add.result.id);
 
     const del = await reg.dispatch('queue.delegate', { id: add.result.id, missionId: 'mABC' });
     ok('delegate via bridge', del.ok && del.result.delegated === 1 && store.get(add.result.id).status === 'delegated');
