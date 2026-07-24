@@ -17,6 +17,8 @@
     const expanded = new Set();     // open item ids
     const editing = new Set();      // ids in edit mode
     const editDrafts = {};          // id -> {text,target,urgency}
+    const answering = new Set();    // blocked ids with the answer box open (GAP-2)
+    const answerDrafts = {};        // id -> reply text
     let addOpen = false;
     let addDraft = { text: '', target: '', urgency: 'normal' };
     let refocusSearch = false;
@@ -94,9 +96,10 @@
     }
 
     function outcomeBlock(n) {
-        if (!n.stamp && !n.resolution && !n.answerPath && !n.reportPath) { return ''; }
+        if (!n.stamp && !n.resolution && !n.answerPath && !n.reportPath && !n.userReply) { return ''; }
         let h = '<div class="q-outcome">';
         if (n.stamp) { h += `<div class="q-stamp">${esc(n.stamp)}</div>`; }
+        if (n.userReply) { h += `<div class="q-reply"><span class="q-reply-h">💬 your reply</span><div class="q-md">${mdToHtml(n.userReply)}</div></div>`; }
         if (n.resolution) { h += `<div class="q-md">${mdToHtml(n.resolution)}</div>`; }
         const files = [];
         if (n.answerPath) { files.push(`<button class="secondary" data-act="openanswer" data-id="${esc(n.id)}" title="${esc(n.answerPath)}">📝 Open answer (${esc(fileBase(n.answerPath))})</button>`); }
@@ -118,6 +121,18 @@
         </div>`;
     }
 
+    // GAP-2: inline reply box shown on a blocked item — the user's answer that
+    // re-animates it back into the pipeline.
+    function answerForm(n) {
+        const d = answerDrafts[n.id] || '';
+        return `<div class="q-answer">
+            <label>Your answer — sends this back into the pipeline</label>
+            <textarea class="q-af" data-af-id="${esc(n.id)}" rows="3" placeholder="Reply to unblock this…">${esc(d)}</textarea>
+            <div class="btnrow"><button data-act="answersend" data-id="${esc(n.id)}">Send answer</button>
+              <button class="secondary" data-act="answercancel" data-id="${esc(n.id)}">Cancel</button></div>
+        </div>`;
+    }
+
     function itemCard(n) {
         const open = expanded.has(n.id), inEdit = editing.has(n.id);
         const terminal = n.status === 'done' || n.status === 'dropped';
@@ -130,12 +145,14 @@
                 ${n.target ? `<div class="muted small">target: <strong>${esc(n.target)}</strong></div>` : ''}
                 ${delegationLink(n)}${outcomeBlock(n)}
                 <div class="btnrow q-actions">
+                    ${n.status === 'blocked' ? `<button data-act="answer" data-id="${esc(n.id)}" title="Answer this — records your reply and sends it back into the pipeline">💬 Answer</button>` : ''}
                     <button data-act="handoff" data-id="${esc(n.id)}" title="Open the responsible agent and type this into its terminal (not sent)">🔗 Hand to agent</button>
                     ${!terminal ? `<button class="secondary" data-act="urg" data-id="${esc(n.id)}" title="Cycle urgency">⏫ Urgency</button>` : ''}
                     ${!terminal ? `<button class="secondary" data-act="edit" data-id="${esc(n.id)}">Edit</button>` : ''}
                     ${!terminal ? `<button class="secondary" data-act="drop" data-id="${esc(n.id)}" title="Void this item (dropped). It can only be deleted once handled.">Drop</button>` : ''}
                     ${terminal ? `<button class="secondary danger" data-act="remove" data-id="${esc(n.id)}" title="Delete permanently (only handled items can be deleted)">🗑 Delete</button>` : ''}
-                </div>`;
+                </div>
+                ${answering.has(n.id) ? answerForm(n) : ''}`;
         }
         return `<div class="q-card s-${n.status} ${n.pinned ? 'pinned' : ''} ${focusItem === n.id ? 'focus' : ''}" data-id="${esc(n.id)}">
             <div class="q-row" data-toggle="${esc(n.id)}">
@@ -234,6 +251,11 @@
         .q-actions { margin-top:8px; }
         .q-edit label { display:block; font-size:10px; text-transform:uppercase; opacity:.7; margin:6px 0 2px; }
         .q-edit textarea, .q-edit input, .q-edit select { width:100%; box-sizing:border-box; padding:5px; font-family:inherit; }
+        .q-reply { margin:4px 0; }
+        .q-reply-h { display:block; font-size:10px; text-transform:uppercase; letter-spacing:.03em; opacity:.7; margin-bottom:2px; }
+        .q-answer { margin:8px 0 2px; padding:8px 10px; border:1px solid var(--vscode-panel-border); border-left:3px solid var(--vscode-charts-orange,#e9a700); border-radius:4px; background:var(--vscode-editorWidget-background); }
+        .q-answer label { display:block; font-size:10px; text-transform:uppercase; opacity:.7; margin:0 0 3px; }
+        .q-answer textarea { width:100%; box-sizing:border-box; padding:5px; font-family:inherit; }
         button.danger:hover { background:var(--vscode-inputValidation-errorBackground,#5a1d1d); border-color:var(--vscode-editorError-foreground,#e51400); }
         .tag { font-size:10px; opacity:.7; border:1px solid var(--vscode-panel-border); border-radius:3px; padding:1px 5px; }
     </style>`;
@@ -279,6 +301,11 @@
         scope.querySelectorAll('[data-ef]').forEach(el => { d[el.dataset.ef] = el.value; });
     }
 
+    function captureAnswer(id) {
+        const el = document.querySelector(`.q-answer [data-af-id="${id}"]`);
+        if (el) { answerDrafts[id] = el.value; }
+    }
+
     function wire() {
         const bind = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
         bind('q-search', 'input', e => { query = e.target.value; refocusSearch = true; saveState(); render(); });
@@ -317,12 +344,23 @@
             const id = el.closest('.q-card').dataset.id, d = editDrafts[id]; if (d) { d[el.dataset.ef] = el.value; }
         }));
 
+        // answer box live capture (GAP-2)
+        document.querySelectorAll('.q-answer [data-af-id]').forEach(el => el.addEventListener('input', () => {
+            answerDrafts[el.dataset.afId] = el.value;
+        }));
+
         // item actions
-        document.querySelectorAll('.q-actions [data-act], .q-edit [data-act], .q-outcome [data-act]').forEach(b => b.addEventListener('click', ev => {
+        document.querySelectorAll('.q-actions [data-act], .q-edit [data-act], .q-outcome [data-act], .q-answer [data-act]').forEach(b => b.addEventListener('click', ev => {
             ev.stopPropagation();
             const id = b.dataset.id, act = b.dataset.act;
             if (act === 'handoff') { vscode.postMessage({ type: 'handoff', id }); }
             else if (act === 'drop') { vscode.postMessage({ type: 'drop', id }); }
+            else if (act === 'answer') { answerDrafts[id] = answerDrafts[id] || ''; answering.add(id); expanded.add(id); render(); }
+            else if (act === 'answercancel') { captureAnswer(id); answering.delete(id); delete answerDrafts[id]; render(); }
+            else if (act === 'answersend') {
+                captureAnswer(id); const t = (answerDrafts[id] || '').trim();
+                if (t) { vscode.postMessage({ type: 'answer', id, text: t }); answering.delete(id); delete answerDrafts[id]; }
+            }
             else if (act === 'remove') { expanded.delete(id); vscode.postMessage({ type: 'remove', id }); }
             else if (act === 'urg') {
                 const n = (DATA.items || []).find(x => x.id === id) || {};

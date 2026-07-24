@@ -117,6 +117,13 @@ export class QueuePanel {
                 // terminal (and only then removable). Nothing vanishes unhandled.
                 if (typeof msg.id === 'string') { s.stamp(msg.id, { stamp: '-DROPPED- (cancelled by user)', status: 'dropped' }); this.mutated(); }
                 break;
+            case 'answer':
+                // GAP-2: the user answers a BLOCKED item — records the reply and
+                // sends it back into the pipeline (clears it from the bell).
+                if (typeof msg.id === 'string' && typeof msg.text === 'string' && msg.text.trim()) {
+                    s.answer(msg.id, msg.text); this.mutated();
+                }
+                break;
             case 'remove':
                 if (typeof msg.id === 'string') {
                     const r = s.remove(msg.id);

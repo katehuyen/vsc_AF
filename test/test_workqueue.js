@@ -127,6 +127,38 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
 }
 
+// ---------- GAP-2: blocked → user answer feedback loop ----------
+{
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-queue-answer-'));
+    const file = path.join(dir, 'work-queue.json');
+    const store = new WorkQueueStore(file); store.load();
+
+    const g = store.add({ text: 'need the locale', author: 'developer' });
+    const s = store.add({ text: 'standalone blocked', author: 'developer' });
+    store.group([g.id]);   // g gets a group; s stays groupless
+    store.stamp(g.id, { stamp: '-SORU- which locale?', status: 'blocked' });
+    store.stamp(s.id, { stamp: '-SORU- which one?', status: 'blocked' });
+    ok('two blocked items ping the bell', store.blocked() === 2);
+
+    ok('answer re-animates a grouped item back to grouped + records reply + time',
+        store.answer(g.id, '  TR only  ') && (() => {
+            const n = store.get(g.id);
+            return n.status === 'grouped' && n.userReply === 'TR only' && typeof n.userRepliedAt === 'number';
+        })());
+    ok('answer re-animates a groupless item to captured',
+        store.answer(s.id, 'the second one') && store.get(s.id).status === 'captured');
+    ok('answering both cleared the bell', store.blocked() === 0);
+    ok('a second answer appends (Q&A trail kept)',
+        store.answer(g.id, 'and EN fallback') && store.get(g.id).userReply === 'TR only\n\nand EN fallback');
+    ok('answer refuses a missing id', store.answer('nope', 'x') === false);
+    ok('answer refuses empty text', store.answer(g.id, '   ') === false);
+
+    const reload = new WorkQueueStore(file); reload.load();
+    ok('reply + reanimated status persist across reload',
+        reload.get(g.id).userReply === 'TR only\n\nand EN fallback' && reload.get(g.id).status === 'grouped');
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+}
+
 // ---------- §19.C bridge ops (+ cevap second leg + fromNotice cross-link) ----------
 (async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-queue-bridge-'));
@@ -152,7 +184,7 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
     registerQueueOps(reg, { store, notices, writeAnswer, onChange: () => changes++, onPost: n => { posted = n; } });
 
     const cat = reg.catalog().map(c => c.op);
-    ok('queue ops catalogued', ['queue.add', 'queue.list', 'queue.get', 'queue.group', 'queue.delegate', 'queue.stamp', 'queue.remove', 'queue.fromNotice'].every(op => cat.includes(op)));
+    ok('queue ops catalogued', ['queue.add', 'queue.list', 'queue.get', 'queue.group', 'queue.delegate', 'queue.stamp', 'queue.remove', 'queue.fromNotice', 'queue.answer'].every(op => cat.includes(op)));
 
     const add = await reg.dispatch('queue.add', { text: 'pad does not open on the second screen', target: 'repoA', urgency: 'soon', author: 'user' });
     ok('add returns id/status/active', add.ok && add.result.status === 'captured' && add.result.active === 1);
@@ -160,6 +192,15 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
 
     const noText = await reg.dispatch('queue.add', { target: 'repoA' });
     ok('add refuses missing text', !noText.ok && /text/i.test(noText.error));
+
+    // GAP-2: queue.answer unblocks a blocked item + records the reply
+    const blk = await reg.dispatch('queue.add', { text: 'which environment?', author: 'developer' });
+    await reg.dispatch('queue.setStatus', { id: blk.result.id, status: 'blocked' });
+    const ans = await reg.dispatch('queue.answer', { id: blk.result.id, text: 'production' });
+    ok('queue.answer unblocks + returns status + records reply',
+        ans.ok && ans.result.status === 'captured' && store.get(blk.result.id).userReply === 'production');
+    const ansBad = await reg.dispatch('queue.answer', { id: 'nope', text: 'x' });
+    ok('queue.answer refuses a missing item', !ansBad.ok && /not found/i.test(ansBad.error));
 
     const add2 = await reg.dispatch('queue.add', { text: 'repoB crash on launch', target: 'repoB' });
     const grp = await reg.dispatch('queue.group', { ids: [add.result.id, add2.result.id] });

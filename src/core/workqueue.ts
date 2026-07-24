@@ -89,6 +89,11 @@ export interface WorkItem {
     reportPath?: string;
     delegatedAt?: number;
     handledAt?: number;
+    // --- blocked → user feedback loop (GAP-2) ---
+    /** The user's reply to a BLOCKED item — what unblocks it. Accumulates across
+     *  several rounds (a Q&A trail), separated by a blank line. */
+    userReply?: string;
+    userRepliedAt?: number;
     // --- source link (a notice the user converted into this item) ---
     sourceNoticeId?: string;
     /** Snapshot of the source notice title — origin stays legible if the notice
@@ -349,6 +354,22 @@ export class WorkQueueStore {
         this.save(); return true;
     }
 
+    /** GAP-2 — the blocked→user feedback loop. The user ANSWERS a blocked item:
+     *  the reply is recorded and the item is re-animated back into the pipeline
+     *  (to its prior 'grouped' if it was batched, else 'captured') so the manager
+     *  reprocesses it. Without this, a blocked item has no way back and would pile
+     *  up unresolved in the bell. Replies accumulate as a Q&A trail. Refused for a
+     *  missing id or an empty reply; a terminal item keeps its terminal status. */
+    answer(id: string, text: string): boolean {
+        const n = this.find(id); if (!n) { return false; }
+        const reply = String(text ?? '').trim().slice(0, TEXT_MAX);
+        if (!reply) { return false; }
+        n.userReply = n.userReply ? `${n.userReply}\n\n${reply}`.slice(0, TEXT_MAX) : reply;
+        n.userRepliedAt = Date.now();
+        if (n.status === 'blocked') { n.status = n.groupId ? 'grouped' : 'captured'; }
+        this.save(); return true;
+    }
+
     /** Archive a handled item out of the active lanes (kept, not deleted). */
     archive(id: string, archived = true): boolean {
         const n = this.find(id); if (!n) { return false; }
@@ -480,6 +501,15 @@ export function registerQueueOps(bridge: BridgeRegistry, deps: QueueOpsDeps): vo
             handler: (args) => {
                 need(store.setStatus(argStr(args, 'id'), argStr(args, 'status')), 'Work item not found — queue.list shows current ids.');
                 changed(); return { ok: true };
+            }
+        },
+        {
+            op: 'queue.answer',
+            describe: 'Answer a BLOCKED work item — the user→agent reply that unblocks it (mirror of answering a Notices question). The reply is recorded on the item and the item is re-animated back into the pipeline (to its prior group if it had one, else captured) so the manager reprocesses it; the attention bell drops. Replies accumulate as a Q&A trail. args: id, text (the reply). Refused for a missing id or empty text.',
+            handler: (args) => {
+                const id = argStr(args, 'id');
+                need(store.answer(id, argStr(args, 'text')), 'Work item not found or empty reply — queue.list shows current ids.');
+                changed(); return { ok: true, status: store.get(id)?.status };
             }
         },
         {
