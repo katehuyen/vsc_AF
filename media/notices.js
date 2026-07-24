@@ -21,6 +21,10 @@
     const expanded = new Set();     // open notice ids
     const openSec = new Set();      // "id#idx" open sections
     const selected = new Set();     // checked notice ids (bulk actions)
+    // Unread view only: ids that were auto-read by opening them to read, but
+    // must STAY visible so a row can't slip away the instant it's opened. They
+    // fade to a "just read" look and drop out on the next deliberate view change.
+    const stickyRead = new Set();
     const drafts = {};              // id -> answer draft
     const editing = new Set();      // ids in edit mode
     const editDrafts = {};          // id -> {title,type,level,tags,body,sections:[{title,body}]}
@@ -103,7 +107,7 @@
 
     function visible() {
         let list = (DATA.notices || []).filter(n =>
-            (fMode !== 'unread' || !n.read) &&
+            (fMode !== 'unread' || !n.read || stickyRead.has(n.id)) &&
             (fMode !== 'questions' || n.type === 'question') &&
             (!fType || n.type === fType) &&
             (!fLevel || lvl(n) === Number(fLevel)) &&
@@ -410,14 +414,16 @@
 
     function wire(items) {
         const bind = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
-        document.querySelectorAll('[data-chip]').forEach(b => b.addEventListener('click', () => { fMode = b.dataset.chip; saveState(); render(); }));
+        // Switching (or re-clicking) a filter chip is a deliberate view refresh:
+        // release the sticky-read rows so read notices finally drop out of Unread.
+        document.querySelectorAll('[data-chip]').forEach(b => b.addEventListener('click', () => { fMode = b.dataset.chip; stickyRead.clear(); saveState(); render(); }));
         bind('nt-type', 'change', e => { fType = e.target.value; saveState(); render(); });
         bind('nt-level', 'change', e => { fLevel = Number(e.target.value) || 0; saveState(); render(); });
         bind('nt-agent', 'change', e => { fAgent = e.target.value; saveState(); render(); });
         bind('nt-status', 'change', e => { fStatus = e.target.value; saveState(); render(); });
         bind('nt-sort', 'change', e => { sortKey = e.target.value; saveState(); render(); });
         bind('nt-search', 'input', e => { query = e.target.value; refocusSearch = true; saveState(); render(); });
-        bind('nt-reset', 'click', () => { fMode = DEF.fMode; fType = DEF.fType; fLevel = DEF.fLevel; fAgent = DEF.fAgent; fStatus = DEF.fStatus; sortKey = DEF.sortKey; query = DEF.query; saveState(); render(); });
+        bind('nt-reset', 'click', () => { fMode = DEF.fMode; fType = DEF.fType; fLevel = DEF.fLevel; fAgent = DEF.fAgent; fStatus = DEF.fStatus; sortKey = DEF.sortKey; query = DEF.query; stickyRead.clear(); saveState(); render(); });
 
         // bulk actions run on the SELECTED ids, or — if nothing is checked — on
         // everything currently shown (the active filter).
@@ -469,7 +475,12 @@
                 // opening a notice marks it read automatically (a question's real
                 // state is answered/not — its read flag just clears the bell)
                 const n = (DATA.notices || []).find(x => x.id === id);
-                if (n && !n.read) { vscode.postMessage({ type: 'markRead', id, read: true }); }
+                if (n && !n.read) {
+                    // In the unread view, pin this row so it doesn't vanish the
+                    // instant it flips to read — the user opened it TO read it.
+                    if (fMode === 'unread') { stickyRead.add(id); }
+                    vscode.postMessage({ type: 'markRead', id, read: true });
+                }
             }
             render();
         }));
@@ -539,6 +550,7 @@
             DATA = ev.data.data;
             const ids = new Set((DATA.notices || []).map(n => n.id));
             [...selected].forEach(id => { if (!ids.has(id)) { selected.delete(id); } });
+            [...stickyRead].forEach(id => { if (!ids.has(id)) { stickyRead.delete(id); } });
             if (DATA.focusId) { focusId = DATA.focusId; expanded.add(focusId); }
             render();
         }
