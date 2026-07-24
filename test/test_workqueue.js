@@ -13,7 +13,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 const {
     WorkQueueStore, makeWorkItem, filterItems, capItems, coerceStatus, coerceUrgency,
     blockedCount, activeCount, isTerminal, registerQueueOps, QUEUE_STATUSES, TERMINAL_STATUSES,
-    groupSummaries, coerceDeps
+    groupSummaries, coerceDeps, mergeItems, itemModifiedAt
 } = require(path.join(__dirname, '..', 'out', 'core', 'workqueue.js'));
 const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'bridge.js'));
 
@@ -157,6 +157,45 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
     const reload = new WorkQueueStore(file); reload.load();
     ok('reply + reanimated status persist across reload',
         reload.get(g.id).userReply === 'TR only\n\nand EN fallback' && reload.get(g.id).status === 'grouped');
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+}
+
+// ---------- GAP-6: atomic write + concurrency-safe merge ----------
+{
+    // pure merge: union by id, keep the most-recently-touched version
+    const A = { id: 'a', ts: 100, author: 'user', text: 'A', status: 'captured', urgency: 'normal' };
+    const A2 = { id: 'a', ts: 100, author: 'user', text: 'A edited', status: 'grouped', urgency: 'normal', editedAt: 200 };
+    const B = { id: 'b', ts: 150, author: 'user', text: 'B', status: 'captured', urgency: 'normal' };
+    ok('itemModifiedAt takes the latest stamp', itemModifiedAt(A2) === 200 && itemModifiedAt(A) === 100);
+    const merged = mergeItems([A2], [A, B]);
+    ok('merge unions by id (keeps the other writer\'s item)', merged.some(n => n.id === 'b'));
+    ok('merge keeps the most-recently-touched version', merged.find(n => n.id === 'a').text === 'A edited');
+    ok('merge dedups (one row per id)', merged.filter(n => n.id === 'a').length === 1);
+
+    // two stores on the same file: a concurrent add must not clobber the first
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-queue-concurrent-'));
+    const file = path.join(dir, 'work-queue.json');
+    const s1 = new WorkQueueStore(file); s1.load();
+    const s2 = new WorkQueueStore(file); s2.load();   // both see empty at the same rev
+    const x = s1.add({ text: 'from window 1' });        // s1 writes → rev 1
+    const y = s2.add({ text: 'from window 2' });        // s2 (still rev 0) must merge, not overwrite x
+
+    const reload = new WorkQueueStore(file); reload.load();
+    ok('concurrent add from a second store does not clobber the first',
+        reload.items.some(n => n.id === x.id) && reload.items.some(n => n.id === y.id));
+
+    const leftovers = fs.readdirSync(dir).filter(f => f.includes('.tmp-'));
+    ok('no temp files left after atomic save', leftovers.length === 0);
+    const onDisk = JSON.parse(fs.readFileSync(file, 'utf8'));
+    ok('file carries a monotonic rev', typeof onDisk.rev === 'number' && onDisk.rev >= 2);
+
+    // a lone store still removes cleanly — the rev guard skips self-merge, so a
+    // deleted terminal item is NOT resurrected from disk on the next save
+    const t = s1.add({ text: 'temp' });
+    s1.stamp(t.id, { status: 'dropped' });
+    ok('single-writer drop+remove sticks (rev guard skips self-merge)', s1.remove(t.id).ok === true);
+    const after = new WorkQueueStore(file); after.load();
+    ok('removed item stays gone after reload', !after.items.some(n => n.id === t.id));
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
 }
 

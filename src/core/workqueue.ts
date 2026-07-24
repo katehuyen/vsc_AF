@@ -302,6 +302,29 @@ export function activeCount(list: WorkItem[]): number {
     return list.reduce((a, n) => a + (isTerminal(n) ? 0 : 1), 0);
 }
 
+/** The last-touched timestamp of an item — the tiebreaker when the same id
+ *  exists in two concurrently-saved copies (GAP-6 merge). */
+export function itemModifiedAt(n: WorkItem): number {
+    return Math.max(n.ts || 0, n.editedAt || 0, n.delegatedAt || 0, n.handledAt || 0, n.userRepliedAt || 0);
+}
+
+/** GAP-6 — union two copies of the queue by id, keeping the most-recently-touched
+ *  version of each item, so a concurrent writer's work is never clobbered by a
+ *  whole-file overwrite (e.g. the manager stamping while a second window captures).
+ *  Trade-off: an item deleted by one writer while another still holds it can
+ *  reappear — deliberately, since the priority is never LOSING a capture; the
+ *  resurrected terminal item is cleaned up on the next handle. */
+export function mergeItems(ours: WorkItem[], theirs: WorkItem[]): WorkItem[] {
+    const byId = new Map<string, WorkItem>();
+    for (const t of theirs) { if (t && typeof t.id === 'string') { byId.set(t.id, t); } }
+    for (const o of ours) {
+        if (!o || typeof o.id !== 'string') { continue; }
+        const t = byId.get(o.id);
+        byId.set(o.id, !t || itemModifiedAt(o) >= itemModifiedAt(t) ? o : t);
+    }
+    return Array.from(byId.values());
+}
+
 /** Cap without ever dropping a LIVE item — only trims the oldest terminal ones. */
 export function capItems(list: WorkItem[], max = MAX_ITEMS): WorkItem[] {
     if (list.length <= max) { return list; }
@@ -314,24 +337,49 @@ export function capItems(list: WorkItem[], max = MAX_ITEMS): WorkItem[] {
 
 export class WorkQueueStore {
     items: WorkItem[] = [];
+    /** Monotonic on-disk revision — bumped on every write, used to detect a
+     *  concurrent writer since we loaded (GAP-6). */
+    private rev = 0;
 
     constructor(private file: string) { }
 
-    load(): void {
+    /** Read + normalise the store from disk without touching in-memory state. */
+    private readDiskRaw(): { rev: number; items: WorkItem[] } | undefined {
         try {
-            const raw = JSON.parse(fs.readFileSync(this.file, 'utf8')) as { items?: WorkItem[] } | WorkItem[];
+            const raw = JSON.parse(fs.readFileSync(this.file, 'utf8')) as { rev?: number; items?: WorkItem[] } | WorkItem[];
             const arr = Array.isArray(raw) ? raw : raw?.items;
-            this.items = Array.isArray(arr)
-                ? arr.filter(n => n && typeof n.id === 'string').map(normalise)
-                : [];
-        } catch { this.items = []; }
+            const items = Array.isArray(arr) ? arr.filter(n => n && typeof n.id === 'string').map(normalise) : [];
+            const rev = !Array.isArray(raw) && typeof raw?.rev === 'number' ? raw.rev : 0;
+            return { rev, items };
+        } catch { return undefined; }
+    }
+
+    load(): void {
+        const disk = this.readDiskRaw();
+        this.items = disk?.items ?? [];
+        this.rev = disk?.rev ?? 0;
     }
 
     save(): void {
+        // GAP-6 — concurrency safety: if another writer bumped the on-disk rev
+        // since we loaded/last-saved, merge their items in before overwriting so
+        // nothing they captured is lost. Then write ATOMICALLY (temp + rename) so
+        // a reader never sees a half-written file.
+        let diskRev = this.rev;
+        const disk = this.readDiskRaw();
+        if (disk) {
+            diskRev = disk.rev;
+            if (diskRev !== this.rev) { this.items = mergeItems(this.items, disk.items); }
+        }
         this.items = capItems(this.items);
+        this.rev = Math.max(this.rev, diskRev) + 1;
+        const tmp = `${this.file}.tmp-${process.pid}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
         try {
-            fs.writeFileSync(this.file, JSON.stringify({ items: this.items }, null, 2), 'utf8');
-        } catch { /* best-effort */ }
+            fs.writeFileSync(tmp, JSON.stringify({ rev: this.rev, items: this.items }, null, 2), 'utf8');
+            fs.renameSync(tmp, this.file);
+        } catch {
+            try { fs.unlinkSync(tmp); } catch { /* ignore — best-effort cleanup */ }
+        }
     }
 
     add(input: WorkItemInput): WorkItem {
