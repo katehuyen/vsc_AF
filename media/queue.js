@@ -1,7 +1,7 @@
-// Agent Farm — İş Kuyruğu (work queue) page. The user→agent async channel
-// (mirror of Notices). Low-friction capture; items persist until HANDLED and
-// are shown in PIPELINE LANES so the user can track what got done and how.
-// Reads nothing but its own store data. See src/core/workqueue.ts.
+// Agent Farm — Work Queue page. The user→agent async channel (mirror of
+// Notices). Low-friction capture; items persist until HANDLED and are shown in
+// PIPELINE LANES so the user can track what got done and how. Reads nothing but
+// its own store data. See src/core/workqueue.ts.
 (function () {
     'use strict';
     const vscode = acquireVsCodeApi();
@@ -25,20 +25,20 @@
     // Pipeline lanes, in order. `blocked` sits on top: it is the ONLY state that
     // needs the user. `dropped` (voided) is tucked away behind a toggle.
     const LANES = [
-        { id: 'blocked', icon: '🟠', label: 'Sana soru (bloke)' },
-        { id: 'captured', icon: '⏬', label: 'Yeni' },
-        { id: 'grouped', icon: '🔀', label: 'Gruplandı' },
-        { id: 'delegated', icon: '⏩', label: 'Delege edildi' },
-        { id: 'done', icon: '✅', label: 'Bitti' },
-        { id: 'dropped', icon: '❌', label: 'İptal' }
+        { id: 'blocked', icon: '🟠', label: 'Needs you' },
+        { id: 'captured', icon: '⏬', label: 'New' },
+        { id: 'grouped', icon: '🔀', label: 'Grouped' },
+        { id: 'delegated', icon: '⏩', label: 'Delegated' },
+        { id: 'done', icon: '✅', label: 'Done' },
+        { id: 'dropped', icon: '❌', label: 'Dropped' }
     ];
     const LANE = Object.fromEntries(LANES.map(l => [l.id, l]));
-    const URG = { normal: '', soon: '🔸 yakında', urgent: '🔴 acil' };
+    const URG = { normal: '', soon: '🔸 soon', urgent: '🔴 urgent' };
 
     function saveState() { if (vscode.setState) { vscode.setState({ fTarget, fAuthor, query, showDropped }); } }
     function esc(s) { return C.esc(String(s == null ? '' : s)); }
     function fileBase(p) { return String(p || '').split(/[\\/]/).pop(); }
-    function authorChip(a) { return a === 'user' ? '🧑 sen' : '🤖 ' + esc(a); }
+    function authorChip(a) { return a === 'user' ? '🧑 you' : '🤖 ' + esc(a); }
     function timeLabel(ts) { return new Date(ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); }
 
     // ---- minimal safe markdown for resolution text (escape first) ----
@@ -75,25 +75,21 @@
             matchesQuery(n);
     }
 
-    function statusBadge(n) {
-        const l = LANE[n.status]; if (!l) { return ''; }
-        return `<span class="q-badge s-${n.status}">${l.icon} ${esc(l.label)}</span>`;
-    }
     function urgencyBadge(n) {
         return n.urgency && n.urgency !== 'normal' ? `<span class="q-urg u-${n.urgency}">${URG[n.urgency]}</span>` : '';
     }
 
     function sourceLink(n) {
         if (!n.sourceNoticeId) { return ''; }
-        const t = n.sourceNoticeTitle ? esc(n.sourceNoticeTitle) : '(mesaj)';
-        return `<div class="q-src">kaynak: <a href="#" class="q-openNotice" data-id="${esc(n.sourceNoticeId)}" title="Kaynak Notice mesajına git">🔔 ${t}</a></div>`;
+        const t = n.sourceNoticeTitle ? esc(n.sourceNoticeTitle) : '(message)';
+        return `<div class="q-src">source: <a href="#" class="q-openNotice" data-id="${esc(n.sourceNoticeId)}" title="Go to the source notice">🔔 ${t}</a></div>`;
     }
 
     function delegationLink(n) {
         const bits = [];
-        if (n.missionId) { bits.push(`<a href="#" class="q-afnav" data-to="missions" title="Missions panelini aç">🎯 mission ${esc(n.missionId.slice(0, 8))}</a>`); }
-        if (n.taskId) { bits.push(`<a href="#" class="q-afnav" data-to="tasks" title="Tasks panelini aç">⚙ task ${esc(n.taskId.slice(0, 8))}</a>`); }
-        if (n.groupId) { bits.push(`<span class="muted small">grup ${esc(n.groupId.slice(0, 8))}</span>`); }
+        if (n.missionId) { bits.push(`<a href="#" class="q-afnav" data-to="missions" title="Open the Missions panel">🎯 mission ${esc(n.missionId.slice(0, 8))}</a>`); }
+        if (n.taskId) { bits.push(`<a href="#" class="q-afnav" data-to="tasks" title="Open the Tasks panel">⚙ task ${esc(n.taskId.slice(0, 8))}</a>`); }
+        if (n.groupId) { bits.push(`<span class="muted small">group ${esc(n.groupId.slice(0, 8))}</span>`); }
         return bits.length ? `<div class="q-deleg">${bits.join(' · ')}</div>` : '';
     }
 
@@ -103,10 +99,10 @@
         if (n.stamp) { h += `<div class="q-stamp">${esc(n.stamp)}</div>`; }
         if (n.resolution) { h += `<div class="q-md">${mdToHtml(n.resolution)}</div>`; }
         const files = [];
-        if (n.answerPath) { files.push(`<button class="secondary" data-act="openanswer" data-id="${esc(n.id)}" title="${esc(n.answerPath)}">📝 Cevabı aç (${esc(fileBase(n.answerPath))})</button>`); }
-        if (n.reportPath) { files.push(`<button class="secondary" data-act="openreport" data-id="${esc(n.id)}" title="${esc(n.reportPath)}">📄 Raporu aç (${esc(fileBase(n.reportPath))})</button>`); }
+        if (n.answerPath) { files.push(`<button class="secondary" data-act="openanswer" data-id="${esc(n.id)}" title="${esc(n.answerPath)}">📝 Open answer (${esc(fileBase(n.answerPath))})</button>`); }
+        if (n.reportPath) { files.push(`<button class="secondary" data-act="openreport" data-id="${esc(n.id)}" title="${esc(n.reportPath)}">📄 Open report (${esc(fileBase(n.reportPath))})</button>`); }
         if (files.length) { h += `<div class="q-files">${files.join(' ')}</div>`; }
-        if (n.handledAt) { h += `<div class="muted small">ele alındı: ${esc(new Date(n.handledAt).toLocaleString())}</div>`; }
+        if (n.handledAt) { h += `<div class="muted small">handled: ${esc(new Date(n.handledAt).toLocaleString())}</div>`; }
         return h + '</div>';
     }
 
@@ -114,11 +110,11 @@
         const d = editDrafts[n.id];
         const urgOpts = ['normal', 'soon', 'urgent'].map(k => `<option value="${k}" ${d.urgency === k ? 'selected' : ''}>${k}</option>`).join('');
         return `<div class="q-edit">
-            <label>Metin</label><textarea class="q-ef" data-ef="text" rows="3">${esc(d.text)}</textarea>
-            <div class="q-erow"><span><label>Hedef</label><input class="q-ef" data-ef="target" value="${esc(d.target)}" placeholder="ZEN / ZEP / AgentFarm…"></span>
-              <span><label>Aciliyet</label><select class="q-ef" data-ef="urgency">${urgOpts}</select></span></div>
-            <div class="btnrow"><button data-act="editsave" data-id="${esc(n.id)}">Kaydet</button>
-              <button class="secondary" data-act="editcancel" data-id="${esc(n.id)}">Vazgeç</button></div>
+            <label>Text</label><textarea class="q-ef" data-ef="text" rows="3">${esc(d.text)}</textarea>
+            <div class="q-erow"><span><label>Target</label><input class="q-ef" data-ef="target" value="${esc(d.target)}" placeholder="repo or agent"></span>
+              <span><label>Urgency</label><select class="q-ef" data-ef="urgency">${urgOpts}</select></span></div>
+            <div class="btnrow"><button data-act="editsave" data-id="${esc(n.id)}">Save</button>
+              <button class="secondary" data-act="editcancel" data-id="${esc(n.id)}">Cancel</button></div>
         </div>`;
     }
 
@@ -131,25 +127,25 @@
         else {
             body = `${sourceLink(n)}
                 <div class="q-fulltext">${mdToHtml(n.text)}</div>
-                ${n.target ? `<div class="muted small">hedef: <strong>${esc(n.target)}</strong></div>` : ''}
+                ${n.target ? `<div class="muted small">target: <strong>${esc(n.target)}</strong></div>` : ''}
                 ${delegationLink(n)}${outcomeBlock(n)}
                 <div class="btnrow q-actions">
-                    <button data-act="handoff" data-id="${esc(n.id)}" title="Sorumlu ajanı aç, bu metni terminale yaz (göndermeden bekler)">🔗 Ajana bağlan</button>
-                    ${!terminal ? `<button class="secondary" data-act="urg" data-id="${esc(n.id)}" title="Aciliyeti değiştir">⏫ Aciliyet</button>` : ''}
-                    ${!terminal ? `<button class="secondary" data-act="edit" data-id="${esc(n.id)}">Düzenle</button>` : ''}
-                    ${!terminal ? `<button class="secondary" data-act="drop" data-id="${esc(n.id)}" title="Bu girdiyi iptal et (voided). Ancak ele alındıktan sonra silinebilir.">İptal et</button>` : ''}
-                    ${terminal ? `<button class="secondary danger" data-act="remove" data-id="${esc(n.id)}" title="Kalıcı sil (yalnız ele alınmış girdi silinebilir)">🗑 Sil</button>` : ''}
+                    <button data-act="handoff" data-id="${esc(n.id)}" title="Open the responsible agent and type this into its terminal (not sent)">🔗 Hand to agent</button>
+                    ${!terminal ? `<button class="secondary" data-act="urg" data-id="${esc(n.id)}" title="Cycle urgency">⏫ Urgency</button>` : ''}
+                    ${!terminal ? `<button class="secondary" data-act="edit" data-id="${esc(n.id)}">Edit</button>` : ''}
+                    ${!terminal ? `<button class="secondary" data-act="drop" data-id="${esc(n.id)}" title="Void this item (dropped). It can only be deleted once handled.">Drop</button>` : ''}
+                    ${terminal ? `<button class="secondary danger" data-act="remove" data-id="${esc(n.id)}" title="Delete permanently (only handled items can be deleted)">🗑 Delete</button>` : ''}
                 </div>`;
         }
         return `<div class="q-card s-${n.status} ${n.pinned ? 'pinned' : ''} ${focusItem === n.id ? 'focus' : ''}" data-id="${esc(n.id)}">
             <div class="q-row" data-toggle="${esc(n.id)}">
                 <span class="q-caret">${open ? '▾' : '▸'}</span>
-                <span class="q-author" title="${n.author === 'user' ? 'senin girdin' : 'ajan girdisi'}">${authorChip(n.author)}</span>
+                <span class="q-author" title="${n.author === 'user' ? 'your entry' : 'agent entry'}">${authorChip(n.author)}</span>
                 <span class="q-text" title="${esc(n.text)}">${esc(n.text)}</span>
                 ${urgencyBadge(n)}
                 ${n.target ? `<span class="q-target">${esc(n.target)}</span>` : ''}
                 ${tags ? `<span class="q-tags">${tags}</span>` : ''}
-                ${n.sourceNoticeId ? '<span class="q-badge src" title="Bir Notice mesajından üretildi">🔔</span>' : ''}
+                ${n.sourceNoticeId ? '<span class="q-badge src" title="Spawned from a notice">🔔</span>' : ''}
                 <span class="q-meta muted small">${esc(timeLabel(n.ts))}</span>
             </div>
             <div class="q-body" ${open ? '' : 'hidden'}>${body}</div>
@@ -164,32 +160,32 @@
     }
 
     function addForm() {
-        if (!addOpen) { return `<div class="q-addbar"><button data-add="open">＋ Kuyruğa ekle</button></div>`; }
+        if (!addOpen) { return `<div class="q-addbar"><button data-add="open">＋ Add to queue</button></div>`; }
         const targets = (DATA.targets || []);
         const dl = targets.map(t => `<option value="${esc(t)}"></option>`).join('');
         const urgOpts = ['normal', 'soon', 'urgent'].map(k => `<option value="${k}" ${addDraft.urgency === k ? 'selected' : ''}>${k}</option>`).join('');
         return `<div class="q-add">
-            <textarea id="q-add-text" rows="2" placeholder="Ne yapılacak? (tek satır yeter — sürtünmesiz not)">${esc(addDraft.text)}</textarea>
+            <textarea id="q-add-text" rows="2" placeholder="What needs doing? (one line is enough — friction-free)">${esc(addDraft.text)}</textarea>
             <div class="q-erow">
-                <span><input id="q-add-target" list="q-targets" value="${esc(addDraft.target)}" placeholder="Hedef (ops): ZEN / ZEP / AgentFarm…"><datalist id="q-targets">${dl}</datalist></span>
+                <span><input id="q-add-target" list="q-targets" value="${esc(addDraft.target)}" placeholder="Target (optional): a repo or agent"><datalist id="q-targets">${dl}</datalist></span>
                 <span><select id="q-add-urg">${urgOpts}</select></span>
             </div>
-            <div class="btnrow"><button data-add="save">Ekle</button><button class="secondary" data-add="cancel">Vazgeç</button>
-              <span class="muted small">Girdi ele alınana kadar silinmez.</span></div>
+            <div class="btnrow"><button data-add="save">Add</button><button class="secondary" data-add="cancel">Cancel</button>
+              <span class="muted small">An item can't be deleted until it's handled.</span></div>
         </div>`;
     }
 
     function controls() {
-        const targets = ['<option value="">Tüm hedefler</option>']
+        const targets = ['<option value="">All targets</option>']
             .concat((DATA.targets || []).map(t => `<option value="${esc(t)}" ${fTarget === t ? 'selected' : ''}>${esc(t)}</option>`)).join('');
-        const authors = ['<option value="">Herkes</option>', `<option value="user" ${fAuthor === 'user' ? 'selected' : ''}>🧑 sadece benim</option>`]
+        const authors = ['<option value="">Everyone</option>', `<option value="user" ${fAuthor === 'user' ? 'selected' : ''}>🧑 mine only</option>`]
             .concat((DATA.agents || []).map(a => `<option value="${esc(a)}" ${fAuthor === a ? 'selected' : ''}>🤖 ${esc(a)}</option>`)).join('');
         return `<div class="q-controls">
-            <input id="q-search" type="search" placeholder="🔍 ara" value="${esc(query)}">
+            <input id="q-search" type="search" placeholder="🔍 search" value="${esc(query)}">
             <select id="q-target">${targets}</select>
             <select id="q-author">${authors}</select>
-            <label class="q-drop"><input type="checkbox" id="q-showdropped" ${showDropped ? 'checked' : ''}> iptalleri göster</label>
-            <button class="secondary" id="q-reset" title="Filtreleri sıfırla">↺</button>
+            <label class="q-drop"><input type="checkbox" id="q-showdropped" ${showDropped ? 'checked' : ''}> show dropped</label>
+            <button class="secondary" id="q-reset" title="Reset filters">↺</button>
         </div>`;
     }
 
@@ -255,14 +251,14 @@
             lanesHtml += laneHtml(l, byLane[l.id] || []);
         }
         if (!lanesHtml) {
-            lanesHtml = '<p class="muted" style="margin-top:20px">📥 Kuyruk boş. Küçük düzeltmeleri/işleri buraya bırak — ele alınana kadar kaybolmaz. Komut: <code>Agent Farm: Kuyruğa ekle</code> ya da yukarıdaki ＋.</p>';
+            lanesHtml = '<p class="muted" style="margin-top:20px">📥 The queue is empty. Drop small fixes/tasks here — they won\'t be lost until handled. Command: <code>Agent Farm: Add to Queue</code> or the ＋ above.</p>';
         }
         const active = DATA.active || 0, blocked = DATA.blocked || 0;
         document.getElementById('app').innerHTML = `${STYLE}
             ${window.AFHeader.tabs('queue')}
             ${window.AFHeader.html({
-                page: 'queue', title: '📥 İş Kuyruğu',
-                sub: `${(DATA.items || []).length} girdi · ${active} aktif${blocked ? ` · ${blocked} sana soru` : ''} · gösterilen ${items.length} · ${new Date(DATA.generatedAt).toLocaleTimeString()}`,
+                page: 'queue', title: '📥 Work Queue',
+                sub: `${(DATA.items || []).length} items · ${active} active${blocked ? ` · ${blocked} need you` : ''} · showing ${items.length} · ${new Date(DATA.generatedAt).toLocaleTimeString()}`,
                 controls: controls()
             })}
             ${addForm()}

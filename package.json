@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.14.1",
+  "version": "3.14.2",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -971,13 +971,13 @@
       },
       {
         "command": "agentfarm.openQueue",
-        "title": "İş Kuyruğu (You → Agent work queue)",
+        "title": "Open Work Queue (You → Agent async work channel)",
         "category": "Agent Farm",
         "icon": "$(inbox)"
       },
       {
         "command": "agentfarm.queueAdd",
-        "title": "Kuyruğa ekle (queue a work item)",
+        "title": "Add to Queue",
         "category": "Agent Farm",
         "icon": "$(add)"
       },
@@ -2042,13 +2042,13 @@
         "agentFarm.answerDir": {
           "type": "string",
           "default": "",
-          "description": "Folder where a work item's detailed ANSWER (a 'cevap', not a report) is written by queue.stamp (naming YYYY-MM-DD_<agent>_<name>.md). Empty = D:\\zone\\know\\note\\obsidian\\01_INBOX\\00_AGENT_AREA\\00_OUTPUT\\01_CEVAPLAR."
+          "description": "Folder where a work item's detailed answer (not a user-requested report) is written by queue.stamp (naming YYYY-MM-DD_<agent>_<name>.md). Empty = D:\\zone\\know\\note\\obsidian\\01_INBOX\\00_AGENT_AREA\\00_OUTPUT\\01_CEVAPLAR."
         },
         "agentFarm.queue.targets": {
           "type": "array",
           "items": { "type": "string" },
-          "default": ["ZEN", "ZEP", "AgentFarm"],
-          "description": "Suggested routing targets (products/areas) offered in the work queue's add form and filter, in addition to the discovered agent names."
+          "default": [],
+          "description": "Optional routing-target suggestions (repos/areas) offered in the work queue's add form and filter, in addition to the discovered agent names. Empty by default — free text, nothing hardcoded."
         },
         "agentFarm.queue.groupSize": {
           "type": "number",

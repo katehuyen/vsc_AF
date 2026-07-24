@@ -2888,14 +2888,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         QueuePanel.refreshIfOpen(); NoticesPanel.refreshIfOpen(); updateNoticesBadge();
     };
 
-    // "Ajana bağlan": open an agent's terminal with the text PREFILLED on the
+    // "Hand to agent": open an agent's terminal with the text PREFILLED on the
     // command line but NOT executed — the user reviews and presses Enter. Same
     // interactive form as a task launch (core/tasks.ts), sendText(..., false).
     const handoffToAgent = async (text: string, target?: string): Promise<void> => {
         let agent = target ? agents.find(a => a.name.toLowerCase() === target.toLowerCase()) : undefined;
         if (!agent) {
             const pick = await vscode.window.showQuickPick(agents.map(a => a.name), {
-                placeHolder: `Bu işi hangi ajana bağlayayım? — "${text.slice(0, 60)}"`, ignoreFocusOut: true
+                placeHolder: `Which agent should handle this? — "${text.slice(0, 60)}"`, ignoreFocusOut: true
             });
             if (!pick) { return; }
             agent = agents.find(a => a.name === pick);
@@ -2905,11 +2905,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const terminal = vscode.window.createTerminal({ name: `AF: ${agent.name}`, cwd: agent.dir });
         terminal.show();
         terminal.sendText(`claude "${oneLine}"`, false);   // typed, NOT executed
-        void vscode.window.showInformationMessage(`🔗 ${agent.name} açıldı — mesaj terminale yazıldı (gönderilmedi). Gözden geçir, Enter'a bas.`);
+        void vscode.window.showInformationMessage(`🔗 Opened ${agent.name} — the message is typed into the terminal (not sent). Review it and press Enter.`);
     };
 
+    // Routing-target suggestions for the queue: the discovered agent names, plus
+    // whatever the user configured in agentFarm.queue.targets (empty by default —
+    // no product names are hardcoded; targets are free text anyway).
     const queueTargets = (): string[] => {
-        const cfg = vscode.workspace.getConfiguration('agentFarm').get<string[]>('queue.targets') || ['ZEN', 'ZEP', 'AgentFarm'];
+        const cfg = vscode.workspace.getConfiguration('agentFarm').get<string[]>('queue.targets') || [];
         return [...new Set([...cfg, ...agents.map(a => a.name)])];
     };
     const showQueuePanel = (focusItem?: string): void => QueuePanel.show({
@@ -6629,14 +6632,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         vscode.commands.registerCommand('agentfarm.queueAdd', async () => {
             const text = await vscode.window.showInputBox({
-                prompt: 'İş kuyruğuna ekle — tek satır yeter (ele alınana kadar kaybolmaz)',
-                placeHolder: 'ör. ZEN: dikte pedi bazen ikinci ekranda açılmıyor',
+                prompt: "Add to the work queue — one line is enough (it won't be lost until handled)",
+                placeHolder: 'e.g. fix the alignment glitch on the settings page',
                 ignoreFocusOut: true
             });
             if (!text || !text.trim()) { return; }
             const item = workQueueStore.add({ text: text.trim(), author: 'user' });
             updateNoticesBadge(); QueuePanel.refreshIfOpen();
-            void vscode.window.showInformationMessage('📥 Kuyruğa eklendi.', 'Kuyruğu aç')
+            void vscode.window.showInformationMessage('📥 Added to the queue.', 'Open queue')
                 .then(p => { if (p) { showQueuePanel(item.id); } });
         }),
 

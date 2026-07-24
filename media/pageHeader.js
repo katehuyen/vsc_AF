@@ -20,17 +20,16 @@
     const NAV = [
         { id: 'dashboard', label: 'Dashboard' },
         { id: 'notices', label: '🔔 Notices' },
-        { id: 'queue', label: '📥 Kuyruk' },
+        { id: 'queue', label: '📥 Queue' },
         { id: 'timeline', label: 'Live Timeline' },
         { id: 'tasks', label: 'Tasks' },
         { id: 'missions', label: 'Missions' },
         { id: 'toolbox', label: 'Toolbox' }
     ];
 
-    // Notices ↔ Kuyruk read as two tabs of ONE inbox (the user's "tek sayfa iki
-    // sekme"). Both pages render this strip at the very top; the inactive tab is
-    // an afnav button that opens the other panel. Counts ride along: 🔔 unread,
-    // 📥 items that need you (blocked).
+    // Notices ↔ Queue read as two tabs of ONE inbox. Both pages render this strip
+    // at the very top; the inactive tab is an afnav button that opens the other
+    // panel. Counts ride along: 🔔 unread, 📥 items that need you (blocked).
     const TAB_STYLE = `<style>
         .af-tabs { display:flex; gap:4px; margin:0 0 12px; border-bottom:1px solid var(--vscode-panel-border); }
         .af-tab { padding:7px 16px; border:none; border-bottom:2px solid transparent; border-radius:6px 6px 0 0;
@@ -46,7 +45,7 @@
         const blocked = (ui.queue && ui.queue.blocked) || 0;
         const T = [
             { id: 'notices', label: '🔔 Notices', n: unread },
-            { id: 'queue', label: '📥 Kuyruk', n: blocked }
+            { id: 'queue', label: '📥 Queue', n: blocked }
         ];
         return `${TAB_STYLE}<div class="af-tabs">` + T.map(t =>
             `<button class="af-tab ${t.id === active ? 'on' : ''}" data-afnav="${t.id}">${t.label}${t.n ? ` <span class="af-tab-n">(${t.n})</span>` : ''}</button>`

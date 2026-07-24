@@ -4,7 +4,7 @@ import { handleAfNav, htmlShell } from './base';
 import { WorkItem, WorkQueueStore } from '../core/workqueue';
 
 /**
- * İş Kuyruğu page — the user→agent async work queue (see core/workqueue.ts),
+ * Work Queue page — the user→agent async work queue (see core/workqueue.ts),
  * the mirror of the Notices board. Low-friction capture + pipeline LANES so the
  * user can track what they dropped through to completion (and read the outcome).
  * Self-contained: it touches only its own store, plus injected callbacks for the
@@ -20,7 +20,7 @@ export interface QueueDeps {
     onChange?: () => void;
     /** Cross-link back to Notices, focused on the source notice. */
     openNotice?: (noticeId: string) => void;
-    /** "Ajana bağlan": open the item's target agent terminal, prefilled with the
+    /** "Hand to agent": open the item's target agent terminal, prefilled with the
      *  item text (typed, NOT sent — the user reviews and presses Enter). */
     handoff?: (item: WorkItem) => void;
 }
@@ -52,7 +52,7 @@ export class QueuePanel {
         }
         const panel = vscode.window.createWebviewPanel(
             'agentfarm.queue',
-            'Agent Farm — İş Kuyruğu',
+            'Agent Farm — Work Queue',
             vscode.ViewColumn.One,
             { enableScripts: true, retainContextWhenHidden: true }
         );
@@ -72,7 +72,7 @@ export class QueuePanel {
         this.panel.webview.html = htmlShell(
             this.panel.webview,
             this.deps.extensionUri,
-            'Agent Farm İş Kuyruğu',
+            'Agent Farm Work Queue',
             buildData(this.deps, this.focusItem),
             'queue.js'
         );
@@ -115,7 +115,7 @@ export class QueuePanel {
             case 'drop':
                 // User voids a capture — a form of HANDLING it, so it becomes
                 // terminal (and only then removable). Nothing vanishes unhandled.
-                if (typeof msg.id === 'string') { s.stamp(msg.id, { stamp: '-DROPPED- (kullanıcı iptal etti)', status: 'dropped' }); this.mutated(); }
+                if (typeof msg.id === 'string') { s.stamp(msg.id, { stamp: '-DROPPED- (cancelled by user)', status: 'dropped' }); this.mutated(); }
                 break;
             case 'remove':
                 if (typeof msg.id === 'string') {
@@ -123,8 +123,8 @@ export class QueuePanel {
                     if (!r.ok) {
                         void vscode.window.showWarningMessage(
                             r.reason === 'not-handled'
-                                ? 'Agent Farm: bu girdi henüz ele alınmadı — önce iptal et ya da bitir (ele alınmadan silinmez).'
-                                : 'Agent Farm: girdi bulunamadı.');
+                                ? "Agent Farm: this item isn't handled yet — drop or finish it first (it can't be deleted before it's handled)."
+                                : 'Agent Farm: item not found.');
                     }
                     this.mutated();
                 }
@@ -163,13 +163,13 @@ export class QueuePanel {
         if (!p) { return; }
         try {
             if (!fs.existsSync(p)) {
-                void vscode.window.showWarningMessage(`Agent Farm: dosya bulunamadı — ${p}`);
+                void vscode.window.showWarningMessage(`Agent Farm: file not found — ${p}`);
                 return;
             }
             const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(p));
             await vscode.window.showTextDocument(doc, { preview: true });
         } catch (e) {
-            void vscode.window.showErrorMessage(`Agent Farm: dosya açılamadı — ${String(e)}`);
+            void vscode.window.showErrorMessage(`Agent Farm: could not open file — ${String(e)}`);
         }
     }
 

@@ -19,16 +19,16 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
 // ---------- makeWorkItem / coercion ----------
 {
     const n = makeWorkItem({
-        text: '  fix ZEN pad  ', author: ' user ', target: ' ZEN ', urgency: 'URGENT',
+        text: '  fix repoA pad  ', author: ' user ', target: ' repoA ', urgency: 'URGENT',
         tags: 'a, b', sourceNoticeId: ' n1 ', sourceNoticeTitle: ' uyku reminder '
     });
-    ok('text trimmed', n.text === 'fix ZEN pad');
+    ok('text trimmed', n.text === 'fix repoA pad');
     ok('author trimmed', n.author === 'user');
     ok('default status captured', n.status === 'captured');
     ok('urgency lowercased+validated', n.urgency === 'urgent');
     ok('bad urgency → normal', coerceUrgency('nope') === 'normal' && coerceUrgency('soon') === 'soon');
     ok('unknown status → fallback', coerceStatus('nope') === 'captured' && coerceStatus('done') === 'done');
-    ok('target trimmed', n.target === 'ZEN');
+    ok('target trimmed', n.target === 'repoA');
     ok('tags parsed', n.tags.join(',') === 'a,b');
     ok('source notice linked + title snapshot', n.sourceNoticeId === 'n1' && n.sourceNoticeTitle === 'uyku reminder');
     ok('author defaults to user', makeWorkItem({ text: 'x' }).author === 'user');
@@ -43,7 +43,7 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
 {
     const base = Date.now();
     const list = [
-        { id: 'a', ts: base + 1, author: 'user', text: 't', status: 'captured', urgency: 'normal', target: 'ZEN' },
+        { id: 'a', ts: base + 1, author: 'user', text: 't', status: 'captured', urgency: 'normal', target: 'repoA' },
         { id: 'b', ts: base + 2, author: 'developer', text: 't', status: 'done', urgency: 'normal', tags: ['ui'] },
         { id: 'c', ts: base + 3, author: 'user', text: 't', status: 'blocked', urgency: 'urgent', pinned: true, groupId: 'g1' },
         { id: 'd', ts: base + 4, author: 'user', text: 't', status: 'delegated', urgency: 'soon', sourceNoticeId: 'n9' }
@@ -52,7 +52,7 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
     ok('filter by status', filterItems(list, { status: 'captured' }).map(n => n.id).join() === 'a');
     ok('filter active (non-terminal)', filterItems(list, { active: true }).map(n => n.id).sort().join() === 'a,c,d');
     ok('filter by author', filterItems(list, { author: 'user' }).length === 3);
-    ok('filter by target', filterItems(list, { target: 'ZEN' }).map(n => n.id).join() === 'a');
+    ok('filter by target', filterItems(list, { target: 'repoA' }).map(n => n.id).join() === 'a');
     ok('filter by urgency', filterItems(list, { urgency: 'urgent' }).map(n => n.id).join() === 'c');
     ok('filter by groupId', filterItems(list, { groupId: 'g1' }).map(n => n.id).join() === 'c');
     ok('filter by sourceNoticeId', filterItems(list, { sourceNoticeId: 'n9' }).map(n => n.id).join() === 'd');
@@ -80,14 +80,14 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
     const store = new WorkQueueStore(file); store.load();
     ok('fresh store empty', store.items.length === 0 && store.active() === 0);
 
-    const a = store.add({ text: 'fix A', author: 'user', target: 'ZEN' });
-    const b = store.add({ text: 'fix B', author: 'user', target: 'ZEN' });
+    const a = store.add({ text: 'fix A', author: 'user', target: 'repoA' });
+    const b = store.add({ text: 'fix B', author: 'user', target: 'repoA' });
     const c = store.add({ text: 'fix C', author: 'developer' });
     ok('add prepends', store.items[0].id === c.id);
     ok('active counts all three', store.active() === 3);
 
-    ok('edit updates fields', store.edit(a.id, { text: 'fix A v2', target: 'ZEP', urgency: 'soon' }) && (() => {
-        const n = store.get(a.id); return n.text === 'fix A v2' && n.target === 'ZEP' && n.urgency === 'soon' && n.edited === true;
+    ok('edit updates fields', store.edit(a.id, { text: 'fix A v2', target: 'repoB', urgency: 'soon' }) && (() => {
+        const n = store.get(a.id); return n.text === 'fix A v2' && n.target === 'repoB' && n.urgency === 'soon' && n.edited === true;
     })());
     ok('setUrgency', store.setUrgency(b.id, 'urgent') && store.get(b.id).urgency === 'urgent');
     ok('pin floats', store.pin(c.id, true) && store.list()[0].id === c.id);
@@ -108,8 +108,8 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
     ok('archive refuses a live item', store.archive(a.id) === false);
 
     // stamp handles it (with a cevap) → terminal → removable
-    ok('stamp writes outcome + status done', store.stamp(a.id, { stamp: '-DONE- fixed', resolution: 'ZEN pad düzeltildi', answerPath: 'D:/CEVAPLAR/x.md', status: 'done' }) && (() => {
-        const n = store.get(a.id); return n.status === 'done' && n.stamp === '-DONE- fixed' && n.resolution === 'ZEN pad düzeltildi' && n.answerPath === 'D:/CEVAPLAR/x.md' && n.handledAt;
+    ok('stamp writes outcome + status done', store.stamp(a.id, { stamp: '-DONE- fixed', resolution: 'pad fixed', answerPath: 'D:/CEVAPLAR/x.md', status: 'done' }) && (() => {
+        const n = store.get(a.id); return n.status === 'done' && n.stamp === '-DONE- fixed' && n.resolution === 'pad fixed' && n.answerPath === 'D:/CEVAPLAR/x.md' && n.handledAt;
     })());
     ok('remove now allowed (terminal)', store.remove(a.id).ok === true && !store.items.some(n => n.id === a.id));
 
@@ -154,14 +154,14 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
     const cat = reg.catalog().map(c => c.op);
     ok('queue ops catalogued', ['queue.add', 'queue.list', 'queue.get', 'queue.group', 'queue.delegate', 'queue.stamp', 'queue.remove', 'queue.fromNotice'].every(op => cat.includes(op)));
 
-    const add = await reg.dispatch('queue.add', { text: 'ZEN pad ikinci ekranda açılmıyor', target: 'ZEN', urgency: 'soon', author: 'user' });
+    const add = await reg.dispatch('queue.add', { text: 'pad does not open on the second screen', target: 'repoA', urgency: 'soon', author: 'user' });
     ok('add returns id/status/active', add.ok && add.result.status === 'captured' && add.result.active === 1);
-    ok('onPost + onChange fired', posted && posted.text === 'ZEN pad ikinci ekranda açılmıyor' && changes >= 1);
+    ok('onPost + onChange fired', posted && posted.text === 'pad does not open on the second screen' && changes >= 1);
 
-    const noText = await reg.dispatch('queue.add', { target: 'ZEN' });
+    const noText = await reg.dispatch('queue.add', { target: 'repoA' });
     ok('add refuses missing text', !noText.ok && /text/i.test(noText.error));
 
-    const add2 = await reg.dispatch('queue.add', { text: 'ZEP crash on launch', target: 'ZEP' });
+    const add2 = await reg.dispatch('queue.add', { text: 'repoB crash on launch', target: 'repoB' });
     const grp = await reg.dispatch('queue.group', { ids: [add.result.id, add2.result.id] });
     ok('group via bridge', grp.ok && grp.result.count === 2);
 

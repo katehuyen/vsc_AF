@@ -61,7 +61,7 @@ export interface WorkItem {
     author: string;
     /** The raw capture — the whole point, friction-free. */
     text: string;
-    /** Product/repo/agent routing hint: "ZEN" | "ZEP" | "AgentFarm" | <agent>. */
+    /** Free-text routing hint: a repo/area or an agent name. */
     target?: string;
     tags?: string[];
     /** default 'normal'. */
@@ -423,7 +423,7 @@ export function registerQueueOps(bridge: BridgeRegistry, deps: QueueOpsDeps): vo
     bridge.register([
         {
             op: 'queue.add',
-            describe: 'Drop ONE work item into the user\'s async work queue (user→agent; the low-friction capture channel — "fix this / do this" that does NOT deserve its own turn). Persists until HANDLED. args: text (required, the raw one-liner), target? (product/repo/agent hint: ZEN|ZEP|AgentFarm|<agent>), urgency? (normal|soon|urgent; urgent short-circuits batching), tags? (string[]|csv), author? (defaults to the agent name for agent-queued items; "user" for user captures). The manager scans, groups and batch-delegates these.',
+            describe: 'Drop ONE work item into the user\'s async work queue (user→agent; the low-friction capture channel — "fix this / do this" that does NOT deserve its own turn). Persists until HANDLED. args: text (required, the raw one-liner), target? (free-text routing hint: a repo/area or an agent name), urgency? (normal|soon|urgent; urgent short-circuits batching), tags? (string[]|csv), author? (defaults to the agent name for agent-queued items; "user" for user captures). The manager scans, groups and batch-delegates these.',
             handler: (args) => {
                 const item = store.add({
                     text: argStr(args, 'text'),

@@ -25,7 +25,7 @@
     const editing = new Set();      // ids in edit mode
     const editDrafts = {};          // id -> {title,type,level,tags,body,sections:[{title,body}]}
     const showOrig = new Set();     // ids showing the pre-edit original
-    const converting = new Set();   // ids showing the "kuyruğa ekle" inline box
+    const converting = new Set();   // ids showing the "add to queue" inline box
     const convertDrafts = {};       // id -> text the user is writing for the queue
     const convertDelete = {};       // id -> bool: delete the notice on send (default true)
     let refocusSearch = false;
@@ -143,10 +143,10 @@
         const del = convertDelete[n.id] !== undefined ? convertDelete[n.id] : true;
         // Answering a question IS leaving a new task → the answer auto-becomes a
         // queue item; the notice is deleted by default (uncheck to keep it).
-        return `<div class="nt-qbox"><textarea class="nt-atext" data-id="${esc(n.id)}" rows="3" placeholder="Cevabını yaz — otomatik kuyruğa iş olarak eklenir…">${esc(draft)}</textarea>
-            <label class="nt-del"><input type="checkbox" class="nt-delcb" data-id="${esc(n.id)}" ${del ? 'checked' : ''}> gönderince bu mesajı sil</label>
-            <div class="btnrow"><button data-act="answer" data-id="${esc(n.id)}">Cevap gönder → kuyruğa</button>
-            <button class="secondary" data-act="decline" data-id="${esc(n.id)}">Cevapsız kapat</button></div></div>`;
+        return `<div class="nt-qbox"><textarea class="nt-atext" data-id="${esc(n.id)}" rows="3" placeholder="Type your answer — it's auto-added to the work queue as a task…">${esc(draft)}</textarea>
+            <label class="nt-del"><input type="checkbox" class="nt-delcb" data-id="${esc(n.id)}" ${del ? 'checked' : ''}> delete this message on send</label>
+            <div class="btnrow"><button data-act="answer" data-id="${esc(n.id)}">Send answer → queue</button>
+            <button class="secondary" data-act="decline" data-id="${esc(n.id)}">Dismiss (no answer)</button></div></div>`;
     }
 
     // Queue items this notice spawned (the bi-directional link) — shown inside
@@ -154,19 +154,19 @@
     function spawnedHtml(n) {
         if (!n.spawnedItems || !n.spawnedItems.length) { return ''; }
         const rows = n.spawnedItems.map(s =>
-            `<li><a href="#" class="nt-openitem" data-id="${esc(s.itemId)}" title="Kuyruktaki item'a git">📥 ${esc(s.text || '(item)')}</a></li>`).join('');
-        return `<div class="nt-spawned"><div class="muted small">🔁 Bu mesajdan üretilen kuyruk item'ları:</div><ul>${rows}</ul></div>`;
+            `<li><a href="#" class="nt-openitem" data-id="${esc(s.itemId)}" title="Go to the queue item">📥 ${esc(s.text || '(item)')}</a></li>`).join('');
+        return `<div class="nt-spawned"><div class="muted small">🔁 Queue items spawned from this message:</div><ul>${rows}</ul></div>`;
     }
 
-    // The "Kuyruğa ekle" inline box (low-friction convert; default-delete).
+    // The "Add to queue" inline box (low-friction convert; default-delete).
     function convertHtml(n) {
         if (!converting.has(n.id)) { return ''; }
         const draft = convertDrafts[n.id] != null ? convertDrafts[n.id] : '';
         const del = convertDelete[n.id] !== undefined ? convertDelete[n.id] : true;
-        return `<div class="nt-convert"><textarea class="nt-ctext" data-id="${esc(n.id)}" rows="2" placeholder="Kuyruğa ne düşsün? (ör. 'evet girmedim, uyku 01:00–08:30')">${esc(draft)}</textarea>
-            <label class="nt-del"><input type="checkbox" class="nt-cdelcb" data-id="${esc(n.id)}" ${del ? 'checked' : ''}> gönderince bu mesajı sil</label>
-            <div class="btnrow"><button data-act="convertsend" data-id="${esc(n.id)}">📥 Kuyruğa gönder</button>
-            <button class="secondary" data-act="convertcancel" data-id="${esc(n.id)}">Vazgeç</button></div></div>`;
+        return `<div class="nt-convert"><textarea class="nt-ctext" data-id="${esc(n.id)}" rows="2" placeholder="What should go to the queue? (your reply / elaboration)">${esc(draft)}</textarea>
+            <label class="nt-del"><input type="checkbox" class="nt-cdelcb" data-id="${esc(n.id)}" ${del ? 'checked' : ''}> delete this message on send</label>
+            <div class="btnrow"><button data-act="convertsend" data-id="${esc(n.id)}">📥 Send to queue</button>
+            <button class="secondary" data-act="convertcancel" data-id="${esc(n.id)}">Cancel</button></div></div>`;
     }
 
     function sectionsHtml(n) {
@@ -225,8 +225,8 @@
                 ${n.body ? `<div class="nt-md">${mdToHtml(n.body)}</div>` : (!n.sections && !isQ ? '<div class="muted small">(no details)</div>' : '')}
                 ${sectionsHtml(n)}${reportBtn}${questionBlock(n)}${spawnedHtml(n)}${convertHtml(n)}${originalBlock(n)}
                 <div class="btnrow nt-actions">
-                    <button data-act="handoffNotice" data-id="${esc(n.id)}" title="Sorumlu ajanı aç, bu mesajı terminale yaz (göndermeden bekler)">🔗 Ajana bağlan</button>
-                    ${!isQ ? `<button data-act="convert" data-id="${esc(n.id)}" title="Bu mesajı bir kuyruk işine çevir">📥 Kuyruğa ekle</button>` : ''}
+                    <button data-act="handoffNotice" data-id="${esc(n.id)}" title="Open the responsible agent and type this message into its terminal (not sent)">🔗 Hand to agent</button>
+                    ${!isQ ? `<button data-act="convert" data-id="${esc(n.id)}" title="Turn this message into a queue item">📥 Add to queue</button>` : ''}
                     <button class="secondary" data-act="read" data-id="${esc(n.id)}" data-read="${n.read ? '0' : '1'}">${n.read ? 'Mark unread' : 'Mark read'}</button>
                     <button class="secondary" data-act="edit" data-id="${esc(n.id)}">Edit</button>
                     ${n.edited ? `<button class="secondary" data-act="orig" data-id="${esc(n.id)}">${showOrig.has(n.id) ? 'Hide original' : 'Show original'}</button>` : ''}

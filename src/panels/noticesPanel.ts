@@ -26,7 +26,7 @@ export interface NoticesDeps {
     /** Convert a notice (or the user's answer to it) into a work-queue item;
      *  links both ways and optionally removes the source notice (default). */
     convertToQueue?: (a: { noticeId: string; text: string; deleteNotice: boolean }) => void;
-    /** "Ajana bağlan" on a notice: open the responsible agent's terminal,
+    /** "Hand to agent" on a notice: open the responsible agent's terminal,
      *  prefilled with the notice text (typed, not sent). */
     handoffNotice?: (notice: Notice) => void;
     /** Open the work queue focused on a spawned item (cross-link). */
@@ -136,7 +136,7 @@ export class NoticesPanel {
                 }
                 break;
             case 'convertToQueue':
-                // "Kuyruğa ekle" — turn this notice into a work item.
+                // "Add to queue" — turn this notice into a work item.
                 if (typeof msg.id === 'string' && typeof msg.text === 'string' && msg.text.trim()) {
                     try { this.deps.convertToQueue?.({ noticeId: msg.id, text: msg.text, deleteNotice: msg.deleteNotice !== false }); } catch { /* best-effort */ }
                     this.mutated();
