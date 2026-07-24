@@ -46,6 +46,7 @@ import { buildEvalReport, compareRuns, EvalCase, EvalStore, runEvalSet, summariz
 import { buildInsights, Insight } from './core/health';
 import { ApprovalQueue, blockingCount, buildNeedsQueue, NeedItem } from './core/needs';
 import { NoticesStore, registerNoticesOps, reportFileStem } from './core/notices';
+import { registerQueueOps, WorkItem, WorkQueueStore } from './core/workqueue';
 import { PulseStore, runPulseSweep } from './core/pulse';
 import { buildTriggerStats, describeTriggerStat, triggerAlerts } from './core/triggerstats';
 import {
@@ -121,7 +122,8 @@ import { AirtablePanel } from './panels/airtablePanel';
 import { TasksPanel } from './panels/tasksPanel';
 import { NeedsPanel } from './panels/needsPanel';
 import { NoticesPanel } from './panels/noticesPanel';
-import { setNoticesUnreadProvider } from './panels/base';
+import { QueuePanel } from './panels/queuePanel';
+import { setNoticesUnreadProvider, setQueueBlockedProvider } from './panels/base';
 import { SearchPanel } from './panels/searchPanel';
 import { FarmSettingsPanel } from './panels/settingsPanel';
 import { SelectionPanel } from './panels/selectionPanel';
@@ -246,17 +248,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // bridge op. Dedicated page + a status-bar bell carrying the unread count.
     const noticesStore = new NoticesStore(path.join(context.globalStorageUri.fsPath, 'notices.json'));
     noticesStore.load();
+    // Work Queue — the user→agent async work channel (core/workqueue.ts): the
+    // mirror of Notices. The SAME status-bar bell carries its "needs you"
+    // (blocked) count, so the user has ONE attention indicator — never two
+    // separate places to scan.
+    const workQueueStore = new WorkQueueStore(path.join(context.globalStorageUri.fsPath, 'work-queue.json'));
+    workQueueStore.load();
     // Feed the global nav's 🔔 Notices badge (read live at each page render).
     setNoticesUnreadProvider(() => noticesStore.unread());
+    setQueueBlockedProvider(() => workQueueStore.blocked());
     const noticesBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 89);
     noticesBar.command = 'agentfarm.openNotices';
     context.subscriptions.push(noticesBar);
     const updateNoticesBadge = () => {
         const u = noticesStore.unread();
-        noticesBar.text = u > 0 ? `$(bell-dot) ${u}` : '$(bell)';
-        noticesBar.tooltip = u > 0
-            ? `${u} unread notice(s) — click to open the Notices board`
-            : 'Notices — agent→user messages & reminders';
+        const b = workQueueStore.blocked();   // queue items that need YOU
+        const n = u + b;
+        noticesBar.text = n > 0 ? `$(bell-dot) ${n}` : '$(bell)';
+        noticesBar.tooltip = n > 0
+            ? `${u} unread notice(s)${b ? ` · ${b} queue item(s) need you` : ''} — click to open`
+            : 'Notices & work queue — agent↔you';
         noticesBar.show();
     };
     updateNoticesBadge();
@@ -2828,6 +2839,100 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         }
     });
+
+    // A work item's detailed ANSWER (a "cevap", NOT a user-requested report) is
+    // written to its own dedicated folder, 01_CEVAPLAR — distinct from 10_REPORT.
+    // Same naming as reports (YYYY-MM-DD_<agent>_<name>.md) so it stays
+    // attributable; the queue links it as answerPath.
+    const cevapDir = (): string => {
+        const cfg = vscode.workspace.getConfiguration('agentFarm').get<string>('answerDir');
+        return (cfg && cfg.trim())
+            || path.join('D:', 'zone', 'know', 'note', 'obsidian', '01_INBOX', '00_AGENT_AREA', '00_OUTPUT', '01_CEVAPLAR');
+    };
+    const writeAnswer = (a: { title: string; name?: string; body: string; agentName?: string }): string => {
+        const dir = cevapDir();
+        fs.mkdirSync(dir, { recursive: true });
+        const d = new Date();
+        const stem = reportFileStem({ title: a.title, name: a.name, agentName: a.agentName, date: d });
+        let file = path.join(dir, `${stem}.md`);
+        for (let i = 2; fs.existsSync(file); i++) { file = path.join(dir, `${stem}-${i}.md`); }
+        const footer = a.agentName ? `\n\n---\n_${a.agentName} · ${d.toLocaleString()}_\n` : '';
+        fs.writeFileSync(file, a.body.trimEnd() + footer, 'utf8');
+        return file;
+    };
+
+    // Work Queue bridge ops (queue.*) — the user→agent capture channel. The
+    // notices port lets queue.fromNotice cross-link the two boards without a
+    // hard module dependency. Panel refresh is added once QueuePanel exists.
+    registerQueueOps(bridge, {
+        store: workQueueStore,
+        notices: {
+            titleOf: (id) => noticesStore.titleOf(id),
+            addSpawnedItem: (id, ref) => noticesStore.addSpawnedItem(id, ref),
+            dismiss: (id) => noticesStore.dismiss(id)
+        },
+        writeAnswer,
+        // Refresh BOTH boards: queue.fromNotice mutates a notice too.
+        onChange: () => { QueuePanel.refreshIfOpen(); NoticesPanel.refreshIfOpen(); updateNoticesBadge(); }
+    });
+
+    // --- Notice ↔ Kuyruk shared plumbing (used by both panels + commands) ---
+    // Convert a notice (or an answer to it) into a work-queue item, cross-linking
+    // both boards. Default-deletes the source notice (else records the spawned
+    // item ON the notice so the link stays visible).
+    const convertNoticeToQueue = (a: { noticeId: string; text: string; deleteNotice: boolean }): void => {
+        const title = noticesStore.titleOf(a.noticeId);
+        const item = workQueueStore.add({ text: a.text, author: 'user', sourceNoticeId: a.noticeId, sourceNoticeTitle: title });
+        if (a.deleteNotice) { noticesStore.dismiss(a.noticeId); }
+        else { noticesStore.addSpawnedItem(a.noticeId, { itemId: item.id, text: item.text, ts: item.ts }); }
+        QueuePanel.refreshIfOpen(); NoticesPanel.refreshIfOpen(); updateNoticesBadge();
+    };
+
+    // "Ajana bağlan": open an agent's terminal with the text PREFILLED on the
+    // command line but NOT executed — the user reviews and presses Enter. Same
+    // interactive form as a task launch (core/tasks.ts), sendText(..., false).
+    const handoffToAgent = async (text: string, target?: string): Promise<void> => {
+        let agent = target ? agents.find(a => a.name.toLowerCase() === target.toLowerCase()) : undefined;
+        if (!agent) {
+            const pick = await vscode.window.showQuickPick(agents.map(a => a.name), {
+                placeHolder: `Bu işi hangi ajana bağlayayım? — "${text.slice(0, 60)}"`, ignoreFocusOut: true
+            });
+            if (!pick) { return; }
+            agent = agents.find(a => a.name === pick);
+        }
+        if (!agent) { return; }
+        const oneLine = text.replace(/\r?\n/g, ' ').replace(/"/g, '\\"').slice(0, 2000);
+        const terminal = vscode.window.createTerminal({ name: `AF: ${agent.name}`, cwd: agent.dir });
+        terminal.show();
+        terminal.sendText(`claude "${oneLine}"`, false);   // typed, NOT executed
+        void vscode.window.showInformationMessage(`🔗 ${agent.name} açıldı — mesaj terminale yazıldı (gönderilmedi). Gözden geçir, Enter'a bas.`);
+    };
+
+    const queueTargets = (): string[] => {
+        const cfg = vscode.workspace.getConfiguration('agentFarm').get<string[]>('queue.targets') || ['ZEN', 'ZEP', 'AgentFarm'];
+        return [...new Set([...cfg, ...agents.map(a => a.name)])];
+    };
+    const showQueuePanel = (focusItem?: string): void => QueuePanel.show({
+        extensionUri: context.extensionUri,
+        store: workQueueStore,
+        targets: queueTargets,
+        agentNames: () => agents.map(a => a.name),
+        onChange: () => { updateNoticesBadge(); NoticesPanel.refreshIfOpen(); },
+        openNotice: (noticeId) => showNoticesPanel(noticeId),
+        handoff: (item) => { void handoffToAgent(item.text, item.target); }
+    }, focusItem);
+
+    const showNoticesPanel = (focusNotice?: string): void => NoticesPanel.show({
+        extensionUri: context.extensionUri,
+        store: noticesStore,
+        agentNames: () => agents.map(a => a.name),
+        onChange: () => { updateNoticesBadge(); QueuePanel.refreshIfOpen(); },
+        lastExportDir: () => context.globalState.get<string>('agentfarm.lastExportDir'),
+        setLastExportDir: (dir: string) => { void context.globalState.update('agentfarm.lastExportDir', dir); },
+        convertToQueue: convertNoticeToQueue,
+        handoffNotice: (n) => { void handoffToAgent(n.title, n.agentName); },
+        openQueueItem: (itemId) => showQueuePanel(itemId)
+    }, focusNotice);
 
     // ---------- Airtable Engine module ----------
     // Single source of truth: the module's own store file in globalStorage —
@@ -6514,15 +6619,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             NeedsPanel.show(needsDeps);
         }),
 
-        vscode.commands.registerCommand('agentfarm.openNotices', () => {
-            NoticesPanel.show({
-                extensionUri: context.extensionUri,
-                store: noticesStore,
-                agentNames: () => agents.map(a => a.name),
-                onChange: () => updateNoticesBadge(),
-                lastExportDir: () => context.globalState.get<string>('agentfarm.lastExportDir'),
-                setLastExportDir: (dir: string) => { void context.globalState.update('agentfarm.lastExportDir', dir); }
+        vscode.commands.registerCommand('agentfarm.openNotices', (arg?: unknown) => {
+            showNoticesPanel(typeof arg === 'string' ? arg : undefined);
+        }),
+
+        vscode.commands.registerCommand('agentfarm.openQueue', (arg?: unknown) => {
+            showQueuePanel(typeof arg === 'string' ? arg : undefined);
+        }),
+
+        vscode.commands.registerCommand('agentfarm.queueAdd', async () => {
+            const text = await vscode.window.showInputBox({
+                prompt: 'İş kuyruğuna ekle — tek satır yeter (ele alınana kadar kaybolmaz)',
+                placeHolder: 'ör. ZEN: dikte pedi bazen ikinci ekranda açılmıyor',
+                ignoreFocusOut: true
             });
+            if (!text || !text.trim()) { return; }
+            const item = workQueueStore.add({ text: text.trim(), author: 'user' });
+            updateNoticesBadge(); QueuePanel.refreshIfOpen();
+            void vscode.window.showInformationMessage('📥 Kuyruğa eklendi.', 'Kuyruğu aç')
+                .then(p => { if (p) { showQueuePanel(item.id); } });
         }),
 
         vscode.commands.registerCommand('agentfarm.openTasks', () => {

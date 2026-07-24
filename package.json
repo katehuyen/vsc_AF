@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.13.0",
+  "version": "3.14.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -154,6 +154,13 @@
             ]
           }
         ]
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "agentfarm.queueAdd",
+        "key": "ctrl+alt+q",
+        "mac": "cmd+alt+q"
       }
     ],
     "commands": [
@@ -961,6 +968,18 @@
         "title": "Open Notices (Agent → You message board)",
         "category": "Agent Farm",
         "icon": "$(bell)"
+      },
+      {
+        "command": "agentfarm.openQueue",
+        "title": "İş Kuyruğu (You → Agent work queue)",
+        "category": "Agent Farm",
+        "icon": "$(inbox)"
+      },
+      {
+        "command": "agentfarm.queueAdd",
+        "title": "Kuyruğa ekle (queue a work item)",
+        "category": "Agent Farm",
+        "icon": "$(add)"
       },
       {
         "command": "agentfarm.openTasks",
@@ -2009,6 +2028,27 @@
           "type": "string",
           "default": "",
           "description": "Default folder where agents' full 'notices.post report' files are written (naming YYYY-MM-DD_<name>.md). Empty = D:\\zone\\know\\note\\obsidian\\01_INBOX\\00_AGENT_AREA\\00_OUTPUT\\10_REPORT."
+        },
+        "agentFarm.answerDir": {
+          "type": "string",
+          "default": "",
+          "description": "Folder where a work item's detailed ANSWER (a 'cevap', not a report) is written by queue.stamp (naming YYYY-MM-DD_<agent>_<name>.md). Empty = D:\\zone\\know\\note\\obsidian\\01_INBOX\\00_AGENT_AREA\\00_OUTPUT\\01_CEVAPLAR."
+        },
+        "agentFarm.queue.targets": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["ZEN", "ZEP", "AgentFarm"],
+          "description": "Suggested routing targets (products/areas) offered in the work queue's add form and filter, in addition to the discovered agent names."
+        },
+        "agentFarm.queue.groupSize": {
+          "type": "number",
+          "default": 3,
+          "description": "Work queue batching: a group of same-target items FIRES for delegation once it reaches this many items (mechanical threshold; the manager also fires on age/urgency)."
+        },
+        "agentFarm.queue.maxAgeHours": {
+          "type": "number",
+          "default": 24,
+          "description": "Work queue batching: the oldest item in a group forces the group to fire after this many hours, so nothing starves (anti-starvation cap)."
         },
         "agentFarm.ingestFolders": {
           "type": "array",

@@ -25,7 +25,11 @@
     const editing = new Set();      // ids in edit mode
     const editDrafts = {};          // id -> {title,type,level,tags,body,sections:[{title,body}]}
     const showOrig = new Set();     // ids showing the pre-edit original
+    const converting = new Set();   // ids showing the "kuyruğa ekle" inline box
+    const convertDrafts = {};       // id -> text the user is writing for the queue
+    const convertDelete = {};       // id -> bool: delete the notice on send (default true)
     let refocusSearch = false;
+    let focusId = DATA.focusId || null;   // cross-link highlight (one shot)
 
     const TYPES = {
         update:     { icon: '📣', label: 'Update' },
@@ -136,9 +140,33 @@
         if (s === 'answered') { return `<div class="nt-answer"><div class="muted small">Your answer${n.answeredAt ? ' · ' + esc(new Date(n.answeredAt).toLocaleString()) : ''}:</div><div class="nt-md">${mdToHtml(n.answer || '')}</div></div>`; }
         if (s === 'declined') { return `<div class="muted small nt-answer">✕ You dismissed this question without answering. The agent will see it was passed over.</div>`; }
         const draft = drafts[n.id] != null ? drafts[n.id] : '';
-        return `<div class="nt-qbox"><textarea class="nt-atext" data-id="${esc(n.id)}" rows="3" placeholder="Type your answer…">${esc(draft)}</textarea>
-            <div class="btnrow"><button data-act="answer" data-id="${esc(n.id)}">Send answer</button>
-            <button class="secondary" data-act="decline" data-id="${esc(n.id)}">Dismiss (no answer)</button></div></div>`;
+        const del = convertDelete[n.id] !== undefined ? convertDelete[n.id] : true;
+        // Answering a question IS leaving a new task → the answer auto-becomes a
+        // queue item; the notice is deleted by default (uncheck to keep it).
+        return `<div class="nt-qbox"><textarea class="nt-atext" data-id="${esc(n.id)}" rows="3" placeholder="Cevabını yaz — otomatik kuyruğa iş olarak eklenir…">${esc(draft)}</textarea>
+            <label class="nt-del"><input type="checkbox" class="nt-delcb" data-id="${esc(n.id)}" ${del ? 'checked' : ''}> gönderince bu mesajı sil</label>
+            <div class="btnrow"><button data-act="answer" data-id="${esc(n.id)}">Cevap gönder → kuyruğa</button>
+            <button class="secondary" data-act="decline" data-id="${esc(n.id)}">Cevapsız kapat</button></div></div>`;
+    }
+
+    // Queue items this notice spawned (the bi-directional link) — shown inside
+    // the notice so "what did I turn this into, what did I write" stays visible.
+    function spawnedHtml(n) {
+        if (!n.spawnedItems || !n.spawnedItems.length) { return ''; }
+        const rows = n.spawnedItems.map(s =>
+            `<li><a href="#" class="nt-openitem" data-id="${esc(s.itemId)}" title="Kuyruktaki item'a git">📥 ${esc(s.text || '(item)')}</a></li>`).join('');
+        return `<div class="nt-spawned"><div class="muted small">🔁 Bu mesajdan üretilen kuyruk item'ları:</div><ul>${rows}</ul></div>`;
+    }
+
+    // The "Kuyruğa ekle" inline box (low-friction convert; default-delete).
+    function convertHtml(n) {
+        if (!converting.has(n.id)) { return ''; }
+        const draft = convertDrafts[n.id] != null ? convertDrafts[n.id] : '';
+        const del = convertDelete[n.id] !== undefined ? convertDelete[n.id] : true;
+        return `<div class="nt-convert"><textarea class="nt-ctext" data-id="${esc(n.id)}" rows="2" placeholder="Kuyruğa ne düşsün? (ör. 'evet girmedim, uyku 01:00–08:30')">${esc(draft)}</textarea>
+            <label class="nt-del"><input type="checkbox" class="nt-cdelcb" data-id="${esc(n.id)}" ${del ? 'checked' : ''}> gönderince bu mesajı sil</label>
+            <div class="btnrow"><button data-act="convertsend" data-id="${esc(n.id)}">📥 Kuyruğa gönder</button>
+            <button class="secondary" data-act="convertcancel" data-id="${esc(n.id)}">Vazgeç</button></div></div>`;
     }
 
     function sectionsHtml(n) {
@@ -195,9 +223,11 @@
             body = `<div class="muted small nt-sub">${esc(t.label)} · L${L} ${esc(LEVELS[L])}${n.edited ? ' · ✎ edited' + (n.editedAt ? ' ' + esc(new Date(n.editedAt).toLocaleString()) : '') : ''}</div>
                 ${due}
                 ${n.body ? `<div class="nt-md">${mdToHtml(n.body)}</div>` : (!n.sections && !isQ ? '<div class="muted small">(no details)</div>' : '')}
-                ${sectionsHtml(n)}${reportBtn}${questionBlock(n)}${originalBlock(n)}
+                ${sectionsHtml(n)}${reportBtn}${questionBlock(n)}${spawnedHtml(n)}${convertHtml(n)}${originalBlock(n)}
                 <div class="btnrow nt-actions">
-                    <button data-act="read" data-id="${esc(n.id)}" data-read="${n.read ? '0' : '1'}">${n.read ? 'Mark unread' : 'Mark read'}</button>
+                    <button data-act="handoffNotice" data-id="${esc(n.id)}" title="Sorumlu ajanı aç, bu mesajı terminale yaz (göndermeden bekler)">🔗 Ajana bağlan</button>
+                    ${!isQ ? `<button data-act="convert" data-id="${esc(n.id)}" title="Bu mesajı bir kuyruk işine çevir">📥 Kuyruğa ekle</button>` : ''}
+                    <button class="secondary" data-act="read" data-id="${esc(n.id)}" data-read="${n.read ? '0' : '1'}">${n.read ? 'Mark unread' : 'Mark read'}</button>
                     <button class="secondary" data-act="edit" data-id="${esc(n.id)}">Edit</button>
                     ${n.edited ? `<button class="secondary" data-act="orig" data-id="${esc(n.id)}">${showOrig.has(n.id) ? 'Hide original' : 'Show original'}</button>` : ''}
                     <button class="secondary" data-act="exportone" data-id="${esc(n.id)}">Export MD</button>
@@ -331,6 +361,12 @@
         .nt-actions { margin-top:8px; }
         .tag { font-size:10px; opacity:.7; border:1px solid var(--vscode-panel-border); border-radius:3px; padding:1px 5px; }
         .nt-day { margin:16px 0 4px; font-size:11px; letter-spacing:.05em; text-transform:uppercase; opacity:.6; }
+        .nt-del { display:inline-flex; gap:4px; align-items:center; font-size:11px; opacity:.8; margin:4px 0; }
+        .nt-convert { margin:8px 0; padding:8px; border:1px solid var(--vscode-panel-border); border-radius:5px; background:var(--vscode-editorWidget-background); }
+        .nt-convert textarea { width:100%; box-sizing:border-box; padding:6px; font-family:inherit; resize:vertical; }
+        .nt-spawned { margin:6px 0; padding:6px 8px; border-left:3px solid var(--vscode-textLink-foreground); background:var(--vscode-editorWidget-background); border-radius:4px; }
+        .nt-spawned ul { margin:4px 0; padding-left:18px; }
+        .nt-openitem { color:var(--vscode-textLink-foreground); cursor:pointer; }
     </style>`;
 
     function render() {
@@ -344,6 +380,7 @@
         } else { listHtml = items.map(noticeCard).join(''); }
 
         document.getElementById('app').innerHTML = `${STYLE}
+            ${window.AFHeader.tabs('notices')}
             ${window.AFHeader.html({
                 page: 'notices', title: '🔔 Notices',
                 sub: `${(DATA.notices || []).length} total · ${DATA.unread || 0} unread · ${DATA.openQuestions || 0} open question(s) · showing ${items.length}${selected.size ? ` · ${selected.size} selected` : ''} · ${new Date(DATA.generatedAt).toLocaleTimeString()}`,
@@ -353,6 +390,11 @@
         window.AFHeader.wire(vscode);
         wire(items);
         if (refocusSearch) { const s = document.getElementById('nt-search'); if (s) { s.focus(); const v = s.value.length; try { s.setSelectionRange(v, v); } catch (e) {} } refocusSearch = false; }
+        if (focusId) {
+            const el = document.querySelector(`.nt-card[data-id="${focusId}"]`);
+            if (el) { el.scrollIntoView({ block: 'center' }); }
+            focusId = null;   // one-shot highlight
+        }
     }
 
     function currentEditValues(id) {
@@ -443,6 +485,9 @@
             ev.stopPropagation(); vscode.postMessage({ type: 'pin', id: p.dataset.pinrow, pinned: p.dataset.pin === '1' });
         }));
         document.querySelectorAll('.nt-atext').forEach(t => t.addEventListener('input', () => { drafts[t.dataset.id] = t.value; }));
+        document.querySelectorAll('.nt-ctext').forEach(t => t.addEventListener('input', () => { convertDrafts[t.dataset.id] = t.value; }));
+        document.querySelectorAll('.nt-delcb, .nt-cdelcb').forEach(cb => cb.addEventListener('change', ev => { ev.stopPropagation(); convertDelete[cb.dataset.id] = cb.checked; }));
+        document.querySelectorAll('.nt-openitem').forEach(a => a.addEventListener('click', ev => { ev.preventDefault(); ev.stopPropagation(); vscode.postMessage({ type: 'openQueueItem', id: a.dataset.id }); }));
         document.querySelectorAll('.nt-edit [data-ef]').forEach(el => el.addEventListener('input', () => {
             const id = el.closest('.nt-card').dataset.id, d = editDrafts[id]; if (!d) { return; }
             const f = el.dataset.ef;
@@ -451,14 +496,25 @@
             else { d[f] = el.value; }
         }));
 
-        document.querySelectorAll('.nt-actions [data-act], .nt-qbox [data-act], .nt-edit [data-act], .nt-report [data-act]').forEach(b => b.addEventListener('click', ev => {
+        const delChecked = (sel, id) => { const cb = document.querySelector(`${sel}[data-id="${id}"]`); return cb ? cb.checked : true; };
+        document.querySelectorAll('.nt-actions [data-act], .nt-qbox [data-act], .nt-edit [data-act], .nt-report [data-act], .nt-convert [data-act]').forEach(b => b.addEventListener('click', ev => {
             ev.stopPropagation();
             const id = b.dataset.id, act = b.dataset.act;
             if (act === 'read') { vscode.postMessage({ type: 'markRead', id, read: b.dataset.read === '1' }); }
             else if (act === 'openreport') { vscode.postMessage({ type: 'openReport', id }); }
             else if (act === 'dismiss') { expanded.delete(id); vscode.postMessage({ type: 'dismiss', id }); }
             else if (act === 'decline') { vscode.postMessage({ type: 'decline', id }); }
-            else if (act === 'answer') { const t = (drafts[id] || '').trim(); if (t) { delete drafts[id]; vscode.postMessage({ type: 'answer', id, text: t }); } }
+            else if (act === 'answer') {
+                const t = (drafts[id] || '').trim();
+                if (t) { delete drafts[id]; vscode.postMessage({ type: 'answer', id, text: t, deleteNotice: delChecked('.nt-delcb', id) }); }
+            }
+            else if (act === 'handoffNotice') { vscode.postMessage({ type: 'handoffNotice', id }); }
+            else if (act === 'convert') { if (converting.has(id)) { converting.delete(id); } else { converting.add(id); expanded.add(id); } render(); }
+            else if (act === 'convertcancel') { converting.delete(id); delete convertDrafts[id]; render(); }
+            else if (act === 'convertsend') {
+                const t = (convertDrafts[id] || '').trim();
+                if (t) { converting.delete(id); delete convertDrafts[id]; vscode.postMessage({ type: 'convertToQueue', id, text: t, deleteNotice: delChecked('.nt-cdelcb', id) }); }
+            }
             else if (act === 'exportone') { vscode.postMessage({ type: 'exportOne', id }); }
             else if (act === 'orig') { if (showOrig.has(id)) { showOrig.delete(id); } else { showOrig.add(id); } render(); }
             else if (act === 'edit') {
@@ -483,8 +539,10 @@
             DATA = ev.data.data;
             const ids = new Set((DATA.notices || []).map(n => n.id));
             [...selected].forEach(id => { if (!ids.has(id)) { selected.delete(id); } });
+            if (DATA.focusId) { focusId = DATA.focusId; expanded.add(focusId); }
             render();
         }
     });
+    if (focusId) { expanded.add(focusId); }
     render();
 })();

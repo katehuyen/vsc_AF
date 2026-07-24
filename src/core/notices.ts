@@ -39,6 +39,16 @@ export interface NoticeSection {
     body: string;
 }
 
+/** A queue item the user spawned FROM a notice — remembered on the notice so
+ *  "what did I turn this into, and what did I write" stays visible here. The
+ *  work queue holds the mirror link (WorkItem.sourceNoticeId). */
+export interface NoticeSpawnedRef {
+    itemId: string;
+    /** Snapshot of what the user wrote when converting. */
+    text: string;
+    ts: number;
+}
+
 export interface Notice {
     id: string;
     ts: number;
@@ -73,6 +83,10 @@ export interface Notice {
     editedAt?: number;
     /** Content snapshot before the first user edit (for diff). */
     original?: NoticeSnapshot;
+    /** Queue items the user spawned FROM this notice (bi-directional link with
+     *  the work queue). A notice can spawn several; each remembers what the user
+     *  wrote, so the linkage is visible inside the notice and clickable. */
+    spawnedItems?: NoticeSpawnedRef[];
 }
 
 export interface NoticeSnapshot {
@@ -337,6 +351,19 @@ export class NoticesStore {
         n.handled = true; n.handledAt = Date.now();
         this.save(); return true;
     }
+
+    /** Record that the user converted this notice into a queue item (the
+     *  bi-directional link). A notice may spawn several; they accumulate here
+     *  and stay visible on the notice until the user removes it. */
+    addSpawnedItem(id: string, ref: NoticeSpawnedRef): boolean {
+        const n = this.find(id); if (!n) { return false; }
+        if (!n.spawnedItems) { n.spawnedItems = []; }
+        n.spawnedItems.push({ itemId: ref.itemId, text: String(ref.text ?? '').slice(0, 400), ts: ref.ts || Date.now() });
+        this.save(); return true;
+    }
+
+    /** Title of a notice (for the queue's source-snapshot). */
+    titleOf(id: string): string | undefined { return this.find(id)?.title; }
 
     dismiss(id: string): boolean {
         const before = this.notices.length;

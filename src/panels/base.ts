@@ -14,6 +14,14 @@ function currentUnread(): number {
     try { return noticesUnreadProvider ? Math.max(0, Math.floor(noticesUnreadProvider())) : 0; } catch { return 0; }
 }
 
+/** Live count of work-queue items that need the user (blocked) — feeds the
+ *  Notices/Kuyruk tab strip's 📥 badge, same pattern as the unread provider. */
+let queueBlockedProvider: (() => number) | undefined;
+export function setQueueBlockedProvider(fn: () => number): void { queueBlockedProvider = fn; }
+function currentBlocked(): number {
+    try { return queueBlockedProvider ? Math.max(0, Math.floor(queueBlockedProvider())) : 0; } catch { return 0; }
+}
+
 export function getNonce(): string {
     let text = '';
     const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -80,6 +88,7 @@ export function handleAfNav(to: unknown): void {
         timeline: 'agentfarm.openTimeline',
         needs: 'agentfarm.openNeeds',
         notices: 'agentfarm.openNotices',
+        queue: 'agentfarm.openQueue',
         board: 'agentfarm.openBoard',
         tasks: 'agentfarm.openTasks',
         airtable: 'agentfarm.openAirtable',
@@ -126,7 +135,9 @@ export function htmlShell(
             fallback: cfg.get<string>('speakerLabelFallback', 'agent')
         },
         // Unread notice count for the global nav's 🔔 Notices badge.
-        notices: { unread: currentUnread() }
+        notices: { unread: currentUnread() },
+        // Blocked work-queue count for the 📥 Kuyruk tab badge.
+        queue: { blocked: currentBlocked() }
     };
     return `<!DOCTYPE html>
 <html lang="en">

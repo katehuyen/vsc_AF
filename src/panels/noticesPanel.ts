@@ -22,15 +22,25 @@ export interface NoticesDeps {
     /** Export-MD remembers the last save folder (shared farm-wide). */
     lastExportDir?: () => string | undefined;
     setLastExportDir?: (dir: string) => void;
+    // --- Notice ↔ Kuyruk integration ---
+    /** Convert a notice (or the user's answer to it) into a work-queue item;
+     *  links both ways and optionally removes the source notice (default). */
+    convertToQueue?: (a: { noticeId: string; text: string; deleteNotice: boolean }) => void;
+    /** "Ajana bağlan" on a notice: open the responsible agent's terminal,
+     *  prefilled with the notice text (typed, not sent). */
+    handoffNotice?: (notice: Notice) => void;
+    /** Open the work queue focused on a spawned item (cross-link). */
+    openQueueItem?: (itemId: string) => void;
 }
 
-function buildData(deps: NoticesDeps): Record<string, unknown> {
+function buildData(deps: NoticesDeps, focusNotice?: string): Record<string, unknown> {
     return {
         generatedAt: Date.now(),
         notices: deps.store.list({ limit: 0 }),
         unread: deps.store.unread(),
         openQuestions: deps.store.openQuestions(),
-        agents: deps.agentNames()
+        agents: deps.agentNames(),
+        focusId: focusNotice ?? null
     };
 }
 
@@ -39,10 +49,13 @@ export class NoticesPanel {
     private disposables: vscode.Disposable[] = [];
     /** Last batch of notices removed from the UI (single-level undo). */
     private lastRemoved?: Notice[];
+    /** One-shot cross-link focus (a queue item's source notice). */
+    private focusNotice?: string;
 
-    static show(deps: NoticesDeps): void {
+    static show(deps: NoticesDeps, focusNotice?: string): void {
         if (NoticesPanel.current) {
             NoticesPanel.current.deps = deps;
+            NoticesPanel.current.focusNotice = focusNotice;
             NoticesPanel.current.panel.reveal();
             NoticesPanel.current.refresh();
             return;
@@ -53,22 +66,26 @@ export class NoticesPanel {
             vscode.ViewColumn.One,
             { enableScripts: true, retainContextWhenHidden: true }
         );
-        NoticesPanel.current = new NoticesPanel(panel, deps);
+        NoticesPanel.current = new NoticesPanel(panel, deps, focusNotice);
     }
 
     static refreshIfOpen(): void {
         NoticesPanel.current?.refresh();
     }
 
-    private constructor(readonly panel: vscode.WebviewPanel, private deps: NoticesDeps) {
+    private constructor(readonly panel: vscode.WebviewPanel, private deps: NoticesDeps, focusNotice?: string) {
+        this.focusNotice = focusNotice;
         this.render();
         panel.onDidDispose(() => this.dispose(), null, this.disposables);
         panel.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
     }
 
-    /** buildData + the panel-local undo count (kept out of the store). */
+    /** buildData + the panel-local undo count (kept out of the store). Focus is
+     *  one-shot: consumed by the first render/refresh after it is set. */
     private data(): Record<string, unknown> {
-        return { ...buildData(this.deps), undoable: this.lastRemoved?.length ?? 0 };
+        const d = { ...buildData(this.deps, this.focusNotice), undoable: this.lastRemoved?.length ?? 0 };
+        this.focusNotice = undefined;
+        return d;
     }
 
     private render(): void {
@@ -107,8 +124,32 @@ export class NoticesPanel {
                 if (typeof msg.id === 'string' && typeof msg.stars === 'number') { s.setStars(msg.id, msg.stars); this.mutated(); }
                 break;
             case 'answer':
-                // User answers a question; the asking agent picks it up on its next turn.
-                if (typeof msg.id === 'string' && typeof msg.text === 'string') { s.answer(msg.id, msg.text); this.mutated(); }
+                // Answering a question IS leaving a new task → the answer
+                // auto-becomes a work-queue item (constitution: friction-free).
+                // The notice is deleted by default (uncheck to keep it, in which
+                // case the answer is recorded and the spawned item is linked).
+                if (typeof msg.id === 'string' && typeof msg.text === 'string' && msg.text.trim()) {
+                    const del = msg.deleteNotice !== false;
+                    if (!del) { s.answer(msg.id, msg.text); }
+                    try { this.deps.convertToQueue?.({ noticeId: msg.id, text: msg.text, deleteNotice: del }); } catch { /* best-effort */ }
+                    this.mutated();
+                }
+                break;
+            case 'convertToQueue':
+                // "Kuyruğa ekle" — turn this notice into a work item.
+                if (typeof msg.id === 'string' && typeof msg.text === 'string' && msg.text.trim()) {
+                    try { this.deps.convertToQueue?.({ noticeId: msg.id, text: msg.text, deleteNotice: msg.deleteNotice !== false }); } catch { /* best-effort */ }
+                    this.mutated();
+                }
+                break;
+            case 'handoffNotice':
+                if (typeof msg.id === 'string') {
+                    const n = s.list({ limit: 0 }).find(x => x.id === msg.id);
+                    if (n) { try { this.deps.handoffNotice?.(n); } catch { /* best-effort */ } }
+                }
+                break;
+            case 'openQueueItem':
+                if (typeof msg.id === 'string') { try { this.deps.openQueueItem?.(msg.id); } catch { /* best-effort */ } }
                 break;
             case 'decline':
                 if (typeof msg.id === 'string') { s.decline(msg.id); this.mutated(); }

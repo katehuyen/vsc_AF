@@ -20,11 +20,38 @@
     const NAV = [
         { id: 'dashboard', label: 'Dashboard' },
         { id: 'notices', label: '🔔 Notices' },
+        { id: 'queue', label: '📥 Kuyruk' },
         { id: 'timeline', label: 'Live Timeline' },
         { id: 'tasks', label: 'Tasks' },
         { id: 'missions', label: 'Missions' },
         { id: 'toolbox', label: 'Toolbox' }
     ];
+
+    // Notices ↔ Kuyruk read as two tabs of ONE inbox (the user's "tek sayfa iki
+    // sekme"). Both pages render this strip at the very top; the inactive tab is
+    // an afnav button that opens the other panel. Counts ride along: 🔔 unread,
+    // 📥 items that need you (blocked).
+    const TAB_STYLE = `<style>
+        .af-tabs { display:flex; gap:4px; margin:0 0 12px; border-bottom:1px solid var(--vscode-panel-border); }
+        .af-tab { padding:7px 16px; border:none; border-bottom:2px solid transparent; border-radius:6px 6px 0 0;
+            background:transparent; color:var(--vscode-foreground); opacity:.65; font-size:13px; cursor:pointer; }
+        .af-tab:hover { opacity:.9; background:var(--vscode-list-hoverBackground); }
+        .af-tab.on { opacity:1; font-weight:600; border-bottom-color:var(--vscode-textLink-foreground); background:var(--vscode-editorWidget-background); }
+        .af-tab .af-tab-n { opacity:.8; font-weight:400; }
+    </style>`;
+
+    function tabs(active) {
+        const ui = window.__AFUI__ || {};
+        const unread = (ui.notices && ui.notices.unread) || 0;
+        const blocked = (ui.queue && ui.queue.blocked) || 0;
+        const T = [
+            { id: 'notices', label: '🔔 Notices', n: unread },
+            { id: 'queue', label: '📥 Kuyruk', n: blocked }
+        ];
+        return `${TAB_STYLE}<div class="af-tabs">` + T.map(t =>
+            `<button class="af-tab ${t.id === active ? 'on' : ''}" data-afnav="${t.id}">${t.label}${t.n ? ` <span class="af-tab-n">(${t.n})</span>` : ''}</button>`
+        ).join('') + `</div>`;
+    }
 
     /**
      * o: {
@@ -94,5 +121,5 @@
             b.addEventListener('click', () => vscode.postMessage({ type: 'openGuide', anchor: b.dataset.afguide })));
     }
 
-    window.AFHeader = { html, wire };
+    window.AFHeader = { html, wire, tabs };
 })();
