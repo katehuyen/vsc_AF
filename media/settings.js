@@ -249,6 +249,29 @@
         </div>`;
     }
 
+    // Report/answer .md "open with" default + custom external app (e.g. Notepad).
+    function docOpenSection() {
+        const d = DATA.docOpen;
+        if (!d) { return ''; }
+        const LBL = { vscode: 'VS Code (raw markdown)', preview: 'Markdown preview (rendered)', obsidian: 'Obsidian (rendered in your vault)', custom: 'Custom external app (e.g. Notepad)' };
+        const modes = d.modes && d.modes.length ? d.modes : ['vscode', 'preview', 'obsidian', 'custom'];
+        const opts = modes.map(m => `<option value="${C.esc(m)}"${m === d.defaultMode ? ' selected' : ''}>${C.esc(LBL[m] || m)}</option>`).join('');
+        const showCustom = d.defaultMode === 'custom';
+        return `
+            <h2 class="cat" id="cat-docopen">Report / Answer open mode</h2>
+            <div class="setitem">
+                <div class="setdesc">How report &amp; answer <code>.md</code> links (Notices + Work Queue) open when clicked. The split button's caret still lets you pick per click.</div>
+                <div class="sethead"><span class="setname">Default</span></div>
+                <select id="docopenmode" style="margin-top:4px; min-width:280px">${opts}</select>
+                <div id="docopencustom" style="margin-top:10px; ${showCustom ? '' : 'display:none'}">
+                    <div class="setdesc">Custom app — executable or command, e.g. <code>notepad.exe</code> or a full path.</div>
+                    <input id="docopencmd" type="text" value="${C.esc(d.customCommand || '')}" placeholder="notepad.exe" style="width:100%; max-width:440px; padding:6px 8px">
+                    <div class="setdesc" style="margin-top:6px">Arguments — <code>{file}</code> becomes the file path.</div>
+                    <input id="docopenargs" type="text" value="${C.esc(d.customArgs || '{file}')}" placeholder="{file}" style="width:100%; max-width:440px; padding:6px 8px">
+                </div>
+            </div>`;
+    }
+
     function render() {
         const cats = DATA.categories
             .map(c => ({ ...c, items: c.items.filter(matches) }))
@@ -309,6 +332,7 @@
             </div>
             <div class="catnav">${DATA.folders ? '<a data-cat="folders">Agent folders</a>' : ''}${cats.map(c => `<a data-cat="${c.id}">${C.esc(c.label)}</a>`).join('')}${DATA.claude ? '<a data-cat="claude">Claude Code</a>' : ''}</div>
             ${foldersSection()}
+            ${docOpenSection()}
             ${cats.map(c => `
                 <h2 class="cat" id="cat-${c.id}">${C.esc(c.label)} <span class="muted small">${c.items.length}</span></h2>
                 ${c.items.map(itemHtml).join('')}`).join('')
@@ -318,6 +342,12 @@
 
         // -- wiring --
         window.AFHeader.wire(vscode);
+        const dcMode = document.getElementById('docopenmode');
+        if (dcMode) { dcMode.addEventListener('change', () => vscode.postMessage({ type: 'docOpenSet', field: 'defaultMode', value: dcMode.value })); }
+        const dcCmd = document.getElementById('docopencmd');
+        if (dcCmd) { dcCmd.addEventListener('change', () => vscode.postMessage({ type: 'docOpenSet', field: 'customCommand', value: dcCmd.value })); }
+        const dcArgs = document.getElementById('docopenargs');
+        if (dcArgs) { dcArgs.addEventListener('change', () => vscode.postMessage({ type: 'docOpenSet', field: 'customArgs', value: dcArgs.value })); }
         const filterEl = document.getElementById('filter');
         filterEl.addEventListener('input', () => {
             filter = filterEl.value.toLowerCase();

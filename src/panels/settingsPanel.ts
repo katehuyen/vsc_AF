@@ -32,6 +32,9 @@ export interface FarmSettingsDeps {
     claudeSettingsFile(): string;
     /** Live root scan + excludes for the Agent folders section. */
     agentFolders?(): { reports: AgentFolderReport[]; excludes: string[] };
+    /** Report/answer .md "open with" default + custom external app (Notepad etc.). */
+    docOpen?(): { defaultMode: string; customCommand: string; customArgs: string; modes: string[] };
+    setDocOpen?(patch: { defaultMode?: string; customCommand?: string; customArgs?: string }): void;
 }
 
 const CONFIG_SECTION = 'agentFarm';
@@ -122,7 +125,8 @@ export class FarmSettingsPanel {
                 items: buildClaudeModel(cc.json),
                 raw: cc.raw,
                 parseError: cc.parseError
-            }
+            },
+            docOpen: this.deps.docOpen?.() ?? null
         };
     }
 
@@ -159,6 +163,14 @@ export class FarmSettingsPanel {
             case 'reset':
                 await this.setValue(String(msg.key ?? ''), undefined);
                 break;
+            case 'docOpenSet': {
+                const field = String(msg.field ?? '');
+                if (field === 'defaultMode' || field === 'customCommand' || field === 'customArgs') {
+                    this.deps.setDocOpen?.({ [field]: String(msg.value ?? '') });
+                    this.refresh();
+                }
+                break;
+            }
             case 'saveProfile': {
                 const name = String(msg.name ?? '').trim();
                 if (!name) { break; }

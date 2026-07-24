@@ -6571,6 +6571,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     getProfiles: () => context.globalState.get('agentfarm.settingsProfiles', []),
                     setProfiles: (list) => context.globalState.update('agentfarm.settingsProfiles', list),
                     claudeSettingsFile: () => userSettingsPath(claudeDir()),
+                    // Report/answer .md "open with" default + custom external app.
+                    docOpen: () => ({ ...docOpenStore.get(), modes: [...DOC_OPEN_MODES] }),
+                    setDocOpen: (patch) => {
+                        docOpenStore.set(patch);
+                        QueuePanel.refreshIfOpen(); NoticesPanel.refreshIfOpen();
+                    },
                     // Agent folders section: a fresh scan per render, so badges and
                     // the per-root agent lists always match what discovery would do.
                     agentFolders: () => {
