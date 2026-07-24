@@ -22,6 +22,12 @@ const SO = require(path.join(__dirname, '..', 'out', 'core', 'settingsops.js'));
     ok('categories come in declared order', model.every((c, i) =>
         i === 0 || SO.CATEGORY_LABELS.findIndex(l => l[0] === c.id) > SO.CATEGORY_LABELS.findIndex(l => l[0] === model[i - 1].id)));
 
+    // the work-queue feature's settings live under their own category
+    const queue = model.find(c => c.id === 'queue');
+    ok('work queue settings categorised (not leaking to Other)', queue &&
+        ['agentFarm.answerDir', 'agentFarm.queue.groupSize', 'agentFarm.queue.maxAgeHours', 'agentFarm.queue.targets']
+            .every(k => queue.items.some(i => i.key === k)));
+
     // a setting invented tomorrow lands in Other automatically
     const m2 = SO.buildSettingsModel({ ...props, 'agentFarm.futureThing': { type: 'string', default: 'x', description: 'd' } }, () => undefined);
     const other2 = m2.find(c => c.id === 'other');

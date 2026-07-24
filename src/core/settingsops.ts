@@ -67,7 +67,10 @@ const CATEGORY_OF: Record<string, string> = {
     dailyDigest: 'reports', weeklySummary: 'reports', autoReport: 'reports',
     autoReportFolder: 'reports', autoReportDays: 'reports', autoReportIncludeOutputs: 'reports',
     digestTtsModel: 'reports', digestTtsFolder: 'reports', reportDir: 'reports',
-    notifyWebhookUrl: 'reports', notifyWebhookEvents: 'reports'
+    notifyWebhookUrl: 'reports', notifyWebhookEvents: 'reports',
+    // work queue (user→agent async channel) + its answer folder
+    answerDir: 'queue', 'queue.groupSize': 'queue', 'queue.maxAgeHours': 'queue',
+    'queue.targets': 'queue'
 };
 
 export const CATEGORY_LABELS: [string, string][] = [
@@ -81,6 +84,7 @@ export const CATEGORY_LABELS: [string, string][] = [
     ['cli', 'Multi-CLI'],
     ['health', 'Health & Insights'],
     ['reports', 'Reports & Digest'],
+    ['queue', 'Work Queue'],
     ['other', 'Other']
 ];
 
