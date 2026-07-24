@@ -266,11 +266,21 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
         addSpawnedItem: (id, ref) => { spawned.push({ id, ref }); return true; },
         dismiss: (id) => { dismissed = id; return true; }
     };
+    // GAP-8: the CEVAPLAR file name must follow the vault rule
+    // YYYY-MM-DD_<agent>_<topic>.md — the host builds it with the SAME stem
+    // builder the report flow uses (reportFileStem), only the folder differs.
+    // Mirror that here so the test guards the real naming contract, and force a
+    // fixed date so it is deterministic.
+    const { reportFileStem } = require(path.join(__dirname, '..', 'out', 'core', 'notices.js'));
+    const FIXED = new Date('2026-07-24T10:00:00');
     const writeAnswer = (a) => {
-        const file = path.join(cevapDir, `${(a.name || a.title).replace(/[\\/:*?"<>|]+/g, ' ').trim()}.md`);
+        const stem = reportFileStem({ title: a.title || 'cevap', name: a.name, agentName: a.agentName, date: FIXED });
+        const file = path.join(cevapDir, `${stem}.md`);
         fs.writeFileSync(file, a.body, 'utf8');
         return file;
     };
+    ok('empty-topic cevap falls back to "cevap", not the report word "rapor"',
+        /_cevap$/.test(reportFileStem({ title: 'cevap', name: '', agentName: 'developer', date: FIXED })));
 
     const reg = new BridgeRegistry();
     registerQueueOps(reg, { store, notices, writeAnswer, onChange: () => changes++, onPost: n => { posted = n; } });
@@ -312,8 +322,11 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
     ok('delegate via bridge', del.ok && del.result.delegated === 1 && store.get(add.result.id).status === 'delegated');
 
     // stamp with a cevap (answer) → written to CEVAPLAR (not a report), linked
-    const st = await reg.dispatch('queue.stamp', { id: add.result.id, stamp: '-DONE-', resolution: 'kısa cevap', answer: '# Cevap\n\nDolu dolu açıklama.', answerName: 'zen-pad-fix', status: 'done' });
+    const st = await reg.dispatch('queue.stamp', { id: add.result.id, stamp: '-DONE-', resolution: 'kısa cevap', answer: '# Cevap\n\nDolu dolu açıklama.', answerName: 'zen-pad-fix', agent: 'developer', status: 'done' });
     ok('stamp returns answerPath', st.ok && typeof st.result.answerPath === 'string' && /zen-pad-fix\.md$/.test(st.result.answerPath));
+    // GAP-8: the CEVAPLAR file name follows the vault rule YYYY-MM-DD_<agent>_<topic>.md
+    ok('cevap filename follows YYYY-MM-DD_<agent>_<topic>.md',
+        /(^|[\\/])2026-07-24_developer_zen-pad-fix\.md$/.test(st.result.answerPath));
     ok('cevap file written to CEVAPLAR', st.ok && fs.existsSync(st.result.answerPath) && /Dolu dolu/.test(fs.readFileSync(st.result.answerPath, 'utf8')));
     ok('item stores answerPath + resolution', store.get(add.result.id).answerPath === st.result.answerPath && store.get(add.result.id).resolution === 'kısa cevap');
 

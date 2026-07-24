@@ -2842,8 +2842,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // A work item's detailed ANSWER (a "cevap", NOT a user-requested report) is
     // written to its own dedicated folder, 01_CEVAPLAR — distinct from 10_REPORT.
-    // Same naming as reports (YYYY-MM-DD_<agent>_<name>.md) so it stays
-    // attributable; the queue links it as answerPath.
+    // GAP-8: it reuses the SAME stem builder as reports (reportFileStem) so the
+    // host adds the exact YYYY-MM-DD_<agent>_<topic> prefix the vault rule wants
+    // (constitution §7/§13) — only the target folder differs. The empty-topic
+    // fallback is forced to "cevap" (not the report word "rapor") so a title-less
+    // answer still reads as an answer.
     const cevapDir = (): string => {
         const cfg = vscode.workspace.getConfiguration('agentFarm').get<string>('answerDir');
         return (cfg && cfg.trim())
@@ -2853,7 +2856,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const dir = cevapDir();
         fs.mkdirSync(dir, { recursive: true });
         const d = new Date();
-        const stem = reportFileStem({ title: a.title, name: a.name, agentName: a.agentName, date: d });
+        const stem = reportFileStem({ title: a.title || 'cevap', name: a.name, agentName: a.agentName, date: d });
         let file = path.join(dir, `${stem}.md`);
         for (let i = 2; fs.existsSync(file); i++) { file = path.join(dir, `${stem}-${i}.md`); }
         const footer = a.agentName ? `\n\n---\n_${a.agentName} · ${d.toLocaleString()}_\n` : '';
