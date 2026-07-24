@@ -12,9 +12,13 @@
 
     const STYLE = `<style>
         .af-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px 24px; flex-wrap:wrap; margin:0 0 10px; }
-        .af-head-info { flex:1 1 260px; min-width:220px; }
-        .af-head-bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; justify-content:flex-end; margin-left:auto; }
-        .af-head-sep { width:1px; align-self:stretch; min-height:22px; background:var(--vscode-widget-border,#4444); margin:0 4px; }
+        .af-head-info { flex:1 1 260px; min-width:200px; }
+        /* The toolbar is two wrapping halves (page actions | global nav) that
+           break onto a second line as UNITS — never intermixing, never leaving
+           the divider stranded — so many-button pages stay tidy at any width. */
+        .af-head-bar { display:flex; gap:8px 10px; flex-wrap:wrap; align-items:center; justify-content:flex-end; margin-left:auto; min-width:0; }
+        .af-head-actions, .af-head-nav { display:flex; gap:8px; flex-wrap:wrap; align-items:center; justify-content:flex-end; min-width:0; }
+        .af-head-nav.has-actions { border-left:1px solid var(--vscode-widget-border,#4444); margin-left:2px; padding-left:12px; }
     </style>`;
 
     const NAV = [
@@ -89,14 +93,17 @@
         }
         if (o.refresh !== false) { cluster.push('<button class="secondary af-refresh">Refresh</button>'); }
         if (o.guide) { cluster.push(`<button class="secondary" data-afguide="${o.guide}">? Guide</button>`); }
+        // Two logical halves, each in its own wrapping group so they break onto
+        // a second line cleanly instead of shuffling buttons past one another.
+        // The divider rides on the nav group's left edge (only when there are
+        // page actions to its left), so it can never orphan mid-wrap.
         const left = (o.controls || '') + (o.actions || '');
+        const nav = `<div class="af-head-nav${left ? ' has-actions' : ''}">${cluster.join('')}</div>`;
+        const bar = left ? `<div class="af-head-actions">${left}</div>${nav}` : nav;
         return `${STYLE}
             <div class="af-head">
                 <div class="af-head-info"><h1>${o.title}</h1>${o.sub ? `<div class="muted small">${o.sub}</div>` : ''}</div>
-                <div class="af-head-bar">
-                    ${left}${left ? '<span class="af-head-sep"></span>' : ''}
-                    ${cluster.join('')}
-                </div>
+                <div class="af-head-bar">${bar}</div>
             </div>`;
     }
 
