@@ -584,10 +584,12 @@
         document.querySelectorAll('[data-doc]').forEach(b => b.addEventListener('click', ev => {
             ev.stopPropagation();
             const doc = b.dataset.doc, id = b.dataset.id;
-            if (doc === 'main') { docMenu = null; vscode.postMessage({ type: 'openReport', id }); }
+            // caret toggles the menu; every other action closes it (render()) so a
+            // pick or a main-click never leaves the popover hanging open.
+            if (doc === 'main') { docMenu = null; vscode.postMessage({ type: 'openReport', id }); render(); }
             else if (doc === 'caret') { docMenu = docMenu === id ? null : id; render(); }
-            else if (doc === 'open') { docMenu = null; vscode.postMessage({ type: 'openReport', id, mode: b.dataset.mode }); }
-            else if (doc === 'cfg') { docMenu = null; vscode.postMessage({ type: 'configureDocOpen' }); }
+            else if (doc === 'open') { docMenu = null; vscode.postMessage({ type: 'openReport', id, mode: b.dataset.mode }); render(); }
+            else if (doc === 'cfg') { docMenu = null; vscode.postMessage({ type: 'configureDocOpen' }); render(); }
         }));
     }
 
@@ -602,5 +604,15 @@
         }
     });
     if (focusId) { expanded.add(focusId); }
+
+    // Close the "open with" split menu on ANY click outside it. Capture phase so
+    // it fires even for elements that stopPropagation in the bubble phase; the
+    // caret's own handler still toggles the menu because it runs after this.
+    document.addEventListener('click', ev => {
+        if (!docMenu) { return; }
+        const t = ev.target;
+        if (!(t && t.closest && t.closest('.nt-split'))) { docMenu = null; render(); }
+    }, true);
+
     render();
 })();

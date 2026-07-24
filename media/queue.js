@@ -517,10 +517,10 @@
         document.querySelectorAll('[data-doc]').forEach(b => b.addEventListener('click', ev => {
             ev.stopPropagation();
             const doc = b.dataset.doc, kind = b.dataset.kind, id = b.dataset.id, key = kind + ':' + id;
-            if (doc === 'main') { docMenu = null; vscode.postMessage({ type: 'openFile', kind, id }); }
+            if (doc === 'main') { docMenu = null; vscode.postMessage({ type: 'openFile', kind, id }); render(); }
             else if (doc === 'caret') { docMenu = docMenu === key ? null : key; render(); }
-            else if (doc === 'open') { docMenu = null; vscode.postMessage({ type: 'openFile', kind, id, mode: b.dataset.mode }); }
-            else if (doc === 'cfg') { docMenu = null; vscode.postMessage({ type: 'configureDocOpen' }); }
+            else if (doc === 'open') { docMenu = null; vscode.postMessage({ type: 'openFile', kind, id, mode: b.dataset.mode }); render(); }
+            else if (doc === 'cfg') { docMenu = null; vscode.postMessage({ type: 'configureDocOpen' }); render(); }
         }));
 
         // Agent-tracked category collapse (Feature A).
@@ -548,5 +548,15 @@
         }
     });
     if (focusItem) { expanded.add(focusItem); }
+
+    // Close the "open with" split menu on ANY click outside it. Capture phase so
+    // it fires even for elements that stopPropagation in the bubble phase; the
+    // caret's own handler still toggles the menu because it runs after this.
+    document.addEventListener('click', ev => {
+        if (!docMenu) { return; }
+        const t = ev.target;
+        if (!(t && t.closest && t.closest('.q-split'))) { docMenu = null; render(); }
+    }, true);
+
     render();
 })();
