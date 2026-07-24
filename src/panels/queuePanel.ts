@@ -1,4 +1,3 @@
-import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { handleAfNav, htmlShell } from './base';
 import { WorkItem, WorkQueueStore } from '../core/workqueue';
@@ -23,16 +22,49 @@ export interface QueueDeps {
     /** "Hand to agent": open the item's target agent terminal, prefilled with the
      *  item text (typed, NOT sent — the user reviews and presses Enter). */
     handoff?: (item: WorkItem) => void;
+    // --- Feature A: live status mirror for agent-tracked (delegated) items ---
+    /** Current status/title of the mission run an item was delegated into. */
+    missionStatus?: (missionId: string) => { status: string; title?: string } | undefined;
+    /** Current status/title of the task an item was delegated into. */
+    taskStatus?: (taskId: string) => { status: string; title?: string } | undefined;
+    // --- Feature B: shared "open with" for report/answer .md links ---
+    /** Open a resolved report/answer file with a mode (default when omitted). */
+    openDoc?: (filePath: string, mode?: string) => void;
+    /** Current doc-open default, for the split-button UI. */
+    docOpenConfig?: () => { mode: string; hasCustom: boolean };
+    /** Launch the host-side "configure default + custom app" flow. */
+    configureDocOpen?: () => void;
+}
+
+/** Live status of every agent-tracked item that carries a mission/task link —
+ *  the mirror shown in the Agent-tracked lane (running → done/failed), read
+ *  fresh on each render so it tracks the linked run/task as it progresses. */
+function buildLiveMap(deps: QueueDeps, items: WorkItem[]): Record<string, { kind: string; status: string; title?: string }> {
+    const live: Record<string, { kind: string; status: string; title?: string }> = {};
+    for (const n of items) {
+        if (n.missionId && deps.missionStatus) {
+            const m = deps.missionStatus(n.missionId);
+            if (m) { live[n.id] = { kind: 'mission', status: m.status, title: m.title }; continue; }
+        }
+        if (n.taskId && deps.taskStatus) {
+            const t = deps.taskStatus(n.taskId);
+            if (t) { live[n.id] = { kind: 'task', status: t.status, title: t.title }; }
+        }
+    }
+    return live;
 }
 
 function buildData(deps: QueueDeps, focusItem?: string): Record<string, unknown> {
+    const items = deps.store.list({ limit: 0 });
     return {
         generatedAt: Date.now(),
-        items: deps.store.list({ limit: 0 }),
+        items,
         blocked: deps.store.blocked(),
         active: deps.store.active(),
         targets: deps.targets(),
         agents: deps.agentNames(),
+        live: buildLiveMap(deps, items),
+        docOpen: deps.docOpenConfig ? deps.docOpenConfig() : { mode: 'vscode', hasCustom: false },
         focusItem: focusItem ?? null
     };
 }
@@ -143,7 +175,12 @@ export class QueuePanel {
                 }
                 break;
             case 'openFile':
-                if (typeof msg.id === 'string') { void this.openFile(msg.id, msg.kind === 'report' ? 'report' : 'answer'); }
+                if (typeof msg.id === 'string') {
+                    this.openFile(msg.id, msg.kind === 'report' ? 'report' : 'answer', typeof msg.mode === 'string' ? msg.mode : undefined);
+                }
+                break;
+            case 'configureDocOpen':
+                try { this.deps.configureDocOpen?.(); } catch { /* best-effort */ }
                 break;
             case 'openNotice':
                 if (typeof msg.id === 'string') { try { this.deps.openNotice?.(msg.id); } catch { /* best-effort */ } }
@@ -162,22 +199,15 @@ export class QueuePanel {
         }
     }
 
-    /** Open the item's answer (01_CEVAPLAR) or report (10_REPORT) file. The path
-     *  comes from the item itself, never the webview — no arbitrary file open. */
-    private async openFile(id: string, kind: 'answer' | 'report'): Promise<void> {
+    /** Open the item's answer (01_CEVAPLAR) or report (10_REPORT) file, via the
+     *  shared "open with" helper (mode = the caret choice, or the user's default
+     *  when omitted). The path comes from the item itself, never the webview —
+     *  no arbitrary file open. */
+    private openFile(id: string, kind: 'answer' | 'report', mode?: string): void {
         const n = this.deps.store.get(id);
         const p = kind === 'report' ? n?.reportPath : n?.answerPath;
         if (!p) { return; }
-        try {
-            if (!fs.existsSync(p)) {
-                void vscode.window.showWarningMessage(`Agent Farm: file not found — ${p}`);
-                return;
-            }
-            const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(p));
-            await vscode.window.showTextDocument(doc, { preview: true });
-        } catch (e) {
-            void vscode.window.showErrorMessage(`Agent Farm: could not open file — ${String(e)}`);
-        }
+        try { this.deps.openDoc?.(p, mode); } catch { /* best-effort */ }
     }
 
     private dispose(): void {

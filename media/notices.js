@@ -32,6 +32,7 @@
     const converting = new Set();   // ids showing the "add to queue" inline box
     const convertDrafts = {};       // id -> text the user is writing for the queue
     const convertDelete = {};       // id -> bool: delete the notice on send (default true)
+    let docMenu = null;             // open "open with" split menu key (a notice id)
     let refocusSearch = false;
     let focusId = DATA.focusId || null;   // cross-link highlight (one shot)
 
@@ -56,6 +57,29 @@
     function tmeta(t) { return TYPES[t] || TYPES.update; }
     function lvl(n) { return n.level >= 1 && n.level <= 4 ? n.level : 1; }
     function reportBase(p) { return String(p || '').split(/[\\/]/).pop(); }
+
+    // "Open with" modes for the linked report .md (Feature B): main click uses
+    // the user's default (DATA.docOpen.mode), the caret ▾ offers the rest.
+    const DOC_MODES = [
+        ['vscode', '📄 VS Code (raw)'],
+        ['preview', '👁 Markdown preview'],
+        ['obsidian', '🟣 Obsidian'],
+        ['custom', '🖥 Custom app']
+    ];
+    function docDefault() { return (DATA.docOpen && DATA.docOpen.mode) || 'vscode'; }
+    // Split button for the report link: main opens with the default mode; the
+    // caret reveals per-click modes + a Configure item. `id` is the notice id.
+    function docSplit(id, label, path) {
+        const def = docDefault();
+        const menu = docMenu === id ? `<div class="nt-docmenu">
+            ${DOC_MODES.map(([m, l]) => `<button class="nt-docopt${m === def ? ' cur' : ''}" data-doc="open" data-id="${esc(id)}" data-mode="${m}">${l}${m === def ? ' <span class="muted small">· default</span>' : ''}</button>`).join('')}
+            <button class="nt-docopt cfg" data-doc="cfg" data-id="${esc(id)}">⚙ Configure default & custom app…</button>
+          </div>` : '';
+        return `<span class="nt-split">
+            <button class="nt-docmain" data-doc="main" data-id="${esc(id)}" title="${esc(path)}">${label}</button>
+            <button class="nt-doccaret" data-doc="caret" data-id="${esc(id)}" title="Open with…" aria-expanded="${docMenu === id ? 'true' : 'false'}">▾</button>
+            ${menu}</span>`;
+    }
 
     // ---- minimal safe markdown (escape first, then structural transforms) ----
     function mdInline(t) {
@@ -221,7 +245,7 @@
         if (inEdit) { body = editForm(n); }
         else {
             const reportBtn = n.reportPath ? `<div class="nt-report">
-                    <button data-act="openreport" data-id="${esc(n.id)}">📄 Tam raporu aç</button>
+                    ${docSplit(n.id, '📄 Open full report', n.reportPath)}
                     <span class="muted small nt-reppath" title="${esc(n.reportPath)}">${esc(reportBase(n.reportPath))}</span>
                 </div>` : '';
             body = `<div class="muted small nt-sub">${esc(t.label)} · L${L} ${esc(LEVELS[L])}${n.edited ? ' · ✎ edited' + (n.editedAt ? ' ' + esc(new Date(n.editedAt).toLocaleString()) : '') : ''}</div>
@@ -344,6 +368,18 @@
         .nt-badge.rep { cursor:default; }
         .nt-report { display:flex; gap:8px; align-items:center; margin:8px 0; padding:6px 8px; border-left:3px solid var(--vscode-textLink-foreground); background:var(--vscode-editorWidget-background); border-radius:4px; }
         .nt-report .nt-reppath { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        /* "Open with" split button (Feature B) */
+        .nt-split { position:relative; display:inline-flex; }
+        .nt-docmain, .nt-doccaret { background:var(--vscode-button-background); color:var(--vscode-button-foreground); border:none; padding:4px 10px; cursor:pointer; font-family:inherit; }
+        .nt-docmain:hover, .nt-doccaret:hover { background:var(--vscode-button-hoverBackground); }
+        .nt-docmain { border-radius:4px 0 0 4px; }
+        .nt-doccaret { border-radius:0 4px 4px 0; margin-left:1px; padding:4px 7px; }
+        .nt-docmenu { position:absolute; top:100%; left:0; z-index:20; margin-top:2px; min-width:240px; display:flex; flex-direction:column;
+            background:var(--vscode-editorWidget-background); border:1px solid var(--vscode-panel-border); border-radius:5px; box-shadow:0 2px 10px rgba(0,0,0,.35); overflow:hidden; }
+        .nt-docopt { text-align:left; background:transparent; border:none; border-radius:0; padding:6px 10px; color:var(--vscode-foreground); cursor:pointer; font-family:inherit; }
+        .nt-docopt:hover { background:var(--vscode-list-hoverBackground); }
+        .nt-docopt.cur { font-weight:700; }
+        .nt-docopt.cfg { border-top:1px solid var(--vscode-panel-border); opacity:.9; }
         .nt-body { padding:2px 12px 12px 32px; border-top:1px solid var(--vscode-panel-border); }
         .nt-sub { margin:4px 0; text-transform:uppercase; letter-spacing:.04em; font-size:10px; }
         .nt-md { margin:4px 0; line-height:1.5; word-break:break-word; }
@@ -512,7 +548,6 @@
             ev.stopPropagation();
             const id = b.dataset.id, act = b.dataset.act;
             if (act === 'read') { vscode.postMessage({ type: 'markRead', id, read: b.dataset.read === '1' }); }
-            else if (act === 'openreport') { vscode.postMessage({ type: 'openReport', id }); }
             else if (act === 'dismiss') { expanded.delete(id); vscode.postMessage({ type: 'dismiss', id }); }
             else if (act === 'decline') { vscode.postMessage({ type: 'decline', id }); }
             else if (act === 'answer') {
@@ -542,6 +577,17 @@
         }));
         document.querySelectorAll('.nt-link').forEach(a => a.addEventListener('click', ev => {
             ev.preventDefault(); ev.stopPropagation(); vscode.postMessage({ type: 'openExternal', url: a.dataset.href });
+        }));
+
+        // "Open with" split button on the report link (Feature B): main = default
+        // mode, caret = menu, menu item = per-click mode, cfg = configure flow.
+        document.querySelectorAll('[data-doc]').forEach(b => b.addEventListener('click', ev => {
+            ev.stopPropagation();
+            const doc = b.dataset.doc, id = b.dataset.id;
+            if (doc === 'main') { docMenu = null; vscode.postMessage({ type: 'openReport', id }); }
+            else if (doc === 'caret') { docMenu = docMenu === id ? null : id; render(); }
+            else if (doc === 'open') { docMenu = null; vscode.postMessage({ type: 'openReport', id, mode: b.dataset.mode }); }
+            else if (doc === 'cfg') { docMenu = null; vscode.postMessage({ type: 'configureDocOpen' }); }
         }));
     }
 

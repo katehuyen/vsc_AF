@@ -123,6 +123,8 @@ import { TasksPanel } from './panels/tasksPanel';
 import { NeedsPanel } from './panels/needsPanel';
 import { NoticesPanel } from './panels/noticesPanel';
 import { QueuePanel } from './panels/queuePanel';
+import { openReportDoc } from './panels/openDoc';
+import { DocOpenStore, DOC_OPEN_LABELS, DOC_OPEN_MODES, DocOpenMode, registerDocOpenOps } from './core/docopen';
 import { setNoticesUnreadProvider, setQueueBlockedProvider } from './panels/base';
 import { SearchPanel } from './panels/searchPanel';
 import { FarmSettingsPanel } from './panels/settingsPanel';
@@ -254,6 +256,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // separate places to scan.
     const workQueueStore = new WorkQueueStore(path.join(context.globalStorageUri.fsPath, 'work-queue.json'));
     workQueueStore.load();
+    // Doc-open config (core/docopen.ts) — the module store behind the shared
+    // "open with" split-button on report/answer .md links in BOTH boards. Its
+    // own JSON file, deliberately NOT a VS Code settings leak (the custom-app
+    // command is machine-specific and the choice is a panel UI convenience).
+    const docOpenStore = new DocOpenStore(path.join(context.globalStorageUri.fsPath, 'doc-open-config.json'));
     // Feed the global nav's 🔔 Notices badge (read live at each page render).
     setNoticesUnreadProvider(() => noticesStore.unread());
     setQueueBlockedProvider(() => workQueueStore.blocked());
@@ -1917,6 +1924,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (missionEngines.size) { missionEmitter.fire(); }
     }, null, context.subscriptions);
 
+    // Feature A — keep the Work Queue's agent-tracked lane LIVE: a delegated item
+    // mirrors its mission/task status, so refresh the queue when any task (a
+    // mission step runs AS a task too) changes state. Cheap: refreshIfOpen only
+    // rebuilds when the page is actually open.
+    taskManager.onDidChange(() => QueuePanel.refreshIfOpen(), null, context.subscriptions);
+    missionEmitter.event(() => QueuePanel.refreshIfOpen(), null, context.subscriptions);
+
     // ---------- Farm Bridge: agents use the farm through request files ----------
     // The user directs an agent in chat; the agent drops <name>.request.json in
     // <globalStorage>/bridge/ and the RUNNER executes it through the same code
@@ -2879,6 +2893,55 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         onChange: () => { QueuePanel.refreshIfOpen(); NoticesPanel.refreshIfOpen(); updateNoticesBadge(); }
     });
 
+    // --- Doc-open "open with" (Feature B) — shared by BOTH boards -------------
+    // ONE helper opens a report/answer .md with the chosen mode (mode omitted =
+    // the user's stored default). The path is always host-resolved (from the
+    // notice/item), never the webview — so nothing arbitrary can be opened.
+    const openDoc = (filePath: string, mode?: string): void => {
+        const cfg = docOpenStore.get();
+        const m = (mode && (DOC_OPEN_MODES as string[]).includes(mode) ? mode : cfg.defaultMode) as DocOpenMode;
+        void openReportDoc(filePath, m, cfg);
+    };
+    const docOpenConfig = (): { mode: string; hasCustom: boolean } => {
+        const c = docOpenStore.get();
+        return { mode: c.defaultMode, hasCustom: !!c.customCommand.trim() };
+    };
+    // The host-side "configure default + custom app" flow (the ⚙ Configure item
+    // in each panel's caret menu, and the palette command). Writes the module
+    // store; both boards pick it up on their next render.
+    const configureDocOpen = async (): Promise<void> => {
+        const cur = docOpenStore.get();
+        const picked = await vscode.window.showQuickPick(
+            DOC_OPEN_MODES.map(m => ({
+                label: `${m === cur.defaultMode ? '$(check) ' : ''}${DOC_OPEN_LABELS[m]}`,
+                description: m === cur.defaultMode ? 'current default' : '',
+                mode: m
+            })),
+            { placeHolder: 'Default way to open report/answer .md links', ignoreFocusOut: true });
+        if (!picked) { return; }
+        const patch: { defaultMode: string; customCommand?: string; customArgs?: string } = { defaultMode: picked.mode };
+        if (picked.mode === 'custom') {
+            const cmd = await vscode.window.showInputBox({
+                prompt: 'Custom app — executable or command to run', value: cur.customCommand,
+                placeHolder: 'e.g. C:\\Program Files\\Typora\\Typora.exe', ignoreFocusOut: true
+            });
+            if (cmd === undefined) { return; }
+            const args = await vscode.window.showInputBox({
+                prompt: 'Arguments template — {file} is replaced by the file path', value: cur.customArgs || '{file}',
+                placeHolder: '{file}', ignoreFocusOut: true
+            });
+            if (args === undefined) { return; }
+            patch.customCommand = cmd; patch.customArgs = args;
+        }
+        docOpenStore.set(patch);
+        QueuePanel.refreshIfOpen(); NoticesPanel.refreshIfOpen();
+        void vscode.window.showInformationMessage(`Agent Farm: report/answer links now open in "${DOC_OPEN_LABELS[picked.mode]}".`);
+    };
+    registerDocOpenOps(bridge, {
+        store: docOpenStore,
+        onChange: () => { QueuePanel.refreshIfOpen(); NoticesPanel.refreshIfOpen(); }
+    });
+
     // --- Notice ↔ Kuyruk shared plumbing (used by both panels + commands) ---
     // Convert a notice (or an answer to it) into a work-queue item, cross-linking
     // both boards. Default-deletes the source notice (else records the spawned
@@ -2925,7 +2988,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         agentNames: () => agents.map(a => a.name),
         onChange: () => { updateNoticesBadge(); NoticesPanel.refreshIfOpen(); },
         openNotice: (noticeId) => showNoticesPanel(noticeId),
-        handoff: (item) => { void handoffToAgent(item.text, item.target); }
+        handoff: (item) => { void handoffToAgent(item.text, item.target); },
+        // Feature A — live status mirror of an agent-tracked item's delegation.
+        missionStatus: (id) => {
+            const r = missionStore.run(id);
+            return r ? { status: r.status, title: missionStore.spec(r.specId)?.title } : undefined;
+        },
+        taskStatus: (id) => {
+            const t = taskManager.tasks.find(x => x.id === id);
+            return t ? { status: t.status, title: t.title } : undefined;
+        },
+        // Feature B — shared "open with".
+        openDoc,
+        docOpenConfig,
+        configureDocOpen: () => { void configureDocOpen(); }
     }, focusItem);
 
     const showNoticesPanel = (focusNotice?: string): void => NoticesPanel.show({
@@ -2937,7 +3013,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         setLastExportDir: (dir: string) => { void context.globalState.update('agentfarm.lastExportDir', dir); },
         convertToQueue: convertNoticeToQueue,
         handoffNotice: (n) => { void handoffToAgent(n.title, n.agentName); },
-        openQueueItem: (itemId) => showQueuePanel(itemId)
+        openQueueItem: (itemId) => showQueuePanel(itemId),
+        // Feature B — shared "open with".
+        openDoc,
+        docOpenConfig,
+        configureDocOpen: () => { void configureDocOpen(); }
     }, focusNotice);
 
     // ---------- Airtable Engine module ----------
@@ -6644,6 +6724,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             updateNoticesBadge(); QueuePanel.refreshIfOpen();
             void vscode.window.showInformationMessage('📥 Added to the queue.', 'Open queue')
                 .then(p => { if (p) { showQueuePanel(item.id); } });
+        }),
+
+        vscode.commands.registerCommand('agentfarm.configureDocOpen', () => {
+            void configureDocOpen();
         }),
 
         vscode.commands.registerCommand('agentfarm.openTasks', () => {

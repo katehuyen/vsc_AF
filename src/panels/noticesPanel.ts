@@ -31,6 +31,13 @@ export interface NoticesDeps {
     handoffNotice?: (notice: Notice) => void;
     /** Open the work queue focused on a spawned item (cross-link). */
     openQueueItem?: (itemId: string) => void;
+    // --- Feature B: shared "open with" for the linked report .md ---
+    /** Open a resolved report file with a mode (default when omitted). */
+    openDoc?: (filePath: string, mode?: string) => void;
+    /** Current doc-open default, for the split-button UI. */
+    docOpenConfig?: () => { mode: string; hasCustom: boolean };
+    /** Launch the host-side "configure default + custom app" flow. */
+    configureDocOpen?: () => void;
 }
 
 function buildData(deps: NoticesDeps, focusNotice?: string): Record<string, unknown> {
@@ -40,6 +47,7 @@ function buildData(deps: NoticesDeps, focusNotice?: string): Record<string, unkn
         unread: deps.store.unread(),
         openQuestions: deps.store.openQuestions(),
         agents: deps.agentNames(),
+        docOpen: deps.docOpenConfig ? deps.docOpenConfig() : { mode: 'vscode', hasCustom: false },
         focusId: focusNotice ?? null
     };
 }
@@ -200,7 +208,10 @@ export class NoticesPanel {
                 if (typeof msg.id === 'string') { void this.exportOne(msg.id); }
                 break;
             case 'openReport':
-                if (typeof msg.id === 'string') { void this.openReport(msg.id); }
+                if (typeof msg.id === 'string') { this.openReport(msg.id, typeof msg.mode === 'string' ? msg.mode : undefined); }
+                break;
+            case 'configureDocOpen':
+                try { this.deps.configureDocOpen?.(); } catch { /* best-effort */ }
                 break;
             case 'openExternal':
                 // Only http(s) links from a notice body may open — never a file:// or command: uri.
@@ -239,22 +250,14 @@ export class NoticesPanel {
         await this.saveMarkdown(`# Agent Farm — Notice\n\n${noticeMarkdown(n, 2)}`, 'notice');
     }
 
-    /** Open the linked full report (the "second leg") in an editor tab. The path
-     *  comes from the notice itself (never from the webview), so it can only be a
-     *  report an agent attached — no arbitrary file open. */
-    private async openReport(id: string): Promise<void> {
+    /** Open the linked full report (the "second leg") via the shared "open with"
+     *  helper (mode = the caret choice, or the user's default when omitted). The
+     *  path comes from the notice itself (never from the webview), so it can only
+     *  be a report an agent attached — no arbitrary file open. */
+    private openReport(id: string, mode?: string): void {
         const n = this.deps.store.list({ limit: 0 }).find(x => x.id === id);
         if (!n || !n.reportPath) { return; }
-        try {
-            if (!fs.existsSync(n.reportPath)) {
-                void vscode.window.showWarningMessage(`Agent Farm: report file not found — ${n.reportPath}`);
-                return;
-            }
-            const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(n.reportPath));
-            await vscode.window.showTextDocument(doc, { preview: true });
-        } catch (e) {
-            void vscode.window.showErrorMessage(`Agent Farm: could not open report — ${String(e)}`);
-        }
+        try { this.deps.openDoc?.(n.reportPath, mode); } catch { /* best-effort */ }
     }
 
     private async saveMarkdown(md: string, base: string): Promise<void> {

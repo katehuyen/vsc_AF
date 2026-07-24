@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.16.0 — Work-Queue author lanes + "Open with" for report/answer links (2026-07-24)
+
+Two related board upgrades. The manager now self-queues its meaningful delegations (author=`manager`, often status `delegated`), which in a single flat list buried the user's own captures; and every report/answer `.md` link opened as raw, unrendered markdown in a VS Code tab.
+
+- **Work Queue — functional author lanes.** The queue splits into three top-level categories instead of one flat pipeline: **🟠 Needs you** (blocked, author-independent — stays prominent, the attention bell), **🧑 Your captures** (the PRIMARY lane, work FOR the agents, front-and-center), and **🤖 Agent-tracked delegations** (a SECONDARY, collapsible lane so the manager's tracked work never crowds out your captures). The pipeline sub-lanes (New / Grouped / Delegated / Done / Dropped) live inside each category.
+- **Live status mirror on agent-tracked items.** A delegated item shows the LIVE status of the mission/task it links (running → done/failed), read fresh via its `missionId`/`taskId`, with a click-through chip that opens the Missions/Tasks panel. The collapsed lane header carries a rollup (e.g. "2 running · 1 done"). The queue refreshes as those tasks change state.
+- **"Open with" split button (Notices + Work Queue).** The report link on a notice and the answer/report links on a queue item are now a split button: the main click opens with your default; the ▾ caret offers **VS Code (raw)**, **Markdown preview (rendered)**, **Obsidian** (opens the vault file rendered via `obsidian://`), and a **custom external app** (`{file}` argument template). One shared `openReportDoc` helper backs both panels.
+- **Default lives in a module store, not a settings leak.** The chosen default (and the custom-app command) is written to the extension's own `doc-open-config.json` in globalStorage — deliberately kept out of the schema-driven `agentFarm.*` page, since the custom-app path is machine-specific. Configure it from the caret menu (⚙) or `Agent Farm: Configure Report/Answer Open Mode`.
+- **Bridge (§19.C):** `docopen.get` / `docopen.set` expose the open-mode config to agents. 28 new pure tests (mode coercion, obsidian URI, space-safe argv, module-store round-trip incl. BOM tolerance, both ops). Suite green.
+
 ## 3.13.0 — Capture now: the /context breakdown on demand (2026-07-24)
 
 3.12.x could only SHOW a breakdown if `/context` had been run inside the session — and a corpus scan showed that is almost never true (ONE recorded invocation across every transcript on the machine). The feature was correct and useless. Root-cause fix: produce the breakdown on demand.
