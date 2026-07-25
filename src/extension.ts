@@ -28,6 +28,9 @@ import { buildImpactReport, correlateVersions, InstructionHistory } from './core
 import { chunkMemoryFile, memoryFileRefs } from './core/memquery';
 import { modelArgsFor as policyModelArgs, ModelPolicyRule } from './core/modelpolicy';
 import {
+    describePrecondition, parsePrecondition, Precondition, rollupAutomationLog
+} from './core/automation';
+import {
     AGENTS_MD_NAME, antigravityStatus, syncToAntigravity, syncToClaude, SyncResult
 } from './core/antigravity';
 import { syncCodexExtras } from './core/codex';
@@ -687,6 +690,35 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const pct = 100 * index.windowUsage().tokens / limit;
                 return pct >= guard ? `quota guard (${Math.round(pct)}% of 5h window)` : undefined;
             },
+            // The daily budget as a BRAKE. `agentFarm.budgets` used to raise an
+            // insight and let the task start anyway; a ceiling you can walk
+            // through is not a ceiling. Per-agent limit first, then the fleet.
+            budgetCheck: (agentName) => {
+                const budgets = cfg().get<Record<string, number>>('budgets', {});
+                if (!budgets || !Object.keys(budgets).length) { return undefined; }
+                const d = new Date();
+                const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                const spend = (agentId?: string) =>
+                    (agentId ? index.forAgent(agentId) : index.all())
+                        .reduce((sum, s) => sum + (s.daily[day]?.cost ?? 0), 0);
+                const own = budgets[agentName];
+                if (own && own > 0) {
+                    const cost = spend(agents.find(a => a.name === agentName)?.id);
+                    if (cost >= own) {
+                        return `daily budget spent (${agentName}: $${cost.toFixed(2)} of $${own.toFixed(2)})`;
+                    }
+                }
+                const fleet = budgets['*'];
+                if (fleet && fleet > 0) {
+                    const cost = spend();
+                    if (cost >= fleet) {
+                        return `fleet daily budget spent ($${cost.toFixed(2)} of $${fleet.toFixed(2)})`;
+                    }
+                }
+                return undefined;
+            },
+            queueWorkCount: () => workQueueStore.list({ limit: 0 })
+                .filter(i => i.status === 'captured' || i.status === 'grouped' || i.status === 'blocked').length,
             getEnv: (agentId) => vault.env(agentId),
             resolveTemplate: (s) => vault.substitute(s),
             forward: postForward,
@@ -2037,12 +2069,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             describe: 'Installed schedules. args: none',
             handler: () => taskManager.schedules.map(s => ({
                 id: s.id, title: s.title, agent: s.agentName, kind: s.kind,
-                hour: s.hour, minute: s.minute, dow: s.dow, enabled: s.enabled, missed: s.missed
+                hour: s.hour, minute: s.minute, dow: s.dow, enabled: s.enabled, missed: s.missed,
+                model: s.model ?? null, fireIf: s.fireIf ?? null
             }))
         },
         {
             op: 'schedules.add',
-            describe: 'Install a schedule. args: agent (name|id), title, prompt, kind? (daily|weekly|once), hour?, minute?, dow?, onceAt?, mode?, missed? (skip|run|ask)',
+            describe: 'Install a schedule. args: agent (name|id), title, prompt, kind? (daily|weekly|once), hour?, minute?, dow?, onceAt?, mode?, missed? (skip|run|ask), model? (opus|sonnet|haiku — stated ON the schedule, beats the modelPolicy engine), fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} — no agent is woken when it fails)',
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const seeds = parseSeedSchedules(JSON.stringify([
@@ -2050,8 +2083,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(seeds.length, 'Invalid schedule — title and prompt are required.');
                 need(!taskManager.schedules.some(s => s.title === seeds[0].title),
                     `A schedule titled "${seeds[0].title}" already exists.`);
-                const s = taskManager.addSchedule(seeds[0]);
-                return { id: s.id, title: s.title };
+                const model = optStr(args, 'model');
+                need(!model || /^[\w.:-]+$/.test(model), 'model must be a model id/alias (e.g. opus, sonnet, haiku).');
+                const fireIf = args.fireIf === undefined ? undefined : parsePrecondition(args.fireIf);
+                need(args.fireIf === undefined || fireIf,
+                    'fireIf.kind must be folderHasFiles | fileMissing | pathChangedWithin | queueHasWork.');
+                const s = taskManager.addSchedule({ ...seeds[0], model: model || undefined, fireIf });
+                return { id: s.id, title: s.title, model: s.model ?? null, fireIf: s.fireIf ?? null };
             }
         },
         {
@@ -2155,7 +2193,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             op: 'triggers.list',
             describe: 'Installed triggers (watch/hook/webhook). args: none',
             handler: () => taskManager.triggers.map(t => ({
-                id: t.id, title: t.title, type: t.type, enabled: t.enabled
+                id: t.id, title: t.title, type: t.type, enabled: t.enabled,
+                fireIf: t.fireIf ?? null,
+                model: t.action.kind === 'workflow' ? null : (t.action.model ?? null),
+                fireCount: t.fireCount ?? 0, skipCount: t.skipCount ?? 0,
+                lastSkipReason: t.lastSkipReason ?? null
             }))
         },
         {
@@ -2178,6 +2220,115 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(t, 'Trigger not found — triggers.list shows current ones.');
                 triggerManager.fire(t as FarmTrigger, 'manual');
                 return { fired: (t as FarmTrigger).title };
+            }
+        },
+        {
+            op: 'automations.status',
+            describe: 'The farm-wide automation gate: master switch, pause-until, quiet hours, plus each automation\'s fired/skipped counts and what the gate would decide right now. args: windowDays? (rollup window, default 7)',
+            handler: (args) => {
+                const days = typeof args.windowDays === 'number' && args.windowDays > 0
+                    ? Math.floor(args.windowDays) : 7;
+                const now = new Date();
+                const gate = taskManager.automationGate(now);
+                const roll = rollupAutomationLog(taskManager.automationLog,
+                    { now: now.getTime(), windowMs: days * 24 * 3600_000 });
+                const row = (kind: string, id: string, title: string, enabled: boolean,
+                    pre: Precondition | undefined) => {
+                    const r = roll.get(id);
+                    const v = taskManager.checkPrecondition(pre);
+                    return {
+                        kind, id, title, enabled,
+                        fireIf: describePrecondition(pre) || null,
+                        wouldFireNow: enabled && !gate && v.ok,
+                        preconditionNow: v.detail,
+                        fired: r?.fired ?? 0, skipped: r?.skipped ?? 0,
+                        skipRate: r ? Math.round(r.skipRate * 100) : 0
+                    };
+                };
+                return {
+                    gate: gate ? { blocked: true, kind: gate.kind, reason: gate.reason, until: gate.until ?? null }
+                        : { blocked: false },
+                    state: taskManager.automation,
+                    windowDays: days,
+                    schedules: taskManager.schedules.map(s =>
+                        ({ ...row('schedule', s.id, s.title, s.enabled, s.fireIf), agent: s.agentName, model: s.model ?? null })),
+                    triggers: taskManager.triggers.map(t => row('trigger', t.id, t.title, t.enabled, t.fireIf))
+                };
+            }
+        },
+        {
+            op: 'automations.pause',
+            describe: 'Master switch OFF — no schedule or trigger fires. args: minutes? (temporary pause; omit for indefinite), reason? (shown in the UI so a forgotten pause is explainable)',
+            handler: (args) => {
+                const mins = typeof args.minutes === 'number' && args.minutes > 0 ? Math.floor(args.minutes) : 0;
+                const reason = optStr(args, 'reason') || undefined;
+                const state = mins
+                    ? taskManager.setAutomationState({ paused: false, pausedUntil: Date.now() + mins * 60_000, pauseReason: reason })
+                    : taskManager.setAutomationState({ paused: true, pausedUntil: undefined, pauseReason: reason });
+                TasksPanel.refreshIfOpen();
+                return { paused: !!state.paused, pausedUntil: state.pausedUntil ?? null, reason: state.pauseReason ?? null };
+            }
+        },
+        {
+            op: 'automations.resume',
+            describe: 'Master switch ON — schedules and triggers fire again (clears any pause-until too). args: none',
+            handler: () => {
+                const state = taskManager.setAutomationState({ paused: false, pausedUntil: undefined, pauseReason: undefined });
+                TasksPanel.refreshIfOpen();
+                return { paused: !!state.paused };
+            }
+        },
+        {
+            op: 'automations.quietHours',
+            describe: 'Set or clear the nightly quiet window; inside it nothing wakes on its own and a due schedule is DEFERRED to the end of the window (not dropped). args: from ("HH:MM"), to ("HH:MM") — pass from:"" to turn quiet hours off',
+            handler: (args) => {
+                const from = optStr(args, 'from');
+                const to = optStr(args, 'to');
+                if (!from) {
+                    const s = taskManager.setAutomationState({ quietFrom: undefined, quietTo: undefined });
+                    TasksPanel.refreshIfOpen();
+                    return { quietHours: null, state: s };
+                }
+                const ok = (v: string) => /^\d{1,2}:\d{2}$/.test(v);
+                need(ok(from) && ok(to), 'from/to must be "HH:MM" (e.g. 23:00 and 07:00).');
+                const s = taskManager.setAutomationState({ quietFrom: from, quietTo: to });
+                TasksPanel.refreshIfOpen();
+                return { quietHours: `${s.quietFrom}–${s.quietTo}` };
+            }
+        },
+        {
+            op: 'automations.bulk',
+            describe: 'Enable/disable MANY automations at once — the thing that used to force one-by-one clicking. args: set (on|off), kind? (schedule|trigger|both, default both), titles? (array of ids/titles; omit = every automation of that kind), tag? (substring match on the title)',
+            handler: (args) => {
+                const set = argStr(args, 'set');
+                need(set === 'on' || set === 'off', 'set must be on | off.');
+                const enabled = set === 'on';
+                const kind = optStr(args, 'kind') || 'both';
+                need(['schedule', 'trigger', 'both'].includes(kind), 'kind must be schedule | trigger | both.');
+                const refs = Array.isArray(args.titles)
+                    ? new Set(args.titles.map(x => String(x))) : undefined;
+                const tag = optStr(args, 'tag').toLowerCase();
+                const match = (id: string, title: string) =>
+                    (!refs || refs.has(id) || refs.has(title)) &&
+                    (!tag || title.toLowerCase().includes(tag));
+                const changed: string[] = [];
+                if (kind !== 'trigger') {
+                    for (const s of taskManager.schedules) {
+                        if (!match(s.id, s.title) || s.enabled === enabled) { continue; }
+                        s.enabled = enabled;
+                        changed.push(`schedule:${s.title}`);
+                    }
+                }
+                if (kind !== 'schedule') {
+                    for (const t of taskManager.triggers) {
+                        if (!match(t.id, t.title) || t.enabled === enabled) { continue; }
+                        t.enabled = enabled;
+                        changed.push(`trigger:${t.title}`);
+                    }
+                }
+                taskManager.persist();
+                TasksPanel.refreshIfOpen();
+                return { set, changed, count: changed.length };
             }
         },
         {
@@ -2403,7 +2554,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     bridge.register([
         {
             op: 'schedules.edit',
-            describe: 'Edit a schedule in place (id survives — no delete+recreate). args: id or title, then any of: newTitle?, prompt?, agent? (name|id), mode? (headless|interactive), kind? (daily|weekly|once), hour? (0-23), minute? (0-59), dow? (0-6, weekly), onceAt? ("YYYY-MM-DD HH:MM" or epoch ms, once), missed? (skip|run|ask), enabled? (boolean)',
+            describe: 'Edit a schedule in place (id survives — no delete+recreate). args: id or title, then any of: newTitle?, prompt?, agent? (name|id), mode? (headless|interactive), kind? (daily|weekly|once), hour? (0-23), minute? (0-59), dow? (0-6, weekly), onceAt? ("YYYY-MM-DD HH:MM" or epoch ms, once), missed? (skip|run|ask), enabled? (boolean), model? (opus|sonnet|haiku|"" to clear — beats the modelPolicy engine), fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} or null to clear — the schedule is skipped for free when it fails)',
             handler: (args) => {
                 const ref = optStr(args, 'id') || argStr(args, 'title');
                 const s = taskManager.schedules.find(x => x.id === ref || x.title === ref);
@@ -2461,6 +2612,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     }
                 }
                 if (typeof args.enabled === 'boolean') { patch.enabled = args.enabled; }
+                if (args.model !== undefined) {
+                    const m = optStr(args, 'model');
+                    need(!m || /^[\w.:-]+$/.test(m), 'model must be a model id/alias (e.g. opus, sonnet, haiku).');
+                    patch.model = m || undefined;
+                }
+                if (args.fireIf !== undefined) {
+                    if (args.fireIf === null || args.fireIf === '') { patch.fireIf = undefined; }
+                    else {
+                        const pre = parsePrecondition(args.fireIf);
+                        need(pre, 'fireIf.kind must be folderHasFiles | fileMissing | pathChangedWithin | queueHasWork.');
+                        patch.fireIf = pre;
+                    }
+                }
                 need(Object.keys(patch).length, 'Nothing to edit — pass at least one documented field.');
                 const kindAfter = patch.kind ?? cur.kind;
                 need(kindAfter !== 'weekly' || (patch.dow ?? cur.dow) !== undefined,
@@ -2510,7 +2674,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'triggers.add',
-            describe: 'Install a trigger. args: title, type (watch|hook|webhook), watch? (existing file/folder — watch type), hookEvent? (start|prompt|toolStart|toolEnd|permission|notify|stop|subagent|compact|end — hook type), hookAgent? (agent name filter, hook type), action ({kind:"task", agent, prompt, title?, mode?} | {kind:"dispatch", prompt, title?} | {kind:"workflow", workflow: id|title}), debounceSec?, cooldownSec?, maxPerHour? (0 = unlimited), enabled? (default true). Prompts may use {watch} and {payload}. A webhook trigger returns its POST url.',
+            describe: 'Install a trigger. args: title, type (watch|hook|webhook), watch? (existing file/folder — watch type), hookEvent? (start|prompt|toolStart|toolEnd|permission|notify|stop|subagent|compact|end — hook type), hookAgent? (agent name filter, hook type), action ({kind:"task", agent, prompt, title?, mode?, model?} | {kind:"dispatch", prompt, title?, model?} | {kind:"workflow", workflow: id|title}), fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} — the CONTENT brake: a watch fires on any filesystem change, this stops the wake-up for free when there is no real work), debounceSec?, cooldownSec?, maxPerHour? (0 = unlimited), enabled? (default true). Prompts may use {watch} and {payload}. A webhook trigger returns its POST url.',
             handler: (args) => {
                 const title = argStr(args, 'title');
                 const typeIn = argStr(args, 'type');
@@ -2544,12 +2708,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     action = {
                         kind: 'task', agentId: agent.id, agentName: agent.name,
                         title: String(a.title ?? '').trim() || title, prompt,
-                        mode: a.mode === 'interactive' ? 'interactive' : 'headless'
+                        mode: a.mode === 'interactive' ? 'interactive' : 'headless',
+                        model: String(a.model ?? '').trim() || undefined
                     };
                 } else if (kind === 'dispatch') {
                     const prompt = String(a.prompt ?? '').trim();
                     need(prompt, 'action.prompt is required for a dispatch action.');
-                    action = { kind: 'dispatch', title: String(a.title ?? '').trim() || title, prompt, mode: 'headless' };
+                    action = {
+                        kind: 'dispatch', title: String(a.title ?? '').trim() || title, prompt, mode: 'headless',
+                        model: String(a.model ?? '').trim() || undefined
+                    };
                 } else if (kind === 'workflow') {
                     const wref = String(a.workflow ?? '').trim();
                     const w = taskManager.workflows.find(x => x.id === wref || x.title === wref);
@@ -2564,22 +2732,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     need(typeof v === 'number' && Number.isFinite(v) && v >= min, `${key} must be a number ≥ ${min}.`);
                     return Math.floor(v as number);
                 };
+                const fireIf = args.fireIf === undefined ? undefined : parsePrecondition(args.fireIf);
+                need(args.fireIf === undefined || fireIf,
+                    'fireIf.kind must be folderHasFiles | fileMissing | pathChangedWithin | queueHasWork.');
                 const trigger = taskManager.addTrigger({
-                    title, type, watchPath, hookEvent, hookAgent, token, action,
+                    title, type, watchPath, hookEvent, hookAgent, token, action, fireIf,
                     debounceSec: numArg('debounceSec', type === 'watch' ? 10 : 1, 1),
                     cooldownSec: numArg('cooldownSec', 60, 0),
                     maxPerHour: numArg('maxPerHour', 6, 0),
                     enabled: args.enabled !== false
                 });
                 return {
-                    id: trigger.id, title: trigger.title, type,
+                    id: trigger.id, title: trigger.title, type, fireIf: trigger.fireIf ?? null,
                     ...(token ? { url: `http://127.0.0.1:${cfg().get<number>('livePort', 8377)}/trigger/${token}` } : {})
                 };
             }
         },
         {
             op: 'triggers.edit',
-            describe: 'Edit a trigger in place. args: id or title, then any of: newTitle?, prompt? (task/dispatch action), agent? (name|id — task action), watch? (watch type), hookEvent?/hookAgent? (hook type; hookAgent "" = any agent), debounceSec? (≥1), cooldownSec?, maxPerHour? (0 = unlimited)',
+            describe: 'Edit a trigger in place. args: id or title, then any of: newTitle?, prompt? (task/dispatch action), agent? (name|id — task action), watch? (watch type), hookEvent?/hookAgent? (hook type; hookAgent "" = any agent), debounceSec? (≥1), cooldownSec?, maxPerHour? (0 = unlimited), model? ("" to clear), fireIf? (precondition object, or null to clear)',
             handler: (args) => {
                 const ref = optStr(args, 'id') || argStr(args, 'title');
                 const t = taskManager.triggers.find(x => x.id === ref || x.title === ref);
@@ -2633,9 +2804,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 numPatch('debounceSec', 1);
                 numPatch('cooldownSec', 0);
                 numPatch('maxPerHour', 0);
+                if (args.model !== undefined) {
+                    need(tr.action.kind !== 'workflow', 'A workflow trigger has no model — set it on the steps.');
+                    const m = optStr(args, 'model');
+                    need(!m || /^[\w.:-]+$/.test(m), 'model must be a model id/alias (e.g. opus, sonnet, haiku).');
+                    if (tr.action.kind !== 'workflow') { tr.action.model = m || undefined; }
+                    updated.push('model');
+                }
+                if (args.fireIf !== undefined) {
+                    if (args.fireIf === null || args.fireIf === '') { tr.fireIf = undefined; }
+                    else {
+                        const pre = parsePrecondition(args.fireIf);
+                        need(pre, 'fireIf.kind must be folderHasFiles | fileMissing | pathChangedWithin | queueHasWork.');
+                        tr.fireIf = pre;
+                    }
+                    updated.push('fireIf');
+                }
                 need(updated.length, 'Nothing to edit — pass at least one documented field.');
                 taskManager.updateTrigger(tr);
-                return { id: tr.id, title: tr.title, updated };
+                return { id: tr.id, title: tr.title, updated, fireIf: tr.fireIf ?? null };
             }
         },
         {

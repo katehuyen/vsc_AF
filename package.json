@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.16.3",
+  "version": "3.17.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -2052,7 +2052,9 @@
         },
         "agentFarm.queue.targets": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "description": "Optional routing-target suggestions (repos/areas) offered in the work queue's add form and filter, in addition to the discovered agent names. Empty by default — free text, nothing hardcoded."
         },

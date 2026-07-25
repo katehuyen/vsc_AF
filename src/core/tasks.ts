@@ -3,6 +3,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo } from './agents';
+import {
+    appendAutomationEvent, AutomationEvent, AutomationState, evaluatePrecondition,
+    gateBlock, pauseExpired, Precondition
+} from './automation';
 import { buildBrowserPrompt, hostAllowed } from './browser';
 import {
     DEFAULT_MEDIA_PRICING, downloadAsset, estimateMediaCost, extFromUrl, injectMediaFeedback,
@@ -88,6 +92,16 @@ export interface FarmSchedule {
     enabled: boolean;
     lastRunKey?: string;
     missed?: MissedPolicy;
+    /** Explicit model for this schedule's runs. Beats the model-policy engine,
+     *  so "this nightly batch needs real judgment — run it on opus" is stated
+     *  ON the schedule instead of hidden in a settings regex that silently
+     *  contradicts it. Empty = policy/agent default. */
+    model?: string;
+    /** Is there work? Evaluated for free before any agent is woken; a schedule
+     *  whose precondition fails is stamped as handled for the day and skipped. */
+    fireIf?: Precondition;
+    /** Quiet hours deferred this occurrence; it fires when the window ends. */
+    pendingRunKey?: string;
 }
 
 export interface FarmTemplate {
@@ -183,10 +197,10 @@ export interface FarmTrigger {
     /** hook: only fire for this agent (name); empty = any agent */
     hookAgent?: string;
     action:
-        | { kind: 'task'; agentId: string; agentName: string; title: string; prompt: string; mode: TaskMode }
+        | { kind: 'task'; agentId: string; agentName: string; title: string; prompt: string; mode: TaskMode; model?: string }
         | { kind: 'workflow'; workflowId: string }
         /** F2: no fixed agent — the dispatcher routes each firing to the best agent. */
-        | { kind: 'dispatch'; title: string; prompt: string; mode: TaskMode };
+        | { kind: 'dispatch'; title: string; prompt: string; mode: TaskMode; model?: string };
     debounceSec: number;
     cooldownSec: number;
     maxPerHour: number;
@@ -194,6 +208,15 @@ export interface FarmTrigger {
     lastFiredAt?: number;
     fireCount?: number;
     recentFirings?: number[];
+    /** Is there work? A watch trigger fires on ANY filesystem change — including
+     *  noise that has nothing to do with the job. This is the content brake the
+     *  frequency brakes (debounce/cooldown/maxPerHour) can never be: it is
+     *  evaluated for free and stops the wake-up before it costs a model call. */
+    fireIf?: Precondition;
+    /** Firings suppressed by the precondition or the gate (cost NOT paid). */
+    skipCount?: number;
+    lastSkippedAt?: number;
+    lastSkipReason?: string;
 }
 
 export interface FarmWorkflow {
@@ -332,6 +355,10 @@ interface StoreShape {
     templates: FarmTemplate[];
     workflows: FarmWorkflow[];
     triggers: FarmTrigger[];
+    /** farm-wide master switch / quiet hours (see core/automation.ts) */
+    automation?: AutomationState;
+    /** rolling fired/skipped decision log — the evidence that the gate works */
+    automationLog?: AutomationEvent[];
 }
 
 export interface TaskManagerOptions {
@@ -388,6 +415,11 @@ export interface TaskManagerOptions {
      *  ${globalStorage} / ${home} tokens instead of absolute machine paths,
      *  so the git-synced store works on every machine (see portablePaths). */
     portableRoots?: () => PortableRoot[];
+    /** Actionable work-queue items, for the `queueHasWork` precondition. */
+    queueWorkCount?: () => number;
+    /** Today's API-equivalent spend for a budget check: agentName → USD, plus
+     *  the fleet total under '*'. Undefined = no budget enforcement. */
+    budgetCheck?: (agentName: string) => string | undefined;
 }
 
 export class TaskManager implements vscode.Disposable {
@@ -396,6 +428,8 @@ export class TaskManager implements vscode.Disposable {
     templates: FarmTemplate[] = [];
     workflows: FarmWorkflow[] = [];
     triggers: FarmTrigger[] = [];
+    automation: AutomationState = {};
+    automationLog: AutomationEvent[] = [];
     private terminals = new Map<string, vscode.Terminal>();      // taskId -> terminal
     private processes = new Map<string, cp.ChildProcess>();      // taskId -> headless process
     private handoffs = new Map<string, Handoff>();               // workflowRunId -> last handoff
@@ -516,6 +550,8 @@ export class TaskManager implements vscode.Disposable {
             this.templates = Array.isArray(json.templates) ? json.templates : [];
             this.workflows = Array.isArray(json.workflows) ? json.workflows : [];
             this.triggers = Array.isArray(json.triggers) ? json.triggers : [];
+            this.automation = json.automation && typeof json.automation === 'object' ? json.automation : {};
+            this.automationLog = Array.isArray(json.automationLog) ? json.automationLog : [];
             // B11: a follower window mirrors the store as-is — the stale pass
             // below would cancel rows that are alive in the runner window.
             if (!this.runner()) { return; }
@@ -777,11 +813,50 @@ export class TaskManager implements vscode.Disposable {
                 schedules: this.schedules,
                 templates: this.templates,
                 workflows: this.workflows,
-                triggers: this.triggers
+                triggers: this.triggers,
+                automation: this.automation,
+                automationLog: this.automationLog
             }, this.proots()), null, 2), 'utf8');
         } catch { /* storage is best-effort */ }
         this.pruneOutputs();
         this.onDidChangeEmitter.fire();
+    }
+
+    // ---------- automation gate (core/automation.ts) ----------
+
+    /** Farm-wide block (master switch / pause-until / quiet hours), or undefined.
+     *  `manual` = the user pressed Run Now; quiet hours do not apply to them. */
+    automationGate(now = new Date(), manual = false): ReturnType<typeof gateBlock> {
+        if (pauseExpired(this.automation, now.getTime())) {
+            this.automation = { ...this.automation, pausedUntil: undefined, pauseReason: undefined };
+            this.save();
+        }
+        return gateBlock(this.automation, now, { manual });
+    }
+
+    /** Is there work? Free to evaluate — no agent is woken to find out. */
+    checkPrecondition(pre: Precondition | undefined): { ok: boolean; detail: string } {
+        return evaluatePrecondition(pre, { queueWorkCount: this.opts.queueWorkCount });
+    }
+
+    /** Record a fired/skipped decision. This log IS the evidence that the gate
+     *  works — a precondition that silently suppressed work would be exactly
+     *  the "rule that fails silently" the constitution forbids. */
+    logAutomation(ev: Omit<AutomationEvent, 'ts'>): void {
+        this.automationLog = appendAutomationEvent(this.automationLog, { ...ev, ts: Date.now() });
+        this.save();
+    }
+
+    /** Persist after a caller mutated store rows in place (bulk enable/disable). */
+    persist(): void {
+        this.save();
+    }
+
+    /** Update the master switch / quiet hours (panel + bridge share this path). */
+    setAutomationState(patch: Partial<AutomationState>): AutomationState {
+        this.automation = { ...this.automation, ...patch };
+        this.save();
+        return this.automation;
     }
 
     // ---------- tasks ----------
@@ -819,6 +894,11 @@ export class TaskManager implements vscode.Disposable {
         if (maxAgent > 0 && this.runningCount(task.agentId) >= maxAgent) { return `agent busy (${task.agentName})`; }
         const quota = this.opts.quotaCheck?.();
         if (quota) { return quota; }
+        // Budget is a BRAKE, not a notification: over the daily ceiling nothing
+        // new launches. (It used to raise an insight and then start the task
+        // anyway — a ceiling you can walk through is not a ceiling.)
+        const budget = this.opts.budgetCheck?.(task.agentName);
+        if (budget) { return budget; }
         return undefined;
     }
 
@@ -2158,6 +2238,23 @@ export class TaskManager implements vscode.Disposable {
         t.fireCount = (t.fireCount ?? 0) + 1;
         t.recentFirings = [...(t.recentFirings ?? []).filter(ts => now - ts < 3600_000), now];
         this.save();
+        this.logAutomation({
+            kind: 'trigger', id: t.id, title: t.title, outcome: 'fired',
+            reason: this.checkPrecondition(t.fireIf).detail
+        });
+    }
+
+    /** A firing the gate or the precondition suppressed. Counted separately
+     *  from failures: nothing went wrong, the wake-up simply was not worth
+     *  paying for — and the count is what proves the brake earns its keep. */
+    markTriggerSkipped(t: FarmTrigger, reason: string): void {
+        t.skipCount = (t.skipCount ?? 0) + 1;
+        t.lastSkippedAt = Date.now();
+        t.lastSkipReason = reason;
+        this.save();
+        this.logAutomation({
+            kind: 'trigger', id: t.id, title: t.title, outcome: 'skipped', reason
+        });
     }
 
     // ---------- schedules ----------
@@ -2194,13 +2291,25 @@ export class TaskManager implements vscode.Disposable {
         this.save();
     }
 
+    /** Manual "Run Now": the master switch still applies (paused means paused),
+     *  but quiet hours and the precondition do not — the user pressing a button
+     *  is a deliberate act, not an unattended wake-up. */
     runScheduleNow(s: FarmSchedule): void {
+        const gate = this.automationGate(new Date(), true);
+        if (gate) {
+            void vscode.window.showWarningMessage(`Agent Farm: cannot run "${s.title}" — ${gate.reason}.`);
+            return;
+        }
         const agent = this.getAgents().find(a => a.id === s.agentId);
         if (!agent) {
             void vscode.window.showWarningMessage(`Agent Farm: agent for schedule "${s.title}" not found.`);
             return;
         }
         const task = this.addTask(agent, s.title, s.prompt, s.mode, { fromSchedule: s.id });
+        if (s.model) { task.model = s.model; }
+        this.logAutomation({
+            kind: 'schedule', id: s.id, title: s.title, outcome: 'fired', reason: 'run now (manual)'
+        });
         this.startTask(task);
     }
 
@@ -2208,6 +2317,10 @@ export class TaskManager implements vscode.Disposable {
      *  window — in-memory on purpose, so a dismissed toast comes back in the
      *  next window instead of the occurrence silently dying. */
     private askedMissed = new Set<string>();
+
+    /** (schedule.id + runKey) pairs whose gate-block was already logged this
+     *  window — keeps a 30s tick from writing the same skip line forever. */
+    private gateNoted = new Set<string>();
 
     private tickSchedules(): void {
         if (!this.runner()) { return; } // B11: only the runner window fires schedules
@@ -2232,16 +2345,79 @@ export class TaskManager implements vscode.Disposable {
                 }
                 continue;
             }
-            s.lastRunKey = runKey;
-            if (s.kind === 'once') { s.enabled = false; }
-            const agent = this.getAgents().find(a => a.id === s.agentId);
-            if (!agent) { continue; }
-            const task = this.addTask(agent, s.title, s.prompt, s.mode, { fromSchedule: s.id });
-            void vscode.window.showInformationMessage(
-                `Agent Farm: scheduled task started — "${s.title}" (${s.agentName})` +
-                (missedKey ? ' — caught up; the scheduled time passed while VS Code was closed.' : ''));
-            this.startTask(task);
+            // --- the gate: may we work at all right now? ---
+            const gate = this.automationGate(now);
+            if (gate) {
+                if (gate.kind === 'quiet') {
+                    // Quiet hours DEFER rather than drop: the occurrence is
+                    // remembered and fires when the window ends, so a nightly
+                    // batch is not silently lost by "no wake-ups after 23:00".
+                    if (s.pendingRunKey !== runKey) {
+                        s.pendingRunKey = runKey;
+                        s.lastRunKey = runKey;
+                        this.save();
+                        this.logAutomation({
+                            kind: 'schedule', id: s.id, title: s.title,
+                            outcome: 'skipped', reason: `${gate.reason} — deferred to the end of the window`
+                        });
+                    }
+                } else if (!this.gateNoted.has(s.id + runKey)) {
+                    this.gateNoted.add(s.id + runKey);
+                    this.logAutomation({
+                        kind: 'schedule', id: s.id, title: s.title,
+                        outcome: 'skipped', reason: gate.reason
+                    });
+                }
+                continue;
+            }
+            this.fireSchedule(s, runKey, !!missedKey);
         }
+        this.releaseQuietDeferred(now);
+    }
+
+    /** Occurrences held back by quiet hours, released once the window ends. */
+    private releaseQuietDeferred(now: Date): void {
+        if (this.automationGate(now)) { return; }
+        for (const s of this.schedules) {
+            if (!s.pendingRunKey || !s.enabled) { continue; }
+            const key = s.pendingRunKey;
+            s.pendingRunKey = undefined;
+            this.fireSchedule(s, key, false, 'held over from quiet hours');
+        }
+    }
+
+    /** Precondition check, then launch. Shared by the on-time path, the
+     *  quiet-hours release and Run Now (which passes `manual`). */
+    private fireSchedule(s: FarmSchedule, runKey: string, caughtUp: boolean, note?: string): void {
+        const pre = this.checkPrecondition(s.fireIf);
+        if (!pre.ok) {
+            // Nothing to do — settle this occurrence so it does not retry all
+            // day, and record WHY. No agent was woken; this skip is free.
+            s.lastRunKey = runKey;
+            s.pendingRunKey = undefined;
+            this.save();
+            this.logAutomation({
+                kind: 'schedule', id: s.id, title: s.title,
+                outcome: 'skipped', reason: pre.detail
+            });
+            return;
+        }
+        s.lastRunKey = runKey;
+        s.pendingRunKey = undefined;
+        if (s.kind === 'once') { s.enabled = false; }
+        const agent = this.getAgents().find(a => a.id === s.agentId);
+        if (!agent) { return; }
+        const task = this.addTask(agent, s.title, s.prompt, s.mode, { fromSchedule: s.id });
+        if (s.model) { task.model = s.model; }
+        this.logAutomation({
+            kind: 'schedule', id: s.id, title: s.title,
+            outcome: 'fired', reason: note ? `${pre.detail} (${note})` : pre.detail
+        });
+        void vscode.window.showInformationMessage(
+            `Agent Farm: scheduled task started — "${s.title}" (${s.agentName})` +
+            (caughtUp ? ' — caught up; the scheduled time passed while VS Code was closed.' : '') +
+            (note ? ` — ${note}.` : ''));
+        this.startTask(task);
     }
 
     dispose(): void {

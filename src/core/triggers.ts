@@ -95,7 +95,16 @@ export class TriggerManager implements vscode.Disposable {
         return this.tryFire(trigger, 'webhook', payload);
     }
 
-    /** Fire if cooldown and hourly cap allow it. */
+    /**
+     * Fire if every brake allows it. Order matters — cheapest check first, and
+     * every one of these runs BEFORE a model is ever spawned:
+     *   1. cooldown / hourly cap  — frequency brakes (how often)
+     *   2. the farm gate          — master switch · pause-until · quiet hours
+     *   3. the PRECONDITION       — content brake (is there actually work?)
+     * A watch trigger fires on any filesystem change, including noise that has
+     * nothing to do with the job; without step 3 the only way to learn "there
+     * was nothing to do" was to pay for a full agent wake-up.
+     */
     tryFire(trigger: FarmTrigger, reason: string, payload?: unknown): boolean {
         const now = Date.now();
         if (trigger.lastFiredAt && now - trigger.lastFiredAt < trigger.cooldownSec * 1000) {
@@ -107,8 +116,18 @@ export class TriggerManager implements vscode.Disposable {
                 `Agent Farm: trigger "${trigger.title}" hit its hourly cap (${trigger.maxPerHour}) — skipping.`);
             return false;
         }
+        const gate = this.tasks.automationGate(new Date());
+        if (gate) { return this.skip(trigger, gate.reason); }
+        const pre = this.tasks.checkPrecondition(trigger.fireIf);
+        if (!pre.ok) { return this.skip(trigger, pre.detail); }
         this.fire(trigger, reason, payload);
         return true;
+    }
+
+    /** A suppressed firing: no agent woken, no cost — but never silent. */
+    private skip(trigger: FarmTrigger, reason: string): boolean {
+        this.tasks.markTriggerSkipped(trigger, reason);
+        return false;
     }
 
     fire(trigger: FarmTrigger, reason: string, payload?: unknown): void {
@@ -143,6 +162,7 @@ export class TriggerManager implements vscode.Disposable {
         }
         const prompt = substitute(action.prompt);
         const task = this.tasks.addTask(agent, action.title, prompt, action.mode, { fromTrigger: trigger.id });
+        if (action.model) { task.model = action.model; }
         void vscode.window.showInformationMessage(
             `Agent Farm: trigger "${trigger.title}" fired (${reason}) → task "${action.title}".`);
         this.tasks.startTask(task);
@@ -179,6 +199,7 @@ export class TriggerManager implements vscode.Disposable {
         if (!agent) { return; }
         const task = this.tasks.addTask(agent, `${action.title} → ${agent.name}`, prompt, action.mode,
             { fromTrigger: trigger.id });
+        if ((action as { model?: string }).model) { task.model = (action as { model?: string }).model; }
         void vscode.window.showInformationMessage(
             `Agent Farm: dispatch "${trigger.title}" (${reason}) → ${agent.name} [${result.method}: ${truncate(result.reason, 60)}].`);
         this.tasks.startTask(task);
