@@ -1,5 +1,5 @@
 import { BridgeRegistry, optStr } from './bridge';
-import { SessionInfo } from './sessions';
+import { SessionInfo, SessionOrigin, sessionOrigin } from './sessions';
 
 /**
  * Turns page data: every session unrolled into one row per user turn. Turn
@@ -32,11 +32,14 @@ export interface TurnRow {
     errors: number;
     models: string[];
     sidechain: boolean;
+    /** Who started the session this turn belongs to — 'user' dialog or 'auto' run. */
+    origin: SessionOrigin;
     active: boolean;
 }
 
 /** All turn rows of one session, newest data included. */
 export function turnRowsFor(s: SessionInfo, active: boolean): TurnRow[] {
+    const origin = sessionOrigin(s);
     return s.turns.map((t, i) => {
         const next = s.turns[i + 1];
         const endTs = next?.ts || s.lastTs || t.ts;
@@ -58,6 +61,7 @@ export function turnRowsFor(s: SessionInfo, active: boolean): TurnRow[] {
             errors: t.errors,
             models: t.models,
             sidechain: s.isSidechain,
+            origin,
             active
         };
     });
@@ -82,16 +86,18 @@ export function registerTurnsOps(
 ): void {
     bridge.register({
         op: 'turns.list',
-        describe: 'Every user turn across the farm, newest first (the Turns page as data). args: agent? (name filter), limit? (default 20)',
+        describe: 'Every user turn across the farm, newest first (the Turns page as data). args: agent? (name filter), origin? ("user" = turns of sessions a person started interactively — the page default; "auto" = turns of automation runs (schedule/trigger/task/mission); omit or "all" = both), limit? (default 20)',
         handler: (args) => {
             const agent = optStr(args, 'agent').toLowerCase();
+            const origin = optStr(args, 'origin').toLowerCase();
             const limit = typeof args.limit === 'number' && args.limit > 0 ? Math.floor(args.limit) : 20;
             return buildTurnRows(deps.sessions(), deps.isActive)
                 .filter(r => !agent || r.agentName.toLowerCase() === agent)
+                .filter(r => origin !== 'user' && origin !== 'auto' ? true : r.origin === origin)
                 .slice(0, limit)
                 .map(r => ({
                     agent: r.agentName, session: r.session, turn: `${r.n}/${r.of}`,
-                    label: r.label, ts: r.ts, tokens: r.tokens,
+                    label: r.label, ts: r.ts, origin: r.origin, tokens: r.tokens,
                     cost: Math.round(r.cost * 10000) / 10000,
                     tools: r.tools, errors: r.errors, models: r.models
                 }));

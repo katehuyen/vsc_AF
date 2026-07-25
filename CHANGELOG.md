@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.20.0 — Sessions tables: your dialogs separated from the farm's own runs (2026-07-26)
+
+With standing duties, schedules and triggers firing all day, the sessions the user actually *talked* in were a minority buried in the same list as every automation run — and there was no way to tell one from the other, let alone filter. The session viewer had two related problems: it called the AI side "Assistant" (these are agents), and it opened as an undifferentiated wall of text.
+
+- **Origin column + scope (Dashboard · Agent Detail · Turns).** A narrow **By** column marks every row: **🧑 you started it** (interactive session) or **🤖 automation started it** (schedule / trigger / task / mission, or any `claude -p`). All three tables **open scoped to 🧑**; the **🧑 chip** right before Filters flips **User ↔ All in one click**, and the filter panel's **Started by: All / 🧑 User / 🤖 Auto** row adds the third scope. Scope is remembered per page, and the chip row states the cut (`12/47 sessions`) whenever rows are hidden.
+- **Read, never guessed.** The origin comes from the transcript's own `entrypoint` field — `sdk-*` = a program launched the CLI, anything else = a person at a keyboard. Verified against all 261 transcripts on the machine (`cli` / `sdk-cli` / `claude-desktop`, none missing the field), and against the task store: every task and schedule the farm runs is headless, so every one of them reads as 🤖. An unknown entrypoint counts as yours — a filter must never bury a real conversation.
+- **The row pool is built per origin.** The host ships the union of each sort criterion's top-N; that union is now taken separately for the user and auto lanes, so the User scope gets its genuine top-N however much automation dominates the raw list.
+- **"Assistant" → "Agent"** in the session viewer, Turns and Search chip rows, with the extension-wide glyph vocabulary applied: **🧑 User · 🤖 Agent · 🔧 Tool calls · 📄 Results · ⚠ Errors**. The message rows carry the same marks, and the viewer's subtitle now opens with **🧑 your session** / **🤖 automation run**.
+- **The viewer opens folded, in Single-open mode.** What you land on is the session's turn list — a clickable map — not a wall of text; opening a turn folds the previous one. Expand all / Collapse all / Single-open override it any time (an explicit "off" survives reloads), turns arriving on a live session come in folded, and a turn you opened by hand is never folded behind your back. Every jump (deep link, ↑↓, breakdown row) still auto-unfolds its target.
+- **Bridge (§19.C):** `sessions.recent` and `turns.list` take the same `origin?` scope (`user` / `auto` / omit) and state each row's origin — an agent asked "what did I work on yesterday?" can now answer with dialogs instead of its own scheduled sweeps.
+- 49 new checks (origin parsing incl. future `sdk-*` entrypoints, the per-origin pool, column/switch/filter behavior, the new accordion opening state, live turns arriving folded, both bridge ops). Suite: 63 files, **2159 checks green**.
+
 ## 3.16.0 — Work-Queue author lanes + "Open with" for report/answer links (2026-07-24)
 
 Two related board upgrades. The manager now self-queues its meaningful delegations (author=`manager`, often status `delegated`), which in a single flat list buried the user's own captures; and every report/answer `.md` link opened as raw, unrendered markdown in a VS Code tab.

@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
 import { watchStatus } from '../core/duties';
 import { Insight } from '../core/health';
-import { SessionIndex, SessionInfo } from '../core/sessions';
+import { SessionIndex, SessionInfo, sessionOrigin } from '../core/sessions';
 import { PricingEngine, totalTokens } from '../core/pricing';
 import { SubsystemStatus } from '../core/farmstatus';
 import { dayKey } from '../core/util';
@@ -51,7 +51,10 @@ interface AgentSummary {
  *  instead of shipping every session, the pool is the union of the true top-N
  *  per sortable criterion (recency, cost, tokens, ctx-now, duration, turns):
  *  whatever sort the user picks, its genuine top N is guaranteed to be
- *  present. N follows the user's Show box (webview 'setTableN' message);
+ *  present. The union is taken PER ORIGIN (user / auto), because the table
+ *  filters by origin client-side and defaults to User — a pool built over the
+ *  mixed list would leave the User view short whenever automation dominates
+ *  the top rows. N follows the user's Show box (webview 'setTableN' message);
  *  n = 0 means "all" — every session ships and the union shortcut is moot.
  *  Exported for tests and reused by the agent detail page. */
 export const SESSION_TABLE_N = 12;
@@ -83,6 +86,8 @@ export function sessionRowPool(
         ctx: s.lastCtxTokens ?? 0,
         cost: s.cost,
         sidechain: s.isSidechain,
+        // 🧑 your own dialog vs 🤖 an automation run — the table's default scope
+        origin: sessionOrigin(s),
         active: isActive ? isActive(s) : false
     }));
     type Row = typeof rows[number];
@@ -93,9 +98,12 @@ export function sessionRowPool(
         r => r.ts, r => r.cost, r => r.tokens, r => r.ctx, r => r.durationMin, r => r.turns
     ];
     const pool = new Set<Row>();
-    for (const key of keys) {
-        rows.slice().sort((a, b) => key(b) - key(a)).slice(0, n)
-            .forEach(r => pool.add(r));
+    for (const origin of ['user', 'auto'] as const) {
+        const lane = rows.filter(r => r.origin === origin);
+        for (const key of keys) {
+            lane.slice().sort((a, b) => key(b) - key(a)).slice(0, n)
+                .forEach(r => pool.add(r));
+        }
     }
     // newest first — the webview re-sorts anyway; this is just a stable wire order
     return [...pool].sort((a, b) => b.ts - a.ts);

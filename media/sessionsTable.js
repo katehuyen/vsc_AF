@@ -2,7 +2,9 @@
 // One pool of rows, sorted client-side by the picked criterion; each row folds
 // open (▸) into that session's per-turn breakdown (fetched on demand from the
 // host via a 'sessionTurns' message); active rows carry a ⌨ jump-to-terminal
-// button. A Show box picks how many rows to list (empty / All = every one);
+// button. A narrow origin column (🧑 you / 🤖 automation) separates your own
+// dialogs from the runs the farm started by itself; the table opens scoped to
+// 🧑 and the chip next to Filters flips User ↔ All in one click. A Show box picks how many rows to list (empty / All = every one);
 // changing it posts 'setTableN' so the host rebuilds the row pool for the new
 // N — hosts must answer that message. The component owns exactly one container
 // div and re-renders only that, so host-page state (e.g. an open pricing
@@ -29,8 +31,21 @@
         { id: 'tools', label: 'Tools', get: r => r.toolCalls || 0 },
         { id: 'errors', label: 'Errors', get: r => r.errors || 0 }
     ];
+    // Origin scope (who started the session). 'user' is the DEFAULT: the table
+    // is first of all the log of your own conversations, and on a farm with
+    // standing duties the automation runs outnumber them several times over.
+    // '' = both. The glyphs are the queue page's author language (🧑 you /
+    // 🤖 agent), so one vocabulary carries across the whole extension.
+    const ORIGINS = [
+        { id: '', label: 'All', glyph: '🧑🤖', tip: 'Both your own sessions and automation runs' },
+        { id: 'user', label: 'User', glyph: '🧑', tip: 'Only sessions you started yourself — your dialogs' },
+        { id: 'auto', label: 'Auto', glyph: '🤖', tip: 'Only automation runs — schedule / trigger / task / mission' }
+    ];
+    const originOf = r => (r.origin === 'auto' ? 'auto' : 'user');
+    const originMeta = id => ORIGINS.find(o => o.id === id) || ORIGINS[0];
+
     const FDEF = () => ({
-        text: '', agent: '', activeOnly: false, errorsOnly: false, mainOnly: false,
+        text: '', agent: '', origin: 'user', activeOnly: false, errorsOnly: false, mainOnly: false,
         from: '', to: '', ranges: {}
     });
 
@@ -50,6 +65,11 @@
         .af-ftext { width:180px; padding:2px 6px; }
         .af-count { width:52px; padding:1px 4px; }
         .foldcell { width:22px; }
+        /* Origin: one narrow glyph column — the eye scans a single strip to tell
+           your own dialogs from automation runs. The word is in the tooltip. */
+        .origcell { width:20px; text-align:center; font-size:11px; line-height:1;
+            opacity:.85; cursor:default; }
+        .origcell.auto { opacity:.6; }
         .fold { font-size:10px; padding:0 6px; line-height:16px; cursor:pointer; border-radius:3px;
             background:transparent; opacity:.7; border:1px solid var(--vscode-widget-border, #4444);
             color:var(--vscode-foreground); }
@@ -85,7 +105,7 @@
      * opts: {
      *   vscode, C,           // acquired VS Code API + AFCharts helpers
      *   containerId,         // the div this component owns
-     *   columns,             // subset of: agent,title,when,duration,turns,tools,errors,tokens,ctx,cost
+     *   columns,             // subset of: origin,agent,title,when,duration,turns,tools,errors,tokens,ctx,cost
      *   tableN,              // rows shown after sorting (default 12; 0 = all)
      *   stateKey,            // persistence namespace ('dash', 'agent', …)
      *   fallbackSort, fallbackSingle  // initial state when nothing persisted
@@ -123,6 +143,9 @@
             vscode.setState(Object.assign({}, st, { afSess: all }));
         }
 
+        // The origin scope is deliberately NOT counted here: it has its own
+        // always-visible switch in the chip row, so counting it would park a
+        // permanent "(1)" on the Filters chip and say nothing new.
         function activeFilterCount() {
             let n = (filters.text ? 1 : 0) + (filters.agent ? 1 : 0)
                 + (filters.activeOnly ? 1 : 0) + (filters.errorsOnly ? 1 : 0) + (filters.mainOnly ? 1 : 0)
@@ -139,6 +162,7 @@
             return list.filter(r => {
                 if (text && ((r.title || '') + ' ' + (r.agent || '')).toLowerCase().indexOf(text) < 0) { return false; }
                 if (filters.agent && r.agentName !== filters.agent) { return false; }
+                if (filters.origin && originOf(r) !== filters.origin) { return false; }
                 if (filters.activeOnly && !r.active) { return false; }
                 if (filters.errorsOnly && !(r.errors > 0)) { return false; }
                 if (filters.mainOnly && r.sidechain) { return false; }
@@ -174,7 +198,12 @@
                     <input type="number" class="af-fr-${k.id}-min" placeholder="min" value="${rg.min !== undefined ? rg.min : ''}">–<input type="number" class="af-fr-${k.id}-max" placeholder="max" value="${rg.max !== undefined ? rg.max : ''}">
                 </label>`;
             }).join('');
+            const origins = ORIGINS.map(o =>
+                `<button class="chip af-forig-${o.id || 'all'}${filters.origin === o.id ? ' on' : ''}" title="${o.tip}">${o.glyph} ${o.label}</button>`).join('');
             return `<div class="af-fpanel">
+                <div class="af-frow">
+                    <span class="muted small" title="Who started the session">Started by:</span>${origins}
+                </div>
                 <div class="af-frow">
                     <input type="text" class="af-ftext" placeholder="title contains…" value="${C.esc(filters.text)}">
                     ${hasAgentCol && agents.length > 1 ? `<span class="muted small">Agent:</span>
@@ -207,6 +236,7 @@
             ` <button class="fold" data-term="${C.esc(r.agentName || '')}" data-sid="${C.esc(r.sessionId || '')}" data-cwd="${C.esc(r.cwd || '')}" title="Jump to this session's terminal window (if one is open)">⌨</button>`;
 
         const HEAD = {
+            origin: '<th class="origcell" title="Who started the session — 🧑 you, in an interactive session · 🤖 automation (schedule / trigger / task / mission). Switch the scope with the 🧑 chip above.">By</th>',
             agent: '<th>Agent</th>',
             title: '<th>Title</th>',
             when: '<th class="num">When</th>',
@@ -221,6 +251,12 @@
         // the active dot / sub badge / ⌨ button live in the leftmost identity
         // cell — Agent when present (dashboard), otherwise Title (agent page)
         const CELL = {
+            origin: r => {
+                const o = originMeta(originOf(r));
+                return `<td class="origcell ${o.id}" title="${o.id === 'auto'
+                    ? 'Automation started this session (schedule / trigger / task / mission)'
+                    : 'You started this session — an interactive dialog'}">${o.glyph}</td>`;
+            },
             agent: r => `<td>${dot(r)}${C.esc(r.agent)}${subBadge(r)}${termBtn(r)}</td>`,
             title: r => hasAgentCol
                 ? `<td title="${C.esc(r.title)}">${C.esc(r.title)}</td>`
@@ -259,6 +295,8 @@
             const def = SORTS.find(s => s.id === sort) || SORTS[0];
             const pool = filterRows(rows);
             const nf = activeFilterCount();
+            const hidden = rows.length - pool.length;
+            const scope = originMeta(filters.origin);
             shown = pool.slice().sort((a, b) => def.key(b) - def.key(a));
             if (tableN > 0) { shown = shown.slice(0, tableN); }
             shown.forEach(r => { if (open.has(r.file)) { ensureTurns(r); } });
@@ -280,13 +318,14 @@
                 <button class="chip af-expand" title="List every shown session's turns">Expand all</button>
                 <button class="chip af-collapse" title="Hide all turn lists">Collapse all</button>
                 <button class="chip af-single${single ? ' on' : ''}" title="Only one session's turns open at a time: unfolding a session folds the previous one">Single-open</button>
-                <button class="chip af-filter${nf ? ' on' : ''}" title="Filter the sessions by text, agent, flags, ranges and dates">Filters${nf ? ` (${nf})` : ''}</button>
-                <span class="muted small">${nf ? `${pool.length}/${rows.length} sessions` : '— ▸ lists a session\'s turns with per-turn tokens/cost · ● = active now · ctx = context after the last reply'}</span>
+                <button class="chip af-oswitch${filters.origin ? ' on' : ''}" title="Scope: ${scope.tip} · click to ${filters.origin ? 'show everything' : 'go back to your own sessions'}">${scope.glyph}</button>
+                <button class="chip af-filter${nf ? ' on' : ''}" title="Filter the sessions by origin, text, agent, flags, ranges and dates">Filters${nf ? ` (${nf})` : ''}</button>
+                <span class="muted small">${hidden > 0 ? `${pool.length}/${rows.length} sessions` : '— ▸ lists a session\'s turns with per-turn tokens/cost · ● = active now · ctx = context after the last reply'}</span>
             </div>
             ${filterPanelHtml()}
             <div class="tablewrap"><table>
                 <tr><th></th>${cols.map(c => HEAD[c]).join('')}</tr>
-                ${rowsHtml || `<tr><td colspan="${cols.length + 1}" class="muted">${nf ? 'No sessions match the filters.' : 'No sessions yet.'}</td></tr>`}
+                ${rowsHtml || `<tr><td colspan="${cols.length + 1}" class="muted">${rows.length ? 'No sessions match the filters.' : 'No sessions yet.'}</td></tr>`}
             </table></div>`;
         }
 
@@ -334,6 +373,15 @@
             if (allBtn) {
                 allBtn.addEventListener('click', () => setCount(tableN === 0 ? defaultN : 0));
             }
+            // ---- origin scope: one-click User ↔ All, without opening the panel ----
+            const osw = root.querySelector('.af-oswitch');
+            if (osw) {
+                osw.addEventListener('click', () => {
+                    filters.origin = filters.origin ? '' : 'user';
+                    saveState();
+                    renderSection();
+                });
+            }
             // ---- filter panel ----
             const fchip = root.querySelector('.af-filter');
             if (fchip) {
@@ -349,6 +397,8 @@
                 if (el) { el.addEventListener(ev, () => fn(el)); }
             };
             if (filtersOpen) {
+                ORIGINS.forEach(o =>
+                    wireEl(`.af-forig-${o.id || 'all'}`, 'click', () => { filters.origin = o.id; apply(); }));
                 wireEl('.af-ftext', 'change', el => { filters.text = el.value || ''; apply(); });
                 wireEl('.af-fagent', 'change', el => { filters.agent = el.value || ''; apply(); });
                 wireEl('.af-factive', 'click', () => { filters.activeOnly = !filters.activeOnly; apply(); });

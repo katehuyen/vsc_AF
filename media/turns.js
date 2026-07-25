@@ -30,28 +30,41 @@
         { id: 'errors', label: 'Errors', get: r => r.errors || 0 },
         { id: 'turnno', label: 'Turn #', get: r => r.n || 0 }
     ];
+    // Origin scope of the turn's session — the Sessions tables' scope, same
+    // glyphs, same default (🧑 your own dialogs): a farm with standing duties
+    // produces far more automation turns than you ever type yourself.
+    const ORIGINS = [
+        { id: '', label: 'All', glyph: '🧑🤖', tip: 'Turns of both your own sessions and automation runs' },
+        { id: 'user', label: 'User', glyph: '🧑', tip: 'Only turns of sessions you started yourself' },
+        { id: 'auto', label: 'Auto', glyph: '🤖', tip: 'Only turns of automation runs — schedule / trigger / task / mission' }
+    ];
+    const originOf = r => (r.origin === 'auto' ? 'auto' : 'user');
+    const originMeta = id => ORIGINS.find(o => o.id === id) || ORIGINS[0];
+
     const FDEF = () => ({
-        text: '', session: '', agent: '', model: '',
+        text: '', session: '', agent: '', model: '', origin: 'user',
         activeOnly: false, errorsOnly: false, mainOnly: false,
         from: '', to: '', ranges: {}
     });
 
     // Content filter of an unfolded turn — the session viewer's chip set, same
     // semantics: empty selection = show everything; "Errors" matches the flag,
-    // not a role. Dialog (you + assistant) is the default: the conversation is
-    // what you came to read, tool traffic is one chip away.
+    // not a role. Dialog (you + the agent) is the default: the conversation is
+    // what you came to read, tool traffic is one chip away. The AI side is
+    // labelled "Agent", never "Assistant" — these are agents (core/speaker.ts).
     const ROLE_CHIPS = [
-        { id: 'user', label: 'User', match: m => m.role === 'user' },
-        { id: 'assistant', label: 'Assistant', match: m => m.role === 'assistant' },
-        { id: 'tool', label: 'Tool calls', match: m => m.role === 'tool' },
-        { id: 'toolResult', label: 'Results', match: m => m.role === 'toolResult' },
-        { id: 'error', label: 'Errors', match: m => m.isError }
+        { id: 'user', label: '🧑 User', match: m => m.role === 'user' },
+        { id: 'assistant', label: '🤖 Agent', match: m => m.role === 'assistant' },
+        { id: 'tool', label: '🔧 Tool calls', match: m => m.role === 'tool' },
+        { id: 'toolResult', label: '📄 Results', match: m => m.role === 'toolResult' },
+        { id: 'error', label: '⚠ Errors', match: m => m.isError }
     ];
     const ROLE_DEFAULT = ['user', 'assistant'];
 
-    // Visible column order — Tokens sits right after Model, next to the figures
-    // that explain it. HEAD/CELL are keyed so the order lives in ONE list.
-    const COLUMNS = ['agent', 'label', 'session', 'n', 'models', 'tokens', 'when', 'duration', 'tools', 'errors', 'cost'];
+    // Visible column order — origin first (one narrow glyph strip to scan),
+    // Tokens right after Model, next to the figures that explain it. HEAD/CELL
+    // are keyed so the order lives in ONE list.
+    const COLUMNS = ['origin', 'agent', 'label', 'session', 'n', 'models', 'tokens', 'when', 'duration', 'tools', 'errors', 'cost'];
     // How much of a long text a cell shows before it is cut (the full string is
     // always in the cell's tooltip). The CSS caps match these.
     const LABEL_CHARS = 77;
@@ -73,6 +86,9 @@
         .af-ftext { width:180px; padding:2px 6px; }
         .af-count { width:52px; padding:1px 4px; }
         .foldcell { width:22px; }
+        .origcell { width:20px; text-align:center; font-size:11px; line-height:1;
+            opacity:.85; cursor:default; }
+        .origcell.auto { opacity:.6; }
         .fold { font-size:10px; padding:0 6px; line-height:16px; cursor:pointer; border-radius:3px;
             background:transparent; opacity:.7; border:1px solid var(--vscode-widget-border, #4444);
             color:var(--vscode-foreground); }
@@ -157,6 +173,8 @@
         }
     });
 
+    // The origin scope has its own always-visible switch chip, so it is not
+    // counted here (a permanent "(1)" on the Filters chip says nothing).
     function activeFilterCount() {
         let n = (filters.text ? 1 : 0) + (filters.session ? 1 : 0) + (filters.agent ? 1 : 0)
             + (filters.model ? 1 : 0) + (filters.activeOnly ? 1 : 0) + (filters.errorsOnly ? 1 : 0)
@@ -175,6 +193,7 @@
             if (text && (r.label || '').toLowerCase().indexOf(text) < 0) { return false; }
             if (sess && (r.session || '').toLowerCase().indexOf(sess) < 0) { return false; }
             if (filters.agent && r.agentName !== filters.agent) { return false; }
+            if (filters.origin && originOf(r) !== filters.origin) { return false; }
             if (filters.model && !(r.models || []).some(m => m.indexOf(filters.model) >= 0)) { return false; }
             if (filters.activeOnly && !r.active) { return false; }
             if (filters.errorsOnly && !(r.errors > 0)) { return false; }
@@ -215,7 +234,12 @@
                 <input type="number" class="af-fr-${k.id}-min" placeholder="min" value="${rg.min !== undefined ? rg.min : ''}">–<input type="number" class="af-fr-${k.id}-max" placeholder="max" value="${rg.max !== undefined ? rg.max : ''}">
             </label>`;
         }).join('');
+        const origins = ORIGINS.map(o =>
+            `<button class="chip af-forig-${o.id || 'all'}${filters.origin === o.id ? ' on' : ''}" title="${o.tip}">${o.glyph} ${o.label}</button>`).join('');
         return `<div class="af-fpanel">
+            <div class="af-frow">
+                <span class="muted small" title="Who started the session the turn belongs to">Started by:</span>${origins}
+            </div>
             <div class="af-frow">
                 <input type="text" class="af-ftext af-fturn" placeholder="turn contains…" value="${C.esc(filters.text)}" title="Filter by the turn's opening prompt">
                 <input type="text" class="af-ftext af-fsess" placeholder="session contains…" value="${C.esc(filters.session)}" title="Filter by the session title the turn belongs to">
@@ -282,6 +306,7 @@
     const cut = (s, n) => (s || '').length > n ? s.slice(0, n - 1) + '…' : (s || '—');
 
     const HEAD = {
+        origin: '<th class="origcell" title="Who started the session this turn belongs to — 🧑 you, in an interactive session · 🤖 automation (schedule / trigger / task / mission). Switch the scope with the 🧑 chip above.">By</th>',
         agent: '<th>Agent</th>',
         label: '<th>Turn</th>',
         session: '<th title="The session this turn belongs to — hover a cell for the full title">Session</th>',
@@ -295,6 +320,12 @@
         cost: '<th class="num">Cost</th>'
     };
     const CELL = {
+        origin: r => {
+            const o = originMeta(originOf(r));
+            return `<td class="origcell ${o.id}" title="${o.id === 'auto'
+                ? 'Automation started this session (schedule / trigger / task / mission)'
+                : 'You started this session — an interactive dialog'}">${o.glyph}</td>`;
+        },
         agent: r => `<td>${dot(r)}${C.esc(r.agent)}${subBadge(r)}${termBtn(r)}</td>`,
         label: r => `<td class="turncol" title="${C.esc(r.label || '')}">${C.esc(cut(r.label, LABEL_CHARS))}</td>`,
         session: r => `<td class="sesscol" title="${C.esc(r.session || '')}">${C.esc(cut(r.session, SESSION_CHARS))}</td>`,
@@ -316,7 +347,7 @@
         return `<div class="chiprow">
             <span class="muted small" title="What an unfolded turn (▸) shows of its content">Show:</span>
             <button class="chip${all ? ' on' : ''}" data-preset="all" title="Show every message of an unfolded turn">All</button>
-            <button class="chip${dialog ? ' on' : ''}" data-preset="dialog" title="Only you + claude — tool traffic hidden (the default)">Dialog</button>
+            <button class="chip${dialog ? ' on' : ''}" data-preset="dialog" title="Only you + the agent — tool traffic hidden (the default)">Dialog</button>
             ${ROLE_CHIPS.map(c =>
                 `<button class="chip${roleSel.has(c.id) ? ' on' : ''}" data-chip="${c.id}">${c.label}</button>`).join('')}
             <span class="muted small">— applies to every turn you unfold</span>
@@ -328,6 +359,8 @@
         const def = SORTS.find(s => s.id === sort) || SORTS[0];
         const pool = filterRows(rows);
         const nf = activeFilterCount();
+        const hidden = rows.length - pool.length;
+        const scope = originMeta(filters.origin);
         shown = pool.slice().sort((a, b) => def.key(b) - def.key(a));
         if (tableN > 0) { shown = shown.slice(0, tableN); }
         shown.forEach(r => { if (open.has(key(r))) { ensureDetail(r); } });
@@ -352,14 +385,15 @@
             <button class="chip af-expand" title="Unfold every listed turn (reads each transcript once)">Expand all</button>
             <button class="chip af-collapse" title="Fold all turns closed">Collapse all</button>
             <button class="chip af-single${single ? ' on' : ''}" title="Only one turn open at a time: unfolding a turn folds the previous one">Single-open</button>
-            <button class="chip af-filter${nf ? ' on' : ''}" title="Filter the turns by prompt text, session, agent, model, flags, ranges and dates">Filters${nf ? ` (${nf})` : ''}</button>
-            <span class="muted small">${nf ? `${pool.length}/${rows.length} turns` : `${rows.length} turns — ▸ shows a turn's content · row click opens the transcript at that turn · ● = active now`}</span>
+            <button class="chip af-oswitch${filters.origin ? ' on' : ''}" title="Scope: ${scope.tip} · click to ${filters.origin ? 'show everything' : 'go back to your own sessions'}">${scope.glyph}</button>
+            <button class="chip af-filter${nf ? ' on' : ''}" title="Filter the turns by origin, prompt text, session, agent, model, flags, ranges and dates">Filters${nf ? ` (${nf})` : ''}</button>
+            <span class="muted small">${hidden > 0 ? `${pool.length}/${rows.length} turns` : `${rows.length} turns — ▸ shows a turn's content · row click opens the transcript at that turn · ● = active now`}</span>
         </div>
         ${contentChipsHtml()}
         ${filterPanelHtml()}
         <div class="tablewrap"><table>
             <tr><th></th>${COLUMNS.map(c => HEAD[c]).join('')}</tr>
-            ${rowsHtml || `<tr><td colspan="${COLUMNS.length + 1}" class="muted">${nf ? 'No turns match the filters.' : 'No turns yet.'}</td></tr>`}
+            ${rowsHtml || `<tr><td colspan="${COLUMNS.length + 1}" class="muted">${rows.length ? 'No turns match the filters.' : 'No turns yet.'}</td></tr>`}
         </table></div>`;
     }
 
@@ -443,6 +477,12 @@
                 saveState();
                 render();
             }));
+        // Origin scope: one click flips User ↔ All without opening the panel.
+        root.querySelector('.af-oswitch').addEventListener('click', () => {
+            filters.origin = filters.origin ? '' : 'user';
+            saveState();
+            render();
+        });
         root.querySelector('.af-filter').addEventListener('click', () => {
             filtersOpen = !filtersOpen;
             saveState();
@@ -454,6 +494,8 @@
             if (el) { el.addEventListener(ev, () => fn(el)); }
         };
         if (filtersOpen) {
+            ORIGINS.forEach(o =>
+                wireEl(`.af-forig-${o.id || 'all'}`, 'click', () => { filters.origin = o.id; apply(); }));
             wireEl('.af-fturn', 'change', el => { filters.text = el.value || ''; apply(); });
             wireEl('.af-fsess', 'change', el => { filters.session = el.value || ''; apply(); });
             wireEl('.af-fagent', 'change', el => { filters.agent = el.value || ''; apply(); });

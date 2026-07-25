@@ -7,25 +7,44 @@
     let filter = '';
     let turnsOpen = false;
     // Role filter: empty set = show everything. "Errors" matches by flag, not role.
+    // The AI side is "Agent", never "Assistant" — what talks back here is an
+    // agent (the same stance core/speaker.ts takes with its 'agent' fallback).
+    // Each chip carries its glyph so the row reads at a glance and shares the
+    // extension-wide 🧑/🤖 vocabulary.
     const ROLE_CHIPS = [
-        { id: 'user', label: 'User', match: m => m.role === 'user' },
-        { id: 'assistant', label: 'Assistant', match: m => m.role === 'assistant' },
-        { id: 'tool', label: 'Tool calls', match: m => m.role === 'tool' },
-        { id: 'toolResult', label: 'Results', match: m => m.role === 'toolResult' },
-        { id: 'error', label: 'Errors', match: m => m.isError }
+        { id: 'user', label: '🧑 User', match: m => m.role === 'user' },
+        { id: 'assistant', label: '🤖 Agent', match: m => m.role === 'assistant' },
+        { id: 'tool', label: '🔧 Tool calls', match: m => m.role === 'tool' },
+        { id: 'toolResult', label: '📄 Results', match: m => m.role === 'toolResult' },
+        { id: 'error', label: '⚠ Errors', match: m => m.isError }
     ];
-    // Dialog (you + assistant) is the default view: the conversation is what you
+    // Dialog (you + the agent) is the default view: the conversation is what you
     // came to read. Tool traffic is one chip away — and a deep link (focusTs)
     // pointing at a tool message clears the filter so it can never hide a jump.
     let roleSel = new Set(['user', 'assistant']);
     // Turns unticked in their band are left out of Export MD (default: all included).
     const exportOff = new Set();
     // Accordion: collapsed turns show only their band (session-local, display-only —
-    // export/filters ignore it). singleOpen = expanding a turn folds all the others;
-    // persisted in webview state so the mode survives tab switches.
+    // export/filters ignore it). A transcript OPENS fully folded and in single-open
+    // mode: a session is read turn by turn, and landing on a wall of text buries the
+    // turn list that is the real map of the session. Anything that jumps to a turn
+    // (deep link, ↑↓, breakdown row) unfolds its target, so nothing is out of reach.
     const collapsed = new Set();
-    let singleOpen = !!(((typeof vscode.getState === 'function' && vscode.getState()) || {}).singleOpen);
+    // Turn numbers already folded once — a live session's NEW turns arrive folded
+    // too, but a turn the user opened by hand is never re-folded behind their back.
+    const foldedOnce = new Set();
+    const savedState = (typeof vscode.getState === 'function' && vscode.getState()) || {};
+    let singleOpen = savedState.singleOpen !== undefined ? !!savedState.singleOpen : true;
     let turnCounts = null; // per-turn message counts, rebuilt when DATA changes
+
+    /** Fold every turn not seen before (called at load and on every data push). */
+    function foldNewTurns() {
+        (DATA.turns || []).forEach(t => {
+            if (foldedOnce.has(t.n)) { return; }
+            foldedOnce.add(t.n);
+            collapsed.add(t.n);
+        });
+    }
     // G4 replay state: play messages 0..pos step by step over the *filtered* list,
     // honoring real gaps.
     const replay = { active: false, playing: false, pos: 0, speed: 2, timer: null, msgs: [] };
@@ -45,6 +64,7 @@
         if (ev.data.type !== 'data') { return; }
         DATA = ev.data.data;
         turnCounts = null;
+        foldNewTurns();
         if (ev.data.auto && replay.active) {
             // live update while replaying: keep position/controls, just refresh the counter.
             updateReplayUi();
@@ -203,10 +223,14 @@
         return msgs.map((m, i) => turnHdrHtml(m) + messageHtml(m, i)).join('');
     }
 
+    // The chips' glyphs, repeated on the messages themselves: a long transcript
+    // is scanned by these marks long before the words are read.
+    const ROLE_GLYPH = { user: '🧑', assistant: '🤖', tool: '🔧', toolResult: '📄' };
+
     function messageHtml(m, idx) {
-        const roleLabel = m.role === 'assistant'
+        const roleLabel = (ROLE_GLYPH[m.role] ? ROLE_GLYPH[m.role] + ' ' : '') + (m.role === 'assistant'
             ? C.aiLabel(m.model, true)
-            : { user: 'USER', tool: 'TOOL CALL', toolResult: 'TOOL RESULT', system: 'SYSTEM' }[m.role];
+            : { user: 'USER', tool: 'TOOL CALL', toolResult: 'TOOL RESULT', system: 'SYSTEM' }[m.role]);
         const hide = m.turn && collapsed.has(m.turn) ? ' tclosed' : '';
         const cls = m.role + (m.isError ? ' error' : '') + hide;
         const meta = [
@@ -683,7 +707,7 @@
             ${window.AFHeader.html({
                 page: 'viewer',
                 title: C.esc(DATA.title),
-                sub: `${C.esc(DATA.cwd || '')} · ${C.esc(DATA.sessionId)} · ${DATA.permissionMode ? 'mode: ' + C.esc(DATA.permissionMode) : ''}`,
+                sub: `${DATA.origin === 'auto' ? '🤖 automation run' : '🧑 your session'} · ${C.esc(DATA.cwd || '')} · ${C.esc(DATA.sessionId)} · ${DATA.permissionMode ? 'mode: ' + C.esc(DATA.permissionMode) : ''}`,
                 actions: `<button id="resume">⏵ Resume</button>
                     <button class="secondary" id="focusterm" title="Jump to this session's terminal window (if one is open)">⌨ Terminal</button>
                     <button class="secondary" id="replaytoggle">${replay.active ? '✕ Exit replay' : '▶ Replay'}</button>
@@ -892,6 +916,7 @@
         }
     }
 
+    foldNewTurns();
     render();
     if (DATA.focusTs) { focusAt(DATA.focusTs); }
 })();

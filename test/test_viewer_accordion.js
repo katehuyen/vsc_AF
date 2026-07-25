@@ -1,7 +1,8 @@
-// DOM-stub tests: session viewer turn accordion — per-band fold/unfold,
-// Expand all / Collapse all, single-open mode (+ its webview-state persistence),
-// focus auto-unfolds the target turn, and the role-chip binder no longer
-// swallows unrelated .chip buttons (turnbox All/None/Invert, accordion controls).
+// DOM-stub tests: session viewer turn accordion — the fully-folded single-open
+// opening state, per-band fold/unfold, Expand all / Collapse all, single-open
+// mode (+ its webview-state persistence), newly arrived turns folding
+// themselves, focus auto-unfolding the target turn, and the role-chip binder
+// not swallowing unrelated .chip buttons (turnbox All/None/Invert, accordion).
 const fs = require('fs');
 const vm = require('vm');
 
@@ -101,29 +102,38 @@ function makeSandbox(opts) {
             });
         },
         focusMsg: (ts) => msgHandler({ data: { type: 'focus', ts } }),
+        pushData: (d) => msgHandler({ data: { type: 'data', data: d } }),
+        data: () => sandbox.window.__DATA__,
         lastFocused: () => focused,
         savedState: () => state.saved,
         seenSelectors
     };
 }
 
-// ---------- default mode: fold/unfold, expand/collapse all ----------
+// ---------- opening state: fully folded, single-open on ----------
 {
     const t = makeSandbox();
     let html = t.appHtml();
     ok('controls row rendered', html.includes('id="t-expandall"') && html.includes('id="t-collapseall"') && html.includes('id="t-singleopen"'));
-    ok('everything starts open', count(html, 'turnhdr closed') === 0 && count(html, ' tclosed"') === 0);
-    ok('open bands carry a ▾ caret', count(html, '▾') === 3);
-
-    t.click('t-collapseall');
-    html = t.appHtml();
-    ok('collapse all folds every band', count(html, 'class="turnhdr closed"') === 3);
-    ok('…hides every turn message', count(html, ' tclosed"') === 6);
-    ok('…but not the turnless preamble', html.includes('class="msg assistant" data-idx="0"'));
+    ok('a transcript opens fully folded', count(html, 'class="turnhdr closed"') === 3 && count(html, ' tclosed"') === 6);
+    ok('…and in single-open mode', html.includes('class="chip on" id="t-singleopen"'));
+    ok('…but the turnless preamble is never folded', html.includes('class="msg assistant" data-idx="0"'));
     ok('folded bands carry a ▸ caret', count(html, '▸') === 3 && count(html, '▾') === 0);
     ok('folded band shows its message count', html.includes('2 msgs'));
     ok('folded band tooltip flips to expand', html.includes('Click to expand this turn'));
 
+    t.click('t-expandall');
+    html = t.appHtml();
+    ok('expand all opens everything', count(html, 'turnhdr closed') === 0 && count(html, ' tclosed"') === 0);
+    ok('open bands carry a ▾ caret', count(html, '▾') === 3);
+
+    t.click('t-collapseall');
+    html = t.appHtml();
+    ok('collapse all folds every band again', count(html, 'class="turnhdr closed"') === 3);
+    ok('…hides every turn message', count(html, ' tclosed"') === 6);
+
+    // multi-open behavior: switch the default single-open mode off first
+    t.click('t-singleopen');
     t.bandClick(2);
     html = t.appHtml();
     ok('band click unfolds that turn only', count(html, 'class="turnhdr closed"') === 2
@@ -151,11 +161,11 @@ function makeSandbox(opts) {
 // ---------- single-open mode ----------
 {
     const t = makeSandbox();
-    t.click('t-collapseall');
+    t.click('t-singleopen');   // off — so two turns can be opened at once
     t.bandClick(1);
     t.bandClick(2); // multi mode: 1 and 2 both open now
 
-    t.click('t-singleopen');
+    t.click('t-singleopen');   // back on
     let html = t.appHtml();
     ok('enabling single-open keeps only the first open turn', count(html, 'class="turnhdr closed"') === 2
         && html.includes('class="turnhdr closed" data-turn="2"') && html.includes('class="turnhdr closed" data-turn="3"'));
@@ -181,10 +191,27 @@ function makeSandbox(opts) {
     ok('toggling the mode off persists too', t.savedState().singleOpen === false);
 }
 
+// ---------- a live session's new turns arrive folded ----------
+{
+    const t = makeSandbox();
+    t.bandClick(2); // the user opens turn 2 by hand
+    const next = JSON.parse(JSON.stringify(t.data()));
+    next.turnCount = 4;
+    next.turns.push({ n: 4, label: 'four' });
+    next.messages.push(
+        { role: 'user', ts: 7000, text: 'ask four', turn: 4, turnStart: true },
+        { role: 'assistant', ts: 8000, text: 'ans four', turn: 4 });
+    t.pushData(next);
+    const html = t.appHtml();
+    ok('a turn that arrives while reading comes folded',
+        html.includes('class="turnhdr closed" data-turn="4"'));
+    ok('…and the turn the user opened stays open',
+        !html.includes('class="turnhdr closed" data-turn="2"') && html.includes('ans two'));
+}
+
 // ---------- focus auto-unfolds the target turn ----------
 {
     const t = makeSandbox();
-    t.click('t-collapseall');
     t.focusMsg(3900); // nearest message: 'ans two' (idx 4, turn 2)
     const html = t.appHtml();
     ok('focus unfolds the turn containing the target', count(html, 'class="turnhdr closed"') === 2 && !html.includes('class="msg assistant tclosed" data-idx="4"'));
@@ -195,6 +222,9 @@ function makeSandbox(opts) {
 {
     const t = makeSandbox({ initialState: { singleOpen: true } });
     ok('persisted single-open comes back on', t.appHtml().includes('class="chip on" id="t-singleopen"'));
+    // an explicit "off" must beat the new default-on, or the choice never sticks
+    const off = makeSandbox({ initialState: { singleOpen: false } });
+    ok('persisted single-open OFF beats the default', !off.appHtml().includes('class="chip on" id="t-singleopen"'));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -97,6 +97,13 @@ eq('n/of context', rows[1].n + '/' + rows[1].of, '1/2');
 eq('turn 1 duration runs to the next turn (min)', rows[1].durationMin, 5);
 ok('last turn duration runs to the session end', rows[0].durationMin >= 1 && rows[0].durationMin <= 2);
 ok('active flag from the callback', rows[0].active === true);
+ok('origin rides on every turn of the session', rows.every(r => r.origin === 'user'));
+{
+    // the same session recorded as an SDK run → every one of its turns is automation
+    const autoInfo = Object.assign({}, info, { entrypoint: 'sdk-cli' });
+    ok('an sdk-cli session marks its turns as automation',
+        buildTurnRows([autoInfo], () => false).every(r => r.origin === 'auto'));
+}
 
 // ---------- 4) turns.js page contract (source-level regression guards) ----------
 // The page script is a webview module (needs a DOM); these guard the exact
@@ -106,6 +113,11 @@ ok('active flag from the callback', rows[0].active === true);
     const cols = /const COLUMNS = \[([^\]]+)\]/.exec(js);
     ok('COLUMNS list present', !!cols);
     const order = cols ? cols[1].split(',').map(s => s.trim().replace(/'/g, '')) : [];
+    ok('the origin glyph column leads the row', order[0] === 'origin');
+    ok('the page opens scoped to your own sessions and can flip in one click',
+        /origin: 'user'/.test(js) && /af-oswitch/.test(js) && /af-forig-/.test(js));
+    ok('the AI side of the Show chips is "Agent", never "Assistant"',
+        /🤖 Agent/.test(js) && !/'Assistant'/.test(js));
     ok('Tokens sits between Model and When',
         order.indexOf('tokens') === order.indexOf('models') + 1 &&
         order.indexOf('when') === order.indexOf('tokens') + 1);
@@ -170,6 +182,13 @@ ok('active flag from the callback', rows[0].active === true);
     ok('limit honored', limited.ok && limited.result.length === 1);
     const filtered = await reg.dispatch('turns.list', { agent: 'nobody' });
     ok('agent filter honored', filtered.ok && filtered.result.length === 0);
+    ok('origin rides along on the op rows', all.result.every(r => r.origin === 'user'));
+    const userOnly = await reg.dispatch('turns.list', { origin: 'user' });
+    const autoOnly = await reg.dispatch('turns.list', { origin: 'auto' });
+    ok('origin filter honored both ways',
+        userOnly.ok && userOnly.result.length === 2 && autoOnly.ok && autoOnly.result.length === 0);
+    const anyScope = await reg.dispatch('turns.list', { origin: 'all' });
+    ok('an unrecognized origin means "both", not "nothing"', anyScope.ok && anyScope.result.length === 2);
 
     fs.rmSync(dir, { recursive: true, force: true });
     console.log(`\n${pass} passed, ${fail} failed`);

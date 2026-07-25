@@ -874,6 +874,58 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         ok('missions.cancel refuses an already-finished run', !cancelAgain.ok && /already done/.test(cancelAgain.error));
     }
 
+    // ---------- §19.C: sessions.recent origin scope ----------
+    // The Sessions tables let the user separate their own dialogs from the
+    // farm's automation runs; the same distinction has to be reachable as data,
+    // or an agent asked "what did I work on yesterday?" answers with its own
+    // scheduled sweeps. Same handler shape extension.ts registers.
+    {
+        const Module = require('module');
+        const origLoad = Module._load;
+        Module._load = function (request) {
+            if (request === 'vscode') { return { Uri: {}, window: {}, workspace: { getConfiguration: () => ({ get: (_k, d) => d }) } }; }
+            return origLoad.apply(this, arguments);
+        };
+        const { sessionOrigin } = require(path.join(__dirname, '..', 'out', 'core', 'sessions.js'));
+        Module._load = origLoad;
+        const all = [
+            { agentName: 'dev', title: 'my dialog', lastTs: 300, mtime: 0, userTurns: 4, cost: 1, entrypoint: 'cli' },
+            { agentName: 'dev', title: 'nightly sweep', lastTs: 200, mtime: 0, userTurns: 1, cost: 2, entrypoint: 'sdk-cli' },
+            { agentName: 'psy', title: 'older dialog', lastTs: 100, mtime: 0, userTurns: 2, cost: 3 }
+        ];
+        reg.register({
+            op: 'sessions.recent',
+            describe: 'Most recent sessions farm-wide. args: origin? ("user" | "auto" | omit), limit? (default 10)',
+            handler: (args) => {
+                const limit = typeof args.limit === 'number' && args.limit > 0 ? Math.floor(args.limit) : 10;
+                const origin = optStr(args, 'origin').toLowerCase();
+                return all
+                    .filter(s => origin !== 'user' && origin !== 'auto' ? true : sessionOrigin(s) === origin)
+                    .slice().sort((a, b) => (b.lastTs || b.mtime) - (a.lastTs || a.mtime))
+                    .slice(0, limit)
+                    .map(s => ({ agent: s.agentName, title: s.title, origin: sessionOrigin(s) }));
+            }
+        });
+        ok('sessions.recent appears in the catalog', reg.catalog().some(c => c.op === 'sessions.recent'));
+        const every = await reg.dispatch('sessions.recent', {});
+        ok('no origin arg = every session, newest first',
+            every.ok && every.result.length === 3 && every.result[0].title === 'my dialog');
+        ok('every row states its origin', every.result.every(r => r.origin === 'user' || r.origin === 'auto'));
+        const mine = await reg.dispatch('sessions.recent', { origin: 'user' });
+        ok('origin=user drops the automation runs',
+            mine.ok && mine.result.length === 2 && !mine.result.some(r => r.title === 'nightly sweep'));
+        const auto = await reg.dispatch('sessions.recent', { origin: 'auto' });
+        ok('origin=auto keeps only them', auto.ok && auto.result.length === 1 && auto.result[0].title === 'nightly sweep');
+        const junk = await reg.dispatch('sessions.recent', { origin: 'whatever' });
+        ok('an unrecognized origin means "both", never "nothing"', junk.ok && junk.result.length === 3);
+
+        // the real registration must carry the same contract (this mirror can drift)
+        const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        const block = src.slice(src.indexOf("op: 'sessions.recent'"), src.indexOf("op: 'sessions.recent'") + 1200);
+        ok('extension.ts registers sessions.recent with the origin arg',
+            /origin\?/.test(block) && /sessionOrigin\(s\) === origin/.test(block) && /origin: sessionOrigin\(s\)/.test(block));
+    }
+
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })();

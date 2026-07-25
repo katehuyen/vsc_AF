@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { PricingEngine, totalTokens, Usage } from '../core/pricing';
+import { sessionOrigin } from '../core/sessions';
 import { askExportOptions, handleAfNav, htmlShell } from './base';
 
 export interface ViewerDeps {
@@ -242,6 +243,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
     let title = '';
     let cwd = '';
     let permissionMode = '';
+    let entrypoint = '';
     // Turn accounting runs inside the parse loop: usage on assistant lines whose content
     // never renders (e.g. thinking-only stream lines) must still bill to the open turn.
     let inTurn = 0;
@@ -257,6 +259,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
             type?: string; subtype?: string; content?: string;
             summary?: string; isMeta?: boolean; isSidechain?: boolean;
             timestamp?: string; cwd?: string; permissionMode?: string; requestId?: string;
+            entrypoint?: string;
             costUSD?: number; toolUseResult?: unknown;
             message?: {
                 id?: string; model?: string; content?: unknown;
@@ -271,6 +274,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
             lastTs = Math.max(lastTs, ts);
         }
         if (line.cwd && !cwd) { cwd = line.cwd; }
+        if (line.entrypoint && !entrypoint) { entrypoint = line.entrypoint; }
         if (line.type === 'summary' && line.summary && !title) { title = line.summary; continue; }
         if (line.type === 'permission-mode' && line.permissionMode) { permissionMode = line.permissionMode; continue; }
         // `/context` is recorded as a system/local_command line; capture the latest one.
@@ -422,6 +426,9 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
         title: deps.titleFor?.(sessionId) || title || '(untitled session)',
         cwd,
         permissionMode,
+        // Who started this session — the same 🧑/🤖 distinction the Sessions
+        // tables filter on, so opening a transcript says it too.
+        origin: sessionOrigin({ entrypoint }),
         firstTs,
         lastTs,
         models: [...models],

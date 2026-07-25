@@ -1,7 +1,8 @@
 // DOM-stub test for the shared Sessions table (media/sessionsTable.js):
 // sorting (incl. the Ctx-now criterion), the turn accordion (fold → host
 // request → turn rows → turn jump), single-open mode, expand/collapse,
-// the ⌨ jump-to-terminal button, and per-page state persistence.
+// the ⌨ jump-to-terminal button, the origin scope (🧑 user / 🤖 auto column,
+// its one-click switch and its filter chips), and per-page state persistence.
 const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
@@ -276,6 +277,62 @@ const mkRow = (i, extra) => Object.assign({
         html().includes('No sessions match the filters.'));
     click(q('.af-fclear'));
     ok('Clear restores every row', html().includes('title1') && html().includes('title2') && html().includes('title3'));
+}
+
+// ---------- part: origin scope — the column, the one-click switch, the chips ----------
+{
+    posted = []; state = {};
+    const t = sandbox.window.AFSessionsTable.create({
+        vscode: vscodeStub, C, containerId: 'orig',
+        columns: ['origin', 'agent', 'title', 'when', 'cost'], stateKey: 'orig'
+    });
+    // two of the user's own dialogs, three automation runs
+    t.setRows([
+        mkRow(1, { origin: 'user' }), mkRow(2, { origin: 'auto' }), mkRow(3, { origin: 'auto' }),
+        mkRow(4, { origin: 'user' }), mkRow(5, { origin: 'auto' })
+    ], 10);
+    const html = () => containers.orig.innerHTML;
+    const q = sel => containers.orig.querySelector(sel);
+    const shownRows = () => containers.orig.querySelectorAll('[data-fold]').length;
+
+    ok('origin column rendered with its own header', html().includes('>By</th>'));
+    ok('the table opens scoped to your own sessions',
+        shownRows() === 2 && html().includes('title1') && html().includes('title4') && !html().includes('title2'));
+    ok('…and says how many rows that hides', html().includes('2/5 sessions'));
+    ok('user rows carry the 🧑 glyph, and no 🤖 is on screen',
+        html().includes('🧑</td>') && !html().includes('🤖</td>'));
+    ok('the scope switch shows the current scope and is lit', html().includes('af-oswitch on'));
+
+    click(q('.af-oswitch'));
+    ok('one click on the switch shows everything', shownRows() === 5 && html().includes('title2'));
+    ok('…automation rows carry the 🤖 glyph', html().includes('🤖</td>'));
+    ok('…the switch goes quiet and the row count note disappears',
+        !html().includes('af-oswitch on') && !html().includes('/5 sessions'));
+    ok('scope persisted under the page key', state.afSess.orig.filters.origin === '');
+
+    click(q('.af-oswitch'));
+    ok('clicking again returns to your own sessions', shownRows() === 2);
+
+    // the filter panel carries the three-way scope, incl. Auto (the switch has no third stop)
+    click(q('.af-filter'));
+    ok('filter panel offers all three scopes',
+        html().includes('af-forig-all') && html().includes('af-forig-user') && html().includes('af-forig-auto'));
+    click(q('.af-forig-auto'));
+    ok('Auto shows only automation runs',
+        shownRows() === 3 && html().includes('title2') && !html().includes('title1'));
+    ok('…and the switch reflects the narrowed scope', html().includes('af-oswitch on'));
+    click(q('.af-oswitch'));
+    ok('the switch does what its label says from any scope: Auto → All', shownRows() === 5);
+    click(q('.af-oswitch'));
+    ok('…and the next click lands back on your own sessions', shownRows() === 2);
+    ok('the Filters chip is NOT inflated by the scope', !html().includes('Filters ('));
+    click(q('.af-fclear'));
+    ok('Clear restores the default scope, not "all"', shownRows() === 2);
+
+    // a row without an origin field (older host, external CLI) counts as yours
+    t.setRows([mkRow(9)], 10);
+    ok('a row with no origin stays visible in the User scope',
+        containers.orig.querySelectorAll('[data-fold]').length === 1);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

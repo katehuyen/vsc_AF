@@ -88,6 +88,10 @@ export interface SessionInfo {
     dutiesReadTs?: number;
     /** Approximate context size after the last assistant reply (prompt + cache + output of the latest request). */
     lastCtxTokens?: number;
+    /** How the CLI was entered, verbatim from the transcript: 'cli' (interactive
+     *  terminal), 'sdk-cli' (`claude -p` / SDK), 'claude-desktop', … Feeds
+     *  `sessionOrigin`; absent on external-CLI sessions that have no transcript. */
+    entrypoint?: string;
     daily: Record<string, DailyBucket>;
     /** assistant message counts in 7x24 local-time buckets, index = dow*24+hour */
     heat: number[];
@@ -95,6 +99,22 @@ export interface SessionInfo {
     recentMsgs: RecentMsg[];
     /** Per-turn rollup, in order — powers the Turns page and the turns.list bridge op. */
     turns: SessionTurn[];
+}
+
+/** Who started a session: 'user' = a person at a keyboard, 'auto' = a program. */
+export type SessionOrigin = 'user' | 'auto';
+
+/**
+ * Read the origin off the transcript's own `entrypoint` field — never guessed
+ * from timing or prompt shape. An `sdk-*` entrypoint means a program launched
+ * the CLI (a schedule / trigger / task / mission run, or a hand-written
+ * `claude -p` one-shot); every other entrypoint is an interactive session a
+ * person is sitting in ('cli', 'claude-desktop', …). An unknown entrypoint
+ * reads as 'user': the Sessions tables default to the User scope, and a filter
+ * that hides real dialogs is worse than one that shows an extra robot row.
+ */
+export function sessionOrigin(s: Pick<SessionInfo, 'entrypoint'>): SessionOrigin {
+    return String(s.entrypoint ?? '').startsWith('sdk') ? 'auto' : 'user';
 }
 
 interface JsonlLine {
@@ -109,6 +129,7 @@ interface JsonlLine {
     gitBranch?: string;
     permissionMode?: string;
     requestId?: string;
+    entrypoint?: string;
     costUSD?: number;
     message?: {
         id?: string;
@@ -229,6 +250,7 @@ export function parseSessionFile(
         if (line.cwd && !info.cwd) { info.cwd = line.cwd; }
         if (line.version) { info.version = line.version; }
         if (line.gitBranch) { info.gitBranch = line.gitBranch; }
+        if (line.entrypoint && !info.entrypoint) { info.entrypoint = line.entrypoint; }
         if (line.isSidechain) { info.isSidechain = true; }
 
         if (line.type === 'summary' && line.summary && !info.title) {

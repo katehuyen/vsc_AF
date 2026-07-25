@@ -25,10 +25,10 @@
     // Role chips: dialog is the default — tool traffic is opt-in, or the noise
     // would drown the conversation ("memory" matches hundreds of file listings).
     const ROLE_CHIPS = [
-        { id: 'user', label: 'User' },
-        { id: 'assistant', label: 'Assistant' },
-        { id: 'tool', label: 'Tool calls' },
-        { id: 'toolResult', label: 'Results' }
+        { id: 'user', label: '🧑 User' },
+        { id: 'assistant', label: '🤖 Agent' },
+        { id: 'tool', label: '🔧 Tool calls' },
+        { id: 'toolResult', label: '📄 Results' }
     ];
     let roleSel = new Set(['user', 'assistant']);
 
@@ -83,7 +83,7 @@
         const all = roleSel.size === ROLE_CHIPS.length;
         return `<div class="chiprow" id="rolechips">
             <span class="muted small">Search in:</span>
-            <button class="chip${dialog ? ' on' : ''}" data-preset="dialog" title="You + assistant text">Dialog</button>
+            <button class="chip${dialog ? ' on' : ''}" data-preset="dialog" title="You + the agent's text">Dialog</button>
             <button class="chip${all ? ' on' : ''}" data-preset="all" title="Everything incl. tool inputs and results">Everything</button>
             ${ROLE_CHIPS.map(c => `<button class="chip${roleSel.has(c.id) ? ' on' : ''}" data-chip="${c.id}">${c.label}</button>`).join('')}
             <label class="small" title="Agents' memory/*.md notes"><input id="srcmem" type="checkbox" checked> memory</label>

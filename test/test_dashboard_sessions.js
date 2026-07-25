@@ -76,6 +76,58 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     ok('missing lastTs falls back to mtime for ts', p2[0].ts === 777);
 }
 
+// ---------- part 1a: origin — 🧑 your dialogs vs 🤖 automation runs ----------
+{
+    const Module = require('module');
+    const origLoad = Module._load;
+    Module._load = function (request) {
+        if (request === 'vscode') {
+            return { Uri: {}, window: {}, workspace: { getConfiguration: () => ({ get: (_k, d) => d }) }, ViewColumn: {}, ConfigurationTarget: {}, env: {} };
+        }
+        return origLoad.apply(this, arguments);
+    };
+    const { sessionRowPool } = require(path.join(__dirname, '..', 'out', 'panels', 'dashboard.js'));
+    const { sessionOrigin } = require(path.join(__dirname, '..', 'out', 'core', 'sessions.js'));
+    Module._load = origLoad;
+
+    // the entrypoint the transcript itself recorded is the ONLY signal
+    ok('sdk-cli (claude -p / SDK) reads as automation', sessionOrigin({ entrypoint: 'sdk-cli' }) === 'auto');
+    ok('an interactive terminal reads as user', sessionOrigin({ entrypoint: 'cli' }) === 'user');
+    ok('the desktop app reads as user', sessionOrigin({ entrypoint: 'claude-desktop' }) === 'user');
+    ok('a future sdk-* entrypoint still reads as automation', sessionOrigin({ entrypoint: 'sdk-ts' }) === 'auto');
+    ok('unknown/absent entrypoint reads as user (never hide a real dialog)',
+        sessionOrigin({}) === 'user' && sessionOrigin({ entrypoint: '' }) === 'user');
+
+    const usage = i => ({ input: i, output: 0, cacheWrite: 0, cacheRead: 0 });
+    // 20 automation runs are the newest AND the most expensive; 3 user dialogs
+    // sit far below them. A pool built over the mixed list would leave the
+    // (default) User scope of the table nearly empty.
+    const mixed = [];
+    for (let i = 1; i <= 20; i++) {
+        mixed.push({
+            file: `a${i}`, agentName: 'dev', sessionId: `sa${i}`, title: `auto ${i}`,
+            entrypoint: 'sdk-cli', firstTs: 5000, lastTs: 900000 + i * 1000, mtime: 0,
+            usage: usage(500), cost: 100, isSidechain: false, toolCalls: 1, errors: 0, userTurns: 1
+        });
+    }
+    for (let i = 1; i <= 3; i++) {
+        mixed.push({
+            file: `u${i}`, agentName: 'dev', sessionId: `su${i}`, title: `mine ${i}`,
+            entrypoint: 'cli', firstTs: 1000, lastTs: 1000 + i, mtime: 0,
+            usage: usage(1), cost: 1, isSidechain: false, toolCalls: 1, errors: 0, userTurns: 1
+        });
+    }
+    const pool = sessionRowPool(mixed, undefined, 5);
+    const files = pool.map(r => r.file);
+    ok('origin carried on every row',
+        pool.find(r => r.file === 'a1').origin === 'auto' && pool.find(r => r.file === 'u1').origin === 'user');
+    ok('the user lane survives a pool dominated by automation',
+        files.includes('u1') && files.includes('u2') && files.includes('u3'));
+    ok('…and the automation lane keeps its own top-N',
+        files.includes('a20') && files.includes('a19'));
+    ok('the union stays a shortcut, not the whole list', pool.length < mixed.length);
+}
+
 // ---------- part 1b: the viewer's turn table carries ts (the deep-link contract) ----------
 {
     const Module = require('module');
@@ -108,6 +160,18 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
         && data.turns[0].ts === Date.parse(t1) && data.turns[1].ts === Date.parse(t2));
     ok('turn table still carries label/tokens/cost', data.turns[0].label === 'first ask' && data.turns[0].tokens === 15 && data.turns[0].cost === 0.5);
     ok('turns are computed before the maxMessages cut', data.messages.length === 1 && data.turnCount === 2);
+    ok('a transcript with no entrypoint opens as your own session', data.origin === 'user');
+
+    // the viewer states the origin too — an sdk-cli transcript is an automation run
+    const autoTmp = path.join(require('os').tmpdir(), `af-origin-${Date.now()}.jsonl`);
+    fs.writeFileSync(autoTmp, JSON.stringify({
+        type: 'user', timestamp: t1, entrypoint: 'sdk-cli', message: { content: 'scheduled sweep' }
+    }));
+    const autoData = viewer.buildData(autoTmp, {
+        extensionUri: {}, getPricing: () => ({ costFor: () => 0 }), maxMessages: () => 5, contextLimitFor: () => 0
+    });
+    fs.unlinkSync(autoTmp);
+    ok('an sdk-cli transcript opens as an automation run', autoData.origin === 'auto');
 
     // ---- the /context breakdown captured from a system/local_command line ----
     // Claude Code records `/context` as an ANSI-colored gauge; buildData strips the

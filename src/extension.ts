@@ -90,7 +90,7 @@ import { contextWindowFor, DEFAULT_PRICING, PriceRule, PricingEngine, PricingVer
 import { QualityStore, sampleQuality } from './core/quality';
 import { buildDailyDigest, buildFleetReport, buildOutputsDigest } from './core/report';
 import { buildForecast, renderForecastMarkdown } from './core/forecast';
-import { SessionIndex, SessionInfo } from './core/sessions';
+import { SessionIndex, SessionInfo, sessionOrigin } from './core/sessions';
 import {
     applySuggestionToClaudeMd, collectUserMessages, scanCorrections, SuggestionStore
 } from './core/suggest';
@@ -2553,14 +2553,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'sessions.recent',
-            describe: 'Most recent sessions farm-wide. args: limit? (default 10)',
+            describe: 'Most recent sessions farm-wide. args: origin? ("user" = sessions a person started interactively — what the Sessions tables show by default; "auto" = automation runs (schedule/trigger/task/mission, any `claude -p`); omit or "all" = both), limit? (default 10)',
             handler: (args) => {
                 const limit = typeof args.limit === 'number' && args.limit > 0 ? Math.floor(args.limit) : 10;
+                const origin = optStr(args, 'origin').toLowerCase();
                 return index.all()
+                    .filter(s => origin !== 'user' && origin !== 'auto' ? true : sessionOrigin(s) === origin)
                     .slice().sort((a, b) => (b.lastTs || b.mtime) - (a.lastTs || a.mtime))
                     .slice(0, limit)
                     .map(s => ({
                         agent: s.agentName, title: s.title, lastTs: s.lastTs,
+                        origin: sessionOrigin(s),
                         turns: s.userTurns, cost: Math.round(s.cost * 100) / 100
                     }));
             }
