@@ -543,7 +543,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         pulseFailures: agents
             .map(a => pulseStore.latestFor(a.id))
             .filter((p): p is NonNullable<typeof p> => !!p && !p.ok)
-            .map(p => ({ agentId: p.agentId, agentName: p.agentName, reason: p.reason, ts: p.ts }))
+            .map(p => ({ agentId: p.agentId, agentName: p.agentName, reason: p.reason, ts: p.ts })),
+        // Dead-duty check: the searchable text of every ENABLED automation.
+        // Left undefined until the task manager exists — a caller that cannot
+        // see automations must not conclude that every duty is unwired.
+        automationTitles: taskManagerRef
+            ? [
+                ...taskManagerRef.schedules.filter(s => s.enabled).map(s => `${s.title} ${s.prompt}`),
+                ...taskManagerRef.triggers.filter(t => t.enabled).map(t =>
+                    `${t.title} ${t.action.kind === 'workflow' ? '' : t.action.prompt}`)
+            ]
+            : undefined
     });
 
     // Insights lifecycle: a dismissed insight stays hidden (for a day, a week

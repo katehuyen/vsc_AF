@@ -45,6 +45,19 @@ export interface HealthConfig {
     taskAlerts?: { severity: 'warning' | 'info'; agentId?: string; agentName: string; message: string }[];
     /** H3: latest failed pulse per agent. */
     pulseFailures?: { agentId: string; agentName: string; reason: string; ts: number }[];
+    /**
+     * Titles + prompts of ENABLED schedules/triggers, for the dead-duty check.
+     * Undefined skips the check entirely (a caller that cannot see automations
+     * must not conclude that every duty is unwired).
+     */
+    automationTitles?: string[];
+}
+
+/** Does any enabled automation name this duty (in its title or its prompt)? */
+export function dutyIsWired(dutyTitle: string, automationText: string[]): boolean {
+    const needle = dutyTitle.toLowerCase().trim();
+    if (!needle) { return true; }
+    return automationText.some(t => t.toLowerCase().includes(needle));
 }
 
 const TREND_MIN_PREV_USD = 0.5;
@@ -211,7 +224,26 @@ export function buildInsights(
                 });
             }
             for (const duty of agent.duties) {
-                if (duty.paused || !duty.watch) { continue; }
+                if (duty.paused) { continue; }
+                // A DEAD DUTY: written down, timed, and driven by nothing. An
+                // [every-turn] duty is passive by design — it is only checked
+                // while the agent already happens to be running — so a daily or
+                // weekly duty with no schedule/trigger behind it never actually
+                // happens. Checked BEFORE the watch-path guard below: a timed
+                // duty needs wiring whether or not it names a watch target.
+                if ((duty.cadence === 'daily' || duty.cadence === 'weekly') &&
+                    cfg.automationTitles && !dutyIsWired(duty.title, cfg.automationTitles)) {
+                    insights.push({
+                        severity: 'warning',
+                        agentId: agent.id,
+                        agentName: agent.name,
+                        category: 'duties',
+                        message: `Duty "${duty.title}" is [${duty.cadence}] but nothing drives it — no enabled schedule or trigger mentions it, so it only runs if something else happens to wake the agent.`,
+                        filePath: agent.dutiesPath,
+                        guideAnchor: 'nobet-gorevleri'
+                    });
+                }
+                if (!duty.watch) { continue; }
                 const ws = watchStatus(duty.watch);
                 if (ws && !ws.exists) {
                     insights.push({
