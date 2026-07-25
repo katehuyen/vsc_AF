@@ -3250,6 +3250,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             dismiss: (id) => noticesStore.dismiss(id)
         },
         writeAnswer,
+        thresholds: () => ({
+            groupSize: cfg().get<number>('queue.groupSize', 3),
+            maxAgeHours: cfg().get<number>('queue.maxAgeHours', 24)
+        }),
         // Refresh BOTH boards: queue.fromNotice mutates a notice too.
         onChange: () => { QueuePanel.refreshIfOpen(); NoticesPanel.refreshIfOpen(); updateNoticesBadge(); }
     });

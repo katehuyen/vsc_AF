@@ -348,6 +348,61 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
     const listActive = await reg.dispatch('queue.list', { active: true });
     ok('list active excludes terminal', listActive.ok && listActive.result.every(n => n.status !== 'done' && n.status !== 'dropped'));
 
+    // ---------- queueMaturity: the sweep decision, thresholds applied ----------
+    {
+        const { queueMaturity, groupSummaries } =
+            require(path.join(__dirname, '..', 'out', 'core', 'workqueue.js'));
+        const NOW = Date.now();
+        const H = 3600000;
+        const item = (o) => Object.assign({ id: 'x', ts: NOW, status: 'captured', text: 't' }, o);
+
+        const empty = queueMaturity([], { now: NOW });
+        ok('an empty queue is not actionable', empty.actionable === false && /empty/.test(empty.reason));
+
+        // THE regression: a captured item that was never grouped is invisible to
+        // groupSummaries, so a sweep reading only groups calls the queue idle
+        // while a user's own answer rots past the ceiling.
+        const orphan = [item({ id: 'sleep', ts: NOW - 30 * H, text: 'Gece 3.00 ile 11.00 arasi uyku' })];
+        const m1 = queueMaturity(orphan, { now: NOW, maxAgeHours: 24 });
+        ok('the group digest alone shows nothing', groupSummaries(orphan, NOW).length === 0);
+        ok('an ungrouped item past the ceiling is STARVING', m1.starving.length === 1);
+        ok('starvation makes the sweep actionable', m1.actionable === true);
+        ok('the starving item is identifiable by text', /uyku/.test(m1.starving[0].text));
+        ok('its age is reported', m1.starving[0].ageHours === 30);
+        ok('the reason names the ceiling', /past the 24h ceiling/.test(m1.reason));
+
+        const fresh = queueMaturity([item({ id: 'a', ts: NOW - H })], { now: NOW, maxAgeHours: 24 });
+        ok('a fresh ungrouped item is not starving', fresh.starving.length === 0);
+        ok('but it is counted as ungrouped', fresh.ungrouped === 1);
+        ok('and wakes nobody yet', fresh.actionable === false);
+        ok('the reason says it is warming up', /warming up/.test(fresh.reason));
+
+        const g = (n, extra) => Array.from({ length: n }, (_, i) =>
+            item(Object.assign({ id: 'g' + i, groupId: 'G', status: 'grouped' }, extra)));
+        ok('a group below the batch size is not ripe',
+            queueMaturity(g(2), { now: NOW, groupSize: 3 }).ripe.length === 0);
+        const bySize = queueMaturity(g(3), { now: NOW, groupSize: 3 });
+        ok('a group at the batch size is ripe', bySize.ripe.length === 1);
+        ok('and it says why', /batch size 3/.test(bySize.ripe[0].why));
+        const byAge = queueMaturity(g(1, { ts: NOW - 40 * H }), { now: NOW, groupSize: 3, maxAgeHours: 24 });
+        ok('a small but old group is ripe on age',
+            byAge.ripe.length === 1 && /ceiling 24h/.test(byAge.ripe[0].why));
+        const byUrgent = queueMaturity(g(1, { urgency: 'urgent' }), { now: NOW, groupSize: 3 });
+        ok('urgency short-circuits batching',
+            byUrgent.ripe.length === 1 && /urgent/.test(byUrgent.ripe[0].why));
+
+        const blocked = queueMaturity([item({ id: 'b', status: 'blocked' })], { now: NOW });
+        ok('a blocked item is actionable on its own', blocked.actionable === true);
+        ok('and names the user as the blocker', /waiting on the user/.test(blocked.reason));
+
+        const doneOnly = queueMaturity([
+            item({ id: 'd1', status: 'done', ts: NOW - 90 * H }),
+            item({ id: 'd2', status: 'dropped', ts: NOW - 90 * H })
+        ], { now: NOW });
+        ok('terminal items are ignored entirely', doneOnly.actionable === false
+            && doneOnly.starving.length === 0 && doneOnly.ungrouped === 0);
+    }
+
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
     try { fs.rmSync(cevapDir, { recursive: true, force: true }); } catch {}
 

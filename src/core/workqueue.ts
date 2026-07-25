@@ -291,6 +291,66 @@ export function groupSummaries(list: WorkItem[], now = Date.now()): GroupSummary
     return out;
 }
 
+/** What a sweep should do right now, decided in code instead of re-derived from
+ *  prose on every run. */
+export interface QueueMaturity {
+    /** groups that have earned a delegation (size, age, or urgency) */
+    ripe: (GroupSummary & { why: string })[];
+    /** live captured items that were never grouped at all */
+    ungrouped: number;
+    /**
+     * Ungrouped items already past the age ceiling. THE starvation case, and a
+     * real one: an item that never got a groupId is invisible to the group
+     * digest, so a sweep reading only groups concludes "nothing to do" while a
+     * user's answer rots in the queue. That is exactly how a sleep-log entry
+     * sat in `captured` until it was noticed by hand.
+     */
+    starving: { id: string; text: string; ageHours: number; status: string }[];
+    /** is waking an agent worth it at all */
+    actionable: boolean;
+    /** one line the sweep can act on (and the user can read) */
+    reason: string;
+}
+
+export function queueMaturity(
+    list: WorkItem[],
+    opts: { groupSize?: number; maxAgeHours?: number; now?: number } = {}
+): QueueMaturity {
+    const now = opts.now ?? Date.now();
+    const size = opts.groupSize ?? 3;
+    const maxAge = opts.maxAgeHours ?? 24;
+    const live = list.filter(n => !isTerminal(n));
+
+    const ripe = groupSummaries(live, now)
+        .map(g => {
+            const why = g.hasUrgent ? 'urgent item'
+                : g.oldestAgeHours > maxAge ? `waited ${Math.round(g.oldestAgeHours)}h (ceiling ${maxAge}h)`
+                    : g.count >= size ? `${g.count} items (batch size ${size})`
+                        : '';
+            return { ...g, why };
+        })
+        .filter(g => g.why);
+
+    const loose = live.filter(n => !n.groupId && n.status === 'captured');
+    const starving = loose
+        .map(n => ({
+            id: n.id, text: n.text.slice(0, 80), status: n.status,
+            ageHours: Math.round(((now - (n.ts || now)) / 3600000) * 10) / 10
+        }))
+        .filter(n => n.ageHours > maxAge)
+        .sort((a, b) => b.ageHours - a.ageHours);
+
+    const blocked = live.filter(n => n.status === 'blocked').length;
+    const actionable = ripe.length > 0 || starving.length > 0 || blocked > 0;
+    const reason = !live.length ? 'queue is empty'
+        : starving.length ? `${starving.length} ungrouped item(s) past the ${maxAge}h ceiling — oldest ${starving[0].ageHours}h`
+            : ripe.length ? `${ripe.length} group(s) ripe: ${ripe.map(g => g.why).join('; ')}`
+                : blocked ? `${blocked} blocked item(s) waiting on the user`
+                    : `${live.length} item(s) still warming up (need ${size} or ${maxAge}h)`;
+
+    return { ripe, ungrouped: loose.length, starving, actionable, reason };
+}
+
 /** Count of items still needing the USER (the only queue state that pings the
  *  attention bell — everything else is the manager's problem). */
 export function blockedCount(list: WorkItem[]): number {
@@ -504,6 +564,11 @@ export class WorkQueueStore {
     active(): number { return activeCount(this.items); }
     /** GAP-3 — digest of the active batch groups (see groupSummaries). */
     groups(): GroupSummary[] { return groupSummaries(this.items); }
+
+    /** The sweep decision in one call (see queueMaturity). */
+    maturity(opts: { groupSize?: number; maxAgeHours?: number } = {}): QueueMaturity {
+        return queueMaturity(this.items, opts);
+    }
     list(f: WorkItemFilter = {}): WorkItem[] { return filterItems(this.items, f); }
 }
 
@@ -543,6 +608,8 @@ export interface QueueOpsDeps {
     writeAnswer?: (a: { title: string; name?: string; body: string; agentName?: string }) => string;
     onChange?: () => void;
     onPost?: (item: WorkItem) => void;
+    /** Batching thresholds, read live from settings by the host. */
+    thresholds?: () => { groupSize: number; maxAgeHours: number };
 }
 
 /** Read a string-array arg, tolerating a single string. */
@@ -641,8 +708,19 @@ export function registerQueueOps(bridge: BridgeRegistry, deps: QueueOpsDeps): vo
         },
         {
             op: 'queue.groups',
-            describe: 'Digest of the ACTIVE batch groups in ONE shot — so the manager reads batching maturity directly instead of re-deriving it from every item each scan. Returns [{ groupId, count, oldestAgeHours, targets[], statuses {status:count}, hasUrgent }], ripest (oldest) group first. Compare count against agentFarm.queue.groupSize, oldestAgeHours against queue.maxAgeHours, and hasUrgent (the short-circuit) to pick the groups mature enough to delegate now. args: none.',
+            describe: 'Digest of the ACTIVE batch groups in ONE shot — so the manager reads batching maturity directly instead of re-deriving it from every item each scan. Returns [{ groupId, count, oldestAgeHours, targets[], statuses {status:count}, hasUrgent }], ripest (oldest) group first. Compare count against agentFarm.queue.groupSize, oldestAgeHours against queue.maxAgeHours, and hasUrgent (the short-circuit) to pick the groups mature enough to delegate now. NOTE: only items that already HAVE a groupId appear here — use queue.maturity to also see ungrouped items that are starving. args: none.',
             handler: () => store.groups()
+        },
+        {
+            op: 'queue.maturity',
+            describe: 'THE SWEEP DECISION in one call: what deserves a delegation right now, with the thresholds already applied. Returns { actionable, reason, ripe:[{groupId,count,oldestAgeHours,why}], ungrouped, starving:[{id,text,ageHours}] }. `starving` is the one queue.groups CANNOT show you — a captured item that was never grouped has no groupId, so a sweep reading only groups sees an empty digest while a user answer rots past the ceiling. Start every sweep here. args: groupSize?, maxAgeHours? (default: the agentFarm.queue.* settings).',
+            handler: (args) => {
+                const t = deps.thresholds?.() ?? { groupSize: 3, maxAgeHours: 24 };
+                return store.maturity({
+                    groupSize: typeof args.groupSize === 'number' ? args.groupSize : t.groupSize,
+                    maxAgeHours: typeof args.maxAgeHours === 'number' ? args.maxAgeHours : t.maxAgeHours
+                });
+            }
         },
         {
             op: 'queue.delegate',
