@@ -212,16 +212,16 @@
         return `<tr class="prow ${open ? 'open' : ''}" data-key="${key}">
             <td class="tick">${p.switchable ? `<input type="checkbox" class="rowsel" data-kind="${p.kind}" data-id="${p.id}"${selected.has(key) ? ' checked' : ''}>` : ''}</td>
             <td class="expand" data-expand="${key}" role="button" tabindex="0" title="details">${open ? '▾' : '▸'}</td>
-            <td>
+            <td class="main">
                 <div class="rowtitle"><span title="${C.esc(k.hint)}">${k.icon}</span> <b>${C.esc(p.title)}</b> ${badges}</div>
                 <div class="muted small">${C.esc(p.when)}${p.nextAt ? ` · next ${C.esc(until(p.nextAt))}` : ''}</div>
             </td>
-            <td>${p.agentName ? C.esc(p.agentName) : '<span class="muted">—</span>'}</td>
+            <td class="agent">${p.agentName ? C.esc(p.agentName) : '<span class="muted">—</span>'}</td>
             <td>${p.model ? `<span class="badge">${C.esc(p.model)}</span>` : '<span class="muted">default</span>'}</td>
             <td class="guardcell">${guard}</td>
             <td class="num">${fmtUSD(p.cost7d)}${p.runs7d ? `<div class="muted small">${p.runs7d} run(s)</div>` : ''}</td>
-            <td>${p.lastRunAt ? C.esc(rel(p.lastRunAt)) : '<span class="muted">never</span>'}
-                ${p.lastNote ? `<div class="muted small" title="${C.esc(p.lastNote)}">${C.esc(p.lastNote.length > 34 ? p.lastNote.slice(0, 33) + '…' : p.lastNote)}</div>` : ''}</td>
+            <td class="lastrun">${p.lastRunAt ? C.esc(rel(p.lastRunAt)) : '<span class="muted">never</span>'}
+                ${p.lastNote ? `<div class="muted small">${C.esc(p.lastNote)}</div>` : ''}</td>
             <td class="state">${stateCell}</td>
             <td class="acts">
                 <button class="mini secondary" data-plan="run" data-kind="${p.kind}" data-id="${p.id}" title="run it now">run</button>
@@ -269,16 +269,20 @@
             groups.get(g).push(p);
         }
 
+        const lede = `<p class="lede">A <b>plan</b> is anything that defines work: ⏰ a <b>schedule</b> runs at a set
+            time, ⚡ a <b>trigger</b> runs when something happens, 🔗 a <b>workflow</b> chains several agents and
+            📋 a <b>template</b> is a saved prompt. The first two run on their own; the last two run when launched.
+            Every one of them produces <b>tasks</b> — see the Runs tab.</p>`;
         const head = `<tr>
             <th class="tick"><input type="checkbox" class="allsel" title="select all switchable"></th>
             <th class="expand"></th>
-            ${sortCell(v, 'title', 'What')}
+            ${sortCell(v, 'title', 'What runs')}
             ${sortCell(v, 'agent', 'Agent')}
             <th>Model</th>
             <th>Guard</th>
             ${sortCell(v, 'cost', 'Cost 7d', true)}
             ${sortCell(v, 'last', 'Last run')}
-            <th>On</th><th></th></tr>`;
+            <th class="state">On</th><th class="acts"></th></tr>`;
 
         const body = !sorted.length
             ? `<tr><td colspan="10" class="empty">${d.plan.length
@@ -289,6 +293,7 @@
                 + list.map(planRowHtml).join('')).join('');
 
         return `
+            ${lede}
             <div class="toolbar">
                 <input type="search" id="planq" placeholder="Search name, prompt, agent…" value="${C.esc(v.q)}" class="${v.q ? 'set' : ''}">
                 ${sel('kind', 'Kind', v.kind, Object.keys(KIND).map(k => ({ v: k, t: KIND[k].label })))}
@@ -347,13 +352,14 @@
         const live = r.status === 'running' || r.status === 'queued' || r.status === 'parked';
         return `<tr class="prow ${open ? 'open' : ''}">
             <td class="expand" data-expand="${key}" role="button" tabindex="0">${open ? '▾' : '▸'}</td>
-            <td><div class="rowtitle"><b>${C.esc(r.title)}</b></div>
+            <td class="main"><div class="rowtitle"><b>${C.esc(r.title)}</b></div>
                 <div class="muted small">${C.esc(r.agentName)} · ${C.esc(r.mode)}${r.detail ? ' · ' + C.esc(r.detail) : ''}</div></td>
-            <td><span class="pill ${st[1]}">${C.esc(st[0])}</span></td>
-            <td>${r.sourceKind === 'manual' ? '<span class="muted">you</span>' : `<span title="${C.esc(r.source)}">${C.esc(r.sourceKind)}</span><div class="muted small">${C.esc(r.source.length > 22 ? r.source.slice(0, 21) + '…' : r.source)}</div>`}</td>
+            <td class="state"><span class="pill ${st[1]}">${C.esc(st[0])}</span></td>
+            <td class="from">${r.sourceKind === 'manual' ? '<span class="muted">you</span>'
+                : `${C.esc(r.sourceKind)}<div class="muted small">${C.esc(r.source)}</div>`}</td>
             <td class="num">${r.durMin !== undefined ? r.durMin + 'm' : '—'}</td>
             <td class="num">${fmtUSD(r.costUSD)}</td>
-            <td>${C.esc(rel(r.when))}</td>
+            <td class="when">${C.esc(rel(r.when))}</td>
             <td class="acts">
                 ${r.status === 'queued' ? `<button class="mini secondary" data-task="start" data-id="${r.id}">start</button>
                     <button class="mini secondary" data-task="next" data-id="${r.id}" title="move to the front">↑</button>` : ''}
@@ -381,12 +387,14 @@
             when: r => r.when, title: r => r.title.toLowerCase(),
             cost: r => r.costUSD || 0, dur: r => r.durMin || 0
         });
-        const head = `<tr><th class="expand"></th>${sortCell(v, 'title', 'Run')}<th>Status</th><th>From</th>
-            ${sortCell(v, 'dur', 'Took', true)}${sortCell(v, 'cost', 'Cost', true)}${sortCell(v, 'when', 'When')}<th></th></tr>`;
+        const head = `<tr><th class="expand"></th>${sortCell(v, 'title', 'Task')}<th class="state">Status</th><th>Started by</th>
+            ${sortCell(v, 'dur', 'Took', true)}${sortCell(v, 'cost', 'Cost', true)}${sortCell(v, 'when', 'When')}<th class="acts"></th></tr>`;
         const body = !sorted.length
             ? `<tr><td colspan="8" class="empty">${d.runs.length ? 'Nothing matches these filters.' : 'Nothing has run yet.'}</td></tr>`
             : sorted.map(runRowHtml).join('');
         return `
+            <p class="lede">A <b>task</b> is one execution. It is started by a schedule, a trigger or a
+                workflow step — or by you, with <b>+ Run a task</b>. Everything on the Plan tab produces tasks here.</p>
             <div class="toolbar">
                 <input type="search" id="runq" placeholder="Search run, prompt, agent…" value="${C.esc(v.q)}" class="${v.q ? 'set' : ''}">
                 ${sel('agent', 'Agent', v.agent, d.agents)}
@@ -452,17 +460,29 @@
                 .bulk[hidden] { display:none; }
                 .cmdbar { display:flex; gap:6px; margin:0 0 10px; }
                 .cmdbar input { flex:1; }
-                table.grid { width:100%; border-collapse:collapse; }
+                /* Columns size themselves to their content and use whatever
+                   width the window gives them. Only the fixed-size furniture
+                   (checkbox, caret) and the numeric/action columns are pinned;
+                   the text columns are free to grow on a wide screen and to
+                   shrink on a narrow one — nothing is capped by hand. */
+                .tablewrap { overflow-x:auto; }
+                table.grid { width:100%; border-collapse:collapse; table-layout:auto; }
                 table.grid th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.4px;
-                    opacity:.65; font-weight:600; padding:4px 8px; border-bottom:1px solid var(--vscode-panel-border); }
-                table.grid td { padding:7px 8px; border-bottom:1px solid var(--vscode-panel-border); vertical-align:top; }
+                    opacity:.65; font-weight:600; padding:4px 10px; border-bottom:1px solid var(--vscode-panel-border); }
+                table.grid td { padding:7px 10px; border-bottom:1px solid var(--vscode-panel-border); vertical-align:top; }
                 th.sortable { cursor:pointer; user-select:none; white-space:nowrap; }
                 th.sortable:hover { color:var(--vscode-textLink-foreground); }
-                th.tick, td.tick { width:26px; padding-right:0; }
-                th.expand, td.expand { width:18px; padding-left:2px; padding-right:2px; cursor:pointer; opacity:.6; }
+                th.tick, td.tick { width:1%; white-space:nowrap; padding-right:0; }
+                th.expand, td.expand { width:1%; white-space:nowrap; padding-left:4px; padding-right:4px;
+                    cursor:pointer; opacity:.6; }
                 td.expand:hover { opacity:1; }
-                td.num, th.num { text-align:right; white-space:nowrap; }
-                td.acts { white-space:nowrap; text-align:right; }
+                td.num, th.num { text-align:right; white-space:nowrap; width:1%; }
+                td.acts, th.acts { white-space:nowrap; text-align:right; width:1%; }
+                td.state, th.state { width:1%; white-space:nowrap; }
+                /* the free-growing text columns */
+                td.main { min-width:15rem; }
+                td.when, td.guardcell, td.lastrun, td.from { min-width:9rem; }
+                td.agent { min-width:6rem; }
                 td.acts .mini { margin-left:3px; }
                 td.state { text-align:center; }
                 .rowtitle { display:flex; gap:6px; align-items:baseline; flex-wrap:wrap; }
@@ -479,6 +499,7 @@
                     background:var(--vscode-textCodeBlock-background, rgba(128,128,128,.09)); border-radius:5px;
                     max-height:190px; overflow:auto; font-size:11.5px; }
                 .empty { text-align:center; opacity:.6; padding:22px 8px; }
+                .lede { font-size:12px; opacity:.8; margin:0 0 9px; max-width:78ch; line-height:1.5; }
                 .badge { font-size:10px; border:1px solid var(--vscode-panel-border); border-radius:3px; padding:0 5px; }
                 .badge.warn { color:var(--vscode-editorWarning-foreground,#cca700); border-color:currentColor; }
                 button.mini { font-size:10px; padding:1px 6px; }

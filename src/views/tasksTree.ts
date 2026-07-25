@@ -1,23 +1,46 @@
 import * as vscode from 'vscode';
+import { describePrecondition } from '../core/automation';
 import { FarmSchedule, FarmTask, FarmTemplate, FarmTrigger, FarmWorkflow, TaskManager } from '../core/tasks';
 import { TriggerManager } from '../core/triggers';
 import { relTime } from '../core/util';
 
+/**
+ * Tasks tree — the sidebar NAVIGATOR for the Tasks page.
+ *
+ * It mirrors the page's one distinction so the two surfaces teach the same
+ * model instead of two different ones:
+ *
+ *   PLAN   — every work DEFINITION (schedule · trigger · workflow · template)
+ *   NOW    — what is running or waiting to run, i.e. what needs you
+ *   RECENT — the last handful of finished runs, as evidence
+ *
+ * Two faults this replaces. (1) Root sections appeared only when they had
+ * content, so a farm with no workflows simply had no Workflows section and the
+ * feature looked missing. All three roots are now ALWAYS present, and an empty
+ * one says what to add. (2) Tasks were grouped per agent with every finished
+ * run included, so each agent unfolded into a wall of history with nothing to
+ * do about it; history now lives behind RECENT (capped) and the page.
+ *
+ * Leaf `contextValue`s are deliberately unchanged — every existing right-click
+ * menu keeps working.
+ */
+
 export type TaskNode =
-    | { kind: 'triggers-root' }
+    | { kind: 'plan-root' }
+    | { kind: 'now-root' }
+    | { kind: 'recent-root' }
+    | { kind: 'empty'; parent: 'plan' | 'now' | 'recent' }
     | { kind: 'trigger'; trigger: FarmTrigger }
-    | { kind: 'schedules-root' }
     | { kind: 'schedule'; schedule: FarmSchedule }
-    | { kind: 'templates-root' }
     | { kind: 'template'; template: FarmTemplate }
-    | { kind: 'workflows-root' }
     | { kind: 'workflow'; workflow: FarmWorkflow }
     | { kind: 'workflow-step'; workflow: FarmWorkflow; index: number }
-    | { kind: 'agent-group'; agentId: string; agentName: string }
     | { kind: 'task'; task: FarmTask }
     | { kind: 'follower-note' };
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+/** How many finished runs the sidebar keeps; the page holds the rest. */
+const RECENT_MAX = 12;
 
 function scheduleWhen(s: FarmSchedule): string {
     const hm = `${String(s.hour).padStart(2, '0')}:${String(s.minute).padStart(2, '0')}`;
@@ -25,6 +48,8 @@ function scheduleWhen(s: FarmSchedule): string {
     if (s.kind === 'weekly') { return `${DOW[s.dow ?? 0]} ${hm}`; }
     return s.onceAt ? `once ${new Date(s.onceAt).toLocaleString()}` : 'once';
 }
+
+const isLive = (t: FarmTask) => t.status === 'queued' || t.status === 'running';
 
 export class TasksTreeProvider implements vscode.TreeDataProvider<TaskNode> {
     private emitter = new vscode.EventEmitter<void>();
@@ -40,6 +65,29 @@ export class TasksTreeProvider implements vscode.TreeDataProvider<TaskNode> {
 
     refresh(): void { this.emitter.fire(); }
 
+    /** Every definition, in the order the sidebar should scan them. */
+    private planNodes(): TaskNode[] {
+        const KIND_ORDER = { schedule: 0, trigger: 1, workflow: 2, template: 3 };
+        const rows: { order: number; sub: number; node: TaskNode }[] = [
+            ...this.manager.schedules.map(schedule => ({
+                order: KIND_ORDER.schedule,
+                sub: schedule.enabled ? schedule.hour * 60 + schedule.minute : 1e6,
+                node: { kind: 'schedule' as const, schedule }
+            })),
+            ...this.manager.triggers.map(trigger => ({
+                order: KIND_ORDER.trigger, sub: trigger.enabled ? 0 : 1,
+                node: { kind: 'trigger' as const, trigger }
+            })),
+            ...this.manager.workflows.map(workflow => ({
+                order: KIND_ORDER.workflow, sub: 0, node: { kind: 'workflow' as const, workflow }
+            })),
+            ...this.manager.templates.map(template => ({
+                order: KIND_ORDER.template, sub: 0, node: { kind: 'template' as const, template }
+            }))
+        ];
+        return rows.sort((a, b) => a.order - b.order || a.sub - b.sub).map(r => r.node);
+    }
+
     getTreeItem(node: TaskNode): vscode.TreeItem {
         if (node.kind === 'follower-note') {
             const item = new vscode.TreeItem('Read-only — another window runs the queue', vscode.TreeItemCollapsibleState.None);
@@ -49,13 +97,65 @@ export class TasksTreeProvider implements vscode.TreeDataProvider<TaskNode> {
             item.contextValue = 'follower-note';
             return item;
         }
-        if (node.kind === 'triggers-root') {
-            const item = new vscode.TreeItem('Triggers', vscode.TreeItemCollapsibleState.Expanded);
-            item.iconPath = new vscode.ThemeIcon('zap');
-            item.description = `${this.manager.triggers.filter(t => t.enabled).length} armed`;
-            item.contextValue = 'triggers-root';
+
+        // ---- roots ----
+        if (node.kind === 'plan-root') {
+            const m = this.manager;
+            const on = m.schedules.filter(s => s.enabled).length + m.triggers.filter(t => t.enabled).length;
+            const total = m.schedules.length + m.triggers.length;
+            const item = new vscode.TreeItem('Plan', vscode.TreeItemCollapsibleState.Expanded);
+            item.iconPath = new vscode.ThemeIcon('calendar');
+            const extras = m.workflows.length + m.templates.length;
+            item.description = `${on}/${total} on${extras ? ` · ${extras} manual` : ''}`;
+            item.tooltip = 'Everything that DEFINES work: schedules, triggers, workflows and templates.\n'
+                + 'A schedule or trigger runs on its own; a workflow or template runs when you launch it.';
+            item.contextValue = 'plan-root';
             return item;
         }
+        if (node.kind === 'now-root') {
+            const running = this.manager.tasks.filter(t => t.status === 'running').length;
+            const queued = this.manager.tasks.filter(t => t.status === 'queued').length;
+            const item = new vscode.TreeItem('Now', vscode.TreeItemCollapsibleState.Expanded);
+            item.iconPath = new vscode.ThemeIcon('play-circle',
+                running ? new vscode.ThemeColor('charts.green') : undefined);
+            item.description = running || queued
+                ? `${running} running${queued ? ` · ${queued} queued` : ''}`
+                : 'idle';
+            item.tooltip = 'Tasks running or waiting to run. A TASK is one execution — started by a '
+                + 'schedule, a trigger, a workflow step, or by you.';
+            item.contextValue = 'now-root';
+            return item;
+        }
+        if (node.kind === 'recent-root') {
+            const finished = this.manager.tasks.filter(t => !isLive(t));
+            const failed = finished.filter(t => t.status === 'failed').length;
+            const item = new vscode.TreeItem('Recent', vscode.TreeItemCollapsibleState.Collapsed);
+            item.iconPath = new vscode.ThemeIcon('history',
+                failed ? new vscode.ThemeColor('errorForeground') : undefined);
+            item.description = finished.length
+                ? `last ${Math.min(RECENT_MAX, finished.length)}${failed ? ` · ${failed} failed` : ''}`
+                : 'nothing yet';
+            item.tooltip = `The ${RECENT_MAX} most recent finished runs. The full history lives on the `
+                + 'Tasks page and in the monthly archive — this is a glance, not a ledger.';
+            item.contextValue = 'recent-root';
+            return item;
+        }
+        if (node.kind === 'empty') {
+            const text = node.parent === 'plan'
+                ? 'Nothing automated yet — add a schedule or a trigger'
+                : node.parent === 'now'
+                    ? 'Nothing running or queued'
+                    : 'No finished runs yet';
+            const item = new vscode.TreeItem(text, vscode.TreeItemCollapsibleState.None);
+            item.iconPath = new vscode.ThemeIcon(node.parent === 'plan' ? 'add' : 'dash');
+            item.contextValue = `empty-${node.parent}`;
+            if (node.parent === 'plan') {
+                item.command = { command: 'agentfarm.addSchedule', title: 'Add Scheduled Task' };
+            }
+            return item;
+        }
+
+        // ---- PLAN leaves (contextValues unchanged: the menus depend on them) ----
         if (node.kind === 'trigger') {
             const t = node.trigger;
             const armed = t.type !== 'watch' || this.triggerManager?.isArmed(t.id);
@@ -66,32 +166,30 @@ export class TasksTreeProvider implements vscode.TreeDataProvider<TaskNode> {
                     : armed ? new vscode.ThemeColor('charts.yellow')
                         : new vscode.ThemeColor('errorForeground'));
             const src = t.type === 'watch'
-                ? `watch: …${(t.watchPath ?? '').slice(-30)}`
+                ? `watch: …${(t.watchPath ?? '').slice(-24)}`
                 : t.type === 'webhook'
                     ? `webhook: /trigger/…${(t.token ?? '').slice(-6)}`
                     : `hook: ${t.hookEvent}${t.hookAgent ? '@' + t.hookAgent : ''}`;
             const target = t.action.kind === 'workflow' ? 'workflow'
                 : t.action.kind === 'dispatch' ? 'dispatch→auto'
-                    : `task→${t.action.agentName}`;
+                    : `→${t.action.agentName}`;
             const parts = [src, target];
             if (!t.enabled) { parts.push('off'); }
             else if (!armed && t.type === 'watch') { parts.push('PATH MISSING'); }
+            else if (!t.fireIf?.kind) { parts.push('no guard'); }
+            if (t.skipCount) { parts.push(`${t.skipCount} skipped`); }
             const stat = this.triggerStat?.(t);
             if (stat) { parts.push(stat); }
             else if (t.fireCount) { parts.push(`fired ${t.fireCount}×${t.lastFiredAt ? ' (' + relTime(t.lastFiredAt) + ')' : ''}`); }
             item.description = parts.join(' • ');
-            item.tooltip = `${t.title}\n${src}\naction: ${target}\n` +
-                `debounce ${t.debounceSec}s • cooldown ${t.cooldownSec}s • max ${t.maxPerHour}/h\n` +
-                (t.lastFiredAt ? `last fired: ${new Date(t.lastFiredAt).toLocaleString()}` : 'never fired') +
-                (stat ? `\nreliability: ${stat}` : '');
+            item.tooltip = `⚡ TRIGGER — ${t.title}\n${src}\naction: ${target}\n`
+                + `model: ${t.action.kind === 'workflow' ? '—' : (t.action.model || 'default')}\n`
+                + `fires only if: ${describePrecondition(t.fireIf) || 'no guard — any change wakes an agent'}\n`
+                + `debounce ${t.debounceSec}s • cooldown ${t.cooldownSec}s • max ${t.maxPerHour}/h\n`
+                + (t.lastFiredAt ? `last fired: ${new Date(t.lastFiredAt).toLocaleString()}` : 'never fired')
+                + (t.lastSkipReason ? `\nlast skip: ${t.lastSkipReason}` : '')
+                + (stat ? `\nreliability: ${stat}` : '');
             item.contextValue = t.type === 'webhook' ? 'trigger-webhook' : 'trigger';
-            return item;
-        }
-        if (node.kind === 'schedules-root') {
-            const item = new vscode.TreeItem('Scheduled', vscode.TreeItemCollapsibleState.Expanded);
-            item.iconPath = new vscode.ThemeIcon('calendar');
-            item.description = `${this.manager.schedules.filter(s => s.enabled).length} active`;
-            item.contextValue = 'schedules-root';
             return item;
         }
         if (node.kind === 'schedule') {
@@ -101,42 +199,37 @@ export class TasksTreeProvider implements vscode.TreeDataProvider<TaskNode> {
                 s.enabled ? 'clock' : 'circle-slash',
                 s.enabled ? new vscode.ThemeColor('charts.blue') : undefined
             );
-            item.description = `${s.agentName} • ${scheduleWhen(s)}${s.enabled ? '' : ' • off'}`;
-            item.tooltip = `${s.title}\n${s.agentName} — ${scheduleWhen(s)} (${s.mode})\n\n${s.prompt}`;
+            const parts = [s.agentName, scheduleWhen(s)];
+            if (s.model) { parts.push(s.model); }
+            if (!s.enabled) { parts.push('off'); }
+            else if (!s.fireIf?.kind) { parts.push('no guard'); }
+            if (s.pendingRunKey) { parts.push('deferred'); }
+            item.description = parts.join(' • ');
+            item.tooltip = `⏰ SCHEDULE — ${s.title}\n${s.agentName} — ${scheduleWhen(s)} (${s.mode})\n`
+                + `model: ${s.model || 'default'}\n`
+                + `runs only if: ${describePrecondition(s.fireIf) || 'no guard — it runs whether or not there is work'}\n`
+                + `missed → ${s.missed ?? 'skip'}\n\n${s.prompt}`;
             item.contextValue = s.enabled ? 'schedule-on' : 'schedule-off';
-            return item;
-        }
-        if (node.kind === 'templates-root') {
-            const item = new vscode.TreeItem('Templates', vscode.TreeItemCollapsibleState.Collapsed);
-            item.iconPath = new vscode.ThemeIcon('bookmark');
-            item.description = String(this.manager.templates.length);
-            item.contextValue = 'templates-root';
             return item;
         }
         if (node.kind === 'template') {
             const t = node.template;
             const item = new vscode.TreeItem(t.title, vscode.TreeItemCollapsibleState.None);
             item.iconPath = new vscode.ThemeIcon('bookmark');
-            item.description = `${t.agentName ?? 'any agent'} • ${t.mode}`;
-            item.tooltip = `${t.title}\n${t.agentName ?? 'agent chosen at run time'} (${t.mode})\n\n${t.prompt}`;
+            item.description = `${t.agentName ?? 'any agent'} • ${t.mode} • manual`;
+            item.tooltip = `📋 TEMPLATE — ${t.title}\nA saved prompt you launch by hand; it never runs on its own.\n`
+                + `${t.agentName ?? 'agent chosen at run time'} (${t.mode})\n\n${t.prompt}`;
             item.contextValue = 'template';
-            return item;
-        }
-        if (node.kind === 'workflows-root') {
-            const item = new vscode.TreeItem('Workflows', vscode.TreeItemCollapsibleState.Expanded);
-            item.iconPath = new vscode.ThemeIcon('type-hierarchy-sub');
-            item.description = String(this.manager.workflows.length);
-            item.contextValue = 'workflows-root';
             return item;
         }
         if (node.kind === 'workflow') {
             const w = node.workflow;
             const item = new vscode.TreeItem(w.title, vscode.TreeItemCollapsibleState.Collapsed);
             item.iconPath = new vscode.ThemeIcon('type-hierarchy-sub', new vscode.ThemeColor('charts.purple'));
-            const agents = [...new Set(w.steps.map(s => s.agentName))];
-            item.description = `${w.steps.length} steps • ${agents.join(' → ')}`;
-            item.tooltip = `${w.title}\n\n` +
-                w.steps.map((s, i) => `${i + 1}. [${s.agentName}] ${s.title} (${s.mode})`).join('\n');
+            const agents = [...new Set(w.steps.map(s => s.agentName).filter(Boolean))];
+            item.description = `${w.steps.length} steps${agents.length ? ' • ' + agents.join(' → ') : ''} • manual`;
+            item.tooltip = `🔗 WORKFLOW — ${w.title}\nA chain of steps; it runs when you launch it or a trigger does.\n\n`
+                + w.steps.map((s, i) => `${i + 1}. [${s.agentName}] ${s.title} (${s.mode})`).join('\n');
             item.contextValue = 'workflow';
             return item;
         }
@@ -145,22 +238,15 @@ export class TasksTreeProvider implements vscode.TreeDataProvider<TaskNode> {
             const item = new vscode.TreeItem(`${node.index + 1}. ${s.title}`, vscode.TreeItemCollapsibleState.None);
             item.iconPath = new vscode.ThemeIcon(s.parallel ? 'git-merge' : 'arrow-small-right',
                 s.parallel ? new vscode.ThemeColor('charts.purple') : undefined);
-            const kind = s.approval ? 'approval' : s.select ? 'select' : s.webhook ? 'webhook' : s.media ? 'media' : s.browser ? 'browser' : s.mode;
+            const kind = s.approval ? 'approval' : s.select ? 'select' : s.webhook ? 'webhook'
+                : s.media ? 'media' : s.browser ? 'browser' : s.mode;
             item.description = `${s.agentName} • ${kind}${s.parallel ? ' • ∥ parallel' : ''}`;
             item.tooltip = (s.parallel ? '∥ runs in parallel with adjacent parallel steps\n\n' : '') + (s.prompt || s.title);
             item.contextValue = 'workflow-step';
             return item;
         }
-        if (node.kind === 'agent-group') {
-            const tasks = this.manager.tasks.filter(t => t.agentId === node.agentId);
-            const queued = tasks.filter(t => t.status === 'queued').length;
-            const running = tasks.filter(t => t.status === 'running').length;
-            const item = new vscode.TreeItem(node.agentName, vscode.TreeItemCollapsibleState.Expanded);
-            item.iconPath = new vscode.ThemeIcon('hubot');
-            item.description = `${queued} queued${running ? ` • ${running} running` : ''}`;
-            item.contextValue = 'task-agent-group';
-            return item;
-        }
+
+        // ---- a TASK: one execution ----
         const t = node.task;
         const item = new vscode.TreeItem(t.title, vscode.TreeItemCollapsibleState.None);
         const meta: Record<string, { icon: string; color?: string }> = {
@@ -178,8 +264,11 @@ export class TasksTreeProvider implements vscode.TreeDataProvider<TaskNode> {
             ? `deferred: ${t.deferredReason}`
             : t.status + (t.verified ? ` • verify ${t.verified}` : '');
         const cost = t.costUSD !== undefined ? ` • $${t.costUSD.toFixed(2)}` : '';
-        item.description = `${statusLabel}${prio}${t.mode === 'headless' ? ' • headless' : ''}${cost} • ${relTime(when)}`;
-        item.tooltip = `${t.title}\n[${t.status}] ${t.agentName} (${t.mode})`
+        const from = t.fromSchedule ? 'schedule' : t.fromTrigger ? 'trigger'
+            : t.workflowId !== undefined ? 'workflow' : 'you';
+        item.description = `${t.agentName} • ${statusLabel}${prio}${cost} • ${relTime(when)}`;
+        item.tooltip = `▶ TASK (one run) — ${t.title}\n[${t.status}] ${t.agentName} (${t.mode}) • started by: ${from}`
+            + (t.model ? `\nmodel: ${t.model}` : '')
             + (t.costUSD !== undefined ? `\nCost: $${t.costUSD.toFixed(4)} (API-equivalent, from the matched transcript)` : '')
             + `\n\n${t.prompt}`;
         // Workflow-step finals get a distinct context so the menu offers "resume chain" instead of a plain retry.
@@ -201,50 +290,37 @@ export class TasksTreeProvider implements vscode.TreeDataProvider<TaskNode> {
             if (this.isRunner && !this.isRunner()) {
                 roots.push({ kind: 'follower-note' });
             }
-            if (this.manager.triggers.length) {
-                roots.push({ kind: 'triggers-root' });
-            }
-            if (this.manager.schedules.length) {
-                roots.push({ kind: 'schedules-root' });
-            }
-            if (this.manager.workflows.length) {
-                roots.push({ kind: 'workflows-root' });
-            }
-            if (this.manager.templates.length) {
-                roots.push({ kind: 'templates-root' });
-            }
-            const groups = new Map<string, string>();
-            for (const t of this.manager.tasks) {
-                groups.set(t.agentId, t.agentName);
-            }
-            for (const [agentId, agentName] of [...groups].sort((a, b) => a[1].localeCompare(b[1]))) {
-                roots.push({ kind: 'agent-group', agentId, agentName });
-            }
+            // All three are ALWAYS present: a section that disappears when empty
+            // makes the feature behind it look missing.
+            roots.push({ kind: 'plan-root' }, { kind: 'now-root' }, { kind: 'recent-root' });
             return roots;
         }
-        if (node.kind === 'triggers-root') {
-            return this.manager.triggers.map(trigger => ({ kind: 'trigger' as const, trigger }));
+        if (node.kind === 'plan-root') {
+            const plan = this.planNodes();
+            return plan.length ? plan : [{ kind: 'empty', parent: 'plan' }];
         }
-        if (node.kind === 'schedules-root') {
-            return this.manager.schedules.map(schedule => ({ kind: 'schedule' as const, schedule }));
+        if (node.kind === 'now-root') {
+            const order: Record<string, number> = { running: 0, queued: 1 };
+            const live = this.manager.tasks
+                .filter(isLive)
+                .sort((a, b) => order[a.status] - order[b.status]
+                    || (b.priority ?? 0) - (a.priority ?? 0)
+                    || a.createdAt - b.createdAt)
+                .map(task => ({ kind: 'task' as const, task }));
+            return live.length ? live : [{ kind: 'empty', parent: 'now' }];
         }
-        if (node.kind === 'templates-root') {
-            return this.manager.templates.map(template => ({ kind: 'template' as const, template }));
-        }
-        if (node.kind === 'workflows-root') {
-            return this.manager.workflows.map(workflow => ({ kind: 'workflow' as const, workflow }));
+        if (node.kind === 'recent-root') {
+            const finished = this.manager.tasks
+                .filter(t => !isLive(t))
+                .sort((a, b) => (b.endedAt ?? b.createdAt) - (a.endedAt ?? a.createdAt))
+                .slice(0, RECENT_MAX)
+                .map(task => ({ kind: 'task' as const, task }));
+            return finished.length ? finished : [{ kind: 'empty', parent: 'recent' }];
         }
         if (node.kind === 'workflow') {
-            return node.workflow.steps.map((_s, index) => ({
+            return (node.workflow?.steps ?? []).map((_s, index) => ({
                 kind: 'workflow-step' as const, workflow: node.workflow, index
             }));
-        }
-        if (node.kind === 'agent-group') {
-            const order: Record<string, number> = { running: 0, queued: 1, failed: 2, done: 3, cancelled: 4 };
-            return this.manager.tasks
-                .filter(t => t.agentId === node.agentId)
-                .sort((a, b) => order[a.status] - order[b.status] || b.createdAt - a.createdAt)
-                .map(task => ({ kind: 'task' as const, task }));
         }
         return [];
     }

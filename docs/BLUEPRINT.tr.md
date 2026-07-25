@@ -1063,6 +1063,20 @@ Filo büyüyünce dar boğaz sensin: kim izin bekliyor, hangi tarayıcı adımı
 
 Durum çubuğu artık bu kuyruğu sayar: `🔔 N need you` görünüyorsa tıklamak kuyruğu açar. İş engelleyen üç tür sayılır: izin, tarayıcı onayı, stalled.
 
+### Beş Kavram — hangisi ne? {#gorev-kavramlari}
+
+Karışmaması için tek yerde:
+
+| Kavram | Nedir | Kendi kendine çalışır mı |
+|---|---|---|
+| ⏰ **Schedule** (zamanlama) | belirli bir saatte ajana iş verir | **evet** |
+| ⚡ **Trigger** (tetikleyici) | bir şey olunca (dosya değişti, webhook, canlı olay) iş verir | **evet** |
+| 🔗 **Workflow** (iş akışı) | birden çok adımın zinciri (farklı ajanlar, onay/seçim kapıları, medya) | hayır — sen ya da bir tetikleyici başlatır |
+| 📋 **Template** (şablon) | kayıtlı bir istem; elle fırlatırsın | hayır |
+| ▶ **Task** (görev) | **tek bir koşu.** Yukarıdakilerin hepsi task ÜRETİR | — |
+
+**Task ayrı bir tür değil, çalışmanın kendisidir.** Bir zamanlama saati gelince bir task doğurur; bir tetikleyici ateşleyince bir task doğurur; bir iş akışının her adımı bir task'tır; **+ Run a task** ile sen de doğrudan bir task açabilirsin (tek seferlik iş). Bu yüzden Tasks sayfasında ilk dördü **Plan** sekmesinde (tanımlar), task'lar **Runs** sekmesindedir (koşular) — sayfanın adının "Tasks" olmasının sebebi de budur: hepsi sonunda task'a çıkar.
+
 ### Tasks Sayfası — Ajan Aktivitesi Yönetim Paneli {#tasks-sayfasi}
 
 **Agent Farm: Open Tasks** (global gezinmedeki **Tasks** düğmesi) — 3.19.0'da **baştan tasarlandı**. Eski dört bölümlü düzen (Board / Automations / Reusables / Analytics) kaldırıldı: bölüm adları uygulamanın iç tiplerini yansıtıyordu, kullanıcının zihnindeki nesneleri değil, ve aynı şeyin *planı* ile *koşusu* iki ayrı sekmeye dağılmıştı ("tetikleyici var ama görevler nerede?").
@@ -1105,6 +1119,18 @@ Tek tablo, tek satır dili:
 Canlı, kuyrukta, park edilmiş ve biten koşular tek listede: durum · **nereden geldiği** (zamanlama / tetikleyici / iş akışı / sen) · süre · maliyet · ne zaman. Satırdan: başlat · öne al · terminal · iptal · yeniden koştur · çıktı · sil; park edilmişte "retry start". Detay satır içinde açılır (tam istem + transcript). Filtreler: ajan · durum · kaynak + arama, PLAN'daki aynı çip/reset mantığıyla. **Doğal dil komut çubuğu** bu sekmede (cümleni yaz, ucuz model plana çevirir, önizleme onayıyla kurulur).
 
 Filtre durumu **sekme başına** hatırlanır; sekme değiştirmek diğerinin filtrelerini bulaştırmaz.
+
+#### Yan paneldeki Tasks ağacı
+
+Sayfayla **aynı modeli** öğretir; 3.19.0'da o da elden geçti. Üç kök, **her zaman görünür**:
+
+- **Plan** — dört tanım türü tek listede (zamanlama → tetikleyici → iş akışı → şablon sırasıyla, açık zamanlamalar saate göre). Satırda ajan, saat, model, `no guard` / `PATH MISSING` / `deferred` uyarıları ve atlanan ateşleme sayısı; tooltip türü **kelimeyle** söyler ("⏰ SCHEDULE") ve önkoşulu açıklar. Kök başlıkta `açık/toplam` + kaç tanesinin elle çalıştığı.
+- **Now** — yalnız **çalışan ve kuyrukta** olanlar; yani sana bakan iş. Çalışan görev tıklanınca terminali açar.
+- **Recent** — son **12** biten koşu, en yenisi üstte; başlıkta kaç tanesinin başarısız olduğu. Tamamı sayfada ve aylık arşivde.
+
+Düzeltilen iki kusur: (1) eskiden bölümler **yalnız içeriği varken** görünüyordu — iş akışı tanımlamamış bir kurulumda "Workflows" bölümü hiç çıkmıyor, özellik yokmuş gibi duruyordu; artık üç kök de her zaman var ve boş olan **ne ekleneceğini söyler** (tıklanabilir). (2) görevler **ajan başına gruplanıp bütün geçmiş** içeri konuyordu, her ajan bir tarih duvarına açılıyor ve kullanıcıya yapacak bir şey bırakmıyordu; geçmiş artık Recent'ın arkasında ve sınırlı.
+
+Sağ tık menülerinin tamamı korundu (yaprak `contextValue`'ları değişmedi); Plan kökünde satır içi **+ Schedule / + Trigger / sayfayı aç**, Now kökünde **+ Task**, Recent kökünde **bitenleri temizle** düğmeleri var.
 
 #### Analiz artık ayrı sayfa
 

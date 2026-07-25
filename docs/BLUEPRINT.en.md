@@ -1063,6 +1063,20 @@ As the fleet grows, the bottleneck is you: who's waiting for permission, which b
 
 The status bar now counts this queue: if `🔔 N need you` shows, clicking it opens the queue. Three blocking kinds are counted: permission, browser approval, stalled.
 
+### Five concepts — which is which? {#gorev-kavramlari}
+
+In one place so they never blur:
+
+| Concept | What it is | Runs on its own? |
+|---|---|---|
+| ⏰ **Schedule** | gives an agent work at a set time | **yes** |
+| ⚡ **Trigger** | gives work when something happens (file change, webhook, live event) | **yes** |
+| 🔗 **Workflow** | a chain of steps (several agents, approval/selection gates, media) | no — you or a trigger launches it |
+| 📋 **Template** | a saved prompt you fire by hand | no |
+| ▶ **Task** | **one single run.** Everything above PRODUCES tasks | — |
+
+**A task is not a fifth type — it is the execution itself.** A schedule's time arrives and it spawns a task; a trigger fires and spawns a task; every workflow step is a task; and **+ Run a task** lets you open one directly (a one-off job). That is why the first four live on the **Plan** tab (definitions) and tasks live on the **Runs** tab (executions) — and why the page is called Tasks: everything ends up as one.
+
 ### Tasks Page — the agent-activity control panel {#tasks-sayfasi}
 
 **Agent Farm: Open Tasks** (the **Tasks** button in the global nav) — **redesigned from scratch in 3.19.0**. The old four-section layout (Board / Automations / Reusables / Analytics) is gone: the section names described the implementation's internal types rather than the objects in the user's head, and the *plan* for a thing lived in a different tab from its *runs* ("there are triggers, but where are the tasks?").
@@ -1105,6 +1119,18 @@ One table, one row language:
 Live, queued, parked and finished runs in one list: status · **where it came from** (schedule / trigger / workflow / you) · duration · cost · when. Row actions: start · move to front · terminal · cancel · re-run · output · delete; a parked run gets "retry start". Detail expands inline (full prompt + transcript). Filters: agent · status · source + search, with the same chip/reset behaviour as PLAN. The **natural-language command bar** lives on this tab.
 
 Filter state is remembered **per tab**; switching tabs never bleeds one tab's filters into the other.
+
+#### The Tasks tree in the sidebar
+
+It teaches **the same model** as the page; it was reworked in 3.19.0 too. Three roots, **always visible**:
+
+- **Plan** — all four definition kinds in one list (schedules → triggers → workflows → templates; enabled schedules by time of day). Rows show agent, time, model and the `no guard` / `PATH MISSING` / `deferred` warnings plus the suppressed-firing count; the tooltip names the kind **in words** ("⏰ SCHEDULE") and spells out the precondition. The root shows `on/total` plus how many are manual.
+- **Now** — only what is **running or queued**: the work that concerns you. Clicking a running task reveals its terminal.
+- **Recent** — the last **12** finished runs, newest first, with the failure count on the root. The rest lives on the page and in the monthly archive.
+
+Two faults fixed. (1) Sections used to appear **only when they had content** — a farm with no workflows had no Workflows section at all, so the feature looked missing; all three roots are now permanent and an empty one **says what to add** (and is clickable). (2) Tasks were grouped **per agent with all history included**, so every agent unfolded into a wall of finished runs with nothing to do about them; history now sits behind Recent and is capped.
+
+Every right-click menu is preserved (leaf `contextValue`s unchanged). Inline buttons: **+ Schedule / + Trigger / open the page** on the Plan root, **+ Task** on Now, **clear finished** on Recent.
 
 #### Analytics is now its own page
 
