@@ -156,6 +156,10 @@ const mkRow = (i, extra) => Object.assign({
     const cont = containers.modes;
     const openCount = () => (cont.innerHTML.match(/sessrow open/g) || []).length;
 
+    ok('the table opens with every row folded and single-open on',
+        openCount() === 0 && cont.innerHTML.includes('af-single on'));
+
+    click(cont.querySelector('.af-single'));   // off — so two rows can be open at once
     click(cont.querySelectorAll('[data-fold]')[0]);
     click(cont.querySelectorAll('[data-fold]')[1]);
     ok('two rows open without single-open', openCount() === 2);
@@ -184,6 +188,15 @@ const mkRow = (i, extra) => Object.assign({
     const html = containers.persist.innerHTML;
     ok('persisted sort restored (cost-desc)', html.indexOf('title3') < html.indexOf('title1'));
     ok('persisted single-open restored', html.includes('af-single on'));
+    // the important direction now that single-open is the default: an explicit
+    // "off" must survive, or the user's choice never sticks
+    state = { afSess: { dash: { sort: 'cost', single: false } } };
+    const tOff = sandbox.window.AFSessionsTable.create({
+        vscode: vscodeStub, C, containerId: 'persistoff',
+        columns: ['title', 'cost'], stateKey: 'dash'
+    });
+    tOff.setRows([mkRow(1)], 10);
+    ok('persisted single-open OFF beats the default', !containers.persistoff.innerHTML.includes('af-single on'));
 
     // pre-2.57 dashboards persisted sessSort/sessSingle at the top level
     state = { sessSort: 'turns', sessSingle: true };

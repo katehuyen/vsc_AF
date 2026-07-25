@@ -128,7 +128,13 @@
         const saved = (persisted.afSess || {})[opts.stateKey] || {};
         let sort = SORTS.some(s => s.id === saved.sort) ? saved.sort
             : (SORTS.some(s => s.id === opts.fallbackSort) ? opts.fallbackSort : 'recent');
-        let single = saved.single !== undefined ? !!saved.single : !!opts.fallbackSingle;
+        // Single-open is the default everywhere a session surface folds things
+        // open (viewer turn bands, Turns page, here): rows start collapsed and
+        // opening one closes the last, so the table stays a list you scan
+        // instead of growing into a page you scroll. An explicit choice — this
+        // page's own, or the pre-2.57 top-level one — still wins.
+        let single = saved.single !== undefined ? !!saved.single
+            : opts.fallbackSingle !== undefined ? !!opts.fallbackSingle : true;
         let filters = Object.assign(FDEF(), saved.filters || {});
         let filtersOpen = !!saved.filtersOpen;
         const open = new Set();
