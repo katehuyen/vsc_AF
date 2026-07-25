@@ -309,6 +309,64 @@
 
     // ---------- Automations section ----------
 
+    /** $ with enough precision to be honest about small automation runs. */
+    function usd(n) {
+        if (!n) { return '—'; }
+        return n >= 10 ? '$' + n.toFixed(0) : '$' + n.toFixed(2);
+    }
+
+    /** The guard cell: what stops a pointless wake-up, and what it has saved. */
+    function guardCell(a) {
+        if (!a.hasGuard) {
+            return `<span class="badge warn" title="No precondition: this fires on schedule/on any change, whether or not there is work to do — the wake-up is paid before anyone can tell.">no guard</span>`;
+        }
+        const saved = a.skipped7d
+            ? `<div class="muted small">skipped ${a.skipped7d}× (${a.skipRate}%)</div>` : '';
+        return `<span title="${C.esc(a.fireIf)}${a.lastReason ? ' — last: ' + C.esc(a.lastReason) : ''}">🛡 ${C.esc(a.fireIf)}</span>${saved}`;
+    }
+
+    /** The gate strip — the master controls that used to not exist at all. */
+    function gateHtml(gate) {
+        const g = gate || {};   // a page rendered from older data still draws
+        const state = g.paused
+            ? `<span class="badge err">ALL PAUSED</span>${g.pauseReason ? ` <span class="muted small">${C.esc(g.pauseReason)}</span>` : ''}`
+            : g.pausedUntil && g.pausedUntil > Date.now()
+                ? `<span class="badge warn">paused until ${C.esc(new Date(g.pausedUntil).toLocaleTimeString())}</span>`
+                : g.blocked
+                    ? `<span class="badge warn">${C.esc(g.blockReason)}</span>`
+                    : `<span class="badge ok">running</span>`;
+        const quiet = g.quietFrom
+            ? `${C.esc(g.quietFrom)}–${C.esc(g.quietTo)}`
+            : '<span class="muted">off</span>';
+        const savings = g.skipped7d
+            ? `<span class="now-cell" title="Wake-ups the preconditions suppressed in the last 7 days — each one is an agent run that was never paid for.">🛡 ${g.skipped7d} wake-up(s) saved this week</span>`
+            : '';
+        return `<div class="gatebar">
+            <div class="gaterow">
+                <b>Automation gate</b> ${state}
+                <span class="grow"></span>
+                ${g.paused || (g.pausedUntil && g.pausedUntil > Date.now())
+                ? `<button data-gate="resume" title="Schedules and triggers fire again">▶ Resume all</button>`
+                : `<button class="secondary" data-gate="pause" title="Master switch: nothing fires on its own until you resume">⏸ Pause all</button>
+                     <button class="secondary" data-gate="pause-for:60">1h</button>
+                     <button class="secondary" data-gate="pause-for:480">8h</button>
+                     <button class="secondary" data-gate="pause-for:1440">24h</button>`}
+                <button class="secondary" data-gate="quiet" title="Nightly window in which nothing wakes on its own; a due schedule is deferred to the end of the window, not dropped">🌙 Quiet hours: ${quiet}</button>
+            </div>
+            ${savings ? `<div class="gaterow muted small">${savings}</div>` : ''}
+        </div>`;
+    }
+
+    /** Checkbox + bulk bar shared by both automation tables. */
+    function bulkBar(kind) {
+        return `<div class="bulkbar" data-bulkbar="${kind}" hidden>
+            <b class="bulkcount">0 selected</b>
+            <button class="mini" data-bulk="on:${kind}">enable</button>
+            <button class="mini secondary" data-bulk="off:${kind}">disable</button>
+            <button class="mini secondary" data-bulk="clear:${kind}">clear</button>
+        </div>`;
+    }
+
     function automationsHtml(d) {
         const trig = d.automations.triggers;
         const sched = d.automations.schedules;
@@ -316,16 +374,22 @@
             { key: 'title', label: 'Trigger', get: t => t.title },
             { key: 'src', label: 'Source', get: t => t.src },
             { key: 'target', label: 'Target', filter: true, get: t => t.target },
+            { key: 'guard', label: 'Guard', filter: true, get: t => t.hasGuard ? 'guarded' : 'no guard' },
             { key: 'state', label: 'State', filter: true, get: t => t.enabled ? 'on' : 'off' },
+            { key: 'cost', label: 'Cost 7d', num: true, get: t => t.cost7d || 0 },
             { key: 'fired', label: 'Reliability', num: true, get: t => t.fireCount || 0 }
         ], 'Triggers');
         const trigRows = ttTrig.rows.map(t => `<tr>
+            <td class="tick"><input type="checkbox" class="rowsel" data-kind="trig" value="${t.id}"></td>
             <td><b title="${C.esc(t.title)}">${C.esc(t.title)}</b>${t.alwaysFails ? ' <span class="badge err">always fails</span>' : ''}
                 ${t.enabled && !t.armed ? ' <span class="badge warn">path missing</span>' : ''}
+                ${t.model ? ` <span class="badge">${C.esc(t.model)}</span>` : ''}
                 <div class="muted small" title="${C.esc(t.src)} → ${C.esc(t.target)}">${C.esc(t.src)} → ${C.esc(t.target)}</div></td>
+            <td>${guardCell(t)}</td>
             <td>${t.enabled ? '<span class="dot on"></span> on' : '<span class="dot off"></span> off'}</td>
+            <td class="num" title="${t.runs7d} run(s) in the last 7 days">${usd(t.cost7d)}</td>
             <td>${t.stat ? C.esc(t.stat) : (t.fireCount ? `fired ${t.fireCount}×` : 'never fired')}
-                <div class="muted small">${t.lastFiredAt ? 'last ' + rel(t.lastFiredAt) : ''}</div></td>
+                <div class="muted small">${t.lastFiredAt ? 'last ' + rel(t.lastFiredAt) : ''}${t.skipCount ? ` · ${t.skipCount} skipped` : ''}</div></td>
             <td class="muted small">deb ${t.debounceSec}s · cool ${t.cooldownSec}s · max ${t.maxPerHour || '∞'}/h</td>
             <td class="rowbtns">
                 <button class="mini secondary" data-trig="toggle:${t.id}">${t.enabled ? 'disable' : 'enable'}</button>
@@ -336,15 +400,24 @@
         const ttSched = tableTools('sched-table', sched, [
             { key: 'title', label: 'Schedule', get: s => s.title },
             { key: 'agent', label: 'Agent', filter: true, get: s => s.agentName },
+            { key: 'model', label: 'Model', filter: true, get: s => s.model || 'default' },
             { key: 'mode', label: 'Mode', filter: true, get: s => s.mode },
             { key: 'when', label: 'When', get: s => s.when },
+            { key: 'guard', label: 'Guard', filter: true, get: s => s.hasGuard ? 'guarded' : 'no guard' },
             { key: 'state', label: 'State', filter: true, get: s => s.enabled ? 'on' : 'off' },
+            { key: 'cost', label: 'Cost 7d', num: true, get: s => s.cost7d || 0 },
             { key: 'next', label: 'Next run', num: true, get: s => s.nextAt || 0 }
         ], 'Schedules');
         const schedRows = ttSched.rows.map(s => `<tr>
-            <td><b title="${C.esc(s.title)}">${C.esc(s.title)}</b><div class="muted small">${C.esc(s.agentName)} · ${s.mode}</div></td>
+            <td class="tick"><input type="checkbox" class="rowsel" data-kind="sched" value="${s.id}"></td>
+            <td><b title="${C.esc(s.title)}">${C.esc(s.title)}</b>
+                ${s.model ? ` <span class="badge" title="Stated on the schedule — beats the modelPolicy engine">${C.esc(s.model)}</span>` : ''}
+                ${s.deferred ? ' <span class="badge warn" title="Held back by quiet hours; it fires when the window ends">deferred</span>' : ''}
+                <div class="muted small">${C.esc(s.agentName)} · ${s.mode}</div></td>
             <td>${C.esc(s.when)}<div class="muted small">missed: ${C.esc(s.missed)}</div></td>
+            <td>${guardCell(s)}</td>
             <td>${s.enabled ? '<span class="dot on"></span> on' : '<span class="dot off"></span> off'}</td>
+            <td class="num" title="${s.runs7d} run(s) in the last 7 days">${usd(s.cost7d)}</td>
             <td>${s.enabled ? C.esc(fmtNext(s.nextAt)) : '—'}</td>
             <td class="rowbtns">
                 <button class="mini secondary" data-sched="toggle:${s.id}">${s.enabled ? 'disable' : 'enable'}</button>
@@ -352,18 +425,24 @@
                 <button class="mini secondary" data-sched="edit:${s.id}">edit</button>
                 <button class="mini secondary" data-sched="delete:${s.id}">✕</button>
             </td></tr>`).join('');
+        const noGuard = [...trig, ...sched].filter(a => a.enabled && !a.hasGuard).length;
         return `
+            ${gateHtml(d.gate)}
+            ${noGuard ? `<p class="hintbox">⚠ ${noGuard} enabled automation(s) have <b>no guard</b>: they wake an agent whether or not there is work.
+                Add a <code>fireIf</code> precondition in <b>edit</b> — it is checked for free, before anything is spent.</p>` : ''}
             <div class="spread"><h2 style="margin:10px 0 6px;border:none">⚡ Triggers <span class="muted small">${trig.filter(t => t.enabled).length} armed / ${trig.length}</span></h2>
                 <button class="secondary" data-add="trig-add">+ Trigger</button></div>
             ${trig.length ? ttTrig.bar : ''}
+            ${trig.length ? bulkBar('trig') : ''}
             <div class="tablewrap">${trig.length
-                ? `<table><tr>${ttTrig.th('title', 'Trigger')}${ttTrig.th('state', 'State')}${ttTrig.th('fired', 'Reliability', true)}<th>Limits</th><th></th></tr>${trigRows}</table>`
+                ? `<table><tr><th class="tick"><input type="checkbox" class="allsel" data-kind="trig" title="select all"></th>${ttTrig.th('title', 'Trigger')}${ttTrig.th('guard', 'Guard')}${ttTrig.th('state', 'State')}${ttTrig.th('cost', 'Cost 7d', true)}${ttTrig.th('fired', 'Reliability', true)}<th>Limits</th><th></th></tr>${trigRows}</table>`
                 : '<p class="muted">No triggers yet — a trigger fires a task/workflow when a file changes, a webhook is called, or a live hook event happens.</p>'}</div>
             <div class="spread"><h2 style="margin:22px 0 6px;border:none">🕑 Schedules <span class="muted small">${sched.filter(s => s.enabled).length} active / ${sched.length}</span></h2>
                 <button class="secondary" data-add="sched-add">+ Schedule</button></div>
             ${sched.length ? ttSched.bar : ''}
+            ${sched.length ? bulkBar('sched') : ''}
             <div class="tablewrap">${sched.length
-                ? `<table><tr>${ttSched.th('title', 'Schedule')}${ttSched.th('when', 'When')}${ttSched.th('state', 'State')}${ttSched.th('next', 'Next run', true)}<th></th></tr>${schedRows}</table>`
+                ? `<table><tr><th class="tick"><input type="checkbox" class="allsel" data-kind="sched" title="select all"></th>${ttSched.th('title', 'Schedule')}${ttSched.th('when', 'When')}${ttSched.th('guard', 'Guard')}${ttSched.th('state', 'State')}${ttSched.th('cost', 'Cost 7d', true)}${ttSched.th('next', 'Next run', true)}<th></th></tr>${schedRows}</table>`
                 : '<p class="muted">No schedules yet — a schedule runs an agent prompt daily, weekly or once at a set time.</p>'}</div>`;
     }
 
@@ -596,6 +675,21 @@
                 .now-hot { color:var(--vscode-editorWarning-foreground,#cca700); font-weight:600; }
                 .seg-n { opacity:.6; font-size:10px; }
                 .seg-warn { color:var(--vscode-editorWarning-foreground,#cca700); font-size:10px; }
+                .gatebar { border:1px solid var(--vscode-widget-border,#4443); border-radius:8px;
+                    padding:8px 10px; margin:0 0 12px;
+                    background:var(--vscode-editorWidget-background, rgba(128,128,128,.05)); }
+                .gaterow { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+                .gaterow .grow { flex:1 1 auto; }
+                .gaterow + .gaterow { margin-top:6px; }
+                .bulkbar { display:flex; gap:6px; align-items:center; margin:4px 0 6px; padding:5px 9px;
+                    border:1px solid var(--vscode-focusBorder); border-radius:6px;
+                    background:var(--vscode-editorWidget-background, rgba(128,128,255,.06)); }
+                .bulkbar[hidden] { display:none; }
+                th.tick, td.tick { width:24px; text-align:center; padding-right:0; }
+                td.num { text-align:right; white-space:nowrap; }
+                .hintbox { border:1px solid var(--vscode-editorWarning-foreground,#cca700); border-radius:6px;
+                    padding:7px 10px; margin:0 0 12px; font-size:12px; }
+                .badge.ok { color:var(--vscode-charts-green,#3fb950); }
             </style>
             ${window.AFHeader.html({
                 page: 'tasks',
@@ -629,7 +723,57 @@
         act('tpl', 'tpl');
         act('wf', 'wf');
         wireTables();
+        if (section === 'automations') { wireAutomations(); }
         if (section === 'board') { wireBoard(); }
+    }
+
+    /** Gate buttons + bulk selection. Selection is deliberately transient: it
+     *  lives only until the next render, so a stale tick can never carry a
+     *  forgotten selection into a bulk action. */
+    function wireAutomations() {
+        document.querySelectorAll('[data-gate]').forEach(b =>
+            b.addEventListener('click', () => {
+                const [a, arg] = b.dataset.gate.split(':');
+                post({ type: 'gate', act: a, text: arg });
+            }));
+
+        const selected = kind => [...document.querySelectorAll(`.rowsel[data-kind="${kind}"]:checked`)]
+            .map(c => c.value);
+        const sync = kind => {
+            const bar = document.querySelector(`[data-bulkbar="${kind}"]`);
+            if (!bar) { return; }
+            const n = selected(kind).length;
+            bar.hidden = n === 0;
+            const label = bar.querySelector('.bulkcount');
+            if (label) { label.textContent = `${n} selected`; }
+            const all = document.querySelector(`.allsel[data-kind="${kind}"]`);
+            const boxes = document.querySelectorAll(`.rowsel[data-kind="${kind}"]`);
+            if (all) {
+                all.checked = n > 0 && n === boxes.length;
+                all.indeterminate = n > 0 && n < boxes.length;
+            }
+        };
+        document.querySelectorAll('.rowsel').forEach(c =>
+            c.addEventListener('change', () => sync(c.dataset.kind)));
+        document.querySelectorAll('.allsel').forEach(a =>
+            a.addEventListener('change', () => {
+                document.querySelectorAll(`.rowsel[data-kind="${a.dataset.kind}"]`)
+                    .forEach(c => { c.checked = a.checked; });
+                sync(a.dataset.kind);
+            }));
+        document.querySelectorAll('[data-bulk]').forEach(b =>
+            b.addEventListener('click', () => {
+                const [a, kind] = b.dataset.bulk.split(':');
+                if (a === 'clear') {
+                    document.querySelectorAll(`.rowsel[data-kind="${kind}"]`).forEach(c => { c.checked = false; });
+                    sync(kind);
+                    return;
+                }
+                const ids = selected(kind);
+                if (ids.length) { post({ type: 'bulk', act: a, ids }); }
+            }));
+        sync('trig');
+        sync('sched');
     }
 
     render();

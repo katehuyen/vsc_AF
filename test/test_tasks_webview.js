@@ -21,12 +21,16 @@ function getEl(id) {
             id, listeners: {}, style: {}, value: '', checked: false, _html: '',
             addEventListener(ev, fn) { this.listeners[ev] = fn; },
             focus() { },
-            set innerHTML(v) { this._html = v; }, get innerHTML() { return this._html; }
+            set innerHTML(v) { this._html = v; elCache.clear(); }, get innerHTML() { return this._html; }
         };
     }
     return els[id];
 }
 const wired = {};
+/** Elements are cached per rendered tag so repeated queries return the SAME
+ *  object — otherwise checkbox state set by a test (or by the page's own
+ *  "select all") would vanish on the next querySelectorAll. Cleared on render. */
+const elCache = new Map();
 
 const NOW = Date.now();
 const task = (over) => ({
@@ -62,27 +66,44 @@ const DATA = {
             { id: 'a2', name: 'developer', queued: 0, running: 0 }
         ]
     },
+    gate: {
+        paused: false, pausedUntil: undefined, pauseReason: '',
+        quietFrom: '23:00', quietTo: '07:00',
+        blocked: false, blockReason: '', skipped7d: 23
+    },
     automations: {
         triggers: [
             {
+                // the measured real case: guarded, almost always skipped, cheap
                 id: 'tr1', title: 'Inbox factory', type: 'watch', src: 'watch: …/inbox', target: 'task → psikolog',
                 enabled: true, armed: false, debounceSec: 5, cooldownSec: 60, maxPerHour: 4,
-                fireCount: 12, lastFiredAt: NOW - 3600e3, stat: 'fired 12× • 7d: 3✓/1✗', alwaysFails: false
+                fireCount: 12, lastFiredAt: NOW - 3600e3, stat: 'fired 12× • 7d: 3✓/1✗', alwaysFails: false,
+                model: 'opus', hasGuard: true, fireIf: 'files in …/inbox (skip _LOG_.md)',
+                skipped7d: 23, fired7d: 2, skipRate: 92, lastReason: 'no files waiting',
+                cost7d: 70.9, runs7d: 23, skipCount: 23, lastSkipReason: 'no files waiting'
             },
             {
                 id: 'tr2', title: 'Deploy hook', type: 'webhook', src: 'webhook: /trigger/…abc123', target: 'workflow',
                 enabled: false, armed: true, debounceSec: 0, cooldownSec: 0, maxPerHour: 0,
-                fireCount: 0, alwaysFails: false
+                fireCount: 0, alwaysFails: false,
+                model: '', hasGuard: false, fireIf: '', skipped7d: 0, fired7d: 0, skipRate: 0,
+                cost7d: 0, runs7d: 0, skipCount: 0, lastSkipReason: ''
             }
         ],
         schedules: [
             {
                 id: 's1', title: 'daily digest', agentName: 'psikolog', mode: 'headless',
-                when: 'daily 09:00', kind: 'daily', missed: 'run', enabled: true, nextAt: NOW + 3600e3
+                when: 'daily 09:00', kind: 'daily', missed: 'run', enabled: true, nextAt: NOW + 3600e3,
+                model: 'opus', deferred: true, hasGuard: true, fireIf: 'files in …/YERLESTIR',
+                skipped7d: 4, fired7d: 1, skipRate: 80, lastReason: 'no files waiting',
+                cost7d: 3.4, runs7d: 1
             },
             {
+                // enabled:false + no guard — the "unguarded" hint must not count it
                 id: 's2', title: 'weekly report', agentName: 'developer', mode: 'headless',
-                when: 'Mon 08:30', kind: 'weekly', missed: 'skip', enabled: false, nextAt: undefined
+                when: 'Mon 08:30', kind: 'weekly', missed: 'skip', enabled: false, nextAt: undefined,
+                model: '', deferred: false, hasGuard: false, fireIf: '',
+                skipped7d: 0, fired7d: 0, skipRate: 0, cost7d: 0, runs7d: 0
             }
         ]
     },
@@ -113,6 +134,16 @@ const DATA = {
     }
 };
 
+/** A minimal element the page code can read, click and mutate. */
+function mkEl(dataset, value) {
+    const el = {
+        dataset, value, checked: false, indeterminate: false, hidden: false, textContent: '',
+        addEventListener: (_e, fn) => { el._click = fn; },
+        querySelector: () => null
+    };
+    return el;
+}
+
 const sandbox = {
     acquireVsCodeApi: () => ({
         postMessage: (m) => posted.push(m),
@@ -130,21 +161,55 @@ const sandbox = {
     },
     document: {
         getElementById: getEl,
+        // Shim selectors: `[data-x]` (wiring probe, as before) plus class +
+        // exact-value forms — `.rowsel[data-kind="sched"]`, `.allsel:checked` —
+        // so checkbox/bulk wiring can be exercised without a real DOM.
         querySelectorAll: (sel) => {
-            const m = /\[data-([a-z]+)\]/.exec(sel);
-            if (!m || sel.startsWith('.kb-card')) { return []; } // dnd + dblclick wiring skipped in the shim
-            const attr = m[1];
-            const list = [];
-            const re = new RegExp(`data-${attr}="([^"]*)"`, 'g');
-            let match;
-            while ((match = re.exec(getEl('app')._html))) {
-                const el = { dataset: { [attr]: match[1] } };
-                el.addEventListener = (_e, fn) => { el._click = fn; };
-                list.push(el);
+            if (sel.startsWith('.kb-card')) { return []; } // dnd + dblclick wiring skipped in the shim
+            const cls = /^\.([\w-]+)/.exec(sel);
+            const attrEq = /\[data-([a-z]+)="([^"]*)"\]/.exec(sel);
+            const attrAny = /\[data-([a-z]+)\]/.exec(sel);
+            const wantChecked = sel.includes(':checked');
+
+            // legacy fast path: a bare [data-attr] probe records the wiring
+            if (!cls && attrAny && !attrEq) {
+                const attr = attrAny[1];
+                const list = [];
+                const re = new RegExp(`data-${attr}="([^"]*)"`, 'g');
+                let match;
+                while ((match = re.exec(getEl('app')._html))) {
+                    list.push(mkEl({ [attr]: match[1] }));
+                }
+                wired[attr] = list;
+                return list;
             }
-            wired[attr] = list;
-            return list;
-        }
+            if (!cls && !attrEq) { return []; }
+
+            // general path: scan opening tags and match class + data attributes
+            const out = [];
+            const tags = getEl('app')._html.match(/<(?:input|button|div|th|td|span)\b[^>]*>/g) || [];
+            for (const tag of tags) {
+                if (cls && !new RegExp(`class="[^"]*\\b${cls[1]}\\b`).test(tag)) { continue; }
+                if (attrEq && !tag.includes(`data-${attrEq[1]}="${attrEq[2]}"`)) { continue; }
+                const dataset = {};
+                let d;
+                const dre = /data-([a-z]+)="([^"]*)"/g;
+                while ((d = dre.exec(tag))) { dataset[d[1]] = d[2]; }
+                const value = /value="([^"]*)"/.exec(tag);
+                let el = elCache.get(tag);
+                if (!el) {
+                    el = mkEl(dataset, value ? value[1] : undefined);
+                    elCache.set(tag, el);
+                }
+                // `:checked` filters a live selection the test drives by hand
+                if (wantChecked && !el.checked) { continue; }
+                out.push(el);
+            }
+            const key = cls ? cls[1] : attrEq[1];
+            wired[key] = out;
+            return out;
+        },
+        querySelector: (sel) => sandbox.document.querySelectorAll(sel)[0] || null
     },
     setTimeout: () => 0, clearTimeout: () => { }, setInterval: () => 0, clearInterval: () => { }, console, Date
 };
@@ -268,6 +333,86 @@ ok('fire posts trig/fire', posted[0] && posted[0].type === 'trig' && posted[0].a
 posted = [];
 clickWired('add', 'sched-add');
 ok('+ Schedule posts sched-add', posted[0] && posted[0].type === 'sched-add');
+
+// ---------- the automation gate + guard columns ----------
+ok('gate strip renders with a running state', html().includes('Automation gate')
+    && html().includes('badge ok">running'));
+ok('quiet hours shown on the gate button', html().includes('Quiet hours: 23:00–07:00'));
+ok('saved wake-ups are reported', html().includes('23 wake-up(s) saved this week'));
+ok('guard column shows the precondition', html().includes('🛡 files in …/inbox (skip _LOG_.md)'));
+ok('guard column reports what it saved', html().includes('skipped 23× (92%)'));
+ok('an unguarded automation is flagged', html().includes('>no guard<'));
+// the two unguarded rows in the fixture are both DISABLED, so the hint stays
+// silent — an off automation costs nothing and needs no guard
+ok('the unguarded hint ignores disabled automations', !/enabled automation\(s\) have/.test(html()));
+{
+    const saved = DATA.automations.triggers[1].enabled;
+    DATA.automations.triggers[1].enabled = true;   // unguarded AND live
+    clickWired('sec', 'board');
+    clickWired('sec', 'automations');
+    ok('an enabled unguarded automation raises the hint',
+        /⚠ 1 enabled automation\(s\) have/.test(html()));
+    DATA.automations.triggers[1].enabled = saved;
+    clickWired('sec', 'board');
+    clickWired('sec', 'automations');
+}
+ok('per-automation 7d cost is shown', html().includes('$71') || html().includes('$70.90'));
+ok('a schedule model override is badged', /badge[^>]*>opus</.test(html()));
+ok('a quiet-hours deferred occurrence is badged', html().includes('>deferred<'));
+posted = [];
+clickWired('gate', 'pause');
+ok('Pause all posts gate/pause', posted[0] && posted[0].type === 'gate' && posted[0].act === 'pause');
+posted = [];
+clickWired('gate', 'pause-for:480');
+ok('timed pause carries its minutes', posted[0] && posted[0].type === 'gate'
+    && posted[0].act === 'pause-for' && posted[0].text === '480');
+posted = [];
+clickWired('gate', 'quiet');
+ok('quiet hours button posts gate/quiet', posted[0] && posted[0].act === 'quiet');
+
+// bulk selection: tick two schedule rows, then disable them in one action
+{
+    const boxes = sandbox.document.querySelectorAll('.rowsel[data-kind="sched"]');
+    ok('a checkbox exists per schedule row', boxes.length === 2);
+    boxes.forEach(b => { b.checked = true; });
+    posted = [];
+    clickWired('bulk', 'off:sched');
+    ok('bulk disable posts every selected id', posted[0] && posted[0].type === 'bulk'
+        && posted[0].act === 'off' && posted[0].ids.length === 2
+        && posted[0].ids.includes('s1') && posted[0].ids.includes('s2'));
+    boxes.forEach(b => { b.checked = false; });
+    posted = [];
+    clickWired('bulk', 'on:sched');
+    ok('bulk with nothing selected posts nothing', posted.length === 0);
+}
+
+// a paused farm flips the strip to Resume — the master switch must be visible
+{
+    const saved = DATA.gate;
+    DATA.gate = { ...saved, paused: true, pauseReason: 'reviewing cost', blocked: true, blockReason: 'all automations are paused' };
+    clickWired('sec', 'board');
+    clickWired('sec', 'automations');
+    ok('paused farm shows the ALL PAUSED badge', html().includes('ALL PAUSED'));
+    ok('paused farm explains why', html().includes('reviewing cost'));
+    posted = [];
+    clickWired('gate', 'resume');
+    ok('Resume all posts gate/resume', posted[0] && posted[0].act === 'resume');
+    DATA.gate = saved;
+    clickWired('sec', 'board');
+    clickWired('sec', 'automations');
+}
+
+// an older payload with no gate block must still render (defensive)
+{
+    const saved = DATA.gate;
+    delete DATA.gate;
+    clickWired('sec', 'board');
+    clickWired('sec', 'automations');
+    ok('a page rendered without gate data still draws', html().includes('Automation gate'));
+    DATA.gate = saved;
+    clickWired('sec', 'board');
+    clickWired('sec', 'automations');
+}
 
 // ---------- reusables ----------
 clickWired('sec', 'reusables');

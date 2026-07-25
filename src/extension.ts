@@ -188,6 +188,123 @@ const MISSED_POLICY_PICKS: { label: string; description: string; missed: MissedP
     }
 ];
 
+/**
+ * Model for a schedule/trigger, stated ON the automation. Before this the only
+ * way to route a nightly batch to a specific model was a regex in
+ * `agentFarm.modelPolicy` — invisible from the panel, and free to silently
+ * contradict what the duty text said it needed.
+ * Returns '' for "leave it to the policy/agent default", undefined if cancelled.
+ */
+async function pickAutomationModel(current?: string): Promise<string | undefined> {
+    const aliases = vscode.workspace.getConfiguration('agentFarm')
+        .get<string[]>('modelAliases', ['haiku', 'sonnet', 'opus', 'fable']);
+    const picks: { label: string; description?: string; model: string }[] = [
+        {
+            label: '$(circle-outline) Default',
+            description: 'the modelPolicy engine / the agent default decides',
+            model: ''
+        },
+        ...aliases.map(a => ({
+            label: `$(sparkle) ${a}`,
+            description: a === current ? 'current' : undefined,
+            model: a
+        }))
+    ];
+    const pick = await vscode.window.showQuickPick(
+        picks.map(p => ({ ...p, label: p.model === (current ?? '') ? `${p.label} ✓` : p.label })),
+        { ignoreFocusOut: true, placeHolder: 'Model for this automation (beats the modelPolicy engine)' });
+    return pick?.model;
+}
+
+/**
+ * The firing precondition. This is the brake that makes an unattended wake-up
+ * conditional on there being real work — checked for free, before a model is
+ * ever spawned. Returns {value} (possibly undefined = no guard), or undefined
+ * when the user cancelled.
+ */
+async function pickPrecondition(
+    current: Precondition | undefined, title: string
+): Promise<{ value: Precondition | undefined } | undefined> {
+    // NOTE: the payload field is `pre`, not `kind` — QuickPickItem.kind is
+    // VS Code's separator marker and hijacks the list rendering.
+    const kinds: { label: string; description: string; pre: string }[] = [
+        {
+            label: '$(circle-slash) No guard',
+            description: 'fires whenever it is due / whenever the watch changes',
+            pre: ''
+        },
+        {
+            label: '$(folder) Only if a folder holds files',
+            description: 'the classic: an inbox folder with real work in it',
+            pre: 'folderHasFiles'
+        },
+        {
+            label: '$(file) Only if a file is MISSING',
+            description: 'nudges: today\'s diary entry was never written',
+            pre: 'fileMissing'
+        },
+        {
+            label: '$(history) Only if a path changed recently',
+            description: 'react to fresh activity, ignore a stale tree',
+            pre: 'pathChangedWithin'
+        },
+        {
+            label: '$(inbox) Only if the work queue has items',
+            description: 'sweeps: do not wake up for an empty queue',
+            pre: 'queueHasWork'
+        }
+    ];
+    const pick = await vscode.window.showQuickPick(
+        kinds.map(k => ({ ...k, label: k.pre === (current?.kind ?? '') ? `${k.label} ✓` : k.label })),
+        { ignoreFocusOut: true, placeHolder: `Fire "${title}" only if… (checked for free, before anything is spent)` });
+    if (!pick) { return undefined; }
+    if (!pick.pre) { return { value: undefined }; }
+
+    const pre: Precondition = { kind: pick.pre as Precondition['kind'] };
+    if (pick.pre !== 'queueHasWork') {
+        const p = await vscode.window.showInputBox({
+            title: `Path for "${title}"`,
+            value: current?.path ?? '',
+            placeHolder: pick.pre === 'fileMissing'
+                ? String.raw`e.g. D:\…\REPORT_DAY\{today} Gün.md  ({today} / {yesterday} expand)`
+                : 'absolute path to the folder / file',
+            ignoreFocusOut: true,
+            validateInput: v => v.trim() ? undefined : 'A path is required.'
+        });
+        if (!p) { return undefined; }
+        pre.path = p.trim();
+    }
+    if (pick.pre === 'folderHasFiles') {
+        const skip = await vscode.window.showInputBox({
+            title: 'Files that do NOT count as work (comma separated)',
+            value: (current?.except ?? ['_LOG_.md']).join(', '),
+            placeHolder: '_LOG_.md',
+            ignoreFocusOut: true
+        });
+        if (skip === undefined) { return undefined; }
+        pre.except = skip.split(',').map(s => s.trim()).filter(Boolean);
+    }
+    if (pick.pre === 'pathChangedWithin') {
+        const h = await vscode.window.showInputBox({
+            title: 'Changed within how many hours?', value: String(current?.hours ?? 24),
+            ignoreFocusOut: true,
+            validateInput: v => Number(v) > 0 ? undefined : 'A positive number of hours.'
+        });
+        if (!h) { return undefined; }
+        pre.hours = Math.floor(Number(h));
+    }
+    if (pick.pre === 'folderHasFiles' || pick.pre === 'queueHasWork') {
+        const n = await vscode.window.showInputBox({
+            title: 'How many items before it is worth a run?',
+            value: String(current?.minCount ?? 1), ignoreFocusOut: true,
+            validateInput: v => Number(v) >= 1 ? undefined : 'At least 1.'
+        });
+        if (!n) { return undefined; }
+        pre.minCount = Math.floor(Number(n));
+    }
+    return { value: pre };
+}
+
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     let agents: AgentInfo[] = [];
     let insights: Insight[] = [];
@@ -4722,7 +4839,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (!missedPick) { return; }
                 missed = missedPick.missed;
             }
-            const patch: Partial<FarmSchedule> = { title, prompt, hour, minute, dow, onceAt, missed };
+            const model = await pickAutomationModel(s.model);
+            if (model === undefined) { return; }
+            const fireIf = await pickPrecondition(s.fireIf, s.title);
+            if (fireIf === undefined) { return; }
+            const patch: Partial<FarmSchedule> = {
+                title, prompt, hour, minute, dow, onceAt, missed,
+                model: model || undefined, fireIf: fireIf.value
+            };
             // switching catch-up ON settles the past first — otherwise the edit
             // itself would instantly fire an occurrence from before the choice
             if (missed !== (s.missed ?? 'skip') && missed !== 'skip') {
@@ -4732,6 +4856,69 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }),
         vscode.commands.registerCommand('agentfarm.runScheduleNow', (node?: TaskNode) => {
             if (node?.kind === 'schedule') { taskManager.runScheduleNow(node.schedule); }
+        }),
+
+        // ---- the automation gate: master switch · quiet hours ----
+        vscode.commands.registerCommand('agentfarm.pauseAutomations', async () => {
+            const pick = await vscode.window.showQuickPick([
+                { label: '$(debug-pause) Pause indefinitely', mins: 0, description: 'until you resume' },
+                { label: '$(clock) Pause for 1 hour', mins: 60 },
+                { label: '$(clock) Pause for 8 hours', mins: 480 },
+                { label: '$(clock) Pause for 24 hours', mins: 1440 }
+            ], { ignoreFocusOut: true, placeHolder: 'Master switch — nothing fires on its own while paused' });
+            if (!pick) { return; }
+            const reason = await vscode.window.showInputBox({
+                title: 'Why? (shown in the UI so a forgotten pause is explainable)',
+                placeHolder: 'e.g. reviewing cost', ignoreFocusOut: true
+            });
+            if (reason === undefined) { return; }
+            taskManager.setAutomationState(pick.mins
+                ? { paused: false, pausedUntil: Date.now() + pick.mins * 60_000, pauseReason: reason }
+                : { paused: true, pausedUntil: undefined, pauseReason: reason });
+            TasksPanel.refreshIfOpen();
+            void vscode.window.showInformationMessage(
+                `Agent Farm: automations paused${pick.mins ? ` for ${pick.mins} min` : ''}.`);
+        }),
+        vscode.commands.registerCommand('agentfarm.resumeAutomations', () => {
+            taskManager.setAutomationState({ paused: false, pausedUntil: undefined, pauseReason: undefined });
+            TasksPanel.refreshIfOpen();
+            void vscode.window.showInformationMessage('Agent Farm: automations resumed.');
+        }),
+        vscode.commands.registerCommand('agentfarm.setQuietHours', async () => {
+            const cur = taskManager.automation;
+            const pick = await vscode.window.showQuickPick([
+                { label: '🌙 23:00 – 07:00', from: '23:00', to: '07:00', description: 'nothing wakes overnight' },
+                { label: '🌙 00:00 – 08:00', from: '00:00', to: '08:00' },
+                { label: '$(edit) Custom…', from: '', to: '' },
+                { label: '$(circle-slash) Turn quiet hours off', from: 'off', to: 'off' }
+            ], {
+                ignoreFocusOut: true,
+                placeHolder: cur.quietFrom
+                    ? `Quiet hours (currently ${cur.quietFrom}–${cur.quietTo})`
+                    : 'Quiet hours (currently off) — a due schedule is DEFERRED to the window end, never dropped'
+            });
+            if (!pick) { return; }
+            if (pick.from === 'off') {
+                taskManager.setAutomationState({ quietFrom: undefined, quietTo: undefined });
+                TasksPanel.refreshIfOpen();
+                void vscode.window.showInformationMessage('Agent Farm: quiet hours off.');
+                return;
+            }
+            let { from, to } = pick;
+            if (!from) {
+                const ask = async (what: string, def: string) => vscode.window.showInputBox({
+                    title: `Quiet hours — ${what}`, value: def, ignoreFocusOut: true,
+                    validateInput: v => /^\d{1,2}:\d{2}$/.test(v.trim()) ? undefined : 'Use HH:MM (e.g. 23:00).'
+                });
+                const f = await ask('start', cur.quietFrom || '23:00');
+                if (!f) { return; }
+                const t = await ask('end', cur.quietTo || '07:00');
+                if (!t) { return; }
+                from = f.trim(); to = t.trim();
+            }
+            taskManager.setAutomationState({ quietFrom: from, quietTo: to });
+            TasksPanel.refreshIfOpen();
+            void vscode.window.showInformationMessage(`Agent Farm: quiet hours ${from}–${to}.`);
         }),
 
         vscode.commands.registerCommand('agentfarm.quickStart', () => {
@@ -5661,8 +5848,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 maxPerHour = await askNum('Max firings per hour (0 = unlimited)', maxPerHour, 0) ?? maxPerHour;
             }
 
+            // The content brake. Offered up-front for a WATCH trigger because
+            // that is where it matters most: a folder watch fires on any change,
+            // including noise, and without a guard every one of those is a paid
+            // agent wake-up.
+            let fireIf: Precondition | undefined;
+            if (typePick.type === 'watch') {
+                const guardPick = await pickPrecondition(
+                    watchPath ? { kind: 'folderHasFiles', path: watchPath, except: ['_LOG_.md'] } : undefined,
+                    title);
+                if (guardPick === undefined) { return; }
+                fireIf = guardPick.value;
+            }
+
             taskManager.addTrigger({
-                title, type: typePick.type, watchPath, hookEvent, hookAgent, token, action,
+                title, type: typePick.type, watchPath, hookEvent, hookAgent, token, action, fireIf,
                 debounceSec, cooldownSec, maxPerHour, enabled: true
             });
             const target = action.kind === 'task' ? `runs on ${action.agentName}`
@@ -5701,6 +5901,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     ? [{ label: '$(comment) Prompt', description: t.action.prompt.replace(/\s+/g, ' ').slice(0, 60), id: 'prompt' }] : []),
                 ...(t.action.kind === 'task'
                     ? [{ label: '$(person) Agent', description: t.action.agentName, id: 'agent' }] : []),
+                ...(t.action.kind !== 'workflow'
+                    ? [{ label: '$(sparkle) Model', description: t.action.model || 'default (policy/agent)', id: 'model' }] : []),
+                {
+                    label: '$(shield) Fire only if… (precondition)',
+                    description: describePrecondition(t.fireIf) || 'no guard — fires on ANY change',
+                    id: 'fireIf'
+                },
                 { label: '$(watch) Debounce seconds', description: String(t.debounceSec), id: 'debounce' },
                 { label: '$(history) Cooldown seconds', description: String(t.cooldownSec), id: 'cooldown' },
                 { label: '$(dashboard) Max firings per hour (0 = unlimited)', description: String(t.maxPerHour), id: 'cap' }
@@ -5722,6 +5929,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     if (!v) { return; }
                     t.title = v;
                     if (t.action.kind !== 'workflow') { t.action.title = v; }
+                    break;
+                }
+                case 'model': {
+                    if (t.action.kind === 'workflow') { return; }
+                    const m = await pickAutomationModel(t.action.model);
+                    if (m === undefined) { return; }
+                    t.action.model = m || undefined;
+                    break;
+                }
+                case 'fireIf': {
+                    const pre = await pickPrecondition(t.fireIf, t.title);
+                    if (pre === undefined) { return; }
+                    t.fireIf = pre.value;
                     break;
                 }
                 case 'prompt': {

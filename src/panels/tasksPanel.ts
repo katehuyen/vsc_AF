@@ -5,6 +5,7 @@ import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
 import { buildForecast, familyDurations, nextOccurrences } from '../core/forecast';
 import { NeedItem } from '../core/needs';
+import { describePrecondition, Precondition, rollupAutomationLog } from '../core/automation';
 import { FarmSchedule, FarmTask, FarmTemplate, FarmTrigger, FarmWorkflow, TaskManager } from '../core/tasks';
 import { buildAgentTaskStats, buildTaskFamilies, taskAlerts, TaskRecord, titleFamily } from '../core/taskstats';
 import { TriggerManager } from '../core/triggers';
@@ -239,6 +240,37 @@ function buildData(deps: TasksDeps, section?: TasksSection): Record<string, unkn
     const trigStats = buildTriggerStats(m.triggers, records, { now });
     const statById = new Map(trigStats.map(s => [s.id, s]));
 
+    // What each automation actually COST over the last 7 days. The data was
+    // always there (FarmTask.costUSD + fromSchedule/fromTrigger); it was simply
+    // never added up, so a trigger could burn $70 in a week and still look
+    // healthy on a scorecard that only counted successes.
+    const weekAgo = now - 7 * DAY_MS;
+    const spend = new Map<string, { usd: number; runs: number }>();
+    for (const r of records) {
+        const src = r.fromSchedule ?? r.fromTrigger;
+        if (!src || (r.endedAt ?? r.createdAt) < weekAgo) { continue; }
+        const cur = spend.get(src) ?? { usd: 0, runs: 0 };
+        cur.usd += (r.costUSD ?? 0) + (r.mediaCost ?? 0);
+        cur.runs++;
+        spend.set(src, cur);
+    }
+    const roll = rollupAutomationLog(m.automationLog, { now, windowMs: 7 * DAY_MS });
+    const guard = (id: string, pre: Precondition | undefined) => {
+        const r = roll.get(id);
+        const s = spend.get(id);
+        return {
+            fireIf: describePrecondition(pre) || '',
+            hasGuard: !!pre?.kind,
+            skipped7d: r?.skipped ?? 0,
+            fired7d: r?.fired ?? 0,
+            skipRate: r ? Math.round(r.skipRate * 100) : 0,
+            lastReason: r?.lastReason ?? '',
+            cost7d: s?.usd ?? 0,
+            runs7d: s?.runs ?? 0
+        };
+    };
+    const gateNow = m.automationGate(new Date(now));
+
     // today's pulse for the NOW strip — archive included, so clearing the board
     // never zeroes the day
     const dayStart = new Date(now);
@@ -261,6 +293,19 @@ function buildData(deps: TasksDeps, section?: TasksSection): Record<string, unkn
             today
         },
         load,
+        gate: {
+            paused: !!m.automation.paused,
+            pausedUntil: m.automation.pausedUntil,
+            pauseReason: m.automation.pauseReason ?? '',
+            quietFrom: m.automation.quietFrom ?? '',
+            quietTo: m.automation.quietTo ?? '',
+            blocked: !!gateNow,
+            blockKind: gateNow?.kind,
+            blockReason: gateNow?.reason ?? '',
+            blockUntil: gateNow?.until,
+            /** total saved wake-ups over the window — the brake's receipt */
+            skipped7d: [...roll.values()].reduce((a, b) => a + b.skipped, 0)
+        },
         automations: {
             triggers: m.triggers.map(t => {
                 const stat = statById.get(t.id);
@@ -271,15 +316,21 @@ function buildData(deps: TasksDeps, section?: TasksSection): Record<string, unkn
                     armed: t.type !== 'watch' || !!deps.triggerManager?.isArmed(t.id),
                     debounceSec: t.debounceSec, cooldownSec: t.cooldownSec, maxPerHour: t.maxPerHour,
                     fireCount: t.fireCount ?? 0, lastFiredAt: t.lastFiredAt,
+                    skipCount: t.skipCount ?? 0, lastSkipReason: t.lastSkipReason ?? '',
+                    model: t.action.kind === 'workflow' ? '' : (t.action.model ?? ''),
                     stat: stat ? describeTriggerStat(stat) : undefined,
-                    alwaysFails: stat?.alwaysFails ?? false
+                    alwaysFails: stat?.alwaysFails ?? false,
+                    ...guard(t.id, t.fireIf)
                 };
             }),
             schedules: m.schedules.map(s => ({
                 id: s.id, title: s.title, agentName: s.agentName, mode: s.mode,
                 when: scheduleWhen(s), kind: s.kind, missed: s.missed ?? 'skip',
                 enabled: s.enabled,
-                nextAt: nextOccurrences(s, now, 35)[0]
+                model: s.model ?? '',
+                deferred: !!s.pendingRunKey,
+                nextAt: nextOccurrences(s, now, 35)[0],
+                ...guard(s.id, s.fireIf)
             }))
         },
         reusables: {
@@ -373,7 +424,7 @@ export class TasksPanel {
     private async onMessage(msg: {
         type: string; taskId?: string; to?: string; text?: string; act?: string; id?: string;
         approvalId?: string; ok?: boolean; file?: string; transcriptPath?: string; sessionId?: string;
-        col?: string; content?: string; name?: string;
+        col?: string; content?: string; name?: string; ids?: string[];
     }): Promise<void> {
         const m = this.deps.manager;
         const run = (cmd: string, ...args: unknown[]) => { void vscode.commands.executeCommand(cmd, ...args); };
@@ -507,6 +558,52 @@ export class TasksPanel {
             case 'trig-add':
                 run('agentfarm.addTrigger');
                 break;
+
+            // ---- the gate: master switch · pause-until · quiet hours ----
+            case 'gate': {
+                const m2 = this.deps.manager;
+                if (msg.act === 'pause') {
+                    m2.setAutomationState({ paused: true, pausedUntil: undefined, pauseReason: msg.text || '' });
+                } else if (msg.act === 'resume') {
+                    m2.setAutomationState({ paused: false, pausedUntil: undefined, pauseReason: undefined });
+                } else if (msg.act === 'pause-for') {
+                    const mins = Number(msg.text ?? 0);
+                    if (mins > 0) {
+                        m2.setAutomationState({
+                            paused: false, pausedUntil: Date.now() + mins * 60_000,
+                            pauseReason: `paused for ${mins} min`
+                        });
+                    }
+                } else if (msg.act === 'quiet') {
+                    run('agentfarm.setQuietHours');
+                }
+                this.refresh();
+                break;
+            }
+
+            // ---- bulk enable/disable: the one-by-one clicking this replaces ----
+            case 'bulk': {
+                const m2 = this.deps.manager;
+                const ids = new Set(Array.isArray(msg.ids) ? msg.ids : []);
+                if (!ids.size) { break; }
+                const on = msg.act === 'on';
+                const sched = m2.schedules.filter(s => ids.has(s.id));
+                const trig = m2.triggers.filter(t => ids.has(t.id));
+                const n = sched.length + trig.length;
+                if (!await this.confirm(
+                    `${on ? 'Enable' : 'Disable'} ${n} automation(s)?` +
+                    (on ? ' They will start firing on their own schedule again.' : ''),
+                    on ? 'Enable' : 'Disable')) {
+                    break;
+                }
+                for (const s of sched) { s.enabled = on; }
+                for (const t of trig) { t.enabled = on; }
+                m2.persist();
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: ${n} automation(s) ${on ? 'enabled' : 'disabled'}.`);
+                this.refresh();
+                break;
+            }
 
             // ---- reusables ----
             case 'tpl': {
