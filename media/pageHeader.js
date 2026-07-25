@@ -23,6 +23,7 @@
 
     const NAV = [
         { id: 'dashboard', label: 'Dashboard' },
+        { id: 'living', label: '💓 Living' },
         { id: 'notices', label: '🔔 Notices' },
         { id: 'queue', label: '📥 Queue' },
         { id: 'timeline', label: 'Live Timeline' },

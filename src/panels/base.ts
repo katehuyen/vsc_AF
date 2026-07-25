@@ -85,6 +85,7 @@ export async function askExportOptions(
 export function handleAfNav(to: unknown): void {
     const commands: Record<string, string> = {
         dashboard: 'agentfarm.openDashboard',
+        living: 'agentfarm.openLiving',
         timeline: 'agentfarm.openTimeline',
         needs: 'agentfarm.openNeeds',
         notices: 'agentfarm.openNotices',

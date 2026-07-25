@@ -30,6 +30,8 @@ import { modelArgsFor as policyModelArgs, ModelPolicyRule } from './core/modelpo
 import {
     describePrecondition, parsePrecondition, Precondition, rollupAutomationLog
 } from './core/automation';
+import { LivingCheck, LivingInput, wireDuties } from './core/living';
+import { LivingPanel } from './panels/livingPanel';
 import {
     AGENTS_MD_NAME, antigravityStatus, syncToAntigravity, syncToClaude, SyncResult
 } from './core/antigravity';
@@ -387,17 +389,67 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const noticesBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 89);
     noticesBar.command = 'agentfarm.openNotices';
     context.subscriptions.push(noticesBar);
+    /** Living page refresh signal — fired by anything that changes a loop. */
+    const livingEmitter = new vscode.EventEmitter<void>();
+    context.subscriptions.push(livingEmitter);
+    // A notice that has gone unread for a day is a loop that never closed. The
+    // badge used to count everything flat, so a 3-minute update and a 3-day
+    // level-3 announcement looked identical — which is how a daily cycle can
+    // die for weeks while its safety-net reminder sits on the board unread.
+    // Aging gives the board its SECOND BEAT: it starts insisting.
+    const nagged = new Set<string>();
+    const escalatedNotices = () => {
+        const staleH = cfg().get<number>('noticeStaleHours', 24);
+        const cutoff = Date.now() - staleH * 3600_000;
+        const all = noticesStore.list({ limit: 0 });
+        return {
+            stale: all.filter(n => !n.read && n.level >= 3 && n.ts < cutoff),
+            questions: all.filter(n => n.type === 'question' && n.status === 'open' && n.ts < cutoff),
+            staleH
+        };
+    };
     const updateNoticesBadge = () => {
         const u = noticesStore.unread();
         const b = workQueueStore.blocked();   // queue items that need YOU
         const n = u + b;
-        noticesBar.text = n > 0 ? `$(bell-dot) ${n}` : '$(bell)';
-        noticesBar.tooltip = n > 0
-            ? `${u} unread notice(s)${b ? ` · ${b} queue item(s) need you` : ''} — click to open`
-            : 'Notices & work queue — agent↔you';
+        const { stale, questions, staleH } = escalatedNotices();
+        const aging = stale.length + questions.length;
+        if (aging > 0) {
+            noticesBar.text = `$(warning) ${n || aging}`;
+            noticesBar.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
+            const oldest = [...stale, ...questions].sort((a, b2) => a.ts - b2.ts)[0];
+            const days = Math.round((Date.now() - oldest.ts) / 3600_000 / 24 * 10) / 10;
+            noticesBar.tooltip =
+                `${aging} item(s) waiting longer than ${staleH}h — oldest "${oldest.title}" (${days} day(s))` +
+                `${stale.length ? `\n${stale.length} unread important notice(s)` : ''}` +
+                `${questions.length ? `\n${questions.length} unanswered agent question(s)` : ''}` +
+                '\nClick to open the board.';
+        } else {
+            noticesBar.text = n > 0 ? `$(bell-dot) ${n}` : '$(bell)';
+            noticesBar.backgroundColor = undefined;
+            noticesBar.tooltip = n > 0
+                ? `${u} unread notice(s)${b ? ` · ${b} queue item(s) need you` : ''} — click to open`
+                : 'Notices & work queue — agent↔you';
+        }
         noticesBar.show();
+
+        // Insist ONCE per item, never in a loop: the point is that ignoring
+        // something has a consequence, not that the farm becomes a nag.
+        for (const q of questions) {
+            if (nagged.has(q.id)) { continue; }
+            nagged.add(q.id);
+            void vscode.window.showWarningMessage(
+                `Agent Farm: ${q.agentName || 'an agent'} has been waiting ${Math.round((Date.now() - q.ts) / 3600_000)}h for an answer — "${q.title}"`,
+                'Answer now', 'Later'
+            ).then(p => { if (p === 'Answer now') { void vscode.commands.executeCommand('agentfarm.openNotices', q.id); } });
+        }
+        livingEmitter.fire();
     };
     updateNoticesBadge();
+    // Staleness is a function of TIME, not of events — without its own tick a
+    // notice would only "become old" the next time something else happened.
+    const agingTimer = setInterval(updateNoticesBadge, 10 * 60_000);
+    context.subscriptions.push({ dispose: () => clearInterval(agingTimer) });
 
     // I1: CLAUDE.md version history (per agent).
     const instrHistory = new InstructionHistory(path.join(context.globalStorageUri.fsPath, 'instr-history'));
@@ -2383,6 +2435,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     ? taskManager.setAutomationState({ paused: false, pausedUntil: Date.now() + mins * 60_000, pauseReason: reason })
                     : taskManager.setAutomationState({ paused: true, pausedUntil: undefined, pauseReason: reason });
                 TasksPanel.refreshIfOpen();
+                LivingPanel.refreshIfOpen();
                 return { paused: !!state.paused, pausedUntil: state.pausedUntil ?? null, reason: state.pauseReason ?? null };
             }
         },
@@ -2392,6 +2445,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             handler: () => {
                 const state = taskManager.setAutomationState({ paused: false, pausedUntil: undefined, pauseReason: undefined });
                 TasksPanel.refreshIfOpen();
+                LivingPanel.refreshIfOpen();
                 return { paused: !!state.paused };
             }
         },
@@ -2404,12 +2458,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (!from) {
                     const s = taskManager.setAutomationState({ quietFrom: undefined, quietTo: undefined });
                     TasksPanel.refreshIfOpen();
+                    LivingPanel.refreshIfOpen();
                     return { quietHours: null, state: s };
                 }
                 const ok = (v: string) => /^\d{1,2}:\d{2}$/.test(v);
                 need(ok(from) && ok(to), 'from/to must be "HH:MM" (e.g. 23:00 and 07:00).');
                 const s = taskManager.setAutomationState({ quietFrom: from, quietTo: to });
                 TasksPanel.refreshIfOpen();
+                LivingPanel.refreshIfOpen();
                 return { quietHours: `${s.quietFrom}–${s.quietTo}` };
             }
         },
@@ -2445,6 +2501,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
                 taskManager.persist();
                 TasksPanel.refreshIfOpen();
+                LivingPanel.refreshIfOpen();
                 return { set, changed, count: changed.length };
             }
         },
@@ -3953,7 +4010,69 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     needsEmitter.event(() => {
         NeedsPanel.refreshIfOpen();
         TasksPanel.refreshIfOpen();
+        LivingPanel.refreshIfOpen();
     }, null, context.subscriptions);
+
+    // ---- Living page: the farm's state assembled into loop-shaped signals ----
+
+    /** Today's API-equivalent spend across the fleet. */
+    const spendToday = (): number => {
+        const d = new Date();
+        const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        return index.all().reduce((sum, s) => sum + (s.daily[day]?.cost ?? 0), 0);
+    };
+
+    const livingSnapshot = (): LivingInput => {
+        const scheds = taskManager.schedules.map(s => ({
+            id: s.id, title: s.title, enabled: s.enabled, hasGuard: !!s.fireIf?.kind,
+            lastFiredAt: s.lastRunKey ? undefined : undefined, agentName: s.agentName,
+            prompt: s.prompt
+        }));
+        const trigs = taskManager.triggers.map(t => ({
+            id: t.id, title: t.title, enabled: t.enabled, hasGuard: !!t.fireIf?.kind,
+            lastFiredAt: t.lastFiredAt,
+            prompt: t.action.kind === 'workflow' ? '' : t.action.prompt
+        }));
+        // Schedules do not stamp a timestamp, only a run key — the automation log
+        // is the honest source for "when did this last actually fire".
+        const lastFired = new Map<string, number>();
+        for (const ev of taskManager.automationLog) {
+            if (ev.outcome === 'fired') { lastFired.set(ev.id, ev.ts); }
+        }
+        const automations = [...scheds, ...trigs].map(a => ({
+            ...a, lastFiredAt: lastFired.get(a.id) ?? a.lastFiredAt
+        }));
+        const budgets = cfg().get<Record<string, number>>('budgets', {});
+        return {
+            notices: noticesStore.list({ limit: 0 }),
+            queue: workQueueStore.list({ limit: 0 }),
+            automations,
+            duties: wireDuties(
+                agents.flatMap(a => (a.duties ?? []).map(d => ({
+                    agentName: a.name, title: d.title, cadence: d.cadence, paused: d.paused
+                }))),
+                automations),
+            automationLog: taskManager.automationLog,
+            checks: [],
+            gateReason: taskManager.automationGate(new Date())?.reason,
+            spendToday: spendToday(),
+            budgetToday: budgets['*'] || undefined,
+            queueStaleHours: cfg().get<number>('queue.maxAgeHours', 24),
+            noticeStaleHours: cfg().get<number>('noticeStaleHours', 24),
+            preconditionDeps: {
+                queueWorkCount: () => workQueueStore.list({ limit: 0 })
+                    .filter(i => i.status === 'captured' || i.status === 'grouped' || i.status === 'blocked').length
+            }
+        };
+    };
+
+    const livingDeps = {
+        extensionUri: context.extensionUri,
+        snapshot: livingSnapshot,
+        onDidChange: livingEmitter.event,
+        checks: () => cfg().get<LivingCheck[]>('livingChecks', [])
+    };
+    taskManager.onDidChange(() => livingEmitter.fire(), null, context.subscriptions);
 
     let pendingMerge: { name: string; files: string[] } | undefined;
 
@@ -4876,12 +4995,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 ? { paused: false, pausedUntil: Date.now() + pick.mins * 60_000, pauseReason: reason }
                 : { paused: true, pausedUntil: undefined, pauseReason: reason });
             TasksPanel.refreshIfOpen();
+            LivingPanel.refreshIfOpen();
             void vscode.window.showInformationMessage(
                 `Agent Farm: automations paused${pick.mins ? ` for ${pick.mins} min` : ''}.`);
         }),
         vscode.commands.registerCommand('agentfarm.resumeAutomations', () => {
             taskManager.setAutomationState({ paused: false, pausedUntil: undefined, pauseReason: undefined });
             TasksPanel.refreshIfOpen();
+            LivingPanel.refreshIfOpen();
             void vscode.window.showInformationMessage('Agent Farm: automations resumed.');
         }),
         vscode.commands.registerCommand('agentfarm.setQuietHours', async () => {
@@ -4901,6 +5022,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (pick.from === 'off') {
                 taskManager.setAutomationState({ quietFrom: undefined, quietTo: undefined });
                 TasksPanel.refreshIfOpen();
+                LivingPanel.refreshIfOpen();
                 void vscode.window.showInformationMessage('Agent Farm: quiet hours off.');
                 return;
             }
@@ -4918,6 +5040,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
             taskManager.setAutomationState({ quietFrom: from, quietTo: to });
             TasksPanel.refreshIfOpen();
+            LivingPanel.refreshIfOpen();
             void vscode.window.showInformationMessage(`Agent Farm: quiet hours ${from}–${to}.`);
         }),
 
@@ -7145,6 +7268,61 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         vscode.commands.registerCommand('agentfarm.openTasks', () => {
             TasksPanel.show(tasksDeps);
+        }),
+
+        vscode.commands.registerCommand('agentfarm.openLiving', () => {
+            LivingPanel.show(livingDeps);
+        }),
+
+        // The Living page only sees the FARM until you tell it what the farm
+        // exists for: a diary file that should be written, an inbox that should
+        // be empty. Each check is a precondition where TRUE = "needs attention".
+        vscode.commands.registerCommand('agentfarm.configureLivingChecks', async () => {
+            const checks = cfg().get<LivingCheck[]>('livingChecks', []);
+            const pick = await vscode.window.showQuickPick([
+                { label: '$(add) Add a check…', id: 'add' },
+                ...(checks.length ? [{ label: '$(trash) Remove a check…', id: 'remove' }] : []),
+                { label: '$(json) Edit them all as JSON (settings)', id: 'json' }
+            ], { ignoreFocusOut: true, placeHolder: `Living checks (${checks.length} configured)` });
+            if (!pick) { return; }
+            if (pick.id === 'json') {
+                await vscode.commands.executeCommand('workbench.action.openSettingsJson');
+                return;
+            }
+            if (pick.id === 'remove') {
+                const victim = await vscode.window.showQuickPick(
+                    checks.map((c, i) => ({ label: c.label, description: describePrecondition(c.when), i })),
+                    { ignoreFocusOut: true, placeHolder: 'Remove which check?' });
+                if (!victim) { return; }
+                const next = checks.filter((_, i) => i !== victim.i);
+                await cfg().update('livingChecks', next, vscode.ConfigurationTarget.Global);
+                LivingPanel.refreshIfOpen();
+                return;
+            }
+            const label = await vscode.window.showInputBox({
+                title: 'What loop is this?',
+                placeHolder: "e.g. Today's day file written",
+                ignoreFocusOut: true
+            });
+            if (!label) { return; }
+            const pre = await pickPrecondition(undefined, label);
+            if (!pre?.value) { return; }
+            const level = await vscode.window.showQuickPick([
+                { label: '⚠️ Warn', description: 'needs you soon', v: 'warn' as const },
+                { label: '🛑 Alert', description: 'the loop has stopped', v: 'alert' as const },
+                { label: '· Info', description: 'worth seeing, not urgent', v: 'info' as const }
+            ], { ignoreFocusOut: true, placeHolder: 'How loud when this hits?' });
+            if (!level) { return; }
+            const hint = await vscode.window.showInputBox({
+                title: 'What closes this loop? (shown as the hint; optional)',
+                placeHolder: 'e.g. write today\'s entry, or ask the agent to open it',
+                ignoreFocusOut: true
+            });
+            if (hint === undefined) { return; }
+            const next = [...checks, { label, when: pre.value, level: level.v, hint: hint || undefined }];
+            await cfg().update('livingChecks', next, vscode.ConfigurationTarget.Global);
+            LivingPanel.refreshIfOpen();
+            void vscode.window.showInformationMessage(`Agent Farm: living check "${label}" added.`);
         }),
 
         // Alias kept for every pre-Tasks entry point (menus, notifications,

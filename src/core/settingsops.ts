@@ -60,6 +60,7 @@ const CATEGORY_OF: Record<string, string> = {
     // multi-CLI
     cliProfiles: 'cli', codexHome: 'cli', geminiDir: 'cli', relayFeeds: 'cli',
     // health & insights
+    livingChecks: 'health', noticeStaleHours: 'health',
     staleMemoryDays: 'health', contextBudgetTokens: 'health', permissionLint: 'health',
     pulse: 'health', insightAutoDelegate: 'health', qualitySample: 'health',
     qualitySamplesPerAgent: 'health', suggestScan: 'health', packGalleryRepos: 'health',
