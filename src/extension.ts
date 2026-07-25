@@ -32,6 +32,7 @@ import {
 } from './core/automation';
 import { LivingCheck, LivingInput, wireDuties } from './core/living';
 import { LivingPanel } from './panels/livingPanel';
+import { TaskAnalyticsPanel } from './panels/taskAnalyticsPanel';
 import {
     AGENTS_MD_NAME, antigravityStatus, syncToAntigravity, syncToClaude, SyncResult
 } from './core/antigravity';
@@ -7286,6 +7287,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         vscode.commands.registerCommand('agentfarm.openLiving', () => {
             LivingPanel.show(livingDeps);
+        }),
+
+        vscode.commands.registerCommand('agentfarm.openTaskAnalytics', () => {
+            TaskAnalyticsPanel.show({
+                extensionUri: context.extensionUri,
+                manager: taskManager,
+                allRecords: allTaskRecords,
+                forecastDays: () => cfg().get<number>('forecastDays', 7),
+                onDidChange: taskManager.onDidChange,
+                lastExportDir: () => context.globalState.get<string>('agentfarm.lastExportDir'),
+                setLastExportDir: (dir: string) => { void context.globalState.update('agentfarm.lastExportDir', dir); }
+            });
         }),
 
         // The Living page only sees the FARM until you tell it what the farm

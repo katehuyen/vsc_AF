@@ -419,7 +419,46 @@ Fırtına korumaları yerleşiktir ve **2.8.0'dan itibaren her tetik için ayrı
 - **Saatlik tavan** (varsayılan 6/saat, 0 = sınırsız): aşılırsa uyarıyla atlanır.
 - Kendi çıktı arşivini izleyen tetik kurulamazsa/kurulmuşsa devre dışı kalır (geri besleme döngüsü koruması).
 
-Yönetim: **Add Trigger** sihirbazı; tetik satırında ▶ (elle ateşle), aç/kapat, sil; sağ tık → **Edit Trigger** ile ad, prompt, hedef ajan, debounce, cooldown ve saatlik tavan sonradan değiştirilir (2.8.0 — `farm-tasks.json`'ı elle düzenlemek artık gerekmez). Kaç kez ateşlediği ve son ateşleme zamanı satırda görünür. Watch yolu kaybolursa satır kırmızı "PATH MISSING" gösterir.
+Yönetim: **Add Trigger** sihirbazı; tetik satırında ▶ (elle ateşle), aç/kapat, sil; sağ tık → **Edit Trigger** ile ad, prompt, hedef ajan, model, önkoşul, debounce, cooldown ve saatlik tavan sonradan değiştirilir (2.8.0 — `farm-tasks.json`'ı elle düzenlemek artık gerekmez). Kaç kez ateşlediği, kaç kez atlandığı ve son ateşleme zamanı satırda görünür. Watch yolu kaybolursa satır "path missing" rozetiyle görünür.
+
+## Otomasyon Kapısı {#otomasyon-kapisi}
+
+3.17.0 ile gelen katman. Yukarıdaki fırtına korumaları (debounce/cooldown/saatlik tavan) hepsi **sıklık** frenidir: uyanmanın ne sıklıkta olduğunu sınırlar, **değip değmediğini asla**. Sonuç ölçüldü: tek bir klasör tetikleyicisi beş gecede 23 kez opus uyandırdı, her seferinde yapacak iş bulamadı, **70,90 $** yaktı. "İş var mı?" sorusunun cevabını öğrenmenin tek yolu ajanı uyandırmaktı.
+
+Artık her denetimsiz çalışma, **model çağrılmadan önce** iki soruyu geçmek zorunda.
+
+### 1. Farm şu an çalışabilir mi?
+
+- **Ana şalter** — `Pause All Automations` / `Resume All Automations`. Sebep yazılabilir; unutulmuş bir duraklatma açıklanabilir kalır.
+- **Süreli duraklatma** — 1s / 8s / 24s; kendi kendine biter, temizlik gerektirmez.
+- **Sessiz saat** (`Set Quiet Hours`, ör. 23:30–04:30; gece yarısını aşabilir) — pencere içinde hiçbir şey kendiliğinden uyanmaz. **Vakti gelen zamanlı görev düşmez, ERTELENİR**: pencere bitince ateşlenir, satırda `deferred` rozetiyle görünür. Elle "run now" sessiz saate takılmaz — düğmeye basmak denetimsiz uyanma değildir; ana şalter ona da uygulanır.
+
+### 2. Gerçekten yapacak iş var mı? — `fireIf` önkoşulu
+
+Zamanlama ve tetikleyicilere takılan, **bedava** değerlendirilen içerik freni:
+
+| Tür | Ateşler ki | Tipik kullanım |
+|---|---|---|
+| `folderHasFiles` | klasörde ≥ `minCount` dosya var (`except[]` hariç, `recursive`) | boşalması gereken giriş klasörü (`except: ["_LOG_.md"]`) |
+| `fileMissing` | yol **yok** | dürtü: bugünün gün dosyası yazılmamış |
+| `pathChangedWithin` | yol son `hours` saatte değişmiş | taze hareket varsa çalış |
+| `queueHasWork` | iş kuyruğunda ≥ `minCount` aktif kayıt | süpürme: boş kuyruk için uyanma |
+
+Yollarda **`{today}` / `{yesterday}`** token'ları yerel `YYYY-MM-DD` olur. **Opt-in**: önkoşulu olmayan hiçbir otomasyonun davranışı değişmez. Bilinmeyen tür **fail-open** (ateşler) — bir koruma asla yanlışlıkla gerçek işi bastırmaz.
+
+Sağlanmayan önkoşul hiçbir ajan uyandırmaz; zamanlamada o günkü koşu "halledildi" damgası alır (gün boyu tekrar denemez), tetikleyicide `skipCount` artar. **Her karar (fired/skipped + sebep) `automationLog`'a yazılır** — sessizce iş yutan bir koruma, anayasa İlke 1'in tam ihlali olurdu. Bu günlük Yaşam Panosu'nun altında ve `automations.status` çıktısında okunur.
+
+### 3. Model otomasyonun üzerinde
+
+`FarmSchedule.model` ve tetikleyici `action.model`, `agentFarm.modelPolicy` regex motorunu **yener**. Sebep: bir policy kuralının, görevin kendi `DUTIES.md` satırıyla sessizce çelişmesi mümkündü (gerçek vaka: "bu nöbeti opus yapar" yazarken kural onu sonnet'e düşürüyordu). Model artık sihirbazda seçilir, satırda rozet olarak görünür.
+
+### 4. Bütçe fren, uyarı değil
+
+`agentFarm.budgets` (ajan adı başına, `"*"` = filo) aşıldığında **yeni görev başlamaz** — sebebiyle park edilir. Eskiden yalnızca insight üretip görevi yine de başlatıyordu; geçilebilen tavan tavan değildir.
+
+### Köprü
+
+`automations.status` (kapı + her otomasyonun fired/skipped/skipRate + şu an ne ateşlerdi) · `automations.pause {minutes?, reason?}` · `automations.resume` · `automations.quietHours {from,to}` · `automations.bulk {set, kind?, titles?, tag?}`; ayrıca `schedules.add/edit` ve `triggers.add/edit` üzerinde `model` ve `fireIf` argümanları. Bir otomasyonun neden çalışmadığı **tahmin edilmez**, `automations.status` sorulur.
 
 ## Çoklu-Ajan İş Akışları
 
@@ -979,6 +1018,36 @@ Sinyal yorgunluğuna karşı: on ayrı uyarı yerine haftada bir, üç cümlelik
 - İndeks: **Build Semantic Index** komutu son `semanticMaxSessions` (300) oturumu parçalar halinde vektörler; dosya tabanlıdır, artımlı çalışır (yalnız yeni/değişen oturumlar) ve her semantik aramada 20 oturuma kadar kendini tazeler.
 - Sonuçlarda benzerlik yüzdesi rozeti görünür; semantik modda yazarken otomatik arama yapılmaz (her sorgu bir embedding çağrısıdır), Enter'la ararsın.
 
+## Notices ve İş Kuyruğu — ajan↔kullanıcı kanalı {#notices-kuyruk}
+
+İki yönlü asenkron kanal; global gezinmede **🔔 Notices | 📥 Queue** iki sekme, durum çubuğunda tek dikkat rozeti.
+
+**Notices (ajan → sen):** her ajan sana söyleyeceği **tek şey için tek satır** bırakır. İki eksen: `type` (update · report · result · reminder · suggestion · warning · question) ve `level` (1 rutin → 4 ultra). Uzun içerik iki bacaklı gider: panoda **özet**, arkasında `10_REPORT`'a yazılan **tam rapor** ("📄 Open full report"). `question` tipi asenkron soru-cevap taşır: ajan sorar, sen UI'dan cevaplarsın (→answered) ya da cevapsız kaparsın (→declined), ajan bir sonraki turunda cevabı uygular ve kaydı kapatır. **Yaşlanma** için bkz. [Yaşam Panosu](#yasam-panosu).
+
+**İş Kuyruğu (sen → ajan):** kullanırken fark ettiğin düzeltmeleri sürtünmesiz düşürdüğün kanal (`Ctrl+Alt+Q`); kayıtlar **halledilene kadar kaybolmaz**. Boru hattı: `captured → grouped → delegated → done` (+ `blocked` = sana soru, tek dikkat çeken durum; `dropped` = geçersiz). Terminal olmayan bir kayıt **silinemez** — hatalı giriş `dropped`'a taşınır, o da "halledildi" sayılır. Bir notice tek tıkla kuyruk kaydına çevrilebilir (`queue.fromNotice`), bir soruyu cevaplamak otomatik kayıt açar; kayıt kaynağına `sourceNoticeId` ile geri bağlanır.
+
+**Olgunluk motoru — `queue.maturity` (3.18.1).** Gruplama/olgunluk kararı (grupla · bekle · delege et) düzyazıdan koda taşındı: eşikleri (`agentFarm.queue.groupSize`, `queue.maxAgeHours`) uygulayıp `{ actionable, reason, ripe[], ungrouped, starving[] }` döndürür. **`starving`, `queue.groups`'un gösteremediği şeydir:** hiç gruplanmamış bir kaydın `groupId`'si yoktur, yani yalnız grup özetine bakan bir süpürme, kullanıcının kendi cevabı tavanı aşmış hâlde çürürken "kuyruk boş" sonucuna varır — gerçekte olan buydu. **Her süpürme `queue.maturity` ile başlar.**
+
+## Yaşam Panosu {#yasam-panosu}
+
+**Agent Farm: Open Living** (global gezinmede **💓 Living**) — 3.18.0. Tek soruya cevap veren tek ekran: **sistem bugün yaşıyor mu?**
+
+Var olma sebebi ölçülmüş bir vakadır: LifeOS günlük döngüsü 16 gün durdu; emniyet nöbeti her sabah **doğru** çalıştı, hatırlatmasını panoya bıraktı, kimse okumadı. Hiçbir hata yoktu, hiçbir parça kırmızı değildi — ve sistem ölüydü. Diğer her sayfa bir **parçayı** raporluyor; bu sayfa **döngüleri** raporlar: bir şey açıldı — kapandı mı?
+
+Satırlar:
+
+- **Notices** — okunmamış seviye-3+ mesajın **yaşı** (sayısı değil). Üçten fazla bayat mesaj = durmuş.
+- **Sorular** — cevapsız `open` soru. *Okundu ≠ cevaplandı.* Cevaplanmış ama ajanın henüz işlemediği sorular ayrı satır.
+- **Kuyruk** — en eski aktif kaydın yaşı; `queue.maxAgeHours` tavanını aşan `captured` = boru durmuş. Bloke kayıtlar ayrı satır.
+- **Otomasyonlar** — hepsi kapalıysa **ölü**; açık ama 7 gündür ateşleyememişse **sessiz ölüm**; açık ama korumasızsa maliyet uyarısı; kapı kapalıysa ayrı satır.
+- **Nöbetler** — `[daily]`/`[weekly]` kadanslı olup arkasında hiçbir zamanlama/tetikleyici olmayan görev (`[every-turn]` tasarım gereği pasiftir, muaf).
+- **Harcama** — bugünkü tutar / tavan; tavan yoksa "idle" (sağlıklı değil).
+- **Kendi çeklerin** — `agentFarm.livingChecks`: önkoşul motoru burada **"DOĞRU = dikkat gerekiyor"** olarak okunur, yani aynı `{today}` token'larıyla gün dosyası / boş olması gereken klasör kontrol edilir. `Configure Living Checks…` ile eklenir.
+
+**Skor:** ölü döngü 0, uyarı 0,5 sayılır — tek ölü döngüsü olan sistem "%94 sağlıklı" diye okunmaz. Sayfanın altında **otomasyon karar kuyruğu**: ne zaman, ne ateşlendi, ne atlandı ve **neden**.
+
+**Notices yaşlanması (ikinci vuruş):** `agentFarm.noticeStaleHours`'ı (varsayılan 24) geçen okunmamış seviye-3+ mesaj veya cevapsız soru varsa durum çubuğu zili uyarı rengine geçer ve en eskisini adıyla + gün sayısıyla söyler; her cevapsız soru için **bir kez** "Answer now" bildirimi çıkar. Amaç dırdır değil — görmezden gelmenin bir sonucu olması.
+
 ## Komuta Merkezi
 
 Filo büyüyünce dar boğaz sensin: kim izin bekliyor, hangi tarayıcı adımı onay istiyor, bütçe nerede taştı? Komuta Merkezi katmanı (Faz G) bu soruların tek ekranda cevaplanması içindir.
@@ -994,34 +1063,52 @@ Filo büyüyünce dar boğaz sensin: kim izin bekliyor, hangi tarayıcı adımı
 
 Durum çubuğu artık bu kuyruğu sayar: `🔔 N need you` görünüyorsa tıklamak kuyruğu açar. İş engelleyen üç tür sayılır: izin, tarayıcı onayı, stalled.
 
-### Tasks Sayfası {#tasks-sayfasi}
+### Tasks Sayfası — Ajan Aktivitesi Yönetim Paneli {#tasks-sayfasi}
 
-**Agent Farm: Open Tasks** (global gezinmede Missions'ın solundaki **Tasks** düğmesi; Tasks ağacı başlığındaki $(layout) simgesi de buraya açılır) — görev dünyasının tamamı tek zengin komuta sayfasında. Başlığın hemen altında **NOW şeridi** her bölümde görünür kalır: şu an çalışanlar (filo limitine karşı), onay bekleyenler (tıkla → Board), kuyruk sayısı ve **bir sonraki zamanlı koşu** — hangi sekmede olursan ol sayfanın nabzı gözünün önündedir. Bölüm düğmeleri de sayaç taşır (Analytics'te uyarı varsa ⚠). Dört bölüm:
+**Agent Farm: Open Tasks** (global gezinmedeki **Tasks** düğmesi) — 3.19.0'da **baştan tasarlandı**. Eski dört bölümlü düzen (Board / Automations / Reusables / Analytics) kaldırıldı: bölüm adları uygulamanın iç tiplerini yansıtıyordu, kullanıcının zihnindeki nesneleri değil, ve aynı şeyin *planı* ile *koşusu* iki ayrı sekmeye dağılmıştı ("tetikleyici var ama görevler nerede?").
 
-**Board** — kuyruğun yönetici yüzeyi (eski bağımsız Kanban sayfası buraya taşındı; `Open Task Board` komutu da bu bölümü açar):
+Sayfa artık verideki gerçek ikiliğin üzerine kurulu:
 
-- Kolonlar: **📥 Inbox** (kuyrukta, elle başlatılacak) · **🕓 Parked** (kapasite/kota bekleyen) · **⚙️ Running** · **🛡️ Needs Approval** (izin + tarayıcı onayları, kart üstünde Run/Reject) · **🏁 Done** (son 30).
-- Kartları **sürükle-bırak**: Inbox→Running = başlat, Running→Done = tamamla, Inbox→Done = iptal. Kart üstünde ajan, süre, verify rozeti, koşu/medya maliyeti ve köken rozeti (🕑 zamanlama · ⚡ tetik · 🔗 workflow); başlığın üzerine gelince **tam istem** görünür. Çıktı arşivi olan karta **çift tık** = çıktıyı aç.
-- **Her kart bir sonraki eylemini taşır**: kuyrukta = ▶ hemen koştur (sırayı atlar) + iptal · çalışan = ⌨ terminale atla + iptal · biten = ↻ **yeniden koştur** (workflow adımı zincirini kaldığı yerden sürdürür) + ✕ kaldır. Çıktısı/transcript'i olan kartta açık 📄/🗒 açma düğmeleri var.
-- **Kolon üstü toplu eylemler**: Done'da **clear all** (önce tarihçe arşivlenir, çıktı dosyaları silinir), çok elemanlı Inbox/Parked'ta **cancel all** — ikisi de onay sorar; 15 kartlık temizlik 15 tık değil tek tıktır.
-- Panonun üstünde **komuta çubuğu**: doğal dil cümleni yaz, ucuz model plana çevirir, önizleme onayıyla kurulur (aşağıdaki Doğal Dil Komuta ile aynı akış). Yanındaki **filtre kutusu** tüm görev kolonlarını başlık/ajan/duruma göre daraltır (onay bekleyenler asla gizlenmez); kolon başlığı `görünen/toplam` gösterir.
-- Kolonların üstünde **yük şeridi**: filo geneli `çalışan/limit` (agentFarm.maxConcurrentTasks) + ajan başına `çalışan/limit` ve kuyruk sayısı — limiti dolan ajan turuncu yanar. NOW şeridine **🏁 today** hücresi eklendi (gece yarısından beri biten/başarısız, arşiv dahil). Göreli zamanlar 30 sn'de bir kendiliğinden akar.
+- **PLAN** — işi **tanımlayan** her şey: zamanlama, tetikleyici, iş akışı, şablon. Dördü de farklı iç tipler ama kullanıcı hepsini **aynı şekilde** yönetir (aç/kapa, koru, modelini seç, koştur, düzenle, sil) — bu yüzden hepsi **tek tabloda**, tür sütunuyla.
+- **KOŞU** — o tanımların gerçekte ne yaptığı.
 
-**Automations** — tetikleyiciler ve zamanlamalar tek yerde:
+Yönetim önce gelir ve zengin yüzeyi o alır.
 
-- **Triggers**: kaynak (watch/webhook/hook) → hedef, kurulu/ateşlenmiş durumu, **güvenilirlik karnesi** (7 günlük ✓/✗ + başlama gecikmesi), debounce/cooldown/saat limiti; satırdan **enable/disable · fire · edit · delete**. Watch yolu kaybolan tetik "path missing" rozetiyle görünür.
-- **Schedules**: ne zaman (daily/weekly/once) + kaçırma politikası, **bir sonraki koşu zamanı**; satırdan **enable/disable · run now · edit · delete**.
+#### Üst kontrol şeridi (her iki sekmede sabit)
 
-**Reusables** — tekrar kullanılabilirler:
+Otomasyon kapısının durumu ve tek hamlelik kumandalar: **⏸ Pause all** / **▶ Resume all**, 1s / 8s / 24s süreli duraklatma, **🌙 sessiz saat**. Yanında sayılar: çalışan/limit · kuyruk · sana bakan · **kaç plan açık** · bugün biten/başarısız · otomasyonların **7 günlük maliyeti** · **engellenen uyanma sayısı** · **dikkat isteyen satır sayısı** (tıklayınca tabloyu o satırlara filtreler).
 
-- **Templates**: kayıtlı istem şablonları — satırdan çalıştır/sil (şablon kaydetmek: Tasks ağacında biten göreve sağ tık → Save as template).
-- **Workflows**: adım listesiyle kartlar (∥ = paralel adım) — çalıştır, adım ekle, yeniden adlandır, sil.
+#### PLAN sekmesi
 
-**Analytics** — görev sağlığının sayfası:
+Tek tablo, tek satır dili:
 
-- 30 günlük KPI'lar (koşu, başarı oranı, medyan süre, verify tekrarı, kuyruk ETA'sı) + uyarılar (çok başarısız ajan, hep başarısız aile/tetik).
-- Günlük **debi grafiği** (done/failed), **ajan karnesi** tablosu, **görev aileleri** (aynı işin tekrarları).
-- **Öngörü özeti**: sonraki N günün zamanlı koşuları, her birinin tipik süresi/başarısı; tam öngörü belgesi ve aylık görev tarihçesi dosyalarına tek tık köprü.
+| Sütun | Ne söyler |
+|---|---|
+| tür + ad | ⏰ zamanlama · ⚡ tetikleyici · 🔗 iş akışı · 📋 şablon, sorun rozetleriyle |
+| ne zaman | "her gün 05:00" · "değişince · …/01_YERLEŞTİR" · "sen koşturunca" + bir sonraki koşu |
+| ajan / model | modeli görevin **üzerinde** (policy motorunu yener); yoksa "default" |
+| koruma | `fireIf` önkoşulu + **kaç uyanma engellediği** |
+| maliyet 7g | o tanımın gerçek harcaması |
+| son koşu | ne zaman + son kararın sebebi ("no files waiting") |
+| açık/kapalı | gerçek bir **anahtar**; şablon/iş akışı gibi anahtarı olmayanlar "manual" der |
+
+- **Arama** ad, istem, ajan ve zamanlama metninde birden arar.
+- **Filtreler**: tür · ajan · model · durum · koruma · "dikkat isteyen". **Aktif her filtre, üstte kaldırılabilir bir çip olarak GÖRÜNÜR** ("showing 3 of 12 — kind: trigger ✕") ve yanında tek tıklık **Reset filters** durur. Unuttuğun bir filtre, filtresizlikten kötüdür.
+- **Gruplama**: türe göre (varsayılan) · ajana göre · düz. Sıralama sütun başlıklarından; ikinci tık yönü çevirir.
+- **Toplu işlem**: satır kutucukları + "hepsini seç" → tek hamlede aç/kapa (onaylı).
+- **Satır detayı satır içinde açılır** (▸): tam istem, hedef, zamanlama, önkoşul, 7 günlük koşu/atlama/maliyet dökümü, iş akışıysa adım listesi. Hiçbir şey gizemli bir ikinci sayfa açmaz.
+- **Ekleme** aynı çubukta: + Schedule · + Trigger · + Workflow.
+- Sorun rozetleri ve anlamları: `no guard` (korumasız — iş olsun olmasın uyandırır) · `path missing` · `always fails` · `never ran` · `deferred` (sessiz saat erteledi) · `no steps`.
+
+#### KOŞU sekmesi
+
+Canlı, kuyrukta, park edilmiş ve biten koşular tek listede: durum · **nereden geldiği** (zamanlama / tetikleyici / iş akışı / sen) · süre · maliyet · ne zaman. Satırdan: başlat · öne al · terminal · iptal · yeniden koştur · çıktı · sil; park edilmişte "retry start". Detay satır içinde açılır (tam istem + transcript). Filtreler: ajan · durum · kaynak + arama, PLAN'daki aynı çip/reset mantığıyla. **Doğal dil komut çubuğu** bu sekmede (cümleni yaz, ucuz model plana çevirir, önizleme onayıyla kurulur).
+
+Filtre durumu **sekme başına** hatırlanır; sekme değiştirmek diğerinin filtrelerini bulaştırmaz.
+
+#### Analiz artık ayrı sayfa
+
+**Agent Farm: Open Task Analytics** (PLAN çubuğundaki 📊 Analytics düğmesi) — 30 günlük KPI'lar, debi grafiği, ajan karnesi, görev aileleri, uyarılar ve öngörü. Yönetim yüzeyinden **bilerek ayrıldı**: bunlar *okuma* içindir; bir otomasyonu açarken grafiklerin altında anahtar aramak zorunda kalmamalısın. Sayfada her tablo kendi arama/filtre/sıralama/↺ reset/⬇ MD dışa aktarma araçlarını taşır.
 
 ### Maliyet Anomalisi
 

@@ -1,467 +1,463 @@
-// Tasks page webview: section shell (Board / Automations / Reusables /
-// Analytics), the load strip, row-action routing to host messages, the
-// focus message from the openBoard alias, and the global-nav contract
-// (Tasks hides its own button, the other four global pages show).
-const fs = require('fs');
+// Tasks control panel (media/tasksPage.js) rendered in a DOM shim.
+//
+// The page is built on one distinction: PLAN (every work DEFINITION, whatever
+// its internal type) vs RUN (what those definitions actually did). These tests
+// pin the management contract: everything manageable shows up in one table,
+// every active filter is visible and removable, and nothing opens a mystery
+// second page.
 const path = require('path');
+const fs = require('fs');
 const vm = require('vm');
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
-const code = fs.readFileSync(path.resolve(__dirname, '../media/pageHeader.js'), 'utf8')
-    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/tasksPage.js'), 'utf8');
+const code = fs.readFileSync(path.join(__dirname, '..', 'media', 'tasksPage.js'), 'utf8');
 
+// ---------------------------------------------------------------- DOM shim
 let posted = [];
-let msgHandler = null;
+let state = {};
 const els = {};
+const elCache = new Map();
+
+function mkEl(tag, dataset, attrs) {
+    const el = {
+        tagName: tag.toUpperCase(), dataset, value: attrs.value, type: attrs.type || '',
+        checked: 'checked' in attrs, indeterminate: false, hidden: 'hidden' in attrs,
+        textContent: '', className: attrs.class || '',
+        _listeners: {},
+        addEventListener(ev, fn) { this._listeners[ev] = fn; },
+        focus() { },
+        setSelectionRange() { },
+        click() { if (this._listeners.click) { this._listeners.click({ currentTarget: this, preventDefault() { } }); } },
+        fire(ev, extra) { if (this._listeners[ev]) { this._listeners[ev](Object.assign({ currentTarget: this, preventDefault() { } }, extra)); } }
+    };
+    return el;
+}
 function getEl(id) {
+    // NOTE: defined with defineProperty, not Object.assign — assign COPIES the
+    // value a getter returns instead of the accessor itself, which would leave
+    // innerHTML a dead plain property and the page silently unrendered.
     if (!els[id]) {
-        els[id] = {
-            id, listeners: {}, style: {}, value: '', checked: false, _html: '',
-            addEventListener(ev, fn) { this.listeners[ev] = fn; },
-            focus() { },
-            set innerHTML(v) { this._html = v; elCache.clear(); }, get innerHTML() { return this._html; }
-        };
+        const el = mkEl('div', {}, {});
+        el.id = id;
+        el._html = '';
+        Object.defineProperty(el, 'innerHTML', {
+            get() { return this._html; },
+            set(v) { this._html = v; elCache.clear(); }
+        });
+        els[id] = el;
     }
     return els[id];
 }
-const wired = {};
-/** Elements are cached per rendered tag so repeated queries return the SAME
- *  object — otherwise checkbox state set by a test (or by the page's own
- *  "select all") would vanish on the next querySelectorAll. Cleared on render. */
-const elCache = new Map();
+const html = () => getEl('app')._html;
 
-const NOW = Date.now();
-const task = (over) => ({
-    id: 't1', title: 'weekly digest', agentName: 'psikolog', mode: 'headless',
-    status: 'queued', detail: '', when: NOW - 60000, hasOutput: false,
-    promptPreview: 'prompt of ' + (over && over.id || 't1'), ...over
-});
-const DATA = {
-    generatedAt: NOW,
-    section: undefined,
-    board: {
-        inbox: [task({ id: 't1' })],
-        parked: [task({ id: 't2', title: 'parked job', detail: 'concurrency' })],
-        running: [task({ id: 't3', title: 'live run', status: 'running', durMin: 4 })],
-        waiting: [{
-            kind: 'permission', title: 'needs a permission', detail: 'Bash wants to run x',
-            ref: { transcriptPath: 'D:/tr/s1.jsonl', sessionId: 'S1' }
-        }],
-        done: [
-            task({
-                id: 't4', title: 'done job', status: 'done', durMin: 7, hasOutput: true, outputFile: 'D:/out/t4.md',
-                sourceKind: 'schedule', source: 'daily digest', costUSD: 0.42, sessionFile: 'D:/tr/t4.jsonl'
-            }),
-            task({ id: 't5', title: 'broken job', status: 'failed' })
-        ],
-        today: { done: 3, failed: 1 }
-    },
-    load: {
-        global: { running: 2, limit: 2 },
-        perAgentLimit: 1,
-        agents: [
-            { id: 'a1', name: 'psikolog', queued: 1, running: 1 },
-            { id: 'a2', name: 'developer', queued: 0, running: 0 }
-        ]
-    },
-    gate: {
-        paused: false, pausedUntil: undefined, pauseReason: '',
-        quietFrom: '23:00', quietTo: '07:00',
-        blocked: false, blockReason: '', skipped7d: 23
-    },
-    automations: {
-        triggers: [
-            {
-                // the measured real case: guarded, almost always skipped, cheap
-                id: 'tr1', title: 'Inbox factory', type: 'watch', src: 'watch: …/inbox', target: 'task → psikolog',
-                enabled: true, armed: false, debounceSec: 5, cooldownSec: 60, maxPerHour: 4,
-                fireCount: 12, lastFiredAt: NOW - 3600e3, stat: 'fired 12× • 7d: 3✓/1✗', alwaysFails: false,
-                model: 'opus', hasGuard: true, fireIf: 'files in …/inbox (skip _LOG_.md)',
-                skipped7d: 23, fired7d: 2, skipRate: 92, lastReason: 'no files waiting',
-                cost7d: 70.9, runs7d: 23, skipCount: 23, lastSkipReason: 'no files waiting'
-            },
-            {
-                id: 'tr2', title: 'Deploy hook', type: 'webhook', src: 'webhook: /trigger/…abc123', target: 'workflow',
-                enabled: false, armed: true, debounceSec: 0, cooldownSec: 0, maxPerHour: 0,
-                fireCount: 0, alwaysFails: false,
-                model: '', hasGuard: false, fireIf: '', skipped7d: 0, fired7d: 0, skipRate: 0,
-                cost7d: 0, runs7d: 0, skipCount: 0, lastSkipReason: ''
-            }
-        ],
-        schedules: [
-            {
-                id: 's1', title: 'daily digest', agentName: 'psikolog', mode: 'headless',
-                when: 'daily 09:00', kind: 'daily', missed: 'run', enabled: true, nextAt: NOW + 3600e3,
-                model: 'opus', deferred: true, hasGuard: true, fireIf: 'files in …/YERLESTIR',
-                skipped7d: 4, fired7d: 1, skipRate: 80, lastReason: 'no files waiting',
-                cost7d: 3.4, runs7d: 1
-            },
-            {
-                // enabled:false + no guard — the "unguarded" hint must not count it
-                id: 's2', title: 'weekly report', agentName: 'developer', mode: 'headless',
-                when: 'Mon 08:30', kind: 'weekly', missed: 'skip', enabled: false, nextAt: undefined,
-                model: '', deferred: false, hasGuard: false, fireIf: '',
-                skipped7d: 0, fired7d: 0, skipRate: 0, cost7d: 0, runs7d: 0
-            }
-        ]
-    },
-    reusables: {
-        templates: [{ id: 'tp1', title: 'triage inbox', agentName: 'psikolog', mode: 'headless', prompt: 'triage the inbox now' }],
-        workflows: [{
-            id: 'w1', title: 'publish pipeline',
-            steps: [
-                { title: 'draft', agentName: 'psikolog', parallel: false, kind: 'headless' },
-                { title: 'render', agentName: 'developer', parallel: true, kind: 'media' }
-            ]
-        }]
-    },
-    analytics: {
-        kpis: { runs30d: 40, done: 30, failed: 8, retries: 3, successRate: 30 / 38, medianMs: 5 * 60000 },
-        agents: [{
-            agentId: 'a1', agentName: 'psikolog', total: 25, done: 20, failed: 4, cancelled: 1,
-            successRate: 20 / 24, medianDurationMs: 4 * 60000, retries: 2, verifyPass: 1, verifyFail: 0
-        }],
-        families: [{ title: 'weekly digest', source: 'schedule', runs: 9, failed: 9, alwaysFails: true, agents: 'psikolog' }],
-        alerts: [{ severity: 'warning', who: 'psikolog', message: 'Tasks are failing more than succeeding' }],
-        daily: Array.from({ length: 30 }, (_, i) => ({ day: `2026-07-${String(i + 1).padStart(2, '0')}`, done: i % 3, failed: i % 2 })),
-        forecast: {
-            days: 7, totalScheduledRuns: 5, estBusyMs: 42 * 60000,
-            upcoming: [{ ts: NOW + 7200e3, title: 'daily digest', agentName: 'psikolog', kind: 'daily', medianMs: 4 * 60000, successRate: 0.8 }]
-        },
-        queue: { count: 2, etaMs: 11 * 60000, known: 1 }
+/** Parse the rendered HTML into shim elements matching a CSS-ish selector. */
+function query(sel) {
+    const idM = /^#([\w-]+)/.exec(sel);
+    const cls = /\.([\w-]+)/.exec(sel);
+    const attrEq = /\[data-([\w-]+)="([^"]*)"\]/.exec(sel);
+    const attrAny = /\[data-([\w-]+)\]/.exec(sel);
+    const tagM = /^([a-z]+)(?![\w-])/.exec(sel);
+    const roleM = /\[role=([\w]+)\]/.exec(sel);
+    const wantChecked = sel.includes(':checked');
+    const out = [];
+    const tags = html().match(/<(?:input|button|select|div|span|th|td|tr|label|a)\b[^>]*>/g) || [];
+    for (const raw of tags) {
+        const tag = /^<([a-z]+)/.exec(raw)[1];
+        if (idM && !raw.includes(`id="${idM[1]}"`)) { continue; }
+        if (tagM && tag !== tagM[1]) { continue; }
+        if (cls && !new RegExp(`class="[^"]*\\b${cls[1]}\\b`).test(raw)) { continue; }
+        if (attrEq && !raw.includes(`data-${attrEq[1]}="${attrEq[2]}"`)) { continue; }
+        if (attrAny && !attrEq && !new RegExp(`data-${attrAny[1]}[="\\s>]`).test(raw)) { continue; }
+        if (roleM && !raw.includes(`role="${roleM[1]}"`)) { continue; }
+        let el = elCache.get(raw);
+        if (!el) {
+            const dataset = {};
+            let d;
+            const dre = /data-([\w-]+)(?:="([^"]*)")?/g;
+            while ((d = dre.exec(raw))) { dataset[d[1]] = d[2] === undefined ? '' : d[2]; }
+            const attrs = {};
+            let a;
+            const are = /\b(value|type|class|id)="([^"]*)"/g;
+            while ((a = are.exec(raw))) { attrs[a[1]] = a[2]; }
+            if (/\bchecked\b/.test(raw)) { attrs.checked = true; }
+            if (/\bhidden\b/.test(raw)) { attrs.hidden = true; }
+            el = mkEl(tag, dataset, attrs);
+            if (attrs.id) { els[attrs.id] = el; }
+            elCache.set(raw, el);
+        }
+        if (wantChecked && !el.checked) { continue; }
+        out.push(el);
     }
-};
-
-/** A minimal element the page code can read, click and mutate. */
-function mkEl(dataset, value) {
-    const el = {
-        dataset, value, checked: false, indeterminate: false, hidden: false, textContent: '',
-        addEventListener: (_e, fn) => { el._click = fn; },
-        querySelector: () => null
-    };
-    return el;
+    return out;
 }
 
 const sandbox = {
     acquireVsCodeApi: () => ({
         postMessage: (m) => posted.push(m),
-        getState: () => undefined,
-        setState: () => { }
+        getState: () => state,
+        setState: (s) => { state = s; }
     }),
     window: {
-        AFCharts: {
-            esc: (s) => String(s),
-            fmtUSD: (v) => '$' + Number(v).toFixed(2),
-            stackedBars: (days, series) => `<svg data-bars="${days.length}x${series.length}"></svg>`
-        },
-        __DATA__: DATA,
-        addEventListener: (ev, fn) => { if (ev === 'message') { msgHandler = fn; } }
+        AFCharts: { esc: (s) => String(s == null ? '' : s), fmtUSD: (v) => '$' + Number(v).toFixed(2) },
+        AFHeader: { html: (o) => `<header data-page="${o.page}">${o.title}</header>`, wire: () => { } },
+        __DATA__: null,
+        addEventListener: () => { }
     },
     document: {
-        getElementById: getEl,
-        // Shim selectors: `[data-x]` (wiring probe, as before) plus class +
-        // exact-value forms — `.rowsel[data-kind="sched"]`, `.allsel:checked` —
-        // so checkbox/bulk wiring can be exercised without a real DOM.
-        querySelectorAll: (sel) => {
-            if (sel.startsWith('.kb-card')) { return []; } // dnd + dblclick wiring skipped in the shim
-            const cls = /^\.([\w-]+)/.exec(sel);
-            const attrEq = /\[data-([a-z]+)="([^"]*)"\]/.exec(sel);
-            const attrAny = /\[data-([a-z]+)\]/.exec(sel);
-            const wantChecked = sel.includes(':checked');
-
-            // legacy fast path: a bare [data-attr] probe records the wiring
-            if (!cls && attrAny && !attrEq) {
-                const attr = attrAny[1];
-                const list = [];
-                const re = new RegExp(`data-${attr}="([^"]*)"`, 'g');
-                let match;
-                while ((match = re.exec(getEl('app')._html))) {
-                    list.push(mkEl({ [attr]: match[1] }));
-                }
-                wired[attr] = list;
-                return list;
-            }
-            if (!cls && !attrEq) { return []; }
-
-            // general path: scan opening tags and match class + data attributes
-            const out = [];
-            const tags = getEl('app')._html.match(/<(?:input|button|div|th|td|span)\b[^>]*>/g) || [];
-            for (const tag of tags) {
-                if (cls && !new RegExp(`class="[^"]*\\b${cls[1]}\\b`).test(tag)) { continue; }
-                if (attrEq && !tag.includes(`data-${attrEq[1]}="${attrEq[2]}"`)) { continue; }
-                const dataset = {};
-                let d;
-                const dre = /data-([a-z]+)="([^"]*)"/g;
-                while ((d = dre.exec(tag))) { dataset[d[1]] = d[2]; }
-                const value = /value="([^"]*)"/.exec(tag);
-                let el = elCache.get(tag);
-                if (!el) {
-                    el = mkEl(dataset, value ? value[1] : undefined);
-                    elCache.set(tag, el);
-                }
-                // `:checked` filters a live selection the test drives by hand
-                if (wantChecked && !el.checked) { continue; }
-                out.push(el);
-            }
-            const key = cls ? cls[1] : attrEq[1];
-            wired[key] = out;
-            return out;
-        },
-        querySelector: (sel) => sandbox.document.querySelectorAll(sel)[0] || null
+        getElementById: (id) => els[id] || (id === 'app' ? getEl('app') : (query(`#${id}`)[0] || null)),
+        querySelectorAll: query,
+        querySelector: (s) => query(s)[0] || null,
+        get hidden() { return false; },
+        get activeElement() { return null; }
     },
-    setTimeout: () => 0, clearTimeout: () => { }, setInterval: () => 0, clearInterval: () => { }, console, Date
+    setTimeout: () => 0, clearTimeout: () => { }, setInterval: () => 0, clearInterval: () => { },
+    console, Date, Math, JSON, String, Number, Object, Array, RegExp, Set, Map, isNaN, parseInt, parseFloat
 };
 sandbox.globalThis = sandbox;
-vm.createContext(sandbox);
-vm.runInContext(code, sandbox); // render()
 
-const html = () => getEl('app')._html;
-const clickWired = (attr, value) => {
-    const el = (wired[attr] || []).find(e => e.dataset[attr] === value);
-    ok(`wired [data-${attr}="${value}"] exists`, !!el);
-    if (el) { el._click({ stopPropagation() { } }); }
+const NOW = Date.now();
+const DATA = {
+    generatedAt: NOW,
+    tab: 'plan',
+    gate: {
+        paused: false, pausedUntil: undefined, pauseReason: '',
+        quietFrom: '23:30', quietTo: '04:30', blocked: false, blockReason: ''
+    },
+    summary: {
+        running: 1, runLimit: 2, queued: 2, needsYou: 1,
+        plansOn: 3, plansSwitchable: 4, doneToday: 4, failedToday: 1,
+        cost7d: 18.4, savedWakeups7d: 23, issues: 2
+    },
+    agents: ['manager', 'genel', 'basit'],
+    perAgentLimit: 1,
+    plan: [
+        {
+            id: 's1', kind: 'schedule', title: 'AGENT_AREA batch',
+            when: 'every day 05:00', nextAt: NOW + 3600e3, agentName: 'manager', model: 'opus',
+            guard: 'files in …/00_INPUT (skip _LOG_.md)', hasGuard: true,
+            switchable: true, enabled: true,
+            cost7d: 12.3, runs7d: 3, skipped7d: 4, skipRate: 57,
+            lastRunAt: NOW - 7200e3, lastNote: '2 files waiting', issues: [],
+            detail: { prompt: 'apply the filing duty', target: 'runs on manager · headless', timing: 'every day 05:00 · missed → run', steps: [], missed: 'run' }
+        },
+        {
+            id: 's2', kind: 'schedule', title: 'AI daily scan',
+            when: 'every day 06:00', agentName: 'manager', model: '',
+            guard: '', hasGuard: false, switchable: true, enabled: false,
+            cost7d: 0, runs7d: 0, skipped7d: 0, skipRate: 0,
+            lastNote: '', issues: [],
+            detail: { prompt: 'scan AI news', target: 'runs on manager · headless', timing: 'every day 06:00 · missed → skip', steps: [], missed: 'skip' }
+        },
+        {
+            id: 't1', kind: 'trigger', title: 'Media watch',
+            when: 'on change · …/02_MEDIALASTIR', agentName: 'manager', model: 'opus',
+            guard: '', hasGuard: false, switchable: true, enabled: true,
+            cost7d: 70.9, runs7d: 23, skipped7d: 0, skipRate: 0,
+            lastRunAt: NOW - 3600e3, lastNote: 'no files waiting',
+            issues: ['no-guard', 'path-missing'],
+            detail: { prompt: 'file the media', target: 'runs on manager', timing: 'debounce 60s · cooldown 300s · max 6/h', steps: [], missed: '' }
+        },
+        {
+            id: 'w1', kind: 'workflow', title: 'publish pipeline',
+            when: 'when you run it (or a trigger does)', agentName: '', model: '',
+            guard: '', hasGuard: false, switchable: false, enabled: true,
+            cost7d: 0, runs7d: 0, skipped7d: 0, skipRate: 0,
+            lastNote: '2 step(s)', issues: [],
+            detail: { prompt: '', target: '2 step chain', timing: '', steps: ['1. render ∥ — genel', '2. post — basit'], missed: '' }
+        },
+        {
+            id: 'tp1', kind: 'template', title: 'triage inbox',
+            when: 'when you run it', agentName: 'genel', model: '',
+            guard: '', hasGuard: false, switchable: false, enabled: true,
+            cost7d: 0, runs7d: 0, skipped7d: 0, skipRate: 0,
+            lastNote: '', issues: [],
+            detail: { prompt: 'triage the inbox now', target: 'runs on genel · headless', timing: '', steps: [], missed: '' }
+        }
+    ],
+    runs: [
+        {
+            id: 'r1', title: 'live run', agentName: 'manager', mode: 'headless', status: 'running',
+            source: 'AGENT_AREA batch', sourceKind: 'schedule', when: NOW - 300e3, durMin: 5,
+            detail: '', costUSD: 1.2, hasOutput: false, prompt: 'do the batch'
+        },
+        {
+            id: 'r2', title: 'parked run', agentName: 'genel', mode: 'headless', status: 'parked',
+            source: 'you', sourceKind: 'manual', when: NOW - 600e3,
+            detail: 'agent busy (genel)', hasOutput: false, prompt: 'something'
+        },
+        {
+            id: 'r3', title: 'finished run', agentName: 'basit', mode: 'headless', status: 'done',
+            source: 'repo backup', sourceKind: 'schedule', when: NOW - 7200e3, durMin: 1,
+            detail: '', costUSD: 0.22, hasOutput: true, outputFile: 'D:/out/r3.md',
+            sessionFile: 'D:/t/s.jsonl', prompt: 'commit the repo'
+        },
+        {
+            id: 'r4', title: 'broken run', agentName: 'manager', mode: 'headless', status: 'failed',
+            source: 'Media watch', sourceKind: 'trigger', when: NOW - 9200e3, durMin: 2,
+            detail: '', hasOutput: false, prompt: 'file the media'
+        }
+    ]
+};
+sandbox.window.__DATA__ = DATA;
+
+vm.createContext(sandbox);
+vm.runInContext(code, sandbox);
+
+const clickData = (attr, value) => {
+    const el = query(`[data-${attr}="${value}"]`)[0];
+    ok(`control [data-${attr}="${value}"] exists`, !!el);
+    if (el) { el.click(); }
+    return el;
+};
+/** `data-resetview` is a valueless attribute, so it needs its own lookup. */
+const resetView = () => {
+    const el = query('[data-resetview]')[0];
+    ok('a reset control is present while filters are active', !!el);
+    if (el) { el.click(); }
 };
 
-// ---------- NOW strip (visible in every section) ----------
-ok('NOW strip shows running vs limit with the task', html().includes('⚙️ 1/2')
-    && html().includes('live run') && html().includes('@psikolog'));
-ok('NOW strip flags waits as hot + queued count', html().includes('1 needs you')
-    && html().includes('2 queued'));
-ok('NOW strip announces the next scheduled run', html().includes('🕑')
-    && html().includes('daily digest'));
-ok('NOW strip shows today\'s pulse and runs it hot on failures',
-    html().includes('🏁 today 3✓ 1✗') && /now-cell now-hot" data-goto="analytics"/.test(html()));
-ok('segment buttons carry counts + alert marker', html().includes('⚠1')
-    && /Board <span class="seg-n">3<\/span>/.test(html()));
-
-// ---------- board section (default) ----------
-ok('board renders all five columns', ['📥 Inbox', '🕓 Parked', '⚙️ Running', '🛡️ Needs Approval', '🏁 Done']
-    .every(h => html().includes(h)));
-ok('cards land in their columns', html().includes('weekly digest') && html().includes('parked job')
-    && html().includes('live run') && html().includes('broken job'));
-ok('load strip shows the fleet limit and marks it hot', html().includes('farm <b>2</b>/2')
-    && /ld-chip global hot/.test(html()));
-ok('busy agent chip with queue count, idle agents folded', html().includes('psikolog <b>1</b>/1')
-    && html().includes('1 idle agent'));
-ok('NL command bar renders', html().includes('id="cmd"') && html().includes('id="cmdgo"'));
-ok('waiting card offers terminal + open session', html().includes('data-termsid="S1"')
-    && html().includes('data-session="D:/tr/s1.jsonl"'));
-ok('card title carries the full prompt as tooltip', html().includes('title="prompt of t5"'));
-ok('provenance badge names the schedule behind the task',
-    html().includes('from schedule: daily digest'));
-ok('run cost badge renders', html().includes('$0.42'));
-ok('finished cards offer re-run, queued cards offer run-next, running cards a terminal',
-    html().includes('data-rerun="t5"') && html().includes('data-next="t1"')
-    && html().includes('data-term="t3"'));
-ok('output + transcript are explicit buttons, not just a hidden dblclick',
-    html().includes('data-openout="D:/out/t4.md"') && html().includes('data-transcript="D:/tr/t4.jsonl"'));
-ok('Done header offers clear all; single-item queues hide cancel all',
-    html().includes('data-clearall="1"') && !html().includes('data-cancelcol'));
-ok('filter input renders in the board bar', html().includes('id="flt"'));
-
-// global-nav contract: the four other global pages show; no Tasks button (own page)
-ok('global nav shows the other pages', ['data-afnav="dashboard"', 'data-afnav="timeline"',
-    'data-afnav="missions"', 'data-afnav="toolbox"'].every(a => html().includes(a)));
-ok('own page button hidden', !html().includes('data-afnav="tasks"'));
+// ---------------------------------------------------- control header (gate)
+ok('page announces the automation gate', html().includes('Automation'));
+ok('an open gate reads as running', html().includes('>running<'));
+ok('quiet hours are shown on the control', html().includes('Quiet 23:30–04:30'));
+ok('running vs limit is in the header', html().includes('<b>1</b>/2 running'));
+ok('queued count shows', html().includes('<b>2</b> queued'));
+ok('needs-you is flagged hot', /class="stat hot"[^>]*>🛡️ <b>1<\/b> need you/.test(html()));
+ok('switched-on count shows plans, not runs', html().includes('<b>3</b>/4 switched on'));
+ok('7-day automation cost is in the header', html().includes('$18</b>/7d') || html().includes('$18.40'));
+ok('saved wake-ups are reported', html().includes('<b>23</b> saved'));
+ok('rows needing attention are counted', html().includes('<b>2</b> need attention'));
 
 posted = [];
-clickWired('cancel', 't3');
-ok('cancel posts cancel with the task id', posted[0] && posted[0].type === 'cancel' && posted[0].taskId === 't3');
-posted = [];
-clickWired('del', 't5');
-ok('✕ posts delete with the task id', posted[0] && posted[0].type === 'delete' && posted[0].taskId === 't5');
-posted = [];
-clickWired('rerun', 't5');
-ok('↻ posts rerun with the task id', posted[0] && posted[0].type === 'rerun' && posted[0].taskId === 't5');
-posted = [];
-clickWired('next', 't1');
-ok('▶ posts run-next with the task id', posted[0] && posted[0].type === 'run-next' && posted[0].taskId === 't1');
-posted = [];
-clickWired('term', 't3');
-ok('⌨ posts open-terminal with the task id', posted[0] && posted[0].type === 'open-terminal' && posted[0].taskId === 't3');
-posted = [];
-clickWired('openout', 'D:/out/t4.md');
-ok('📄 posts open-output with the file', posted[0] && posted[0].type === 'open-output'
-    && posted[0].file === 'D:/out/t4.md');
-posted = [];
-clickWired('transcript', 'D:/tr/t4.jsonl');
-ok('🗒 posts open-transcript with the file', posted[0] && posted[0].type === 'open-transcript'
-    && posted[0].file === 'D:/tr/t4.jsonl');
-posted = [];
-clickWired('clearall', '1');
-ok('clear all posts clear-finished', posted[0] && posted[0].type === 'clear-finished');
-
-// board filter: narrows every task column, keeps totals visible, never hides approvals
-getEl('flt').value = 'broken';
-getEl('flt').listeners.input();
-ok('filter narrows the board to matching cards', html().includes('broken job')
-    && !html().includes('done job') && !html().includes('weekly digest'));
-ok('filtered column shows shown/total', html().includes('<span class="muted">1/2</span>'));
-ok('approvals survive the filter', html().includes('needs a permission'));
-getEl('flt').value = '';
-getEl('flt').listeners.input();
-ok('clearing the filter restores the board', html().includes('done job') && html().includes('weekly digest'));
-
-posted = [];
-getEl('cmd').value = 'run the digest tomorrow at 9';
-getEl('cmdgo').listeners.click();
-ok('command bar posts the typed command', posted[0] && posted[0].type === 'command'
-    && posted[0].text === 'run the digest tomorrow at 9');
-
-// ---------- automations ----------
-clickWired('sec', 'automations');
-ok('NOW strip survives the section switch', html().includes('now-strip'));
-ok('triggers table renders with source → target', html().includes('Inbox factory')
-    && html().includes('watch: …/inbox') && html().includes('task → psikolog'));
-ok('armed=false shows the path-missing badge', html().includes('path missing'));
-ok('reliability scorecard shows', html().includes('fired 12× • 7d: 3✓/1✗'));
-ok('schedules show next run + missed policy', html().includes('daily digest')
-    && html().includes('missed: run') && html().includes('daily 09:00'));
-ok('disabled schedule has no next run', /weekly report[\s\S]*?—/.test(html()));
-posted = [];
-clickWired('sched', 'toggle:s1');
-ok('schedule toggle posts sched/toggle', posted[0] && posted[0].type === 'sched'
-    && posted[0].act === 'toggle' && posted[0].id === 's1');
-posted = [];
-clickWired('sched', 'run:s1');
-ok('run now posts sched/run', posted[0] && posted[0].type === 'sched' && posted[0].act === 'run');
-posted = [];
-clickWired('trig', 'fire:tr1');
-ok('fire posts trig/fire', posted[0] && posted[0].type === 'trig' && posted[0].act === 'fire' && posted[0].id === 'tr1');
-posted = [];
-clickWired('add', 'sched-add');
-ok('+ Schedule posts sched-add', posted[0] && posted[0].type === 'sched-add');
-
-// ---------- the automation gate + guard columns ----------
-ok('gate strip renders with a running state', html().includes('Automation gate')
-    && html().includes('badge ok">running'));
-ok('quiet hours shown on the gate button', html().includes('Quiet hours: 23:00–07:00'));
-ok('saved wake-ups are reported', html().includes('23 wake-up(s) saved this week'));
-ok('guard column shows the precondition', html().includes('🛡 files in …/inbox (skip _LOG_.md)'));
-ok('guard column reports what it saved', html().includes('skipped 23× (92%)'));
-ok('an unguarded automation is flagged', html().includes('>no guard<'));
-// the two unguarded rows in the fixture are both DISABLED, so the hint stays
-// silent — an off automation costs nothing and needs no guard
-ok('the unguarded hint ignores disabled automations', !/enabled automation\(s\) have/.test(html()));
-{
-    const saved = DATA.automations.triggers[1].enabled;
-    DATA.automations.triggers[1].enabled = true;   // unguarded AND live
-    clickWired('sec', 'board');
-    clickWired('sec', 'automations');
-    ok('an enabled unguarded automation raises the hint',
-        /⚠ 1 enabled automation\(s\) have/.test(html()));
-    DATA.automations.triggers[1].enabled = saved;
-    clickWired('sec', 'board');
-    clickWired('sec', 'automations');
-}
-ok('per-automation 7d cost is shown', html().includes('$71') || html().includes('$70.90'));
-ok('a schedule model override is badged', /badge[^>]*>opus</.test(html()));
-ok('a quiet-hours deferred occurrence is badged', html().includes('>deferred<'));
-posted = [];
-clickWired('gate', 'pause');
+clickData('gate', 'pause');
 ok('Pause all posts gate/pause', posted[0] && posted[0].type === 'gate' && posted[0].act === 'pause');
 posted = [];
-clickWired('gate', 'pause-for:480');
-ok('timed pause carries its minutes', posted[0] && posted[0].type === 'gate'
-    && posted[0].act === 'pause-for' && posted[0].text === '480');
+clickData('gate', 'pause-for:480');
+ok('a timed pause carries its minutes', posted[0] && posted[0].act === 'pause-for' && posted[0].text === '480');
 posted = [];
-clickWired('gate', 'quiet');
+clickData('gate', 'quiet');
 ok('quiet hours button posts gate/quiet', posted[0] && posted[0].act === 'quiet');
 
-// bulk selection: tick two schedule rows, then disable them in one action
+// ------------------------------------------------------------------- tabs
+ok('there are exactly two tabs', query('[data-tab]').length === 2);
+ok('PLAN is the default tab', /class="tab on" data-tab="plan"/.test(html()));
+ok('tab counts come from the data', html().includes('📅 Plan <span class="tab-n">5</span>')
+    && html().includes('▶ Runs <span class="tab-n">4</span>'));
+ok('analytics is a link OUT, not a tab', html().includes('data-open="open-analytics"')
+    && !/data-tab="analytics"/.test(html()));
+
+// ------------------------------------------------------- PLAN: one table
+ok('a schedule appears', html().includes('AGENT_AREA batch'));
+ok('a trigger appears in the SAME table', html().includes('Media watch'));
+ok('a workflow appears too', html().includes('publish pipeline'));
+ok('and a template', html().includes('triage inbox'));
+ok('each kind carries its icon', html().includes('⏰') && html().includes('⚡')
+    && html().includes('🔗') && html().includes('📋'));
+ok('rows are grouped by kind by default', html().includes('class="grouphead"')
+    && html().includes('Schedules') && html().includes('Triggers'));
+ok('a schedule shows when it next runs', /next (tomorrow |\w{3} )?\d\d:\d\d/.test(html()));
+ok('the model override is badged', /class="badge">opus</.test(html()));
+ok('no model reads as default', html().includes('>default<'));
+ok('a guard is shown with what it saved', html().includes('🛡 files in …/00_INPUT')
+    && html().includes('saved 4 wake-up(s)'));
+ok('problems are badged on the row', html().includes('>no guard<') && html().includes('>path missing<'));
+ok('per-row 7d cost is shown', html().includes('$70.90') || html().includes('$71'));
+ok('switchable rows get a real switch', /class="sw on"/.test(html()) && /class="sw off"/.test(html()));
+ok('non-switchable rows say so instead of faking a switch',
+    (html().match(/>manual</g) || []).length >= 2);
+ok('only switchable rows get a checkbox', query('.rowsel').length === 3);
+
+// ------------------------------------------------------ PLAN: row actions
+posted = [];
+query('[data-plan="toggle"]')[0].click();
+ok('the switch posts plan/toggle with kind AND id',
+    posted[0] && posted[0].type === 'plan' && posted[0].act === 'toggle'
+    && posted[0].kind === 'schedule' && posted[0].id === 's1');
+posted = [];
+query('[data-plan="run"]').find(e => e.dataset.kind === 'trigger').click();
+ok('run works on a trigger row too',
+    posted[0] && posted[0].act === 'run' && posted[0].kind === 'trigger' && posted[0].id === 't1');
+posted = [];
+query('[data-plan="edit"]').find(e => e.dataset.kind === 'workflow').click();
+ok('edit works on a workflow row', posted[0] && posted[0].kind === 'workflow');
+posted = [];
+clickData('add', 'trigger');
+ok('+ Trigger posts plan-add with its kind',
+    posted[0] && posted[0].type === 'plan-add' && posted[0].kind === 'trigger');
+
+// -------------------------------------------------- PLAN: inline detail
+ok('detail is closed by default', !html().includes('class="detailbox"'));
+query('[data-expand="schedule:s1"]')[0].click();
+ok('expanding opens detail INLINE (no second page)', html().includes('class="detailbox"'));
+ok('detail shows the full prompt', html().includes('apply the filing duty'));
+ok('detail shows the target', html().includes('runs on manager · headless'));
+ok('detail shows the guard', html().includes('Fires only if'));
+ok('detail shows the 7-day record', html().includes('3 run(s) · 4 skipped (57%)'));
+query('[data-expand="schedule:s1"]')[0].click();
+ok('collapsing closes it again', !html().includes('class="detailbox"'));
+query('[data-expand="workflow:w1"]')[0].click();
+ok('a workflow expands to its steps', html().includes('render ∥') && html().includes('post — basit'));
+query('[data-expand="workflow:w1"]')[0].click();
+
+// ------------------------------------------------------ PLAN: filtering
+ok('no filter chips when nothing is filtered', !html().includes('class="chips"'));
+const setFilter = (name, value) => {
+    const el = query(`[data-f="${name}"]`)[0];
+    el.value = value;
+    if (el.type === 'checkbox') { el.checked = value; }
+    el.fire('change');
+};
+setFilter('kind', 'trigger');
+ok('filtering by kind narrows the table', html().includes('Media watch') && !html().includes('AGENT_AREA batch'));
+ok('an active filter becomes a visible chip', html().includes('class="chips"') && html().includes('kind: trigger'));
+ok('the chip reports how much is hidden', html().includes('showing 1 of 5'));
+ok('a reset control appears with it', html().includes('data-resetview'));
+clickData('clear', 'kind');
+ok('clicking the chip removes that filter', html().includes('AGENT_AREA batch') && !html().includes('class="chips"'));
+
+setFilter('agent', 'manager');
+setFilter('state', 'on');
+ok('two filters produce two chips',
+    html().includes('agent: manager') && html().includes('state: on'));
+ok('combined filters intersect', html().includes('AGENT_AREA batch')
+    && html().includes('Media watch') && !html().includes('AI daily scan'));
+resetView();
+ok('reset clears every filter at once', !html().includes('class="chips"'));
+ok('and brings the rows back', html().includes('AI daily scan') && html().includes('triage inbox'));
+
+setFilter('guard', 'no');
+ok('the guard filter finds unguarded rows', html().includes('Media watch') && !html().includes('AGENT_AREA batch'));
+resetView();
+
+const issuesBox = query('[data-f="issues"]')[0];
+issuesBox.checked = true;
+issuesBox.fire('change');
+ok('"needs attention" shows only rows with problems',
+    html().includes('Media watch') && !html().includes('AGENT_AREA batch'));
+ok('a boolean filter also gets a chip', html().includes('needs attention'));
+resetView();
+
+// the header shortcut sets the same filter
+posted = [];
+query('[data-fixissues]')[0].click();
+ok('the header "need attention" chip applies the filter',
+    html().includes('Media watch') && !html().includes('AI daily scan'));
+resetView();
+
+// search covers prompt text, not just the title
+const q = sandbox.document.getElementById('planq');
+q.value = 'scan AI news';
+q.fire('input');
+ok('search matches the PROMPT, not only the name',
+    html().includes('AI daily scan') && !html().includes('Media watch'));
+ok('the search term shows as a chip', html().includes('“scan AI news”'));
+resetView();
+
+// grouping
+setFilter('group', 'agent');
+ok('grouping by agent regroups the table', html().includes('>manager <') || html().includes('manager <span'));
+setFilter('group', '');
+ok('flat grouping drops the group headers', !html().includes('class="grouphead"'));
+setFilter('group', 'kind');
+
+// sorting (grouping is applied AFTER the sort, so compare with a flat list)
+setFilter('group', '');
+clickData('sort', 'cost');
+ok('sorting by cost puts the cheapest first (ascending)',
+    html().indexOf('AI daily scan') < html().indexOf('Media watch'));
+clickData('sort', 'cost');
+ok('clicking the same column flips the direction',
+    html().indexOf('Media watch') < html().indexOf('AI daily scan'));
+ok('grouping stays off while sorting flat', !html().includes('class="grouphead"'));
+setFilter('group', 'kind');
+
+// ---------------------------------------------------------- PLAN: bulk
 {
-    const boxes = sandbox.document.querySelectorAll('.rowsel[data-kind="sched"]');
-    ok('a checkbox exists per schedule row', boxes.length === 2);
-    boxes.forEach(b => { b.checked = true; });
+    const boxes = query('.rowsel');
+    boxes.forEach(b => { b.checked = true; b.fire('change'); });
     posted = [];
-    clickWired('bulk', 'off:sched');
-    ok('bulk disable posts every selected id', posted[0] && posted[0].type === 'bulk'
-        && posted[0].act === 'off' && posted[0].ids.length === 2
-        && posted[0].ids.includes('s1') && posted[0].ids.includes('s2'));
-    boxes.forEach(b => { b.checked = false; });
+    clickData('bulk', 'off');
+    ok('bulk switch-off posts every selected row with its kind',
+        posted[0] && posted[0].type === 'bulk' && posted[0].act === 'off'
+        && posted[0].rows.length === 3
+        && posted[0].rows.some(r => r.kind === 'schedule' && r.id === 's1')
+        && posted[0].rows.some(r => r.kind === 'trigger' && r.id === 't1'));
     posted = [];
-    clickWired('bulk', 'on:sched');
-    ok('bulk with nothing selected posts nothing', posted.length === 0);
+    clickData('bulk', 'on');
+    ok('a cleared selection posts nothing', posted.length === 0);
 }
 
-// a paused farm flips the strip to Resume — the master switch must be visible
+// ------------------------------------------------------------- RUN side
+clickData('tab', 'run');
+ok('the RUN tab renders its own toolbar', html().includes('Search run, prompt, agent'));
+ok('a live run is listed', html().includes('live run'));
+ok('a parked run explains why it is parked', html().includes('agent busy (genel)'));
+ok('statuses render as pills', html().includes('>running<') && html().includes('>failed<'));
+ok('the run says where it came from', html().includes('>schedule<') && html().includes('AGENT_AREA batch'));
+ok('a manual run says "you"', html().includes('>you<'));
+ok('cost per run is shown', html().includes('$0.22'));
+ok('the natural-language command bar is here, not on the plan tab', html().includes('id="cmd"'));
+
+posted = [];
+query('[data-task="cancel"]')[0].click();
+ok('cancel posts task/cancel', posted[0] && posted[0].type === 'task' && posted[0].act === 'cancel');
+posted = [];
+query('[data-task="rerun"]')[0].click();
+ok('re-run is offered on a finished run', posted[0] && posted[0].act === 'rerun');
+posted = [];
+query('[data-task="unpark"]')[0].click();
+ok('a parked run can be retried', posted[0] && posted[0].act === 'unpark' && posted[0].id === 'r2');
+posted = [];
+query('[data-out]')[0].click();
+ok('output opens by path', posted[0] && posted[0].type === 'open-output' && posted[0].file === 'D:/out/r3.md');
+
+setFilter('status', 'failed');
+ok('the run status filter works', html().includes('broken run') && !html().includes('live run'));
+ok('and reports itself as a chip', html().includes('status: failed'));
+resetView();
+setFilter('source', 'trigger');
+ok('filtering by source works', html().includes('broken run') && !html().includes('finished run'));
+resetView();
+
+query('[data-expand="run:r3"]')[0].click();
+ok('a run expands to its prompt inline', html().includes('commit the repo'));
+ok('and offers its transcript', html().includes('data-tr="D:/t/s.jsonl"'));
+
+// -------------------------------------------- filters are remembered per tab
+clickData('tab', 'plan');
+ok('plan filters survived the tab round-trip (kind still grouped)', html().includes('class="grouphead"'));
+ok('the plan tab does NOT inherit the run tab filters', !html().includes('status: failed'));
+
+// ------------------------------------------------------ paused-farm state
 {
-    const saved = DATA.gate;
-    DATA.gate = { ...saved, paused: true, pauseReason: 'reviewing cost', blocked: true, blockReason: 'all automations are paused' };
-    clickWired('sec', 'board');
-    clickWired('sec', 'automations');
-    ok('paused farm shows the ALL PAUSED badge', html().includes('ALL PAUSED'));
-    ok('paused farm explains why', html().includes('reviewing cost'));
+    DATA.gate = { paused: true, pauseReason: 'reviewing cost', blocked: true, blockReason: 'all automations are paused', quietFrom: '', quietTo: '' };
+    sandbox.window.__DATA__ = DATA;
+    clickData('tab', 'run'); clickData('tab', 'plan');   // force a re-render
+    ok('a paused farm is unmissable', html().includes('ALL PAUSED'));
+    ok('and explains itself', html().includes('reviewing cost'));
+    ok('quiet hours read as off when unset', html().includes('Quiet off'));
     posted = [];
-    clickWired('gate', 'resume');
-    ok('Resume all posts gate/resume', posted[0] && posted[0].act === 'resume');
-    DATA.gate = saved;
-    clickWired('sec', 'board');
-    clickWired('sec', 'automations');
+    clickData('gate', 'resume');
+    ok('Resume all is offered instead of Pause', posted[0] && posted[0].act === 'resume');
 }
 
-// an older payload with no gate block must still render (defensive)
+// --------------------------------------------------------- empty states
+// The page captured DATA by reference at load, so a fresh object would be
+// ignored — mutate the object it is actually holding.
 {
-    const saved = DATA.gate;
-    delete DATA.gate;
-    clickWired('sec', 'board');
-    clickWired('sec', 'automations');
-    ok('a page rendered without gate data still draws', html().includes('Automation gate'));
-    DATA.gate = saved;
-    clickWired('sec', 'board');
-    clickWired('sec', 'automations');
+    DATA.gate = { paused: false, quietFrom: '', quietTo: '' };
+    DATA.plan.length = 0;
+    DATA.runs.length = 0;
+    DATA.summary.issues = 0;
+    DATA.summary.savedWakeups7d = 0;
+    DATA.summary.needsYou = 0;
+    clickData('tab', 'run'); clickData('tab', 'plan');
+    ok('an empty plan explains what to do', html().includes('Nothing is automated yet'));
+    clickData('tab', 'run');
+    ok('an empty run list says so', html().includes('Nothing has run yet'));
 }
 
-// ---------- reusables ----------
-clickWired('sec', 'reusables');
-ok('template row renders with prompt preview', html().includes('triage inbox')
-    && html().includes('triage the inbox now'));
-ok('workflow card lists steps and marks parallel', html().includes('publish pipeline')
-    && html().includes('∥ render'));
-posted = [];
-clickWired('tpl', 'run:tp1');
-ok('template run posts tpl/run', posted[0] && posted[0].type === 'tpl' && posted[0].act === 'run' && posted[0].id === 'tp1');
-posted = [];
-clickWired('wf', 'run:w1');
-ok('workflow run posts wf/run', posted[0] && posted[0].type === 'wf' && posted[0].act === 'run' && posted[0].id === 'w1');
-
-// ---------- analytics ----------
-clickWired('sec', 'analytics');
-ok('KPI tiles render', html().includes('Runs · 30d') && html().includes('40')
-    && html().includes('Success rate') && html().includes('79%'));
-ok('alert renders', html().includes('Tasks are failing more than succeeding'));
-ok('throughput chart got 30 daily buckets', html().includes('data-bars="30x2"'));
-ok('agent scorecard row renders', html().includes('psikolog') && html().includes('20✓ / 4✗ / 1⊘'));
-ok('always-failing family badged', html().includes('always fails'));
-ok('forecast digest lists the upcoming run', html().includes('5 scheduled run(s)')
-    && html().includes('daily digest'));
-posted = [];
-clickWired('open', 'open-forecast');
-ok('Open full forecast posts open-forecast', posted[0] && posted[0].type === 'open-forecast');
-posted = [];
-clickWired('open', 'open-history');
-ok('Task history posts open-history', posted[0] && posted[0].type === 'open-history');
-
-// ---------- host messages ----------
-msgHandler({ data: { type: 'focus', section: 'board' } });
-ok('focus message switches back to the board', html().includes('id="cmd"'));
-msgHandler({ data: { type: 'data', data: { ...DATA, board: { ...DATA.board, running: [] } } } });
-ok('data message re-renders in place', html().includes('⚙️ Running') && !html().includes('live run'));
-
-// a queue column with several tasks grows a "cancel all"
-msgHandler({
-    data: {
-        type: 'data',
-        data: { ...DATA, board: { ...DATA.board, inbox: [task({ id: 't1' }), task({ id: 't6', title: 'second queued' })] } }
-    }
-});
-ok('two queued tasks surface cancel all on the column', html().includes('data-cancelcol="inbox"'));
-posted = [];
-clickWired('cancelcol', 'inbox');
-ok('cancel all posts cancel-all with the column', posted[0] && posted[0].type === 'cancel-all'
-    && posted[0].col === 'inbox');
-
-console.log(`${pass} passed, ${fail} failed`);
-if (fail) { process.exit(1); }
+console.log(`\n${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);

@@ -419,7 +419,46 @@ Storm guards are built in and **configured per-trigger from 2.8.0** — the wiza
 - **Hourly cap** (default 6/hour, 0 = unlimited): exceeded ones are skipped with a warning.
 - A trigger that watches its own output archive can't be set up / is disabled if it was (feedback-loop protection).
 
-Management: the **Add Trigger** wizard; on the trigger row ▶ (fire by hand), toggle on/off, delete; right-click → **Edit Trigger** to change name, prompt, target agent, debounce, cooldown and hourly cap afterwards (2.8.0 — editing `farm-tasks.json` by hand is no longer needed). How many times it fired and the last fire time show on the row. If the watch path is lost, the row shows a red "PATH MISSING".
+Management: the **Add Trigger** wizard; on the trigger row ▶ (fire by hand), toggle on/off, delete; right-click → **Edit Trigger** to change name, prompt, target agent, model, precondition, debounce, cooldown and hourly cap afterwards (2.8.0 — editing `farm-tasks.json` by hand is no longer needed). Firings, skips and the last fire time show on the row. If the watch path is lost, the row shows a "path missing" badge.
+
+## The Automation Gate {#otomasyon-kapisi}
+
+Added in 3.17.0. The storm brakes above (debounce / cooldown / hourly cap) are all **frequency** brakes: they cap how *often* an agent wakes, never whether waking is *worth* anything. The measured result: one folder watch woke opus 23 times over five nights, found nothing every time, and cost **$70.90**. The only way to learn "there was nothing to do" was to pay for a full wake-up.
+
+Now every unattended run must pass two questions **before** a model is spawned.
+
+### 1. May the farm work right now?
+
+- **Master switch** — `Pause All Automations` / `Resume All Automations`, with an optional reason so a forgotten pause stays explainable.
+- **Timed pause** — 1h / 8h / 24h; it expires on its own, no cleanup.
+- **Quiet hours** (`Set Quiet Hours`, e.g. 23:30–04:30, may wrap past midnight) — nothing wakes on its own inside the window. A schedule whose time arrives is **deferred, not dropped**: it fires when the window ends and shows a `deferred` badge. Manual "run now" ignores quiet hours — pressing a button is not an unattended wake-up; the master switch still applies to it.
+
+### 2. Is there actually work? — the `fireIf` precondition
+
+A content brake on schedules and triggers, evaluated **for free**:
+
+| Kind | Fires when | Typical use |
+|---|---|---|
+| `folderHasFiles` | the folder holds ≥ `minCount` files (`except[]`, `recursive`) | an inbox that should end up empty (`except: ["_LOG_.md"]`) |
+| `fileMissing` | the path does **not** exist | nudges: today's diary entry was never written |
+| `pathChangedWithin` | the path changed within `hours` | act on fresh activity, ignore a stale tree |
+| `queueHasWork` | the work queue holds ≥ `minCount` live items | sweeps — don't wake for an empty queue |
+
+Paths accept **`{today}` / `{yesterday}`** (local `YYYY-MM-DD`). **Opt-in**: nothing that already exists changes behaviour. An unknown kind **fails open** (fires) — a guard must never suppress real work by accident.
+
+A precondition that fails wakes nobody; a schedule stamps that occurrence as settled (so it doesn't retry all day) and a trigger increments `skipCount`. **Every decision (fired/skipped + reason) is written to `automationLog`** — a guard that silently swallowed work would be precisely the "rule that fails silently" the agent constitution forbids. The log is readable at the bottom of the Living page and through `automations.status`.
+
+### 3. The model belongs on the automation
+
+`FarmSchedule.model` and a trigger's `action.model` **beat** the `agentFarm.modelPolicy` regex engine. Reason: a policy rule could silently contradict the duty's own `DUTIES.md` line (real case: the text said "run this on opus" while the rule downgraded it to sonnet). The model is now picked in the wizard and badged on the row.
+
+### 4. Budget is a brake, not a warning
+
+`agentFarm.budgets` (per agent name, `"*"` = fleet) now **blocks the launch** once today's ceiling is reached — the task is parked with the reason. It used to raise an insight and start the task anyway; a ceiling you can walk through is not a ceiling.
+
+### Bridge
+
+`automations.status` (the gate + per-automation fired/skipped/skipRate + what would fire right now) · `automations.pause {minutes?, reason?}` · `automations.resume` · `automations.quietHours {from,to}` · `automations.bulk {set, kind?, titles?, tag?}`, plus `model` and `fireIf` arguments on `schedules.add/edit` and `triggers.add/edit`. Why an automation didn't run is never guessed — it is asked.
 
 ## Multi-Agent Workflows
 
@@ -979,6 +1018,36 @@ Against signal fatigue: instead of ten separate warnings, once a week a three-se
 - Index: the **Build Semantic Index** command vectorizes the last `semanticMaxSessions` (300) sessions in chunks; it's file-based, works incrementally (only new/changed sessions), and refreshes itself up to 20 sessions on every semantic search.
 - Results show a similarity-percentage badge; in semantic mode no automatic search happens as you type (each query is an embedding call), you search with Enter.
 
+## Notices and the Work Queue — the agent↔you channel {#notices-kuyruk}
+
+A two-way async channel; **🔔 Notices | 📥 Queue** are two tabs in the global nav, sharing one attention badge in the status bar.
+
+**Notices (agent → you):** every agent leaves **one row per thing it wants to tell you**. Two axes: `type` (update · report · result · reminder · suggestion · warning · question) and `level` (1 routine → 4 ultra). Long content travels on two legs: the **summary** on the board plus a full report written into `10_REPORT` behind it ("📄 Open full report"). The `question` type carries an async lifecycle: the agent asks, you answer in the UI (→answered) or close it unanswered (→declined), and the agent applies the answer and resolves it on its next turn. For **ageing**, see [the Living page](#yasam-panosu).
+
+**Work Queue (you → agent):** the frictionless channel for fixes you notice while working (`Ctrl+Alt+Q`); items **do not disappear until handled**. Pipeline: `captured → grouped → delegated → done` (+ `blocked` = a question for you, the only attention-grabbing state; `dropped` = invalid). A non-terminal item **cannot be deleted** — a bad entry moves to `dropped`, which counts as handled. A notice converts to a queue item in one click (`queue.fromNotice`), answering a question creates one automatically, and the item links back through `sourceNoticeId`.
+
+**Maturity engine — `queue.maturity` (3.18.1).** The grouping/maturity decision (group · wait · delegate) moved from prose into code: it applies the thresholds (`agentFarm.queue.groupSize`, `queue.maxAgeHours`) and returns `{ actionable, reason, ripe[], ungrouped, starving[] }`. **`starving` is what `queue.groups` cannot show you:** an item that was never grouped has no `groupId`, so a sweep reading only the group digest concludes "the queue is idle" while the user's own answer rots past the ceiling — which is exactly what happened. **Every sweep starts with `queue.maturity`.**
+
+## The Living Page {#yasam-panosu}
+
+**Agent Farm: Open Living** (**💓 Living** in the global nav) — 3.18.0. One screen answering one question: **is the system alive today?**
+
+It exists because of a measured failure: the daily LifeOS cycle stopped for 16 days while the safety-net duty ran **correctly** every morning and posted its reminder, which nobody read. There was no error and no red part — and the system was dead. Every other page reports on a **part**; this one reports on **loops**: something opened — did it close?
+
+Rows:
+
+- **Notices** — the **age** of unread level-3+ messages (not the count). More than three stale ones = stopped.
+- **Questions** — open, unanswered questions. *Read ≠ answered.* Answered-but-unprocessed questions get their own row.
+- **Queue** — the age of the oldest live item; a `captured` item past `queue.maxAgeHours` means the pipeline stopped. Blocked items get their own row.
+- **Automations** — all switched off = dead; enabled but silent for 7 days = the quiet death; enabled but unguarded = a cost warning; a closed gate gets its own row.
+- **Duties** — a `[daily]`/`[weekly]` duty with no schedule or trigger behind it (`[every-turn]` is passive by design, exempt).
+- **Spend** — today against the ceiling; with no ceiling set it reads "idle", not healthy.
+- **Your own checks** — `agentFarm.livingChecks`: the precondition engine read as **"TRUE = needs attention"**, so the same `{today}` tokens check a diary file or a folder that should be empty. Added via `Configure Living Checks…`.
+
+**Score:** a dead loop counts zero, a warning counts half — a system with one dead loop must not read as "94% healthy". At the bottom sits the **automation decision log**: when, what fired, what was skipped, and **why**.
+
+**Notice ageing (the second beat):** an unread level-3+ notice or unanswered question older than `agentFarm.noticeStaleHours` (default 24) turns the status-bar bell into a warning naming the oldest item and its age, and nags **once** per unanswered question. The goal is not nagging — it is that ignoring something has a consequence.
+
 ## Command Center
 
 As the fleet grows, the bottleneck is you: who's waiting for permission, which browser step wants approval, where did the budget overflow? The Command Center layer (Phase G) is for answering these questions on a single screen.
@@ -994,34 +1063,52 @@ As the fleet grows, the bottleneck is you: who's waiting for permission, which b
 
 The status bar now counts this queue: if `🔔 N need you` shows, clicking it opens the queue. Three blocking kinds are counted: permission, browser approval, stalled.
 
-### Tasks Page {#tasks-sayfasi}
+### Tasks Page — the agent-activity control panel {#tasks-sayfasi}
 
-**Agent Farm: Open Tasks** (the **Tasks** button left of Missions in the global nav; the $(layout) icon in the Tasks tree header opens it too) — the whole task world on one rich command page. Right under the header the **NOW strip** stays visible in every section: what's running (against the fleet limit), what needs you (click → Board), the queue count and the **next scheduled run** — the page's pulse is in view whichever tab you're on. Section buttons carry counts too (⚠ on Analytics when there are alerts). Four sections:
+**Agent Farm: Open Tasks** (the **Tasks** button in the global nav) — **redesigned from scratch in 3.19.0**. The old four-section layout (Board / Automations / Reusables / Analytics) is gone: the section names described the implementation's internal types rather than the objects in the user's head, and the *plan* for a thing lived in a different tab from its *runs* ("there are triggers, but where are the tasks?").
 
-**Board** — the manager surface for the queue (the old standalone Kanban page folded in here; the `Open Task Board` command opens this section):
+The page is now built on the one distinction that actually exists in the data:
 
-- Columns: **📥 Inbox** (queued, to be started by hand) · **🕓 Parked** (waiting on capacity/quota) · **⚙️ Running** · **🛡️ Needs Approval** (permission + browser approvals, Run/Reject on the card) · **🏁 Done** (last 30).
-- **Drag and drop** cards: Inbox→Running = start, Running→Done = complete, Inbox→Done = cancel. The card shows agent, duration, verify badge, run/media cost and a provenance badge (🕑 schedule · ⚡ trigger · 🔗 workflow); hovering the title shows the **full prompt**. **Double-click** a card that has an output archive = open the output.
-- **Every card carries its next action**: queued = ▶ run-now (jumps the queue) + cancel · running = ⌨ jump to terminal + cancel · finished = ↻ **re-run** (a workflow step resumes its chain) + ✕ remove. Cards with an output/transcript get explicit 📄/🗒 open buttons.
-- **Bulk actions on the columns**: Done has **clear all** (history is archived first, output files are deleted), multi-item Inbox/Parked get **cancel all** — both behind a confirm, so a 15-card cleanup is one click, not fifteen.
-- Above the board is a **command bar**: type your natural-language sentence, a cheap model turns it into a plan, and it's set up with a preview approval (the same flow as Natural Language Command below). Next to it a **filter box** narrows every task column by title/agent/status (approvals never hide); column headers show `shown/total`.
-- Above the columns sits the **load strip**: fleet-wide `running/limit` (agentFarm.maxConcurrentTasks) plus per-agent `running/limit` and queue counts — an agent at its limit glows orange. The NOW strip adds a **🏁 today** cell (done/failed since midnight, archive included). Relative times tick every 30s on their own.
+- **PLAN** — everything that **defines** work: schedules, triggers, workflows, templates. Four different internal types that the user manages **the same way** (switch it, guard it, pick its model, run it, edit it, delete it) — so they live in **one table** with a kind column.
+- **RUN** — what those definitions actually did.
 
-**Automations** — triggers and schedules in one place:
+Management comes first and gets the rich surface.
 
-- **Triggers**: source (watch/webhook/hook) → target, armed/fired state, the **reliability scorecard** (7-day ✓/✗ + start delay), debounce/cooldown/hourly cap; row actions **enable/disable · fire · edit · delete**. A watch trigger whose path vanished shows a "path missing" badge.
-- **Schedules**: when (daily/weekly/once) + missed policy, the **next run time**; row actions **enable/disable · run now · edit · delete**.
+#### Control strip (fixed on both tabs)
 
-**Reusables**:
+The automation gate's state plus one-move controls: **⏸ Pause all** / **▶ Resume all**, 1h / 8h / 24h timed pause, **🌙 quiet hours**. Beside them the numbers: running/limit · queued · needs you · **how many plans are on** · finished/failed today · the automations' **7-day cost** · **suppressed wake-ups** · **rows needing attention** (clicking filters the table down to them).
 
-- **Templates**: saved prompt templates — run/delete from the row (to save one: right-click a finished task in the Tasks tree → Save as template).
-- **Workflows**: cards with the step list (∥ = parallel step) — run, add step, rename, delete.
+#### PLAN tab
 
-**Analytics** — the task-health page:
+One table, one row language:
 
-- 30-day KPIs (runs, success rate, median duration, verify retries, queue ETA) + alerts (failing agents, always-failing families/triggers).
-- The daily **throughput chart** (done/failed), the **per-agent scorecard** table, **task families** (repeated runs of the same job).
-- The **forecast digest**: the next N days of scheduled runs with their usual duration/success; one-click bridges to the full forecast document and the monthly task-history files.
+| Column | What it tells you |
+|---|---|
+| kind + name | ⏰ schedule · ⚡ trigger · 🔗 workflow · 📋 template, with problem badges |
+| when | "every day 05:00" · "on change · …/inbox" · "when you run it" + the next run |
+| agent / model | the model stated **on** the automation (it beats the policy engine); otherwise "default" |
+| guard | the `fireIf` precondition + **how many wake-ups it saved** |
+| cost 7d | what that definition actually spent |
+| last run | when + the reason behind the last decision ("no files waiting") |
+| on/off | a real **switch**; things with no on/off state say "manual" instead of faking one |
+
+- **Search** covers name, prompt, agent and the timing text at once.
+- **Filters**: kind · agent · model · state · guard · "needs attention". **Every active filter is VISIBLE as a removable chip** ("showing 3 of 12 — kind: trigger ✕") with a one-click **Reset filters** beside it. A filter you forgot you set is worse than no filter.
+- **Grouping**: by kind (default) · by agent · flat. Sorting from the column headers; a second click flips the direction.
+- **Bulk**: row checkboxes + select-all → switch many on/off in one move (behind a confirm).
+- **Row detail expands inline** (▸): full prompt, target, timing, precondition, the 7-day run/skip/cost breakdown, and the step list for a workflow. Nothing opens a mystery second page.
+- **Adding** is on the same bar: + Schedule · + Trigger · + Workflow.
+- Problem badges: `no guard` (fires whether or not there is work) · `path missing` · `always fails` · `never ran` · `deferred` (held by quiet hours) · `no steps`.
+
+#### RUN tab
+
+Live, queued, parked and finished runs in one list: status · **where it came from** (schedule / trigger / workflow / you) · duration · cost · when. Row actions: start · move to front · terminal · cancel · re-run · output · delete; a parked run gets "retry start". Detail expands inline (full prompt + transcript). Filters: agent · status · source + search, with the same chip/reset behaviour as PLAN. The **natural-language command bar** lives on this tab.
+
+Filter state is remembered **per tab**; switching tabs never bleeds one tab's filters into the other.
+
+#### Analytics is now its own page
+
+**Agent Farm: Open Task Analytics** (the 📊 Analytics button on the PLAN bar) — 30-day KPIs, throughput chart, per-agent scorecard, task families, alerts and the forecast. Split off **deliberately**: those numbers are for *reading*; you should not have to hunt for a switch underneath charts while turning an automation on. Every table there carries its own search/filter/sort/↺ reset/⬇ MD export.
 
 ### Cost Anomaly {#maliyet-anomalisi}
 
