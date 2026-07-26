@@ -2570,10 +2570,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'agents.sync',
-            describe: 'Cross-engine sync for one agent: CLAUDE.md → AGENTS.md (the shared instruction file read by BOTH Antigravity and Codex) + duty workflows + a Codex MCP TOML snippet when .mcp.json exists. Non-destructive: if AGENTS.md diverged from CLAUDE.md (conflict / foreign / antigravity-ahead) it reports the state and changes nothing unless force=true. args: agent (name|id), force? (default false)',
+            describe: 'Cross-engine sync for one agent. Writes BOTH lanes, because the engines look in different places: <agent>/AGENTS.md (Codex merges one AGENTS.md per directory from the git root down to its cwd) and <agent>/.agents/AGENTS.md (Antigravity\'s workspace customization root — it reads NOTHING above the workspace, so the shared constitution is embedded in this file). Plus duty workflows and a Codex MCP TOML snippet when .mcp.json exists. Non-destructive: if a generated file diverged (conflict / foreign / antigravity-ahead) it reports the state and changes nothing unless force=true. args: agent (name|id), force? (default false)',
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
-                const st = antigravityStatus(agent.dir);
+                const st = antigravityStatus(agent.dir, agent.constitutionPath);
                 // Divergence that needs a human decision — surface it, don't clobber.
                 if ((st.state === 'conflict' || st.state === 'foreign' || st.state === 'antigravity-ahead')
                     && args.force !== true) {
@@ -2582,12 +2582,52 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         note: 'AGENTS.md diverged from CLAUDE.md — resolve with the "Sync Agent with Antigravity + Codex" command, or pass force=true to overwrite from CLAUDE.md.'
                     };
                 }
-                const ag = syncToAntigravity(agent.dir, agent.duties, { force: true });
+                const ag = syncToAntigravity(agent.dir, agent.duties,
+                    { force: true, constitutionPath: agent.constitutionPath });
                 const cx = syncCodexExtras(agent.dir);
                 return {
                     agent: agent.name, state: 'in-sync', synced: true,
+                    constitution: agent.constitutionPath ?? null,
                     written: [...ag.written, ...cx.written],
                     notes: [...ag.notes, ...cx.notes]
+                };
+            }
+        },
+        {
+            op: 'constitution.sync',
+            describe: 'Mirror the SHARED constitution — a nest root\'s own CLAUDE.md, the instructions Claude Code loads for every child agent — to that folder\'s AGENTS.md (which Codex picks up on its git-root→cwd walk) and .agents/AGENTS.md (Antigravity, for when the nest folder itself is the open workspace). Agents get the same text embedded in their own .agents/AGENTS.md via agents.sync, since Antigravity reads no parent folder. CLAUDE.md is read, never written. args: root? (path or folder name — omit when there is only one nest), force? (default false: a foreign or hand-edited AGENTS.md is reported, not overwritten)',
+            handler: (args) => {
+                const { reports } = scanRoots(
+                    cfg().get<string[]>('agentRoots', []),
+                    cfg().get<string[]>('excludeAgentDirs', []));
+                const nests = reports.filter(r =>
+                    r.kind === 'nest' && fs.existsSync(path.join(r.root, 'CLAUDE.md')));
+                if (!nests.length) {
+                    throw new Error('no shared constitution found (a root that holds agent folders and has its own CLAUDE.md)');
+                }
+                const want = optStr(args, 'root');
+                const nest = want
+                    ? nests.find(n => normPath(n.root) === normPath(expandEnvPath(want)) ||
+                        path.basename(n.root).toLowerCase() === want.toLowerCase())
+                    : nests[0];
+                if (!nest) {
+                    throw new Error(`no such nest: ${want} (known: ${nests.map(n => path.basename(n.root)).join(', ')})`);
+                }
+                const st = antigravityStatus(nest.root);
+                if ((st.state === 'conflict' || st.state === 'foreign' || st.state === 'antigravity-ahead')
+                    && args.force !== true) {
+                    return {
+                        root: nest.root, state: st.state, synced: false,
+                        note: 'AGENTS.md at the nest root diverged from the constitution — inspect it, or pass force=true to overwrite it from CLAUDE.md.'
+                    };
+                }
+                const ag = syncToAntigravity(nest.root, [], { force: true });
+                const cx = syncCodexExtras(nest.root);
+                return {
+                    root: nest.root, state: 'in-sync', synced: true,
+                    written: [...ag.written, ...cx.written],
+                    notes: [...ag.notes, ...cx.notes,
+                        'Agents embed this text in their own .agents/AGENTS.md — run agents.sync for each agent to propagate a change.']
                 };
             }
         }
@@ -8136,18 +8176,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     });
             };
 
-            const status = antigravityStatus(agent.dir);
+            const sync = (opts: { force?: boolean } = {}) =>
+                syncToAntigravity(agent.dir, agent.duties,
+                    { ...opts, constitutionPath: agent.constitutionPath });
+
+            const status = antigravityStatus(agent.dir, agent.constitutionPath);
             switch (status.state) {
                 case 'none': {
                     const ok = await vscode.window.showInformationMessage(
                         `Make "${agent.name}" Antigravity + Codex compatible?\n\n` +
-                        `Creates AGENTS.md (from CLAUDE.md) — read by BOTH Antigravity and Codex — ` +
+                        `Creates AGENTS.md from CLAUDE.md (the cross-tool file Codex reads) and ` +
+                        `.agents/AGENTS.md (Antigravity's own rules file${agent.constitutionPath ? ', with the shared constitution embedded — Antigravity reads nothing above the workspace root' : ''}), ` +
                         `.agents/workflows/ from active duties, and MCP merge suggestions if .mcp.json exists ` +
                         `(JSON for Antigravity, TOML for Codex).\n\n` +
                         `memory/ is shared as-is — no conversion. From now on, edits on either side are detected and can be synced back.`,
                         { modal: true }, 'Create');
                     if (ok !== 'Create') { return; }
-                    showResult('Antigravity + Codex files created', withCodex(syncToAntigravity(agent.dir, agent.duties)));
+                    showResult('Antigravity + Codex files created', withCodex(sync()));
                     return;
                 }
                 case 'foreign': {
@@ -8156,16 +8201,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         `Overwrite it with CLAUDE.md content? (a timestamped .afbak backup is kept)`,
                         { modal: true }, 'Overwrite');
                     if (ok !== 'Overwrite') { return; }
-                    showResult('AGENTS.md replaced', withCodex(syncToAntigravity(agent.dir, agent.duties, { force: true })));
+                    showResult('AGENTS.md replaced', withCodex(sync({ force: true })));
                     return;
                 }
                 case 'in-sync': {
                     // Refresh duty workflows anyway — duties may have changed independently.
-                    showResult('already in sync (duty workflows refreshed)', withCodex(syncToAntigravity(agent.dir, agent.duties)));
+                    showResult('already in sync (duty workflows refreshed)', withCodex(sync()));
                     return;
                 }
                 case 'claude-ahead': {
-                    showResult('CLAUDE.md → AGENTS.md synced', withCodex(syncToAntigravity(agent.dir, agent.duties)));
+                    showResult('CLAUDE.md → AGENTS.md synced', withCodex(sync()));
                     return;
                 }
                 case 'antigravity-ahead': {
@@ -8174,13 +8219,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         `(CLAUDE.md gets a timestamped .afbak backup)`,
                         { modal: true }, 'Apply to CLAUDE.md', 'Show Diff', 'Overwrite with CLAUDE.md');
                     if (choice === 'Apply to CLAUDE.md') {
-                        showResult('AGENTS.md → CLAUDE.md synced', withCodex(syncToClaude(agent.dir)));
+                        showResult('AGENTS.md → CLAUDE.md synced', withCodex(syncToClaude(agent.dir, agent.constitutionPath)));
                     } else if (choice === 'Show Diff') {
                         await vscode.commands.executeCommand('vscode.diff',
                             vscode.Uri.file(agent.claudeMdPath), vscode.Uri.file(agentsPath),
                             `${agent.name}: CLAUDE.md ↔ AGENTS.md`);
                     } else if (choice === 'Overwrite with CLAUDE.md') {
-                        showResult('AGENTS.md overwritten from CLAUDE.md', withCodex(syncToAntigravity(agent.dir, agent.duties)));
+                        showResult('AGENTS.md overwritten from CLAUDE.md', withCodex(sync()));
                     }
                     return;
                 }
@@ -8196,13 +8241,104 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     } else if (choice === 'Claude wins') {
                         const b = path.join(agent.dir, AGENTS_MD_NAME);
                         try { fs.copyFileSync(b, `${b}.${Date.now()}.afbak`); } catch { /* best effort */ }
-                        showResult('resolved: CLAUDE.md → AGENTS.md', withCodex(syncToAntigravity(agent.dir, agent.duties, { force: true })));
+                        showResult('resolved: CLAUDE.md → AGENTS.md', withCodex(sync({ force: true })));
                     } else if (choice === 'Antigravity wins') {
-                        showResult('resolved: AGENTS.md → CLAUDE.md', withCodex(syncToClaude(agent.dir)));
+                        showResult('resolved: AGENTS.md → CLAUDE.md', withCodex(syncToClaude(agent.dir, agent.constitutionPath)));
                     }
                     return;
                 }
             }
+        }),
+
+        // The shared constitution — a nest root's own CLAUDE.md, which Claude
+        // Code loads for every child session. Codex gets it for free once the
+        // folder has an AGENTS.md (it merges one file per directory from the
+        // git root down to the cwd); Antigravity never reads above a workspace
+        // root, so agents carry it embedded in their own rules file and this
+        // command only covers the case where the nest folder IS the workspace.
+        vscode.commands.registerCommand('agentfarm.syncConstitution', async () => {
+            const { reports } = scanRoots(
+                cfg().get<string[]>('agentRoots', []),
+                cfg().get<string[]>('excludeAgentDirs', []));
+            const nests = reports.filter(r =>
+                r.kind === 'nest' && fs.existsSync(path.join(r.root, 'CLAUDE.md')));
+            if (!nests.length) {
+                void vscode.window.showWarningMessage(
+                    'Agent Farm: no shared constitution found — a root folder that holds agent folders AND its own CLAUDE.md is what this syncs.');
+                return;
+            }
+            let nest = nests[0].root;
+            if (nests.length > 1) {
+                const picked = await vscode.window.showQuickPick(
+                    nests.map(n => ({ label: path.basename(n.root), description: n.root })),
+                    { title: 'Which shared constitution?' });
+                if (!picked) { return; }
+                nest = picked.description;
+            }
+
+            const run = (force: boolean): SyncResult => {
+                const ag = syncToAntigravity(nest, [], { force });
+                const cx = syncCodexExtras(nest);
+                return {
+                    written: [...ag.written, ...cx.written],
+                    skipped: [...ag.skipped, ...cx.skipped],
+                    backups: [...ag.backups, ...cx.backups],
+                    notes: [...ag.notes, ...cx.notes]
+                };
+            };
+            const report = (title: string, r: SyncResult) => {
+                refreshAll();
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: ${title} — ${r.written.length} file(s) written` +
+                    (r.skipped.length ? `, ${r.skipped.length} left untouched` : '') +
+                    (r.backups.length ? `, ${r.backups.length} backup(s)` : '') +
+                    '. Agents carry this constitution inside their own .agents/AGENTS.md — re-sync them to pick up changes.',
+                    'Open AGENTS.md')
+                    .then(c => {
+                        if (c === 'Open AGENTS.md') {
+                            void vscode.commands.executeCommand('vscode.open',
+                                vscode.Uri.file(path.join(nest, AGENTS_MD_NAME)));
+                        }
+                    });
+            };
+
+            const status = antigravityStatus(nest);
+            if (status.state === 'foreign') {
+                const ok = await vscode.window.showWarningMessage(
+                    `${path.basename(nest)} already has an AGENTS.md that Agent Farm did not generate. ` +
+                    `Overwrite it from the shared CLAUDE.md? (a timestamped .afbak backup is kept)`,
+                    { modal: true }, 'Overwrite');
+                if (ok !== 'Overwrite') { return; }
+                report('shared constitution mirrored', run(true));
+                return;
+            }
+            if (status.state === 'antigravity-ahead' || status.state === 'conflict') {
+                // The constitution is the system's most load-bearing file: this
+                // command never writes it back, it only offers the diff.
+                const choice = await vscode.window.showWarningMessage(
+                    `${path.basename(nest)}/AGENTS.md was edited since the last sync. The constitution itself is never ` +
+                    `overwritten from a generated file — inspect the diff, or overwrite AGENTS.md from CLAUDE.md.`,
+                    { modal: true }, 'Show Diff', 'Overwrite AGENTS.md');
+                if (choice === 'Show Diff') {
+                    await vscode.commands.executeCommand('vscode.diff',
+                        vscode.Uri.file(path.join(nest, 'CLAUDE.md')),
+                        vscode.Uri.file(path.join(nest, AGENTS_MD_NAME)),
+                        `${path.basename(nest)}: CLAUDE.md ↔ AGENTS.md`);
+                } else if (choice === 'Overwrite AGENTS.md') {
+                    report('shared constitution mirrored', run(true));
+                }
+                return;
+            }
+            if (status.state === 'none') {
+                const ok = await vscode.window.showInformationMessage(
+                    `Make the shared constitution in "${path.basename(nest)}" readable by Antigravity + Codex?\n\n` +
+                    `Creates ${path.basename(nest)}/AGENTS.md (Codex merges it on its walk from the git root down to ` +
+                    `whatever agent folder it runs in) and .agents/AGENTS.md (Antigravity, for when this folder itself ` +
+                    `is the open workspace).\n\nCLAUDE.md is only read — never written.`,
+                    { modal: true }, 'Create');
+                if (ok !== 'Create') { return; }
+            }
+            report('shared constitution mirrored', run(false));
         }),
 
         // ---------- E3: agent packs ----------

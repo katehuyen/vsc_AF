@@ -1302,13 +1302,29 @@ A single file to templatize an agent and move or share it to another machine: `.
 
 ### Antigravity Compatibility {#antigravity-uyumlulugu}
 
-Your agents are optimized for Claude; but if you like, the same agent runs under Google Antigravity (Gemini) too. Antigravity's standard: **AGENTS.md** in the root (a cross-tool instruction file), `.agents/workflows/*.md` (slash-command workflows), `.agents/skills/` (ability guides); MCP configuration in the global `~/.gemini/config/mcp_config.json` (the same `mcpServers` schema as Claude's `.mcp.json`). Since `memory/` files are plain markdown, **both sides use them as is — no conversion needed**.
+Your agents are optimized for Claude; but if you like, the same agent runs under Google Antigravity (Gemini) and OpenAI Codex too. `memory/` files are plain markdown, so **both sides use them as is — no conversion needed**.
 
-**Set up:** right-click an agent → **Sync Agent with Antigravity…**
+**Two engines, two instruction files — because they look in different places.** This is not a preference, it is what each engine does:
+
+| | Reads | Walks up? |
+|---|---|---|
+| **Codex** | one `AGENTS.md` per directory, merged **from the git root down to its cwd** (32 KiB ceiling) | **Yes** — a shared file one level up arrives on its own |
+| **Antigravity** | `<workspace root>/.agents/AGENTS.md` + the global `~/.gemini/config/AGENTS.md` | **No** — nothing above the open workspace is ever loaded |
+
+So the sync writes both: `AGENTS.md` in the agent folder (Codex's cross-tool file) **and** `.agents/AGENTS.md` (Antigravity's rules file, its workspace customization root). Same source, different addressees.
+
+**Set up:** right-click an agent → **Sync Agent with Antigravity + Codex…**
 
 - `CLAUDE.md` → `AGENTS.md` is produced (self-references adapted; a sync marker at the top of the file).
+- `CLAUDE.md` (+ the shared constitution, see below) → `.agents/AGENTS.md`, the file Antigravity actually reads.
 - Active standing duties → `.agents/workflows/` files (called in Antigravity as `/duty-name`).
-- If there's a `.mcp.json` → an `.agents/mcp_config.suggested.json` suggestion (you merge it into the global gemini file by hand — Agent Farm never writes to `~/.gemini`).
+- If there's a `.mcp.json` → an `.agents/mcp_config.suggested.json` suggestion (you merge it into the global gemini file by hand — Agent Farm never writes to `~/.gemini`) and `.agents/codex/mcp.suggested.toml` for Codex.
+
+**The shared constitution.** When agents live in a *nest* — a root folder that holds the agent folders and has its own `CLAUDE.md` — that file is the constitution every agent loads. Claude Code loads a parent instruction file for free; the other engines do not, each in its own way:
+
+- **Codex** gets it once the nest folder has an `AGENTS.md` of its own: **Sync Shared Constitution with Antigravity + Codex…** (or the `constitution.sync` bridge op) mirrors it there, and Codex merges it on its walk down to whatever agent folder it is running in. One copy, no duplication — which is also why the agent's own `AGENTS.md` deliberately does **not** repeat it.
+- **Antigravity** cannot be reached that way at all, so each agent's `.agents/AGENTS.md` carries the constitution **inline**, in a fenced `agent-farm:shared-constitution` block, ahead of the agent's own instructions.
+- The constitution is **read, never written**: the reverse sync strips the fenced block before anything reaches an agent's `CLAUDE.md`, and no command writes the nest `CLAUDE.md`. When the constitution changes, Insights says which agents are still carrying the old text.
 
 **Keep it alive (directional sync):** This isn't a one-time export. On every sync, content fingerprints are written to `.agents/af-antigravity-sync.json`; on the next run it's determined which side moved ahead:
 

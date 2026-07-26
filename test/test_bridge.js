@@ -115,6 +115,46 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
     }
 
+    // ---------- §19.C: constitution.sync op contract (the shared instructions) ----------
+    // The nest root's own CLAUDE.md is what Claude Code loads for every child
+    // agent; the op mirrors it to the files the other engines read, and never
+    // writes the constitution itself.
+    {
+        const nest = fs.mkdtempSync(path.join(os.tmpdir(), 'af-bridge-const-'));
+        fs.mkdirSync(path.join(nest, 'dev'));
+        fs.writeFileSync(path.join(nest, 'CLAUDE.md'), '# Anayasa\n\nOrtak kurallar.\n');
+        fs.writeFileSync(path.join(nest, 'dev', 'CLAUDE.md'), '# Dev\n');
+        reg.register({
+            op: 'constitution.sync',
+            describe: 'Mirror the shared constitution to AGENTS.md (Codex) + .agents/AGENTS.md (Antigravity). args: root?, force?',
+            handler: (a) => {
+                const st = antigravityStatus(nest);
+                if ((st.state === 'conflict' || st.state === 'foreign' || st.state === 'antigravity-ahead')
+                    && a.force !== true) {
+                    return { root: nest, state: st.state, synced: false };
+                }
+                const ag = syncToAntigravity(nest, [], { force: true });
+                const cx = syncCodexExtras(nest);
+                return { root: nest, state: 'in-sync', synced: true, written: [...ag.written, ...cx.written] };
+            }
+        });
+        ok('constitution.sync appears in the catalog', reg.catalog().some(c => c.op === 'constitution.sync'));
+
+        const first = await reg.dispatch('constitution.sync', {});
+        ok('constitution.sync mirrors both engine lanes', first.ok && first.result.synced === true &&
+            fs.existsSync(path.join(nest, 'AGENTS.md')) &&
+            fs.existsSync(path.join(nest, '.agents', 'AGENTS.md')));
+        ok('constitution.sync never writes CLAUDE.md',
+            fs.readFileSync(path.join(nest, 'CLAUDE.md'), 'utf8') === '# Anayasa\n\nOrtak kurallar.\n');
+
+        fs.appendFileSync(path.join(nest, 'AGENTS.md'), '\nElle eklenen satır.\n');
+        const guarded = await reg.dispatch('constitution.sync', {});
+        ok('constitution.sync is non-destructive on divergence (no force)',
+            guarded.ok && guarded.result.synced === false && guarded.result.state === 'antigravity-ahead');
+
+        try { fs.rmSync(nest, { recursive: true, force: true }); } catch {}
+    }
+
     // ---------- §19.C: tasks board ops contract (rerun / runNext / clearFinished) ----------
     // Same handler shapes extension.ts registers, against a mock TaskManager —
     // proves the ops are catalogued and guard their status preconditions.

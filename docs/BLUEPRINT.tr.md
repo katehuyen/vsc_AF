@@ -1302,13 +1302,29 @@ Ajanı şablonlaştırıp başka makineye taşımak veya paylaşmak için tek do
 
 ### Antigravity Uyumluluğu
 
-Ajanların Claude için optimize; ama istersen aynı ajan Google Antigravity (Gemini) altında da çalışır. Antigravity'nin standardı: kökte **AGENTS.md** (araçlar-arası talimat dosyası), `.agents/workflows/*.md` (slash-komut iş akışları), `.agents/skills/` (beceri kılavuzları); MCP yapılandırması global `~/.gemini/config/mcp_config.json` (Claude'un `.mcp.json`'ı ile aynı `mcpServers` şeması). `memory/` dosyaları düz markdown olduğundan **iki taraf da olduğu gibi kullanır — dönüşüm gerekmez**.
+Ajanların Claude için optimize; ama istersen aynı ajan Google Antigravity (Gemini) ve OpenAI Codex altında da çalışır. `memory/` dosyaları düz markdown olduğundan **iki taraf da olduğu gibi kullanır — dönüşüm gerekmez**.
 
-**Kur:** ajana sağ tık → **Sync Agent with Antigravity…**
+**İki motor, iki talimat dosyası — çünkü farklı yerlere bakıyorlar.** Bu bir tercih değil, motorların davranışı:
+
+| | Okuduğu | Üst klasöre çıkar mı? |
+|---|---|---|
+| **Codex** | her klasörden bir `AGENTS.md`, **git kökünden cwd'ye kadar** birleştirilerek (32 KiB tavanı) | **Evet** — bir üstteki ortak dosya kendiliğinden ulaşır |
+| **Antigravity** | `<workspace kökü>/.agents/AGENTS.md` + global `~/.gemini/config/AGENTS.md` | **Hayır** — açık workspace'in üstündeki hiçbir şey yüklenmez |
+
+Bu yüzden senkron ikisini birden yazar: ajan klasöründe `AGENTS.md` (Codex'in araçlar-arası dosyası) **ve** `.agents/AGENTS.md` (Antigravity'nin kural dosyası — workspace customization root'u). Aynı kaynak, farklı muhataplar.
+
+**Kur:** ajana sağ tık → **Sync Agent with Antigravity + Codex…**
 
 - `CLAUDE.md` → `AGENTS.md` üretilir (öz-referanslar uyarlanır; dosya başında senkron işareti).
+- `CLAUDE.md` (+ aşağıdaki ortak anayasa) → `.agents/AGENTS.md`, Antigravity'nin gerçekten okuduğu dosya.
 - Aktif nöbet görevleri → `.agents/workflows/` dosyaları (Antigravity'de `/nobet-adi` diye çağrılır).
-- `.mcp.json` varsa → `.agents/mcp_config.suggested.json` önerisi (global gemini dosyasına elle birleştirirsin — Agent Farm `~/.gemini`'ye asla yazmaz).
+- `.mcp.json` varsa → `.agents/mcp_config.suggested.json` önerisi (global gemini dosyasına elle birleştirirsin — Agent Farm `~/.gemini`'ye asla yazmaz) ve Codex için `.agents/codex/mcp.suggested.toml`.
+
+**Ortak anayasa.** Ajanlar bir *nest* içindeyse — ajan klasörlerini tutan ve kendi `CLAUDE.md`'si olan kök klasör — o dosya her ajanın yüklediği anayasadır. Claude Code üst klasördeki talimat dosyasını bedavaya yükler; diğer motorlar yüklemez, her biri kendi yolundan:
+
+- **Codex** için nest klasörünün kendi `AGENTS.md`'si yeterli: **Sync Shared Constitution with Antigravity + Codex…** (veya `constitution.sync` bridge op'u) anayasayı oraya aynalar, Codex de hangi ajan klasöründe çalışıyorsa oraya inen yürüyüşünde onu birleştirir. Tek kopya, tekrar yok — ajanın kendi `AGENTS.md`'si bu yüzden anayasayı bilerek **tekrarlamaz**.
+- **Antigravity**'ye bu yoldan ulaşılamaz; bu yüzden her ajanın `.agents/AGENTS.md` dosyası anayasayı **içine gömülü** taşır: `agent-farm:shared-constitution` bloğu içinde, ajanın kendi talimatından önce.
+- Anayasa **okunur, asla yazılmaz**: ters senkron, ajanın `CLAUDE.md`'sine bir şey yazmadan önce bu bloğu söker; hiçbir komut nest `CLAUDE.md`'sini yazmaz. Anayasa değiştiğinde Insights hangi ajanların hâlâ eski metni taşıdığını söyler.
 
 **Yaşat (yönlü senkron):** Bu tek seferlik bir dışa aktarım değil. Her senkronda içerik parmak izleri `.agents/af-antigravity-sync.json`'a yazılır; sonraki çalıştırmada hangi taraf ilerlemiş anlaşılır:
 

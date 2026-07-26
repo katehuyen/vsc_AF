@@ -27,6 +27,9 @@ export interface AgentInfo {
     memoryDir?: string;
     memoryIndexPath?: string;
     agentsMdPath?: string;
+    /** The nest root's own CLAUDE.md — shared instructions Claude Code loads
+     *  for every child session. Set only when this agent sits in a nest. */
+    constitutionPath?: string;
     settingsPath?: string;
     memoryFiles: FileMeta[];
     toolFiles: FileMeta[];
@@ -54,13 +57,14 @@ function isAgentDir(dir: string): boolean {
         fs.existsSync(path.join(dir, 'memory', 'MEMORY.md'));
 }
 
-function readAgent(dir: string): AgentInfo {
+function readAgent(dir: string, constitutionPath?: string): AgentInfo {
     const name = path.basename(dir);
     const agent: AgentInfo = {
         id: normPath(dir),
         name,
         dir,
         normDir: normPath(dir),
+        constitutionPath,
         memoryFiles: [],
         toolFiles: [],
         contextLoad: { claudeMd: 0, memoryIndex: 0, agentsMd: 0, total: 0 },
@@ -79,10 +83,15 @@ function readAgent(dir: string): AgentInfo {
         agent.contextLoad.claudeMd = estimateTokens(safeReadFile(claudeMd) ?? '');
     }
 
-    const agentsMd = path.join(dir, '.agents', 'AGENTS.md');
-    if (fs.existsSync(agentsMd)) {
-        agent.agentsMdPath = agentsMd;
-        agent.contextLoad.agentsMd = estimateTokens(safeReadFile(agentsMd) ?? '');
+    // The two cross-engine lanes: <dir>/AGENTS.md (Codex, cross-tool) and
+    // .agents/AGENTS.md (Antigravity's workspace customization root). No engine
+    // loads both, so the load an engine actually pays is the larger of the two.
+    const agentsLanes = [path.join(dir, 'AGENTS.md'), path.join(dir, '.agents', 'AGENTS.md')]
+        .filter(p => fs.existsSync(p));
+    if (agentsLanes.length) {
+        agent.agentsMdPath = agentsLanes[0];
+        agent.contextLoad.agentsMd = Math.max(
+            ...agentsLanes.map(p => estimateTokens(safeReadFile(p) ?? '')));
     }
 
     const memDir = path.join(dir, 'memory');
@@ -171,10 +180,10 @@ export function scanRoots(roots: string[], excludes: string[] = []): { agents: A
     const seenRoots = new Set<string>();
     const seenAgents = new Set<string>();
 
-    const admit = (c: AgentCandidate) => {
+    const admit = (c: AgentCandidate, constitutionPath?: string) => {
         if (c.excluded || seenAgents.has(normPath(c.dir))) { return; }
         seenAgents.add(normPath(c.dir));
-        agents.push(readAgent(c.dir));
+        agents.push(readAgent(c.dir, constitutionPath));
     };
 
     for (const root of roots) {
@@ -209,7 +218,13 @@ export function scanRoots(roots: string[], excludes: string[] = []): { agents: A
             }
         }
         report.candidates.sort((a, b) => a.name.localeCompare(b.name));
-        report.candidates.forEach(admit);
+        // In a nest, the root's own CLAUDE.md is every child's shared
+        // constitution — the cross-engine sync has to carry it, since only
+        // Claude Code loads a parent instruction file for free.
+        const constitutionPath = report.kind === 'nest' && fs.existsSync(path.join(root, 'CLAUDE.md'))
+            ? path.join(root, 'CLAUDE.md')
+            : undefined;
+        report.candidates.forEach(c => admit(c, constitutionPath));
     }
     agents.sort((a, b) => a.name.localeCompare(b.name));
     return { agents, reports };

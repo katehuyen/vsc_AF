@@ -272,7 +272,7 @@ export function buildInsights(
 
         // 5d) Antigravity sync drift (only for agents that opted into the compat layer)
         {
-            const ag = antigravityStatus(agent.dir);
+            const ag = antigravityStatus(agent.dir, agent.constitutionPath);
             if (ag.state === 'conflict') {
                 insights.push({
                     severity: 'warning',
@@ -290,8 +290,21 @@ export function buildInsights(
                     agentName: agent.name,
                     category: 'antigravity',
                     message: ag.state === 'claude-ahead'
-                        ? 'CLAUDE.md changed since the last cross-engine sync — run "Sync Agent with Antigravity + Codex…" to update AGENTS.md.'
+                        ? (ag.constitutionChanged
+                            ? 'The shared constitution changed — this agent\'s .agents/AGENTS.md still carries the old text (Antigravity reads no file above the workspace). Run "Sync Agent with Antigravity + Codex…".'
+                            : 'CLAUDE.md changed since the last cross-engine sync — run "Sync Agent with Antigravity + Codex…" to update AGENTS.md.')
                         : 'AGENTS.md was edited (Antigravity/Codex side) — run "Sync Agent with Antigravity + Codex…" to carry the changes back to CLAUDE.md.',
+                    filePath: agent.claudeMdPath,
+                    guideAnchor: 'antigravity-uyumlulugu'
+                });
+            }
+            if (ag.rulesDiverged) {
+                insights.push({
+                    severity: 'info',
+                    agentId: agent.id,
+                    agentName: agent.name,
+                    category: 'antigravity',
+                    message: '.agents/AGENTS.md (the file Antigravity reads) was edited by hand — it is generated from CLAUDE.md plus the shared constitution, so the next sync skips it and a forced one overwrites it. Carry the gain into CLAUDE.md to keep it.',
                     filePath: agent.claudeMdPath,
                     guideAnchor: 'antigravity-uyumlulugu'
                 });

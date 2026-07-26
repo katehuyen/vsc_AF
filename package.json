@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.21.0",
+  "version": "3.22.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -958,6 +958,12 @@
         "title": "Sync Agent with Antigravity + Codexâ€¦",
         "category": "Agent Farm",
         "icon": "$(sync)"
+      },
+      {
+        "command": "agentfarm.syncConstitution",
+        "title": "Sync Shared Constitution with Antigravity + Codexâ€¦",
+        "category": "Agent Farm",
+        "icon": "$(law)"
       },
       {
         "command": "agentfarm.commandBar",
