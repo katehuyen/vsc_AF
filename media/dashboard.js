@@ -395,8 +395,11 @@
             if (cmpWin === 'all') { cmpRows = null; render(); }
             else { render(); requestCmp(); } // custom shows its date inputs first
         });
-        wireCmp('cmp-from', 'change', el => { cmpFrom = el.value; requestCmp(); });
-        wireCmp('cmp-to', 'change', el => { cmpTo = el.value; requestCmp(); });
+        // Dates and the Show box apply as you type, on a longer beat than the
+        // client-side filters: each commit is a round trip to the host.
+        const liveCmp = (id, fn, delay) => window.AFFilter.live(document.getElementById(id), fn, delay);
+        liveCmp('cmp-from', el => { cmpFrom = el.value; requestCmp(); }, 400);
+        liveCmp('cmp-to', el => { cmpTo = el.value; requestCmp(); }, 400);
         wireCmp('cmp-sort', 'change', el => {
             cmpSort = el.value;
             const defs = cmpRows ? CMP_SORTS_WIN : CMP_SORTS_ALL;
@@ -405,11 +408,11 @@
             render();
         });
         wireCmp('cmp-dir', 'click', () => { cmpAsc = !cmpAsc; render(); });
-        wireCmp('cmp-count', 'change', el => {
+        liveCmp('cmp-count', el => {
             const v = parseInt(el.value, 10);
             cmpShow = isFinite(v) && v >= 1 ? v : 0;
             render();
-        });
+        }, 300);
         wireCmp('cmp-all', 'click', () => { cmpShow = cmpShow === 0 ? CMP_SHOW_DEFAULT : 0; render(); });
 
         // The shared component fills its container and wires its own controls

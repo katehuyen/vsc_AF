@@ -5,8 +5,10 @@
     const C = window.AFCharts;
     let DATA = window.__DATA__;
 
-    // Wave A filters: production / scene / source ('' = all).
-    let fProject = '', fScene = '', fSource = '';
+    // Production + scene are a drill-down (the matrix below belongs to ONE
+    // production), so they stay single-pick. Source is a plain filter:
+    // null = all, an array = that subset, [] = none. See media/afFilters.js.
+    let fProject = '', fScene = '', fSource = null;
 
     window.addEventListener('message', ev => {
         if (ev.data.type === 'data') { DATA = ev.data.data; render(); }
@@ -99,7 +101,7 @@
         const items = DATA.items.filter(i =>
             (!fProject || i.projectId === fProject) &&
             (!fScene || (fScene === '·' ? (i.projectId === fProject && !i.sceneId) : i.sceneId === fScene)) &&
-            (!fSource || i.source === fSource));
+            (!fSource || fSource.indexOf(i.source) >= 0));
 
         const proj = productions.find(p => p.id === fProject);
         const sceneOpts = proj
@@ -117,10 +119,10 @@
                         ${productions.map(p => `<option value="${C.esc(p.id)}"${fProject === p.id ? ' selected' : ''}>${C.esc(p.title)}</option>`).join('')}
                     </select>` : ''}
                     ${proj ? `<select id="fscene" title="scene">${sceneOpts}</select>` : ''}
-                    ${sources.length > 1 ? `<select id="fsource" title="source">
-                        <option value="">all sources</option>
-                        ${sources.map(s => `<option value="${C.esc(s)}"${fSource === s ? ' selected' : ''}>${C.esc(s)}</option>`).join('')}
-                    </select>` : ''}`,
+                    ${sources.length > 1 ? window.AFFilter.multi({
+                        id: 'gal-sources', label: 'Sources', options: sources, selected: fSource,
+                        align: 'right', title: 'Which sources to show — tick any combination'
+                    }) : ''}`,
                 actions: `<button class="secondary" id="newprod">${productions.length ? 'New Production' : '＋ New Production'}</button>`,
                 guide: 'medya-uretim-hatti'
             })}
@@ -135,7 +137,10 @@
         const wire = (id, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener('change', fn); } };
         wire('fproj', ev => { fProject = ev.target.value; fScene = ''; render(); });
         wire('fscene', ev => { fScene = ev.target.value; render(); });
-        wire('fsource', ev => { fSource = ev.target.value; render(); });
+        window.AFFilter.wireMulti({
+            id: 'gal-sources',
+            onChange: sel => { fSource = sel; render(); }
+        });
         const newprod = document.getElementById('newprod');
         if (newprod) { newprod.addEventListener('click', () => vscode.postMessage({ type: 'newProduction' })); }
         const exportseq = document.getElementById('exportseq');

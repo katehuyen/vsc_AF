@@ -9,9 +9,11 @@
     let DATA = window.__DATA__;
 
     const st = (typeof vscode.getState === 'function' && vscode.getState()) || {};
-    const DEF = { fTarget: '', fAuthor: '', query: '', showDropped: false, agentLaneOpen: false };
-    let fTarget = st.fTarget || DEF.fTarget;
-    let fAuthor = st.fAuthor || DEF.fAuthor;
+    // Target / author are multi-pick: null = all (no filter), an array = exactly
+    // that subset, [] = none. See media/afFilters.js.
+    const DEF = { fTarget: null, fAuthor: null, query: '', showDropped: false, agentLaneOpen: false };
+    let fTarget = Array.isArray(st.fTarget) ? st.fTarget : null;
+    let fAuthor = Array.isArray(st.fAuthor) ? st.fAuthor : null;
     let query = st.query || DEF.query;
     let showDropped = st.showDropped !== undefined ? !!st.showDropped : DEF.showDropped;
     // The SECONDARY "Agent-tracked" category is collapsible and starts folded so
@@ -105,8 +107,8 @@
             .join(' ').toLowerCase().indexOf(q) >= 0;
     }
     function passesFilters(n) {
-        return (!fTarget || (n.target || '') === fTarget) &&
-            (!fAuthor || n.author === fAuthor) &&
+        return (!fTarget || fTarget.indexOf(n.target || '') >= 0) &&
+            (!fAuthor || fAuthor.indexOf(n.author) >= 0) &&
             matchesQuery(n);
     }
 
@@ -279,15 +281,24 @@
         </div>`;
     }
 
+    // The two multi-pick filters, described once so markup and wiring cannot drift.
+    function filterPickers() {
+        return [
+            { id: 'q-target', label: 'Targets', get: () => fTarget, set: v => { fTarget = v; },
+                title: 'Which targets to list — tick any combination',
+                options: (DATA.targets || []).slice() },
+            { id: 'q-author', label: 'Authors', get: () => fAuthor, set: v => { fAuthor = v; },
+                title: 'Who wrote the item — tick any combination',
+                options: [{ v: 'user', t: '🧑 mine' }].concat((DATA.agents || []).map(a => ({ v: a, t: '🤖 ' + a }))) }
+        ];
+    }
+
     function controls() {
-        const targets = ['<option value="">All targets</option>']
-            .concat((DATA.targets || []).map(t => `<option value="${esc(t)}" ${fTarget === t ? 'selected' : ''}>${esc(t)}</option>`)).join('');
-        const authors = ['<option value="">Everyone</option>', `<option value="user" ${fAuthor === 'user' ? 'selected' : ''}>🧑 mine only</option>`]
-            .concat((DATA.agents || []).map(a => `<option value="${esc(a)}" ${fAuthor === a ? 'selected' : ''}>🤖 ${esc(a)}</option>`)).join('');
         return `<div class="q-controls">
             <input id="q-search" type="search" placeholder="🔍 search" value="${esc(query)}">
-            <select id="q-target">${targets}</select>
-            <select id="q-author">${authors}</select>
+            ${filterPickers().map(p => window.AFFilter.multi({
+                id: p.id, label: p.label, options: p.options, selected: p.get(), title: p.title
+            })).join('')}
             <label class="q-drop"><input type="checkbox" id="q-showdropped" ${showDropped ? 'checked' : ''}> show dropped</label>
             <button class="secondary" id="q-reset" title="Reset filters">↺</button>
         </div>`;
@@ -442,8 +453,10 @@
     function wire() {
         const bind = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
         bind('q-search', 'input', e => { query = e.target.value; refocusSearch = true; saveState(); render(); });
-        bind('q-target', 'change', e => { fTarget = e.target.value; saveState(); render(); });
-        bind('q-author', 'change', e => { fAuthor = e.target.value; saveState(); render(); });
+        filterPickers().forEach(p => window.AFFilter.wireMulti({
+            id: p.id,
+            onChange: sel => { p.set(sel); saveState(); render(); }
+        }));
         bind('q-showdropped', 'change', e => { showDropped = e.target.checked; saveState(); render(); });
         bind('q-reset', 'click', () => { fTarget = DEF.fTarget; fAuthor = DEF.fAuthor; query = DEF.query; saveState(); render(); });
 

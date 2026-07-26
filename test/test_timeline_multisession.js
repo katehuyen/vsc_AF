@@ -3,7 +3,7 @@
 const fs = require('fs');
 const vm = require('vm');
 
-const code = fs.readFileSync(require('path').resolve(__dirname, '../media/pageHeader.js'), 'utf8') + '\n' + fs.readFileSync(require('path').resolve(__dirname, '../media/timeline.js'), 'utf8');
+const code = fs.readFileSync(require('path').resolve(__dirname, '../media/pageHeader.js'), 'utf8') + '\n' + fs.readFileSync(require('path').resolve(__dirname, '../media/afFilters.js'), 'utf8') + '\n' + fs.readFileSync(require('path').resolve(__dirname, '../media/timeline.js'), 'utf8');
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
@@ -137,6 +137,16 @@ posted = [];
 chipEls.find(e => !e.dataset.session && e.dataset.agent === 'dev' && e.dataset.action === 'modal')._click();
 ok('gutter click posts setTurnActions', posted.length === 1 && posted[0].type === 'setTurnActions');
 ok('modal added to dev default', posted[0].map.dev.indexOf('modal') !== -1 && posted[0].map.dev.indexOf('sound') !== -1);
+
+// ---- range buttons: no gaps a user has to jump over ----
+{
+    const wins = (lastHtml.match(/data-win="(\d+)"/g) || []).map(s => Number(/\d+/.exec(s)[0]));
+    ok('the range strip runs 15m → 30d',
+        JSON.stringify(wins) === JSON.stringify([15, 30, 60, 120, 180, 240, 480, 960, 1440, 4320, 10080, 43200]));
+    ok('the in-between ranges are labelled 30m / 2h / 3h',
+        lastHtml.includes('data-win="30" class="">30m<') && lastHtml.includes('>2h<') && lastHtml.includes('>3h<'));
+    ok('1h is still the one selected on open', /data-win="60" class="sel"/.test(lastHtml));
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

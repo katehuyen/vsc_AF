@@ -9,12 +9,15 @@
     let DATA = window.__DATA__;
 
     const st = (typeof vscode.getState === 'function' && vscode.getState()) || {};
-    const DEF = { fMode: 'all', fType: '', fLevel: 0, fAgent: '', fStatus: '', sortKey: 'newest', query: '', singleMode: false };
+    // Type / level / agent / status are multi-pick: null = all (no filter),
+    // an array = exactly that subset, [] = none. See media/afFilters.js.
+    const DEF = { fMode: 'all', fType: null, fLevel: null, fAgent: null, fStatus: null, sortKey: 'newest', query: '', singleMode: false };
+    const pick = v => (Array.isArray(v) ? v : null);
     let fMode = st.fMode || DEF.fMode;
-    let fType = st.fType || DEF.fType;
-    let fLevel = st.fLevel || DEF.fLevel;
-    let fAgent = st.fAgent || DEF.fAgent;
-    let fStatus = st.fStatus || DEF.fStatus;   // '' | open | answered | declined (questions)
+    let fType = pick(st.fType);
+    let fLevel = pick(st.fLevel);
+    let fAgent = pick(st.fAgent);
+    let fStatus = pick(st.fStatus);   // open | answered | declined (questions)
     let sortKey = st.sortKey || DEF.sortKey;
     let query = st.query || DEF.query;
     let singleMode = st.singleMode !== undefined ? !!st.singleMode : DEF.singleMode;
@@ -129,14 +132,17 @@
         return haystack(n).indexOf(q) >= 0;
     }
 
+    /** null = no filter; otherwise the value must be in the picked set. */
+    const inSet = (sel, v) => !sel || sel.indexOf(String(v)) >= 0;
+
     function visible() {
         let list = (DATA.notices || []).filter(n =>
             (fMode !== 'unread' || !n.read || stickyRead.has(n.id)) &&
             (fMode !== 'questions' || n.type === 'question') &&
-            (!fType || n.type === fType) &&
-            (!fLevel || lvl(n) === Number(fLevel)) &&
-            (!fAgent || n.agentName === fAgent) &&
-            (!fStatus || (n.type === 'question' && (n.status || 'open') === fStatus)) &&
+            inSet(fType, n.type) &&
+            inSet(fLevel, lvl(n)) &&
+            inSet(fAgent, n.agentName) &&
+            (!fStatus || (n.type === 'question' && fStatus.indexOf(n.status || 'open') >= 0)) &&
             matchesQuery(n));
         const by = {
             newest: (a, b) => b.ts - a.ts, oldest: (a, b) => a.ts - b.ts,
@@ -282,24 +288,36 @@
 
     function chip(id, label, on) { return `<button class="af-chip ${on ? 'on' : 'secondary'}" data-chip="${id}">${esc(label)}</button>`; }
 
+    // The four multi-pick filters, described once so the markup and the wiring
+    // can never drift apart.
+    function filterPickers() {
+        return [
+            { id: 'nt-type', label: 'Type', get: () => fType, set: v => { fType = v; },
+                title: 'Which notice types to list — tick any combination',
+                options: Object.keys(TYPES).map(k => ({ v: k, t: TYPES[k].icon + ' ' + TYPES[k].label })) },
+            { id: 'nt-level', label: 'Level', get: () => fLevel, set: v => { fLevel = v; },
+                title: 'Which importance levels to list — tick any combination',
+                options: [4, 3, 2, 1].map(k => ({ v: String(k), t: 'L' + k + ' · ' + LEVELS[k] })) },
+            { id: 'nt-agent', label: 'Agents', get: () => fAgent, set: v => { fAgent = v; },
+                title: 'Which agents\' notices to list — tick any combination',
+                options: (DATA.agents || []).slice() },
+            { id: 'nt-status', label: 'Status', get: () => fStatus, set: v => { fStatus = v; },
+                title: 'Question status — tick any combination',
+                options: [{ v: 'open', t: '❓ Waiting' }, { v: 'answered', t: '✓ Answered' }, { v: 'declined', t: '✕ Declined' }] }
+        ];
+    }
+
     function controls() {
         const total = (DATA.notices || []).length, unread = DATA.unread || 0, q = DATA.openQuestions || 0;
-        const typeOpts = ['<option value="">All types</option>'].concat(Object.keys(TYPES).map(k => `<option value="${k}" ${fType === k ? 'selected' : ''}>${TYPES[k].icon} ${TYPES[k].label}</option>`)).join('');
-        const lvlOpts = ['<option value="0">All levels</option>'].concat([4, 3, 2, 1].map(k => `<option value="${k}" ${Number(fLevel) === k ? 'selected' : ''}>L${k} · ${LEVELS[k]}</option>`)).join('');
-        const agentOpts = ['<option value="">All agents</option>'].concat((DATA.agents || []).map(a => `<option value="${esc(a)}" ${fAgent === a ? 'selected' : ''}>${esc(a)}</option>`)).join('');
-        const statusOpts = ['<option value="">Any status</option>'].concat(
-            [['open', '❓ Waiting'], ['answered', '✓ Answered'], ['declined', '✕ Declined']]
-                .map(([k, l]) => `<option value="${k}" ${fStatus === k ? 'selected' : ''}>${l}</option>`)).join('');
         const sortOpts = SORTS.map(([k, l]) => `<option value="${k}" ${sortKey === k ? 'selected' : ''}>Sort: ${l}</option>`).join('');
         return `<div class="nt-controls">
             <input id="nt-search" type="search" placeholder="🔍 search (text or #tag)" value="${esc(query)}">
             ${chip('all', `All (${total})`, fMode === 'all')}
             ${chip('unread', `Unread (${unread})`, fMode === 'unread')}
             ${chip('questions', `❓ (${q})`, fMode === 'questions')}
-            <select id="nt-type">${typeOpts}</select>
-            <select id="nt-level">${lvlOpts}</select>
-            <select id="nt-agent">${agentOpts}</select>
-            <select id="nt-status" title="Question status (answered / waiting / dismissed)">${statusOpts}</select>
+            ${filterPickers().map(p => window.AFFilter.multi({
+                id: p.id, label: p.label, options: p.options, selected: p.get(), title: p.title
+            })).join('')}
             <select id="nt-sort">${sortOpts}</select>
             <button class="secondary" id="nt-reset" title="Reset filters, search and sort">↺ Reset</button>
         </div>`;
@@ -453,10 +471,10 @@
         // Switching (or re-clicking) a filter chip is a deliberate view refresh:
         // release the sticky-read rows so read notices finally drop out of Unread.
         document.querySelectorAll('[data-chip]').forEach(b => b.addEventListener('click', () => { fMode = b.dataset.chip; stickyRead.clear(); saveState(); render(); }));
-        bind('nt-type', 'change', e => { fType = e.target.value; saveState(); render(); });
-        bind('nt-level', 'change', e => { fLevel = Number(e.target.value) || 0; saveState(); render(); });
-        bind('nt-agent', 'change', e => { fAgent = e.target.value; saveState(); render(); });
-        bind('nt-status', 'change', e => { fStatus = e.target.value; saveState(); render(); });
+        filterPickers().forEach(p => window.AFFilter.wireMulti({
+            id: p.id,
+            onChange: sel => { p.set(sel); saveState(); render(); }
+        }));
         bind('nt-sort', 'change', e => { sortKey = e.target.value; saveState(); render(); });
         bind('nt-search', 'input', e => { query = e.target.value; refocusSearch = true; saveState(); render(); });
         bind('nt-reset', 'click', () => { fMode = DEF.fMode; fType = DEF.fType; fLevel = DEF.fLevel; fAgent = DEF.fAgent; fStatus = DEF.fStatus; sortKey = DEF.sortKey; query = DEF.query; stickyRead.clear(); saveState(); render(); });

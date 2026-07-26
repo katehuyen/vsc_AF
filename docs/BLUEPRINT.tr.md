@@ -77,6 +77,18 @@ Arayüzde gördüğün her **?** düğmesi seni bu kılavuzun ilgili bölümüne
 - **Nöbet görevi** = ajanla süreklilik anlaşması ("şuraya bak, değişince şunu yap") — `DUTIES.md`'de yaşar.
 - **Görev/Workflow** = senin başlattığın işler; nöbet görevinden farkı, ajanın oturum içinde kendi kendine değil, kuyruktan tetiklenmesidir.
 
+### Filtreler — her yerde aynı kontrol {#filtreler}
+
+Eklentideki her filtre tek bir sözleşmeyi izler; bir sayfada öğrendiğin, diğerinde de geçerlidir.
+
+- **"Hepsi ya da bir tanesi" değil, istediğin kombinasyon.** Filtre açılır kutusu bir **onay kutusu listesidir**: iki ajanı, üç seviyeyi, dört durumu — hangi alt kümeyi istersen. Listenin üstünde **Select all** / **Clear** durur; liste uzunsa *Clear'a bas, ilgilendiğin ikisini işaretle* en hızlı yoldur. Düğme seçimi söyler — `Agents: all`, `Agents: dev`, `Agents: 2/7`, `Agents: none`.
+- **Hepsi işaretliyse filtre yok demektir.** Böylece sonradan ortaya çıkan bir değer — yeni bir ajan, yeni bir model — sen kutuyu açmadan kendiliğinden dahil olur. **Hiçbiri işaretli değilse** dürüstçe hiçbir şey eşleşmez ve düğme bunu yazar.
+- **İşaretlerken menü açık kalır.** Arkadaki liste her tıkta yeniden filtrelenir; menü elinin altında kapanmaz.
+- **Metin ve sayı kutuları yazdıkça filtreler.** Bir min/max sınırı, bir "başlık şunu içeriyor", bir tarih — yazmayı bıraktıktan bir an sonra uygulanır. Enter yok, başka yere tıklamak yok; imleç de yerini korur.
+- Sıralama kutuları, gruplama ve ayarlar tek seçimli kalır; düzenleyiciler (ayarlar, fiyatlandırma, formlar) her tuş vuruşunda değil, işlem bitince kaydeder — orada her tuş bir yazma olurdu.
+
+Sayfanın tamamını kapsayan filtreler (Sessions tablolarındaki 🧑/🤖 kaynağı, Media Gallery'deki prodüksiyon) tek seçimli kalır: onlar bir alt küme değil, bir derinleşmedir.
+
 ## Modüller
 
 ### Agents Ağacı
@@ -244,7 +256,7 @@ Kaldırmak için: **Agent Farm: Remove Live Hooks** — yalnızca Agent Farm'ın
 - **Tıkla → tam o ana git (2.37.0):** Kulvardaki herhangi bir işarete **veya yeşil araç bloğuna** tıklayınca Oturum Görüntüleyici yalnızca açılmakla kalmaz, kayıtta **tam o olayın olduğu mesaja** kayar ve mesajı kısa süreliğine çerçeveyle vurgular. Görüntüleyici zaten açıksa aynı tık onu öne getirip o noktaya taşır.
 - **Sıra-sende bildirimleri (2.22.0):** Her kulvarın solundaki dört kutucuk — **♪ ses · ◎ odak · ▣ modal · ▭ toast** — o ajan **YOUR TURN**'e geçtiğinde (görev bitip senin girdini beklemeye başlayınca) çalışacak eylemleri seçer. Ajan başına bağımsızdır; kutucuğa tıkla, seç/kaldır. Seçim `globalState`'e yazılır ve tetikleme host tarafındadır — **panel kapalıyken de çalışır**. *Ses:* kısa bip (Windows'ta PowerShell beep). *Odak:* timeline panelini öne getirir (VS Code'un OS penceresini garanti öne getiren API'si yoktur; modal en güçlü dikkat çekicidir). *Modal:* "Sıra sende: <ajan>" bloklayıcı diyaloğu + Transkripti aç. *Toast:* köşede non-modal bildirim. Aynı tura tek bildirim düşer (3 sn'lik oturum-başı yutma). Bu, global `notifyTurnEnd` ayarından ayrıdır — o tüm ajanlar için tek bir toast atar; bu ise ajan-seçmeli ve zengin eylemlidir.
 - **Oturum-bazlı uyarı override'ı (2.45.0):** Kulvar kutucukları ajanın **varsayılanıdır** ve tüm oturumlarını kapsar; belirli BİR oturumu farklı ayarlamak istersen o oturumun **Live sessions kartındaki** chip'lere tıkla — değişiklik yalnız o oturuma işler (kart "session override — reset" gösterir; reset ile varsayılana döner). Tüm chip'leri kapatmak o oturumu susturur, ajan varsayılanı diğer oturumlarda çalışmaya devam eder. Override'lar oturum kimliğiyle saklanır ve oturum kapanınca otomatik temizlenir.
-- Kırmızı dikey çizgi = şu an. Pencere seçici (2.43.0 ile genişledi): **15m / 1h / 4h / 8h / 16h / 24h** ayrıntılı kulvar görünümü + **3d / 7d / 30d** yoğunluk görünümü. 16h ve 24h de artık klasik akış (kulvar) olarak çizilir — monitör 24 saati bellekte tuttuğundan bar'lara düşmek yalnız 3 gün ve üzerinde gerekir.
+- Kırmızı dikey çizgi = şu an. Pencere seçici: **15m / 30m / 1h / 2h / 3h / 4h / 8h / 16h / 24h** ayrıntılı kulvar görünümü + **3d / 7d / 30d** yoğunluk görünümü. Kısa uçta artık atlanacak boşluk yok — 15m ile 4h arasında eksik olan basamaklar (**30m, 2h, 3h**) şeritte; tek bir oturumu canlı izlerken "çok dar" ile "dört saatlik geçmiş" arasında seçim yapmak gerekmiyor. 16h ve 24h de klasik akış (kulvar) olarak çizilir — monitör 24 saati bellekte tuttuğundan bar'lara düşmek yalnız 3 gün ve üzerinde gerekir.
 - Sağ üstte **Dashboard** düğmesi (2.43.0): Dashboard ↔ Ajan Detayı ↔ Timeline üçgeninde tek tık geçiş (Dashboard'da Live Timeline, Ajan Detayında her ikisi de var).
 - **Yoğunluk görünümü (24h+):** o ölçekte tek tek noktalar okunmaz — her kulvar 168 zaman dilimine bölünür, dilim başına aktivite çubuğu çizilir (yeşil = araçlar, mavi = komutlar, √ ölçek); şeridin üstündeki kırmızı bant = o dilimde izin beklemesi yaşandı. Amaç desenleri görmek: hangi ajan hangi gün/saatte çalışmış, nerede takılmış.
 - **Kalıcılık (2.13.0):** olaylar artık `globalStorage/live-events.jsonl` dosyasına yazılır — VS Code'u kapatıp açmak zaman çizelgesini sıfırlamaz. Bellekte son 24 saat tutulur (uzun aralıklar diskten okunur), dosyada son **31 gün** saklanır (üstü otomatik budanır, boyut sınırı 64MB). 31 günden geriye gitmemesinin nedeni yük değil anlam: hook olayları o ölçekte desen bilgisi taşımaz — uzun vadeli bakış için Dashboard (1 yıla kadar) doğru araçtır.

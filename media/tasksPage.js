@@ -27,10 +27,18 @@
     let pendingCommand = false;
 
     // ---- view state, per tab; every field has a default so "reset" is exact --
-    const PLAN_DEF = { q: '', kind: '', agent: '', model: '', state: '', guard: '', issues: false, group: 'kind', sort: 'when', asc: true };
-    const RUN_DEF = { q: '', agent: '', status: '', source: '', sort: 'when', asc: false };
+    // The pick fields (kind/agent/model/state/guard · agent/status/source) are
+    // multi-pick: null = all (no filter), array = that subset, [] = none.
+    // See media/afFilters.js.
+    const PLAN_DEF = { q: '', kind: null, agent: null, model: null, state: null, guard: null, issues: false, group: 'kind', sort: 'when', asc: true };
+    const RUN_DEF = { q: '', agent: null, status: null, source: null, sort: 'when', asc: false };
+    const PICKS = { plan: ['kind', 'agent', 'model', 'state', 'guard'], run: ['agent', 'status', 'source'] };
     let planView = Object.assign({}, PLAN_DEF, saved.planView || {});
     let runView = Object.assign({}, RUN_DEF, saved.runView || {});
+    // a pre-3.21 saved view holds strings — carry the choice over as a one-item set
+    [['plan', planView], ['run', runView]].forEach(([t, v]) => PICKS[t].forEach(k => {
+        if (v[k] !== null && !Array.isArray(v[k])) { v[k] = v[k] ? [String(v[k])] : null; }
+    }));
     const expanded = new Set();          // row keys with detail open
     const selected = new Set();          // "kind:id" of ticked plan rows
     let refocus = null;                  // element id to refocus after render
@@ -134,15 +142,23 @@
 
     // ------------------------------------------------------- filter plumbing
 
-    /** A select that shows its own label when set — so an active filter is legible. */
+    // Every pick filter on the page, so the markup and the wiring are built from
+    // one list (options are recomputed per render — the data moves).
+    let pickDefs = [];
+    /** A multi-pick dropdown: tick any combination, not "all or exactly one". */
     function sel(name, label, value, options) {
-        const opts = ['<option value="">' + C.esc(label) + ': all</option>']
-            .concat(options.map(o => {
-                const v = typeof o === 'string' ? o : o.v;
-                const t = typeof o === 'string' ? o : o.t;
-                return `<option value="${C.esc(v)}"${v === value ? ' selected' : ''}>${C.esc(t)}</option>`;
-            }));
-        return `<select data-f="${name}" class="${value ? 'set' : ''}">${opts.join('')}</select>`;
+        const id = 'tf-' + tab + '-' + name;
+        pickDefs.push({ id, name, options });
+        return window.AFFilter.multi({
+            id, label, options, selected: value,
+            title: 'Filter by ' + label.toLowerCase() + ' — tick any combination'
+        });
+    }
+
+    /** A pick filter's chip text: one value by name, several as a count. */
+    function pickText(v) {
+        if (!v.length) { return 'none'; }
+        return v.length === 1 ? String(v[0]) : v.length + ' picked';
     }
 
     /** The always-visible record of what is currently hiding rows from you. */
@@ -151,8 +167,9 @@
         for (const k of Object.keys(def)) {
             if (k === 'sort' || k === 'asc' || k === 'group') { continue; }
             const v = view[k];
-            if (v === def[k] || v === '' || v === false) { continue; }
-            const text = k === 'q' ? `“${v}”` : (labels[k] ? `${labels[k]}: ${v}` : String(v));
+            if (v === def[k] || v === '' || v === false || v === null) { continue; }
+            const shownVal = Array.isArray(v) ? pickText(v) : v;
+            const text = k === 'q' ? `“${v}”` : (labels[k] ? `${labels[k]}: ${shownVal}` : String(shownVal));
             chips.push(`<span class="chip" data-clear="${k}" role="button" tabindex="0" title="remove this filter">${C.esc(text)} ✕</span>`);
         }
         if (!chips.length) { return ''; }
@@ -183,13 +200,12 @@
         const v = planView;
         const q = v.q.trim().toLowerCase();
         return d.plan.filter(p => {
-            if (v.kind && p.kind !== v.kind) { return false; }
-            if (v.agent && p.agentName !== v.agent) { return false; }
-            if (v.model && (p.model || 'default') !== v.model) { return false; }
-            if (v.state === 'on' && !(p.switchable && p.enabled)) { return false; }
-            if (v.state === 'off' && !(p.switchable && !p.enabled)) { return false; }
-            if (v.guard === 'yes' && !p.hasGuard) { return false; }
-            if (v.guard === 'no' && p.hasGuard) { return false; }
+            if (v.kind && v.kind.indexOf(p.kind) < 0) { return false; }
+            if (v.agent && v.agent.indexOf(p.agentName) < 0) { return false; }
+            if (v.model && v.model.indexOf(p.model || 'default') < 0) { return false; }
+            // a row that can't be switched at all is neither on nor off
+            if (v.state && !(p.switchable && v.state.indexOf(p.enabled ? 'on' : 'off') >= 0)) { return false; }
+            if (v.guard && v.guard.indexOf(p.hasGuard ? 'yes' : 'no') < 0) { return false; }
             if (v.issues && !p.issues.length) { return false; }
             if (q && !(p.title + ' ' + p.detail.prompt + ' ' + p.when + ' ' + p.agentName).toLowerCase().includes(q)) { return false; }
             return true;
@@ -337,9 +353,9 @@
         const v = runView;
         const q = v.q.trim().toLowerCase();
         return d.runs.filter(r => {
-            if (v.agent && r.agentName !== v.agent) { return false; }
-            if (v.status && r.status !== v.status) { return false; }
-            if (v.source && r.sourceKind !== v.source) { return false; }
+            if (v.agent && v.agent.indexOf(r.agentName) < 0) { return false; }
+            if (v.status && v.status.indexOf(r.status) < 0) { return false; }
+            if (v.source && v.source.indexOf(r.sourceKind) < 0) { return false; }
             if (q && !(r.title + ' ' + r.prompt + ' ' + r.agentName + ' ' + r.source).toLowerCase().includes(q)) { return false; }
             return true;
         });
@@ -417,6 +433,7 @@
 
     function render() {
         const d = DATA;
+        pickDefs = [];   // refilled by sel() while the toolbar below is built
         document.getElementById('app').innerHTML = `
             <style>
                 .ctl { border:1px solid var(--vscode-widget-border,#4443); border-radius:9px; padding:9px 12px;
@@ -555,7 +572,12 @@
         click('[data-fixissues]', () => setView({ issues: true }));
         document.querySelectorAll('[data-fixissues]').forEach(el => key(el, () => setView({ issues: true })));
 
-        // filters
+        // filters: the pick dropdowns are multi-select (afFilters.js); the
+        // checkbox and the grouping select stay single-valued
+        pickDefs.forEach(p => window.AFFilter.wireMulti({
+            id: p.id,
+            onChange: valsel => setView({ [p.name]: valsel })
+        }));
         on('[data-f]', 'change', e => {
             const el = e.currentTarget;
             setView({ [el.dataset.f]: el.type === 'checkbox' ? el.checked : el.value });

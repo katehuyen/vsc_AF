@@ -26,8 +26,9 @@
     const FILTER_DEFAULTS = () => ({
         status: [],                   // picked statuses (empty = all)
         verdict: [],                  // picked verdicts (empty = all)
-        lead: '',                     // lead agent name ('' = all)
-        agent: '',                    // team member name ('' = all)
+        // multi-pick: null = all (no filter), array = that subset, [] = none
+        leads: null,                  // lead agent names
+        agents: null,                 // team member names
         from: '', to: '',             // started-date range (yyyy-mm-dd)
         ranges: {}                    // key → {min?, max?} for tokens/cost/rounds/tasks/duration
     });
@@ -355,7 +356,7 @@
 
     function activeFilterCount() {
         let n = filters.status.length + filters.verdict.length
-            + (filters.lead ? 1 : 0) + (filters.agent ? 1 : 0)
+            + (filters.leads ? 1 : 0) + (filters.agents ? 1 : 0)
             + (filters.from ? 1 : 0) + (filters.to ? 1 : 0);
         RANGE_KEYS.forEach(k => {
             const rg = filters.ranges[k.id];
@@ -369,8 +370,8 @@
             const sp = spec(r);
             if (filters.status.length && filters.status.indexOf(r.status) < 0) { return false; }
             if (filters.verdict.length && !(r.result && filters.verdict.indexOf(r.result.verdict) >= 0)) { return false; }
-            if (filters.lead && sp.leadAgentName !== filters.lead) { return false; }
-            if (filters.agent && !sp.team.some(m => m.agentName === filters.agent)) { return false; }
+            if (filters.leads && filters.leads.indexOf(sp.leadAgentName) < 0) { return false; }
+            if (filters.agents && !sp.team.some(m => filters.agents.indexOf(m.agentName) >= 0)) { return false; }
             if (filters.from) {
                 const t = Date.parse(filters.from);
                 if (!isNaN(t) && r.startedAt < t) { return false; }
@@ -390,9 +391,8 @@
         });
     }
 
-    /** Filter panel: selection chips + range inputs, viewer/settings idiom. */
-    function filterPanelHtml() {
-        if (!filtersOpen) { return ''; }
+    /** The lead / team names present in the run list — the pickers' options. */
+    function filterFacets() {
         const leads = [];
         const agents = [];
         DATA.runs.forEach(r => {
@@ -400,7 +400,13 @@
             if (leads.indexOf(sp.leadAgentName) < 0) { leads.push(sp.leadAgentName); }
             sp.team.forEach(m => { if (agents.indexOf(m.agentName) < 0) { agents.push(m.agentName); } });
         });
-        leads.sort(); agents.sort();
+        return { leads: leads.sort(), agents: agents.sort() };
+    }
+
+    /** Filter panel: selection chips + pickers + range inputs, viewer/settings idiom. */
+    function filterPanelHtml() {
+        if (!filtersOpen) { return ''; }
+        const facets = filterFacets();
         const selChip = (id, label, on) =>
             `<button class="chip${on ? ' on' : ''}" id="${id}">${C.esc(label)}</button>`;
         const rangeInputs = RANGE_KEYS.map(k => {
@@ -414,12 +420,14 @@
                 ${RUN_STATUSES.map(s => selChip('fs-' + s, STATUS_LABEL[s] || s, filters.status.indexOf(s) >= 0)).join(' ')}</div>
             <div class="fltrow"><span class="muted small">Verdict:</span>
                 ${VERDICTS.map(v => selChip('fv-' + v, v, filters.verdict.indexOf(v) >= 0)).join(' ')}
-                <span class="muted small">Lead:</span>
-                <select id="f-lead"><option value="">all</option>${leads.map(l =>
-                    `<option value="${C.esc(l)}"${filters.lead === l ? ' selected' : ''}>${C.esc(l)}</option>`).join('')}</select>
-                <span class="muted small">Team has:</span>
-                <select id="f-agent"><option value="">any</option>${agents.map(a =>
-                    `<option value="${C.esc(a)}"${filters.agent === a ? ' selected' : ''}>${C.esc(a)}</option>`).join('')}</select></div>
+                ${window.AFFilter.multi({
+                    id: 'flt-leads', label: 'Lead', options: facets.leads, selected: filters.leads,
+                    title: 'Which lead agents to list — tick any combination'
+                })}
+                ${window.AFFilter.multi({
+                    id: 'flt-agents', label: 'Team has', options: facets.agents, selected: filters.agents,
+                    allLabel: 'any', title: 'Keep runs whose team includes any of the ticked agents'
+                })}</div>
             <div class="fltrow">${rangeInputs}
                 <label class="fltrange">Started <input type="date" id="f-from" value="${C.esc(filters.from)}">–<input type="date" id="f-to" value="${C.esc(filters.to)}"></label>
                 <button class="chip" id="f-clear" title="Reset every filter">Clear</button></div>
@@ -847,14 +855,21 @@
                 if (i >= 0) { filters.verdict.splice(i, 1); } else { filters.verdict.push(v); }
                 applyFlt();
             }));
-            const wireInput = (id, fn) => {
-                const el = document.getElementById(id);
-                if (el && el.addEventListener) { el.addEventListener('change', () => fn(el)); }
-            };
-            wireInput('f-lead', el => { filters.lead = el.value; applyFlt(); });
-            wireInput('f-agent', el => { filters.agent = el.value; applyFlt(); });
-            wireInput('f-from', el => { filters.from = el.value; applyFlt(); });
-            wireInput('f-to', el => { filters.to = el.value; applyFlt(); });
+            // filter boxes apply as you type — no blur, no Enter (afFilters.js
+            // keeps the caret across the re-render each keystroke triggers)
+            const wireInput = (id, fn, delay) =>
+                window.AFFilter.live(document.getElementById(id), fn, delay);
+            const facets = filterFacets();
+            window.AFFilter.wireMulti({
+                id: 'flt-leads',
+                onChange: sel => { filters.leads = sel; applyFlt(); }
+            });
+            window.AFFilter.wireMulti({
+                id: 'flt-agents',
+                onChange: sel => { filters.agents = sel; applyFlt(); }
+            });
+            wireInput('f-from', el => { filters.from = el.value; applyFlt(); }, 300);
+            wireInput('f-to', el => { filters.to = el.value; applyFlt(); }, 300);
             RANGE_KEYS.forEach(k => {
                 const setBound = (bound) => (el) => {
                     const n = el.value === '' ? undefined : Number(el.value);

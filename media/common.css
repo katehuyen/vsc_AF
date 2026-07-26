@@ -67,7 +67,8 @@ button.secondary {
 button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
 .btnrow { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
 
-.seg { display: inline-flex; border: 1px solid var(--vscode-widget-border, #4444); border-radius: 5px; overflow: hidden; }
+/* wraps rather than squeezes: the timeline's range strip is 12 steps wide */
+.seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--vscode-widget-border, #4444); border-radius: 5px; overflow: hidden; }
 .seg button { background: transparent; color: var(--vscode-foreground); border-radius: 0; opacity: .7; }
 .seg button.sel { background: var(--vscode-button-background); color: var(--vscode-button-foreground); opacity: 1; }
 
@@ -120,6 +121,30 @@ mark {
     background: var(--vscode-editor-findMatchHighlightBackground, #ffd33d55);
     color: inherit; border-radius: 2px; padding: 0 1px;
 }
+
+/* Multi-select filter dropdown (media/afFilters.js) — every "all or one"
+   filter box in the extension is one of these: tick any combination, with
+   Select all / Clear above the list. */
+.afms { position: relative; display: inline-block; }
+.afms-btn { font-size: 12px; padding: 3px 9px; white-space: nowrap; }
+.afms-menu {
+    position: absolute; left: 0; top: calc(100% + 4px); z-index: 60;
+    /* .right = the picker sits at the right edge of a header bar, so the menu
+       has to grow inwards or it would run off the panel */
+    min-width: 180px; max-width: 320px; max-height: 280px; overflow: auto;
+    padding: 6px 12px 8px; text-align: left;
+    background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+    border: 1px solid var(--vscode-widget-border, #4444); border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, .3);
+}
+.afms-menu.right { left: auto; right: 0; }
+.afms-menu .afms-tools {
+    font-size: 11px; margin-bottom: 5px; white-space: nowrap;
+    color: var(--vscode-descriptionForeground);
+}
+.afms-menu .afms-tools a { cursor: pointer; }
+.afms-menu .afms-item { display: block; padding: 2px 0; cursor: pointer; white-space: nowrap; font-size: 12px; }
+.afms-menu .afms-item input { cursor: pointer; margin-right: 6px; vertical-align: middle; }
 
 .footnote { margin-top: 30px; font-size: 11px; opacity: .55; }
 

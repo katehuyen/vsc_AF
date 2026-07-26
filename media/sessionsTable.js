@@ -44,8 +44,10 @@
     const originOf = r => (r.origin === 'auto' ? 'auto' : 'user');
     const originMeta = id => ORIGINS.find(o => o.id === id) || ORIGINS[0];
 
+    // agents: null = every agent (no filter — one joining the fleet is included
+    // by itself); an array = exactly that subset, [] = none. See afFilters.js.
     const FDEF = () => ({
-        text: '', agent: '', origin: 'user', activeOnly: false, errorsOnly: false, mainOnly: false,
+        text: '', agents: null, origin: 'user', activeOnly: false, errorsOnly: false, mainOnly: false,
         from: '', to: '', ranges: {}
     });
 
@@ -153,7 +155,7 @@
         // always-visible switch in the chip row, so counting it would park a
         // permanent "(1)" on the Filters chip and say nothing new.
         function activeFilterCount() {
-            let n = (filters.text ? 1 : 0) + (filters.agent ? 1 : 0)
+            let n = (filters.text ? 1 : 0) + (filters.agents ? 1 : 0)
                 + (filters.activeOnly ? 1 : 0) + (filters.errorsOnly ? 1 : 0) + (filters.mainOnly ? 1 : 0)
                 + (filters.from ? 1 : 0) + (filters.to ? 1 : 0);
             FRANGES.forEach(k => {
@@ -167,7 +169,7 @@
             const text = (filters.text || '').toLowerCase();
             return list.filter(r => {
                 if (text && ((r.title || '') + ' ' + (r.agent || '')).toLowerCase().indexOf(text) < 0) { return false; }
-                if (filters.agent && r.agentName !== filters.agent) { return false; }
+                if (filters.agents && filters.agents.indexOf(r.agentName) < 0) { return false; }
                 if (filters.origin && originOf(r) !== filters.origin) { return false; }
                 if (filters.activeOnly && !r.active) { return false; }
                 if (filters.errorsOnly && !(r.errors > 0)) { return false; }
@@ -191,11 +193,16 @@
             });
         }
 
-        function filterPanelHtml() {
-            if (!filtersOpen) { return ''; }
+        const AGENT_MS = 'sess-agents-' + opts.stateKey;
+        function agentNames() {
             const agents = [];
             rows.forEach(r => { if (r.agentName && agents.indexOf(r.agentName) < 0) { agents.push(r.agentName); } });
-            agents.sort();
+            return agents.sort();
+        }
+
+        function filterPanelHtml() {
+            if (!filtersOpen) { return ''; }
+            const agents = agentNames();
             const flag = (cls, label, on, tip) =>
                 `<button class="chip ${cls}${on ? ' on' : ''}" title="${tip}">${label}</button>`;
             const ranges = FRANGES.map(k => {
@@ -212,9 +219,10 @@
                 </div>
                 <div class="af-frow">
                     <input type="text" class="af-ftext" placeholder="title contains…" value="${C.esc(filters.text)}">
-                    ${hasAgentCol && agents.length > 1 ? `<span class="muted small">Agent:</span>
-                        <select class="af-fagent"><option value="">all</option>${agents.map(a =>
-                            `<option value="${C.esc(a)}"${filters.agent === a ? ' selected' : ''}>${C.esc(a)}</option>`).join('')}</select>` : ''}
+                    ${hasAgentCol && agents.length > 1 ? window.AFFilter.multi({
+                        id: AGENT_MS, label: 'Agents', options: agents, selected: filters.agents,
+                        title: 'Which agents to list — tick any combination'
+                    }) : ''}
                     ${flag('af-factive', 'Active now', filters.activeOnly, 'Only sessions with a live terminal working right now')}
                     ${flag('af-ferrors', 'Has errors', filters.errorsOnly, 'Only sessions with at least one tool error')}
                     ${flag('af-fmain', 'Main only', filters.mainOnly, 'Hide subagent (sidechain) sessions')}
@@ -368,12 +376,14 @@
                 renderSection();
             });
             // ---- Show box: how many rows to list (empty / All = every one) ----
+            // a longer beat than the client-side filters: each commit asks the
+            // host to rebuild the row pool
             const cnt = root.querySelector('.af-count');
             if (cnt) {
-                cnt.addEventListener('change', () => {
-                    const v = parseInt(cnt.value, 10);
+                window.AFFilter.live(cnt, el => {
+                    const v = parseInt(el.value, 10);
                     setCount(isFinite(v) && v >= 1 ? v : 0);
-                });
+                }, 400);
             }
             const allBtn = root.querySelector('.af-allrows');
             if (allBtn) {
@@ -402,16 +412,25 @@
                 const el = root.querySelector(sel);
                 if (el) { el.addEventListener(ev, () => fn(el)); }
             };
+            // Filter boxes apply as you type — no blur, no Enter (afFilters.js
+            // keeps the caret across the re-render each keystroke triggers).
+            const liveEl = (sel, fn, delay) => {
+                const el = root.querySelector(sel);
+                if (el) { window.AFFilter.live(el, fn, delay); }
+            };
             if (filtersOpen) {
                 ORIGINS.forEach(o =>
                     wireEl(`.af-forig-${o.id || 'all'}`, 'click', () => { filters.origin = o.id; apply(); }));
-                wireEl('.af-ftext', 'change', el => { filters.text = el.value || ''; apply(); });
-                wireEl('.af-fagent', 'change', el => { filters.agent = el.value || ''; apply(); });
+                liveEl('.af-ftext', el => { filters.text = el.value || ''; apply(); });
+                window.AFFilter.wireMulti({
+                    root, id: AGENT_MS,
+                    onChange: sel => { filters.agents = sel; apply(); }
+                });
                 wireEl('.af-factive', 'click', () => { filters.activeOnly = !filters.activeOnly; apply(); });
                 wireEl('.af-ferrors', 'click', () => { filters.errorsOnly = !filters.errorsOnly; apply(); });
                 wireEl('.af-fmain', 'click', () => { filters.mainOnly = !filters.mainOnly; apply(); });
-                wireEl('.af-ffrom', 'change', el => { filters.from = el.value || ''; apply(); });
-                wireEl('.af-fto', 'change', el => { filters.to = el.value || ''; apply(); });
+                liveEl('.af-ffrom', el => { filters.from = el.value || ''; apply(); }, 300);
+                liveEl('.af-fto', el => { filters.to = el.value || ''; apply(); }, 300);
                 FRANGES.forEach(k => {
                     const bound = (b) => (el) => {
                         const n = el.value === '' || el.value === undefined ? NaN : Number(el.value);
@@ -420,8 +439,8 @@
                         if (rg.min === undefined && rg.max === undefined) { delete filters.ranges[k.id]; }
                         apply();
                     };
-                    wireEl(`.af-fr-${k.id}-min`, 'change', bound('min'));
-                    wireEl(`.af-fr-${k.id}-max`, 'change', bound('max'));
+                    liveEl(`.af-fr-${k.id}-min`, bound('min'));
+                    liveEl(`.af-fr-${k.id}-max`, bound('max'));
                 });
                 wireEl('.af-fclear', 'click', () => { filters = FDEF(); apply(); });
             }

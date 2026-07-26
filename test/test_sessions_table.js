@@ -7,7 +7,9 @@ const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
 
-const code = fs.readFileSync(path.resolve(__dirname, '../media/sessionsTable.js'), 'utf8');
+const code = fs.readFileSync(path.resolve(__dirname, '../media/afFilters.js'), 'utf8')
+    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/sessionsTable.js'), 'utf8');
+const createAfmsDom = require(path.join(__dirname, 'lib_afms_dom.js'));
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
@@ -17,7 +19,11 @@ function makeContainer() {
         _html: '', _els: {},
         set innerHTML(v) { this._html = v; this._els = {}; },
         get innerHTML() { return this._html; },
-        querySelector(sel) { return this.querySelectorAll(sel)[0] || null; },
+        querySelector(sel) {
+            // the shared multi-pick control has its own shim (lib_afms_dom.js)
+            if (sel.indexOf('[data-afms') === 0) { return this.ms.querySelector(sel); }
+            return this.querySelectorAll(sel)[0] || null;
+        },
         querySelectorAll(sel) {
             if (this._els[sel]) { return this._els[sel]; }
             const mk = ds => { const e = { dataset: ds }; e.addEventListener = (_t, fn) => { e._fn = fn; }; return e; };
@@ -40,6 +46,7 @@ function makeContainer() {
             return list;
         }
     };
+    c.ms = createAfmsDom(() => c._html);
     return c;
 }
 
@@ -49,6 +56,7 @@ let state = {};
 const sandbox = {
     window: {},
     document: { getElementById: id => containers[id] || (containers[id] = makeContainer()) },
+    setTimeout: () => 0, clearTimeout: () => { },
     console
 };
 sandbox.globalThis = sandbox;
@@ -265,9 +273,12 @@ const mkRow = (i, extra) => Object.assign({
 
     ok('Filters chip renders in the chip row', html().includes('af-filter'));
     click(q('.af-filter'));
-    ok('filter panel opens with text, agent, flags, ranges and dates',
-        html().includes('af-ftext') && html().includes('af-fagent') && html().includes('af-factive')
+    const ms = containers.flt.ms;
+    ok('filter panel opens with text, agent picker, flags, ranges and dates',
+        html().includes('af-ftext') && ms.has('sess-agents-flt') && html().includes('af-factive')
         && html().includes('af-fr-tokens-min') && html().includes('af-ffrom') && html().includes('af-fclear'));
+    ok('the agent picker opens unfiltered, every agent ticked',
+        ms.label('sess-agents-flt') === 'Agents: all' && ms.ticked('sess-agents-flt').length === 2);
     click(q('.af-factive'));
     ok('Active-now flag narrows to the live session and shows the count',
         html().includes('title2') && !html().includes('title1') && html().includes('1/3 sessions'));
@@ -285,11 +296,22 @@ const mkRow = (i, extra) => Object.assign({
     ok('token min-range hides small sessions', html().includes('title2') && !html().includes('title1'));
     ok('filter state persisted under the page key',
         state.afSess && state.afSess.flt.filters.ranges.tokens.min === 5000);
-    const ag = q('.af-fagent'); ag.value = 'dev'; ag._fn(ev());
-    ok('agent selection combines with the range (nothing matches → honest row)',
+    ms.only('sess-agents-flt', ['dev']);
+    ok('agent pick combines with the range (nothing matches → honest row)',
         html().includes('No sessions match the filters.'));
+    ok('one-agent pick names the agent on the button', ms.label('sess-agents-flt') === 'Agents: dev');
     click(q('.af-fclear'));
     ok('Clear restores every row', html().includes('title1') && html().includes('title2') && html().includes('title3'));
+    // any subset, not just all-or-one: Clear then tick both is the same as all
+    ms.only('sess-agents-flt', ['dev', 'psy']);
+    ok('ticking every agent means no filter at all',
+        ms.label('sess-agents-flt') === 'Agents: all'
+        && state.afSess.flt.filters.agents === null
+        && html().includes('title1') && html().includes('title2'));
+    ms.clear('sess-agents-flt');
+    ok('Clear on the picker honestly matches nothing',
+        ms.label('sess-agents-flt') === 'Agents: none' && html().includes('No sessions match the filters.'));
+    click(q('.af-fclear'));
 }
 
 // ---------- part: origin scope — the column, the one-click switch, the chips ----------

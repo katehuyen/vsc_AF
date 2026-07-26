@@ -21,7 +21,6 @@
     // sessions stay visible too). A Set = exactly the ticked subset; an empty
     // Set honestly matches nothing.
     let agentSel = preset && preset.agentName ? new Set([preset.agentName]) : null;
-    let agDocCloseWired = false;
     // Role chips: dialog is the default — tool traffic is opt-in, or the noise
     // would drown the conversation ("memory" matches hundreds of file listings).
     const ROLE_CHIPS = [
@@ -60,24 +59,6 @@
         return '';
     }
 
-    function agentLabel() {
-        if (!agentSel) { return 'Agents: all'; }
-        if (!agentSel.size) { return 'Agents: none'; }
-        if (agentSel.size === 1) { return 'Agent: ' + [...agentSel][0]; }
-        return `Agents: ${agentSel.size}/${DATA.agents.length}`;
-    }
-
-    /** Ticked names straight from the checkboxes (the DOM is the source of truth
-     *  while the menu is open — agentSel is derived from it on every change). */
-    function readAgentBoxes() {
-        const set = new Set();
-        DATA.agents.forEach((a, i) => {
-            const cb = document.getElementById('ag-' + i);
-            if (cb && cb.checked) { set.add(a); }
-        });
-        return set;
-    }
-
     function chipRow() {
         const dialog = roleSel.size === 2 && roleSel.has('user') && roleSel.has('assistant');
         const all = roleSel.size === ROLE_CHIPS.length;
@@ -93,14 +74,13 @@
 
     function shell() {
         const fileScope = !!(preset && preset.file);
-        const agentMenu = `<span id="agwrap" style="position:relative; display:inline-block">
-            <button class="secondary" id="agbtn" ${fileScope ? 'disabled' : ''} title="Pick which agents to search — tick any combination">${C.esc(agentLabel())} ▾</button>
-            <div id="agmenu" class="agmenu" hidden>
-                <div class="agtools"><a id="agall">Select all</a> · <a id="agnone">Clear</a></div>
-                ${DATA.agents.map((a, i) =>
-                    `<label class="agitem"><input type="checkbox" id="ag-${i}" data-agent="${C.esc(a)}"${!agentSel || agentSel.has(a) ? ' checked' : ''}> ${C.esc(a)}</label>`).join('')}
-            </div>
-        </span>`;
+        // the extension-wide multi-pick control (media/afFilters.js) — this page
+        // set the pattern, every other filter now uses the same widget
+        const agentMenu = window.AFFilter.multi({
+            id: 'search-agents', label: 'Agents', options: DATA.agents,
+            selected: agentSel ? [...agentSel] : null, disabled: fileScope,
+            title: 'Pick which agents to search — tick any combination'
+        });
         document.getElementById('app').innerHTML = `
             <style>
                 .chiprow { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-top:8px; }
@@ -112,17 +92,6 @@
                 .scopepill { font-size:11px; padding:2px 10px; border-radius:10px; white-space:nowrap;
                     background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); }
                 .scopepill a { cursor:pointer; margin-left:4px; }
-                .agmenu { position:absolute; right:0; top:calc(100% + 4px); z-index:60;
-                    min-width:180px; max-height:280px; overflow:auto; padding:6px 12px 8px;
-                    background:var(--vscode-editorWidget-background, var(--vscode-editor-background));
-                    border:1px solid var(--vscode-widget-border, #4444); border-radius:4px;
-                    box-shadow:0 4px 12px rgba(0,0,0,.3); text-align:left; }
-                .agmenu .agtools { font-size:11px; margin-bottom:5px; white-space:nowrap;
-                    color:var(--vscode-descriptionForeground); }
-                .agmenu .agtools a { cursor:pointer; }
-                .agmenu .agitem { display:block; padding:2px 0; cursor:pointer;
-                    white-space:nowrap; font-size:12px; }
-                .agmenu .agitem input { cursor:pointer; margin-right:6px; vertical-align:middle; }
                 .sessgroup { margin-bottom:12px; }
                 .sessgroup > .sesshead { cursor:pointer; padding:6px 10px; border-radius:4px;
                     background:color-mix(in srgb, var(--vscode-textLink-foreground) 10%, transparent);
@@ -193,10 +162,7 @@
         ['regex', 'case', 'srcmem', 'srcevents'].forEach(id =>
             document.getElementById(id).addEventListener('change', scheduleRun));
 
-        // ---- agent picker (checkbox dropdown) ----
-        const agbtn = document.getElementById('agbtn');
-        const agmenu = document.getElementById('agmenu');
-        const syncAgentUi = () => { agbtn.textContent = agentLabel() + ' ▾'; };
+        // ---- agent picker (the shared multi-pick control) ----
         // a selection that no longer matches the "Agent: X" pill retires the pill
         const dropStaleAgentPreset = () => {
             if (preset && preset.agentName &&
@@ -206,43 +172,14 @@
                 if (sc) { sc.innerHTML = scopeLine(); }
             }
         };
-        const applyAgentSet = (set) => {
-            agentSel = set.size === DATA.agents.length ? null : set;
-            syncAgentUi();
-            dropStaleAgentPreset();
-            scheduleRun();
-        };
-        agbtn.addEventListener('click', () => { agmenu.hidden = !agmenu.hidden; });
-        DATA.agents.forEach((a, i) => {
-            const cb = document.getElementById('ag-' + i);
-            if (cb) { cb.addEventListener('change', () => applyAgentSet(readAgentBoxes())); }
+        window.AFFilter.wireMulti({
+            id: 'search-agents',
+            onChange: sel => {
+                agentSel = sel === null ? null : new Set(sel);
+                dropStaleAgentPreset();
+                scheduleRun();
+            }
         });
-        document.getElementById('agall').addEventListener('click', () => {
-            DATA.agents.forEach((_a, i) => {
-                const cb = document.getElementById('ag-' + i);
-                if (cb) { cb.checked = true; }
-            });
-            applyAgentSet(new Set(DATA.agents));
-        });
-        document.getElementById('agnone').addEventListener('click', () => {
-            DATA.agents.forEach((_a, i) => {
-                const cb = document.getElementById('ag-' + i);
-                if (cb) { cb.checked = false; }
-            });
-            applyAgentSet(new Set());
-        });
-        // close on any click outside the picker (wired once; clicks inside stop here)
-        const agwrap = document.getElementById('agwrap');
-        if (agwrap && typeof agwrap.addEventListener === 'function') {
-            agwrap.addEventListener('click', ev => { if (ev && ev.stopPropagation) { ev.stopPropagation(); } });
-        }
-        if (!agDocCloseWired && typeof document.addEventListener === 'function') {
-            agDocCloseWired = true;
-            document.addEventListener('click', () => {
-                const m = document.getElementById('agmenu');
-                if (m) { m.hidden = true; }
-            });
-        }
         semBox.addEventListener('change', () => {
             document.getElementById('regexLbl').style.opacity = semBox.checked ? '0.4' : '1';
             document.getElementById('caseLbl').style.opacity = semBox.checked ? '0.4' : '1';

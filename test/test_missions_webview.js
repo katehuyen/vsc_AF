@@ -8,8 +8,9 @@ const vm = require('vm');
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
-const code = fs.readFileSync(path.resolve(__dirname, '../media/pageHeader.js'), 'utf8')
+const code = fs.readFileSync(path.resolve(__dirname, '../media/pageHeader.js'), 'utf8') + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afFilters.js'), 'utf8')
     + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/missions.js'), 'utf8');
+const createAfmsDom = require(path.join(__dirname, 'lib_afms_dom.js'));
 
 let posted = [];
 let msgHandler = null;
@@ -93,6 +94,9 @@ const sandbox = {
     setTimeout: () => 0, clearTimeout: () => { }, console, Date
 };
 sandbox.globalThis = sandbox;
+// the shared multi-pick filter control has its own shim (lib_afms_dom.js)
+const ms = createAfmsDom(() => getEl('app')._html);
+sandbox.document.querySelector = (s) => (s.indexOf('[data-afms') === 0 ? ms.querySelector(s) : null);
 vm.createContext(sandbox);
 vm.runInContext(code, sandbox); // render()
 
@@ -448,9 +452,22 @@ ok('Collapse all folds the whole list', detailCount() === 0);
     };
     msgHandler({ data: { type: 'data', data: { ...DATA, pending: { questions: [], approvals: [] }, runs: [RUN, RUNF] } } });
     getEl('m-filters').listeners.click();
-    ok('filter panel opens with selection chips + range inputs + dates',
+    ok('filter panel opens with selection chips + pickers + range inputs + dates',
         html().includes('id="fs-done"') && html().includes('id="fv-success"')
+        && ms.has('flt-leads') && ms.has('flt-agents')
         && html().includes('id="fr-tokens-min"') && html().includes('id="f-from"') && html().includes('id="f-clear"'));
+    ok('the lead / team pickers open unfiltered',
+        ms.label('flt-leads') === 'Lead: all' && ms.label('flt-agents') === 'Team has: any');
+    ms.clear('flt-leads');
+    ok('an empty lead pick honestly matches nothing',
+        html().includes('No runs match the filters.') && ms.label('flt-leads') === 'Lead: none');
+    // one option, ticked = every option ticked = no filter at all
+    ms.only('flt-leads', ['lead']);
+    ok('picking the lead brings its runs back',
+        html().includes('data-run="run1"') && ms.label('flt-leads') === 'Lead: all');
+    ms.only('flt-agents', ['coder']);
+    ok('the team picker keeps runs whose team includes the pick', html().includes('data-run="run1"'));
+    getEl('f-clear').listeners.click();
     getEl('fs-done').listeners.click();
     ok('status selection narrows the list and shows the N/M count',
         html().includes('data-run="runF"') && !html().includes('data-run="run1"') && html().includes('1/2 runs'));

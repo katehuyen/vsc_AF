@@ -33,6 +33,7 @@
     // ---- table tools: search + column filters + sort + Markdown export ------
     const tstate = {};
     const lastTables = {};
+    const tablePicks = {};   // table id -> its column pickers, rebuilt per render
     let refocusTable = '';
     function tstateFor(id) { return tstate[id] || (tstate[id] = { q: '', sort: '', asc: false, filters: {} }); }
     function cmpVals(a, b, num) {
@@ -48,7 +49,9 @@
                 if (hay.indexOf(q) < 0) { return false; }
             }
             for (const c of cols) {
-                if (c.filter && s.filters[c.key] && String(c.get(r) == null ? '' : c.get(r)) !== s.filters[c.key]) { return false; }
+                // null = no filter; otherwise the cell must be in the picked set
+                const pickset = s.filters[c.key];
+                if (c.filter && pickset && pickset.indexOf(String(c.get(r) == null ? '' : c.get(r))) < 0) { return false; }
             }
             return true;
         });
@@ -57,10 +60,16 @@
             if (c) { rows = rows.slice().sort((a, b) => cmpVals(c.get(a), c.get(b), c.num) * (s.asc ? 1 : -1)); }
         }
         lastTables[id] = { title, cols, rows };
-        const selects = cols.filter(c => c.filter).map(c => {
-            const vals = [...new Set(allRows.map(r => String(c.get(r) == null ? '' : c.get(r))).filter(Boolean))].sort();
-            return `<select data-tf="${id}:${c.key}" title="Filter by ${C.esc(c.label)}"><option value="">${C.esc(c.label)}: all</option>${vals.map(v => `<option value="${C.esc(v)}" ${s.filters[c.key] === v ? 'selected' : ''}>${C.esc(v)}</option>`).join('')}</select>`;
-        }).join('');
+        // one multi-pick dropdown per filterable column — tick any combination
+        const picks = cols.filter(c => c.filter).map(c => ({
+            id: 'taf-' + id + '-' + c.key, key: c.key, label: c.label,
+            options: [...new Set(allRows.map(r => String(c.get(r) == null ? '' : c.get(r))).filter(Boolean))].sort()
+        }));
+        tablePicks[id] = picks;
+        const selects = picks.map(p => window.AFFilter.multi({
+            id: p.id, label: p.label, options: p.options, selected: s.filters[p.key],
+            title: 'Filter by ' + p.label + ' — tick any combination'
+        })).join('');
         const active = q || s.sort || Object.values(s.filters).some(Boolean);
         const bar = `<div class="tbl-tools">
             <input type="search" data-tq="${id}" value="${C.esc(s.q)}" placeholder="⌕ search">
@@ -191,8 +200,10 @@
             el.addEventListener('click', () => post({ type: el.dataset.go })));
         document.querySelectorAll('[data-tq]').forEach(el =>
             el.addEventListener('input', () => { tstateFor(el.dataset.tq).q = el.value; refocusTable = el.dataset.tq; render(); }));
-        document.querySelectorAll('[data-tf]').forEach(el =>
-            el.addEventListener('change', () => { const [id, key] = el.dataset.tf.split(':'); tstateFor(id).filters[key] = el.value; render(); }));
+        Object.keys(tablePicks).forEach(id => tablePicks[id].forEach(p => window.AFFilter.wireMulti({
+            id: p.id,
+            onChange: sel => { tstateFor(id).filters[p.key] = sel; render(); }
+        })));
         document.querySelectorAll('[data-tsort]').forEach(el =>
             el.addEventListener('click', () => {
                 const [id, key] = el.dataset.tsort.split(':');

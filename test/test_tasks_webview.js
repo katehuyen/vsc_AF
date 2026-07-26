@@ -12,7 +12,9 @@ const vm = require('vm');
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
-const code = fs.readFileSync(path.join(__dirname, '..', 'media', 'tasksPage.js'), 'utf8');
+const code = fs.readFileSync(path.join(__dirname, '..', 'media', 'afFilters.js'), 'utf8')
+    + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'tasksPage.js'), 'utf8');
+const createAfmsDom = require(path.join(__dirname, 'lib_afms_dom.js'));
 
 // ---------------------------------------------------------------- DOM shim
 let posted = [];
@@ -51,6 +53,7 @@ function getEl(id) {
     return els[id];
 }
 const html = () => getEl('app')._html;
+const ms = createAfmsDom(html);
 
 /** Parse the rendered HTML into shim elements matching a CSS-ish selector. */
 function query(sel) {
@@ -108,7 +111,8 @@ const sandbox = {
     document: {
         getElementById: (id) => els[id] || (id === 'app' ? getEl('app') : (query(`#${id}`)[0] || null)),
         querySelectorAll: query,
-        querySelector: (s) => query(s)[0] || null,
+        // the shared multi-pick control has its own shim (lib_afms_dom.js)
+        querySelector: (s) => (s.indexOf('[data-afms') === 0 ? ms.querySelector(s) : query(s)[0] || null),
         get hidden() { return false; },
         get activeElement() { return null; }
     },
@@ -303,10 +307,16 @@ query('[data-expand="workflow:w1"]')[0].click();
 
 // ------------------------------------------------------ PLAN: filtering
 ok('no filter chips when nothing is filtered', !html().includes('class="chips"'));
-const setFilter = (name, value) => {
+// The pick filters are multi-select dropdowns (media/afFilters.js): setting one
+// means "clear, then tick exactly these". The checkbox and the grouping select
+// are still single-valued controls.
+// only the open tab's pickers are on the page, so the name pins one id
+const pickId = (name) => ms.ids().filter(i => i.slice(-name.length - 1) === '-' + name)[0] || '';
+const setFilter = (name, ...values) => {
+    if (pickId(name)) { ms.only(pickId(name), values.map(String)); return; }
     const el = query(`[data-f="${name}"]`)[0];
-    el.value = value;
-    if (el.type === 'checkbox') { el.checked = value; }
+    el.value = values[0];
+    if (el.type === 'checkbox') { el.checked = values[0]; }
     el.fire('change');
 };
 setFilter('kind', 'trigger');

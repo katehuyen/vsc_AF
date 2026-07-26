@@ -285,7 +285,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 // test_sessions_table.js; here we prove the dashboard page loads the component
 // with its rows/columns and routes its messages both ways.
 {
-    const headerCode = fs.readFileSync(path.resolve(__dirname, '../media/pageHeader.js'), 'utf8');
+    const headerCode = fs.readFileSync(path.resolve(__dirname, '../media/pageHeader.js'), 'utf8') + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afFilters.js'), 'utf8');
     const sessCode = fs.readFileSync(path.resolve(__dirname, '../media/sessionsTable.js'), 'utf8');
     const code = fs.readFileSync(path.resolve(__dirname, '../media/dashboard.js'), 'utf8');
     let posted = [];

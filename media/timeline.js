@@ -423,7 +423,7 @@
                 page: 'timeline',
                 title: 'Live Timeline',
                 sub: `${listenerHtml} · fed by Claude Code hooks · detail ≤24h live, 3d+ from persisted history (kept 31 days)`,
-                controls: `<span class="seg">${[15, 60, 240, 480, 960, 1440, 4320, 10080, 43200].map(m => {
+                controls: `<span class="seg">${[15, 30, 60, 120, 180, 240, 480, 960, 1440, 4320, 10080, 43200].map(m => {
                     const label = m < 60 ? m + 'm' : m <= 1440 ? (m / 60) + 'h' : (m / 1440) + 'd';
                     return `<button data-win="${m}" class="${m === windowMin ? 'sel' : ''}">${label}</button>`;
                 }).join('')}</span>`,

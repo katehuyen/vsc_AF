@@ -10,6 +10,7 @@ let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
 const S = require(path.join(__dirname, '..', 'out', 'core', 'search.js'));
+const createAfmsDom = require(path.join(__dirname, 'lib_afms_dom.js'));
 
 const tmpdir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-search-'));
 const tfile = (name, lines) => {
@@ -137,7 +138,7 @@ const TS = (m) => Date.parse(T(m));
 
 // ---------- webview: grouped rendering, scope pill, click routing ----------
 {
-    const code = fs.readFileSync(path.resolve(__dirname, '../media/pageHeader.js'), 'utf8') + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/search.js'), 'utf8');
+    const code = fs.readFileSync(path.resolve(__dirname, '../media/pageHeader.js'), 'utf8') + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afFilters.js'), 'utf8') + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/search.js'), 'utf8');
     let posted = [];
     let msgHandler = null;
     const els = {};
@@ -236,7 +237,7 @@ const TS = (m) => Date.parse(T(m));
 
 // ---------- webview: agent picker (checkbox dropdown, fleet scope) ----------
 {
-    const code = fs.readFileSync(path.resolve(__dirname, '../media/pageHeader.js'), 'utf8') + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/search.js'), 'utf8');
+    const code = fs.readFileSync(path.resolve(__dirname, '../media/pageHeader.js'), 'utf8') + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afFilters.js'), 'utf8') + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/search.js'), 'utf8');
     let posted = [];
     let msgHandler = null;
     const els = {};
@@ -262,24 +263,21 @@ const TS = (m) => Date.parse(T(m));
             },
             addEventListener: (ev, fn) => { if (ev === 'message') { msgHandler = fn; } }
         },
-        document: { getElementById: getEl, querySelectorAll: () => [] },
+        document: { getElementById: getEl, querySelectorAll: () => [], querySelector: (s) => ms.querySelector(s) },
         setTimeout: () => 0, clearTimeout: () => { }, console, Date
     };
     sandbox.globalThis = sandbox;
     vm.createContext(sandbox);
+    const ms = createAfmsDom(() => getEl('app')._html);
     vm.runInContext(code, sandbox); // shell()
 
     const app = getEl('app');
-    ok('picker defaults to all agents', app._html.includes('Agents: all ▾')
-        && (app._html.match(/data-agent="[^"]+" checked>/g) || []).length === 3);
+    ok('picker defaults to all agents',
+        ms.label('search-agents') === 'Agents: all' && ms.ticked('search-agents').length === 3);
 
-    const setBoxes = (dev, ops, psy) => {
-        getEl('ag-0').checked = dev; getEl('ag-1').checked = ops; getEl('ag-2').checked = psy;
-    };
     // untick one agent → subset is sent as an explicit array
-    setBoxes(true, false, true);
-    getEl('ag-1').listeners.change();
-    ok('subset label counts the pick', getEl('agbtn').textContent === 'Agents: 2/3 ▾');
+    ms.toggle('search-agents', 'ops', false);
+    ok('subset label counts the pick', ms.label('search-agents') === 'Agents: 2/3');
     getEl('q').value = 'needle';
     posted = [];
     getEl('go').listeners.click();
@@ -287,33 +285,40 @@ const TS = (m) => Date.parse(T(m));
     ok('subset search carries exactly the ticked agents', sm && JSON.stringify(sm.agents) === '["dev","psy"]');
 
     // Clear → empty set (finds nothing, honestly); Select all → null (no filter)
-    getEl('agnone').listeners.click();
-    ok('Clear unticks everything', getEl('agbtn').textContent === 'Agents: none ▾'
-        && !getEl('ag-0').checked && !getEl('ag-2').checked);
+    ms.clear('search-agents');
+    ok('Clear unticks everything',
+        ms.label('search-agents') === 'Agents: none' && ms.ticked('search-agents').length === 0);
     posted = [];
     getEl('go').listeners.click();
     sm = posted.find(p => p.type === 'search');
     ok('none-selected search sends an empty set', sm && JSON.stringify(sm.agents) === '[]');
-    getEl('agall').listeners.click();
-    ok('Select all restores the no-filter state', getEl('agbtn').textContent === 'Agents: all ▾' && getEl('ag-1').checked);
+    ms.selectAll('search-agents');
+    ok('Select all restores the no-filter state',
+        ms.label('search-agents') === 'Agents: all' && ms.ticked('search-agents').length === 3);
     posted = [];
     getEl('go').listeners.click();
     sm = posted.find(p => p.type === 'search');
     ok('all-selected search sends no agent filter', sm && sm.agents === null);
 
+    // an arbitrary two-of-three pick — the point of the whole control
+    ms.only('search-agents', ['dev', 'psy']);
+    posted = [];
+    getEl('go').listeners.click();
+    sm = posted.find(p => p.type === 'search');
+    ok('any subset is expressible (clear, then tick two)', sm && JSON.stringify(sm.agents) === '["dev","psy"]');
+    ms.selectAll('search-agents');
+
     // agent preset → only that agent ticked, single-agent label
     msgHandler({ data: { type: 'preset', preset: { agentName: 'ops' } } });
-    ok('agent preset ticks only that agent', app._html.includes('Agent: ops ▾')
-        && /id="ag-1" data-agent="ops" checked>/.test(app._html)
-        && /id="ag-0" data-agent="dev">/.test(app._html));
+    ok('agent preset ticks only that agent',
+        ms.label('search-agents') === 'Agents: ops' && JSON.stringify(ms.ticked('search-agents')) === '["ops"]');
     ok('agent preset shows the scope pill', app._html.includes('Agent: ops') && app._html.includes('id="clearscope"'));
 
     // widening the pick retires the stale "Agent: X" pill
     getEl('scope')._html = 'PILL'; // pre-seed: proves dropStaleAgentPreset really clears it
-    setBoxes(true, true, false);
-    getEl('ag-0').listeners.change();
+    ms.toggle('search-agents', 'dev', true);
     ok('changed pick retires the agent pill', getEl('scope')._html === ''
-        && getEl('agbtn').textContent === 'Agents: 2/3 ▾');
+        && ms.label('search-agents') === 'Agents: 2/3');
 }
 
 fs.rmSync(tmpdir, { recursive: true, force: true });

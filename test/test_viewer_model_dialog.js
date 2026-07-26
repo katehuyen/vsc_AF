@@ -80,7 +80,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 
 // ---------- part 2: page — Dialog default, model tags, deep-link beats the filter ----------
 {
-    const code = fs.readFileSync(path.resolve(__dirname, '../media/pageHeader.js'), 'utf8') + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/sessionViewer.js'), 'utf8');
+    const code = fs.readFileSync(path.resolve(__dirname, '../media/pageHeader.js'), 'utf8') + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afFilters.js'), 'utf8') + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/sessionViewer.js'), 'utf8');
     let focused = null, msgHandler = null;
     const els = {};
     function getEl(id) {
