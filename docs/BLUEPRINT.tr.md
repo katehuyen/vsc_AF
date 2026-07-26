@@ -1358,6 +1358,28 @@ E1 klasör-senkronu geçmişi taşır; relay **canlılığı** taşır. Kurulum:
 
 Ajan paketlerinin tüketim tarafı: `agentFarm.packGalleryRepos` = git URL'leri veya yerel klasörler → **Browse Agent Pack Gallery…** kaynakları senkronlar (git: sığ klon + pull), bulunan `.agentpack`'leri listeler, seçtiğin normal **güvenli import akışıyla** kurulur (hafıza/sır asla pakette yok, tetikler kapalı gelir, yeni webhook token).
 
+### Diğer Motorlarla Çalışma — Uçtan Uca
+
+Yukarıdaki iki bölüm (Antigravity Uyumluluğu, aşağıdaki Çoklu-CLI Yürütücü) ayrı ayrı doğru ama parça parça — burada **"tam olarak nasıl kullanılır"** sorusunun kendisi. Üç farklı senaryo, üç farklı mekanizma:
+
+**A. Codex — Agent Farm içinden gerçekten çalıştırılır (gerçek bir CLI olduğu için).**
+1. Bir kere: ajana sağ tık → **Sync Agent with Antigravity + Codex…** — ajan klasörüne `AGENTS.md` yazar (`CLAUDE.md`'den üretilir; Codex'in okuduğu dosya budur).
+2. `agentFarm.cliProfiles` ayarına ekle: `[{"name": "codex", "headless": "codex exec \"{prompt}\"", "interactive": "codex"}]`.
+3. Ajana sağ tık → **Start Session With… (choose CLI)** → **codex** seç → aynı ajan klasöründe bir terminal açılır, içinde `codex` çalışır. Codex kendi kuralı gereği git kökünden cwd'ye kadar her klasördeki `AGENTS.md`'yi birleştirip okur — senkronladığın kimlik ekstra bir şey yapmadan otomatik devreye girer.
+4. Headless görev olarak da çalışır: **Add Task** sihirbazında CLI seçimi çıkar; "codex" seçilirse prompt `codex exec` ile koşar, çıktı arşivlenir.
+5. İstersen `~/.codex/config.toml`'a `notify = ["node", "<cliHook.js yolu>"]` ekleyerek canlı olayları (Stop, araç çağrısı) da aynı zaman çizelgesine akıtabilirsin (aşağıdaki "Hook köprüsü").
+6. **Sınır:** transcript analizi, anlık araç/hata takibi, maliyet ve kalite skorlaması Claude'a özgü kalır — codex yalnızca açık/kapalı yaşam döngüsü + çıktı arşivi + çıkış kodu alır (ayrıca aşağıdaki "Harici oturum geçmişi" ile GERÇEK transcript + maliyet de görünür — bu codex için özel olarak yazılmış bir istisnadır).
+
+**B. Antigravity — bambaşka bir şey; Agent Farm bunu ASLA açmaz.**
+Antigravity, VS Code gibi ayrı bir masaüstü **uygulama** (Google'ın kendi editörü) — terminalde başlatılan bir CLI değil, Agent Farm içinden hiçbir komutla açılmaz ve açılamaz. Agent Farm'ın rolü tek şey: ajan klasörünü Antigravity açtığında doğru kimliği bulsun diye dosyaları hazırlamak. Kullanımı: **Sync Agent with Antigravity + Codex…** çalıştır (`.agents/AGENTS.md` + nöbet görevleri → `.agents/workflows/` slash-komutları), sonra ajan klasörünü **sen** Antigravity uygulamasında proje olarak açarsın. O andan sonra Agent Farm'ın hiçbir kontrolü yoktur — senkron yalnızca "Antigravity açtığında bu ajan kim, kuralları ne" sorusunu baştan cevaplamıştır.
+
+**C. Tamamen farklı / kendi CLI'ın (aider, opencode, kendi scriptin, ne olursa) — jenerik mekanizma.**
+`cliProfiles` Claude/Codex/Gemini'ye özel değil: `{prompt}`/`{args}` şablonlu **herhangi bir** CLI eklenebilir:
+```json
+{"name": "aider", "headless": "aider --message \"{prompt}\"", "interactive": "aider"}
+```
+Bu profil de aynen **Start Session With…** listesinde çıkar, aynı terminal-açma + Add Task akışı çalışır — Codex'ten hiçbir farkı yoktur. Tek gerçek kısıt: derin gözlem (gerçek transcript geçmişi + maliyet) bugün yalnız Codex ve Gemini için ayrıca yazılmış birer adaptörle var; tamamen bilinmeyen bir CLI için böyle bir adaptör yok, o yüzden yalnızca "açık/kapalı" yaşam döngüsünü görürsün (hook köprüsünü bağlarsan canlı olaylar da eklenir). Derin gözlem istiyorsan bir sonraki adım kendi `SessionSource` adaptörünü yazmaktır (bkz. E3b'nin mimarisi aşağıda) — bugün hazır değil, ama mekanizma buna açık.
+
 ### Çoklu-CLI Yürütücü
 
 Görev yürütücü artık claude'a kilitli değil: `agentFarm.cliProfiles` = `[{"name": "gemini", "headless": "gemini -p \"{prompt}\"", "interactive": "gemini"}]` → Add Task sihirbazı CLI seçtirir. **Beklenti sınırı net:** claude-dışı yürütücüler çıktı arşivi + çıkış kodu durumu alır; transcript analizi, canlı hook'lar, maliyet ve kalite katmanları Claude'a özgüdür. Antigravity senkronu (1.3.0) ile aynı ajan kimliği iki tarafta da çalışır.

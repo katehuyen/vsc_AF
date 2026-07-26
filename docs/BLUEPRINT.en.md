@@ -1358,6 +1358,28 @@ E1's folder sync carries the past; a relay carries **liveness**. Setup:
 
 The consumption side of agent packs: `agentFarm.packGalleryRepos` = git URLs or local folders → **Browse Agent Pack Gallery…** syncs the sources (git: shallow clone + pull), lists the `.agentpack` files found, and the one you pick is set up with the normal **safe import flow** (memory/secrets are never in the pack, triggers come in off, a new webhook token).
 
+### Working With Other Engines — End to End
+
+The two sections above (Antigravity Compatibility, Multi-CLI Runner below) are each correct but scattered — this is the **"how do I actually use this"** answer, in one place. Three different scenarios, three different mechanisms:
+
+**A. Codex — actually runs FROM Agent Farm (because it's a real CLI).**
+1. Once: right-click the agent → **Sync Agent with Antigravity + Codex…** — writes `AGENTS.md` into the agent folder (generated from `CLAUDE.md`; the file Codex reads).
+2. Add to `agentFarm.cliProfiles`: `[{"name": "codex", "headless": "codex exec \"{prompt}\"", "interactive": "codex"}]`.
+3. Right-click the agent → **Start Session With… (choose CLI)** → pick **codex** → a terminal opens in the same agent folder running `codex`. Codex's own rule merges every `AGENTS.md` from the git root down to the cwd — the identity you synced kicks in automatically, no extra step.
+4. Works as a headless task too: the **Add Task** wizard offers a CLI choice; picking "codex" runs the prompt through `codex exec` and archives the output.
+5. Optionally wire `~/.codex/config.toml` with `notify = ["node", "<path to cliHook.js>"]` to stream live events (Stop, tool calls) onto the same timeline (see "Hook bridge" below).
+6. **The limit:** transcript analysis, live tool/error tracking, cost and quality scoring stay Claude-specific — codex only gets open/closed lifecycle + output archive + exit code (though "External session history" below is a codex-specific exception that adds REAL transcript history + cost on top).
+
+**B. Antigravity — an entirely different thing; Agent Farm never opens it.**
+Antigravity is a standalone desktop **application**, like VS Code (Google's own editor) — not a CLI launched in a terminal, and no command in Agent Farm opens it or could. Agent Farm's only role is preparing the files so that when Antigravity opens the agent folder, it finds the right identity. Usage: run **Sync Agent with Antigravity + Codex…** (`.agents/AGENTS.md` + active duties → `.agents/workflows/` slash commands), then **you** open the agent folder as a project in the Antigravity application yourself. From that point Agent Farm has no control at all — the sync only answered, in advance, "who is this agent and what are its rules" for when Antigravity opens it.
+
+**C. A completely different / your own CLI (aider, opencode, your own script, anything) — the generic mechanism.**
+`cliProfiles` isn't Claude/Codex/Gemini-specific: any CLI with a `{prompt}`/`{args}` template can be added:
+```json
+{"name": "aider", "headless": "aider --message \"{prompt}\"", "interactive": "aider"}
+```
+This profile shows up in **Start Session With…** exactly the same way, with the same terminal-launch + Add Task flow — no different from Codex. The one real limit: real transcript history + cost is, today, only wired for Codex and Gemini via dedicated adapters; a completely unknown CLI has none, so you only get open/closed lifecycle tracking (live events too, if you wire the hook bridge). Real transcript history for a bespoke CLI would mean writing your own `SessionSource` adapter (see the E3b architecture below) — not built today, but the mechanism is open to it.
+
 ### Multi-CLI Runner
 
 The task runner is no longer locked to claude: `agentFarm.cliProfiles` = `[{"name": "gemini", "headless": "gemini -p \"{prompt}\"", "interactive": "gemini"}]` → the Add Task wizard lets you pick a CLI. **The expectation is clearly bounded:** non-claude runners get an output archive + exit-code status; transcript analysis, live hooks, cost and quality layers are Claude-specific. With Antigravity sync (1.3.0) the same agent identity works on both sides.
