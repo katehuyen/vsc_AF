@@ -5,6 +5,7 @@ import { Insight } from '../core/health';
 import { SessionIndex, SessionInfo, sessionOrigin } from '../core/sessions';
 import { PricingEngine, totalTokens } from '../core/pricing';
 import { SubsystemStatus } from '../core/farmstatus';
+import { PlanUsageSnapshot } from '../core/planusage';
 import { dayKey } from '../core/util';
 import { handleAfNav, htmlShell } from './base';
 import { buildData as buildViewerData } from './sessionViewer';
@@ -22,6 +23,12 @@ export interface DashboardDeps {
     quality?(agentId: string): { avg?: number; count: number };
     /** Z1: per-subsystem activation rows for the Farm Status card. */
     farmStatus?(): SubsystemStatus[];
+    /** Plan usage card: the cached snapshot (no network) for the render. */
+    planUsage?(): PlanUsageSnapshot | undefined;
+    /** Plan usage card: refresh it; `force` bypasses the cache TTL. */
+    refreshPlanUsage?(force: boolean): Promise<PlanUsageSnapshot | undefined>;
+    /** Plan usage card: auto-refresh beat in minutes; 0 = manual only. */
+    planUsageRefreshMinutes?(): number;
 }
 
 interface AgentSummary {
@@ -241,6 +248,11 @@ function buildData(deps: DashboardDeps, tableN = DASHBOARD_SESSION_TABLE_N): Rec
         },
         unknownModels: [...deps.getPricing().unknownModels],
         farmStatus: deps.farmStatus?.() ?? [],
+        // Plan usage card — the cached snapshot only; the webview asks for a
+        // refresh itself (on its timer and on ⟳), so a render never blocks on
+        // a network round trip.
+        planUsage: deps.planUsage?.(),
+        planUsageRefreshMinutes: deps.planUsageRefreshMinutes?.() ?? 5,
         // E3: external-CLI sessions (side list — excluded from every cost/usage
         // figure above; surfaced as an honest one-liner).
         externalSessions: (() => {
@@ -338,6 +350,15 @@ export class DashboardPanel {
             case 'refresh':
                 this.refresh();
                 break;
+            case 'planUsage': {
+                // The card's own beat (and its ⟳ button, which sets force).
+                // Answered out-of-band so a slow endpoint never stalls the page.
+                void (async () => {
+                    const usage = await this.deps.refreshPlanUsage?.(msg.force === true);
+                    void this.panel.webview.postMessage({ type: 'planUsage', usage });
+                })();
+                break;
+            }
             case 'setTableN': {
                 // Sessions-table Show box (0 = all). The pool is rebuilt host-side
                 // so the requested top-N is genuine, not a re-slice of the old pool.

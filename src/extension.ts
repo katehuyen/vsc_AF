@@ -64,6 +64,7 @@ import {
 import { LiveMonitor, LiveSession } from './core/live';
 import { OwnerLease } from './core/owner';
 import { buildFarmStatus } from './core/farmstatus';
+import { PlanUsageService } from './core/planusage';
 import { matchTaskSession } from './core/taskcost';
 import {
     buildDelegationPrompt, delegationTitle, DismissEntry, filterDismissed,
@@ -2552,6 +2553,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            op: 'usage.plan',
+            describe: 'Your Claude SUBSCRIPTION rate-limit state as Anthropic reports it — the same figures /usage prints: session (5h) and weekly utilization % with reset times. This is the real quota, not the transcript-derived cost figures the rest of the farm reports. args: force? (default false — served from the dashboard card\'s cache)',
+            handler: async (args) => {
+                const snap = await planUsage.get(args.force === true);
+                return {
+                    state: snap.state, plan: snap.plan, fetchedAt: snap.fetchedAt,
+                    note: snap.note,
+                    bars: snap.bars.map(b => ({
+                        id: b.id, title: b.title, percent: b.percent,
+                        resetsAt: b.resetsAt ? new Date(b.resetsAt).toISOString() : null
+                    }))
+                };
+            }
+        },
+        {
             op: 'sessions.recent',
             describe: 'Most recent sessions farm-wide. args: origin? ("user" = sessions a person started interactively — what the Sessions tables show by default; "auto" = automation runs (schedule/trigger/task/mission, any `claude -p`); omit or "all" = both), limit? (default 10)',
             handler: (args) => {
@@ -3824,6 +3840,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     });
     context.subscriptions.push(statusBar);
 
+    // Plan usage — the subscription limits Anthropic itself reports (what
+    // /usage prints), cached behind one service so the dashboard card, its ⟳
+    // and the bridge op all share a single request budget.
+    const planUsage = new PlanUsageService({
+        ttlMs: () => Math.max(0, cfg().get<number>('planUsageRefreshMinutes', 5)) * 60000
+    });
+
     const dashboardDeps = {
         extensionUri: context.extensionUri,
         getAgents: () => agents,
@@ -3870,7 +3893,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 qualitySamples: qualityStore.scores.length,
                 secretCount: vault.names().length
             });
-        }
+        },
+        // Plan usage card: cached snapshot for the render, an explicit refresh
+        // for the card's beat and its ⟳ button.
+        planUsage: () => planUsage.current(),
+        refreshPlanUsage: (force: boolean) => planUsage.get(force),
+        planUsageRefreshMinutes: () => Math.max(0, cfg().get<number>('planUsageRefreshMinutes', 5))
     };
     const detailDeps = {
         extensionUri: context.extensionUri,

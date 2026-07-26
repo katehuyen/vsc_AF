@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.22.0",
+  "version": "3.23.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -1992,6 +1992,12 @@
           "type": "number",
           "default": 0,
           "description": "Optional token limit for the rolling 5-hour usage window (subscription plans). 0 hides the progress bar and shows raw totals."
+        },
+        "agentFarm.planUsageRefreshMinutes": {
+          "type": "number",
+          "default": 5,
+          "minimum": 0,
+          "description": "Dashboard \"Plan usage\" card: how often it re-reads your Claude subscription limits from Anthropic, in minutes. 0 turns the automatic refresh off — the card's ⟳ button still works. The card reads the OAuth session Claude Code stores locally; it never writes to it."
         },
         "agentFarm.maxTranscriptMessages": {
           "type": "number",

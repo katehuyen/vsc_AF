@@ -57,12 +57,40 @@
         vscode.postMessage({ type: 'compareWindow', from: Date.now() - w.ms, to: Date.now() });
     }
 
+    // ---- Plan usage card state ----
+    // The card lives on its own beat: the host answers {type:'planUsage'} out
+    // of band, so a slow endpoint never holds up a dashboard render.
+    let puBusy = false;      // a request is in flight — the ⟳ shows it
+    let puTimer = null;      // auto-refresh interval, re-armed when the beat changes
+    let puBeat = -1;         // minutes currently armed
+
+    function askPlanUsage(force) {
+        puBusy = true;
+        vscode.postMessage({ type: 'planUsage', force: !!force });
+    }
+
+    /** Arm (or disarm) the self-refresh beat. 0 minutes = manual only. */
+    function armPlanUsage() {
+        const mins = Number(DATA.planUsageRefreshMinutes) || 0;
+        if (mins === puBeat) { return; }
+        puBeat = mins;
+        if (puTimer) { clearInterval(puTimer); puTimer = null; }
+        if (mins > 0) { puTimer = setInterval(() => askPlanUsage(false), mins * 60000); }
+    }
+
     window.addEventListener('message', ev => {
         if (sessTable.onMessage(ev)) { return; }
         if (ev.data.type === 'compareWindow') { cmpRows = ev.data.rows || []; render(); return; }
+        if (ev.data.type === 'planUsage') {
+            puBusy = false;
+            if (ev.data.usage) { DATA.planUsage = ev.data.usage; }
+            render();
+            return;
+        }
         if (ev.data.type === 'data') {
             DATA = ev.data.data;
             render();
+            armPlanUsage();
             if (cmpWin !== 'all') { requestCmp(); } // refresh the windowed figures too
         }
     });
@@ -202,6 +230,65 @@
         <p class="muted small">Cache eff. = cache-read share of prompt tokens (higher is cheaper). Err % = tool errors / tool calls. Quality = judge average of sampled sessions (14d) <a data-guide="kalite-karnesi">?</a> · <a data-guide="filo-raporu">Export a Markdown report ?</a>${cmpMoreNote(rows.length, all.length)}</p>`;
     }
 
+    // ---- Plan usage card ----
+    // The real subscription limits as Anthropic reports them — the same figures
+    // Claude Code's /usage prints. Deliberately next to Farm status: that box
+    // says what the farm can do, this one says how much room is left to do it.
+    const PU_STYLE = `<style>
+        .pucard { flex:0 1 340px; min-width:250px; }
+        .pucard .pu-head { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+        .pu-ref { font-size:12px; line-height:1; padding:2px 7px; border-radius:4px; cursor:pointer;
+            background:transparent; color:var(--vscode-foreground); opacity:.6;
+            border:1px solid var(--vscode-widget-border, #4444); }
+        .pu-ref:hover { opacity:1; background:var(--vscode-list-hoverBackground); }
+        .pu-bar { margin-top:9px; }
+        .pu-bar .pu-t { display:flex; justify-content:space-between; align-items:baseline; gap:8px; font-size:12px; }
+        .pu-bar .pu-t strong { font-size:13px; }
+        .pu-bar .progress { margin-top:3px; }
+    </style>`;
+
+    /** "Resets 21:40 · in 2h 20m" — the absolute time answers "when", the
+     *  relative one answers "should I start this now". */
+    function puReset(ts) {
+        if (!ts) { return ''; }
+        const d = new Date(ts);
+        const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        const sameDay = d.toDateString() === new Date().toDateString();
+        const when = sameDay ? time : `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${time}`;
+        const left = ts - Date.now();
+        if (left <= 0) { return `Resets ${when}`; }
+        const h = Math.floor(left / 3600e3), m = Math.round((left % 3600e3) / 60000);
+        return `Resets ${when} · in ${h > 0 ? h + 'h ' : ''}${m}m`;
+    }
+
+    function planCard() {
+        const pu = DATA.planUsage;
+        const mins = Number(DATA.planUsageRefreshMinutes) || 0;
+        const btn = `<button class="pu-ref" id="pu-refresh" title="Read your subscription limits from Anthropic now">${puBusy ? '…' : '⟳'}</button>`;
+        let body, foot;
+        if (!pu) {
+            body = '<div class="sub" style="margin-top:8px">Reading your subscription limits…</div>';
+            foot = '';
+        } else if (pu.state !== 'ok') {
+            body = `<div class="sub" style="margin-top:8px">${C.esc(pu.note || 'Usage data is unavailable.')}</div>`;
+            foot = `<div class="sub muted" style="margin-top:8px">Checked ${new Date(pu.fetchedAt).toLocaleTimeString()}</div>`;
+        } else {
+            body = pu.bars.map(b => {
+                const cls = b.percent >= 90 ? ' hot' : b.percent >= 75 ? ' warn' : '';
+                return `<div class="pu-bar">
+                    <div class="pu-t"><span>${C.esc(b.title)}</span><strong>${b.percent}%</strong></div>
+                    <div class="progress"><div class="${cls.trim()}" style="width:${b.percent}%"></div></div>
+                    <div class="sub">${C.esc(puReset(b.resetsAt))}</div>
+                </div>`;
+            }).join('');
+            foot = `<div class="sub muted" style="margin-top:10px">${pu.plan ? C.esc(pu.plan) + ' plan · ' : ''}updated ${new Date(pu.fetchedAt).toLocaleTimeString()} · ${mins > 0 ? 'auto every ' + mins + ' min' : 'manual refresh only'}</div>`;
+        }
+        return `<div class="card pucard">
+            <div class="pu-head"><div class="label">Plan usage</div>${btn}</div>
+            ${body}${foot}
+        </div>`;
+    }
+
     function render() {
         const days = dayKeysBack(range);
         const today = DATA.today;
@@ -324,7 +411,7 @@
         const stCounts = { active: 0, ready: 0, dormant: 0 };
         st.forEach(r => { stCounts[r.state]++; });
         const statusCard = st.length ? `
-            <details class="card" style="margin:12px 0;padding:10px 14px" ${stCounts.dormant ? 'open' : ''}>
+            <details class="card" style="flex:3 1 420px;padding:10px 14px" ${stCounts.dormant ? 'open' : ''}>
                 <summary><strong>Farm status</strong> — ${stCounts.active} live · ${stCounts.ready} ready · ${stCounts.dormant} dormant${stCounts.dormant ? ' <span class="muted small">(unused capability — one click each)</span>' : ''}</summary>
                 <div style="margin-top:8px">
                 ${st.map(r => `
@@ -336,6 +423,11 @@
                     </div>`).join('')}
                 </div>
             </details>` : '';
+        // Plan usage sits to the LEFT of Farm status, on the same line: the two
+        // boxes answer the paired questions "what can the farm do" and "how much
+        // subscription room is left". Farm status stays full width if it is the
+        // only one there (an empty status list leaves the usage card alone).
+        const statusRow = `${PU_STYLE}<div class="row" style="margin:12px 0">${planCard()}${statusCard}</div>`;
 
         const unknown = DATA.unknownModels.length
             ? `<p class="footnote">⚠ No pricing rule matched: ${DATA.unknownModels.map(C.esc).join(', ')} — their cost is counted as $0. <a data-status-kind="settings" data-status-value="agentFarm.pricing" style="cursor:pointer">Add a rule in agentFarm.pricing →</a></p>`
@@ -355,7 +447,7 @@
                 guide: 'dashboard'
             })}
             ${kpis}
-            ${statusCard}
+            ${statusRow}
             ${charts}
             <h2>Agents</h2>
             <div class="grid">${cards}</div>
@@ -384,6 +476,11 @@
             b.addEventListener('click', () => vscode.postMessage({
                 type: 'statusAction', kind: b.dataset.statusKind, value: b.dataset.statusValue
             })));
+        const puBtn = document.getElementById('pu-refresh');
+        if (puBtn) {
+            // force: the ⟳ means "now", not "if the cache happens to be stale"
+            puBtn.addEventListener('click', () => { if (!puBusy) { askPlanUsage(true); render(); } });
+        }
 
         // ---- Agent comparison controls ----
         const wireCmp = (id, ev, fn) => {
@@ -422,4 +519,6 @@
     }
 
     render();
+    armPlanUsage();
+    askPlanUsage(false);   // first fill — the host serves its cache if it is fresh
 })();

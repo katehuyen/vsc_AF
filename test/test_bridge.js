@@ -966,6 +966,60 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             /origin\?/.test(block) && /sessionOrigin\(s\) === origin/.test(block) && /origin: sessionOrigin\(s\)/.test(block));
     }
 
+    // ---------- §19.C: usage.plan — the real subscription quota ----------
+    // Every other figure the bridge exposes is derived from local transcripts.
+    // This one is the plan's own rate-limit state, so an agent can answer
+    // "have I got room to run this?" instead of guessing from cost.
+    {
+        const PU = require(path.join(__dirname, '..', 'out', 'core', 'planusage.js'));
+        const payload = {
+            five_hour: { utilization: 82.9, resets_at: '2026-07-26T14:40:00+00:00' },
+            seven_day: { utilization: 88, resets_at: '2026-07-27T13:00:00+00:00' },
+            seven_day_opus: null, seven_day_sonnet: null
+        };
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-bridge-usage-'));
+        const credFile = path.join(dir, '.credentials.json');
+        fs.writeFileSync(credFile, JSON.stringify({
+            claudeAiOauth: { accessToken: 'tok', expiresAt: 4102444800000, subscriptionType: 'pro' }
+        }));
+        let calls = 0;
+        const planUsage = new PU.PlanUsageService({
+            ttlMs: () => 600000,
+            credentialsFile: () => credFile,
+            fetchImpl: () => { calls++; return Promise.resolve({ status: 200, body: JSON.stringify(payload) }); }
+        });
+        // same handler shape extension.ts registers
+        reg.register({
+            op: 'usage.plan',
+            describe: 'Your Claude SUBSCRIPTION rate-limit state as Anthropic reports it. args: force? (default false)',
+            handler: async (args) => {
+                const snap = await planUsage.get(args.force === true);
+                return {
+                    state: snap.state, plan: snap.plan, fetchedAt: snap.fetchedAt, note: snap.note,
+                    bars: snap.bars.map(b => ({
+                        id: b.id, title: b.title, percent: b.percent,
+                        resetsAt: b.resetsAt ? new Date(b.resetsAt).toISOString() : null
+                    }))
+                };
+            }
+        });
+        ok('usage.plan appears in the catalog', reg.catalog().some(c => c.op === 'usage.plan'));
+        const r = await reg.dispatch('usage.plan', {});
+        ok('dispatch returns the session and weekly bars',
+            r.ok && r.result.state === 'ok' && r.result.plan === 'pro' && r.result.bars.length === 2);
+        ok('percent is the floored utilization, reset an ISO string',
+            r.result.bars[0].percent === 82 && r.result.bars[0].resetsAt === '2026-07-26T14:40:00.000Z');
+        await reg.dispatch('usage.plan', {});
+        ok('a second call inside the TTL is served from the shared cache', calls === 1);
+
+        // the real registration must carry the same contract (this mirror can drift)
+        const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        const block = src.slice(src.indexOf("op: 'usage.plan'"), src.indexOf("op: 'usage.plan'") + 1200);
+        ok('extension.ts registers usage.plan against the shared service',
+            /force\?/.test(block) && /planUsage\.get\(args\.force === true\)/.test(block)
+            && /resetsAt/.test(block));
+    }
+
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })();

@@ -84,6 +84,7 @@ td.num, th.num { text-align: right; }
 .progress { height: 7px; border-radius: 4px; background: var(--vscode-widget-border, #4443); overflow: hidden; margin-top: 6px; }
 .progress > div { height: 100%; border-radius: 4px; background: var(--vscode-charts-blue, #3794ff); }
 .progress > div.hot { background: var(--vscode-charts-red, #f14c4c); }
+.progress > div.warn { background: var(--vscode-charts-yellow, #cca700); }
 
 .chartbox { flex: 1 1 320px; min-width: 280px; }
 .chartbox svg { width: 100%; height: auto; display: block; }
