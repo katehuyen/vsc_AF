@@ -265,11 +265,11 @@ const LIVE_PAYLOAD = {
 
         // just the usage card, so an assertion can never be satisfied by some
         // other part of the dashboard that happens to contain the same text
-        const card = () => lastHtml.slice(lastHtml.indexOf('class="card pucard"'), lastHtml.indexOf('Farm status'));
+        const card = () => lastHtml.slice(lastHtml.indexOf('class="card pucard"'), lastHtml.indexOf('<h2>Agents</h2>'));
 
-        ok('the card sits in the same row as Farm status, to its LEFT',
-            /class="row"[^>]*>\s*<div class="card pucard"/.test(lastHtml)
-            && lastHtml.indexOf('class="card pucard"') < lastHtml.indexOf('Farm status'));
+        ok('the card sits in the same row as Farm status, to its RIGHT',
+            /Farm status[\s\S]*?<div class="card pucard"/.test(lastHtml)
+            && lastHtml.indexOf('Farm status') < lastHtml.indexOf('class="card pucard"'));
         ok('before any answer it says it is reading, not "0%"',
             card().includes('Reading your subscription limits') && !card().includes('%'));
         ok('the page asks the host for the figures on load',

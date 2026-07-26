@@ -423,11 +423,11 @@
                     </div>`).join('')}
                 </div>
             </details>` : '';
-        // Plan usage sits to the LEFT of Farm status, on the same line: the two
+        // Plan usage sits to the RIGHT of Farm status, on the same line: the two
         // boxes answer the paired questions "what can the farm do" and "how much
         // subscription room is left". Farm status stays full width if it is the
         // only one there (an empty status list leaves the usage card alone).
-        const statusRow = `${PU_STYLE}<div class="row" style="margin:12px 0">${planCard()}${statusCard}</div>`;
+        const statusRow = `${PU_STYLE}<div class="row" style="margin:12px 0">${statusCard}${planCard()}</div>`;
 
         const unknown = DATA.unknownModels.length
             ? `<p class="footnote">⚠ No pricing rule matched: ${DATA.unknownModels.map(C.esc).join(', ')} — their cost is counted as $0. <a data-status-kind="settings" data-status-value="agentFarm.pricing" style="cursor:pointer">Add a rule in agentFarm.pricing →</a></p>`
