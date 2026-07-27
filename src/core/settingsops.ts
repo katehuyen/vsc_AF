@@ -60,6 +60,10 @@ const CATEGORY_OF: Record<string, string> = {
     embeddingsSecret: 'search', semanticMaxSessions: 'search',
     // multi-CLI
     cliProfiles: 'cli', codexHome: 'cli', geminiDir: 'cli', relayFeeds: 'cli',
+    // reaching the farm from outside this VS Code window
+    'web.enabled': 'access', 'web.port': 'access', 'web.bind': 'access', 'web.token': 'access',
+    'telegram.enabled': 'access', 'telegram.allowedChats': 'access',
+    'telegram.maxDailyUSD': 'access', 'telegram.defaultAgent': 'access',
     // health & insights
     livingChecks: 'health', noticeStaleHours: 'health',
     staleMemoryDays: 'health', contextBudgetTokens: 'health', permissionLint: 'health',
@@ -87,6 +91,7 @@ export const CATEGORY_LABELS: [string, string][] = [
     ['health', 'Health & Insights'],
     ['reports', 'Reports & Digest'],
     ['queue', 'Work Queue'],
+    ['access', 'Access (web view · messaging)'],
     ['other', 'Other']
 ];
 

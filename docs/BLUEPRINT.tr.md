@@ -303,6 +303,40 @@ Her oturumun transkripti `Edit` / `Write` / `MultiEdit` / `NotebookEdit` çağr�
 - Sessions tablolarında **Files** kolonu: indeksin zaten yaptığı tek geçişte sayıldığı için ek maliyeti yok.
 - **Köprü:** `sessions.files` (`detail:true` hunk'ları da döner).
 
+## Dışarıdan Erişim — Web Görünümü ve Sohbet Kanalı {#disaridan-erisim}
+
+*(3.26.0)* Agent Farm tek bir VS Code penceresinin içindeydi: telefondan bakılamıyor, VS Code kapalıyken hiçbir yüzey kalmıyordu (headless servis çiftliği **çalıştırıyor** ama kimseye **göstermiyordu**), ve dışarıdan bir mesaj yazıp cevap almanın yolu yoktu.
+
+### Web görünümü (salt okunur)
+
+`agentFarm.web.enabled` tek, kendi kendine yeten bir sayfa sunar: **ne seni bekliyor · ne çalışıyor · ajan ve proje başına maliyet · son oturumlar · notices** — başparmak için boyutlanmış, kendini tazeleyen.
+
+Tasarım ikinci bir arayüz yığını değil, bir **snapshot sözleşmesidir**: eklenti 20 saniyede bir `web-snapshot.json` yazar, portu kim tutuyorsa onu sunar. Bu yüzden sayfa panelle **asla çelişemez** — ve **VS Code kapanınca portu headless servis devralır**, elindeki son snapshot'ı sunmaya devam eder ve bunu sayfada açıkça söyler ("VS Code kapalı"). VS Code dönünce portu geri verir.
+
+Ağa bakan tek yüzey olduğu için kuralları sert:
+
+- **Varsayılan kapalı.**
+- **`127.0.0.1`** — LAN'a açmak (`agentFarm.web.bind: lan`) bilinçli bir tercihtir.
+- **Token zorunlu.** Token yoksa sunucu **başlamaz** (açık sunmaz). `?t=`, `Authorization: Bearer` ya da sayfanın kurduğu çerezle taşınır — telefondaki yer imi adres çubuğunda token olmadan da çalışsın diye.
+- **Yapısı gereği salt okunur:** hiçbir rota bir şey başlatmaz, durdurmaz, değiştirmez. Çiftliği sürmek köprünün işidir, makinenin kendi sınırının içinde.
+
+**Open Web View…** komutu token'ı üretir, "yalnız bu makine mi / ağdaki cihazlar da mı" diye bir kez sorar ve URL'yi verir (tarayıcıda aç / kopyala).
+
+### Sohbet kanalı (Telegram)
+
+**Connect Telegram…** bot token'ını alır (kaydetmeden önce Telegram'a doğrulatır) ve **sır kasasına** yazar — settings.json'a asla. Sonrası: bir sohbet ajanlarınla konuşur; yazdığın her mesaj, sohbetin bağlı olduğu ajanda **headless** koşar ve cevap maliyetiyle birlikte aynı iş parçacığına döner. Dışarıya port açılmaz — çiftlik dışarı doğru long-polling yapar.
+
+Komutlar: `/agent <ad>` (sohbeti bir ajana bağla) · `/agents` · `/status` (ne çalışıyor, ne seni bekliyor, bugünkü harcama) · `/cancel` · `/help`.
+
+İki ray isteğe bağlı değildir:
+
+- **Allowlist.** Listede olmayan bir sohbete iş yapılmaz; cevap olarak **kendi chat id'si** söylenir, böylece izin vermek tek kopyalama işidir. Liste boşsa köprü kimseye çalışmaz.
+- **Günlük tavan.** `agentFarm.telegram.maxDailyUSD` (varsayılan $1) — sohbetten başlayan koşular buna sayılır ve tavan dolunca durur; `/status` çalışmaya devam eder. Tanınmayan bir `/komut` asla prompt olarak koşturulmaz, yardım metniyle cevaplanır.
+
+### Sesli giriş neden burada değil
+
+VS Code webview'i mikrofona erişemez (iframe'de `microphone` izni yok ve bunu verecek bir API de yok), dolayısıyla panel içinde bir dikte kutusu **harici bir kaydedici** gerektirirdi — GPU'suz, Docker'sız bir makinede yerel bir bağımlılık, hem de bloğun en düşük öncelikli maddesi için. Doğru yeri **web görünümü**: orası gerçek bir tarayıcı, `getUserMedia` orada zaten çalışıyor. O yüzden sesli giriş, web yüzeyi yazma eylemleri kazandığında oraya eklenecek — yarım yapılmak yerine yol haritasına yazıldı.
+
 ## Terminal Render Sağlığı
 
 VS Code'un terminali gerçek bir terminal değildir — Chromium içinde çalışan **xterm.js** emülatörüdür (shell → PTY → xterm.js → Electron → GPU). Katman sayısı yüzünden uzun TUI oturumlarında (claude gibi) render aksaklıkları görülebilir: yazarken varmış gibi görünen hayalet boşluklar, kaybolan/bozulan satırlar, kaydırınca düzelen görüntü. İki çare var, ikisi de tek komutta: **Agent Farm: Terminal Rendering Fix…**
@@ -1635,6 +1669,8 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 - **Interrupt Session (send Esc)** `Ctrl+Alt+I` — çalışan turu durdurur, oturumu kapatmaz
 - **Manage Projects… / Assign Agent to Project…** — proje ekseni ([Projeler, Portföy ve Kod Değişiklikleri](#projeler-portfoy))
 - **Open Agent Portfolio** — filo tek ekranda (global nav'da **Agents**)
+- **Open Web View…** — telefondan bakılan salt-okunur pano ([Dışarıdan Erişim](#disaridan-erisim))
+- **Connect Telegram…** — sohbetten ajana mesaj, cevabı aynı iş parçacığına
 - **Open Agent in New Window / Reveal in File Explorer**
 - **Open Live Timeline** — kulvar görünümü (canlı gözlem)
 - **Install Live Hooks / Remove Live Hooks** — canlı gözlem hook'larını kur/kaldır

@@ -105,7 +105,13 @@ Git entegrasyonu yalnızca iki yerde: `core/worktree.ts` (paralel koşular) ve `
 → Bir kod ajanı komuta merkezinin en beklenen yüzeyi eksik: "bu oturum hangi dosyaları değiştirdi, diff'i göster, geri al / kabul et". Transcript'te `Edit`/`Write` araç çağrıları zaten kayıtlı — veri var, yüzey yok.
 → Console (§1) ile doğal eşleşir: ajan dosyayı değiştirdiğinde diff panelde belirir, oradan onaylanır.
 
-### C. Erişim
+### C. Erişim — **C1 ve C3 KAPANDI (3.26.0) · C2 ERTELENDİ (gerekçeli)**
+
+**C1 → ÇÖZÜLDÜ.** Salt-okunur **web görünümü** (`agentFarm.web.*`): tek kendi kendine yeten sayfa (needs · canlı oturumlar · ajanlar · projeler · notices · son oturumlar), **snapshot sözleşmesi** üzerinden — eklenti 20sn'de bir `web-snapshot.json` yazar, portu kim tutuyorsa sunar; **VS Code kapanınca headless servis portu devralır** ve bunu sayfada söyler, dönünce geri verir. Varsayılan kapalı · `127.0.0.1` (LAN opt-in) · **token zorunlu** (yoksa sunucu başlamaz) · **hiçbir rota yazmaz**. `Open Web View…` token üretir ve URL'yi verir.
+**C3 → ÇÖZÜLDÜ.** **Telegram köprüsü**: `Connect Telegram…` (token doğrulanır, **sır kasasına** yazılır), sohbet→ajan bağlama, mesaj→headless koşu, cevap+maliyet aynı iş parçacığına. `/agent · /agents · /status · /cancel · /help`. Dışarıya port açılmaz (long-polling). İki ray: **allowlist** (listede olmayan sohbete iş yapılmaz, kendi chat id'si söylenir) ve **günlük USD tavanı**. Tanınmayan `/komut` asla prompt olarak koşmaz.
+**C2 → ERTELENDİ, gerekçeli.** VS Code webview'i mikrofona erişemiyor (iframe'de `microphone` izni yok, verecek API de yok) → panel içi dikte **harici kaydedici** ister; GPU'suz/Docker'sız makinede yerel bağımlılık, üstelik bloğun ⭐ (en düşük) maddesi. **Doğru yeri artık var:** C1'in web görünümü gerçek bir tarayıcıda çalışıyor, `getUserMedia` orada sorunsuz. Plan: web yüzeyi **yazma eylemleri** kazandığında (bkz. DALGA 3.2) mikrofon oraya eklenecek; transkripsiyon kullanıcının kendi `fal.ai` anahtarıyla (medya hattı ve fiyatlandırma zaten kurulu).
+
+*Aşağısı denetim günündeki tespitlerdir, kayıt olarak duruyor.*
 
 **C1. Yalnızca VS Code.** ⭐⭐⭐
 Eklenti bir webview kümesi; dışarıdan erişim yok. `livePort` (8377) yalnızca hook olaylarını dinleyen bir `127.0.0.1` sunucusu (`core/live.ts:324`), UI servis etmiyor.

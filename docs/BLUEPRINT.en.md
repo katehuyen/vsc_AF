@@ -303,6 +303,40 @@ Every transcript already carried each `Edit` / `Write` / `MultiEdit` / `Notebook
 - The Sessions tables gain a **Files** column, counted during the index's existing parse — no extra cost.
 - **Bridge:** `sessions.files` (`detail:true` returns the hunks too).
 
+## Reaching the Farm from Outside — Web View and Chat {#disaridan-erisim}
+
+*(3.26.0)* Agent Farm lived inside one VS Code window: nothing to look at from a phone, nothing at all while VS Code was closed (the headless service kept the farm **running** and showed nobody anything), and no way to write to it and get an answer.
+
+### The web view (read-only)
+
+`agentFarm.web.enabled` serves one self-contained page: **what needs you · what is running · per-agent and per-project cost · recent sessions · notices** — sized for a thumb, refreshing itself.
+
+It is a **snapshot contract**, not a second UI stack: the extension writes `web-snapshot.json` on a 20-second beat and whoever owns the port serves it. The page therefore **cannot disagree with the panel** — and **when VS Code closes the headless service takes the port over**, keeps serving the last snapshot it has, and says so on the page instead of pretending the figures are live. It hands the port straight back when VS Code returns.
+
+Being the one surface that can face a network, its rules are strict:
+
+- **Off by default.**
+- **`127.0.0.1`** unless you opt into LAN (`agentFarm.web.bind: lan`).
+- **A token is mandatory.** No token and the server **refuses to start** rather than serving the farm to whoever asks. It travels as `?t=`, an `Authorization: Bearer` header, or the cookie the page sets — so a phone bookmark keeps working without the token in the address bar.
+- **Read-only by construction:** no route starts, stops or changes anything. Driving the farm is the bridge's job, behind your own machine boundary.
+
+**Open Web View…** generates the token, asks local-vs-network once, and hands you the URL (open in browser / copy).
+
+### The chat channel (Telegram)
+
+**Connect Telegram…** takes a bot token (verified against Telegram *before* anything is saved) and stores it in the **secret vault** — never in settings.json. After that a chat talks to your agents: any message runs headlessly on the agent the chat is bound to, and the answer comes back in the same thread with the run's cost. No inbound port is opened — the farm long-polls outward.
+
+Commands: `/agent <name>` (bind this chat) · `/agents` · `/status` (running, blocked, today's spend) · `/cancel` · `/help`.
+
+Two rails that are not optional:
+
+- **An allowlist.** A message from an unlisted chat gets no work done — it is answered with **its own chat id**, so allowing it is one copy-paste. An empty list means the bridge serves nobody.
+- **A daily cap.** `agentFarm.telegram.maxDailyUSD` (default $1): chat-started runs count against it and stop when it is reached, while `/status` keeps working. An unknown `/command` is never run as a prompt — it gets the help text.
+
+### Why voice input is not here
+
+A VS Code webview cannot reach a microphone (the iframe carries no `microphone` permission, and there is no API to grant one), so a dictation box inside the panel would need an **external recorder** — a native dependency on a machine with no GPU and no Docker, for the lowest-priority item in the block. Its right home is the **web view**: that is a real browser, where `getUserMedia` already works. So voice input goes there once that surface gains write actions — written into the roadmap rather than half-built.
+
 ## Terminal Rendering Health {#terminal-rendering-health}
 
 VS Code's terminal isn't a real terminal — it's the **xterm.js** emulator running inside Chromium (shell → PTY → xterm.js → Electron → GPU). Because of the number of layers, long TUI sessions (like claude) can show rendering glitches: ghost gaps that look present as you type, lines that vanish/garble, an image that fixes itself when you scroll. There are two remedies, both in one command: **Agent Farm: Terminal Rendering Fix…**
@@ -1636,6 +1670,8 @@ All in the command palette with the `Agent Farm:` prefix:
 - **Interrupt Session (send Esc)** `Ctrl+Alt+I` — stops the running turn without closing the session
 - **Manage Projects… / Assign Agent to Project…** — the project axis ([Projects, Portfolio and Code Changes](#projeler-portfoy))
 - **Open Agent Portfolio** — the fleet on one screen (**Agents** in the global nav)
+- **Open Web View…** — the read-only, phone-friendly board ([Reaching the Farm from Outside](#disaridan-erisim))
+- **Connect Telegram…** — message an agent from a chat, answer in the same thread
 - **Open Agent in New Window / Reveal in File Explorer**
 - **Open Live Timeline** — swim-lane view (live observation)
 - **Install Live Hooks / Remove Live Hooks** — install/remove the live-observation hooks

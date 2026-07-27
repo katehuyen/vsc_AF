@@ -109,6 +109,14 @@ import {
 } from './core/projects';
 import { collectEdits, fileStats, groupByFile } from './core/codeedits';
 import { contentAtHead, gitRoot, repoRelative } from './core/gitfile';
+import { buildSnapshot } from './core/websnapshot';
+import {
+    addSpend, clipForChat, HELP_TEXT, InboundMessage, isAllowed, parseCommand,
+    SpendLedger, withinBudget
+} from './core/messaging';
+import { getMe, sendMessage, TelegramPoller } from './core/telegram';
+import { generateToken, RunningWebServer, startWebServer, lanAddress } from './core/webserver';
+import { buildPortfolioRows } from './panels/portfolioPanel';
 import {
     applySuggestionToClaudeMd, collectUserMessages, scanCorrections, SuggestionStore
 } from './core/suggest';
@@ -4720,6 +4728,316 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
     };
 
+    // ---------- C1: the read-only web surface ----------
+    // One snapshot file, two possible servers: this window while it is open,
+    // the headless service once the heartbeat goes stale. The page never
+    // re-derives anything, so it cannot disagree with the panel — and it says
+    // out loud when what it shows has stopped being live.
+    const snapshotFile = path.join(context.globalStorageUri.fsPath, 'web-snapshot.json');
+    let webServer: RunningWebServer | undefined;
+    const webCfg = () => ({
+        enabled: cfg().get<boolean>('web.enabled', false),
+        port: Math.max(1, cfg().get<number>('web.port', 8378)),
+        bind: (cfg().get<string>('web.bind', 'local') === 'lan' ? 'lan' : 'local') as 'local' | 'lan',
+        token: cfg().get<string>('web.token', '').trim()
+    });
+
+    const writeWebSnapshot = () => {
+        const w = webCfg();
+        if (!w.enabled) { return; }
+        const now = Date.now();
+        const rows = buildPortfolioRows({
+            extensionUri: context.extensionUri,
+            getAgents: () => agents,
+            index,
+            getInsights: () => insights,
+            live,
+            projects: () => projectDefs(),
+            budgets: () => cfg().get<Record<string, number>>('budgets', {})
+        }, now);
+        const today = dayKey(now);
+        const projectByAgent = agentProjectMap(
+            agents.map(a => ({ id: a.id, name: a.name, dir: a.dir })), projectDefs());
+        const needsRows = buildNeeds().map(n => ({
+            kind: n.kind, agent: n.agentName, title: n.title, detail: n.detail, ts: n.ts
+        }));
+        const snapshot = buildSnapshot({
+            host: os.hostname(),
+            writer: 'extension',
+            tokensToday: index.all().reduce((n, s) => {
+                const b = s.daily[today];
+                return n + (b ? totalTokens(b.usage) : 0);
+            }, 0),
+            agents: rows.map(r => ({
+                name: r.name, project: r.project, status: r.status, active: r.active,
+                lastActivity: r.lastActivity, costToday: r.costToday, cost30: r.cost30,
+                quietDays: r.quietDays
+            })),
+            needs: needsRows,
+            notices: noticesStore.list({ limit: 40 }).map(n => ({
+                title: n.title, type: n.type, level: n.level ?? 1,
+                agent: n.agentName ?? '', ts: n.ts, unread: !n.read
+            })),
+            live: live.sessions()
+                .filter(s => s.status !== 'idle' && s.status !== 'ended')
+                .map(s => ({
+                    title: s.lastPrompt ?? '(no prompt yet)', agent: s.agentName ?? s.sessionId.slice(0, 8),
+                    project: (s.agentName && projectByAgent[s.agentName]) || '', status: s.status,
+                    ts: s.lastEventTs, cost: 0, turns: s.prompts
+                })),
+            sessions: index.all()
+                .slice().sort((a, b) => (b.lastTs || b.mtime) - (a.lastTs || a.mtime)).slice(0, 25)
+                .map(s => ({
+                    title: s.title, agent: s.agentName ?? '?',
+                    project: (s.agentName && projectByAgent[s.agentName]) || '',
+                    status: '', ts: s.lastTs || s.mtime, cost: Math.round(s.cost * 100) / 100,
+                    turns: s.userTurns
+                })),
+            tasks: taskManager.tasks
+                .filter(t => t.status === 'running' || t.status === 'queued')
+                .slice(0, 20)
+                .map(t => ({ title: t.title, agent: t.agentName, status: t.status, ts: t.createdAt })),
+            projects: projectRollup().map(p => ({
+                name: p.name, agents: p.agents.length, sessions: p.sessions,
+                costToday: p.todayCost, cost: p.cost
+            }))
+        }, now);
+        try {
+            fs.mkdirSync(path.dirname(snapshotFile), { recursive: true });
+            fs.writeFileSync(snapshotFile, JSON.stringify(snapshot), 'utf8');
+        } catch { /* storage unavailable — the page will show its own staleness */ }
+    };
+
+    // The service reads its own copy of the web settings (it has no access to
+    // VS Code's), so the two sides can never disagree about port or token.
+    const writeWebConfigForService = () => {
+        const w = webCfg();
+        try {
+            fs.mkdirSync(context.globalStorageUri.fsPath, { recursive: true });
+            fs.writeFileSync(path.join(context.globalStorageUri.fsPath, 'web-config.json'),
+                JSON.stringify({ enabled: w.enabled, port: w.port, bind: w.bind, token: w.token }), 'utf8');
+        } catch { /* storage unavailable */ }
+    };
+
+    let webRetry: NodeJS.Timeout | undefined;
+    const applyWebServer = (attempt = 0) => {
+        if (webRetry) { clearTimeout(webRetry); webRetry = undefined; }
+        const w = webCfg();
+        webServer?.close();
+        webServer = undefined;
+        writeWebConfigForService();
+        if (!w.enabled) { return; }
+        if (!w.token) {
+            void vscode.window.showWarningMessage(
+                'Agent Farm: the web view needs a token — run "Open Web View…" and one will be generated.');
+            return;
+        }
+        webServer = startWebServer(
+            { ...w, snapshotFile, writer: 'extension' },
+            err => {
+                // The headless service may still be holding the port; it lets go
+                // on its next tick once this window's heartbeat is fresh again.
+                if (attempt < 3) {
+                    webRetry = setTimeout(() => applyWebServer(attempt + 1), 20_000);
+                    return;
+                }
+                void vscode.window.showWarningMessage(
+                    `Agent Farm: web view could not start on port ${w.port} — ${String(err.message ?? err)}`);
+            });
+        if (webServer) { writeWebSnapshot(); }
+    };
+    applyWebServer();
+    const webTimer = setInterval(writeWebSnapshot, 20_000);
+    context.subscriptions.push({
+        dispose: () => {
+            clearInterval(webTimer);
+            if (webRetry) { clearTimeout(webRetry); }
+            webServer?.close();
+        }
+    });
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
+        if (e.affectsConfiguration('agentFarm.web')) { applyWebServer(); }
+    }));
+
+    // ---------- C3: the inbound messaging channel ----------
+    // A message from a chat app becomes a headless run for one agent, and the
+    // answer goes back to the same thread. Two rails, both non-negotiable:
+    // an allowlist (empty = the bridge does not run) and a daily USD cap.
+    // The bot token is a credential, so it lives in the Secrets vault under a
+    // fixed name — never in settings.json, never on the bridge (_REF/bridge.md).
+    const TELEGRAM_SECRET = 'TELEGRAM_BOT_TOKEN';
+    const CHAT_STATE_KEY = 'agentfarm.chatState';
+    interface ChatState {
+        offset: number;
+        agentByChat: Record<string, string>;
+        ledger: SpendLedger;
+        taskByChat: Record<string, string>;
+    }
+    const chatState = (): ChatState => {
+        const s = context.globalState.get<Partial<ChatState>>(CHAT_STATE_KEY, {});
+        return {
+            offset: typeof s.offset === 'number' ? s.offset : 0,
+            agentByChat: s.agentByChat ?? {},
+            ledger: s.ledger ?? { day: dayKey(Date.now()), usd: 0 },
+            taskByChat: s.taskByChat ?? {}
+        };
+    };
+    const saveChatState = (next: ChatState) => context.globalState.update(CHAT_STATE_KEY, next);
+    const chatCfg = () => ({
+        enabled: cfg().get<boolean>('telegram.enabled', false),
+        allow: (cfg().get<number[]>('telegram.allowedChats', []) ?? [])
+            .filter(n => typeof n === 'number'),
+        maxDailyUSD: cfg().get<number>('telegram.maxDailyUSD', 1),
+        defaultAgent: cfg().get<string>('telegram.defaultAgent', '').trim()
+    });
+    let poller: TelegramPoller | undefined;
+
+    const chatSend = async (chatId: number, text: string) => {
+        const token = vault.get(TELEGRAM_SECRET);
+        if (!token) { return; }
+        try { await sendMessage(token, chatId, clipForChat(text)); }
+        catch (e) { console.warn('Agent Farm: telegram send failed', e); }
+    };
+
+    /** Run one chat message as a headless task and answer in the same thread. */
+    const chatRunPrompt = async (chatId: number, prompt: string, agentName: string) => {
+        const agent = agents.find(a => a.name.toLowerCase() === agentName.toLowerCase());
+        if (!agent) {
+            await chatSend(chatId, `No agent called "${agentName}". /agents lists them.`);
+            return;
+        }
+        const st = chatState();
+        const day = dayKey(Date.now());
+        const cap = chatCfg().maxDailyUSD;
+        if (!withinBudget(st.ledger, cap, day)) {
+            await chatSend(chatId,
+                `Today's chat budget is used up (${fmtUSD(st.ledger.usd)} of ${fmtUSD(cap)}). ` +
+                'Raise agentFarm.telegram.maxDailyUSD or wait for tomorrow.');
+            return;
+        }
+        const task = taskManager.addTask(agent, `chat: ${prompt.slice(0, 40)}`, prompt, 'headless');
+        await saveChatState({ ...st, taskByChat: { ...st.taskByChat, [chatId]: task.id } });
+        taskManager.startTask(task);
+        await chatSend(chatId, `▶ ${agent.name} is on it (headless run). I'll answer here when it finishes.`);
+        // Wait for the run without holding anything: the manager fires on every
+        // task change, and a ceiling stops a hung run from waiting forever.
+        const started = Date.now();
+        const sub = taskManager.onDidChange(async () => {
+            const t = taskManager.tasks.find(x => x.id === task.id);
+            if (!t || (t.status !== 'done' && t.status !== 'failed')) {
+                if (Date.now() - started > 20 * 60_000) { sub.dispose(); }
+                return;
+            }
+            sub.dispose();
+            let body = '';
+            try { body = t.outputFile ? archivedOutputBody(fs.readFileSync(t.outputFile, 'utf8')) : ''; }
+            catch { /* no output */ }
+            const cost = matchTaskSession(t, index.all())?.cost ?? 0;
+            const now = chatState();
+            await saveChatState({
+                ...now,
+                ledger: addSpend(now.ledger, cost, dayKey(Date.now())),
+                taskByChat: Object.fromEntries(
+                    Object.entries(now.taskByChat).filter(([k]) => k !== String(chatId)))
+            });
+            await chatSend(chatId,
+                `${t.status === 'done' ? '✅' : '⚠'} ${agent.name} — ${t.status}` +
+                (cost ? ` · ${fmtUSD(cost)}` : '') + '\n\n' + (body || '(no output)'));
+        });
+        context.subscriptions.push(sub);
+    };
+
+    const chatHandle = async (msg: InboundMessage) => {
+        const c = chatCfg();
+        if (!isAllowed(msg.chatId, c.allow)) {
+            // Say who it is, so adding the id to the allowlist is one copy away.
+            await chatSend(msg.chatId,
+                `This chat is not allowed to drive the farm.\nChat id: ${msg.chatId}\n` +
+                'Add it to agentFarm.telegram.allowedChats to enable it.');
+            return;
+        }
+        const st = chatState();
+        const bound = st.agentByChat[msg.chatId] ?? c.defaultAgent;
+        const cmd = parseCommand(msg.text);
+        if (cmd.kind === 'help') { await chatSend(msg.chatId, HELP_TEXT); return; }
+        if (cmd.kind === 'agents') {
+            await chatSend(msg.chatId, agents.length
+                ? 'Agents: ' + agents.map(a => a.name).join(', ') + (bound ? `\nThis chat: ${bound}` : '')
+                : 'No agents found.');
+            return;
+        }
+        if (cmd.kind === 'use') {
+            const agent = agents.find(a => a.name.toLowerCase() === cmd.agent.toLowerCase());
+            if (!agent) { await chatSend(msg.chatId, `No agent called "${cmd.agent}". /agents lists them.`); return; }
+            await saveChatState({ ...st, agentByChat: { ...st.agentByChat, [msg.chatId]: agent.name } });
+            await chatSend(msg.chatId, `This chat now talks to ${agent.name}.`);
+            return;
+        }
+        if (cmd.kind === 'status') {
+            const needs = buildNeeds();
+            const running = taskManager.tasks.filter(t => t.status === 'running');
+            const today = dayKey(Date.now());
+            const cost = index.all().reduce((n, s) => n + (s.daily[today]?.cost ?? 0), 0);
+            await chatSend(msg.chatId, [
+                `Farm: ${agents.length} agents · ${index.activeAgentIds().size} active`,
+                `Today: ${fmtUSD(cost)} · chat runs ${fmtUSD(st.ledger.day === today ? st.ledger.usd : 0)} of ${fmtUSD(c.maxDailyUSD)}`,
+                `Needs you: ${needs.length}${needs.length ? ' — ' + needs[0].title : ''}`,
+                `Running tasks: ${running.length}${running.length ? ' — ' + running[0].title : ''}`,
+                bound ? `This chat: ${bound}` : 'This chat is not bound to an agent yet (/agent <name>)'
+            ].join('\n'));
+            return;
+        }
+        if (cmd.kind === 'cancel') {
+            const id = st.taskByChat[msg.chatId];
+            const t = id ? taskManager.tasks.find(x => x.id === id) : undefined;
+            if (t && t.status === 'running') {
+                taskManager.cancelTask(t);
+                await chatSend(msg.chatId, 'Stopped.');
+            } else {
+                await chatSend(msg.chatId, 'Nothing from this chat is running.');
+            }
+            return;
+        }
+        if (!bound) {
+            await chatSend(msg.chatId,
+                'Bind this chat to an agent first: /agent <name>\n/agents lists them.');
+            return;
+        }
+        await chatRunPrompt(msg.chatId, cmd.text, bound);
+    };
+
+    const applyChatBridge = async () => {
+        poller?.stop();
+        poller = undefined;
+        const c = chatCfg();
+        if (!c.enabled) { return; }
+        const token = vault.get(TELEGRAM_SECRET);
+        if (!token) {
+            void vscode.window.showWarningMessage(
+                'Agent Farm: the Telegram bridge needs a bot token — run "Connect Telegram…".');
+            return;
+        }
+        if (!c.allow.length) {
+            void vscode.window.showWarningMessage(
+                'Agent Farm: the Telegram bridge has no allowed chats, so it stays off. Message the bot once and add the id it reports to agentFarm.telegram.allowedChats.');
+        }
+        poller = new TelegramPoller({
+            token,
+            offset: chatState().offset,
+            onMessages: (msgs, next) => {
+                void saveChatState({ ...chatState(), offset: next });
+                for (const m of msgs) { void chatHandle(m); }
+            },
+            onError: e => console.warn('Agent Farm: telegram poll failed', e.message)
+        });
+        poller.start();
+    };
+    void applyChatBridge();
+    context.subscriptions.push({ dispose: () => poller?.stop() });
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
+        if (e.affectsConfiguration('agentFarm.telegram')) { void applyChatBridge(); }
+    }));
+
     // ---------- B1: projects ----------
     // A project is a name over a set of agents and/or folders. Membership is
     // declared once (agentFarm.projects) and every surface resolves through
@@ -5399,6 +5717,96 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (pick.project) {
                 await saveProjects(assignAgent(defs, pick.project, agent.name, true));
             }
+        }),
+
+        // ---------- C1: the web view, and how to reach it ----------
+        vscode.commands.registerCommand('agentfarm.openWebView', async () => {
+            let w = webCfg();
+            if (!w.enabled || !w.token) {
+                const bindPick = await vscode.window.showQuickPick([
+                    {
+                        label: '$(device-desktop) This machine only',
+                        detail: 'http://127.0.0.1 — a browser on this computer',
+                        bind: 'local' as const
+                    },
+                    {
+                        label: '$(radio-tower) This machine and my network',
+                        detail: 'your phone or a second machine on the same Wi-Fi can open it — read-only, token required',
+                        bind: 'lan' as const
+                    }
+                ], { placeHolder: 'Who should be able to open the read-only web view?', ignoreFocusOut: true });
+                if (!bindPick) { return; }
+                const token = w.token || generateToken();
+                try {
+                    await cfg().update('web.token', token, vscode.ConfigurationTarget.Global);
+                    await cfg().update('web.bind', bindPick.bind, vscode.ConfigurationTarget.Global);
+                    await cfg().update('web.enabled', true, vscode.ConfigurationTarget.Global);
+                } catch (e) {
+                    void vscode.window.showWarningMessage(`Agent Farm: could not save the web settings — ${String(e)}`);
+                    return;
+                }
+                applyWebServer();
+                w = webCfg();
+            }
+            writeWebSnapshot();
+            const host = w.bind === 'lan' ? lanAddress() : '127.0.0.1';
+            const url = `http://${host}:${w.port}/?t=${w.token}`;
+            const choice = await vscode.window.showInformationMessage(
+                `Agent Farm web view: ${url}` +
+                (w.bind === 'lan'
+                    ? ' — reachable from your phone on the same network. Anyone with this link can READ the dashboard.'
+                    : ' — this machine only.'),
+                'Open in browser', 'Copy URL', 'Settings');
+            if (choice === 'Open in browser') { void vscode.env.openExternal(vscode.Uri.parse(url)); }
+            if (choice === 'Copy URL') {
+                await vscode.env.clipboard.writeText(url);
+                void vscode.window.setStatusBarMessage('$(check) Agent Farm: web view URL copied', 4000);
+            }
+            if (choice === 'Settings') {
+                void vscode.commands.executeCommand('agentfarm.openFarmSettings', { focus: 'agentFarm.web.enabled' });
+            }
+        }),
+
+        // ---------- C3: connecting the chat channel ----------
+        vscode.commands.registerCommand('agentfarm.connectTelegram', async () => {
+            const existing = vault.get(TELEGRAM_SECRET);
+            const token = await vscode.window.showInputBox({
+                prompt: 'Telegram bot token (from @BotFather) — stored in the Agent Farm secret vault, never in settings',
+                value: existing ?? '', password: true, ignoreFocusOut: true
+            });
+            if (token === undefined) { return; }
+            if (!token.trim()) {
+                void vscode.window.showWarningMessage('Agent Farm: no token given — the chat bridge stays off.');
+                return;
+            }
+            let who: { ok: boolean; username?: string };
+            try { who = await getMe(token.trim()); }
+            catch (e) {
+                void vscode.window.showWarningMessage(`Agent Farm: could not reach Telegram — ${String(e)}`);
+                return;
+            }
+            if (!who.ok) {
+                void vscode.window.showWarningMessage('Agent Farm: Telegram rejected that token.');
+                return;
+            }
+            vault.set(TELEGRAM_SECRET, token.trim());
+            const c = chatCfg();
+            try {
+                await cfg().update('telegram.enabled', true, vscode.ConfigurationTarget.Global);
+            } catch { /* schema not registered yet — the setting page still works */ }
+            await applyChatBridge();
+            const next = c.allow.length
+                ? `Allowed chats: ${c.allow.join(', ')}.`
+                : 'Now message @' + (who.username ?? 'your bot') +
+                  ' once — it will reply with the chat id, and adding that id to agentFarm.telegram.allowedChats switches the bridge on for it.';
+            void vscode.window.showInformationMessage(
+                `Agent Farm: connected to @${who.username ?? '?'} — ${next}`, 'Settings')
+                .then(x => {
+                    if (x === 'Settings') {
+                        void vscode.commands.executeCommand('agentfarm.openFarmSettings',
+                            { focus: 'agentFarm.telegram.allowedChats' });
+                    }
+                });
         }),
 
         // ---------- B2: the fleet on one screen ----------

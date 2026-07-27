@@ -258,9 +258,75 @@ function fireWatchTrigger(id: string): void {
     writeStore(store);
 }
 
+// ---------- C1: the web view, while VS Code is away ----------
+// The extension owns the port whenever it is running; this side takes it over
+// only once the heartbeat goes stale, and gives it straight back. Same server,
+// same page, same snapshot file — the page just says the snapshot is the last
+// one the extension managed to write, because pretending otherwise would be a
+// lie about how fresh the numbers are.
+
+interface WebServerModule {
+    startWebServer(opts: Record<string, unknown>,
+        onError?: (e: Error) => void): { close(): void; url(): string } | undefined;
+}
+
+const webConfigFile = path.join(storageDir, 'web-config.json');
+const snapshotFile = path.join(storageDir, 'web-snapshot.json');
+let webHandle: { close(): void } | undefined;
+
+function readWebConfig(): { enabled: boolean; port: number; bind: 'local' | 'lan'; token: string } | undefined {
+    try {
+        const raw = JSON.parse(fs.readFileSync(webConfigFile, 'utf8')) as Record<string, unknown>;
+        const token = typeof raw.token === 'string' ? raw.token : '';
+        if (raw.enabled !== true || !token) { return undefined; }
+        return {
+            enabled: true,
+            port: typeof raw.port === 'number' ? raw.port : 8378,
+            bind: raw.bind === 'lan' ? 'lan' : 'local',
+            token
+        };
+    } catch { return undefined; }
+}
+
+/** Mark the snapshot as served by this side, so the page can say so. */
+function stampSnapshotWriter(): void {
+    try {
+        const snap = JSON.parse(fs.readFileSync(snapshotFile, 'utf8')) as Record<string, unknown>;
+        if (snap.writer === 'service') { return; }
+        snap.writer = 'service';
+        fs.writeFileSync(snapshotFile, JSON.stringify(snap), 'utf8');
+    } catch { /* nothing written yet — the server serves {} and the page says so */ }
+}
+
+function syncWebServer(): void {
+    const cfgWeb = readWebConfig();
+    const shouldServe = !!cfgWeb && !vscodeAlive();
+    if (!shouldServe) {
+        if (webHandle) { webHandle.close(); webHandle = undefined; log('web view handed back to VS Code'); }
+        return;
+    }
+    if (webHandle) { return; }
+    try {
+        // compiled sibling module — the service ships in the same out/ tree
+        const mod = require('../core/webserver.js') as WebServerModule;
+        stampSnapshotWriter();
+        webHandle = mod.startWebServer({
+            port: cfgWeb!.port, bind: cfgWeb!.bind, token: cfgWeb!.token,
+            snapshotFile, writer: 'service', onLog: (l: string) => log(l)
+        }, e => log('web view error: ' + String(e)));
+        if (webHandle) {
+            log(`web view served by the service on :${cfgWeb!.port} (VS Code is away)`);
+            logRun({ kind: 'web-served', port: cfgWeb!.port });
+        }
+    } catch (e) {
+        log('web view could not start: ' + String(e));
+    }
+}
+
 // ---------- main loop ----------
 
 function tick(): void {
+    syncWebServer();
     if (vscodeAlive()) { return; }
     const store = readStore();
     const cfgSvc = readConfig();

@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.25.0",
+  "version": "3.26.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -420,6 +420,18 @@
         "command": "agentfarm.openEditedFile",
         "title": "Open File the Agent Edited",
         "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.openWebView",
+        "title": "Open Web View… (read-only, phone-friendly)",
+        "category": "Agent Farm",
+        "icon": "$(radio-tower)"
+      },
+      {
+        "command": "agentfarm.connectTelegram",
+        "title": "Connect Telegram… (message an agent from your phone)",
+        "category": "Agent Farm",
+        "icon": "$(comment-discussion)"
       },
       {
         "command": "agentfarm.openAgentDetail",
@@ -2090,6 +2102,53 @@
           },
           "default": [],
           "markdownDescription": "Groups your agents (and folders) into **projects** — a customer, a product, a contract. Once declared, the Dashboard shows a per-project cost table, the Sessions tables gain a Project column and filter, and the Agent Portfolio groups by it, so \"what did I spend on this customer this month\" and \"show me everything on this project\" become one lookup. **An agent belongs to exactly one project** (the first that claims it): overlapping membership would double-count the money. Sessions outside every project fall into an honest `Unassigned` bucket, so the rows always add up to the fleet total. Easiest way in: the **Manage Projects…** command (or *Assign Agent to Project…* on an agent row)."
+        },
+        "agentFarm.web.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Serve a **read-only web view** of the farm — the same figures the panel shows, sized for a phone: what needs you, what is running, per-agent and per-project cost, recent sessions. Off by default. While VS Code is open the extension serves it; when VS Code is closed the **headless service** takes the port over and keeps serving the last snapshot (and says so on the page). Bound to `127.0.0.1` unless `agentFarm.web.bind` says otherwise, and **a token is always required** — there is no route that starts, stops or changes anything. Use **Open Web View…** to get the URL."
+        },
+        "agentFarm.web.port": {
+          "type": "number",
+          "default": 8378,
+          "description": "Port for the read-only web view (the live-hook listener uses agentFarm.livePort, 8377, and must stay separate)."
+        },
+        "agentFarm.web.bind": {
+          "type": "string",
+          "enum": [
+            "local",
+            "lan"
+          ],
+          "default": "local",
+          "markdownDescription": "`local` — only this machine (127.0.0.1). `lan` — reachable from your phone or a second machine on the same network. LAN exposure is opt-in on purpose; the token stays mandatory either way, and the view stays read-only."
+        },
+        "agentFarm.web.token": {
+          "type": "string",
+          "default": "",
+          "description": "Access token for the web view. Generated for you the first time you enable it; anyone with this token can READ the farm's dashboard, so treat it like a password. Empty = the server refuses to start."
+        },
+        "agentFarm.telegram.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Let a **Telegram chat talk to your agents**: send a message, the agent the chat is bound to runs it headlessly, and the answer comes back in the same thread. Off by default; the bot token lives in the Agent Farm **secret vault** (never in settings) — set it up with **Connect Telegram…**. Two rails are always on: a message from a chat that is not in `agentFarm.telegram.allowedChats` is refused (it is told its own chat id, so allowing it is one copy), and chat-started runs stop at `agentFarm.telegram.maxDailyUSD` per day. Commands in chat: `/agent <name>` · `/agents` · `/status` · `/cancel` · `/help`."
+        },
+        "agentFarm.telegram.allowedChats": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "default": [],
+          "description": "Telegram chat ids allowed to drive the farm. EMPTY = nobody can (the bridge answers every message with a refusal and its own chat id). This is the access list for something that spends money — keep it to your own chats."
+        },
+        "agentFarm.telegram.maxDailyUSD": {
+          "type": "number",
+          "default": 1,
+          "description": "Ceiling on what chat-started runs may cost per day (API-equivalent). 0 = no runs from chat at all; commands like /status keep working."
+        },
+        "agentFarm.telegram.defaultAgent": {
+          "type": "string",
+          "default": "",
+          "description": "Agent a new chat talks to before it picks one with /agent. Empty = a chat must bind an agent first."
         },
         "agentFarm.launchDefaults": {
           "type": "object",
