@@ -2,6 +2,15 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.24.1 — The session name shows up, and "Reveal folder" opens the folder (2026-07-27)
+
+Three things 3.24.0 got wrong in the hand, reported from use.
+
+- **A session's name was invisible.** The launcher's *Session name* field passes `-n`, and the CLI shows it in its prompt box — but Agent Farm's tables kept showing the title derived from the first prompt, so naming a session changed nothing where it mattered. The reason: the name is **not written to the transcript**. It lives in the CLI's own live registry, `~/.claude/sessions/<pid>.json` (read from a real one, not assumed: `{pid, sessionId, cwd, kind, entrypoint, name, status, …}`), a file that is deleted when the process exits. So the names are now **read from there and remembered** — scanned at startup, on a quiet 20s beat, and twice right after a named launch, with the persisted map only rewritten when something actually changed. A session's title now has three honest sources in order: **your rename → the name it was started with → the title derived from the conversation**, and whatever a name replaces stays visible in the row's tooltip. This also covers sessions you named yourself outside the panel.
+- **"Reveal in File Explorer" opened the agents root, for every agent.** VS Code's `revealFileInOS` always reveals a path *inside its parent*, which is right for a file and wrong for a folder — picking an agent made no difference to what opened. Reveal now decides by kind: a **folder is opened** (Explorer directly on Windows, the OS handler elsewhere, with the old behaviour as a fallback), a **file is revealed inside its folder**. One shared helper backs every reveal in the extension — agent folders, agent roots, skill folders, the outputs folder, Toolbox and Airtable paths — so they all behave the same way.
+- **The Start Session button sat on the wrong side.** In the Agents view title it now follows Open Dashboard instead of preceding it.
+- 29 new checks (the CLI registry incl. BOM, broken and nameless files; remembering across a session's death and a mid-run rename; the three-source title precedence in both directions; the reveal decision and a guard that no call site goes back to the raw command; the button order). Suite: **71 files, 2519 checks green.**
+
 ## 3.24.0 — Interaction and control: the panel can start, shelve and stop sessions (2026-07-27)
 
 The extension could see everything about a session and do nothing to one. Every session opened as a bare `claude` with the model, the effort and the permission mode typed into the terminal by hand; the six sessions you live in were somewhere inside a list of hundreds; a session working on the wrong thing could only be stopped by finding its window; and 173 commands were reachable through exactly one keyboard shortcut. This release closes that block — the **A. Interaction and control** findings of the product audit — on the terminal path, without touching the one-click Start that already works.

@@ -264,6 +264,11 @@
         const dot = r => r.active ? '<span class="dot on" title="Active now"></span> ' : '';
         const subBadge = r => r.sidechain ? ' <span class="badge">sub</span>' : '';
         const tagChips = r => (r.tags || []).map(t => `<span class="stag">${C.esc(t)}</span>`).join('');
+        // The column shows the session's NAME when it has one (given at launch
+        // with -n, or a rename); the title the conversation itself suggests is
+        // kept in the tooltip so nothing is lost behind the name.
+        const titleTip = r => C.esc(r.title) +
+            (r.autoTitle && r.autoTitle !== r.title ? ' &#10;from the conversation: ' + C.esc(r.autoTitle) : '');
         // ⎋ interrupt: only on rows that are actually running — Esc is typed
         // into that session's terminal, which stops the turn, not the session
         const stopBtn = r => r.active
@@ -298,8 +303,8 @@
             },
             agent: r => `<td>${dot(r)}${C.esc(r.agent)}${subBadge(r)}${termBtn(r)}${stopBtn(r)}</td>`,
             title: r => hasAgentCol
-                ? `<td title="${C.esc(r.title)}">${C.esc(r.title)}${tagChips(r)}</td>`
-                : `<td title="${C.esc(r.title)}">${dot(r)}${C.esc(r.title)}${tagChips(r)}${subBadge(r)}${termBtn(r)}${stopBtn(r)}</td>`,
+                ? `<td title="${titleTip(r)}">${C.esc(r.title)}${tagChips(r)}</td>`
+                : `<td title="${titleTip(r)}">${dot(r)}${C.esc(r.title)}${tagChips(r)}${subBadge(r)}${termBtn(r)}${stopBtn(r)}</td>`,
             when: r => `<td class="num">${relTime(r.ts)}</td>`,
             duration: r => `<td class="num">${r.durationMin || 0}m</td>`,
             turns: r => `<td class="num">${r.turns || 0}</td>`,

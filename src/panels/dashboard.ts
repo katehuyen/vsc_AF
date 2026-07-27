@@ -83,6 +83,9 @@ export function sessionRowPool(
         sessionId: s.sessionId,
         cwd: s.cwd ?? '',
         title: s.title,
+        // what the transcript itself suggests — shown in the tooltip when a
+        // launch name or a rename is what you see in the column
+        autoTitle: s.autoTitle,
         ts: s.lastTs || s.mtime || 0,
         durationMin: s.firstTs && s.lastTs ? Math.round((s.lastTs - s.firstTs) / 60000) : 0,
         turns: s.userTurns,

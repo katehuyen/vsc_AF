@@ -491,7 +491,11 @@ function sessionTreeItem(s: SessionInfo, index: SessionIndex, showAgent: boolean
         rollupLine = `\nSubagents: ${roll.count} • tree total ${fmtUSD(s.cost + roll.cost)} (self ${fmtUSD(s.cost)})`;
     }
     item.description = parts.join(' • ');
-    item.tooltip = `${s.title}\n${s.models.join(', ')}\n${s.userTurns} turns • ${s.toolCalls} tool calls • ${s.errors} errors` +
+    item.tooltip = `${s.title}` +
+        // a launch name / rename replaces the derived title in the label —
+        // keep what the conversation itself suggests visible here
+        (s.autoTitle && s.autoTitle !== s.title ? `\nfrom the conversation: ${s.autoTitle}` : '') +
+        `\n${s.models.join(', ')}\n${s.userTurns} turns • ${s.toolCalls} tool calls • ${s.errors} errors` +
         (s.lastCtxTokens ? `\nContext now: ~${fmtTokens(s.lastCtxTokens)} tokens` : '') + rollupLine;
     item.command = {
         command: 'agentfarm.openSession',

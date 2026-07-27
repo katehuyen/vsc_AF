@@ -5,6 +5,7 @@ import { mcpUsage, readAgentMcpServers, removeMcpServer, setServerDisabled } fro
 import { loadProbeCache, McpServerConfig, probeMcpServer, saveProbeCache } from '../core/mcpProbe';
 import { skillUsage } from '../core/skills';
 import { SessionIndex } from '../core/sessions';
+import { revealPath } from '../core/reveal';
 import {
     buildToolboxInventory, HookEntry, removeHookEntry, removeUserMcpServer, removeWithBackup,
     scaffoldItem, setPluginEnabled, ToolboxItem, userClaudeDir, userConfigJson
@@ -127,7 +128,7 @@ export class ToolboxPanel {
                 break;
             case 'reveal':
                 if (typeof msg.path === 'string' && msg.path) {
-                    void vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(msg.path));
+                    void revealPath(msg.path);
                 }
                 break;
             case 'openExternal': {

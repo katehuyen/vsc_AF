@@ -6,6 +6,7 @@ import {
 import { loadProbeCache, probeMcpServer, saveProbeCache } from '../core/mcpProbe';
 import { probeCacheKey, resolveServerConfig } from '../core/toolboxBridge';
 import { handleAfNav, htmlShell } from './base';
+import { revealPath } from '../core/reveal';
 
 /**
  * Airtable Engine page — the module's own control room (it outgrew being a
@@ -165,7 +166,7 @@ export class AirtablePanel {
             }
             case 'reveal':
                 if (typeof msg.path === 'string' && msg.path) {
-                    void vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(msg.path));
+                    void revealPath(msg.path);
                 }
                 break;
             case 'open-config':

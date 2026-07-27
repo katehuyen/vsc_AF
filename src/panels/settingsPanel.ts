@@ -10,6 +10,7 @@ import {
     validateRawClaudeSettings
 } from '../core/claudesettings';
 import { normPath } from '../core/util';
+import { revealPath } from '../core/reveal';
 import { handleAfNav, htmlShell } from './base';
 
 /** Webview-ready snapshot of one agent root for the Agent folders section. */
@@ -308,7 +309,7 @@ export class FarmSettingsPanel {
             }
             case 'rootReveal':
                 if (typeof msg.root === 'string' && msg.root) {
-                    void vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(msg.root));
+                    void revealPath(msg.root);
                 }
                 break;
             case 'rootCleanDupes': {

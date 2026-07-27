@@ -228,10 +228,12 @@ Eskiden her oturum çıplak `claude` ile açılıyordu; model, efor, izin modu v
 | Model | senin model bilgi tabanından (`agentFarm.modelAliases`) + serbest metin | `--model` |
 | Effort | low · medium · high · xhigh · max | `--effort` |
 | Permissions | plan · acceptEdits · auto · manual · dontAsk · ⚠ bypassPermissions | `--permission-mode` |
-| Session name | prompt kutusunda, `/resume` seçicisinde ve terminal başlığında görünür | `-n` |
+| Session name | prompt kutusunda, `/resume` seçicisinde, terminal başlığında **ve Agent Farm'ın oturum listelerinde** görünür | `-n` |
 | First prompt | boş oturum yerine ilk mesajla açılır | konumsal argüman |
 
 Alt kısımda **profiller**: *Save this as a profile…* mevcut seçimi `agentFarm.launchProfiles`'a adıyla yazar ("derin inceleme" = opus + xhigh + plan gibi), *Load a profile…* geri yükler; *Make model/effort/permissions my defaults* seçimi `launchDefaults`'a taşır. Launcher, her ajan için **en son ne ile başlattığını hatırlar** — aynı tür oturumu ikinci açışın tek Enter'dır.
+
+**Oturum adı nereden okunuyor (3.24.1):** `-n` ile verilen ad **transkripte yazılmaz**; CLI'ın kendi canlı kaydında (`~/.claude/sessions/<pid>.json`) durur ve süreç bitince o dosya silinir. Agent Farm bu kaydı okuyup adı **hatırlar** (açılışta, 20 saniyelik sessiz turda ve adlı bir başlatmadan hemen sonra iki kez). Bir oturumun başlığının üç kaynağı vardır, bu sırayla: **senin verdiğin ad (Rename) → başlatılırken verilen ad (`-n`) → konuşmadan türetilen başlık**. Adın örttüğü başlık kaybolmaz, satırın tooltip'inde durur. Panel dışında kendin `claude -n …` ile başlattığın oturumlar da aynı şekilde adıyla görünür.
 
 Serbest metin (ad, ilk cümle) her zaman tırnaklanır: `"` tek tırnağa döner, backtick (PowerShell kaçış karakteri) düşer, satır sonları boşluk olur — üç kabuğun (PowerShell · cmd · sh) hiçbirinde tırnak dışına taşamaz. `$` ve `%` **bilerek korunur**: kullanıcının kendi metnini sessizce bozmaktansa komut satırını göstermek doğru olanıdır (kabuk bir değişkeni genişletirse **Start satırında görürsün**).
 

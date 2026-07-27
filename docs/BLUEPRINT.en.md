@@ -228,10 +228,12 @@ Every session used to open as a bare `claude`, with the model, the effort, the p
 | Model | from your own model knowledge base (`agentFarm.modelAliases`) + free text | `--model` |
 | Effort | low · medium · high · xhigh · max | `--effort` |
 | Permissions | plan · acceptEdits · auto · manual · dontAsk · ⚠ bypassPermissions | `--permission-mode` |
-| Session name | shown in the prompt box, the `/resume` picker and the terminal title | `-n` |
+| Session name | shown in the prompt box, the `/resume` picker, the terminal title **and Agent Farm's own session lists** | `-n` |
 | First prompt | opens with an opening message instead of an empty session | positional argument |
 
 At the bottom sit the **profiles**: *Save this as a profile…* writes the current picks to `agentFarm.launchProfiles` under a name ("deep review" = opus + xhigh + plan), *Load a profile…* restores one, and *Make model/effort/permissions my defaults* promotes them to `launchDefaults`. The launcher **remembers what each agent was last launched with** — the second time you start the same kind of session it is one Enter.
+
+**Where the session name is read from (3.24.1):** the name given with `-n` is **never written to the transcript** — it lives in the CLI's own live registry (`~/.claude/sessions/<pid>.json`), a file deleted when the process exits. Agent Farm reads that registry and **remembers** the name (at startup, on a quiet 20s beat, and twice right after a named launch). A session's title therefore has three sources, in this order: **your rename → the name it was started with (`-n`) → the title derived from the conversation**. Nothing is lost behind a name: whatever it replaced stays in the row's tooltip. Sessions you named yourself outside the panel (`claude -n …`) show up the same way.
 
 Free text (name, first prompt) is always quoted: `"` becomes `'`, a backtick (PowerShell's escape character) is dropped, newlines become spaces — it cannot break out of its quotes in any of the three shells (PowerShell · cmd · sh). `$` and `%` are **deliberately left alone**: mangling the user's own text silently is worse than showing the command line, and if a shell would expand a variable **you see it on the Start row**.
 

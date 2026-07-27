@@ -101,6 +101,8 @@ import {
 } from './core/sessionmarks';
 import { INTERRUPT_KEY, resolveInterrupt, TermRecord } from './core/interrupt';
 import { QUICK_MENU, QUICK_MENU_GROUPS } from './core/quickmenu';
+import { mergeSessionNames, readCliSessions } from './core/cliSessions';
+import { revealPath } from './core/reveal';
 import {
     applySuggestionToClaudeMd, collectUserMessages, scanCorrections, SuggestionStore
 } from './core/suggest';
@@ -848,6 +850,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // only fires when the content signature actually changed.
     const externalInterval = setInterval(refreshExternalSessions, 60_000);
     context.subscriptions.push({ dispose: () => clearInterval(externalInterval) });
+
+    // A session started with a name (`claude -n …`, what the launcher passes)
+    // carries that name ONLY in the CLI's own live registry — it is never
+    // written to the transcript, and the registry file dies with the process.
+    // So the names are read from there and remembered: scanned at startup, on a
+    // quiet beat, and right after a launch (the file appears a second or two
+    // after the terminal opens). setCliNames only fires when something changed.
+    const NAMES_KEY = 'agentfarm.sessionNames';
+    const scanCliSessionNames = () => {
+        const known = context.globalState.get<Record<string, string>>(NAMES_KEY, {});
+        const merged = mergeSessionNames(known, readCliSessions(claudeDir()));
+        if (!merged) { return; }
+        void context.globalState.update(NAMES_KEY, merged);
+        index.setCliNames(merged);
+    };
+    index.setCliNames(context.globalState.get<Record<string, string>>(NAMES_KEY, {}));
+    scanCliSessionNames();
+    const namesInterval = setInterval(scanCliSessionNames, 20_000);
+    context.subscriptions.push({ dispose: () => clearInterval(namesInterval) });
 
     const state = {
         getAgents: () => agents,
@@ -4343,6 +4364,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // Terminal name stays "claude: <agent>" — agentfarm.focusSessionTerminal
         // and the interrupt resolver both find windows by that exact shape.
         launchClaudeTerminal(`claude: ${agent.name}`, cwd ?? agent.dir, command, undefined, sessionId);
+        // A named launch should show its name in the panel within seconds, not
+        // at the next quiet scan: the CLI writes its session file a moment
+        // after boot, so look twice while the user is still watching.
+        if (merged.name?.trim()) {
+            for (const ms of [2500, 6000]) { setTimeout(scanCliSessionNames, ms); }
+        }
         return command;
     };
 
@@ -5389,7 +5416,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('agentfarm.revealAgent', async (arg: AgentArg) => {
             const agent = await resolveAgent(arg);
             if (!agent) { return; }
-            await vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(agent.dir));
+            await revealPath(agent.dir);
         }),
 
         vscode.commands.registerCommand('agentfarm.addTask', async () => {
@@ -5992,7 +6019,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const choice = await vscode.window.showInformationMessage(
                 `Agent Farm: exported ${clips.length} clip(s) → ${path.basename(uri.fsPath)} (+ .edl). Import the XML in Premiere: File → Import.`,
                 'Reveal', 'Open XML');
-            if (choice === 'Reveal') { void vscode.commands.executeCommand('revealFileInOS', uri); }
+            if (choice === 'Reveal') { void revealPath(uri.fsPath); }
             if (choice === 'Open XML') { void vscode.window.showTextDocument(uri); }
         }),
 
@@ -6429,7 +6456,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         vscode.commands.registerCommand('agentfarm.revealSkill', (node?: AgentNode) => {
             if (node?.kind !== 'skill') { return; }
-            void vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(node.skill.source));
+            void revealPath(node.skill.source);
         }),
 
         vscode.commands.registerCommand('agentfarm.editMcpServer', async (node?: AgentNode) => {
@@ -7438,7 +7465,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (choice === 'Open script') {
                 void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(cmdFile));
             } else if (choice === 'Open log folder') {
-                void vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(taskManager.outputsDir));
+                void revealPath(taskManager.outputsDir);
             }
         }),
 
@@ -8633,7 +8660,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 `Agent Farm: spoken briefing saved — ${path.basename(result.file!)}`, 'Reveal')
                 .then(c => {
                     if (c === 'Reveal') {
-                        void vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(result.file!));
+                        void revealPath(result.file!);
                     }
                 });
         }),
@@ -8949,7 +8976,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 (warnings.length ? ` Skipped: ${warnings.join('; ')}` : ''),
                 'Reveal')
                 .then(c => {
-                    if (c === 'Reveal') { void vscode.commands.executeCommand('revealFileInOS', target); }
+                    if (c === 'Reveal') { void revealPath(target.fsPath); }
                 });
         }),
 

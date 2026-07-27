@@ -64,6 +64,9 @@ export interface SessionInfo {
     title: string;
     /** Title derived from the transcript, kept so clearing a user rename can restore it. */
     autoTitle: string;
+    /** Display name the session was started with (`claude -n …`), read from the
+     *  CLI's own session registry (cliSessions.ts) — not in the transcript. */
+    cliName?: string;
     /** On the user's shelf (sessionmarks.ts): listed first, never cut by a top-N. */
     pinned?: boolean;
     /** User labels on this session — searched by the tables' text filter. */
@@ -432,6 +435,8 @@ export class SessionIndex implements vscode.Disposable {
     private titleOverrides = new Map<string, string>();
     /** User shelf marks (sessionId → pin/tags), persisted by the extension. */
     private marks: SessionMarks = {};
+    /** Session display names from the CLI's registry (sessionId → -n name). */
+    private cliNames = new Map<string, string>();
     private watchers: fs.FSWatcher[] = [];
     private pending = new Map<string, NodeJS.Timeout>();
     private readonly onDidUpdateEmitter = new vscode.EventEmitter<void>();
@@ -500,8 +505,7 @@ export class SessionIndex implements vscode.Disposable {
             const segments = file.split(/[\\/]/);
             info.parentSessionId = segments[segments.length - 1 - depth];
         }
-        const override = this.titleOverrides.get(info.sessionId);
-        if (override) { info.title = override; }
+        this.applyTitle(info);
         this.applyMark(info);
         this.assignAgent(info);
         if (!info.agentId && !this.includeUnmatched()) {
@@ -533,13 +537,32 @@ export class SessionIndex implements vscode.Disposable {
         }
     }
 
+    /**
+     * A session's title has three sources, in this order:
+     *   1. the user's own rename — an explicit decision, always wins;
+     *   2. the name it was STARTED with (`claude -n …`, from the CLI registry) —
+     *      naming a session at launch has to mean something afterwards;
+     *   3. the title derived from the first real prompt in the transcript.
+     */
+    private applyTitle(info: SessionInfo): void {
+        info.cliName = this.cliNames.get(info.sessionId);
+        info.title = this.titleOverrides.get(info.sessionId) ?? info.cliName ?? info.autoTitle;
+    }
+
     /** Replace the user-set session names and re-apply them to everything indexed. */
     setTitleOverrides(map: Record<string, string>): void {
         this.titleOverrides = new Map(
             Object.entries(map).filter(([, v]) => typeof v === 'string' && v.trim()));
-        for (const s of this.sessions.values()) {
-            s.title = this.titleOverrides.get(s.sessionId) ?? s.autoTitle;
-        }
+        for (const s of this.sessions.values()) { this.applyTitle(s); }
+        this.onDidUpdateEmitter.fire();
+    }
+
+    /** Replace the launch names read from the CLI's session registry. */
+    setCliNames(map: Record<string, string>): void {
+        this.cliNames = new Map(
+            Object.entries(map).filter(([, v]) => typeof v === 'string' && v.trim()));
+        for (const s of this.sessions.values()) { this.applyTitle(s); }
+        for (const s of this.externalList) { this.applyTitle(s); }
         this.onDidUpdateEmitter.fire();
     }
 
