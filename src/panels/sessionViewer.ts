@@ -5,6 +5,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { PricingEngine, totalTokens, Usage } from '../core/pricing';
 import { sessionOrigin } from '../core/sessions';
+import { collectEdits, fileStats, groupByFile } from '../core/codeedits';
 import { askExportOptions, handleAfNav, htmlShell } from './base';
 
 export interface ViewerDeps {
@@ -442,6 +443,16 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
         turnCount: turnNo,
         turnTotals,
         turns,
+        // What this session did to the code, summarised. The hunks themselves
+        // are fetched per file on demand ('sessionFileEdits') — a Write of a
+        // 3000-line file has no business travelling in every render.
+        files: groupByFile(collectEdits(raw.split('\n'))).map(f => {
+            const st = fileStats(f);
+            return {
+                file: f.file, edits: f.edits, written: f.written, failed: f.failed,
+                added: st.added, removed: st.removed, turns: f.turns, lastTs: f.lastTs
+            };
+        }),
         messageCount: messages.length,
         truncatedCount,
         messages: messages.slice(-max)
@@ -552,6 +563,41 @@ export class SessionViewerPanel {
         switch (msg.type) {
             case 'openRaw':
                 vscode.commands.executeCommand('vscode.open', vscode.Uri.file(this.file));
+                break;
+            // ---- what the agent did to the code (B3) ----
+            case 'sessionFileEdits': {
+                // One file's hunks, read on demand. Long hunks are cut here (not
+                // in the webview) so a Write of a huge file never travels whole.
+                const want = typeof msg.file === 'string' ? msg.file : '';
+                let raw = '';
+                try { raw = fs.readFileSync(this.file, 'utf8'); } catch { /* gone */ }
+                const group = groupByFile(collectEdits(raw.split('\n'))).find(f => f.file === want);
+                const CUT = 200;
+                const clip = (t?: string) => {
+                    if (t === undefined) { return { text: undefined, clipped: false }; }
+                    const lines = t.split('\n');
+                    return lines.length > CUT
+                        ? { text: lines.slice(0, CUT).join('\n'), clipped: true }
+                        : { text: t, clipped: false };
+                };
+                void this.panel.webview.postMessage({
+                    type: 'sessionFileEdits', file: want,
+                    records: (group?.records ?? []).map(r => {
+                        const o = clip(r.oldText), n = clip(r.newText);
+                        return {
+                            tool: r.tool, ts: r.ts, turn: r.turn, hunk: r.hunk, failed: !!r.failed,
+                            bytes: r.bytes, oldText: o.text, newText: n.text,
+                            clipped: o.clipped || n.clipped
+                        };
+                    })
+                });
+                break;
+            }
+            case 'openEditedFile':
+                if (typeof msg.file === 'string' && msg.file) {
+                    void vscode.commands.executeCommand('agentfarm.openEditedFile',
+                        { file: msg.file, diff: msg.diff === true });
+                }
                 break;
             case 'ctxCapture': {
                 if (this.capturing) { break; }

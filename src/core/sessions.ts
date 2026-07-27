@@ -88,6 +88,11 @@ export interface SessionInfo {
      *  was actually read — a session reading ANOTHER agent's memory (or the
      *  ~/.claude auto-memory) must not inflate its own matrix cell. */
     memoryReads: Record<string, number>;
+    /** Files this session WROTE to (Edit/Write/MultiEdit/NotebookEdit), by
+     *  normPath'd full path → number of write calls. Counted during the one
+     *  parse the index already does, so "what did this session touch?" costs
+     *  nothing extra; the per-edit detail is read on demand (codeedits.ts). */
+    filesEdited: Record<string, number>;
     errors: number;
     version?: string;
     gitBranch?: string;
@@ -156,6 +161,9 @@ interface JsonlLine {
 const RECENT_MSG_WINDOW_MS = 48 * 3600 * 1000;
 const MAX_EVENTS_PER_FILE = 40;
 
+/** Tools that change a file on disk (codeedits.ts parses their inputs in full). */
+export const WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
+
 function toolDetail(input: Record<string, unknown> | undefined): string {
     if (!input) { return ''; }
     const cand = input['file_path'] ?? input['command'] ?? input['description'] ??
@@ -223,6 +231,7 @@ export function parseSessionFile(
         tools: {},
         skillCalls: {},
         memoryReads: {},
+        filesEdited: {},
         errors: 0,
         daily: {},
         heat: new Array(168).fill(0),
@@ -387,7 +396,14 @@ export function parseSessionFile(
                                 info.skillCalls[skillName] = (info.skillCalls[skillName] ?? 0) + 1;
                             }
                         }
-                        const filePath = String(block.input?.['file_path'] ?? '');
+                        const filePath = String(block.input?.['file_path'] ?? block.input?.['notebook_path'] ?? '');
+                        // What the agent did to the code: every tool that WRITES
+                        // a file, counted per file. Reads are deliberately not
+                        // here — "touched" would make the column meaningless.
+                        if (filePath && WRITE_TOOLS.has(block.name)) {
+                            const key = normPath(filePath);
+                            info.filesEdited[key] = (info.filesEdited[key] ?? 0) + 1;
+                        }
                         if (ts && filePath.toUpperCase().includes('DUTIES.MD')) {
                             info.dutiesReadTs = Math.max(info.dutiesReadTs ?? 0, ts);
                         }

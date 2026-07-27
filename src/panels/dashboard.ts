@@ -6,6 +6,7 @@ import { SessionIndex, SessionInfo, sessionOrigin } from '../core/sessions';
 import { PricingEngine, totalTokens } from '../core/pricing';
 import { SubsystemStatus } from '../core/farmstatus';
 import { PlanUsageSnapshot } from '../core/planusage';
+import { ProjectRollup } from '../core/projects';
 import { dayKey } from '../core/util';
 import { handleAfNav, htmlShell } from './base';
 import { buildData as buildViewerData } from './sessionViewer';
@@ -29,6 +30,10 @@ export interface DashboardDeps {
     refreshPlanUsage?(force: boolean): Promise<PlanUsageSnapshot | undefined>;
     /** Plan usage card: auto-refresh beat in minutes; 0 = manual only. */
     planUsageRefreshMinutes?(): number;
+    /** B1: per-project rollup for the Projects card (empty = no projects declared). */
+    projects?(): ProjectRollup[];
+    /** B1: agent name → project name, so rows can be grouped client-side. */
+    agentProjects?(): Record<string, string>;
 }
 
 interface AgentSummary {
@@ -72,7 +77,9 @@ export const AGENT_SESSION_TABLE_N = 50;
 export function sessionRowPool(
     sessions: SessionInfo[],
     isActive?: (s: SessionInfo) => boolean,
-    n = SESSION_TABLE_N
+    n = SESSION_TABLE_N,
+    /** B1: which project owns this session (undefined = none declared). */
+    projectOf?: (s: SessionInfo) => string | undefined
 ): unknown[] {
     const rows = sessions.map(s => ({
         file: s.file,
@@ -101,6 +108,11 @@ export function sessionRowPool(
         // shelf marks: pinned rows sort first and survive every top-N cut
         pinned: s.pinned === true,
         tags: s.tags ?? [],
+        // B1: the project this session's work belongs to ('' = none declared)
+        project: projectOf?.(s) ?? '',
+        // B3: how many distinct files this session wrote to (counted during the
+        // index's own parse — the per-edit detail is read on demand)
+        files: Object.keys(s.filesEdited ?? {}).length,
         active: isActive ? isActive(s) : false
     }));
     type Row = typeof rows[number];
@@ -234,7 +246,9 @@ function buildData(deps: DashboardDeps, tableN = DASHBOARD_SESSION_TABLE_N): Rec
         for (let i = 0; i < 168; i++) { heat[i] += s.heat[i]; }
     }
 
-    const sessionRows = sessionRowPool(sessions, s => deps.index.isSessionActive(s, now), tableN);
+    const projectByAgent = deps.agentProjects?.() ?? {};
+    const sessionRows = sessionRowPool(sessions, s => deps.index.isSessionActive(s, now), tableN,
+        s => (s.agentName ? projectByAgent[s.agentName] : undefined));
 
     const win = deps.index.windowUsage(now);
 
@@ -247,6 +261,10 @@ function buildData(deps: DashboardDeps, tableN = DASHBOARD_SESSION_TABLE_N): Rec
         heat,
         sessionRows,
         sessionTableN: tableN,
+        // B1: the project axis. Empty until projects are declared, and then
+        // every figure below can be read per customer / product / contract.
+        projects: deps.projects?.() ?? [],
+        agentProjects: deps.agentProjects?.() ?? {},
         window: { ...win, limit: deps.windowTokenLimit() },
         fleetBudget: deps.budgets()['*'] ?? 0,
         mediaCost: deps.mediaCost(),
@@ -355,6 +373,9 @@ export class DashboardPanel {
                     agentName: typeof msg.agentName === 'string' ? msg.agentName : undefined,
                     cwd: typeof msg.cwd === 'string' && msg.cwd ? msg.cwd : undefined
                 });
+                break;
+            case 'manageProjects':
+                void vscode.commands.executeCommand('agentfarm.manageProjects');
                 break;
             case 'pinSession':
                 // the star already flipped in the webview — pass the state it

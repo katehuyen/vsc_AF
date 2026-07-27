@@ -52,6 +52,11 @@
     window.addEventListener('message', ev => {
         if (ev.data.type === 'focus') { focusAt(ev.data.ts); return; }
         if (ev.data.type === 'ctxCapture') { onCtxCaptureResult(ev.data); return; }
+        if (ev.data.type === 'sessionFileEdits') {
+            fileHunks[ev.data.file] = ev.data.records || [];
+            render({ keepScroll: true });
+            return;
+        }
         if (ev.data.type === 'exportBuild') {
             // host answered the Export MD prompt — build with the chosen options
             vscode.postMessage({
@@ -465,6 +470,54 @@
         </details>`;
     }
 
+    // ---- B3: what this session did to the code ----------------------------
+    // The hunks are the session's OWN before/after text, straight from the
+    // transcript — not a git diff, so a later session's work can never show up
+    // as this one's. "vs HEAD" is offered separately and says so.
+    const openFiles = new Set();      // files whose hunks are expanded
+    const fileHunks = {};             // file -> records (fetched on demand)
+
+    function fileBoxHtml() {
+        const files = DATA.files || [];
+        if (!files.length) { return ''; }
+        const total = files.reduce((n, f) => n + f.edits, 0);
+        const add = files.reduce((n, f) => n + f.added, 0);
+        const rem = files.reduce((n, f) => n + f.removed, 0);
+        return `<details id="filebox" class="turnbox" open>
+            <summary>Files changed — ${files.length} file(s) · ${total} write(s) · <span class="plus">+${add}</span> <span class="minus">−${rem}</span></summary>
+            <div class="tablewrap"><table>
+                <thead><tr><th></th><th>File</th><th class="num">writes</th><th class="num">+/−</th><th>turns</th><th></th></tr></thead>
+                <tbody>${files.map(f => {
+                    const open = openFiles.has(f.file);
+                    const short = f.file.split(/[\\/]/).slice(-2).join('/');
+                    return `<tr class="click" data-fileopen="${C.esc(f.file)}" title="${C.esc(f.file)}">
+                        <td><button class="only">${open ? '▾' : '▸'}</button></td>
+                        <td>${C.esc(short)}${f.written ? ' <span class="tag">written</span>' : ''}${f.failed ? ` <span class="badge err" title="${f.failed} call(s) came back with an error — those changes did not happen">${f.failed} failed</span>` : ''}</td>
+                        <td class="num">${f.edits}</td>
+                        <td class="num"><span class="plus">+${f.added}</span> <span class="minus">−${f.removed}</span></td>
+                        <td class="muted small">${f.turns.map(t => '#' + t).join(' ')}</td>
+                        <td><button class="only" data-openfile="${C.esc(f.file)}" title="Open this file in the editor">open</button>
+                            <button class="only" data-difffile="${C.esc(f.file)}" title="Diff the file on disk against git HEAD — this is what is uncommitted NOW, by anyone, not only this session">vs HEAD</button></td>
+                    </tr>` + (open ? `<tr><td></td><td colspan="5">${hunksHtml(f.file)}</td></tr>` : '');
+                }).join('')}</tbody>
+            </table></div>
+            <p class="footnote">These are the session's own edits, as it made them — the before/after text is read back from the transcript, so it stays true however the file has changed since. <b>vs HEAD</b> answers the other question: what is uncommitted in that file right now.</p>
+        </details>`;
+    }
+
+    function hunksHtml(file) {
+        const recs = fileHunks[file];
+        if (!recs) { return '<span class="muted small">Loading changes…</span>'; }
+        if (!recs.length) { return '<span class="muted small">No recorded hunks.</span>'; }
+        return recs.map((r, i) => {
+            const head = `<div class="hunkhead">${r.tool}${r.hunk ? ' #' + r.hunk : ''} · turn ${r.turn}${r.failed ? ' · <span class="badge err">failed — not applied</span>' : ''}${r.bytes !== undefined ? ` · ${r.bytes} chars written` : ''}${r.clipped ? ' · <span class="muted">(long — cut for display)</span>' : ''}</div>`;
+            const side = (text, cls, sign) => text === undefined || text === ''
+                ? ''
+                : `<pre class="hunk ${cls}">${text.split('\n').map(l => sign + C.esc(l)).join('\n')}</pre>`;
+            return `<div class="hunkbox" data-hunk="${i}">${head}${side(r.oldText, 'old', '−')}${side(r.newText, 'new', '+')}</div>`;
+        }).join('');
+    }
+
     // Breakdown popover for the "Context now" card, built from the transcript's last
     // /context run (DATA.contextReport). Always rendered: with no snapshot it explains
     // how to get one — a hidden feature the user can't discover helps nobody.
@@ -703,6 +756,18 @@
                 .ctxact button:hover:not(:disabled) { background:var(--vscode-button-secondaryHoverBackground, var(--vscode-list-hoverBackground)); }
                 .ctxact button:disabled { opacity:.6; cursor:default; }
                 .ctxstatus { font-size:10px; opacity:.75; line-height:1.4; }
+                /* Files changed (B3): the session's own hunks, old above new. */
+                .plus { color:var(--vscode-charts-green, #4caf50); }
+                .minus { color:var(--vscode-charts-red, #f14c4c); }
+                .hunkbox { margin:6px 0 12px; }
+                .hunkhead { font-size:10px; opacity:.7; margin-bottom:3px; }
+                .hunk { margin:0; padding:5px 8px; font-size:11px; line-height:1.45; overflow-x:auto;
+                    border-radius:4px; white-space:pre; }
+                .hunk.old { background:color-mix(in srgb, var(--vscode-charts-red, #f14c4c) 12%, transparent);
+                    border-left:3px solid color-mix(in srgb, var(--vscode-charts-red, #f14c4c) 55%, transparent); }
+                .hunk.new { background:color-mix(in srgb, var(--vscode-charts-green, #4caf50) 12%, transparent);
+                    border-left:3px solid color-mix(in srgb, var(--vscode-charts-green, #4caf50) 55%, transparent);
+                    margin-top:3px; }
             </style>
             ${window.AFHeader.html({
                 page: 'viewer',
@@ -729,6 +794,7 @@
                 <div class="card"><div class="label">Span</div><div class="kpi">${durMin}m</div><div class="sub">${fmtTime(DATA.firstTs)} → ${fmtTime(DATA.lastTs)}</div></div>
                 <div class="card"><div class="label">Activity</div><div class="kpi">${DATA.toolCalls}</div><div class="sub">tool calls · ${DATA.errors} errors · ${C.esc((DATA.models || []).map(m => m.replace(/^claude-/, '')).join(', '))}</div></div>
             </div>
+            ${fileBoxHtml()}
             ${turnBoxHtml()}
             ${replay.active ? `
             <div class="replaybar">
@@ -760,6 +826,28 @@
         window.AFHeader.wire(vscode);
         document.getElementById('raw').addEventListener('click', () => vscode.postMessage({ type: 'openRaw' }));
         wireContextPop();
+        // ---- Files changed: fold a file open (hunks fetched once), open it,
+        // or ask for the git comparison (a different question — see the box).
+        document.querySelectorAll('[data-fileopen]').forEach(row =>
+            row.addEventListener('click', ev => {
+                if (ev.target && ev.target.dataset && (ev.target.dataset.openfile || ev.target.dataset.difffile)) { return; }
+                const f = row.dataset.fileopen;
+                if (openFiles.has(f)) { openFiles.delete(f); } else {
+                    openFiles.add(f);
+                    if (!fileHunks[f]) { vscode.postMessage({ type: 'sessionFileEdits', file: f }); }
+                }
+                render({ keepScroll: true });
+            }));
+        document.querySelectorAll('[data-openfile]').forEach(b =>
+            b.addEventListener('click', ev => {
+                ev.stopPropagation();
+                vscode.postMessage({ type: 'openEditedFile', file: b.dataset.openfile, diff: false });
+            }));
+        document.querySelectorAll('[data-difffile]').forEach(b =>
+            b.addEventListener('click', ev => {
+                ev.stopPropagation();
+                vscode.postMessage({ type: 'openEditedFile', file: b.dataset.difffile, diff: true });
+            }));
         if (DATA.agentName) {
             const ab = document.getElementById('agentpage');
             if (ab) { ab.addEventListener('click', () => vscode.postMessage({ type: 'openAgent', cwd: DATA.cwd })); }

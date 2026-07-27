@@ -12,7 +12,7 @@
     const sessTable = window.AFSessionsTable.create({
         vscode, C,
         containerId: 'sessblock',
-        columns: ['origin', 'agent', 'title', 'when', 'duration', 'turns', 'tools', 'errors', 'tokens', 'ctx', 'cost'],
+        columns: ['origin', 'agent', 'project', 'title', 'when', 'duration', 'turns', 'tools', 'files', 'errors', 'tokens', 'ctx', 'cost'],
         tableN: 20, // dashboard default; the All chip toggles back to this
         stateKey: 'dash',
         fallbackSort: persisted.sessSort,
@@ -429,6 +429,34 @@
         // only one there (an empty status list leaves the usage card alone).
         const statusRow = `${PU_STYLE}<div class="row" style="margin:12px 0">${statusCard}${planCard()}</div>`;
 
+        // B1: Projects — "what did I spend on this customer". Every session lands
+        // in exactly one bucket (a named project or Unassigned), so the rows add
+        // up to the fleet total. The card only exists once projects are declared.
+        const projects = DATA.projects || [];
+        const named = projects.filter(p => p.name !== 'Unassigned' || p.sessions);
+        const projectsCard = named.length ? `
+            <h2>Projects</h2>
+            <div class="tablewrap"><table>
+                <tr><th>Project</th><th>Agents</th><th class="num">Sessions</th><th class="num">Today</th><th class="num">Total</th><th class="num">Tokens</th><th class="num">Last activity</th></tr>
+                ${named.map(p => {
+                    const over = p.budgetUSD && p.todayCost > p.budgetUSD;
+                    const budget = p.budgetUSD
+                        ? ` <span class="badge${over ? ' err' : ''}" title="daily budget ${C.fmtUSD(p.budgetUSD)}">${Math.round((p.todayCost / p.budgetUSD) * 100)}%</span>`
+                        : '';
+                    return `<tr class="click" data-project="${C.esc(p.name)}" title="${C.esc(p.note || 'Filter the Sessions table by this project')}">
+                        <td><strong>${C.esc(p.name)}</strong>${p.note ? ` <span class="muted small">${C.esc(p.note)}</span>` : ''}</td>
+                        <td class="muted small">${C.esc((p.agents || []).join(', ')) || '—'}</td>
+                        <td class="num">${p.sessions}</td>
+                        <td class="num">${C.fmtUSD(p.todayCost)}${budget}</td>
+                        <td class="num"><strong>${C.fmtUSD(p.cost)}</strong></td>
+                        <td class="num">${C.fmtTok(p.tokens)}</td>
+                        <td class="num">${p.lastTs ? new Date(p.lastTs).toLocaleDateString() : '—'}</td>
+                    </tr>`;
+                }).join('')}
+            </table></div>
+            <p class="footnote">An agent belongs to exactly one project, so these rows add up to the fleet total. <a data-manage-projects style="cursor:pointer">Manage projects →</a></p>`
+            : `<p class="footnote">No projects declared yet — group your agents by customer / product and every figure here can be read per project. <a data-manage-projects style="cursor:pointer">Set them up →</a></p>`;
+
         const unknown = DATA.unknownModels.length
             ? `<p class="footnote">⚠ No pricing rule matched: ${DATA.unknownModels.map(C.esc).join(', ')} — their cost is counted as $0. <a data-status-kind="settings" data-status-value="agentFarm.pricing" style="cursor:pointer">Add a rule in agentFarm.pricing →</a></p>`
             : '';
@@ -452,6 +480,7 @@
             <h2>Agents</h2>
             <div class="grid">${cards}</div>
             ${cmpSection()}
+            ${projectsCard}
             <h2>Sessions</h2>
             <div id="sessblock"></div>
             ${unknown}
@@ -472,6 +501,15 @@
             row.addEventListener('click', () => vscode.postMessage({ type: 'openAgent', agentId: row.dataset.agentRow })));
         document.querySelectorAll('[data-guide]').forEach(a =>
             a.addEventListener('click', ev => { ev.stopPropagation(); vscode.postMessage({ type: 'openGuide', anchor: a.dataset.guide }); }));
+        document.querySelectorAll('[data-manage-projects]').forEach(a =>
+            a.addEventListener('click', ev => { ev.stopPropagation(); vscode.postMessage({ type: 'manageProjects' }); }));
+        document.querySelectorAll('[data-project]').forEach(row =>
+            row.addEventListener('click', () => {
+                // the project row is a lens on the sessions below it
+                sessTable.setProjectFilter(row.dataset.project);
+                const el = document.getElementById('sessblock');
+                if (el && el.scrollIntoView) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+            }));
         document.querySelectorAll('[data-status-kind]').forEach(b =>
             b.addEventListener('click', () => vscode.postMessage({
                 type: 'statusAction', kind: b.dataset.statusKind, value: b.dataset.statusValue

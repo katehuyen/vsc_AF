@@ -274,6 +274,35 @@ A 173-command extension had exactly one shortcut. Now there is a **hub** and six
 
 **Keyboard-layout note:** on Windows, Ctrl+Alt is AltGr. On a Turkish-Q layout AltGr types a character on **Q/E/T** (`@`, `€`, `₺`), so none of the new shortcuts sit on those three letters. The one exception is **Ctrl+Alt+Q** (Add to Work Queue), left as it was for backwards compatibility — if it eats your `@`, rebind it in Keyboard Shortcuts.
 
+## Projects, Portfolio and Code Changes {#projeler-portfoy}
+
+*(3.25.0)* The farm knew agents and sessions — and nothing **above** them (a grouping), nothing **across** them (the fleet as a portfolio) and nothing **below** them (the code an agent actually produces). All three arrived here.
+
+### Projects — the missing axis
+
+**`agentFarm.projects`** names a set of agents (and/or folders): a customer, a product, a contract.
+
+- **A Projects table on the Dashboard:** per project — sessions · today · total · tokens · last activity, plus a percentage when you set a daily budget. **Clicking a row scopes the Sessions table below it** to that project (and widens the origin scope, so "everything on this project" does not quietly exclude its automation runs).
+- **A Project column and filter** on the Sessions tables (multi-pick, combines with every other filter).
+- The **Portfolio** page groups by it.
+- **The one-owner rule:** *an agent belongs to at most one project* — assigning it moves it. The reason is arithmetic: overlapping membership double-counts "what did I spend on this customer", and a number you cannot add up is worse than none. Everything unclaimed lands in an **Unassigned** bucket, so the rows **always sum to the fleet total**.
+- **Setting it up:** the `Manage Projects…` command (create · members · folders · daily budget · note · rename · delete) or **Assign Agent to Project…** on an agent row. The setting itself covers folder mapping (`paths`) and anything the picker does not.
+- **Bridge:** `projects.list` · `projects.assign` · `projects.set`.
+
+### Agent Portfolio — the fleet on one screen
+
+The **Agents** tab in the global nav (`Open Agent Portfolio`). One row per agent, grouped by project, **sortable on every column**: what it is doing right now · **how many days it has been quiet** (💤 past 14) · 7-day and 30-day sessions/cost/tokens · files written · duties (⏳ work waiting, ⏸ paused) · open findings · memory files · fixed context load. Filter to a project, hide dormant agents, and from the row itself **▶ start a session · ◧ assign a project · 📁 reveal the folder**. "Which of these is dead?" is a column now, not an afternoon.
+
+### What the agent did to the code
+
+Every transcript already carried each `Edit` / `Write` / `MultiEdit` / `NotebookEdit` call **with its own before-and-after text**; none of it was shown anywhere. The Session Viewer now opens with a **Files changed** box: each file, its write count, ±lines and which turns touched it — unfold a file and you get **the session's own hunks**, red above green.
+
+- This is **what that session changed** — not the file's current state. A later session's work can never be read as this one's.
+- **vs HEAD** sits next to it and asks the *other* question: what is uncommitted in that file right now. It opens in VS Code's own diff view, and says so honestly when the folder is not a git repository.
+- A tool call that came back with an error is marked **failed — not applied** and counted nowhere.
+- The Sessions tables gain a **Files** column, counted during the index's existing parse — no extra cost.
+- **Bridge:** `sessions.files` (`detail:true` returns the hunks too).
+
 ## Terminal Rendering Health {#terminal-rendering-health}
 
 VS Code's terminal isn't a real terminal — it's the **xterm.js** emulator running inside Chromium (shell → PTY → xterm.js → Electron → GPU). Because of the number of layers, long TUI sessions (like claude) can show rendering glitches: ghost gaps that look present as you type, lines that vanish/garble, an image that fixes itself when you scroll. There are two remedies, both in one command: **Agent Farm: Terminal Rendering Fix…**
@@ -1605,6 +1634,8 @@ All in the command palette with the `Agent Farm:` prefix:
 - **Quick Menu (everything, one key)** `Ctrl+Alt+F` — the grouped quick-access list; every row prints its own shortcut
 - **Session Shelf… (pinned + recent)** `Ctrl+Alt+P` · **Pin / Unpin Session** · **Label Session…** — the shelf
 - **Interrupt Session (send Esc)** `Ctrl+Alt+I` — stops the running turn without closing the session
+- **Manage Projects… / Assign Agent to Project…** — the project axis ([Projects, Portfolio and Code Changes](#projeler-portfoy))
+- **Open Agent Portfolio** — the fleet on one screen (**Agents** in the global nav)
 - **Open Agent in New Window / Reveal in File Explorer**
 - **Open Live Timeline** — swim-lane view (live observation)
 - **Install Live Hooks / Remove Live Hooks** — install/remove the live-observation hooks

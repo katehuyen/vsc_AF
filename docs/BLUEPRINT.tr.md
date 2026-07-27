@@ -274,6 +274,35 @@ Headless işler (task, mission) baştan beri durdurulabiliyordu — süreç bizi
 
 **Türkçe-Q klavye notu:** Windows'ta Ctrl+Alt = AltGr. Türkçe-Q düzeninde AltGr **Q/E/T** harflerinde karakter üretir (`@`, `€`, `₺`), bu yüzden yeni kısayolların hiçbiri o üç harfe konmadı. Tek istisna, geriye dönük uyumluluk için olduğu gibi bırakılan **Ctrl+Alt+Q**'dur (Add to Work Queue) — `@` yazarken kuyruk kutusu açılıyorsa VS Code'un Keyboard Shortcuts ekranından değiştirebilirsin.
 
+## Projeler, Portföy ve Kod Değişiklikleri {#projeler-portfoy}
+
+*(3.25.0)* Çiftlik ajanları ve oturumları biliyordu; **onların üstünde** bir gruplama, **yan yana** bir filo görünümü ve **altında** ajanın ürettiği asıl şeyi — kodu — göremiyordu. Üçü de bu sürümde geldi.
+
+### Projeler — eksik eksen
+
+**`agentFarm.projects`**: bir ada bağlanmış ajan (ve/veya klasör) kümesi — bir müşteri, bir ürün, bir sözleşme.
+
+- **Dashboard'da Projects tablosu:** proje başına oturum · bugün · toplam · token · son etkinlik, ve günlük bütçe verdiysen yüzdesi. **Satıra tıklamak alttaki Sessions tablosunu o projeye daraltır** (kapsam da otomatik "All" olur — "bu projedeki her şey" otomasyon koşularını gizlemesin diye).
+- **Sessions tablolarında Project kolonu + Projects filtresi** (çok seçimli, diğer filtrelerle birleşir).
+- **Portföy sayfası** projeye göre gruplar.
+- **Tek sahiplik kuralı:** *bir ajan en fazla bir projeye aittir* — bir projeye atamak onu eskisinden çıkarır. Sebebi aritmetik: örtüşen üyelik "bu müşteriye ne harcadım"ı çift saydırır, toplanamayan sayı hiç sayı olmamasından kötüdür. Hiçbir projeye girmeyen her şey **Unassigned** kovasına düşer, böylece satırlar **daima filo toplamına eşittir**.
+- **Kurulum:** `Manage Projects…` komutu (oluştur · üyeler · klasörler · günlük bütçe · not · yeniden adlandır · sil) ya da ajan sağ tık menüsünde **Assign Agent to Project…**. Klasör eşlemesi (`paths`) ve pickerin kapsamadığı her şey için ayarın kendisi de düzenlenebilir.
+- **Köprü:** `projects.list` · `projects.assign` · `projects.set`.
+
+### Agent Portfolio — filo tek ekranda
+
+Global nav'daki **Agents** sekmesi (`Open Agent Portfolio`). Ajan başına tek satır, projeye göre gruplu, **her kolondan sıralanabilir**: şu an ne yapıyor · **kaç gündür sessiz** (14 günü aşınca 💤) · 7g ve 30g oturum/maliyet/token · yazdığı dosya sayısı · nöbetler (⏳ bekleyen iş var, ⏸ duraklatılmış) · açık bulgular (hata/uyarı) · hafıza dosyası · sabit bağlam yükü. Projeye göre süz, uykudakileri gizle; satırdan **▶ oturum başlat · ◧ projeye ata · 📁 klasörü aç**. "Hangisi ölü?" sorusunun cevabı artık bir kolon.
+
+### Ajan koda ne yaptı
+
+Her oturumun transkripti `Edit` / `Write` / `MultiEdit` / `NotebookEdit` çağrılarını **kendi öncesi-sonrası metniyle** zaten taşıyordu; hiçbir yerde gösterilmiyordu. Oturum Görüntüleyici artık **Files changed** kutusuyla açılıyor: her dosya, yazma sayısı, ±satır, hangi turların dokunduğu — ve dosyayı açınca **oturumun kendi hunk'ları**, kırmızı üstte yeşil altta.
+
+- Bu, **o oturumun değiştirdiği şeydir** — dosyanın bugünkü hâli değil. Sonraki bir oturumun işi asla bunun gibi görünmez.
+- **vs HEAD** düğmesi yanında durur ve *başka* soruyu sorar: "şu an bu dosyada commit edilmemiş ne var" — VS Code'un kendi diff görünümünde açılır, git deposu yoksa dürüstçe söyler.
+- Hata dönen bir çağrı **failed — not applied** diye işaretlenir ve hiçbir sayıya girmez.
+- Sessions tablolarında **Files** kolonu: indeksin zaten yaptığı tek geçişte sayıldığı için ek maliyeti yok.
+- **Köprü:** `sessions.files` (`detail:true` hunk'ları da döner).
+
 ## Terminal Render Sağlığı
 
 VS Code'un terminali gerçek bir terminal değildir — Chromium içinde çalışan **xterm.js** emülatörüdür (shell → PTY → xterm.js → Electron → GPU). Katman sayısı yüzünden uzun TUI oturumlarında (claude gibi) render aksaklıkları görülebilir: yazarken varmış gibi görünen hayalet boşluklar, kaybolan/bozulan satırlar, kaydırınca düzelen görüntü. İki çare var, ikisi de tek komutta: **Agent Farm: Terminal Rendering Fix…**
@@ -1604,6 +1633,8 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 - **Quick Menu (everything, one key)** `Ctrl+Alt+F` — gruplu hızlı erişim listesi, her satır kendi kısayolunu yazar
 - **Session Shelf… (pinned + recent)** `Ctrl+Alt+P` · **Pin / Unpin Session** · **Label Session…** — raf
 - **Interrupt Session (send Esc)** `Ctrl+Alt+I` — çalışan turu durdurur, oturumu kapatmaz
+- **Manage Projects… / Assign Agent to Project…** — proje ekseni ([Projeler, Portföy ve Kod Değişiklikleri](#projeler-portfoy))
+- **Open Agent Portfolio** — filo tek ekranda (global nav'da **Agents**)
 - **Open Agent in New Window / Reveal in File Explorer**
 - **Open Live Timeline** — kulvar görünümü (canlı gözlem)
 - **Install Live Hooks / Remove Live Hooks** — canlı gözlem hook'larını kur/kaldır

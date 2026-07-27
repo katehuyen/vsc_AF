@@ -14,7 +14,7 @@
     const sessTable = window.AFSessionsTable.create({
         vscode, C,
         containerId: 'sessblock',
-        columns: ['origin', 'title', 'when', 'duration', 'turns', 'tools', 'errors', 'tokens', 'ctx', 'cost'],
+        columns: ['origin', 'title', 'when', 'duration', 'turns', 'tools', 'files', 'errors', 'tokens', 'ctx', 'cost'],
         tableN: 50, // agent-page default; the All chip toggles back to this
         stateKey: 'agent'
     });

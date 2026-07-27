@@ -102,6 +102,8 @@ export function liveEventsSource(
                         tools: {},
                         skillCalls: {},
                         memoryReads: {},
+                        // external CLIs report no tool inputs — honestly empty
+                        filesEdited: {},
                         errors: 0,
                         daily: {},
                         heat: new Array(168).fill(0),

@@ -99,7 +99,8 @@ export function handleAfNav(to: unknown): void {
         capabilities: 'agentfarm.openCapabilities',
         toolbox: 'agentfarm.openToolbox',
         secrets: 'agentfarm.openSecrets',
-        turns: 'agentfarm.openTurns'
+        turns: 'agentfarm.openTurns',
+        portfolio: 'agentfarm.openPortfolio'
     };
     const cmd = commands[String(to)];
     if (cmd) { void vscode.commands.executeCommand(cmd); }

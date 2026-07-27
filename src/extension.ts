@@ -104,6 +104,12 @@ import { QUICK_MENU, QUICK_MENU_GROUPS } from './core/quickmenu';
 import { mergeSessionNames, readCliSessions } from './core/cliSessions';
 import { revealPath } from './core/reveal';
 import {
+    agentProjectMap, assignAgent, normalizeProjects, ProjectDef, projectOfAgent,
+    projectOfSession, rollupProjects, UNASSIGNED
+} from './core/projects';
+import { collectEdits, fileStats, groupByFile } from './core/codeedits';
+import { contentAtHead, gitRoot, repoRelative } from './core/gitfile';
+import {
     applySuggestionToClaudeMd, collectUserMessages, scanCorrections, SuggestionStore
 } from './core/suggest';
 import { buildWeeklyFactsText, generateWeeklySummary, isoWeek, WeeklyFacts } from './core/summary';
@@ -120,6 +126,7 @@ import {
 } from './core/missions';
 import { standardRoots } from './core/portablePaths';
 import { MissionsPanel } from './panels/missionsPanel';
+import { PortfolioPanel } from './panels/portfolioPanel';
 import { MissionNode, MissionsTreeProvider } from './views/missionsTree';
 import { TriggerManager } from './core/triggers';
 import { dayKey, expandEnvPath, fmtTokens, fmtUSD, normPath, readFileTail, relTime, remapStorageIds } from './core/util';
@@ -2708,6 +2715,110 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            op: 'projects.list',
+            describe: 'Projects (agentFarm.projects) with their cost rollup — the answer to "what did this customer cost". Every session lands in exactly one bucket (a named project or "Unassigned"), so the rows add up to the fleet total. args: none',
+            handler: () => projectRollup().map(p => ({
+                project: p.name, agents: p.agents, sessions: p.sessions,
+                cost: p.cost, todayCost: p.todayCost, tokens: p.tokens,
+                budgetUSD: p.budgetUSD ?? null, note: p.note ?? null,
+                lastTs: p.lastTs
+            }))
+        },
+        {
+            op: 'projects.assign',
+            describe: 'Put an agent in a project (creating the project when it does not exist yet), or take it out. An agent belongs to at most one project — assigning moves it. args: agent (name|id), project (omit or "" to unassign)',
+            handler: async (args) => {
+                const agent = findAgent(argStr(args, 'agent'));
+                const project = optStr(args, 'project').trim();
+                let defs = projectDefs();
+                if (!project) {
+                    defs = defs.map(p => {
+                        const rest = (p.agents ?? []).filter(a => a.toLowerCase() !== agent.name.toLowerCase());
+                        return rest.length ? { ...p, agents: rest } : { ...p, agents: undefined };
+                    });
+                } else {
+                    if (!defs.some(p => p.name.toLowerCase() === project.toLowerCase())) {
+                        defs = [...defs, { name: project }];
+                    }
+                    defs = assignAgent(defs, project, agent.name, true);
+                }
+                const ok = await saveProjects(defs);
+                need(ok, 'could not write agentFarm.projects');
+                return {
+                    agent: agent.name,
+                    project: projectOfAgent({ id: agent.id, name: agent.name, dir: agent.dir }, projectDefs()) ?? null
+                };
+            }
+        },
+        {
+            op: 'projects.set',
+            describe: 'Create or update a project definition. args: project (name), agents? (array of agent names — replaces the list), paths? (array of folders), budgetUSD? (daily), note?, delete? (true removes the project; its agents are untouched)',
+            handler: async (args) => {
+                const name = argStr(args, 'project').trim();
+                need(name, 'project name required');
+                const defs = projectDefs();
+                if (args.delete === true) {
+                    const ok = await saveProjects(defs.filter(p => p.name.toLowerCase() !== name.toLowerCase()));
+                    need(ok, 'could not write agentFarm.projects');
+                    return { project: name, deleted: true };
+                }
+                const strList = (v: unknown) => Array.isArray(v)
+                    ? v.filter((x): x is string => typeof x === 'string' && !!x.trim()).map(x => x.trim())
+                    : undefined;
+                const patch: Partial<ProjectDef> = {};
+                const agentList = strList(args.agents);
+                if (agentList) { patch.agents = agentList; }
+                const pathList = strList(args.paths);
+                if (pathList) { patch.paths = pathList; }
+                if (typeof args.budgetUSD === 'number') { patch.budgetUSD = args.budgetUSD; }
+                const note = optStr(args, 'note');
+                if (note) { patch.note = note; }
+                const exists = defs.some(p => p.name.toLowerCase() === name.toLowerCase());
+                let next = exists
+                    ? defs.map(p => (p.name.toLowerCase() === name.toLowerCase() ? { ...p, ...patch } : p))
+                    : [...defs, { name, ...patch }];
+                // keep the one-project-per-agent rule even when set from outside
+                for (const a of patch.agents ?? []) { next = assignAgent(next, name, a, true); }
+                const ok = await saveProjects(next);
+                need(ok, 'could not write agentFarm.projects');
+                return { project: name, created: !exists, agents: patch.agents ?? null };
+            }
+        },
+        {
+            op: 'sessions.files',
+            describe: 'What a session did to the CODE: every file it wrote to (Edit/Write/MultiEdit/NotebookEdit) with write counts and +/- line totals, read back from the transcript\'s own before/after text — so it is what THAT session changed, not what the file looks like now. args: sessionId or file (transcript path), detail? (true also returns each hunk, capped)',
+            handler: (args) => {
+                const sessionId = optStr(args, 'sessionId');
+                const fileArg = optStr(args, 'file');
+                const s = fileArg
+                    ? index.all().find(x => x.file === fileArg)
+                    : index.all().find(x => x.sessionId === sessionId);
+                need(s, 'session not found — sessions.recent lists current ones');
+                const target = s as SessionInfo;
+                let raw = '';
+                try { raw = fs.readFileSync(target.file, 'utf8'); } catch { /* gone */ }
+                const groups = groupByFile(collectEdits(raw.split('\n')));
+                const detail = args.detail === true;
+                return {
+                    sessionId: target.sessionId, agent: target.agentName ?? null,
+                    files: groups.map(f => {
+                        const st = fileStats(f);
+                        return {
+                            file: f.file, writes: f.edits, failed: f.failed, written: f.written,
+                            added: st.added, removed: st.removed, turns: f.turns,
+                            ...(detail ? {
+                                hunks: f.records.slice(0, 40).map(r => ({
+                                    tool: r.tool, turn: r.turn, failed: !!r.failed,
+                                    oldText: (r.oldText ?? '').slice(0, 4000),
+                                    newText: (r.newText ?? '').slice(0, 4000)
+                                }))
+                            } : {})
+                        };
+                    })
+                };
+            }
+        },
+        {
             op: 'agents.sync',
             describe: 'Cross-engine sync for one agent. Writes BOTH lanes, because the engines look in different places: <agent>/AGENTS.md (Codex merges one AGENTS.md per directory from the git root down to its cwd) and <agent>/.agents/AGENTS.md (Antigravity\'s workspace customization root — it reads NOTHING above the workspace, so the shared constitution is embedded in this file). Plus duty workflows and a Codex MCP TOML snippet when .mcp.json exists. Non-destructive: if a generated file diverged (conflict / foreign / antigravity-ahead) it reports the state and changes nothing unless force=true. args: agent (name|id), force? (default false)',
             handler: (args) => {
@@ -4021,7 +4132,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // for the card's beat and its ⟳ button.
         planUsage: () => planUsage.current(),
         refreshPlanUsage: (force: boolean) => planUsage.get(force),
-        planUsageRefreshMinutes: () => Math.max(0, cfg().get<number>('planUsageRefreshMinutes', 5))
+        planUsageRefreshMinutes: () => Math.max(0, cfg().get<number>('planUsageRefreshMinutes', 5)),
+        // B1: the project axis — the card's rollup and the map the rows group by.
+        projects: () => projectRollup(),
+        agentProjects: () => agentProjectMap(
+            agents.map(a => ({ id: a.id, name: a.name, dir: a.dir })), projectDefs())
     };
     const detailDeps = {
         extensionUri: context.extensionUri,
@@ -4605,6 +4720,60 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
     };
 
+    // ---------- B1: projects ----------
+    // A project is a name over a set of agents and/or folders. Membership is
+    // declared once (agentFarm.projects) and every surface resolves through
+    // core/projects.ts — so "what did this customer cost" is one sum, not a
+    // per-page interpretation.
+    const projectDefs = (): ProjectDef[] => normalizeProjects(cfg().get('projects', []));
+    const saveProjects = async (next: ProjectDef[]): Promise<boolean> => {
+        try {
+            await cfg().update('projects', next, vscode.ConfigurationTarget.Global);
+            refreshAll();
+            return true;
+        } catch (e) {
+            void vscode.window.showWarningMessage(
+                `Agent Farm: could not write agentFarm.projects — ${String(e)}`);
+            return false;
+        }
+    };
+    /** Sessions reduced to what the project rollup needs (today's cost included). */
+    const projectRollup = () => {
+        const today = dayKey(Date.now());
+        return rollupProjects(
+            projectDefs(),
+            index.all().map(s => ({
+                agentId: s.agentId, agentName: s.agentName, cwd: s.cwd,
+                cost: s.cost, tokens: totalTokens(s.usage),
+                todayCost: s.daily[today]?.cost ?? 0,
+                lastTs: s.lastTs || s.mtime || 0
+            })),
+            agents.map(a => ({ id: a.id, name: a.name, dir: a.dir }))
+        );
+    };
+
+    /** Pick agents for a project — pre-ticked with the ones it already has. */
+    const pickProjectAgents = async (project: ProjectDef): Promise<string[] | undefined> => {
+        const owned = new Set((project.agents ?? []).map(a => a.toLowerCase()));
+        const defs = projectDefs();
+        const picks = await vscode.window.showQuickPick(
+            agents.map(a => {
+                const other = projectOfAgent({ id: a.id, name: a.name, dir: a.dir }, defs);
+                const taken = other && other !== project.name;
+                return {
+                    label: a.name,
+                    description: taken ? `currently in "${other}" — picking it moves it here` : a.dir,
+                    picked: owned.has(a.name.toLowerCase()),
+                    name: a.name
+                };
+            }),
+            {
+                canPickMany: true, ignoreFocusOut: true,
+                placeHolder: `Which agents belong to "${project.name}"? (an agent belongs to one project)`
+            });
+        return picks?.map(p => p.name);
+    };
+
     // ---------- A3: interrupt ----------
     // The only thing that stops a running turn is the key a person would press.
     // So press it: Esc, typed into that session's own terminal. Nothing is
@@ -5080,6 +5249,206 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             (arg?: { sessionId?: string; agentName?: string } | { session?: SessionInfo } | SessionInfo) => {
                 const unwrapped = arg && 'session' in arg && arg.session ? arg.session : arg;
                 void interruptSession(unwrapped as { sessionId?: string; agentName?: string } | undefined);
+            }),
+
+        // ---------- B1: managing projects ----------
+        vscode.commands.registerCommand('agentfarm.manageProjects', async () => {
+            for (;;) {
+                const defs = projectDefs();
+                const roll = projectRollup();
+                interface Row extends vscode.QuickPickItem { act?: string; project?: string }
+                const rows: Row[] = [
+                    { label: '$(add) New project…', detail: 'a name over a set of agents / folders', act: 'new' },
+                    ...(defs.length ? [{ label: 'Projects', kind: vscode.QuickPickItemKind.Separator } as Row] : []),
+                    ...defs.map(p => {
+                        const r = roll.find(x => x.name === p.name);
+                        return {
+                            label: `$(project) ${p.name}`,
+                            description: `${r?.agents.length ?? 0} agents · ${fmtUSD(r?.cost ?? 0)} total` +
+                                (p.budgetUSD ? ` · budget ${fmtUSD(p.budgetUSD)}/day` : ''),
+                            detail: [(p.agents ?? []).join(', '), ...(p.paths ?? [])].filter(Boolean).join(' · ')
+                                || 'no members yet',
+                            act: 'edit', project: p.name
+                        } as Row;
+                    }),
+                    { label: '', kind: vscode.QuickPickItemKind.Separator },
+                    {
+                        label: '$(json) Edit agentFarm.projects directly…',
+                        detail: 'paths, notes and anything the picker does not cover', act: 'settings'
+                    }
+                ];
+                const pick = await vscode.window.showQuickPick(rows, {
+                    placeHolder: 'Projects — one name over a set of agents; every cost figure can then be grouped by it',
+                    ignoreFocusOut: true
+                });
+                if (!pick?.act) { return; }
+                if (pick.act === 'settings') {
+                    void vscode.commands.executeCommand('workbench.action.openSettings', 'agentFarm.projects');
+                    return;
+                }
+                if (pick.act === 'new') {
+                    const name = await vscode.window.showInputBox({
+                        prompt: 'Project name (a customer, a product, a contract)', ignoreFocusOut: true
+                    });
+                    if (!name?.trim()) { continue; }
+                    if (defs.some(p => p.name.toLowerCase() === name.trim().toLowerCase())) {
+                        void vscode.window.showWarningMessage(`Agent Farm: "${name.trim()}" already exists.`);
+                        continue;
+                    }
+                    const fresh: ProjectDef = { name: name.trim() };
+                    const picked = await pickProjectAgents(fresh);
+                    if (picked?.length) { fresh.agents = picked; }
+                    let next = [...defs, fresh];
+                    // moving an agent in also takes it out of wherever it was
+                    for (const a of picked ?? []) { next = assignAgent(next, fresh.name, a, true); }
+                    await saveProjects(next);
+                    continue;
+                }
+                // ---- edit one project ----
+                const project = defs.find(p => p.name === pick.project);
+                if (!project) { continue; }
+                const action = await vscode.window.showQuickPick([
+                    { label: '$(person-add) Members…', description: (project.agents ?? []).join(', ') || 'none', act: 'members' },
+                    { label: '$(folder) Folders…', description: (project.paths ?? []).join(' · ') || 'none', act: 'paths' },
+                    { label: '$(dashboard) Daily budget…', description: project.budgetUSD ? fmtUSD(project.budgetUSD) : 'none', act: 'budget' },
+                    { label: '$(edit) Rename…', act: 'rename' },
+                    { label: '$(note) Note…', description: project.note ?? '', act: 'note' },
+                    { label: '$(trash) Delete project', description: 'the agents themselves are untouched', act: 'delete' }
+                ], { placeHolder: project.name, ignoreFocusOut: true });
+                if (!action) { continue; }
+                if (action.act === 'members') {
+                    const picked = await pickProjectAgents(project);
+                    if (!picked) { continue; }
+                    let next = defs;
+                    for (const a of agents.map(x => x.name)) {
+                        next = assignAgent(next, project.name, a, picked.includes(a));
+                    }
+                    await saveProjects(next);
+                } else if (action.act === 'paths') {
+                    const value = await vscode.window.showInputBox({
+                        prompt: 'Folders that belong to this project, comma separated (sessions under them count here)',
+                        value: (project.paths ?? []).join(', '), ignoreFocusOut: true
+                    });
+                    if (value === undefined) { continue; }
+                    const paths = value.split(',').map(s => s.trim()).filter(Boolean);
+                    await saveProjects(defs.map(p => p.name === project.name
+                        ? { ...p, ...(paths.length ? { paths } : { paths: undefined }) } : p));
+                } else if (action.act === 'budget') {
+                    const value = await vscode.window.showInputBox({
+                        prompt: 'Daily budget in USD for the whole project (empty = none)',
+                        value: project.budgetUSD ? String(project.budgetUSD) : '', ignoreFocusOut: true
+                    });
+                    if (value === undefined) { continue; }
+                    const n = Number(value.trim());
+                    await saveProjects(defs.map(p => p.name === project.name
+                        ? { ...p, budgetUSD: value.trim() && isFinite(n) && n > 0 ? n : undefined } : p));
+                } else if (action.act === 'rename') {
+                    const value = await vscode.window.showInputBox({
+                        prompt: 'New name', value: project.name, ignoreFocusOut: true
+                    });
+                    if (!value?.trim() || value.trim() === project.name) { continue; }
+                    await saveProjects(defs.map(p => p.name === project.name ? { ...p, name: value.trim() } : p));
+                } else if (action.act === 'note') {
+                    const value = await vscode.window.showInputBox({
+                        prompt: 'Note (customer, contract, anything the name does not say)',
+                        value: project.note ?? '', ignoreFocusOut: true
+                    });
+                    if (value === undefined) { continue; }
+                    await saveProjects(defs.map(p => p.name === project.name
+                        ? { ...p, note: value.trim() || undefined } : p));
+                } else if (action.act === 'delete') {
+                    const yes = await vscode.window.showWarningMessage(
+                        `Delete project "${project.name}"? Its agents and their sessions are untouched — only the grouping goes.`,
+                        { modal: true }, 'Delete');
+                    if (yes !== 'Delete') { continue; }
+                    await saveProjects(defs.filter(p => p.name !== project.name));
+                }
+            }
+        }),
+
+        // Straight from an agent row: which project does this one belong to?
+        vscode.commands.registerCommand('agentfarm.assignProject', async (arg: AgentArg) => {
+            const agent = await resolveAgent(arg);
+            if (!agent) { return; }
+            const defs = projectDefs();
+            const current = projectOfAgent({ id: agent.id, name: agent.name, dir: agent.dir }, defs);
+            interface Row extends vscode.QuickPickItem { project?: string; act?: string }
+            const pick = await vscode.window.showQuickPick<Row>([
+                ...defs.map(p => ({
+                    label: (p.name === current ? '$(check) ' : '$(blank) ') + p.name,
+                    description: (p.agents ?? []).join(', '),
+                    project: p.name
+                })),
+                ...(current ? [{ label: '$(circle-slash) None', description: 'take it out of ' + current, act: 'none' }] : []),
+                { label: '$(add) New project…', act: 'new' }
+            ], { placeHolder: `Project for ${agent.name}`, ignoreFocusOut: true });
+            if (!pick) { return; }
+            if (pick.act === 'none') {
+                await saveProjects(defs.map(p => ({
+                    ...p,
+                    agents: (p.agents ?? []).filter(a => a.toLowerCase() !== agent.name.toLowerCase())
+                })).map(p => (p.agents?.length ? p : { ...p, agents: undefined })));
+                return;
+            }
+            if (pick.act === 'new') {
+                const name = await vscode.window.showInputBox({ prompt: 'Project name', ignoreFocusOut: true });
+                if (!name?.trim()) { return; }
+                await saveProjects(assignAgent([...defs, { name: name.trim() }], name.trim(), agent.name, true));
+                return;
+            }
+            if (pick.project) {
+                await saveProjects(assignAgent(defs, pick.project, agent.name, true));
+            }
+        }),
+
+        // ---------- B2: the fleet on one screen ----------
+        vscode.commands.registerCommand('agentfarm.openPortfolio', () => {
+            PortfolioPanel.show({
+                extensionUri: context.extensionUri,
+                getAgents: () => agents,
+                index,
+                getInsights: () => insights,
+                live,
+                projects: () => projectDefs(),
+                budgets: () => cfg().get<Record<string, number>>('budgets', {})
+            });
+        }),
+
+        // ---------- B3: open / diff a file the agent wrote ----------
+        vscode.commands.registerCommand('agentfarm.openEditedFile',
+            async (arg?: { file?: string; diff?: boolean }) => {
+                const file = arg?.file;
+                if (!file) { return; }
+                if (!fs.existsSync(file)) {
+                    void vscode.window.showWarningMessage(
+                        `Agent Farm: ${path.basename(file)} no longer exists on disk — the session's own hunks are still in the transcript.`);
+                    return;
+                }
+                if (!arg?.diff) {
+                    await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(file));
+                    return;
+                }
+                // "vs HEAD" is a DIFFERENT question from "what this session wrote":
+                // it shows what is uncommitted right now, whoever wrote it.
+                gitRoot(path.dirname(file), root => {
+                    if (!root) {
+                        void vscode.window.showInformationMessage(
+                            'Agent Farm: not inside a git repository — opening the file instead.');
+                        void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(file));
+                        return;
+                    }
+                    const rel = repoRelative(root, file);
+                    contentAtHead(root, rel, content => {
+                        const dir = path.join(context.globalStorageUri.fsPath, 'headcache');
+                        try { fs.mkdirSync(dir, { recursive: true }); } catch { /* exists */ }
+                        const left = path.join(dir, `HEAD_${path.basename(file)}`);
+                        try { fs.writeFileSync(left, content ?? '', 'utf8'); } catch { /* read-only fs */ }
+                        void vscode.commands.executeCommand('vscode.diff',
+                            vscode.Uri.file(left), vscode.Uri.file(file),
+                            `${path.basename(file)} — ${content === undefined ? 'new file' : 'HEAD'} ↔ working tree`,
+                            { preview: true });
+                    });
+                });
             }),
 
         // ---------- A4: one key for 170 commands ----------

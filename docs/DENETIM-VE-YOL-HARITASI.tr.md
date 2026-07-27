@@ -79,7 +79,13 @@ Dördü de terminal yolu üzerinde çözüldü; Console'u (§1) beklemeden. Ayr�
 
 **A4. Klavye kısayolu neredeyse yok.** ⭐ → **ÇÖZÜLDÜ.** `ctrl+alt+f` = **Quick Menu** (gruplu, yazarak süzülen; her satır kendi kısayolunu yazar) + altı doğrudan tuş (s · p · i · d · n · l), `ctrl+alt+q` olduğu gibi. Türkçe-Q'da AltGr'nin karakter ürettiği **Q/E/T** harflerine yeni tuş konmadı — bunu bir test denetliyor.
 
-### B. Kapsam ve veri modeli
+### B. Kapsam ve veri modeli — **KAPANDI (3.25.0)**
+
+**B1 → ÇÖZÜLDÜ.** `agentFarm.projects` (ad → ajanlar/klasörler, günlük bütçe, not) + **tek sahiplik kuralı** (bir ajan tek projede; toplam daima filo toplamına eşit, artığı `Unassigned`). Dashboard'da Projects tablosu (satıra tıkla → alttaki Sessions o projeye daralır), Sessions tablolarında Project kolonu + filtresi, portföyde gruplama. `Manage Projects…` + ajan sağ tık `Assign Agent to Project…`. Köprü: `projects.list` · `projects.assign` · `projects.set`.
+**B2 → ÇÖZÜLDÜ.** **Agent Portfolio** sayfası (global nav'da *Agents*): ajan başına satır, projeye göre gruplu, her kolondan sıralanır — şu anki durum, **kaç gündür sessiz** (💤 >14g), 7g/30g oturum-maliyet-token, yazılan dosya, nöbetler (⏳/⏸), bulgular, hafıza, sabit bağlam; projeye süz, uykudakileri gizle, satırdan başlat/ata/klasör aç.
+**B3 → ÇÖZÜLDÜ.** Oturum Görüntüleyici'de **Files changed**: dosya · yazma sayısı · ±satır · turlar; dosyayı açınca **oturumun kendi hunk'ları** (transkriptin öncesi/sonrası metni — dosyanın bugünkü hâli değil). Yanında ayrı bir soru olarak **vs HEAD** (VS Code diff). Hata dönen çağrı *failed — not applied*, hiçbir sayıya girmez. Sessions tablolarında **Files** kolonu (indeksin tek geçişinde sayılır). Köprü: `sessions.files`.
+
+*Aşağısı denetim günündeki tespitlerdir, kayıt olarak duruyor.*
 
 **B1. Proje / müşteri kavramı yok.** ⭐⭐⭐
 `AgentInfo` = `{id, name, dir, claudeMd, memory, tools, duties, ...}` — **etiket yok, grup yok, müşteri yok, proje yok** (`core/agents.ts:21`). Ajanlar düz bir liste; oturumlar `cwd`'ye göre ilişkilendiriliyor.

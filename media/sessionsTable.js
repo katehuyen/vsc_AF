@@ -50,9 +50,13 @@
     // agents: null = every agent (no filter — one joining the fleet is included
     // by itself); an array = exactly that subset, [] = none. See afFilters.js.
     const FDEF = () => ({
-        text: '', agents: null, origin: 'user', activeOnly: false, errorsOnly: false, mainOnly: false,
-        pinnedOnly: false, from: '', to: '', ranges: {}
+        text: '', agents: null, projects: null, origin: 'user', activeOnly: false, errorsOnly: false,
+        mainOnly: false, pinnedOnly: false, from: '', to: '', ranges: {}
     });
+    // Sessions with no project land in one honest bucket rather than silently
+    // disappearing from a project filter.
+    const UNASSIGNED = 'Unassigned';
+    const projectOf = r => r.project || UNASSIGNED;
 
     const STYLE = `<style>
         .chiprow { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:8px 0; }
@@ -168,7 +172,7 @@
         // always-visible switch in the chip row, so counting it would park a
         // permanent "(1)" on the Filters chip and say nothing new.
         function activeFilterCount() {
-            let n = (filters.text ? 1 : 0) + (filters.agents ? 1 : 0)
+            let n = (filters.text ? 1 : 0) + (filters.agents ? 1 : 0) + (filters.projects ? 1 : 0)
                 + (filters.activeOnly ? 1 : 0) + (filters.errorsOnly ? 1 : 0) + (filters.mainOnly ? 1 : 0)
                 + (filters.pinnedOnly ? 1 : 0)
                 + (filters.from ? 1 : 0) + (filters.to ? 1 : 0);
@@ -188,6 +192,7 @@
                 if (text && ((r.title || '') + ' ' + (r.agent || '') + ' ' + (r.tags || []).join(' '))
                     .toLowerCase().indexOf(text) < 0) { return false; }
                 if (filters.agents && filters.agents.indexOf(r.agentName) < 0) { return false; }
+                if (filters.projects && filters.projects.indexOf(projectOf(r)) < 0) { return false; }
                 if (filters.origin && originOf(r) !== filters.origin) { return false; }
                 if (filters.activeOnly && !r.active) { return false; }
                 if (filters.errorsOnly && !(r.errors > 0)) { return false; }
@@ -212,10 +217,17 @@
         }
 
         const AGENT_MS = 'sess-agents-' + opts.stateKey;
+        const PROJECT_MS = 'sess-projects-' + opts.stateKey;
         function agentNames() {
             const agents = [];
             rows.forEach(r => { if (r.agentName && agents.indexOf(r.agentName) < 0) { agents.push(r.agentName); } });
             return agents.sort();
+        }
+        // Named projects first, Unassigned last — it is a leftover, not a project.
+        function projectNames() {
+            const names = [];
+            rows.forEach(r => { const p = projectOf(r); if (names.indexOf(p) < 0) { names.push(p); } });
+            return names.sort((a, b) => a === UNASSIGNED ? 1 : b === UNASSIGNED ? -1 : a.localeCompare(b));
         }
 
         function filterPanelHtml() {
@@ -240,6 +252,10 @@
                     ${hasAgentCol && agents.length > 1 ? window.AFFilter.multi({
                         id: AGENT_MS, label: 'Agents', options: agents, selected: filters.agents,
                         title: 'Which agents to list — tick any combination'
+                    }) : ''}
+                    ${projectNames().length > 1 ? window.AFFilter.multi({
+                        id: PROJECT_MS, label: 'Projects', options: projectNames(), selected: filters.projects,
+                        title: 'Which projects to list — declared in agentFarm.projects (Manage Projects…)'
                     }) : ''}
                     ${flag('af-factive', 'Active now', filters.activeOnly, 'Only sessions with a live terminal working right now')}
                     ${flag('af-ferrors', 'Has errors', filters.errorsOnly, 'Only sessions with at least one tool error')}
@@ -282,6 +298,8 @@
         const HEAD = {
             origin: '<th class="origcell" title="Who started the session — 🧑 you, in an interactive session · 🤖 automation (schedule / trigger / task / mission). Switch the scope with the 🧑 chip above.">By</th>',
             agent: '<th>Agent</th>',
+            project: '<th title="Which project this session\'s work belongs to — declared in agentFarm.projects (Manage Projects…)">Project</th>',
+            files: '<th class="num" title="Distinct files this session wrote to (Edit / Write / MultiEdit / NotebookEdit) — open the session to see the changes themselves">Files</th>',
             title: '<th>Title</th>',
             when: '<th class="num">When</th>',
             duration: '<th class="num">Duration</th>',
@@ -305,6 +323,8 @@
             title: r => hasAgentCol
                 ? `<td title="${titleTip(r)}">${C.esc(r.title)}${tagChips(r)}</td>`
                 : `<td title="${titleTip(r)}">${dot(r)}${C.esc(r.title)}${tagChips(r)}${subBadge(r)}${termBtn(r)}${stopBtn(r)}</td>`,
+            project: r => `<td class="${r.project ? '' : 'muted'}">${C.esc(r.project || '—')}</td>`,
+            files: r => `<td class="num">${r.files || ''}</td>`,
             when: r => `<td class="num">${relTime(r.ts)}</td>`,
             duration: r => `<td class="num">${r.durationMin || 0}m</td>`,
             turns: r => `<td class="num">${r.turns || 0}</td>`,
@@ -465,6 +485,10 @@
                     root, id: AGENT_MS,
                     onChange: sel => { filters.agents = sel; apply(); }
                 });
+                window.AFFilter.wireMulti({
+                    root, id: PROJECT_MS,
+                    onChange: sel => { filters.projects = sel; apply(); }
+                });
                 wireEl('.af-factive', 'click', () => { filters.activeOnly = !filters.activeOnly; apply(); });
                 wireEl('.af-ferrors', 'click', () => { filters.errorsOnly = !filters.errorsOnly; apply(); });
                 wireEl('.af-fmain', 'click', () => { filters.mainOnly = !filters.mainOnly; apply(); });
@@ -557,6 +581,17 @@
             renderSection();
         }
 
+        /** Scope the table to one project (the Projects card clicks through to
+         *  here). The origin scope is widened at the same time: "everything on
+         *  this project" must not silently exclude its automation runs. */
+        function setProjectFilter(name) {
+            filters.projects = name ? [name] : null;
+            filters.origin = '';
+            filtersOpen = true;
+            saveState();
+            renderSection();
+        }
+
         function onMessage(ev) {
             if (!ev.data || ev.data.type !== 'sessionTurns') { return false; }
             const c = turnCache[ev.data.file];
@@ -565,7 +600,7 @@
             return true;
         }
 
-        return { setRows, onMessage };
+        return { setRows, onMessage, setProjectFilter };
     }
 
     window.AFSessionsTable = { SORTS, create };
