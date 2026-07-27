@@ -26,6 +26,11 @@ export interface QuickMenuEntry {
 export const QUICK_MENU: QuickMenuEntry[] = [
     // ---- Sessions: the things you do WITH an agent ----
     {
+        group: 'Sessions', label: '$(comment-discussion) Console', key: 'ctrl+alt+c',
+        detail: 'talk to an agent inside the panel — hosted session, live permissions, interrupt',
+        command: 'agentfarm.openConsole'
+    },
+    {
         group: 'Sessions', label: '$(rocket) Start session…', key: 'ctrl+alt+s',
         detail: 'pick agent · model · effort · permission mode · name · first prompt, then launch',
         command: 'agentfarm.launchSession'

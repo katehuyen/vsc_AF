@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.28.0 — Console: the extension stops watching and starts talking (2026-07-27)
+
+The structural gap the whole audit was built around. Agent Farm could read everything about a session and say nothing to one: every dialog happened in a terminal, and the panel's rich picture — cost, context, health — ended in a wall you could look at but not act through. **DALGA 1** closes it.
+
+- **Sessions run *here* now.** A new **💬 Console** page (first in the global nav, `ctrl+alt+c`) hosts long-lived `claude` processes over the CLI's own streaming JSON channel. Left: the sessions this window hosts, plus your shelf and recent transcripts — a click **resumes one into the Console**. Right: the conversation and a composer. It is the user's own CLI and their own subscription: **no API key of ours, no separate cost model**, and the transcript still lands in `~/.claude/projects`, so every analytic, health and timeline engine keeps working untouched.
+- **The composer carries the launcher's vocabulary** — agent · model · effort · permission mode — from the same `core/launch.ts` dictionary, so there is one vocabulary in the extension rather than two.
+- **Interrupt and queue.** A running turn stops with **⎋ Interrupt** (the CLI's own control-channel interrupt — the turn ends, the session and its context stay). Anything typed mid-turn is **queued**, shown as queued, and sent the moment the turn ends; the queue can be cleared without touching the running turn.
+- **Permissions, answered honestly.** Measured first: Claude Code **does not ask the panel anything** — a tool without permission simply comes back as an errored result. So the Console offers no fake "Allow once" button. It detects the refusal and offers what it can really do: **change this session's permission rule, live, and ask the agent to retry** (`Allow file edits` · `Let it decide` · `⚠ Allow everything` · `Plan only`). The permission selector stays live for the whole session — something the terminal path cannot do at all.
+- **What it did to the code, inline.** Every `Edit`/`Write` shows as a tool line with its file and two buttons: **open** and **vs HEAD** (the same diff surface 3.25.0 added, reused rather than rebuilt).
+- **Sessions outlive the tab.** Closing the Console tab does not kill a conversation; sessions end when you end them, or with the window. Each row carries its own live cost, turn count and the CLI's own context estimate.
+- **Bridge (§19.C):** `console.start` · `console.send` (queues when a turn is running) · `console.sessions` · `console.interrupt` · `console.permissionMode` (with `retry`) · `console.close` — the manager agent drives the same channel the panel does.
+- **Verified against reality, not mocked.** `test/smoke_console_live.js` drives **real** claude processes end to end — answer, mid-turn queueing, interrupt in flight, a refused write, the live grant, the retry that really writes the file, and a clean close: **18/18 green for $0.076**. It is kept out of `npm test` because it spends money. The measurement also caught the one design error worth naming: the CLI emits **nothing at all** until its first stdin line, so queueing the first message until the session "looks ready" deadlocks forever — the first message is now always sent.
+- 62 new unit checks on the protocol itself (flag building, queueing rules, event folding incl. thinking blocks and hook chatter that must never render as conversation, the narrow permission-refusal detector, cost accumulation, junk lines). Suite: **77 files, 2815 checks green.**
+
 ## 3.27.0 — A guide you can search, and findings that remember (2026-07-27)
 
 Two of the "it exists but it is not good enough" items, both of which were costing the same thing: information the farm already had, with no way to ask it a question.

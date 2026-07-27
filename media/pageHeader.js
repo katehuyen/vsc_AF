@@ -22,6 +22,7 @@
     </style>`;
 
     const NAV = [
+        { id: 'console', label: '💬 Console' },
         { id: 'dashboard', label: 'Dashboard' },
         { id: 'portfolio', label: 'Agents' },
         { id: 'living', label: '💓 Living' },

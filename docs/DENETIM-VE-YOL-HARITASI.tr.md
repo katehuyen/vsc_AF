@@ -359,7 +359,19 @@ Hepsi mekanik, hepsi bugün yapılabilir, hiçbiri mimariye dokunmuyor. Bunlar d
 | 0.5 | ~~Kısayol seti: Needs You, Dashboard, Tasks, Command Bar (E6)~~ **YAPILDI (3.24.0)** — `ctrl+alt+f` Quick Menu + 6 doğrudan tuş | `package.json` keybindings |
 | 0.6 | **Needs You'yu global NAV'a ekle** (E5) — bekleyen sayısı rozetiyle, Notices'taki desenin aynısı | `media/pageHeader.js:24` |
 
-### DALGA 1 — **Console**: eklentinin konuşmaya başlaması ⭐⭐⭐
+### DALGA 1 — **Console**: eklentinin konuşmaya başlaması ⭐⭐⭐ — **KAPANDI (3.28.0)**
+
+**1.1 Oturum ana makinesi → ÇÖZÜLDÜ** (`core/consolehost.ts` + `core/consoleproto.ts`): panelin barındırdığı uzun ömürlü `claude` süreçleri, CLI'ın streaming JSON kanalı üzerinden; kullanıcının kendi kurulumu ve aboneliği, ayrı API anahtarı yok, transkript aynı yerde.
+**1.2 Console sayfası → ÇÖZÜLDÜ** (`panels/consolePanel.ts` + `media/console.js`): global nav'ın başında **💬 Console**, `Ctrl+Alt+C`. Solda barındırılan oturumlar + raf + son transkriptler (tıkla → Console'un içine devam ettir), sağda konuşma + kompozitör.
+**1.3 Kompozitör kontrolleri → ÇÖZÜLDÜ**: ajan · model · efor · izin modu, hepsi `core/launch.ts` sözlüğünden (ikinci sözlük yazılmadı).
+**1.4 Panel-içi izin cevabı → ÇÖZÜLDÜ, ama ölçüme göre yeniden tasarlanarak.** Ölçüm: **Claude Code panele hiçbir şey sormuyor** — izinsiz araç yalnızca hatalı sonuçla dönüyor, `control_request` gelmiyor. Dolayısıyla "Allow / Allow always / Deny" diye cevaplanacak bir diyalog **yok**; sahte buton koymak yerine Console reddi tespit edip gerçekten yapabileceğini yapıyor: **oturumun izin kuralını canlı değiştirmek** (`set_permission_mode` — ölçüldü, çalışıyor) **+ ajana tekrar dene demek**. İzin seçici oturum boyunca canlı.
+**1.5 Kesme + kuyruk → ÇÖZÜLDÜ**: kesme CLI'ın kontrol kanalıyla (tur biter, oturum kalır); tur içinde yazılan mesaj kuyruğa alınır, görünür ve tur bitince gönderilir.
+**1.6 Diff yüzeyi → zaten 3.25.0'da**; Console akışında her `Edit`/`Write` satırında **open** + **vs HEAD** olarak yeniden kullanılıyor.
+**Köprü:** `console.start · console.send · console.sessions · console.interrupt · console.permissionMode · console.close`.
+
+> **Canlı doğrulandı:** `test/smoke_console_live.js` gerçek claude süreçleriyle **18/18** (cevap · tur-içi kuyruk · uçuşta kesme · reddedilen yazma · canlı izin · tekrar deneyip dosyayı gerçekten yazma · temiz kapanış), $0,076. `npm test`'in dışında tutulur (para harcar). Ölçüm bir tasarım hatası da yakaladı: **CLI ilk stdin satırını alana kadar hiçbir şey yayınlamıyor** → ilk mesajı beklemeye almak kilitlenme demek; ilk mesaj daima gönderilir.
+
+*Aşağısı denetim günündeki plandır.*
 
 Tek büyük iş bu. §1'deki boşluğu kapatır ve arkasından gelen üç maddeyi bedava getirir.
 

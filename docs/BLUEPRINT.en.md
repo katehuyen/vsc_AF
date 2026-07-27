@@ -210,6 +210,38 @@ A live stream of the fleet's most recent events: user commands (prompts), tool c
 - **Reset Token Lap** again for a new lap; **Clear Token Lap** to remove the counter.
 - Limit: the lap is fed from the last 48 hours of messages — a lap older than 48 hours only counts the last 48 hours (the tooltip warns you).
 
+## Console — talking inside the panel {#console}
+
+*(3.28.0)* The **structural gap** the whole audit was built around: Agent Farm could read everything about a session and **say nothing to one**. The Console closes it.
+
+The **💬 Console** tab (first in the global nav, `Ctrl+Alt+C`) hosts long-lived `claude` processes **inside the panel**, over the CLI's own streaming JSON channel. Left: the sessions this window hosts, plus your shelf and recent transcripts (clicking one **resumes it into the Console**). Right: the conversation and a composer.
+
+**Your install, your subscription:** no API key of ours, no change to the cost model, and the transcript still lands in `~/.claude/projects` — so every analytics / health / timeline engine keeps working untouched.
+
+### The composer
+
+Under the box: **agent · model · effort · permission mode** — all from the launcher's own dictionary (`core/launch.ts`), so the extension has one vocabulary rather than two. `Ctrl+Enter` sends.
+
+- **⎋ Interrupt** stops the running turn through the CLI's own control channel. **The turn ends; the session and its context stay.**
+- **Queue:** anything typed while a turn runs is **queued**, shown as queued, and sent the moment the turn ends. The queue can be cleared without touching the running turn.
+- Each row carries its own **cost · turns · the CLI's context estimate**.
+
+### Permissions, answered honestly
+
+**Measured first:** Claude Code **does not ask the panel anything** — a tool without permission simply comes back as an errored result. So there is no fake "Allow once" button here. The Console detects the refusal and offers what it can really do: **change this session's permission rule, live, and ask the agent to retry** — `Allow file edits` · `Let it decide` · `⚠ Allow everything` · `Plan only`. The permission selector stays live for the whole session, which the terminal path cannot do at all.
+
+### Code changes, inline
+
+Every `Edit`/`Write` appears with its file and two buttons: **open** and **vs HEAD** (3.25.0's diff surface, reused rather than rebuilt).
+
+### Sessions outlive the tab
+
+Closing the Console tab does **not** kill a conversation; sessions end when you end them, or with the window.
+
+**Bridge:** `console.start` · `console.send` (queues while a turn runs) · `console.sessions` · `console.interrupt` · `console.permissionMode` (with `retry`) · `console.close`.
+
+> **Verification:** `test/smoke_console_live.js` drives **real** claude processes end to end (answer · mid-turn queueing · interrupt in flight · a refused write · the live grant · the retry that really writes the file · a clean close): **18/18 for $0.076**. It stays out of `npm test` because it spends money. The measurement also caught the one design error worth naming: the CLI emits **nothing at all** until its first stdin line, so holding the first message until the session "looks ready" deadlocks forever — the first message is now always sent.
+
 ## Starting and Steering Sessions {#oturum-denetim}
 
 *(3.24.0)* Agent Farm could **see** sessions; now it can **touch** them. Four parts: what a session starts with, which sessions stay within reach, how a running one is stopped, and how all of it is reached from the keyboard.

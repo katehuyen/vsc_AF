@@ -139,6 +139,8 @@ import {
 import { standardRoots } from './core/portablePaths';
 import { MissionsPanel } from './panels/missionsPanel';
 import { PortfolioPanel } from './panels/portfolioPanel';
+import { ConsolePanel } from './panels/consolePanel';
+import { ConsoleHost } from './core/consolehost';
 import { MissionNode, MissionsTreeProvider } from './views/missionsTree';
 import { TriggerManager } from './core/triggers';
 import { dayKey, expandEnvPath, fmtTokens, fmtUSD, normPath, readFileTail, relTime, remapStorageIds } from './core/util';
@@ -2745,6 +2747,97 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            op: 'console.start',
+            describe: 'Open a Console session — a claude process this VS Code window HOSTS, not a terminal it launched: it stays alive between turns, streams its events into the panel, and can be interrupted and re-permissioned live. args: agent (name|id), prompt? (first message), model?, effort?, permissionMode?, resume? (claude session id to continue). Returns the console id to talk to.',
+            handler: (args) => {
+                const agent = findAgent(argStr(args, 'agent'));
+                const d = launchDefaults();
+                const id = consoleHost.start({
+                    agentId: agent.id, agentName: agent.name, cwd: agent.dir,
+                    model: optStr(args, 'model') || d.model,
+                    effort: optStr(args, 'effort') || d.effort,
+                    permissionMode: optStr(args, 'permissionMode') || d.permissionMode,
+                    resume: optStr(args, 'resume') || undefined,
+                    firstPrompt: optStr(args, 'prompt') || undefined
+                });
+                ConsolePanel.refreshIfOpen();
+                return { id, agent: agent.name, cwd: agent.dir };
+            }
+        },
+        {
+            op: 'console.send',
+            describe: 'Say something in a hosted Console session. If a turn is already running the message is QUEUED and sent when that turn ends (nothing is dropped and nothing interrupts by surprise). args: id (console id from console.start), text',
+            handler: (args) => {
+                const id = argStr(args, 'id');
+                const r = consoleHost.send(id, argStr(args, 'text'));
+                need(r, 'no such live console session (console.sessions lists them)');
+                ConsolePanel.refreshIfOpen();
+                return { id, queued: r!.queued };
+            }
+        },
+        {
+            op: 'console.sessions',
+            describe: 'The Console sessions this window hosts: status, cost so far, turns, queued messages, permission mode and the last few messages. args: id? (one session, with more of its transcript), messages? (how many messages to include, default 0)',
+            handler: (args) => {
+                const want = optStr(args, 'id');
+                const take = typeof args.messages === 'number' ? Math.max(0, Math.floor(args.messages)) : 0;
+                const rows = consoleHost.list().filter(s => !want || s.id === want);
+                return rows.map(s => ({
+                    id: s.id, agent: s.agentName, sessionId: s.sessionId ?? null,
+                    status: s.status, permissionMode: s.permissionMode,
+                    cost: s.costUSD, turns: s.turns, queued: s.queued.length,
+                    contextTokens: s.contextTokens ?? null,
+                    pendingPermission: s.pendingPermission?.detail ?? null,
+                    exitReason: s.exitReason ?? null,
+                    messages: take
+                        ? s.messages.slice(-take).map(m => ({
+                            role: m.role, text: m.text ?? null,
+                            tool: m.tool ? `${m.tool.name} ${m.tool.detail}` : null,
+                            isError: m.isError ?? false, ts: m.ts
+                        }))
+                        : undefined
+                }));
+            }
+        },
+        {
+            op: 'console.interrupt',
+            describe: 'Stop the turn a hosted session is running. The session and its context survive — this is the CLI\'s own interrupt over the control channel, not a killed process. args: id',
+            handler: (args) => {
+                const id = argStr(args, 'id');
+                const ok = consoleHost.interrupt(id);
+                need(ok, 'no such live console session');
+                ConsolePanel.refreshIfOpen();
+                return { id, interrupted: true };
+            }
+        },
+        {
+            op: 'console.permissionMode',
+            describe: 'Change what a hosted session may do, LIVE and mid-conversation (plan | acceptEdits | auto | manual | dontAsk | bypassPermissions). This is how a refused tool gets unblocked: Claude Code does not ask the panel for a one-off approval, so the rule is changed and the agent retries. args: id, mode, retry? (default false — true also tells the agent to try the refused action again)',
+            handler: (args) => {
+                const id = argStr(args, 'id');
+                const mode = argStr(args, 'mode');
+                need(PERMISSION_CHOICES.some(c => c.id === mode),
+                    `unknown permission mode "${mode}" — one of: ${PERMISSION_CHOICES.filter(c => c.id).map(c => c.id).join(', ')}`);
+                const ok = consoleHost.setPermissionMode(id, mode);
+                need(ok, 'no such live console session');
+                if (args.retry === true) {
+                    consoleHost.send(id, 'Permission granted — please retry the action you were refused.');
+                }
+                ConsolePanel.refreshIfOpen();
+                return { id, mode };
+            }
+        },
+        {
+            op: 'console.close',
+            describe: 'End a hosted Console session (its transcript stays on disk and stays resumable). args: id, forget? (true also drops it from the Console list)',
+            handler: (args) => {
+                const id = argStr(args, 'id');
+                if (args.forget === true) { consoleHost.forget(id); } else { consoleHost.close(id); }
+                ConsolePanel.refreshIfOpen();
+                return { id, closed: true };
+            }
+        },
+        {
             op: 'insights.history',
             describe: 'How each finding has BEHAVED over time, not just what is open now: how many separate times it came back, when it was first seen, whether you acted on it, and whether it returned AFTER that action (the honest answer to "did the fix work"). args: limit? (default 20), recurringOnly? (default false)',
             handler: (args) => {
@@ -4781,6 +4874,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
     };
 
+    // ---------- DALGA 1: the Console's session host ----------
+    // Long-lived claude processes this window owns, spoken to over the CLI's
+    // streaming JSON channel. They deliberately outlive the panel tab (closing
+    // a tab must not kill a conversation) and die with the window.
+    const consoleHost = new ConsoleHost();
+    context.subscriptions.push({ dispose: () => consoleHost.dispose() });
+    context.subscriptions.push(consoleHost.onChange(() => ConsolePanel.refreshIfOpen()));
+    const consoleDeps = {
+        extensionUri: context.extensionUri,
+        host: consoleHost,
+        getAgents: () => agents,
+        index,
+        modelAliases: () => cfg().get<string[]>('modelAliases', []),
+        launchDefaults: () => launchDefaults()
+    };
+
     // ---------- C1: the read-only web surface ----------
     // One snapshot file, two possible servers: this window while it is open,
     // the headless service once the heartbeat goes stale. The page never
@@ -5802,6 +5911,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (pick.project) {
                 await saveProjects(assignAgent(defs, pick.project, agent.name, true));
             }
+        }),
+
+        // ---------- DALGA 1: the Console ----------
+        vscode.commands.registerCommand('agentfarm.openConsole', (arg?: { agentId?: string }) => {
+            ConsolePanel.show(consoleDeps, arg && typeof arg === 'object' ? arg : undefined);
         }),
 
         // ---------- C1: the web view, and how to reach it ----------

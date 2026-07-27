@@ -210,6 +210,38 @@ Filodaki son olayların canlı akışı: kullanıcı komutları (prompt), araç 
 - Yeni tur için tekrar **Reset Token Lap**; sayacı kaldırmak için **Clear Token Lap**.
 - Sınır: lap, son 48 saatlik mesaj penceresinden beslenir — 48 saatten yaşlı bir lap yalnızca son 48 saati sayar (tooltip'te uyarır).
 
+## Console — panelin içinde konuşmak {#console}
+
+*(3.28.0)* Denetimin etrafında kurulduğu **yapısal boşluk**: Agent Farm bir oturum hakkında her şeyi okuyabiliyordu, hiçbirine **bir şey söyleyemiyordu**. Console bunu kapatır.
+
+**💬 Console** sekmesi (global nav'ın başında, `Ctrl+Alt+C`) uzun ömürlü `claude` süreçlerini **panelin içinde** barındırır — CLI'ın kendi streaming JSON kanalı üzerinden. Solda bu pencerenin barındırdığı oturumlar + rafın ve son transkriptler (tıklayınca **Console'un içine devam ettirilir**); sağda konuşma ve yazma kutusu.
+
+**Senin kurulumun, senin aboneliğin:** bizim bir API anahtarımız yok, maliyet modeli değişmiyor, transkript yine `~/.claude/projects` altına yazılıyor — yani mevcut analitik / sağlık / zaman çizelgesi motorlarının hiçbiri bozulmuyor.
+
+### Kompozitör
+
+Yazma kutusunun altında **ajan · model · efor · izin modu** — hepsi launcher'ın sözlüğünden (`core/launch.ts`), yani eklentide tek bir sözlük var. `Ctrl+Enter` gönderir.
+
+- **⎋ Interrupt:** çalışan turu durdurur — CLI'ın kendi kontrol kanalı üzerinden. **Tur biter, oturum ve bağlamı kalır.**
+- **Kuyruk:** tur çalışırken yazdığın mesaj **kuyruğa alınır**, kuyrukta olduğu görünür ve tur biter bitmez gönderilir. Kuyruk, çalışan tura dokunmadan temizlenebilir.
+- Her satırda oturumun kendi **maliyeti · tur sayısı · CLI'ın bağlam tahmini** durur.
+
+### İzinler — dürüst cevap
+
+**Önce ölçüldü:** Claude Code panele **hiçbir şey sormuyor**; izni olmayan bir araç yalnızca hatalı bir sonuçla geri dönüyor. Bu yüzden Console'da sahte bir "Allow once" düğmesi **yok**. Reddi tespit edip gerçekten yapabileceğini öneriyor: **bu oturumun izin kuralını canlı değiştirmek ve ajana tekrar denemesini söylemek** — `Allow file edits` · `Let it decide` · `⚠ Allow everything` · `Plan only`. İzin seçici oturum boyunca canlıdır; terminal yolunda bu hiç mümkün değildi.
+
+### Kod değişiklikleri, akışın içinde
+
+Her `Edit`/`Write` satırı dosyasıyla birlikte görünür; yanında **open** ve **vs HEAD** düğmeleri (3.25.0'ın diff yüzeyi, yeniden yazılmadan kullanılıyor).
+
+### Oturumlar sekmeden uzun yaşar
+
+Console sekmesini kapatmak konuşmayı **öldürmez**; oturumlar sen bitirince ya da pencere kapanınca biter.
+
+**Köprü:** `console.start` · `console.send` (tur çalışıyorsa kuyruğa alır) · `console.sessions` · `console.interrupt` · `console.permissionMode` (`retry` ile) · `console.close`.
+
+> **Doğrulama:** `test/smoke_console_live.js` **gerçek** claude süreçleriyle uçtan uca koşar (cevap · tur-içi kuyruk · uçuşta kesme · reddedilen yazma · canlı izin verme · tekrar deneyip dosyayı gerçekten yazma · temiz kapanış): **18/18, $0,076**. Para harcadığı için `npm test`'in dışında tutulur. Ölçüm bir tasarım hatasını da yakaladı: **CLI ilk stdin satırını alana kadar hiçbir şey yayınlamıyor**, dolayısıyla ilk mesajı "oturum hazır görünene kadar" kuyrukta tutmak sonsuza kadar kilitleniyordu — ilk mesaj artık daima gönderilir.
+
 ## Oturum Başlatma ve Denetim {#oturum-denetim}
 
 *(3.24.0)* Agent Farm oturumları **görüyordu**; artık onlara **dokunuyor**. Dört parça: bir oturum neyle başlar, hangi oturumlar elinin altında durur, çalışan bir oturum nasıl durdurulur, ve tüm bunlara klavyeden nasıl ulaşılır.
