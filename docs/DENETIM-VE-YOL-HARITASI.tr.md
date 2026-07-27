@@ -144,6 +144,14 @@ Bu, v2.92.0'da Airtable için temizlenen sorunun aynısı ve o iş "ürün = SIF
 **D5. UI yerelleştirmesi yok.** ⭐
 `l10n` bundle yok, `%nls%` kullanımı yok. Kural doğru (UI daima İngilizce) ama *ürün* olarak VS Code'un l10n mekanizması hiç kurulmamış; ileride Türkçe/başka dil isteği gelirse sıfırdan iş.
 
+### E. Arayüz zenginliği — **E1 ve E3 KAPANDI (3.27.0) · E2 ERTELENDİ**
+
+**E1 → ÇÖZÜLDÜ.** Insight **tarihçe defteri** (`core/insighthistory.ts`): ilk görülme · son görülme · son eylem, ve türetilen asıl bilgi **regressed** (müdahaleden sonra kaybolup geri gelme). Ağaç satırında **↻N** ve **⚠back**, tooltip'te cümlesi; **Insight History…** listesi (açık / tekrar eden / müdahaleden sonra dönen / tutan düzeltme sayılarıyla). Tazeleme tekrar sayılmaz; müdahale edilmemiş çalkantı asla "kırılmış düzeltme" denmez. Köprü: `insights.history`. *(4.2 de bu maddeyle kapandı.)*
+**E3 → ÇÖZÜLDÜ.** Kılavuz içi arama: her isabet işaretlenir, Enter / ↑↓ ile gezilir, Esc temizler — ve tarayıcı find'ının yapamadığı şey: **içindekiler listesi, kelimenin gerçekten geçtiği bölümlere kısılır** (`4/17 hits in 3 sections`). Panele VS Code'un kendi `ctrl+F`'i de açıldı. *(4.4 de bu maddeyle kapandı.)*
+**E2 → ERTELENDİ (büyük iş, riskli değil ama küçük de değil).** `gallery` + `production` + `premiere` + `mediaProviders`'ı tek "içerik üretim" sayfasında birleştirmek, Tasks sayfası birleştirmesinin (3.19.0) aynı boyutunda bir iş: dört ayrı panelin webview'i tek sayfaya taşınacak. Mevcut yüzeyler çalışıyor, kimse engellenmiş değil — bu yüzden Console'un fizibilite ölçümü ve E1/E3 önce yapıldı. Sıradaki uygun oturumun işi. *(4.3 aynı madde.)*
+
+*Aşağısı denetim günündeki tespitlerdir.*
+
 ### E. Arayüz zenginliği — "var ama yeterince iyi değil"
 
 **E1. Insights → aksiyon zinciri zayıf.** Bulgu satırında Fix/Delegate/Dismiss var; ama "bu bulgunun tarihçesi", "kaç kere tekrar etti", "düzelttim mi işe yaradı mı" yok. `instrhistory` + `abtest` altyapısı var, insight'lara bağlanmamış.
@@ -355,6 +363,12 @@ Hepsi mekanik, hepsi bugün yapılabilir, hiçbiri mimariye dokunmuyor. Bunlar d
 
 Tek büyük iş bu. §1'deki boşluğu kapatır ve arkasından gelen üç maddeyi bedava getirir.
 
+> **FİZİBİLİTE ÖLÇÜLDÜ — 2026-07-27 (spike, haiku, $0.016).** Taşıma **çalışıyor**, tahmin değil: `claude --model haiku -p --input-format stream-json --output-format stream-json --verbose` stdin'den JSON kullanıcı mesajı alıyor ve olay akışı döndürüyor. Ölçülen olay türleri: `system:init` (cwd · session_id · tools · model · permissionMode · slash_commands · agents · skills · plugins · capabilities · memory_paths), `system:hook_started` / `hook_response`, **`system:thinking_tokens`** (canlı token tahmini, delta'lı), `assistant`, `rate_limit_event`, `result:success` (`total_cost_usd` · `usage` · `num_turns` · `duration_api_ms` · `session_id`). **Süreç `result`'tan sonra ayakta kaldı** — yani uzun ömürlü oturum ana makinesi (1.1) bu yolla mümkün; kullanıcının kendi CLI'ı ve aboneliği, ayrı API anahtarı yok, transkript aynı yere yazılıyor (session_id dönüyor).
+>
+> **Kalan bilinmeyen tam olarak şurası:** izin isteklerinin ve kesmenin bu kanalda nasıl yüzeye çıktığı (1.4 ve 1.5'in kuyruk yarısı). Görünen iki yol: `--permission-prompt-tool <mcp-aracı>` ile izin isteklerini kendi MCP aracımıza yönlendirmek, ya da kontrol protokolü (`control_request`) üzerinden cevaplamak. **Sıradaki oturumun ilk işi bu ikisini ölçmek olmalı** — Console'un geri kalanı (sayfa, akış render'ı, kuyruk) ancak bu netleştikten sonra tasarlanmalı, çünkü 1.4 sahte buton koymadan çözülmesi gereken tek yer.
+>
+> **Bu bloktan zaten teslim edilenler:** 1.3'ün sözlüğü (`core/launch.ts` — seçenekler + komut satırı üretimi, saf ve testli; Console kompozitörü ikinci bir sözlük yazmayacak), 1.5'in kesme yarısı (`core/interrupt.ts` + `sessions.interrupt`), 1.6 diff yüzeyi (3.25.0, `core/codeedits.ts` — Console'da da aynı modül kullanılacak).
+
 **1.1 — Oturum ana makinesi (session host).** Claude Code'u streaming-input modunda eklenti içinden çalıştıran bir servis: uzun ömürlü süreç, mesaj kuyruğu, kesme, izin isteklerinin yüzeye çıkması. Kullanıcının kendi `claude` kurulumunu ve aboneliğini kullanır — ayrı API anahtarı **yok**, maliyet modeli değişmez, transcript aynı `~/.claude/projects` altına yazılır (mevcut analitik/sağlık/timeline motorları bozulmaz).
 
 **1.2 — Console sayfası.** Global nav'a yeni sekme. Sol: oturum listesi (sabitlenenler + son oturumlar + arama — mevcut `sessions` + `search` altyapısı üstüne). Sağ: konuşma + yazma kutusu.
@@ -401,11 +415,11 @@ Ucuz, bağımsız, ve "herkesin kullanabileceği ürün" hedefine tek maddede en
 ### DALGA 4 — Olgunlaştırma ⭐
 
 **4.1** `extension.ts` bölünmesi (F1) — alan bazlı `src/commands/*.ts`.
-**4.2** Insight tarihçesi: bulgu tekrar sayacı + "düzelttim, işe yaradı mı" ölçümü (`instrhistory`/`abtest` motorlarına bağla).
+**4.2** ~~Insight tarihçesi~~ **YAPILDI (3.27.0)** — kendi defteriyle (`core/insighthistory.ts`); `instrhistory`/`abtest` motorlarına bağlanmadı, çünkü onlar *talimat sürümlerini* ölçüyor, bu ise *bulgunun kendi davranışını* — ayrı eksen, ayrı kayıt.
 **4.3** İçerik üretim sayfası: `gallery` + `production` + `premiere` + `mediaProviders` tek yüzeyde (Tasks/Toolbox birleştirmesinin aynısı).
-**4.4** Kılavuz içi arama.
-**4.5** Dashboard kişiselleştirme (kart gizle/sırala, kayıtlı görünüm).
-**4.6** `l10n` altyapısını kur (içerik İngilizce kalır; mekanizma hazır olur).
+**4.4** ~~Kılavuz içi arama~~ **YAPILDI (3.27.0)** — bölüm-farkındalıklı: içindekiler, kelimenin geçtiği bölümlere kısılıyor.
+**4.5** Dashboard kişiselleştirme (kart gizle/sırala, kayıtlı görünüm). *(Açık. Risksiz ama ⭐ — sayfa zaten aralık seçici, karşılaştırma penceresi ve filtre taşıyor; sıradaki uygun oturumda.)*
+**4.6** `l10n` altyapısını kur. **BİLİNÇLİ OLARAK ERTELENDİ:** VS Code'un l10n'ı `package.json`'daki **her** komut başlığını/ayar açıklamasını `%anahtar%` dolaylamasına çevirmeyi ister — 180 komut + 90 ayar, tek bir yazım hatasının komut paletini bozabildiği, bugün hiçbir kullanıcı kazancı olmayan mekanik bir değişiklik. Canlı üründe bu oran kabul edilebilir değil; gerçekten ikinci bir dil istendiğinde yapılmalı, "hazır dursun" diye değil.
 **4.7** Çok makineli senkron **reçetesi** (§3.5): BLUEPRINT'e "ajan klasörünü iki makinede senkron tutmak" bölümü — bulut sürücü ve git yolları, ikisinin de tuzaklarıyla. Kod işi değil belge işi; `agentpack` + `farmRelay` zaten var, kullanıcı bilmiyor.
 
 ---

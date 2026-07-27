@@ -1062,6 +1062,17 @@ From 0.7.0, if there's archived headless task output within the period, a **Task
 
 Agent Farm audits your agents with eight rules. The goal: **cheaper, more consistent agents that forget less.**
 
+### Insight History — does it keep coming back, and did your fix hold? (3.27.0) {#insight-tarihcesi}
+
+Insights were a **snapshot**: a finding appeared, you fixed or dismissed it, and the farm forgot. So the two questions that decide whether a finding is worth acting on had no answer — **how long has this been here / how many times has it come back**, and **did what I did last time actually help**.
+
+A **ledger** now rides along with the same refresh that builds the list. It records three moments (first seen · last seen · your last action) and derives the one fact that matters most: **regressed** — it was gone after you acted, and then came back. That is the difference between "the fix worked" and "the fix looked like it worked".
+
+- **Every row carries its own record:** **↻4** when a finding has returned four separate times, **⚠back** when your fix did not hold, and the sentence in the tooltip (`3× (came back) · first seen 12d ago · your fix did not hold — back after 2d`).
+- **Insight History…** (a button on the Insights view) lists the ledger, worst offenders first, with the real counts in its header: how many are open, how many keep returning, **how many came back after you acted**, how many fixes are holding.
+- **A refresh is not an occurrence:** a finding that is still listed is the *same* appearance, so "seen 4 times" means four separate visits, not four dashboard renders. Churn on something you never acted on is never called a broken fix.
+- **Bridge:** `insights.history` (`limit?`, `recurringOnly?`) — "what keeps breaking?" is answered from the record, not from today's snapshot.
+
 ### Insight Lifecycle (2.41.0)
 
 Insights are no longer a read-only list — every finding has a **path to closure**. On hover (or right-click) three actions appear:

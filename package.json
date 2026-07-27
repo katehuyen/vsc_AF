@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.26.1",
+  "version": "3.27.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -420,6 +420,12 @@
         "command": "agentfarm.openEditedFile",
         "title": "Open File the Agent Edited",
         "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.insightHistory",
+        "title": "Insight History… (what keeps coming back, and did the fix hold)",
+        "category": "Agent Farm",
+        "icon": "$(history)"
       },
       {
         "command": "agentfarm.openWebView",
@@ -1322,6 +1328,11 @@
           "command": "agentfarm.delegateInsight",
           "when": "view == agentfarm.insights",
           "group": "navigation@2"
+        },
+        {
+          "command": "agentfarm.insightHistory",
+          "when": "view == agentfarm.insights",
+          "group": "navigation@3"
         },
         {
           "command": "agentfarm.restoreInsights",

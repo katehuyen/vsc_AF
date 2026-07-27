@@ -184,7 +184,10 @@ export class GuidePanel {
             'agentfarm.guide',
             'Agent Farm',
             vscode.ViewColumn.Beside,
-            { enableScripts: true, retainContextWhenHidden: true }
+            // enableFindWidget gives the guide VS Code's own ctrl+F on top of
+            // the page's section-aware search box — the muscle-memory key works
+            // even before anyone notices the box.
+            { enableScripts: true, retainContextWhenHidden: true, enableFindWidget: true }
         );
         GuidePanel.open.set(doc, new GuidePanel(panel, extensionUri, doc, rawTitle, anchor, lang));
     }
@@ -269,6 +272,26 @@ export class GuidePanel {
     content="default-src 'none'; style-src ${this.panel.webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
 <link rel="stylesheet" href="${css}">
 <style>
+/* In-guide search (E3): 1900 lines of manual are only useful if you can find
+   the paragraph you need. The box filters the table of contents to the
+   sections that actually match and walks the hits inside the page. */
+#gsearch { position: fixed; top: 8px; left: 12px; right: 200px; z-index: 51;
+    display: flex; gap: 6px; align-items: center; max-width: 640px; }
+#gsearch input { flex: 1; min-width: 120px; font: inherit; font-size: 12px; padding: 4px 9px;
+    border-radius: 5px; border: 1px solid var(--vscode-widget-border, #4443);
+    background: var(--vscode-input-background); color: var(--vscode-input-foreground); }
+#gsearch button { cursor: pointer; font: inherit; font-size: 11px; padding: 3px 9px; border-radius: 4px;
+    border: 1px solid var(--vscode-widget-border, #4443);
+    background: var(--vscode-editor-background); color: var(--vscode-foreground); opacity: .8; }
+#gsearch button:hover { opacity: 1; }
+#gcount { font-size: 11px; color: var(--vscode-descriptionForeground); white-space: nowrap; }
+mark.af-hit { background: var(--vscode-editor-findMatchHighlightBackground, #ea5c0055);
+    color: inherit; border-radius: 2px; }
+mark.af-hit.cur { background: var(--vscode-editor-findMatchBackground, #a8ac94);
+    color: var(--vscode-editor-foreground); outline: 1px solid var(--vscode-focusBorder); }
+#toc a.nohit { opacity: .28; }
+body.guide.searching #content h1, body.guide.searching #content h2,
+body.guide.searching #content h3 { scroll-margin-top: 46px; }
 #langbar { position: fixed; top: 10px; right: 18px; display: flex; gap: 6px; z-index: 50; }
 #langbar button {
     cursor: pointer; font: inherit; font-size: 11px; padding: 2px 10px; border-radius: 4px;
@@ -284,6 +307,12 @@ export class GuidePanel {
 <title>${escapeHtml(r.title)}</title>
 </head>
 <body class="guide">
+<div id="gsearch">
+    <input id="gq" type="search" placeholder="Search this guide…  (Enter = next, Esc = clear)" autocomplete="off">
+    <button id="gprev" title="Previous hit">↑</button>
+    <button id="gnext" title="Next hit">↓</button>
+    <span id="gcount"></span>
+</div>
 ${langbar}
 <nav id="toc">${tocHtml}</nav>
 <main id="content">${html}</main>
@@ -306,6 +335,112 @@ document.addEventListener('click', ev => {
     }
 });
 ${this.anchor ? `setTimeout(() => { const el = document.getElementById(${JSON.stringify(this.anchor)}); if (el) { el.scrollIntoView(); el.classList.add('flash'); } }, 60);` : ''}
+
+// ---- E3: in-guide search ------------------------------------------------
+// Marks every hit in the page, walks them with Enter / ↑ ↓, and — the part a
+// browser's find cannot do — dims the table of contents down to the sections
+// that actually contain the word, so a 1900-line manual answers "where is
+// this explained?" instead of just "here is the next occurrence".
+(function () {
+    const content = document.getElementById('content');
+    const box = document.getElementById('gq');
+    const countEl = document.getElementById('gcount');
+    const tocLinks = Array.from(document.querySelectorAll('#toc a'));
+    if (!content || !box) { return; }
+    let hits = [];
+    let cur = -1;
+
+    function clearMarks() {
+        content.querySelectorAll('mark.af-hit').forEach(m => {
+            const t = document.createTextNode(m.textContent);
+            m.parentNode.replaceChild(t, m);
+        });
+        content.normalize();
+        tocLinks.forEach(a => a.classList.remove('nohit'));
+        document.body.classList.remove('searching');
+        hits = []; cur = -1;
+    }
+
+    /** id of the nearest heading above this node — which section a hit is in. */
+    function sectionOf(node) {
+        let el = node.parentElement;
+        while (el && el !== content) {
+            let sib = el.previousElementSibling;
+            while (sib) {
+                if (/^H[1-6]$/.test(sib.tagName) && sib.id) { return sib.id; }
+                sib = sib.previousElementSibling;
+            }
+            el = el.parentElement;
+        }
+        return '';
+    }
+
+    function run(q) {
+        clearMarks();
+        const needle = q.trim().toLowerCase();
+        if (needle.length < 2) { countEl.textContent = ''; return; }
+        const sections = new Set();
+        const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT, {
+            acceptNode: n => (n.parentElement && /SCRIPT|STYLE|MARK/.test(n.parentElement.tagName))
+                ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
+        });
+        const targets = [];
+        let node;
+        while ((node = walker.nextNode())) {
+            if (node.nodeValue.toLowerCase().indexOf(needle) >= 0) { targets.push(node); }
+        }
+        for (const text of targets) {
+            const sec = sectionOf(text);
+            const frag = document.createDocumentFragment();
+            let rest = text.nodeValue;
+            let idx = rest.toLowerCase().indexOf(needle);
+            while (idx >= 0) {
+                if (idx > 0) { frag.appendChild(document.createTextNode(rest.slice(0, idx))); }
+                const mark = document.createElement('mark');
+                mark.className = 'af-hit';
+                mark.textContent = rest.slice(idx, idx + needle.length);
+                frag.appendChild(mark);
+                hits.push(mark);
+                if (sec) { sections.add(sec); }
+                rest = rest.slice(idx + needle.length);
+                idx = rest.toLowerCase().indexOf(needle);
+            }
+            if (rest) { frag.appendChild(document.createTextNode(rest)); }
+            text.parentNode.replaceChild(frag, text);
+        }
+        // the answer to "where is this explained?"
+        tocLinks.forEach(a => {
+            const id = decodeURIComponent((a.getAttribute('href') || '').slice(1));
+            if (!sections.has(id)) { a.classList.add('nohit'); }
+        });
+        document.body.classList.add('searching');
+        countEl.textContent = hits.length
+            ? hits.length + ' hit' + (hits.length === 1 ? '' : 's') + ' in ' + sections.size + ' section' + (sections.size === 1 ? '' : 's')
+            : 'no match';
+        if (hits.length) { go(0); }
+    }
+
+    function go(i) {
+        if (!hits.length) { return; }
+        if (cur >= 0 && hits[cur]) { hits[cur].classList.remove('cur'); }
+        cur = (i + hits.length) % hits.length;
+        hits[cur].classList.add('cur');
+        hits[cur].scrollIntoView({ behavior: 'smooth', block: 'center' });
+        countEl.textContent = (cur + 1) + '/' + hits.length + ' · ' + countEl.textContent.replace(/^\\d+\\/\\d+ · /, '');
+    }
+
+    let timer = null;
+    box.addEventListener('input', () => {
+        if (timer) { clearTimeout(timer); }
+        timer = setTimeout(() => run(box.value), 180);
+    });
+    box.addEventListener('keydown', ev => {
+        if (ev.key === 'Enter') { ev.preventDefault(); go(cur + (ev.shiftKey ? -1 : 1)); }
+        if (ev.key === 'Escape') { box.value = ''; clearMarks(); countEl.textContent = ''; }
+    });
+    document.getElementById('gnext').addEventListener('click', () => go(cur + 1));
+    document.getElementById('gprev').addEventListener('click', () => go(cur - 1));
+})();
 </script>
 </body>
 </html>`;

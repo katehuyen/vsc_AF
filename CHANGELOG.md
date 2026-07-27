@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.27.0 — A guide you can search, and findings that remember (2026-07-27)
+
+Two of the "it exists but it is not good enough" items, both of which were costing the same thing: information the farm already had, with no way to ask it a question.
+
+- **Search inside the guide (E3).** 1900 lines of manual answered "what does this do" only if you already knew which section to open. The guide now carries its own search box: it marks every hit, walks them with Enter / ↑ ↓ (Esc clears), and — the part a browser's find cannot do — **dims the table of contents down to the sections that actually contain the word**, with a live `4/17 hits in 3 sections` count. So it answers *where is this explained*, not just *here is the next occurrence*. VS Code's own `ctrl+F` find widget is enabled on the panel too, so the muscle-memory key works before anyone notices the box.
+- **Insight history (E1).** The Insights list was a snapshot: a finding appeared, you fixed or dismissed it, and the farm forgot — so the two questions that decide whether a finding is worth acting on had no answer. A ledger now rides along with the same refresh that builds the list, recording three moments (first seen, last seen, last action) and one derived fact that matters more than the rest: **regressed** — it was gone after you acted, and then came back. That is the difference between "the fix worked" and "the fix looked like it worked".
+  - Every tree row carries its own record: **↻4** when a finding has come back four separate times, **⚠back** when your fix did not hold, and a tooltip that says it in words (`3× (came back) · first seen 12d ago · your fix did not hold — back after 2d`).
+  - **Insight History…** (a button on the Insights view) lists the ledger, worst offenders first, with the counts that matter in its header: how many are open, how many keep returning, **how many came back after you acted**, and how many fixes are holding.
+  - A refresh is not an occurrence — a finding that is still listed is the same appearance — so "seen 4 times" means four separate visits, not four dashboard renders. Churn with no action is never called a broken fix.
+  - **Bridge (§19.C):** `insights.history` (args: `limit?`, `recurringOnly?`) — an agent asked "what keeps breaking?" answers from the record instead of from today's snapshot.
+- 56 new checks (the two ledger rules under every ordering — refresh vs return, action-then-clear, action-then-regression, churn without an action, acting on an already-resolved finding; the sentence each state produces; summary, pruning and hand-edited stores; plus the wiring of both surfaces). Suite: **76 files, 2753 checks green.**
+
 ## 3.26.1 — The new surfaces announce themselves (2026-07-27)
 
 Three releases added four things a user could only find by knowing they exist. A feature nobody can discover is a feature nobody has.

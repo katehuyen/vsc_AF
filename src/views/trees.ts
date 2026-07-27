@@ -4,7 +4,8 @@ import { AgentInfo, FileMeta } from '../core/agents';
 import { Duty, watchStatus } from '../core/duties';
 import { indexedMemoryNames, memoryLastUsed, memoryUsage, readMemoryFrontmatter } from '../core/memusage';
 import { Insight } from '../core/health';
-import { FIX_COMMANDS } from '../core/insightops';
+import { FIX_COMMANDS, insightKey } from '../core/insightops';
+import { describeRecord, InsightHistoryStore } from '../core/insighthistory';
 import {
     McpServerDef, mcpLastUsed, mcpToolBreakdown, mcpUsage, readAgentMcpServers, readDisabledServers
 } from '../core/mcp';
@@ -530,8 +531,12 @@ export class SessionsTreeProvider implements vscode.TreeDataProvider<SessionInfo
 export class InsightsTreeProvider implements vscode.TreeDataProvider<Insight> {
     private emitter = new vscode.EventEmitter<void>();
     readonly onDidChangeTreeData = this.emitter.event as vscode.Event<void | Insight | Insight[] | null | undefined>;
+    /** E1: how each finding has behaved over time (insighthistory.ts). */
+    private history: InsightHistoryStore = {};
 
     constructor(private state: FarmState) {}
+
+    setHistory(store: InsightHistoryStore): void { this.history = store; }
 
     refresh(): void { this.emitter.fire(); }
 
@@ -556,8 +561,15 @@ export class InsightsTreeProvider implements vscode.TreeDataProvider<Insight> {
             iconByseverity[ins.severity],
             new vscode.ThemeColor(colorBySeverity[ins.severity])
         );
-        item.description = `${ins.agentName} • ${ins.category}`;
-        item.tooltip = `${ins.message}\n\nActions (hover / right-click): `
+        // E1: a finding's own record — how often it has come back, and whether
+        // what you did last time held. A repeat offender says so on its row.
+        const rec = this.history[insightKey(ins)];
+        const hist = describeRecord(rec, Date.now());
+        const repeat = rec && rec.occurrences > 1 ? ` ↻${rec.occurrences}` : '';
+        const broke = rec?.regressedAt ? ' ⚠back' : '';
+        item.description = `${ins.agentName} • ${ins.category}${repeat}${broke}`;
+        item.tooltip = `${ins.message}` + (hist ? `\n\n${hist}` : '')
+            + `\n\nActions (hover / right-click): `
             + `${FIX_COMMANDS[ins.category] ? 'Fix · ' : ''}Delegate to Agent · Dismiss`;
         item.contextValue = ins.suggestionId ? 'insight-suggestion'
             : FIX_COMMANDS[ins.category] ? 'insight-fixable' : 'insight';

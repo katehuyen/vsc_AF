@@ -111,6 +111,10 @@ import { collectEdits, fileStats, groupByFile } from './core/codeedits';
 import { contentAtHead, gitRoot, repoRelative } from './core/gitfile';
 import { buildSnapshot } from './core/websnapshot';
 import {
+    describeRecord, InsightHistoryStore, normalizeHistory, pruneHistory,
+    recordAction, recordSighting, summarize as summarizeInsightHistory
+} from './core/insighthistory';
+import {
     addSpend, clipForChat, HELP_TEXT, InboundMessage, isAllowed, parseCommand,
     SpendLedger, withinBudget
 } from './core/messaging';
@@ -1331,8 +1335,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ).then(c => { if (c === 'Show Tasks') { void vscode.commands.executeCommand('agentfarm.tasks.focus'); } });
     };
 
+    // E1: the ledger behind "has this come back?" and "did my fix hold?".
+    // Written from the same refresh that builds the insights, so it can never
+    // drift from what the list actually showed.
+    const INSIGHT_HISTORY_KEY = 'agentfarm.insightHistory';
+    const insightHistory = (): InsightHistoryStore =>
+        normalizeHistory(context.globalState.get<unknown>(INSIGHT_HISTORY_KEY, {}));
+    const saveInsightHistory = (store: InsightHistoryStore) =>
+        void context.globalState.update(INSIGHT_HISTORY_KEY, store);
+    const noteInsightAction = (ins: Insight, kind: 'fix' | 'delegate') =>
+        saveInsightHistory(recordAction(insightHistory(), insightKey(ins), kind, Date.now()));
+
     const refreshInsights = () => {
         insights = applyInsightDismiss(buildInsights(agents, index, healthConfig()));
+        const now = Date.now();
+        const history = pruneHistory(recordSighting(insightHistory(), insights.map(i => ({
+            key: insightKey(i), label: i.message, agentName: i.agentName,
+            category: i.category, severity: i.severity
+        })), now), now);
+        saveInsightHistory(history);
+        insightsTree.setHistory(history);
         autoDelegateInsights();
         insightsTree.refresh();
         DashboardPanel.refreshIfOpen();
@@ -2720,6 +2742,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 term.show();
                 term.sendText(INTERRUPT_KEY, false);
                 return { sessionId, interrupted: true, terminal: term.name, how: target.how };
+            }
+        },
+        {
+            op: 'insights.history',
+            describe: 'How each finding has BEHAVED over time, not just what is open now: how many separate times it came back, when it was first seen, whether you acted on it, and whether it returned AFTER that action (the honest answer to "did the fix work"). args: limit? (default 20), recurringOnly? (default false)',
+            handler: (args) => {
+                const limit = typeof args.limit === 'number' && args.limit > 0 ? Math.floor(args.limit) : 20;
+                const sum = summarizeInsightHistory(insightHistory(), 500);
+                const now = Date.now();
+                const rows = (args.recurringOnly === true
+                    ? sum.top.filter(r => r.occurrences > 1 || r.regressedAt)
+                    : sum.top).slice(0, limit);
+                return {
+                    tracked: sum.tracked, open: sum.open, recurring: sum.recurring,
+                    regressedAfterAction: sum.regressed, fixesHolding: sum.fixedHolding,
+                    findings: rows.map(r => ({
+                        agent: r.agentName, category: r.category, message: r.label,
+                        severity: r.severity, occurrences: r.occurrences, open: r.open,
+                        firstSeen: r.firstSeen, lastSeen: r.lastSeen,
+                        actedAt: r.actedAt ?? null, actedKind: r.actedKind ?? null,
+                        regressedAfterAction: !!r.regressedAt,
+                        summary: describeRecord(r, now)
+                    }))
+                };
             }
         },
         {
@@ -5374,6 +5420,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     'Agent Farm: no mechanical fix for this insight — use "Delegate to Agent" instead.');
                 return;
             }
+            // From here the ledger watches whether this actually held (E1).
+            noteInsightAction(target, 'fix');
             void vscode.commands.executeCommand(fix.command,
                 fix.agentScoped && target.agentId ? { agentId: target.agentId } : undefined);
         }),
@@ -5425,9 +5473,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const task = taskManager.addTask(agent, delegationTitle(list), buildDelegationPrompt(list), 'headless');
                 taskManager.startTask(task);
             }
+            // Same ledger as Fix: a delegation is an action whose result the
+            // next refresh will judge (E1).
+            for (const i of selected) { noteInsightAction(i, 'delegate'); }
             void vscode.window.showInformationMessage(
                 `Agent Farm: ${byAgent.size} task(s) queued — the agents will investigate and report.`, 'Show Tasks'
             ).then(c => { if (c === 'Show Tasks') { void vscode.commands.executeCommand('agentfarm.tasks.focus'); } });
+        }),
+
+        // E1: the ledger, readable. "Which findings keep coming back, and did
+        // what I did about them hold?" — the question a snapshot cannot answer.
+        vscode.commands.registerCommand('agentfarm.insightHistory', async () => {
+            const store = insightHistory();
+            const sum = summarizeInsightHistory(store, 200);
+            if (!sum.tracked) {
+                void vscode.window.showInformationMessage(
+                    'Agent Farm: no insight history yet — it starts recording from the next refresh.');
+                return;
+            }
+            const now = Date.now();
+            const pick = await vscode.window.showQuickPick(sum.top.map(r => ({
+                label: (r.regressedAt ? '$(warning) ' : r.occurrences > 1 ? '$(history) ' : '$(check) ')
+                    + r.label.slice(0, 80),
+                description: `${r.agentName} · ${r.category}${r.open ? '' : ' · resolved'}`,
+                detail: describeRecord(r, now),
+                rec: r
+            })), {
+                placeHolder: `${sum.open} open · ${sum.recurring} have come back · ${sum.regressed} came back AFTER you acted · ${sum.fixedHolding} fixes holding`,
+                matchOnDetail: true, ignoreFocusOut: true
+            });
+            if (pick?.rec.open) {
+                const live = insights.find(i => insightKey(i) === pick.rec.key);
+                if (live) { await vscode.commands.executeCommand('agentfarm.delegateInsight', live); }
+            }
         }),
 
         vscode.commands.registerCommand('agentfarm.restoreInsights', async () => {

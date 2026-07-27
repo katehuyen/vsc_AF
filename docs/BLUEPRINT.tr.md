@@ -1062,6 +1062,17 @@ VS Code açıkken çalışır; gün içinde ilk açılışta o günün raporu ü
 
 Agent Farm ajanlarını sekiz kuralla denetler. Amaç: **daha ucuz, daha tutarlı, daha az unutan ajanlar.**
 
+### Insight Tarihçesi — tekrar ediyor mu, düzeltmen tuttu mu? (3.27.0) {#insight-tarihcesi}
+
+Insights bir **anlık görüntüydü**: bulgu çıkardı, düzeltir ya da ertelerdin, çiftlik unuturdu. Böylece bir bulguya değer verip vermeyeceğini belirleyen iki soru cevapsızdı — **ne zamandır burada / kaç kere geri geldi** ve **geçen sefer yaptığım şey işe yaradı mı**.
+
+Artık insight listesini kuran aynı tazelemede bir **defter** işliyor. Üç anı kaydeder (ilk görülme · son görülme · son eylemin) ve hepsinden önemli bir sonucu türetir: **regressed** — sen müdahale ettikten sonra kayboldu, sonra geri geldi. "Düzeltme işe yaradı" ile "düzeltme işe yaramış gibi göründü" arasındaki fark budur.
+
+- **Her satır kendi kaydını taşır:** dört ayrı kez geri gelmişse **↻4**, düzeltmen tutmamışsa **⚠back**, tooltip'te de cümlesiyle (`3× (came back) · first seen 12d ago · your fix did not hold — back after 2d`).
+- **Insight History…** (Insights panelinin başlığındaki düğme) defteri en çok tekrar edenden başlayarak listeler; başlığında da asıl sayılar: kaç tanesi açık, kaçı tekrar ediyor, **kaçı sen müdahale ettikten sonra geri geldi**, kaç düzeltme tutuyor.
+- **Tazeleme bir tekrar değildir:** listede durmaya devam eden bulgu *aynı* görülmedir, yani "4 kez görüldü" dört ayrı ziyaret demektir, dört pano yenilemesi değil. Müdahale edilmemiş bir bulgunun gelip gitmesi de asla "kırılmış düzeltme" sayılmaz.
+- **Köprü:** `insights.history` (`limit?`, `recurringOnly?`) — "ne sürekli bozuluyor?" sorusu artık kayıttan cevaplanıyor.
+
 ### Insight Yaşam Döngüsü (2.41.0)
 
 Insights artık salt-okunur bir liste değil — her bulgunun bir **kapanış yolu** var. Satırın üzerine gelince (veya sağ tık) üç eylem çıkar:
