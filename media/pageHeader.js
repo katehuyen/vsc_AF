@@ -21,14 +21,18 @@
         .af-head-nav.has-actions { border-left:1px solid var(--vscode-widget-border,#4444); margin-left:2px; padding-left:12px; }
     </style>`;
 
+    // Order is meaning, not arrival: the board you start from, the place you
+    // talk, the three vital signs, what is happening right now, then who does
+    // the work and what the work is. New pages take their place in that
+    // sequence — they do not pile up on the left.
     const NAV = [
-        { id: 'console', label: '💬 Console' },
         { id: 'dashboard', label: 'Dashboard' },
-        { id: 'portfolio', label: 'Agents' },
+        { id: 'console', label: '💬 Console' },
         { id: 'living', label: '💓 Living' },
         { id: 'notices', label: '🔔 Notices' },
         { id: 'queue', label: '📥 Queue' },
         { id: 'timeline', label: 'Live Timeline' },
+        { id: 'portfolio', label: 'Agents' },
         { id: 'tasks', label: 'Tasks' },
         { id: 'missions', label: 'Missions' },
         { id: 'toolbox', label: 'Toolbox' }

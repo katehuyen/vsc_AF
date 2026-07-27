@@ -64,7 +64,28 @@ export function sessionsDir(claudeDir: string): string {
     return path.join(claudeDir, 'sessions');
 }
 
-/** Every session the CLI currently reports as running. Never throws. */
+/**
+ * Is that process still there?
+ *
+ * The registry file is written by the CLI and removed when it exits cleanly —
+ * but a hard kill (a closed terminal window, a crash) leaves the file behind,
+ * and a stale file claims a session is open for as long as nobody notices.
+ * Signal 0 asks the OS without touching the process; EPERM means it exists and
+ * belongs to someone else, which still counts as alive.
+ */
+export function pidAlive(pid: number): boolean {
+    if (!pid || pid < 1) { return false; }
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch (e) {
+        return (e as NodeJS.ErrnoException)?.code === 'EPERM';
+    }
+}
+
+/** Every session the CLI currently reports as running. Never throws.
+ *  Records whose process is gone are dropped: a leftover file must never keep
+ *  a session un-resumable. */
 export function readCliSessions(claudeDir: string): CliSessionRecord[] {
     const dir = sessionsDir(claudeDir);
     let files: string[] = [];
@@ -89,6 +110,8 @@ export function readCliSessions(claudeDir: string): CliSessionRecord[] {
         if (typeof o.entrypoint === 'string') { rec.entrypoint = o.entrypoint; }
         if (typeof o.startedAt === 'number') { rec.startedAt = o.startedAt; }
         if (typeof o.updatedAt === 'number') { rec.updatedAt = o.updatedAt; }
+        // A record whose process is gone describes nothing that exists.
+        if (!pidAlive(rec.pid)) { continue; }
         out.push(rec);
     }
     return out;

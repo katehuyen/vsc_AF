@@ -5960,6 +5960,36 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             ConsolePanel.show(consoleDeps, arg && typeof arg === 'object' ? arg : undefined);
         }),
 
+        // From a session row: pick that conversation back up INSIDE the panel.
+        // Same ownership rule as everywhere else — a session a process already
+        // owns cannot be joined, only jumped to.
+        vscode.commands.registerCommand('agentfarm.resumeInConsole',
+            async (arg?: { session?: SessionInfo } | SessionInfo) => {
+                const s = arg && 'session' in arg && arg.session ? arg.session : arg as SessionInfo | undefined;
+                if (!s?.sessionId || !s.cwd) { return; }
+                const owner = ownerOf(readCliSessions(claudeDir()), s.sessionId);
+                if (owner) {
+                    const go = await vscode.window.showWarningMessage(
+                        `"${s.title}" is open right now in ${describeOwner(owner)}.\n\n` +
+                        'Claude Code cannot join a running session — resuming it here would start a second process on the same transcript, and the two would never see each other\'s turns.',
+                        { modal: true }, 'Jump to it instead');
+                    if (go === 'Jump to it instead') {
+                        void vscode.commands.executeCommand('agentfarm.focusSessionTerminal', {
+                            sessionId: s.sessionId, agentName: s.agentName, cwd: s.cwd
+                        });
+                    }
+                    return;
+                }
+                const already = consoleHost.list().find(h =>
+                    h.sessionId === s.sessionId && h.status !== 'ended' && h.status !== 'error');
+                const agent = agents.find(a => a.name === s.agentName);
+                const id = already?.id ?? consoleHost.start({
+                    agentId: agent?.id ?? '', agentName: s.agentName ?? 'session',
+                    cwd: s.cwd, resume: s.sessionId, ...launchDefaults()
+                });
+                ConsolePanel.show(consoleDeps, { sessionId: id });
+            }),
+
         // From an agent row: open the Console with a hosted session for THAT
         // agent already running, so the path from "which agent" to "typing at
         // it" is one click instead of a page plus a picker.

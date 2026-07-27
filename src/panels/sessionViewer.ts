@@ -526,6 +526,14 @@ export class SessionViewerPanel {
             data.agentId = owner.agentId;
             data.agentName = owner.agentName;
         }
+        // The tab carried a session-id fragment, and hovering it repeated the
+        // same fragment. A tab is a place you recognise, so it carries the
+        // session's NAME; the id stays available in the page and the tooltip
+        // (VS Code shows the title there) is now worth reading.
+        const title = String(data.title ?? '').trim();
+        this.panel.title = title
+            ? (title.length > 40 ? title.slice(0, 40) + '…' : title)
+            : `Session: ${String(data.sessionId ?? '').slice(0, 8)}`;
         return data;
     }
 
@@ -590,6 +598,25 @@ export class SessionViewerPanel {
                             clipped: o.clipped || n.clipped
                         };
                     })
+                });
+                break;
+            }
+            // The session's own page carries the two session-level actions that
+            // used to exist only in the side panel's right-click menu.
+            case 'resumeConsole': {
+                const data = this.viewData();
+                void vscode.commands.executeCommand('agentfarm.resumeInConsole', {
+                    sessionId: String(data.sessionId ?? ''),
+                    title: String(data.title ?? ''),
+                    cwd: String(data.cwd ?? ''),
+                    agentName: data.agentName
+                });
+                break;
+            }
+            case 'renameSession': {
+                const data = this.viewData();
+                void vscode.commands.executeCommand('agentfarm.renameSession', {
+                    sessionId: String(data.sessionId ?? ''), title: String(data.title ?? '')
                 });
                 break;
             }

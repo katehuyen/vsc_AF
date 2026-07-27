@@ -211,6 +211,22 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         /owned\.has\(r\.sessionId\)/.test(js));
 }
 
+// ---------- the leak that made closed sessions un-resumable ----------
+// `shell: true` means the child we hold is the shell, not claude: killing it
+// left claude.exe running for hours, holding its registry entry, so the panel
+// kept reporting the session as open. Measured: five orphaned claude.exe trees.
+{
+    const host = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'consolehost.ts'), 'utf8');
+    ok('closing a Console session kills the whole process TREE', /killTree\(h\.child\)/.test(host));
+    ok('…with taskkill /T on Windows, like the task runner does',
+        /taskkill.*\/T.*\/F|'\/T', '\/F'/.test(host) || /'\/PID', String\(pid\), '\/T', '\/F'/.test(host));
+    ok('…and the reason is written down, not just the code',
+        /orphaned, holding its/.test(host) && /session registry/.test(host));
+    const cli = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'cliSessions.ts'), 'utf8');
+    ok('a registry file whose process is gone is ignored',
+        /if \(!pidAlive\(rec\.pid\)\) \{ continue; \}/.test(cli));
+}
+
 // ---------- the composer shows what each mode can actually change ----------
 {
     const js = fs.readFileSync(path.join(__dirname, '..', 'media', 'console.js'), 'utf8');
@@ -226,6 +242,50 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         /if \(!st\.agentId\)/.test(js));
     ok('an agent row can open the Console with that agent preselected',
         /presetAgent/.test(js));
+    ok('a session row carries its own title, not just the agent name',
+        /class="t2"/.test(js));
+    ok('…and right-click renames it, the same rename as everywhere else',
+        /contextmenu/.test(js) && /type: 'rename'/.test(js));
+}
+
+// ---------- one name, three places to set it ----------
+{
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+    const menus = [].concat(...Object.values(pkg.contributes.menus));
+    ok('1. the side panel still renames a session',
+        menus.some(m => m.command === 'agentfarm.renameSession'));
+    const cjs = fs.readFileSync(path.join(__dirname, '..', 'media', 'console.js'), 'utf8');
+    ok('2. the Console renames from a row', /type: 'rename'/.test(cjs));
+    const vjs = fs.readFileSync(path.join(__dirname, '..', 'media', 'sessionViewer.js'), 'utf8');
+    ok('3. the session\'s own page has a rename button', /id="renamesess"/.test(vjs));
+    ok('…and a Resume-in-Console button next to the terminal one',
+        /id="resumeconsole"/.test(vjs));
+    ok('a session row can be resumed into the Console from the side panel',
+        menus.some(m => m.command === 'agentfarm.resumeInConsole'));
+    const viewer = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'sessionViewer.ts'), 'utf8');
+    ok('the viewer tab is named after the session, not a fragment of its id',
+        /this\.panel\.title = title/.test(viewer));
+    ok('the Files box remembers being closed instead of re-opening every render',
+        /filesOpen \? ' open' : ''/.test(vjs) && /filesOpen = filebox\.open/.test(vjs));
+}
+
+// ---------- the nav is ordered by meaning ----------
+{
+    const nav = fs.readFileSync(path.join(__dirname, '..', 'media', 'pageHeader.js'), 'utf8');
+    const order = (nav.match(/\{ id: '([a-z]+)'/g) || []).map(s => s.replace(/.*'([a-z]+)'.*/, '$1'));
+    ok('Dashboard leads', order[0] === 'dashboard');
+    ok('Console follows it', order[1] === 'console');
+    ok('the vital signs come next', order.slice(2, 5).join(',') === 'living,notices,queue');
+    ok('then what is happening right now', order[5] === 'timeline');
+    ok('then who does the work, then the work', order.slice(6, 8).join(',') === 'portfolio,tasks');
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+    const title = pkg.contributes.menus['view/title']
+        .filter(m => m.when === 'view == agentfarm.agents')
+        .map(m => ({ cmd: m.command, at: Number(m.group.replace('navigation@', '')) }))
+        .sort((a, b) => a.at - b.at).map(x => x.cmd);
+    ok('in the side panel Console sits between Start Session and Turns',
+        title.indexOf('agentfarm.openConsole') === title.indexOf('agentfarm.launchSession') + 1
+        && title.indexOf('agentfarm.openTurns') === title.indexOf('agentfarm.openConsole') + 1);
 }
 
 // ---------- the fleet line on the portfolio ----------

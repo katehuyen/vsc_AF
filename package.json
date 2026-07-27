@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.29.0",
+  "version": "3.29.1",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -394,6 +394,12 @@
       {
         "command": "agentfarm.consoleForAgent",
         "title": "Talk in Console…",
+        "category": "Agent Farm",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "agentfarm.resumeInConsole",
+        "title": "Resume in Console (continue it inside the panel)",
         "category": "Agent Farm",
         "icon": "$(comment-discussion)"
       },
@@ -1282,11 +1288,6 @@
     "menus": {
       "view/title": [
         {
-          "command": "agentfarm.openConsole",
-          "when": "view == agentfarm.agents",
-          "group": "navigation@0"
-        },
-        {
           "command": "agentfarm.openDashboard",
           "when": "view == agentfarm.agents",
           "group": "navigation@1"
@@ -1295,6 +1296,11 @@
           "command": "agentfarm.launchSession",
           "when": "view == agentfarm.agents",
           "group": "navigation@1.1"
+        },
+        {
+          "command": "agentfarm.openConsole",
+          "when": "view == agentfarm.agents",
+          "group": "navigation@1.2"
         },
         {
           "command": "agentfarm.openTurns",
@@ -1527,6 +1533,11 @@
           "command": "agentfarm.pinSession",
           "when": "view =~ /^agentfarm\\.(agents|sessions)$/ && viewItem =~ /^session/",
           "group": "1_session@3"
+        },
+        {
+          "command": "agentfarm.resumeInConsole",
+          "when": "view =~ /^agentfarm\\.(agents|sessions)$/ && viewItem =~ /^session-resumable/",
+          "group": "1_session@1.5"
         },
         {
           "command": "agentfarm.tagSession",

@@ -6,6 +6,10 @@
     let DATA = window.__DATA__;
     let filter = '';
     let turnsOpen = false;
+    // Files changed: open on first sight (it is the answer to "what did this
+    // session DO"), but a box you closed must stay closed — every live update
+    // re-renders the page, and re-opening it each time was a bug, not a policy.
+    let filesOpen = true;
     // Role filter: empty set = show everything. "Errors" matches by flag, not role.
     // The AI side is "Agent", never "Assistant" — what talks back here is an
     // agent (the same stance core/speaker.ts takes with its 'agent' fallback).
@@ -451,11 +455,11 @@
         return `<details id="turnbox" class="turnbox"${turnsOpen ? ' open' : ''}>
             <summary>Turn breakdown — ${turns.length} turns · ${incLabel} (click a row to jump)</summary>
             <div class="selrow">
-                <span class="muted small">Export selection:</span>
+                <span class="muted small">Pick turns for <b>Export MD → current view</b>:</span>
                 <button class="chip" data-selact="all">All</button>
                 <button class="chip" data-selact="none">None</button>
                 <button class="chip" data-selact="invert">Invert</button>
-                <span class="muted small">— or use the checkboxes here / on the turn bands (they stay in sync); "only" exports just that turn</span>
+                <span class="muted small">— a finer cut than the filters: keep exactly the turns you want (the checkboxes here and on the turn bands stay in sync; "only" keeps just that one). <b>Export MD → everything</b> ignores this and exports the whole transcript.</span>
             </div>
             <div class="tablewrap"><table>
                 <thead><tr><th>md</th><th>#</th><th>prompt</th><th>model</th><th class="num">tokens</th><th class="num">cost</th></tr></thead>
@@ -483,7 +487,7 @@
         const total = files.reduce((n, f) => n + f.edits, 0);
         const add = files.reduce((n, f) => n + f.added, 0);
         const rem = files.reduce((n, f) => n + f.removed, 0);
-        return `<details id="filebox" class="turnbox" open>
+        return `<details id="filebox" class="turnbox"${filesOpen ? ' open' : ''}>
             <summary>Files changed — ${files.length} file(s) · ${total} write(s) · <span class="plus">+${add}</span> <span class="minus">−${rem}</span></summary>
             <div class="tablewrap"><table>
                 <thead><tr><th></th><th>File</th><th class="num">writes</th><th class="num">+/−</th><th>turns</th><th></th></tr></thead>
@@ -774,6 +778,8 @@
                 title: C.esc(DATA.title),
                 sub: `${DATA.origin === 'auto' ? '🤖 automation run' : '🧑 your session'} · ${C.esc(DATA.cwd || '')} · ${C.esc(DATA.sessionId)} · ${DATA.permissionMode ? 'mode: ' + C.esc(DATA.permissionMode) : ''}`,
                 actions: `<button id="resume">⏵ Resume</button>
+                    <button class="secondary" id="resumeconsole" title="Pick this conversation back up inside the panel (Console) instead of a terminal">💬 Resume in Console</button>
+                    <button class="secondary" id="renamesess" title="Give this session your own name — the same rename as the side panel's">✎ Rename</button>
                     <button class="secondary" id="focusterm" title="Jump to this session's terminal window (if one is open)">⌨ Terminal</button>
                     <button class="secondary" id="replaytoggle">${replay.active ? '✕ Exit replay' : '▶ Replay'}</button>
                     <button class="secondary" id="exportmd" title="Export to Markdown — asks whether to save the current view (filters/folding applied) or everything${exportOff.size ? ` · ${includedTurnCount()}/${(DATA.turns || []).length} turns currently shown` : ''}">⬇ Export MD</button>
@@ -856,6 +862,10 @@
             vscode.postMessage({ type: 'focusTerminal', cwd: DATA.cwd }));
         document.getElementById('resume').addEventListener('click', () =>
             vscode.postMessage({ type: 'resume', cwd: DATA.cwd }));
+        document.getElementById('resumeconsole').addEventListener('click', () =>
+            vscode.postMessage({ type: 'resumeConsole' }));
+        document.getElementById('renamesess').addEventListener('click', () =>
+            vscode.postMessage({ type: 'renameSession' }));
         // Export MD asks first (current view vs everything, + folded-title choice
         // when turns are collapsed); the host replies with 'exportBuild' carrying
         // the picked options, and we build the markdown then.
@@ -900,6 +910,9 @@
                 render({ keepScroll: true });
             });
         }
+
+        const filebox = document.getElementById('filebox');
+        if (filebox) { filebox.addEventListener('toggle', () => { filesOpen = filebox.open; }); }
 
         const turnbox = document.getElementById('turnbox');
         if (turnbox) {

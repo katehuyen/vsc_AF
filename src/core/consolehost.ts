@@ -19,6 +19,25 @@ import {
     reduceEvent, shiftQueued, userMessageLine
 } from './consoleproto';
 
+/**
+ * Kill a spawned process AND everything under it.
+ *
+ * On Windows a `shell: true` spawn gives us `cmd.exe`; `child.kill()` ends the
+ * shell and leaves `claude.exe` running forever. `taskkill /T` is what the
+ * task and mission runners already use for the same reason.
+ */
+export function killTree(child: cp.ChildProcess): void {
+    const pid = child.pid;
+    if (!pid) { return; }
+    if (process.platform === 'win32') {
+        try {
+            cp.execFile('taskkill', ['/PID', String(pid), '/T', '/F'],
+                { windowsHide: true }, () => { /* already gone is fine */ });
+        } catch { /* fall through to the plain kill below */ }
+    }
+    try { child.kill(); } catch { /* already gone */ }
+}
+
 export interface HostedSessionInit {
     agentId: string;
     agentName: string;
@@ -193,12 +212,20 @@ export class ConsoleHost {
         this.mutate(id, s => ({ ...s, queued: [] }));
     }
 
-    /** End one session's process. */
+    /**
+     * End one session's process — the whole tree.
+     *
+     * `shell: true` means the child we hold is the shell wrapper, not `claude`
+     * itself: killing it leaves the real process running, orphaned, holding its
+     * entry in the CLI's session registry. That entry is what tells everyone
+     * "this session is open", so a leak here shows up as sessions that stay
+     * un-resumable for hours after they were closed. Kill the tree.
+     */
     close(id: string): void {
         const h = this.sessions.get(id);
         if (!h) { return; }
         try { h.child.stdin?.end(); } catch { /* already gone */ }
-        try { h.child.kill(); } catch { /* already gone */ }
+        killTree(h.child);
         this.mutate(id, s => ({ ...s, status: 'ended', exitReason: s.exitReason ?? 'closed by you' }));
     }
 

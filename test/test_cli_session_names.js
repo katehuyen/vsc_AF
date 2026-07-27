@@ -13,7 +13,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 
 const {
     readCliSessions, mergeSessionNames, sessionsDir, isChosenName, ownerOf,
-    describeOwner, liveSessionIds
+    describeOwner, liveSessionIds, pidAlive
 } = require(path.join(__dirname, '..', 'out', 'core', 'cliSessions.js'));
 // reveal.ts talks to the file manager, so its module needs the vscode stub
 const { revealActionFor } = (() => {
@@ -36,43 +36,58 @@ const { revealActionFor } = (() => {
     ok('sessions dir is <claudeDir>/sessions', dir === path.join(home, 'sessions'));
     ok('a missing registry is empty, not an error', readCliSessions(path.join(home, 'nope')).length === 0);
 
+    // The registry only describes RUNNING sessions, so the fixtures use this
+    // very process's pid for the ones that must be read: a record whose
+    // process is gone describes nothing (see the stale-file check below).
+    const LIVE = process.pid;
     // the real shape, verified against live files written by the CLI
-    fs.writeFileSync(path.join(dir, '2264804.json'), JSON.stringify({
-        pid: 2264804, sessionId: '8ae50684-6523-4a0c-bd86-da7a571b758e',
+    fs.writeFileSync(path.join(dir, `${LIVE}.json`), JSON.stringify({
+        pid: LIVE, sessionId: '8ae50684-6523-4a0c-bd86-da7a571b758e',
         cwd: 'D:\\zone\\agent\\ajanlar\\explorer', startedAt: 1785124993343,
         version: '2.1.220', peerProtocol: 1, kind: 'interactive', entrypoint: 'cli',
         name: 'deneme', nameSource: 'explicit', status: 'idle',
         updatedAt: 1785125130106, statusUpdatedAt: 1785125130106
     }));
     // …and a session nobody named: the CLI still writes a name, marked derived
-    fs.writeFileSync(path.join(dir, '2452924.json'), JSON.stringify({
-        pid: 2452924, sessionId: 'c2b47f03-ac6b-4c7a-925b-c06b8d48b28b',
+    fs.writeFileSync(path.join(dir, 'derived.json'), JSON.stringify({
+        pid: LIVE, sessionId: 'c2b47f03-ac6b-4c7a-925b-c06b8d48b28b',
         cwd: 'D:\\zone\\agent\\ajanlar\\basit', kind: 'interactive', entrypoint: 'cli',
         name: 'basit-2e', nameSource: 'derived', status: 'idle'
     }));
     // a session started without -n: no name field at all
-    fs.writeFileSync(path.join(dir, '9999.json'), JSON.stringify({
-        pid: 9999, sessionId: 'sid-unnamed', cwd: 'D:\\x', kind: 'interactive'
+    fs.writeFileSync(path.join(dir, 'unnamed.json'), JSON.stringify({
+        pid: LIVE, sessionId: 'sid-unnamed', cwd: 'D:\\x', kind: 'interactive'
+    }));
+    // ‼️ the file a hard-killed process leaves behind: it must NOT keep the
+    // session looking open (this is what made closed sessions un-resumable)
+    fs.writeFileSync(path.join(dir, 'stale.json'), JSON.stringify({
+        pid: 999999998, sessionId: 'sid-stale', cwd: 'D:\\x', kind: 'interactive',
+        name: 'ghost', nameSource: 'explicit'
     }));
     // hostile neighbours
     fs.writeFileSync(path.join(dir, 'broken.json'), '{not json');
-    fs.writeFileSync(path.join(dir, 'noid.json'), JSON.stringify({ pid: 1, name: 'x' }));
-    fs.writeFileSync(path.join(dir, 'blankname.json'), JSON.stringify({ pid: 2, sessionId: 'sid-blank', name: '   ' }));
+    fs.writeFileSync(path.join(dir, 'noid.json'), JSON.stringify({ pid: LIVE, name: 'x' }));
+    fs.writeFileSync(path.join(dir, 'blankname.json'), JSON.stringify({ pid: LIVE, sessionId: 'sid-blank', name: '   ' }));
     fs.writeFileSync(path.join(dir, 'notes.txt'), 'ignored');
     // a BOM-prefixed file (some editors) must still parse
-    fs.writeFileSync(path.join(dir, '4321.json'),
-        '\ufeff' + JSON.stringify({ pid: 4321, sessionId: 'sid-bom', name: 'bom-name' }));
+    fs.writeFileSync(path.join(dir, 'bom.json'),
+        '\ufeff' + JSON.stringify({ pid: LIVE, sessionId: 'sid-bom', name: 'bom-name' }));
 
     const list = readCliSessions(home);
     const byId = Object.fromEntries(list.map(s => [s.sessionId, s]));
     ok('the named live session is read', byId['8ae50684-6523-4a0c-bd86-da7a571b758e'].name === 'deneme');
     ok('…with its pid, cwd, kind and status', (() => {
         const s = byId['8ae50684-6523-4a0c-bd86-da7a571b758e'];
-        return s.pid === 2264804 && /explorer$/.test(s.cwd) && s.kind === 'interactive' && s.status === 'idle';
+        return s.pid === LIVE && /explorer$/.test(s.cwd) && s.kind === 'interactive' && s.status === 'idle';
     })());
     ok('an unnamed session is listed without a name', 'sid-unnamed' in byId && !byId['sid-unnamed'].name);
     ok('a blank name is not a name', byId['sid-blank'] && !byId['sid-blank'].name);
     ok('a BOM does not hide a session', byId['sid-bom'].name === 'bom-name');
+    ok('‼️ a file left behind by a dead process is IGNORED', !byId['sid-stale']);
+    ok('…which is what frees a closed session for resuming immediately',
+        !liveSessionIds(list).has('sid-stale'));
+    ok('pidAlive says yes to this very process, no to a dead one',
+        pidAlive(process.pid) && !pidAlive(999999998) && !pidAlive(0));
     ok('broken JSON is skipped, not thrown', list.length === 5);
     ok('a derived name is read but marked as the CLI\'s own',
         byId['c2b47f03-ac6b-4c7a-925b-c06b8d48b28b'].nameSource === 'derived'

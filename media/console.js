@@ -32,6 +32,7 @@
         .srow .h { display:flex; align-items:center; gap:6px; justify-content:space-between; }
         .srow .n { font-weight:600; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .srow .m { font-size:10px; color:var(--vscode-descriptionForeground); margin-top:2px; }
+        .srow .t2 { font-size:11px; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .dot { width:8px; height:8px; border-radius:50%; flex:none; display:inline-block; }
         .talk { flex:1 1 auto; overflow-y:auto; max-height:62vh; padding:4px 2px 10px;
             border:1px solid var(--vscode-widget-border,#4443); border-radius:8px; }
@@ -88,12 +89,18 @@
     const sel = () => (DATA.sessions || []).find(s => s.id === DATA.selected);
 
     function sessionList() {
+        // Agent name alone cannot tell two sessions of the same agent apart —
+        // the session's own title goes on the row, and right-click renames it
+        // (the same rename as the side panel's, on the same store).
         const rows = (DATA.sessions || []).map(s => `
-            <div class="srow${s.id === DATA.selected ? ' sel' : ''}" data-sel="${C.esc(s.id)}">
+            <div class="srow${s.id === DATA.selected ? ' sel' : ''}" data-sel="${C.esc(s.id)}"
+                 data-rename="${C.esc(s.sessionId || '')}" data-title="${C.esc(s.title || '')}"
+                 title="${C.esc(s.title || 'not named yet')} — right-click to rename">
                 <div class="h">
                     <span class="n"><span class="dot" style="background:${STATUS_COLOR[s.status] || '#888'}"></span>${C.esc(s.agentName)}</span>
                     <span class="m">${C.fmtUSD(s.cost)}</span>
                 </div>
+                <div class="t2">${C.esc(s.title || '(no title yet)')}</div>
                 <div class="m">${C.esc(s.status)}${s.queued ? ` · ${s.queued} queued` : ''}${s.turns ? ` · ${s.turns} turns` : ''} · ${relTime(s.lastTs)}</div>
             </div>`).join('');
         // A session a live process already owns cannot be joined — resuming it
@@ -102,7 +109,8 @@
         const owned = new Set(DATA.owned || []);
         const resume = st.showResume ? `<div style="margin-top:6px">${(DATA.resumable || []).map(r => `
             <div class="srow${owned.has(r.sessionId) ? ' owned' : ''}" data-resume="${C.esc(r.sessionId)}"
-                 title="${owned.has(r.sessionId) ? 'Open right now in a terminal or another process — Agent Farm cannot join a running session' : C.esc(r.cwd)}">
+                 data-rtitle="${C.esc(r.title)}"
+                 title="${owned.has(r.sessionId) ? 'Open right now in a terminal or another process — Agent Farm cannot join a running session' : C.esc(r.cwd) + ' — right-click to rename'}">
                 <div class="n">${r.pinned ? '📌 ' : ''}${C.esc(r.title)}</div>
                 <div class="m">${C.esc(r.agentName)} · ${relTime(r.ts)} ago · ${C.fmtUSD(r.cost)}</div>
             </div>`).join('') || '<div class="empty">No transcripts yet.</div>'}</div>` : '';
@@ -249,6 +257,17 @@
                 type: 'resume', sessionId: r.dataset.resume,
                 model: st.model, effort: st.effort, permissionMode: st.permissionMode
             })));
+        // Right-click renames — on a hosted session and on a resumable one
+        // alike, because "rename it here" should mean the same thing wherever
+        // the row happens to live.
+        const wireRename = (el, sid, title) => el.addEventListener('contextmenu', ev => {
+            ev.preventDefault();
+            vscode.postMessage({ type: 'rename', sessionId: sid || '', title: title || '' });
+        });
+        document.querySelectorAll('[data-rename]').forEach(r =>
+            wireRename(r, r.dataset.rename, r.dataset.title));
+        document.querySelectorAll('[data-resume]').forEach(r =>
+            wireRename(r, r.dataset.resume, r.dataset.rtitle));
         document.querySelectorAll('[data-open]').forEach(b =>
             b.addEventListener('click', () => vscode.postMessage({ type: 'openFile', file: b.dataset.open, diff: false })));
         document.querySelectorAll('[data-diff]').forEach(b =>

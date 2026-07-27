@@ -2,6 +2,19 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.29.1 — The leak behind "it says it is still open", and the places a session can be named (2026-07-28)
+
+- **‼️ Closed sessions stayed un-resumable for hours — and it was a process leak of ours.** `shell: true` means the child Agent Farm holds is the shell, not `claude`: `child.kill()` ended the wrapper and left `claude.exe` running, orphaned, still holding its entry in the CLI's session registry — which is exactly what tells everyone "this session is open". Measured on this machine: **five orphaned claude trees**, each with a dozen children, hours old. Console sessions now die with **`taskkill /T`** (the same tree-kill the task and mission runners already use), and — because a hard-killed process can always leave its file behind — **a registry record whose pid is no longer alive is ignored**. Verified against the five real leftovers: 5 files on disk, 0 counted as live. So closing a session frees it **immediately** now.
+- **Can a terminal and the Console share one session? Measured: no.** There is no local way to join a running session — no attach subcommand, and `--remote-control` is the cloud remote for the mobile app, not a local channel. A session belongs to one process; `--resume` forks the state. The guard therefore stays, but with the leak fixed it only ever fires for sessions that really are open.
+- **One name, three places.** Renaming a session now works from the side panel (as before), from a **right-click on any row in the Console** (hosted or resumable), and from a **✎ Rename** button on the session's own page — all writing the same store, so a name set anywhere shows up everywhere.
+- **Console rows carry the session's title**, not just the agent name, so two sessions of one agent are tellable apart.
+- **Resume in Console** is now on the session right-click menu in the side panel, and as a **💬 Resume in Console** button on the session page next to ⏵ Resume.
+- **The session tab is named after the session.** It used to read `Session: 3f2a91b8` and hovering it repeated the same fragment; it now carries the session's real title (the id is still on the page).
+- **The Files-changed box stops re-opening itself.** It is open the first time (it answers "what did this session do") but a box you closed now stays closed through the live re-renders. It only appears for sessions that actually wrote files — that part was intended.
+- **The turn checkboxes earn their place, and now say so.** They are not dead: they are a finer cut than the filters for **Export MD → current view** (keep exactly turns 3, 7 and 12), while **Export MD → everything** ignores them. The row now says that instead of leaving it to be guessed.
+- **Navigation is ordered by meaning, not by arrival.** Global nav: **Dashboard · 💬 Console · 💓 Living · 🔔 Notices · 📥 Queue · Live Timeline · Agents · Tasks · Missions · Toolbox**. In the side panel the Console icon sits between **Start Session** and **Turns** instead of jumping to the front.
+- 34 new checks (tree-kill and the stale-pid guard, the three rename surfaces, the nav order in both places, the Console row title and its right-click, the Files box remembering its state). Suite: **77 files, 2870 checks green.**
+
 ## 3.29.0 — Titles restored, and the Console stops claiming two processes are one session (2026-07-28)
 
 Three things reported from use, two of them mine to answer for. All three were settled by **reading the CLI's own session registry** rather than reasoning about it.
