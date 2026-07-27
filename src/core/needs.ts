@@ -192,6 +192,9 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
                 ref: { sessionId: s.sessionId, transcriptPath: s.transcriptPath },
                 actions: [
                     { id: 'focus-terminal', label: '⌨ Terminal' },
+                    // a session stuck mid-work is exactly what Esc is for:
+                    // the turn dies, the session and its context stay
+                    { id: 'interrupt', label: '⎋ Interrupt' },
                     { id: 'open-session', label: 'Open Session' },
                     { id: 'open-timeline', label: 'Timeline' }
                 ]

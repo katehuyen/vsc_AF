@@ -106,13 +106,14 @@ The main tree in the side panel. Each agent expands with these sub-sections:
 | Permissions | `.claude/settings.local.json` permission summary |
 | Sessions | The last 15 sessions; clicking opens the Session Viewer |
 
-Right-click menu on an agent: **Start Claude Session**, **Continue Latest Session**, **Open Agent Detail**, **Open in New Window**, **Reveal in File Explorer**.
+Right-click menu on an agent: **Start Claude Session**, **Start Session…** (model · effort · permission mode · name · first prompt — see [Starting and Steering Sessions](#oturum-denetim)), **Continue Latest Session**, **Open Agent Detail**, **Open in New Window**, **Reveal in File Explorer**.
 
 Right-click menu on a session row (2.7.0):
 
 - **Resume Session in Terminal** — opens a terminal in that session's folder and runs `claude --resume <session-id>`: you continue **any past session** where you left off (Continue Latest only resumes the most recent one). The ⏵ icon that appears on hover does the same. The **⏵ Resume** button at the top-right of the Session Viewer does the same job too.
 - **Focus Session Terminal (2.58.0)** — the ⌨/terminal icon on hover (and in the right-click menu) jumps straight to that session's terminal window. The same ⌨ is available on **every** surface a session appears: Dashboard and Agent Detail table rows, Timeline live cards, the Session Viewer's top bar and Needs You items.
 - **Rename Session…** — give the session your own name (to remember it); leave it blank and the automatic title comes back. Names are persistent, the transcript file is untouched.
+- **Pin / Unpin Session (3.24.0)** — puts the session on your shelf: pinned sessions are listed first and are exempt from every row limit. The 📌 button on hover does the same. **Label Session…** adds comma-separated labels and **Interrupt Session** stops the running turn with an Esc — see [Starting and Steering Sessions](#oturum-denetim).
 
 Since 2.7.0 session titles are derived from the conversation: commands like `/compact`, `<...>` harness blocks and `!` shell lines are no longer used as titles — the first real user sentence is the title.
 
@@ -208,6 +209,68 @@ A live stream of the fleet's most recent events: user commands (prompts), tool c
 - **Agent Farm: Reset Token Lap** — starts counting the whole fleet's tokens/cost/messages from that moment; it shows as `⏱ 84.2K` in the status bar, with details and reset/clear links in the tooltip.
 - **Reset Token Lap** again for a new lap; **Clear Token Lap** to remove the counter.
 - Limit: the lap is fed from the last 48 hours of messages — a lap older than 48 hours only counts the last 48 hours (the tooltip warns you).
+
+## Starting and Steering Sessions {#oturum-denetim}
+
+*(3.24.0)* Agent Farm could **see** sessions; now it can **touch** them. Four parts: what a session starts with, which sessions stay within reach, how a running one is stopped, and how all of it is reached from the keyboard.
+
+### Start Session… — what a session starts with (A1)
+
+Every session used to open as a bare `claude`, with the model, the effort, the permission mode and the first sentence typed into the terminal by hand. There are two layers now:
+
+- **Defaults that apply to every session — `agentFarm.launchDefaults`.** `model` · `effort` · `permissionMode`. Set once; **Start Session, Continue Latest and Resume** all carry them. Every field is optional and **an empty one emits no flag at all** — with the default `{}` a launch is exactly the bare `claude` it always was.
+- **The Start Session… launcher** (`Ctrl+Alt+S`, the 🚀 in the Agents view title, the agent right-click menu, the **Start session…** button on the Agent Detail page). One picker that stays open: every row is a dimension of the launch, the top row is the trigger — and **its description is the exact command line that will run.** No hidden flags.
+
+| Row | What it does | CLI |
+| --- | --- | --- |
+| **▶ Start** | launches; its description is the full command line | — |
+| Agent | which folder it opens in | `cwd` |
+| Model | from your own model knowledge base (`agentFarm.modelAliases`) + free text | `--model` |
+| Effort | low · medium · high · xhigh · max | `--effort` |
+| Permissions | plan · acceptEdits · auto · manual · dontAsk · ⚠ bypassPermissions | `--permission-mode` |
+| Session name | shown in the prompt box, the `/resume` picker and the terminal title | `-n` |
+| First prompt | opens with an opening message instead of an empty session | positional argument |
+
+At the bottom sit the **profiles**: *Save this as a profile…* writes the current picks to `agentFarm.launchProfiles` under a name ("deep review" = opus + xhigh + plan), *Load a profile…* restores one, and *Make model/effort/permissions my defaults* promotes them to `launchDefaults`. The launcher **remembers what each agent was last launched with** — the second time you start the same kind of session it is one Enter.
+
+Free text (name, first prompt) is always quoted: `"` becomes `'`, a backtick (PowerShell's escape character) is dropped, newlines become spaces — it cannot break out of its quotes in any of the three shells (PowerShell · cmd · sh). `$` and `%` are **deliberately left alone**: mangling the user's own text silently is worse than showing the command line, and if a shell would expand a variable **you see it on the Start row**.
+
+### The shelf — pin and labels (A2)
+
+Among hundreds of transcripts are the six you live in. **★** puts them on the shelf:
+
+- The **★** at the start of each row in the Sessions tables (Dashboard + Agent Detail) — a filled star means shelved. **A pinned session is listed first and is exempt from the row limit**: *Show 20* gives you 20 rows *plus* the whole shelf, so pinning a seventh never hides a sixth. The **★ Pinned** chip in the filter panel narrows the table to the shelf alone.
+- **Labels:** *Label Session…* (session right-click) takes comma-separated free-text labels — `zen, release, customer x`. They render as chips on the row and **the table's text filter searches them too**, so typing "zen" catches both the titles and the labels.
+- **The Recent Sessions tree**: pinned sessions sit at the top with a 📌 icon, outside the 30-row cut; the pin button on hover and the right-click menu do the same.
+- **Session shelf…** (`Ctrl+Alt+P`, the 📌 in the Recent Sessions title): the shelf itself — pinned first, then the last 20 sessions; **Enter resumes the session in a terminal**, 📖 opens the transcript, 📌 pins or unpins.
+
+Pins and labels are attached to the session **id** and kept in VS Code's own storage: the transcript file is untouched, and re-scans and restarts leave them alone.
+
+### ⎋ Interrupt — stopping a running turn (A3)
+
+Headless work (tasks, missions) has always been stoppable — the process is ours, we kill its tree. A session you are talking to is a different animal: the only thing that stops it is **the key a person would press**. So that is what Agent Farm does — it **types Esc into the session's own terminal.** Nothing is killed: **the turn ends, the session and its context stay.**
+
+- Where: the **⎋** next to a **running** row in the Sessions tables · **⎋ Interrupt** on the Timeline's live cards · **⎋ Interrupt** on a stalled row in Needs You · `Ctrl+Alt+I` (picks a session) · the session right-click menu.
+- Targeting order: (1) the terminal the session was **launched in**, (2) the newest integrated terminal named for that agent, (3) an external window. **A session that cannot be identified gets nothing** — typing Esc into a random claude window, unlike bringing one to the front, cannot be undone.
+- The honest limit: in **external-terminal mode** (`agentFarm.externalTerminal`) the window is not ours to type into — there the window is brought to the front and you are told to press Esc in it. No fake button.
+- Bridge: `sessions.interrupt` returns the same distinction as data (`interrupted: false` + the reason).
+
+### The keyboard (A4)
+
+A 173-command extension had exactly one shortcut. Now there is a **hub** and six direct keys — all of them re-bindable in VS Code's Keyboard Shortcuts editor:
+
+| Key | Opens |
+| --- | --- |
+| **Ctrl+Alt+F** | **Quick Menu** — a grouped, type-to-filter list: Sessions · Pages · Work · System. Every row **prints its own shortcut**, so the menu teaches the direct keys instead of replacing them. |
+| Ctrl+Alt+S | Start Session… (the launcher) |
+| Ctrl+Alt+P | Session shelf… (pinned + recent) |
+| Ctrl+Alt+I | Interrupt session |
+| Ctrl+Alt+D | Dashboard |
+| Ctrl+Alt+N | Needs You |
+| Ctrl+Alt+L | Live Timeline |
+| Ctrl+Alt+Q | Add to Work Queue *(unchanged)* |
+
+**Keyboard-layout note:** on Windows, Ctrl+Alt is AltGr. On a Turkish-Q layout AltGr types a character on **Q/E/T** (`@`, `€`, `₺`), so none of the new shortcuts sit on those three letters. The one exception is **Ctrl+Alt+Q** (Add to Work Queue), left as it was for backwards compatibility — if it eats your `@`, rebind it in Keyboard Shortcuts.
 
 ## Terminal Rendering Health {#terminal-rendering-health}
 
@@ -1449,6 +1512,8 @@ The page is **schema-driven**: it renders whatever the extension manifest declar
 
 **Per-agent default model (2.75.0, knowledge base 2.78.0):** every agent chip carries a **model** dropdown — the default model for that agent's sessions. The options come from **your model knowledge base** (`agentFarm.modelAliases`, default haiku/sonnet/opus/fable): when a new model name appears, add it there once and every picker offers it permanently. For anything not listed, the **custom…** entry opens a free-text input (Enter saves, Esc cancels); a full model id already written in the folder is preserved and listed too. The choice is written to the `model` key of the agent's `.claude/settings.local.json`; picking **CLI default** removes the key so claude's own default takes over. A full model id can be typed into the file by hand — the box displays it and never clobbers it. For new agents there is `agentFarm.newAgentModel` (default **sonnet**): every agent created via **New Agent** gets that model written into its `settings.local.json`; leave it empty to write none.
 
+**Session launch defaults (3.24.0):** `agentFarm.launchDefaults` — the `model` · `effort` · `permissionMode` every interactive session carries (Start, Continue and Resume alike); an empty field emits no flag, so the default `{}` changes nothing. `agentFarm.launchProfiles` holds named setups ("deep review" = opus + xhigh + plan) and is what the **Start Session…** launcher lists. Both live in Farm Settings' **Core & Agents** section — see [Starting and Steering Sessions](#oturum-denetim).
+
 **Machine-independent stores and paths (2.76.0):** the extension's persisted files (`farm-tasks.json`, `missions.json`, the task history archive) can travel between machines via git: on save, absolute machine paths are turned into `${claudeDir}` / `${globalStorage}` / `${home}` tokens, and on load the tokens expand to this machine's real roots. Foreign absolute paths in records written before the tokens (e.g. another machine's `C:\Users\<name>\.claude\...`) **heal themselves on load** — everything after the `.claude` / `globalStorage` marker is re-rooted onto this machine; only values that are entirely a path are healed, prose (prompts) is never touched. All folder settings (`agentRoots`, `claudeDir`, `extraClaudeDirs`, `codexHome`, `geminiDir`, `autoReportFolder`, `digestTtsFolder`, `ingestFolders`) also accept `%USERPROFILE%`, `${env:VAR}` and `~` — a git-synced settings.json needs no machine-specific paths.
 
 **Claude Code (claude CLI) section (2.55.0):** the same page also edits **claude's own** `~/.claude/settings.json` — the file behind terminal tips like *"Set CLAUDE_CODE_USE_POWERSHELL_TOOL=1 …"*. A curated, explained catalog covers the default model, permission default mode, co-authored-by, transcript retention (`cleanupPeriodDays` — bounds how far back Agent Farm's search and analytics can see), output style and the well-known env switches (PowerShell tool preview, thinking/output token caps, bash timeouts, auto-update/telemetry opt-outs). Clearing a value removes the key so Claude's own default takes over. Everything else is editable in the validated **raw JSON editor** below the catalog — broken JSON is never saved, and a one-time `.agentfarm-backup` copy is kept next to the file. Changes apply to **new** claude sessions.
@@ -1533,7 +1598,11 @@ All in the command palette with the `Agent Farm:` prefix:
 - **Refresh** — re-scan agents and sessions
 - **New Agent** — a new agent scaffold from a template (CLAUDE.md + memory + .claude)
 - **Add Agent Root Folder** — add a new root folder
-- **Start Claude Session / Continue Latest Session** — opens a terminal in the agent folder and starts `claude`
+- **Start Claude Session / Continue Latest Session** — opens a terminal in the agent folder and starts `claude` (carrying `agentFarm.launchDefaults`, if set)
+- **Start Session… (model · effort · permissions · first prompt)** `Ctrl+Alt+S` — the launcher; see [Starting and Steering Sessions](#oturum-denetim)
+- **Quick Menu (everything, one key)** `Ctrl+Alt+F` — the grouped quick-access list; every row prints its own shortcut
+- **Session Shelf… (pinned + recent)** `Ctrl+Alt+P` · **Pin / Unpin Session** · **Label Session…** — the shelf
+- **Interrupt Session (send Esc)** `Ctrl+Alt+I` — stops the running turn without closing the session
 - **Open Agent in New Window / Reveal in File Explorer**
 - **Open Live Timeline** — swim-lane view (live observation)
 - **Install Live Hooks / Remove Live Hooks** — install/remove the live-observation hooks

@@ -195,6 +195,7 @@
                 title: `<span class="dot ${a.active ? 'on' : 'off'}"></span> ${C.esc(a.name)}`,
                 sub: `${C.esc(a.dir)} · permissions: ${C.esc(a.permissionSummary)}`,
                 actions: `<button id="start">Start session</button>
+                    <button class="secondary" id="launch" title="Start a session after picking model · effort · permission mode · name · first prompt">Start session…</button>
                     <button class="secondary" id="continue">Continue latest</button>
                     <button class="secondary" id="reveal">Reveal folder</button>`,
                 searchTitle: "Search all of this agent's sessions",
@@ -251,6 +252,7 @@
         window.AFHeader.wire(vscode);
         document.getElementById('addDuty').addEventListener('click', () => vscode.postMessage({ type: 'addDuty' }));
         document.getElementById('start').addEventListener('click', () => vscode.postMessage({ type: 'startSession' }));
+        document.getElementById('launch').addEventListener('click', () => vscode.postMessage({ type: 'launchSession' }));
         document.getElementById('continue').addEventListener('click', () => vscode.postMessage({ type: 'continueSession' }));
         document.getElementById('reveal').addEventListener('click', () => vscode.postMessage({ type: 'reveal' }));
         document.querySelectorAll('[data-file]').forEach(el =>

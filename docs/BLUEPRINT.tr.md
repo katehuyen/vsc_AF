@@ -106,13 +106,14 @@ Yan paneldeki ana ağaç. Her ajan şu alt bölümlerle açılır:
 | Permissions | `.claude/settings.local.json` izin özeti |
 | Sessions | Son 15 oturum; tıklayınca Oturum Görüntüleyici açılır |
 
-Ajan üzerinde sağ tık menüsü: **Start Claude Session**, **Continue Latest Session**, **Open Agent Detail**, **Open in New Window**, **Reveal in File Explorer**.
+Ajan üzerinde sağ tık menüsü: **Start Claude Session**, **Start Session…** (model · efor · izin modu · ad · ilk cümle — bkz. [Oturum Başlatma ve Denetim](#oturum-denetim)), **Continue Latest Session**, **Open Agent Detail**, **Open in New Window**, **Reveal in File Explorer**.
 
 Oturum satırında sağ tık menüsü (2.7.0):
 
 - **Resume Session in Terminal** — o oturumun klasöründe terminal açıp `claude --resume <oturum-id>` çalıştırır: **herhangi bir geçmiş oturuma** kaldığın yerden devam edersin (Continue Latest yalnızca en son oturumu sürdürür). Satırın üzerine gelince çıkan ⏵ ikonu da aynısını yapar. Oturum Görüntüleyicinin sağ üstündeki **⏵ Resume** düğmesi de aynı işi görür.
 - **Focus Session Terminal (2.58.0)** — üzerine gelince çıkan ⌨/terminal ikonu (ve sağ tık menüsü) doğrudan o oturumun terminal penceresine atlar. Aynı ⌨, oturumun göründüğü **her** yüzeyde var: Dashboard ve Ajan Detay tablo satırları, Timeline canlı kartları, Oturum Görüntüleyicinin üst çubuğu ve Needs You maddeleri.
 - **Rename Session…** — oturuma kendi adını ver (hatırlamak için); boş bırakırsan otomatik başlık geri gelir. Adlar kalıcıdır, transcript dosyasına dokunulmaz.
+- **Pin / Unpin Session (3.24.0)** — oturumu rafa koyar: pinli oturumlar listenin başında durur ve satır sınırından muaftır. Satır üstündeki 📌 düğmesi de aynısını yapar. **Label Session…** virgülle ayrılmış etiketler ekler, **Interrupt Session** çalışan turu Esc ile durdurur — bkz. [Oturum Başlatma ve Denetim](#oturum-denetim).
 
 Oturum başlıkları 2.7.0'dan itibaren konuşmadan türetilir: `/compact` gibi komutlar, `<...>` harness blokları ve `!` kabuk satırları artık başlık olmaz — ilk gerçek kullanıcı cümlesi başlıktır.
 
@@ -208,6 +209,68 @@ Filodaki son olayların canlı akışı: kullanıcı komutları (prompt), araç 
 - **Agent Farm: Reset Token Lap** — o andan itibaren tüm filonun token/maliyet/mesajını saymaya başlar; durum çubuğunda `⏱ 84.2K` olarak görünür, tooltip'te ayrıntısı ve sıfırlama/temizleme linkleri vardır.
 - Yeni tur için tekrar **Reset Token Lap**; sayacı kaldırmak için **Clear Token Lap**.
 - Sınır: lap, son 48 saatlik mesaj penceresinden beslenir — 48 saatten yaşlı bir lap yalnızca son 48 saati sayar (tooltip'te uyarır).
+
+## Oturum Başlatma ve Denetim {#oturum-denetim}
+
+*(3.24.0)* Agent Farm oturumları **görüyordu**; artık onlara **dokunuyor**. Dört parça: bir oturum neyle başlar, hangi oturumlar elinin altında durur, çalışan bir oturum nasıl durdurulur, ve tüm bunlara klavyeden nasıl ulaşılır.
+
+### Start Session… — bir oturum neyle başlar (A1)
+
+Eskiden her oturum çıplak `claude` ile açılıyordu; model, efor, izin modu ve ilk cümle terminale elle yazılıyordu. Artık iki katman var:
+
+- **Her oturuma uygulanan varsayılanlar — `agentFarm.launchDefaults`.** `model` · `effort` · `permissionMode`. Bir kere ayarla; **Start Session, Continue Latest ve Resume** dahil her başlatma bunları taşır. Her alan isteğe bağlıdır ve **boş alan hiç bayrak üretmez** — varsayılan `{}` ile başlatma, her zamanki çıplak `claude`'un aynısıdır.
+- **Start Session… launcher'ı** (`Ctrl+Alt+S`, Agents panelinin başlığındaki 🚀, ajan sağ tık menüsü, Ajan Detay sayfasındaki **Start session…** düğmesi). Açık kalan tek bir seçici: her satır başlatmanın bir boyutu, en üstteki satır ise tetiktir — ve **açıklaması, çalışacak komut satırının tam kendisidir.** Gizli bayrak yok.
+
+| Satır | Ne yapar | CLI karşılığı |
+| --- | --- | --- |
+| **▶ Start** | başlatır; açıklaması tam komut satırıdır | — |
+| Agent | hangi klasörde açılacağı | `cwd` |
+| Model | senin model bilgi tabanından (`agentFarm.modelAliases`) + serbest metin | `--model` |
+| Effort | low · medium · high · xhigh · max | `--effort` |
+| Permissions | plan · acceptEdits · auto · manual · dontAsk · ⚠ bypassPermissions | `--permission-mode` |
+| Session name | prompt kutusunda, `/resume` seçicisinde ve terminal başlığında görünür | `-n` |
+| First prompt | boş oturum yerine ilk mesajla açılır | konumsal argüman |
+
+Alt kısımda **profiller**: *Save this as a profile…* mevcut seçimi `agentFarm.launchProfiles`'a adıyla yazar ("derin inceleme" = opus + xhigh + plan gibi), *Load a profile…* geri yükler; *Make model/effort/permissions my defaults* seçimi `launchDefaults`'a taşır. Launcher, her ajan için **en son ne ile başlattığını hatırlar** — aynı tür oturumu ikinci açışın tek Enter'dır.
+
+Serbest metin (ad, ilk cümle) her zaman tırnaklanır: `"` tek tırnağa döner, backtick (PowerShell kaçış karakteri) düşer, satır sonları boşluk olur — üç kabuğun (PowerShell · cmd · sh) hiçbirinde tırnak dışına taşamaz. `$` ve `%` **bilerek korunur**: kullanıcının kendi metnini sessizce bozmaktansa komut satırını göstermek doğru olanıdır (kabuk bir değişkeni genişletirse **Start satırında görürsün**).
+
+### Raf — pin ve etiket (A2)
+
+253 oturumun içinde her gün döndüğün altı iş vardır. **★** onları rafa koyar:
+
+- Sessions tablolarında (Dashboard + Ajan Detay) satır başındaki **★** — dolu yıldız = rafta. **Rafa konan oturum listenin başında durur ve satır sınırından muaftır**: *Show 20* dediğinde 20 satır + rafın tamamı gelir, yani yedinciyi pinlemek altıncıyı gizlemez. Filtre panelindeki **★ Pinned** chip'i tabloyu yalnız rafa indirger.
+- **Etiketler:** *Label Session…* (oturum sağ tık menüsü) virgülle ayrılmış serbest etiketler yazar — `zen, release, müşteri x`. Etiketler satırda çip olarak görünür ve **tablonun metin filtresi onları da arar**, yani "zen" yazmak hem başlığı hem etiketi tutar.
+- **Recent Sessions ağacı**: pinli oturumlar 📌 ikonuyla en üstte, 30 satırlık kesmenin dışında; satır üstündeki pin düğmesi ve sağ tık menüsü aynı işi yapar.
+- **Session shelf…** (`Ctrl+Alt+P`, Recent Sessions başlığındaki 📌): rafın kendisi — önce pinliler, sonra son 20 oturum; **Enter oturumu terminalde devam ettirir**, satırdaki 📖 transkripti açar, 📌 rafa alır/çıkarır.
+
+Pin ve etiketler oturum **kimliğine** bağlıdır ve VS Code'un kalıcı deposunda tutulur; transcript dosyasına dokunulmaz, yeniden tarama ve yeniden başlatma onları etkilemez.
+
+### ⎋ Interrupt — çalışan bir turu durdurmak (A3)
+
+Headless işler (task, mission) baştan beri durdurulabiliyordu — süreç bizim, ağacını öldürürüz. Konuştuğun bir oturum başka bir hayvan: onu durduran tek şey **insanın basacağı tuştur**. Agent Farm da tam olarak onu yapar — **oturumun kendi terminaline Esc yazar.** Süreç öldürülmez: **tur biter, oturum ve bağlamı yerinde kalır.**
+
+- Nerede: Sessions tablolarında **çalışan** satırın yanındaki **⎋** · Timeline'ın canlı kartlarında **⎋ Interrupt** · Needs You'daki takılmış (stalled) satırda **⎋ Interrupt** · `Ctrl+Alt+I` (oturum seçtirir) · oturum sağ tık menüsü.
+- Hedefleme sırası: (1) o oturumun **başlatıldığı** terminal, (2) o ajan adına açılmış en yeni entegre terminal, (3) harici pencere. **Kimliği çözülemeyen bir oturum için hiçbir şey yapılmaz** — rastgele bir claude penceresine Esc yazmak, pencere öne getirmekten farklı olarak geri alınamaz.
+- Dürüst sınır: **harici terminal modunda** (`agentFarm.externalTerminal`) pencere bizim değildir, içine yazamayız — o durumda pencere öne getirilir ve "Esc'e orada bas" denir. Sahte düğme yok.
+- Köprü: `sessions.interrupt` aynı ayrımı veri olarak döner (`interrupted: false` + gerekçe).
+
+### Klavye (A4)
+
+173 komutluk bir eklentide tek kısayol vardı. Artık bir **hub** ve altı doğrudan tuş var — hepsi VS Code'un Keyboard Shortcuts ekranından değiştirilebilir:
+
+| Tuş | Ne açar |
+| --- | --- |
+| **Ctrl+Alt+F** | **Quick Menu** — gruplu, yazarak süzülen liste: Sessions · Pages · Work · System. Her satır **kendi kısayolunu yazar**, yani menü doğrudan tuşları öğretir. |
+| Ctrl+Alt+S | Start Session… (launcher) |
+| Ctrl+Alt+P | Session shelf… (pinliler + son oturumlar) |
+| Ctrl+Alt+I | Interrupt session |
+| Ctrl+Alt+D | Dashboard |
+| Ctrl+Alt+N | Needs You |
+| Ctrl+Alt+L | Live Timeline |
+| Ctrl+Alt+Q | Add to Work Queue *(2.x'ten beri)* |
+
+**Türkçe-Q klavye notu:** Windows'ta Ctrl+Alt = AltGr. Türkçe-Q düzeninde AltGr **Q/E/T** harflerinde karakter üretir (`@`, `€`, `₺`), bu yüzden yeni kısayolların hiçbiri o üç harfe konmadı. Tek istisna, geriye dönük uyumluluk için olduğu gibi bırakılan **Ctrl+Alt+Q**'dur (Add to Work Queue) — `@` yazarken kuyruk kutusu açılıyorsa VS Code'un Keyboard Shortcuts ekranından değiştirebilirsin.
 
 ## Terminal Render Sağlığı
 
@@ -1449,6 +1512,8 @@ Sayfa **şema-güdümlüdür**: eklenti manifestinin bildirdiği her şeyi çize
 
 **Ajan başına varsayılan model (2.75.0, bilgi tabanı 2.78.0):** her ajan çipinde bir **model** açılır kutusu var — o ajanın oturumlarının varsayılan modeli. Seçenekler **senin model bilgi tabanından** gelir (`agentFarm.modelAliases`, varsayılan haiku/sonnet/opus/fable): yeni bir model adı çıktığında oraya bir kere ekle, her seçicide kalıcı görünür. Listede olmayan bir şey gerekiyorsa **custom…** seçeneği serbest metin girişi açar (Enter kaydeder, Esc vazgeçer); klasörde zaten tam bir model id'si yazılıysa o da listede korunur. Seçim ajanın `.claude/settings.local.json` dosyasındaki `model` anahtarına yazılır; **CLI default** seçmek anahtarı siler, claude'un kendi varsayılanı devreye girer. Tam model id'si gerekiyorsa dosyaya elle yazılabilir — kutu onu görüntüler ve bozmadan korur. Yeni ajanlar içinse `agentFarm.newAgentModel` ayarı (varsayılan **sonnet**) vardır: **New Agent** ile açılan her ajanın `settings.local.json`'ına bu model otomatik yazılır; boş bırakılırsa model yazılmaz.
 
+**Oturum başlatma varsayılanları (3.24.0):** `agentFarm.launchDefaults` — her etkileşimli oturumun taşıdığı `model` · `effort` · `permissionMode` (Start, Continue ve Resume dahil); boş alan hiç bayrak üretmez, varsayılan `{}` ile davranış değişmez. `agentFarm.launchProfiles` ise adlı kurulumları tutar ("derin inceleme" = opus + xhigh + plan gibi) ve **Start Session…** launcher'ında listelenir. İkisi de Farm Settings'in **Core & Agents** bölümündedir — bkz. [Oturum Başlatma ve Denetim](#oturum-denetim).
+
 **Makine-bağımsız store'lar ve yollar (2.76.0):** Eklentinin kalıcı dosyaları (`farm-tasks.json`, `missions.json`, görev tarih arşivi) git ile makineler arası taşınabilir: kayıt sırasında mutlak makine yolları `${claudeDir}` / `${globalStorage}` / `${home}` jetonlarına çevrilir, okunurken bu makinenin gerçek köklerine açılır. Jetonlardan önce yazılmış eski kayıtlardaki yabancı mutlak yollar (ör. başka makinenin `C:\Users\<ad>\.claude\...`'u) okunurken **kendiliğinden iyileşir** — `.claude` / `globalStorage` işaretinden sonrası bu makinenin köküne bağlanır; yalnız değeri komple yol olan alanlar iyileştirilir, düzyazı (prompt) asla bozulmaz. Ayrıca tüm klasör ayarları (`agentRoots`, `claudeDir`, `extraClaudeDirs`, `codexHome`, `geminiDir`, `autoReportFolder`, `digestTtsFolder`, `ingestFolders`) `%USERPROFILE%`, `${env:VAR}` ve `~` yazımını destekler — settings.json'ı git'le taşıyorsan makineye özel yol yazmak zorunda değilsin.
 
 **Claude Code (claude CLI) bölümü (2.55.0):** aynı sayfa **claude'un kendi** `~/.claude/settings.json` dosyasını da düzenler — terminaldeki *"Set CLAUDE_CODE_USE_POWERSHELL_TOOL=1 …"* gibi ipuçlarının arkasındaki dosya. Açıklamalı seçilmiş katalog: varsayılan model, izin varsayılan modu, co-authored-by, transkript saklama süresi (`cleanupPeriodDays` — Agent Farm'ın arama ve analitiğinin ne kadar geriye görebildiğini sınırlar), output style ve bilinen env anahtarları (PowerShell tool önizlemesi, thinking/çıktı token tavanları, bash zaman aşımı, oto-güncelleme/telemetri kapatmaları). Bir değeri temizlemek anahtarı dosyadan siler — Claude'un kendi varsayılanı devreye girer. Geri kalan her şey kataloğun altındaki doğrulamalı **ham JSON editöründen** düzenlenir — bozuk JSON asla kaydedilmez, dosyanın yanında bir kerelik `.agentfarm-backup` kopyası tutulur. Değişiklikler **yeni** claude oturumlarına uygulanır.
@@ -1532,7 +1597,11 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 - **Refresh** — ajanları ve oturumları yeniden tara
 - **New Agent** — şablondan yeni ajan iskeleti (CLAUDE.md + memory + .claude)
 - **Add Agent Root Folder** — yeni kök klasör ekle
-- **Start Claude Session / Continue Latest Session** — ajan klasöründe terminal açıp `claude` başlatır
+- **Start Claude Session / Continue Latest Session** — ajan klasöründe terminal açıp `claude` başlatır (`agentFarm.launchDefaults` varsa onunla)
+- **Start Session… (model · effort · permissions · first prompt)** `Ctrl+Alt+S` — launcher; bkz. [Oturum Başlatma ve Denetim](#oturum-denetim)
+- **Quick Menu (everything, one key)** `Ctrl+Alt+F` — gruplu hızlı erişim listesi, her satır kendi kısayolunu yazar
+- **Session Shelf… (pinned + recent)** `Ctrl+Alt+P` · **Pin / Unpin Session** · **Label Session…** — raf
+- **Interrupt Session (send Esc)** `Ctrl+Alt+I` — çalışan turu durdurur, oturumu kapatmaz
 - **Open Agent in New Window / Reveal in File Explorer**
 - **Open Live Timeline** — kulvar görünümü (canlı gözlem)
 - **Install Live Hooks / Remove Live Hooks** — canlı gözlem hook'larını kur/kaldır

@@ -41,6 +41,11 @@ function makeContainer() {
             } else if (sel === '[data-turnjump]') {
                 grab(/data-turnjump="([^"]*)" data-turnts="(\d+)"/g,
                     m => ({ turnjump: m[1], turnts: m[2] }));
+            } else if (sel === '[data-pin]') {
+                grab(/data-pin="([^"]*)" data-pinned="([^"]*)"/g, m => ({ pin: m[1], pinned: m[2] }));
+            } else if (sel === '[data-stop]') {
+                grab(/data-stop="([^"]*)" data-stopagent="([^"]*)"/g,
+                    m => ({ stop: m[1], stopagent: m[2] }));
             }
             this._els[sel] = list;
             return list;
@@ -368,6 +373,82 @@ const mkRow = (i, extra) => Object.assign({
     t.setRows([mkRow(9)], 10);
     ok('a row with no origin stays visible in the User scope',
         containers.orig.querySelectorAll('[data-fold]').length === 1);
+}
+
+// ---------- part: the shelf — ★ column, pinned-first, exempt from the row limit ----------
+{
+    posted = []; state = {};
+    const t = sandbox.window.AFSessionsTable.create({
+        vscode: vscodeStub, C, containerId: 'pin',
+        columns: ['title', 'when', 'cost'], stateKey: 'pin'
+    });
+    // f5 is the OLDEST and cheapest — bottom of every sort — and pinned.
+    t.setRows([
+        mkRow(1), mkRow(2), mkRow(3), mkRow(4),
+        mkRow(5, { pinned: true, tags: ['zen', 'release'] })
+    ], 2);
+    const html = () => containers.pin.innerHTML;
+    const q = sel => containers.pin.querySelector(sel);
+    const rowsShown = () => containers.pin.querySelectorAll('[data-fold]').length;
+
+    ok('the ★ column has its own header', html().includes('class="pincell"') && html().includes('>★</th>'));
+    ok('every row carries a pin toggle', containers.pin.querySelectorAll('[data-pin]').length === rowsShown());
+    ok('a pinned row shows a filled star, unpinned an outline',
+        html().includes('pinbtn on') && html().includes('>☆</button>'));
+    ok('the pinned session leads, whatever the sort says',
+        html().indexOf('title5') < html().indexOf('title1'));
+    ok('…and it does NOT eat one of the N rows (2 + the pinned one)', rowsShown() === 3);
+    ok('its labels are on the row', html().includes('>zen</span>') && html().includes('>release</span>'));
+
+    // ★ click: optimistic locally + persisted by the host
+    click(containers.pin.querySelectorAll('[data-pin]')[0]);   // the pinned f5 → unpin
+    const off = posted.find(p => p.type === 'pinSession');
+    ok('★ posts the session id and the wanted state',
+        off && off.sessionId === 'sid5' && off.pinned === false);
+    ok('the row flips at once, without waiting for the host',
+        !html().includes('pinbtn on') && rowsShown() === 2);
+    ok('…and the unpinned session falls back out of the top-N', !html().includes('title5'));
+
+    posted = [];
+    click(containers.pin.querySelectorAll('[data-pin]')[0]);   // pin the first visible row
+    ok('pinning back posts pinned:true',
+        posted.some(p => p.type === 'pinSession' && p.pinned === true));
+
+    // labels are searchable text
+    t.setRows([mkRow(1), mkRow(2, { tags: ['customer x'] })], 10);
+    click(q('.af-filter'));
+    const txt = q('.af-ftext'); txt.value = 'customer'; txt._fn(ev());
+    ok('the text filter searches labels too',
+        html().includes('title2') && !html().includes('title1'));
+    txt.value = ''; txt._fn(ev());
+
+    // the ★ Pinned filter = the shelf on its own
+    t.setRows([mkRow(1), mkRow(2, { pinned: true }), mkRow(3)], 10);
+    click(q('.af-fpin'));
+    ok('★ Pinned narrows to the shelf',
+        html().includes('title2') && !html().includes('title1') && !html().includes('title3'));
+    ok('…and it counts as an active filter', html().includes('Filters ('));
+    click(q('.af-fclear'));
+    ok('Clear restores everything', html().includes('title1') && html().includes('title3'));
+}
+
+// ---------- part: ⎋ interrupt — only where there is something to stop ----------
+{
+    posted = []; state = {};
+    const t = sandbox.window.AFSessionsTable.create({
+        vscode: vscodeStub, C, containerId: 'stop',
+        columns: ['title', 'cost'], stateKey: 'stop'
+    });
+    t.setRows([mkRow(1, { active: true }), mkRow(2)], 10);
+    const stops = () => containers.stop.querySelectorAll('[data-stop]');
+
+    ok('the interrupt button is on the running row only', stops().length === 1);
+    click(stops()[0]);
+    const msg = posted.find(p => p.type === 'interruptSession');
+    ok('⎋ posts the session identity', msg && msg.sessionId === 'sid1' && msg.agentName === 'dev');
+
+    t.setRows([mkRow(1), mkRow(2)], 10);
+    ok('nothing running, nothing to interrupt', stops().length === 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

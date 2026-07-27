@@ -95,6 +95,9 @@ export function sessionRowPool(
         sidechain: s.isSidechain,
         // 🧑 your own dialog vs 🤖 an automation run — the table's default scope
         origin: sessionOrigin(s),
+        // shelf marks: pinned rows sort first and survive every top-N cut
+        pinned: s.pinned === true,
+        tags: s.tags ?? [],
         active: isActive ? isActive(s) : false
     }));
     type Row = typeof rows[number];
@@ -105,6 +108,9 @@ export function sessionRowPool(
         r => r.ts, r => r.cost, r => r.tokens, r => r.ctx, r => r.durationMin, r => r.turns
     ];
     const pool = new Set<Row>();
+    // The shelf is not a top-N: a pinned session is on the table because the
+    // user put it there, whatever it costs or how long ago it ran.
+    rows.filter(r => r.pinned).forEach(r => pool.add(r));
     for (const origin of ['user', 'auto'] as const) {
         const lane = rows.filter(r => r.origin === origin);
         for (const key of keys) {
@@ -345,6 +351,18 @@ export class DashboardPanel {
                     sessionId: typeof msg.sessionId === 'string' && msg.sessionId ? msg.sessionId : undefined,
                     agentName: typeof msg.agentName === 'string' ? msg.agentName : undefined,
                     cwd: typeof msg.cwd === 'string' && msg.cwd ? msg.cwd : undefined
+                });
+                break;
+            case 'pinSession':
+                void vscode.commands.executeCommand('agentfarm.pinSession', {
+                    sessionId: typeof msg.sessionId === 'string' ? msg.sessionId : '',
+                    pinned: msg.pinned === true
+                });
+                break;
+            case 'interruptSession':
+                void vscode.commands.executeCommand('agentfarm.interruptSession', {
+                    sessionId: typeof msg.sessionId === 'string' && msg.sessionId ? msg.sessionId : undefined,
+                    agentName: typeof msg.agentName === 'string' ? msg.agentName : undefined
                 });
                 break;
             case 'refresh':

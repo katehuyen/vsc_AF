@@ -33,7 +33,7 @@ const CATEGORY_OF: Record<string, string> = {
     // core
     agentRoots: 'core', excludeAgentDirs: 'core', claudeDir: 'core', extraClaudeDirs: 'core',
     includeUnmatchedProjects: 'core', guideLanguage: 'core', newAgentModel: 'core',
-    modelAliases: 'core',
+    modelAliases: 'core', launchDefaults: 'core', launchProfiles: 'core',
     // display & labels
     speakerLabelTemplate: 'display', speakerLabelCase: 'display', speakerLabelFallback: 'display',
     // live monitoring & alerts

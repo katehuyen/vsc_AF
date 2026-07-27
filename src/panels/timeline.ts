@@ -115,6 +115,12 @@ export class TimelinePanel {
                     agentName: typeof msg.agentName === 'string' ? msg.agentName : undefined
                 });
                 break;
+            case 'interruptSession':
+                void vscode.commands.executeCommand('agentfarm.interruptSession', {
+                    sessionId: typeof msg.sessionId === 'string' && msg.sessionId ? msg.sessionId : undefined,
+                    agentName: typeof msg.agentName === 'string' ? msg.agentName : undefined
+                });
+                break;
             case 'openGuide':
                 void vscode.commands.executeCommand('agentfarm.openGuide', msg.anchor);
                 break;

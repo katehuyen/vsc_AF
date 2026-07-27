@@ -93,6 +93,15 @@ import { buildDailyDigest, buildFleetReport, buildOutputsDigest } from './core/r
 import { buildForecast, renderForecastMarkdown } from './core/forecast';
 import { SessionIndex, SessionInfo, sessionOrigin } from './core/sessions';
 import {
+    buildLaunchCommand, describeLaunch, EFFORT_CHOICES, LaunchChoice, LaunchDefaults,
+    LaunchOptions, LaunchProfile, modelChoices, PERMISSION_CHOICES, validateLaunch, withDefaults
+} from './core/launch';
+import {
+    allTags, isPinned, normalizeMarks, parseTags, SessionMarks, setTags, tagsOf, togglePin
+} from './core/sessionmarks';
+import { INTERRUPT_KEY, resolveInterrupt, TermRecord } from './core/interrupt';
+import { QUICK_MENU, QUICK_MENU_GROUPS } from './core/quickmenu';
+import {
     applySuggestionToClaudeMd, collectUserMessages, scanCorrections, SuggestionStore
 } from './core/suggest';
 import { buildWeeklyFactsText, generateWeeklySummary, isoWeek, WeeklyFacts } from './core/summary';
@@ -510,6 +519,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const TITLES_KEY = 'agentfarm.sessionTitles';
     const sessionTitles = () => context.globalState.get<Record<string, string>>(TITLES_KEY, {});
     index.setTitleOverrides(sessionTitles());
+
+    // The shelf (pin + tags) lives beside the names, in its own store: a mark
+    // is the user's own annotation, so it survives restarts, re-scans and the
+    // transcript being rewritten under it.
+    const MARKS_KEY = 'agentfarm.sessionMarks';
+    const sessionMarks = (): SessionMarks =>
+        normalizeMarks(context.globalState.get<unknown>(MARKS_KEY, {}));
+    // (refreshAll is defined further down, once the trees exist; a mark is only
+    // ever saved from a command, long after activation.)
+    const saveMarks = async (marks: SessionMarks) => {
+        await context.globalState.update(MARKS_KEY, marks);
+        index.setMarks(marks);
+        refreshAll();
+    };
+    index.setMarks(sessionMarks());
 
     let taskManagerRef: TaskManager | undefined;
     // Task analytics source: live task list merged with the finished-task
@@ -2585,6 +2609,84 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            op: 'sessions.start',
+            describe: 'Start an INTERACTIVE claude session in an agent\'s folder — the same launch the Start Session… picker performs, with the same flags. Not a headless run: it opens a terminal a human then talks in (use tasks.add for work that should run by itself). args: agent (name|id), model? (alias or id), effort? (low|medium|high|xhigh|max), permissionMode? (plan|acceptEdits|auto|manual|dontAsk|bypassPermissions), name? (session display name), prompt? (first message), resume? (session id), continue? (true = latest session in that folder). Unset fields fall back to agentFarm.launchDefaults.',
+            handler: (args) => {
+                const agent = findAgent(argStr(args, 'agent'));
+                const o: LaunchOptions = {
+                    model: optStr(args, 'model'),
+                    effort: optStr(args, 'effort'),
+                    permissionMode: optStr(args, 'permissionMode'),
+                    name: optStr(args, 'name'),
+                    prompt: optStr(args, 'prompt'),
+                    resume: optStr(args, 'resume'),
+                    continueLast: args.continue === true
+                };
+                const errors = validateLaunch(withDefaults(o, launchDefaults()));
+                need(!errors.length, errors.join(' · '));
+                const command = startClaudeSession(agent, o);
+                need(command, 'launch rejected — see the warning in the window');
+                return { agent: agent.name, cwd: agent.dir, command };
+            }
+        },
+        {
+            op: 'sessions.pin',
+            describe: 'Put a session on the user\'s shelf, or take it off. Pinned sessions are listed first on every sessions surface and are never cut by a row limit. args: sessionId, pinned? (default: toggle)',
+            handler: async (args) => {
+                const sessionId = argStr(args, 'sessionId');
+                const marks = sessionMarks();
+                const want = typeof args.pinned === 'boolean' ? args.pinned : undefined;
+                const next = togglePin(marks, sessionId, want);
+                await saveMarks(next);
+                return { sessionId, pinned: isPinned(next, sessionId) };
+            }
+        },
+        {
+            op: 'sessions.tag',
+            describe: 'Set the user\'s labels on a session (replaces them; empty clears). Labels are searched by the sessions tables\' text filter. args: sessionId, tags (array or comma-separated string)',
+            handler: async (args) => {
+                const sessionId = argStr(args, 'sessionId');
+                const raw = Array.isArray(args.tags) ? args.tags.join(', ') : optStr(args, 'tags');
+                const next = setTags(sessionMarks(), sessionId, parseTags(raw));
+                await saveMarks(next);
+                return { sessionId, tags: tagsOf(next, sessionId) };
+            }
+        },
+        {
+            op: 'sessions.shelf',
+            describe: 'The pinned sessions (the user\'s shelf) with their labels — what they keep coming back to. args: none',
+            handler: () => index.pinned().map(s => ({
+                sessionId: s.sessionId, title: s.title, agent: s.agentName ?? null,
+                tags: s.tags ?? [], lastTs: s.lastTs, cwd: s.cwd ?? null,
+                cost: Math.round(s.cost * 100) / 100
+            }))
+        },
+        {
+            op: 'sessions.interrupt',
+            describe: 'Stop what a live session is doing by typing Esc into its terminal — the turn ends, the session and its context survive. Integrated terminals only: a session running in an external OS window is reported back as such (nobody can type into it), and headless task/mission runs are stopped with tasks.stop / missions.cancel instead. args: sessionId',
+            handler: async (args) => {
+                const sessionId = argStr(args, 'sessionId');
+                const openTerms = vscode.window.terminals;
+                const records: TermRecord[] = termBindings.map(b => ({
+                    title: b.title, sessionId: b.sessionId,
+                    hasTerminal: !!b.term && openTerms.includes(b.term),
+                    terminalIndex: b.term ? openTerms.indexOf(b.term) : undefined
+                }));
+                const agentName = live.sessions().find(s => s.sessionId === sessionId)?.agentName
+                    ?? index.all().find(s => s.sessionId === sessionId)?.agentName;
+                const target = resolveInterrupt({
+                    sessionId, agentName, bindings: records, terminalNames: openTerms.map(t => t.name)
+                });
+                if (target.kind !== 'integrated') {
+                    return { sessionId, interrupted: false, reason: target.how };
+                }
+                const term = openTerms[target.terminalIndex];
+                term.show();
+                term.sendText(INTERRUPT_KEY, false);
+                return { sessionId, interrupted: true, terminal: term.name, how: target.how };
+            }
+        },
+        {
             op: 'agents.sync',
             describe: 'Cross-engine sync for one agent. Writes BOTH lanes, because the engines look in different places: <agent>/AGENTS.md (Codex merges one AGENTS.md per directory from the git root down to its cwd) and <agent>/.agents/AGENTS.md (Antigravity\'s workspace customization root — it reads NOTHING above the workspace, so the shared constitution is embedded in this file). Plus duty workflows and a Codex MCP TOML snippet when .mcp.json exists. Non-destructive: if a generated file diverged (conflict / foreign / antigravity-ahead) it reports the state and changes nothing unless force=true. args: agent (name|id), force? (default false)',
             handler: (args) => {
@@ -3961,6 +4063,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 void vscode.commands.executeCommand('agentfarm.focusSessionTerminal',
                     { sessionId: item.ref.sessionId });
                 break;
+            case 'interrupt':
+                // agentName is resolved from the live monitor inside the command —
+                // a needs row can carry a session-id stub instead of a real agent.
+                void vscode.commands.executeCommand('agentfarm.interruptSession',
+                    { sessionId: item.ref.sessionId });
+                break;
             case 'open-dashboard':
                 void vscode.commands.executeCommand('agentfarm.openDashboard');
                 break;
@@ -4205,6 +4313,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return terminal;
     };
 
+    // ---------- A1: what a session starts WITH ----------
+    // Until now every session started as a bare `claude` and the model, the
+    // effort, the permission mode and the first prompt were typed into the
+    // terminal by hand. Two levels fix that: settings that apply to EVERY
+    // launch (here), and the launcher picker that overrides them for one.
+    const launchDefaults = (): LaunchDefaults => {
+        const d = cfg().get<LaunchDefaults>('launchDefaults', {}) ?? {};
+        return {
+            model: (d.model ?? '').trim(),
+            effort: (d.effort ?? '').trim(),
+            permissionMode: (d.permissionMode ?? '').trim()
+        };
+    };
+
+    /** Build + launch one claude session. Defaults fill whatever the caller
+     *  left open; an invalid value is reported here rather than in a terminal
+     *  the user then has to read. Returns the command line that ran. */
+    const startClaudeSession = (
+        agent: AgentInfo, o: LaunchOptions = {}, sessionId?: string, cwd?: string
+    ): string | undefined => {
+        const merged = withDefaults(o, launchDefaults());
+        const errors = validateLaunch(merged);
+        if (errors.length) {
+            void vscode.window.showWarningMessage(`Agent Farm: ${errors.join(' · ')}`);
+            return undefined;
+        }
+        const command = buildLaunchCommand('claude', merged);
+        // Terminal name stays "claude: <agent>" — agentfarm.focusSessionTerminal
+        // and the interrupt resolver both find windows by that exact shape.
+        launchClaudeTerminal(`claude: ${agent.name}`, cwd ?? agent.dir, command, undefined, sessionId);
+        return command;
+    };
+
     // Claude only announces its session id via hook events after the terminal is
     // already running — bind each new live session to the launch it came from:
     // same cwd, session started after the launch (5 min window absorbs slow
@@ -4232,6 +4373,272 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             { placeHolder: 'Select an agent', ignoreFocusOut: true }
         );
         return pick?.agent;
+    };
+
+    // ---------- A1: the launcher ----------
+    // One picker that stays open: every row is a dimension of the launch, the
+    // top row is the trigger, and its description is the EXACT command line
+    // that will run. Nothing is hidden behind a flag the user can't see.
+    const LAST_LAUNCH_KEY = 'agentfarm.lastLaunch';
+    const lastLaunch = () => context.globalState.get<Record<string, LaunchOptions>>(LAST_LAUNCH_KEY, {});
+
+    /** Sub-picker for one dimension. Cancelling keeps the current value;
+     *  "Other…" accepts anything the installed CLI might know that we don't. */
+    const pickChoice = async (
+        placeHolder: string, choices: LaunchChoice[], current: string, allowCustom: boolean
+    ): Promise<string | undefined> => {
+        interface Item extends vscode.QuickPickItem { id: string; custom?: boolean }
+        const items: Item[] = choices.map(c => ({
+            label: (c.id === current ? '$(check) ' : '$(blank) ') + c.label,
+            description: c.detail,
+            id: c.id
+        }));
+        if (allowCustom) {
+            items.push({
+                label: '$(edit) Other…', id: '',
+                description: 'type a value the picker does not list', custom: true
+            });
+        }
+        const pick = await vscode.window.showQuickPick(items, { placeHolder, ignoreFocusOut: true });
+        if (!pick) { return undefined; }
+        if (pick.custom) {
+            const typed = await vscode.window.showInputBox({
+                prompt: placeHolder, value: current, ignoreFocusOut: true
+            });
+            return typed === undefined ? undefined : typed.trim();
+        }
+        return pick.id;
+    };
+
+    const launchProfiles = (): LaunchProfile[] =>
+        (cfg().get<LaunchProfile[]>('launchProfiles', []) ?? []).filter(p => p?.name);
+
+    const runLauncher = async (agent: AgentInfo, seed: LaunchOptions): Promise<void> => {
+        let o: LaunchOptions = { ...seed };
+        const show = (v: string | undefined, empty = 'default') => (v?.trim() ? v.trim() : empty);
+        for (;;) {
+            const merged = withDefaults(o, launchDefaults());
+            const command = buildLaunchCommand('claude', merged);
+            const d = launchDefaults();
+            const inherited = (own: string | undefined, def: string | undefined) =>
+                !own?.trim() && def?.trim() ? ' (from your defaults)' : '';
+            interface Row extends vscode.QuickPickItem { act?: string }
+            const rows: Row[] = [
+                {
+                    label: '$(rocket) Start', description: command,
+                    detail: `runs in ${agent.dir}`, act: 'start'
+                },
+                { label: 'Session', kind: vscode.QuickPickItemKind.Separator },
+                {
+                    label: '$(hubot) Agent', description: agent.name,
+                    detail: 'which folder the session opens in', act: 'agent'
+                },
+                {
+                    label: '$(star-full) Model', description: show(merged.model) + inherited(o.model, d.model),
+                    detail: 'from your agentFarm.modelAliases list — --model', act: 'model'
+                },
+                {
+                    label: '$(zap) Effort', description: show(merged.effort) + inherited(o.effort, d.effort),
+                    detail: 'how much reasoning per turn — --effort', act: 'effort'
+                },
+                {
+                    label: '$(shield) Permissions',
+                    description: show(merged.permissionMode) + inherited(o.permissionMode, d.permissionMode),
+                    detail: 'what it may do without asking — --permission-mode', act: 'perm'
+                },
+                {
+                    label: '$(tag) Session name', description: show(o.name, '—'),
+                    detail: 'shown in the prompt box, the /resume picker and the terminal title — -n', act: 'name'
+                },
+                {
+                    label: '$(comment-discussion) First prompt', description: show(o.prompt, '—'),
+                    detail: 'sent as the opening message instead of an empty session', act: 'prompt'
+                },
+                { label: 'Setup', kind: vscode.QuickPickItemKind.Separator },
+                ...(launchProfiles().length ? [{
+                    label: '$(bookmark) Load a profile…',
+                    description: launchProfiles().map(p => p.name).join(' · '),
+                    detail: 'agentFarm.launchProfiles', act: 'load'
+                } as Row] : []),
+                {
+                    label: '$(save) Save this as a profile…', description: '',
+                    detail: 'so tomorrow it is two clicks', act: 'save'
+                },
+                {
+                    label: '$(settings-gear) Make model/effort/permissions my defaults', description: '',
+                    detail: 'agentFarm.launchDefaults — applied to every session, including Continue and Resume',
+                    act: 'default'
+                }
+            ];
+            const pick = await vscode.window.showQuickPick(rows, {
+                placeHolder: `Start a session for ${agent.name} — ${describeLaunch(merged)}`,
+                ignoreFocusOut: true, matchOnDescription: true
+            });
+            if (!pick?.act) { return; } // Esc anywhere = launch nothing
+            if (pick.act === 'start') {
+                const ran = startClaudeSession(agent, o);
+                if (!ran) { continue; } // invalid value — the picker stays up
+                const remembered = {
+                    ...lastLaunch(),
+                    [agent.id]: { model: o.model, effort: o.effort, permissionMode: o.permissionMode }
+                };
+                await context.globalState.update(LAST_LAUNCH_KEY, remembered);
+                return;
+            }
+            if (pick.act === 'agent') {
+                const next = await resolveAgent(undefined);
+                if (next) { agent = next; }
+                continue;
+            }
+            if (pick.act === 'model') {
+                const v = await pickChoice('Model for this session',
+                    modelChoices(cfg().get<string[]>('modelAliases', [])), merged.model ?? '', true);
+                if (v !== undefined) { o.model = v; }
+                continue;
+            }
+            if (pick.act === 'effort') {
+                const v = await pickChoice('Reasoning effort for this session',
+                    EFFORT_CHOICES, merged.effort ?? '', false);
+                if (v !== undefined) { o.effort = v; }
+                continue;
+            }
+            if (pick.act === 'perm') {
+                const v = await pickChoice('What may this session do without asking?',
+                    PERMISSION_CHOICES, merged.permissionMode ?? '', false);
+                if (v !== undefined) { o.permissionMode = v; }
+                continue;
+            }
+            if (pick.act === 'name') {
+                const v = await vscode.window.showInputBox({
+                    prompt: 'Session name (empty = none)', value: o.name ?? '', ignoreFocusOut: true
+                });
+                if (v !== undefined) { o.name = v.trim(); }
+                continue;
+            }
+            if (pick.act === 'prompt') {
+                const v = await vscode.window.showInputBox({
+                    prompt: 'First prompt (empty = start with an empty session)',
+                    value: o.prompt ?? '', ignoreFocusOut: true
+                });
+                if (v !== undefined) { o.prompt = v.trim(); }
+                continue;
+            }
+            if (pick.act === 'load') {
+                const p = await vscode.window.showQuickPick(
+                    launchProfiles().map(p => ({
+                        label: p.name, description: describeLaunch(p), profile: p
+                    })), { placeHolder: 'Load which profile?', ignoreFocusOut: true });
+                if (p) {
+                    o = {
+                        ...o, model: p.profile.model ?? '', effort: p.profile.effort ?? '',
+                        permissionMode: p.profile.permissionMode ?? '',
+                        prompt: p.profile.prompt ?? o.prompt
+                    };
+                }
+                continue;
+            }
+            if (pick.act === 'save') {
+                const name = await vscode.window.showInputBox({
+                    prompt: 'Profile name', ignoreFocusOut: true
+                });
+                if (!name?.trim()) { continue; }
+                const next: LaunchProfile[] = [
+                    ...launchProfiles().filter(p => p.name !== name.trim()),
+                    {
+                        name: name.trim(), model: merged.model, effort: merged.effort,
+                        permissionMode: merged.permissionMode, ...(o.prompt ? { prompt: o.prompt } : {})
+                    }
+                ];
+                try {
+                    await cfg().update('launchProfiles', next, vscode.ConfigurationTarget.Global);
+                    void vscode.window.showInformationMessage(
+                        `Agent Farm: profile "${name.trim()}" saved (agentFarm.launchProfiles).`);
+                } catch (e) {
+                    void vscode.window.showWarningMessage(
+                        `Agent Farm: could not write agentFarm.launchProfiles — ${String(e)}`);
+                }
+                continue;
+            }
+            if (pick.act === 'default') {
+                try {
+                    await cfg().update('launchDefaults', {
+                        model: merged.model ?? '', effort: merged.effort ?? '',
+                        permissionMode: merged.permissionMode ?? ''
+                    }, vscode.ConfigurationTarget.Global);
+                    void vscode.window.showInformationMessage(
+                        `Agent Farm: every session now starts with ${describeLaunch({
+                            model: merged.model, effort: merged.effort, permissionMode: merged.permissionMode
+                        })} (agentFarm.launchDefaults).`);
+                } catch (e) {
+                    void vscode.window.showWarningMessage(
+                        `Agent Farm: could not write agentFarm.launchDefaults — ${String(e)}`);
+                }
+                continue;
+            }
+        }
+    };
+
+    // ---------- A3: interrupt ----------
+    // The only thing that stops a running turn is the key a person would press.
+    // So press it: Esc, typed into that session's own terminal. Nothing is
+    // killed — the session stays, its turn does not.
+    const RUNNING_STATUSES = ['working', 'tool', 'waiting-permission', 'stalled'];
+    const interruptSession = async (
+        arg?: { sessionId?: string; agentName?: string } | SessionInfo
+    ): Promise<void> => {
+        let sessionId = arg?.sessionId;
+        let agentName = arg?.agentName;
+        if (!sessionId) {
+            const running = live.sessions().filter(s => RUNNING_STATUSES.includes(s.status));
+            const list = running.length ? running : live.sessions();
+            if (!list.length) {
+                void vscode.window.showInformationMessage(
+                    'Agent Farm: no live session is being tracked right now.');
+                return;
+            }
+            const pick = await vscode.window.showQuickPick(list.map(s => ({
+                label: `$(debug-pause) ${s.agentName ?? s.sessionId.slice(0, 8)}`,
+                description: s.status + (s.currentTool ? ` · ${s.currentTool}` : ''),
+                detail: s.lastPrompt ?? '',
+                s
+            })), { placeHolder: 'Interrupt which session? (sends Esc)', ignoreFocusOut: true });
+            if (!pick) { return; }
+            sessionId = pick.s.sessionId;
+            agentName = pick.s.agentName;
+        }
+        if (!agentName) {
+            agentName = live.sessions().find(s => s.sessionId === sessionId)?.agentName
+                ?? index.all().find(s => s.sessionId === sessionId)?.agentName;
+        }
+        const openTerms = vscode.window.terminals;
+        const records: TermRecord[] = termBindings.map(b => ({
+            title: b.title,
+            sessionId: b.sessionId,
+            hasTerminal: !!b.term && openTerms.includes(b.term),
+            terminalIndex: b.term ? openTerms.indexOf(b.term) : undefined
+        }));
+        const target = resolveInterrupt({
+            sessionId, agentName, bindings: records, terminalNames: openTerms.map(t => t.name)
+        });
+        const who = agentName ?? sessionId?.slice(0, 8) ?? 'the session';
+        if (target.kind === 'integrated') {
+            const term = openTerms[target.terminalIndex];
+            term.show();
+            term.sendText(INTERRUPT_KEY, false); // Esc, no newline — a keypress, not a line
+            void vscode.window.showInformationMessage(
+                `Agent Farm: Esc sent to ${who} (${target.how}) — the running turn stops, the session stays open.`);
+            return;
+        }
+        if (target.kind === 'external') {
+            focusExternalTerminal(target.titles, found => {
+                void vscode.window.showWarningMessage(found
+                    ? `Agent Farm: ${who} runs in an external terminal — its window is now in front, press Esc there. (Agent Farm can only type into integrated terminals.)`
+                    : `Agent Farm: could not find a terminal window for ${who} — if it is running elsewhere, press Esc in that window.`);
+            });
+            return;
+        }
+        void vscode.window.showWarningMessage(
+            `Agent Farm: no terminal found for ${who} — ${target.how}.`);
     };
 
     // Palette entry point for the insight commands (tree rows pass the object).
@@ -4528,9 +4935,146 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const s = arg && 'session' in arg && arg.session ? arg.session : arg as SessionInfo | undefined;
                 if (!s?.sessionId) { return; }
                 const cwd = s.cwd && fs.existsSync(s.cwd) ? s.cwd : undefined;
+                // Resume carries the launch defaults too: picking up yesterday's
+                // conversation should not silently drop today's model choice.
+                const merged = withDefaults({ resume: s.sessionId }, launchDefaults());
                 launchClaudeTerminal(`claude: ${s.agentName ?? s.sessionId.slice(0, 8)}`, cwd,
-                    `claude --resume ${s.sessionId}`, undefined, s.sessionId);
+                    buildLaunchCommand('claude', merged), undefined, s.sessionId);
             }),
+
+        // ---------- A2: the shelf (pin + tags) ----------
+        // Tree rows pass a SessionInfo (or a {session} wrapper), webviews pass
+        // {sessionId, pinned} — the same session, three shapes, one command.
+        vscode.commands.registerCommand('agentfarm.pinSession',
+            async (arg?: { session?: SessionInfo; sessionId?: string; pinned?: boolean } | SessionInfo) => {
+                const s = arg && 'session' in arg && arg.session ? arg.session : arg as SessionInfo | undefined;
+                const sessionId = s?.sessionId || (arg as { sessionId?: string })?.sessionId;
+                if (!sessionId) { return; }
+                const want = typeof (arg as { pinned?: boolean })?.pinned === 'boolean'
+                    ? (arg as { pinned?: boolean }).pinned
+                    : undefined;
+                const marks = sessionMarks();
+                const next = togglePin(marks, sessionId, want);
+                await saveMarks(next);
+                const nowPinned = isPinned(next, sessionId);
+                const title = s?.title || index.all().find(x => x.sessionId === sessionId)?.title || sessionId.slice(0, 8);
+                void vscode.window.setStatusBarMessage(
+                    nowPinned
+                        ? `$(pinned) Agent Farm: "${title}" is on your shelf`
+                        : `Agent Farm: "${title}" taken off the shelf`, 4000);
+            }),
+
+        vscode.commands.registerCommand('agentfarm.tagSession',
+            async (arg?: { session?: SessionInfo; sessionId?: string } | SessionInfo) => {
+                const s = arg && 'session' in arg && arg.session ? arg.session : arg as SessionInfo | undefined;
+                const sessionId = s?.sessionId || (arg as { sessionId?: string })?.sessionId;
+                if (!sessionId) { return; }
+                const marks = sessionMarks();
+                const known = allTags(marks);
+                const value = await vscode.window.showInputBox({
+                    prompt: 'Labels for this session, comma separated (empty = none)',
+                    placeHolder: known.length ? `in use: ${known.join(', ')}` : 'e.g. zen, release, customer-x',
+                    value: tagsOf(marks, sessionId).join(', '),
+                    ignoreFocusOut: true
+                });
+                if (value === undefined) { return; }
+                await saveMarks(setTags(marks, sessionId, parseTags(value)));
+            }),
+
+        // The shelf itself: pinned first, then the recent list, one Enter to
+        // pick the conversation back up. This is the answer to "253 sessions,
+        // and the six I actually live in are somewhere in there".
+        vscode.commands.registerCommand('agentfarm.sessionShelf', async () => {
+            interface ShelfItem extends vscode.QuickPickItem { s?: SessionInfo }
+            const pinnedList = index.pinned();
+            const rest = index.all()
+                .filter(s => !s.pinned && !s.isSidechain)
+                .sort((a, b) => (b.lastTs || b.mtime) - (a.lastTs || a.mtime))
+                .slice(0, 20);
+            if (!pinnedList.length && !rest.length) {
+                void vscode.window.showInformationMessage('Agent Farm: no sessions indexed yet.');
+                return;
+            }
+            const openBtn = { iconPath: new vscode.ThemeIcon('book'), tooltip: 'Open the transcript instead' };
+            const pinBtn = { iconPath: new vscode.ThemeIcon('pin'), tooltip: 'Pin / unpin' };
+            const row = (s: SessionInfo): ShelfItem => ({
+                label: `${s.pinned ? '$(pinned) ' : '$(comment-discussion) '}${s.title}`,
+                description: [s.agentName, ...(s.tags ?? []), relTime(s.mtime)].filter(Boolean).join(' · '),
+                detail: `${s.userTurns} turns · ${fmtUSD(s.cost)}${s.cwd ? ` · ${s.cwd}` : ''}`,
+                buttons: [openBtn, pinBtn],
+                s
+            });
+            const items: ShelfItem[] = [];
+            if (pinnedList.length) {
+                items.push({ label: 'Pinned', kind: vscode.QuickPickItemKind.Separator });
+                items.push(...pinnedList.map(row));
+            }
+            items.push({ label: 'Recent', kind: vscode.QuickPickItemKind.Separator });
+            items.push(...rest.map(row));
+            const qp = vscode.window.createQuickPick<ShelfItem>();
+            qp.items = items;
+            qp.placeholder = pinnedList.length
+                ? 'Enter resumes the session · ★ pins · 📖 opens the transcript'
+                : 'Nothing pinned yet — the pin button (or the ★ on the Sessions table) builds your shelf';
+            qp.matchOnDescription = true;
+            qp.ignoreFocusOut = true;
+            qp.onDidTriggerItemButton(async ev => {
+                const s = ev.item.s;
+                if (!s) { return; }
+                if (ev.button === openBtn) {
+                    qp.hide();
+                    await vscode.commands.executeCommand('agentfarm.openSession', s.file);
+                    return;
+                }
+                // pin, then re-open so the shelf comes back reordered
+                qp.hide();
+                await vscode.commands.executeCommand('agentfarm.pinSession', s);
+                await vscode.commands.executeCommand('agentfarm.sessionShelf');
+            });
+            qp.onDidAccept(() => {
+                const s = qp.selectedItems[0]?.s;
+                qp.hide();
+                if (!s) { return; }
+                if (!s.isSidechain && !s.machine && s.cwd) {
+                    void vscode.commands.executeCommand('agentfarm.resumeSession', s);
+                } else {
+                    void vscode.commands.executeCommand('agentfarm.openSession', s.file);
+                }
+            });
+            qp.onDidHide(() => qp.dispose());
+            qp.show();
+        }),
+
+        // ---------- A3 ----------
+        vscode.commands.registerCommand('agentfarm.interruptSession',
+            (arg?: { sessionId?: string; agentName?: string } | { session?: SessionInfo } | SessionInfo) => {
+                const unwrapped = arg && 'session' in arg && arg.session ? arg.session : arg;
+                void interruptSession(unwrapped as { sessionId?: string; agentName?: string } | undefined);
+            }),
+
+        // ---------- A4: one key for 170 commands ----------
+        vscode.commands.registerCommand('agentfarm.quickMenu', async () => {
+            interface MenuItem extends vscode.QuickPickItem { command?: string }
+            const items: MenuItem[] = [];
+            for (const group of QUICK_MENU_GROUPS) {
+                const entries = QUICK_MENU.filter(e => e.group === group);
+                if (!entries.length) { continue; }
+                items.push({ label: group, kind: vscode.QuickPickItemKind.Separator });
+                for (const e of entries) {
+                    items.push({
+                        label: e.label,
+                        description: e.key ? e.key.replace('ctrl+alt+', 'Ctrl+Alt+') : '',
+                        detail: e.detail,
+                        command: e.command
+                    });
+                }
+            }
+            const pick = await vscode.window.showQuickPick(items, {
+                placeHolder: 'Agent Farm — what do you want to do?',
+                matchOnDetail: true, matchOnDescription: true
+            });
+            if (pick?.command) { await vscode.commands.executeCommand(pick.command); }
+        }),
 
         vscode.commands.registerCommand('agentfarm.renameSession',
             async (arg?: { session?: SessionInfo } | SessionInfo) => {
@@ -4757,16 +5301,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         }),
 
+        // One click, no questions — but it now carries agentFarm.launchDefaults,
+        // so "always opus, always acceptEdits" is set once instead of typed
+        // into every terminal. Empty defaults = the bare `claude` of before.
         vscode.commands.registerCommand('agentfarm.startSession', async (arg: AgentArg) => {
             const agent = await resolveAgent(arg);
             if (!agent) { return; }
-            launchClaudeTerminal(`claude: ${agent.name}`, agent.dir, 'claude');
+            startClaudeSession(agent);
         }),
 
         vscode.commands.registerCommand('agentfarm.continueSession', async (arg: AgentArg) => {
             const agent = await resolveAgent(arg);
             if (!agent) { return; }
-            launchClaudeTerminal(`claude: ${agent.name}`, agent.dir, 'claude --continue');
+            startClaudeSession(agent, { continueLast: true });
+        }),
+
+        // A1: the same start, with every dimension on the table first.
+        vscode.commands.registerCommand('agentfarm.launchSession', async (arg: AgentArg) => {
+            const agent = await resolveAgent(arg);
+            if (!agent) { return; }
+            // Seeded with what this agent was last launched with — the second
+            // time you start the same kind of session it is one Enter.
+            await runLauncher(agent, { ...(lastLaunch()[agent.id] ?? {}) });
         }),
 
         // E1: open a session with a different CLI (gemini/codex/…) WITHOUT touching

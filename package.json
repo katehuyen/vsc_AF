@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.23.0",
+  "version": "3.24.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -157,6 +157,41 @@
       }
     ],
     "keybindings": [
+      {
+        "command": "agentfarm.quickMenu",
+        "key": "ctrl+alt+f",
+        "mac": "cmd+alt+f"
+      },
+      {
+        "command": "agentfarm.launchSession",
+        "key": "ctrl+alt+s",
+        "mac": "cmd+alt+s"
+      },
+      {
+        "command": "agentfarm.sessionShelf",
+        "key": "ctrl+alt+p",
+        "mac": "cmd+alt+p"
+      },
+      {
+        "command": "agentfarm.interruptSession",
+        "key": "ctrl+alt+i",
+        "mac": "cmd+alt+i"
+      },
+      {
+        "command": "agentfarm.openDashboard",
+        "key": "ctrl+alt+d",
+        "mac": "cmd+alt+d"
+      },
+      {
+        "command": "agentfarm.openNeeds",
+        "key": "ctrl+alt+n",
+        "mac": "cmd+alt+n"
+      },
+      {
+        "command": "agentfarm.openTimeline",
+        "key": "ctrl+alt+l",
+        "mac": "cmd+alt+l"
+      },
       {
         "command": "agentfarm.queueAdd",
         "key": "ctrl+alt+q",
@@ -346,10 +381,22 @@
         "icon": "$(debug-continue)"
       },
       {
+        "command": "agentfarm.launchSession",
+        "title": "Start Session… (model · effort · permissions · first prompt)",
+        "category": "Agent Farm",
+        "icon": "$(rocket)"
+      },
+      {
         "command": "agentfarm.startSessionWith",
         "title": "Start Session With… (choose CLI)",
         "category": "Agent Farm",
         "icon": "$(run-all)"
+      },
+      {
+        "command": "agentfarm.quickMenu",
+        "title": "Quick Menu (everything, one key)",
+        "category": "Agent Farm",
+        "icon": "$(list-unordered)"
       },
       {
         "command": "agentfarm.openAgentDetail",
@@ -383,6 +430,30 @@
         "title": "Rename Session…",
         "category": "Agent Farm",
         "icon": "$(edit)"
+      },
+      {
+        "command": "agentfarm.pinSession",
+        "title": "Pin / Unpin Session (shelf)",
+        "category": "Agent Farm",
+        "icon": "$(pin)"
+      },
+      {
+        "command": "agentfarm.tagSession",
+        "title": "Label Session…",
+        "category": "Agent Farm",
+        "icon": "$(tag)"
+      },
+      {
+        "command": "agentfarm.sessionShelf",
+        "title": "Session Shelf… (pinned + recent)",
+        "category": "Agent Farm",
+        "icon": "$(pinned)"
+      },
+      {
+        "command": "agentfarm.interruptSession",
+        "title": "Interrupt Session (send Esc)",
+        "category": "Agent Farm",
+        "icon": "$(debug-pause)"
       },
       {
         "command": "agentfarm.openFile",
@@ -1153,6 +1224,11 @@
     "menus": {
       "view/title": [
         {
+          "command": "agentfarm.launchSession",
+          "when": "view == agentfarm.agents",
+          "group": "navigation@0"
+        },
+        {
           "command": "agentfarm.openDashboard",
           "when": "view == agentfarm.agents",
           "group": "navigation@1"
@@ -1191,6 +1267,11 @@
           "command": "agentfarm.refresh",
           "when": "view == agentfarm.agents || view == agentfarm.sessions || view == agentfarm.insights || view == agentfarm.feed || view == agentfarm.toolbox",
           "group": "navigation@3"
+        },
+        {
+          "command": "agentfarm.sessionShelf",
+          "when": "view == agentfarm.sessions",
+          "group": "navigation@0"
         },
         {
           "command": "agentfarm.searchTranscripts",
@@ -1346,7 +1427,7 @@
         },
         {
           "command": "agentfarm.resumeSession",
-          "when": "view =~ /^agentfarm\\.(agents|sessions)$/ && viewItem == session-resumable",
+          "when": "view =~ /^agentfarm\\.(agents|sessions)$/ && viewItem =~ /^session-resumable/",
           "group": "inline@1"
         },
         {
@@ -1355,8 +1436,13 @@
           "group": "inline@2"
         },
         {
+          "command": "agentfarm.pinSession",
+          "when": "view =~ /^agentfarm\\.(agents|sessions)$/ && viewItem =~ /^session/",
+          "group": "inline@3"
+        },
+        {
           "command": "agentfarm.resumeSession",
-          "when": "view =~ /^agentfarm\\.(agents|sessions)$/ && viewItem == session-resumable",
+          "when": "view =~ /^agentfarm\\.(agents|sessions)$/ && viewItem =~ /^session-resumable/",
           "group": "1_session@1"
         },
         {
@@ -1368,6 +1454,21 @@
           "command": "agentfarm.renameSession",
           "when": "view =~ /^agentfarm\\.(agents|sessions)$/ && viewItem =~ /^session/",
           "group": "1_session@2"
+        },
+        {
+          "command": "agentfarm.pinSession",
+          "when": "view =~ /^agentfarm\\.(agents|sessions)$/ && viewItem =~ /^session/",
+          "group": "1_session@3"
+        },
+        {
+          "command": "agentfarm.tagSession",
+          "when": "view =~ /^agentfarm\\.(agents|sessions)$/ && viewItem =~ /^session/",
+          "group": "1_session@4"
+        },
+        {
+          "command": "agentfarm.interruptSession",
+          "when": "view =~ /^agentfarm\\.(agents|sessions)$/ && viewItem =~ /^session/",
+          "group": "1_session@5"
         },
         {
           "command": "agentfarm.startSession",
@@ -1385,19 +1486,24 @@
           "group": "1_actions@1"
         },
         {
-          "command": "agentfarm.continueSession",
+          "command": "agentfarm.launchSession",
           "when": "view == agentfarm.agents && viewItem == agent",
           "group": "1_actions@2"
         },
         {
-          "command": "agentfarm.startSessionWith",
+          "command": "agentfarm.continueSession",
           "when": "view == agentfarm.agents && viewItem == agent",
           "group": "1_actions@3"
         },
         {
-          "command": "agentfarm.openAgentDetail",
+          "command": "agentfarm.startSessionWith",
           "when": "view == agentfarm.agents && viewItem == agent",
           "group": "1_actions@4"
+        },
+        {
+          "command": "agentfarm.openAgentDetail",
+          "when": "view == agentfarm.agents && viewItem == agent",
+          "group": "1_actions@5"
         },
         {
           "command": "agentfarm.openAgentInNewWindow",
@@ -1916,7 +2022,77 @@
             "opus",
             "fable"
           ],
-          "description": "Your model name knowledge base: the names/ids offered in every model picker (the per-agent model dropdown in Agent folders, the mission model suggestions). Add a new model name here ONCE and it appears in every picker permanently — model names change over time, this list is yours to keep current. Every picker also accepts a custom free-text entry for anything not listed."
+          "description": "Your model name knowledge base: the names/ids offered in every model picker (the per-agent model dropdown in Agent folders, the mission model suggestions, the Start Session… launcher). Add a new model name here ONCE and it appears in every picker permanently — model names change over time, this list is yours to keep current. Every picker also accepts a custom free-text entry for anything not listed."
+        },
+        "agentFarm.launchDefaults": {
+          "type": "object",
+          "properties": {
+            "model": {
+              "type": "string",
+              "description": "--model for every session (alias or full id). Empty = the agent's own setting / the CLI default."
+            },
+            "effort": {
+              "type": "string",
+              "enum": [
+                "",
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "description": "--effort for every session. Empty = no flag."
+            },
+            "permissionMode": {
+              "type": "string",
+              "enum": [
+                "",
+                "plan",
+                "acceptEdits",
+                "auto",
+                "manual",
+                "dontAsk",
+                "bypassPermissions"
+              ],
+              "description": "--permission-mode for every session. Empty = no flag (asks, as configured)."
+            }
+          },
+          "additionalProperties": false,
+          "default": {},
+          "markdownDescription": "How **every** interactive session starts — Start, Continue and Resume alike, from the tree, the palette or a keybinding. Set once instead of typing `--model` into a terminal all day. Every field is optional and an empty one emits no flag at all, so the default `{}` starts exactly the bare `claude` it always did. The **Start Session…** launcher (`ctrl+alt+s`) shows these as inherited values and can override them for one launch, or write itself back here."
+        },
+        "agentFarm.launchProfiles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "profile name shown in the launcher"
+              },
+              "model": {
+                "type": "string",
+                "description": "--model"
+              },
+              "effort": {
+                "type": "string",
+                "description": "--effort (low|medium|high|xhigh|max)"
+              },
+              "permissionMode": {
+                "type": "string",
+                "description": "--permission-mode (plan|acceptEdits|auto|manual|dontAsk|bypassPermissions)"
+              },
+              "prompt": {
+                "type": "string",
+                "description": "optional first prompt sent with the session"
+              }
+            },
+            "required": [
+              "name"
+            ]
+          },
+          "default": [],
+          "markdownDescription": "Saved launch setups offered by the **Start Session…** launcher — \"deep review\" (opus + xhigh + plan), \"quick fix\" (sonnet + acceptEdits), and so on. The launcher's *Save this as a profile…* row writes here; nothing is applied until you pick one."
         },
         "agentFarm.speakerLabelTemplate": {
           "type": "string",

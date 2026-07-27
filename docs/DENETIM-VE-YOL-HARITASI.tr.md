@@ -4,6 +4,8 @@
 
 **Denetimin kapsamı:** repo kodu (37.125 satır TS + 9.532 satır webview JS), `package.json` katkıları, köprü op kataloğu, git geçmişi (168 commit), belgeler, ve §3 için referans ürünün kendi kaynakları. Ölçüm yapılan her sayı aşağıda kaynağıyla verilir; ölçülmemiş şeyler "tahmin" diye işaretlenir.
 
+**İlerleme:** **§2/A (Etkileşim ve kontrol) 3.24.0'da tamamen kapandı** — A1 · A2 · A3 · A4. Aşağıdaki §0 envanteri denetim günündeki (3.22.0) sayıları taşır, güncellenmez; kapanan maddeler kendi başlıklarında işaretlidir.
+
 ---
 
 ## 0. Bugün nerede duruyoruz — envanter
@@ -65,21 +67,17 @@ Bu, AF'nin ihtiyacı olan dört şeyin hepsini tek mimariyle veriyor: **canlı s
 
 Önem sırasına göre. Her madde: **ne · kanıt · neden önemli.**
 
-### A. Etkileşim ve kontrol
+### A. Etkileşim ve kontrol — **KAPANDI (3.24.0)**
 
-**A1. Oturum başlatma diyaloğu yok.** ⭐⭐⭐
-Model · efor · izin modu · başlangıç promptu · oturum adı seçmeden `claude` çalışıyor. `agentFarm.newAgentModel` yalnızca *yeni ajan iskeleti* için; başlatmayı etkilemiyor. `modelPolicy` motoru sadece headless görevlerde devrede.
-→ Kullanıcı her seferinde terminalde elle `--model`, `/model`, izin ayarı yapıyor.
+Dördü de terminal yolu üzerinde çözüldü; Console'u (§1) beklemeden. Ayrıntı: `CHANGELOG.md` 3.24.0 + kılavuzun **Oturum Başlatma ve Denetim** bölümü.
 
-**A2. Oturum sabitleme (pin) / etiketleme yok.** ⭐⭐
-Kod tabanında `pin`/`favorite`/`star` kavramı yok (grep: 0 sonuç). `renameSession` var, ama 253 oturumluk bir listede "sürekli döndüğüm 6 iş" ayrı bir raf değil.
-→ Uzun süreli işler (bir proje, bir müşteri, bir ürün) her gün yeniden aranıyor.
+**A1. Oturum başlatma diyaloğu yok.** ⭐⭐⭐ → **ÇÖZÜLDÜ.** İki katman: her başlatmanın taşıdığı `agentFarm.launchDefaults` (model · efor · izin modu; Start/Continue/Resume dahil, boş alan hiç bayrak üretmez) + **Start Session… launcher'ı** (`ctrl+alt+s`) — ajan · model · efor · izin modu · oturum adı · ilk prompt, ve **Start satırının açıklaması çalışacak tam komut satırı**. Profiller (`agentFarm.launchProfiles`) ve ajan başına son-kullanılan hafızası. Model listesi `modelAliases` bilgi tabanından. Köprü: `sessions.start`.
 
-**A3. Kesme (interrupt) yok.** ⭐⭐
-Çalışan bir oturumu panelden durdurmanın yolu yok; `taskkill /T` yalnızca headless task/mission için.
+**A2. Oturum sabitleme (pin) / etiketleme yok.** ⭐⭐ → **ÇÖZÜLDÜ.** Sessions tablolarında **★** kolonu; pinli oturum **listenin başında ve satır sınırından muaf** (havuz host tarafında da pinlileri her zaman taşır). **Label Session…** ile serbest etiketler — çip olarak görünür, metin filtresi onları da arar. Recent Sessions ağacında pinliler 30'luk kesmenin dışında en üstte. **Session shelf…** (`ctrl+alt+p`) rafın kendisi: Enter devam ettirir. Köprü: `sessions.pin` · `sessions.tag` · `sessions.shelf`.
 
-**A4. Klavye kısayolu neredeyse yok.** ⭐
-Tek kısayol: `ctrl+alt+q` (queueAdd). 173 komutluk bir eklentide komut paleti dışında hızlı erişim yok.
+**A3. Kesme (interrupt) yok.** ⭐⭐ → **ÇÖZÜLDÜ.** Oturumun kendi terminaline **Esc yazılır** — tur biter, oturum ve bağlam kalır. Sessions tabloları (çalışan satır) · Timeline canlı kartları · Needs You (stalled) · `ctrl+alt+i` · sağ tık. Hedefleme: tam başlatma → ajanın en yeni terminali → harici pencere; **kimliği çözülemeyen oturuma dokunulmaz**. Harici terminal modunda pencere öne getirilip "Esc'e orada bas" denir (sahte düğme yok). Köprü: `sessions.interrupt`.
+
+**A4. Klavye kısayolu neredeyse yok.** ⭐ → **ÇÖZÜLDÜ.** `ctrl+alt+f` = **Quick Menu** (gruplu, yazarak süzülen; her satır kendi kısayolunu yazar) + altı doğrudan tuş (s · p · i · d · n · l), `ctrl+alt+q` olduğu gibi. Türkçe-Q'da AltGr'nin karakter ürettiği **Q/E/T** harflerine yeni tuş konmadı — bunu bir test denetliyor.
 
 ### B. Kapsam ve veri modeli
 
@@ -338,7 +336,7 @@ Hepsi mekanik, hepsi bugün yapılabilir, hiçbiri mimariye dokunmuyor. Bunlar d
 | 0.2 | `repository` · `bugs` · `homepage` alanlarını ekle; `categories`'e `AI` + `Chat` ekle | `package.json` |
 | 0.3 | README'ye 4–5 ekran görüntüsü + bir GIF (Dashboard · Timeline · Tasks · Toolbox · Missions) | `README.md`, `docs/img/` |
 | 0.4 | Headless servis: macOS `launchd` plist + Linux `systemd --user` unit üretimi (Windows `schtasks` yolu aynen kalır) | `extension.ts` servis bölümü |
-| 0.5 | Kısayol seti: Needs You, Dashboard, Tasks, Command Bar (E6) | `package.json` keybindings |
+| 0.5 | ~~Kısayol seti: Needs You, Dashboard, Tasks, Command Bar (E6)~~ **YAPILDI (3.24.0)** — `ctrl+alt+f` Quick Menu + 6 doğrudan tuş | `package.json` keybindings |
 | 0.6 | **Needs You'yu global NAV'a ekle** (E5) — bekleyen sayısı rozetiyle, Notices'taki desenin aynısı | `media/pageHeader.js:24` |
 
 ### DALGA 1 — **Console**: eklentinin konuşmaya başlaması ⭐⭐⭐
@@ -349,11 +347,11 @@ Tek büyük iş bu. §1'deki boşluğu kapatır ve arkasından gelen üç maddey
 
 **1.2 — Console sayfası.** Global nav'a yeni sekme. Sol: oturum listesi (sabitlenenler + son oturumlar + arama — mevcut `sessions` + `search` altyapısı üstüne). Sağ: konuşma + yazma kutusu.
 
-**1.3 — Kompozitör kontrolleri.** Yazma kutusunun altında: **ajan seçici · model seçici · efor · izin modu**. Seçimler `modelPolicy` motoruyla aynı sözlüğü kullanır. Bu tek satır, A1'i tamamen çözer.
+**1.3 — Kompozitör kontrolleri.** Yazma kutusunun altında: **ajan seçici · model seçici · efor · izin modu**. Sözlük 3.24.0'da `core/launch.ts`'te kuruldu (seçenekler + komut satırı üretimi, saf ve testli) — Console kompozitörü aynı modülü kullanır, ikinci bir sözlük yazılmaz. A1 terminal yolunda **zaten çözüldü** (Start Session… launcher'ı); burada kalan iş, aynı seçimlerin Console oturumuna uygulanmasıdır.
 
 **1.4 — Panel-içi izin cevabı.** `needs.ts`'teki `permission` satırına gerçek **Allow / Allow always / Deny** aksiyonları. Console'un barındırdığı oturumlarda doğrudan; terminalde başlatılmış oturumlarda mevcut "⌨ Terminal" davranışı korunur (dürüst ayrım, sahte buton yok).
 
-**1.5 — Kesme (interrupt) + kuyruk.** Çalışan turu durdurma; sıraya alınmış mesajlar.
+**1.5 — Kesme (interrupt) + kuyruk.** Çalışan turu durdurma; sıraya alınmış mesajlar. *(Kesme, terminal yolunda 3.24.0'da geldi — `core/interrupt.ts` + `sessions.interrupt`; Console'un kendi barındırdığı oturumlarda protokol düzeyinde kesme buna eklenir, kuyruk yeni iştir.)*
 
 **1.6 — Diff yüzeyi (B3).** Oturumda `Edit`/`Write` geçtiğinde değişen dosyaların listesi + VS Code diff görünümü + geri al. Veri transcript'te zaten var.
 
@@ -364,7 +362,7 @@ Tek büyük iş bu. §1'deki boşluğu kapatır ve arkasından gelen üç maddey
 **2.1** `AgentInfo`'ya `tags: string[]`; `agentFarm.projects` ayarı (ad → ajan/klasör eşlemesi).
 **2.2** Dashboard · Tasks · Timeline · Turns · Task Analytics'e **Proje** filtresi (3.21.0'ın paylaşımlı filtre bileşeni sayesinde satır maliyeti düşük).
 **2.3** Proje başına maliyet/bütçe: `agentFarm.budgets` zaten var, anahtarı ajandan projeye genişlet.
-**2.4** Oturum sabitleme (A2) — proje etiketiyle birlikte gelir.
+**2.4** ~~Oturum sabitleme (A2)~~ **YAPILDI (3.24.0)** — pin + serbest etiketler oturum düzeyinde geldi (`core/sessionmarks.ts`). Bu dalgada kalan iş **proje** boyutudur: ajan/klasör bazlı proje tanımı ve oturum etiketlerinin projeye bağlanması (oturum etiketi ≠ proje; ikisi ayrı eksen, birleştirme bu dalganın işi).
 
 Bu dalga "çoklu müşteri/proje yönetimi"ni açar: kim için ne kadar harcadım, hangi işin hangi ajanları var.
 

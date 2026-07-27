@@ -466,12 +466,19 @@ function sessionTreeItem(s: SessionInfo, index: SessionIndex, showAgent: boolean
         : vscode.TreeItemCollapsibleState.None);
     const active = index.isSessionActive(s);
     // Resume needs a local, top-level transcript with a known working directory.
-    item.contextValue = !s.isSidechain && !s.machine && s.cwd ? 'session-resumable' : 'session';
+    // The "-pinned" suffix is what the context menu switches Pin/Unpin on, so
+    // every `when` clause matching these values is a prefix regex, not an ==.
+    item.contextValue = (!s.isSidechain && !s.machine && s.cwd ? 'session-resumable' : 'session')
+        + (s.pinned ? '-pinned' : '');
+    // A pinned session carries the shelf's own icon: it is on the list because
+    // you put it there, and that is worth more than "it is a conversation".
     item.iconPath = new vscode.ThemeIcon(
-        active ? 'record' : (s.isSidechain ? 'git-branch' : 'comment-discussion'),
-        active ? new vscode.ThemeColor('charts.green') : undefined
+        active ? 'record' : (s.pinned ? 'pinned' : (s.isSidechain ? 'git-branch' : 'comment-discussion')),
+        active ? new vscode.ThemeColor('charts.green')
+            : (s.pinned ? new vscode.ThemeColor('charts.yellow') : undefined)
     );
     const parts: string[] = [];
+    if (s.tags?.length) { parts.push(s.tags.join(' · ')); }
     if (showAgent && s.agentName) { parts.push(s.agentName); }
     if (s.machine) { parts.push(`⇄ ${s.machine}`); }
     parts.push(relTime(s.mtime));
@@ -508,9 +515,11 @@ export class SessionsTreeProvider implements vscode.TreeDataProvider<SessionInfo
 
     getChildren(node?: SessionInfo): SessionInfo[] {
         if (node) { return this.state.index.childrenOf(node.sessionId); }
-        return [...this.state.index.topLevel(), ...this.state.index.external()]
-            .sort((a, b) => b.mtime - a.mtime)
-            .slice(0, 30);
+        const all = [...this.state.index.topLevel(), ...this.state.index.external()]
+            .sort((a, b) => b.mtime - a.mtime);
+        // The shelf sits above the recent list and is exempt from its cut —
+        // a session you pinned is never pushed off the bottom by a busy day.
+        return [...all.filter(s => s.pinned), ...all.filter(s => !s.pinned).slice(0, 30)];
     }
 }
 

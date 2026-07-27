@@ -1020,6 +1020,142 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             && /resetsAt/.test(block));
     }
 
+    // ---------- session ops (§19.C): start · pin · tag · shelf · interrupt ----------
+    // Interaction and control reach the bridge with the feature, not after it:
+    // an agent asked "start me a planning session on the dev agent" or "what am
+    // I keeping on my shelf?" answers through the same code the UI clicks.
+    {
+        const reg = new BridgeRegistry();
+        const { buildLaunchCommand, withDefaults, validateLaunch } =
+            require(path.join(__dirname, '..', 'out', 'core', 'launch.js'));
+        const { togglePin, setTags, parseTags, isPinned, tagsOf, normalizeMarks } =
+            require(path.join(__dirname, '..', 'out', 'core', 'sessionmarks.js'));
+        const { resolveInterrupt } = require(path.join(__dirname, '..', 'out', 'core', 'interrupt.js'));
+
+        // stand-ins for the extension's live state
+        let marks = {};
+        const launched = [];
+        const defaults = { model: 'sonnet' };
+        const sessions = [
+            { sessionId: 'sid1', title: 'zen release', agentName: 'dev', cwd: 'D:/a/dev', lastTs: 5, cost: 1.234 },
+            { sessionId: 'sid2', title: 'other', agentName: 'dev', cwd: 'D:/a/dev', lastTs: 9, cost: 0 }
+        ];
+        const terminals = ['claude: dev #1'];
+
+        reg.register([
+            {
+                op: 'sessions.start',
+                describe: 'Start an INTERACTIVE claude session. args: agent, model?, effort?, permissionMode?, name?, prompt?, resume?, continue?',
+                handler: (args) => {
+                    const o = {
+                        model: optStr(args, 'model'), effort: optStr(args, 'effort'),
+                        permissionMode: optStr(args, 'permissionMode'), name: optStr(args, 'name'),
+                        prompt: optStr(args, 'prompt'), resume: optStr(args, 'resume'),
+                        continueLast: args.continue === true
+                    };
+                    const errors = validateLaunch(withDefaults(o, defaults));
+                    need(!errors.length, errors.join(' · '));
+                    const command = buildLaunchCommand('claude', withDefaults(o, defaults));
+                    launched.push(command);
+                    return { agent: argStr(args, 'agent'), command };
+                }
+            },
+            {
+                op: 'sessions.pin',
+                describe: 'Put a session on the shelf. args: sessionId, pinned?',
+                handler: (args) => {
+                    const id = argStr(args, 'sessionId');
+                    marks = togglePin(normalizeMarks(marks), id,
+                        typeof args.pinned === 'boolean' ? args.pinned : undefined);
+                    return { sessionId: id, pinned: isPinned(marks, id) };
+                }
+            },
+            {
+                op: 'sessions.tag',
+                describe: 'Set the labels on a session. args: sessionId, tags',
+                handler: (args) => {
+                    const id = argStr(args, 'sessionId');
+                    const raw = Array.isArray(args.tags) ? args.tags.join(', ') : optStr(args, 'tags');
+                    marks = setTags(normalizeMarks(marks), id, parseTags(raw));
+                    return { sessionId: id, tags: tagsOf(marks, id) };
+                }
+            },
+            {
+                op: 'sessions.shelf',
+                describe: 'The pinned sessions with their labels. args: none',
+                handler: () => sessions.filter(s => isPinned(marks, s.sessionId))
+                    .map(s => ({ sessionId: s.sessionId, title: s.title, tags: tagsOf(marks, s.sessionId) }))
+            },
+            {
+                op: 'sessions.interrupt',
+                describe: 'Type Esc into a live session\'s terminal. args: sessionId',
+                handler: (args) => {
+                    const sessionId = argStr(args, 'sessionId');
+                    // like the real handler: the agent is looked up, not assumed
+                    const agentName = sessions.find(s => s.sessionId === sessionId)?.agentName;
+                    const target = resolveInterrupt({
+                        sessionId, agentName,
+                        bindings: [{ title: 'claude: dev #1', sessionId: 'sid1', hasTerminal: true, terminalIndex: 0 }],
+                        terminalNames: terminals
+                    });
+                    return target.kind === 'integrated'
+                        ? { sessionId, interrupted: true, terminal: terminals[target.terminalIndex] }
+                        : { sessionId, interrupted: false, reason: target.how };
+                }
+            }
+        ]);
+
+        const cat = reg.catalog().map(c => c.op);
+        ok('every session op is in the catalog',
+            ['sessions.start', 'sessions.pin', 'sessions.tag', 'sessions.shelf', 'sessions.interrupt']
+                .every(op => cat.includes(op)));
+
+        const start = await reg.dispatch('sessions.start',
+            { agent: 'dev', effort: 'high', name: 'plan', prompt: 'read the report first' });
+        ok('sessions.start builds the launch through the shared builder',
+            start.ok && start.result.command
+            === 'claude --model sonnet --effort high -n "plan" "read the report first"');
+        const bad = await reg.dispatch('sessions.start', { agent: 'dev', effort: 'turbo' });
+        ok('an invalid effort is refused with a readable error',
+            !bad.ok && /effort "turbo"/.test(bad.error) && launched.length === 1);
+
+        const pin = await reg.dispatch('sessions.pin', { sessionId: 'sid1' });
+        ok('sessions.pin toggles on and reports the new state', pin.ok && pin.result.pinned === true);
+        await reg.dispatch('sessions.tag', { sessionId: 'sid1', tags: ['zen', 'zen', 'release'] });
+        const shelf = await reg.dispatch('sessions.shelf', {});
+        ok('sessions.shelf lists the pinned session with de-duped labels',
+            shelf.ok && shelf.result.length === 1 && shelf.result[0].sessionId === 'sid1'
+            && shelf.result[0].tags.join('|') === 'zen|release');
+        const tagStr = await reg.dispatch('sessions.tag', { sessionId: 'sid1', tags: 'a, b' });
+        ok('tags accept a comma-separated string too', tagStr.ok && tagStr.result.tags.join('|') === 'a|b');
+        const off = await reg.dispatch('sessions.pin', { sessionId: 'sid1', pinned: false });
+        ok('an explicit pinned:false takes it off the shelf', off.ok && off.result.pinned === false);
+        ok('…and the shelf is empty again', (await reg.dispatch('sessions.shelf', {})).result.length === 0);
+
+        const int = await reg.dispatch('sessions.interrupt', { sessionId: 'sid1' });
+        ok('sessions.interrupt reports the terminal it typed Esc into',
+            int.ok && int.result.interrupted === true && int.result.terminal === 'claude: dev #1');
+        const noInt = await reg.dispatch('sessions.interrupt', { sessionId: 'nope' });
+        ok('a session with no terminal is reported honestly, not silently "done"',
+            noInt.ok && noInt.result.interrupted === false && noInt.result.reason);
+
+        // the real registrations must exist and carry the same contracts
+        const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        for (const op of ['sessions.start', 'sessions.pin', 'sessions.tag', 'sessions.shelf', 'sessions.interrupt']) {
+            ok(`extension.ts registers ${op}`, src.includes(`op: '${op}'`));
+        }
+        const startBlock = src.slice(src.indexOf("op: 'sessions.start'"), src.indexOf("op: 'sessions.start'") + 1800);
+        ok('sessions.start calls the shared launcher, not its own command builder',
+            /startClaudeSession\(agent, o\)/.test(startBlock) && /validateLaunch/.test(startBlock));
+        ok('sessions.start says it is interactive and points at tasks.add for headless work',
+            /INTERACTIVE/.test(startBlock) && /tasks\.add/.test(startBlock));
+        const intBlock = src.slice(src.indexOf("op: 'sessions.interrupt'"), src.indexOf("op: 'sessions.interrupt'") + 1600);
+        ok('sessions.interrupt sends the Esc key with no newline',
+            /sendText\(INTERRUPT_KEY, false\)/.test(intBlock));
+        ok('…and states the external-terminal limit in its contract',
+            /external/i.test(intBlock));
+    }
+
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })();

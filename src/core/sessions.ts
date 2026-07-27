@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo } from './agents';
 import { addUsage, emptyUsage, PricingEngine, totalTokens, Usage } from './pricing';
+import { normalizeMarks, SessionMarks } from './sessionmarks';
 import { dayKey, normPath, truncate } from './util';
 
 export interface DailyBucket {
@@ -63,6 +64,10 @@ export interface SessionInfo {
     title: string;
     /** Title derived from the transcript, kept so clearing a user rename can restore it. */
     autoTitle: string;
+    /** On the user's shelf (sessionmarks.ts): listed first, never cut by a top-N. */
+    pinned?: boolean;
+    /** User labels on this session — searched by the tables' text filter. */
+    tags?: string[];
     firstTs: number;
     lastTs: number;
     mtime: number;
@@ -425,6 +430,8 @@ export class SessionIndex implements vscode.Disposable {
     private sessions = new Map<string, SessionInfo>();
     /** User-set session names (sessionId → title), persisted by the extension. */
     private titleOverrides = new Map<string, string>();
+    /** User shelf marks (sessionId → pin/tags), persisted by the extension. */
+    private marks: SessionMarks = {};
     private watchers: fs.FSWatcher[] = [];
     private pending = new Map<string, NodeJS.Timeout>();
     private readonly onDidUpdateEmitter = new vscode.EventEmitter<void>();
@@ -495,6 +502,7 @@ export class SessionIndex implements vscode.Disposable {
         }
         const override = this.titleOverrides.get(info.sessionId);
         if (override) { info.title = override; }
+        this.applyMark(info);
         this.assignAgent(info);
         if (!info.agentId && !this.includeUnmatched()) {
             // Keep it out of the index but remember nothing: farm-focused scope.
@@ -533,6 +541,27 @@ export class SessionIndex implements vscode.Disposable {
             s.title = this.titleOverrides.get(s.sessionId) ?? s.autoTitle;
         }
         this.onDidUpdateEmitter.fire();
+    }
+
+    private applyMark(info: SessionInfo): void {
+        const mark = this.marks[info.sessionId];
+        info.pinned = mark?.pinned === true ? true : undefined;
+        info.tags = mark?.tags?.length ? mark.tags : undefined;
+    }
+
+    /** Replace the shelf marks (pin / tags) and re-apply them to everything indexed. */
+    setMarks(map: unknown): void {
+        this.marks = normalizeMarks(map);
+        for (const s of this.sessions.values()) { this.applyMark(s); }
+        for (const s of this.externalList) { this.applyMark(s); }
+        this.onDidUpdateEmitter.fire();
+    }
+
+    /** Pinned sessions, newest activity first — the shelf. */
+    pinned(): SessionInfo[] {
+        return [...this.all(), ...this.externalList]
+            .filter(s => s.pinned)
+            .sort((a, b) => (b.lastTs || b.mtime) - (a.lastTs || a.mtime));
     }
 
     /** Re-run agent assignment after agents were re-discovered. */
@@ -600,6 +629,7 @@ export class SessionIndex implements vscode.Disposable {
         if (sig === this.externalSig) { return; }
         this.externalSig = sig;
         this.externalList = sessions;
+        for (const s of this.externalList) { this.applyMark(s); }
         this.onDidUpdateEmitter.fire();
     }
 

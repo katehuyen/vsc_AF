@@ -266,8 +266,23 @@ export class AgentDetailPanel {
                     cwd: typeof msg.cwd === 'string' && msg.cwd ? msg.cwd : undefined
                 });
                 break;
+            case 'pinSession':
+                void vscode.commands.executeCommand('agentfarm.pinSession', {
+                    sessionId: typeof msg.sessionId === 'string' ? msg.sessionId : '',
+                    pinned: msg.pinned === true
+                });
+                break;
+            case 'interruptSession':
+                void vscode.commands.executeCommand('agentfarm.interruptSession', {
+                    sessionId: typeof msg.sessionId === 'string' && msg.sessionId ? msg.sessionId : undefined,
+                    agentName: typeof msg.agentName === 'string' ? msg.agentName : undefined
+                });
+                break;
             case 'startSession':
                 vscode.commands.executeCommand('agentfarm.startSession', { agentId: this.agentId });
+                break;
+            case 'launchSession':
+                vscode.commands.executeCommand('agentfarm.launchSession', { agentId: this.agentId });
                 break;
             case 'continueSession':
                 vscode.commands.executeCommand('agentfarm.continueSession', { agentId: this.agentId });

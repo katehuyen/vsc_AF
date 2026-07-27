@@ -4,7 +4,10 @@
 // host via a 'sessionTurns' message); active rows carry a ⌨ jump-to-terminal
 // button. A narrow origin column (🧑 you / 🤖 automation) separates your own
 // dialogs from the runs the farm started by itself; the table opens scoped to
-// 🧑 and the chip next to Filters flips User ↔ All in one click. A Show box picks how many rows to list (empty / All = every one);
+// 🧑 and the chip next to Filters flips User ↔ All in one click. A ★ column
+// holds the shelf: pinned sessions sort first and are exempt from the row
+// limit, and running rows carry a ⎋ interrupt button next to the ⌨ jump.
+// A Show box picks how many rows to list (empty / All = every one);
 // changing it posts 'setTableN' so the host rebuilds the row pool for the new
 // N — hosts must answer that message. The component owns exactly one container
 // div and re-renders only that, so host-page state (e.g. an open pricing
@@ -48,7 +51,7 @@
     // by itself); an array = exactly that subset, [] = none. See afFilters.js.
     const FDEF = () => ({
         text: '', agents: null, origin: 'user', activeOnly: false, errorsOnly: false, mainOnly: false,
-        from: '', to: '', ranges: {}
+        pinnedOnly: false, from: '', to: '', ranges: {}
     });
 
     const STYLE = `<style>
@@ -72,6 +75,15 @@
         .origcell { width:20px; text-align:center; font-size:11px; line-height:1;
             opacity:.85; cursor:default; }
         .origcell.auto { opacity:.6; }
+        /* Pin: the shelf. One narrow always-present column — an outlined star
+           on every row (click to shelve), filled on the ones you keep. */
+        .pincell { width:20px; text-align:center; }
+        .pinbtn { background:transparent; border:0; cursor:pointer; padding:0 2px; font-size:11px;
+            line-height:1; color:var(--vscode-foreground); opacity:.25; }
+        .pinbtn:hover { opacity:.8; }
+        .pinbtn.on { opacity:1; color:var(--vscode-charts-yellow, #d7ba7d); }
+        .stag { font-size:9px; padding:0 5px; margin-left:4px; border-radius:7px; white-space:nowrap;
+            border:1px solid var(--vscode-widget-border, #4444); opacity:.8; }
         .fold { font-size:10px; padding:0 6px; line-height:16px; cursor:pointer; border-radius:3px;
             background:transparent; opacity:.7; border:1px solid var(--vscode-widget-border, #4444);
             color:var(--vscode-foreground); }
@@ -114,7 +126,8 @@
      * }
      * returns { setRows(rows, tableN?), onMessage(ev) -> handled? }
      * Host must answer 'sessionTurns' and 'setTableN' (rebuild the pool with
-     * the requested N) and handle 'openSession'/'focusTerminal'.
+     * the requested N) and handle 'openSession' / 'focusTerminal' /
+     * 'pinSession' (persist the shelf) / 'interruptSession'.
      */
     function create(opts) {
         const vscode = opts.vscode, C = opts.C;
@@ -157,6 +170,7 @@
         function activeFilterCount() {
             let n = (filters.text ? 1 : 0) + (filters.agents ? 1 : 0)
                 + (filters.activeOnly ? 1 : 0) + (filters.errorsOnly ? 1 : 0) + (filters.mainOnly ? 1 : 0)
+                + (filters.pinnedOnly ? 1 : 0)
                 + (filters.from ? 1 : 0) + (filters.to ? 1 : 0);
             FRANGES.forEach(k => {
                 const rg = filters.ranges[k.id];
@@ -168,7 +182,11 @@
         function filterRows(list) {
             const text = (filters.text || '').toLowerCase();
             return list.filter(r => {
-                if (text && ((r.title || '') + ' ' + (r.agent || '')).toLowerCase().indexOf(text) < 0) { return false; }
+                if (filters.pinnedOnly && !r.pinned) { return false; }
+                // tags are part of the searchable text: "zen" finds both the
+                // sessions titled that way and the ones you labelled zen
+                if (text && ((r.title || '') + ' ' + (r.agent || '') + ' ' + (r.tags || []).join(' '))
+                    .toLowerCase().indexOf(text) < 0) { return false; }
                 if (filters.agents && filters.agents.indexOf(r.agentName) < 0) { return false; }
                 if (filters.origin && originOf(r) !== filters.origin) { return false; }
                 if (filters.activeOnly && !r.active) { return false; }
@@ -226,6 +244,7 @@
                     ${flag('af-factive', 'Active now', filters.activeOnly, 'Only sessions with a live terminal working right now')}
                     ${flag('af-ferrors', 'Has errors', filters.errorsOnly, 'Only sessions with at least one tool error')}
                     ${flag('af-fmain', 'Main only', filters.mainOnly, 'Hide subagent (sidechain) sessions')}
+                    ${flag('af-fpin', '★ Pinned', filters.pinnedOnly, 'Only the sessions you pinned — your shelf')}
                 </div>
                 <div class="af-frow">${ranges}
                     <label class="af-frange">When <input type="date" class="af-ffrom" value="${C.esc(filters.from)}">–<input type="date" class="af-fto" value="${C.esc(filters.to)}"></label>
@@ -244,6 +263,12 @@
 
         const dot = r => r.active ? '<span class="dot on" title="Active now"></span> ' : '';
         const subBadge = r => r.sidechain ? ' <span class="badge">sub</span>' : '';
+        const tagChips = r => (r.tags || []).map(t => `<span class="stag">${C.esc(t)}</span>`).join('');
+        // ⎋ interrupt: only on rows that are actually running — Esc is typed
+        // into that session's terminal, which stops the turn, not the session
+        const stopBtn = r => r.active
+            ? ` <button class="fold" data-stop="${C.esc(r.sessionId || '')}" data-stopagent="${C.esc(r.agentName || '')}" title="Interrupt this session (sends Esc to its terminal) — stops the turn, keeps the session">⎋</button>`
+            : '';
         // on every row, not just active ones — a terminal window can be open
         // while the session idles; the command falls back honestly if none is
         const termBtn = r =>
@@ -271,10 +296,10 @@
                     ? 'Automation started this session (schedule / trigger / task / mission)'
                     : 'You started this session — an interactive dialog'}">${o.glyph}</td>`;
             },
-            agent: r => `<td>${dot(r)}${C.esc(r.agent)}${subBadge(r)}${termBtn(r)}</td>`,
+            agent: r => `<td>${dot(r)}${C.esc(r.agent)}${subBadge(r)}${termBtn(r)}${stopBtn(r)}</td>`,
             title: r => hasAgentCol
-                ? `<td title="${C.esc(r.title)}">${C.esc(r.title)}</td>`
-                : `<td title="${C.esc(r.title)}">${dot(r)}${C.esc(r.title)}${subBadge(r)}${termBtn(r)}</td>`,
+                ? `<td title="${C.esc(r.title)}">${C.esc(r.title)}${tagChips(r)}</td>`
+                : `<td title="${C.esc(r.title)}">${dot(r)}${C.esc(r.title)}${tagChips(r)}${subBadge(r)}${termBtn(r)}${stopBtn(r)}</td>`,
             when: r => `<td class="num">${relTime(r.ts)}</td>`,
             duration: r => `<td class="num">${r.durationMin || 0}m</td>`,
             turns: r => `<td class="num">${r.turns || 0}</td>`,
@@ -311,15 +336,24 @@
             const nf = activeFilterCount();
             const hidden = rows.length - pool.length;
             const scope = originMeta(filters.origin);
-            shown = pool.slice().sort((a, b) => def.key(b) - def.key(a));
-            if (tableN > 0) { shown = shown.slice(0, tableN); }
+            // The shelf sits on top: pinned rows first, then whatever criterion
+            // is picked — a session you keep coming back to is never scrolled to.
+            shown = pool.slice().sort((a, b) =>
+                ((b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)) || (def.key(b) - def.key(a)));
+            // …and it is not part of the top-N either: the cut applies to the
+            // unpinned rows, so pinning a seventh session never hides a sixth.
+            if (tableN > 0) {
+                const pinnedRows = shown.filter(r => r.pinned);
+                shown = pinnedRows.concat(shown.filter(r => !r.pinned).slice(0, tableN));
+            }
             shown.forEach(r => { if (open.has(r.file)) { ensureTurns(r); } });
             const rowsHtml = shown.map(r => {
                 const o = open.has(r.file);
                 return `<tr class="click sessrow${o ? ' open' : ''}" data-session="${C.esc(r.file)}">
                     <td class="foldcell"><button class="fold" data-fold="${C.esc(r.file)}" title="${o ? 'Hide' : 'List'} this session's turns">${o ? '▾' : '▸'}</button></td>
+                    <td class="pincell"><button class="pinbtn${r.pinned ? ' on' : ''}" data-pin="${C.esc(r.sessionId || '')}" data-pinned="${r.pinned ? '1' : '0'}" title="${r.pinned ? 'Pinned — click to take it off your shelf' : 'Pin this session to your shelf (always listed first)'}">${r.pinned ? '★' : '☆'}</button></td>
                     ${cols.map(c => CELL[c](r)).join('')}
-                </tr>` + (o ? `<tr class="sessturns"><td></td><td colspan="${cols.length}">${turnPanelHtml(r)}</td></tr>` : '');
+                </tr>` + (o ? `<tr class="sessturns"><td colspan="2"></td><td colspan="${cols.length}">${turnPanelHtml(r)}</td></tr>` : '');
             }).join('');
             return `${STYLE}
             <div class="chiprow">
@@ -338,8 +372,8 @@
             </div>
             ${filterPanelHtml()}
             <div class="tablewrap"><table>
-                <tr><th></th>${cols.map(c => HEAD[c]).join('')}</tr>
-                ${rowsHtml || `<tr><td colspan="${cols.length + 1}" class="muted">${rows.length ? 'No sessions match the filters.' : 'No sessions yet.'}</td></tr>`}
+                <tr><th></th><th class="pincell" title="Your shelf — ★ pins a session so it is always listed first and never cut by the row limit">★</th>${cols.map(c => HEAD[c]).join('')}</tr>
+                ${rowsHtml || `<tr><td colspan="${cols.length + 2}" class="muted">${rows.length ? 'No sessions match the filters.' : 'No sessions yet.'}</td></tr>`}
             </table></div>`;
         }
 
@@ -429,6 +463,7 @@
                 wireEl('.af-factive', 'click', () => { filters.activeOnly = !filters.activeOnly; apply(); });
                 wireEl('.af-ferrors', 'click', () => { filters.errorsOnly = !filters.errorsOnly; apply(); });
                 wireEl('.af-fmain', 'click', () => { filters.mainOnly = !filters.mainOnly; apply(); });
+                wireEl('.af-fpin', 'click', () => { filters.pinnedOnly = !filters.pinnedOnly; apply(); });
                 liveEl('.af-ffrom', el => { filters.from = el.value || ''; apply(); }, 300);
                 liveEl('.af-fto', el => { filters.to = el.value || ''; apply(); }, 300);
                 FRANGES.forEach(k => {
@@ -463,6 +498,26 @@
                     vscode.postMessage({
                         type: 'focusTerminal', sessionId: b.dataset.sid || '',
                         agentName: b.dataset.term, cwd: b.dataset.cwd || ''
+                    });
+                }));
+            // ★ pin — flipped locally at once so the shelf reorders under the
+            // cursor; the host persists it and sends the rows back on its own beat
+            root.querySelectorAll('[data-pin]').forEach(b =>
+                b.addEventListener('click', ev => {
+                    ev.stopPropagation(); // the row click underneath opens the transcript
+                    const sid = b.dataset.pin;
+                    const want = b.dataset.pinned !== '1';
+                    const r = rows.find(x => x.sessionId === sid);
+                    if (r) { r.pinned = want; }
+                    vscode.postMessage({ type: 'pinSession', sessionId: sid, pinned: want });
+                    renderSection();
+                }));
+            root.querySelectorAll('[data-stop]').forEach(b =>
+                b.addEventListener('click', ev => {
+                    ev.stopPropagation();
+                    vscode.postMessage({
+                        type: 'interruptSession', sessionId: b.dataset.stop || '',
+                        agentName: b.dataset.stopagent || ''
                     });
                 }));
             root.querySelectorAll('[data-fold]').forEach(b =>

@@ -83,6 +83,10 @@
         'idle':               { label: 'IDLE',        color: 'var(--vscode-descriptionForeground, #999)' },
         'ended':              { label: 'ENDED',       color: 'var(--vscode-descriptionForeground, #999)' }
     };
+    // Statuses where there is something to interrupt: a turn is in flight, a
+    // permission dialog is up, or the session stopped mid-work. An idle or
+    // finished session has nothing to stop — the button stays off those cards.
+    const RUNNING = ['working', 'tool', 'waiting-permission', 'stalled'];
 
     function fmtClock(ts) {
         const d = new Date(ts);
@@ -375,6 +379,7 @@
                 ${turnChips(s)}
                 <div class="btnrow">
                     <button class="secondary" data-focusterm="${C.esc(s.agentName)}" data-sid="${C.esc(s.sessionId)}" title="Jump to this session's terminal window">⌨ Terminal</button>
+                    ${!s.source && RUNNING.indexOf(s.status) >= 0 ? `<button class="secondary" data-stopsess="${C.esc(s.sessionId)}" data-stopagent="${C.esc(s.agentName)}" title="Interrupt this session — types Esc into its terminal, which stops the running turn and leaves the session open">⎋ Interrupt</button>` : ''}
                     ${s.transcriptPath ? `<button class="secondary" data-open="${C.esc(s.transcriptPath)}" data-ts="${s.lastEventTs || 0}">Open transcript</button>` : ''}
                 </div>
             </div>`;
@@ -452,6 +457,10 @@
             b.addEventListener('click', () => { windowMin = Number(b.dataset.win); render(); }));
         document.querySelectorAll('[data-guide]').forEach(b =>
             b.addEventListener('click', () => vscode.postMessage({ type: 'openGuide', anchor: b.dataset.guide })));
+        document.querySelectorAll('[data-stopsess]').forEach(b =>
+            b.addEventListener('click', () => vscode.postMessage({
+                type: 'interruptSession', sessionId: b.dataset.stopsess || '', agentName: b.dataset.stopagent || ''
+            })));
         document.querySelectorAll('[data-focusterm]').forEach(b =>
             b.addEventListener('click', () => vscode.postMessage({
                 // sessionId picks the exact terminal of THIS card; agentName is the fallback
