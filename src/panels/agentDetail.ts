@@ -267,9 +267,11 @@ export class AgentDetailPanel {
                 });
                 break;
             case 'pinSession':
+                // the star already flipped in the webview — pass the state it
+                // wants, not a toggle, so the two can never disagree
                 void vscode.commands.executeCommand('agentfarm.pinSession', {
                     sessionId: typeof msg.sessionId === 'string' ? msg.sessionId : '',
-                    pinned: msg.pinned === true
+                    wantPinned: msg.pinned === true
                 });
                 break;
             case 'interruptSession':

@@ -128,5 +128,29 @@ const {
     ok('without the pin that same session is cut', !none.find(r => r.sessionId === 'sid40'));
 }
 
+// ---------- the wiring contract: a toggle must not read a row's own state ----------
+// A SessionInfo carries `pinned`. If the pin command treated that field as an
+// instruction, every click on an already-pinned tree row would say "pin it
+// again" and nothing would ever come off the shelf. The webviews therefore
+// pass the state they want as `wantPinned`, and the command only honours that.
+{
+    const fs = require('fs');
+    const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    const cmd = ext.slice(ext.indexOf("registerCommand('agentfarm.pinSession'"),
+        ext.indexOf("registerCommand('agentfarm.pinSession'") + 1400);
+    ok('the pin command reads wantPinned, never the row\'s own pinned flag',
+        /wantPinned/.test(cmd) && !/\?\.pinned === 'boolean'/.test(cmd));
+    ok('…and falls back to a real toggle when no state is asked for',
+        /togglePin\(marks, sessionId, want\)/.test(cmd));
+    for (const panel of ['dashboard.ts', 'agentDetail.ts']) {
+        const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', panel), 'utf8');
+        const block = src.slice(src.indexOf("case 'pinSession'"), src.indexOf("case 'pinSession'") + 500);
+        ok(`${panel} forwards the webview's wanted state as wantPinned`,
+            /wantPinned: msg\.pinned === true/.test(block));
+    }
+    ok('SessionInfo really does carry a pinned flag (the reason for the rule)',
+        /pinned\?: boolean/.test(fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'sessions.ts'), 'utf8')));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

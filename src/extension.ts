@@ -4943,15 +4943,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }),
 
         // ---------- A2: the shelf (pin + tags) ----------
-        // Tree rows pass a SessionInfo (or a {session} wrapper), webviews pass
-        // {sessionId, pinned} — the same session, three shapes, one command.
+        // Tree rows pass a SessionInfo (or a {session} wrapper) and toggle;
+        // webviews, which flipped the star locally already, pass the state they
+        // want as `wantPinned`. Deliberately NOT named `pinned`: a SessionInfo
+        // carries its own `pinned` flag, and reading that as an instruction
+        // would turn every click on a pinned tree row into "pin it again".
         vscode.commands.registerCommand('agentfarm.pinSession',
-            async (arg?: { session?: SessionInfo; sessionId?: string; pinned?: boolean } | SessionInfo) => {
+            async (arg?: { session?: SessionInfo; sessionId?: string; wantPinned?: boolean } | SessionInfo) => {
                 const s = arg && 'session' in arg && arg.session ? arg.session : arg as SessionInfo | undefined;
                 const sessionId = s?.sessionId || (arg as { sessionId?: string })?.sessionId;
                 if (!sessionId) { return; }
-                const want = typeof (arg as { pinned?: boolean })?.pinned === 'boolean'
-                    ? (arg as { pinned?: boolean }).pinned
+                const want = typeof (arg as { wantPinned?: boolean })?.wantPinned === 'boolean'
+                    ? (arg as { wantPinned?: boolean }).wantPinned
                     : undefined;
                 const marks = sessionMarks();
                 const next = togglePin(marks, sessionId, want);
