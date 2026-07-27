@@ -234,9 +234,29 @@ Under the box: **agent · model · effort · permission mode** — all from the 
 
 Every `Edit`/`Write` appears with its file and two buttons: **open** and **vs HEAD** (3.25.0's diff surface, reused rather than rebuilt).
 
+### ‼️ Two processes cannot share one session (3.29.0)
+
+Claude Code **cannot join a running session.** "Resuming" a session that a terminal already has open starts a **second process** on the same transcript: both write to it, neither sees the other's turns, and the session list stitches them into **one conversation nobody actually had**.
+
+The Console now **checks who owns a session before resuming it** (the CLI's own registry: the same session id under two pids means it is busy) and **refuses by default**, explaining what a second process would mean and offering the two things that do work: **jump to the terminal that has it**, or **start a new session in the same folder**. Rows open elsewhere are greyed in the resume list. Resuming into a *terminal* (⏵ Resume in the side panel) carries the same warning, with a deliberate "open a second process anyway" for when that is genuinely wanted.
+
 ### Sessions outlive the tab
 
 Closing the Console tab does **not** kill a conversation; sessions end when you end them, or with the window.
+
+### Where to open it
+
+- **💬 Console** in the global nav (on every page) · **`Ctrl+Alt+C`**
+- The **💬** button in the **Agents** view title bar (side panel)
+- **Right-click an agent → Talk in Console…**
+- The **💬 Console** button at the top of the agent page
+
+All of them open the Console with that agent **preselected in the composer**; **no process starts until you say something.**
+
+### The composer has two modes
+
+- **New session:** agent · model · effort · permission-mode pickers + your text → **Start session**.
+- **Running session:** the agent/model/effort pickers are **gone** (they were decided when the process started and cannot change — dead boxes helped nobody). In their place a plain status line (`dev · haiku`) and **the one control that genuinely works live: the permission mode**.
 
 **Bridge:** `console.start` · `console.send` (queues while a turn runs) · `console.sessions` · `console.interrupt` · `console.permissionMode` (with `retry`) · `console.close`.
 
@@ -265,7 +285,11 @@ Every session used to open as a bare `claude`, with the model, the effort, the p
 
 At the bottom sit the **profiles**: *Save this as a profile…* writes the current picks to `agentFarm.launchProfiles` under a name ("deep review" = opus + xhigh + plan), *Load a profile…* restores one, and *Make model/effort/permissions my defaults* promotes them to `launchDefaults`. The launcher **remembers what each agent was last launched with** — the second time you start the same kind of session it is one Enter.
 
-**Where the session name is read from (3.24.1):** the name given with `-n` is **never written to the transcript** — it lives in the CLI's own live registry (`~/.claude/sessions/<pid>.json`), a file deleted when the process exits. Agent Farm reads that registry and **remembers** the name (at startup, on a quiet 20s beat, and twice right after a named launch). A session's title therefore has three sources, in this order: **your rename → the name it was started with (`-n`) → the title derived from the conversation**. Nothing is lost behind a name: whatever it replaced stays in the row's tooltip. Sessions you named yourself outside the panel (`claude -n …`) show up the same way.
+**Where the session name is read from (3.24.1, rule corrected in 3.29.0):** the name given with `-n` is **never written to the transcript** — it lives in the CLI's own live registry (`~/.claude/sessions/<pid>.json`), a file deleted when the process exits. Agent Farm reads that registry and **remembers** the name.
+
+> **‼️ The distinction that matters:** Claude Code names **every** session — one nobody named gets an invented label (`basit-2e`, `developer-07`), marked in the registry as **`nameSource: "derived"`**. Agent Farm adopts **only names a human chose** (`nameSource` anything but `derived`, or a name Agent Farm passed itself with `-n`); an unmarked name is not trusted. **A session you start without naming keeps the title derived from the first real thing said in it**, exactly as before.
+
+A session's title therefore has three sources, in this order: **your rename → the name it was started with (`-n`) → the title derived from the conversation**. Nothing is lost behind a name: whatever it replaced stays in the row's tooltip.
 
 Free text (name, first prompt) is always quoted: `"` becomes `'`, a backtick (PowerShell's escape character) is dropped, newlines become spaces — it cannot break out of its quotes in any of the three shells (PowerShell · cmd · sh). `$` and `%` are **deliberately left alone**: mangling the user's own text silently is worse than showing the command line, and if a shell would expand a variable **you see it on the Start row**.
 

@@ -26,17 +26,34 @@ export interface ConsoleDeps {
     index: SessionIndex;
     modelAliases(): string[];
     launchDefaults(): { model?: string; effort?: string; permissionMode?: string };
+    /**
+     * Which sessions a live process already owns (the CLI's own registry).
+     *
+     * This is what stops the Console from telling a lie: `claude --resume <id>`
+     * on a session that is already open in a terminal starts a SECOND process
+     * on the same transcript. Both write to it, neither sees the other's
+     * turns, and Agent Farm would show the interleaved result as one
+     * conversation that no participant actually had.
+     */
+    liveOwners(): { sessionId: string; pid: number; entrypoint?: string; status?: string; cwd?: string }[];
 }
 
 export class ConsolePanel {
     private static current?: ConsolePanel;
     private disposables: vscode.Disposable[] = [];
     private selected?: string;
+    /** agent to preselect in the composer (opened from an agent row) */
+    private presetAgent?: string;
 
     static show(deps: ConsoleDeps, opts?: { sessionId?: string; agentId?: string }): void {
         if (ConsolePanel.current) {
             ConsolePanel.current.panel.reveal();
             if (opts?.sessionId) { ConsolePanel.current.selected = opts.sessionId; }
+            if (opts?.agentId) {
+                // "talk to THIS agent": composer mode, nothing spawned yet
+                ConsolePanel.current.presetAgent = opts.agentId;
+                ConsolePanel.current.selected = '';
+            }
             ConsolePanel.current.refresh();
             return;
         }
@@ -45,6 +62,10 @@ export class ConsolePanel {
             { enableScripts: true, retainContextWhenHidden: true });
         ConsolePanel.current = new ConsolePanel(panel, deps);
         if (opts?.sessionId) { ConsolePanel.current.selected = opts.sessionId; }
+        if (opts?.agentId) {
+            ConsolePanel.current.presetAgent = opts.agentId;
+            ConsolePanel.current.selected = '';
+        }
         ConsolePanel.current.refresh();
     }
 
@@ -64,11 +85,16 @@ export class ConsolePanel {
     private data(): Record<string, unknown> {
         const hosted = this.deps.host.list();
         if (this.selected && !hosted.some(s => s.id === this.selected)) { this.selected = undefined; }
-        if (!this.selected && hosted.length) { this.selected = hosted[0].id; }
+        // An explicit "new session" (selected === '') is respected; only an
+        // unset selection falls back to the newest hosted session.
+        if (this.selected === undefined && hosted.length) { this.selected = hosted[0].id; }
         const d = this.deps.launchDefaults();
+        const preset = this.presetAgent;
+        this.presetAgent = undefined;   // one-shot: it seeds the picker once
         return {
             generatedAt: Date.now(),
             selected: this.selected ?? '',
+            presetAgent: preset ?? '',
             // the conversation of the selected session in full; the others as headers
             sessions: hosted.map(s => ({
                 id: s.id, agentName: s.agentName, sessionId: s.sessionId ?? '',
@@ -85,6 +111,9 @@ export class ConsolePanel {
             permissions: PERMISSION_CHOICES,
             grants: PERMISSION_GRANTS,
             defaults: { model: d.model ?? '', effort: d.effort ?? '', permissionMode: d.permissionMode ?? '' },
+            // sessions a live process owns right now — the resume list marks
+            // them instead of offering a second process on the same transcript
+            owned: this.deps.liveOwners().map(o => o.sessionId),
             // the shelf + recent transcripts, to resume one into the Console
             resumable: [
                 ...this.deps.index.pinned(),
@@ -137,6 +166,38 @@ export class ConsolePanel {
                 const sessionId = str('sessionId');
                 const row = this.deps.index.all().find(s => s.sessionId === sessionId);
                 if (!row?.cwd) { return; }
+                // The guard that makes "same session" true instead of a story:
+                // if a process already owns this session id, resuming would
+                // start a second one on the same transcript.
+                const owner = this.deps.liveOwners().find(o => o.sessionId === sessionId);
+                if (owner) {
+                    const where = owner.entrypoint === 'sdk-cli'
+                        ? 'a program (a Console session or a headless run)'
+                        : 'a terminal';
+                    const choice = await vscode.window.showWarningMessage(
+                        `That session is open right now in ${where} (pid ${owner.pid}).\n\n` +
+                        'Claude Code cannot join a running session: resuming it here would start a SECOND process on the same transcript. ' +
+                        'Both would write to it and neither would see the other\'s turns — it would look like one conversation that nobody actually had.',
+                        { modal: true },
+                        'Jump to that terminal', 'New session in the same folder');
+                    if (choice === 'Jump to that terminal') {
+                        void vscode.commands.executeCommand('agentfarm.focusSessionTerminal',
+                            { sessionId, agentName: row.agentName, cwd: row.cwd });
+                        return;
+                    }
+                    if (choice !== 'New session in the same folder') { return; }
+                    const agentForNew = this.deps.getAgents().find(a => a.name === row.agentName);
+                    const dn = this.deps.launchDefaults();
+                    this.selected = host.start({
+                        agentId: agentForNew?.id ?? '', agentName: row.agentName ?? 'session',
+                        cwd: row.cwd,
+                        model: str('model') || dn.model,
+                        effort: str('effort') || dn.effort,
+                        permissionMode: str('permissionMode') || dn.permissionMode
+                    });
+                    this.refresh();
+                    return;
+                }
                 const agent = this.deps.getAgents().find(a => a.name === row.agentName);
                 const d = this.deps.launchDefaults();
                 this.selected = host.start({

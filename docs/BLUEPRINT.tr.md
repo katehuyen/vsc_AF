@@ -234,9 +234,29 @@ Yazma kutusunun altında **ajan · model · efor · izin modu** — hepsi launch
 
 Her `Edit`/`Write` satırı dosyasıyla birlikte görünür; yanında **open** ve **vs HEAD** düğmeleri (3.25.0'ın diff yüzeyi, yeniden yazılmadan kullanılıyor).
 
+### ‼️ Bir oturumu iki süreç paylaşamaz (3.29.0)
+
+Claude Code **çalışan bir oturuma katılamaz.** Terminalde açık bir oturumu Console'a "devam ettirmek", aynı transkripte yazan **ikinci bir süreç** başlatır: ikisi de dosyaya yazar, hiçbiri diğerinin turlarını görmez, ve oturum listesi bunları **kimsenin yapmadığı tek bir konuşma** gibi gösterir.
+
+Artık Console devam ettirmeden **önce sahibine bakıyor** (CLI'ın kendi kaydı: aynı sessionId iki pid'de görünüyorsa oturum meşguldür) ve **varsayılan olarak reddediyor** — ne olacağını açıklayıp gerçekten işe yarayan iki seçeneği sunuyor: **o terminale atla** ya da **aynı klasörde yeni oturum aç**. Başka yerde açık olan satırlar devam-ettirme listesinde soluk görünür. Terminale devam ettirmek de (sol paneldeki ⏵ Resume) aynı uyarıyı verir; bilerek isteyenler için "yine de ikinci süreci aç" seçeneği durur.
+
 ### Oturumlar sekmeden uzun yaşar
 
 Console sekmesini kapatmak konuşmayı **öldürmez**; oturumlar sen bitirince ya da pencere kapanınca biter.
+
+### Nereden açılır
+
+- Global nav'daki **💬 Console** (her sayfada) · **`Ctrl+Alt+C`**
+- Sol paneldeki **Agents** başlığındaki **💬** düğmesi
+- Bir ajana **sağ tık → Talk in Console…**
+- Ajan sayfasının üstündeki **💬 Console** düğmesi
+
+Bunların hepsi Console'u o ajan **kompozitörde seçili** olarak açar; **sen bir şey söyleyene kadar hiçbir süreç başlatılmaz.**
+
+### Kompozitör iki moddur
+
+- **Yeni oturum:** ajan · model · efor · izin modu seçicileri + metin → **Start session**.
+- **Çalışan oturum:** ajan/model/efor artık **gösterilmez** (süreç başlarken kararlaştırıldılar, değiştirilemezler; ölü kutu koymanın anlamı yok). Yerlerinde düz bir durum satırı (`dev · haiku`) ve **gerçekten canlı çalışan tek kontrol: izin modu**.
 
 **Köprü:** `console.start` · `console.send` (tur çalışıyorsa kuyruğa alır) · `console.sessions` · `console.interrupt` · `console.permissionMode` (`retry` ile) · `console.close`.
 
@@ -265,7 +285,11 @@ Eskiden her oturum çıplak `claude` ile açılıyordu; model, efor, izin modu v
 
 Alt kısımda **profiller**: *Save this as a profile…* mevcut seçimi `agentFarm.launchProfiles`'a adıyla yazar ("derin inceleme" = opus + xhigh + plan gibi), *Load a profile…* geri yükler; *Make model/effort/permissions my defaults* seçimi `launchDefaults`'a taşır. Launcher, her ajan için **en son ne ile başlattığını hatırlar** — aynı tür oturumu ikinci açışın tek Enter'dır.
 
-**Oturum adı nereden okunuyor (3.24.1):** `-n` ile verilen ad **transkripte yazılmaz**; CLI'ın kendi canlı kaydında (`~/.claude/sessions/<pid>.json`) durur ve süreç bitince o dosya silinir. Agent Farm bu kaydı okuyup adı **hatırlar** (açılışta, 20 saniyelik sessiz turda ve adlı bir başlatmadan hemen sonra iki kez). Bir oturumun başlığının üç kaynağı vardır, bu sırayla: **senin verdiğin ad (Rename) → başlatılırken verilen ad (`-n`) → konuşmadan türetilen başlık**. Adın örttüğü başlık kaybolmaz, satırın tooltip'inde durur. Panel dışında kendin `claude -n …` ile başlattığın oturumlar da aynı şekilde adıyla görünür.
+**Oturum adı nereden okunuyor (3.24.1, kuralı 3.29.0'da düzeltildi):** `-n` ile verilen ad **transkripte yazılmaz**; CLI'ın kendi canlı kaydında (`~/.claude/sessions/<pid>.json`) durur ve süreç bitince o dosya silinir. Agent Farm bu kaydı okuyup adı **hatırlar**.
+
+> **‼️ Kritik ayrım:** Claude Code **her** oturuma bir ad verir — kimse ad vermediyse kendisi uydurur (`basit-2e`, `developer-07`) ve bunu kayıtta **`nameSource: "derived"`** diye işaretler. Agent Farm **yalnızca insanın seçtiği adı** benimser (`nameSource` "derived" dışında bir şeyse, ya da adı zaten kendisi `-n` ile geçirdiyse); işaretsiz bir ada güvenilmez. **Ad vermeden açtığın oturum, eskiden olduğu gibi konuşmanın kendi ilk cümlesinden başlığını alır.**
+
+Bir oturumun başlığının üç kaynağı vardır, bu sırayla: **senin verdiğin ad (Rename) → başlatılırken verilen ad (`-n`) → konuşmadan türetilen başlık**. Adın örttüğü başlık kaybolmaz, satırın tooltip'inde durur.
 
 Serbest metin (ad, ilk cümle) her zaman tırnaklanır: `"` tek tırnağa döner, backtick (PowerShell kaçış karakteri) düşer, satır sonları boşluk olur — üç kabuğun (PowerShell · cmd · sh) hiçbirinde tırnak dışına taşamaz. `$` ve `%` **bilerek korunur**: kullanıcının kendi metnini sessizce bozmaktansa komut satırını göstermek doğru olanıdır (kabuk bir değişkeni genişletirse **Start satırında görürsün**).
 

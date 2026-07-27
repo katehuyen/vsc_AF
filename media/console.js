@@ -61,6 +61,10 @@
         .crow .grow { flex:1; }
         .qbadge { font-size:10px; padding:1px 7px; border-radius:8px;
             background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); }
+        .fixed { font-size:11px; opacity:.75; }
+        .permlbl { font-size:10px; opacity:.75; display:flex; align-items:center; gap:4px; }
+        .owned { opacity:.5; }
+        .owned .n::after { content:' · open elsewhere'; font-weight:400; opacity:.8; }
         .empty { padding:26px 12px; color:var(--vscode-descriptionForeground); font-size:12px; }
     </style>`;
 
@@ -92,8 +96,13 @@
                 </div>
                 <div class="m">${C.esc(s.status)}${s.queued ? ` · ${s.queued} queued` : ''}${s.turns ? ` · ${s.turns} turns` : ''} · ${relTime(s.lastTs)}</div>
             </div>`).join('');
+        // A session a live process already owns cannot be joined — resuming it
+        // would start a second process on the same transcript. The row says so
+        // instead of offering it as if it were free.
+        const owned = new Set(DATA.owned || []);
         const resume = st.showResume ? `<div style="margin-top:6px">${(DATA.resumable || []).map(r => `
-            <div class="srow" data-resume="${C.esc(r.sessionId)}" title="${C.esc(r.cwd)}">
+            <div class="srow${owned.has(r.sessionId) ? ' owned' : ''}" data-resume="${C.esc(r.sessionId)}"
+                 title="${owned.has(r.sessionId) ? 'Open right now in a terminal or another process — Agent Farm cannot join a running session' : C.esc(r.cwd)}">
                 <div class="n">${r.pinned ? '📌 ' : ''}${C.esc(r.title)}</div>
                 <div class="m">${C.esc(r.agentName)} · ${relTime(r.ts)} ago · ${C.fmtUSD(r.cost)}</div>
             </div>`).join('') || '<div class="empty">No transcripts yet.</div>'}</div>` : '';
@@ -150,31 +159,58 @@
         </div>`;
     }
 
+    // The composer has two modes, and they show DIFFERENT controls — a running
+    // session has no use for an agent/model picker (both were decided when the
+    // process started and cannot change), and showing them greyed out was just
+    // a row of dead boxes. What CAN change mid-session is the permission mode,
+    // so that one stays a live control; the rest becomes a plain status line.
     function composer(s) {
-        const opts = (list, cur, blank) => (list || []).map(o =>
-            `<option value="${C.esc(o.id)}"${o.id === cur ? ' selected' : ''}>${C.esc(o.label || o.id || blank)}</option>`).join('');
+        const opts = (list, cur) => (list || []).map(o =>
+            `<option value="${C.esc(o.id)}"${o.id === cur ? ' selected' : ''}>${C.esc(o.label || o.id)}</option>`).join('');
         const running = s && s.status === 'working';
+        const dead = s && (s.status === 'ended' || s.status === 'error');
+
+        const newRow = `<div class="crow">
+            <select id="c-agent" title="Which agent — the session opens in its folder">
+                <option value="">choose an agent…</option>
+                ${(DATA.agents || []).map(a => `<option value="${C.esc(a.id)}"${a.id === st.agentId ? ' selected' : ''}>${C.esc(a.name)}</option>`).join('')}
+            </select>
+            <select id="c-model" title="Model for the new session (--model)">${opts(DATA.models, st.model)}</select>
+            <select id="c-effort" title="Reasoning effort (--effort)">${opts(DATA.efforts, st.effort)}</select>
+            <select id="c-perm" title="What it may do without asking (--permission-mode)">${opts(DATA.permissions, st.permissionMode)}</select>
+            <span class="grow"></span>
+            <button id="c-send">Start session</button>
+        </div>`;
+
+        const liveRow = s ? `<div class="crow">
+            <span class="fixed" title="Decided when this session started — a running session cannot change them">
+                ${C.esc(s.agentName)}${s.model ? ' · ' + C.esc(String(s.model).replace(/^claude-/, '')) : ''}
+            </span>
+            <label class="permlbl" title="The one thing that CAN change mid-session — applied live">permissions
+                <select id="c-perm">${opts(DATA.permissions, s.permissionMode)}</select>
+            </label>
+            <span class="grow"></span>
+            ${s.queued ? `<span class="qbadge" title="Waiting for the current turn to finish">${s.queued} queued</span> <button class="secondary" id="c-clearq">clear</button>` : ''}
+            ${running ? '<button class="secondary" id="c-int" title="Stop the running turn — the session and its context stay">⎋ Interrupt</button>' : ''}
+            <button id="c-send"${dead ? ' disabled' : ''}>${running ? 'Queue' : 'Send'}</button>
+        </div>` : '';
+
+        const placeholder = s
+            ? (dead ? 'This session has ended — start a new one to keep talking.'
+                : 'Message ' + C.esc(s.agentName) + '…  (Ctrl+Enter sends)')
+            : 'Say something to start a session…  (Ctrl+Enter sends)';
+
         return `<div class="composer">
-            <textarea id="c-text" placeholder="${s ? 'Message ' + C.esc(s.agentName) + '…  (Ctrl+Enter sends)' : 'Say something to start a session…  (Ctrl+Enter sends)'}">${C.esc(st.draft || '')}</textarea>
-            <div class="crow">
-                <select id="c-agent" title="Which agent — the session opens in its folder"${s ? ' disabled' : ''}>
-                    <option value="">agent…</option>
-                    ${(DATA.agents || []).map(a => `<option value="${C.esc(a.id)}"${a.id === (s ? '' : st.agentId) ? ' selected' : ''}>${C.esc(a.name)}</option>`).join('')}
-                </select>
-                <select id="c-model" title="--model"${s ? ' disabled' : ''}>${opts(DATA.models, st.model)}</select>
-                <select id="c-effort" title="--effort"${s ? ' disabled' : ''}>${opts(DATA.efforts, st.effort)}</select>
-                <select id="c-perm" title="Permission mode — changeable live, mid-session">${opts(DATA.permissions, s ? s.permissionMode : st.permissionMode)}</select>
-                <span class="grow"></span>
-                ${s && s.queued ? `<span class="qbadge" title="Messages waiting for the current turn">${s.queued} queued</span> <button class="secondary" id="c-clearq">clear</button>` : ''}
-                ${running ? '<button class="secondary" id="c-int" title="Stop the running turn — the session and its context stay">⎋ Interrupt</button>' : ''}
-                <button id="c-send">${s ? (running ? 'Queue' : 'Send') : 'Start session'}</button>
-            </div>
+            <textarea id="c-text" placeholder="${placeholder}"${dead ? ' disabled' : ''}>${C.esc(st.draft || '')}</textarea>
+            ${s ? liveRow : newRow}
             ${s ? `<div class="crow" style="font-size:10px;opacity:.6">
-                ${s.sessionId ? 'session ' + C.esc(s.sessionId.slice(0, 8)) + ' · ' : ''}${s.model ? C.esc(s.model) + ' · ' : ''}${s.contextTokens ? '~' + C.fmtTok(s.contextTokens) + ' ctx · ' : ''}${C.fmtUSD(s.cost)} this session
+                ${s.sessionId ? 'session ' + C.esc(s.sessionId.slice(0, 8)) + ' · ' : ''}${s.contextTokens ? '~' + C.fmtTok(s.contextTokens) + ' ctx · ' : ''}${C.fmtUSD(s.cost)} this session · ${s.turns} turn(s)
                 <span class="grow"></span>
                 ${s.sessionId ? '<button class="secondary" id="c-transcript">Open transcript</button>' : ''}
-                ${s.status === 'ended' || s.status === 'error' ? '<button class="secondary" id="c-forget">Remove</button>' : '<button class="secondary" id="c-close">End session</button>'}
-            </div>` : ''}
+                ${dead ? '<button class="secondary" id="c-forget">Remove from list</button>' : '<button class="secondary" id="c-close">End session</button>'}
+            </div>` : `<div class="crow" style="font-size:10px;opacity:.6">
+                A new session opens in the chosen agent's folder and runs here, in the panel.
+            </div>`}
         </div>`;
     }
 
@@ -231,10 +267,13 @@
             });
             text.focus();
         }
+        // new-session controls only exist in new-session mode
         const pick = (id, key) => byId(id, 'change', e => { st[key] = e.target.value; save(); });
-        pick('c-agent', 'agentId');
-        pick('c-model', 'model');
-        pick('c-effort', 'effort');
+        if (!s) {
+            pick('c-agent', 'agentId');
+            pick('c-model', 'model');
+            pick('c-effort', 'effort');
+        }
         byId('c-perm', 'change', e => {
             const mode = e.target.value;
             if (s) {
@@ -260,6 +299,13 @@
             if (cur && cur.status !== 'ended' && cur.status !== 'error') {
                 vscode.postMessage({ type: 'send', id: cur.id, text: value });
             } else {
+                if (!st.agentId) {
+                    // the picker is right there; say what is missing rather than
+                    // swallowing the message
+                    const a = document.getElementById('c-agent');
+                    if (a) { a.focus(); }
+                    return;
+                }
                 vscode.postMessage({
                     type: 'start', agentId: st.agentId, text: value,
                     model: st.model, effort: st.effort, permissionMode: st.permissionMode
@@ -274,9 +320,12 @@
     window.addEventListener('message', ev => {
         if (ev.data && ev.data.type === 'data') {
             DATA = ev.data.data;
+            // opened from an agent row: preselect that agent in the composer
+            if (DATA.presetAgent) { st.agentId = DATA.presetAgent; save(); }
             render();
         }
     });
+    if (DATA.presetAgent) { st.agentId = DATA.presetAgent; save(); }
 
     render();
 })();

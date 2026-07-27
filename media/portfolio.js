@@ -42,6 +42,9 @@
         .dot2 { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
         .grouphead td { background:color-mix(in srgb, var(--vscode-textLink-foreground) 10%, transparent);
             font-weight:600; }
+        /* the fleet line: pinned above everything, never re-ordered by a sort */
+        .totrow td { background:color-mix(in srgb, var(--vscode-foreground) 9%, transparent);
+            border-bottom:2px solid var(--vscode-widget-border,#4444); font-size:12px; }
         .dormant td { opacity:.55; }
         .pf tr.click:hover td { background:var(--vscode-list-hoverBackground); }
         .miniact { font-size:10px; padding:0 6px; line-height:16px; margin-left:4px; cursor:pointer;
@@ -77,12 +80,41 @@
             return cmp * st.dir;
         });
 
+        // The whole-fleet picture, summed over exactly the rows on screen (so a
+        // project filter or "hide dormant" narrows the totals too). It is
+        // rendered OUTSIDE the sort, always first, because a total that moves
+        // when you re-sort is not a total you can glance at.
         const totals = rows.reduce((t, r) => {
             t.cost30 += r.cost30; t.cost7 += r.cost7; t.today += r.costToday;
-            t.sessions30 += r.sessions30; t.files += r.filesEdited30;
+            t.sessions7 += r.sessions7; t.sessions30 += r.sessions30;
+            t.tokens30 += r.tokens30; t.files += r.filesEdited30;
+            t.duties += r.duties; t.dutiesWaiting += r.dutiesWaiting;
+            t.errors += r.errors; t.warnings += r.warnings;
+            t.memoryFiles += r.memoryFiles; t.contextLoad += r.contextLoad;
             t.active += r.active ? 1 : 0; t.dormant += r.dormant ? 1 : 0;
             return t;
-        }, { cost30: 0, cost7: 0, today: 0, sessions30: 0, files: 0, active: 0, dormant: 0 });
+        }, {
+            cost30: 0, cost7: 0, today: 0, sessions7: 0, sessions30: 0, tokens30: 0,
+            files: 0, duties: 0, dutiesWaiting: 0, errors: 0, warnings: 0,
+            memoryFiles: 0, contextLoad: 0, active: 0, dormant: 0
+        });
+
+        const totalsRow = `<tr class="totrow" title="Every agent listed above — the fleet's own numbers, unaffected by sorting">
+            <td class="agentcell"><strong>ALL ${rows.length} AGENTS</strong></td>
+            <td>${totals.active ? `<span class="badge">${totals.active} working</span>` : '<span class="muted">—</span>'}</td>
+            <td class="num">${totals.dormant ? totals.dormant + ' 💤' : '—'}</td>
+            <td class="num">${totals.sessions7 || ''}</td>
+            <td class="num">${totals.cost7 ? C.fmtUSD(totals.cost7) : ''}</td>
+            <td class="num">${totals.sessions30 || ''}</td>
+            <td class="num"><strong>${totals.cost30 ? C.fmtUSD(totals.cost30) : ''}</strong></td>
+            <td class="num">${totals.tokens30 ? C.fmtTok(totals.tokens30) : ''}</td>
+            <td class="num">${totals.files || ''}</td>
+            <td class="num">${totals.duties || ''}${totals.dutiesWaiting ? ` <span class="badge warn">⏳${totals.dutiesWaiting}</span>` : ''}</td>
+            <td class="num">${totals.errors ? `<span class="badge err">${totals.errors}</span> ` : ''}${totals.warnings ? `<span class="badge warn">${totals.warnings}</span>` : ''}${!totals.errors && !totals.warnings ? '—' : ''}</td>
+            <td class="num">${totals.memoryFiles || ''}</td>
+            <td class="num"><strong>${C.fmtTok(totals.contextLoad)}</strong></td>
+            <td></td>
+        </tr>`;
 
         const head = `<tr>${COLS.map(c =>
             `<th class="${c.num ? 'num ' : ''}click" data-sort="${c.id}" title="${c.tip || 'Sort by ' + c.label}">${c.label}${st.sort === c.id ? (st.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`
@@ -144,7 +176,7 @@
                 guide: 'ajan-portfoyu'
             })}
             <div class="chiprow">${projectChips || ''}${st.projects ? '<button class="chip" id="pf-allproj">All projects</button>' : ''}</div>
-            <div class="tablewrap"><table class="pf">${head}${body || `<tr><td colspan="${COLS.length + 1}" class="muted">No agents match.</td></tr>`}</table></div>
+            <div class="tablewrap"><table class="pf">${head}${rows.length ? totalsRow : ''}${body || `<tr><td colspan="${COLS.length + 1}" class="muted">No agents match.</td></tr>`}</table></div>
             <p class="footnote">Rows are agents; the group header sums each project's last 30 days. "Quiet" is days since the agent's last session — 💤 marks anything older than ${DATA.dormantDays} days. Costs are API-equivalent values from local transcripts, not a bill.</p>`;
 
         window.AFHeader.wire(vscode, { onRefresh: () => vscode.postMessage({ type: 'refresh' }) });

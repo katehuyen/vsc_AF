@@ -11,8 +11,10 @@ const path = require('path');
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
-const { readCliSessions, mergeSessionNames, sessionsDir } =
-    require(path.join(__dirname, '..', 'out', 'core', 'cliSessions.js'));
+const {
+    readCliSessions, mergeSessionNames, sessionsDir, isChosenName, ownerOf,
+    describeOwner, liveSessionIds
+} = require(path.join(__dirname, '..', 'out', 'core', 'cliSessions.js'));
 // reveal.ts talks to the file manager, so its module needs the vscode stub
 const { revealActionFor } = (() => {
     const Module = require('module');
@@ -34,12 +36,19 @@ const { revealActionFor } = (() => {
     ok('sessions dir is <claudeDir>/sessions', dir === path.join(home, 'sessions'));
     ok('a missing registry is empty, not an error', readCliSessions(path.join(home, 'nope')).length === 0);
 
-    // the real shape, verified against a live file written by the CLI
+    // the real shape, verified against live files written by the CLI
     fs.writeFileSync(path.join(dir, '2264804.json'), JSON.stringify({
         pid: 2264804, sessionId: '8ae50684-6523-4a0c-bd86-da7a571b758e',
         cwd: 'D:\\zone\\agent\\ajanlar\\explorer', startedAt: 1785124993343,
         version: '2.1.220', peerProtocol: 1, kind: 'interactive', entrypoint: 'cli',
-        name: 'deneme', status: 'idle', updatedAt: 1785125130106, statusUpdatedAt: 1785125130106
+        name: 'deneme', nameSource: 'explicit', status: 'idle',
+        updatedAt: 1785125130106, statusUpdatedAt: 1785125130106
+    }));
+    // …and a session nobody named: the CLI still writes a name, marked derived
+    fs.writeFileSync(path.join(dir, '2452924.json'), JSON.stringify({
+        pid: 2452924, sessionId: 'c2b47f03-ac6b-4c7a-925b-c06b8d48b28b',
+        cwd: 'D:\\zone\\agent\\ajanlar\\basit', kind: 'interactive', entrypoint: 'cli',
+        name: 'basit-2e', nameSource: 'derived', status: 'idle'
     }));
     // a session started without -n: no name field at all
     fs.writeFileSync(path.join(dir, '9999.json'), JSON.stringify({
@@ -64,28 +73,72 @@ const { revealActionFor } = (() => {
     ok('an unnamed session is listed without a name', 'sid-unnamed' in byId && !byId['sid-unnamed'].name);
     ok('a blank name is not a name', byId['sid-blank'] && !byId['sid-blank'].name);
     ok('a BOM does not hide a session', byId['sid-bom'].name === 'bom-name');
-    ok('broken JSON is skipped, not thrown', list.length === 4);
+    ok('broken JSON is skipped, not thrown', list.length === 5);
+    ok('a derived name is read but marked as the CLI\'s own',
+        byId['c2b47f03-ac6b-4c7a-925b-c06b8d48b28b'].nameSource === 'derived'
+        && !isChosenName(byId['c2b47f03-ac6b-4c7a-925b-c06b8d48b28b']));
     ok('a record without a sessionId is useless and dropped', !list.some(s => !s.sessionId));
     fs.rmSync(home, { recursive: true, force: true });
 }
 
-// ---------- remembering: the registry file dies with the process ----------
+// ---------- ‼️ the rule that matters: WHOSE name is it? ----------
+// The CLI names every session, whether or not a human asked for one, and marks
+// which is which. Adopting the invented ones replaced good conversation titles
+// ("fix the popup bug") with noise ("basit-2e") — the whole point of a title.
 {
+    ok('a name the CLI invented is NOT a chosen name',
+        !isChosenName({ sessionId: 'x', name: 'basit-2e', nameSource: 'derived' }));
+    ok('…whatever the casing of that marker',
+        !isChosenName({ sessionId: 'x', name: 'developer-07', nameSource: 'DERIVED' }));
+    ok('a name a human set IS chosen',
+        isChosenName({ sessionId: 'x', name: 'zen release', nameSource: 'explicit' }));
+    ok('a name with no marker is not trusted (fall back to the conversation)',
+        !isChosenName({ sessionId: 'x', name: 'zen release' }));
+    ok('no name at all is no name', !isChosenName({ sessionId: 'x', nameSource: 'explicit' }));
+
     const live = [
-        { sessionId: 'a', name: 'zen release' },
-        { sessionId: 'b' },                       // unnamed
-        { sessionId: 'c', name: 'audit' }
+        { sessionId: 'a', name: 'zen release', nameSource: 'explicit' },
+        { sessionId: 'b' },                                              // unnamed
+        { sessionId: 'c', name: 'basit-2e', nameSource: 'derived' },     // the CLI's own
+        { sessionId: 'd', name: 'audit' }                                // unmarked
     ];
     const first = mergeSessionNames({}, live);
-    ok('names found are remembered', first.a === 'zen release' && first.c === 'audit');
+    ok('a chosen name is remembered', first.a === 'zen release');
+    ok('‼️ an invented name is NOT remembered', !('c' in first));
     ok('an unnamed session is not remembered as empty', !('b' in first));
+    ok('an unmarked name is left alone by default', !('d' in first));
+    ok('…but IS adopted when Agent Farm itself passed it with -n',
+        mergeSessionNames({}, live, ['audit']).d === 'audit');
+    ok('…and that still does not rescue an invented one',
+        !('c' in mergeSessionNames({}, live, ['basit-2e', 'audit'])));
+
     ok('a second identical scan changes nothing (no re-render)',
         mergeSessionNames(first, live) === undefined);
     ok('a name survives the session ending (empty scan changes nothing)',
         mergeSessionNames(first, []) === undefined);
-    const renamed = mergeSessionNames(first, [{ sessionId: 'a', name: 'zen hotfix' }]);
-    ok('a mid-run rename by the CLI wins', renamed.a === 'zen hotfix' && renamed.c === 'audit');
+    const renamed = mergeSessionNames(first, [{ sessionId: 'a', name: 'zen hotfix', nameSource: 'explicit' }]);
+    ok('a mid-run rename by the human wins', renamed.a === 'zen hotfix');
     ok('merging is immutable', first.a === 'zen release');
+}
+
+// ---------- who owns a session right now ----------
+// Two processes on one session id both write the same transcript and never see
+// each other's turns. The registry is what makes that detectable BEFORE it
+// happens rather than after it looks like one conversation.
+{
+    const records = [
+        { pid: 2452924, sessionId: 'c2b47f03', entrypoint: 'cli', status: 'idle' },
+        { pid: 2455148, sessionId: 'c2b47f03', entrypoint: 'sdk-cli' },
+        { pid: 2462644, sessionId: '35769ba9', entrypoint: 'cli' }
+    ];
+    ok('live session ids are listed', liveSessionIds(records).has('c2b47f03'));
+    ok('an unknown session is free', !liveSessionIds(records).has('nope'));
+    ok('the owner of a session is found', ownerOf(records, '35769ba9').pid === 2462644);
+    ok('a free session has no owner', ownerOf(records, 'free') === undefined);
+    ok('a terminal owner is described as one', /terminal/.test(describeOwner(records[0])));
+    ok('a program owner says it is a program',
+        /program/.test(describeOwner(records[1])) && /Console/.test(describeOwner(records[1])));
+    ok('the description names the pid', /pid 2452924/.test(describeOwner(records[0])));
 }
 
 // ---------- the title precedence, as the index applies it ----------

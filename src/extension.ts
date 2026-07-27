@@ -101,7 +101,7 @@ import {
 } from './core/sessionmarks';
 import { INTERRUPT_KEY, resolveInterrupt, TermRecord } from './core/interrupt';
 import { QUICK_MENU, QUICK_MENU_GROUPS } from './core/quickmenu';
-import { mergeSessionNames, readCliSessions } from './core/cliSessions';
+import { describeOwner, mergeSessionNames, ownerOf, readCliSessions } from './core/cliSessions';
 import { revealPath } from './core/reveal';
 import {
     agentProjectMap, assignAgent, normalizeProjects, ProjectDef, projectOfAgent,
@@ -879,9 +879,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // quiet beat, and right after a launch (the file appears a second or two
     // after the terminal opens). setCliNames only fires when something changed.
     const NAMES_KEY = 'agentfarm.sessionNames';
+    // Names Agent Farm itself passed with -n. A CLI build that does not report
+    // `nameSource` still gets these adopted, because we know they were chosen.
+    const OUR_NAMES_KEY = 'agentfarm.launchNames';
+    const ourLaunchNames = () => context.globalState.get<string[]>(OUR_NAMES_KEY, []);
+    const rememberLaunchName = (name: string) => {
+        const n = name.trim();
+        if (!n) { return; }
+        const list = ourLaunchNames();
+        if (list.includes(n)) { return; }
+        void context.globalState.update(OUR_NAMES_KEY, [...list, n].slice(-100));
+    };
+    // 3.29.0 — one-time repair. Earlier builds adopted the name the CLI invents
+    // for every unnamed session ("basit-2e"), which replaced good conversation
+    // titles with noise. The store is rebuilt from scratch; only names a human
+    // actually chose come back.
+    const NAMES_REPAIRED_KEY = 'agentfarm.sessionNames.derivedPurge';
+    if (!context.globalState.get<boolean>(NAMES_REPAIRED_KEY, false)) {
+        void context.globalState.update(NAMES_KEY, {});
+        void context.globalState.update(NAMES_REPAIRED_KEY, true);
+    }
     const scanCliSessionNames = () => {
         const known = context.globalState.get<Record<string, string>>(NAMES_KEY, {});
-        const merged = mergeSessionNames(known, readCliSessions(claudeDir()));
+        const merged = mergeSessionNames(known, readCliSessions(claudeDir()), ourLaunchNames());
         if (!merged) { return; }
         void context.globalState.update(NAMES_KEY, merged);
         index.setCliNames(merged);
@@ -4635,8 +4655,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         launchClaudeTerminal(`claude: ${agent.name}`, cwd ?? agent.dir, command, undefined, sessionId);
         // A named launch should show its name in the panel within seconds, not
         // at the next quiet scan: the CLI writes its session file a moment
-        // after boot, so look twice while the user is still watching.
+        // after boot, so look twice while the user is still watching. The name
+        // is remembered as ours, so it is adopted even on a CLI build that does
+        // not mark where a name came from.
         if (merged.name?.trim()) {
+            rememberLaunchName(merged.name);
             for (const ms of [2500, 6000]) { setTimeout(scanCliSessionNames, ms); }
         }
         return command;
@@ -4887,7 +4910,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         getAgents: () => agents,
         index,
         modelAliases: () => cfg().get<string[]>('modelAliases', []),
-        launchDefaults: () => launchDefaults()
+        launchDefaults: () => launchDefaults(),
+        liveOwners: () => readCliSessions(claudeDir())
     };
 
     // ---------- C1: the read-only web surface ----------
@@ -5639,9 +5663,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // Tree elements differ per view: Agents wraps the session in {kind:'session', session},
         // Recent Sessions passes the SessionInfo itself.
         vscode.commands.registerCommand('agentfarm.resumeSession',
-            (arg?: { session?: SessionInfo } | SessionInfo) => {
+            async (arg?: { session?: SessionInfo } | SessionInfo) => {
                 const s = arg && 'session' in arg && arg.session ? arg.session : arg as SessionInfo | undefined;
                 if (!s?.sessionId) { return; }
+                // Claude Code cannot join a running session: resuming one that a
+                // process already owns starts a SECOND process on the same
+                // transcript, and the two never see each other's turns. Say so
+                // before it happens rather than after it looks like one chat.
+                const owner = ownerOf(readCliSessions(claudeDir()), s.sessionId);
+                if (owner) {
+                    const go = await vscode.window.showWarningMessage(
+                        `"${s.title}" is already open in ${describeOwner(owner)}.\n\n` +
+                        'Resuming it starts a SECOND process on the same transcript: both write to it, neither sees the other\'s turns, and the session list then shows one conversation that nobody actually had.',
+                        { modal: true }, 'Jump to it instead', 'Open a second process anyway');
+                    if (go === 'Jump to it instead') {
+                        void vscode.commands.executeCommand('agentfarm.focusSessionTerminal', {
+                            sessionId: s.sessionId, agentName: s.agentName, cwd: s.cwd
+                        });
+                        return;
+                    }
+                    if (go !== 'Open a second process anyway') { return; }
+                }
                 const cwd = s.cwd && fs.existsSync(s.cwd) ? s.cwd : undefined;
                 // Resume carries the launch defaults too: picking up yesterday's
                 // conversation should not silently drop today's model choice.
@@ -5916,6 +5958,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // ---------- DALGA 1: the Console ----------
         vscode.commands.registerCommand('agentfarm.openConsole', (arg?: { agentId?: string }) => {
             ConsolePanel.show(consoleDeps, arg && typeof arg === 'object' ? arg : undefined);
+        }),
+
+        // From an agent row: open the Console with a hosted session for THAT
+        // agent already running, so the path from "which agent" to "typing at
+        // it" is one click instead of a page plus a picker.
+        vscode.commands.registerCommand('agentfarm.consoleForAgent', async (arg: AgentArg) => {
+            const agent = await resolveAgent(arg);
+            if (!agent) { return; }
+            // If a live Console session for this agent already exists, land on
+            // it; otherwise open the composer with the agent chosen — no
+            // process is spawned until there is something to say.
+            const existing = consoleHost.list().find(s =>
+                s.agentId === agent.id && s.status !== 'ended' && s.status !== 'error');
+            ConsolePanel.show(consoleDeps,
+                existing ? { sessionId: existing.id } : { agentId: agent.id });
         }),
 
         // ---------- C1: the web view, and how to reach it ----------

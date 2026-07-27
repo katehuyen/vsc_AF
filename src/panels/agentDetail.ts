@@ -286,6 +286,9 @@ export class AgentDetailPanel {
             case 'launchSession':
                 vscode.commands.executeCommand('agentfarm.launchSession', { agentId: this.agentId });
                 break;
+            case 'consoleSession':
+                vscode.commands.executeCommand('agentfarm.consoleForAgent', { agentId: this.agentId });
+                break;
             case 'continueSession':
                 vscode.commands.executeCommand('agentfarm.continueSession', { agentId: this.agentId });
                 break;

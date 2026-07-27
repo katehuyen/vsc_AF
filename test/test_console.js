@@ -186,6 +186,61 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         && reduceEvent(s, 'not an object', NOW).changed === false);
 }
 
+// ---------- ‼️ two processes must never share one session ----------
+// `claude --resume <id>` on a session a process already owns starts a SECOND
+// process on the same transcript: both write to it, neither sees the other's
+// turns, and the session list then shows one conversation nobody had. Measured
+// on the real registry (two pids, one sessionId, entrypoints cli + sdk-cli).
+{
+    const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'consolePanel.ts'), 'utf8');
+    ok('the Console asks who owns a session before resuming it',
+        /liveOwners\(\)\.find\(o => o\.sessionId === sessionId\)/.test(panel));
+    ok('…and refuses by default, explaining what a second process would mean',
+        /SECOND process on the same transcript/.test(panel));
+    ok('…offering the two things that DO work: jump there, or a new session',
+        /Jump to that terminal/.test(panel) && /New session in the same folder/.test(panel));
+
+    const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    ok('resuming into a TERMINAL carries the same warning',
+        /ownerOf\(readCliSessions\(claudeDir\(\)\), s\.sessionId\)/.test(ext));
+    ok('…and lets it happen only as a deliberate choice',
+        /Open a second process anyway/.test(ext));
+
+    const js = fs.readFileSync(path.join(__dirname, '..', 'media', 'console.js'), 'utf8');
+    ok('the resume list marks sessions that are open elsewhere',
+        /owned\.has\(r\.sessionId\)/.test(js));
+}
+
+// ---------- the composer shows what each mode can actually change ----------
+{
+    const js = fs.readFileSync(path.join(__dirname, '..', 'media', 'console.js'), 'utf8');
+    const liveRow = js.slice(js.indexOf('const liveRow'), js.indexOf('const placeholder'));
+    ok('a running session gets NO agent/model/effort boxes at all (they were dead)',
+        liveRow.length > 100 && !/c-agent|c-model|c-effort/.test(liveRow));
+    ok('…it shows them as a plain status line instead', /class="fixed"/.test(js));
+    ok('…and keeps the one control that really works mid-session',
+        /The one thing that CAN change mid-session/.test(js));
+    ok('new-session mode is the only place the agent is picked',
+        /const newRow = /.test(js) && /choose an agent…/.test(js));
+    ok('starting without an agent focuses the picker instead of swallowing the message',
+        /if \(!st\.agentId\)/.test(js));
+    ok('an agent row can open the Console with that agent preselected',
+        /presetAgent/.test(js));
+}
+
+// ---------- the fleet line on the portfolio ----------
+{
+    const js = fs.readFileSync(path.join(__dirname, '..', 'media', 'portfolio.js'), 'utf8');
+    ok('the portfolio has a totals row', /totalsRow/.test(js));
+    ok('…that sums the fixed context load the user asked for',
+        /contextLoad \+= r\.contextLoad/.test(js));
+    ok('…and sums every other column too',
+        /tokens30 \+= r\.tokens30/.test(js) && /memoryFiles \+= r\.memoryFiles/.test(js)
+        && /errors \+= r\.errors/.test(js));
+    ok('…rendered outside the sort so it never moves',
+        /never re-ordered by a sort/.test(js));
+}
+
 // ---------- wiring ----------
 {
     const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
