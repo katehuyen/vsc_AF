@@ -777,8 +777,15 @@
                 page: 'viewer',
                 title: C.esc(DATA.title),
                 sub: `${DATA.origin === 'auto' ? '🤖 automation run' : '🧑 your session'} · ${C.esc(DATA.cwd || '')} · ${C.esc(DATA.sessionId)} · ${DATA.permissionMode ? 'mode: ' + C.esc(DATA.permissionMode) : ''}`,
+                // On a session's own page the Console nav button means "continue
+                // THIS session there" (the ↗ beside it still opens the page).
+                navActions: {
+                    console: {
+                        label: '💬 Resume in Console',
+                        title: 'Pick this conversation back up inside the panel instead of a terminal'
+                    }
+                },
                 actions: `<button id="resume">⏵ Resume</button>
-                    <button class="secondary" id="resumeconsole" title="Pick this conversation back up inside the panel (Console) instead of a terminal">💬 Resume in Console</button>
                     <button class="secondary" id="renamesess" title="Give this session your own name — the same rename as the side panel's">✎ Rename</button>
                     <button class="secondary" id="focusterm" title="Jump to this session's terminal window (if one is open)">⌨ Terminal</button>
                     <button class="secondary" id="replaytoggle">${replay.active ? '✕ Exit replay' : '▶ Replay'}</button>
@@ -829,7 +836,9 @@
         `;
         if (prevScroll) { window.scrollTo(prevScroll.x, prevScroll.y); }
 
-        window.AFHeader.wire(vscode);
+        window.AFHeader.wire(vscode, {
+            navActions: { console: { onClick: () => vscode.postMessage({ type: 'resumeConsole' }) } }
+        });
         document.getElementById('raw').addEventListener('click', () => vscode.postMessage({ type: 'openRaw' }));
         wireContextPop();
         // ---- Files changed: fold a file open (hunks fetched once), open it,
@@ -862,8 +871,6 @@
             vscode.postMessage({ type: 'focusTerminal', cwd: DATA.cwd }));
         document.getElementById('resume').addEventListener('click', () =>
             vscode.postMessage({ type: 'resume', cwd: DATA.cwd }));
-        document.getElementById('resumeconsole').addEventListener('click', () =>
-            vscode.postMessage({ type: 'resumeConsole' }));
         document.getElementById('renamesess').addEventListener('click', () =>
             vscode.postMessage({ type: 'renameSession' }));
         // Export MD asks first (current view vs everything, + folded-title choice

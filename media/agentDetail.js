@@ -194,8 +194,15 @@
                 page: 'agent',
                 title: `<span class="dot ${a.active ? 'on' : 'off'}"></span> ${C.esc(a.name)}`,
                 sub: `${C.esc(a.dir)} · permissions: ${C.esc(a.permissionSummary)}`,
-                actions: `<button id="console" title="Talk to this agent inside the panel — a hosted session, no terminal">💬 Console</button>
-                    <button id="start">Start session</button>
+                // On an agent's own page the Console nav button means "talk to
+                // THIS agent" (the ↗ next to it still opens the Console page).
+                navActions: {
+                    console: {
+                        label: '💬 Talk in Console',
+                        title: 'Open the Console with this agent chosen — nothing starts until you say something'
+                    }
+                },
+                actions: `<button id="start">Start session</button>
                     <button class="secondary" id="launch" title="Start a session after picking model · effort · permission mode · name · first prompt">Start session…</button>
                     <button class="secondary" id="continue">Continue latest</button>
                     <button class="secondary" id="reveal">Reveal folder</button>`,
@@ -250,11 +257,12 @@
             <div id="sessblock"></div>
         `;
 
-        window.AFHeader.wire(vscode);
+        window.AFHeader.wire(vscode, {
+            navActions: { console: { onClick: () => vscode.postMessage({ type: 'consoleSession' }) } }
+        });
         document.getElementById('addDuty').addEventListener('click', () => vscode.postMessage({ type: 'addDuty' }));
         document.getElementById('start').addEventListener('click', () => vscode.postMessage({ type: 'startSession' }));
         document.getElementById('launch').addEventListener('click', () => vscode.postMessage({ type: 'launchSession' }));
-        document.getElementById('console').addEventListener('click', () => vscode.postMessage({ type: 'consoleSession' }));
         document.getElementById('continue').addEventListener('click', () => vscode.postMessage({ type: 'continueSession' }));
         document.getElementById('reveal').addEventListener('click', () => vscode.postMessage({ type: 'reveal' }));
         document.querySelectorAll('[data-file]').forEach(el =>

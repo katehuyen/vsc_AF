@@ -157,6 +157,8 @@ Tek bir ajanın komuta ekranı:
 
 ### Oturum Görüntüleyici
 
+> **Metin kesilmez (3.30.1).** Sayfanın varlık sebebi transkripti **okumak** olduğu için **kullanıcı ve ajan metni asla kırpılmaz** — uzunsa uzun. Yalnızca **araç yükleri** (büyük bir dosyanın `Read`'i, dev bir JSON sonucu) bir tavana takılır: 200.000 karakter, ve tavana değdiğinde bunu açıkça söyleyip "Open raw JSONL"a yönlendirir. Üstteki satırda ayrıca **✎ Rename** (oturuma ad ver) ve **💬 Resume in Console** vardır.
+
 Bir oturumun ham JSONL kaydını okunur konuşmaya çevirir:
 
 - Mesajlar renk kodludur: mavi = kullanıcı, yeşil = asistan, sarı = araç çağrısı, mor = araç sonucu. Hatalı araç sonuçları kırmızı kenarlıkla ve açık halde gelir.
@@ -245,6 +247,8 @@ Artık Console devam ettirmeden **önce sahibine bakıyor** (CLI'ın kendi kayd�
 Console sekmesini kapatmak konuşmayı **öldürmez**; oturumlar sen bitirince ya da pencere kapanınca biter.
 
 ### Nereden açılır
+
+**Konusu olan iki sayfada Console düğmesi o konuyu kasteder (3.30.1):** ajan sayfasında **💬 Talk in Console** (o ajan seçili), oturum sayfasında **💬 Resume in Console** (o oturum). Her ikisinin yanında küçük bir **↗** durur ve Console **sayfasını** açar — yani hiçbir şey kaybolmaz.
 
 - Global nav'daki **💬 Console** (her sayfada) · **`Ctrl+Alt+C`**
 - Sol paneldeki **Agents** başlığındaki **💬** düğmesi

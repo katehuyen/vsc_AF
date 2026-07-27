@@ -258,8 +258,16 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     ok('2. the Console renames from a row', /type: 'rename'/.test(cjs));
     const vjs = fs.readFileSync(path.join(__dirname, '..', 'media', 'sessionViewer.js'), 'utf8');
     ok('3. the session\'s own page has a rename button', /id="renamesess"/.test(vjs));
-    ok('…and a Resume-in-Console button next to the terminal one',
-        /id="resumeconsole"/.test(vjs));
+    // The two pages that HAVE a subject claim the Console nav button for it,
+    // instead of carrying a second button that means almost the same thing.
+    ok('a session page claims the Console nav button for "resume THIS session"',
+        /navActions:/.test(vjs) && /Resume in Console/.test(vjs));
+    const ajs = fs.readFileSync(path.join(__dirname, '..', 'media', 'agentDetail.js'), 'utf8');
+    ok('an agent page claims it for "talk to THIS agent"',
+        /navActions:/.test(ajs) && /Talk in Console/.test(ajs));
+    const hdr = fs.readFileSync(path.join(__dirname, '..', 'media', 'pageHeader.js'), 'utf8');
+    ok('…and a claimed button still offers the plain page next to it',
+        /data-afclaim/.test(hdr) && /af-nav-plain/.test(hdr));
     ok('a session row can be resumed into the Console from the side panel',
         menus.some(m => m.command === 'agentfarm.resumeInConsole'));
     const viewer = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'sessionViewer.ts'), 'utf8');

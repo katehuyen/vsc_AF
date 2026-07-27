@@ -48,7 +48,9 @@ interface ViewMessage {
     turnStart?: boolean;
 }
 
-const TEXT_LIMIT = 4000;
+/** Ceiling for TOOL payloads only (a Read of a big file, a huge JSON result).
+ *  The conversation itself is never cut — see clipTool. */
+const TOOL_LIMIT = 200_000;
 
 /** Run-attribute keys we look for next to the model (effort / reasoning level /
  *  service tier …). Claude Code does not record any of these today — probed
@@ -79,8 +81,20 @@ function readAttrs(line: Record<string, unknown>, msg: Record<string, unknown>):
     return out;
 }
 
-function clip(s: string): string {
-    return s.length > TEXT_LIMIT ? s.slice(0, TEXT_LIMIT) + `\n… [truncated, ${s.length} chars total]` : s;
+/**
+ * Tool payloads only — never the conversation.
+ *
+ * A tool result can be a whole file (megabytes); the words a person and an
+ * agent said to each other cannot. Cutting the conversation at 4 000
+ * characters made the one page whose entire purpose is *reading the
+ * transcript* stop halfway through a long answer, so it does not any more:
+ * user and assistant text travels whole, and only tool input/output meets a
+ * ceiling — a high one, and it says so when it is reached.
+ */
+function clipTool(s: string): string {
+    return s.length > TOOL_LIMIT
+        ? s.slice(0, TOOL_LIMIT) + `\n… [tool payload cut here — ${s.length.toLocaleString()} characters total; "Open raw JSONL" has all of it]`
+        : s;
 }
 
 /** Human-readable prompt snippet: slash commands show as their name, harness XML is skipped. */
@@ -290,7 +304,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
             const content = line.message.content;
             if (typeof content === 'string') {
                 if (!line.isMeta) {
-                    messages.push({ role: 'user', ts, text: clip(content), sidechain: line.isSidechain });
+                    messages.push({ role: 'user', ts, text: content, sidechain: line.isSidechain });
                     if (!line.isSidechain) { inTurn++; }
                     if (!title) { title = titleCandidate(content); }
                 }
@@ -300,12 +314,12 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
                         if (b.is_error) { errors++; }
                         messages.push({
                             role: 'toolResult', ts,
-                            text: clip(contentToText(b.content) || String(b.text ?? '')),
+                            text: clipTool(contentToText(b.content) || String(b.text ?? '')),
                             isError: !!b.is_error,
                             sidechain: line.isSidechain
                         });
                     } else if (b?.type === 'text' && b.text) {
-                        messages.push({ role: 'user', ts, text: clip(b.text), sidechain: line.isSidechain });
+                        messages.push({ role: 'user', ts, text: b.text, sidechain: line.isSidechain });
                         if (!line.isSidechain) { inTurn++; }
                         if (!title) { title = titleCandidate(b.text); }
                     }
@@ -363,7 +377,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
                 for (const b of msg.content as { type?: string; text?: string; name?: string; input?: unknown }[]) {
                     if (b?.type === 'text' && b.text?.trim()) {
                         messages.push({
-                            role: 'assistant', ts, text: clip(b.text),
+                            role: 'assistant', ts, text: b.text,
                             model: msg.model, tokens: msgTokens, cost: msgCost,
                             sidechain: line.isSidechain
                         });
@@ -373,7 +387,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
                         // Tool-only assistant turns still cost tokens — attribute them to the first tool block.
                         messages.push({
                             role: 'tool', ts, tool: b.name,
-                            input: clip(JSON.stringify(b.input ?? {}, null, 2)),
+                            input: clipTool(JSON.stringify(b.input ?? {}, null, 2)),
                             model: msgTokens ? msg.model : undefined,
                             tokens: msgTokens || undefined, cost: msgCost || undefined,
                             sidechain: line.isSidechain
@@ -580,7 +594,9 @@ export class SessionViewerPanel {
                 let raw = '';
                 try { raw = fs.readFileSync(this.file, 'utf8'); } catch { /* gone */ }
                 const group = groupByFile(collectEdits(raw.split('\n'))).find(f => f.file === want);
-                const CUT = 200;
+                // High enough that a real edit is never cut; only a Write of a
+                // whole large file meets it, and the row says so.
+                const CUT = 4000;
                 const clip = (t?: string) => {
                     if (t === undefined) { return { text: undefined, clipped: false }; }
                     const lines = t.split('\n');

@@ -75,6 +75,10 @@
      *   related,     // optional [{nav, label}] — related panels, after Live Timeline
      *   searchTitle, // optional tooltip when ⌕ Search is page-scoped
      *   refresh,     // false to omit the Refresh button (pages with nothing to re-scan)
+     *   navActions,  // optional { <navId>: {label, title} } — this page claims that
+     *                //   nav button for its own subject; it renders as a split
+     *                //   (claimed action + ▸ that still opens the page). Pass the
+     *                //   matching { <navId>: {onClick} } to wire().
      *   guide        // guide anchor for ? Guide (omit → no button)
      * }
      */
@@ -85,10 +89,21 @@
         // (window.__AFUI__.notices.unread, injected by htmlShell).
         const unread = (window.__AFUI__ && window.__AFUI__.notices && window.__AFUI__.notices.unread) || 0;
         for (const n of NAV) {
-            if (n.id !== o.page) {
-                const label = (n.id === 'notices' && unread > 0) ? `${n.label} (${unread})` : n.label;
-                cluster.push(`<button class="secondary" data-afnav="${n.id}">${label}</button>`);
+            if (n.id === o.page) { continue; }
+            const label = (n.id === 'notices' && unread > 0) ? `${n.label} (${unread})` : n.label;
+            // A page may claim a nav button for its own subject: on the agent
+            // page "Console" should mean *talk to THIS agent*, on a session's
+            // page *continue THIS session there*. The button splits rather
+            // than changing meaning silently — the ↗ still opens the page, so
+            // nothing that used to work stops working.
+            const claim = (o.navActions || {})[n.id];
+            if (claim) {
+                cluster.push(
+                    `<button class="secondary" data-afclaim="${n.id}" title="${claim.title || ''}">${claim.label}</button>` +
+                    `<button class="secondary af-nav-plain" data-afnav="${n.id}" title="Open the ${label.replace(/^[^\w]+\s*/, '')} page itself">↗</button>`);
+                continue;
             }
+            cluster.push(`<button class="secondary" data-afnav="${n.id}">${label}</button>`);
         }
         for (const r of o.related || []) {
             cluster.push(`<button class="secondary" data-afnav="${r.nav}">${r.label}</button>`);
@@ -126,6 +141,12 @@
     function wire(vscode, hooks) {
         document.querySelectorAll('[data-afnav]').forEach(b =>
             b.addEventListener('click', () => vscode.postMessage({ type: 'afnav', to: b.dataset.afnav })));
+        // The page's own meaning for a claimed nav button (see navActions).
+        document.querySelectorAll('[data-afclaim]').forEach(b =>
+            b.addEventListener('click', () => {
+                const claim = ((hooks && hooks.navActions) || {})[b.dataset.afclaim];
+                if (claim && claim.onClick) { claim.onClick(); }
+            }));
         document.querySelectorAll('.af-refresh').forEach(b =>
             b.addEventListener('click', () => {
                 if (hooks && hooks.onRefresh) { hooks.onRefresh(); return; }

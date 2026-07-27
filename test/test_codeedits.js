@@ -132,7 +132,8 @@ const result = (id, isError) => L({
     ok('…that fetches hunks on demand', /type: 'sessionFileEdits'/.test(viewer));
     ok('…and separates "vs HEAD" from the session\'s own hunks', /vs HEAD/.test(viewer));
     const host = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'sessionViewer.ts'), 'utf8');
-    ok('the host caps what it sends back', /CUT = 200/.test(host));
+    ok('the host caps a hunk only where it would be absurd, not where edits live',
+        /const CUT = 4000;/.test(host) && /never cut/.test(host));
     const table = fs.readFileSync(path.join(__dirname, '..', 'media', 'sessionsTable.js'), 'utf8');
     ok('the sessions tables have a Files column', /files: r =>/.test(table));
     const sessions = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'sessions.ts'), 'utf8');

@@ -2,6 +2,12 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.30.1 — The transcript is readable again, and the two subject pages own their Console button (2026-07-28)
+
+- **‼️ The session viewer was cutting the conversation at 4 000 characters** — `… [truncated, 9 214 chars total]` — on the one page whose entire purpose is *reading the transcript*. A long answer stopped halfway and there was no way to see the rest. **User and assistant text is now never cut.** Only tool payloads meet a ceiling (a `Read` of a big file can be megabytes), and it is a high one — 200 000 characters — which says so when it is reached and points at Open raw JSONL. The per-file hunk display went from 200 to 4 000 lines for the same reason.
+- **The Console button on the two pages that HAVE a subject now means that subject.** On an agent's page the nav button is **💬 Talk in Console** (that agent, preselected); on a session's page it is **💬 Resume in Console** (that session). Each keeps a small **↗** beside it that still opens the Console page itself, so nothing that used to work stopped working — and the duplicate standalone buttons those pages briefly carried are gone. Any page can now claim a nav button for its own subject (`navActions`), which is the general form of the fix rather than two special cases.
+- 5 checks moved to the new behaviour, plus new ones for the claim mechanism and the un-truncated transcript. Suite: **77 files, 2908 checks green.**
+
 ## 3.30.0 — Studio: the content pipeline stops being four separate things (2026-07-28)
 
 The audit's **E2 / wave 4.3**. `media`, `production`, `premiere` and `mediaProviders` all worked, and nothing connected them: the Gallery showed assets, the scene manifest was a JSON file, the sequence export was a command, and the money and the provider keys were invisible. So the only thing that matters — **the pipeline the user actually works** — existed nowhere as a whole.
