@@ -68,6 +68,11 @@ export const QUICK_MENU: QuickMenuEntry[] = [
         command: 'agentfarm.openTimeline'
     },
     {
+        group: 'Pages', label: '$(organization) Agents (portfolio)',
+        detail: 'the whole fleet on one screen: who works, who is dormant, who costs what',
+        command: 'agentfarm.openPortfolio'
+    },
+    {
         group: 'Pages', label: '$(checklist) Tasks',
         detail: 'plan · runs · automations · reusables · analytics',
         command: 'agentfarm.openTasks'
@@ -126,6 +131,21 @@ export const QUICK_MENU: QuickMenuEntry[] = [
     },
 
     // ---- System ----
+    {
+        group: 'System', label: '$(project) Manage projects…',
+        detail: 'group agents by customer / product, so every cost figure can be read per project',
+        command: 'agentfarm.manageProjects'
+    },
+    {
+        group: 'System', label: '$(radio-tower) Web view…',
+        detail: 'read-only board for your phone — off by default, token required',
+        command: 'agentfarm.openWebView'
+    },
+    {
+        group: 'System', label: '$(comment-discussion) Connect Telegram…',
+        detail: 'message an agent from a chat; the answer comes back in the same thread',
+        command: 'agentfarm.connectTelegram'
+    },
     {
         group: 'System', label: '$(gear) Farm Settings',
         detail: 'every Agent Farm setting, explained, in one page',

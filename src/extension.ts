@@ -4133,7 +4133,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 oversightLoopsOn: ['qualitySample', 'suggestScan', 'weeklySummary']
                     .filter(k => cfg().get<boolean>(k, false)).length,
                 qualitySamples: qualityStore.scores.length,
-                secretCount: vault.names().length
+                secretCount: vault.names().length,
+                projectCount: projectDefs().length,
+                web: { ...webCfg(), serving: !!webServer },
+                chat: {
+                    enabled: chatCfg().enabled,
+                    hasToken: !!vault.get(TELEGRAM_SECRET),
+                    allowedChats: chatCfg().allow.length
+                }
             });
         },
         // Plan usage card: cached snapshot for the render, an explicit refresh

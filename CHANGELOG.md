@@ -2,6 +2,14 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.26.1 — The new surfaces announce themselves (2026-07-27)
+
+Three releases added four things a user could only find by knowing they exist. A feature nobody can discover is a feature nobody has.
+
+- **Farm status rows for Projects, Web view and Chat channel** — the dashboard card that already names every dormant subsystem now names these too, each with its one-click way in. Two half-configured states get their own honest wording instead of looking broken: a web view that is **enabled but not serving** says the headless service is probably still holding the port, and a chat channel that is **connected with an empty allowlist** says so and points at the allowlist rather than reading as "active".
+- **The Quick Menu (`ctrl+alt+f`) learned the new pages** — Agents (portfolio) under Pages; Manage projects…, Web view… and Connect Telegram… under System.
+- 11 new checks (each row's three states, the two half-states and their actions, and that the rows stay absent for callers that report no data). Suite: **75 files, 2708 checks green.**
+
 ## 3.26.0 — Access: the farm is readable from a phone, and can be written to from a chat (2026-07-27)
 
 The audit's **C block**. Agent Farm was a set of webviews inside one VS Code window: nothing to look at from a phone, nothing at all while VS Code was closed (the headless service kept the farm *running* and showed nobody anything), and no way to send it a message and get an answer.

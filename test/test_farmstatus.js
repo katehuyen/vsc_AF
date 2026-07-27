@@ -96,5 +96,61 @@ const dormantFarm = {
         && /fail-soft/.test(by.cli.detail) && by.cli.action.value === 'coklu-cli-yurutucu');
 }
 
+// ---------- projects · web view · chat channel (3.25/3.26) ----------
+// These three are the ones a user is most likely not to know exist, so the
+// status card is where they have to announce themselves — including the two
+// half-configured states that would otherwise look like failures.
+{
+    const base = {
+        listenerState: 'disabled', eventsLast24h: 0,
+        taskCount: 0, scheduleCount: 0, tasksDone7d: 0,
+        triggerCount: 0, triggersFired7d: 0, workflowCount: 0, workflowRuns7d: 0,
+        hasMediaKey: false, mediaAssetCount: 0, mediaCostMonth: 0,
+        cliProfileCount: 0, externalSessions: {}, ingestFolderCount: 0,
+        registeredAssetCount: 0, oversightLoopsOn: 0, qualitySamples: 0, secretCount: 0
+    };
+    const rowsOf = extra => Object.fromEntries(
+        buildFarmStatus({ ...base, ...extra }).map(r => [r.id, r]));
+
+    // the rows only appear when the host reports them (older callers unaffected)
+    ok('no project/web/chat data = no rows',
+        !rowsOf({}).projects && !rowsOf({}).web && !rowsOf({}).chat);
+
+    const none = rowsOf({
+        projectCount: 0,
+        web: { enabled: false, serving: false, bind: 'local', port: 8378 },
+        chat: { enabled: false, hasToken: false, allowedChats: 0 }
+    });
+    ok('no projects = dormant with a one-click setup',
+        none.projects.state === 'dormant' && none.projects.action.value === 'agentfarm.manageProjects');
+    ok('…and it says what cannot be asked without them', /customer cost/.test(none.projects.detail));
+    ok('web off = dormant, one click to turn on',
+        none.web.state === 'dormant' && none.web.action.value === 'agentfarm.openWebView');
+    ok('chat off = dormant, one click to connect',
+        none.chat.state === 'dormant' && none.chat.action.value === 'agentfarm.connectTelegram');
+
+    const live = rowsOf({
+        projectCount: 3,
+        web: { enabled: true, serving: true, bind: 'lan', port: 8378 },
+        chat: { enabled: true, hasToken: true, allowedChats: 2 }
+    });
+    ok('projects in use = active', live.projects.state === 'active' && /3 project/.test(live.projects.detail));
+    ok('serving on the LAN says so, token and all',
+        live.web.state === 'active' && /network/.test(live.web.detail) && /8378/.test(live.web.detail));
+    ok('an allowed chat channel is active', live.chat.state === 'active' && /2 chat/.test(live.chat.detail));
+
+    // the two half-states that are NOT failures
+    const half = rowsOf({
+        web: { enabled: true, serving: false, bind: 'local', port: 8378 },
+        chat: { enabled: true, hasToken: true, allowedChats: 0 }
+    });
+    ok('enabled-but-not-serving is "ready", and names the likely reason',
+        half.web.state === 'ready' && /headless service/.test(half.web.detail));
+    ok('connected with an empty allowlist is "ready", not active',
+        half.chat.state === 'ready' && /no chat is allowed/.test(half.chat.detail));
+    ok('…and points at the allowlist setting',
+        half.chat.action.kind === 'settings' && half.chat.action.value === 'agentFarm.telegram.allowedChats');
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

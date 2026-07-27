@@ -42,6 +42,12 @@ export interface FarmStatusInput {
     oversightLoopsOn: number;       // enabled sampling loops (quality/suggest/weekly)
     qualitySamples: number;
     secretCount: number;
+    /** C1: the read-only web view — is it serving, and to whom? */
+    web?: { enabled: boolean; serving: boolean; bind: 'local' | 'lan'; port: number };
+    /** C3: the inbound chat channel — connected, and how many chats may use it. */
+    chat?: { enabled: boolean; hasToken: boolean; allowedChats: number };
+    /** B1: how many projects the fleet is grouped into. */
+    projectCount?: number;
 }
 
 const fmtUSD = (n: number) => '$' + (Math.round(n * 100) / 100).toFixed(2);
@@ -193,6 +199,64 @@ export function buildFarmStatus(i: FarmStatusInput): SubsystemStatus[] {
             id: 'secrets', label: 'Secret vault', state: 'ready',
             detail: `${i.secretCount} secret(s) stored`
         });
+    }
+
+    // B1 — the project axis. Without it every cost figure is per agent only.
+    if (i.projectCount !== undefined) {
+        rows.push(i.projectCount > 0
+            ? {
+                id: 'projects', label: 'Projects', state: 'active',
+                detail: `${i.projectCount} project(s) — cost, sessions and the portfolio can be read per customer`
+            }
+            : {
+                id: 'projects', label: 'Projects', state: 'dormant',
+                detail: 'no projects — agents are one flat list, so "what did this customer cost" cannot be asked',
+                action: { label: 'Set up projects', kind: 'command', value: 'agentfarm.manageProjects' }
+            });
+    }
+
+    // C1 — the web view. "Enabled but not serving" is its own state: the port
+    // is usually held by the headless service, and saying so beats a green dot.
+    if (i.web) {
+        rows.push(!i.web.enabled
+            ? {
+                id: 'web', label: 'Web view', state: 'dormant',
+                detail: 'off — the farm is only readable inside this VS Code window',
+                action: { label: 'Turn it on', kind: 'command', value: 'agentfarm.openWebView' }
+            }
+            : i.web.serving
+                ? {
+                    id: 'web', label: 'Web view', state: 'active',
+                    detail: `serving on :${i.web.port} · ${i.web.bind === 'lan'
+                        ? 'reachable from your network (token required)' : 'this machine only'}`,
+                    action: { label: 'Open', kind: 'command', value: 'agentfarm.openWebView' }
+                }
+                : {
+                    id: 'web', label: 'Web view', state: 'ready',
+                    detail: `enabled but not serving on :${i.web.port} — the headless service may still hold the port`,
+                    action: { label: 'Details', kind: 'command', value: 'agentfarm.openWebView' }
+                });
+    }
+
+    // C3 — the inbound chat channel. A token with no allowlist is a half setup
+    // that answers every message with a refusal, so it gets its own row.
+    if (i.chat) {
+        rows.push(!i.chat.enabled || !i.chat.hasToken
+            ? {
+                id: 'chat', label: 'Chat channel', state: 'dormant',
+                detail: 'off — no way to message an agent from your phone',
+                action: { label: 'Connect Telegram', kind: 'command', value: 'agentfarm.connectTelegram' }
+            }
+            : i.chat.allowedChats === 0
+                ? {
+                    id: 'chat', label: 'Chat channel', state: 'ready',
+                    detail: 'connected, but no chat is allowed yet — message the bot and add the id it reports',
+                    action: { label: 'Allowlist', kind: 'settings', value: 'agentFarm.telegram.allowedChats' }
+                }
+                : {
+                    id: 'chat', label: 'Chat channel', state: 'active',
+                    detail: `${i.chat.allowedChats} chat(s) can run work on your agents`
+                });
     }
 
     return rows;
