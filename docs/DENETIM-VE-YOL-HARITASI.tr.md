@@ -148,7 +148,7 @@ Bu, v2.92.0'da Airtable için temizlenen sorunun aynısı ve o iş "ürün = SIF
 
 **E1 → ÇÖZÜLDÜ.** Insight **tarihçe defteri** (`core/insighthistory.ts`): ilk görülme · son görülme · son eylem, ve türetilen asıl bilgi **regressed** (müdahaleden sonra kaybolup geri gelme). Ağaç satırında **↻N** ve **⚠back**, tooltip'te cümlesi; **Insight History…** listesi (açık / tekrar eden / müdahaleden sonra dönen / tutan düzeltme sayılarıyla). Tazeleme tekrar sayılmaz; müdahale edilmemiş çalkantı asla "kırılmış düzeltme" denmez. Köprü: `insights.history`. *(4.2 de bu maddeyle kapandı.)*
 **E3 → ÇÖZÜLDÜ.** Kılavuz içi arama: her isabet işaretlenir, Enter / ↑↓ ile gezilir, Esc temizler — ve tarayıcı find'ının yapamadığı şey: **içindekiler listesi, kelimenin gerçekten geçtiği bölümlere kısılır** (`4/17 hits in 3 sections`). Panele VS Code'un kendi `ctrl+F`'i de açıldı. *(4.4 de bu maddeyle kapandı.)*
-**E2 → ERTELENDİ (büyük iş, riskli değil ama küçük de değil).** `gallery` + `production` + `premiere` + `mediaProviders`'ı tek "içerik üretim" sayfasında birleştirmek, Tasks sayfası birleştirmesinin (3.19.0) aynı boyutunda bir iş: dört ayrı panelin webview'i tek sayfaya taşınacak. Mevcut yüzeyler çalışıyor, kimse engellenmiş değil — bu yüzden Console'un fizibilite ölçümü ve E1/E3 önce yapıldı. Sıradaki uygun oturumun işi. *(4.3 aynı madde.)*
+**E2 → ÇÖZÜLDÜ (3.30.0).** **🎬 Studio**: hattın kendisi tek sayfada, beş sekme — **Pipeline** (sahne sahne durum + *o sahnenin bir sonraki adımı* tek düğme; adım kanıttan türer) · **Assets** (galerinin duvarı, aynen) · **Triage** (eksik olan yüzey: keep/drop eskiden yalnızca iş akışının selection adımında vardı, yani iş akışı dışında üretilen hiçbir şey yargılanamıyordu; aynı alanlara yazıyor, sekans seçici kararı onurlandırıyor) · **Assemble** (dışa aktarımın birebir içereceği klipler) · **Sources** (sağlayıcı anahtarları, izlenen klasörler, maliyet ve bütçe). Galeri sayfası Studio'nun Assets sekmesine emekli edildi; `Open Media Gallery` komutu duruyor ve oraya açıyor. *(4.3 aynı madde.)*
 
 *Aşağısı denetim günündeki tespitlerdir.*
 
@@ -428,7 +428,7 @@ Ucuz, bağımsız, ve "herkesin kullanabileceği ürün" hedefine tek maddede en
 
 **4.1** `extension.ts` bölünmesi (F1) — alan bazlı `src/commands/*.ts`.
 **4.2** ~~Insight tarihçesi~~ **YAPILDI (3.27.0)** — kendi defteriyle (`core/insighthistory.ts`); `instrhistory`/`abtest` motorlarına bağlanmadı, çünkü onlar *talimat sürümlerini* ölçüyor, bu ise *bulgunun kendi davranışını* — ayrı eksen, ayrı kayıt.
-**4.3** İçerik üretim sayfası: `gallery` + `production` + `premiere` + `mediaProviders` tek yüzeyde (Tasks/Toolbox birleştirmesinin aynısı).
+**4.3** ~~İçerik üretim sayfası~~ **YAPILDI (3.30.0)** — 🎬 Studio; üstelik yalnızca birleştirme değil, eksik olan **Triage** yüzeyini de getirdi.
 **4.4** ~~Kılavuz içi arama~~ **YAPILDI (3.27.0)** — bölüm-farkındalıklı: içindekiler, kelimenin geçtiği bölümlere kısılıyor.
 **4.5** Dashboard kişiselleştirme (kart gizle/sırala, kayıtlı görünüm). *(Açık. Risksiz ama ⭐ — sayfa zaten aralık seçici, karşılaştırma penceresi ve filtre taşıyor; sıradaki uygun oturumda.)*
 **4.6** `l10n` altyapısını kur. **BİLİNÇLİ OLARAK ERTELENDİ:** VS Code'un l10n'ı `package.json`'daki **her** komut başlığını/ayar açıklamasını `%anahtar%` dolaylamasına çevirmeyi ister — 180 komut + 90 ayar, tek bir yazım hatasının komut paletini bozabildiği, bugün hiçbir kullanıcı kazancı olmayan mekanik bir değişiklik. Canlı üründe bu oran kabul edilebilir değil; gerçekten ikinci bir dil istendiğinde yapılmalı, "hazır dursun" diye değil.

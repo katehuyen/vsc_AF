@@ -155,7 +155,7 @@ import { TurnsPanel } from './panels/turnsPanel';
 import { ToolboxTreeProvider } from './views/toolboxTree';
 import { MemoryGraphPanel } from './panels/memoryGraph';
 import { DashboardPanel } from './panels/dashboard';
-import { GalleryPanel } from './panels/gallery';
+import { StudioPanel } from './panels/studioPanel';
 import { GuidePanel } from './panels/guide';
 import { AirtablePanel } from './panels/airtablePanel';
 import { TasksPanel } from './panels/tasksPanel';
@@ -1150,7 +1150,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             .filter(f => f && typeof f.path === 'string' && !!f.path.trim())
             .map(f => ({ ...f, path: expandEnvPath(f.path.trim()) })),
         (metas) => {
-            GalleryPanel.refreshIfOpen();
+            StudioPanel.refreshIfOpen();
             const sources = [...new Set(metas.map(m => m.source ?? 'external'))].join(', ');
             void vscode.window.showInformationMessage(
                 `Agent Farm: ${metas.length} media asset(s) registered from ${sources}`, 'Open Gallery'
@@ -4897,6 +4897,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
     };
 
+    // The Studio's dependencies: the asset archive, the manifests in the agent
+    // folders, what is watched, what it may cost, and which provider keys exist
+    // (never the keys themselves — that stays inside the vault).
+    const studioDeps = {
+        extensionUri: context.extensionUri,
+        tasks: taskManagerRef as TaskManager,
+        getAgents: () => agents,
+        ingestFolders: () => cfg().get<{ path?: string; agent?: string }[]>('ingestFolders', []) ?? [],
+        mediaBudget: () => cfg().get<number>('mediaBudgetMonthUSD', 0),
+        providerKeys: () => ({
+            fal: !!vault.get(cfg().get<string>('mediaAuthSecret', 'FAL_KEY')),
+            replicate: !!vault.get(cfg().get<string>('replicateAuthSecret', 'REPLICATE_API_TOKEN'))
+        })
+    };
+
     // ---------- DALGA 1: the Console's session host ----------
     // Long-lived claude processes this window owns, spoken to over the CLI's
     // streaming JSON channel. They deliberately outlive the panel tab (closing
@@ -7007,8 +7022,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         }),
 
+        // The Studio is the content-production page; the old "Open Media
+        // Gallery" entry point still works and lands on its Assets tab, which
+        // is what the gallery was.
+        vscode.commands.registerCommand('agentfarm.openStudio', (arg?: { tab?: string; projectId?: string }) => {
+            StudioPanel.show(studioDeps, arg && typeof arg === 'object' ? arg : undefined);
+        }),
+
         vscode.commands.registerCommand('agentfarm.openGallery', () => {
-            GalleryPanel.show({ extensionUri: context.extensionUri, tasks: taskManager, getAgents: () => agents });
+            StudioPanel.show(studioDeps, { tab: 'assets' });
         }),
 
         // Wave A: scene-by-scene production manifest (production.json in an agent folder).
@@ -7099,7 +7121,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (registerExternalAsset(taskManager.outputsDir, uri.fsPath,
                     { ...link, source: 'external:manual' })) { n++; }
             }
-            GalleryPanel.refreshIfOpen();
+            StudioPanel.refreshIfOpen();
             void vscode.window.showInformationMessage(
                 `Agent Farm: ${n} asset(s) registered` +
                 (picked.length - n ? ` (${picked.length - n} already known)` : '') + '.',

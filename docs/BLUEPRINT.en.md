@@ -892,6 +892,26 @@ The same method works for every service: `ELEVENLABS_KEY`, `N8N_TOKEN`… — wh
 
 ## Media Production Pipeline
 
+### 🎬 Studio — the pipeline on one page (3.30.0) {#studio}
+
+Four parts worked and none of them was connected to the others: the scene manifest (`production.json`), the asset wall (the Gallery), the sequence export (Premiere) and the machinery that generates and ingests (providers, watched folders, budget). So **the thing the user actually works** — *plan → generate → triage → assign → approve → assemble* — existed nowhere as a whole.
+
+**Studio** is that pipeline; **🎬 Studio** in the global nav, five tabs:
+
+| Tab | What it answers |
+| --- | --- |
+| **Pipeline** | The production scene by scene: status chip (click to change), counts by kind, a thumbnail strip, and **that scene's next step as a single button** |
+| **Assets** | The old Gallery wall, unchanged: production/scene/source filters, Open · Re-run · Vary… · Feedback… · Scene… |
+| **Triage** | **Assets nobody has judged** — ✓ Keep / ✗ Drop |
+| **Assemble** | Exactly the clips the export will contain, in order, with the XML + EDL button |
+| **Sources** | Provider keys (present or not), watched folders, register-by-hand, today/30-day/all-time cost and the budget |
+
+**A scene's "next step" is derived from evidence, not guessed** — in this order: nothing made yet → **Generate**; assets nobody judged → **Triage**; judged but not approved → **Set status**; approved → **In sequence**.
+
+**Why Triage is new:** keeping/dropping assets used to exist only *inside* a workflow's selection step — so anything generated outside a workflow, or ingested from a watched folder, could never be judged at all. Studio's Triage writes the same fields (`selectedUrls` / `rejectedUrls`), so the gallery badges and the **sequence picker** honour the decision: **a dropped asset never enters the sequence.**
+
+The old **Open Media Gallery** command still exists and opens Studio's **Assets** tab — which is what the gallery was.
+
 With 1.0 the extension changed category: text agents and **media models** (image/video/audio) run in the same chain — a Content Factory.
 
 ### Media Step (🎬)

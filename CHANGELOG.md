@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.30.0 — Studio: the content pipeline stops being four separate things (2026-07-28)
+
+The audit's **E2 / wave 4.3**. `media`, `production`, `premiere` and `mediaProviders` all worked, and nothing connected them: the Gallery showed assets, the scene manifest was a JSON file, the sequence export was a command, and the money and the provider keys were invisible. So the only thing that matters — **the pipeline the user actually works** — existed nowhere as a whole.
+
+**🎬 Studio** is that pipeline, as one page with five tabs, with a production as its subject:
+
+- **Pipeline** — the production scene by scene: status chip (click to change), counts by kind, a thumbnail strip, and **that scene's next step as a single button**. The step is *derived from evidence, in order*: nothing made yet → **Generate**; assets nobody has judged → **Triage**; judged but not approved → **Set status**; approved → **In sequence**. A progress bar and one honest line say what is actually left ("1 scene with nothing made yet · 3 assets nobody has judged · 2 assets in no scene"), plus what this production has cost.
+- **Assets** — the Gallery's own wall, unchanged: production/scene/source filters and Open · Re-run · Vary… · Feedback… · Scene… on every card. Assets now also carry an **unjudged** badge, because that was invisible before.
+- **Triage — the surface that was missing.** Keeping or dropping an asset existed **only inside a workflow's selection step**, so anything generated outside a workflow, or dropped into a watched folder, could never be judged at all. Triage lists everything unjudged with ✓ Keep / ✗ Drop and writes the **same fields** that step writes — so the badges and, more importantly, the **sequence picker** honour it: a dropped asset never enters the export.
+- **Assemble** — exactly the clips the export will contain, in order, each with its scene and a preview, and the XML + EDL button. No more exporting blind.
+- **Sources** — who can generate (fal / Replicate: is a key in the vault?), what is watched (ingest folders, and whether they still exist), register-by-hand, and the money: today, 30 days against the budget, all time — labelled an estimate from your own pricing rules, not a bill.
+- **One surface, not two.** The Gallery page is retired into Studio's Assets tab; **Open Media Gallery still works** and lands there, so nothing anyone learned is lost.
+- 51 new checks (the next-step rule in every ordering incl. the traps — an approved scene with nothing made still needs generating, an unjudged asset outranks approval; progress and percentages; assets in a scene the manifest no longer has; loose assets that belong to no production; the cost windows; and the page carrying all four modules' actions). Suite: **77 files, 2906 checks green.**
+
 ## 3.29.1 — The leak behind "it says it is still open", and the places a session can be named (2026-07-28)
 
 - **‼️ Closed sessions stayed un-resumable for hours — and it was a process leak of ours.** `shell: true` means the child Agent Farm holds is the shell, not `claude`: `child.kill()` ended the wrapper and left `claude.exe` running, orphaned, still holding its entry in the CLI's session registry — which is exactly what tells everyone "this session is open". Measured on this machine: **five orphaned claude trees**, each with a dozen children, hours old. Console sessions now die with **`taskkill /T`** (the same tree-kill the task and mission runners already use), and — because a hard-killed process can always leave its file behind — **a registry record whose pid is no longer alive is ignored**. Verified against the five real leftovers: 5 files on disk, 0 counted as live. So closing a session frees it **immediately** now.

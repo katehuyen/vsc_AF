@@ -894,6 +894,26 @@ Aynı yöntem her servis için geçerlidir: `ELEVENLABS_KEY`, `N8N_TOKEN`… —
 
 1.0 ile eklenti kategori değiştirdi: metin ajanların ve **medya modelleri** (görsel/video/ses) aynı zincirde çalışır — İçerik Fabrikası.
 
+### 🎬 Studio — hattın tek sayfası (3.30.0) {#studio}
+
+Dört parça çalışıyordu ama hiçbiri diğerine bağlı değildi: sahne manifestosu (`production.json`), varlık duvarı (Galeri), sekans dışa aktarımı (Premiere) ve üreten/içeri alan makine (sağlayıcılar, izlenen klasörler, bütçe). Yani **kullanıcının fiilen yürüttüğü iş** — *planla → üret → ayıkla → sahneye ata → onayla → kurgula* — hiçbir yerde bütün olarak görünmüyordu.
+
+**Studio** o hattın kendisidir; global nav'da **🎬 Studio**, beş sekme:
+
+| Sekme | Ne cevaplar |
+| --- | --- |
+| **Pipeline** | Prodüksiyon sahne sahne: durum çipi (tıkla → değiştir), tür bazlı sayılar, küçük görsel şeridi ve **o sahnenin bir sonraki adımı** tek düğme olarak |
+| **Assets** | Eski Galeri duvarı, aynen: üretim/sahne/kaynak filtreleri, Open · Re-run · Vary… · Feedback… · Scene… |
+| **Triage** | **Kimsenin bakmadığı varlıklar** — ✓ Keep / ✗ Drop |
+| **Assemble** | Dışa aktarımın **birebir** içereceği klipler, sırasıyla; XML + EDL düğmesi |
+| **Sources** | Sağlayıcı anahtarları (var/yok), izlenen klasörler, elle varlık kaydı, bugün/30 gün/toplam maliyet ve bütçe |
+
+**Sahnenin "bir sonraki adımı" tahmin değil, kanıttan türer** — bu sırayla: hiç varlık yoksa **Generate**, kimsenin yargılamadığı varlık varsa **Triage**, yargılanmış ama onaylanmamışsa **Set status**, onaylıysa **In sequence**.
+
+**Triage neden yeni:** varlık ayıklama (keep/drop) eskiden yalnızca bir iş akışının *selection* adımının içinde vardı — yani bir iş akışı dışında üretilen ya da izlenen klasörden gelen hiçbir şey yargılanamıyordu. Studio'daki Triage aynı alanlara (`selectedUrls` / `rejectedUrls`) yazar, dolayısıyla galeri rozetleri ve **sekans seçici** kararı olduğu gibi onurlandırır: **düşürülmüş bir varlık sekansa asla girmez.**
+
+Eski **Open Media Gallery** komutu duruyor ve Studio'nun **Assets** sekmesini açıyor — galeri tam olarak oydu.
+
 ### Medya Adımı (🎬)
 
 Workflow kurarken **Media step** seç: adım bir üretim modeli çağırır. Model kimliği serbest metindir ve **hangi sağlayıcıya gideceğini kimliğin öneki belirler** (2.26.0 — MediaProvider soyutlaması):

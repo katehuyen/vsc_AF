@@ -1,0 +1,333 @@
+// Agent Farm — Studio: the content pipeline on one page.
+//
+// The four things that used to be scattered (the scene manifest, the asset
+// wall, the Premiere export, and the machinery that generates/ingests) are
+// five tabs of one subject — a production — laid out as the work actually
+// flows: plan → generate → triage → assign → approve → assemble.
+(function () {
+    'use strict';
+
+    const vscode = acquireVsCodeApi();
+    const C = window.AFCharts;
+    let DATA = window.AF_DATA || { productions: [], items: [], untriaged: [], loose: [] };
+
+    // Assets tab filters (the gallery's own semantics: production/scene are a
+    // drill-down, source is a plain multi-pick).
+    let fScene = '';
+    let fSource = null;
+
+    const TABS = [
+        { id: 'pipeline', label: 'Pipeline', hint: 'the production, scene by scene' },
+        { id: 'assets', label: 'Assets', hint: 'everything that was made or ingested' },
+        { id: 'triage', label: 'Triage', hint: 'assets nobody has judged yet' },
+        { id: 'assemble', label: 'Assemble', hint: 'the sequence Premiere would get' },
+        { id: 'sources', label: 'Sources', hint: 'providers · watched folders · budget' }
+    ];
+
+    const STATUS_COLORS = {
+        draft: 'var(--vscode-descriptionForeground, #999)',
+        generating: 'var(--vscode-charts-blue, #3794ff)',
+        review: 'var(--vscode-charts-yellow, #cca700)',
+        approved: 'var(--vscode-charts-green, #4caf50)',
+        unassigned: 'var(--vscode-descriptionForeground, #999)'
+    };
+    // What each scene is waiting for — the label is the button, so the row
+    // always offers the one thing that moves it forward.
+    const ACTION = {
+        generate: { label: '＋ Generate', title: 'Nothing has been made for this scene yet — start a recipe workflow', msg: 'generate' },
+        triage: { label: '👁 Triage', title: 'Assets here have never been kept or dropped', msg: 'tab', arg: 'triage' },
+        review: { label: '✓ Set status', title: 'Judged assets are waiting for your verdict on the scene', msg: 'setSceneStatus' },
+        approved: { label: '🎬 In sequence', title: 'Approved — this scene goes into the export', msg: 'tab', arg: 'assemble' }
+    };
+
+    const STYLE = `<style>
+        .tabs { display:flex; gap:4px; margin:0 0 12px; border-bottom:1px solid var(--vscode-panel-border); flex-wrap:wrap; }
+        .tab { padding:7px 15px; border:none; border-bottom:2px solid transparent; border-radius:6px 6px 0 0;
+            background:transparent; color:var(--vscode-foreground); opacity:.7; cursor:pointer; font-size:12px; }
+        .tab:hover { opacity:1; background:var(--vscode-list-hoverBackground); }
+        .tab.on { opacity:1; border-bottom-color:var(--vscode-textLink-foreground); font-weight:600; }
+        .tab .cnt { font-size:10px; margin-left:6px; padding:0 6px; border-radius:8px;
+            background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); }
+        .scenerow { display:flex; gap:12px; align-items:center; padding:9px 10px; border-radius:8px;
+            border:1px solid var(--vscode-widget-border,#4443); margin-bottom:7px; flex-wrap:wrap; }
+        .scenerow .nm { flex:0 0 190px; font-weight:600; font-size:13px; }
+        .scenerow .counts { flex:0 0 150px; font-size:11px; color:var(--vscode-descriptionForeground); }
+        .strip { display:flex; gap:5px; flex:1 1 220px; min-width:120px; overflow:hidden; }
+        .strip img, .strip video { height:44px; width:64px; object-fit:cover; border-radius:4px; cursor:pointer; }
+        .strip .none { font-size:11px; color:var(--vscode-descriptionForeground); }
+        .bar { height:7px; border-radius:4px; background:var(--vscode-widget-border,#4443); overflow:hidden; margin:6px 0 2px; }
+        .bar > span { display:block; height:100%; background:var(--vscode-charts-green,#4caf50); }
+        .tri { display:flex; gap:10px; align-items:flex-start; padding:9px; border-radius:8px;
+            border:1px solid var(--vscode-widget-border,#4443); margin-bottom:8px; }
+        .tri img, .tri video { width:150px; height:96px; object-fit:cover; border-radius:5px; cursor:pointer; }
+        .seqrow { display:flex; gap:10px; align-items:center; padding:6px 9px; border-radius:7px;
+            border:1px solid var(--vscode-widget-border,#4443); margin-bottom:5px; }
+        .seqrow img, .seqrow video { width:96px; height:54px; object-fit:cover; border-radius:4px; }
+        .srcrow { display:flex; gap:10px; align-items:center; padding:7px 10px; border-radius:7px;
+            border:1px solid var(--vscode-widget-border,#4443); margin-bottom:6px; }
+        .srcrow .lbl { flex:0 0 150px; font-weight:600; font-size:12px; }
+        .dot { width:9px; height:9px; border-radius:50%; display:inline-block; flex:none; }
+    </style>`;
+
+    const cur = () => (DATA.productions || []).find(p => p.id === DATA.project);
+    const post = (type, extra) => vscode.postMessage(Object.assign({ type }, extra || {}));
+    const fmtTime = ts => new Date(ts).toLocaleString();
+
+    function thumb(a) {
+        if (!a.uri) { return ''; }
+        if (a.kind === 'video') { return `<video src="${a.uri}" muted data-open="${C.esc(a.file)}"></video>`; }
+        if (a.kind === 'image') { return `<img src="${a.uri}" data-open="${C.esc(a.file)}" title="${C.esc(a.title)}">`; }
+        return '';
+    }
+
+    // ---------- 1. Pipeline ----------
+    function pipelineHtml() {
+        const p = cur();
+        if (!p) {
+            return `<div class="card"><h3>No production yet</h3>
+                <p class="muted">A production is a small <code>production.json</code> in an agent's folder: a title and its scenes. It is what turns a pile of generated files into a piece of work with a state — and what the sequence export walks.</p>
+                <button id="newprod">＋ New production</button></div>`;
+        }
+        const rows = p.scenes.map(s => {
+            const act = ACTION[s.next];
+            return `<div class="scenerow">
+                <span class="nm">${C.esc(s.title)} <span class="muted small">${C.esc(s.id)}</span></span>
+                <span class="badge click" style="color:${STATUS_COLORS[s.status]};border-color:${STATUS_COLORS[s.status]}"
+                      data-status="${C.esc(s.id)}" title="click to change this scene's status">${s.status}</span>
+                <span class="counts">${s.total ? `${s.counts.image} img · ${s.counts.video} vid · ${s.counts.audio} aud` : 'no assets'}${s.untriaged ? ` · <b>${s.untriaged} unjudged</b>` : ''}</span>
+                <span class="strip">${s.thumbs.map(thumb).join('') || '<span class="none">—</span>'}</span>
+                <button class="secondary" data-act="${C.esc(s.next)}" data-scene="${C.esc(s.id)}" title="${act.title}">${act.label}</button>
+            </div>`;
+        }).join('');
+        const un = p.unassigned.length
+            ? `<div class="scenerow" style="border-style:dashed">
+                <span class="nm">Unassigned</span>
+                <span class="badge">no scene</span>
+                <span class="counts">${p.unassigned.length} asset(s)</span>
+                <span class="strip">${p.unassigned.slice(0, 6).map(thumb).join('')}</span>
+                <button class="secondary" data-tab="assets" title="Show them in Assets and give each a scene">Assign…</button>
+            </div>` : '';
+        return `<div class="spread">
+                <h2 style="margin:0">${C.esc(p.title)} <span class="muted small">${C.esc(p.agentName)}</span></h2>
+                <div>
+                    <button class="secondary" id="editmanifest" title="Open production.json">Edit manifest</button>
+                    <button class="secondary" id="newprod">＋ New production</button>
+                </div>
+            </div>
+            <div class="bar"><span style="width:${p.progress.percent}%"></span></div>
+            <p class="sub">${p.progress.approved}/${p.progress.total} scenes approved · ${C.esc(p.summary)} · ${C.fmtUSD(p.cost)} spent on this production</p>
+            ${rows || '<div class="card muted">This manifest has no scenes yet — add them to production.json.</div>'}
+            ${un}`;
+    }
+
+    // ---------- 2. Assets (the wall the Gallery used to be) ----------
+    function assetCard(item) {
+        let preview;
+        if (item.kind === 'image' && item.assetUri) {
+            preview = `<img src="${item.assetUri}" style="width:100%;max-height:220px;object-fit:cover;border-radius:6px;cursor:pointer" data-open="${C.esc(item.assetPath)}">`;
+        } else if (item.kind === 'video' && item.assetUri) {
+            preview = `<video src="${item.assetUri}" controls muted style="width:100%;max-height:220px;border-radius:6px"></video>`;
+        } else if (item.kind === 'audio' && item.assetUri) {
+            preview = `<audio src="${item.assetUri}" controls style="width:100%"></audio>`;
+        } else {
+            preview = `<div class="muted" style="padding:30px;text-align:center">no asset${item.assetPath ? '' : ' (pruned or failed)'}</div>`;
+        }
+        const external = item.source && item.source.indexOf('external') === 0;
+        const p = (DATA.productions || []).find(x => x.id === item.projectId);
+        const sceneTag = item.projectId
+            ? `<span class="badge" title="assigned scene">${C.esc(p ? p.title + (item.sceneId ? ' · ' + ((p.scenes.find(s => s.id === item.sceneId) || {}).title || item.sceneId) : '') : item.projectId)}</span>`
+            : '';
+        const srcTag = external ? `<span class="badge warn" title="registered from a watched/external folder">${C.esc(item.source)}</span>` : '';
+        const pickTag = item.selectedCount
+            ? `<span class="badge" style="color:var(--vscode-charts-green,#4caf50);border-color:var(--vscode-charts-green,#4caf50)" title="kept in triage">✓ kept</span>`
+            : item.rejectedCount
+                ? '<span class="badge muted" title="dropped in triage">✗ dropped</span>'
+                : '<span class="badge warn" title="nobody has judged this yet">unjudged</span>';
+        return `<div class="card">
+            ${preview}
+            <h3 style="margin:8px 0 2px">${C.esc(item.title)}</h3>
+            <div class="sub">${C.esc(item.model)} · ${fmtTime(item.ts)}${item.estCost ? ' · ~' + C.fmtUSD(item.estCost) : ''} ${sceneTag}${srcTag}${pickTag}</div>
+            ${item.workflowTitle ? `<div class="sub muted">from: ${C.esc(item.workflowTitle)}</div>` : ''}
+            ${item.input ? `<details style="margin-top:6px"><summary class="small">input</summary><pre>${C.esc(item.input)}</pre></details>` : ''}
+            <div class="btnrow">
+                ${item.assetPath ? `<button class="secondary" data-open="${C.esc(item.assetPath)}">Open file</button>` : ''}
+                ${external ? '' : `<button class="secondary" data-rerun="${C.esc(item.taskId)}">Re-run</button>
+                <button class="secondary" data-vary="${C.esc(item.taskId)}">Vary…</button>
+                <button class="secondary" data-feedback="${C.esc(item.taskId)}" title="Say what was wrong — the note is injected into the prompt and it is regenerated">Feedback…</button>`}
+                <button class="secondary" data-assign="${C.esc(item.taskId)}">Scene…</button>
+            </div>
+        </div>`;
+    }
+
+    function assetsHtml() {
+        const p = cur();
+        const items = (DATA.items || []).filter(i =>
+            (!DATA.project || i.projectId === DATA.project) &&
+            (!fScene || (fScene === '·' ? (i.projectId === DATA.project && !i.sceneId) : i.sceneId === fScene)) &&
+            (!fSource || fSource.indexOf(i.source) >= 0));
+        const sources = [...new Set((DATA.items || []).map(i => i.source))].sort();
+        const sceneOpts = p
+            ? `<option value="">all scenes</option><option value="·"${fScene === '·' ? ' selected' : ''}>unassigned</option>` +
+              p.scenes.map(s => `<option value="${C.esc(s.id)}"${fScene === s.id ? ' selected' : ''}>${C.esc(s.title)}</option>`).join('')
+            : '';
+        return `<div class="chiprow">
+                ${p ? `<select id="fscene" title="scene">${sceneOpts}</select>` : ''}
+                ${sources.length > 1 ? window.AFFilter.multi({
+                    id: 'studio-sources', label: 'Sources', options: sources, selected: fSource,
+                    title: 'Which sources to show — tick any combination'
+                }) : ''}
+                <span class="muted small">${items.length}/${(DATA.items || []).length} shown</span>
+            </div>
+            ${items.length
+                ? `<div class="grid">${items.map(assetCard).join('')}</div>`
+                : (DATA.items || []).length
+                    ? '<div class="card"><p class="muted">Nothing matches these filters.</p></div>'
+                    : `<div class="card"><h3>No media yet</h3><p class="muted">Add a 🎬 Media step to a workflow (or run a recipe) — what it generates lands here with its prompt, model and cost. Files dropped into a watched folder are registered automatically (see <b>Sources</b>).</p></div>`}`;
+    }
+
+    // ---------- 3. Triage ----------
+    function triageHtml() {
+        const rows = DATA.untriaged || [];
+        if (!rows.length) {
+            return `<div class="card"><h3>Nothing waiting</h3><p class="muted">Every asset has been kept or dropped. New ones appear here the moment they are generated or ingested — this is the queue that decides what the sequence may use.</p></div>`;
+        }
+        return `<p class="sub">${rows.length} asset(s) nobody has judged. Keeping or dropping here writes the same decision a workflow's selection step writes — the sequence export never picks a dropped asset.</p>
+            ${rows.map(a => `<div class="tri">
+                ${a.uri ? (a.kind === 'video'
+                    ? `<video src="${a.uri}" controls muted></video>`
+                    : `<img src="${a.uri}" data-open="${C.esc(a.file)}">`)
+                    : '<div class="muted" style="width:150px;text-align:center">no preview</div>'}
+                <div style="flex:1;min-width:0">
+                    <div><strong>${C.esc(a.title)}</strong></div>
+                    <div class="sub">${fmtTime(a.ts)}${a.cost ? ' · ~' + C.fmtUSD(a.cost) : ''} · ${C.esc(a.source)}</div>
+                    <div class="btnrow">
+                        <button data-keep="${C.esc(a.taskId)}" title="Keep it — the sequence may use it">✓ Keep</button>
+                        <button class="secondary" data-drop="${C.esc(a.taskId)}" title="Drop it — never picked for the sequence">✗ Drop</button>
+                        <button class="secondary" data-assign="${C.esc(a.taskId)}">Scene…</button>
+                        ${a.file ? `<button class="secondary" data-open="${C.esc(a.file)}">Open file</button>` : ''}
+                    </div>
+                </div>
+            </div>`).join('')}`;
+    }
+
+    // ---------- 4. Assemble ----------
+    function assembleHtml() {
+        const p = cur();
+        if (!p) { return '<div class="card muted">Pick a production first.</div>'; }
+        const seq = DATA.sequence || [];
+        return `<div class="spread">
+                <h2 style="margin:0">Sequence — ${C.esc(p.title)}</h2>
+                <button id="exportseq"${seq.length ? '' : ' disabled'} title="Write an FCP7 XML + EDL you can import in Premiere">Export XML + EDL →</button>
+            </div>
+            <p class="sub">One clip per scene, in manifest order: a kept video first, else any video, else an image. Scenes with nothing usable are skipped, and a dropped asset is never chosen — so what you see here is exactly what the export will contain.</p>
+            ${seq.length
+                ? seq.map((c, i) => `<div class="seqrow">
+                    <span class="muted small" style="width:22px">${i + 1}</span>
+                    ${c.uri ? (c.kind === 'video' ? `<video src="${c.uri}" muted></video>` : `<img src="${c.uri}">`) : ''}
+                    <span style="flex:1;min-width:0"><strong>${C.esc(c.sceneTitle)}</strong><br><span class="muted small">${C.esc(c.name)}</span></span>
+                    <button class="secondary" data-open="${C.esc(c.file)}">Open</button>
+                </div>`).join('')
+                : '<div class="card muted">No scene has a usable asset yet — generate or keep something first.</div>'}`;
+    }
+
+    // ---------- 5. Sources ----------
+    function sourcesHtml() {
+        const pr = DATA.providers || {};
+        const cost = DATA.cost || {};
+        const pct = cost.budgetMonth ? Math.round((cost.month / cost.budgetMonth) * 100) : 0;
+        const dot = on => `<span class="dot" style="background:${on ? 'var(--vscode-charts-green,#4caf50)' : 'var(--vscode-descriptionForeground,#999)'}"></span>`;
+        const folders = (DATA.ingestFolders || []);
+        return `<h2>Who generates</h2>
+            <div class="srcrow">${dot(pr.fal)}<span class="lbl">fal.ai</span>
+                <span class="muted small" style="flex:1">${pr.fal ? 'key present in the vault — media steps can run' : 'no key: add one to the secret vault (agentFarm.mediaAuthSecret names it)'}</span>
+                <button class="secondary" data-settings="agentFarm.mediaAuthSecret">Setting</button></div>
+            <div class="srcrow">${dot(pr.replicate)}<span class="lbl">Replicate</span>
+                <span class="muted small" style="flex:1">${pr.replicate ? 'key present in the vault' : 'no key: models prefixed replicate: cannot run'}</span>
+                <button class="secondary" data-settings="agentFarm.replicateAuthSecret">Setting</button></div>
+
+            <h2>What is watched</h2>
+            ${folders.length
+                ? folders.map(f => `<div class="srcrow">${dot(f.exists)}<span class="lbl">${C.esc(f.agent || 'any agent')}</span>
+                    <span class="muted small" style="flex:1">${C.esc(f.path)}${f.exists ? '' : ' — folder not found'}</span></div>`).join('')
+                : '<div class="srcrow"><span class="muted small">No watched folders. Anything you drop into one is registered as an asset automatically — useful for footage you did not generate.</span><button class="secondary" data-settings="agentFarm.ingestFolders">Set up</button></div>'}
+            <div class="btnrow"><button class="secondary" id="register">Register asset(s) by hand…</button></div>
+
+            <h2>What it costs</h2>
+            <div class="srcrow"><span class="lbl">Today</span><span style="flex:1">${C.fmtUSD(cost.today || 0)}</span></div>
+            <div class="srcrow"><span class="lbl">Last 30 days</span>
+                <span style="flex:1">${C.fmtUSD(cost.month || 0)}${cost.budgetMonth ? ` of ${C.fmtUSD(cost.budgetMonth)} budget` : ''}</span>
+                ${cost.budgetMonth ? `<span class="badge${pct >= 100 ? ' err' : pct >= 75 ? ' warn' : ''}">${pct}%</span>` : ''}
+                <button class="secondary" data-settings="agentFarm.mediaBudgetMonthUSD">Budget</button></div>
+            <div class="srcrow"><span class="lbl">All time</span><span style="flex:1">${C.fmtUSD(cost.total || 0)}</span>
+                <button class="secondary" data-settings="agentFarm.mediaPricing">Pricing rules</button></div>
+            <p class="footnote">Media cost is estimated from your own <code>agentFarm.mediaPricing</code> rules against each model's response — it is not a bill from the provider.</p>`;
+    }
+
+    function render() {
+        const p = cur();
+        const body = DATA.tab === 'assets' ? assetsHtml()
+            : DATA.tab === 'triage' ? triageHtml()
+                : DATA.tab === 'assemble' ? assembleHtml()
+                    : DATA.tab === 'sources' ? sourcesHtml()
+                        : pipelineHtml();
+        const counts = { triage: (DATA.untriaged || []).length, assets: (DATA.items || []).length };
+        document.getElementById('app').innerHTML = `${STYLE}
+            ${window.AFHeader.html({
+                page: 'studio',
+                title: '🎬 Studio',
+                sub: p
+                    ? `${C.esc(p.title)} · ${p.progress.approved}/${p.progress.total} scenes approved · ${C.fmtUSD((DATA.cost || {}).month || 0)} in 30 days`
+                    : `${(DATA.items || []).length} asset(s) · ${C.fmtUSD((DATA.cost || {}).month || 0)} in 30 days`,
+                controls: (DATA.productions || []).length > 1
+                    ? `<select id="fproj" title="production">${DATA.productions.map(x =>
+                        `<option value="${C.esc(x.id)}"${x.id === DATA.project ? ' selected' : ''}>${C.esc(x.title)}</option>`).join('')}</select>`
+                    : '',
+                guide: 'medya-uretim-hatti'
+            })}
+            <div class="tabs">${TABS.map(t =>
+                `<button class="tab${DATA.tab === t.id ? ' on' : ''}" data-tab="${t.id}" title="${t.hint}">${t.label}${counts[t.id] ? `<span class="cnt">${counts[t.id]}</span>` : ''}</button>`).join('')}</div>
+            ${body}`;
+
+        window.AFHeader.wire(vscode, { onRefresh: () => post('refresh') });
+        const on = (sel, fn) => document.querySelectorAll(sel).forEach(fn);
+        on('[data-tab]', el => el.addEventListener('click', () => post('tab', { tab: el.dataset.tab })));
+        const proj = document.getElementById('fproj');
+        if (proj) { proj.addEventListener('change', e => { fScene = ''; post('project', { project: e.target.value }); }); }
+        const fs = document.getElementById('fscene');
+        if (fs) { fs.addEventListener('change', e => { fScene = e.target.value; render(); }); }
+        window.AFFilter.wireMulti({ id: 'studio-sources', onChange: sel => { fSource = sel; render(); } });
+
+        on('[data-open]', el => el.addEventListener('click', () => post('openAsset', { path: el.dataset.open })));
+        on('[data-rerun]', el => el.addEventListener('click', () => post('rerun', { taskId: el.dataset.rerun })));
+        on('[data-vary]', el => el.addEventListener('click', () => post('vary', { taskId: el.dataset.vary })));
+        on('[data-feedback]', el => el.addEventListener('click', () => post('feedback', { taskId: el.dataset.feedback })));
+        on('[data-assign]', el => el.addEventListener('click', () => post('assign', { taskId: el.dataset.assign })));
+        on('[data-status]', el => el.addEventListener('click', () =>
+            post('setSceneStatus', { projectId: DATA.project, sceneId: el.dataset.status })));
+        on('[data-keep]', el => el.addEventListener('click', () => post('triageDecision', { taskId: el.dataset.keep, keep: true })));
+        on('[data-drop]', el => el.addEventListener('click', () => post('triageDecision', { taskId: el.dataset.drop, keep: false })));
+        on('[data-settings]', el => el.addEventListener('click', () => post('openSettings', { focus: el.dataset.settings })));
+        // the per-scene next action
+        on('[data-act]', el => el.addEventListener('click', () => {
+            const a = ACTION[el.dataset.act];
+            if (!a) { return; }
+            if (a.msg === 'tab') { post('tab', { tab: a.arg }); return; }
+            if (a.msg === 'setSceneStatus') {
+                post('setSceneStatus', { projectId: DATA.project, sceneId: el.dataset.scene });
+                return;
+            }
+            post(a.msg, { sceneId: el.dataset.scene });
+        }));
+        const byId = (id, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener('click', fn); } };
+        byId('newprod', () => post('newProduction'));
+        byId('exportseq', () => post('exportSequence'));
+        byId('register', () => post('registerAsset'));
+        byId('editmanifest', () => { const x = cur(); if (x) { post('openFile', { path: x.file }); } });
+    }
+
+    window.addEventListener('message', ev => {
+        if (ev.data && ev.data.type === 'data') { DATA = ev.data.data; render(); }
+    });
+
+    render();
+})();

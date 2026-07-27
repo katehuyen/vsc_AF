@@ -35,6 +35,7 @@
         { id: 'portfolio', label: 'Agents' },
         { id: 'tasks', label: 'Tasks' },
         { id: 'missions', label: 'Missions' },
+        { id: 'studio', label: '🎬 Studio' },
         { id: 'toolbox', label: 'Toolbox' }
     ];
 
