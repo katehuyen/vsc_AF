@@ -246,21 +246,10 @@ export class ConsolePanel {
                 void vscode.commands.executeCommand('agentfarm.openEditedFile',
                     { file: str('file'), diff: msg.diff === true });
                 break;
-            case 'rename': {
-                // The same rename as the side panel's, on the same store — one
-                // name for a session, wherever you happen to be standing.
-                const sid = str('sessionId');
-                if (!sid) {
-                    void vscode.window.showInformationMessage(
-                        'Agent Farm: this session has not reported its id yet — say something first, then rename it.');
-                    return;
-                }
-                const row = this.deps.index.all().find(x => x.sessionId === sid);
-                await vscode.commands.executeCommand('agentfarm.renameSession',
-                    row ?? { sessionId: sid, title: str('title') });
-                this.refresh();
-                break;
-            }
+            // Renaming a Console row goes through VS Code's own right-click menu
+            // (`webview/context` → agentfarm.renameSession), which is why there
+            // is no 'rename' message here: the row carries its identity in
+            // `data-vscode-context` and the command does the rest.
             case 'openTranscript': {
                 const row = this.deps.index.all().find(s => s.sessionId === str('sessionId'));
                 if (row) { void vscode.commands.executeCommand('agentfarm.openSession', row.file); }

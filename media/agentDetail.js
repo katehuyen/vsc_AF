@@ -198,8 +198,9 @@
                 // THIS agent" (the ↗ next to it still opens the Console page).
                 navActions: {
                     console: {
-                        label: '💬 Talk in Console',
-                        title: 'Open the Console with this agent chosen — nothing starts until you say something'
+                        label: '💬 Talk to this agent',
+                        hint: 'Opens the Console with this agent chosen — nothing starts until you say something',
+                        title: 'Console — talk to this agent, or open the page'
                     }
                 },
                 actions: `<button id="start">Start session</button>

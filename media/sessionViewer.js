@@ -6,10 +6,13 @@
     let DATA = window.__DATA__;
     let filter = '';
     let turnsOpen = false;
-    // Files changed: open on first sight (it is the answer to "what did this
-    // session DO"), but a box you closed must stay closed — every live update
-    // re-renders the page, and re-opening it each time was a bug, not a policy.
-    let filesOpen = true;
+    // Files changed: CLOSED until the user opens it, and then exactly as they
+    // left it. Its state is persisted (vscode.setState), not just held in this
+    // closure, because the page is rebuilt from scratch on more than a re-render
+    // — a settings change re-issues the whole HTML, and the panel is restored
+    // after a reload — and every one of those rebuilds used to spring the box
+    // back open. A box that reopens itself is a box the user does not control.
+    let filesOpen = false;
     // Role filter: empty set = show everything. "Errors" matches by flag, not role.
     // The AI side is "Agent", never "Assistant" — what talks back here is an
     // agent (the same stance core/speaker.ts takes with its 'agent' fallback).
@@ -39,7 +42,15 @@
     const foldedOnce = new Set();
     const savedState = (typeof vscode.getState === 'function' && vscode.getState()) || {};
     let singleOpen = savedState.singleOpen !== undefined ? !!savedState.singleOpen : true;
+    filesOpen = savedState.filesOpen === true;
     let turnCounts = null; // per-turn message counts, rebuilt when DATA changes
+
+    /** Remember a display choice across re-renders, reloads and restores. */
+    function keepState(patch) {
+        if (typeof vscode.setState !== 'function') { return; }
+        const st = (typeof vscode.getState === 'function' && vscode.getState()) || {};
+        vscode.setState(Object.assign({}, st, patch));
+    }
 
     /** Fold every turn not seen before (called at load and on every data push). */
     function foldNewTurns() {
@@ -778,11 +789,13 @@
                 title: C.esc(DATA.title),
                 sub: `${DATA.origin === 'auto' ? '🤖 automation run' : '🧑 your session'} · ${C.esc(DATA.cwd || '')} · ${C.esc(DATA.sessionId)} · ${DATA.permissionMode ? 'mode: ' + C.esc(DATA.permissionMode) : ''}`,
                 // On a session's own page the Console nav button means "continue
-                // THIS session there" (the ↗ beside it still opens the page).
+                // THIS session there" — first item of its menu; the page itself
+                // is the second, so one button carries both.
                 navActions: {
                     console: {
-                        label: '💬 Resume in Console',
-                        title: 'Pick this conversation back up inside the panel instead of a terminal'
+                        label: '💬 Resume this session here',
+                        hint: 'Picks this conversation back up inside the panel instead of a terminal',
+                        title: 'Console — resume this session, or open the page'
                     }
                 },
                 actions: `<button id="resume">⏵ Resume</button>
@@ -910,16 +923,18 @@
                     (DATA.turns || []).filter(t => !collapsed.has(t.n)).slice(1)
                         .forEach(t => collapsed.add(t.n));
                 }
-                if (typeof vscode.setState === 'function') {
-                    const st = (typeof vscode.getState === 'function' && vscode.getState()) || {};
-                    vscode.setState(Object.assign({}, st, { singleOpen }));
-                }
+                keepState({ singleOpen });
                 render({ keepScroll: true });
             });
         }
 
         const filebox = document.getElementById('filebox');
-        if (filebox) { filebox.addEventListener('toggle', () => { filesOpen = filebox.open; }); }
+        if (filebox) {
+            filebox.addEventListener('toggle', () => {
+                filesOpen = filebox.open;
+                keepState({ filesOpen });
+            });
+        }
 
         const turnbox = document.getElementById('turnbox');
         if (turnbox) {

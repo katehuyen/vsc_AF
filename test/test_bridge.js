@@ -1034,6 +1034,7 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
 
         // stand-ins for the extension's live state
         let marks = {};
+        const titles = {};
         const launched = [];
         const defaults = { model: 'sonnet' };
         const sessions = [
@@ -1068,6 +1069,16 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
                     marks = togglePin(normalizeMarks(marks), id,
                         typeof args.pinned === 'boolean' ? args.pinned : undefined);
                     return { sessionId: id, pinned: isPinned(marks, id) };
+                }
+            },
+            {
+                op: 'sessions.rename',
+                describe: 'Give a session the user\'s own name. args: sessionId, name',
+                handler: (args) => {
+                    const id = argStr(args, 'sessionId');
+                    const name = optStr(args, 'name').trim();
+                    if (name) { titles[id] = name; } else { delete titles[id]; }
+                    return { sessionId: id, title: titles[id] || null };
                 }
             },
             {
@@ -1107,8 +1118,8 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
 
         const cat = reg.catalog().map(c => c.op);
         ok('every session op is in the catalog',
-            ['sessions.start', 'sessions.pin', 'sessions.tag', 'sessions.shelf', 'sessions.interrupt']
-                .every(op => cat.includes(op)));
+            ['sessions.start', 'sessions.pin', 'sessions.rename', 'sessions.tag', 'sessions.shelf',
+                'sessions.interrupt'].every(op => cat.includes(op)));
 
         const start = await reg.dispatch('sessions.start',
             { agent: 'dev', effort: 'high', name: 'plan', prompt: 'read the report first' });
@@ -1132,6 +1143,13 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         ok('an explicit pinned:false takes it off the shelf', off.ok && off.result.pinned === false);
         ok('…and the shelf is empty again', (await reg.dispatch('sessions.shelf', {})).result.length === 0);
 
+        const named = await reg.dispatch('sessions.rename', { sessionId: 'sid1', name: '  Kalan eksikler  ' });
+        ok('sessions.rename stores the trimmed name and reports it back',
+            named.ok && named.result.title === 'Kalan eksikler');
+        const unnamed = await reg.dispatch('sessions.rename', { sessionId: 'sid1', name: '' });
+        ok('…and an empty name restores the automatic title',
+            unnamed.ok && unnamed.result.title === null);
+
         const int = await reg.dispatch('sessions.interrupt', { sessionId: 'sid1' });
         ok('sessions.interrupt reports the terminal it typed Esc into',
             int.ok && int.result.interrupted === true && int.result.terminal === 'claude: dev #1');
@@ -1141,7 +1159,8 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
 
         // the real registrations must exist and carry the same contracts
         const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
-        for (const op of ['sessions.start', 'sessions.pin', 'sessions.tag', 'sessions.shelf', 'sessions.interrupt']) {
+        for (const op of ['sessions.start', 'sessions.pin', 'sessions.rename', 'sessions.tag',
+            'sessions.shelf', 'sessions.interrupt']) {
             ok(`extension.ts registers ${op}`, src.includes(`op: '${op}'`));
         }
         const startBlock = src.slice(src.indexOf("op: 'sessions.start'"), src.indexOf("op: 'sessions.start'") + 1800);

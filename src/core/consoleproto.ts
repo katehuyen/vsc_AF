@@ -57,7 +57,7 @@ export interface ConsoleSessionState {
     agentId: string;
     agentName: string;
     cwd: string;
-    /** claude's session id, known once system:init arrives */
+    /** claude's session id — known up-front on a resume, otherwise once system:init arrives */
     sessionId?: string;
     model?: string;
     effort?: string;
@@ -306,13 +306,24 @@ export function reduceEvent(
     return { state, changed: false };
 }
 
-/** A fresh session record. */
+/**
+ * A fresh session record.
+ *
+ * `sessionId` is optional but is set from the start on a **resume**: that id is
+ * ours before the process even spawns, and everything that identifies a session
+ * hangs off it — the row's name, the rename, the transcript. Waiting for the
+ * CLI's own `system:init` to report it back left a resumed session nameless and
+ * unrenameable ("this session has not reported its id yet") for as long as the
+ * first turn took.
+ */
 export function newSessionState(o: {
     id: string; agentId: string; agentName: string; cwd: string;
     model?: string; effort?: string; permissionMode?: string; now: number;
+    sessionId?: string;
 }): ConsoleSessionState {
     return {
         id: o.id, agentId: o.agentId, agentName: o.agentName, cwd: o.cwd,
+        sessionId: o.sessionId,
         model: o.model, effort: o.effort,
         permissionMode: o.permissionMode?.trim() || 'default',
         status: 'starting', messages: [], queued: [],

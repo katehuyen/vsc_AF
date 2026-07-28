@@ -494,11 +494,18 @@ export class SessionViewerPanel {
         }
         const panel = vscode.window.createWebviewPanel(
             'agentfarm.session',
-            `Session: ${path.basename(file, '.jsonl').slice(0, 8)}`,
+            `Session #${path.basename(file, '.jsonl').slice(0, 8)}`,
             vscode.ViewColumn.One,
             { enableScripts: true, retainContextWhenHidden: true }
         );
         SessionViewerPanel.open.set(file, new SessionViewerPanel(panel, file, deps, focusTs));
+    }
+
+    /** A session renamed anywhere is renamed here too — tab caption included. */
+    static refreshOpen(): void {
+        for (const p of SessionViewerPanel.open.values()) {
+            void p.panel.webview.postMessage({ type: 'data', data: p.viewData(), auto: true });
+        }
     }
 
     private constructor(
@@ -540,14 +547,16 @@ export class SessionViewerPanel {
             data.agentId = owner.agentId;
             data.agentName = owner.agentName;
         }
-        // The tab carried a session-id fragment, and hovering it repeated the
-        // same fragment. A tab is a place you recognise, so it carries the
-        // session's NAME; the id stays available in the page and the tooltip
-        // (VS Code shows the title there) is now worth reading.
+        // The tab reads `Session #<id> — <name>`, and that ONE string is all a
+        // webview tab has: VS Code gives a WebviewPanel a `title` and no
+        // tooltip, and the tab's hover is that same title. So the id leads (it
+        // is what the tab shows in its narrow width, and what you match against
+        // a terminal or a log line) and the name rides behind it, where the
+        // hover — which is never truncated — hands it back in full.
         const title = String(data.title ?? '').trim();
-        this.panel.title = title
-            ? (title.length > 40 ? title.slice(0, 40) + '…' : title)
-            : `Session: ${String(data.sessionId ?? '').slice(0, 8)}`;
+        const name = title && title !== '(untitled session)' ? title : '';
+        this.panel.title =
+            `Session #${String(data.sessionId ?? '').slice(0, 8)}${name ? ' — ' + name : ''}`;
         return data;
     }
 

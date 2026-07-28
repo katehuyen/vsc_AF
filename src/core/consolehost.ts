@@ -100,7 +100,9 @@ export class ConsoleHost {
             state: newSessionState({
                 id, agentId: init.agentId, agentName: init.agentName, cwd: init.cwd,
                 model: init.model, effort: init.effort, permissionMode: init.permissionMode,
-                now: Date.now()
+                now: Date.now(),
+                // a resumed session already HAS an id — see newSessionState
+                sessionId: init.resume
             }),
             child, buffer: '', reqSeq: 0
         };

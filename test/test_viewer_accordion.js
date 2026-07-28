@@ -118,14 +118,18 @@ function makeSandbox(opts) {
     ok('a transcript opens fully folded', count(html, 'class="turnhdr closed"') === 3 && count(html, ' tclosed"') === 6);
     ok('…and in single-open mode', html.includes('class="chip on" id="t-singleopen"'));
     ok('…but the turnless preamble is never folded', html.includes('class="msg assistant" data-idx="0"'));
-    ok('folded bands carry a ▸ caret', count(html, '▸') === 3 && count(html, '▾') === 0);
+    // Counted on the band's own caret span — the header toolbar has carets of
+    // its own (the claimed Console button's menu), and they are not turns.
+    ok('folded bands carry a ▸ caret',
+        count(html, '<span class="tcaret">▸</span>') === 3
+        && count(html, '<span class="tcaret">▾</span>') === 0);
     ok('folded band shows its message count', html.includes('2 msgs'));
     ok('folded band tooltip flips to expand', html.includes('Click to expand this turn'));
 
     t.click('t-expandall');
     html = t.appHtml();
     ok('expand all opens everything', count(html, 'turnhdr closed') === 0 && count(html, ' tclosed"') === 0);
-    ok('open bands carry a ▾ caret', count(html, '▾') === 3);
+    ok('open bands carry a ▾ caret', count(html, '<span class="tcaret">▾</span>') === 3);
 
     t.click('t-collapseall');
     html = t.appHtml();

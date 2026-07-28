@@ -88,19 +88,36 @@
 
     const sel = () => (DATA.sessions || []).find(s => s.id === DATA.selected);
 
+    /**
+     * The right-click contract for a session row.
+     *
+     * `data-vscode-context` hands the row's identity to VS Code, which builds
+     * the menu from the `webview/context` entries in package.json — the
+     * standard Copy/Paste items stay (`preventDefaultContextMenuItems: false`)
+     * and the session's own actions are appended to them. This is deliberately
+     * NOT a `contextmenu` listener: hijacking the right-click to open a rename
+     * box straight away took the normal menu away from the page and left rename
+     * as the only thing a right-click could ever mean.
+     */
+    const ctxAttr = o => `data-vscode-context="${JSON.stringify(o)
+        .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}"`;
+
     function sessionList() {
-        // Agent name alone cannot tell two sessions of the same agent apart —
-        // the session's own title goes on the row, and right-click renames it
-        // (the same rename as the side panel's, on the same store).
+        // Agent name alone cannot tell two sessions of the same agent apart, so
+        // the row carries the agent AND the session's own name — the same name
+        // the side panel and the viewer show.
         const rows = (DATA.sessions || []).map(s => `
             <div class="srow${s.id === DATA.selected ? ' sel' : ''}" data-sel="${C.esc(s.id)}"
-                 data-rename="${C.esc(s.sessionId || '')}" data-title="${C.esc(s.title || '')}"
-                 title="${C.esc(s.title || 'not named yet')} — right-click to rename">
+                 ${ctxAttr({
+                     webviewSection: 'afConsoleSession', preventDefaultContextMenuItems: false,
+                     sessionId: s.sessionId || '', title: s.title || '', agentName: s.agentName || ''
+                 })}
+                 title="${C.esc(s.title || 'not named yet')} — right-click for session actions">
                 <div class="h">
                     <span class="n"><span class="dot" style="background:${STATUS_COLOR[s.status] || '#888'}"></span>${C.esc(s.agentName)}</span>
                     <span class="m">${C.fmtUSD(s.cost)}</span>
                 </div>
-                <div class="t2">${C.esc(s.title || '(no title yet)')}</div>
+                <div class="t2">${C.esc(s.title || '(no name yet)')}</div>
                 <div class="m">${C.esc(s.status)}${s.queued ? ` · ${s.queued} queued` : ''}${s.turns ? ` · ${s.turns} turns` : ''} · ${relTime(s.lastTs)}</div>
             </div>`).join('');
         // A session a live process already owns cannot be joined — resuming it
@@ -109,8 +126,11 @@
         const owned = new Set(DATA.owned || []);
         const resume = st.showResume ? `<div style="margin-top:6px">${(DATA.resumable || []).map(r => `
             <div class="srow${owned.has(r.sessionId) ? ' owned' : ''}" data-resume="${C.esc(r.sessionId)}"
-                 data-rtitle="${C.esc(r.title)}"
-                 title="${owned.has(r.sessionId) ? 'Open right now in a terminal or another process — Agent Farm cannot join a running session' : C.esc(r.cwd) + ' — right-click to rename'}">
+                 ${ctxAttr({
+                     webviewSection: 'afConsoleResumable', preventDefaultContextMenuItems: false,
+                     sessionId: r.sessionId, title: r.title || '', agentName: r.agentName || '', cwd: r.cwd || ''
+                 })}
+                 title="${owned.has(r.sessionId) ? 'Open right now in a terminal or another process — Agent Farm cannot join a running session' : C.esc(r.cwd) + ' — right-click for session actions'}">
                 <div class="n">${r.pinned ? '📌 ' : ''}${C.esc(r.title)}</div>
                 <div class="m">${C.esc(r.agentName)} · ${relTime(r.ts)} ago · ${C.fmtUSD(r.cost)}</div>
             </div>`).join('') || '<div class="empty">No transcripts yet.</div>'}</div>` : '';
@@ -257,17 +277,8 @@
                 type: 'resume', sessionId: r.dataset.resume,
                 model: st.model, effort: st.effort, permissionMode: st.permissionMode
             })));
-        // Right-click renames — on a hosted session and on a resumable one
-        // alike, because "rename it here" should mean the same thing wherever
-        // the row happens to live.
-        const wireRename = (el, sid, title) => el.addEventListener('contextmenu', ev => {
-            ev.preventDefault();
-            vscode.postMessage({ type: 'rename', sessionId: sid || '', title: title || '' });
-        });
-        document.querySelectorAll('[data-rename]').forEach(r =>
-            wireRename(r, r.dataset.rename, r.dataset.title));
-        document.querySelectorAll('[data-resume]').forEach(r =>
-            wireRename(r, r.dataset.resume, r.dataset.rtitle));
+        // Right-click is NOT wired here on purpose — see ctxAttr: the rows carry
+        // their identity in `data-vscode-context` and VS Code builds the menu.
         document.querySelectorAll('[data-open]').forEach(b =>
             b.addEventListener('click', () => vscode.postMessage({ type: 'openFile', file: b.dataset.open, diff: false })));
         document.querySelectorAll('[data-diff]').forEach(b =>

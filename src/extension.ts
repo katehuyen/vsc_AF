@@ -1270,6 +1270,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ToolboxPanel.refreshIfOpen();
     };
 
+    /**
+     * Give a session the user's own name (empty restores the automatic title).
+     *
+     * The one place that writes it, so a rename means the same thing from the
+     * side panel, the Console row, the session's own page and the bridge — and
+     * every surface showing that name is told, tab captions included.
+     */
+    const applySessionTitle = async (sessionId: string, name: string): Promise<string> => {
+        const titles = { ...sessionTitles() };
+        if (name.trim()) { titles[sessionId] = name.trim(); }
+        else { delete titles[sessionId]; }
+        await context.globalState.update(TITLES_KEY, titles);
+        index.setTitleOverrides(titles);
+        refreshAll();
+        ConsolePanel.refreshIfOpen();
+        SessionViewerPanel.refreshOpen();
+        return titles[sessionId] ?? '';
+    };
+
     index.onDidUpdate(() => {
         insights = applyInsightDismiss(buildInsights(agents, index, healthConfig()));
         notifyBudgets();
@@ -2707,6 +2726,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const command = startClaudeSession(agent, o);
                 need(command, 'launch rejected — see the warning in the window');
                 return { agent: agent.name, cwd: agent.dir, command };
+            }
+        },
+        {
+            op: 'sessions.rename',
+            describe: 'Give a session the user\'s own name — the same rename the side panel, the Console rows and the session page do, on the same store. An empty name restores the automatic title. args: sessionId, name',
+            handler: async (args) => {
+                const sessionId = argStr(args, 'sessionId');
+                const title = await applySessionTitle(sessionId, optStr(args, 'name'));
+                return { sessionId, title: title || null };
             }
         },
         {
@@ -5430,12 +5458,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (agent) { AgentDetailPanel.show(agent.id, detailDeps); }
         }),
 
-        vscode.commands.registerCommand('agentfarm.openSession', (file?: string, focusTs?: number) => {
-            if (typeof file === 'string' && file) {
-                SessionViewerPanel.show(file, viewerDeps,
-                    typeof focusTs === 'number' && focusTs > 0 ? focusTs : undefined);
-            }
-        }),
+        // Takes the transcript path, or — when it comes from a right-click menu
+        // (a tree row, a Console row) — the object that identifies the session.
+        // A menu hands its context to the command; only the id is guaranteed to
+        // be in it, so the path is resolved here.
+        vscode.commands.registerCommand('agentfarm.openSession',
+            (arg?: string | { file?: string; sessionId?: string }, focusTs?: number) => {
+                let file = typeof arg === 'string' ? arg : arg?.file;
+                if (!file && arg && typeof arg === 'object' && arg.sessionId) {
+                    file = index.all().find(s => s.sessionId === arg.sessionId)?.file;
+                    if (!file) {
+                        void vscode.window.showInformationMessage(
+                            'Agent Farm: no transcript on disk for that session yet.');
+                        return;
+                    }
+                }
+                if (file) {
+                    SessionViewerPanel.show(file, viewerDeps,
+                        typeof focusTs === 'number' && focusTs > 0 ? focusTs : undefined);
+                }
+            }),
 
         // Z1: one-click working examples — the shortest path from "installed"
         // to "something actually runs". Each is a real, removable definition.
@@ -6187,17 +6229,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('agentfarm.renameSession',
             async (arg?: { session?: SessionInfo } | SessionInfo) => {
                 const s = arg && 'session' in arg && arg.session ? arg.session : arg as SessionInfo | undefined;
-                if (!s?.sessionId) { return; }
+                if (!s?.sessionId) {
+                    // A row WAS right-clicked but carries no id yet: that only
+                    // happens to a brand-new Console session before its first
+                    // turn. Say so — silence would read as a broken menu item.
+                    if (arg) {
+                        void vscode.window.showInformationMessage(
+                            'Agent Farm: this session has not reported its id yet — say something in it first, then rename it.');
+                    }
+                    return;
+                }
                 const value = await vscode.window.showInputBox({
                     prompt: 'Session name (leave empty to restore the automatic title)',
                     value: s.title, ignoreFocusOut: true
                 });
                 if (value === undefined) { return; }
-                const titles = { ...sessionTitles() };
-                if (value.trim()) { titles[s.sessionId] = value.trim(); }
-                else { delete titles[s.sessionId]; }
-                await context.globalState.update(TITLES_KEY, titles);
-                index.setTitleOverrides(titles);
+                await applySessionTitle(s.sessionId, value);
             }),
 
         vscode.commands.registerCommand('agentfarm.openTimeline', () => {

@@ -157,7 +157,9 @@ Tek bir ajanın komuta ekranı:
 
 ### Oturum Görüntüleyici
 
-> **Metin kesilmez (3.30.1).** Sayfanın varlık sebebi transkripti **okumak** olduğu için **kullanıcı ve ajan metni asla kırpılmaz** — uzunsa uzun. Yalnızca **araç yükleri** (büyük bir dosyanın `Read`'i, dev bir JSON sonucu) bir tavana takılır: 200.000 karakter, ve tavana değdiğinde bunu açıkça söyleyip "Open raw JSONL"a yönlendirir. Üstteki satırda ayrıca **✎ Rename** (oturuma ad ver) ve **💬 Resume in Console** vardır.
+> **Metin kesilmez (3.30.1).** Sayfanın varlık sebebi transkripti **okumak** olduğu için **kullanıcı ve ajan metni asla kırpılmaz** — uzunsa uzun. Yalnızca **araç yükleri** (büyük bir dosyanın `Read`'i, dev bir JSON sonucu) bir tavana takılır: 200.000 karakter, ve tavana değdiğinde bunu açıkça söyleyip "Open raw JSONL"a yönlendirir. Üstteki satırda ayrıca **✎ Rename** (oturuma ad ver) ve **💬 Console** düğmesi (menüsünde *Resume this session here*) vardır.
+>
+> **Sekme başlığı (3.30.2):** `Session #3f2a91b8 — Kalan eksikler`. Önde **kimlik**, arkada **ad**. Bir webview sekmesinin VS Code'da yalnızca **tek bir metni** vardır (`WebviewPanel.title`); ayrı bir tooltip API'si yoktur, üzerine gelince görünen şey aynı başlıktır. Dar sekmede gördüğün kısım kimlik, fare ile üzerine gelince kırpılmadan görünen tam metin ise adı da içerir — ikisini tek metinde barındırmanın tek yolu budur.
 
 Bir oturumun ham JSONL kaydını okunur konuşmaya çevirir:
 
@@ -220,6 +222,8 @@ Filodaki son olayların canlı akışı: kullanıcı komutları (prompt), araç 
 
 **Senin kurulumun, senin aboneliğin:** bizim bir API anahtarımız yok, maliyet modeli değişmiyor, transkript yine `~/.claude/projects` altına yazılıyor — yani mevcut analitik / sağlık / zaman çizelgesi motorlarının hiçbiri bozulmuyor.
 
+**Soldaki satıra sağ tık = VS Code'un kendi menüsü (3.30.2).** Barındırılan karta da, aşağıdaki devam ettirilebilir satıra da sağ tıkladığında **standart menü** (Copy/Paste vb.) açılır ve altına o oturumun eylemleri eklenir: **Rename Session…**, **Open Session Transcript**, devam ettirilebilir satırda ayrıca **Resume in Console**. Sağ tık artık doğrudan bir yeniden adlandırma kutusu açmıyor — bir sağ tıkın tek anlamı olması, menüyü tamamen ortadan kaldırmak demekti. Kartlarda ajan adının yanında **oturumun adı** da yazar; devam ettirilen bir oturum kimliğini **süreç doğmadan** bilir, dolayısıyla adı ve yeniden adlandırması ilk andan itibaren çalışır ("bu oturum kimliğini bildirmedi" hatası buradan geliyordu).
+
 ### Kompozitör
 
 Yazma kutusunun altında **ajan · model · efor · izin modu** — hepsi launcher'ın sözlüğünden (`core/launch.ts`), yani eklentide tek bir sözlük var. `Ctrl+Enter` gönderir.
@@ -248,7 +252,7 @@ Console sekmesini kapatmak konuşmayı **öldürmez**; oturumlar sen bitirince y
 
 ### Nereden açılır
 
-**Konusu olan iki sayfada Console düğmesi o konuyu kasteder (3.30.1):** ajan sayfasında **💬 Talk in Console** (o ajan seçili), oturum sayfasında **💬 Resume in Console** (o oturum). Her ikisinin yanında küçük bir **↗** durur ve Console **sayfasını** açar — yani hiçbir şey kaybolmaz.
+**Konusu olan iki sayfada Console düğmesi o konuyu kasteder (3.30.1; 3.30.2'de tek düğme):** ajan ve oturum sayfalarında nav'daki **💬 Console ▾** *tek* düğmedir ve küçük bir menü açar — üstte o sayfanın kendi anlamı (**Talk to this agent** / **Resume this session here**), altında **↗ Open the Console page**. Eskiden yan yana iki düğmeydi; aynı yere giden iki düğme araç çubuğunun dörtte birini yiyordu.
 
 - Global nav'daki **💬 Console** (her sayfada) · **`Ctrl+Alt+C`**
 - Sol paneldeki **Agents** başlığındaki **💬** düğmesi
@@ -294,6 +298,8 @@ Alt kısımda **profiller**: *Save this as a profile…* mevcut seçimi `agentFa
 > **‼️ Kritik ayrım:** Claude Code **her** oturuma bir ad verir — kimse ad vermediyse kendisi uydurur (`basit-2e`, `developer-07`) ve bunu kayıtta **`nameSource: "derived"`** diye işaretler. Agent Farm **yalnızca insanın seçtiği adı** benimser (`nameSource` "derived" dışında bir şeyse, ya da adı zaten kendisi `-n` ile geçirdiyse); işaretsiz bir ada güvenilmez. **Ad vermeden açtığın oturum, eskiden olduğu gibi konuşmanın kendi ilk cümlesinden başlığını alır.**
 
 Bir oturumun başlığının üç kaynağı vardır, bu sırayla: **senin verdiğin ad (Rename) → başlatılırken verilen ad (`-n`) → konuşmadan türetilen başlık**. Adın örttüğü başlık kaybolmaz, satırın tooltip'inde durur.
+
+**Ad vermenin üç yeri (3.29.1; 3.30.2'de tamamlandı)** — hepsi aynı depoya yazar, yani bir yerde verilen ad **her yerde** görünür: sol paneldeki oturum satırına sağ tık · **Console'un sol panelindeki satıra sağ tık** (barındırılan kartlar da, aşağıdaki devam ettirilebilir liste de) · oturumun kendi sayfasındaki **✎ Rename**. Ad değiştiği an ağaçlar, Console satırları ve açık transkript sekmelerinin başlıkları birlikte güncellenir. Köprüde karşılığı **`sessions.rename`** (`sessionId`, `name`; boş `name` otomatik başlığı geri getirir) — yani bir ajana "şu oturumun adını şu yap" denebilir.
 
 Serbest metin (ad, ilk cümle) her zaman tırnaklanır: `"` tek tırnağa döner, backtick (PowerShell kaçış karakteri) düşer, satır sonları boşluk olur — üç kabuğun (PowerShell · cmd · sh) hiçbirinde tırnak dışına taşamaz. `$` ve `%` **bilerek korunur**: kullanıcının kendi metnini sessizce bozmaktansa komut satırını göstermek doğru olanıdır (kabuk bir değişkeni genişletirse **Start satırında görürsün**).
 
@@ -355,7 +361,9 @@ Global nav'daki **Agents** sekmesi (`Open Agent Portfolio`). Ajan başına tek s
 
 ### Ajan koda ne yaptı
 
-Her oturumun transkripti `Edit` / `Write` / `MultiEdit` / `NotebookEdit` çağrılarını **kendi öncesi-sonrası metniyle** zaten taşıyordu; hiçbir yerde gösterilmiyordu. Oturum Görüntüleyici artık **Files changed** kutusuyla açılıyor: her dosya, yazma sayısı, ±satır, hangi turların dokunduğu — ve dosyayı açınca **oturumun kendi hunk'ları**, kırmızı üstte yeşil altta.
+Her oturumun transkripti `Edit` / `Write` / `MultiEdit` / `NotebookEdit` çağrılarını **kendi öncesi-sonrası metniyle** zaten taşıyordu; hiçbir yerde gösterilmiyordu. Oturum Görüntüleyicideki **Files changed** kutusu bunu gösterir: her dosya, yazma sayısı, ±satır, hangi turların dokunduğu — ve dosyayı açınca **oturumun kendi hunk'ları**, kırmızı üstte yeşil altta.
+
+- **Kutu kapalı gelir ve sen ne yaptıysan öyle kalır (3.30.2).** Açıp kapatma tercihi kalıcıdır: canlı bir oturumda saniyede bir gelen yeniden çizimler, ayar değişince sayfanın baştan üretilmesi ya da pencerenin yeniden yüklenmesi onu bir daha açmaz. Kutu yalnızca **gerçekten dosya yazmış** oturumlarda görünür — her sayfada çıkmamasının sebebi budur.
 
 - Bu, **o oturumun değiştirdiği şeydir** — dosyanın bugünkü hâli değil. Sonraki bir oturumun işi asla bunun gibi görünmez.
 - **vs HEAD** düğmesi yanında durur ve *başka* soruyu sorar: "şu an bu dosyada commit edilmemiş ne var" — VS Code'un kendi diff görünümünde açılır, git deposu yoksa dürüstçe söyler.

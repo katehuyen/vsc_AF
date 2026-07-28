@@ -84,6 +84,21 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         permissionMode: 'manual', cwd: 'D:/a/dev'
     });
     ok('init adopts claude\'s own session id', s.sessionId === 'sid-9');
+    // A RESUMED session's id is ours before the process even spawns, and the
+    // row's name, its rename and its transcript all hang off that id. Waiting
+    // for init to report it back left the row nameless — and "this session has
+    // not reported its id yet" was the answer to a right-click on it.
+    {
+        const resumed = newSessionState({
+            id: 'c9', agentId: 'a', agentName: 'dev', cwd: 'D:/a/dev', now: NOW, sessionId: 'sid-1'
+        });
+        ok('a resumed session knows its id before the CLI says a word', resumed.sessionId === 'sid-1');
+        ok('…a brand new one honestly has none', fresh().sessionId === undefined);
+        ok('…and the id the CLI reports still wins',
+            reduce(resumed, { type: 'system', subtype: 'init', session_id: 'sid-2' }).sessionId === 'sid-2');
+        const host = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'consolehost.ts'), 'utf8');
+        ok('…the host seeds it from --resume', /sessionId: init\.resume/.test(host));
+    }
     ok('…the model and the permission mode it really started in',
         s.model === 'claude-haiku-4-5' && s.permissionMode === 'manual');
     ok('…and the session becomes usable', s.status === 'idle');
@@ -244,8 +259,16 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         /presetAgent/.test(js));
     ok('a session row carries its own title, not just the agent name',
         /class="t2"/.test(js));
-    ok('…and right-click renames it, the same rename as everywhere else',
-        /contextmenu/.test(js) && /type: 'rename'/.test(js));
+    // Right-click must reach VS Code's OWN menu (Copy/Paste and the session's
+    // actions together) — a `contextmenu` listener that opened a rename box
+    // straight away is exactly what this forbids.
+    ok('…and right-click hands the row to VS Code\'s context menu, not to a rename box',
+        /data-vscode-context/.test(js)
+        && !/addEventListener\('contextmenu'/.test(js) && !/type: 'rename'/.test(js));
+    ok('…keeping the default Copy/Paste items in it',
+        /preventDefaultContextMenuItems: false/.test(js));
+    ok('…on the hosted rows and the resumable ones alike',
+        /webviewSection: 'afConsoleSession'/.test(js) && /webviewSection: 'afConsoleResumable'/.test(js));
 }
 
 // ---------- one name, three places to set it ----------
@@ -255,26 +278,49 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     ok('1. the side panel still renames a session',
         menus.some(m => m.command === 'agentfarm.renameSession'));
     const cjs = fs.readFileSync(path.join(__dirname, '..', 'media', 'console.js'), 'utf8');
-    ok('2. the Console renames from a row', /type: 'rename'/.test(cjs));
+    const web = pkg.contributes.menus['webview/context'] || [];
+    ok('2. the Console renames from a row — through the same command',
+        /data-vscode-context/.test(cjs)
+        && web.some(m => m.command === 'agentfarm.renameSession'
+            && /afConsole\(Session\|Resumable\)/.test(m.when)));
     const vjs = fs.readFileSync(path.join(__dirname, '..', 'media', 'sessionViewer.js'), 'utf8');
     ok('3. the session\'s own page has a rename button', /id="renamesess"/.test(vjs));
+    const extSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    ok('a renamed session is renamed everywhere at once (trees, Console rows, open tabs)',
+        /const applySessionTitle/.test(extSrc)
+        && /ConsolePanel\.refreshIfOpen\(\);\s*\n\s*SessionViewerPanel\.refreshOpen\(\);/.test(extSrc));
+    // The Console row's menu is a real menu: resume and the transcript are on it
+    // too, so a right-click is a place to work from, not a single shortcut.
+    ok('a resumable row can be resumed from that menu',
+        web.some(m => m.command === 'agentfarm.resumeInConsole' && m.when.includes('afConsoleResumable')));
+    ok('…and any row can open its transcript from it',
+        web.some(m => m.command === 'agentfarm.openSession'));
     // The two pages that HAVE a subject claim the Console nav button for it,
     // instead of carrying a second button that means almost the same thing.
     ok('a session page claims the Console nav button for "resume THIS session"',
-        /navActions:/.test(vjs) && /Resume in Console/.test(vjs));
+        /navActions:/.test(vjs) && /Resume this session here/.test(vjs));
     const ajs = fs.readFileSync(path.join(__dirname, '..', 'media', 'agentDetail.js'), 'utf8');
     ok('an agent page claims it for "talk to THIS agent"',
-        /navActions:/.test(ajs) && /Talk in Console/.test(ajs));
+        /navActions:/.test(ajs) && /Talk to this agent/.test(ajs));
     const hdr = fs.readFileSync(path.join(__dirname, '..', 'media', 'pageHeader.js'), 'utf8');
-    ok('…and a claimed button still offers the plain page next to it',
-        /data-afclaim/.test(hdr) && /af-nav-plain/.test(hdr));
+    // ONE button, two meanings in a menu under it — the pair of buttons it
+    // replaced ate a quarter of the toolbar's width.
+    ok('…and a claimed button stays ONE button with a menu, not two buttons',
+        /data-afclaim=/.test(hdr) && /af-claim-menu/.test(hdr) && !/af-nav-plain/.test(hdr));
+    ok('…whose menu still offers the plain page',
+        /data-afclaimmenu[\s\S]{0,400}data-afnav="\$\{n\.id\}"/.test(hdr));
     ok('a session row can be resumed into the Console from the side panel',
         menus.some(m => m.command === 'agentfarm.resumeInConsole'));
     const viewer = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'sessionViewer.ts'), 'utf8');
-    ok('the viewer tab is named after the session, not a fragment of its id',
-        /this\.panel\.title = title/.test(viewer));
-    ok('the Files box remembers being closed instead of re-opening every render',
-        /filesOpen \? ' open' : ''/.test(vjs) && /filesOpen = filebox\.open/.test(vjs));
+    // A webview tab has ONE string (VS Code gives it no tooltip of its own):
+    // the id leads, because that is what the narrow tab shows, and the name
+    // rides behind it for the hover, which never truncates.
+    ok('the viewer tab leads with the session id and carries the name behind it',
+        /`Session #\$\{String\(data\.sessionId \?\? ''\)\.slice\(0, 8\)\}\$\{name \? ' — ' \+ name : ''\}`/.test(viewer));
+    ok('the Files box starts closed and stays as the user left it',
+        /let filesOpen = false;/.test(vjs)
+        && /filesOpen = savedState\.filesOpen === true;/.test(vjs)
+        && /keepState\(\{ filesOpen \}\)/.test(vjs));
 }
 
 // ---------- the nav is ordered by meaning ----------

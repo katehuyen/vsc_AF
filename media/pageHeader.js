@@ -19,6 +19,22 @@
         .af-head-bar { display:flex; gap:8px 10px; flex-wrap:wrap; align-items:center; justify-content:flex-end; margin-left:auto; min-width:0; }
         .af-head-actions, .af-head-nav { display:flex; gap:8px; flex-wrap:wrap; align-items:center; justify-content:flex-end; min-width:0; }
         .af-head-nav.has-actions { border-left:1px solid var(--vscode-widget-border,#4444); margin-left:2px; padding-left:12px; }
+        /* A nav button a page has claimed (see navActions): ONE button, whose
+           two meanings live in a menu under it. Two buttons side by side ate a
+           quarter of the toolbar's width for a destination nobody reaches twice. */
+        .af-claim { position:relative; display:inline-flex; }
+        .af-claim-menu { position:absolute; top:calc(100% + 4px); right:0; z-index:40; min-width:230px;
+            display:flex; flex-direction:column; padding:4px; border-radius:6px;
+            border:1px solid var(--vscode-menu-border, var(--vscode-widget-border,#4444));
+            background:var(--vscode-menu-background, var(--vscode-editorWidget-background));
+            box-shadow:0 3px 10px #0006; }
+        .af-claim-menu[hidden] { display:none; }
+        .af-claim-menu button { text-align:left; white-space:nowrap; border:none; border-radius:4px;
+            background:transparent; color:var(--vscode-menu-foreground, var(--vscode-foreground));
+            padding:5px 9px; font-size:12px; cursor:pointer; }
+        .af-claim-menu button:hover { background:var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground));
+            color:var(--vscode-menu-selectionForeground, inherit); }
+        .af-claim-menu .af-claim-hint { font-size:10px; opacity:.65; padding:1px 9px 4px; }
     </style>`;
 
     // Order is meaning, not arrival: the board you start from, the place you
@@ -75,10 +91,11 @@
      *   related,     // optional [{nav, label}] — related panels, after Live Timeline
      *   searchTitle, // optional tooltip when ⌕ Search is page-scoped
      *   refresh,     // false to omit the Refresh button (pages with nothing to re-scan)
-     *   navActions,  // optional { <navId>: {label, title} } — this page claims that
-     *                //   nav button for its own subject; it renders as a split
-     *                //   (claimed action + ▸ that still opens the page). Pass the
-     *                //   matching { <navId>: {onClick} } to wire().
+     *   navActions,  // optional { <navId>: {label, title, hint} } — this page claims
+     *                //   that nav button for its own subject; the button stays ONE
+     *                //   button and opens a small menu: the claimed action first,
+     *                //   then the plain page. Pass the matching
+     *                //   { <navId>: {onClick} } to wire().
      *   guide        // guide anchor for ? Guide (omit → no button)
      * }
      */
@@ -93,14 +110,22 @@
             const label = (n.id === 'notices' && unread > 0) ? `${n.label} (${unread})` : n.label;
             // A page may claim a nav button for its own subject: on the agent
             // page "Console" should mean *talk to THIS agent*, on a session's
-            // page *continue THIS session there*. The button splits rather
-            // than changing meaning silently — the ↗ still opens the page, so
-            // nothing that used to work stops working.
+            // page *continue THIS session there*. The button stays one button
+            // and never changes meaning silently — it opens a two-item menu,
+            // the claimed action first and the plain page under it, so nothing
+            // that used to work stops working and the toolbar keeps its width.
             const claim = (o.navActions || {})[n.id];
             if (claim) {
-                cluster.push(
-                    `<button class="secondary" data-afclaim="${n.id}" title="${claim.title || ''}">${claim.label}</button>` +
-                    `<button class="secondary af-nav-plain" data-afnav="${n.id}" title="Open the ${label.replace(/^[^\w]+\s*/, '')} page itself">↗</button>`);
+                const plain = label.replace(/^[^\w]+\s*/, '');
+                cluster.push(`<span class="af-claim">
+                    <button class="secondary" data-afclaim="${n.id}" aria-haspopup="true" aria-expanded="false"
+                        title="${claim.title || ''}">${label} ▾</button>
+                    <div class="af-claim-menu" data-afclaimmenu="${n.id}" hidden>
+                        <button data-afclaimgo="${n.id}">${claim.label}</button>
+                        ${claim.hint ? `<div class="af-claim-hint">${claim.hint}</div>` : ''}
+                        <button data-afnav="${n.id}">↗ Open the ${plain} page</button>
+                    </div>
+                </span>`);
                 continue;
             }
             cluster.push(`<button class="secondary" data-afnav="${n.id}">${label}</button>`);
@@ -141,12 +166,36 @@
     function wire(vscode, hooks) {
         document.querySelectorAll('[data-afnav]').forEach(b =>
             b.addEventListener('click', () => vscode.postMessage({ type: 'afnav', to: b.dataset.afnav })));
-        // The page's own meaning for a claimed nav button (see navActions).
+        // A claimed nav button opens its menu; the menu's first item is the
+        // page's own meaning, the second is the plain page (wired by data-afnav
+        // above). Any click elsewhere, or Escape, closes it.
+        const closeClaims = () => document.querySelectorAll('[data-afclaimmenu]').forEach(m => {
+            m.hidden = true;
+            const btn = m.parentElement && m.parentElement.querySelector('[data-afclaim]');
+            if (btn) { btn.setAttribute('aria-expanded', 'false'); }
+        });
         document.querySelectorAll('[data-afclaim]').forEach(b =>
+            b.addEventListener('click', ev => {
+                ev.stopPropagation();
+                const menu = b.parentElement.querySelector('[data-afclaimmenu]');
+                const open = menu && menu.hidden;
+                closeClaims();
+                if (menu && open) { menu.hidden = false; b.setAttribute('aria-expanded', 'true'); }
+            }));
+        document.querySelectorAll('[data-afclaimgo]').forEach(b =>
             b.addEventListener('click', () => {
-                const claim = ((hooks && hooks.navActions) || {})[b.dataset.afclaim];
+                closeClaims();
+                const claim = ((hooks && hooks.navActions) || {})[b.dataset.afclaimgo];
                 if (claim && claim.onClick) { claim.onClick(); }
             }));
+        document.querySelectorAll('[data-afclaimmenu] [data-afnav]').forEach(b =>
+            b.addEventListener('click', closeClaims));
+        // Document-level listeners survive re-renders, so they are attached once.
+        if (!window.__afClaimWired && typeof document.addEventListener === 'function') {
+            window.__afClaimWired = true;
+            document.addEventListener('click', () => closeClaims());
+            document.addEventListener('keydown', ev => { if (ev.key === 'Escape') { closeClaims(); } });
+        }
         document.querySelectorAll('.af-refresh').forEach(b =>
             b.addEventListener('click', () => {
                 if (hooks && hooks.onRefresh) { hooks.onRefresh(); return; }
