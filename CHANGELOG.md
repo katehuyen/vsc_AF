@@ -2,7 +2,17 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
-## 3.31.0 — The Live Timeline stops showing sessions that are not there, and its rows become handles (2026-07-28)
+## 3.31.0 — The Live Timeline stops showing sessions that are not there, the Console stops fighting the reader (2026-07-28)
+
+### The Console
+
+- **‼️ A Console conversation was filed as automation, so it appeared nowhere.** A session hosted in the panel reaches the CLI over the same streaming `-p` channel a headless run uses, so its transcript says `entrypoint: sdk-cli` — and that field is what Agent Farm reads the origin from. Every sessions table, dashboard, agent page and the Turns page default to the **User** scope, so a conversation you were having *right now* left no trace anywhere: no new session row, no new turn. It was indexed and live the whole time; it was filtered out of the view. Agent Farm now **remembers the session ids its own Console hosted** (`globalStorage/console-sessions.json`, kept across reloads) and files those as user. Sessions started in the Console before this build stay classified as automation — the 🤖 scope chip shows them.
+- **‼️ The page was rebuilt whole on every streamed line — and that was the scrolling bug.** Rebuilding destroyed the textarea, recreated it and re-focused it; focusing an element scrolls it into view, so the page dragged itself back down while you were reading further up, no matter what the tail-following logic said. The Console now **builds its shell once** and writes into named slots, only when their content actually differs. Consequences: scrolled up stays scrolled up · your half-typed message and its cursor survive a streamed line · the layout stops shifting under the pointer.
+- **‼️ The tall empty gap between the conversation and the composer is gone.** The wrapper had a `min-height` and the conversation box a `max-height`, so a short conversation left a page-sized hole in the middle and the page scrolled as well as the box. The Console is a full-height app layout now: the conversation is the only scroller, the composer sits under it, and a short conversation is pushed **down onto** the composer the way a terminal does.
+- **A line you filtered out is not news you are missing.** The **↓ N new lines** pill counts only what the **show** filter lets through, and changing the filter starts the count over instead of reporting the whole conversation as new.
+- **"ctx now" keeps up.** It was read only from the CLI's occasional `thinking_tokens` event, so it froze at whatever the first one said (`ctx 800` for a whole session). It now comes off each assistant message's own usage — the same arithmetic the sessions tables do.
+
+### The Live Timeline
 
 - **‼️ A tool call that never ended was drawn as work still being done — for ever.** A `PreToolUse` whose `PostToolUse` never arrived (a closed terminal window, a crashed CLI, a killed process) left a green bar growing across the page on a session that had been over for hours. The block now stops **where the session's last event really landed** and is drawn **hollow and dashed**, with a tooltip that says so; only a tool the session itself claims to be inside (`currentTool` + `tool`/`stalled`) keeps growing.
 - **‼️ A session nobody had heard from sat on the page until something else happened.** The TTL sweep only ran when *some other* session reported a hook event, so a dead card could stay for hours on a quiet farm. It now runs on the monitor's own 30-second timer.
@@ -11,8 +21,10 @@ All notable changes to Agent Farm. Detailed release notes live in the built-in g
 - **The rows finally say who they are.** Hover a lane's name: the session's id, status and current tool, its own name, cost, tokens, context, turns, counters, folder and pid — all of it, on the row. Click the name to open the session. A row whose folder is not one of your agent folders is labelled `#3f8a1c2b` and explains itself, instead of showing a bare hex string that reads like a bug.
 - **The session cards carry a session's numbers, not just its event counts.** `(#407c78cb)` next to the name (the same handle the Console rows use), the session's own title, then cost · tokens · ctx now · turns · model, the work counters, start/duration/last-event, and where it runs (pid · terminal or Console) with a clickable folder. The title and the name open the session.
 - Bridge: **`sessions.live`** (everything the timeline shows, including `alive` — false = over, null = unknowable), **`sessions.end`**, **`sessions.dismiss`** (`sessionId`, or `gone:true` to sweep). An agent can now see and settle live sessions the same way you can.
+### Everywhere
+
 - **‼️ The Agents page opened empty until you pressed Refresh.** It (and the Console and Studio pages) read `window.AF_DATA`, a global nothing sets — the shell injects `window.__DATA__`. The other two masked it with a refresh on open; the Agents page had none, so it showed a blank table every time.
-- 55 checks added across the timeline page, the live monitor and the bridge. Suite: **78 files, 3010 checks green.**
+- 70 checks added across the timeline page, the Console page, the live monitor, the session index and the bridge. Suite: **78 files, 3025 checks green.**
 
 ## 3.30.4 — The Console stops pulling the page away from you, and its rows say what a session costs (2026-07-28)
 

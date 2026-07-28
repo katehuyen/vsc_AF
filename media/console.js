@@ -3,6 +3,14 @@
 // `claude` process this window hosts; nothing is simulated, and where the CLI
 // cannot do something (answer a permission dialog) the UI says what it CAN do
 // instead of pretending.
+//
+// The page is built ONCE and then patched. A streaming conversation re-renders
+// several times a second, and rebuilding the whole page each time destroyed and
+// recreated the textarea you were typing in — which then had to be re-focused,
+// which scrolled it into view, which dragged the page down while you were
+// reading something further up. Now the shell is built when the *shape* changes
+// (a different session, a different composer mode) and everything else is
+// written into named slots, and only when its content actually differs.
 (function () {
     'use strict';
 
@@ -23,10 +31,18 @@
         vscode.setState(all);
     };
 
+    // The page is an app, not a document: it fills the window, the conversation
+    // is the only thing that scrolls, and the composer stays where you left it.
+    // Before this, the wrapper had a `min-height` and the conversation box a
+    // `max-height` — so a short conversation left a tall empty gap between the
+    // last line and the composer, and the whole page scrolled as well as the box.
     const STYLE = `<style>
-        .cwrap { display:flex; gap:14px; align-items:stretch; min-height:70vh; }
-        .clist { flex:0 0 250px; display:flex; flex-direction:column; gap:6px; min-width:0; }
-        .cmain { flex:1 1 auto; display:flex; flex-direction:column; min-width:0; }
+        html, body { height:100%; }
+        body { overflow:auto; padding-bottom:14px; }
+        #app { min-height:100%; display:flex; flex-direction:column; }
+        .cwrap { display:flex; gap:14px; align-items:stretch; flex:1 1 auto; min-height:340px; }
+        .clist { flex:0 0 250px; display:flex; flex-direction:column; gap:6px; min-width:0; overflow-y:auto; }
+        .cmain { flex:1 1 auto; display:flex; flex-direction:column; min-width:0; min-height:0; }
         .srow { border:1px solid var(--vscode-widget-border,#4443); border-radius:7px; padding:7px 9px;
             cursor:pointer; background:var(--vscode-editor-background); }
         .srow:hover { background:var(--vscode-list-hoverBackground); }
@@ -39,13 +55,19 @@
         .srow .t2 { font-size:11px; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .dot { width:8px; height:8px; border-radius:50%; flex:none; display:inline-block; }
         .talkwrap { position:relative; display:flex; flex-direction:column; flex:1 1 auto; min-height:0; }
-        .talk { flex:1 1 auto; overflow-y:auto; max-height:62vh; padding:4px 2px 10px;
-            border:1px solid var(--vscode-widget-border,#4443); border-radius:8px; }
+        .talk { flex:1 1 auto; min-height:0; overflow-y:auto; padding:4px 2px 10px;
+            border:1px solid var(--vscode-widget-border,#4443); border-radius:8px;
+            display:flex; flex-direction:column; }
+        /* A short conversation sits ON the composer, the way a terminal does —
+           margin-top:auto rather than justify-content:flex-end, which would make
+           the top of a long conversation unreachable. */
+        .talkinner { margin-top:auto; }
         /* the way back down, offered rather than forced */
         .jump { position:absolute; left:50%; transform:translateX(-50%); bottom:10px; z-index:5;
             font-size:11px; padding:3px 12px; border-radius:12px; box-shadow:0 2px 8px #0005; }
         .jump[hidden] { display:none; }
         .hiddenote { font-size:10px; opacity:.6; padding:3px 4px 0; }
+        .hiddenote:empty { display:none; }
         /* the show-filter lives in the composer, at the BOTTOM of the page, so
            its menu opens upwards instead of off the edge */
         .crow .afms-menu { top:auto; bottom:calc(100% + 4px); }
@@ -67,9 +89,11 @@
             background:color-mix(in srgb, var(--vscode-editorWarning-foreground,#cca700) 12%, transparent); }
         .permbox .t { font-weight:600; font-size:12px; }
         .permbox .d { font-size:11px; opacity:.85; margin:4px 0 8px; }
-        .composer { margin-top:8px; border:1px solid var(--vscode-widget-border,#4443); border-radius:8px; padding:8px; }
-        .composer textarea { width:100%; min-height:64px; resize:vertical; font:inherit; font-size:13px;
-            border-radius:6px; padding:7px 9px; border:1px solid var(--vscode-widget-border,#4443);
+        .composer { margin-top:8px; flex:none; border:1px solid var(--vscode-widget-border,#4443);
+            border-radius:8px; padding:8px; }
+        .composer textarea { width:100%; min-height:64px; max-height:30vh; resize:vertical; font:inherit;
+            font-size:13px; border-radius:6px; padding:7px 9px;
+            border:1px solid var(--vscode-widget-border,#4443);
             background:var(--vscode-input-background); color:var(--vscode-input-foreground); }
         .crow { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-top:7px; }
         .crow select { font-size:11px; padding:2px 4px; }
@@ -102,34 +126,6 @@
 
     const sel = () => (DATA.sessions || []).find(s => s.id === DATA.selected);
 
-    // ---- following the tail -------------------------------------------------
-    // "At the bottom" has to have slack: a streamed line can land mid-frame and
-    // sub-pixel rounding makes an exact comparison flicker.
-    const BOTTOM_SLACK = 40;
-    const atBottom = el => el.scrollHeight - el.scrollTop - el.clientHeight <= BOTTOM_SLACK;
-    /** lines that arrived while the reader was scrolled up */
-    let unseen = 0;
-    /** how many lines the last render drew — the yardstick for "arrived" */
-    let shownCount = 0;
-    /** the next render lands at the tail whatever the old scroll said — set when
-     *  the reader themselves changed what is on screen (a different session) */
-    let forceTail = true;
-
-    function paintJump() {
-        const btn = document.getElementById('c-jump');
-        if (!btn) { return; }
-        btn.hidden = unseen <= 0;
-        btn.textContent = `↓ ${unseen} new line${unseen === 1 ? '' : 's'}`;
-    }
-
-    function jumpToEnd() {
-        const el = document.getElementById('talk');
-        if (!el) { return; }
-        el.scrollTop = el.scrollHeight;
-        unseen = 0;
-        paintJump();
-    }
-
     /**
      * The right-click contract for a session row.
      *
@@ -148,48 +144,6 @@
      *  a terminal or a log line, so it rides with the agent's name. */
     const who = (agentName, sessionId) =>
         `${C.esc(agentName || 'session')}${sessionId ? ` <span class="sid">(#${C.esc(String(sessionId).slice(0, 8))})</span>` : ''}`;
-
-    function sessionList() {
-        // Agent name alone cannot tell two sessions of the same agent apart, so
-        // the row carries the agent, the session id, the session's own name and
-        // its numbers: cost (with the tokens it bought) on the top line, and
-        // "ctx now" — what the window is holding — on the bottom one.
-        const rows = (DATA.sessions || []).map(s => `
-            <div class="srow${s.id === DATA.selected ? ' sel' : ''}" data-sel="${C.esc(s.id)}"
-                 ${ctxAttr({
-                     webviewSection: 'afConsoleSession', preventDefaultContextMenuItems: false,
-                     sessionId: s.sessionId || '', title: s.title || '',
-                     agentName: s.agentName || '', cwd: s.cwd || ''
-                 })}
-                 title="${C.esc(s.title || 'not named yet')} — right-click for session actions">
-                <div class="h">
-                    <span class="n"><span class="dot" style="background:${STATUS_COLOR[s.status] || '#888'}"></span>${who(s.agentName, s.sessionId)}</span>
-                    <span class="m" title="cost so far${s.tokens ? ' · tokens spent' : ''}">${C.fmtUSD(s.cost)}${s.tokens ? ` (${C.fmtTok(s.tokens)})` : ''}</span>
-                </div>
-                <div class="t2">${C.esc(s.title || '(no name yet)')}</div>
-                <div class="m">${C.esc(s.status)}${s.queued ? ` · ${s.queued} queued` : ''}${s.turns ? ` · ${s.turns} turns` : ''} · ${relTime(s.lastTs)}${s.contextTokens ? ` · <span title="Approximate context in the model window right now">ctx ${C.fmtTok(s.contextTokens)}</span>` : ''}</div>
-            </div>`).join('');
-        // A session a live process already owns cannot be joined — resuming it
-        // would start a second process on the same transcript. The row says so
-        // instead of offering it as if it were free.
-        const owned = new Set(DATA.owned || []);
-        const resume = st.showResume ? `<div style="margin-top:6px">${(DATA.resumable || []).map(r => `
-            <div class="srow${owned.has(r.sessionId) ? ' owned' : ''}" data-resume="${C.esc(r.sessionId)}"
-                 ${ctxAttr({
-                     webviewSection: 'afConsoleResumable', preventDefaultContextMenuItems: false,
-                     sessionId: r.sessionId, title: r.title || '', agentName: r.agentName || '', cwd: r.cwd || ''
-                 })}
-                 title="${owned.has(r.sessionId) ? 'Open right now in a terminal or another process — Agent Farm cannot join a running session' : C.esc(r.cwd) + ' — right-click for session actions'}">
-                <div class="n">${r.pinned ? '📌 ' : ''}${C.esc(r.title)}</div>
-                <div class="m">${who(r.agentName, r.sessionId)} · ${relTime(r.ts)} ago · ${C.fmtUSD(r.cost)}${r.contextTokens ? ` · <span title="Approximate context after this session's last reply — what resuming it starts from">ctx ${C.fmtTok(r.contextTokens)}</span>` : ''}</div>
-            </div>`).join('') || '<div class="empty">No transcripts yet.</div>'}</div>` : '';
-        return `<div class="clist">
-            <button id="c-new">＋ New session</button>
-            ${rows || '<div class="empty">No hosted sessions yet. Pick an agent below and say something — the process starts here, in the panel.</div>'}
-            <button class="secondary" id="c-toggle-resume" style="margin-top:6px">${st.showResume ? '▾' : '▸'} Resume an existing session</button>
-            ${resume}
-        </div>`;
-    }
 
     /**
      * The kinds of line the Console shows, and what each one matches.
@@ -248,7 +202,7 @@
     }
 
     function permissionBox(s) {
-        if (!s.pendingPermission) { return ''; }
+        if (!s || !s.pendingPermission) { return ''; }
         // Honest wording: the CLI never asked us anything — it refused the tool.
         // What a button can really do is change the session's rule and retry.
         return `<div class="permbox">
@@ -261,228 +215,374 @@
         </div>`;
     }
 
-    // The composer has two modes, and they show DIFFERENT controls — a running
-    // session has no use for an agent/model picker (both were decided when the
-    // process started and cannot change), and showing them greyed out was just
-    // a row of dead boxes. What CAN change mid-session is the permission mode,
-    // so that one stays a live control; the rest becomes a plain status line.
-    function composer(s) {
+    // ---- the pieces, each rendered on its own ---------------------------------
+
+    function sessionListHtml() {
+        // Agent name alone cannot tell two sessions of the same agent apart, so
+        // the row carries the agent, the session id, the session's own name and
+        // its numbers: cost (with the tokens it bought) on the top line, and
+        // "ctx now" — what the window is holding — on the bottom one.
+        const rows = (DATA.sessions || []).map(s => `
+            <div class="srow${s.id === DATA.selected ? ' sel' : ''}" data-sel="${C.esc(s.id)}"
+                 ${ctxAttr({
+                     webviewSection: 'afConsoleSession', preventDefaultContextMenuItems: false,
+                     sessionId: s.sessionId || '', title: s.title || '',
+                     agentName: s.agentName || '', cwd: s.cwd || ''
+                 })}
+                 title="${C.esc(s.title || 'not named yet')} — right-click for session actions">
+                <div class="h">
+                    <span class="n"><span class="dot" style="background:${STATUS_COLOR[s.status] || '#888'}"></span>${who(s.agentName, s.sessionId)}</span>
+                    <span class="m" title="cost so far${s.tokens ? ' · tokens spent' : ''}">${C.fmtUSD(s.cost)}${s.tokens ? ` (${C.fmtTok(s.tokens)})` : ''}</span>
+                </div>
+                <div class="t2">${C.esc(s.title || '(no name yet)')}</div>
+                <div class="m">${C.esc(s.status)}${s.queued ? ` · ${s.queued} queued` : ''}${s.turns ? ` · ${s.turns} turns` : ''} · ${relTime(s.lastTs)}${s.contextTokens ? ` · <span title="Approximate context in the model window right now">ctx ${C.fmtTok(s.contextTokens)}</span>` : ''}</div>
+            </div>`).join('');
+        // A session a live process already owns cannot be joined — resuming it
+        // would start a second process on the same transcript. The row says so
+        // instead of offering it as if it were free.
+        const owned = new Set(DATA.owned || []);
+        const resume = st.showResume ? `<div style="margin-top:6px">${(DATA.resumable || []).map(r => `
+            <div class="srow${owned.has(r.sessionId) ? ' owned' : ''}" data-resume="${C.esc(r.sessionId)}"
+                 ${ctxAttr({
+                     webviewSection: 'afConsoleResumable', preventDefaultContextMenuItems: false,
+                     sessionId: r.sessionId, title: r.title || '', agentName: r.agentName || '', cwd: r.cwd || ''
+                 })}
+                 title="${owned.has(r.sessionId) ? 'Open right now in a terminal or another process — Agent Farm cannot join a running session' : C.esc(r.cwd) + ' — right-click for session actions'}">
+                <div class="n">${r.pinned ? '📌 ' : ''}${C.esc(r.title)}</div>
+                <div class="m">${who(r.agentName, r.sessionId)} · ${relTime(r.ts)} ago · ${C.fmtUSD(r.cost)}${r.contextTokens ? ` · <span title="Approximate context after this session's last reply — what resuming it starts from">ctx ${C.fmtTok(r.contextTokens)}</span>` : ''}</div>
+            </div>`).join('') || '<div class="empty">No transcripts yet.</div>'}</div>` : '';
+        return `<button id="c-new">＋ New session</button>
+            ${rows || '<div class="empty">No hosted sessions yet. Pick an agent below and say something — the process starts here, in the panel.</div>'}
+            <button class="secondary" id="c-toggle-resume" style="margin-top:6px">${st.showResume ? '▾' : '▸'} Resume an existing session</button>
+            ${resume}`;
+    }
+
+    function talkHtml(s, shown) {
+        if (!s) {
+            return `<div class="empty">This is the Console: sessions run <em>here</em>, in the panel — your own <code>claude</code>, your own subscription, transcripts in the usual place.<br><br>Pick an agent below, type, and press Ctrl+Enter.</div>`;
+        }
+        const body = shown.map(messageHtml).join('')
+            || `<div class="empty">${(s.messages || []).length ? 'Every line is filtered out — widen <b>show</b> in the composer.' : 'Nothing said yet.'}</div>`;
+        return body + permissionBox(s);
+    }
+
+    /** The bits of the live composer row that change while a turn runs. */
+    function liveBitsHtml(s) {
+        if (!s) { return ''; }
+        return `${s.queued ? `<span class="qbadge" title="Waiting for the current turn to finish">${s.queued} queued</span> <button class="secondary" id="c-clearq">clear</button>` : ''}
+            ${s.status === 'working' ? '<button class="secondary" id="c-int" title="Stop the running turn — the session and its context stay">⎋ Interrupt</button>' : ''}`;
+    }
+
+    function statusHtml(s) {
+        if (!s) {
+            return `A new session opens in the chosen agent's folder and runs here, in the panel.`;
+        }
+        const dead = s.status === 'ended' || s.status === 'error';
+        return `${s.sessionId ? 'session ' + C.esc(s.sessionId.slice(0, 8)) + ' · ' : ''}${s.contextTokens ? '~' + C.fmtTok(s.contextTokens) + ' ctx · ' : ''}${C.fmtUSD(s.cost)} this session · ${s.turns} turn(s)
+            <span class="grow"></span>
+            ${s.sessionId ? '<button class="secondary" id="c-transcript">Open transcript</button>' : ''}
+            ${dead ? '<button class="secondary" id="c-forget">Remove from list</button>' : '<button class="secondary" id="c-close">End session</button>'}`;
+    }
+
+    function headerHtml(s) {
+        return window.AFHeader.html({
+            page: 'console',
+            title: 'Console',
+            sub: s
+                ? `${C.esc(s.agentName)} · ${C.esc(s.status)}${s.exitReason ? ' — ' + C.esc(s.exitReason) : ''}`
+                : `${(DATA.sessions || []).length} hosted session(s) in this window`,
+            guide: 'console',
+            related: [{ nav: 'timeline', label: 'Live Timeline' }]
+        });
+    }
+
+    // ---- following the tail ---------------------------------------------------
+    // "At the bottom" has to have slack: a streamed line can land mid-frame and
+    // sub-pixel rounding makes an exact comparison flicker.
+    const BOTTOM_SLACK = 40;
+    const atBottom = el => el.scrollHeight - el.scrollTop - el.clientHeight <= BOTTOM_SLACK;
+    /** lines that arrived while the reader was scrolled up */
+    let unseen = 0;
+    /** how many lines the last paint drew — the yardstick for "arrived" */
+    let shownCount = 0;
+
+    function paintJump() {
+        const btn = document.getElementById('c-jump');
+        if (!btn) { return; }
+        btn.hidden = unseen <= 0;
+        btn.textContent = `↓ ${unseen} new line${unseen === 1 ? '' : 's'}`;
+    }
+
+    function jumpToEnd() {
+        const el = document.getElementById('talk');
+        if (el) { el.scrollTop = el.scrollHeight; }
+        unseen = 0;
+        paintJump();
+    }
+
+    /** The reader themselves changed what is on screen — start counting over. */
+    function resetTail() {
+        unseen = 0;
+        shownCount = -1;   // the next paint is a baseline, not "new lines"
+        jumpToEnd();
+    }
+
+    // ---- the shell, built once -----------------------------------------------
+
+    /** What the shell was built for; when this changes, the shell is rebuilt. */
+    let shellKey = null;
+    /** Last html written into each slot — nothing is touched unless it differs. */
+    const written = {};
+
+    function slot(id, html) {
+        if (written[id] === html) { return false; }
+        const el = document.getElementById(id);
+        if (!el) { return false; }
+        el.innerHTML = html;
+        written[id] = html;
+        return true;
+    }
+
+    function buildShell(s) {
         const opts = (list, cur) => (list || []).map(o =>
             `<option value="${C.esc(o.id)}"${o.id === cur ? ' selected' : ''}>${C.esc(o.label || o.id)}</option>`).join('');
-        const running = s && s.status === 'working';
         const dead = s && (s.status === 'ended' || s.status === 'error');
-
-        const newRow = `<div class="crow">
-            <select id="c-agent" title="Which agent — the session opens in its folder">
-                <option value="">choose an agent…</option>
-                ${(DATA.agents || []).map(a => `<option value="${C.esc(a.id)}"${a.id === st.agentId ? ' selected' : ''}>${C.esc(a.name)}</option>`).join('')}
-            </select>
-            <select id="c-model" title="Model for the new session (--model)">${opts(DATA.models, st.model)}</select>
-            <select id="c-effort" title="Reasoning effort (--effort)">${opts(DATA.efforts, st.effort)}</select>
-            <select id="c-perm" title="What it may do without asking (--permission-mode)">${opts(DATA.permissions, st.permissionMode)}</select>
-            <span class="grow"></span>
-            <button id="c-send">Start session</button>
-        </div>`;
-
-        const liveRow = s ? `<div class="crow">
-            <span class="fixed" title="Decided when this session started — a running session cannot change them">
-                ${C.esc(s.agentName)}${s.model ? ' · ' + C.esc(String(s.model).replace(/^claude-/, '')) : ''}
-            </span>
-            <label class="permlbl" title="The one thing that CAN change mid-session — applied live">permissions
-                <select id="c-perm">${opts(DATA.permissions, s.permissionMode)}</select>
-            </label>
-            ${window.AFFilter.multi({
-                id: 'c-kinds', label: 'show', allLabel: 'show: everything',
-                options: KINDS, selected: st.kinds,
-                title: 'Which kinds of line the conversation shows — tick any combination'
-            })}
-            <span class="grow"></span>
-            ${s.queued ? `<span class="qbadge" title="Waiting for the current turn to finish">${s.queued} queued</span> <button class="secondary" id="c-clearq">clear</button>` : ''}
-            ${running ? '<button class="secondary" id="c-int" title="Stop the running turn — the session and its context stay">⎋ Interrupt</button>' : ''}
-            <button id="c-send"${dead ? ' disabled' : ''}>${running ? 'Queue' : 'Send'}</button>
-        </div>` : '';
-
         const placeholder = s
             ? (dead ? 'This session has ended — start a new one to keep talking.'
                 : 'Message ' + C.esc(s.agentName) + '…  (Ctrl+Enter sends)')
             : 'Say something to start a session…  (Ctrl+Enter sends)';
 
-        return `<div class="composer">
-            <textarea id="c-text" placeholder="${placeholder}"${dead ? ' disabled' : ''}>${C.esc(st.draft || '')}</textarea>
-            ${s ? liveRow : newRow}
-            ${s ? `<div class="crow" style="font-size:10px;opacity:.6">
-                ${s.sessionId ? 'session ' + C.esc(s.sessionId.slice(0, 8)) + ' · ' : ''}${s.contextTokens ? '~' + C.fmtTok(s.contextTokens) + ' ctx · ' : ''}${C.fmtUSD(s.cost)} this session · ${s.turns} turn(s)
+        // The composer has two modes, and they show DIFFERENT controls — a
+        // running session has no use for an agent/model picker (both were
+        // decided when the process started and cannot change), and showing them
+        // greyed out was just a row of dead boxes. What CAN change mid-session
+        // is the permission mode, so that one stays a live control.
+        const controls = s
+            ? `<span class="fixed" title="Decided when this session started — a running session cannot change them">
+                    ${C.esc(s.agentName)}${s.model ? ' · ' + C.esc(String(s.model).replace(/^claude-/, '')) : ''}
+                </span>
+                <label class="permlbl" title="The one thing that CAN change mid-session — applied live">permissions
+                    <select id="c-perm">${opts(DATA.permissions, s.permissionMode)}</select>
+                </label>
+                ${window.AFFilter.multi({
+                    id: 'c-kinds', label: 'show', allLabel: 'show: everything',
+                    options: KINDS, selected: st.kinds,
+                    title: 'Which kinds of line the conversation shows — tick any combination'
+                })}
                 <span class="grow"></span>
-                ${s.sessionId ? '<button class="secondary" id="c-transcript">Open transcript</button>' : ''}
-                ${dead ? '<button class="secondary" id="c-forget">Remove from list</button>' : '<button class="secondary" id="c-close">End session</button>'}
-            </div>` : `<div class="crow" style="font-size:10px;opacity:.6">
-                A new session opens in the chosen agent's folder and runs here, in the panel.
-            </div>`}
-        </div>`;
-    }
+                <span id="c-live"></span>
+                <button id="c-send"${dead ? ' disabled' : ''}>Send</button>`
+            : `<select id="c-agent" title="Which agent — the session opens in its folder">
+                    <option value="">choose an agent…</option>
+                    ${(DATA.agents || []).map(a => `<option value="${C.esc(a.id)}"${a.id === st.agentId ? ' selected' : ''}>${C.esc(a.name)}</option>`).join('')}
+                </select>
+                <select id="c-model" title="Model for the new session (--model)">${opts(DATA.models, st.model)}</select>
+                <select id="c-effort" title="Reasoning effort (--effort)">${opts(DATA.efforts, st.effort)}</select>
+                <select id="c-perm" title="What it may do without asking (--permission-mode)">${opts(DATA.permissions, st.permissionMode)}</select>
+                <span class="grow"></span>
+                <span id="c-live"></span>
+                <button id="c-send">Start session</button>`;
 
-    function render() {
-        const s = sel();
-        // Where the reader is, BEFORE the page is rebuilt (see followTail).
-        const prev = document.getElementById('talk');
-        const wasPinned = forceTail || !prev || atBottom(prev);
-        forceTail = false;
-        const prevTop = prev ? prev.scrollTop : 0;
-        const prevShown = shownCount;
-
-        const shown = s ? visibleMessages(s.messages) : [];
-        shownCount = shown.length;
-        if (wasPinned) { unseen = 0; } else if (shownCount > prevShown) { unseen += shownCount - prevShown; }
-
-        const hidden = s ? (s.messages || []).length - shown.length : 0;
-        const talk = s
-            ? (shown.map(messageHtml).join('')
-                || `<div class="empty">${(s.messages || []).length ? 'Every line is filtered out — widen <b>show</b> in the composer.' : 'Nothing said yet.'}</div>`)
-            : `<div class="empty">This is the Console: sessions run <em>here</em>, in the panel — your own <code>claude</code>, your own subscription, transcripts in the usual place.<br><br>Pick an agent below, type, and press Ctrl+Enter.</div>`;
         document.getElementById('app').innerHTML = `${STYLE}
-            ${window.AFHeader.html({
-                page: 'console',
-                title: 'Console',
-                sub: s
-                    ? `${C.esc(s.agentName)} · ${C.esc(s.status)}${s.exitReason ? ' — ' + C.esc(s.exitReason) : ''}`
-                    : `${(DATA.sessions || []).length} hosted session(s) in this window`,
-                guide: 'console',
-                related: [{ nav: 'timeline', label: 'Live Timeline' }]
-            })}
+            <div id="c-head"></div>
             <div class="cwrap">
-                ${sessionList()}
+                <div class="clist" id="c-list"></div>
                 <div class="cmain">
                     <div class="talkwrap">
-                        <div class="talk" id="talk">${talk}${s ? permissionBox(s) : ''}</div>
+                        <div class="talk" id="talk"><div class="talkinner" id="talkinner"></div></div>
                         <button class="jump" id="c-jump" hidden></button>
-                        ${hidden ? `<div class="hiddenote">${hidden} line(s) hidden by <b>show</b></div>` : ''}
+                        <div class="hiddenote" id="c-hidden"></div>
                     </div>
-                    ${composer(s)}
+                    <div class="composer">
+                        <textarea id="c-text" placeholder="${placeholder}"${dead ? ' disabled' : ''}></textarea>
+                        <div class="crow" id="c-controls">${controls}</div>
+                        <div class="crow" id="c-status" style="font-size:10px;opacity:.6"></div>
+                    </div>
                 </div>
             </div>`;
+        // A rebuild starts every slot over.
+        for (const k of Object.keys(written)) { delete written[k]; }
 
-        window.AFHeader.wire(vscode, { onRefresh: () => vscode.postMessage({ type: 'refresh' }) });
-        // Follow the tail only while the reader IS at the tail. Scrolling up to
-        // read something is a statement; yanking the view back down on the next
-        // streamed line takes the page away mid-sentence. Same contract as a
-        // terminal: stay put, count what arrives, and offer the way back.
+        const text = document.getElementById('c-text');
+        if (text) {
+            text.value = st.draft || '';
+            text.addEventListener('input', () => { st.draft = text.value; save(); });
+            text.addEventListener('keydown', ev => {
+                if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); send(); }
+            });
+            // Only here — never on a data update. Focusing scrolls the element
+            // into view, which is exactly the "it dragged me back down" bug.
+            try { text.focus({ preventScroll: true }); } catch (e) { text.focus(); }
+        }
         const talkEl = document.getElementById('talk');
         if (talkEl) {
-            if (wasPinned) { talkEl.scrollTop = talkEl.scrollHeight; } else { talkEl.scrollTop = prevTop; }
             talkEl.addEventListener('scroll', () => {
                 if (!atBottom(talkEl)) { return; }
                 unseen = 0;
                 paintJump();
             });
         }
-        paintJump();
-
         const byId = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
         byId('c-jump', 'click', jumpToEnd);
+        byId('c-send', 'click', send);
         // The line filter is the same multi-select the Search and Notices pages
         // use: null = everything, [] = nothing, any subset in between.
-        if (sel()) {
+        if (s) {
             window.AFFilter.wireMulti({
                 id: 'c-kinds',
                 onChange: picked => {
                     st.kinds = picked;
                     save();
-                    render();
-                    // a filter change is the reader's own move: land at the tail
-                    jumpToEnd();
+                    paint();
+                    // a filter change is the reader's own move: land at the tail,
+                    // and what the filter let through is not "new lines"
+                    resetTail();
                 }
             });
-        }
-        document.querySelectorAll('[data-sel]').forEach(r =>
-            r.addEventListener('click', () => vscode.postMessage({ type: 'select', id: r.dataset.sel })));
-        document.querySelectorAll('[data-resume]').forEach(r =>
-            r.addEventListener('click', () => vscode.postMessage({
-                type: 'resume', sessionId: r.dataset.resume,
-                model: st.model, effort: st.effort, permissionMode: st.permissionMode
-            })));
-        // Right-click is NOT wired here on purpose — see ctxAttr: the rows carry
-        // their identity in `data-vscode-context` and VS Code builds the menu.
-        document.querySelectorAll('[data-open]').forEach(b =>
-            b.addEventListener('click', () => vscode.postMessage({ type: 'openFile', file: b.dataset.open, diff: false })));
-        document.querySelectorAll('[data-diff]').forEach(b =>
-            b.addEventListener('click', () => vscode.postMessage({ type: 'openFile', file: b.dataset.diff, diff: true })));
-        document.querySelectorAll('[data-grant]').forEach(b =>
-            b.addEventListener('click', () => vscode.postMessage({
-                type: 'permissionMode', id: DATA.selected, mode: b.dataset.grant, retry: true
-            })));
-
-        const text = document.getElementById('c-text');
-        const readDraft = () => { st.draft = text ? text.value : ''; save(); };
-        if (text) {
-            text.addEventListener('input', readDraft);
-            text.addEventListener('keydown', ev => {
-                if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); send(); }
-            });
-            text.focus();
-        }
-        // new-session controls only exist in new-session mode
-        const pick = (id, key) => byId(id, 'change', e => { st[key] = e.target.value; save(); });
-        if (!s) {
+        } else {
+            const pick = (id, key) => byId(id, 'change', e => { st[key] = e.target.value; save(); });
             pick('c-agent', 'agentId');
             pick('c-model', 'model');
             pick('c-effort', 'effort');
         }
         byId('c-perm', 'change', e => {
             const mode = e.target.value;
-            if (s) {
+            const cur = sel();
+            if (cur) {
                 // live, mid-session — the same control the permission box uses
-                vscode.postMessage({ type: 'permissionMode', id: s.id, mode, retry: false });
+                vscode.postMessage({ type: 'permissionMode', id: cur.id, mode, retry: false });
             } else {
                 st.permissionMode = mode; save();
             }
         });
-        byId('c-send', 'click', send);
-        byId('c-int', 'click', () => vscode.postMessage({ type: 'interrupt', id: DATA.selected }));
-        byId('c-clearq', 'click', () => vscode.postMessage({ type: 'clearQueue', id: DATA.selected }));
-        byId('c-close', 'click', () => vscode.postMessage({ type: 'close', id: DATA.selected }));
-        byId('c-forget', 'click', () => vscode.postMessage({ type: 'forget', id: DATA.selected }));
-        byId('c-transcript', 'click', () => vscode.postMessage({ type: 'openTranscript', sessionId: s ? s.sessionId : '' }));
-        byId('c-new', 'click', () => { vscode.postMessage({ type: 'select', id: '' }); });
-        byId('c-toggle-resume', 'click', () => { st.showResume = !st.showResume; save(); render(); });
+        resetTail();
+    }
 
-        function send() {
-            const value = text ? text.value.trim() : '';
-            if (!value) { return; }
-            const cur = sel();
-            if (cur && cur.status !== 'ended' && cur.status !== 'error') {
-                vscode.postMessage({ type: 'send', id: cur.id, text: value });
-            } else {
-                if (!st.agentId) {
-                    // the picker is right there; say what is missing rather than
-                    // swallowing the message
-                    const a = document.getElementById('c-agent');
-                    if (a) { a.focus(); }
-                    return;
-                }
-                vscode.postMessage({
-                    type: 'start', agentId: st.agentId, text: value,
-                    model: st.model, effort: st.effort, permissionMode: st.permissionMode
-                });
-            }
-            st.draft = '';
-            save();
-            if (text) { text.value = ''; }
+    // ---- one pass over the changing parts -------------------------------------
+
+    function paint() {
+        const s = sel();
+        const key = `${DATA.selected || ''}|${s ? s.status === 'ended' || s.status === 'error' : 'none'}`;
+        if (shellKey !== key) {
+            shellKey = key;
+            buildShell(s);
         }
+
+        const talkEl = document.getElementById('talk');
+        // Where the reader is, BEFORE anything is written. The element itself is
+        // never replaced, so when they are scrolled up we simply do not touch
+        // scrollTop — the browser keeps the view exactly where it was.
+        const pinned = !talkEl || atBottom(talkEl);
+
+        const shown = s ? visibleMessages(s.messages) : [];
+        const changed = slot('talkinner', talkHtml(s, shown));
+        if (changed) {
+            if (pinned) {
+                unseen = 0;
+                if (talkEl) { talkEl.scrollTop = talkEl.scrollHeight; }
+            } else if (shownCount >= 0 && shown.length > shownCount) {
+                // Only what the filter LET THROUGH counts as a new line: lines
+                // you have filtered out are not news you are missing.
+                unseen += shown.length - shownCount;
+            }
+        }
+        shownCount = shown.length;
+        paintJump();
+
+        const hidden = s ? (s.messages || []).length - shown.length : 0;
+        slot('c-hidden', hidden ? `${hidden} line(s) hidden by <b>show</b>` : '');
+
+        if (slot('c-head', headerHtml(s))) {
+            window.AFHeader.wire(vscode, { onRefresh: () => vscode.postMessage({ type: 'refresh' }) });
+        }
+
+        if (slot('c-list', sessionListHtml())) {
+            document.querySelectorAll('[data-sel]').forEach(r =>
+                r.addEventListener('click', () => vscode.postMessage({ type: 'select', id: r.dataset.sel })));
+            document.querySelectorAll('[data-resume]').forEach(r =>
+                r.addEventListener('click', () => vscode.postMessage({
+                    type: 'resume', sessionId: r.dataset.resume,
+                    model: st.model, effort: st.effort, permissionMode: st.permissionMode
+                })));
+            const byId = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
+            byId('c-new', 'click', () => vscode.postMessage({ type: 'select', id: '' }));
+            byId('c-toggle-resume', 'click', () => { st.showResume = !st.showResume; save(); paint(); });
+        }
+
+        if (changed) {
+            // Right-click is NOT wired here on purpose — see ctxAttr.
+            document.querySelectorAll('[data-open]').forEach(b =>
+                b.addEventListener('click', () => vscode.postMessage({ type: 'openFile', file: b.dataset.open, diff: false })));
+            document.querySelectorAll('[data-diff]').forEach(b =>
+                b.addEventListener('click', () => vscode.postMessage({ type: 'openFile', file: b.dataset.diff, diff: true })));
+            document.querySelectorAll('[data-grant]').forEach(b =>
+                b.addEventListener('click', () => vscode.postMessage({
+                    type: 'permissionMode', id: DATA.selected, mode: b.dataset.grant, retry: true
+                })));
+        }
+
+        // The composer's own row keeps its select and its filter menu — only the
+        // things that actually change mid-turn are rewritten.
+        if (slot('c-live', liveBitsHtml(s))) {
+            const byId = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
+            byId('c-int', 'click', () => vscode.postMessage({ type: 'interrupt', id: DATA.selected }));
+            byId('c-clearq', 'click', () => vscode.postMessage({ type: 'clearQueue', id: DATA.selected }));
+        }
+        const sendBtn = document.getElementById('c-send');
+        if (sendBtn && s) {
+            const label = s.status === 'working' ? 'Queue' : 'Send';
+            if (sendBtn.textContent !== label) { sendBtn.textContent = label; }
+        }
+
+        if (slot('c-status', statusHtml(s))) {
+            const byId = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
+            byId('c-close', 'click', () => vscode.postMessage({ type: 'close', id: DATA.selected }));
+            byId('c-forget', 'click', () => vscode.postMessage({ type: 'forget', id: DATA.selected }));
+            byId('c-transcript', 'click', () => vscode.postMessage({
+                type: 'openTranscript', sessionId: s ? s.sessionId : ''
+            }));
+        }
+    }
+
+    function send() {
+        const text = document.getElementById('c-text');
+        const value = text ? text.value.trim() : '';
+        if (!value) { return; }
+        const cur = sel();
+        if (cur && cur.status !== 'ended' && cur.status !== 'error') {
+            vscode.postMessage({ type: 'send', id: cur.id, text: value });
+        } else {
+            if (!st.agentId) {
+                // the picker is right there; say what is missing rather than
+                // swallowing the message
+                const a = document.getElementById('c-agent');
+                if (a) { a.focus(); }
+                return;
+            }
+            vscode.postMessage({
+                type: 'start', agentId: st.agentId, text: value,
+                model: st.model, effort: st.effort, permissionMode: st.permissionMode
+            });
+        }
+        st.draft = '';
+        save();
+        if (text) { text.value = ''; }
+        // You just said something: you are back at the bottom by definition.
+        jumpToEnd();
     }
 
     window.addEventListener('message', ev => {
         if (ev.data && ev.data.type === 'data') {
             const wasOn = DATA.selected;
             DATA = ev.data.data;
-            // A different conversation is not "new lines in this one": switching
-            // sessions starts the tail-following contract over.
-            if (DATA.selected !== wasOn) { unseen = 0; shownCount = 0; forceTail = true; }
+            // A different conversation is not "new lines in this one".
+            if (DATA.selected !== wasOn) { shownCount = -1; unseen = 0; }
             // opened from an agent row: preselect that agent in the composer
             if (DATA.presetAgent) { st.agentId = DATA.presetAgent; save(); }
-            render();
+            paint();
         }
     });
     if (DATA.presetAgent) { st.agentId = DATA.presetAgent; save(); }
 
-    render();
+    paint();
 })();

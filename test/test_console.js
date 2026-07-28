@@ -320,14 +320,18 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
 // ---------- the composer shows what each mode can actually change ----------
 {
     const js = fs.readFileSync(path.join(__dirname, '..', 'media', 'console.js'), 'utf8');
-    const liveRow = js.slice(js.indexOf('const liveRow'), js.indexOf('const placeholder'));
+    // The composer row is one ternary in buildShell: the live branch first, the
+    // new-session branch after the `:`.
+    const controls = js.slice(js.indexOf('const controls = s'), js.indexOf("getElementById('app').innerHTML"));
+    const split = controls.indexOf(": `<select id=\"c-agent\"");
+    const liveRow = split > 0 ? controls.slice(0, split) : '';
     ok('a running session gets NO agent/model/effort boxes at all (they were dead)',
         liveRow.length > 100 && !/c-agent|c-model|c-effort/.test(liveRow));
     ok('…it shows them as a plain status line instead', /class="fixed"/.test(js));
     ok('…and keeps the one control that really works mid-session',
         /The one thing that CAN change mid-session/.test(js));
     ok('new-session mode is the only place the agent is picked',
-        /const newRow = /.test(js) && /choose an agent…/.test(js));
+        split > 0 && controls.indexOf('choose an agent…') > split);
     ok('starting without an agent focuses the picker instead of swallowing the message',
         /if \(!st\.agentId\)/.test(js));
     ok('an agent row can open the Console with that agent preselected',

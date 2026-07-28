@@ -256,6 +256,22 @@ Claude Code **çalışan bir oturuma katılamaz.** Terminalde açık bir oturumu
 
 Artık Console devam ettirmeden **önce sahibine bakıyor** (CLI'ın kendi kaydı: aynı sessionId iki pid'de görünüyorsa oturum meşguldür) ve **varsayılan olarak reddediyor** — ne olacağını açıklayıp gerçekten işe yarayan iki seçeneği sunuyor: **o terminale atla** ya da **aynı klasörde yeni oturum aç**. Başka yerde açık olan satırlar devam-ettirme listesinde soluk görünür. Terminale devam ettirmek de (sol paneldeki ⏵ Resume) aynı uyarıyı verir; bilerek isteyenler için "yine de ikinci süreci aç" seçeneği durur.
 
+### ‼️ Console oturumu bir insanın konuşmasıdır (3.31.0)
+
+Panelde yapılan konuşma, CLI'a headless bir koşunun kullandığı aynı akışlı `-p` kanalından ulaşır; bu yüzden kaydına `entrypoint: sdk-cli` yazılır — Agent Farm da kökeni tam olarak o alandan okur. Sonuç: **panelde yapılan her konuşma otomasyon diye dosyalanıyordu** ve varsayılanı **User** kapsamı olan Oturumlar tabloları, panolar, ajan sayfaları ve Turlar sayfası o konuşmanın hiç yaşanmadığını gösteriyordu. Oturum baştan beri indeksliydi ve canlıydı; sadece görünümün dışında kalıyordu.
+
+Agent Farm artık **kendi Console'unun barındırdığı oturum kimliklerini hatırlıyor** (`globalStorage/console-sessions.json` — reload kaybettirmez) ve onları *user* olarak dosyalıyor. 3.31.0'dan **önce** Console'da başlatılmış oturumlar otomasyon sınıfında kalır; herhangi bir oturum tablosundaki 🤖 kapsam çipiyle görülürler.
+
+### Sayfa bir kez kurulur, sonra yamanır (3.31.0)
+
+Akan bir konuşma saniyede birkaç kez yeniden çizilir. Sayfa eskiden bunların her birinde **baştan** kuruluyordu — yazdığın metin kutusu yok edilip yeniden yaratılıyor ve tekrar odaklanıyordu; bir öğeyi odaklamak onu görünüme kaydırdığı için **sen yukarıda bir şey okurken sayfa kendini aşağı çekiyordu** ve yapı imlecin altında kayıyordu. Artık kabuk yalnızca *şekil* değişince kuruluyor (başka bir oturum, biten bir oturum), gerisi adlandırılmış yuvalara ve yalnızca içeriği gerçekten değiştiyse yazılıyor. Somut olarak düzelenler:
+
+- **Yukarı kaydırdıysan yukarıda kalırsın.** Konuşma öğesi hiç değiştirilmediği için tarayıcı konumunu korur; en alta döndüğünde (ya da **↓ N new lines** düğmesine bastığında) akış kendiliğinden devam eder.
+- **Filtrelediğin satır kaçırdığın haber değildir.** Sayaç yalnızca **show** filtresinin geçirdiği satırları sayar.
+- **Yarım kalan mesajın**, imlecinin yerinde durur; akan satır onu bozmaz.
+- **Sayfanın ortasında boşluk yok.** Console artık tam-yükseklik bir uygulama düzeni: tek kaydırılan yer konuşma, altında composer; kısa konuşma araya kocaman boş bir kutu bırakmak yerine composer'ın **üstüne oturur**.
+- **"ctx now" güncel kalır.** Yalnızca CLI'ın ara sıra gönderdiği `thinking_tokens` olayından okunduğu için ilk değerde donuyordu; artık her asistan mesajının kendi usage'ından alınıyor — oturum tablolarının yaptığı aynı aritmetik.
+
 ### Oturumlar sekmeden uzun yaşar
 
 Console sekmesini kapatmak konuşmayı **öldürmez**; oturumlar sen bitirince ya da pencere kapanınca biter.

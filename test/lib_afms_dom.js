@@ -26,12 +26,17 @@ module.exports = function createAfmsDom(getHtml) {
         const html = String(getHtml() || '');
         if (html === lastHtml) { return pickers; }
         lastHtml = html;
-        pickers = {};
+        const next = {};
         const wrapRe = /<span class="afms" data-afms-wrap="([^"]*)">([\s\S]*?)<\/div><\/span>/g;
         let w;
         while ((w = wrapRe.exec(html))) {
             const id = w[1];
             const inner = w[2];
+            // A picker whose own markup did not change is the SAME element —
+            // keep its stub (and its listeners). Pages that patch parts of
+            // themselves wire a control once; re-creating the stub because some
+            // unrelated slot changed would lose listeners no browser would lose.
+            if (pickers[id] && pickers[id].inner === inner) { next[id] = pickers[id]; continue; }
             const btn = mkEl({ afms: id }, {
                 textContent: (/<button[^>]*>([\s\S]*?)<\/button>/.exec(inner) || ['', ''])[1]
             });
@@ -51,8 +56,9 @@ module.exports = function createAfmsDom(getHtml) {
                     return m ? tools[m[1]] || null : null;
                 }
             });
-            pickers[id] = { id, btn, menu, boxes, tools };
+            next[id] = { id, inner, btn, menu, boxes, tools };
         }
+        pickers = next;
         return pickers;
     }
 

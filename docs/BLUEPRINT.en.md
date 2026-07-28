@@ -240,6 +240,22 @@ Claude Code **cannot join a running session.** "Resuming" a session that a termi
 
 The Console now **checks who owns a session before resuming it** (the CLI's own registry: the same session id under two pids means it is busy) and **refuses by default**, explaining what a second process would mean and offering the two things that do work: **jump to the terminal that has it**, or **start a new session in the same folder**. Rows open elsewhere are greyed in the resume list. Resuming into a *terminal* (⏵ Resume in the side panel) carries the same warning, with a deliberate "open a second process anyway" for when that is genuinely wanted.
 
+### ‼️ A Console session is a person talking (3.31.0)
+
+A conversation held in the panel reaches the CLI over the same streaming `-p` channel a headless run uses, so its transcript records `entrypoint: sdk-cli` — and Agent Farm reads the origin off exactly that field. The result: **every Console conversation was filed as automation**, and the Sessions tables, the dashboards, the agent pages and the Turns page — all of which default to the **User** scope — showed no sign that it had ever happened. The session was indexed and live the whole time; it was simply filtered out of the view.
+
+Agent Farm now **remembers which session ids its own Console hosted** (`globalStorage/console-sessions.json`, so a reload does not lose it) and files those as *user*. Sessions started in the Console **before** 3.31.0 stay classified as automation — the 🤖 scope chip on any sessions table shows them.
+
+### The page is built once, then patched (3.31.0)
+
+A streaming conversation re-renders several times a second. The page used to be rebuilt whole on each of those — which destroyed the textarea you were typing in, recreated it, and re-focused it; focusing an element scrolls it into view, so **the page dragged itself back down while you were reading something further up**, and the layout shifted under the cursor. Now the shell is built when the *shape* changes (a different session, a session that ended) and everything else is written into named slots, only when its content actually differs. What this fixes, concretely:
+
+- **Scrolled up stays scrolled up.** The conversation element is never replaced, so the browser keeps your position; following the tail resumes by itself when you return to the bottom (or press the **↓ N new lines** pill).
+- **A line you filtered out is not news you are missing.** The pill counts only lines the **show** filter lets through.
+- **Your half-typed message survives** a streamed line, with its cursor where you left it.
+- **No gap in the middle of the page.** The Console is a full-height app layout now: the conversation is the only scroller, the composer sits under it, and a short conversation is pushed **down onto** the composer instead of leaving a tall empty box between them.
+- **"ctx now" keeps up.** It was read only from the CLI's occasional `thinking_tokens` event, so it froze at whatever the first one said; it is now taken off each assistant message's own usage — the same arithmetic the sessions tables do.
+
 ### Sessions outlive the tab
 
 Closing the Console tab does **not** kill a conversation; sessions end when you end them, or with the window.

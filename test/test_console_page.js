@@ -21,10 +21,13 @@ const els = {};
 function mkEl(id) {
     return {
         id, _html: '', listeners: {}, hidden: true, textContent: '',
+        // _writes / _focus are how the test proves the page stopped rebuilding
+        // itself (and re-focusing the textarea) on every streamed line.
+        _writes: 0, _focus: 0,
         scrollTop: 0, scrollHeight: 1000, clientHeight: 300,
-        set innerHTML(v) { this._html = v; }, get innerHTML() { return this._html; },
+        set innerHTML(v) { this._html = v; this._writes++; }, get innerHTML() { return this._html; },
         addEventListener(ev, fn) { this.listeners[ev] = fn; },
-        focus() { }, value: ''
+        focus() { this._focus++; }, value: ''
     };
 }
 const app = () => els.app || (els.app = mkEl('app'));
@@ -52,10 +55,11 @@ const sandbox = {
     },
     document: {
         getElementById: id => {
-            // the page rebuilds #app on every render; the elements inside it
-            // exist only when that html mentions them
+            // The page builds its shell once and then writes into named slots,
+            // so an element exists as soon as the shell — or any slot already
+            // written — mentions its id.
             if (id === 'app') { return app(); }
-            if (!app()._html.includes(`id="${id}"`)) { return null; }
+            if (!allHtml().includes(`id="${id}"`)) { return null; }
             return els[id] || (els[id] = mkEl(id));
         },
         querySelectorAll: sel => {
@@ -67,7 +71,9 @@ const sandbox = {
     },
     console
 };
-const afms = createAfmsDom(() => app()._html);
+/** Everything currently on the page: the shell plus every slot written into it. */
+const allHtml = () => app()._html + Object.keys(els).map(k => els[k]._html || '').join('');
+const afms = createAfmsDom(() => allHtml());
 sandbox.window.window = sandbox.window;
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
@@ -98,7 +104,7 @@ const data = (msgs) => ({
 sandbox.window.__DATA__ = data(CONVO.slice());
 vm.runInContext(code, sandbox);
 const push = d => msgHandler({ data: { type: 'data', data: d } });
-const html = () => app()._html;
+const html = allHtml;
 
 // ---------- the row says who, which session, and what it costs ----------
 {
@@ -109,8 +115,36 @@ const html = () => app()._html;
     ok('…with the session\'s own name under the agent', html().includes('Kalan eksikler'));
 }
 
+// ---------- the page is built once, then patched ----------
+// Rebuilding it on every streamed line destroyed the textarea you were typing
+// in, which then had to be re-focused — and focusing scrolls the element into
+// view, which is what kept dragging the page down while you were reading.
+{
+    const text = () => els['c-text'];
+    const builds = app()._writes;
+    ok('the shell is built once', builds === 1);
+    ok('…and the composer is focused once', text()._focus === 1);
+
+    text().value = 'yarım cümle';
+    push(data(CONVO.concat([msg('agent', { text: 'streamed' })])));
+    push(data(CONVO.concat([msg('agent', { text: 'streamed' }), msg('agent', { text: 'more' })])));
+    ok('a streamed line does NOT rebuild the page', app()._writes === builds);
+    ok('…does not touch the composer', text()._focus === 1 && text().value === 'yarım cümle');
+    ok('…and the conversation itself is what gets written', talk().innerHTML !== '' || els.talkinner._writes > 0);
+
+    // the layout is an app layout: the conversation is the only scroller and a
+    // short one sits ON the composer instead of leaving a gap in the middle
+    ok('the conversation area has no max-height to leave a gap under',
+        !/\.talk \{[^}]*max-height/.test(html()));
+    ok('…and short conversations are pushed to the bottom',
+        /\.talkinner \{[^}]*margin-top:auto/.test(html()));
+}
+
 // ---------- following the tail ----------
 {
+    talk().scrollTop = talk().scrollHeight;
+    talk().listeners.scroll();
+    push(data(CONVO.slice()));
     ok('a fresh render lands at the newest line', talk().scrollTop === talk().scrollHeight);
     ok('…with nothing to jump to', jump().hidden === true);
 
@@ -184,6 +218,27 @@ const html = () => app()._html;
     afms.clear('c-kinds');
     ok('Clear is an honest empty view, not a reset',
         /Every line is filtered out/.test(html()));
+}
+
+// ---------- a line you filtered out is not news you are missing ----------
+{
+    afms.open('c-kinds');
+    afms.clear('c-kinds');
+    afms.toggle('c-kinds', 'user', true);   // only your own lines
+    jump().hidden = true;
+    talk().scrollTop = 100;                 // scrolled up, reading
+    push(data(CONVO.concat([
+        msg('tool', { tool: { name: 'Bash', detail: 'npm test' } }),
+        msg('tool', { text: 'lots of output' })
+    ])));
+    ok('tool lines arriving under a "You only" filter are not counted',
+        jump().hidden === true && talk().scrollTop === 100);
+    push(data(CONVO.concat([
+        msg('tool', { tool: { name: 'Bash', detail: 'npm test' } }),
+        msg('user', { text: 'stop' })
+    ])));
+    ok('…but a line the filter DOES let through still is',
+        jump().hidden === false && jump().textContent === '↓ 1 new line');
 }
 
 console.log(`${pass} passed, ${fail} failed`);

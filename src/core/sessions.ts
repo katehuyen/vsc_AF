@@ -105,6 +105,9 @@ export interface SessionInfo {
      *  terminal), 'sdk-cli' (`claude -p` / SDK), 'claude-desktop', … Feeds
      *  `sessionOrigin`; absent on external-CLI sessions that have no transcript. */
     entrypoint?: string;
+    /** Agent Farm's Console hosted this session: `sdk-cli` in the transcript, a
+     *  person at the keyboard in reality. Set from the id registry, not the file. */
+    consoleHosted?: boolean;
     daily: Record<string, DailyBucket>;
     /** assistant message counts in 7x24 local-time buckets, index = dow*24+hour */
     heat: number[];
@@ -125,8 +128,18 @@ export type SessionOrigin = 'user' | 'auto';
  * person is sitting in ('cli', 'claude-desktop', …). An unknown entrypoint
  * reads as 'user': the Sessions tables default to the User scope, and a filter
  * that hides real dialogs is worse than one that shows an extra robot row.
+ *
+ * **The Console is the exception the entrypoint cannot see.** A Console session
+ * is a person typing, but it reaches the CLI over the same streaming `-p`
+ * channel a headless run does, so its transcript says `sdk-cli` too. Reading
+ * only the entrypoint therefore filed every conversation held in the panel
+ * under "automation" — and the Sessions tables, the dashboards and the Turns
+ * page, which default to the User scope, showed no sign that the conversation
+ * had ever happened. Agent Farm knows which ids it hosted (`consoleHosted`,
+ * carried in `globalStorage/console-sessions.json`), so it says so.
  */
-export function sessionOrigin(s: Pick<SessionInfo, 'entrypoint'>): SessionOrigin {
+export function sessionOrigin(s: Pick<SessionInfo, 'entrypoint' | 'consoleHosted'>): SessionOrigin {
+    if (s.consoleHosted) { return 'user'; }
     return String(s.entrypoint ?? '').startsWith('sdk') ? 'auto' : 'user';
 }
 
@@ -451,6 +464,8 @@ export class SessionIndex implements vscode.Disposable {
     private titleOverrides = new Map<string, string>();
     /** User shelf marks (sessionId → pin/tags), persisted by the extension. */
     private marks: SessionMarks = {};
+    /** Session ids the Console hosted — see setConsoleSessions. */
+    private consoleIds = new Set<string>();
     /** Session display names from the CLI's registry (sessionId → -n name). */
     private cliNames = new Map<string, string>();
     private watchers: fs.FSWatcher[] = [];
@@ -586,6 +601,23 @@ export class SessionIndex implements vscode.Disposable {
         const mark = this.marks[info.sessionId];
         info.pinned = mark?.pinned === true ? true : undefined;
         info.tags = mark?.tags?.length ? mark.tags : undefined;
+        info.consoleHosted = this.consoleIds.has(info.sessionId) ? true : undefined;
+    }
+
+    /**
+     * The sessions Agent Farm's own Console hosted. Their transcripts say
+     * `sdk-cli` like any headless run, so without this list every conversation
+     * held in the panel would be filed as automation and hidden from the User
+     * scope the tables default to (see `sessionOrigin`).
+     */
+    setConsoleSessions(ids: string[]): void {
+        const next = new Set(ids.filter(Boolean));
+        if (next.size === this.consoleIds.size && [...next].every(id => this.consoleIds.has(id))) {
+            return;
+        }
+        this.consoleIds = next;
+        for (const s of this.sessions.values()) { this.applyMark(s); }
+        this.onDidUpdateEmitter.fire();
     }
 
     /** Replace the shelf marks (pin / tags) and re-apply them to everything indexed. */

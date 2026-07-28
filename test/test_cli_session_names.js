@@ -187,6 +187,18 @@ const { revealActionFor } = (() => {
     ok('clearing the rename falls back to the launch name, not the transcript', s.title === 'zen release');
     idx.setCliNames({});
     ok('with no name at all the derived title returns', s.title === 'fix the popup bug');
+
+    // The Console's own sessions: their transcripts say `sdk-cli` like any
+    // headless run, so the index is told which ids it hosted (see sessionOrigin).
+    const { sessionOrigin } = require(path.join(__dirname, '..', 'out', 'core', 'sessions.js'));
+    s.entrypoint = 'sdk-cli';
+    ok('an sdk session is automation until the Console claims it', sessionOrigin(s) === 'auto');
+    idx.setConsoleSessions(['sid1']);
+    ok('a claimed session is a person talking', s.consoleHosted === true && sessionOrigin(s) === 'user');
+    idx.setConsoleSessions(['sid1']);   // same set: no work, no event
+    ok('…re-setting the same list changes nothing', s.consoleHosted === true);
+    idx.setConsoleSessions([]);
+    ok('…and it can be taken back', s.consoleHosted === undefined && sessionOrigin(s) === 'auto');
 }
 
 // ---------- reveal: a folder is opened, a file is revealed inside its folder ----------

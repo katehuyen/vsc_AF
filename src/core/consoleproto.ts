@@ -71,7 +71,9 @@ export interface ConsoleSessionState {
     /** everything this session has spent tokens on, summed off the assistant
      *  messages' own usage — the same total the sessions tables show */
     tokens: number;
-    /** the CLI's own running estimate of the context (system:thinking_tokens) */
+    /** what the model window held for the latest request — read off each
+     *  assistant message's own usage, the same arithmetic the sessions tables
+     *  do (the CLI's `system:thinking_tokens` event refines it when it comes) */
     contextTokens?: number;
     startedAt: number;
     lastTs: number;
@@ -223,7 +225,14 @@ export function reduceEvent(
             const n = (k: string) => (typeof u[k] === 'number' ? u[k] as number : 0);
             const spent = n('input_tokens') + n('output_tokens')
                 + n('cache_read_input_tokens') + n('cache_creation_input_tokens');
-            if (spent) { next = { ...next, tokens: next.tokens + spent }; changed = true; }
+            if (spent) {
+                // "ctx now" is the same figure the sessions tables show: what the
+                // window held for the latest request. Taking it from the CLI's
+                // occasional `thinking_tokens` event alone left the number frozen
+                // at whatever the first one said, for the rest of the session.
+                next = { ...next, tokens: next.tokens + spent, contextTokens: spent };
+                changed = true;
+            }
         }
         for (const b of blocks) {
             const bt = String(b.type ?? '');

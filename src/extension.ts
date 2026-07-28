@@ -5009,6 +5009,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const consoleHost = new ConsoleHost();
     context.subscriptions.push({ dispose: () => consoleHost.dispose() });
     context.subscriptions.push(consoleHost.onChange(() => ConsolePanel.refreshIfOpen()));
+
+    /**
+     * Remember which sessions the Console hosted.
+     *
+     * Their transcripts say `sdk-cli` — the same thing a headless task run says
+     * — so without this list a conversation held in the panel is filed as
+     * automation and never appears in the Sessions tables, the dashboards or
+     * the Turns page, all of which default to the User scope. The list is kept
+     * in globalStorage (a reload must not lose it), capped, and handed to the
+     * index, which re-files the sessions and tells every open page.
+     */
+    const consoleIdsFile = path.join(context.globalStorageUri.fsPath, 'console-sessions.json');
+    const readConsoleIds = (): string[] => {
+        try {
+            const j = JSON.parse(fs.readFileSync(consoleIdsFile, 'utf8')) as { ids?: unknown };
+            return Array.isArray(j.ids) ? j.ids.filter((x): x is string => typeof x === 'string') : [];
+        } catch { return []; }
+    };
+    let consoleIds = readConsoleIds();
+    index.setConsoleSessions(consoleIds);
+    const rememberConsoleSessions = (): void => {
+        const known = new Set(consoleIds);
+        let added = false;
+        for (const s of consoleHost.list()) {
+            if (s.sessionId && !known.has(s.sessionId)) { known.add(s.sessionId); added = true; }
+        }
+        if (!added) { return; }
+        consoleIds = [...known].slice(-2000);   // ids only; a session is ~40 bytes
+        try {
+            fs.writeFileSync(consoleIdsFile, JSON.stringify({ ids: consoleIds }, null, 1), 'utf8');
+        } catch { /* the index still has it for this window */ }
+        index.setConsoleSessions(consoleIds);
+    };
+    context.subscriptions.push(consoleHost.onChange(() => rememberConsoleSessions()));
     /**
      * The conversation a session already had, for a resume that means
      * *continuing*. Read off the transcript on disk — display only, no token

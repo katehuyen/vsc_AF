@@ -97,6 +97,14 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     ok('a future sdk-* entrypoint still reads as automation', sessionOrigin({ entrypoint: 'sdk-ts' }) === 'auto');
     ok('unknown/absent entrypoint reads as user (never hide a real dialog)',
         sessionOrigin({}) === 'user' && sessionOrigin({ entrypoint: '' }) === 'user');
+    // The Console is a person typing, over the very channel a headless run
+    // uses. Reading only the entrypoint filed every conversation held in the
+    // panel as automation — and the tables, which default to the User scope,
+    // showed no sign it had ever happened.
+    ok('a session the Console hosted is a person talking, whatever the entrypoint says',
+        sessionOrigin({ entrypoint: 'sdk-cli', consoleHosted: true }) === 'user');
+    ok('…and a headless run over the same channel is still automation',
+        sessionOrigin({ entrypoint: 'sdk-cli', consoleHosted: false }) === 'auto');
 
     const usage = i => ({ input: i, output: 0, cacheWrite: 0, cacheRead: 0 });
     // 20 automation runs are the newest AND the most expensive; 3 user dialogs
