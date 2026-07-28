@@ -2870,7 +2870,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'sessions.dismiss',
-            describe: 'Take a session off the Live Timeline without touching the session itself — the way to clear a card (and its never-ending tool lane) left behind by a claude that died without a SessionEnd hook. args: sessionId, or gone:true to clear every tracked session whose process the OS no longer knows',
+            describe: 'Take a session off the Live Timeline WHOLE — its card and its swim-lane row, in every range — without touching the session itself: the way to clear what a claude that died without a SessionEnd hook left behind. It comes back if it reports another event. args: sessionId, or gone:true to clear every tracked session whose process the OS no longer knows',
             handler: (args) => {
                 if (args.gone === true) {
                     if (!fs.existsSync(sessionsDir(claudeDir()))) {
@@ -2879,11 +2879,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     const owned = new Set(readCliSessions(claudeDir()).map(o => o.sessionId));
                     const dead = live.sessions().filter(s => !s.source && !owned.has(s.sessionId) &&
                         Date.now() - s.startedAt > 60_000);
-                    for (const s of dead) { live.dismiss(s.sessionId, 'cleared (no live process)'); }
+                    for (const s of dead) { live.dismiss(s.sessionId, 'cleared (no live process)', true); }
                     return { cleared: dead.length, sessions: dead.map(s => s.sessionId) };
                 }
                 const sessionId = argStr(args, 'sessionId');
-                return { sessionId, cleared: live.dismiss(sessionId) };
+                return { sessionId, cleared: live.dismiss(sessionId, 'cleared in Agent Farm', true) };
             }
         },
         {
@@ -5683,7 +5683,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 `No live process owns "${who}" any more — there is nothing left to end. Clear it from the live timeline?`,
                 { modal: true }, 'Clear it');
             if (yes !== 'Clear it') { return; }
-            live.dismiss(sessionId, 'cleared (no live process)');
+            live.dismiss(sessionId, 'cleared (no live process)', true);
             return;
         }
         const yes = await vscode.window.showWarningMessage(
@@ -6240,7 +6240,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             : 'Agent Farm: the CLI session registry is not readable here, so a session cannot be proven finished — clear them one by one.');
                         return;
                     }
-                    for (const s of dead) { live.dismiss(s.sessionId, 'cleared (no live process)'); }
+                    for (const s of dead) { live.dismiss(s.sessionId, 'cleared (no live process)', true); }
                     void vscode.window.showInformationMessage(
                         `Agent Farm: cleared ${dead.length} finished session(s) from the live timeline.`);
                     return;
@@ -6251,9 +6251,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const who = arg?.agentName
                     ?? live.sessions().find(s => s.sessionId === sessionId)?.agentName
                     ?? sessionId.slice(0, 8);
-                if (!live.dismiss(sessionId)) {
+                // purge: card AND lane row leave together — see LiveMonitor.dismiss.
+                if (!live.dismiss(sessionId, 'cleared in Agent Farm', true)) {
                     void vscode.window.showInformationMessage(
-                        `Agent Farm: ${who} is not tracked on the live timeline.`);
+                        `Agent Farm: ${who} is not on the live timeline.`);
                     return;
                 }
                 void vscode.window.showInformationMessage(

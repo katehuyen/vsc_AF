@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.34.0 — A swim-lane row is a session: right-click it, and Clear really clears (2026-07-29)
+
+The Live Timeline had two surfaces for the same thing. The cards at the bottom carried every action — terminal, interrupt, end, clear, rename — and the rows at the top, which are the *same sessions*, carried none of them: a click opened the transcript, and that was it. So acting on what you were looking at meant scrolling down to hunt for its card.
+
+- **Right-click a lane row for that session's commands** — Rename · Open session · Terminal · Interrupt · End session · Clear, the exact menu the cards already had (same `webviewSection`, so the two can never drift apart). The **whole row** answers, with the session it is currently drawing; on a packed row — sequential sessions sharing a track — **each session answers over its own span**, so the menu is about the run under the pointer, not whichever happened to be first. Left-click is untouched: the row name still opens the session, a bar or a dot still opens it *at that moment*. The hit areas are laid down behind them.
+- **‼️ Clear left an orphan behind.** It took the card off the page and left the row — and because it closed the lane by writing an `end` event at "now", that row was usually **empty**: a session with no card, no events in view, and a single tick at the right edge. The one action whose whole purpose is "get this off my page" was the one that left the most visible debris.
+- **Clear now takes the session off this page whole** — card and row together, in the detail ranges and in the 3d+ density view alike, and it **stays off across a window reload** (the ids live in `globalStorage/live-cleared.json`; the event store itself is never rewritten — it is the raw log). It still does not touch the session: the transcript stays on disk, no process is signalled, and a session that reports another event **comes back**, tracked from that moment. Clearing works from the row too, which is the only way to reach a row that has outlived its card.
+- **End session is deliberately not Clear.** What a run did stays on the page as history, closed with the `end` event that never arrived — ending a session should not erase the record of it. When you do want it gone, the row's own right-click has Clear.
+- 27 checks added (`test_live_clear.js` + the lane contract in `test_timeline_multisession.js`): card and row leaving together, an untracked-but-drawn row still clearable, the clear surviving a reload and holding in the density view, a cleared session coming back when it speaks, End keeping its history — and, on the page, the per-session hit areas on a packed row and the bars still being clickable. Suite: **79 files, 3128 checks green.**
+
 ## 3.33.0 — Whose turn is it: the Console answers that at a glance (2026-07-29)
 
 Eight sessions, eight different jobs, and one question you ask every few minutes: **which of them is waiting for me?** The left panel now answers it from across the room, without becoming a Christmas tree.

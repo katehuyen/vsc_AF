@@ -47,6 +47,25 @@
     const ctxAttr = o => `data-vscode-context="${JSON.stringify(o)
         .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}"`;
 
+    /**
+     * The same contract for a SWIM-LANE row. A row is a session too — the one
+     * the card below is about — so right-clicking it must offer that session's
+     * actions (rename · open · terminal · interrupt · end · clear) instead of
+     * making you scroll down to find its card. The identity is read from the
+     * live session when it is still tracked; a row that outlived its card still
+     * knows its id and the agent it belongs to, which is what Clear needs.
+     */
+    function laneCtx(sid, agentName) {
+        const s = LIVE_BY_ID.get(sid);
+        return ctxAttr({
+            webviewSection: 'afTimelineSession', preventDefaultContextMenuItems: false,
+            sessionId: sid,
+            title: (s && s.title) || '',
+            agentName: (s && s.agentName) || agentName || '',
+            cwd: (s && s.cwd) || ''
+        });
+    }
+
     // HTML toggle chips for one Live-sessions card. Same .af-toggle class as the
     // swim-lane SVG toggles, but carrying data-session: clicks change only THIS
     // session, so two open sessions of one agent alert independently.
@@ -292,7 +311,10 @@
                 t.end = Math.max(t.end, s.last);
                 t.segments.push(...s.segments);
                 t.marks.push(...s.marks);
-                t.sessions.push(s.id);
+                // Each session keeps its own span on the row: a packed track
+                // holds several, and a right-click must land on the one under
+                // the pointer, not on whichever happens to be first.
+                t.sessions.push({ id: s.id, first: s.first, last: s.last, live: s.live });
                 if (s.file) { t.file = s.file; }
             }
             const anon = unresolved.has(agent);
@@ -304,8 +326,8 @@
                 firstOfAgent: i === 0,
                 segments: t.segments,
                 marks: t.marks,
-                // Which session(s) this row is drawing — the row's tooltip and
-                // its click both need to know.
+                // Which session(s) this row is drawing — the row's tooltip, its
+                // click and its right-click menu all need to know.
                 sessions: t.sessions,
                 file: t.file
             }));
@@ -349,10 +371,14 @@
             // The label is not decoration: hovering it tells you everything about
             // the session behind the row (id, status, cost, tokens, turns, where
             // it runs), and clicking opens that session's transcript.
-            const tip = lane.sessions.map(sessionTip).join('\n\n') +
+            const tip = lane.sessions.map(s => sessionTip(s.id)).join('\n\n') +
                 (lane.anon ? '\n\nThis row is labelled by its session id because the folder it runs in is not one of your agent folders.' : '') +
-                (lane.file ? '\n\nClick to open this session.' : '');
-            out += `<g class="mark lanelabel" data-file="${C.esc(lane.file || '')}" data-ts="0" style="cursor:${lane.file ? 'pointer' : 'default'}">` +
+                (lane.file ? '\n\nClick to open this session.' : '') +
+                '\n\nRight-click for this session\'s actions.';
+            // The row's "current" session: the live one, else the last it drew.
+            const primary = lane.sessions.filter(s => LIVE_BY_ID.has(s.id)).pop() ||
+                lane.sessions[lane.sessions.length - 1];
+            out += `<g class="mark lanelabel" data-file="${C.esc(lane.file || '')}" data-ts="0" ${laneCtx(primary.id, lane.agent)} style="cursor:${lane.file ? 'pointer' : 'default'}">` +
                 `<text x="4" y="${y + 14}" font-size="11" font-weight="600" text-anchor="start" fill="currentColor" opacity="0.85">${C.esc(name.length > 14 ? name.slice(0, 13) + '…' : name)}</text>` +
                 `<title>${C.esc(tip)}</title></g>`;
             const ty = y + 23;
@@ -365,6 +391,15 @@
                     `<title>${C.esc(a.label)} — agent default for every ${C.esc(lane.agent)} session hitting YOUR TURN (override one session on its card below)</title></g>`;
             }); }
             out += `<line x1="${labelW}" y1="${y + rowH / 2}" x2="${W - 8}" y2="${y + rowH / 2}" stroke="currentColor" opacity="0.1"/>`;
+            // Right-click targets, laid down BEFORE the bars and dots so those
+            // keep their own left-click. The whole row answers (with the row's
+            // current session), and each session's own span answers for itself.
+            out += `<rect x="${labelW}" y="${y + 2}" width="${W - labelW - 8}" height="${rowH - 4}" fill="transparent" ${laneCtx(primary.id, lane.agent)}/>`;
+            for (const s of lane.sessions) {
+                if (s.id === primary.id || s.last < from) { continue; }
+                const sx1 = x(Math.max(s.first, from)), sx2 = Math.max(x(Math.min(s.last, now)), sx1 + 4);
+                out += `<rect x="${sx1.toFixed(1)}" y="${y + 2}" width="${(sx2 - sx1).toFixed(1)}" height="${rowH - 4}" fill="transparent" ${laneCtx(s.id, lane.agent)}/>`;
+            }
             for (const seg of lane.segments) {
                 const x1 = x(seg.start), x2 = Math.max(x(seg.end), x1 + 2);
                 // A tool whose end never arrived is drawn hollow and dashed —
@@ -533,14 +568,14 @@
                 <div class="sub" style="margin-top:${st.money ? '2' : '6'}px">${st.work}</div>
                 <div class="sub" style="margin-top:2px">${st.time}</div>
                 ${where ? `<div class="sub muted" style="margin-top:2px">${where}</div>` : ''}
-                ${gone ? `<div class="sub" style="margin-top:4px;color:var(--vscode-editorWarning-foreground,#cca700)">⚠ No live process owns this session — it is over, its hooks just never said so. <b>Clear</b> takes it off this page.</div>` : ''}
+                ${gone ? `<div class="sub" style="margin-top:4px;color:var(--vscode-editorWarning-foreground,#cca700)">⚠ No live process owns this session — it is over, its hooks just never said so. <b>Clear</b> takes it off this page, card and swim lane together.</div>` : ''}
                 ${turnChips(s)}
                 <div class="btnrow">
                     <button class="secondary" data-focusterm="${C.esc(s.agentName)}" data-sid="${C.esc(s.sessionId)}" title="Jump to this session's terminal window">⌨ Terminal</button>
                     ${!s.source && !gone && RUNNING.indexOf(s.status) >= 0 ? `<button class="secondary" data-stopsess="${C.esc(s.sessionId)}" data-stopagent="${C.esc(s.agentName)}" title="Interrupt this session — types Esc into its terminal, which stops the running turn and leaves the session open">⎋ Interrupt</button>` : ''}
                     ${s.transcriptPath ? `<button class="secondary" data-open="${C.esc(s.transcriptPath)}" data-ts="${s.lastEventTs || 0}">Open transcript</button>` : ''}
                     ${s.owner && !s.source ? `<button class="secondary" data-endsess="${C.esc(s.sessionId)}" data-endagent="${C.esc(s.label || s.agentName)}" title="End this session for real — its claude process (pid ${s.owner.pid}) is stopped and the session leaves this page. Asks first.">⏻ End session</button>` : ''}
-                    <button class="secondary" data-dropsess="${C.esc(s.sessionId)}" data-dropagent="${C.esc(s.label || s.agentName)}" title="${gone ? 'Take this finished session off the page' : 'Stop tracking this session here — the session itself is not touched, and it comes back if it reports another event'}">✕ Clear</button>
+                    <button class="secondary" data-dropsess="${C.esc(s.sessionId)}" data-dropagent="${C.esc(s.label || s.agentName)}" title="Take this session off the Live Timeline whole — this card AND its swim-lane row, in every range. The session itself is not touched: its transcript stays on disk, and it comes back here if it reports another event.">✕ Clear</button>
                 </div>
             </div>`;
         }).join('');
@@ -595,18 +630,18 @@
                 // Only offered when there is something to clean: a session whose
                 // process the OS no longer knows about.
                 actions: goneCount
-                    ? `<button class="secondary" id="clear-gone" title="Clear every session here whose process is gone — they ended without a SessionEnd hook and would sit on this page until their tracking expires">✕ Clear ${goneCount} finished session${goneCount > 1 ? 's' : ''}</button>`
+                    ? `<button class="secondary" id="clear-gone" title="Clear every session here whose process is gone — cards and swim-lane rows both. They ended without a SessionEnd hook and would sit on this page until their tracking expires">✕ Clear ${goneCount} finished session${goneCount > 1 ? 's' : ''}</button>`
                     : '',
                 guide: 'canli-gozlem'
             })}
             ${emptyHint}
             <h2>${density ? 'Activity density' : 'Swim lanes'}</h2>
-            ${density ? '' : `<div class="muted small" style="margin:-4px 0 6px">Left toggles — when an agent hits <b>YOUR TURN</b>: ${TURN_ACTIONS.map(a => a.glyph + ' ' + a.label.split(' ')[0].toLowerCase()).join(' · ')}. Agent default for all of its sessions (fires even while this panel is closed); override a single session on its card below. Concurrent sessions of one agent get their own #1/#2 rows. <b>Hover a row's name</b> for that session's figures; click it to open the session.</div>`}
+            ${density ? '' : `<div class="muted small" style="margin:-4px 0 6px">Left toggles — when an agent hits <b>YOUR TURN</b>: ${TURN_ACTIONS.map(a => a.glyph + ' ' + a.label.split(' ')[0].toLowerCase()).join(' · ')}. Agent default for all of its sessions (fires even while this panel is closed); override a single session on its card below. Concurrent sessions of one agent get their own #1/#2 rows. <b>Hover a row's name</b> for that session's figures; click it to open the session, <b>right-click the row</b> for its actions (rename · terminal · interrupt · end · clear).</div>`}
             <div class="card chartbox">${lanesHtml}<div class="legend">${legend}</div></div>
             ${workflowRunsSvg(runsData, now, winMs)}
             <h2>Live sessions (${DATA.sessions.length})</h2>
             <div class="grid">${sessionCards || '<p class="muted">No sessions tracked yet.</p>'}</div>
-            <p class="footnote">Events arrive via local hooks (127.0.0.1 only, nothing leaves this machine). Right-click a session card for its actions (rename, open, terminal, end). Stuck detection and permission alerts are configurable in settings.</p>
+            <p class="footnote">Events arrive via local hooks (127.0.0.1 only, nothing leaves this machine). Right-click a session card <b>or its swim-lane row</b> for its actions (rename, open, terminal, interrupt, end, clear). Clear takes a session off this page whole — card and row — without touching the session. Stuck detection and permission alerts are configurable in settings.</p>
         `;
 
         const install = document.getElementById('install');

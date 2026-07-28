@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as http from 'http';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { truncate } from './util';
 
@@ -144,7 +145,52 @@ export class LiveMonitor implements vscode.Disposable {
         private storeFile?: string
     ) {
         this.stuckTimer = setInterval(() => this.checkStuck(), 30_000);
+        this.loadCleared();
         this.loadStore();
+    }
+
+    // ---------- Cleared sessions ----------
+
+    /**
+     * Sessions the user took off the Live Timeline with Clear (id → cleared at).
+     *
+     * Clearing is not "this session ended" — it is "I do not want to see this on
+     * this page any more", so it has to take the card AND the lane row with it.
+     * The lane is drawn from events, so hiding the card alone left an empty row
+     * behind: everything the timeline reads is filtered through this set.
+     *
+     * The JSONL store is never rewritten — it is the raw log — so the ids are
+     * kept in a small sidecar file next to it, which is also what makes a Clear
+     * survive a window reload. A new event from a cleared session lifts its
+     * clear: a session that comes back is tracked again from that moment.
+     */
+    private cleared = new Map<string, number>();
+
+    private clearedFile(): string | undefined {
+        return this.storeFile
+            ? path.join(path.dirname(this.storeFile), 'live-cleared.json')
+            : undefined;
+    }
+
+    private loadCleared(): void {
+        const file = this.clearedFile();
+        if (!file || !fs.existsSync(file)) { return; }
+        try {
+            const raw = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, number>;
+            const keepFrom = Date.now() - STORE_RETENTION_MS;
+            for (const [id, ts] of Object.entries(raw)) {
+                // Past retention there is nothing left in the store to hide.
+                if (typeof ts === 'number' && ts >= keepFrom) { this.cleared.set(id, ts); }
+            }
+        } catch { /* unreadable — nothing stays hidden */ }
+    }
+
+    private saveCleared(): void {
+        const file = this.clearedFile();
+        if (!file) { return; }
+        try {
+            fs.writeFileSync(file, JSON.stringify(Object.fromEntries(this.cleared)), 'utf8');
+        } catch { /* best effort — the in-memory set still holds for this window */ }
     }
 
     // ---------- Persistent event store ----------
@@ -167,7 +213,9 @@ export class LiveMonitor implements vscode.Disposable {
                 try { e = JSON.parse(line) as LiveEvent; } catch { continue; }
                 if (typeof e.ts !== 'number' || !e.kind) { continue; }
                 if (e.ts >= keepFrom) { keptLines.push(line); }
-                if (e.ts >= cutoff) { this.eventLog.push(e); }
+                // A cleared session stays out of memory — that is what makes it
+                // stay off the page across a reload.
+                if (e.ts >= cutoff && !this.cleared.has(e.sessionId)) { this.eventLog.push(e); }
             }
             this.eventLog.sort((a, b) => a.ts - b.ts);
             this.capMemory();
@@ -281,6 +329,7 @@ export class LiveMonitor implements vscode.Disposable {
         let total = 0;
         const add = (e: LiveEvent) => {
             if (e.ts < from || e.ts > to) { return; }
+            if (this.cleared.has(e.sessionId)) { return; } // cleared off the page, in every range
             const bucket = Math.min(bucketCount - 1, Math.floor((e.ts - from) / bucketMs));
             const lane = laneOf(e.agentName ?? e.sessionId.slice(0, 8));
             const slot = e.kind === 'toolStart' || e.kind === 'toolEnd' ? 0
@@ -390,6 +439,9 @@ export class LiveMonitor implements vscode.Disposable {
 
     private session(payload: HookPayload): LiveSession {
         const id = payload.session_id ?? 'unknown';
+        // A cleared session that speaks again is back — Clear takes it off the
+        // page, it does not blacklist it.
+        if (this.cleared.delete(id)) { this.saveCleared(); }
         let s = this.sessionsMap.get(id);
         if (!s) {
             const { agentId, agentName } = this.resolveAgent(payload.cwd);
@@ -531,22 +583,37 @@ export class LiveMonitor implements vscode.Disposable {
     }
 
     /**
-     * Forget a tracked session on purpose — the timeline's "Clear" action.
+     * Drop a tracked session, in one of two meanings.
      *
-     * A session whose process is gone without a SessionEnd hook (a closed
-     * terminal window, a crashed CLI, a machine that slept) keeps its card and
-     * its unfinished tool call on the page until the TTL runs out. Clearing
-     * writes the `end` event that never arrived — so the lane closes where the
-     * session really stopped instead of running on to "now" — and drops the
-     * session. Returns false when nothing was tracked under that id.
+     * `purge: false` — the session ENDED (End session): it stops being live and
+     * gets the `end` event that never arrived, so its unfinished tool bar closes
+     * where the session really stopped instead of running on to "now". What it
+     * did stays on the page as history — that is the honest record of a run.
+     *
+     * `purge: true` — the user CLEARED it: take it off this page whole. The card
+     * and the lane row go together (an emptied row with no card is an orphan),
+     * in every range, and it stays gone across a reload. The session itself is
+     * untouched — the transcript is on disk and a new event brings it back.
+     * Because a row outlives its card, this works on an untracked session too,
+     * as long as the page is still drawing its events.
+     *
+     * Returns false when there was nothing to drop under that id.
      */
-    dismiss(sessionId: string, reason = 'cleared in Agent Farm'): boolean {
+    dismiss(sessionId: string, reason = 'cleared in Agent Farm', purge = false): boolean {
         const s = this.sessionsMap.get(sessionId);
-        if (!s) { return false; }
-        s.status = 'ended';
-        s.currentTool = undefined;
-        this.push(s, 'end', undefined, reason);
-        this.sessionsMap.delete(sessionId);
+        const drawn = purge && this.eventLog.some(e => e.sessionId === sessionId);
+        if (!s && !drawn) { return false; }
+        if (s) {
+            s.status = 'ended';
+            s.currentTool = undefined;
+            if (!purge) { this.push(s, 'end', undefined, reason); }
+            this.sessionsMap.delete(sessionId);
+        }
+        if (purge) {
+            this.cleared.set(sessionId, Date.now());
+            this.saveCleared();
+            this.eventLog = this.eventLog.filter(e => e.sessionId !== sessionId);
+        }
         this.onDidUpdateEmitter.fire();
         return true;
     }

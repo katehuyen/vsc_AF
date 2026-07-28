@@ -121,6 +121,38 @@ ok('lane labels are clickable groups', lastHtml.indexOf('class="mark lanelabel"'
 ok('…carrying the session\'s own transcript', lastHtml.indexOf('class="mark lanelabel" data-file="D:/t/S1.jsonl"') !== -1);
 ok('…and its figures in the tooltip', /dev #1 · #S1 · TOOL · Read/.test(lastHtml) && lastHtml.indexOf('$0.50 · 48.2k tok') !== -1);
 
+// ---- a row is a session: right-click it for that session's commands ----
+{
+    const ctxOf = (s) => {
+        const m = /sessionId&quot;:&quot;([^&]*)&quot;/.exec(s);
+        return m ? m[1] : '';
+    };
+    const label = /<g class="mark lanelabel" data-file="D:\/t\/S1.jsonl" data-ts="0" data-vscode-context="([^"]*)"/.exec(lastHtml);
+    ok('the row label carries the right-click contract', !!label);
+    ok('…the same one the cards use', !!label && label[1].indexOf('afTimelineSession') !== -1);
+    ok('…for that row\'s own session', !!label && ctxOf(label[1]) === 'S1');
+    ok('…and the tooltip says so', lastHtml.indexOf("Right-click for this session's actions") !== -1);
+
+    // Transparent hit areas: the whole row answers for its live session, and a
+    // packed row's earlier session answers for itself.
+    const rects = [];
+    const re = /<rect x="([\d.]+)" y="(\d+)" width="([\d.]+)" height="42" fill="transparent" data-vscode-context="([^"]*)"\/>/g;
+    let m;
+    while ((m = re.exec(lastHtml))) {
+        rects.push({ x: Number(m[1]), y: Number(m[2]), w: Number(m[3]), sid: ctxOf(m[4]) });
+    }
+    ok('every row has a full-width right-click area', rects.filter(r => r.w === 792).length === 4);
+    ok('…the dev rows target their own sessions',
+        rects.some(r => r.y === 24 && r.w === 792 && r.sid === 'S1') &&
+        rects.some(r => r.y === 70 && r.w === 792 && r.sid === 'S2'));
+    ok('…a packed row targets the session that is live', rects.some(r => r.y === 116 && r.w === 792 && r.sid === 'S3'));
+    ok('…and the earlier session on that row answers over its own span',
+        rects.some(r => r.y === 116 && r.sid === 'SOLD' && r.w < 792));
+    ok('…a row nobody could name is still a session', rects.some(r => r.y === 162 && r.sid === 'abcdef1234567890'));
+    ok('the hit areas are laid down before the bars, so left-click still opens',
+        lastHtml.indexOf('fill="transparent"') < lastHtml.indexOf('rx="3" fill="var(--vscode-charts-green'));
+}
+
 // ---- an unfinished tool call must not run to "now" forever ----
 {
     // row 2 (ops): toolStart at -9m, no toolEnd, session idle again since -8m
