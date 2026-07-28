@@ -101,7 +101,7 @@ import {
 } from './core/sessionmarks';
 import { INTERRUPT_KEY, resolveInterrupt, TermRecord } from './core/interrupt';
 import { QUICK_MENU, QUICK_MENU_GROUPS } from './core/quickmenu';
-import { describeOwner, mergeSessionNames, ownerOf, readCliSessions } from './core/cliSessions';
+import { describeOwner, mergeSessionNames, ownerOf, readCliSessions, sessionsDir } from './core/cliSessions';
 import { revealPath } from './core/reveal';
 import {
     agentProjectMap, assignAgent, normalizeProjects, ProjectDef, projectOfAgent,
@@ -728,7 +728,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push({ dispose: () => clearTimeout(turnPruneTimer) });
     const showTimeline = (): void => {
         TimelinePanel.show({
-            extensionUri: context.extensionUri, live, tasks: taskManager,
+            extensionUri: context.extensionUri, live, tasks: taskManager, index,
+            // A live card may only claim "no process" when the CLI's own
+            // registry is there to be read — otherwise silence proves nothing.
+            liveOwners: () => readCliSessions(claudeDir()),
+            ownersKnown: () => fs.existsSync(sessionsDir(claudeDir())),
+            stuckMs: () => cfg().get<number>('stuckThresholdSeconds', 240) * 1000,
             getTurnActions, setTurnActions, getSessionTurnActions, setSessionTurnActions
         });
     };
@@ -2794,6 +2799,61 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 term.show();
                 term.sendText(INTERRUPT_KEY, false);
                 return { sessionId, interrupted: true, terminal: term.name, how: target.how };
+            }
+        },
+        {
+            op: 'sessions.live',
+            describe: 'The sessions the live monitor is tracking right now — what the Live Timeline shows: status, current tool, counters, the transcript\'s cost/tokens/turns, and whether a CLI process still owns each one (`alive`: false = it is over, its hooks just never said so; null = the CLI registry is unreadable, so nothing can be claimed). args: none',
+            handler: () => {
+                const rows = new Map(index.all().map(r => [r.sessionId, r]));
+                const owners = readCliSessions(claudeDir());
+                const known = fs.existsSync(sessionsDir(claudeDir()));
+                return live.sessions().map(s => {
+                    const row = rows.get(s.sessionId);
+                    const owner = ownerOf(owners, s.sessionId);
+                    return {
+                        sessionId: s.sessionId, label: live.labelOf(s),
+                        agent: s.agentName ?? null, source: s.source ?? null,
+                        status: s.status, tool: s.currentTool ?? null,
+                        startedAt: s.startedAt, lastEventTs: s.lastEventTs,
+                        prompts: s.prompts, toolCalls: s.toolCalls,
+                        compactions: s.compactions, subagents: s.subagentStops,
+                        cwd: s.cwd ?? null, title: row?.title ?? null,
+                        cost: row ? Math.round(row.cost * 100) / 100 : 0,
+                        tokens: row ? totalTokens(row.usage) : 0,
+                        turns: row?.userTurns ?? 0,
+                        alive: s.source ? null : (known ? !!owner : null),
+                        pid: owner?.pid ?? null
+                    };
+                });
+            }
+        },
+        {
+            op: 'sessions.end',
+            describe: 'End a live session — not its turn (that is sessions.interrupt) but the session: the claude process that owns it is stopped, and it leaves the Live Timeline. A Console-hosted session is closed through the Console instead. The transcript stays on disk and can be resumed. Asks the user to confirm first. args: sessionId',
+            handler: async (args) => {
+                const sessionId = argStr(args, 'sessionId');
+                const before = live.sessions().some(s => s.sessionId === sessionId);
+                await endLiveSession(sessionId);
+                return { sessionId, tracked: before, ended: !live.sessions().some(s => s.sessionId === sessionId) };
+            }
+        },
+        {
+            op: 'sessions.dismiss',
+            describe: 'Take a session off the Live Timeline without touching the session itself — the way to clear a card (and its never-ending tool lane) left behind by a claude that died without a SessionEnd hook. args: sessionId, or gone:true to clear every tracked session whose process the OS no longer knows',
+            handler: (args) => {
+                if (args.gone === true) {
+                    if (!fs.existsSync(sessionsDir(claudeDir()))) {
+                        return { cleared: 0, reason: 'the CLI session registry is unreadable — nothing can be proven finished' };
+                    }
+                    const owned = new Set(readCliSessions(claudeDir()).map(o => o.sessionId));
+                    const dead = live.sessions().filter(s => !s.source && !owned.has(s.sessionId) &&
+                        Date.now() - s.startedAt > 60_000);
+                    for (const s of dead) { live.dismiss(s.sessionId, 'cleared (no live process)'); }
+                    return { cleared: dead.length, sessions: dead.map(s => s.sessionId) };
+                }
+                const sessionId = argStr(args, 'sessionId');
+                return { sessionId, cleared: live.dismiss(sessionId) };
             }
         },
         {
@@ -5401,6 +5461,85 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             `Agent Farm: no terminal found for ${who} — ${target.how}.`);
     };
 
+    /** Shared picker for the session-level commands: a given id wins, otherwise ask. */
+    const pickLiveSessionId = async (
+        given: string | undefined, placeHolder: string
+    ): Promise<string | undefined> => {
+        if (given) { return given; }
+        const list = live.sessions();
+        if (!list.length) {
+            void vscode.window.showInformationMessage(
+                'Agent Farm: no live session is being tracked right now.');
+            return undefined;
+        }
+        const pick = await vscode.window.showQuickPick(list.map(s => ({
+            label: `$(radio-tower) ${live.labelOf(s)} (#${s.sessionId.slice(0, 8)})`,
+            description: s.status + (s.currentTool ? ` · ${s.currentTool}` : ''),
+            detail: s.lastPrompt ?? s.cwd ?? '',
+            id: s.sessionId
+        })), { placeHolder, ignoreFocusOut: true });
+        return pick?.id;
+    };
+
+    /**
+     * End a live session for real — not the turn (that is interrupt), the
+     * session.
+     *
+     * What "end" can honestly mean depends on who owns the process. A session
+     * this window hosts is closed through the Console (its own stdin + process
+     * tree). Any other one is a `claude` the CLI registry knows by pid, and the
+     * only thing that ends it from here is stopping that process tree — so the
+     * question is asked plainly first. Either way the session then leaves the
+     * live timeline, which is also the way out for a session whose process is
+     * already gone and whose card would otherwise sit there until its tracking
+     * expires.
+     */
+    const endLiveSession = async (sessionId: string, agentName?: string): Promise<void> => {
+        const s = live.sessions().find(x => x.sessionId === sessionId);
+        const who = agentName ?? (s ? live.labelOf(s) : sessionId.slice(0, 8));
+        const hosted = consoleHost.list().find(h => h.sessionId === sessionId);
+        if (hosted) {
+            const yes = await vscode.window.showWarningMessage(
+                `End "${who}"? It is a Console session in this window — its process stops and its transcript stays on disk.`,
+                { modal: true }, 'End session');
+            if (yes !== 'End session') { return; }
+            consoleHost.close(hosted.id);
+            live.dismiss(sessionId, 'ended from Agent Farm');
+            return;
+        }
+        const owner = ownerOf(readCliSessions(claudeDir()), sessionId);
+        if (!owner) {
+            const yes = await vscode.window.showWarningMessage(
+                `No live process owns "${who}" any more — there is nothing left to end. Clear it from the live timeline?`,
+                { modal: true }, 'Clear it');
+            if (yes !== 'Clear it') { return; }
+            live.dismiss(sessionId, 'cleared (no live process)');
+            return;
+        }
+        const yes = await vscode.window.showWarningMessage(
+            `End "${who}"?`,
+            {
+                modal: true,
+                detail: `Its claude process (pid ${owner.pid}) is stopped — the same as closing its terminal window. ` +
+                    'Anything mid-turn is lost; the transcript stays on disk and the session can be resumed later.\n\n' +
+                    'To stop only what it is doing right now, use Interrupt instead.'
+            },
+            'End session');
+        if (yes !== 'End session') { return; }
+        try {
+            if (process.platform === 'win32') {
+                cp.execFile('taskkill', ['/PID', String(owner.pid), '/T', '/F'], () => { /* best effort */ });
+            } else {
+                process.kill(owner.pid, 'SIGTERM');
+            }
+        } catch {
+            void vscode.window.showWarningMessage(
+                `Agent Farm: could not stop pid ${owner.pid} — it may already be gone.`);
+        }
+        live.dismiss(sessionId, 'ended from Agent Farm');
+        void vscode.window.showInformationMessage(`Agent Farm: ${who} ended (pid ${owner.pid}).`);
+    };
+
     // Palette entry point for the insight commands (tree rows pass the object).
     const pickInsight = async (placeHolder: string, fixableOnly = false): Promise<Insight | undefined> => {
         const list = insights.filter(i => !fixableOnly || FIX_COMMANDS[i.category]);
@@ -5905,6 +6044,50 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             (arg?: { sessionId?: string; agentName?: string } | { session?: SessionInfo } | SessionInfo) => {
                 const unwrapped = arg && 'session' in arg && arg.session ? arg.session : arg;
                 void interruptSession(unwrapped as { sessionId?: string; agentName?: string } | undefined);
+            }),
+
+        vscode.commands.registerCommand('agentfarm.endSession',
+            async (arg?: { sessionId?: string; agentName?: string }) => {
+                const sessionId = await pickLiveSessionId(arg?.sessionId,
+                    'End which session? (its claude process is stopped)');
+                if (!sessionId) { return; }
+                await endLiveSession(sessionId, arg?.agentName);
+            }),
+
+        vscode.commands.registerCommand('agentfarm.dismissSession',
+            async (arg?: { sessionId?: string; agentName?: string; gone?: boolean }) => {
+                if (arg?.gone) {
+                    // Sweep: every tracked session the OS no longer runs.
+                    const owned = new Set(readCliSessions(claudeDir()).map(o => o.sessionId));
+                    const registry = fs.existsSync(sessionsDir(claudeDir()));
+                    const dead = registry
+                        ? live.sessions().filter(s => !s.source && !owned.has(s.sessionId) &&
+                            Date.now() - s.startedAt > 60_000)
+                        : [];
+                    if (!dead.length) {
+                        void vscode.window.showInformationMessage(registry
+                            ? 'Agent Farm: every tracked session still has a live process.'
+                            : 'Agent Farm: the CLI session registry is not readable here, so a session cannot be proven finished — clear them one by one.');
+                        return;
+                    }
+                    for (const s of dead) { live.dismiss(s.sessionId, 'cleared (no live process)'); }
+                    void vscode.window.showInformationMessage(
+                        `Agent Farm: cleared ${dead.length} finished session(s) from the live timeline.`);
+                    return;
+                }
+                const sessionId = await pickLiveSessionId(arg?.sessionId,
+                    'Clear which session from the live timeline?');
+                if (!sessionId) { return; }
+                const who = arg?.agentName
+                    ?? live.sessions().find(s => s.sessionId === sessionId)?.agentName
+                    ?? sessionId.slice(0, 8);
+                if (!live.dismiss(sessionId)) {
+                    void vscode.window.showInformationMessage(
+                        `Agent Farm: ${who} is not tracked on the live timeline.`);
+                    return;
+                }
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: ${who} cleared from the live timeline — the session itself was not touched.`);
             }),
 
         // ---------- B1: managing projects ----------

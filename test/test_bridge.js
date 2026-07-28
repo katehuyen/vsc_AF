@@ -1175,6 +1175,99 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             /external/i.test(intBlock));
     }
 
+    // ---------- live sessions: read, end, clear ----------
+    // What the Live Timeline can do, an agent can do: see what is running,
+    // stop one for real, and clear a card left behind by a claude that died
+    // without a SessionEnd hook.
+    {
+        const reg = new BridgeRegistry();
+        const N = Date.now();
+        let tracked = [
+            { sessionId: 'A', agentName: 'dev', status: 'tool', currentTool: 'Bash', startedAt: N - 3600e3, lastEventTs: N - 1000, prompts: 4, toolCalls: 9, compactions: 1, subagentStops: 0, cwd: 'D:/a/dev' },
+            { sessionId: 'B', agentName: 'ops', status: 'waiting-input', startedAt: N - 7200e3, lastEventTs: N - 600e3, prompts: 1, toolCalls: 0, compactions: 0, subagentStops: 0 },
+            { sessionId: 'C', source: 'gemini', agentName: 'dev', status: 'idle', startedAt: N - 7200e3, lastEventTs: N - 60e3, prompts: 0, toolCalls: 0, compactions: 0, subagentStops: 0 }
+        ];
+        // Only A still has a process: B is the ghost this feature exists for.
+        const owners = [{ sessionId: 'A', pid: 4242, entrypoint: 'cli' }];
+        const rows = new Map([['A', { title: 'the job', cost: 1.234, userTurns: 4, usage: {} }]]);
+        const cleared = [];
+        const liveStub = {
+            sessions: () => tracked,
+            labelOf: (s) => s.agentName,
+            dismiss: (id) => {
+                if (!tracked.some(s => s.sessionId === id)) { return false; }
+                tracked = tracked.filter(s => s.sessionId !== id);
+                cleared.push(id);
+                return true;
+            }
+        };
+        const registryReadable = () => true;
+        reg.register([
+            {
+                op: 'sessions.live',
+                describe: 'The sessions the live monitor is tracking right now — alive: false = over, null = unknowable. args: none',
+                handler: () => liveStub.sessions().map(s => {
+                    const row = rows.get(s.sessionId);
+                    const owner = owners.find(o => o.sessionId === s.sessionId);
+                    return {
+                        sessionId: s.sessionId, label: liveStub.labelOf(s), status: s.status,
+                        tool: s.currentTool ?? null, prompts: s.prompts, toolCalls: s.toolCalls,
+                        title: row ? row.title : null, cost: row ? Math.round(row.cost * 100) / 100 : 0,
+                        turns: row ? row.userTurns : 0,
+                        alive: s.source ? null : (registryReadable() ? !!owner : null),
+                        pid: owner ? owner.pid : null
+                    };
+                })
+            },
+            {
+                op: 'sessions.dismiss',
+                describe: 'Take a session off the Live Timeline without touching the session. args: sessionId | gone:true',
+                handler: (args) => {
+                    if (args.gone === true) {
+                        if (!registryReadable()) { return { cleared: 0, reason: 'registry unreadable' }; }
+                        const owned = new Set(owners.map(o => o.sessionId));
+                        const dead = liveStub.sessions().filter(s => !s.source && !owned.has(s.sessionId) &&
+                            Date.now() - s.startedAt > 60000);
+                        for (const s of dead) { liveStub.dismiss(s.sessionId); }
+                        return { cleared: dead.length, sessions: dead.map(s => s.sessionId) };
+                    }
+                    const sessionId = argStr(args, 'sessionId');
+                    return { sessionId, cleared: liveStub.dismiss(sessionId) };
+                }
+            }
+        ]);
+
+        const listed = await reg.dispatch('sessions.live', {});
+        ok('sessions.live reports every tracked session', listed.ok && listed.result.length === 3);
+        const a = listed.result.find(r => r.sessionId === 'A');
+        ok('…with its live state and the transcript\'s figures',
+            a.status === 'tool' && a.tool === 'Bash' && a.cost === 1.23 && a.turns === 4);
+        ok('…a session the OS still runs is alive, with its pid', a.alive === true && a.pid === 4242);
+        ok('…one it does not is NOT alive', listed.result.find(r => r.sessionId === 'B').alive === false);
+        ok('…and an external CLI is never judged (no registry of its own)',
+            listed.result.find(r => r.sessionId === 'C').alive === null);
+
+        const swept = await reg.dispatch('sessions.dismiss', { gone: true });
+        ok('sessions.dismiss gone:true clears exactly the ghost',
+            swept.ok && swept.result.cleared === 1 && swept.result.sessions[0] === 'B');
+        ok('…and leaves the running one and the external CLI alone',
+            tracked.map(s => s.sessionId).join(',') === 'A,C');
+        const one = await reg.dispatch('sessions.dismiss', { sessionId: 'A' });
+        ok('sessions.dismiss clears a named session', one.ok && one.result.cleared === true);
+        const gone = await reg.dispatch('sessions.dismiss', { sessionId: 'A' });
+        ok('…and says so plainly when there was nothing to clear', gone.ok && gone.result.cleared === false);
+
+        const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        for (const op of ['sessions.live', 'sessions.end', 'sessions.dismiss']) {
+            ok(`extension.ts registers ${op}`, src.includes(`op: '${op}'`));
+        }
+        const endBlock = src.slice(src.indexOf("op: 'sessions.end'"), src.indexOf("op: 'sessions.end'") + 1200);
+        ok('sessions.end goes through the same confirm-and-stop path the panel uses',
+            /endLiveSession\(sessionId\)/.test(endBlock));
+        ok('…and its contract points at sessions.interrupt for the lesser action',
+            /sessions\.interrupt/.test(endBlock));
+    }
+
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })();

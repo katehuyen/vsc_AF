@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.30.4",
+  "version": "3.31.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -519,6 +519,18 @@
         "title": "Interrupt Session",
         "category": "Agent Farm",
         "icon": "$(debug-pause)"
+      },
+      {
+        "command": "agentfarm.endSession",
+        "title": "End Session (stop its process)",
+        "category": "Agent Farm",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "agentfarm.dismissSession",
+        "title": "Clear Session From Live Timeline",
+        "category": "Agent Farm",
+        "icon": "$(clear-all)"
       },
       {
         "command": "agentfarm.openFile",
@@ -2087,6 +2099,36 @@
           "command": "agentfarm.openSession",
           "when": "webviewSection =~ /^afConsole(Session|Resumable)$/",
           "group": "1_session@4"
+        },
+        {
+          "command": "agentfarm.renameSession",
+          "when": "webviewSection == 'afTimelineSession'",
+          "group": "1_session@1"
+        },
+        {
+          "command": "agentfarm.openSession",
+          "when": "webviewSection == 'afTimelineSession'",
+          "group": "1_session@2"
+        },
+        {
+          "command": "agentfarm.focusSessionTerminal",
+          "when": "webviewSection == 'afTimelineSession'",
+          "group": "1_session@3"
+        },
+        {
+          "command": "agentfarm.interruptSession",
+          "when": "webviewSection == 'afTimelineSession'",
+          "group": "2_stop@1"
+        },
+        {
+          "command": "agentfarm.endSession",
+          "when": "webviewSection == 'afTimelineSession'",
+          "group": "2_stop@2"
+        },
+        {
+          "command": "agentfarm.dismissSession",
+          "when": "webviewSection == 'afTimelineSession'",
+          "group": "2_stop@3"
         }
       ]
     },

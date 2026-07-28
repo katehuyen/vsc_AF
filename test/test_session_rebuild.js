@@ -90,6 +90,28 @@ live.handle({ session_id: 'S1', hook_event_name: 'UserPromptSubmit', prompt: 'ye
 live.handle({ session_id: 'S1', hook_event_name: 'Stop' });
 eq('fresh turn fires after revive', fires, ['S1']);
 
+// ---- clearing a session that stopped without ever saying so ----
+{
+    eq('S4 is tracked before it is cleared', live.sessions().some(s => s.sessionId === 'S4'), true);
+    eq('dismiss reports what it did', live.dismiss('S4', 'test'), true);
+    eq('…the card is gone', live.sessions().some(s => s.sessionId === 'S4'), false);
+    eq('…and asking twice is honest, not an error', live.dismiss('S4'), false);
+    // The end event that never arrived is written, so the lane closes where the
+    // session really stopped instead of drawing on to "now".
+    const evs = live.events(24 * 3600 * 1000).filter(e => e.sessionId === 'S4');
+    eq('an end event closes the story', evs[evs.length - 1].kind, 'end');
+    eq('…with the reason', evs[evs.length - 1].detail, 'test');
+}
+
+// ---- the TTL sweep runs on its own timer, not only on the next hook event ----
+{
+    const s1b = live.sessions().find(x => x.sessionId === 'S1');
+    s1b.lastEventTs = Date.now() - 4 * 3600 * 1000;   // older than SESSION_TTL_MS
+    live.checkStuck();
+    eq('a session nobody has heard from expires without needing another event',
+        live.sessions().some(x => x.sessionId === 'S1'), false);
+}
+
 live.dispose();
 fs.unlinkSync(store);
 console.log(`\n${pass} passed, ${fail} failed`);

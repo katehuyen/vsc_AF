@@ -28,6 +28,25 @@
     ];
     function actionsFor(name) { return (turnActions && turnActions[name]) || []; }
 
+    const STYLE = `<style>
+        .sid { font-weight:400; opacity:.6; font-size:11px; }
+        .slink { cursor:pointer; text-decoration:underline; text-decoration-style:dotted; text-underline-offset:2px; }
+        .slink:hover { color:var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground)); }
+        .pathlink { cursor:pointer; }
+        .pathlink:hover { text-decoration:underline; }
+        .lanelabel:hover text { opacity:1; text-decoration:underline; }
+    </style>`;
+
+    /**
+     * The right-click contract for a session card — the same one the Console's
+     * rows use. `data-vscode-context` hands the card's identity to VS Code,
+     * which builds the menu from the `webview/context` entries in package.json;
+     * the normal Copy/Paste items stay. It is deliberately not a `contextmenu`
+     * listener: hijacking right-click would take the page's own menu away.
+     */
+    const ctxAttr = o => `data-vscode-context="${JSON.stringify(o)
+        .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}"`;
+
     // HTML toggle chips for one Live-sessions card. Same .af-toggle class as the
     // swim-lane SVG toggles, but carrying data-session: clicks change only THIS
     // session, so two open sessions of one agent alert independently.
@@ -109,19 +128,92 @@
         return Math.round(m / 60) + 'h ago';
     }
 
+    function fmtDur(ms) {
+        const m = Math.max(0, Math.round(ms / 60000));
+        if (m < 60) { return m + 'm'; }
+        const h = Math.floor(m / 60);
+        return h + 'h' + (m % 60 ? ' ' + (m % 60) + 'm' : '');
+    }
+
+    // Live sessions by id, refreshed at the top of every render: the lanes need
+    // to know whether the session behind a row is still there, and the tooltips
+    // read their figures from here.
+    let LIVE_BY_ID = new Map();
+
+    /** `#407c78cb` — a session id is how a row is matched against a terminal, a
+     *  tab or a log line, so it is shown, not hidden. */
+    const shortId = id => '#' + String(id || '').slice(0, 8);
+
+    /**
+     * Is this session over without having said so?
+     *
+     * The CLI keeps a registry of its running sessions; a claude session with no
+     * record in it, whose process the OS no longer knows, is finished — whatever
+     * the last hook event claimed. We only make that claim when the registry is
+     * actually readable (`ownersKnown`), never for an external CLI (no registry
+     * of its own), and never in the first minute of a session's life (the record
+     * is written at startup, and a card may render before it lands).
+     */
+    function isGone(s) {
+        return !!DATA.ownersKnown && !s.source && !s.owner &&
+            Date.now() - (s.startedAt || 0) > 60000;
+    }
+
+    /** The figures a session card and a lane tooltip both want, in one place. */
+    function statLines(s) {
+        const money = [
+            s.cost ? C.fmtUSD(s.cost) : '',
+            s.tokens ? C.fmtTok(s.tokens) + ' tok' : '',
+            s.ctxTokens ? 'ctx ' + C.fmtTok(s.ctxTokens) : '',
+            s.turns ? s.turns + ' turns' : '',
+            s.model ? String(s.model).replace(/^claude-/, '') : ''
+        ].filter(Boolean).join(' · ');
+        const work = [
+            s.prompts + ' prompts',
+            s.toolCalls + ' tools',
+            s.compactions ? s.compactions + ' compactions' : '',
+            s.subagentStops ? s.subagentStops + ' subagents' : '',
+            s.filesEdited ? s.filesEdited + ' files' : '',
+            s.errors ? s.errors + ' errors' : ''
+        ].filter(Boolean).join(' · ');
+        const time = `started ${fmtClock(s.startedAt)} · ${fmtDur(Date.now() - s.startedAt)} · last event ${relTime(s.lastEventTs)}`;
+        return { money, work, time };
+    }
+
+    /** Multi-line text for an SVG <title>: everything known about one session. */
+    function sessionTip(sid) {
+        const s = LIVE_BY_ID.get(sid);
+        if (!s) { return `session ${shortId(sid)} — no longer tracked (its events are history)`; }
+        const meta = STATUS_META[s.status] || STATUS_META.idle;
+        const st = statLines(s);
+        const lines = [
+            `${s.label || s.agentName} · ${shortId(s.sessionId)} · ${meta.label}${s.currentTool ? ' · ' + s.currentTool : ''}`,
+            s.title ? `“${s.title}”` : (s.lastPrompt ? `“${s.lastPrompt}”` : ''),
+            st.money, st.work, st.time,
+            isGone(s) ? 'no live process — this session is over (Clear it below)'
+                : (s.owner ? `pid ${s.owner.pid}${s.owner.entrypoint === 'sdk-cli' ? ' (Console/headless)' : ' (terminal)'}` : ''),
+            s.cwd
+        ];
+        return lines.filter(Boolean).join('\n');
+    }
+
     // One row per CONCURRENT session: each agent's sessions are packed into
     // tracks — sessions that overlap in time get separate rows ("dev #1",
     // "dev #2"), sequential ones share a row, so two open sessions of the same
     // agent no longer draw on top of each other.
     function buildLanes(events, now, winMs) {
         const from = now - winMs;
-        const bySession = new Map(); // sessionId -> {agent, first, last, live, segments, marks}
+        const bySession = new Map(); // sessionId -> {id, agent, first, last, live, segments, marks}
         const open = new Map();      // sessionId -> {start, tool, file}
+        // Lane keys that are a session id rather than an agent name — the
+        // session's folder is not one of the agent folders, so the hook stream
+        // never learned a name for it. Shown as "#3f8a1c2b", not as an agent.
+        const unresolved = new Set();
 
         const sessOf = (id, agent, ts) => {
             let s = bySession.get(id);
             if (!s) {
-                s = { agent, first: ts, last: ts, live: false, segments: [], marks: [] };
+                s = { id, agent, first: ts, last: ts, live: false, segments: [], marks: [], file: '' };
                 bySession.set(id, s);
             }
             s.first = Math.min(s.first, ts);
@@ -135,10 +227,14 @@
             const s = sessOf(ls.sessionId, ls.agentName, ls.startedAt || now);
             s.last = now;
             s.live = true;
+            if (ls.transcriptPath) { s.file = ls.transcriptPath; }
+            if (ls.resolved === false) { unresolved.add(ls.agentName); }
         }
 
         for (const e of events) {
+            if (!e.agentName) { unresolved.add(e.sessionId.slice(0, 8)); }
             const s = sessOf(e.sessionId, e.agentName || e.sessionId.slice(0, 8), e.ts);
+            if (e.transcriptPath) { s.file = e.transcriptPath; }
             if (e.kind === 'toolStart') {
                 open.set(e.sessionId, { start: e.ts, tool: e.tool || '?', file: e.transcriptPath || '' });
             } else if (e.kind === 'toolEnd') {
@@ -153,13 +249,28 @@
                 s.marks.push({ ts: e.ts, kind: e.kind, detail: e.detail || '', tool: e.tool || '', file: e.transcriptPath || '' });
             }
         }
-        // Tools still running: draw to "now".
+        // A tool call with no end event. It only keeps GROWING while its session
+        // is still on it: before, any unmatched toolStart was drawn to "now"
+        // forever, so a single lost PostToolUse — a closed terminal, a crash, a
+        // killed process — left a green bar running across the page on a session
+        // that had been over for hours. Now the bar stops where the session's
+        // last event actually landed and is drawn as the open question it is.
         for (const [sid, o] of open) {
             const s = bySession.get(sid);
-            if (s) {
-                s.segments.push({ start: Math.max(o.start, from), end: now, tool: o.tool, live: true, file: o.file });
-                s.last = now;
-            }
+            if (!s) { continue; }
+            const ls = LIVE_BY_ID.get(sid);
+            // "Still on it" is the session's own claim: currentTool is set by
+            // PreToolUse and cleared by PostToolUse / Stop / SessionEnd, so it
+            // is exactly "this session believes it is inside a tool right now".
+            const busy = !!ls && !!ls.currentTool && (ls.status === 'tool' || ls.status === 'stalled');
+            const end = busy ? now : Math.max(o.start, ls ? ls.lastEventTs : s.last);
+            s.segments.push({
+                start: Math.max(o.start, from), end, tool: o.tool, file: o.file,
+                live: busy,
+                stale: busy && ls.status === 'stalled',
+                unfinished: !busy
+            });
+            if (busy) { s.last = now; }
         }
 
         // Group visible sessions per agent (keep first-seen agent order), then
@@ -177,17 +288,26 @@
             const tracks = [];
             for (const s of list) {
                 let t = tracks.find(tr => tr.end <= s.first);
-                if (!t) { t = { end: 0, segments: [], marks: [] }; tracks.push(t); }
+                if (!t) { t = { end: 0, segments: [], marks: [], sessions: [], file: '' }; tracks.push(t); }
                 t.end = Math.max(t.end, s.last);
                 t.segments.push(...s.segments);
                 t.marks.push(...s.marks);
+                t.sessions.push(s.id);
+                if (s.file) { t.file = s.file; }
             }
+            const anon = unresolved.has(agent);
             tracks.forEach((t, i) => lanes.push({
                 agent,
-                name: tracks.length > 1 ? `${agent} #${i + 1}` : agent,
+                // A row nobody can name is labelled by what it IS: a session id.
+                name: (anon ? '#' + agent : agent) + (tracks.length > 1 ? ` #${i + 1}` : ''),
+                anon,
                 firstOfAgent: i === 0,
                 segments: t.segments,
-                marks: t.marks
+                marks: t.marks,
+                // Which session(s) this row is drawing — the row's tooltip and
+                // its click both need to know.
+                sessions: t.sessions,
+                file: t.file
             }));
         }
         return lanes;
@@ -226,7 +346,15 @@
             // Gutter: row label on top; the agent-default YOUR-TURN toggles
             // (♪ ◎ ▣ ▭) only on the agent's FIRST row — they cover every session
             // of that agent (per-session overrides live on the session cards).
-            out += `<text x="4" y="${y + 14}" font-size="11" font-weight="600" text-anchor="start" fill="currentColor" opacity="0.85">${C.esc(name.length > 14 ? name.slice(0, 13) + '…' : name)}</text>`;
+            // The label is not decoration: hovering it tells you everything about
+            // the session behind the row (id, status, cost, tokens, turns, where
+            // it runs), and clicking opens that session's transcript.
+            const tip = lane.sessions.map(sessionTip).join('\n\n') +
+                (lane.anon ? '\n\nThis row is labelled by its session id because the folder it runs in is not one of your agent folders.' : '') +
+                (lane.file ? '\n\nClick to open this session.' : '');
+            out += `<g class="mark lanelabel" data-file="${C.esc(lane.file || '')}" data-ts="0" style="cursor:${lane.file ? 'pointer' : 'default'}">` +
+                `<text x="4" y="${y + 14}" font-size="11" font-weight="600" text-anchor="start" fill="currentColor" opacity="0.85">${C.esc(name.length > 14 ? name.slice(0, 13) + '…' : name)}</text>` +
+                `<title>${C.esc(tip)}</title></g>`;
             const ty = y + 23;
             if (lane.firstOfAgent) { TURN_ACTIONS.forEach((a, ai) => {
                 const gx = 4 + ai * 18;
@@ -239,8 +367,16 @@
             out += `<line x1="${labelW}" y1="${y + rowH / 2}" x2="${W - 8}" y2="${y + rowH / 2}" stroke="currentColor" opacity="0.1"/>`;
             for (const seg of lane.segments) {
                 const x1 = x(seg.start), x2 = Math.max(x(seg.end), x1 + 2);
-                out += `<rect x="${x1.toFixed(1)}" y="${y + rowH / 2 - 7}" width="${(x2 - x1).toFixed(1)}" height="14" rx="3" fill="var(--vscode-charts-green, #4caf50)" opacity="${seg.live ? 0.95 : 0.55}" class="mark" data-file="${C.esc(seg.file || '')}" data-ts="${seg.start}">` +
-                    `<title>${C.esc(seg.tool)} — ${fmtClock(seg.start)} → ${seg.live ? 'running' : fmtClock(seg.end)} (${Math.max(1, Math.round((seg.end - seg.start) / 1000))}s)</title></rect>`;
+                // A tool whose end never arrived is drawn hollow and dashed —
+                // it must not look like work still being done.
+                const style = seg.unfinished
+                    ? 'fill="none" stroke="var(--vscode-charts-green, #4caf50)" stroke-width="1.2" stroke-dasharray="3 2" opacity="0.7"'
+                    : `fill="var(--vscode-charts-green, #4caf50)" opacity="${seg.stale ? 0.6 : seg.live ? 0.95 : 0.55}"`;
+                const when = seg.unfinished
+                    ? `${fmtClock(seg.start)} → unfinished: no end event ever arrived (the session stopped at ${fmtClock(seg.end)})`
+                    : `${fmtClock(seg.start)} → ${seg.live ? (seg.stale ? 'running? — nothing heard since ' + fmtClock(seg.end) : 'running') : fmtClock(seg.end)} (${Math.max(1, Math.round((seg.end - seg.start) / 1000))}s)`;
+                out += `<rect x="${x1.toFixed(1)}" y="${y + rowH / 2 - 7}" width="${(x2 - x1).toFixed(1)}" height="14" rx="3" ${style} class="mark" data-file="${C.esc(seg.file || '')}" data-ts="${seg.start}">` +
+                    `<title>${C.esc(seg.tool)} — ${C.esc(when)}</title></rect>`;
             }
             for (const m of lane.marks) {
                 const st = MARK_STYLE[m.kind] || MARK_STYLE.notify;
@@ -353,6 +489,7 @@
         const now = Date.now();
         const winMs = windowMin * 60000;
         const listener = DATA.listener;
+        LIVE_BY_ID = new Map((DATA.sessions || []).map(s => [s.sessionId, s]));
         if (turnActions === null) { turnActions = Object.assign({}, DATA.turnActions || {}); }
         if (sessionActions === null) { sessionActions = Object.assign({}, DATA.sessionTurnActions || {}); }
 
@@ -367,20 +504,43 @@
             listenerHtml = `<span class="badge err">listener error</span>`;
         }
 
+        const goneCount = DATA.sessions.filter(isGone).length;
         const sessionCards = DATA.sessions.map(s => {
             const meta = STATUS_META[s.status] || STATUS_META.idle;
-            return `<div class="card" style="border-left:3px solid ${meta.color}">
+            const gone = isGone(s);
+            const st = statLines(s);
+            const open = s.transcriptPath
+                ? ` class="slink" data-open="${C.esc(s.transcriptPath)}" data-ts="${s.lastEventTs || 0}" title="Open this session"`
+                : '';
+            const where = [
+                gone ? '' : (s.owner
+                    ? `pid ${s.owner.pid}${s.owner.entrypoint === 'sdk-cli' ? ' · Console/headless' : ' · terminal'}`
+                    : ''),
+                s.cwd ? `<span class="pathlink" data-cwd="${C.esc(s.cwd)}" title="Reveal this folder">${C.esc(s.cwd)}</span>` : ''
+            ].filter(Boolean).join(' · ');
+            return `<div class="card" style="border-left:3px solid ${gone ? 'var(--vscode-descriptionForeground,#999)' : meta.color}"
+                 ${ctxAttr({
+                     webviewSection: 'afTimelineSession', preventDefaultContextMenuItems: false,
+                     sessionId: s.sessionId, title: s.title || '', agentName: s.agentName || '', cwd: s.cwd || ''
+                 })}>
                 <div class="spread">
-                    <h3 style="margin:0">${C.esc(s.label || s.agentName)}${s.source ? ` <span class="badge" title="external CLI — open/closed tracked; richer events only if the CLI is wired to the hook bridge (Copy CLI Hook Bridge Command); no cost tracking">${C.esc(s.source)}</span>` : ''}</h3>
+                    <h3 style="margin:0"><span${open}>${C.esc(s.label || s.agentName)}</span> <span class="sid" title="Session id — the same one the Console rows, the terminal and the log lines carry">(${C.esc(shortId(s.sessionId))})</span>${s.source ? ` <span class="badge" title="external CLI — open/closed tracked; richer events only if the CLI is wired to the hook bridge (Copy CLI Hook Bridge Command); no cost tracking">${C.esc(s.source)}</span>` : ''}</h3>
                     <span class="badge" style="color:${meta.color};border-color:${meta.color}">${meta.label}${s.currentTool ? ' · ' + C.esc(s.currentTool) : ''}</span>
                 </div>
+                ${s.title ? `<div class="sub" style="margin-top:3px"><span${open}>${C.esc(s.title)}</span></div>` : ''}
                 <div class="sub" style="margin-top:4px">${s.lastPrompt ? '“' + C.esc(s.lastPrompt) + '”' : `<span class="muted">${s.source ? 'external CLI — lifecycle only' : 'no prompt yet'}</span>`}</div>
-                <div class="sub" style="margin-top:6px">started ${fmtClock(s.startedAt)} · ${s.prompts} prompts · ${s.toolCalls} tools · ${s.compactions} compactions · ${s.subagentStops} subagents · last event ${relTime(s.lastEventTs)}</div>
+                ${st.money ? `<div class="sub" style="margin-top:6px" title="From this session's transcript: what it has spent, the tokens that bought, what its context window is holding now, and the model of its last reply">${st.money}</div>` : ''}
+                <div class="sub" style="margin-top:${st.money ? '2' : '6'}px">${st.work}</div>
+                <div class="sub" style="margin-top:2px">${st.time}</div>
+                ${where ? `<div class="sub muted" style="margin-top:2px">${where}</div>` : ''}
+                ${gone ? `<div class="sub" style="margin-top:4px;color:var(--vscode-editorWarning-foreground,#cca700)">⚠ No live process owns this session — it is over, its hooks just never said so. <b>Clear</b> takes it off this page.</div>` : ''}
                 ${turnChips(s)}
                 <div class="btnrow">
                     <button class="secondary" data-focusterm="${C.esc(s.agentName)}" data-sid="${C.esc(s.sessionId)}" title="Jump to this session's terminal window">⌨ Terminal</button>
-                    ${!s.source && RUNNING.indexOf(s.status) >= 0 ? `<button class="secondary" data-stopsess="${C.esc(s.sessionId)}" data-stopagent="${C.esc(s.agentName)}" title="Interrupt this session — types Esc into its terminal, which stops the running turn and leaves the session open">⎋ Interrupt</button>` : ''}
+                    ${!s.source && !gone && RUNNING.indexOf(s.status) >= 0 ? `<button class="secondary" data-stopsess="${C.esc(s.sessionId)}" data-stopagent="${C.esc(s.agentName)}" title="Interrupt this session — types Esc into its terminal, which stops the running turn and leaves the session open">⎋ Interrupt</button>` : ''}
                     ${s.transcriptPath ? `<button class="secondary" data-open="${C.esc(s.transcriptPath)}" data-ts="${s.lastEventTs || 0}">Open transcript</button>` : ''}
+                    ${s.owner && !s.source ? `<button class="secondary" data-endsess="${C.esc(s.sessionId)}" data-endagent="${C.esc(s.label || s.agentName)}" title="End this session for real — its claude process (pid ${s.owner.pid}) is stopped and the session leaves this page. Asks first.">⏻ End session</button>` : ''}
+                    <button class="secondary" data-dropsess="${C.esc(s.sessionId)}" data-dropagent="${C.esc(s.label || s.agentName)}" title="${gone ? 'Take this finished session off the page' : 'Stop tracking this session here — the session itself is not touched, and it comes back if it reports another event'}">✕ Clear</button>
                 </div>
             </div>`;
         }).join('');
@@ -423,7 +583,7 @@
                 `<span><i style="background:${v.color};${v.shape === 'diamond' ? 'transform:rotate(45deg);' : ''}"></i>${v.label}</span>`).join('') +
               `<span><i style="background:var(--vscode-charts-green,#4caf50);width:16px;border-radius:3px"></i>tool run</span>`;
 
-        document.getElementById('app').innerHTML = `
+        document.getElementById('app').innerHTML = `${STYLE}
             ${window.AFHeader.html({
                 page: 'timeline',
                 title: 'Live Timeline',
@@ -432,16 +592,21 @@
                     const label = m < 60 ? m + 'm' : m <= 1440 ? (m / 60) + 'h' : (m / 1440) + 'd';
                     return `<button data-win="${m}" class="${m === windowMin ? 'sel' : ''}">${label}</button>`;
                 }).join('')}</span>`,
+                // Only offered when there is something to clean: a session whose
+                // process the OS no longer knows about.
+                actions: goneCount
+                    ? `<button class="secondary" id="clear-gone" title="Clear every session here whose process is gone — they ended without a SessionEnd hook and would sit on this page until their tracking expires">✕ Clear ${goneCount} finished session${goneCount > 1 ? 's' : ''}</button>`
+                    : '',
                 guide: 'canli-gozlem'
             })}
             ${emptyHint}
             <h2>${density ? 'Activity density' : 'Swim lanes'}</h2>
-            ${density ? '' : `<div class="muted small" style="margin:-4px 0 6px">Left toggles — when an agent hits <b>YOUR TURN</b>: ${TURN_ACTIONS.map(a => a.glyph + ' ' + a.label.split(' ')[0].toLowerCase()).join(' · ')}. Agent default for all of its sessions (fires even while this panel is closed); override a single session on its card below. Concurrent sessions of one agent get their own #1/#2 rows.</div>`}
+            ${density ? '' : `<div class="muted small" style="margin:-4px 0 6px">Left toggles — when an agent hits <b>YOUR TURN</b>: ${TURN_ACTIONS.map(a => a.glyph + ' ' + a.label.split(' ')[0].toLowerCase()).join(' · ')}. Agent default for all of its sessions (fires even while this panel is closed); override a single session on its card below. Concurrent sessions of one agent get their own #1/#2 rows. <b>Hover a row's name</b> for that session's figures; click it to open the session.</div>`}
             <div class="card chartbox">${lanesHtml}<div class="legend">${legend}</div></div>
             ${workflowRunsSvg(runsData, now, winMs)}
             <h2>Live sessions (${DATA.sessions.length})</h2>
             <div class="grid">${sessionCards || '<p class="muted">No sessions tracked yet.</p>'}</div>
-            <p class="footnote">Events arrive via local hooks (127.0.0.1 only, nothing leaves this machine). Stuck detection and permission alerts are configurable in settings.</p>
+            <p class="footnote">Events arrive via local hooks (127.0.0.1 only, nothing leaves this machine). Right-click a session card for its actions (rename, open, terminal, end). Stuck detection and permission alerts are configurable in settings.</p>
         `;
 
         const install = document.getElementById('install');
@@ -461,6 +626,18 @@
             b.addEventListener('click', () => vscode.postMessage({
                 type: 'interruptSession', sessionId: b.dataset.stopsess || '', agentName: b.dataset.stopagent || ''
             })));
+        document.querySelectorAll('[data-endsess]').forEach(b =>
+            b.addEventListener('click', () => vscode.postMessage({
+                type: 'endSession', sessionId: b.dataset.endsess || '', agentName: b.dataset.endagent || ''
+            })));
+        document.querySelectorAll('[data-dropsess]').forEach(b =>
+            b.addEventListener('click', () => vscode.postMessage({
+                type: 'dismissSession', sessionId: b.dataset.dropsess || '', agentName: b.dataset.dropagent || ''
+            })));
+        document.querySelectorAll('[data-cwd]').forEach(el =>
+            el.addEventListener('click', () => vscode.postMessage({ type: 'revealFolder', cwd: el.dataset.cwd })));
+        const clearGone = document.getElementById('clear-gone');
+        if (clearGone) { clearGone.addEventListener('click', () => vscode.postMessage({ type: 'clearGone' })); }
         document.querySelectorAll('[data-focusterm]').forEach(b =>
             b.addEventListener('click', () => vscode.postMessage({
                 // sessionId picks the exact terminal of THIS card; agentName is the fallback

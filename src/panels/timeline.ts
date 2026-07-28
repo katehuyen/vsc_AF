@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import { LiveMonitor } from '../core/live';
+import { totalTokens } from '../core/pricing';
+import { SessionIndex } from '../core/sessions';
 import { TaskManager } from '../core/tasks';
 import { handleAfNav, htmlShell } from './base';
 
@@ -7,6 +9,14 @@ export interface TimelineDeps {
     extensionUri: vscode.Uri;
     live: LiveMonitor;
     tasks: TaskManager;
+    /** Transcripts on disk — the money/token/turn figures a hook event cannot carry. */
+    index: SessionIndex;
+    /** Sessions a live CLI process owns right now (the CLI's own registry). */
+    liveOwners: () => { sessionId: string; pid: number; entrypoint?: string; status?: string }[];
+    /** Is that registry readable at all? Without it, "no process" means nothing. */
+    ownersKnown: () => boolean;
+    /** agentFarm.stuckThresholdMinutes in ms — the page marks silence with it. */
+    stuckMs: () => number;
     /** Per-agent turn-ready notification actions (agentName → action ids). */
     getTurnActions: () => Record<string, string[]>;
     setTurnActions: (map: Record<string, string[]>) => void;
@@ -21,29 +31,62 @@ export interface TimelineDeps {
 const DATA_WINDOW_MS = 24 * 3600 * 1000;
 
 function buildData(deps: TimelineDeps): Record<string, unknown> {
+    // The hook stream knows what a session DOES; the transcript knows what it
+    // cost. Joining them here is what lets a card carry the same figures as the
+    // Console's own rows instead of an event count.
+    const rows = new Map(deps.index.all().map(r => [r.sessionId, r]));
+    const owners = deps.liveOwners();
+    const ownersKnown = deps.ownersKnown();
     return {
         now: Date.now(),
+        stuckMs: deps.stuckMs(),
+        // Told once, on the page: "no live process" is only a claim we may make
+        // when the CLI's registry is actually readable.
+        ownersKnown,
         listener: {
             state: deps.live.listenerState,
             port: deps.live.activePort
         },
-        sessions: deps.live.sessions().map(s => ({
-            sessionId: s.sessionId,
-            agentName: s.agentName ?? s.sessionId.slice(0, 8),
-            // "name #k" when the agent runs several sessions at once.
-            label: deps.live.labelOf(s),
-            source: s.source,
-            status: s.status,
-            currentTool: s.currentTool,
-            lastPrompt: s.lastPrompt,
-            startedAt: s.startedAt,
-            lastEventTs: s.lastEventTs,
-            prompts: s.prompts,
-            toolCalls: s.toolCalls,
-            compactions: s.compactions,
-            subagentStops: s.subagentStops,
-            transcriptPath: s.transcriptPath
-        })),
+        sessions: deps.live.sessions().map(s => {
+            const row = rows.get(s.sessionId);
+            const owner = owners.find(o => o.sessionId === s.sessionId);
+            return {
+                sessionId: s.sessionId,
+                // The turn-action maps are keyed by this exact string, so the
+                // fallback stays the raw 8 hex chars; `resolved` tells the page
+                // it is a session id and not somebody's agent.
+                agentName: s.agentName ?? s.sessionId.slice(0, 8),
+                resolved: !!s.agentName,
+                // "name #k" when the agent runs several sessions at once.
+                label: deps.live.labelOf(s),
+                source: s.source,
+                status: s.status,
+                currentTool: s.currentTool,
+                lastPrompt: s.lastPrompt,
+                startedAt: s.startedAt,
+                lastEventTs: s.lastEventTs,
+                prompts: s.prompts,
+                toolCalls: s.toolCalls,
+                compactions: s.compactions,
+                subagentStops: s.subagentStops,
+                errors: s.errors,
+                cwd: s.cwd ?? '',
+                transcriptPath: s.transcriptPath,
+                // From the transcript (absent until the session's first turn lands).
+                title: row?.title ?? '',
+                cost: row?.cost ?? 0,
+                tokens: row ? totalTokens(row.usage) : 0,
+                ctxTokens: row?.lastCtxTokens ?? 0,
+                turns: row?.userTurns ?? 0,
+                model: row?.models?.length ? row.models[row.models.length - 1] : '',
+                filesEdited: row ? Object.keys(row.filesEdited ?? {}).length : 0,
+                // The honest answer to "is this thing still running?" — a pid the
+                // OS confirms, or nothing.
+                owner: owner
+                    ? { pid: owner.pid, entrypoint: owner.entrypoint ?? '', status: owner.status ?? '' }
+                    : null
+            };
+        }),
         events: deps.live.events(DATA_WINDOW_MS),
         workflowRuns: deps.tasks.workflowRuns(DATA_WINDOW_MS),
         turnActions: deps.getTurnActions(),
@@ -120,6 +163,32 @@ export class TimelinePanel {
                     sessionId: typeof msg.sessionId === 'string' && msg.sessionId ? msg.sessionId : undefined,
                     agentName: typeof msg.agentName === 'string' ? msg.agentName : undefined
                 });
+                break;
+            case 'endSession':
+                void vscode.commands.executeCommand('agentfarm.endSession', {
+                    sessionId: typeof msg.sessionId === 'string' ? msg.sessionId : '',
+                    agentName: typeof msg.agentName === 'string' ? msg.agentName : undefined
+                });
+                break;
+            case 'dismissSession':
+                void vscode.commands.executeCommand('agentfarm.dismissSession', {
+                    sessionId: typeof msg.sessionId === 'string' ? msg.sessionId : '',
+                    agentName: typeof msg.agentName === 'string' ? msg.agentName : undefined
+                });
+                break;
+            case 'clearGone':
+                void vscode.commands.executeCommand('agentfarm.dismissSession', { gone: true });
+                break;
+            case 'renameSession':
+                void vscode.commands.executeCommand('agentfarm.renameSession', {
+                    sessionId: typeof msg.sessionId === 'string' ? msg.sessionId : '',
+                    title: typeof msg.title === 'string' ? msg.title : ''
+                });
+                break;
+            case 'revealFolder':
+                if (typeof msg.cwd === 'string' && msg.cwd) {
+                    void vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(msg.cwd));
+                }
                 break;
             case 'openGuide':
                 void vscode.commands.executeCommand('agentfarm.openGuide', msg.anchor);

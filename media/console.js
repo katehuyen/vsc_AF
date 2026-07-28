@@ -8,7 +8,8 @@
 
     const vscode = acquireVsCodeApi();
     const C = window.AFCharts;
-    let DATA = window.AF_DATA || { sessions: [], agents: [], resumable: [] };
+    // The shell's own global (see htmlShell) — not AF_DATA, which nothing sets.
+    let DATA = window.__DATA__ || { sessions: [], agents: [], resumable: [] };
 
     const saved = (typeof vscode.getState === 'function' && vscode.getState()) || {};
     let st = Object.assign({

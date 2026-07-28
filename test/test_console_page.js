@@ -94,7 +94,8 @@ const data = (msgs) => ({
     grants: [], defaults: {}, owned: [], resumable: []
 });
 
-sandbox.window.AF_DATA = data(CONVO.slice());
+// Same global htmlShell injects — the page reads its first payload from here.
+sandbox.window.__DATA__ = data(CONVO.slice());
 vm.runInContext(code, sandbox);
 const push = d => msgHandler({ data: { type: 'data', data: d } });
 const html = () => app()._html;

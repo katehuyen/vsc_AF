@@ -9,7 +9,9 @@
 
     const vscode = acquireVsCodeApi();
     const C = window.AFCharts;
-    let DATA = window.AF_DATA || { rows: [], projects: [], dormantDays: 14 };
+    // htmlShell injects the first payload as window.__DATA__ — reading anything
+    // else means an empty table until the user presses Refresh.
+    let DATA = window.__DATA__ || { rows: [], projects: [], dormantDays: 14 };
 
     const COLS = [
         { id: 'name', label: 'Agent', num: false, get: r => r.name },

@@ -530,6 +530,27 @@ export class LiveMonitor implements vscode.Disposable {
         }
     }
 
+    /**
+     * Forget a tracked session on purpose — the timeline's "Clear" action.
+     *
+     * A session whose process is gone without a SessionEnd hook (a closed
+     * terminal window, a crashed CLI, a machine that slept) keeps its card and
+     * its unfinished tool call on the page until the TTL runs out. Clearing
+     * writes the `end` event that never arrived — so the lane closes where the
+     * session really stopped instead of running on to "now" — and drops the
+     * session. Returns false when nothing was tracked under that id.
+     */
+    dismiss(sessionId: string, reason = 'cleared in Agent Farm'): boolean {
+        const s = this.sessionsMap.get(sessionId);
+        if (!s) { return false; }
+        s.status = 'ended';
+        s.currentTool = undefined;
+        this.push(s, 'end', undefined, reason);
+        this.sessionsMap.delete(sessionId);
+        this.onDidUpdateEmitter.fire();
+        return true;
+    }
+
     private checkStuck(): void {
         const cfg = this.getConfig();
         const now = Date.now();
@@ -555,7 +576,14 @@ export class LiveMonitor implements vscode.Disposable {
                 }
             }
         }
-        if (changed) { this.onDidUpdateEmitter.fire(); }
+        // The TTL sweep belongs here too. prune() used to be reachable only
+        // from handle(), so a session whose events simply STOPPED (the terminal
+        // was closed, the CLI died) sat on the page as a live card — and its
+        // unfinished tool call as a lane that never ended — until some OTHER
+        // session happened to report an event.
+        const before = this.sessionsMap.size;
+        this.prune(now);
+        if (changed || this.sessionsMap.size !== before) { this.onDidUpdateEmitter.fire(); }
     }
 
     private notify(level: 'info' | 'warn', title: string, detail: string): void {

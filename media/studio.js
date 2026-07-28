@@ -9,7 +9,8 @@
 
     const vscode = acquireVsCodeApi();
     const C = window.AFCharts;
-    let DATA = window.AF_DATA || { productions: [], items: [], untriaged: [], loose: [] };
+    // The shell's own global (see htmlShell) — not AF_DATA, which nothing sets.
+    let DATA = window.__DATA__ || { productions: [], items: [], untriaged: [], loose: [] };
 
     // Assets tab filters (the gallery's own semantics: production/scene are a
     // drill-down, source is a plain multi-pick).
