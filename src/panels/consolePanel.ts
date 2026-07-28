@@ -107,7 +107,7 @@ export class ConsolePanel {
                     ? this.deps.index.all().find(x => x.sessionId === s.sessionId)?.title
                     : undefined) ?? '',
                 status: s.status, cost: s.costUSD, turns: s.turns, queued: s.queued.length,
-                model: s.model ?? '', permissionMode: s.permissionMode,
+                tokens: s.tokens, model: s.model ?? '', permissionMode: s.permissionMode,
                 contextTokens: s.contextTokens ?? 0, lastTs: s.lastTs,
                 pendingPermission: s.pendingPermission ?? null,
                 exitReason: s.exitReason ?? '',
@@ -131,7 +131,10 @@ export class ConsolePanel {
                     .slice(0, 15)
             ].slice(0, 25).map(s => ({
                 sessionId: s.sessionId, title: s.title, agentName: s.agentName ?? '',
-                cwd: s.cwd ?? '', pinned: !!s.pinned, ts: s.lastTs || s.mtime, cost: s.cost
+                cwd: s.cwd ?? '', pinned: !!s.pinned, ts: s.lastTs || s.mtime, cost: s.cost,
+                // "Ctx now" — the same figure the sessions tables show, so a row
+                // says what resuming it would cost you in window before you do
+                contextTokens: s.lastCtxTokens ?? 0
             }))
         };
     }

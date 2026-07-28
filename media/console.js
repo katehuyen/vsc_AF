@@ -12,7 +12,9 @@
 
     const saved = (typeof vscode.getState === 'function' && vscode.getState()) || {};
     let st = Object.assign({
-        agentId: '', model: '', effort: '', permissionMode: '', draft: '', showResume: false
+        agentId: '', model: '', effort: '', permissionMode: '', draft: '', showResume: false,
+        // which kinds of line the conversation shows; null = everything
+        kinds: null
     }, saved.afConsole);
     const save = () => {
         const all = (typeof vscode.getState === 'function' && vscode.getState()) || {};
@@ -32,10 +34,21 @@
         .srow .h { display:flex; align-items:center; gap:6px; justify-content:space-between; }
         .srow .n { font-weight:600; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .srow .m { font-size:10px; color:var(--vscode-descriptionForeground); margin-top:2px; }
+        .srow .sid { font-weight:400; opacity:.6; font-size:10px; }
         .srow .t2 { font-size:11px; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .dot { width:8px; height:8px; border-radius:50%; flex:none; display:inline-block; }
+        .talkwrap { position:relative; display:flex; flex-direction:column; flex:1 1 auto; min-height:0; }
         .talk { flex:1 1 auto; overflow-y:auto; max-height:62vh; padding:4px 2px 10px;
             border:1px solid var(--vscode-widget-border,#4443); border-radius:8px; }
+        /* the way back down, offered rather than forced */
+        .jump { position:absolute; left:50%; transform:translateX(-50%); bottom:10px; z-index:5;
+            font-size:11px; padding:3px 12px; border-radius:12px; box-shadow:0 2px 8px #0005; }
+        .jump[hidden] { display:none; }
+        .hiddenote { font-size:10px; opacity:.6; padding:3px 4px 0; }
+        /* the show-filter lives in the composer, at the BOTTOM of the page, so
+           its menu opens upwards instead of off the edge */
+        .crow .afms-menu { top:auto; bottom:calc(100% + 4px); }
+        .crow .afms-btn { font-size:11px; }
         .msg { margin:8px 10px; display:flex; gap:9px; align-items:flex-start; }
         .msg .who { flex:none; width:56px; font-size:10px; opacity:.65; padding-top:3px; text-transform:uppercase; }
         .msg .body { flex:1; min-width:0; white-space:pre-wrap; word-break:break-word; }
@@ -88,6 +101,34 @@
 
     const sel = () => (DATA.sessions || []).find(s => s.id === DATA.selected);
 
+    // ---- following the tail -------------------------------------------------
+    // "At the bottom" has to have slack: a streamed line can land mid-frame and
+    // sub-pixel rounding makes an exact comparison flicker.
+    const BOTTOM_SLACK = 40;
+    const atBottom = el => el.scrollHeight - el.scrollTop - el.clientHeight <= BOTTOM_SLACK;
+    /** lines that arrived while the reader was scrolled up */
+    let unseen = 0;
+    /** how many lines the last render drew — the yardstick for "arrived" */
+    let shownCount = 0;
+    /** the next render lands at the tail whatever the old scroll said — set when
+     *  the reader themselves changed what is on screen (a different session) */
+    let forceTail = true;
+
+    function paintJump() {
+        const btn = document.getElementById('c-jump');
+        if (!btn) { return; }
+        btn.hidden = unseen <= 0;
+        btn.textContent = `↓ ${unseen} new line${unseen === 1 ? '' : 's'}`;
+    }
+
+    function jumpToEnd() {
+        const el = document.getElementById('talk');
+        if (!el) { return; }
+        el.scrollTop = el.scrollHeight;
+        unseen = 0;
+        paintJump();
+    }
+
     /**
      * The right-click contract for a session row.
      *
@@ -102,10 +143,16 @@
     const ctxAttr = o => `data-vscode-context="${JSON.stringify(o)
         .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}"`;
 
+    /** `developer (#407c78cb)` — the id is how a row is matched against a tab,
+     *  a terminal or a log line, so it rides with the agent's name. */
+    const who = (agentName, sessionId) =>
+        `${C.esc(agentName || 'session')}${sessionId ? ` <span class="sid">(#${C.esc(String(sessionId).slice(0, 8))})</span>` : ''}`;
+
     function sessionList() {
         // Agent name alone cannot tell two sessions of the same agent apart, so
-        // the row carries the agent AND the session's own name — the same name
-        // the side panel and the viewer show.
+        // the row carries the agent, the session id, the session's own name and
+        // its numbers: cost (with the tokens it bought) on the top line, and
+        // "ctx now" — what the window is holding — on the bottom one.
         const rows = (DATA.sessions || []).map(s => `
             <div class="srow${s.id === DATA.selected ? ' sel' : ''}" data-sel="${C.esc(s.id)}"
                  ${ctxAttr({
@@ -115,11 +162,11 @@
                  })}
                  title="${C.esc(s.title || 'not named yet')} — right-click for session actions">
                 <div class="h">
-                    <span class="n"><span class="dot" style="background:${STATUS_COLOR[s.status] || '#888'}"></span>${C.esc(s.agentName)}</span>
-                    <span class="m">${C.fmtUSD(s.cost)}</span>
+                    <span class="n"><span class="dot" style="background:${STATUS_COLOR[s.status] || '#888'}"></span>${who(s.agentName, s.sessionId)}</span>
+                    <span class="m" title="cost so far${s.tokens ? ' · tokens spent' : ''}">${C.fmtUSD(s.cost)}${s.tokens ? ` (${C.fmtTok(s.tokens)})` : ''}</span>
                 </div>
                 <div class="t2">${C.esc(s.title || '(no name yet)')}</div>
-                <div class="m">${C.esc(s.status)}${s.queued ? ` · ${s.queued} queued` : ''}${s.turns ? ` · ${s.turns} turns` : ''} · ${relTime(s.lastTs)}</div>
+                <div class="m">${C.esc(s.status)}${s.queued ? ` · ${s.queued} queued` : ''}${s.turns ? ` · ${s.turns} turns` : ''} · ${relTime(s.lastTs)}${s.contextTokens ? ` · <span title="Approximate context in the model window right now">ctx ${C.fmtTok(s.contextTokens)}</span>` : ''}</div>
             </div>`).join('');
         // A session a live process already owns cannot be joined — resuming it
         // would start a second process on the same transcript. The row says so
@@ -133,7 +180,7 @@
                  })}
                  title="${owned.has(r.sessionId) ? 'Open right now in a terminal or another process — Agent Farm cannot join a running session' : C.esc(r.cwd) + ' — right-click for session actions'}">
                 <div class="n">${r.pinned ? '📌 ' : ''}${C.esc(r.title)}</div>
-                <div class="m">${C.esc(r.agentName)} · ${relTime(r.ts)} ago · ${C.fmtUSD(r.cost)}</div>
+                <div class="m">${who(r.agentName, r.sessionId)} · ${relTime(r.ts)} ago · ${C.fmtUSD(r.cost)}${r.contextTokens ? ` · <span title="Approximate context after this session's last reply — what resuming it starts from">ctx ${C.fmtTok(r.contextTokens)}</span>` : ''}</div>
             </div>`).join('') || '<div class="empty">No transcripts yet.</div>'}</div>` : '';
         return `<div class="clist">
             <button id="c-new">＋ New session</button>
@@ -141,6 +188,31 @@
             <button class="secondary" id="c-toggle-resume" style="margin-top:6px">${st.showResume ? '▾' : '▸'} Resume an existing session</button>
             ${resume}
         </div>`;
+    }
+
+    /**
+     * The kinds of line the Console shows, and what each one matches.
+     *
+     * A long turn is mostly tool traffic; reading what the two of you actually
+     * said means being able to put the rest away. Same vocabulary as the
+     * transcript viewer's Show chips — one filter language in the extension,
+     * not two — and the same multi-select control the Search and Notices pages
+     * use, so "any subset" is expressible rather than "all or one".
+     */
+    const KINDS = [
+        { v: 'user', t: '🧑 You', is: m => m.role === 'user' },
+        { v: 'agent', t: '🤖 Agent', is: m => m.role === 'agent' },
+        { v: 'tool', t: '🔧 Tool calls', is: m => m.role === 'tool' && !!m.tool },
+        { v: 'result', t: '📄 Tool results', is: m => m.role === 'tool' && !m.tool && !m.isError },
+        { v: 'error', t: '⚠ Errors', is: m => m.role === 'error' || (m.role === 'tool' && !!m.isError) },
+        { v: 'system', t: '⚙ System · turn totals', is: m => m.role === 'system' || m.role === 'result' }
+    ];
+
+    /** st.kinds: null = everything (and a kind added later is included). */
+    function visibleMessages(list) {
+        if (st.kinds === null || st.kinds === undefined) { return list || []; }
+        const on = KINDS.filter(k => st.kinds.indexOf(k.v) >= 0);
+        return (list || []).filter(m => on.some(k => k.is(m)));
     }
 
     function messageHtml(m) {
@@ -218,6 +290,11 @@
             <label class="permlbl" title="The one thing that CAN change mid-session — applied live">permissions
                 <select id="c-perm">${opts(DATA.permissions, s.permissionMode)}</select>
             </label>
+            ${window.AFFilter.multi({
+                id: 'c-kinds', label: 'show', allLabel: 'show: everything',
+                options: KINDS, selected: st.kinds,
+                title: 'Which kinds of line the conversation shows — tick any combination'
+            })}
             <span class="grow"></span>
             ${s.queued ? `<span class="qbadge" title="Waiting for the current turn to finish">${s.queued} queued</span> <button class="secondary" id="c-clearq">clear</button>` : ''}
             ${running ? '<button class="secondary" id="c-int" title="Stop the running turn — the session and its context stay">⎋ Interrupt</button>' : ''}
@@ -245,8 +322,21 @@
 
     function render() {
         const s = sel();
+        // Where the reader is, BEFORE the page is rebuilt (see followTail).
+        const prev = document.getElementById('talk');
+        const wasPinned = forceTail || !prev || atBottom(prev);
+        forceTail = false;
+        const prevTop = prev ? prev.scrollTop : 0;
+        const prevShown = shownCount;
+
+        const shown = s ? visibleMessages(s.messages) : [];
+        shownCount = shown.length;
+        if (wasPinned) { unseen = 0; } else if (shownCount > prevShown) { unseen += shownCount - prevShown; }
+
+        const hidden = s ? (s.messages || []).length - shown.length : 0;
         const talk = s
-            ? (s.messages || []).map(messageHtml).join('') || '<div class="empty">Nothing said yet.</div>'
+            ? (shown.map(messageHtml).join('')
+                || `<div class="empty">${(s.messages || []).length ? 'Every line is filtered out — widen <b>show</b> in the composer.' : 'Nothing said yet.'}</div>`)
             : `<div class="empty">This is the Console: sessions run <em>here</em>, in the panel — your own <code>claude</code>, your own subscription, transcripts in the usual place.<br><br>Pick an agent below, type, and press Ctrl+Enter.</div>`;
         document.getElementById('app').innerHTML = `${STYLE}
             ${window.AFHeader.html({
@@ -261,16 +351,47 @@
             <div class="cwrap">
                 ${sessionList()}
                 <div class="cmain">
-                    <div class="talk" id="talk">${talk}${s ? permissionBox(s) : ''}</div>
+                    <div class="talkwrap">
+                        <div class="talk" id="talk">${talk}${s ? permissionBox(s) : ''}</div>
+                        <button class="jump" id="c-jump" hidden></button>
+                        ${hidden ? `<div class="hiddenote">${hidden} line(s) hidden by <b>show</b></div>` : ''}
+                    </div>
                     ${composer(s)}
                 </div>
             </div>`;
 
         window.AFHeader.wire(vscode, { onRefresh: () => vscode.postMessage({ type: 'refresh' }) });
+        // Follow the tail only while the reader IS at the tail. Scrolling up to
+        // read something is a statement; yanking the view back down on the next
+        // streamed line takes the page away mid-sentence. Same contract as a
+        // terminal: stay put, count what arrives, and offer the way back.
         const talkEl = document.getElementById('talk');
-        if (talkEl) { talkEl.scrollTop = talkEl.scrollHeight; }
+        if (talkEl) {
+            if (wasPinned) { talkEl.scrollTop = talkEl.scrollHeight; } else { talkEl.scrollTop = prevTop; }
+            talkEl.addEventListener('scroll', () => {
+                if (!atBottom(talkEl)) { return; }
+                unseen = 0;
+                paintJump();
+            });
+        }
+        paintJump();
 
         const byId = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
+        byId('c-jump', 'click', jumpToEnd);
+        // The line filter is the same multi-select the Search and Notices pages
+        // use: null = everything, [] = nothing, any subset in between.
+        if (sel()) {
+            window.AFFilter.wireMulti({
+                id: 'c-kinds',
+                onChange: picked => {
+                    st.kinds = picked;
+                    save();
+                    render();
+                    // a filter change is the reader's own move: land at the tail
+                    jumpToEnd();
+                }
+            });
+        }
         document.querySelectorAll('[data-sel]').forEach(r =>
             r.addEventListener('click', () => vscode.postMessage({ type: 'select', id: r.dataset.sel })));
         document.querySelectorAll('[data-resume]').forEach(r =>
@@ -350,7 +471,11 @@
 
     window.addEventListener('message', ev => {
         if (ev.data && ev.data.type === 'data') {
+            const wasOn = DATA.selected;
             DATA = ev.data.data;
+            // A different conversation is not "new lines in this one": switching
+            // sessions starts the tail-following contract over.
+            if (DATA.selected !== wasOn) { unseen = 0; shownCount = 0; forceTail = true; }
             // opened from an agent row: preselect that agent in the composer
             if (DATA.presetAgent) { st.agentId = DATA.presetAgent; save(); }
             render();

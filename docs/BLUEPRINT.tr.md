@@ -224,6 +224,12 @@ Filodaki son olayların canlı akışı: kullanıcı komutları (prompt), araç 
 
 **Soldaki satıra sağ tık = VS Code'un kendi menüsü (3.30.2).** Barındırılan karta da, aşağıdaki devam ettirilebilir satıra da sağ tıkladığında **standart menü** (Copy/Paste vb.) açılır ve altına o oturumun eylemleri eklenir: **Resume in Terminal**, **Rename Session…**, **Open Transcript**, devam ettirilebilir satırda ayrıca **Resume in Console**. Sağ tık artık doğrudan bir yeniden adlandırma kutusu açmıyor — bir sağ tıkın tek anlamı olması, menüyü tamamen ortadan kaldırmak demekti. Kartlarda ajan adının yanında **oturumun adı** da yazar; devam ettirilen bir oturum kimliğini **süreç doğmadan** bilir, dolayısıyla adı ve yeniden adlandırması ilk andan itibaren çalışır ("bu oturum kimliğini bildirmedi" hatası buradan geliyordu).
 
+**Satırlar ne söyler (3.30.4):** barındırılan kartta üst satır `developer (#407c78cb)` + sağda **maliyet ve aldığı token** (`$0.12 (48.2k)`), altında **oturumun adı**, en altta durum · tur · süre · **ctx now** (modelin penceresinde şu an ne var). Devam ettirilebilir satırlarda da kimlik ve **ctx now** vardır — o oturumu devam ettirmenin nereden başlayacağı tıklamadan önce görünür. Token'lar her asistan mesajının kendi `usage`'ından toplanır; oturum tablolarındaki sayıyla aynı aritmetik, dolayısıyla aynı anlam.
+
+**Akış seni takip eder, sen akışı değil (3.30.4).** Konuşma **yalnızca sen en alttayken** yeni satırı takip eder. Yukarı kaydırıp bir şey okuyorsan sayfa yerinde kalır, gelen satırları sayar ve altta **↓ N new lines** düğmesi çıkarır; ona basınca ya da elinle en alta inince takip kendiliğinden devam eder. Oturum değiştirmek sayacı sıfırlar ve en yeni satırda başlar. (Terminalin davranışının aynısı.)
+
+**Satır türü filtresi (3.30.4).** Yazma kutusunun altındaki **show** seçicisi: 🧑 You · 🤖 Agent · 🔧 Tool calls · 📄 Tool results · ⚠ Errors · ⚙ System. Oturum Görüntüleyicideki Show çipleriyle **aynı sözlük**, Search/Notices sayfalarındaki **aynı çoklu-seçim kutusu** (herhangi bir alt küme; *Select all* = filtre yok, yani sonradan eklenen bir tür otomatik içeride). Kaç satırın gizlendiğini altında yazar, seçim yeniden yüklemede korunur.
+
 **Console'da devam = kaldığın yerden devam (3.30.3).** Bir oturumu Console'a devam ettirdiğinde **önceki konuşma da geliyor**: yukarı kaydır, orada. Satırların kaynağı diskteki transkript (`~/.claude/projects/…jsonl`) — **yalnızca görüntü**: hiçbir yere bir şey gönderilmez, **tek token harcanmaz**; modelin kendi hafızası zaten `--resume` ile geliyor. Son **150** mesaj taşınır (üstteki satır kalanın transkriptte olduğunu söyler) ve dosyanın yalnızca **sonu** ayrıştırılır, yani devam ettirme maliyeti oturum uzadıkça büyümez.
 
 **Console'daki bir oturumu terminale taşımak (3.30.3).** Console'da çalışan bir oturum için "Resume in Terminal" dediğinde artık "olmaz" duvarı yok: bir oturum bir sürece aittir, ama o süreç **bizim** — Agent Farm **"End it in the Console and continue here"** diye sorar, Console'daki oturumu kapatır, **pid gerçekten ölene kadar bekler** (aksi hâlde aynı transkript üstünde ikinci süreç doğardı) ve terminali aynı oturumla açar. Diğer seçenek oturumu çalıştığı yerde gösterir. Başkasının terminalindeki bir oturum için eski uyarı aynen geçerlidir — o süreç bizim değildir.
@@ -257,6 +263,8 @@ Console sekmesini kapatmak konuşmayı **öldürmez**; oturumlar sen bitirince y
 ### Nereden açılır
 
 **Konusu olan iki sayfada Console düğmesi o konuyu kasteder (3.30.1; 3.30.2'de tek düğme):** ajan ve oturum sayfalarında nav'daki **💬 Console ▾** *tek* düğmedir ve iki maddelik bir menü açar — **Talk to Agent** / **Resume Session**, altında **Open Console**. Eskiden yan yana iki düğmeydi; aynı yere giden iki düğme araç çubuğunun dörtte birini yiyordu. Menü maddeleri iki-üç kelimedir: **menü seçenek listesidir, açıklama yeri değildir** — açıklama bu kılavuzun işi.
+
+> **Başlık satırının yoğunluğu (3.30.4):** Refresh · ? Guide ile biten o satır taşıp ikinci satıra sarkıyordu. Yalnızca **o satırın** düğmeleri bir boy küçüldü ve araları daraldı (~%30 dar). **Hiçbir şey yeniden adlandırılmadı, gizlenmedi, sırası değişmedi, ikona çevrilmedi**; sayfaların gövdesindeki düğmeler normal boyunda kaldı.
 
 - Global nav'daki **💬 Console** (her sayfada) · **`Ctrl+Alt+C`**
 - Sol paneldeki **Agents** başlığındaki **💬** düğmesi

@@ -68,6 +68,9 @@ export interface ConsoleSessionState {
     queued: string[];
     costUSD: number;
     turns: number;
+    /** everything this session has spent tokens on, summed off the assistant
+     *  messages' own usage — the same total the sessions tables show */
+    tokens: number;
     /** the CLI's own running estimate of the context (system:thinking_tokens) */
     contextTokens?: number;
     startedAt: number;
@@ -207,10 +210,21 @@ export function reduceEvent(
     }
 
     if (type === 'assistant') {
-        const msg = o.message as { content?: unknown } | undefined;
+        const msg = o.message as { content?: unknown; usage?: Record<string, unknown> } | undefined;
         const blocks = Array.isArray(msg?.content) ? msg!.content as Record<string, unknown>[] : [];
         let next = state;
         let changed = false;
+        // Tokens are counted off each assistant message's own usage — the same
+        // arithmetic the index does on a transcript, so the number on a Console
+        // row and the number in the sessions table mean the same thing. (The
+        // result line's usage is the TURN's, and would double-count.)
+        const u = msg?.usage;
+        if (u) {
+            const n = (k: string) => (typeof u[k] === 'number' ? u[k] as number : 0);
+            const spent = n('input_tokens') + n('output_tokens')
+                + n('cache_read_input_tokens') + n('cache_creation_input_tokens');
+            if (spent) { next = { ...next, tokens: next.tokens + spent }; changed = true; }
+        }
         for (const b of blocks) {
             const bt = String(b.type ?? '');
             if (bt === 'text' && String(b.text ?? '').trim()) {
@@ -329,7 +343,7 @@ export function newSessionState(o: {
         model: o.model, effort: o.effort,
         permissionMode: o.permissionMode?.trim() || 'default',
         status: 'starting', messages: [], queued: [],
-        costUSD: 0, turns: 0, startedAt: o.now, lastTs: o.now
+        costUSD: 0, turns: 0, tokens: 0, startedAt: o.now, lastTs: o.now
     };
 }
 

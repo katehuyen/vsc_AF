@@ -16,9 +16,15 @@
         /* The toolbar is two wrapping halves (page actions | global nav) that
            break onto a second line as UNITS — never intermixing, never leaving
            the divider stranded — so many-button pages stay tidy at any width. */
-        .af-head-bar { display:flex; gap:8px 10px; flex-wrap:wrap; align-items:center; justify-content:flex-end; margin-left:auto; min-width:0; }
-        .af-head-actions, .af-head-nav { display:flex; gap:8px; flex-wrap:wrap; align-items:center; justify-content:flex-end; min-width:0; }
-        .af-head-nav.has-actions { border-left:1px solid var(--vscode-widget-border,#4444); margin-left:2px; padding-left:12px; }
+        .af-head-bar { display:flex; gap:6px 8px; flex-wrap:wrap; align-items:center; justify-content:flex-end; margin-left:auto; min-width:0; }
+        .af-head-actions, .af-head-nav { display:flex; gap:5px; flex-wrap:wrap; align-items:center; justify-content:flex-end; min-width:0; }
+        .af-head-nav.has-actions { border-left:1px solid var(--vscode-widget-border,#4444); margin-left:2px; padding-left:9px; }
+        /* THIS row only. A dozen destinations plus the page's own actions was
+           overflowing and wrapping onto a second line, and a toolbar that moves
+           under the cursor is worse than a slightly tighter one. Nothing is
+           renamed, hidden or reordered — the buttons here are simply denser
+           than the page's own body buttons, which keep their normal size. */
+        .af-head-bar button { font-size:11px; padding:3px 8px; }
         /* A nav button a page has claimed (see navActions): ONE button, whose
            two meanings live in a menu under it. Two buttons side by side ate a
            quarter of the toolbar's width for a destination nobody reaches twice. */
