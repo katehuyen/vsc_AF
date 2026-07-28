@@ -84,6 +84,8 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     const r1 = shiftQueued({ ...q2.state, status: 'idle' }, NOW + 3);
     const r2 = shiftQueued({ ...r1.state, status: 'idle' }, NOW + 4);
     ok('a queue keeps its order', r1.text === 'one' && r2.text === 'two');
+    ok('a turn records when it started, and what the meter read then',
+        first.state.turnStartedAt === NOW && first.state.turnTokensAt === 0);
 }
 
 // ---------- the event stream ----------
@@ -154,6 +156,25 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         num_turns: 2, total_cost_usd: 0.0123, session_id: 'sid-9'
     });
     ok('a finished turn returns the session to idle', s.status === 'idle');
+    // A turn is the unit you think in, so it closes with its own numbers:
+    // how long it took, what it spent, what it cost.
+    {
+        const started = { ...fresh(), status: 'working', turnStartedAt: NOW, turnTokensAt: 1000, tokens: 5200 };
+        const done = reduce(started, {
+            type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0.031
+        }, NOW + 12400);
+        const line = done.messages[done.messages.length - 1];
+        ok('the turn closes with its duration, tokens and cost',
+            line.role === 'result' && line.ms === 12400 && line.tokens === 4200 && line.cost === 0.031);
+        ok('…and the next turn starts its own count',
+            done.turnStartedAt === undefined && done.turnTokensAt === undefined);
+        const noMeter = reduce({ ...fresh(), status: 'working' }, {
+            type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0
+        }, NOW + 5);
+        const bare = noMeter.messages[noMeter.messages.length - 1];
+        ok('…a turn nobody timed reports nothing rather than a made-up zero',
+            bare.ms === undefined && bare.tokens === undefined);
+    }
     ok('…and bills it', s.costUSD === 0.0123 && s.turns === 1);
     s = reduce(s, { type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0.01 });
     ok('cost accumulates across turns', Math.abs(s.costUSD - 0.0223) < 1e-9 && s.turns === 2);
@@ -390,6 +411,20 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     }
     ok('…debounced, because a streaming session updates the index many times a second',
         /pagePulse/.test(extSrc) && /\}, 1000\);/.test(extSrc));
+    // The "your turn" notice is the one signal that travels off the page — so
+    // it is deliberately narrow, or it becomes the thing you turn off.
+    ok('a finished turn is announced only when you are NOT watching it',
+        /ConsolePanel\.isWatching\(s\.id\)/.test(extSrc)
+        && /const isWatching/.test(fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'consolePanel.ts'), 'utf8').replace('static isWatching', 'const isWatching')));
+    ok('…never for a turn that failed or you interrupted', /last\?\.isError/.test(extSrc));
+    ok('…once per turn, on the working→idle edge',
+        /prevConsoleStatus/.test(extSrc) && /was !== 'working' \|\| s\.status !== 'idle'/.test(extSrc));
+    ok('…carrying what the turn cost, and a way in', /Open the Console/.test(extSrc));
+    ok('…and it can be switched off',
+        /notifyConsoleTurnEnd/.test(extSrc)
+        && !!pkg.contributes.configuration.properties['agentFarm.notifyConsoleTurnEnd']);
+    ok('the tab itself carries the count, for when the Console is in the background',
+        /Console \(\$\{waiting\}\)/.test(fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'consolePanel.ts'), 'utf8')));
     // The Console row's menu is a real menu: resume and the transcript are on it
     // too, so a right-click is a place to work from, not a single shortcut.
     ok('a resumable row can be resumed from that menu',

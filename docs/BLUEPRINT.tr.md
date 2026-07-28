@@ -278,6 +278,22 @@ Akan bir konuşma saniyede birkaç kez yeniden çizilir. Sayfa eskiden bunların
 
 > **"Context now" tek kuralla hesaplanır (3.31.1):** `girdi + iki tür cache + çıktı` — ve **sıfır bir ölçüm değildir**. Transkriptte sentetik asistan satırları vardır (kesilen tur, yerel bildirim) ve bunların usage bloğu **tamamen sıfırdır**; "son usage"ı harfi harfine almak, o satırla biten her oturumun rakamını siliyordu. Gerçek bir transkriptte ölçüldü: 67 satırın 2'si sıfır-usage, sonuncusu onlardan biri, ve penceresinde **78.512** token tutan bir oturum sayfasında `—`, tablolarda `0` görünüyordu. Artık son **gerçek** ölçüm geçerlidir. Kural tek yerde (`core/pricing.ts` → `contextAfter`), soran üç yer aynı cevabı alır: oturum tabloları, transkript sayfası, Console.
 
+### Sıra kimde (3.33.0)
+
+Sekiz oturum, sekiz ayrı iş, ve birkaç dakikada bir sorduğun tek soru: **hangisi beni bekliyor?** Sol panel bunu artık uzaktan bakınca cevaplıyor.
+
+- **Her kart fazını aynı anda üç şekilde taşır** — renkli kenar, nokta ve **kelime** — böylece açık temada, renk körü bir okuyucuda ve iki metreden bakışta da çalışır. Durumlar "status" değil, **topu kim tutuyor**: *your turn* (cevapladı ve durdu) · *needs permission* (aynı top, daha ağır: sen karar verene kadar hiçbir şey olmaz) · *working* · *your message is queued* · *starting…* · *nothing said yet* · *ended*.
+- **Sakin tutan dilbilgisi:** **hareket yalnızca kendi kendine çözülen duruma** — çalışan noktanın nabzı atar (1,8 sn, sadece opaklık; *prefers-reduced-motion* ayarına uyar), çünkü gerçekten bir şey oluyor. **"Sıra sende" asla animasyon almaz**: kalıcı bir durumdur, kalıcı animasyon dırdırdır. Onun yerine **kontrast** alır: dolu yeşil kenar, hafif tint, kalın kelime — panelde doygun tek şey odur, bu yüzden anında bulunur. **Dürtme zamandır, animasyon değil**: *your turn · 41m* kendi kendine büyür. Biten oturumlar %55'e çekilir.
+- **Seçim bir halkadır, renk değil.** Seçili kart eskiden link-mavisi bir tint alıyordu ve bu, "çalışıyor" anlamındaki maviyle yarışıyordu — bir kartta iki mavi, bu sistemin ortadan kaldırmak için var olduğu belirsizliğin ta kendisi. **Rengi faz sahiplenir, çerçeveyi seçim.**
+- **Liste asla kendini yeniden sıralamaz** — imlecin altında zıplayan kart rahatsızlığın tanımıdır. Onun yerine kartların üstünde tek satır: **● 3 waiting for you · longest 41m**; tıklayınca en uzun bekleyene gider.
+- **Sekme de sayar:** Console arka plandayken `Console (2)`.
+
+### Tur bitince haber (3.33.0)
+
+Sen başka yerdeyken biten tur **bir kez** haber verir: *"developer is waiting for you (1m · 4.2k tokens · $0.03)"* ve açan bir düğme. Bilerek dar tutuldu, yoksa kapatılan şey olur: **ekranındaki konuşma için asla**, **kestiğin ya da hata veren tur için asla**, tur başına bir kez, working→idle geçişinde. Kapatma: `agentFarm.notifyConsoleTurnEnd`.
+
+**Her tur kendi rakamlarıyla kapanır:** `12.4s · 4.2k tokens · $0.03`. Tur, senin düşündüğün birimdir; "buna değdi mi?" sorusu, rakamlar yalnızca oturum başına varken cevapsızdı. Kimsenin süre tutmadığı bir tur uydurma sıfır yerine hiçbir şey yazmaz.
+
 ### "Çalışıyor" demek (3.32.0)
 
 Mesajınla cevabın ilk satırı arasında sayfa **hiçbir şey** göstermiyordu — ölmüş bir oturumun gösterdiği de tam olarak budur. Artık konuşma ile yazma kutusu arasında bir şerit var ve terminalden **daha fazlasını** söylüyor: dönen bir işaret (donmuş bir etiket değil, canlı), **turun kaç saniyedir sürdüğü**, tuttuğu **context**, bekleyen mesaj sayısı — ve *Thinking…* gibi genel bir kelime yerine **şu an ne yaptığı**: en son uzandığı araç (`Read src/core/sessions.ts`, `Bash npm test`). Önceki turun aracı asla "şu an yapılan" diye gösterilmez. **Esc** çalışan turu durdurur (terminaldeki tuşun aynısı); hiçbir şey çalışmıyorken hiçbir şey yapmaz.

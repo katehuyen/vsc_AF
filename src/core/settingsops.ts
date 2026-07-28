@@ -39,7 +39,8 @@ const CATEGORY_OF: Record<string, string> = {
     // live monitoring & alerts
     liveMonitor: 'live', livePort: 'live', activeThresholdSeconds: 'live',
     stuckThresholdSeconds: 'live', notifyPermission: 'live', notifyStuck: 'live',
-    notifyTurnEnd: 'live', maxTranscriptMessages: 'live', contextWindowTokens: 'live',
+    notifyTurnEnd: 'live', notifyConsoleTurnEnd: 'live',
+    maxTranscriptMessages: 'live', contextWindowTokens: 'live',
     // cost & budgets
     pricing: 'cost', budgets: 'cost', windowTokenLimit: 'cost',
     planUsageRefreshMinutes: 'cost',

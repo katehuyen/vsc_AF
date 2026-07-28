@@ -2,6 +2,19 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.33.0 — Whose turn is it: the Console answers that at a glance (2026-07-29)
+
+Eight sessions, eight different jobs, and one question you ask every few minutes: **which of them is waiting for me?** The left panel now answers it from across the room, without becoming a Christmas tree.
+
+- **Every card carries its phase three ways at once — a coloured edge, a dot and a word** — so it survives a light theme, a colourblind reader and a glance from two metres. The states are not statuses, they are **who holds the ball**: *your turn* (it replied and stopped) · *needs permission* (the same ball, heavier: nothing happens until you decide) · *working* · *your message is queued* · *starting…* · *nothing said yet* · *ended*.
+- **The grammar that keeps it calm.** **Motion only for the state that resolves itself**: the working dot breathes (1.8s, opacity only, and it obeys *prefers-reduced-motion*), because something really is happening. **"Your turn" never animates** — it persists, and animating a persistent state is nagging. It gets **contrast** instead: a filled green edge, a faint tint and a bold word, on a panel where nothing else is saturated, so it is the only loud thing and you find it instantly. **The nudge is time, not animation**: *your turn · 41m* grows by itself. Ended sessions recede to 55%.
+- **Selection is a ring, never a colour.** The selected card used to take a link-blue tint that competed with the blue meaning "working" — two blues on one card is exactly the ambiguity this system exists to remove. The phase owns the colour; selection owns the outline.
+- **The list never reorders itself.** Cards that jump under the cursor are the definition of irritating. Instead, one line above them — **● 3 waiting for you · longest 41m** — and a click takes you to whichever has waited longest.
+- **The tab counts too:** `Console (2)` while the Console sits in the background.
+- **A turn that ends while you are elsewhere tells you.** One notice per turn — *"developer is waiting for you (1m · 4.2k tokens · $0.03)"* with a button that opens it. Deliberately narrow, or it becomes the thing you switch off: **never** for the conversation on your screen, **never** for a turn you interrupted or that failed, once per turn, on the working→idle edge. Off with `agentFarm.notifyConsoleTurnEnd`.
+- **Every turn closes with its own numbers** — `12.4s · 4.2k tokens · $0.03`. A turn is the unit you think in, and "was that worth it?" was unanswerable while the numbers existed only per session. A turn nobody timed reports nothing rather than a made-up zero.
+- 26 checks added (every phase incl. the traps — a queued message is still the agent's ball, a session with nothing said yet is not a nudge — the grammar itself: only the transient state animates, colour is never alone; the call-out's jump; the turn summary; the notice's four conditions). Suite: **78 files, 3096 checks green.** The visual system was also rendered and looked at in a browser, at every phase side by side, before it shipped.
+
 ## 3.32.0 — The Console says it is working, and remembers where you were (2026-07-28)
 
 ### It says it is working

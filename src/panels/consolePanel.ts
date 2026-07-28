@@ -89,6 +89,18 @@ export class ConsolePanel {
         ConsolePanel.current?.refresh();
     }
 
+    /**
+     * Is the user looking at THIS conversation right now?
+     *
+     * The turn-finished notice exists for turns you are not watching; firing it
+     * for the one on your screen would be the extension telling you what you
+     * can already see, which is how a useful notice becomes noise.
+     */
+    static isWatching(hostId: string): boolean {
+        const c = ConsolePanel.current;
+        return !!c && c.panel.visible && c.selected === hostId;
+    }
+
     private constructor(private panel: vscode.WebviewPanel, private deps: ConsoleDeps) {
         panel.webview.html = htmlShell(panel.webview, deps.extensionUri,
             'Console', this.data(), 'console.js');
@@ -163,7 +175,15 @@ export class ConsolePanel {
     }
 
     refresh(): void {
-        void this.panel.webview.postMessage({ type: 'data', data: this.data() });
+        const data = this.data();
+        // The tab says how many conversations are waiting for you, so the nudge
+        // reaches you with the Console in the background — the one place a
+        // count is useful and can never be in the way.
+        const waiting = (data.sessions as { status: string; turns: number; queued: string[] }[])
+            .filter(s => s.status === 'idle' && s.turns > 0 && !s.queued.length).length;
+        const title = waiting ? `Console (${waiting})` : 'Console';
+        if (this.panel.title !== title) { this.panel.title = title; }
+        void this.panel.webview.postMessage({ type: 'data', data });
     }
 
     private agentById(id: string): AgentInfo | undefined {

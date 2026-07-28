@@ -305,6 +305,67 @@ const html = allHtml;
         /already has a session running here/.test(allHtml()));
 }
 
+// ---------- whose turn is it ----------
+// The left panel's whole job, across many cards: who holds the ball, and for
+// how long. Colour is never alone (every state says its word); only the state
+// that resolves itself moves; and the list never reorders itself under you.
+{
+    const list = () => (els['c-list'] ? els['c-list']._html : '');
+    const style = () => app()._html;
+
+    push(data(CONVO.slice()));   // replied and stopped
+    ok('a session that replied and stopped says it is your turn',
+        /class="srow p-you/.test(list()) && />your turn/.test(list()));
+    ok('…and how long it has been waiting', /your turn · \d+[smh]/.test(list()));
+    ok('…with the panel calling it out once, clickably',
+        /id="c-next"/.test(list()) && /1 waiting for you/.test(list()));
+
+    push(data(CONVO.slice(), { status: 'working', turnStartedAt: Date.now() }));
+    ok('a running turn is the agent\'s ball', /class="srow p-agent/.test(list()) && />working/.test(list()));
+    ok('…and nothing is calling for you', !/waiting for you/.test(list()));
+
+    push(data(CONVO.slice(), { status: 'working', queued: ['later'] }));
+    ok('a queued message is still the agent\'s ball, and says so',
+        /class="srow p-agent/.test(list()) && /your message is queued/.test(list()));
+
+    push(data(CONVO.slice(), { pendingPermission: { detail: 'needs Write' } }));
+    ok('a refused tool is a heavier kind of your turn',
+        /class="srow p-blocked/.test(list()) && />needs permission/.test(list()));
+    ok('…and it counts as waiting for you', /1 waiting for you/.test(list()));
+
+    push(data([], { status: 'idle', turns: 0, messages: [] }));
+    ok('a session with nothing said yet is not a nudge',
+        !/p-you/.test(list()) && !/waiting for you/.test(list()));
+
+    push(data(CONVO.slice(), { status: 'ended' }));
+    ok('an ended session recedes instead of shouting', /class="srow p-over/.test(list()));
+
+    // the grammar itself
+    ok('only the transient state animates', /\.srow\.p-agent \.dot[^}]*animation:afbreath/.test(style())
+        && !/\.srow\.p-you[^}]*animation/.test(style()));
+    ok('…and it respects "reduce motion"', /prefers-reduced-motion/.test(style()));
+    ok('your turn is carried by contrast: edge, dot AND word',
+        /\.srow\.p-you \{[^}]*border-left-color/.test(style())
+        && /\.srow\.p-you \.dot/.test(style())
+        && /\.srow\.p-you \.phase/.test(style()));
+
+    // the nudge answers: click takes you to the longest wait, list never reorders
+    const older = data(CONVO.slice());
+    older.sessions = [
+        session(CONVO.slice(), { id: 'csA', sessionId: 'aaaa1111', lastTs: Date.now() - 600000 }),
+        session(CONVO.slice(), { id: 'csB', sessionId: 'bbbb2222', lastTs: Date.now() - 60000 })
+    ];
+    older.selected = 'csB';
+    push(older);
+    ok('two waiting are counted together', /2 waiting for you/.test(list()));
+    const order = list().indexOf('aaaa1111') < list().indexOf('bbbb2222');
+    ok('…the cards keep their own order (a list that jumps is the irritation)', order);
+    posted.length = 0;
+    els['c-next'].listeners.click();
+    ok('…and the call-out jumps to the one waiting longest',
+        posted.some(m => m.type === 'select' && m.id === 'csA'));
+}
+
 // ---------- "it is still working" ----------
 // Between your message and the first line of the reply the page showed nothing
 // at all — and nothing is exactly what a dead session shows. A terminal says so

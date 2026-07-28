@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.32.0",
+  "version": "3.33.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -2339,6 +2339,11 @@
           },
           "default": [],
           "markdownDescription": "Saved launch setups offered by the **Start Session…** launcher — \"deep review\" (opus + xhigh + plan), \"quick fix\" (sonnet + acceptEdits), and so on. The launcher's *Save this as a profile…* row writes here; nothing is applied until you pick one."
+        },
+        "agentFarm.notifyConsoleTurnEnd": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Tell you when a **Console** turn finishes and you are not watching that conversation — a notice carrying what the turn took, with a button that opens it. Never fires for the session on your screen, and never for a turn you interrupted. The Console's own signals (the card's *your turn* state and the count on its tab) do not depend on this."
         },
         "agentFarm.speakerLabelTemplate": {
           "type": "string",

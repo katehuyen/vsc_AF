@@ -49,6 +49,9 @@ export interface ConsoleMessage {
     /** result rows carry the turn's own numbers */
     cost?: number;
     turns?: number;
+    /** how long the turn took, and what it spent — the summary line that closes it */
+    ms?: number;
+    tokens?: number;
 }
 
 export interface ConsoleSessionState {
@@ -81,6 +84,8 @@ export interface ConsoleSessionState {
      *  reply is indistinguishable from a session that has died — and the honest
      *  way to say it is to count from the moment the turn really began. */
     turnStartedAt?: number;
+    /** token total when this turn began — the difference is what the turn spent */
+    turnTokensAt?: number;
     lastTs: number;
     /** why it ended, when it did */
     exitReason?: string;
@@ -293,6 +298,13 @@ export function reduceEvent(
         const cost = typeof o.total_cost_usd === 'number' ? o.total_cost_usd : 0;
         const isError = o.is_error === true;
         const sub = String(o.subtype ?? '');
+        // What the turn actually cost you, closed off where it ended: the time
+        // it took and the tokens it spent were both already known — they were
+        // just never told. A turn is the unit you think in, so it gets a line.
+        const ms = state.turnStartedAt ? Math.max(0, now - state.turnStartedAt) : undefined;
+        const spent = state.turnTokensAt !== undefined
+            ? Math.max(0, state.tokens - state.turnTokensAt)
+            : undefined;
         const next = push({
             role: 'result',
             text: isError
@@ -300,6 +312,8 @@ export function reduceEvent(
                 : '',
             isError,
             cost,
+            ms,
+            tokens: spent || undefined,
             turns: typeof o.num_turns === 'number' ? o.num_turns : undefined
         });
         return {
@@ -308,6 +322,8 @@ export function reduceEvent(
                 status: 'idle',
                 costUSD: Math.round((state.costUSD + cost) * 10000) / 10000,
                 turns: state.turns + 1,
+                turnStartedAt: undefined,
+                turnTokensAt: undefined,
                 sessionId: typeof o.session_id === 'string' ? o.session_id : state.sessionId
             },
             changed: true
@@ -389,7 +405,7 @@ export function acceptUserText(
     }
     return {
         state: {
-            ...state, lastTs: now, status: 'working', turnStartedAt: now,
+            ...state, lastTs: now, status: 'working', turnStartedAt: now, turnTokensAt: state.tokens,
             messages: [...state.messages, { id: nextId(), ts: now, role: 'user', text: t }]
         },
         send: true
@@ -407,7 +423,8 @@ export function shiftQueued(
     const [next, ...rest] = state.queued;
     return {
         state: {
-            ...state, queued: rest, status: 'working', lastTs: now, turnStartedAt: now,
+            ...state, queued: rest, status: 'working', lastTs: now,
+            turnStartedAt: now, turnTokensAt: state.tokens,
             messages: [...state.messages, { id: nextId(), ts: now, role: 'user', text: next }]
         },
         text: next

@@ -5134,9 +5134,48 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         } catch { /* the index still has it for this window */ }
         index.setConsoleSessions(consoleIds);
     };
+    /**
+     * "Your turn" — told once, when the turn ends and you are NOT watching it.
+     *
+     * A hosted session can run for minutes while you work somewhere else, and
+     * the panel's own signals (the card, the tab count) only reach you if you
+     * are looking at the Console. This is the one that travels. Deliberately
+     * narrow, because a notice that fires when you can already see the answer
+     * is how a useful notice turns into noise:
+     *   · never for the conversation on your screen right now,
+     *   · never for a turn you interrupted or that failed — you were there,
+     *   · one per turn, carrying what the turn cost, and a button that takes
+     *     you to it.
+     * Off with `agentFarm.notifyConsoleTurnEnd`.
+     */
+    const prevConsoleStatus = new Map<string, string>();
+    const announceFinishedTurns = (): void => {
+        for (const s of consoleHost.list()) {
+            const was = prevConsoleStatus.get(s.id);
+            prevConsoleStatus.set(s.id, s.status);
+            if (was !== 'working' || s.status !== 'idle') { continue; }
+            if (!cfg().get<boolean>('notifyConsoleTurnEnd', true)) { continue; }
+            if (ConsolePanel.isWatching(s.id)) { continue; }
+            const last = [...s.messages].reverse().find(m => m.role === 'result');
+            if (last?.isError) { continue; }
+            const bits = [
+                last?.ms ? (last.ms >= 60000 ? `${Math.round(last.ms / 6000) / 10}m` : `${Math.round(last.ms / 1000)}s`) : '',
+                last?.tokens ? `${Math.round(last.tokens / 100) / 10}k tokens` : '',
+                last?.cost ? `$${last.cost.toFixed(2)}` : ''
+            ].filter(Boolean).join(' · ');
+            void vscode.window.showInformationMessage(
+                `Agent Farm — ${s.agentName} is waiting for you${bits ? ` (${bits})` : ''}.`,
+                'Open the Console'
+            ).then(pick => {
+                if (pick) { ConsolePanel.show(consoleDeps, { sessionId: s.id }); }
+            });
+        }
+    };
+
     context.subscriptions.push(consoleHost.onChange(() => {
         rememberConsoleSessions();
         rememberOpenConsoleSessions();
+        announceFinishedTurns();
     }));
     /**
      * The conversation a session already had, for a resume that means

@@ -65,11 +65,56 @@
         .srow { border:1px solid var(--vscode-widget-border,#4443); border-radius:7px; padding:7px 9px;
             cursor:pointer; background:var(--vscode-editor-background); }
         .srow:hover { background:var(--vscode-list-hoverBackground); }
+        /* Selection is a RING, never a colour: a link-blue tint on the selected
+           card competed with the blue that means "the agent is working", and two
+           blues on one card is exactly the ambiguity this system exists to
+           remove. The phase owns the colour; selection owns the outline. */
         .srow.sel { border-color:var(--vscode-focusBorder);
-            background:color-mix(in srgb, var(--vscode-textLink-foreground) 12%, transparent); }
+            box-shadow:inset 0 0 0 1px var(--vscode-focusBorder); }
         .srow .h { display:flex; align-items:center; gap:6px; justify-content:space-between; }
         .srow .n { font-weight:600; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .srow .m { font-size:10px; color:var(--vscode-descriptionForeground); margin-top:2px; }
+        /* ---- whose turn is it (see phaseOf) --------------------------------
+           A card carries its phase three ways at once — a coloured edge, a dot
+           and a WORD — so it survives a light theme, a colourblind reader and a
+           glance from two metres away. Only the transient state moves. */
+        .srow { border-left:3px solid transparent; transition:background .18s ease; }
+        .srow .dot { background:var(--vscode-descriptionForeground,#888); }
+        .srow .phase { text-transform:lowercase; }
+        /* YOUR TURN — the only saturated thing on the panel, and static: it
+           persists, and a persistent animation is nagging. */
+        .srow.p-you { border-left-color:var(--vscode-charts-green,#4caf50);
+            background:color-mix(in srgb, var(--vscode-charts-green,#4caf50) 7%, transparent); }
+        .srow.p-you .dot { background:var(--vscode-charts-green,#4caf50);
+            box-shadow:0 0 0 3px color-mix(in srgb, var(--vscode-charts-green,#4caf50) 22%, transparent); }
+        .srow.p-you .phase { color:var(--vscode-charts-green,#4caf50); font-weight:600; }
+        /* BLOCKED — the same ball, heavier: nothing moves until you decide. */
+        .srow.p-blocked { border-left-color:var(--vscode-editorWarning-foreground,#cca700);
+            background:color-mix(in srgb, var(--vscode-editorWarning-foreground,#cca700) 9%, transparent); }
+        .srow.p-blocked .dot { background:var(--vscode-editorWarning-foreground,#cca700);
+            box-shadow:0 0 0 3px color-mix(in srgb, var(--vscode-editorWarning-foreground,#cca700) 22%, transparent); }
+        .srow.p-blocked .phase { color:var(--vscode-editorWarning-foreground,#cca700); font-weight:600; }
+        /* AGENT WORKING — the one state that moves, because it really is moving.
+           A slow breath (1.8s), opacity only: no layout, no colour flashing. */
+        .srow.p-agent { border-left-color:color-mix(in srgb, var(--vscode-charts-blue,#3794ff) 60%, transparent); }
+        .srow.p-agent .dot { background:var(--vscode-charts-blue,#3794ff); animation:afbreath 1.8s ease-in-out infinite; }
+        .srow.p-agent .phase { color:var(--vscode-charts-blue,#3794ff); }
+        @keyframes afbreath { 0%,100% { opacity:1; } 50% { opacity:.35; } }
+        @media (prefers-reduced-motion: reduce) { .srow.p-agent .dot { animation:none; } }
+        .srow.p-open .dot { background:var(--vscode-charts-yellow,#cca700); }
+        .srow.p-over { opacity:.55; }
+        .srow.p-error { border-left-color:var(--vscode-charts-red,#f14c4c); }
+        .srow.p-error .dot { background:var(--vscode-charts-red,#f14c4c); }
+        /* the count above the cards: the nudge you can click, never a popup */
+        .callout { display:flex; align-items:center; gap:7px; width:100%; text-align:left;
+            margin:6px 0 2px; font-size:11px; padding:5px 9px; border-radius:7px;
+            color:var(--vscode-charts-green,#4caf50); font-weight:600;
+            background:color-mix(in srgb, var(--vscode-charts-green,#4caf50) 10%, transparent);
+            border:1px solid color-mix(in srgb, var(--vscode-charts-green,#4caf50) 35%, transparent); }
+        .callout:hover { background:color-mix(in srgb, var(--vscode-charts-green,#4caf50) 18%, transparent); }
+        .callout .cdot { width:7px; height:7px; border-radius:50%; flex:none;
+            background:var(--vscode-charts-green,#4caf50); }
+        .callout .cage { margin-left:auto; font-weight:400; opacity:.8; }
         .srow .sid { font-weight:400; opacity:.6; font-size:10px; }
         .srow .t2 { font-size:11px; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .dot { width:8px; height:8px; border-radius:50%; flex:none; display:inline-block; }
@@ -182,6 +227,49 @@
     const ctxAttr = o => `data-vscode-context="${JSON.stringify(o)
         .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}"`;
 
+    /**
+     * WHOSE TURN IS IT — the one question the left panel has to answer at a
+     * glance, across eight cards, without becoming a Christmas tree.
+     *
+     * The states are not "statuses", they are who holds the ball:
+     *   you      — it replied and stopped. The state that has to reach you.
+     *   blocked  — it refused a tool and cannot go on until you decide. Same
+     *              ball, heavier: nothing at all happens until you look.
+     *   agent    — a turn is running. Transient, resolves itself.
+     *   sent     — you spoke while it was working; your words are queued.
+     *   opening  — the process is starting.
+     *   new      — a session with nothing said yet. Not a nudge; you just made it.
+     *   over     — ended or errored. Recedes.
+     *
+     * The grammar that keeps it calm:
+     *   · MOTION ONLY FOR THE TRANSIENT ONE. The working dot breathes, because
+     *     something really is happening. "Your turn" persists — animating a
+     *     persistent state is nagging, so it gets CONTRAST instead: a filled
+     *     left bar, a faint tint and a chip, on a panel where nothing else is
+     *     saturated. It is the only loud thing, so it is found instantly.
+     *   · COLOUR IS NEVER ALONE. Every state also says its word, so it survives
+     *     a colourblind reader, a light theme and a high-contrast theme.
+     *   · THE NUDGE IS TIME, NOT ANIMATION: "your turn · 6m" grows by itself.
+     *   · THE LIST NEVER REORDERS. Cards that jump are the definition of
+     *     irritating; the count above the list jumps you instead, on a click.
+     */
+    function phaseOf(s) {
+        if (!s) { return { id: 'new', label: '', cls: '' }; }
+        if (s.status === 'error') { return { id: 'over', label: 'error', cls: 'p-error' }; }
+        if (s.status === 'ended') { return { id: 'over', label: 'ended', cls: 'p-over' }; }
+        if (s.pendingPermission) { return { id: 'blocked', label: 'needs permission', cls: 'p-blocked' }; }
+        if (s.status === 'starting') { return { id: 'opening', label: 'starting…', cls: 'p-open' }; }
+        if ((s.queued || []).length) { return { id: 'sent', label: 'your message is queued', cls: 'p-agent' }; }
+        if (s.status === 'working') { return { id: 'agent', label: 'working', cls: 'p-agent' }; }
+        if (!s.turns) { return { id: 'new', label: 'nothing said yet', cls: '' }; }
+        return { id: 'you', label: 'your turn', cls: 'p-you' };
+    }
+
+    /** The sessions holding a ball that is yours — the panel's whole point. */
+    const needingYou = () => (DATA.sessions || [])
+        .filter(s => ['you', 'blocked'].indexOf(phaseOf(s).id) >= 0)
+        .sort((a, b) => (a.lastTs || 0) - (b.lastTs || 0));   // longest wait first
+
     /** `developer (#407c78cb)` — the id is how a row is matched against a tab,
      *  a terminal or a log line, so it rides with the agent's name. */
     const who = (agentName, sessionId) =>
@@ -235,9 +323,13 @@
         if (m.role === 'error') {
             return `<div class="msg err"><span class="who">error</span><div class="body">${C.esc(m.text || '')}</div></div>`;
         }
-        // result row: only worth a line when it carries something
+        // The line that closes a turn: how long it took, what it spent, what it
+        // cost. A turn is the unit you think in — "was that worth it?" was
+        // unanswerable while the numbers only existed per session.
         const bits = [];
         if (m.text) { bits.push(m.text); }
+        if (m.ms) { bits.push(m.ms >= 60000 ? `${Math.round(m.ms / 6000) / 10}m` : `${Math.round(m.ms / 100) / 10}s`); }
+        if (m.tokens) { bits.push(`${C.fmtTok(m.tokens)} tokens`); }
         if (m.cost) { bits.push(C.fmtUSD(m.cost)); }
         if (!bits.length) { return ''; }
         return `<div class="msg res"><span class="who"></span><div class="body">${C.esc(bits.join(' · '))}</div></div>`;
@@ -264,21 +356,36 @@
         // the row carries the agent, the session id, the session's own name and
         // its numbers: cost (with the tokens it bought) on the top line, and
         // "ctx now" — what the window is holding — on the bottom one.
-        const rows = (DATA.sessions || []).map(s => `
-            <div class="srow${s.id === DATA.selected ? ' sel' : ''}" data-sel="${C.esc(s.id)}"
+        const rows = (DATA.sessions || []).map(s => {
+            const p = phaseOf(s);
+            // the nudge is the WAIT, and it grows on its own
+            const waited = p.id === 'you' || p.id === 'blocked' ? relTime(s.lastTs) : '';
+            return `
+            <div class="srow ${p.cls}${s.id === DATA.selected ? ' sel' : ''}" data-sel="${C.esc(s.id)}"
                  ${ctxAttr({
                      webviewSection: 'afConsoleSession', preventDefaultContextMenuItems: false,
                      sessionId: s.sessionId || '', title: s.title || '',
                      agentName: s.agentName || '', cwd: s.cwd || ''
                  })}
-                 title="${C.esc(s.title || 'not named yet')} — right-click for session actions">
+                 title="${C.esc(s.title || 'not named yet')} — ${C.esc(p.label)} — right-click for session actions">
                 <div class="h">
-                    <span class="n"><span class="dot" style="background:${STATUS_COLOR[s.status] || '#888'}"></span>${who(s.agentName, s.sessionId)}</span>
+                    <span class="n"><span class="dot"></span>${who(s.agentName, s.sessionId)}</span>
                     <span class="m" title="cost so far${s.tokens ? ' · tokens spent' : ''}">${C.fmtUSD(s.cost)}${s.tokens ? ` (${C.fmtTok(s.tokens)})` : ''}</span>
                 </div>
                 <div class="t2">${C.esc(s.title || '(no name yet)')}</div>
-                <div class="m">${C.esc(s.status)}${(s.queued || []).length ? ` · ${s.queued.length} waiting` : ''}${s.turns ? ` · ${s.turns} turns` : ''} · ${relTime(s.lastTs)}${s.contextTokens ? ` · <span title="Approximate context in the model window right now">ctx ${C.fmtTok(s.contextTokens)}</span>` : ''}</div>
-            </div>`).join('');
+                <div class="m"><span class="phase">${C.esc(p.label)}${waited ? ` · ${waited}` : ''}</span>${(s.queued || []).length ? ` · ${s.queued.length} waiting` : ''}${s.turns ? ` · ${s.turns} turns` : ''}${s.contextTokens ? ` · <span title="Approximate context in the model window right now">ctx ${C.fmtTok(s.contextTokens)}</span>` : ''}</div>
+            </div>`;
+        }).join('');
+        // One line above the cards, only when something is actually waiting:
+        // the count, and a click that takes you to the one that has waited
+        // longest. This is the "nudge" — under your control, never a popup.
+        const need = needingYou();
+        const longest = need.length ? relTime(need[0].lastTs) : '';
+        const callout = need.length ? `
+            <button class="callout" id="c-next" title="Go to the session that has been waiting longest">
+                <span class="cdot"></span>${need.length} waiting for you
+                <span class="cage">longest ${longest}</span>
+            </button>` : '';
         // A session a live process already owns cannot be joined — resuming it
         // would start a second process on the same transcript. The row says so
         // instead of offering it as if it were free.
@@ -311,6 +418,7 @@
                 <div class="m">ended ${relTime(r.endedAt)} ago · click to continue</div>
             </div>`).join('')}` : '';
         return `<button id="c-new">＋ New session</button>
+            ${callout}
             ${back}
             ${rows || '<div class="empty">No hosted sessions yet. Pick an agent below and say something — the process starts here, in the panel.</div>'}
             <button class="secondary" id="c-toggle-resume" style="margin-top:6px">${st.showResume ? '▾' : '▸'} Resume an existing session</button>
@@ -681,6 +789,11 @@
                 }));
             const byId = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
             byId('c-new', 'click', () => vscode.postMessage({ type: 'select', id: '' }));
+            // the nudge, answered: go to whichever has waited longest
+            byId('c-next', 'click', () => {
+                const next = needingYou()[0];
+                if (next) { vscode.postMessage({ type: 'select', id: next.id }); }
+            });
             byId('c-toggle-resume', 'click', () => { st.showResume = !st.showResume; save(); paint(); });
         }
 
