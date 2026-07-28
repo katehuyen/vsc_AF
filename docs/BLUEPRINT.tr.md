@@ -121,6 +121,8 @@ Oturum başlıkları 2.7.0'dan itibaren konuşmadan türetilir: `/compact` gibi 
 
 Filonun genel panosu. `Agent Farm: Open Dashboard` komutuyla veya durum çubuğuna tıklayarak açılır.
 
+> **Açık sayfa indeksi takip eder (3.31.1).** Yeni bir oturum, yeni bir tur, değişen maliyet — indeks bunu biliyordu, **ağaçlara** söyleniyordu, **sayfalara** söylenmiyordu; yani açık bıraktığın Dashboard, ajan sayfası, Agents (Portfolio), Turns ve Living, sen Refresh'e basana kadar açtığın andaki filoyu gösteriyordu. Artık indeks güncellendiğinde bu sayfalar kendiliğinden yenilenir; **1 saniyelik debounce** ile, çünkü akan bir oturum indeksi saniyede birkaç kez günceller ve her satırda tam sayfa çizmek "takip eden" değil "titreyen" bir sayfa olurdu.
+
 **Her sayfada tek başlık (2.59.0):** her panelin üst çubuğu tek bir ortak bileşenden çizilir; hizalama, boşluk ve sıralama her yerde birebir aynıdır — başlık ve alt yazı solda, sağa yaslı tek araç çubuğu. Araç çubuğu ince bir ayraçla iki yarıya bölünür: **sol yarı sayfanın kendi** kapsam kontrolleri ve eylemleri (aralık/pencere seçicileri, Start/Resume/⌨/Export…); **sağ yarı ise küresel küme — her sayfada aynı düğmeler, aynı sırada:** **Dashboard · Live Timeline · (ilgili panel) · ⌕ Search · ⚙ Settings · Refresh · ? Guide** — yalnızca zaten üzerinde olduğun sayfa listeden düşer. ⌕ Search anlamlı olduğu yerde ön-kapsamlıdır (bu ajan / bu oturum). Sayfalar sol yarılarında farklılaşır; sağ yarı kas hafızasıdır.
 
 - **KPI kartları**: aktif ajan sayısı, bugünkü maliyet, seçili aralık maliyeti, oturum sayısı, 5 saatlik pencere, toplam bulgu sayısı.
@@ -239,7 +241,7 @@ Filodaki son olayların canlı akışı: kullanıcı komutları (prompt), araç 
 Yazma kutusunun altında **ajan · model · efor · izin modu** — hepsi launcher'ın sözlüğünden (`core/launch.ts`), yani eklentide tek bir sözlük var. `Ctrl+Enter` gönderir.
 
 - **⎋ Interrupt:** çalışan turu durdurur — CLI'ın kendi kontrol kanalı üzerinden. **Tur biter, oturum ve bağlamı kalır.**
-- **Kuyruk:** tur çalışırken yazdığın mesaj **kuyruğa alınır**, kuyrukta olduğu görünür ve tur biter bitmez gönderilir. Kuyruk, çalışan tura dokunmadan temizlenebilir.
+- **Kuyruk (3.31.1'de düzeltildi):** tur çalışırken yazdığın mesaj **bekler — konuşmaya girmez**. Yazma kutusunun üstünde, sırasıyla ve metniyle görünür; **gerçekten gönderildiği anda** konuşmanın parçası olur. Eskiden yazıldığı anda akışa giriyordu: sorulduğu cevabın *üstünde* duruyor ve çalışan turu yukarı itiyordu. Terminalde de böyledir — bir şey çalışırken yazdığın satır gönderilene kadar satırda durur. Kuyruk, çalışan tura dokunmadan temizlenebilir.
 - Her satırda oturumun kendi **maliyeti · tur sayısı · CLI'ın bağlam tahmini** durur.
 
 ### İzinler — dürüst cevap
@@ -271,6 +273,8 @@ Akan bir konuşma saniyede birkaç kez yeniden çizilir. Sayfa eskiden bunların
 - **Yarım kalan mesajın**, imlecinin yerinde durur; akan satır onu bozmaz.
 - **Sayfanın ortasında boşluk yok.** Console artık tam-yükseklik bir uygulama düzeni: tek kaydırılan yer konuşma, altında composer; kısa konuşma araya kocaman boş bir kutu bırakmak yerine composer'ın **üstüne oturur**.
 - **"ctx now" güncel kalır.** Yalnızca CLI'ın ara sıra gönderdiği `thinking_tokens` olayından okunduğu için ilk değerde donuyordu; artık her asistan mesajının kendi usage'ından alınıyor — oturum tablolarının yaptığı aynı aritmetik.
+
+> **"Context now" tek kuralla hesaplanır (3.31.1):** `girdi + iki tür cache + çıktı` — ve **sıfır bir ölçüm değildir**. Transkriptte sentetik asistan satırları vardır (kesilen tur, yerel bildirim) ve bunların usage bloğu **tamamen sıfırdır**; "son usage"ı harfi harfine almak, o satırla biten her oturumun rakamını siliyordu. Gerçek bir transkriptte ölçüldü: 67 satırın 2'si sıfır-usage, sonuncusu onlardan biri, ve penceresinde **78.512** token tutan bir oturum sayfasında `—`, tablolarda `0` görünüyordu. Artık son **gerçek** ölçüm geçerlidir. Kural tek yerde (`core/pricing.ts` → `contextAfter`), soran üç yer aynı cevabı alır: oturum tabloları, transkript sayfası, Console.
 
 ### Oturumlar sekmeden uzun yaşar
 

@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.31.1 — The pages notice, the context is real, and a queued message waits (2026-07-28)
+
+### Everywhere
+
+- **‼️ An open page never noticed anything. That was the "nothing shows up" bug.** A session starting, a turn landing, a cost changing — the index knew, the **trees** were told, and every *page* was not. So a Dashboard, an agent page, the Portfolio or the Turns page left open showed the farm as it was the moment you opened it, and talking in the Console while another page ignored the whole conversation was the sharpest form of it. Pages now **follow the index**, debounced by a second so a streaming session makes them keep up instead of flicker: Dashboard · agent pages · Agents (Portfolio) · Turns · Living. (3.31.0 fixed how a Console session is *filed*; this is whether anything on screen ever *re-reads* it.)
+- **‼️ "Context now" was blank on sessions that had one, and the cause was a zero.** A transcript carries synthetic assistant rows — an interrupt notice, a cancelled turn — whose usage block is **all zeros**, and the figure was taken from "the last usage" literally. So any session that happened to end on one reported nothing: measured on a real transcript, 2 of 67 rows were zero-usage, the last row was one of them, and a session whose window held **78 512** tokens showed `—` on its page and `0` in the tables. Zero now means *no measurement*, and the last real figure stands. One rule (`contextAfter`) for all three places that ask: the sessions tables, the transcript page and the Console.
+
+### The Console
+
+- **‼️ A message typed mid-turn joined the conversation before it was sent.** It appeared *above* the reply it was actually asked after and shoved the running turn up the page. It is **waiting, not said**: it now sits in a strip over the composer — in order, with what it says — and becomes part of the conversation at the moment it is really handed over. Same contract as a terminal, where what you type while something runs stays on the line. It can still be cleared without touching the running turn.
+- **‼️ "Talk to Agent" and "Open Console" did the same thing.** The agent page's claimed Console button sent its agent through as a preset, and the Console stored it — but the composer's shell is only rebuilt when the **selected session** changes, so the preset never reached the markup and the picker still read *Choose an agent…*. Worse, the command **landed on an existing session** for that agent when there was one, which is exactly what plain Open Console does. It now always opens the **composer with that agent chosen**, and if that agent already has a session running here the composer says so and offers it — instead of quietly starting a second one.
+- The picker's empty option is **"Choose an agent…"**, capital first, like every other sentence in the UI.
+- 27 checks added: the context rule (unit + a transcript that ends on a synthetic row, in both the index and the transcript page), the waiting queue (protocol + the page's own strip), the agent hand-off, and the page-follows-index wiring. Suite: **78 files, 3049 checks green.**
+
 ## 3.31.0 — The Live Timeline stops showing sessions that are not there, the Console stops fighting the reader (2026-07-28)
 
 ### The Console

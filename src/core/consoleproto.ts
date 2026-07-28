@@ -365,25 +365,46 @@ export function newSessionState(o: {
  * the session "looks ready" therefore deadlocks: the panel waits for an init
  * that only the message can trigger. The pipe is open the moment the process
  * exists, so the first message goes straight out.
+ *
+ * **A queued message does not join the conversation yet.** It is waiting, not
+ * said: writing it into the transcript the moment it was typed put it *above*
+ * the reply it was actually asked after, and pushed the running turn up the
+ * page as if the agent had already heard it. A terminal does not do that —
+ * what you type while something runs sits on the line until it is sent. So the
+ * text lives in `queued` (the composer shows it, and it can still be cleared)
+ * and becomes a message when `shiftQueued` really hands it over.
  */
 export function acceptUserText(
     state: ConsoleSessionState, text: string, now: number
 ): { state: ConsoleSessionState; send: boolean } {
     const t = text.trim();
     if (!t) { return { state, send: false }; }
-    const withMsg: ConsoleSessionState = {
-        ...state, lastTs: now,
-        messages: [...state.messages, { id: nextId(), ts: now, role: 'user', text: t }]
-    };
     if (state.status === 'working') {
-        return { state: { ...withMsg, queued: [...state.queued, t] }, send: false };
+        return { state: { ...state, lastTs: now, queued: [...state.queued, t] }, send: false };
     }
-    return { state: { ...withMsg, status: 'working' }, send: true };
+    return {
+        state: {
+            ...state, lastTs: now, status: 'working',
+            messages: [...state.messages, { id: nextId(), ts: now, role: 'user', text: t }]
+        },
+        send: true
+    };
 }
 
-/** Pull the next queued message once a turn finishes. */
-export function shiftQueued(state: ConsoleSessionState): { state: ConsoleSessionState; text?: string } {
+/**
+ * Pull the next queued message once a turn finishes — and only NOW does it
+ * become part of the conversation (see acceptUserText).
+ */
+export function shiftQueued(
+    state: ConsoleSessionState, now = Date.now()
+): { state: ConsoleSessionState; text?: string } {
     if (state.status !== 'idle' || !state.queued.length) { return { state }; }
     const [next, ...rest] = state.queued;
-    return { state: { ...state, queued: rest, status: 'working' }, text: next };
+    return {
+        state: {
+            ...state, queued: rest, status: 'working', lastTs: now,
+            messages: [...state.messages, { id: nextId(), ts: now, role: 'user', text: next }]
+        },
+        text: next
+    };
 }

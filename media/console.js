@@ -98,6 +98,16 @@
         .crow { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-top:7px; }
         .crow select { font-size:11px; padding:2px 4px; }
         .crow .grow { flex:1; }
+        /* typed while a turn runs: waiting, not said (see queueHtml) */
+        .qwait:empty { display:none; }
+        .qwait { margin:0 0 7px; padding:6px 9px; border-radius:7px;
+            border:1px dashed var(--vscode-widget-border,#4444);
+            background:color-mix(in srgb, var(--vscode-editorWarning-foreground,#cca700) 8%, transparent); }
+        .qwait .qhead { font-size:10px; opacity:.75; margin-bottom:3px; }
+        .qwait .qline { font-size:11px; opacity:.9; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .qwait .qline::before { content:'· '; opacity:.6; }
+        .linkish { background:none; border:none; padding:0; font:inherit; cursor:pointer;
+            color:var(--vscode-textLink-foreground); text-decoration:underline; }
         .qbadge { font-size:10px; padding:1px 7px; border-radius:8px;
             background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); }
         .fixed { font-size:11px; opacity:.75; }
@@ -235,7 +245,7 @@
                     <span class="m" title="cost so far${s.tokens ? ' · tokens spent' : ''}">${C.fmtUSD(s.cost)}${s.tokens ? ` (${C.fmtTok(s.tokens)})` : ''}</span>
                 </div>
                 <div class="t2">${C.esc(s.title || '(no name yet)')}</div>
-                <div class="m">${C.esc(s.status)}${s.queued ? ` · ${s.queued} queued` : ''}${s.turns ? ` · ${s.turns} turns` : ''} · ${relTime(s.lastTs)}${s.contextTokens ? ` · <span title="Approximate context in the model window right now">ctx ${C.fmtTok(s.contextTokens)}</span>` : ''}</div>
+                <div class="m">${C.esc(s.status)}${(s.queued || []).length ? ` · ${s.queued.length} waiting` : ''}${s.turns ? ` · ${s.turns} turns` : ''} · ${relTime(s.lastTs)}${s.contextTokens ? ` · <span title="Approximate context in the model window right now">ctx ${C.fmtTok(s.contextTokens)}</span>` : ''}</div>
             </div>`).join('');
         // A session a live process already owns cannot be joined — resuming it
         // would start a second process on the same transcript. The row says so
@@ -266,16 +276,44 @@
         return body + permissionBox(s);
     }
 
+    const queuedOf = s => ((s && s.queued) || []);
+
     /** The bits of the live composer row that change while a turn runs. */
     function liveBitsHtml(s) {
         if (!s) { return ''; }
-        return `${s.queued ? `<span class="qbadge" title="Waiting for the current turn to finish">${s.queued} queued</span> <button class="secondary" id="c-clearq">clear</button>` : ''}
+        const q = queuedOf(s).length;
+        return `${q ? `<span class="qbadge" title="Waiting for the current turn to finish">${q} waiting</span> <button class="secondary" id="c-clearq">clear</button>` : ''}
             ${s.status === 'working' ? '<button class="secondary" id="c-int" title="Stop the running turn — the session and its context stay">⎋ Interrupt</button>' : ''}`;
+    }
+
+    /**
+     * What you typed while a turn was running — waiting, not said.
+     *
+     * It used to go straight into the conversation, which put it above the
+     * reply it was asked after and shoved the running turn up the page. A
+     * terminal keeps it on the line until it is sent; so does this. It sits
+     * here, in order, until the turn ends and it is really handed over.
+     */
+    function queueHtml(s) {
+        const q = queuedOf(s);
+        if (!q.length) { return ''; }
+        const one = t => `<div class="qline" title="${C.esc(t)}">${C.esc(t.length > 160 ? t.slice(0, 160) + '…' : t)}</div>`;
+        return `<div class="qhead">⏳ ${q.length} message${q.length === 1 ? '' : 's'} waiting — sent when this turn ends</div>${q.map(one).join('')}`;
     }
 
     function statusHtml(s) {
         if (!s) {
-            return `A new session opens in the chosen agent's folder and runs here, in the panel.`;
+            // Coming from an agent page ("Talk to Agent") lands here with that
+            // agent already chosen. If it ALSO has a session running in this
+            // window, say so — starting a second one by accident is the one
+            // mistake this screen can cause.
+            const live = st.agentId
+                ? (DATA.sessions || []).find(x => x.agentId === st.agentId
+                    && x.status !== 'ended' && x.status !== 'error')
+                : undefined;
+            return live
+                ? `${C.esc(live.agentName)} already has a session running here — <button class="linkish" id="c-goto-live">open it</button> instead, or say something below to start a second one.`
+                : `A new session opens in the chosen agent's folder and runs here, in the panel.`;
         }
         const dead = s.status === 'ended' || s.status === 'error';
         return `${s.sessionId ? 'session ' + C.esc(s.sessionId.slice(0, 8)) + ' · ' : ''}${s.contextTokens ? '~' + C.fmtTok(s.contextTokens) + ' ctx · ' : ''}${C.fmtUSD(s.cost)} this session · ${s.turns} turn(s)
@@ -373,7 +411,7 @@
                 <span id="c-live"></span>
                 <button id="c-send"${dead ? ' disabled' : ''}>Send</button>`
             : `<select id="c-agent" title="Which agent — the session opens in its folder">
-                    <option value="">choose an agent…</option>
+                    <option value="">Choose an agent…</option>
                     ${(DATA.agents || []).map(a => `<option value="${C.esc(a.id)}"${a.id === st.agentId ? ' selected' : ''}>${C.esc(a.name)}</option>`).join('')}
                 </select>
                 <select id="c-model" title="Model for the new session (--model)">${opts(DATA.models, st.model)}</select>
@@ -394,6 +432,7 @@
                         <div class="hiddenote" id="c-hidden"></div>
                     </div>
                     <div class="composer">
+                        <div class="qwait" id="c-queue"></div>
                         <textarea id="c-text" placeholder="${placeholder}"${dead ? ' disabled' : ''}></textarea>
                         <div class="crow" id="c-controls">${controls}</div>
                         <div class="crow" id="c-status" style="font-size:10px;opacity:.6"></div>
@@ -467,6 +506,13 @@
             shellKey = key;
             buildShell(s);
         }
+        // The shell is only rebuilt when the SELECTED SESSION changes, so an
+        // agent chosen for us — "Talk to Agent" on an agent's page — would land
+        // in st and never reach the markup whenever the composer was already on
+        // screen, and the button would look exactly like plain Open Console.
+        // The picker mirrors st on every pass instead of only at build time.
+        const agentSel = document.getElementById('c-agent');
+        if (agentSel && agentSel.value !== (st.agentId || '')) { agentSel.value = st.agentId || ''; }
 
         const talkEl = document.getElementById('talk');
         // Where the reader is, BEFORE anything is written. The element itself is
@@ -528,6 +574,7 @@
             byId('c-int', 'click', () => vscode.postMessage({ type: 'interrupt', id: DATA.selected }));
             byId('c-clearq', 'click', () => vscode.postMessage({ type: 'clearQueue', id: DATA.selected }));
         }
+        slot('c-queue', queueHtml(s));
         const sendBtn = document.getElementById('c-send');
         if (sendBtn && s) {
             const label = s.status === 'working' ? 'Queue' : 'Send';
@@ -536,6 +583,11 @@
 
         if (slot('c-status', statusHtml(s))) {
             const byId = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
+            byId('c-goto-live', 'click', () => {
+                const live = (DATA.sessions || []).find(x => x.agentId === st.agentId
+                    && x.status !== 'ended' && x.status !== 'error');
+                if (live) { vscode.postMessage({ type: 'select', id: live.id }); }
+            });
             byId('c-close', 'click', () => vscode.postMessage({ type: 'close', id: DATA.selected }));
             byId('c-forget', 'click', () => vscode.postMessage({ type: 'forget', id: DATA.selected }));
             byId('c-transcript', 'click', () => vscode.postMessage({

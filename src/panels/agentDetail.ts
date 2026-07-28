@@ -164,6 +164,12 @@ export class AgentDetailPanel {
     /** Sessions-table row count chosen in the webview's Show box (0 = all). */
     private tableN = AGENT_SESSION_TABLE_N;
 
+    /** A new session, a new turn: the page follows the index instead of waiting
+     *  for Refresh. Called from the debounced broadcast in extension.ts. */
+    static refreshIfOpen(): void {
+        for (const p of AgentDetailPanel.open.values()) { p.refresh(); }
+    }
+
     static show(agentId: string, deps: AgentDetailDeps): void {
         const existing = AgentDetailPanel.open.get(agentId);
         if (existing) {

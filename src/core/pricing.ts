@@ -13,6 +13,35 @@ export interface Usage {
     cacheRead: number;
 }
 
+/** A raw usage block as the API and the transcripts write it. */
+export interface RawUsage {
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
+}
+
+/**
+ * "Context now" — what the model's window held when it produced a reply:
+ * everything that went in (fresh input + both kinds of cache) plus what came
+ * out. **Returns 0 for a row that never went to the model.**
+ *
+ * That last part is the whole reason this is a function rather than four
+ * additions at each call site. A transcript carries synthetic assistant rows —
+ * an interrupt notice, a cancelled turn, a local message — and they carry a
+ * usage block of **all zeros**. Taking "the last usage" literally therefore
+ * wipes the figure whenever a session ends on one of those: measured on a real
+ * transcript, 2 of 67 assistant rows were zero-usage and the last row was one
+ * of them, so a session whose context was 78 512 tokens reported nothing at
+ * all. A zero here means "no measurement", and callers keep the last real one.
+ */
+export function contextAfter(u: RawUsage | undefined | null): number {
+    if (!u) { return 0; }
+    const n = (v: number | undefined): number => (typeof v === 'number' && v > 0 ? v : 0);
+    return n(u.input_tokens) + n(u.cache_read_input_tokens)
+        + n(u.cache_creation_input_tokens) + n(u.output_tokens);
+}
+
 export const DEFAULT_PRICING: PriceRule[] = [
     { match: 'opus', input: 15, output: 75, cacheWrite: 18.75, cacheRead: 1.5 },
     { match: 'fable|mythos', input: 15, output: 75, cacheWrite: 18.75, cacheRead: 1.5 },

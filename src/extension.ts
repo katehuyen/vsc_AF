@@ -1296,6 +1296,35 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return titles[sessionId] ?? '';
     };
 
+    /**
+     * ‼️ The pages follow the index, not the Refresh button.
+     *
+     * A session that starts, a turn that lands, a cost that changes — the trees
+     * were told and the *pages* were not, so a Dashboard, an agent page, the
+     * Portfolio or the Turns page left open showed the farm as it was when you
+     * opened it. Talking in the Console and watching another page ignore the
+     * conversation is the sharpest form of that: the data was indexed and live
+     * the whole time, and nothing on screen said so.
+     *
+     * Debounced, because a streaming session updates the index several times a
+     * second and a full page render per line would be a page that flickers
+     * instead of a page that follows. One second is under "did it notice?" and
+     * far above the cost of a render.
+     */
+    let pagePulse: NodeJS.Timeout | undefined;
+    const refreshOpenPages = (): void => {
+        if (pagePulse) { return; }
+        pagePulse = setTimeout(() => {
+            pagePulse = undefined;
+            DashboardPanel.refreshIfOpen();
+            AgentDetailPanel.refreshIfOpen();
+            PortfolioPanel.refreshIfOpen();
+            TurnsPanel.refreshIfOpen();
+            LivingPanel.refreshIfOpen();
+        }, 1000);
+    };
+    context.subscriptions.push({ dispose: () => { if (pagePulse) { clearTimeout(pagePulse); } } });
+
     index.onDidUpdate(() => {
         insights = applyInsightDismiss(buildInsights(agents, index, healthConfig()));
         notifyBudgets();
@@ -1304,6 +1333,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         insightsTree.refresh();
         feedTree.refresh();
         needsEmitter.fire();
+        refreshOpenPages();
     }, null, context.subscriptions);
     taskManager.onDidChange(() => needsEmitter.fire(), null, context.subscriptions);
 
@@ -6317,13 +6347,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('agentfarm.consoleForAgent', async (arg: AgentArg) => {
             const agent = await resolveAgent(arg);
             if (!agent) { return; }
-            // If a live Console session for this agent already exists, land on
-            // it; otherwise open the composer with the agent chosen — no
-            // process is spawned until there is something to say.
-            const existing = consoleHost.list().find(s =>
-                s.agentId === agent.id && s.status !== 'ended' && s.status !== 'error');
-            ConsolePanel.show(consoleDeps,
-                existing ? { sessionId: existing.id } : { agentId: agent.id });
+            // Always the composer, with this agent chosen. Landing on an
+            // existing session for the same agent looked identical to plain
+            // "Open Console" — which is exactly what the button has to differ
+            // from. A session that IS already running for this agent is one
+            // click away in the left panel, and the composer says so.
+            ConsolePanel.show(consoleDeps, { agentId: agent.id });
         }),
 
         // ---------- C1: the web view, and how to reach it ----------

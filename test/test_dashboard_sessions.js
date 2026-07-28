@@ -181,6 +181,22 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     fs.unlinkSync(autoTmp);
     ok('an sdk-cli transcript opens as an automation run', autoData.origin === 'auto');
 
+    // ---- "Context now" survives a synthetic last row (see core/pricing.ts) ----
+    // Measured on a real transcript: the last assistant row was a synthetic one
+    // with an all-zero usage block, so the card read "—" on a session whose
+    // window actually held 78 512 tokens.
+    const ctxTmp = path.join(require('os').tmpdir(), `af-ctxzero-${Date.now()}.jsonl`);
+    fs.writeFileSync(ctxTmp, [
+        { type: 'assistant', timestamp: t1, message: { id: 'c1', model: 'claude-x', content: [{ type: 'text', text: 'a' }], usage: { input_tokens: 12, cache_read_input_tokens: 78500, output_tokens: 0 } } },
+        { type: 'assistant', timestamp: t2, message: { id: 'c2', model: '<synthetic>', content: [{ type: 'text', text: 'interrupted' }], usage: { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } }
+    ].map(l => JSON.stringify(l)).join('\n'));
+    const ctxData = viewer.buildData(ctxTmp, {
+        extensionUri: {}, getPricing: () => ({ costFor: () => 0 }), maxMessages: () => 5, contextLimitFor: () => 200000
+    });
+    fs.unlinkSync(ctxTmp);
+    ok('the transcript page keeps the last REAL context, not the synthetic zero',
+        ctxData.context.tokens === 78512);
+
     // ---- the /context breakdown captured from a system/local_command line ----
     // Claude Code records `/context` as an ANSI-colored gauge; buildData strips the
     // ANSI + glyph column and reads the labelled category rows on the right.

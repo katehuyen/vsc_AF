@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo } from './agents';
-import { addUsage, emptyUsage, PricingEngine, totalTokens, Usage } from './pricing';
+import { addUsage, contextAfter, emptyUsage, PricingEngine, totalTokens, Usage } from './pricing';
 import { normalizeMarks, SessionMarks } from './sessionmarks';
 import { dayKey, normPath, truncate } from './util';
 
@@ -343,12 +343,10 @@ export function parseSessionFile(
                 if (turnModelSets.length) { turnModelSets[turnModelSets.length - 1].add(msg.model); }
             }
 
-            if (msg.usage) {
-                info.lastCtxTokens = (msg.usage.input_tokens ?? 0) +
-                    (msg.usage.cache_read_input_tokens ?? 0) +
-                    (msg.usage.cache_creation_input_tokens ?? 0) +
-                    (msg.usage.output_tokens ?? 0);
-            }
+            // Zero = no measurement (a synthetic row), so the last REAL figure
+            // stands — see contextAfter.
+            const ctxNow = contextAfter(msg.usage);
+            if (ctxNow > 0) { info.lastCtxTokens = ctxNow; }
 
             let msgCost = 0;
             let msgTokens = 0;

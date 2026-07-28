@@ -123,6 +123,9 @@ export class PortfolioPanel {
     private static current?: PortfolioPanel;
     private disposables: vscode.Disposable[] = [];
 
+    /** Follows the index — see AgentDetailPanel.refreshIfOpen. */
+    static refreshIfOpen(): void { PortfolioPanel.current?.refresh(); }
+
     static show(deps: PortfolioDeps): void {
         if (PortfolioPanel.current) {
             PortfolioPanel.current.panel.reveal();

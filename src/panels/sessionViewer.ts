@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { PricingEngine, totalTokens, Usage } from '../core/pricing';
+import { contextAfter, PricingEngine, totalTokens, Usage } from '../core/pricing';
 import { sessionOrigin } from '../core/sessions';
 import { collectEdits, fileStats, groupByFile } from '../core/codeedits';
 import { askExportOptions, handleAfNav, htmlShell } from './base';
@@ -365,9 +365,12 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
                     (turnAttrs[inTurn] ?? (turnAttrs[inTurn] = {}))[k] = v;
                 }
             }
-            if (msg.usage) {
-                ctxTokens = (msg.usage.input_tokens ?? 0) + (msg.usage.cache_read_input_tokens ?? 0) +
-                    (msg.usage.cache_creation_input_tokens ?? 0) + (msg.usage.output_tokens ?? 0);
+            // A synthetic row's usage is all zeros; adopting it blanked the
+            // "Context now" card on any session that ended on one — see
+            // contextAfter. Zero means "no measurement", not "empty window".
+            const ctxNow = contextAfter(msg.usage);
+            if (ctxNow > 0) {
+                ctxTokens = ctxNow;
                 ctxTs = ts || ctxTs;
                 if (msg.model && msg.model !== '<synthetic>') { ctxModel = msg.model; }
             }

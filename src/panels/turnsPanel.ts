@@ -172,6 +172,9 @@ export class TurnsPanel {
     private static current: TurnsPanel | undefined;
     private disposables: vscode.Disposable[] = [];
 
+    /** Follows the index — see AgentDetailPanel.refreshIfOpen. */
+    static refreshIfOpen(): void { TurnsPanel.current?.refresh(); }
+
     static show(deps: TurnsDeps): void {
         if (TurnsPanel.current) {
             TurnsPanel.current.panel.reveal();

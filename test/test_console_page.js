@@ -79,12 +79,12 @@ sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
 
 const msg = (role, extra) => Object.assign({ id: 'm' + Math.random(), ts: 1, role }, extra);
-const session = (msgs) => ({
-    id: 'cs1', agentName: 'developer', sessionId: '407c78cb-aaaa', title: 'Kalan eksikler',
-    cwd: 'D:/a/dev', status: 'idle', cost: 0.12, turns: 3, queued: 0, tokens: 48200,
+const session = (msgs, extra) => Object.assign({
+    id: 'cs1', agentId: 'dev', agentName: 'developer', sessionId: '407c78cb-aaaa', title: 'Kalan eksikler',
+    cwd: 'D:/a/dev', status: 'idle', cost: 0.12, turns: 3, queued: [], tokens: 48200,
     model: 'claude-opus-5', permissionMode: 'default', contextTokens: 24100, lastTs: Date.now(),
     pendingPermission: null, exitReason: '', messages: msgs
-});
+}, extra || {});
 const CONVO = [
     msg('user', { text: 'read the report' }),
     msg('agent', { text: 'on it' }),
@@ -93,8 +93,8 @@ const CONVO = [
     msg('tool', { text: 'permission denied', isError: true }),
     msg('result', { text: '', cost: 0.01 })
 ];
-const data = (msgs) => ({
-    generatedAt: 1, selected: 'cs1', presetAgent: '', sessions: [session(msgs)],
+const data = (msgs, extra) => ({
+    generatedAt: 1, selected: 'cs1', presetAgent: '', sessions: [session(msgs, extra)],
     agents: [{ id: 'dev', name: 'developer', dir: 'D:/a/dev' }],
     models: [], efforts: [], permissions: [{ id: 'default', label: 'default' }],
     grants: [], defaults: {}, owned: [], resumable: []
@@ -239,6 +239,43 @@ const html = allHtml;
     ])));
     ok('…but a line the filter DOES let through still is',
         jump().hidden === false && jump().textContent === '↓ 1 new line');
+}
+
+// ---------- a message typed mid-turn WAITS ----------
+// It used to be written into the conversation the moment it was typed, which
+// put it above the reply it was asked after and pushed the running turn up the
+// page. A terminal keeps it on the line until it is sent; so does this.
+{
+    afms.open('c-kinds');
+    afms.selectAll('c-kinds');
+    talk().scrollTop = talk().scrollHeight;
+    push(data(CONVO.slice(), { status: 'working', queued: ['do this next', 'and then this'] }));
+    const q = els['c-queue'] ? els['c-queue']._html : '';
+    ok('what is waiting is shown, in order, above the composer',
+        /2 messages waiting/.test(q)
+        && q.indexOf('do this next') > 0 && q.indexOf('do this next') < q.indexOf('and then this'));
+    const convo = () => (els.talkinner ? els.talkinner._html : '');
+    ok('…and is NOT in the conversation yet', !convo().includes('do this next'));
+    ok('…the row and the composer say how many are waiting',
+        /2 waiting/.test(allHtml()));
+
+    push(data(CONVO.slice(), { status: 'working', queued: [] }));
+    ok('an emptied queue leaves no strip behind',
+        (els['c-queue']._html || '') === '');
+}
+
+// ---------- "Talk to Agent" lands on the composer, with that agent chosen ----------
+{
+    const withPreset = data(CONVO.slice());
+    withPreset.selected = '';            // composer mode, as the command opens it
+    withPreset.presetAgent = 'dev';
+    push(withPreset);
+    ok('the agent picker asks as a sentence', allHtml().includes('Choose an agent…'));
+    ok('…and the agent handed over is the one selected',
+        state.afConsole.agentId === 'dev'
+        && (els['c-agent'] ? els['c-agent'].value === 'dev' : /value="dev" selected/.test(allHtml())));
+    ok('…while a session that agent already has running is offered, not hidden',
+        /already has a session running here/.test(allHtml()));
 }
 
 console.log(`${pass} passed, ${fail} failed`);

@@ -106,6 +106,45 @@ const flat = parseSessionFile(tmp, new PricingEngine(opusOnly(10)), 0);
 ok('flat engine prices every message the same (freeze off) → 20', near(flat.cost, 20));
 fs.unlinkSync(tmp);
 
+// ---------- "context now": a zero-usage row is no measurement ----------
+// ‼️ A transcript carries synthetic assistant rows (an interrupt notice, a
+// cancelled turn) whose usage block is ALL ZEROS. Taking "the last usage"
+// literally wiped the figure whenever a session ended on one — measured on a
+// real transcript: 2 of 67 assistant rows were zero-usage, the last row was one
+// of them, and a session whose window held 78 512 tokens reported nothing at
+// all, both in the Sessions tables and on the transcript page.
+{
+    const { contextAfter } = require(path.join(ROOT, 'out/core/pricing.js'));
+    ok('context = input + both caches + output',
+        contextAfter({ input_tokens: 2, cache_read_input_tokens: 335476, cache_creation_input_tokens: 242, output_tokens: 1647 })
+        === 337367);
+    ok('a missing usage block is 0, not NaN', contextAfter(undefined) === 0 && contextAfter(null) === 0);
+    ok('an all-zero usage block is 0 — "no measurement"',
+        contextAfter({ input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }) === 0);
+    ok('negative/absent fields never subtract', contextAfter({ input_tokens: -5, output_tokens: 10 }) === 10);
+
+    const real = (ts, id, ctx) => JSON.stringify({
+        type: 'assistant', timestamp: ts, requestId: id,
+        message: {
+            id, model: 'claude-opus-4-8',
+            usage: { input_tokens: 2, cache_read_input_tokens: ctx - 2, output_tokens: 0 }
+        }
+    });
+    const synthetic = JSON.stringify({
+        type: 'assistant', timestamp: after, requestId: 'x',
+        message: {
+            id: 'x', model: '<synthetic>',
+            usage: { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
+        }
+    });
+    const f2 = path.join(os.tmpdir(), `af-ctx-${Date.now()}.jsonl`);
+    fs.writeFileSync(f2, [real(before, 'a', 40000), real(after, 'b', 78512), synthetic, ''].join('\n'));
+    const ctxInfo = parseSessionFile(f2, new PricingEngine(opusOnly(10)), 0);
+    ok('a session that ends on a synthetic row keeps its real context',
+        ctxInfo.lastCtxTokens === 78512);
+    fs.unlinkSync(f2);
+}
+
 Module._load = origLoad;
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) { process.exit(1); }

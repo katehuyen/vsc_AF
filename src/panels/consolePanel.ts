@@ -100,13 +100,17 @@ export class ConsolePanel {
             presetAgent: preset ?? '',
             // the conversation of the selected session in full; the others as headers
             sessions: hosted.map(s => ({
-                id: s.id, agentName: s.agentName, sessionId: s.sessionId ?? '', cwd: s.cwd,
+                id: s.id, agentId: s.agentId, agentName: s.agentName,
+                sessionId: s.sessionId ?? '', cwd: s.cwd,
                 // the session's own title — the same one the side panel and the
                 // viewer show, so a rename anywhere is a rename everywhere
                 title: (s.sessionId
                     ? this.deps.index.all().find(x => x.sessionId === s.sessionId)?.title
                     : undefined) ?? '',
-                status: s.status, cost: s.costUSD, turns: s.turns, queued: s.queued.length,
+                status: s.status, cost: s.costUSD, turns: s.turns,
+                // the texts themselves, not a count: a message that is waiting
+                // is not in the conversation yet, so the composer has to show it
+                queued: s.queued,
                 tokens: s.tokens, model: s.model ?? '', permissionMode: s.permissionMode,
                 contextTokens: s.contextTokens ?? 0, lastTs: s.lastTs,
                 pendingPermission: s.pendingPermission ?? null,

@@ -63,16 +63,27 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     ok('…which puts the session to work', first.state.status === 'working');
     const second = acceptUserText(first.state, 'and this', NOW + 1);
     ok('a message typed mid-turn IS queued', second.send === false && second.state.queued.length === 1);
-    ok('…and still shows in the conversation right away',
-        second.state.messages.filter(m => m.role === 'user').length === 2);
+    // Waiting is not said. Writing it into the conversation the moment it was
+    // typed put it ABOVE the reply it was asked after and pushed the running
+    // turn up the page — a terminal keeps it on the line until it goes.
+    ok('…and does NOT join the conversation while it waits',
+        second.state.messages.filter(m => m.role === 'user').length === 1);
     ok('empty input is ignored', acceptUserText(second.state, '   ', NOW).state === second.state);
 
     const idle = { ...second.state, status: 'idle' };
-    const shifted = shiftQueued(idle);
+    const shifted = shiftQueued(idle, NOW + 2);
     ok('a finished turn releases the queued message', shifted.text === 'and this');
+    ok('…and THAT is when it becomes part of the conversation',
+        shifted.state.messages.filter(m => m.role === 'user').length === 2
+        && shifted.state.messages[shifted.state.messages.length - 1].text === 'and this');
     ok('…exactly once', shiftQueued(shifted.state).text === undefined);
     ok('…and marks the session working again', shifted.state.status === 'working');
     ok('nothing is released while a turn runs', shiftQueued(second.state).text === undefined);
+    // order is the order you typed them in
+    const q2 = acceptUserText(acceptUserText(first.state, 'one', NOW + 1).state, 'two', NOW + 2);
+    const r1 = shiftQueued({ ...q2.state, status: 'idle' }, NOW + 3);
+    const r2 = shiftQueued({ ...r1.state, status: 'idle' }, NOW + 4);
+    ok('a queue keeps its order', r1.text === 'one' && r2.text === 'two');
 }
 
 // ---------- the event stream ----------
@@ -331,7 +342,7 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     ok('…and keeps the one control that really works mid-session',
         /The one thing that CAN change mid-session/.test(js));
     ok('new-session mode is the only place the agent is picked',
-        split > 0 && controls.indexOf('choose an agent…') > split);
+        split > 0 && controls.indexOf('Choose an agent…') > split);
     ok('starting without an agent focuses the picker instead of swallowing the message',
         /if \(!st\.agentId\)/.test(js));
     ok('an agent row can open the Console with that agent preselected',
@@ -368,6 +379,17 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     ok('a renamed session is renamed everywhere at once (trees, Console rows, open tabs)',
         /const applySessionTitle/.test(extSrc)
         && /ConsolePanel\.refreshIfOpen\(\);\s*\n\s*SessionViewerPanel\.refreshOpen\(\);/.test(extSrc));
+    // ‼️ A new session, a new turn: the TREES were told and the PAGES were not,
+    // so a Dashboard or an agent page left open showed the farm as it was when
+    // it was opened — while you were talking in the Console and watching it.
+    ok('an open page follows the index, not the Refresh button',
+        /const refreshOpenPages = /.test(extSrc)
+        && /index\.onDidUpdate\(\(\) => \{[\s\S]{0,400}refreshOpenPages\(\);/.test(extSrc));
+    for (const p of ['DashboardPanel', 'AgentDetailPanel', 'PortfolioPanel', 'TurnsPanel', 'LivingPanel']) {
+        ok(`…${p} among them`, new RegExp(`${p}\\.refreshIfOpen\\(\\);`).test(extSrc));
+    }
+    ok('…debounced, because a streaming session updates the index many times a second',
+        /pagePulse/.test(extSrc) && /\}, 1000\);/.test(extSrc));
     // The Console row's menu is a real menu: resume and the transcript are on it
     // too, so a right-click is a place to work from, not a single shortcut.
     ok('a resumable row can be resumed from that menu',
@@ -469,6 +491,13 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     ok('the composer carries agent · model · effort · permission mode',
         /c-agent/.test(js) && /c-model/.test(js) && /c-effort/.test(js) && /c-perm/.test(js));
     ok('interrupt and the queue are in the composer', /c-int/.test(js) && /c-clearq/.test(js));
+    // "Talk to Agent" must differ from "Open Console" by exactly one thing: the
+    // agent is already chosen. The shell is not rebuilt when the composer is
+    // already up, so the picker is mirrored on every pass, not only at build.
+    ok('an agent chosen for us reaches the picker even when the composer is already up',
+        /agentSel\.value = st\.agentId/.test(js));
+    ok('…and the picker asks for it as a sentence, capital first',
+        /Choose an agent…/.test(js) && !/choose an agent/.test(js));
     ok('file writes offer open + diff', /data-open=/.test(js) && /data-diff=/.test(js));
     const nav = fs.readFileSync(path.join(__dirname, '..', 'media', 'pageHeader.js'), 'utf8');
     ok('Console is the first thing in the global nav', /\{ id: 'console'/.test(nav));
