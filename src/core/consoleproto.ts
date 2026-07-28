@@ -76,6 +76,11 @@ export interface ConsoleSessionState {
      *  do (the CLI's `system:thinking_tokens` event refines it when it comes) */
     contextTokens?: number;
     startedAt: number;
+    /** when the turn that is running now started. A conversation surface has to
+     *  say "still working" out loud — silence between your message and the
+     *  reply is indistinguishable from a session that has died — and the honest
+     *  way to say it is to count from the moment the turn really began. */
+    turnStartedAt?: number;
     lastTs: number;
     /** why it ended, when it did */
     exitReason?: string;
@@ -384,7 +389,7 @@ export function acceptUserText(
     }
     return {
         state: {
-            ...state, lastTs: now, status: 'working',
+            ...state, lastTs: now, status: 'working', turnStartedAt: now,
             messages: [...state.messages, { id: nextId(), ts: now, role: 'user', text: t }]
         },
         send: true
@@ -402,7 +407,7 @@ export function shiftQueued(
     const [next, ...rest] = state.queued;
     return {
         state: {
-            ...state, queued: rest, status: 'working', lastTs: now,
+            ...state, queued: rest, status: 'working', lastTs: now, turnStartedAt: now,
             messages: [...state.messages, { id: nextId(), ts: now, role: 'user', text: next }]
         },
         text: next

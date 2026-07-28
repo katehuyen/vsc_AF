@@ -39,6 +39,18 @@ export interface ConsoleDeps {
     /** the conversation a session already had, off its transcript — display
      *  only, so a resume opens where you left off instead of on a blank page */
     history(sessionId: string): ConsoleMessage[];
+    /**
+     * The sessions the PREVIOUS window was hosting when it went away.
+     *
+     * A hosted process belongs to its window: when VS Code closes (or crashes,
+     * or the extension reloads) the conversation ends — leaving it running
+     * orphaned is the leak 3.29.1 was about. What must not end with it is
+     * knowing where you were: these rows put the sessions you were actually in
+     * back on top of the Console, one click from continuing.
+     */
+    lastWindow(): { sessionId: string; agentName: string; title: string; cwd: string; endedAt: number }[];
+    /** take a row off that shelf (resumed, or not wanted) */
+    forgetLastWindow(sessionId: string): void;
 }
 
 export class ConsolePanel {
@@ -113,6 +125,8 @@ export class ConsolePanel {
                 queued: s.queued,
                 tokens: s.tokens, model: s.model ?? '', permissionMode: s.permissionMode,
                 contextTokens: s.contextTokens ?? 0, lastTs: s.lastTs,
+                // the working strip counts from here
+                turnStartedAt: s.turnStartedAt ?? 0,
                 pendingPermission: s.pendingPermission ?? null,
                 exitReason: s.exitReason ?? '',
                 messages: s.id === this.selected ? s.messages.slice(-400) : []
@@ -126,6 +140,11 @@ export class ConsolePanel {
             // sessions a live process owns right now — the resume list marks
             // them instead of offering a second process on the same transcript
             owned: this.deps.liveOwners().map(o => o.sessionId),
+            // where you were when the last window went away (see lastWindow) —
+            // minus anything already running here again
+            lastWindow: this.deps.lastWindow()
+                .filter(r => !hosted.some(h => h.sessionId === r.sessionId
+                    && h.status !== 'ended' && h.status !== 'error')),
             // the shelf + recent transcripts, to resume one into the Console
             resumable: [
                 ...this.deps.index.pinned(),
@@ -224,9 +243,15 @@ export class ConsolePanel {
                     // resume means CONTINUE: what was said comes back with it
                     history: this.deps.history(sessionId)
                 });
+                // it is running again — it is no longer somewhere you "were"
+                this.deps.forgetLastWindow(sessionId);
                 this.refresh();
                 break;
             }
+            case 'forgetLastWindow':
+                this.deps.forgetLastWindow(str('sessionId'));
+                this.refresh();
+                break;
             case 'send': {
                 const r = host.send(str('id'), str('text'));
                 if (!r) {

@@ -278,6 +278,16 @@ Akan bir konuşma saniyede birkaç kez yeniden çizilir. Sayfa eskiden bunların
 
 > **"Context now" tek kuralla hesaplanır (3.31.1):** `girdi + iki tür cache + çıktı` — ve **sıfır bir ölçüm değildir**. Transkriptte sentetik asistan satırları vardır (kesilen tur, yerel bildirim) ve bunların usage bloğu **tamamen sıfırdır**; "son usage"ı harfi harfine almak, o satırla biten her oturumun rakamını siliyordu. Gerçek bir transkriptte ölçüldü: 67 satırın 2'si sıfır-usage, sonuncusu onlardan biri, ve penceresinde **78.512** token tutan bir oturum sayfasında `—`, tablolarda `0` görünüyordu. Artık son **gerçek** ölçüm geçerlidir. Kural tek yerde (`core/pricing.ts` → `contextAfter`), soran üç yer aynı cevabı alır: oturum tabloları, transkript sayfası, Console.
 
+### "Çalışıyor" demek (3.32.0)
+
+Mesajınla cevabın ilk satırı arasında sayfa **hiçbir şey** göstermiyordu — ölmüş bir oturumun gösterdiği de tam olarak budur. Artık konuşma ile yazma kutusu arasında bir şerit var ve terminalden **daha fazlasını** söylüyor: dönen bir işaret (donmuş bir etiket değil, canlı), **turun kaç saniyedir sürdüğü**, tuttuğu **context**, bekleyen mesaj sayısı — ve *Thinking…* gibi genel bir kelime yerine **şu an ne yaptığı**: en son uzandığı araç (`Read src/core/sessions.ts`, `Bash npm test`). Önceki turun aracı asla "şu an yapılan" diye gösterilmez. **Esc** çalışan turu durdurur (terminaldeki tuşun aynısı); hiçbir şey çalışmıyorken hiçbir şey yapmaz.
+
+### Kaldığın yer (3.32.0)
+
+Barındırılan oturum **penceresiyle birlikte biter** — bu bilerekdir: kimsenin okumadığı bir `claude` süreci 3.29.1'deki sızıntının ta kendisidir. Ama hangi konuşmaların içinde olduğun kaydedilmiyordu, dolayısıyla geri geldiğinde onu bütün transkriptlerin arasında aramak gerekiyordu. Artık Console, sol panelin en üstünde **⟲ Where you left off** ile açılıyor: son pencerenin barındırdığı oturumlar, her biri **tek tıkla** ve **söylenen her şeyle** devam ediyor. Satırlar oturumlar **çalışırken** yazılır (kapanışta değil), yani çökme, öldürülen pencere ve elektrik kesintisi de aynı dosyayla kapsanır. Satır, devam ettirilince ya da ✕ ile atılınca raftan düşer; iki haftadan eskiler kendiliğinden düşer.
+
+> **Ölçüldü:** Console'un kendi taşıma katmanından gerçek CLI ile (haiku, en ucuz ayar) `--resume` **aynı oturum kimliğini** bildiriyor, **aynı transkript dosyasına** yazıyor ve model hatırlamaya devam ediyor — süreç tamamen öldürülüp devam ettirildikten sonra "az önce hangi kelimeyi söyledin?" sorusuna doğru cevap verdi. Yani oturumu pencereyle bitirmenin tek maliyeti "nerede kaldığını bilmek"tir; raf da onu geri veriyor.
+
 ### Oturumlar sekmeden uzun yaşar
 
 Console sekmesini kapatmak konuşmayı **öldürmez**; oturumlar sen bitirince ya da pencere kapanınca biter.

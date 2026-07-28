@@ -5059,6 +5059,68 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
     let consoleIds = readConsoleIds();
     index.setConsoleSessions(consoleIds);
+
+    /**
+     * Where you were when the last window went away.
+     *
+     * A hosted session belongs to its window: closing VS Code ends the `claude`
+     * process (leaving it orphaned is the leak 3.29.1 was about, and nothing
+     * would be reading it anyway). Measured with the real CLI: `--resume` picks
+     * the SAME session back up — same id, same transcript, and the model still
+     * remembers — so ending it costs nothing except *knowing where you were*.
+     * That is what this file keeps: the sessions this window hosted, written as
+     * they run, so the next window can put them back on top of the Console
+     * instead of leaving you to find them among every recent transcript.
+     * A crash or a power cut is covered by the same file, for the same reason.
+     */
+    interface LastWindowRow {
+        sessionId: string; agentName: string; title: string; cwd: string; endedAt: number;
+    }
+    const lastWindowFile = path.join(context.globalStorageUri.fsPath, 'console-last-window.json');
+    const readLastWindow = (): LastWindowRow[] => {
+        try {
+            const j = JSON.parse(fs.readFileSync(lastWindowFile, 'utf8')) as { rows?: LastWindowRow[] };
+            const rows = Array.isArray(j.rows) ? j.rows : [];
+            // a fortnight is long enough to come back to a conversation, short
+            // enough that the shelf never becomes a second session list
+            const cutoff = Date.now() - 14 * 24 * 3600_000;
+            return rows.filter(r => r && typeof r.sessionId === 'string' && (r.endedAt ?? 0) > cutoff);
+        } catch { return []; }
+    };
+    /** Rows from the PREVIOUS window, read once at startup and then only edited. */
+    let lastWindow: LastWindowRow[] = readLastWindow();
+    const writeLastWindow = (rows: LastWindowRow[]): void => {
+        try {
+            fs.mkdirSync(path.dirname(lastWindowFile), { recursive: true });
+            fs.writeFileSync(lastWindowFile, JSON.stringify({ rows }, null, 1), 'utf8');
+        } catch { /* the shelf is a convenience — never break a session over it */ }
+    };
+    const forgetLastWindow = (sessionId: string): void => {
+        lastWindow = lastWindow.filter(r => r.sessionId !== sessionId);
+        writeLastWindow(lastWindow);
+    };
+    /**
+     * Written while the sessions RUN, not at shutdown: a crash, a power cut or a
+     * killed window never gets to run our cleanup, and those are exactly the
+     * cases this exists for.
+     */
+    const rememberOpenConsoleSessions = (): void => {
+        const live = consoleHost.list().filter(s => s.sessionId && s.status !== 'ended' && s.status !== 'error');
+        const rows: LastWindowRow[] = live.map(s => ({
+            sessionId: s.sessionId as string,
+            agentName: s.agentName,
+            title: index.all().find(x => x.sessionId === s.sessionId)?.title ?? '',
+            cwd: s.cwd,
+            endedAt: Date.now()
+        }));
+        // keep what the previous window left AND what this one is hosting; a row
+        // is dropped only when it is resumed or dismissed
+        const merged = [...rows];
+        for (const old of lastWindow) {
+            if (!merged.some(r => r.sessionId === old.sessionId)) { merged.push(old); }
+        }
+        writeLastWindow(merged.slice(0, 30));
+    };
     const rememberConsoleSessions = (): void => {
         const known = new Set(consoleIds);
         let added = false;
@@ -5072,7 +5134,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         } catch { /* the index still has it for this window */ }
         index.setConsoleSessions(consoleIds);
     };
-    context.subscriptions.push(consoleHost.onChange(() => rememberConsoleSessions()));
+    context.subscriptions.push(consoleHost.onChange(() => {
+        rememberConsoleSessions();
+        rememberOpenConsoleSessions();
+    }));
     /**
      * The conversation a session already had, for a resume that means
      * *continuing*. Read off the transcript on disk — display only, no token
@@ -5095,7 +5160,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         modelAliases: () => cfg().get<string[]>('modelAliases', []),
         launchDefaults: () => launchDefaults(),
         liveOwners: () => readCliSessions(claudeDir()),
-        history: consoleHistory
+        history: consoleHistory,
+        lastWindow: () => lastWindow,
+        forgetLastWindow
     };
 
     // ---------- C1: the read-only web surface ----------

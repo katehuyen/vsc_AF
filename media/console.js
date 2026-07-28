@@ -87,6 +87,19 @@
         .jump[hidden] { display:none; }
         .hiddenote { font-size:10px; opacity:.6; padding:3px 4px 0; }
         .hiddenote:empty { display:none; }
+        /* "still working" — between the conversation and the composer, so it
+           never moves either of them (flex:none: it takes its own height) */
+        .working { flex:none; font-size:11px; padding:5px 4px 0; display:flex; gap:6px;
+            align-items:baseline; color:var(--vscode-descriptionForeground); }
+        .working:empty { display:none; }
+        .working b { color:var(--vscode-foreground); font-weight:600;
+            overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .working .spin { color:var(--vscode-charts-blue,#3794ff); font-size:13px; }
+        .working .wmeta { margin-left:auto; opacity:.75; white-space:nowrap; }
+        .backhead { font-size:10px; opacity:.7; margin:8px 0 2px; text-transform:uppercase; letter-spacing:.4px; }
+        .srow.back { border-style:dashed; }
+        .srow.back .only { background:none; border:none; opacity:.5; cursor:pointer; font-size:11px; padding:0 3px; }
+        .srow.back .only:hover { opacity:1; }
         /* the show-filter lives in the composer, at the BOTTOM of the page, so
            its menu opens upwards instead of off the edge */
         .crow .afms-menu { top:auto; bottom:calc(100% + 4px); }
@@ -280,10 +293,82 @@
                 <div class="n">${r.pinned ? '📌 ' : ''}${C.esc(r.title)}</div>
                 <div class="m">${who(r.agentName, r.sessionId)} · ${relTime(r.ts)} ago · ${C.fmtUSD(r.cost)}${r.contextTokens ? ` · <span title="Approximate context after this session's last reply — what resuming it starts from">ctx ${C.fmtTok(r.contextTokens)}</span>` : ''}</div>
             </div>`).join('') || '<div class="empty">No transcripts yet.</div>'}</div>` : '';
+        // Where you were when the last window went away. A hosted session ends
+        // with its window — measured: `--resume` picks the SAME session back up,
+        // same id, same transcript, and the model still remembers — so the only
+        // thing that has to survive a close, a reload or a power cut is knowing
+        // where you were. These rows are that, on top, one click from continuing.
+        const back = (DATA.lastWindow || []).length ? `
+            <div class="backhead">⟲ Where you left off</div>
+            ${(DATA.lastWindow || []).map(r => `
+            <div class="srow back" data-back="${C.esc(r.sessionId)}"
+                 title="Continue this conversation here — it ended when the window did, and picks up with everything that was said">
+                <div class="h">
+                    <span class="n">${who(r.agentName, r.sessionId)}</span>
+                    <button class="only" data-backforget="${C.esc(r.sessionId)}" title="Take it off this shelf">✕</button>
+                </div>
+                <div class="t2">${C.esc(r.title || '(no name)')}</div>
+                <div class="m">ended ${relTime(r.endedAt)} ago · click to continue</div>
+            </div>`).join('')}` : '';
         return `<button id="c-new">＋ New session</button>
+            ${back}
             ${rows || '<div class="empty">No hosted sessions yet. Pick an agent below and say something — the process starts here, in the panel.</div>'}
             <button class="secondary" id="c-toggle-resume" style="margin-top:6px">${st.showResume ? '▾' : '▸'} Resume an existing session</button>
             ${resume}`;
+    }
+
+    /**
+     * "It is still working" — said out loud, the way a terminal does.
+     *
+     * Between your message and the first line of the reply the panel used to
+     * show nothing at all, and nothing is exactly what a dead session shows.
+     * This strip is the difference: a turning glyph (so it is visibly *live*,
+     * not a frozen label), the seconds, and — better than a spinner — **what it
+     * is doing right now**, taken from the last tool the agent reached for.
+     * It sits between the conversation and the composer, so it never moves the
+     * conversation and never scrolls away.
+     */
+    const SPIN = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+    let spinTimer = null;
+    /** advanced by the repaint itself, not read off the clock: the glyph must
+     *  move once per paint, whatever the timer's drift does */
+    let spinAt = 0;
+
+    function workingHtml(s) {
+        if (!s || s.status !== 'working') { return ''; }
+        const glyph = SPIN[spinAt % SPIN.length];
+        const secs = s.turnStartedAt ? Math.max(0, Math.round((Date.now() - s.turnStartedAt) / 1000)) : 0;
+        // what it reached for last — the honest version of "Thinking…"
+        let doing = 'working';
+        for (let i = (s.messages || []).length - 1; i >= 0; i--) {
+            const m = s.messages[i];
+            if (m.role === 'user') { break; }
+            if (m.role === 'tool' && m.tool) {
+                doing = m.tool.detail ? `${m.tool.name} ${m.tool.detail}` : m.tool.name;
+                break;
+            }
+        }
+        const q = queuedOf(s).length;
+        return `<span class="spin">${glyph}</span> <b>${C.esc(doing)}</b>
+            <span class="wmeta">${secs}s${s.contextTokens ? ` · ctx ${C.fmtTok(s.contextTokens)}` : ''}${q ? ` · ${q} waiting` : ''} · ⎋ Interrupt stops it</span>`;
+    }
+
+    /** The glyph has to turn on its own — a data push only arrives when the CLI
+     *  says something, and the quiet stretches are exactly when you need it. */
+    function paintWorking() {
+        const el = document.getElementById('c-working');
+        if (!el) { return; }
+        const s = sel();
+        spinAt = (spinAt + 1) % (SPIN.length * 6);
+        const html = workingHtml(s);
+        if (el.innerHTML !== html) { el.innerHTML = html; }
+        const running = !!(s && s.status === 'working');
+        if (running && !spinTimer) {
+            spinTimer = setInterval(paintWorking, 120);
+        } else if (!running && spinTimer) {
+            clearInterval(spinTimer);
+            spinTimer = null;
+        }
     }
 
     function talkHtml(s, shown) {
@@ -450,6 +535,7 @@
                         <button class="jump" id="c-jump" hidden></button>
                         <div class="hiddenote" id="c-hidden"></div>
                     </div>
+                    <div class="working" id="c-working"></div>
                     <div class="composer">
                         <div class="qwait" id="c-queue"></div>
                         <textarea id="c-text" placeholder="${placeholder}"${dead ? ' disabled' : ''}></textarea>
@@ -467,6 +553,16 @@
             text.addEventListener('input', () => { st.draft = text.value; save(); });
             text.addEventListener('keydown', ev => {
                 if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); send(); }
+                // Esc stops the running turn — the terminal's own key, and the
+                // working strip promises it. It does nothing when nothing runs,
+                // so it never eats an Escape you meant for something else.
+                if (ev.key === 'Escape') {
+                    const cur = sel();
+                    if (cur && cur.status === 'working') {
+                        ev.preventDefault();
+                        vscode.postMessage({ type: 'interrupt', id: cur.id });
+                    }
+                }
             });
             // Only here — never on a data update. Focusing scrolls the element
             // into view, which is exactly the "it dragged me back down" bug.
@@ -569,6 +665,20 @@
                     type: 'resume', sessionId: r.dataset.resume,
                     model: st.model, effort: st.effort, permissionMode: st.permissionMode
                 })));
+            // "Where you left off": the same resume, from the shelf
+            document.querySelectorAll('[data-back]').forEach(r =>
+                r.addEventListener('click', ev => {
+                    if (ev.target && ev.target.dataset && ev.target.dataset.backforget) { return; }
+                    vscode.postMessage({
+                        type: 'resume', sessionId: r.dataset.back,
+                        model: st.model, effort: st.effort, permissionMode: st.permissionMode
+                    });
+                }));
+            document.querySelectorAll('[data-backforget]').forEach(b =>
+                b.addEventListener('click', ev => {
+                    ev.stopPropagation();
+                    vscode.postMessage({ type: 'forgetLastWindow', sessionId: b.dataset.backforget });
+                }));
             const byId = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
             byId('c-new', 'click', () => vscode.postMessage({ type: 'select', id: '' }));
             byId('c-toggle-resume', 'click', () => { st.showResume = !st.showResume; save(); paint(); });
@@ -594,6 +704,9 @@
             byId('c-clearq', 'click', () => vscode.postMessage({ type: 'clearQueue', id: DATA.selected }));
         }
         slot('c-queue', queueHtml(s));
+        // deliberately NOT a slot: it repaints itself on a timer while the turn
+        // runs, so its html is never what `written` last saw
+        paintWorking();
         const sendBtn = document.getElementById('c-send');
         if (sendBtn && s) {
             const label = s.status === 'working' ? 'Queue' : 'Send';

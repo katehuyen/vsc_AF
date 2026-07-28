@@ -64,13 +64,40 @@ const sandbox = {
         },
         querySelectorAll: sel => {
             if (sel.indexOf('[data-afms') === 0) { return []; }
-            return [];
+            // enough of a query engine for the rows the page wires by hand
+            const m = /^\[data-([a-z]+)\]$/.exec(sel);
+            if (!m) { return []; }
+            const attr = 'data-' + m[1];
+            const camel = m[1];
+            const out = [];
+            const re = new RegExp(attr + '="([^"]*)"', 'g');
+            let hit;
+            const html = allHtml();
+            while ((hit = re.exec(html))) {
+                // cached per attribute+value: the page wires the object it was
+                // handed, and the test must get that same object back
+                const key = attr + '=' + hit[1];
+                let el = qsCache[key];
+                if (!el) {
+                    el = { dataset: { [camel]: hit[1] } };
+                    el.addEventListener = (_t, fn) => { el._fn = fn; };
+                    qsCache[key] = el;
+                }
+                out.push(el);
+            }
+            return out;
         },
         querySelector: sel => (sel.indexOf('[data-afms') === 0 ? afms.querySelector(sel) : null),
         addEventListener: () => { }
     },
+    // the working strip turns its glyph on a timer; the test drives it by hand
+    setInterval: (fn) => { timers.push(fn); return timers.length; },
+    clearInterval: (h) => { timers[h - 1] = null; },
     console
 };
+const timers = [];
+const tickTimers = () => timers.forEach(fn => { if (fn) { fn(); } });
+const qsCache = {};
 /** Everything currently on the page: the shell plus every slot written into it. */
 const allHtml = () => app()._html + Object.keys(els).map(k => els[k]._html || '').join('');
 const afms = createAfmsDom(() => allHtml());
@@ -276,6 +303,82 @@ const html = allHtml;
         && (els['c-agent'] ? els['c-agent'].value === 'dev' : /value="dev" selected/.test(allHtml())));
     ok('…while a session that agent already has running is offered, not hidden',
         /already has a session running here/.test(allHtml()));
+}
+
+// ---------- "it is still working" ----------
+// Between your message and the first line of the reply the page showed nothing
+// at all — and nothing is exactly what a dead session shows. A terminal says so
+// out loud; so does this, with what it is doing right now rather than a word.
+{
+    const working = () => (els['c-working'] ? els['c-working']._html : '');
+    push(data(CONVO.slice()));
+    ok('an idle session says nothing', working() === '');
+
+    const t0 = Date.now() - 12000;
+    push(data(CONVO.concat([msg('tool', { tool: { name: 'Read', detail: 'D:/a/b.md' } })]),
+        { status: 'working', turnStartedAt: t0 }));
+    ok('a running turn shows a live strip', /class="spin"/.test(working()));
+    ok('…saying what it is doing right now, not just "thinking"',
+        /Read D:\/a\/b\.md/.test(working()));
+    ok('…and how long it has been at it', /12s/.test(working()));
+    ok('…with the way to stop it', /Interrupt/.test(working()));
+
+    const first = /<span class="spin">(.)<\/span>/.exec(working())[1];
+    let spun = false;
+    for (let i = 0; i < 40 && !spun; i++) {
+        tickTimers();
+        spun = /<span class="spin">(.)<\/span>/.exec(working())[1] !== first;
+    }
+    ok('…and the glyph really turns, on its own timer', spun);
+
+    // a tool call from an EARLIER turn must not be reported as what it is doing
+    push(data(CONVO.concat([
+        msg('tool', { tool: { name: 'Read', detail: 'old.md' } }),
+        msg('user', { text: 'now do something else' })
+    ]), { status: 'working', turnStartedAt: Date.now() }));
+    ok('…a tool from a previous turn is not passed off as the current one',
+        !/old\.md/.test(working()) && /working/.test(working()));
+
+    // Esc is the terminal's own key for this, and the strip promises it
+    posted.length = 0;
+    push(data(CONVO.slice(), { status: 'working', turnStartedAt: Date.now() }));
+    els['c-text'].listeners.keydown({ key: 'Escape', preventDefault() { } });
+    ok('Esc stops the running turn', posted.some(m => m.type === 'interrupt'));
+
+    push(data(CONVO.slice()));
+    ok('the strip goes when the turn does', working() === '');
+    posted.length = 0;
+    els['c-text'].listeners.keydown({ key: 'Escape', preventDefault() { } });
+    ok('…and Esc does nothing when nothing is running', !posted.some(m => m.type === 'interrupt'));
+}
+
+// ---------- where you left off ----------
+// A hosted session ends with its window (leaving it orphaned is a leak), and
+// `--resume` was measured to pick the SAME session back up. So the only thing
+// that has to survive a close or a crash is knowing where you were.
+{
+    const withShelf = data(CONVO.slice());
+    withShelf.lastWindow = [{
+        sessionId: '9c67e970-aaaa', agentName: 'developer',
+        title: 'Kalan eksikler', cwd: 'D:/a/dev', endedAt: Date.now() - 3600000
+    }];
+    push(withShelf);
+    const list = els['c-list'] ? els['c-list']._html : '';
+    ok('the shelf is on top of the left panel', /Where you left off/.test(list));
+    ok('…with the session named and handled', /developer/.test(list) && /Kalan eksikler/.test(list)
+        && /\(#9c67e970\)/.test(list));
+    ok('…and says it is one click from continuing', /click to continue/.test(list));
+
+    posted.length = 0;
+    const rows = sandbox.document.querySelectorAll('[data-back]');
+    rows[0]._fn({ target: {} });
+    ok('clicking it resumes that very session',
+        posted.some(m => m.type === 'resume' && m.sessionId === '9c67e970-aaaa'));
+
+    posted.length = 0;
+    sandbox.document.querySelectorAll('[data-backforget]')[0]._fn({ stopPropagation() { }, target: { dataset: { backforget: '9c67e970-aaaa' } } });
+    ok('…and it can be taken off the shelf instead',
+        posted.some(m => m.type === 'forgetLastWindow' && m.sessionId === '9c67e970-aaaa'));
 }
 
 // ---------- the composer stays on the window's bottom edge ----------

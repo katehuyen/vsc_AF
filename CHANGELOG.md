@@ -2,6 +2,19 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.32.0 — The Console says it is working, and remembers where you were (2026-07-28)
+
+### It says it is working
+
+- **‼️ Between your message and the first line of the reply, the page showed nothing at all** — and nothing is exactly what a dead session shows. There was no way to tell "it is thinking" from "it has fallen over". A strip between the conversation and the composer now says so, and it says more than a terminal does: a **turning glyph** (so it is visibly live, not a frozen label), **how long this turn has been running**, the **context** it is holding, how many messages are waiting — and, instead of the terminal's generic *Thinking…*, **what it is doing right now**, taken from the tool it last reached for (`Read src/core/sessions.ts`, `Bash npm test`). A tool call from an earlier turn is never passed off as the current one.
+- **Esc stops the running turn**, the terminal's own key, from the message box. It does nothing when nothing is running, so it never eats an Escape meant for something else.
+
+### It remembers where you were
+
+- **‼️ Closing VS Code lost the thread.** A hosted session ends with its window — that is deliberate (a `claude` left running with nobody reading it is the leak 3.29.1 was about) — but nothing recorded *which conversations you were in*, so coming back meant hunting through every recent transcript. The Console now opens with **⟲ Where you left off** at the top of the left panel: the sessions the last window was hosting, each one click from continuing, with everything that was said. Rows are written **while the sessions run**, not at shutdown, so a crash, a killed window or a power cut is covered by the same file. A row leaves the shelf when it is resumed, or when you dismiss it with ✕; anything older than a fortnight ages out.
+- **Continuing really is continuing — measured, not assumed.** Against the real CLI through the Console's own transport (haiku, cheapest settings): `--resume` reports **the same session id**, writes to **the same transcript file**, and the model still remembers — asked after a full process restart what word it had said, it answered correctly. So ending a session with its window costs nothing but knowing where you were, which is what the shelf restores.
+- 24 checks added (the working strip in every state incl. the stale-tool trap and the glyph actually turning, Esc, the shelf: rendering, resuming and dismissing). Suite: **78 files, 3070 checks green.**
+
 ## 3.31.2 — The composer is nailed to the bottom of the window (2026-07-28)
 
 - **‼️ Every arriving line pushed the composer further down until it left the screen.** Not a scrolling bug — a **growing page**. Two rules said "at least this tall" where they had to say "at most": `#app` had a **min**-height of 100%, so the page grew with the conversation instead of being clipped to the window; and the session list on the left had no ceiling either, so a long list of past sessions stretched the row and did the same thing on its own. The result was a page you had to keep scrolling down to type into, on a screen whose whole point is that you type at the bottom.
