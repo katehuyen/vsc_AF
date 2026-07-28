@@ -159,7 +159,7 @@ Tek bir ajanın komuta ekranı:
 
 > **Metin kesilmez (3.30.1).** Sayfanın varlık sebebi transkripti **okumak** olduğu için **kullanıcı ve ajan metni asla kırpılmaz** — uzunsa uzun. Yalnızca **araç yükleri** (büyük bir dosyanın `Read`'i, dev bir JSON sonucu) bir tavana takılır: 200.000 karakter, ve tavana değdiğinde bunu açıkça söyleyip "Open raw JSONL"a yönlendirir. Üstteki satırda ayrıca **✎ Rename** (oturuma ad ver) ve **💬 Console** düğmesi (menüsünde *Resume this session here*) vardır.
 >
-> **Sekme başlığı (3.30.2):** `Session #3f2a91b8 — Kalan eksikler`. Önde **kimlik**, arkada **ad**. Bir webview sekmesinin VS Code'da yalnızca **tek bir metni** vardır (`WebviewPanel.title`); ayrı bir tooltip API'si yoktur, üzerine gelince görünen şey aynı başlıktır. Dar sekmede gördüğün kısım kimlik, fare ile üzerine gelince kırpılmadan görünen tam metin ise adı da içerir — ikisini tek metinde barındırmanın tek yolu budur.
+> **Sekme başlığı (3.30.3):** `Session #3f2a91b8 · Kalan eks…` — **en fazla 30 karakter**. Önde **kimlik** (hep tam), arkada **ad** (sığdığı kadar). Bir webview sekmesinin VS Code'da yalnızca **tek bir metni** vardır (`WebviewPanel.title`); ayrı bir tooltip API'si yoktur, üzerine gelince görünen şey aynı başlıktır. Sekmeler etiketlerine göre genişlediği için tavan gerçek bir sınırdır: uzun bir ad, bir sekmeyi üç sekme genişliğine çıkarıyordu — kesilen ad olur, sekme değil.
 
 Bir oturumun ham JSONL kaydını okunur konuşmaya çevirir:
 
@@ -222,7 +222,11 @@ Filodaki son olayların canlı akışı: kullanıcı komutları (prompt), araç 
 
 **Senin kurulumun, senin aboneliğin:** bizim bir API anahtarımız yok, maliyet modeli değişmiyor, transkript yine `~/.claude/projects` altına yazılıyor — yani mevcut analitik / sağlık / zaman çizelgesi motorlarının hiçbiri bozulmuyor.
 
-**Soldaki satıra sağ tık = VS Code'un kendi menüsü (3.30.2).** Barındırılan karta da, aşağıdaki devam ettirilebilir satıra da sağ tıkladığında **standart menü** (Copy/Paste vb.) açılır ve altına o oturumun eylemleri eklenir: **Rename Session…**, **Open Session Transcript**, devam ettirilebilir satırda ayrıca **Resume in Console**. Sağ tık artık doğrudan bir yeniden adlandırma kutusu açmıyor — bir sağ tıkın tek anlamı olması, menüyü tamamen ortadan kaldırmak demekti. Kartlarda ajan adının yanında **oturumun adı** da yazar; devam ettirilen bir oturum kimliğini **süreç doğmadan** bilir, dolayısıyla adı ve yeniden adlandırması ilk andan itibaren çalışır ("bu oturum kimliğini bildirmedi" hatası buradan geliyordu).
+**Soldaki satıra sağ tık = VS Code'un kendi menüsü (3.30.2).** Barındırılan karta da, aşağıdaki devam ettirilebilir satıra da sağ tıkladığında **standart menü** (Copy/Paste vb.) açılır ve altına o oturumun eylemleri eklenir: **Resume in Terminal**, **Rename Session…**, **Open Transcript**, devam ettirilebilir satırda ayrıca **Resume in Console**. Sağ tık artık doğrudan bir yeniden adlandırma kutusu açmıyor — bir sağ tıkın tek anlamı olması, menüyü tamamen ortadan kaldırmak demekti. Kartlarda ajan adının yanında **oturumun adı** da yazar; devam ettirilen bir oturum kimliğini **süreç doğmadan** bilir, dolayısıyla adı ve yeniden adlandırması ilk andan itibaren çalışır ("bu oturum kimliğini bildirmedi" hatası buradan geliyordu).
+
+**Console'da devam = kaldığın yerden devam (3.30.3).** Bir oturumu Console'a devam ettirdiğinde **önceki konuşma da geliyor**: yukarı kaydır, orada. Satırların kaynağı diskteki transkript (`~/.claude/projects/…jsonl`) — **yalnızca görüntü**: hiçbir yere bir şey gönderilmez, **tek token harcanmaz**; modelin kendi hafızası zaten `--resume` ile geliyor. Son **150** mesaj taşınır (üstteki satır kalanın transkriptte olduğunu söyler) ve dosyanın yalnızca **sonu** ayrıştırılır, yani devam ettirme maliyeti oturum uzadıkça büyümez.
+
+**Console'daki bir oturumu terminale taşımak (3.30.3).** Console'da çalışan bir oturum için "Resume in Terminal" dediğinde artık "olmaz" duvarı yok: bir oturum bir sürece aittir, ama o süreç **bizim** — Agent Farm **"End it in the Console and continue here"** diye sorar, Console'daki oturumu kapatır, **pid gerçekten ölene kadar bekler** (aksi hâlde aynı transkript üstünde ikinci süreç doğardı) ve terminali aynı oturumla açar. Diğer seçenek oturumu çalıştığı yerde gösterir. Başkasının terminalindeki bir oturum için eski uyarı aynen geçerlidir — o süreç bizim değildir.
 
 ### Kompozitör
 
@@ -252,7 +256,7 @@ Console sekmesini kapatmak konuşmayı **öldürmez**; oturumlar sen bitirince y
 
 ### Nereden açılır
 
-**Konusu olan iki sayfada Console düğmesi o konuyu kasteder (3.30.1; 3.30.2'de tek düğme):** ajan ve oturum sayfalarında nav'daki **💬 Console ▾** *tek* düğmedir ve küçük bir menü açar — üstte o sayfanın kendi anlamı (**Talk to this agent** / **Resume this session here**), altında **↗ Open the Console page**. Eskiden yan yana iki düğmeydi; aynı yere giden iki düğme araç çubuğunun dörtte birini yiyordu.
+**Konusu olan iki sayfada Console düğmesi o konuyu kasteder (3.30.1; 3.30.2'de tek düğme):** ajan ve oturum sayfalarında nav'daki **💬 Console ▾** *tek* düğmedir ve iki maddelik bir menü açar — **Talk to Agent** / **Resume Session**, altında **Open Console**. Eskiden yan yana iki düğmeydi; aynı yere giden iki düğme araç çubuğunun dörtte birini yiyordu. Menü maddeleri iki-üç kelimedir: **menü seçenek listesidir, açıklama yeri değildir** — açıklama bu kılavuzun işi.
 
 - Global nav'daki **💬 Console** (her sayfada) · **`Ctrl+Alt+C`**
 - Sol paneldeki **Agents** başlığındaki **💬** düğmesi

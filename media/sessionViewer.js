@@ -793,8 +793,7 @@
                 // is the second, so one button carries both.
                 navActions: {
                     console: {
-                        label: '💬 Resume this session here',
-                        hint: 'Picks this conversation back up inside the panel instead of a terminal',
+                        label: 'Resume Session',
                         title: 'Console — resume this session, or open the page'
                     }
                 },

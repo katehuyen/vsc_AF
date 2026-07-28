@@ -140,7 +140,9 @@ import { standardRoots } from './core/portablePaths';
 import { MissionsPanel } from './panels/missionsPanel';
 import { PortfolioPanel } from './panels/portfolioPanel';
 import { ConsolePanel } from './panels/consolePanel';
+import { transcriptHistory } from './core/consolehistory';
 import { ConsoleHost } from './core/consolehost';
+import { ConsoleMessage } from './core/consoleproto';
 import { MissionNode, MissionsTreeProvider } from './views/missionsTree';
 import { TriggerManager } from './core/triggers';
 import { dayKey, expandEnvPath, fmtTokens, fmtUSD, normPath, readFileTail, relTime, remapStorageIds } from './core/util';
@@ -4947,6 +4949,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const consoleHost = new ConsoleHost();
     context.subscriptions.push({ dispose: () => consoleHost.dispose() });
     context.subscriptions.push(consoleHost.onChange(() => ConsolePanel.refreshIfOpen()));
+    /**
+     * The conversation a session already had, for a resume that means
+     * *continuing*. Read off the transcript on disk — display only, no token
+     * spent (see core/consolehistory.ts); the model's own context comes from
+     * `--resume`. A transcript that cannot be read is simply no history: the
+     * session still resumes, it just opens empty as it used to.
+     */
+    const consoleHistory = (sessionId: string): ConsoleMessage[] => {
+        const file = index.all().find(s => s.sessionId === sessionId)?.file;
+        if (!file) { return []; }
+        try {
+            return transcriptHistory(fs.readFileSync(file, 'utf8').split('\n'));
+        } catch { return []; }
+    };
     const consoleDeps = {
         extensionUri: context.extensionUri,
         host: consoleHost,
@@ -4954,7 +4970,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         index,
         modelAliases: () => cfg().get<string[]>('modelAliases', []),
         launchDefaults: () => launchDefaults(),
-        liveOwners: () => readCliSessions(claudeDir())
+        liveOwners: () => readCliSessions(claudeDir()),
+        history: consoleHistory
     };
 
     // ---------- C1: the read-only web surface ----------
@@ -5727,7 +5744,35 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // process already owns starts a SECOND process on the same
                 // transcript, and the two never see each other's turns. Say so
                 // before it happens rather than after it looks like one chat.
-                const owner = ownerOf(readCliSessions(claudeDir()), s.sessionId);
+                // Held by the Console? Then it is OURS, and the honest answer is
+                // not "you can't" — it is "shall I move it?". Ending the hosted
+                // process frees the session, and the terminal picks up the same
+                // transcript. (A session held by someone else's terminal still
+                // cannot be joined; that branch is below.)
+                const hosted = consoleHost.list().find(h =>
+                    h.sessionId === s.sessionId && h.status !== 'ended' && h.status !== 'error');
+                if (hosted) {
+                    const MOVE = 'End it in the Console and continue here';
+                    const go = await vscode.window.showWarningMessage(
+                        `"${s.title}" is running in the Console right now.\n\n` +
+                        'One session belongs to one process, so it cannot be in both at once — but this one is ours to close: Agent Farm can end it in the Console and continue the same session in a terminal.',
+                        { modal: true }, MOVE, 'Show it in the Console');
+                    if (go === 'Show it in the Console') {
+                        void vscode.commands.executeCommand('agentfarm.resumeInConsole', s);
+                        return;
+                    }
+                    if (go !== MOVE) { return; }
+                    consoleHost.close(hosted.id);
+                    ConsolePanel.refreshIfOpen();
+                    // The registry entry goes when the process really dies —
+                    // launching before that would be the second-process bug we
+                    // just spent a release fixing. Wait for it (3s ceiling).
+                    for (let i = 0; i < 30; i++) {
+                        if (!ownerOf(readCliSessions(claudeDir()), s.sessionId)) { break; }
+                        await new Promise(r => setTimeout(r, 100));
+                    }
+                }
+                const owner = hosted ? undefined : ownerOf(readCliSessions(claudeDir()), s.sessionId);
                 if (owner) {
                     const go = await vscode.window.showWarningMessage(
                         `"${s.title}" is already open in ${describeOwner(owner)}.\n\n` +
@@ -6042,7 +6087,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const agent = agents.find(a => a.name === s.agentName);
                 const id = already?.id ?? consoleHost.start({
                     agentId: agent?.id ?? '', agentName: s.agentName ?? 'session',
-                    cwd: s.cwd, resume: s.sessionId, ...launchDefaults()
+                    cwd: s.cwd, resume: s.sessionId, ...launchDefaults(),
+                    // resume means CONTINUE: the earlier conversation comes with it
+                    history: consoleHistory(s.sessionId)
                 });
                 ConsolePanel.show(consoleDeps, { sessionId: id });
             }),

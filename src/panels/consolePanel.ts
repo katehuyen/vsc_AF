@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
 import { ConsoleHost } from '../core/consolehost';
-import { PERMISSION_GRANTS } from '../core/consoleproto';
+import { ConsoleMessage, PERMISSION_GRANTS } from '../core/consoleproto';
 import { EFFORT_CHOICES, modelChoices, PERMISSION_CHOICES } from '../core/launch';
 import { SessionIndex } from '../core/sessions';
 import { handleAfNav, htmlShell } from './base';
@@ -36,6 +36,9 @@ export interface ConsoleDeps {
      * conversation that no participant actually had.
      */
     liveOwners(): { sessionId: string; pid: number; entrypoint?: string; status?: string; cwd?: string }[];
+    /** the conversation a session already had, off its transcript — display
+     *  only, so a resume opens where you left off instead of on a blank page */
+    history(sessionId: string): ConsoleMessage[];
 }
 
 export class ConsolePanel {
@@ -97,7 +100,7 @@ export class ConsolePanel {
             presetAgent: preset ?? '',
             // the conversation of the selected session in full; the others as headers
             sessions: hosted.map(s => ({
-                id: s.id, agentName: s.agentName, sessionId: s.sessionId ?? '',
+                id: s.id, agentName: s.agentName, sessionId: s.sessionId ?? '', cwd: s.cwd,
                 // the session's own title — the same one the side panel and the
                 // viewer show, so a rename anywhere is a rename everywhere
                 title: (s.sessionId
@@ -210,7 +213,9 @@ export class ConsolePanel {
                     cwd: row.cwd, resume: sessionId,
                     model: str('model') || d.model,
                     effort: str('effort') || d.effort,
-                    permissionMode: str('permissionMode') || d.permissionMode
+                    permissionMode: str('permissionMode') || d.permissionMode,
+                    // resume means CONTINUE: what was said comes back with it
+                    history: this.deps.history(sessionId)
                 });
                 this.refresh();
                 break;

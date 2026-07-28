@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.30.2",
+  "version": "3.30.3",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -399,7 +399,7 @@
       },
       {
         "command": "agentfarm.resumeInConsole",
-        "title": "Resume in Console (continue it inside the panel)",
+        "title": "Resume in Console",
         "category": "Agent Farm",
         "icon": "$(comment-discussion)"
       },
@@ -480,13 +480,13 @@
       },
       {
         "command": "agentfarm.openSession",
-        "title": "Open Session Transcript",
+        "title": "Open Transcript",
         "category": "Agent Farm",
         "icon": "$(book)"
       },
       {
         "command": "agentfarm.resumeSession",
-        "title": "Resume Session in Terminal",
+        "title": "Resume in Terminal",
         "category": "Agent Farm",
         "icon": "$(debug-continue)"
       },
@@ -498,7 +498,7 @@
       },
       {
         "command": "agentfarm.pinSession",
-        "title": "Pin / Unpin Session (shelf)",
+        "title": "Pin / Unpin Session",
         "category": "Agent Farm",
         "icon": "$(pin)"
       },
@@ -516,7 +516,7 @@
       },
       {
         "command": "agentfarm.interruptSession",
-        "title": "Interrupt Session (send Esc)",
+        "title": "Interrupt Session",
         "category": "Agent Farm",
         "icon": "$(debug-pause)"
       },
@@ -2074,14 +2074,19 @@
           "group": "1_session@1"
         },
         {
-          "command": "agentfarm.renameSession",
+          "command": "agentfarm.resumeSession",
           "when": "webviewSection =~ /^afConsole(Session|Resumable)$/",
           "group": "1_session@2"
         },
         {
-          "command": "agentfarm.openSession",
+          "command": "agentfarm.renameSession",
           "when": "webviewSection =~ /^afConsole(Session|Resumable)$/",
           "group": "1_session@3"
+        },
+        {
+          "command": "agentfarm.openSession",
+          "when": "webviewSection =~ /^afConsole(Session|Resumable)$/",
+          "group": "1_session@4"
         }
       ]
     },

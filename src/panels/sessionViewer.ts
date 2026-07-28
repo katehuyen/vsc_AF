@@ -52,6 +52,29 @@ interface ViewMessage {
  *  The conversation itself is never cut — see clipTool. */
 const TOOL_LIMIT = 200_000;
 
+/** Hard ceiling for the tab caption: `Session #<8-char id>` is 17, so this
+ *  leaves the name about a dozen characters — a hint, not a headline. Tabs are
+ *  sized to fit their label, so this number IS the width of the tab. */
+const TAB_MAX = 30;
+
+/**
+ * What a transcript tab is called.
+ *
+ * One string is all a webview tab has — VS Code gives a `WebviewPanel` a
+ * `title` and no tooltip of its own, and the tab's hover *is* that title — so
+ * both jobs share it: the **id** leads, because that is what identifies the
+ * session against a terminal, a log line or another tab, and the **name**
+ * follows as a hint. The ceiling is the whole point: with tabs sized to fit
+ * their label, a long name made one tab as wide as three, so it is the name
+ * that gets cut, never the id.
+ */
+export function tabCaption(sessionId: string, title?: string): string {
+    const name = (title ?? '').trim();
+    const base = `Session #${String(sessionId ?? '').slice(0, 8)}`;
+    const full = name && name !== '(untitled session)' ? `${base} · ${name}` : base;
+    return full.length > TAB_MAX ? full.slice(0, TAB_MAX - 1).trimEnd() + '…' : full;
+}
+
 /** Run-attribute keys we look for next to the model (effort / reasoning level /
  *  service tier …). Claude Code does not record any of these today — probed
  *  across 40 real transcripts, zero hits — so this normally yields nothing and
@@ -494,7 +517,7 @@ export class SessionViewerPanel {
         }
         const panel = vscode.window.createWebviewPanel(
             'agentfarm.session',
-            `Session #${path.basename(file, '.jsonl').slice(0, 8)}`,
+            tabCaption(path.basename(file, '.jsonl')),
             vscode.ViewColumn.One,
             { enableScripts: true, retainContextWhenHidden: true }
         );
@@ -547,16 +570,7 @@ export class SessionViewerPanel {
             data.agentId = owner.agentId;
             data.agentName = owner.agentName;
         }
-        // The tab reads `Session #<id> — <name>`, and that ONE string is all a
-        // webview tab has: VS Code gives a WebviewPanel a `title` and no
-        // tooltip, and the tab's hover is that same title. So the id leads (it
-        // is what the tab shows in its narrow width, and what you match against
-        // a terminal or a log line) and the name rides behind it, where the
-        // hover — which is never truncated — hands it back in full.
-        const title = String(data.title ?? '').trim();
-        const name = title && title !== '(untitled session)' ? title : '';
-        this.panel.title =
-            `Session #${String(data.sessionId ?? '').slice(0, 8)}${name ? ' — ' + name : ''}`;
+        this.panel.title = tabCaption(String(data.sessionId ?? ''), String(data.title ?? ''));
         return data;
     }
 

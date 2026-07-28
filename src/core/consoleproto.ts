@@ -128,9 +128,11 @@ export function controlLine(requestId: string, subtype: string, extra: Record<st
 }
 
 /** Tools whose call means a file changed (the ✎ chips and the diff surface). */
-const WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
+export const WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 
-function shortArg(name: string, input: Record<string, unknown> | undefined): string {
+/** Exported so the transcript backfill (consolehistory.ts) summarises a tool
+ *  call exactly the way the live stream does — one vocabulary, not two. */
+export function shortArg(name: string, input: Record<string, unknown> | undefined): string {
     if (!input) { return ''; }
     const pick = input['file_path'] ?? input['notebook_path'] ?? input['command'] ??
         input['pattern'] ?? input['query'] ?? input['url'] ?? input['description'] ??

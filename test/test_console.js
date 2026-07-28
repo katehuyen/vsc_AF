@@ -224,6 +224,81 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     const js = fs.readFileSync(path.join(__dirname, '..', 'media', 'console.js'), 'utf8');
     ok('the resume list marks sessions that are open elsewhere',
         /owned\.has\(r\.sessionId\)/.test(js));
+
+    // …but a session the CONSOLE holds is ours to close. "You can't" is the
+    // wrong answer when the thing in the way is our own process: offer to move
+    // it, and wait for the pid to really die before the terminal starts.
+    ok('a session held by the Console offers to MOVE to a terminal instead of refusing',
+        /End it in the Console and continue here/.test(ext)
+        && /consoleHost\.close\(hosted\.id\)/.test(ext));
+    ok('…and does not launch until the process is really gone',
+        /if \(!ownerOf\(readCliSessions\(claudeDir\(\)\), s\.sessionId\)\) \{ break; \}/.test(ext));
+    ok('…the other choice shows it where it is running',
+        /'Show it in the Console'/.test(ext));
+}
+
+// ---------- a resume that means CONTINUE ----------
+// `--resume` restores the model's context; the panel used to show nothing until
+// the next turn, so the one thing a resume is for was missing from the surface
+// that exists to show conversations. The rows come off disk — no token is spent.
+{
+    const { transcriptHistory, HISTORY_MAX } =
+        require(path.join(__dirname, '..', 'out', 'core', 'consolehistory.js'));
+    const L = (o) => JSON.stringify(o);
+    const lines = [
+        L({ type: 'user', timestamp: '2026-07-28T10:00:00.000Z', message: { content: 'read the report' } }),
+        L({ type: 'assistant', timestamp: '2026-07-28T10:00:05.000Z', message: { content: [{ type: 'thinking', text: 'hmm' }, { type: 'text', text: 'on it' }] } }),
+        L({ type: 'assistant', timestamp: '2026-07-28T10:00:06.000Z', message: { content: [{ type: 'tool_use', id: 't1', name: 'Read', input: { file_path: 'D:/a/b.md' } }] } }),
+        L({ type: 'user', timestamp: '2026-07-28T10:00:07.000Z', message: { content: [{ type: 'tool_result', tool_use_id: 't1', content: 'file body' }] } }),
+        L({ type: 'user', isMeta: true, message: { content: 'harness noise' } }),
+        L({ type: 'assistant', isSidechain: true, message: { content: [{ type: 'text', text: 'a subagent said this' }] } }),
+        L({ type: 'summary', summary: 'not conversation' }),
+        'not json at all',
+        ''
+    ];
+    const h = transcriptHistory(lines);
+    const body = h.slice(1, -1);   // between the two system markers
+    ok('the earlier conversation comes back in order',
+        body.map(m => m.role).join(',') === 'user,agent,tool,tool');
+    ok('…with the words that were actually said', body[0].text === 'read the report' && body[1].text === 'on it');
+    ok('…a tool call keeps its file, so the ✎ chips still work',
+        body[2].tool.name === 'Read' && body[2].tool.detail === 'D:/a/b.md');
+    ok('…thinking blocks, meta lines and sub-agent runs stay out',
+        !h.some(m => /hmm|harness noise|a subagent said this|not conversation/.test(m.text || '')));
+    ok('…timestamps come from the transcript', body[0].ts === Date.parse('2026-07-28T10:00:00.000Z'));
+    ok('…and it says where it came from', /read back from the transcript/.test(h[h.length - 1].text));
+    ok('a transcript with no conversation yields nothing at all', transcriptHistory(['', 'junk']).length === 0);
+
+    const many = [];
+    for (let i = 0; i < HISTORY_MAX + 40; i++) {
+        many.push(L({ type: 'user', timestamp: '2026-07-28T10:00:00.000Z', message: { content: 'm' + i } }));
+    }
+    const big = transcriptHistory(many);
+    ok('a long session keeps the END — where you left off is what you came back for',
+        big.length === HISTORY_MAX + 2
+        && big[big.length - 2].text === 'm' + (HISTORY_MAX + 39));
+    ok('…and says how many it left in the transcript', /^↑ 40 older message/.test(big[0].text));
+
+    // A transcript can be tens of megabytes: only its tail is parsed, so the
+    // cost of a resume does not grow with the length of the session.
+    const huge = [];
+    for (let i = 0; i < 5000; i++) {
+        huge.push(L({ type: 'user', timestamp: '2026-07-28T10:00:00.000Z', message: { content: 'x' + i } }));
+    }
+    const tail = transcriptHistory(huge);
+    ok('only the tail of a huge transcript is parsed',
+        tail[tail.length - 2].text === 'x4999' && tail.length === HISTORY_MAX + 2);
+    ok('…and it does not pretend to know how many it skipped',
+        /^↑ earlier messages are in the transcript/.test(tail[0].text));
+
+    const host = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'consolehost.ts'), 'utf8');
+    ok('the history is seeded as MESSAGES, never written to stdin (it costs nothing)',
+        /messages: init\.history/.test(host) && !/write\(id, [^)]*history/.test(host));
+    const panel2 = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'consolePanel.ts'), 'utf8');
+    const ext2 = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    ok('both ways of resuming into the Console carry it',
+        /history: this\.deps\.history\(sessionId\)/.test(panel2)
+        && /history: consoleHistory\(s\.sessionId\)/.test(ext2));
 }
 
 // ---------- the leak that made closed sessions un-resumable ----------
@@ -298,11 +373,15 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     // The two pages that HAVE a subject claim the Console nav button for it,
     // instead of carrying a second button that means almost the same thing.
     ok('a session page claims the Console nav button for "resume THIS session"',
-        /navActions:/.test(vjs) && /Resume this session here/.test(vjs));
+        /navActions:/.test(vjs) && /label: 'Resume Session'/.test(vjs));
     const ajs = fs.readFileSync(path.join(__dirname, '..', 'media', 'agentDetail.js'), 'utf8');
     ok('an agent page claims it for "talk to THIS agent"',
-        /navActions:/.test(ajs) && /Talk to this agent/.test(ajs));
+        /navActions:/.test(ajs) && /label: 'Talk to Agent'/.test(ajs));
     const hdr = fs.readFileSync(path.join(__dirname, '..', 'media', 'pageHeader.js'), 'utf8');
+    // A menu is a list of choices, not a place to explain them: two or three
+    // words per item, and no prose under them.
+    ok('…and neither writes an explanation into the menu',
+        !/hint:/.test(vjs) && !/hint:/.test(ajs) && !/af-claim-hint/.test(hdr));
     // ONE button, two meanings in a menu under it — the pair of buttons it
     // replaced ate a quarter of the toolbar's width.
     ok('…and a claimed button stays ONE button with a menu, not two buttons',
@@ -311,12 +390,25 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         /data-afclaimmenu[\s\S]{0,400}data-afnav="\$\{n\.id\}"/.test(hdr));
     ok('a session row can be resumed into the Console from the side panel',
         menus.some(m => m.command === 'agentfarm.resumeInConsole'));
-    const viewer = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'sessionViewer.ts'), 'utf8');
-    // A webview tab has ONE string (VS Code gives it no tooltip of its own):
-    // the id leads, because that is what the narrow tab shows, and the name
-    // rides behind it for the hover, which never truncates.
-    ok('the viewer tab leads with the session id and carries the name behind it',
-        /`Session #\$\{String\(data\.sessionId \?\? ''\)\.slice\(0, 8\)\}\$\{name \? ' — ' \+ name : ''\}`/.test(viewer));
+    // A webview tab has ONE string (VS Code gives it no tooltip of its own), so
+    // the id leads and the name follows — under a hard ceiling, because tabs are
+    // sized to fit their label and a long name made one tab as wide as three.
+    const Module = require('module');
+    const origLoad = Module._load;
+    Module._load = function (request) {
+        if (request === 'vscode') { return { Uri: {}, window: {}, workspace: { getConfiguration: () => ({ get: (_k, d) => d }) }, ViewColumn: {}, env: {} }; }
+        return origLoad.apply(this, arguments);
+    };
+    const { tabCaption } = require(path.join(__dirname, '..', 'out', 'panels', 'sessionViewer.js'));
+    Module._load = origLoad;
+    ok('the tab leads with the session id',
+        tabCaption('3f2a91b8-c629-49c0', 'Kalan eksikler').startsWith('Session #3f2a91b8'));
+    ok('…the name follows it', tabCaption('3f2a91b8', 'Kalan').endsWith('· Kalan'));
+    ok('…an unnamed session is the id alone',
+        tabCaption('3f2a91b8') === 'Session #3f2a91b8'
+        && tabCaption('3f2a91b8', '(untitled session)') === 'Session #3f2a91b8');
+    const long = tabCaption('3f2a91b8', 'a session name far longer than any tab could ever be');
+    ok('…and a long name is cut, never the tab', long.length === 30 && long.endsWith('…'));
     ok('the Files box starts closed and stays as the user left it',
         /let filesOpen = false;/.test(vjs)
         && /filesOpen = savedState\.filesOpen === true;/.test(vjs)

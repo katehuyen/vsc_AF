@@ -110,7 +110,8 @@
             <div class="srow${s.id === DATA.selected ? ' sel' : ''}" data-sel="${C.esc(s.id)}"
                  ${ctxAttr({
                      webviewSection: 'afConsoleSession', preventDefaultContextMenuItems: false,
-                     sessionId: s.sessionId || '', title: s.title || '', agentName: s.agentName || ''
+                     sessionId: s.sessionId || '', title: s.title || '',
+                     agentName: s.agentName || '', cwd: s.cwd || ''
                  })}
                  title="${C.esc(s.title || 'not named yet')} — right-click for session actions">
                 <div class="h">

@@ -23,7 +23,7 @@
            two meanings live in a menu under it. Two buttons side by side ate a
            quarter of the toolbar's width for a destination nobody reaches twice. */
         .af-claim { position:relative; display:inline-flex; }
-        .af-claim-menu { position:absolute; top:calc(100% + 4px); right:0; z-index:40; min-width:230px;
+        .af-claim-menu { position:absolute; top:calc(100% + 4px); right:0; z-index:40; min-width:150px;
             display:flex; flex-direction:column; padding:4px; border-radius:6px;
             border:1px solid var(--vscode-menu-border, var(--vscode-widget-border,#4444));
             background:var(--vscode-menu-background, var(--vscode-editorWidget-background));
@@ -34,7 +34,6 @@
             padding:5px 9px; font-size:12px; cursor:pointer; }
         .af-claim-menu button:hover { background:var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground));
             color:var(--vscode-menu-selectionForeground, inherit); }
-        .af-claim-menu .af-claim-hint { font-size:10px; opacity:.65; padding:1px 9px 4px; }
     </style>`;
 
     // Order is meaning, not arrival: the board you start from, the place you
@@ -91,11 +90,12 @@
      *   related,     // optional [{nav, label}] — related panels, after Live Timeline
      *   searchTitle, // optional tooltip when ⌕ Search is page-scoped
      *   refresh,     // false to omit the Refresh button (pages with nothing to re-scan)
-     *   navActions,  // optional { <navId>: {label, title, hint} } — this page claims
+     *   navActions,  // optional { <navId>: {label, title} } — this page claims
      *                //   that nav button for its own subject; the button stays ONE
      *                //   button and opens a small menu: the claimed action first,
-     *                //   then the plain page. Pass the matching
-     *                //   { <navId>: {onClick} } to wire().
+     *                //   then the plain page. `label` is two or three words — a
+     *                //   menu is a list of choices, not a place to explain them.
+     *                //   Pass the matching { <navId>: {onClick} } to wire().
      *   guide        // guide anchor for ? Guide (omit → no button)
      * }
      */
@@ -122,8 +122,7 @@
                         title="${claim.title || ''}">${label} ▾</button>
                     <div class="af-claim-menu" data-afclaimmenu="${n.id}" hidden>
                         <button data-afclaimgo="${n.id}">${claim.label}</button>
-                        ${claim.hint ? `<div class="af-claim-hint">${claim.hint}</div>` : ''}
-                        <button data-afnav="${n.id}">↗ Open the ${plain} page</button>
+                        <button data-afnav="${n.id}">Open ${plain}</button>
                     </div>
                 </span>`);
                 continue;

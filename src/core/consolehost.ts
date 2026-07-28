@@ -15,8 +15,8 @@
 
 import * as cp from 'child_process';
 import {
-    acceptUserText, ConsoleSessionState, controlLine, hostArgs, newSessionState,
-    reduceEvent, shiftQueued, userMessageLine
+    acceptUserText, ConsoleMessage, ConsoleSessionState, controlLine, hostArgs,
+    newSessionState, reduceEvent, shiftQueued, userMessageLine
 } from './consoleproto';
 
 /**
@@ -47,6 +47,9 @@ export interface HostedSessionInit {
     permissionMode?: string;
     /** resume an existing claude session instead of starting a new one */
     resume?: string;
+    /** the conversation this session already had, read off its transcript —
+     *  display only (consolehistory.ts), never sent anywhere */
+    history?: ConsoleMessage[];
     /** first message, sent as soon as the process is up */
     firstPrompt?: string;
 }
@@ -96,14 +99,18 @@ export class ConsoleHost {
             cwd: init.cwd, shell: true, windowsHide: true,
             stdio: ['pipe', 'pipe', 'pipe']
         });
+        const base = newSessionState({
+            id, agentId: init.agentId, agentName: init.agentName, cwd: init.cwd,
+            model: init.model, effort: init.effort, permissionMode: init.permissionMode,
+            now: Date.now(),
+            // a resumed session already HAS an id — see newSessionState
+            sessionId: init.resume
+        });
         const hosted: Hosted = {
-            state: newSessionState({
-                id, agentId: init.agentId, agentName: init.agentName, cwd: init.cwd,
-                model: init.model, effort: init.effort, permissionMode: init.permissionMode,
-                now: Date.now(),
-                // a resumed session already HAS an id — see newSessionState
-                sessionId: init.resume
-            }),
+            // The earlier conversation goes in as messages, nothing more: it is
+            // never written to stdin, so it costs nothing and the model's own
+            // context comes from --resume, not from here.
+            state: init.history?.length ? { ...base, messages: init.history } : base,
             child, buffer: '', reqSeq: 0
         };
         this.sessions.set(id, hosted);
