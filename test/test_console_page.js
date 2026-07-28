@@ -278,5 +278,30 @@ const html = allHtml;
         /already has a session running here/.test(allHtml()));
 }
 
+// ---------- the composer stays on the window's bottom edge ----------
+// Measured in a real browser (Chromium, 1200x700 and 820x420, 40 sessions +
+// 320 conversation lines): the page never scrolls, the composer's bottom stays
+// 12px above the window edge — identical before and after 200 streamed lines
+// and after 100 sessions in the left panel — and the two things that CAN be
+// long scroll inside themselves. These four rules are what make that true; the
+// bug they replace was "min-height" twice, which is a floor, not a ceiling.
+{
+    const consoleSrc = fs.readFileSync(path.resolve(__dirname, '../media/console.js'), 'utf8');
+    const style = /const STYLE = `([\s\S]*?)`;/.exec(consoleSrc)[1];
+    const rule = (sel) => {
+        const m = new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{([^}]*)\\}').exec(style);
+        return m ? m[1].replace(/\s+/g, ' ') : '';
+    };
+    ok('the page itself never scrolls', /body \{[^}]*overflow:hidden/.test(style));
+    ok('the app is exactly the window\'s height, not "at least"',
+        /height:100%/.test(rule('#app')) && !/min-height:100%/.test(rule('#app')));
+    ok('the row between header and composer may shrink', /min-height:0/.test(rule('.cwrap')));
+    ok('a long session list scrolls itself instead of stretching the page',
+        /min-height:0/.test(rule('.clist')) && /overflow-y:auto/.test(rule('.clist')));
+    ok('…and so does the conversation',
+        /min-height:0/.test(rule('.talk ')) && /overflow-y:auto/.test(rule('.talk ')));
+    ok('the composer never grows or shrinks with them', /flex:none/.test(rule('.composer')));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

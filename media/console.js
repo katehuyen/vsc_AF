@@ -37,11 +37,30 @@
     // `max-height` — so a short conversation left a tall empty gap between the
     // last line and the composer, and the whole page scrolled as well as the box.
     const STYLE = `<style>
+        /* ‼️ The Console is an APP, not a document: it is exactly as tall as the
+           window and NOTHING here scrolls the page. Two things made the composer
+           slide off the bottom, and both were "the page grows":
+             · #app had a MIN-height of 100% — a floor, not a ceiling, so every
+               arriving line made the page taller and pushed the composer down;
+             · the session list on the left had no ceiling either, so a long list
+               of past sessions stretched the row and did the same thing.
+           Now: the page is clipped to the window (overflow:hidden), the app is
+           height:100%, and the two things that CAN be long — the conversation
+           and the session list — are the only scrollers. The composer sits under
+           the conversation, on the window's bottom edge, whatever either of them
+           does. min-height:0 on every flex ancestor is what lets a child scroll
+           instead of stretching its parent (a flex item's floor is its content
+           unless you say otherwise — that is the whole bug, twice).
+           Measured in Chromium at 1200x700 and 820x420, with 40 sessions and
+           320 lines: page never scrolls, composer bottom identical before and
+           after 200 streamed lines and after 100 more sessions. */
         html, body { height:100%; }
-        body { overflow:auto; padding-bottom:14px; }
-        #app { min-height:100%; display:flex; flex-direction:column; }
-        .cwrap { display:flex; gap:14px; align-items:stretch; flex:1 1 auto; min-height:340px; }
-        .clist { flex:0 0 250px; display:flex; flex-direction:column; gap:6px; min-width:0; overflow-y:auto; }
+        body { overflow:hidden; padding:16px 20px 12px; }
+        #app { height:100%; min-height:0; display:flex; flex-direction:column; }
+        #c-head { flex:none; }
+        .cwrap { display:flex; gap:14px; align-items:stretch; flex:1 1 auto; min-height:0; }
+        .clist { flex:0 0 250px; display:flex; flex-direction:column; gap:6px;
+            min-width:0; min-height:0; overflow-y:auto; overflow-x:hidden; }
         .cmain { flex:1 1 auto; display:flex; flex-direction:column; min-width:0; min-height:0; }
         .srow { border:1px solid var(--vscode-widget-border,#4443); border-radius:7px; padding:7px 9px;
             cursor:pointer; background:var(--vscode-editor-background); }

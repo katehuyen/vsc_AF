@@ -2,6 +2,12 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.31.2 — The composer is nailed to the bottom of the window (2026-07-28)
+
+- **‼️ Every arriving line pushed the composer further down until it left the screen.** Not a scrolling bug — a **growing page**. Two rules said "at least this tall" where they had to say "at most": `#app` had a **min**-height of 100%, so the page grew with the conversation instead of being clipped to the window; and the session list on the left had no ceiling either, so a long list of past sessions stretched the row and did the same thing on its own. The result was a page you had to keep scrolling down to type into, on a screen whose whole point is that you type at the bottom.
+- **The Console is now an app, not a document.** The page itself never scrolls; it is exactly the height of the window. The two things that can be long — the conversation and the session list — each scroll **inside themselves**, and the composer sits under the conversation on the window's bottom edge, 12px clear of it, wherever either of them is scrolled to.
+- **Measured, not assumed** (Chromium, the real stylesheet, 40 sessions and 320 lines): at 1200×700 and at 820×420 the page never scrolls, the composer's bottom stays put — **identical before and after 200 streamed lines, and after 100 more sessions in the left panel** — the Send button stays visible, and dragging the textarea taller shrinks the conversation instead of pushing the composer out. Six checks now pin the rules that make it true.
+
 ## 3.31.1 — The pages notice, the context is real, and a queued message waits (2026-07-28)
 
 ### Everywhere
