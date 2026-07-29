@@ -109,7 +109,8 @@ const msg = (role, extra) => Object.assign({ id: 'm' + Math.random(), ts: 1, rol
 const session = (msgs, extra) => Object.assign({
     id: 'cs1', agentId: 'dev', agentName: 'developer', sessionId: '407c78cb-aaaa', title: 'Kalan eksikler',
     cwd: 'D:/a/dev', status: 'idle', cost: 0.12, turns: 3, queued: [], tokens: 48200,
-    model: 'claude-opus-5', permissionMode: 'default', contextTokens: 24100, lastTs: Date.now(),
+    model: 'claude-opus-5', effort: 'high', permissionMode: 'default',
+    contextTokens: 24100, lastTs: Date.now(), turnTokens: 0, turnCost: 0,
     pendingPermission: null, exitReason: '', messages: msgs
 }, extra || {});
 const CONVO = [
@@ -411,6 +412,60 @@ const html = allHtml;
     posted.length = 0;
     els['c-text'].listeners.keydown({ key: 'Escape', preventDefault() { } });
     ok('…and Esc does nothing when nothing is running', !posted.some(m => m.type === 'interrupt'));
+}
+
+// ---------- the turn's numbers up here, the session's numbers down there ----------
+// Both strips used to show "ctx" — the same session-wide figure twice, three
+// centimetres apart — while the question you actually have about a running turn
+// (what is THIS one costing me?) had no answer anywhere on the page.
+{
+    const working = () => (els['c-working'] ? els['c-working']._html : '');
+    const status = () => (els['c-status'] ? els['c-status']._html : '');
+
+    push(data(CONVO.concat([msg('agent', { text: 'thinking out loud' })]), {
+        status: 'working', turnStartedAt: Date.now() - 41000, turnTokens: 4200, turnCost: 0.031
+    }));
+    ok('the running turn says what IT has spent', /~\$0\.031 \(4200t tokens\)/.test(working()));
+    ok('…marked as the estimate it is until the turn closes', /estimate/.test(working()));
+    // everything since your own last message: agent, three tool lines, the
+    // turn's own result line, and the one that just streamed in
+    ok('…with the lines it has produced so far', / · 6 lines/.test(working()));
+    ok('…and the seconds it has been at it', /41s/.test(working()));
+    ok('the session-wide context figure is NOT repeated up here', !/ctx/.test(working()));
+
+    push(data(CONVO.slice()));
+    ok('the session line carries the cost AND the tokens it bought',
+        /\$0\.12 \(48200t tokens\)<\/span> this session/.test(status()));
+    ok('…the context the window is holding', /~24100t ctx/.test(status()));
+    ok('…and how many turns it took', /3 turns/.test(status()));
+
+    // a turn nobody has spent anything on yet says nothing rather than "$0"
+    push(data(CONVO.slice(), { status: 'working', turnStartedAt: Date.now(), turnTokens: 0, turnCost: 0 }));
+    ok('a turn with nothing spent yet does not write "$0"', !/\$0/.test(working()));
+
+    // model and effort belong to the session, and are stated once, where the
+    // things that were decided at launch already live
+    push(data(CONVO.slice()));
+    ok('the composer says which model AND which effort the session runs at',
+        /opus-5/.test(allHtml()) && /high effort/.test(allHtml()));
+}
+
+// ---------- the card hands its state to the right-click menu ----------
+// `enablement` in package.json reads these as context keys: that is what makes
+// "Remove from list" greyed-but-visible until the session has really ended.
+{
+    push(data(CONVO.slice(), { status: 'working' }));
+    const live = els['c-list']._html;
+    ok('a running card says it is live and working',
+        /afConsoleLive&quot;:true/.test(live) && /afConsoleWorking&quot;:true/.test(live)
+        && /afConsoleEnded&quot;:false/.test(live));
+    ok('…and names the hosted process the menu will act on', /hostId&quot;:&quot;cs1&quot;/.test(live));
+
+    push(data(CONVO.slice(), { status: 'ended' }));
+    const dead = els['c-list']._html;
+    ok('an ended card flips both, so the menu flips with it',
+        /afConsoleEnded&quot;:true/.test(dead) && /afConsoleLive&quot;:false/.test(dead)
+        && /afConsoleWorking&quot;:false/.test(dead));
 }
 
 // ---------- where you left off ----------

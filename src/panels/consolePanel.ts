@@ -3,6 +3,7 @@ import { AgentInfo } from '../core/agents';
 import { ConsoleHost } from '../core/consolehost';
 import { ConsoleMessage, PERMISSION_GRANTS } from '../core/consoleproto';
 import { EFFORT_CHOICES, modelChoices, PERMISSION_CHOICES } from '../core/launch';
+import { Usage } from '../core/pricing';
 import { SessionIndex } from '../core/sessions';
 import { handleAfNav, htmlShell } from './base';
 
@@ -51,6 +52,17 @@ export interface ConsoleDeps {
     lastWindow(): { sessionId: string; agentName: string; title: string; cwd: string; endedAt: number }[];
     /** take a row off that shelf (resumed, or not wanted) */
     forgetLastWindow(sessionId: string): void;
+    /**
+     * What the tokens a running turn has spent are worth, at the rates the rest
+     * of the extension prices everything else with.
+     *
+     * The CLI only says what a turn cost once the turn has ENDED, so without
+     * this the live strip could show the time and the tokens and then go silent
+     * on the one number the user actually asks ("was that worth it?"). It is an
+     * estimate and is marked as one; the line that closes the turn carries the
+     * CLI's own figure, and every session total on this page is the CLI's.
+     */
+    estimateCost(model: string, usage: Usage): number;
 }
 
 export class ConsolePanel {
@@ -135,10 +147,17 @@ export class ConsolePanel {
                 // the texts themselves, not a count: a message that is waiting
                 // is not in the conversation yet, so the composer has to show it
                 queued: s.queued,
-                tokens: s.tokens, model: s.model ?? '', permissionMode: s.permissionMode,
+                tokens: s.tokens, model: s.model ?? '', effort: s.effort ?? '',
+                permissionMode: s.permissionMode,
                 contextTokens: s.contextTokens ?? 0, lastTs: s.lastTs,
                 // the working strip counts from here
                 turnStartedAt: s.turnStartedAt ?? 0,
+                // …and says what THIS TURN has spent, while it is still running:
+                // the session's totals belong under the composer, a turn is the
+                // unit you are watching. The money is an estimate — see
+                // ConsoleDeps.estimateCost.
+                turnTokens: s.turnTokensAt !== undefined ? Math.max(0, s.tokens - s.turnTokensAt) : 0,
+                turnCost: s.turnUsage ? this.deps.estimateCost(s.model ?? '', s.turnUsage) : 0,
                 pendingPermission: s.pendingPermission ?? null,
                 exitReason: s.exitReason ?? '',
                 messages: s.id === this.selected ? s.messages.slice(-400) : []

@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.35.0 — The Console card carries its session's commands, and the numbers stop repeating themselves (2026-07-29)
+
+Two things you do constantly in the Console had no answer on the surface you were looking at: **stopping the session you are pointing at**, and **what the turn now running is costing**.
+
+- **Right-click a session card** — Rename · Resume in Terminal · Open transcript · **⎋ Interrupt turn · ⏻ End session · ✕ Remove from list**. Ending a session used to mean **selecting it first** (which changes the conversation you are reading) and then finding the button under the box; with eight cards in the panel that is three steps to stop the one under the pointer.
+- **The menu greys items out instead of hiding them.** *Remove from list* is there from the start, in grey — it is what comes **after** ending, and an item that only appears once the session has ended teaches you nothing and changes the menu's shape under the pointer. *End session* greys once it has ended; *Interrupt turn* lights up only while a turn runs. The card hands its own state to VS Code (`data-vscode-context` → `enablement` in `package.json`, verified against how VS Code turns that object into context keys), and because `enablement` disables a **menu item** rather than a command, each handler still refuses politely when it is reached another way ("end it first, then remove it from the list").
+- **‼️ Both strips said "ctx"** — the same session-wide figure twice, three centimetres apart — while the question you actually have about a running turn had no answer anywhere. Now: **above the box is the TURN** (`41s · ~$0.031 (4.2k tokens) · 6 lines · 2 waiting`), **below the box is the SESSION** (`session 407c78cb · ~24.1k ctx · $0.12 (48.2k tokens) this session · 3 turns`). Context belongs to the session line: it is what the window is holding, not what a turn did.
+- **A turn is priced while it runs.** The CLI only reports what a turn cost when the turn **ends**, so the live figure is priced from the tokens seen so far at the rates every other cost in the extension uses, and carries a **`~`** until the real one lands — which is why a turn now keeps its usage **by kind** (a cache read is a tenth of the price of fresh input) and drops it the moment the CLI's own number arrives.
+- **Cost is never written without the tokens that bought it**, in one order everywhere on the page: the money first, the tokens in parentheses. `$0.03` of haiku and `$0.03` of opus are not the same event. The turn's closing line now uses that same shape, so the estimate and the CLI's own figure can be read against each other without translating between two layouts.
+- **Model and effort are stated once, where the launch decisions already live:** the fixed line under the composer reads `developer · opus-5 · high effort`.
+- 37 checks added (the menu contract and its `enablement` clauses, the state the card hands over, the refusal when a live session is removed some other way, the two strips' contents, a turn keeping its usage by kind and starting the next one from zero). Suite: **79 files, 3165 checks green.**
+
 ## 3.34.0 — A swim-lane row is a session: right-click it, and Clear really clears (2026-07-29)
 
 The Live Timeline had two surfaces for the same thing. The cards at the bottom carried every action — terminal, interrupt, end, clear, rename — and the rows at the top, which are the *same sessions*, carried none of them: a click opened the transcript, and that was it. So acting on what you were looking at meant scrolling down to hunt for its card.

@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.34.0",
+  "version": "3.35.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -531,6 +531,27 @@
         "title": "Clear Session From Live Timeline",
         "category": "Agent Farm",
         "icon": "$(clear-all)"
+      },
+      {
+        "command": "agentfarm.consoleInterruptTurn",
+        "title": "Interrupt Turn",
+        "category": "Agent Farm",
+        "icon": "$(debug-pause)",
+        "enablement": "afConsoleWorking"
+      },
+      {
+        "command": "agentfarm.consoleEndSession",
+        "title": "End Session",
+        "category": "Agent Farm",
+        "icon": "$(debug-stop)",
+        "enablement": "afConsoleLive"
+      },
+      {
+        "command": "agentfarm.consoleForgetSession",
+        "title": "Remove From List",
+        "category": "Agent Farm",
+        "icon": "$(close)",
+        "enablement": "afConsoleEnded"
       },
       {
         "command": "agentfarm.openFile",
@@ -2099,6 +2120,21 @@
           "command": "agentfarm.openSession",
           "when": "webviewSection =~ /^afConsole(Session|Resumable)$/",
           "group": "1_session@4"
+        },
+        {
+          "command": "agentfarm.consoleInterruptTurn",
+          "when": "webviewSection == 'afConsoleSession'",
+          "group": "2_run@1"
+        },
+        {
+          "command": "agentfarm.consoleEndSession",
+          "when": "webviewSection == 'afConsoleSession'",
+          "group": "2_run@2"
+        },
+        {
+          "command": "agentfarm.consoleForgetSession",
+          "when": "webviewSection == 'afConsoleSession'",
+          "group": "2_run@3"
         },
         {
           "command": "agentfarm.renameSession",

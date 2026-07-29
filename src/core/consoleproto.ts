@@ -25,6 +25,8 @@
  * Pure: builders, a parser and a reducer. No io, no vscode.
  */
 
+import { addUsage, emptyUsage, Usage } from './pricing';
+
 export type ConsoleStatus = 'starting' | 'idle' | 'working' | 'ended' | 'error';
 
 export interface ConsoleToolUse {
@@ -86,6 +88,17 @@ export interface ConsoleSessionState {
     turnStartedAt?: number;
     /** token total when this turn began — the difference is what the turn spent */
     turnTokensAt?: number;
+    /**
+     * What the RUNNING turn has spent so far, by kind of token.
+     *
+     * The CLI reports what a turn cost only when the turn **ends**
+     * (`result.total_cost_usd`), so while it runs the only honest way to put a
+     * figure on it is to price the tokens already seen — with the same rules
+     * every other cost in the extension uses (`pricing.ts`). The live strip
+     * shows that as an estimate (`~`); the line that closes the turn replaces
+     * it with the CLI's own number, which is why this is cleared there.
+     */
+    turnUsage?: Usage;
     lastTs: number;
     /** why it ended, when it did */
     exitReason?: string;
@@ -233,14 +246,22 @@ export function reduceEvent(
         const u = msg?.usage;
         if (u) {
             const n = (k: string) => (typeof u[k] === 'number' ? u[k] as number : 0);
-            const spent = n('input_tokens') + n('output_tokens')
-                + n('cache_read_input_tokens') + n('cache_creation_input_tokens');
+            const one: Usage = {
+                input: n('input_tokens'), output: n('output_tokens'),
+                cacheWrite: n('cache_creation_input_tokens'), cacheRead: n('cache_read_input_tokens')
+            };
+            const spent = one.input + one.output + one.cacheRead + one.cacheWrite;
             if (spent) {
+                // The turn keeps its own breakdown as well as the total: the
+                // total is what it spent, the breakdown is what it can be
+                // priced from while it is still running (see turnUsage).
+                const turn = { ...(next.turnUsage ?? emptyUsage()) };
+                addUsage(turn, one);
                 // "ctx now" is the same figure the sessions tables show: what the
                 // window held for the latest request. Taking it from the CLI's
                 // occasional `thinking_tokens` event alone left the number frozen
                 // at whatever the first one said, for the rest of the session.
-                next = { ...next, tokens: next.tokens + spent, contextTokens: spent };
+                next = { ...next, tokens: next.tokens + spent, contextTokens: spent, turnUsage: turn };
                 changed = true;
             }
         }
@@ -324,6 +345,8 @@ export function reduceEvent(
                 turns: state.turns + 1,
                 turnStartedAt: undefined,
                 turnTokensAt: undefined,
+                // the estimate is over: the number above is the CLI's own
+                turnUsage: undefined,
                 sessionId: typeof o.session_id === 'string' ? o.session_id : state.sessionId
             },
             changed: true
@@ -406,6 +429,7 @@ export function acceptUserText(
     return {
         state: {
             ...state, lastTs: now, status: 'working', turnStartedAt: now, turnTokensAt: state.tokens,
+            turnUsage: emptyUsage(),
             messages: [...state.messages, { id: nextId(), ts: now, role: 'user', text: t }]
         },
         send: true
@@ -424,7 +448,7 @@ export function shiftQueued(
     return {
         state: {
             ...state, queued: rest, status: 'working', lastTs: now,
-            turnStartedAt: now, turnTokensAt: state.tokens,
+            turnStartedAt: now, turnTokensAt: state.tokens, turnUsage: emptyUsage(),
             messages: [...state.messages, { id: nextId(), ts: now, role: 'user', text: next }]
         },
         text: next

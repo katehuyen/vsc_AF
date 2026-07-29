@@ -256,6 +256,21 @@ A streaming conversation re-renders several times a second. The page used to be 
 - **No gap in the middle of the page.** The Console is a full-height app layout now: the conversation is the only scroller, the composer sits under it, and a short conversation is pushed **down onto** the composer instead of leaving a tall empty box between them.
 - **"ctx now" keeps up.** It was read only from the CLI's occasional `thinking_tokens` event, so it froze at whatever the first one said; it is now taken off each assistant message's own usage — the same arithmetic the sessions tables do.
 
+### The card carries the session's commands (3.35.0)
+
+A card in the left panel **is** a session, so **right-click it**: Rename · Resume in Terminal · Open transcript · **⎋ Interrupt turn · ⏻ End session · ✕ Remove from list**. Before this, the only way to end a session was to select it first — which changes the conversation you are reading — and then find the button under the box; with eight sessions in the panel that is three steps to stop the one you are pointing at.
+
+**The menu greys items out instead of hiding them.** *Remove from list* is there from the start, in grey: it is what comes **after** ending, and an item that only appears once the session ends teaches you nothing and changes the menu's shape under the pointer. So the order is visible before you need it — *End session* greys once the session has ended, *Interrupt turn* lights up only while a turn is running. The state comes from the card itself (`data-vscode-context` → the `enablement` clauses in `package.json`); the commands still refuse politely when they are invoked another way, since `enablement` disables a menu item, not a command.
+
+### Two lines of numbers: the turn above the box, the session below it (3.35.0)
+
+Both strips used to say **ctx** — the same session-wide figure twice, three centimetres apart — while the question you actually have about a running turn had no answer anywhere on the page.
+
+- **Above the box, the running turn:** `⠹ Read src/core/sessions.ts — 41s · ~$0.031 (4.2k tokens) · 6 lines · 2 waiting · ⎋ Interrupt stops it`. The CLI reports what a turn cost only when the turn **ends**, so the money is priced from the tokens seen so far, at the rates every other cost in the extension uses, and carries a **`~`** until the real figure lands. The line that closes the turn — two centimetres up, in the conversation — is the CLI's own number, in the same shape.
+- **Below the box, the whole session:** `session 407c78cb · ~24.1k ctx · $0.12 (48.2k tokens) this session · 3 turns`. Context belongs here: it is what the window is holding, not what a turn did.
+- **Cost is never written without the tokens that bought it**, in one order everywhere on the page — the money first, the tokens in parentheses. `$0.03` of haiku and `$0.03` of opus are not the same event.
+- **Model and effort are stated where the rest of the launch decisions are:** the fixed line under the composer now reads `developer · opus-5 · high effort`.
+
 ### Sessions outlive the tab
 
 Closing the Console tab does **not** kill a conversation; sessions end when you end them, or with the window.

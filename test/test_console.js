@@ -175,6 +175,42 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         ok('…a turn nobody timed reports nothing rather than a made-up zero',
             bare.ms === undefined && bare.tokens === undefined);
     }
+    // ---------- what the RUNNING turn is spending ----------
+    // The CLI says what a turn cost only when the turn ends, so a strip that
+    // wants to answer "what is this one costing me?" while you watch it has to
+    // price the tokens itself — which means the turn keeps its usage by KIND,
+    // not just a total (cache reads are a tenth of the price of fresh input).
+    {
+        const started = acceptUserText(fresh(), 'go', NOW).state;
+        ok('a turn starts its own meter at zero',
+            started.turnUsage && started.turnUsage.input === 0 && started.turnUsage.cacheRead === 0);
+        const one = reduce(started, {
+            type: 'assistant',
+            message: {
+                content: [{ type: 'text', text: 'ok' }],
+                usage: {
+                    input_tokens: 100, output_tokens: 40,
+                    cache_read_input_tokens: 9000, cache_creation_input_tokens: 800
+                }
+            }
+        });
+        ok('…and keeps the breakdown, not just the total',
+            one.turnUsage.input === 100 && one.turnUsage.output === 40
+            && one.turnUsage.cacheRead === 9000 && one.turnUsage.cacheWrite === 800);
+        ok('…while the session total still counts every token once',
+            one.tokens === 9940 && one.contextTokens === 9940);
+        const two = reduce(one, {
+            type: 'assistant',
+            message: { content: [{ type: 'text', text: 'more' }], usage: { input_tokens: 60, output_tokens: 10 } }
+        });
+        ok('…a second reply adds to the same turn', two.turnUsage.input === 160 && two.turnUsage.output === 50);
+        const closed = reduce(two, { type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0.02 });
+        ok('…and the estimate is dropped the moment the CLI reports the real figure',
+            closed.turnUsage === undefined);
+        const next = shiftQueued({ ...closed, status: 'idle', queued: ['again'] }, NOW + 9);
+        ok('…the next turn starts from zero again, not from the last one',
+            next.state.turnUsage.input === 0 && next.state.turnUsage.cacheRead === 0);
+    }
     ok('…and bills it', s.costUSD === 0.0123 && s.turns === 1);
     s = reduce(s, { type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0.01 });
     ok('cost accumulates across turns', Math.abs(s.costUSD - 0.0223) < 1e-9 && s.turns === 2);
@@ -380,6 +416,65 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         /preventDefaultContextMenuItems: false/.test(js));
     ok('…on the hosted rows and the resumable ones alike',
         /webviewSection: 'afConsoleSession'/.test(js) && /webviewSection: 'afConsoleResumable'/.test(js));
+}
+
+// ---------- the card's own menu: end it where you are looking at it ----------
+// With eight sessions in the left panel, ending one meant selecting it first
+// (which changes the conversation you are reading) and then finding the button
+// under the box. The card carries the same three actions — and carries its
+// STATE with them, so the menu can grey out what cannot be done to it yet.
+{
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+    const cmd = id => pkg.contributes.commands.find(c => c.command === id);
+    const web = pkg.contributes.menus['webview/context'] || [];
+    const onCard = id => web.some(m => m.command === id && m.when === "webviewSection == 'afConsoleSession'");
+    const js = fs.readFileSync(path.join(__dirname, '..', 'media', 'console.js'), 'utf8');
+    const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+
+    ok('a card can end its session from the right-click menu',
+        !!cmd('agentfarm.consoleEndSession') && onCard('agentfarm.consoleEndSession'));
+    ok('…interrupt the turn it is in the middle of',
+        !!cmd('agentfarm.consoleInterruptTurn') && onCard('agentfarm.consoleInterruptTurn'));
+    ok('…and be removed from the list once it has ended',
+        !!cmd('agentfarm.consoleForgetSession') && onCard('agentfarm.consoleForgetSession'));
+    // Greyed, not hidden: an item that appears only after the session ends
+    // changes the menu's shape under the pointer, and never teaches you that
+    // removing is what comes AFTER ending.
+    ok('Remove from list is greyed until the session has really ended',
+        cmd('agentfarm.consoleForgetSession').enablement === 'afConsoleEnded');
+    ok('…End session is greyed once it has', cmd('agentfarm.consoleEndSession').enablement === 'afConsoleLive');
+    ok('…and Interrupt only while a turn is running',
+        cmd('agentfarm.consoleInterruptTurn').enablement === 'afConsoleWorking');
+    ok('the state those clauses read comes from the card itself',
+        /afConsoleLive: !dead/.test(js) && /afConsoleEnded: dead/.test(js)
+        && /afConsoleWorking: s\.status === 'working'/.test(js));
+    ok('…as does the process they act on', /hostId: s\.id/.test(js));
+    ok('the actions sit in their own group, under the naming ones',
+        web.filter(m => /^2_run@/.test(m.group || '')).length === 3);
+    // `enablement` disables a MENU ITEM; it does not stop the command being run
+    // another way, so the handler still refuses to remove a live session.
+    ok('removing a session that is still running is refused, with the order to follow',
+        /still running — end it first/.test(ext));
+    ok('…and each action names the row it was invoked on', /const consoleRowId = /.test(ext));
+    for (const c of ['consoleEndSession', 'consoleForgetSession', 'consoleInterruptTurn']) {
+        ok(`agentfarm.${c} is registered`, ext.includes(`registerCommand('agentfarm.${c}'`));
+    }
+    // The bridge already carries these as ops — the menu is a new way in, not a
+    // new capability, so nothing new has to be registered there.
+    ok('…and an agent can already do all three over the bridge',
+        ext.includes("op: 'console.close'") && ext.includes("op: 'console.interrupt'")
+        && /args\.forget === true/.test(ext));
+}
+
+// ---------- the turn above the box, the session below it ----------
+{
+    const js = fs.readFileSync(path.join(__dirname, '..', 'media', 'console.js'), 'utf8');
+    const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'consolePanel.ts'), 'utf8');
+    ok('cost is never written without the tokens it bought', /const spend = /.test(js));
+    ok('the running turn is priced while it runs, not guessed at',
+        /estimateCost\(/.test(panel) && /turnUsage \? this\.deps\.estimateCost/.test(panel));
+    ok('…and the panel says out loud that the live figure is an estimate',
+        /is an estimate/.test(panel) || /an estimate/.test(panel));
 }
 
 // ---------- one name, three places to set it ----------

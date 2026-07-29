@@ -304,6 +304,21 @@ Barındırılan oturum **penceresiyle birlikte biter** — bu bilerekdir: kimsen
 
 > **Ölçüldü:** Console'un kendi taşıma katmanından gerçek CLI ile (haiku, en ucuz ayar) `--resume` **aynı oturum kimliğini** bildiriyor, **aynı transkript dosyasına** yazıyor ve model hatırlamaya devam ediyor — süreç tamamen öldürülüp devam ettirildikten sonra "az önce hangi kelimeyi söyledin?" sorusuna doğru cevap verdi. Yani oturumu pencereyle bitirmenin tek maliyeti "nerede kaldığını bilmek"tir; raf da onu geri veriyor.
 
+### Kart oturumun komutlarını taşır (3.35.0)
+
+Sol paneldeki kart **bir oturumdur**, o hâlde **sağ tıklanır**: Rename · Resume in Terminal · Open transcript · **⎋ Interrupt turn · ⏻ End session · ✕ Remove from list**. Önceden bir oturumu bitirmenin tek yolu onu önce **seçmekti** — yani okuduğun konuşmayı değiştirmek — sonra kutunun altındaki düğmeyi bulmaktı; panelde sekiz oturum varken baktığın oturumu durdurmak üç adım demekti.
+
+**Menü gizlemez, soluklaştırır.** *Remove from list* baştan orada, soluk hâlde: bitirmenin **ardından** gelen adım odur, ve ancak oturum bitince beliren bir madde hem hiçbir şey öğretmez hem de menünün şeklini imlecin altında değiştirir. Böylece sıra, ihtiyaç duymadan önce görünür — oturum bitince *End session* solar, *Interrupt turn* yalnızca bir tur çalışırken yanar. Durumu kartın kendisi taşır (`data-vscode-context` → `package.json`'daki `enablement` ifadeleri); komutlar başka bir yoldan çağrılırsa yine kibarca reddeder, çünkü `enablement` bir **menü maddesini** devre dışı bırakır, komutu değil.
+
+### İki rakam satırı: kutunun üstünde tur, altında oturum (3.35.0)
+
+İki şerit de **ctx** yazıyordu — aynı oturum-geneli rakam, üç santim arayla iki kez — çalışan tur hakkında gerçekten sorduğun sorunun ise sayfada hiçbir cevabı yoktu.
+
+- **Kutunun üstünde, çalışan tur:** `⠹ Read src/core/sessions.ts — 41s · ~$0.031 (4.2k tokens) · 6 lines · 2 waiting · ⎋ Interrupt stops it`. CLI bir turun maliyetini yalnızca tur **bitince** bildirir; bu yüzden buradaki para, o ana kadar görülen token'lardan, eklentinin diğer bütün maliyetlerinde kullandığı aynı tarifeyle hesaplanır ve gerçek rakam gelene kadar **`~`** taşır. Turu kapatan satır — iki santim yukarıda, konuşmanın içinde — CLI'ın kendi rakamıdır, aynı biçimde.
+- **Kutunun altında, oturumun tamamı:** `session 407c78cb · ~24.1k ctx · $0.12 (48.2k tokens) this session · 3 turns`. Context buraya aittir: pencerenin **şu an tuttuğu** şeydir, bir turun yaptığı değil.
+- **Maliyet, onu satın alan token'lar olmadan asla yazılmaz** — sayfanın her yerinde tek sıra: önce para, parantez içinde token. Haiku'nun `$0.03`'ü ile opus'un `$0.03`'ü aynı olay değildir.
+- **Model ve efor, diğer başlangıç kararlarının yanında:** kompozitörün altındaki sabit satır artık `developer · opus-5 · high effort` diyor.
+
 ### Oturumlar sekmeden uzun yaşar
 
 Console sekmesini kapatmak konuşmayı **öldürmez**; oturumlar sen bitirince ya da pencere kapanınca biter.

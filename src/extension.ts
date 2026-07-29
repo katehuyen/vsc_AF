@@ -87,7 +87,7 @@ import {
     applyMergedContent, buildMergeDraft, findDuplicateGroups, syncGroup
 } from './core/memorySync';
 import { SecretsVault } from './core/secrets';
-import { contextWindowFor, DEFAULT_PRICING, PriceRule, PricingEngine, PricingVersion, totalTokens } from './core/pricing';
+import { contextWindowFor, DEFAULT_PRICING, PriceRule, PricingEngine, PricingVersion, totalTokens, Usage } from './core/pricing';
 import { QualityStore, sampleQuality } from './core/quality';
 import { buildDailyDigest, buildFleetReport, buildOutputsDigest } from './core/report';
 import { buildForecast, renderForecastMarkdown } from './core/forecast';
@@ -5201,7 +5201,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         liveOwners: () => readCliSessions(claudeDir()),
         history: consoleHistory,
         lastWindow: () => lastWindow,
-        forgetLastWindow
+        forgetLastWindow,
+        // a turn's cost while it is still running — see ConsoleDeps.estimateCost
+        estimateCost: (model: string, u: Usage) => pricing.costFor(model, u)
+    };
+
+    /**
+     * Which hosted session a Console row's right-click is about.
+     *
+     * The card hands its `hostId` over in `data-vscode-context`; a row whose
+     * process this window no longer has (ended and removed, or a stale menu on
+     * a reloaded panel) says so instead of failing silently.
+     */
+    const consoleRowId = (arg?: { hostId?: string }): string | undefined => {
+        const id = typeof arg?.hostId === 'string' ? arg.hostId : '';
+        if (!id || !consoleHost.get(id)) {
+            void vscode.window.showInformationMessage(
+                'Agent Farm: that session is not in this window\'s Console list any more.');
+            return undefined;
+        }
+        return id;
     };
 
     // ---------- C1: the read-only web surface ----------
@@ -6414,6 +6433,61 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // ---------- DALGA 1: the Console ----------
         vscode.commands.registerCommand('agentfarm.openConsole', (arg?: { agentId?: string }) => {
             ConsolePanel.show(consoleDeps, arg && typeof arg === 'object' ? arg : undefined);
+        }),
+
+        /*
+         * The Console card's own menu — the composer's bottom row, on the row
+         * you are pointing at.
+         *
+         * With eight sessions in the left panel, ending one meant selecting it
+         * first (which changes the conversation you were reading) and then
+         * finding the button under the box. These act on the card that was
+         * right-clicked, whichever one you are looking at.
+         *
+         * The state that decides what is greyed out comes from the card itself
+         * (`afConsoleWorking` / `afConsoleLive` / `afConsoleEnded` in
+         * `data-vscode-context`, read by the `enablement` clauses in
+         * package.json). `enablement` disables a menu item; it does not stop a
+         * command from being executed by other means, so each handler still
+         * says what it will not do and why.
+         */
+        vscode.commands.registerCommand('agentfarm.consoleInterruptTurn', (arg?: { hostId?: string }) => {
+            const id = consoleRowId(arg);
+            if (!id) { return; }
+            const s = consoleHost.get(id);
+            if (s?.status !== 'working') {
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: ${s?.agentName ?? 'that session'} is not in the middle of a turn.`);
+                return;
+            }
+            consoleHost.interrupt(id);
+            ConsolePanel.refreshIfOpen();
+        }),
+
+        vscode.commands.registerCommand('agentfarm.consoleEndSession', (arg?: { hostId?: string }) => {
+            const id = consoleRowId(arg);
+            if (!id) { return; }
+            // Same as the composer's End session: the process stops, the row
+            // stays (with everything that was said) until it is removed.
+            consoleHost.close(id);
+            ConsolePanel.refreshIfOpen();
+        }),
+
+        vscode.commands.registerCommand('agentfarm.consoleForgetSession', (arg?: { hostId?: string }) => {
+            const id = consoleRowId(arg);
+            if (!id) { return; }
+            const s = consoleHost.get(id);
+            if (s && s.status !== 'ended' && s.status !== 'error') {
+                // The menu greys this out, so reaching here means the command
+                // was run another way. Removing a live row would kill a running
+                // conversation as a side effect of "tidy up" — say the order.
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: ${s.agentName}'s session is still running — end it first, then remove it from the list.`);
+                return;
+            }
+            // the transcript stays on disk; this only takes the row off the panel
+            consoleHost.forget(id);
+            ConsolePanel.refreshIfOpen();
         }),
 
         // From a session row: pick that conversation back up INSIDE the panel.

@@ -214,6 +214,20 @@
     const sel = () => (DATA.sessions || []).find(s => s.id === DATA.selected);
 
     /**
+     * Money and what it bought, in the ONE order this page uses everywhere: the
+     * cost first, the tokens that paid for it in parentheses.
+     *
+     * A dollar figure on its own is unreadable — $0.03 of haiku and $0.03 of
+     * opus are not the same event — so the two are never written apart. Session
+     * totals, the running turn and the line that closes a turn all say it this
+     * shape, so the live estimate and the CLI's own final figure can be read
+     * against each other without translating between two layouts.
+     */
+    const spend = (cost, tokens) => `${C.fmtUSD(cost || 0)}${tokens ? ` (${C.fmtTok(tokens)} tokens)` : ''}`;
+    /** the same figure, tight enough for a 250px card */
+    const spendShort = (cost, tokens) => `${C.fmtUSD(cost || 0)}${tokens ? ` (${C.fmtTok(tokens)})` : ''}`;
+
+    /**
      * The right-click contract for a session row.
      *
      * `data-vscode-context` hands the row's identity to VS Code, which builds
@@ -223,6 +237,14 @@
      * NOT a `contextmenu` listener: hijacking the right-click to open a rename
      * box straight away took the normal menu away from the page and left rename
      * as the only thing a right-click could ever mean.
+     *
+     * Every key in this object becomes a **context key** while the menu is up,
+     * which is how a card's own state reaches the menu: the `enablement` clause
+     * on `agentfarm.console*` reads `afConsoleLive` / `afConsoleEnded` /
+     * `afConsoleWorking` and greys out what cannot be done to this session yet.
+     * Greying is the point — hiding "Remove from list" until the session ends
+     * would make the menu change shape under the pointer, and you would never
+     * learn that removing is what comes after ending.
      */
     const ctxAttr = o => `data-vscode-context="${JSON.stringify(o)
         .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}"`;
@@ -329,8 +351,9 @@
         const bits = [];
         if (m.text) { bits.push(m.text); }
         if (m.ms) { bits.push(m.ms >= 60000 ? `${Math.round(m.ms / 6000) / 10}m` : `${Math.round(m.ms / 100) / 10}s`); }
-        if (m.tokens) { bits.push(`${C.fmtTok(m.tokens)} tokens`); }
-        if (m.cost) { bits.push(C.fmtUSD(m.cost)); }
+        // the same shape the live strip used while this turn was running, so the
+        // estimate and the CLI's own figure land in the same place
+        if (m.cost || m.tokens) { bits.push(spend(m.cost, m.tokens)); }
         if (!bits.length) { return ''; }
         return `<div class="msg res"><span class="who"></span><div class="body">${C.esc(bits.join(' · '))}</div></div>`;
     }
@@ -360,17 +383,24 @@
             const p = phaseOf(s);
             // the nudge is the WAIT, and it grows on its own
             const waited = p.id === 'you' || p.id === 'blocked' ? relTime(s.lastTs) : '';
+            const dead = s.status === 'ended' || s.status === 'error';
             return `
             <div class="srow ${p.cls}${s.id === DATA.selected ? ' sel' : ''}" data-sel="${C.esc(s.id)}"
                  ${ctxAttr({
                      webviewSection: 'afConsoleSession', preventDefaultContextMenuItems: false,
+                     // the hosted process this card is: what End / Remove act on
+                     hostId: s.id,
                      sessionId: s.sessionId || '', title: s.title || '',
-                     agentName: s.agentName || '', cwd: s.cwd || ''
+                     agentName: s.agentName || '', cwd: s.cwd || '',
+                     // …and the card's STATE, so the menu can grey out what
+                     // cannot be done to it right now (see ctxAttr)
+                     afConsoleLive: !dead, afConsoleEnded: dead,
+                     afConsoleWorking: s.status === 'working'
                  })}
                  title="${C.esc(s.title || 'not named yet')} — ${C.esc(p.label)} — right-click for session actions">
                 <div class="h">
                     <span class="n"><span class="dot"></span>${who(s.agentName, s.sessionId)}</span>
-                    <span class="m" title="cost so far${s.tokens ? ' · tokens spent' : ''}">${C.fmtUSD(s.cost)}${s.tokens ? ` (${C.fmtTok(s.tokens)})` : ''}</span>
+                    <span class="m" title="what this session has spent${s.tokens ? ' — and the tokens it bought' : ''}">${spendShort(s.cost, s.tokens)}</span>
                 </div>
                 <div class="t2">${C.esc(s.title || '(no name yet)')}</div>
                 <div class="m"><span class="phase">${C.esc(p.label)}${waited ? ` · ${waited}` : ''}</span>${(s.queued || []).length ? ` · ${s.queued.length} waiting` : ''}${s.turns ? ` · ${s.turns} turns` : ''}${s.contextTokens ? ` · <span title="Approximate context in the model window right now">ctx ${C.fmtTok(s.contextTokens)}</span>` : ''}</div>
@@ -435,12 +465,30 @@
      * is doing right now**, taken from the last tool the agent reached for.
      * It sits between the conversation and the composer, so it never moves the
      * conversation and never scrolls away.
+     *
+     * **This strip is about the TURN, the line under the composer is about the
+     * SESSION.** Both used to show "ctx" — the same session-wide number, twice,
+     * three centimetres apart — while the question you actually have about a
+     * running turn (what is this one costing me?) had no answer anywhere. So
+     * the context figure now belongs to the session line alone, and the turn
+     * gets its own numbers: how long, how many tokens, what they are worth, and
+     * how many lines it has produced.
      */
     const SPIN = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
     let spinTimer = null;
     /** advanced by the repaint itself, not read off the clock: the glyph must
      *  move once per paint, whatever the timer's drift does */
     let spinAt = 0;
+
+    /** How many lines this turn has produced: everything since your own last
+     *  message. The count you can see growing IS the turn. */
+    function turnLines(s) {
+        const list = (s && s.messages) || [];
+        for (let i = list.length - 1; i >= 0; i--) {
+            if (list[i].role === 'user') { return list.length - 1 - i; }
+        }
+        return list.length;
+    }
 
     function workingHtml(s) {
         if (!s || s.status !== 'working') { return ''; }
@@ -457,8 +505,16 @@
             }
         }
         const q = queuedOf(s).length;
+        // What this turn is spending, as it spends it. The CLI only reports a
+        // turn's real cost when the turn ends, so the money here is priced off
+        // the tokens seen so far and carries a "~" until then — the line that
+        // closes the turn, two centimetres up, is the CLI's own figure.
+        const cost = s.turnTokens || s.turnCost
+            ? ` · <span title="What this turn has spent so far. The money is an estimate at the usual rates — the turn's closing line carries the CLI's own figure.">~${spend(s.turnCost, s.turnTokens)}</span>`
+            : '';
+        const lines = turnLines(s);
         return `<span class="spin">${glyph}</span> <b>${C.esc(doing)}</b>
-            <span class="wmeta">${secs}s${s.contextTokens ? ` · ctx ${C.fmtTok(s.contextTokens)}` : ''}${q ? ` · ${q} waiting` : ''} · ⎋ Interrupt stops it</span>`;
+            <span class="wmeta">${secs}s${cost}${lines ? ` · ${lines} line${lines === 1 ? '' : 's'}` : ''}${q ? ` · ${q} waiting` : ''} · ⎋ Interrupt stops it</span>`;
     }
 
     /** The glyph has to turn on its own — a data push only arrives when the CLI
@@ -528,7 +584,11 @@
                 : `A new session opens in the chosen agent's folder and runs here, in the panel.`;
         }
         const dead = s.status === 'ended' || s.status === 'error';
-        return `${s.sessionId ? 'session ' + C.esc(s.sessionId.slice(0, 8)) + ' · ' : ''}${s.contextTokens ? '~' + C.fmtTok(s.contextTokens) + ' ctx · ' : ''}${C.fmtUSD(s.cost)} this session · ${s.turns} turn(s)
+        // The whole session, in one line: what the window is holding, what the
+        // conversation has cost and the tokens that bought it, how many turns.
+        // (The turn that is running has its own line above the box — the two
+        // used to say "ctx" at each other and nothing else.)
+        return `${s.sessionId ? 'session ' + C.esc(s.sessionId.slice(0, 8)) + ' · ' : ''}${s.contextTokens ? `<span title="Approximate context in the model window right now">~${C.fmtTok(s.contextTokens)} ctx</span> · ` : ''}<span title="Everything this session has spent, as the CLI reported it — and the tokens it bought">${spend(s.cost, s.tokens)}</span> this session · ${s.turns} turn${s.turns === 1 ? '' : 's'}
             <span class="grow"></span>
             ${s.sessionId ? '<button class="secondary" id="c-transcript">Open transcript</button>' : ''}
             ${dead ? '<button class="secondary" id="c-forget">Remove from list</button>' : '<button class="secondary" id="c-close">End session</button>'}`;
@@ -609,7 +669,7 @@
         // is the permission mode, so that one stays a live control.
         const controls = s
             ? `<span class="fixed" title="Decided when this session started — a running session cannot change them">
-                    ${C.esc(s.agentName)}${s.model ? ' · ' + C.esc(String(s.model).replace(/^claude-/, '')) : ''}
+                    ${C.esc(s.agentName)}${s.model ? ' · ' + C.esc(String(s.model).replace(/^claude-/, '')) : ''}${s.effort ? ' · ' + C.esc(s.effort) + ' effort' : ''}
                 </span>
                 <label class="permlbl" title="The one thing that CAN change mid-session — applied live">permissions
                     <select id="c-perm">${opts(DATA.permissions, s.permissionMode)}</select>
