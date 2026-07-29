@@ -367,6 +367,33 @@ const html = allHtml;
         posted.some(m => m.type === 'select' && m.id === 'csA'));
 }
 
+// ---------- ‼️ the wait grows by itself ----------
+// "The nudge is TIME, not animation" — and time was the one thing that did not
+// move. Every figure here is written during a data push, and a push only
+// arrives when the CLI says something; a session waiting for YOU says nothing
+// by definition. So "your turn · 0s" and "longest 0s" stood there for hours,
+// saying the opposite of what they exist to say.
+{
+    const list = () => (els['c-list'] ? els['c-list']._html : '');
+    const fresh = data(CONVO.slice());
+    fresh.sessions[0].lastTs = Date.now();
+    push(fresh);
+    ok('a turn that just ended starts the clock at zero',
+        /your turn · 0s/.test(list()) && /longest 0s/.test(list()));
+
+    // no push, no CLI, nothing said: only the clock moves
+    fresh.sessions[0].lastTs = Date.now() - 2 * 3600 * 1000;
+    tickTimers();
+    ok('…and two hours later it says so, without anything being pushed',
+        /your turn · 2h/.test(list()) && /longest 2h/.test(list()));
+
+    const src = fs.readFileSync(path.resolve(__dirname, '../media/console.js'), 'utf8');
+    ok('…because the clock is a reason to redraw the left panel on its own',
+        /setInterval\(renderList/.test(src));
+    ok('…and only the left panel, which is the only time-dependent part',
+        /function renderList\(\)/.test(src));
+}
+
 // ---------- "it is still working" ----------
 // Between your message and the first line of the reply the page showed nothing
 // at all — and nothing is exactly what a dead session shows. A terminal says so

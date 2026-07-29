@@ -271,6 +271,12 @@ Both strips used to say **ctx** — the same session-wide figure twice, three ce
 - **Cost is never written without the tokens that bought it**, in one order everywhere on the page — the money first, the tokens in parentheses. `$0.03` of haiku and `$0.03` of opus are not the same event.
 - **Model and effort are stated where the rest of the launch decisions are:** the fixed line under the composer now reads `developer · opus-5 · high effort`.
 
+### ‼️ The wait grows by itself (3.35.1)
+
+The left panel's whole design is *"the nudge is **time**, not animation"* — a card that has been waiting says `your turn · 41m`, and the line above the cards says `● 3 waiting for you · longest 41m`. Every figure there is written during a **data push**, and a push only arrives when the CLI says something; a session waiting for **you** says nothing, by definition. So those figures were written the moment the turn ended and then stood at `0s` for as long as you were away, telling you the opposite of what they exist to say.
+
+The clock is now a reason to redraw on its own: the left panel re-renders every 10 seconds. Only that panel ticks — it is the only time-dependent part of the page — and a tick where no text actually changed writes nothing.
+
 ### Sessions outlive the tab
 
 Closing the Console tab does **not** kill a conversation; sessions end when you end them, or with the window.

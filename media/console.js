@@ -780,6 +780,66 @@
         resetTail();
     }
 
+    /**
+     * The left panel, drawn and wired.
+     *
+     * Its own function because it has TWO reasons to be redrawn: a data push,
+     * and **the clock** (see the tick below). Everything else on the page
+     * changes only when the CLI says something.
+     */
+    function renderList() {
+        if (!slot('c-list', sessionListHtml())) { return; }
+        document.querySelectorAll('[data-sel]').forEach(r =>
+            r.addEventListener('click', () => vscode.postMessage({ type: 'select', id: r.dataset.sel })));
+        document.querySelectorAll('[data-resume]').forEach(r =>
+            r.addEventListener('click', () => vscode.postMessage({
+                type: 'resume', sessionId: r.dataset.resume,
+                model: st.model, effort: st.effort, permissionMode: st.permissionMode
+            })));
+        // "Where you left off": the same resume, from the shelf
+        document.querySelectorAll('[data-back]').forEach(r =>
+            r.addEventListener('click', ev => {
+                if (ev.target && ev.target.dataset && ev.target.dataset.backforget) { return; }
+                vscode.postMessage({
+                    type: 'resume', sessionId: r.dataset.back,
+                    model: st.model, effort: st.effort, permissionMode: st.permissionMode
+                });
+            }));
+        document.querySelectorAll('[data-backforget]').forEach(b =>
+            b.addEventListener('click', ev => {
+                ev.stopPropagation();
+                vscode.postMessage({ type: 'forgetLastWindow', sessionId: b.dataset.backforget });
+            }));
+        const byId = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
+        byId('c-new', 'click', () => vscode.postMessage({ type: 'select', id: '' }));
+        // the nudge, answered: go to whichever has waited longest
+        byId('c-next', 'click', () => {
+            const next = needingYou()[0];
+            if (next) { vscode.postMessage({ type: 'select', id: next.id }); }
+        });
+        byId('c-toggle-resume', 'click', () => { st.showResume = !st.showResume; save(); paint(); });
+    }
+
+    /**
+     * ‼️ THE WAIT HAS TO GROW BY ITSELF.
+     *
+     * "the nudge is TIME, not animation" is the whole design of the left panel
+     * — and it was the one thing on it that did not move. Every figure here is
+     * written during a data push, and a push only happens when the CLI says
+     * something; a session that is waiting for YOU says nothing by definition.
+     * So `your turn · 0s` and `longest 0s` were written the moment the turn
+     * ended and then stood there for two hours, telling you the opposite of
+     * what they exist to say — and only ever corrected themselves if some OTHER
+     * session happened to speak and drag a repaint along with it.
+     *
+     * The clock is now a reason to redraw, on its own. Only the left panel is
+     * time-dependent (the waits, the shelf's "ended 2h ago", the resume list's
+     * ages), so only the left panel ticks — and `slot()` means a tick where no
+     * text actually changed writes nothing at all.
+     */
+    const WAIT_TICK_MS = 10000;
+    setInterval(renderList, WAIT_TICK_MS);
+
     // ---- one pass over the changing parts -------------------------------------
 
     function paint() {
@@ -825,37 +885,7 @@
             window.AFHeader.wire(vscode, { onRefresh: () => vscode.postMessage({ type: 'refresh' }) });
         }
 
-        if (slot('c-list', sessionListHtml())) {
-            document.querySelectorAll('[data-sel]').forEach(r =>
-                r.addEventListener('click', () => vscode.postMessage({ type: 'select', id: r.dataset.sel })));
-            document.querySelectorAll('[data-resume]').forEach(r =>
-                r.addEventListener('click', () => vscode.postMessage({
-                    type: 'resume', sessionId: r.dataset.resume,
-                    model: st.model, effort: st.effort, permissionMode: st.permissionMode
-                })));
-            // "Where you left off": the same resume, from the shelf
-            document.querySelectorAll('[data-back]').forEach(r =>
-                r.addEventListener('click', ev => {
-                    if (ev.target && ev.target.dataset && ev.target.dataset.backforget) { return; }
-                    vscode.postMessage({
-                        type: 'resume', sessionId: r.dataset.back,
-                        model: st.model, effort: st.effort, permissionMode: st.permissionMode
-                    });
-                }));
-            document.querySelectorAll('[data-backforget]').forEach(b =>
-                b.addEventListener('click', ev => {
-                    ev.stopPropagation();
-                    vscode.postMessage({ type: 'forgetLastWindow', sessionId: b.dataset.backforget });
-                }));
-            const byId = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
-            byId('c-new', 'click', () => vscode.postMessage({ type: 'select', id: '' }));
-            // the nudge, answered: go to whichever has waited longest
-            byId('c-next', 'click', () => {
-                const next = needingYou()[0];
-                if (next) { vscode.postMessage({ type: 'select', id: next.id }); }
-            });
-            byId('c-toggle-resume', 'click', () => { st.showResume = !st.showResume; save(); paint(); });
-        }
+        renderList();
 
         if (changed) {
             // Right-click is NOT wired here on purpose — see ctxAttr.

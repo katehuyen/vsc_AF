@@ -2,6 +2,14 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.35.1 — ‼️ The wait was frozen at zero (2026-07-29)
+
+*"The nudge is **time**, not animation"* is the whole design of the Console's left panel — and time was the one thing on it that did not move.
+
+Every figure on that panel is written during a **data push**, and a push only arrives when the CLI says something. A session that is waiting for **you** says nothing, by definition. So `your turn · 0s` and `● 1 waiting for you · longest 0s` were written the moment the turn ended and then stood there — for two hours, if that is how long you were away — telling you the opposite of what they exist to say. They only ever corrected themselves if some *other* session happened to speak and drag a repaint along with it.
+
+**The clock is now a reason to redraw, on its own:** the left panel re-renders every 10 seconds, so a wait grows while you watch it. Only the left panel ticks — it is the only time-dependent part of the page (the waits, the shelf's *ended 2h ago*, the resume list's ages) — and because the page writes into named slots only when the text actually differs, a tick where nothing changed writes nothing at all. 4 checks added (zero at the start, two hours later without any push, and the tick itself). Suite: **79 files, 3169 checks green.**
+
 ## 3.35.0 — The Console card carries its session's commands, and the numbers stop repeating themselves (2026-07-29)
 
 Two things you do constantly in the Console had no answer on the surface you were looking at: **stopping the session you are pointing at**, and **what the turn now running is costing**.
