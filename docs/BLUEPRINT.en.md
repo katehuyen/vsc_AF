@@ -223,7 +223,8 @@ The **💬 Console** tab (first in the global nav, `Ctrl+Alt+C`) hosts long-live
 Under the box: **agent · model · effort · permission mode** — all from the launcher's own dictionary (`core/launch.ts`), so the extension has one vocabulary rather than two. `Ctrl+Enter` sends.
 
 - **⎋ Interrupt** stops the running turn through the CLI's own control channel. **The turn ends; the session and its context stay.**
-- **Queue:** anything typed while a turn runs is **queued**, shown as queued, and sent the moment the turn ends. The queue can be cleared without touching the running turn.
+- **‼️ Typing mid-turn steers that turn (3.39.0).** What you write while the agent works goes **into the running turn** — the CLI delivers it at the turn's next step, the same way the interactive terminal delivers what you type while it works. So "no, do it the other way" arrives while there is still something to redirect. The line joins the conversation marked **↯**, because it did not start the turn above it. **Measured, twice:** against the raw CLI (a message written to stdin six seconds into a tool-calling turn reached the model at that turn's next step) and through the Console's own host in `smoke_console_live.js`, where the word only counts if it lands **before** the line that closes the turn.
+- **⏸ Hold** is the other choice, for "say this next, not now": the message waits above the box — **and it is still yours**. ✎ puts it back in the composer to be rewritten (**↑** in an empty box does the same, the terminal's own key), **⏩** stops holding it and says it into the running turn, **⨯** drops it. Held messages go out in order when the turn ends.
 - Each row carries its own **cost · turns · the CLI's context estimate**.
 
 ### Permissions, answered honestly
@@ -291,6 +292,8 @@ The agent (its folder) and the effort really are fixed once the process is up, a
 
 The row count does not choose WHICH sessions, only how many of them you can see — so **clear filter** had no business resetting it. The lock beside the box pins it: **on by default**, the number you set is simply how long the list is, filter or no filter, and it is remembered between sessions. Click it off and it goes back to being part of the question, clearing with the rest.
 
+**And it says which it is without a tooltip (3.39.0).** 🔒 and 🔓 differ by a few pixels of shackle at 10px, so the state was only readable by hovering. State is carried by **colour**, all of it on one side: locked is the accent, at full saturation; unlocked has no colour at all (grayscale and faded) — which no theme can turn back into a signal. The search box also carries **its own ⨯** now: the header's ⌦ clears the whole question, the ⨯ clears just the words you retype, and it only appears while there is something to clear.
+
 ### A session can be found by its id (3.38.0)
 
 `#407c78cb` is the handle every other surface shows — a card, a menu, a log line — and it was the one thing the resume filter did not search. Paste any part of one into the text box and land on that session. **Copy Session ID** is on the right-click menu of every card, which is where you get it from.
@@ -340,9 +343,9 @@ All of them open the Console with that agent **preselected in the composer**; **
 - **New session:** agent · model · effort · permission-mode pickers + your text → **Start session**.
 - **Running session:** the agent/model/effort pickers are **gone** (they were decided when the process started and cannot change — dead boxes helped nobody). In their place a plain status line (`dev · haiku`) and **the one control that genuinely works live: the permission mode**.
 
-**Bridge:** `console.start` · `console.send` (queues while a turn runs) · `console.sessions` · `console.interrupt` · `console.permissionMode` (with `retry`) · `console.close`.
+**Bridge:** `console.start` · `console.send` (goes **into** a running turn; `hold:true` parks it) · `console.queue` (read what is held · `edit` · `drop` · `send` · `clear`) · `console.sessions` · `console.interrupt` · `console.setModel` · `console.permissionMode` (with `retry`) · `console.close`.
 
-> **Verification:** `test/smoke_console_live.js` drives **real** claude processes end to end (answer · mid-turn queueing · interrupt in flight · a refused write · the live grant · the retry that really writes the file · a clean close): **18/18 for $0.076**. It stays out of `npm test` because it spends money. The measurement also caught the one design error worth naming: the CLI emits **nothing at all** until its first stdin line, so holding the first message until the session "looks ready" deadlocks forever — the first message is now always sent.
+> **Verification:** `test/smoke_console_live.js` drives **real** claude processes end to end (answer · mid-turn steering delivered inside the turn · hold + edit + hand-over · interrupt in flight · a refused write · the live grant · the retry that really writes the file · a clean close): **27/27 for $0.112**. It stays out of `npm test` because it spends money. The measurement also caught the one design error worth naming: the CLI emits **nothing at all** until its first stdin line, so holding the first message until the session "looks ready" deadlocks forever — the first message is now always sent.
 
 ## Starting and Steering Sessions {#oturum-denetim}
 

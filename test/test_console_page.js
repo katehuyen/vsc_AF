@@ -277,27 +277,75 @@ const html = allHtml;
         jump().hidden === false && jump().textContent === '↓ 1 new line');
 }
 
-// ---------- a message typed mid-turn WAITS ----------
-// It used to be written into the conversation the moment it was typed, which
-// put it above the reply it was asked after and pushed the running turn up the
-// page. A terminal keeps it on the line until it is sent; so does this.
+// ---------- a message you HELD back is still yours ----------
+// Typing mid-turn now goes INTO the turn (measured: the CLI delivers it at the
+// turn's next step). Hold is the deliberate other choice — and a message that
+// has not been said yet has to be changeable, not just clearable.
 {
     afms.open('c-kinds');
     afms.selectAll('c-kinds');
     talk().scrollTop = talk().scrollHeight;
     push(data(CONVO.slice(), { status: 'working', queued: ['do this next', 'and then this'] }));
-    const q = els['c-queue'] ? els['c-queue']._html : '';
-    ok('what is waiting is shown, in order, above the composer',
-        /2 messages waiting/.test(q)
-        && q.indexOf('do this next') > 0 && q.indexOf('do this next') < q.indexOf('and then this'));
+    const q = () => (els['c-queue'] ? els['c-queue']._html : '');
+    ok('what is held is shown, in order, above the composer',
+        /2 messages held/.test(q())
+        && q().indexOf('do this next') > 0 && q().indexOf('do this next') < q().indexOf('and then this'));
     const convo = () => (els.talkinner ? els.talkinner._html : '');
     ok('…and is NOT in the conversation yet', !convo().includes('do this next'));
-    ok('…the row and the composer say how many are waiting',
-        /2 waiting/.test(allHtml()));
+    ok('…the row and the composer say how many are held', /2 held/.test(allHtml()));
+    ok('…and each one can be rewritten, sent now, or dropped — one by one',
+        /data-qedit="0"/.test(q()) && /data-qnow="1"/.test(q()) && /data-qdrop="1"/.test(q()));
+
+    // ✎ — back into the box, out of the queue: the terminal's "press up to edit"
+    posted.length = 0;
+    sandbox.document.querySelectorAll('[data-qedit]')[1]._fn({});
+    ok('✎ takes it out of the queue…',
+        posted.some(m => m.type === 'queueTake' && m.index === 1));
+    ok('…and puts its words back in the box, ready to be changed',
+        (els['c-text'].value || '').includes('and then this'));
+    els['c-text'].value = '';
+    posted.length = 0;
+    sandbox.document.querySelectorAll('[data-qnow]')[0]._fn({});
+    ok('⏩ stops holding it and says it now', posted.some(m => m.type === 'queueSend' && m.index === 0));
+    posted.length = 0;
+    sandbox.document.querySelectorAll('[data-qdrop]')[0]._fn({});
+    ok('⨯ drops it without saying it', posted.some(m => m.type === 'queueTake' && m.index === 0));
+
+    // ↑ in an empty box does what ✎ does, on the last one held
+    els['c-text'].value = '';
+    posted.length = 0;
+    els['c-text'].listeners.keydown({ key: 'ArrowUp', preventDefault() { } });
+    ok('↑ in an empty box recalls the last held message',
+        posted.some(m => m.type === 'queueTake' && m.index === 1)
+        && (els['c-text'].value || '').includes('and then this'));
+
+    // Hold itself: same box, other button
+    els['c-text'].value = 'wait for the end';
+    posted.length = 0;
+    els['c-hold'].listeners.click();
+    ok('Hold sends what you typed as held, not as speech',
+        posted.some(m => m.type === 'send' && m.hold === true && m.text === 'wait for the end'));
+    els['c-text'].value = 'say it into the turn';
+    posted.length = 0;
+    els['c-send'].listeners.click();
+    ok('…while Send says it into the running turn',
+        posted.some(m => m.type === 'send' && m.hold === false));
+    ok('…and the button says which of the two it is', /Send into turn/.test(els['c-send'].textContent));
+    els['c-text'].value = '';
 
     push(data(CONVO.slice(), { status: 'working', queued: [] }));
     ok('an emptied queue leaves no strip behind',
         (els['c-queue']._html || '') === '');
+}
+
+// ---------- what was said INTO a running turn says so ----------
+{
+    const steered = CONVO.slice();
+    steered.push({ id: 'st1', role: 'user', ts: Date.now(), text: 'no, the other way', steer: true });
+    push(data(steered, { status: 'working' }));
+    const convo = () => (els.talkinner ? els.talkinner._html : '');
+    ok('a steering message is marked, not shown as a plain new question',
+        /class="msg user steer"/.test(convo()) && /Said into the running turn/.test(convo()));
 }
 
 // ---------- "Talk to Agent" lands on the composer, with that agent chosen ----------
@@ -334,8 +382,8 @@ const html = allHtml;
     ok('…and nothing is calling for you', !/waiting for you/.test(list()));
 
     push(data(CONVO.slice(), { status: 'working', queued: ['later'] }));
-    ok('a queued message is still the agent\'s ball, and says so',
-        /class="srow p-agent/.test(list()) && /your message is queued/.test(list()));
+    ok('a held message is still the agent\'s ball, and says so',
+        /class="srow p-agent/.test(list()) && /a message is held/.test(list()));
 
     push(data(CONVO.slice(), { pendingPermission: { detail: 'needs Write' } }));
     ok('a refused tool is a heavier kind of your turn',
@@ -622,11 +670,37 @@ const html = allHtml;
     ok('…while everything that IS a filter is gone', lastQuery().query.text === ''
         && lastQuery().query.when === '');
 
+    // ‼️ Pinned or not has to be readable at a glance, not by tooltip: locked is
+    // the accent colour, unlocked has no colour at all.
+    ok('the lock is a coloured chip when it holds, and grey when it does not',
+        /id="c-rq-nlock"[^>]*>🔒</.test(panel()) && /class="rchip lock on"/.test(panel())
+        && /\.rchip\.lock\.on \{[^}]*charts-blue/.test(app()._html)
+        && /\.rchip\.lock \{[^}]*grayscale\(1\)/.test(app()._html));
+
     push(withResume({ resumeFiltered: true }));
     els['c-rq-nlock'].listeners.click();          // unpin it
     els['c-rq-clear'].listeners.click();
     ok('unpinned, it goes back to being part of the question and clears with it',
         state.afConsole.limitLocked === false && lastQuery().query.limit === 0);
+    push(withResume());
+    ok('…and unpinned it draws itself open and colourless',
+        /id="c-rq-nlock"[^>]*>🔓</.test(panel()) && /class="rchip lock"/.test(panel()));
+
+    // ‼️ The words you typed need their own way out. The header's ⌦ clears the
+    // WHOLE question; the box's ⨯ clears the part you retype.
+    push(withResume());
+    els['c-rq-text'].value = 'kalan';
+    els['c-rq-text'].listeners.input();
+    ok('the search box carries its own clear button', /id="c-rq-xtext"/.test(panel()));
+    ok('…shown only while there is something to clear',
+        els['c-rq-xtext'].hidden === false && state.afConsole.rq.text === 'kalan');
+    posted.length = 0;
+    els['c-rq-xtext'].listeners.click();
+    ok('…and clicking it empties the box and asks again',
+        state.afConsole.rq.text === '' && els['c-rq-text'].value === ''
+        && lastQuery() && lastQuery().query.text === '');
+    ok('…while the rest of the filter stays as it was',
+        els['c-rq-xtext'].hidden === true && state.afConsole.limitLocked === false);
 
     push(withResume());
     ok('…and with nothing set, the button is there but plainly dead',

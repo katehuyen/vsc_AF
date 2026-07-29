@@ -50,6 +50,8 @@ export interface ConsoleMessage {
     role: 'user' | 'agent' | 'tool' | 'result' | 'system' | 'error';
     ts: number;
     text?: string;
+    /** said INTO a running turn (see acceptUserText) rather than starting one */
+    steer?: boolean;
     tool?: ConsoleToolUse;
     /** tool result: did it fail? */
     isError?: boolean;
@@ -76,7 +78,8 @@ export interface ConsoleSessionState {
     permissionMode: string;
     status: ConsoleStatus;
     messages: ConsoleMessage[];
-    /** messages typed while a turn was running, sent in order afterwards */
+    /** messages you chose to HOLD back: they wait here, editable, and are handed
+     *  over in order when the running turn ends (see acceptUserText) */
     queued: string[];
     costUSD: number;
     turns: number;
@@ -474,7 +477,7 @@ export function carriedTotals(s: {
 }
 
 /**
- * Add a user turn: sent now, or queued when a turn is already in flight.
+ * Add a user turn — and, when one is already running, STEER it.
  *
  * `starting` counts as sendable, and that is not a detail — **the CLI emits
  * nothing at all until its first stdin line arrives** (measured: no
@@ -483,21 +486,42 @@ export function carriedTotals(s: {
  * that only the message can trigger. The pipe is open the moment the process
  * exists, so the first message goes straight out.
  *
- * **A queued message does not join the conversation yet.** It is waiting, not
- * said: writing it into the transcript the moment it was typed put it *above*
- * the reply it was actually asked after, and pushed the running turn up the
- * page as if the agent had already heard it. A terminal does not do that —
- * what you type while something runs sits on the line until it is sent. So the
- * text lives in `queued` (the composer shows it, and it can still be cleared)
- * and becomes a message when `shiftQueued` really hands it over.
+ * **‼️ A message typed mid-turn goes INTO that turn, not after it.** Measured
+ * against the real CLI (2026-07-29, haiku, tool-calling turn): a user line
+ * written to stdin six seconds into a running turn was delivered to the model
+ * at the turn's next step — the CLI carries it as its own `queued_command`
+ * attachment, exactly the mechanism the interactive TUI uses for what you type
+ * while it works. Holding it back until the turn ended was therefore a choice
+ * this side was making, not a limit of the channel, and it made the whole point
+ * of typing early ("stop, do it this way instead") impossible: by the time the
+ * message arrived the work it was meant to redirect was done.
+ *
+ * So the default is to send it straight through, and it joins the conversation
+ * marked `steer` — it really was said, into a turn that is still running.
+ *
+ * `hold` is the other half, and it is a CHOICE the composer offers rather than
+ * a rule: the text waits in `queued`, where it can still be edited, dropped or
+ * released by hand, and `shiftQueued` hands it over when the turn ends. That is
+ * for "I want to say this next", not for "stop what you are doing".
  */
 export function acceptUserText(
-    state: ConsoleSessionState, text: string, now: number
+    state: ConsoleSessionState, text: string, now: number, hold = false
 ): { state: ConsoleSessionState; send: boolean } {
     const t = text.trim();
     if (!t) { return { state, send: false }; }
     if (state.status === 'working') {
-        return { state: { ...state, lastTs: now, queued: [...state.queued, t] }, send: false };
+        if (hold) {
+            return { state: { ...state, lastTs: now, queued: [...state.queued, t] }, send: false };
+        }
+        // Into the running turn: the turn's own clock and totals are NOT reset,
+        // because this does not start a turn — it joins one.
+        return {
+            state: {
+                ...state, lastTs: now,
+                messages: [...state.messages, { id: nextId(), ts: now, role: 'user', text: t, steer: true }]
+            },
+            send: true
+        };
     }
     return {
         state: {
@@ -510,7 +534,7 @@ export function acceptUserText(
 }
 
 /**
- * Pull the next queued message once a turn finishes — and only NOW does it
+ * Pull the next held message once a turn finishes — and only NOW does it
  * become part of the conversation (see acceptUserText).
  */
 export function shiftQueued(
@@ -525,5 +549,38 @@ export function shiftQueued(
             messages: [...state.messages, { id: nextId(), ts: now, role: 'user', text: next }]
         },
         text: next
+    };
+}
+
+/**
+ * Change a held message before it is ever said — the terminal's own affordance
+ * ("Press up to edit queued messages"), which a list you can only *clear* does
+ * not have. An empty text drops the line; an out-of-range index changes
+ * nothing, so a stale click from a repainted panel is a no-op rather than an
+ * edit of the wrong message.
+ */
+export function editQueued(
+    state: ConsoleSessionState, index: number, text: string, now = Date.now()
+): { state: ConsoleSessionState; changed: boolean } {
+    if (!Number.isInteger(index) || index < 0 || index >= state.queued.length) {
+        return { state, changed: false };
+    }
+    const t = String(text ?? '').trim();
+    const queued = t
+        ? state.queued.map((q, i) => (i === index ? t : q))
+        : state.queued.filter((_, i) => i !== index);
+    if (t === state.queued[index]) { return { state, changed: false }; }
+    return { state: { ...state, queued, lastTs: now }, changed: true };
+}
+
+/** Take one held message out of the queue — to send it now, or to pull it back
+ *  into the composer for editing. Returns the text so the caller can do either. */
+export function takeQueued(
+    state: ConsoleSessionState, index: number, now = Date.now()
+): { state: ConsoleSessionState; text?: string } {
+    if (!Number.isInteger(index) || index < 0 || index >= state.queued.length) { return { state }; }
+    return {
+        state: { ...state, queued: state.queued.filter((_, i) => i !== index), lastTs: now },
+        text: state.queued[index]
     };
 }

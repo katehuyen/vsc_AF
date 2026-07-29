@@ -272,6 +272,7 @@ export class ConsolePanel {
     private async onMessage(msg: { type: string; [k: string]: unknown }): Promise<void> {
         const host = this.deps.host;
         const str = (k: string) => (typeof msg[k] === 'string' ? msg[k] as string : '');
+        const idx = (k: string) => (typeof msg[k] === 'number' ? Math.floor(msg[k] as number) : -1);
         switch (msg.type) {
             case 'refresh': this.refresh(); break;
             case 'select':
@@ -399,13 +400,24 @@ export class ConsolePanel {
                 break;
             }
             case 'send': {
-                const r = host.send(str('id'), str('text'));
+                // `hold` is the composer's Hold button: park it instead of
+                // saying it into the running turn (see acceptUserText).
+                const r = host.send(str('id'), str('text'), msg.hold === true);
                 if (!r) {
                     void vscode.window.showWarningMessage(
                         'Agent Farm: that session has ended — start a new one to keep talking.');
                 }
                 break;
             }
+            // A held message can still be changed, dropped or said now — the
+            // page already has its text, so pulling it back into the composer
+            // is a take here and a paste there.
+            case 'queueTake':
+                host.takeQueued(str('id'), idx('index'));
+                break;
+            case 'queueSend':
+                host.releaseQueued(str('id'), idx('index'));
+                break;
             case 'interrupt':
                 host.interrupt(str('id'));
                 break;

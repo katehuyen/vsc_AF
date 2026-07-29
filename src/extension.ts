@@ -2923,18 +2923,45 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'console.send',
-            describe: 'Say something in a hosted Console session. If a turn is already running the message is QUEUED and sent when that turn ends (nothing is dropped and nothing interrupts by surprise). args: id (console id from console.start), text',
+            describe: 'Say something in a hosted Console session. While a turn is running this goes INTO that turn — the CLI delivers it at the turn\'s next step, the same steering a terminal does — so it can still redirect work in progress. args: id (console id from console.start), text, hold? (default false — true parks it instead: it waits, editable via console.queue, and is handed over when the turn ends)',
             handler: (args) => {
                 const id = argStr(args, 'id');
-                const r = consoleHost.send(id, argStr(args, 'text'));
+                const r = consoleHost.send(id, argStr(args, 'text'), args.hold === true);
                 need(r, 'no such live console session (console.sessions lists them)');
                 ConsolePanel.refreshIfOpen();
-                return { id, queued: r!.queued };
+                return { id, held: r!.queued, deliveredInto: r!.queued ? null : 'the running turn' };
+            }
+        },
+        {
+            op: 'console.queue',
+            describe: 'The messages HELD back in a Console session (console.send with hold:true) — read them, or act on one before it is ever said. args: id, action? (list | edit | drop | send | clear, default list), index? (0-based, required for edit/drop/send), text? (the new wording, for edit). "send" stops holding it and says it into the running turn.',
+            handler: (args) => {
+                const id = argStr(args, 'id');
+                const s = consoleHost.get(id);
+                need(s, 'no such live console session (console.sessions lists them)');
+                const action = (optStr(args, 'action') || 'list').toLowerCase();
+                const index = typeof args.index === 'number' ? Math.floor(args.index) : -1;
+                const needsIndex = ['edit', 'drop', 'send'].indexOf(action) >= 0;
+                need(!needsIndex || (index >= 0 && index < s!.queued.length),
+                    `index is required for "${action}" and must be 0..${Math.max(0, s!.queued.length - 1)}`);
+                if (action === 'edit') {
+                    need(consoleHost.editQueued(id, index, argStr(args, 'text')), 'nothing changed');
+                } else if (action === 'drop') {
+                    consoleHost.takeQueued(id, index);
+                } else if (action === 'send') {
+                    need(consoleHost.releaseQueued(id, index), 'that message could not be sent');
+                } else if (action === 'clear') {
+                    consoleHost.clearQueue(id);
+                } else {
+                    need(action === 'list', `unknown action "${action}" — list | edit | drop | send | clear`);
+                }
+                ConsolePanel.refreshIfOpen();
+                return { id, action, held: consoleHost.get(id)?.queued ?? [] };
             }
         },
         {
             op: 'console.sessions',
-            describe: 'The Console sessions this window hosts: status, cost so far, turns, queued messages, permission mode and the last few messages. args: id? (one session, with more of its transcript), messages? (how many messages to include, default 0)',
+            describe: 'The Console sessions this window hosts: status, cost so far, turns, held messages (console.queue reads them), permission mode and the last few messages. args: id? (one session, with more of its transcript), messages? (how many messages to include, default 0)',
             handler: (args) => {
                 const want = optStr(args, 'id');
                 const take = typeof args.messages === 'number' ? Math.max(0, Math.floor(args.messages)) : 0;
@@ -2942,7 +2969,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return rows.map(s => ({
                     id: s.id, agent: s.agentName, sessionId: s.sessionId ?? null,
                     status: s.status, permissionMode: s.permissionMode,
-                    cost: s.costUSD, turns: s.turns, queued: s.queued.length,
+                    cost: s.costUSD, turns: s.turns, held: s.queued.length,
                     // the whole conversation's tokens — a resumed session
                     // carries what it spent before this window (CarriedTotals)
                     tokens: s.tokens,

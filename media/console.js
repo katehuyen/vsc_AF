@@ -211,6 +211,16 @@
         .rpanel input, .rpanel select { font-size:10px; padding:1px 3px; width:100%; min-width:0;
             border-radius:3px; border:1px solid var(--vscode-widget-border,#4443);
             background:var(--vscode-input-background); color:var(--vscode-input-foreground); }
+        /* The search box carries its own ⨯: a filter you can set with one hand
+           and can only unset by selecting the text and deleting it is half a
+           control. (The ⌦ in the header clears the WHOLE question — this one
+           clears the words, which is the part you retype.) */
+        .rtext { position:relative; display:flex; align-items:center; }
+        .rtext input { padding-right:15px !important; }
+        .rtext .rx { position:absolute; right:1px; top:50%; transform:translateY(-50%);
+            background:none; border:none; padding:0 2px; line-height:1; cursor:pointer;
+            font-size:11px; opacity:.5; color:var(--vscode-foreground); }
+        .rtext .rx:hover { opacity:1; }
         .rrow { display:flex; gap:4px; align-items:center; }
         .rrow > * { flex:1 1 0; min-width:0; }
         /* A chip is as wide as its word; the row's slack goes to the count box,
@@ -221,6 +231,17 @@
             border:1px solid var(--vscode-widget-border,#4444); }
         .rchip.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground);
             opacity:1; border-color:transparent; }
+        /* ‼️ A LOCK YOU HAVE TO SQUINT AT IS NOT A STATE. 🔒 and 🔓 differ by a
+           few pixels of shackle at 10px, and both were drawn the same weight —
+           so "is the count pinned?" could only be answered by opening the
+           tooltip. State is carried by COLOUR here, all of it on one side:
+           locked is the accent, at full saturation; unlocked has no colour at
+           all (grayscale + faded), which no theme can turn back into a signal. */
+        .rchip.lock { font-size:11px; line-height:1.35; filter:grayscale(1); opacity:.45; }
+        .rchip.lock.on { filter:none; opacity:1;
+            color:var(--vscode-foreground);
+            border-color:var(--vscode-charts-blue,#3794ff);
+            background:color-mix(in srgb, var(--vscode-charts-blue,#3794ff) 24%, transparent); }
         .rn { font-size:10px; display:flex; align-items:center; justify-content:flex-end; gap:3px;
             opacity:.85; white-space:nowrap; }
         /* the spinner arrows ate half the box at this size */
@@ -242,6 +263,10 @@
         .msg .body { flex:1; min-width:0; white-space:pre-wrap; word-break:break-word; }
         .msg.user .body { background:color-mix(in srgb, var(--vscode-textLink-foreground) 10%, transparent);
             border-radius:7px; padding:6px 9px; }
+        /* said INTO a running turn — it did not start one, and the reply above
+           it was not an answer to it */
+        .msg.user.steer .body { border-left:2px solid var(--vscode-charts-blue,#3794ff); }
+        .msg.user.steer .who::after { content:' ↯'; }
         .msg.tool .body { font-size:11px; opacity:.85; font-family:var(--vscode-editor-font-family, monospace); }
         .msg.err .body { color:var(--vscode-errorForeground); }
         .msg.sys .body { font-size:11px; opacity:.7; font-style:italic; }
@@ -263,14 +288,20 @@
         .crow { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-top:7px; }
         .crow select { font-size:11px; padding:2px 4px; }
         .crow .grow { flex:1; }
-        /* typed while a turn runs: waiting, not said (see queueHtml) */
+        /* HELD back on purpose: not said yet, and still yours to change
+           (see queueHtml) */
         .qwait:empty { display:none; }
         .qwait { margin:0 0 7px; padding:6px 9px; border-radius:7px;
             border:1px dashed var(--vscode-widget-border,#4444);
             background:color-mix(in srgb, var(--vscode-editorWarning-foreground,#cca700) 8%, transparent); }
         .qwait .qhead { font-size:10px; opacity:.75; margin-bottom:3px; }
-        .qwait .qline { font-size:11px; opacity:.9; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-        .qwait .qline::before { content:'· '; opacity:.6; }
+        .qwait .qline { font-size:11px; opacity:.9; display:flex; align-items:center; gap:4px; }
+        .qwait .qline .qtext { flex:1 1 auto; min-width:0;
+            overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .qwait .qline .qtext::before { content:'· '; opacity:.6; }
+        .qwait .qbtn { flex:none; background:none; border:none; cursor:pointer; padding:0 3px;
+            font-size:11px; line-height:1; opacity:.55; color:var(--vscode-foreground); }
+        .qwait .qbtn:hover { opacity:1; }
         .linkish { background:none; border:none; padding:0; font:inherit; cursor:pointer;
             color:var(--vscode-textLink-foreground); text-decoration:underline; }
         .qbadge { font-size:10px; padding:1px 7px; border-radius:8px;
@@ -361,7 +392,8 @@
      *   blocked  — it refused a tool and cannot go on until you decide. Same
      *              ball, heavier: nothing at all happens until you look.
      *   agent    — a turn is running. Transient, resolves itself.
-     *   sent     — you spoke while it was working; your words are queued.
+     *   held     — you wrote something and chose to hold it back; it goes when
+     *              the running turn ends, and until then it is still yours.
      *   opening  — the process is starting.
      *   new      — a session with nothing said yet. Not a nudge; you just made it.
      *   over     — ended or errored. Recedes.
@@ -384,7 +416,7 @@
         if (s.status === 'ended') { return { id: 'over', label: 'ended', cls: 'p-over' }; }
         if (s.pendingPermission) { return { id: 'blocked', label: 'needs permission', cls: 'p-blocked' }; }
         if (s.status === 'starting') { return { id: 'opening', label: 'starting…', cls: 'p-open' }; }
-        if ((s.queued || []).length) { return { id: 'sent', label: 'your message is queued', cls: 'p-agent' }; }
+        if ((s.queued || []).length) { return { id: 'held', label: 'a message is held', cls: 'p-agent' }; }
         if (s.status === 'working') { return { id: 'agent', label: 'working', cls: 'p-agent' }; }
         if (!s.turns) { return { id: 'new', label: 'nothing said yet', cls: '' }; }
         return { id: 'you', label: 'your turn', cls: 'p-you' };
@@ -427,7 +459,9 @@
 
     function messageHtml(m) {
         if (m.role === 'user') {
-            return `<div class="msg user"><span class="who">you</span><div class="body">${C.esc(m.text || '')}</div></div>`;
+            // ↯ — said INTO the turn above it, which was already running: it is
+            // not the question that reply was answering.
+            return `<div class="msg user${m.steer ? ' steer' : ''}"${m.steer ? ' title="Said into the running turn — the agent picks it up at its next step"' : ''}><span class="who">you</span><div class="body">${C.esc(m.text || '')}</div></div>`;
         }
         if (m.role === 'agent') {
             return `<div class="msg"><span class="who">agent</span><div class="body">${C.esc(m.text || '')}</div></div>`;
@@ -506,7 +540,7 @@
                     <span class="m" title="${C.esc(tokTip(s.tokens, s.cost))}">${tokBadge(s.tokens)}</span>
                 </div>
                 <div class="t2">${C.esc(s.title || '(no name yet)')}</div>
-                <div class="m"><span class="phase">${C.esc(p.label)}${waited ? ` · ${waited}` : ''}</span>${(s.queued || []).length ? ` · ${s.queued.length} waiting` : ''}${s.turns ? ` · ${s.turns} turns` : ''}${s.contextTokens ? ` · <span class="pair" title="Approximate context in the model window right now">ctx ${C.fmtTok(s.contextTokens)}</span>` : ''}</div>
+                <div class="m"><span class="phase">${C.esc(p.label)}${waited ? ` · ${waited}` : ''}</span>${(s.queued || []).length ? ` · ${s.queued.length} held` : ''}${s.turns ? ` · ${s.turns} turns` : ''}${s.contextTokens ? ` · <span class="pair" title="Approximate context in the model window right now">ctx ${C.fmtTok(s.contextTokens)}</span>` : ''}</div>
             </div>`;
         }).join('');
         // One line above the cards, only when something is actually waiting:
@@ -580,11 +614,14 @@
         const q = st.rq;
         const agents = (DATA.resumeAgents || []);
         const opt = (v, t, cur) => `<option value="${C.esc(v)}"${v === cur ? ' selected' : ''}>${C.esc(t)}</option>`;
-        const chip = (id, label, on, tip) =>
-            `<button class="rchip${on ? ' on' : ''}" id="${id}" title="${C.esc(tip)}">${label}</button>`;
+        const chip = (id, label, on, tip, cls) =>
+            `<button class="rchip${cls ? ' ' + cls : ''}${on ? ' on' : ''}" id="${id}" title="${C.esc(tip)}">${label}</button>`;
         return `<div class="rpanel">
-            <input type="text" id="c-rq-text" placeholder="name, agent, label or #id…"
-                   title="Matched against the session's name, its agent, its labels and its id — paste an id from any card or menu to land on that one session">
+            <div class="rtext">
+                <input type="text" id="c-rq-text" placeholder="name, agent, label or #id…"
+                       title="Matched against the session's name, its agent, its labels and its id — paste an id from any card or menu to land on that one session">
+                <button class="rx" id="c-rq-xtext" hidden title="Clear what you typed (the rest of the filter stays)">⨯</button>
+            </div>
             <div class="rrow">
                 <select id="c-rq-agent" title="Only this agent's sessions">
                     ${opt('', 'every agent', q.agent)}${agents.map(a => opt(a, a, q.agent)).join('')}
@@ -607,7 +644,8 @@
                 ${chip('c-rq-nlock', st.limitLocked ? '🔒' : '🔓', st.limitLocked,
                     st.limitLocked
                         ? 'How many to show is pinned: it survives "clear filter" and applies whether or not a filter is set. Click to unpin.'
-                        : 'How many to show is part of the filter and clears with it. Click to pin it.')}
+                        : 'How many to show is part of the filter and clears with it. Click to pin it.',
+                    'lock')}
             </div>
         </div>`;
     }
@@ -708,7 +746,7 @@
             : '';
         const lines = turnLines(s);
         return `<span class="spin">${glyph}</span> <b>${C.esc(doing)}</b>
-            <span class="wmeta">${secs}s${cost}${lines ? ` · ${lines} line${lines === 1 ? '' : 's'}` : ''}${q ? ` · ${q} waiting` : ''} · ⎋ Interrupt stops it</span>`;
+            <span class="wmeta">${secs}s${cost}${lines ? ` · ${lines} line${lines === 1 ? '' : 's'}` : ''}${q ? ` · ${q} held` : ''} · ⎋ Interrupt stops it</span>`;
     }
 
     /** The glyph has to turn on its own — a data push only arrives when the CLI
@@ -744,23 +782,33 @@
     function liveBitsHtml(s) {
         if (!s) { return ''; }
         const q = queuedOf(s).length;
-        return `${q ? `<span class="qbadge" title="Waiting for the current turn to finish">${q} waiting</span> <button class="secondary" id="c-clearq">clear</button>` : ''}
+        return `${q ? `<span class="qbadge" title="Held back — they go when this turn ends">${q} held</span> <button class="secondary" id="c-clearq">drop all</button>` : ''}
+            ${s.status === 'working' ? '<button class="secondary" id="c-hold" title="Hold it back instead of saying it into this turn: it waits below — editable — and goes when the turn ends">⏸ Hold</button>' : ''}
             ${s.status === 'working' ? '<button class="secondary" id="c-int" title="Stop the running turn — the session and its context stay">⎋ Interrupt</button>' : ''}`;
     }
 
     /**
-     * What you typed while a turn was running — waiting, not said.
+     * What you chose to HOLD back — not said yet, and still yours.
      *
-     * It used to go straight into the conversation, which put it above the
-     * reply it was asked after and shoved the running turn up the page. A
-     * terminal keeps it on the line until it is sent; so does this. It sits
-     * here, in order, until the turn ends and it is really handed over.
+     * Typing while a turn runs sends the message into that turn (the agent
+     * picks it up at its next step). Hold is the other choice, for "say this
+     * next, not now" — and a message that has not been said must be as
+     * changeable as one you have not typed yet, which is why every line here
+     * carries its own three verbs instead of one collective "clear":
+     *   ✎ back into the box, to rewrite it (↑ in an empty box does the same)
+     *   ⏩ never mind, say it into the running turn now
+     *   ⨯ drop it
      */
     function queueHtml(s) {
         const q = queuedOf(s);
         if (!q.length) { return ''; }
-        const one = t => `<div class="qline" title="${C.esc(t)}">${C.esc(t.length > 160 ? t.slice(0, 160) + '…' : t)}</div>`;
-        return `<div class="qhead">⏳ ${q.length} message${q.length === 1 ? '' : 's'} waiting — sent when this turn ends</div>${q.map(one).join('')}`;
+        const one = (t, i) => `<div class="qline">
+            <span class="qtext" title="${C.esc(t)}">${C.esc(t.length > 160 ? t.slice(0, 160) + '…' : t)}</span>
+            <button class="qbtn" data-qedit="${i}" title="Bring it back into the box to change it (↑ in an empty box does the same)">✎</button>
+            <button class="qbtn" data-qnow="${i}" title="Say it now, into the running turn">⏩</button>
+            <button class="qbtn" data-qdrop="${i}" title="Drop it — it is never said">⨯</button>
+        </div>`;
+        return `<div class="qhead">⏸ ${q.length} message${q.length === 1 ? '' : 's'} held — handed over when this turn ends</div>${q.map(one).join('')}`;
     }
 
     function statusHtml(s) {
@@ -926,6 +974,16 @@
             text.addEventListener('input', () => { st.draft = text.value; save(); });
             text.addEventListener('keydown', ev => {
                 if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); send(); }
+                // ↑ in an empty box pulls the last HELD message back to be
+                // rewritten — the terminal's own key for its own queue.
+                if (ev.key === 'ArrowUp' && !text.value) {
+                    const cur = sel();
+                    const q = queuedOf(cur);
+                    if (q.length) {
+                        ev.preventDefault();
+                        recallQueued(cur.id, q.length - 1, q[q.length - 1]);
+                    }
+                }
                 // Esc stops the running turn — the terminal's own key, and the
                 // working strip promises it. It does nothing when nothing runs,
                 // so it never eats an Escape you meant for something else.
@@ -951,7 +1009,7 @@
         }
         const byId = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
         byId('c-jump', 'click', jumpToEnd);
-        byId('c-send', 'click', send);
+        byId('c-send', 'click', () => send(false));
         // The line filter is the same multi-select the Search and Notices pages
         // use: null = everything, [] = nothing, any subset in between.
         if (s) {
@@ -1095,7 +1153,19 @@
     function wireResumePanel() {
         const on = (id, ev, fn) => byId(id, ev, fn);
         const el = id => document.getElementById(id);
-        on('c-rq-text', 'input', () => rqTyped(() => { st.rq.text = el('c-rq-text').value; }));
+        on('c-rq-text', 'input', () => rqTyped(() => {
+            st.rq.text = el('c-rq-text').value;
+            paintTextClear();
+        }));
+        on('c-rq-xtext', 'click', () => {
+            st.rq.text = '';
+            const box = el('c-rq-text');
+            if (box) { box.value = ''; box.focus(); }
+            paintTextClear();
+            // not structural: clearing the words must not rebuild the box you
+            // are standing in (see resumePanelHtml)
+            rqChanged(false);
+        });
         on('c-rq-agent', 'change', () => { st.rq.agent = el('c-rq-agent').value; rqChanged(false); });
         on('c-rq-when', 'change', () => {
             st.rq.when = el('c-rq-when').value;
@@ -1113,6 +1183,14 @@
         on('c-rq-nlock', 'click', () => { st.limitLocked = !st.limitLocked; rqChanged(true); });
     }
 
+    /** The ⨯ belongs to the box's CONTENT, and the content is never in the
+     *  markup — so its visibility is set here, imperatively, for the same
+     *  reason the values are (see resumePanelHtml). */
+    function paintTextClear() {
+        const x = document.getElementById('c-rq-xtext');
+        if (x) { x.hidden = !(st.rq.text || '').length; }
+    }
+
     /** Put the remembered values back into the boxes — never into the one you
      *  are typing in, which is the whole reason they are not in the markup. */
     function fillResumePanel(force) {
@@ -1127,6 +1205,7 @@
         set('c-rq-from', st.rq.from || '');
         set('c-rq-to', st.rq.to || '');
         set('c-rq-n', st.rq.limit ? String(st.rq.limit) : '');
+        paintTextClear();
     }
 
     /**
@@ -1213,16 +1292,40 @@
         if (slot('c-live', liveBitsHtml(s))) {
             const byId = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
             byId('c-int', 'click', () => vscode.postMessage({ type: 'interrupt', id: DATA.selected }));
+            byId('c-hold', 'click', () => send(true));
             byId('c-clearq', 'click', () => vscode.postMessage({ type: 'clearQueue', id: DATA.selected }));
         }
-        slot('c-queue', queueHtml(s));
+        if (slot('c-queue', queueHtml(s))) {
+            const q = queuedOf(s);
+            document.querySelectorAll('[data-qedit]').forEach(b =>
+                b.addEventListener('click', () => {
+                    const i = Number(b.dataset.qedit);
+                    recallQueued(DATA.selected, i, q[i]);
+                }));
+            document.querySelectorAll('[data-qnow]').forEach(b =>
+                b.addEventListener('click', () => vscode.postMessage({
+                    type: 'queueSend', id: DATA.selected, index: Number(b.dataset.qnow)
+                })));
+            document.querySelectorAll('[data-qdrop]').forEach(b =>
+                b.addEventListener('click', () => vscode.postMessage({
+                    type: 'queueTake', id: DATA.selected, index: Number(b.dataset.qdrop)
+                })));
+        }
         // deliberately NOT a slot: it repaints itself on a timer while the turn
         // runs, so its html is never what `written` last saw
         paintWorking();
         const sendBtn = document.getElementById('c-send');
         if (sendBtn && s) {
-            const label = s.status === 'working' ? 'Queue' : 'Send';
+            // It no longer waits for the turn to end, so it no longer says
+            // "Queue" — it goes into the turn that is running (Hold, next to
+            // it, is what waiting looks like now).
+            const working = s.status === 'working';
+            const label = working ? 'Send into turn' : 'Send';
             if (sendBtn.textContent !== label) { sendBtn.textContent = label; }
+            const tip = working
+                ? 'Says it into the running turn — the agent picks it up at its next step, the way a terminal does'
+                : '';
+            if (sendBtn.title !== tip) { sendBtn.title = tip; }
         }
 
         if (slot('c-status', statusHtml(s))) {
@@ -1240,13 +1343,26 @@
         }
     }
 
-    function send() {
+    /** Take a held message back into the box — it leaves the queue, so it can
+     *  only be said again on purpose. */
+    function recallQueued(id, index, textValue) {
+        const box = document.getElementById('c-text');
+        if (box) {
+            box.value = box.value ? `${textValue}\n${box.value}` : textValue;
+            st.draft = box.value;
+            save();
+            try { box.focus({ preventScroll: true }); } catch (e) { box.focus(); }
+        }
+        vscode.postMessage({ type: 'queueTake', id, index });
+    }
+
+    function send(hold) {
         const text = document.getElementById('c-text');
         const value = text ? text.value.trim() : '';
         if (!value) { return; }
         const cur = sel();
         if (cur && cur.status !== 'ended' && cur.status !== 'error') {
-            vscode.postMessage({ type: 'send', id: cur.id, text: value });
+            vscode.postMessage({ type: 'send', id: cur.id, text: value, hold: hold === true });
         } else {
             if (!st.agentId) {
                 // the picker is right there; say what is missing rather than

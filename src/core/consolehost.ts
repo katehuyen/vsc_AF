@@ -16,7 +16,7 @@
 import * as cp from 'child_process';
 import {
     acceptUserText, CarriedTotals, ConsoleMessage, ConsoleSessionState, controlLine,
-    hostArgs, newSessionState, reduceEvent, shiftQueued, userMessageLine
+    editQueued, hostArgs, newSessionState, reduceEvent, shiftQueued, takeQueued, userMessageLine
 } from './consoleproto';
 
 /**
@@ -216,15 +216,50 @@ export class ConsoleHost {
         try { h.child.stdin.write(line); return true; } catch { return false; }
     }
 
-    /** Send a user message — or queue it when a turn is already running. */
-    send(id: string, text: string): { queued: boolean } | undefined {
+    /**
+     * Say something. While a turn runs this goes INTO that turn (the CLI
+     * delivers it at the turn's next step — measured, see acceptUserText);
+     * `hold` instead parks it in the queue until the turn ends.
+     */
+    send(id: string, text: string, hold = false): { queued: boolean } | undefined {
         const h = this.sessions.get(id);
         if (!h || h.state.status === 'ended' || h.state.status === 'error') { return undefined; }
-        const r = acceptUserText(h.state, text, Date.now());
+        const r = acceptUserText(h.state, text, Date.now(), hold);
         h.state = r.state;
         if (r.send) { this.write(id, userMessageLine(text.trim())); }
         this.fire(id);
         return { queued: !r.send };
+    }
+
+    /** Change a held message before it is said. Empty text drops it. */
+    editQueued(id: string, index: number, text: string): boolean {
+        const h = this.sessions.get(id);
+        if (!h) { return false; }
+        const r = editQueued(h.state, index, text);
+        if (r.changed) { h.state = r.state; this.fire(id); }
+        return r.changed;
+    }
+
+    /**
+     * Take a held message out of the queue and return its text — the caller
+     * decides what happens to it (the panel puts it back in the composer to be
+     * edited; `releaseQueued` says it straight away).
+     */
+    takeQueued(id: string, index: number): string | undefined {
+        const h = this.sessions.get(id);
+        if (!h) { return undefined; }
+        const r = takeQueued(h.state, index);
+        if (r.text === undefined) { return undefined; }
+        h.state = r.state;
+        this.fire(id);
+        return r.text;
+    }
+
+    /** Stop holding it: say it now, into the running turn. */
+    releaseQueued(id: string, index: number): boolean {
+        const text = this.takeQueued(id, index);
+        if (text === undefined) { return false; }
+        return !!this.send(id, text);
     }
 
     /** Stop the running turn. The session survives — that is the whole point. */

@@ -19,8 +19,8 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 
 const {
     hostArgs, userMessageLine, controlLine, detectPermissionDenial, reduceEvent,
-    newSessionState, acceptUserText, shiftQueued, PERMISSION_GRANTS, resetIds,
-    carriedTotals
+    newSessionState, acceptUserText, shiftQueued, editQueued, takeQueued,
+    PERMISSION_GRANTS, resetIds, carriedTotals
 } = require(path.join(__dirname, '..', 'out', 'core', 'consoleproto.js'));
 
 const NOW = 1785164000000;
@@ -62,14 +62,27 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     ok('…and its first message is SENT, not queued (the CLI is silent until stdin)',
         first.send === true && first.state.queued.length === 0);
     ok('…which puts the session to work', first.state.status === 'working');
-    const second = acceptUserText(first.state, 'and this', NOW + 1);
-    ok('a message typed mid-turn IS queued', second.send === false && second.state.queued.length === 1);
-    // Waiting is not said. Writing it into the conversation the moment it was
-    // typed put it ABOVE the reply it was asked after and pushed the running
-    // turn up the page — a terminal keeps it on the line until it goes.
+    // ‼️ Measured against the real CLI: a line written to stdin mid-turn is
+    // delivered to the model at that turn's next step. So the default is to
+    // say it, not to sit on it until the turn is over.
+    const steer = acceptUserText(first.state, 'no, do it the other way', NOW + 1);
+    ok('a message typed mid-turn IS sent, into the running turn',
+        steer.send === true && steer.state.queued.length === 0);
+    ok('…and joins the conversation, marked as steering',
+        steer.state.messages[steer.state.messages.length - 1].steer === true);
+    ok('…without restarting the turn\'s own clock',
+        steer.state.turnStartedAt === first.state.turnStartedAt && steer.state.status === 'working');
+
+    const second = acceptUserText(first.state, 'and this', NOW + 1, true);
+    ok('holding it back is the OTHER choice, and it queues',
+        second.send === false && second.state.queued.length === 1);
+    // Held is not said: writing it into the conversation the moment it was
+    // typed would put it ABOVE the reply it was asked after.
     ok('…and does NOT join the conversation while it waits',
         second.state.messages.filter(m => m.role === 'user').length === 1);
     ok('empty input is ignored', acceptUserText(second.state, '   ', NOW).state === second.state);
+    ok('holding while nothing runs just says it',
+        acceptUserText({ ...first.state, status: 'idle' }, 'now', NOW + 2, true).send === true);
 
     const idle = { ...second.state, status: 'idle' };
     const shifted = shiftQueued(idle, NOW + 2);
@@ -81,10 +94,25 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     ok('…and marks the session working again', shifted.state.status === 'working');
     ok('nothing is released while a turn runs', shiftQueued(second.state).text === undefined);
     // order is the order you typed them in
-    const q2 = acceptUserText(acceptUserText(first.state, 'one', NOW + 1).state, 'two', NOW + 2);
+    const q2 = acceptUserText(acceptUserText(first.state, 'one', NOW + 1, true).state, 'two', NOW + 2, true);
     const r1 = shiftQueued({ ...q2.state, status: 'idle' }, NOW + 3);
     const r2 = shiftQueued({ ...r1.state, status: 'idle' }, NOW + 4);
     ok('a queue keeps its order', r1.text === 'one' && r2.text === 'two');
+
+    // ---------- a held message is still yours ----------
+    const held = q2.state;   // ['one', 'two']
+    ok('a held message can be rewritten before it is ever said',
+        editQueued(held, 0, 'ONE instead').state.queued.join('|') === 'ONE instead|two');
+    ok('…emptying it drops the line', editQueued(held, 1, '   ').state.queued.join('|') === 'one');
+    ok('…rewriting it to what it already says changes nothing',
+        editQueued(held, 0, 'one').changed === false);
+    ok('…and an index that is not there is a no-op, not the wrong message',
+        editQueued(held, 7, 'x').changed === false && editQueued(held, -1, 'x').changed === false);
+    const taken = takeQueued(held, 0);
+    ok('taking one out returns its words and leaves the rest',
+        taken.text === 'one' && taken.state.queued.join('|') === 'two');
+    ok('…and taking one that is not there returns nothing',
+        takeQueued(held, 9).text === undefined);
     ok('a turn records when it started, and what the meter read then',
         first.state.turnStartedAt === NOW && first.state.turnTokensAt === 0);
 }
@@ -592,6 +620,19 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         /controlLine\(requestId, 'set_model', \{ model: model\.trim\(\) \}\)/.test(host));
     const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
     ok('…and an agent can do it too, over the bridge', ext.includes("op: 'console.setModel'"));
+
+    // Everything the panel can do to a held message, an agent can do too
+    // (_REF/agentfarm-dev.md: the bridge is part of the feature, not a follow-up)
+    ok('holding, and acting on what is held, reach the bridge in the same commit',
+        ext.includes("op: 'console.queue'")
+        && /console\.send[\s\S]{0,900}hold\?/.test(ext)
+        && /consoleHost\.send\(id, argStr\(args, 'text'\), args\.hold === true\)/.test(ext));
+    ok('…and console.send no longer promises the old "sent when the turn ends"',
+        !/QUEUED and sent when that turn ends/.test(ext));
+    const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'consolePanel.ts'), 'utf8');
+    ok('the panel carries the same three verbs to the host',
+        /case 'queueTake'/.test(panel) && /case 'queueSend'/.test(panel)
+        && /host\.send\(str\('id'\), str\('text'\), msg\.hold === true\)/.test(panel));
 }
 
 // ---------- ‼️ a resumed session keeps what it spent ----------

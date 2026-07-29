@@ -243,7 +243,8 @@ Filodaki son olayların canlı akışı: kullanıcı komutları (prompt), araç 
 Yazma kutusunun altında **ajan · model · efor · izin modu** — hepsi launcher'ın sözlüğünden (`core/launch.ts`), yani eklentide tek bir sözlük var. `Ctrl+Enter` gönderir.
 
 - **⎋ Interrupt:** çalışan turu durdurur — CLI'ın kendi kontrol kanalı üzerinden. **Tur biter, oturum ve bağlamı kalır.**
-- **Kuyruk (3.31.1'de düzeltildi):** tur çalışırken yazdığın mesaj **bekler — konuşmaya girmez**. Yazma kutusunun üstünde, sırasıyla ve metniyle görünür; **gerçekten gönderildiği anda** konuşmanın parçası olur. Eskiden yazıldığı anda akışa giriyordu: sorulduğu cevabın *üstünde* duruyor ve çalışan turu yukarı itiyordu. Terminalde de böyledir — bir şey çalışırken yazdığın satır gönderilene kadar satırda durur. Kuyruk, çalışan tura dokunmadan temizlenebilir.
+- **‼️ Tur içinde yazmak o turu yönlendirir (3.39.0).** Ajan çalışırken yazdığın mesaj **çalışan turun içine** gider — CLI onu turun bir sonraki adımında modele teslim eder; terminalde çalışırken yazdıklarının teslim edildiği yolun aynısı. Böylece "hayır, şöyle yap" hâlâ yönlendirilecek bir iş varken varıyor. Satır konuşmaya **↯** işaretiyle girer, çünkü üstündeki turu o başlatmadı. **İki kez ölçüldü:** çıplak CLI'da (araç çağıran bir turun altıncı saniyesinde stdin'e yazılan mesaj, turun bir sonraki adımında modele ulaştı) ve Console'un kendi host'undan `smoke_console_live.js` içinde — orada kelime ancak turu **kapatan satırdan önce** düşerse sayılıyor.
+- **⏸ Hold** öteki seçenek, "bunu şimdi değil sırada söyle" için: mesaj kutunun üstünde bekler — **ve hâlâ senindir.** ✎ onu yeniden yazman için kompozitöre geri koyar (boş kutuda **↑** aynısını yapar, terminalin kendi tuşu), **⏩** beklemeyi bırakıp çalışan turun içine söyler, **⨯** atar. Bekletilenler tur bitince sırasıyla gider.
 - Her satırda oturumun kendi **maliyeti · tur sayısı · CLI'ın bağlam tahmini** durur.
 
 ### İzinler — dürüst cevap
@@ -282,7 +283,7 @@ Akan bir konuşma saniyede birkaç kez yeniden çizilir. Sayfa eskiden bunların
 
 Sekiz oturum, sekiz ayrı iş, ve birkaç dakikada bir sorduğun tek soru: **hangisi beni bekliyor?** Sol panel bunu artık uzaktan bakınca cevaplıyor.
 
-- **Her kart fazını aynı anda üç şekilde taşır** — renkli kenar, nokta ve **kelime** — böylece açık temada, renk körü bir okuyucuda ve iki metreden bakışta da çalışır. Durumlar "status" değil, **topu kim tutuyor**: *your turn* (cevapladı ve durdu) · *needs permission* (aynı top, daha ağır: sen karar verene kadar hiçbir şey olmaz) · *working* · *your message is queued* · *starting…* · *nothing said yet* · *ended*.
+- **Her kart fazını aynı anda üç şekilde taşır** — renkli kenar, nokta ve **kelime** — böylece açık temada, renk körü bir okuyucuda ve iki metreden bakışta da çalışır. Durumlar "status" değil, **topu kim tutuyor**: *your turn* (cevapladı ve durdu) · *needs permission* (aynı top, daha ağır: sen karar verene kadar hiçbir şey olmaz) · *working* · *a message is held* · *starting…* · *nothing said yet* · *ended*.
 - **Sakin tutan dilbilgisi:** **hareket yalnızca kendi kendine çözülen duruma** — çalışan noktanın nabzı atar (1,8 sn, sadece opaklık; *prefers-reduced-motion* ayarına uyar), çünkü gerçekten bir şey oluyor. **"Sıra sende" asla animasyon almaz**: kalıcı bir durumdur, kalıcı animasyon dırdırdır. Onun yerine **kontrast** alır: dolu yeşil kenar, hafif tint, kalın kelime — panelde doygun tek şey odur, bu yüzden anında bulunur. **Dürtme zamandır, animasyon değil**: *your turn · 41m* kendi kendine büyür. Biten oturumlar %55'e çekilir.
 - **Seçim bir halkadır, renk değil.** Seçili kart eskiden link-mavisi bir tint alıyordu ve bu, "çalışıyor" anlamındaki maviyle yarışıyordu — bir kartta iki mavi, bu sistemin ortadan kaldırmak için var olduğu belirsizliğin ta kendisi. **Rengi faz sahiplenir, çerçeveyi seçim.**
 - **Liste asla kendini yeniden sıralamaz** — imlecin altında zıplayan kart rahatsızlığın tanımıdır. Onun yerine kartların üstünde tek satır: **● 3 waiting for you · longest 41m**; tıklayınca en uzun bekleyene gider.
@@ -340,6 +341,8 @@ Ajan (yani klasörü) ve efor süreç ayağa kalktıktan sonra gerçekten sabitt
 
 Satır sayısı HANGİ oturumların görüneceğini seçmez, sadece kaçını görebileceğini — bu yüzden **clear filter**'ın onu sıfırlaması için hiçbir sebep yoktu. Kutunun yanındaki kilit onu sabitler: **varsayılan olarak açık**, ayarladığın sayı filtre olsa da olmasa da listenin uzunluğudur ve unutulmaz. Söndürdüğünde tekrar sorunun bir parçası olur ve gerisiyle birlikte temizlenir.
 
+**Ve hangi hâlde olduğunu tooltip'siz söylüyor (3.39.0).** 🔒 ile 🔓 10 pikselde birkaç piksel kilit dilinden ibaret; durum ancak üstüne gelince okunuyordu. Durumu artık **renk** taşıyor, hepsi tek tarafta: kilitliyken vurgu rengi, tam doygunlukta; açıkken hiç renk yok (gri tonlama + solgun) — bunu hiçbir tema tekrar sinyale çeviremez. Arama kutusunun da artık **kendi ⨯'i** var: başlıktaki ⌦ bütün soruyu temizler, ⨯ ise yalnızca yeniden yazdığın kelimeleri, ve yalnızca temizlenecek bir şey varken görünür.
+
 ### Bir oturum kimliğiyle bulunur (3.38.0)
 
 `#407c78cb`, diğer bütün yüzeylerin gösterdiği tutamaktır — bir kart, bir menü, bir log satırı — ve devam filtresinin aramadığı tek şeydi. Metin kutusuna herhangi bir parçasını yapıştır, o oturuma in. **Copy Session ID** her kartın sağ tık menüsünde; zaten onu oradan alıyorsun.
@@ -387,9 +390,9 @@ Bunların hepsi Console'u o ajan **kompozitörde seçili** olarak açar; **sen b
 - **Yeni oturum:** ajan · model · efor · izin modu seçicileri + metin → **Start session**.
 - **Çalışan oturum:** ajan/model/efor artık **gösterilmez** (süreç başlarken kararlaştırıldılar, değiştirilemezler; ölü kutu koymanın anlamı yok). Yerlerinde düz bir durum satırı (`dev · haiku`) ve **gerçekten canlı çalışan tek kontrol: izin modu**.
 
-**Köprü:** `console.start` · `console.send` (tur çalışıyorsa kuyruğa alır) · `console.sessions` · `console.interrupt` · `console.permissionMode` (`retry` ile) · `console.close`.
+**Köprü:** `console.start` · `console.send` (tur çalışıyorsa **turun içine** gider; `hold:true` bekletir) · `console.queue` (bekletilenleri oku · `edit` · `drop` · `send` · `clear`) · `console.sessions` · `console.interrupt` · `console.setModel` · `console.permissionMode` (`retry` ile) · `console.close`.
 
-> **Doğrulama:** `test/smoke_console_live.js` **gerçek** claude süreçleriyle uçtan uca koşar (cevap · tur-içi kuyruk · uçuşta kesme · reddedilen yazma · canlı izin verme · tekrar deneyip dosyayı gerçekten yazma · temiz kapanış): **18/18, $0,076**. Para harcadığı için `npm test`'in dışında tutulur. Ölçüm bir tasarım hatasını da yakaladı: **CLI ilk stdin satırını alana kadar hiçbir şey yayınlamıyor**, dolayısıyla ilk mesajı "oturum hazır görünene kadar" kuyrukta tutmak sonsuza kadar kilitleniyordu — ilk mesaj artık daima gönderilir.
+> **Doğrulama:** `test/smoke_console_live.js` **gerçek** claude süreçleriyle uçtan uca koşar (cevap · tur içine yönlendirme · bekletme + düzenleme + teslim · uçuşta kesme · reddedilen yazma · canlı izin verme · tekrar deneyip dosyayı gerçekten yazma · temiz kapanış): **27/27, $0,112**. Para harcadığı için `npm test`'in dışında tutulur. Ölçüm bir tasarım hatasını da yakaladı: **CLI ilk stdin satırını alana kadar hiçbir şey yayınlamıyor**, dolayısıyla ilk mesajı "oturum hazır görünene kadar" kuyrukta tutmak sonsuza kadar kilitleniyordu — ilk mesaj artık daima gönderilir.
 
 ## Oturum Başlatma ve Denetim {#oturum-denetim}
 
