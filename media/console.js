@@ -31,7 +31,18 @@
         // which kinds of line the conversation shows; null = everything
         kinds: null,
         // is the miniature filter open, and what is it asking for
-        showRFilter: false, rq: EMPTY_RQ()
+        showRFilter: false, rq: EMPTY_RQ(),
+        /**
+         * Is "show N" pinned?
+         *
+         * How many rows to list is not a filter — it does not choose WHICH
+         * sessions, only how many of them you can see — so clearing the filter
+         * has no business resetting it. Pinned (the default), the number you
+         * set is simply how long the list is, filter or no filter, until you
+         * unpin it. Unpinned, it goes back to being part of the question and
+         * clears with the rest.
+         */
+        limitLocked: true
     }, saved.afConsole);
     st.rq = Object.assign(EMPTY_RQ(), st.rq);
     const save = () => {
@@ -572,8 +583,8 @@
         const chip = (id, label, on, tip) =>
             `<button class="rchip${on ? ' on' : ''}" id="${id}" title="${C.esc(tip)}">${label}</button>`;
         return `<div class="rpanel">
-            <input type="text" id="c-rq-text" placeholder="name, agent or label…"
-                   title="Matched against the session's name, its agent and its labels">
+            <input type="text" id="c-rq-text" placeholder="name, agent, label or #id…"
+                   title="Matched against the session's name, its agent, its labels and its id — paste an id from any card or menu to land on that one session">
             <div class="rrow">
                 <select id="c-rq-agent" title="Only this agent's sessions">
                     ${opt('', 'every agent', q.agent)}${agents.map(a => opt(a, a, q.agent)).join('')}
@@ -593,6 +604,10 @@
                     <input type="number" id="c-rq-n" min="1" max="${Number(DATA.resumeMax) || 200}"
                            placeholder="${Number(DATA.resumeDefaultN) || 15}">
                 </label>
+                ${chip('c-rq-nlock', st.limitLocked ? '🔒' : '🔓', st.limitLocked,
+                    st.limitLocked
+                        ? 'How many to show is pinned: it survives "clear filter" and applies whether or not a filter is set. Click to unpin.'
+                        : 'How many to show is part of the filter and clears with it. Click to pin it.')}
             </div>
         </div>`;
     }
@@ -685,8 +700,11 @@
         // turn's real cost when the turn ends, so the money here is priced off
         // the tokens seen so far and carries a "~" until then — the line that
         // closes the turn, two centimetres up, is the CLI's own figure.
+        // ‼️ It says "this turn" out loud. The line under the box says "this
+        // session" and the two are three centimetres apart; unlabelled, the
+        // smaller number reads as a second opinion about the same thing.
         const cost = s.turnTokens || s.turnCost
-            ? ` · <span title="What this turn has spent so far. The money is an estimate at the usual rates — the turn's closing line carries the CLI's own figure.">~${spend(s.turnCost, s.turnTokens)}</span>`
+            ? ` · <span title="What THIS TURN has spent so far — the line under the box is the whole session. The money is an estimate at the usual rates; the turn's closing line carries the CLI's own figure.">~${spend(s.turnCost, s.turnTokens)} this turn</span>`
             : '';
         const lines = turnLines(s);
         return `<span class="spin">${glyph}</span> <b>${C.esc(doing)}</b>
@@ -845,10 +863,13 @@
         // greyed out was just a row of dead boxes. What CAN change mid-session
         // is the permission mode, so that one stays a live control.
         const controls = s
-            ? `<span class="fixed" title="Decided when this session started — a running session cannot change them">
-                    ${C.esc(s.agentName)}${s.model ? ' · ' + C.esc(String(s.model).replace(/^claude-/, '')) : ''}${s.effort ? ' · ' + C.esc(s.effort) + ' effort' : ''}
+            ? `<span class="fixed" title="The agent decided this session's folder, and the effort it runs at, when it started">
+                    ${C.esc(s.agentName)}${s.effort ? ' · ' + C.esc(s.effort) + ' effort' : ''}
                 </span>
-                <label class="permlbl" title="The one thing that CAN change mid-session — applied live">permissions
+                <label class="permlbl" title="Switches the model mid-conversation — the same thing /model does in a terminal. It applies from the next turn.">model
+                    <select id="c-model-live">${opts(DATA.models, s.model)}</select>
+                </label>
+                <label class="permlbl" title="What it may do without asking — applied live">permissions
                     <select id="c-perm">${opts(DATA.permissions, s.permissionMode)}</select>
                 </label>
                 ${window.AFFilter.multi({
@@ -951,6 +972,14 @@
             pick('c-model', 'model');
             pick('c-effort', 'effort');
         }
+        // Mid-session model switch. The picker is NOT set back from `s.model`
+        // on a repaint until the CLI has agreed to it (see pendingModel) —
+        // showing the new name before then would be a promise about the next
+        // turn that the panel is in no position to make.
+        byId('c-model-live', 'change', e => {
+            const cur = sel();
+            if (cur) { vscode.postMessage({ type: 'setModel', id: cur.id, model: e.target.value }); }
+        });
         byId('c-perm', 'change', e => {
             const mode = e.target.value;
             const cur = sel();
@@ -1029,11 +1058,7 @@
                 st.showRFilter = !st.showRFilter;
                 rqChanged(true);
             });
-            byId('c-rq-clear', 'click', () => {
-                st.rq = EMPTY_RQ();
-                rqChanged(true);
-                fillResumePanel(true);
-            });
+            byId('c-rq-clear', 'click', clearResumeFilter);
         }
 
         if (slot('c-rpanel', resumePanelHtml())) { wireResumePanel(); }
@@ -1046,6 +1071,16 @@
                     model: st.model, effort: st.effort, permissionMode: st.permissionMode
                 })));
         }
+    }
+
+    /** Back to the default list — keeping the row count when it is pinned,
+     *  because "how many" was never part of the question (see st.limitLocked). */
+    function clearResumeFilter() {
+        const keep = st.limitLocked ? st.rq.limit : 0;
+        st.rq = EMPTY_RQ();
+        st.rq.limit = keep;
+        rqChanged(true);
+        fillResumePanel(true);
     }
 
     /** Typing is debounced: every keystroke otherwise asks the host to walk the
@@ -1075,6 +1110,7 @@
             const n = parseInt(el('c-rq-n').value, 10);
             st.rq.limit = isFinite(n) && n > 0 ? n : 0;
         }));
+        on('c-rq-nlock', 'click', () => { st.limitLocked = !st.limitLocked; rqChanged(true); });
     }
 
     /** Put the remembered values back into the boxes — never into the one you

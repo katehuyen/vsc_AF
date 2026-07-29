@@ -128,7 +128,7 @@ Filonun genel panosu. `Agent Farm: Open Dashboard` komutuyla veya durum çubuğu
 - **KPI kartları**: aktif ajan sayısı, bugünkü maliyet, seçili aralık maliyeti, oturum sayısı, 5 saatlik pencere, toplam bulgu sayısı.
 - **Farm Status kartı (2.39.0):** KPI'ların hemen altında, alt sistem başına dürüst bir aktivasyon satırı — **yeşil nokta = canlı kullanımda, mavi = kurulu ama boşta, gri = hiç kullanılmamış.** Dokuz satır: canlı izleme, görevler/zamanlama, tetikleyiciler, iş akışları, medya hattı, harici CLI'lar, varlık alımı (ingest), zeki gözetim, sır kasası. Uyuyan her satırın yanında **tek tık uyandırma** düğmesi vardır (örnek kurulum, anahtar ekleme, ilgili ayar/kılavuz). Bir şey uyuyorsa kart açık gelir; her şey canlıysa tek satır özete katlanır. Harici CLI satırı adaptörlerin fail-soft doğasını da hatırlatır: profil var ama hiç oturum görünmüyorsa bu bir format kayması işareti olabilir.
 - **Plan usage kartı (3.23.0):** **Farm status kutusunun sağında, aynı hizada** — iki kutu birbirini tamamlayan iki soruyu cevaplar: "çiftlik ne yapabilir" ve "bunu yapacak abonelik payı ne kadar kaldı". Sayfadaki tek **yerel transkriptten türetilmemiş** rakam budur: **Anthropic'in kendi bildirdiği gerçek kota durumu**, Claude Code içindeki `/usage`'ın bastığı sayıların aynısı — **Current session (5s)** ve **Current week (all models)**, planında varsa model bazlı haftalık çubuklar; her biri yüzdesi, çubuğu (%75'te sarı, %90'da kırmızı) ve sıfırlanma zamanıyla — hem saat hem geri sayım olarak ("Resets 21:40 · in 2h 20m"). Kart **kendini tazeler** (`agentFarm.planUsageRefreshMinutes`, varsayılan 5 dakika; 0 = yalnız elle) ve **köşesindeki ⟳** istediğin an yeniden okur. Kart, Claude Code'un bu makinede zaten sakladığı OAuth oturumunu **okur, asla yazmaz**: süresi dolmuş token sessizce yenilenmez — CLI'ın kendi kimlik dosyasıyla yarışmak yerine dürüstçe "bir Claude Code oturumu başlat" der. Bu tür bir giriş yoksa (API anahtarı, gateway, macOS Keychain), ağ yoksa ya da uç nokta kotalıysa yanlış bir sayı yerine tek satırlık gerekçesini basar. Köprü: **`usage.plan`**.
-- **Daily cost by agent**: ajan bazında yığılmış maliyet grafiği. Aralık seçici (2.13.0 ile genişledi): **7 / 14 / 30 / 90 / 180 / 365 gün**. 120 günü aşan aralıklarda çubuklar okunur kalsın diye günlükler otomatik **haftalık gruplanır** (başlıkta "weekly buckets" notu). Tüm günlük veri zaten oturum kayıtlarından geldiği için 1 yıllık görünüm ek yük getirmez.
+- **Daily cost by agent**: ajan bazında yığılmış maliyet grafiği. Aralık seçici (2.13.0 ile genişledi, **3.38.0 ile sorulabilir hâle geldi**): ilk hafta **gün gün — 1 2 3 4 5 6 7** — sonra **14 / 30 / 90 / 180 / 365 gün**, sonra iki tarih için **⇤⇥**. Adımlar 7'den başlıyordu, yani *"dün ve bugün"* bu sayfaya sorulamayan bir soruydu, *"temmuzdaki o hafta"* da öyle; özel aralık zaten baktığın açıklıkla açılıyor, ters aralığı reddediyor ve kartta kendi adını söylüyor (`Cost · 2026-07-10 → 2026-07-16`). Bütün yollar aynı gün-anahtarı listesinde bitiyor; KPI kartları, grafik ve ajan başına sütunlar topladıkları günlük kovalar kadar doğru kalıyor. 120 günü aşan aralıklarda çubuklar okunur kalsın diye günlükler otomatik **haftalık gruplanır** (başlıkta "weekly buckets" notu). Tüm günlük veri zaten oturum kayıtlarından geldiği için 1 yıllık görünüm ek yük getirmez.
 - **Cost by model**: hangi modele ne kadar harcandığını gösteren halka grafik.
 - **Token types**: input / output / cache write / cache read dağılımı. Cache read oranın yüksekse prompt cache verimli çalışıyor demektir — bu iyidir.
 - **Activity heatmap**: haftanın günü × saat bazında mesaj yoğunluğu. Çalışma ritmini gösterir.
@@ -311,6 +311,8 @@ Sol paneldeki kart **bir oturumdur**, o hâlde **sağ tıklanır**: Rename · Re
 
 **Menü gizlemez, soluklaştırır.** *Remove from list* baştan orada, soluk hâlde: bitirmenin **ardından** gelen adım odur, ve ancak oturum bitince beliren bir madde hem hiçbir şey öğretmez hem de menünün şeklini imlecin altında değiştirir. Böylece sıra, ihtiyaç duymadan önce görünür — oturum bitince *End session* solar, *Interrupt turn* yalnızca bir tur çalışırken yanar. Durumu kartın kendisi taşır (`data-vscode-context` → `package.json`'daki `enablement` ifadeleri); komutlar başka bir yoldan çağrılırsa yine kibarca reddeder, çünkü `enablement` bir **menü maddesini** devre dışı bırakır, komutu değil.
 
+**Menü daha uzağa uzanıyor (3.38.0).** Sağ tık menüsünün bütün amacı başka hiçbir yere gitmek zorunda kalmamaktır; bu yüzden Console kartları ayrıca **📌 Pin · Label… · Copy Session ID · ⌨ Terminal** taşıyor, **Live Timeline kulvar satırı ya da live-sessions kartı** — ki o da bir oturumdur — zaten sahip olduğu menünün üstüne **📌 Pin · Label… · Copy Session ID · Resume in Console** ekliyor. Herhangi birinden pinlemek artık **açık olan her yüzeyi** yeniden çiziyor: eskiden yalnızca ağaçlara haber veriliyordu, dolayısıyla bir sayfada yıldız ancak başka bir şey tesadüfen yeniden çizimi tetiklediğinde beliriyordu — bu da *"bazen çalışıyor"* diye okunur.
+
 ### İki rakam satırı: kutunun üstünde tur, altında oturum (3.35.0)
 
 İki şerit de **ctx** yazıyordu — aynı oturum-geneli rakam, üç santim arayla iki kez — çalışan tur hakkında gerçekten sorduğun sorunun ise sayfada hiçbir cevabı yoktu.
@@ -319,6 +321,28 @@ Sol paneldeki kart **bir oturumdur**, o hâlde **sağ tıklanır**: Rename · Re
 - **Kutunun altında, oturumun tamamı:** `session 407c78cb · ~24.1k ctx · $0.12 (48.2k tokens) this session · 3 turns`. Context buraya aittir: pencerenin **şu an tuttuğu** şeydir, bir turun yaptığı değil.
 - **Maliyet, onu satın alan token'lar olmadan asla yazılmaz** — sayfanın her yerinde tek sıra: önce para, parantez içinde token. Haiku'nun `$0.03`'ü ile opus'un `$0.03`'ü aynı olay değildir.
 - **Model ve efor, diğer başlangıç kararlarının yanında:** kompozitörün altındaki sabit satır artık `developer · opus-5 · high effort` diyor.
+
+### ‼️ Devam ettirilen oturum ne harcadığını hatırlıyor (3.38.0)
+
+Barındırılan süreç oturumun kendisi değildir — **bu pencerenin o oturumdaki sırasıdır**. Sıfırdan başlayınca, devam ettirme, kutunun altındaki satırı konuşmanın değil sürecin anlatıcısı yapıyordu: iki yüz tur geçmişi olan bir konuşma için `$0.0000 · 0 tokens · 0 turns this session`. Ve dönüşteki ilk turda çalışan turun token'ını **iki kez** yazıyordu — kutunun üstünde TUR, altında OTURUM olarak — üç santim arayla büyüyen aynı rakam.
+
+Toplamlar artık transkriptle birlikte geri geliyor: maliyet, token, tur ve context, devam listesinin zaten okuduğu aynı index satırından, devam ettirmenin **her kapısında** (Console'un kendi listesi, *Resume in Console*, bir ajanın `console.start`'ı). Tur yine eskiden olduğu gibi bir **fark**. Kutunun üstündeki şerit de hangisi olduğunu artık açıkça söylüyor: altta `$0.12 (48.2k tokens) **this session**` varken üstte `~$0.031 (4.2k tokens) **this turn**`.
+
+### Model konuşmanın ortasında değişir (3.38.0)
+
+Terminalde `/model` oturumun ortasında modeli değiştirir ve bir sonraki tur yenisiyle cevap verir. Panel ise çalışan bir oturumun modeli için "başlarken karar verildi" diyordu — bu hiçbir zaman yapısal bir sınır değildi, sadece kimsenin bakmadığı bir şeydi. **`set_model`, CLI'ın gerçekten işlediği bir kontrol isteğidir** (kurulu ikili üzerinde doğrulandı: CLI'ın kendi işlenen alt-tür kümesinde var, `model`'in string olduğunu doğruluyor ve success/error cevabı veriyor).
+
+Bu yüzden kompozitör onu izin kipinin yanında sunuyor, `console.setModel` de ajanlar için köprüye koyuyor. Oturum, context'i ve transkripti el değmeden kalır; değişiklik **bir sonraki turdan itibaren** geçerlidir ve **CLI kabul edene kadar beklemededir** — `set_model`'in success cevabı boş gelir, yani istenen modele geri götüren tek bağ istek kimliğidir; cevap gelmeden yeni adı göstermek panelin tutamayacağı bir söz olurdu. Reddedilirse hata olarak söylenir ve model olduğu gibi kalır.
+
+Ajan (yani klasörü) ve efor süreç ayağa kalktıktan sonra gerçekten sabittir; onlar da hep oldukları düz durum satırı olarak duruyor.
+
+### 🔒 "Kaç tane gösterileceği" bir filtre değildir (3.38.0)
+
+Satır sayısı HANGİ oturumların görüneceğini seçmez, sadece kaçını görebileceğini — bu yüzden **clear filter**'ın onu sıfırlaması için hiçbir sebep yoktu. Kutunun yanındaki kilit onu sabitler: **varsayılan olarak açık**, ayarladığın sayı filtre olsa da olmasa da listenin uzunluğudur ve unutulmaz. Söndürdüğünde tekrar sorunun bir parçası olur ve gerisiyle birlikte temizlenir.
+
+### Bir oturum kimliğiyle bulunur (3.38.0)
+
+`#407c78cb`, diğer bütün yüzeylerin gösterdiği tutamaktır — bir kart, bir menü, bir log satırı — ve devam filtresinin aramadığı tek şeydi. Metin kutusuna herhangi bir parçasını yapıştır, o oturuma in. **Copy Session ID** her kartın sağ tık menüsünde; zaten onu oradan alıyorsun.
 
 ### ‼️ Kendisini okuyan pencereden uzun yaşayan oturum (3.37.0)
 

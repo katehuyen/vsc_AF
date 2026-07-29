@@ -93,6 +93,10 @@ const sandbox = {
     // the working strip turns its glyph on a timer; the test drives it by hand
     setInterval: (fn) => { timers.push(fn); return timers.length; },
     clearInterval: (h) => { timers[h - 1] = null; },
+    // typing into the filter is debounced; here it lands at once, so a test
+    // reads the query the keystroke produced without waiting on a clock
+    setTimeout: (fn) => { fn(); return 0; },
+    clearTimeout: () => { },
     console
 };
 const timers = [];
@@ -457,6 +461,12 @@ const html = allHtml;
         status: 'working', turnStartedAt: Date.now() - 41000, turnTokens: 4200, turnCost: 0.031
     }));
     ok('the running turn says what IT has spent', /~\$0\.031 \(4200t tokens\)/.test(working()));
+    // ‼️ …and says WHICH it is. Two numbers three centimetres apart, one
+    // labelled "this session" and the other labelled nothing, read as one
+    // figure disagreeing with itself.
+    ok('…named as the turn\'s, next to a line that names itself the session\'s',
+        /4200t tokens\) this turn/.test(working())
+        && / this session/.test(status()));
     ok('…marked as the estimate it is until the turn closes', /estimate/.test(working()));
     // everything since your own last message: agent, three tool lines, the
     // turn's own result line, and the one that just streamed in
@@ -474,11 +484,13 @@ const html = allHtml;
     push(data(CONVO.slice(), { status: 'working', turnStartedAt: Date.now(), turnTokens: 0, turnCost: 0 }));
     ok('a turn with nothing spent yet does not write "$0"', !/\$0/.test(working()));
 
-    // model and effort belong to the session, and are stated once, where the
-    // things that were decided at launch already live
+    // The agent's folder and the effort really are fixed once the process is
+    // up; the model is not — it is a live picker (see the setModel contract).
     push(data(CONVO.slice()));
-    ok('the composer says which model AND which effort the session runs at',
-        /opus-5/.test(allHtml()) && /high effort/.test(allHtml()));
+    ok('the composer states what the session is stuck with — its agent and effort',
+        /developer/.test(allHtml()) && /high effort/.test(allHtml()));
+    ok('…and offers the model as something you can still change',
+        /id="c-model-live"/.test(allHtml()));
 }
 
 // ---------- the card hands its state to the right-click menu ----------
@@ -599,6 +611,23 @@ const html = allHtml;
         /id="c-rq-clear"/.test(head()) && /class="secondary rfilter rclear on"/.test(head()));
     ok('…and the header says, in a word, that you are seeing a narrowed list',
         /class="rfiltered"[^>]*>filtered</.test(head()));
+    // ‼️ "How many" is not a filter — it chooses how much you can see, not
+    // WHICH sessions — so clearing the filter has no business resetting it.
+    push(withResume({ resumeFiltered: true }));
+    els['c-rq-n'].value = '40';
+    els['c-rq-n'].listeners.input();
+    ok('the row count is pinned by default', state.afConsole.limitLocked === true);
+    els['c-rq-clear'].listeners.click();
+    ok('…so clearing the filter keeps it', lastQuery().query.limit === 40);
+    ok('…while everything that IS a filter is gone', lastQuery().query.text === ''
+        && lastQuery().query.when === '');
+
+    push(withResume({ resumeFiltered: true }));
+    els['c-rq-nlock'].listeners.click();          // unpin it
+    els['c-rq-clear'].listeners.click();
+    ok('unpinned, it goes back to being part of the question and clears with it',
+        state.afConsole.limitLocked === false && lastQuery().query.limit === 0);
+
     push(withResume());
     ok('…and with nothing set, the button is there but plainly dead',
         / disabled/.test(head()) && !/rclear on/.test(head()));

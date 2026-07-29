@@ -18,7 +18,7 @@
 /** What the panel asks for. Every field is optional; an empty query is the
  *  default list, unchanged — a filter you did not set never narrows anything. */
 export interface ResumeQuery {
-    /** matched against the session's name, its agent and its labels */
+    /** matched against the session's name, its agent, its labels and its ID */
     text?: string;
     /** exactly one agent's sessions; '' = every agent */
     agent?: string;
@@ -41,6 +41,13 @@ export interface ResumeCandidate {
     agentName?: string;
     tags?: string[];
     pinned?: boolean;
+    /**
+     * The session's own id. Searchable: it is the handle every other surface
+     * shows (`(#407c78cb)` on a card, in a menu, in a log line), so somebody
+     * who has it in front of them can paste it here and land on that session
+     * instead of scrolling for a name they may not remember.
+     */
+    sessionId?: string;
     /** when the session was last touched */
     ts: number;
     origin?: 'user' | 'auto';
@@ -113,7 +120,7 @@ export function filterResumable<T extends ResumeCandidate>(
         if (agent && (r.agentName ?? '') !== agent) { return false; }
         if (r.ts < from || r.ts >= to) { return false; }
         if (text) {
-            const hay = `${r.title ?? ''} ${r.agentName ?? ''} ${(r.tags ?? []).join(' ')}`.toLowerCase();
+            const hay = `${r.title ?? ''} ${r.agentName ?? ''} ${(r.tags ?? []).join(' ')} ${r.sessionId ?? ''}`.toLowerCase();
             if (hay.indexOf(text) < 0) { return false; }
         }
         return true;

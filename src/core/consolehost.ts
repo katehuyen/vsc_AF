@@ -15,8 +15,8 @@
 
 import * as cp from 'child_process';
 import {
-    acceptUserText, ConsoleMessage, ConsoleSessionState, controlLine, hostArgs,
-    newSessionState, reduceEvent, shiftQueued, userMessageLine
+    acceptUserText, CarriedTotals, ConsoleMessage, ConsoleSessionState, controlLine,
+    hostArgs, newSessionState, reduceEvent, shiftQueued, userMessageLine
 } from './consoleproto';
 
 /**
@@ -63,6 +63,9 @@ export interface HostedSessionInit {
     /** the conversation this session already had, read off its transcript —
      *  display only (consolehistory.ts), never sent anywhere */
     history?: ConsoleMessage[];
+    /** and what it already SPENT, so "this session" is the session and not this
+     *  window's turn at it (see CarriedTotals) — resume only */
+    carried?: CarriedTotals;
     /** first message, sent as soon as the process is up */
     firstPrompt?: string;
 }
@@ -128,7 +131,9 @@ export class ConsoleHost {
             model: init.model, effort: init.effort, permissionMode: init.permissionMode,
             now: Date.now(),
             // a resumed session already HAS an id — see newSessionState
-            sessionId: init.resume
+            sessionId: init.resume,
+            // …and a past: what it spent before this window picked it up
+            carried: init.resume ? init.carried : undefined
         });
         const hosted: Hosted = {
             // The earlier conversation goes in as messages, nothing more: it is
@@ -227,6 +232,23 @@ export class ConsoleHost {
         const h = this.sessions.get(id);
         if (!h) { return false; }
         return this.write(id, controlLine(`int-${++h.reqSeq}`, 'interrupt'));
+    }
+
+    /**
+     * Change the model this session answers with, mid-conversation — the same
+     * thing `/model` does in a terminal (see consoleproto's header note).
+     *
+     * The switch is recorded as *pending* and only becomes the session's model
+     * when the CLI answers, because a `set_model` the CLI rejects must not
+     * leave the panel claiming a model that is not being used.
+     */
+    setModel(id: string, model: string): boolean {
+        const h = this.sessions.get(id);
+        if (!h || !model.trim()) { return false; }
+        const requestId = `model-${++h.reqSeq}`;
+        if (!this.write(id, controlLine(requestId, 'set_model', { model: model.trim() }))) { return false; }
+        this.mutate(id, s => ({ ...s, pendingModel: { requestId, model: model.trim() } }));
+        return true;
     }
 
     /**

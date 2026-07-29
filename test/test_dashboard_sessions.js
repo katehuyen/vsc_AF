@@ -508,5 +508,32 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
         oldOnly.exact === false && oldOnly.tokens === 3000 && oldOnly.sessions === 1);
 }
 
+// ---------- the range you can actually ask for ----------
+// The jumps were 7 → 14 → 30: "yesterday and today" was not a question this
+// page could be asked, and neither was "that week in July".
+{
+    const js = fs.readFileSync(path.join(__dirname, '..', 'media', 'dashboard.js'), 'utf8');
+    // the controls string nests template literals, so read the file, not a slice
+    const bar = js.slice(js.indexOf('controls: `'), js.indexOf('related: [{ nav'));
+    ok('the first week is day by day', /\[1, 2, 3, 4, 5, 6, 7\]/.test(bar));
+    ok('…the longer spans are still there', /\[14, 30, 90, 180, 365\]/.test(bar));
+    ok('…and two dates are a range you can pick', /data-range="custom"/.test(bar)
+        && /id="dash-from"/.test(bar) && /id="dash-to"/.test(bar));
+
+    // Every path ends in the same thing — a list of day keys — so the KPI
+    // cards, the chart and the per-agent columns are untouched by the change.
+    ok('one function answers "which days", however the range was chosen',
+        /function rangeDays\(\)/.test(js) && /const days = rangeDays\(\);/.test(js));
+    ok('…the custom range walks from the first day to the last, inclusive',
+        /for \(const d = new Date\(from\); d <= to/.test(js));
+    ok('…refuses a backwards range instead of drawing nothing',
+        /if \(isNaN\(from\) \|\| isNaN\(to\) \|\| to < from\)/.test(js));
+    ok('…and the weekly bucketing follows the DAYS, not the old number',
+        /if \(days\.length > 120\)/.test(js) && !/if \(range > 120\)/.test(js));
+    ok('a picked range says what it is on the card', /rangeLabel\(\)/.test(js));
+    ok('…and "custom" opens on the span you were already looking at',
+        /rangeFrom = d\[0\]/.test(js));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

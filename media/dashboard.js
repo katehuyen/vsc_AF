@@ -4,7 +4,9 @@
     const vscode = acquireVsCodeApi();
     const C = window.AFCharts;
     let DATA = window.__DATA__;
+    // 1–7 individually, then the longer spans, then 'custom' = two dates
     let range = 14;
+    let rangeFrom = '', rangeTo = '';
     // Shared advanced Sessions table (sort box, turn accordion, single-open,
     // ⌨ jump-to-terminal) — the same component the agent detail page uses.
     // fallbackSort/-Single carry over the state persisted by pre-2.57 versions.
@@ -95,15 +97,44 @@
         }
     });
 
+    const dayKey = d =>
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
     function dayKeysBack(n) {
         const out = [];
         const now = new Date();
         for (let i = n - 1; i >= 0; i--) {
-            const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
-            out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+            out.push(dayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - i)));
         }
         return out;
     }
+
+    /**
+     * The days the page is about — the last N, or a range you picked.
+     *
+     * The jumps used to be 7 → 14 → 30: "yesterday and today" was not a
+     * question this page could be asked, and neither was "that week in July".
+     * The first week is now day by day, and `between` takes two dates. Both
+     * end up as the same thing — a list of day keys — so everything
+     * downstream (the KPI cards, the chart, the per-agent columns) is
+     * unchanged and stays exactly as accurate as the daily buckets it sums.
+     */
+    function rangeDays() {
+        if (range !== 'custom') { return dayKeysBack(Number(range)); }
+        const from = new Date(rangeFrom + 'T00:00:00');
+        const to = new Date(rangeTo + 'T00:00:00');
+        if (isNaN(from) || isNaN(to) || to < from) { return dayKeysBack(14); }
+        const out = [];
+        for (const d = new Date(from); d <= to && out.length < 800; d.setDate(d.getDate() + 1)) {
+            out.push(dayKey(d));
+        }
+        return out;
+    }
+
+    /** What the range is called on a card label. */
+    const rangeLabel = () => (range === 'custom'
+        ? `${rangeFrom} → ${rangeTo}`
+        : `${range}d`);
 
     function relTime(ts) {
         if (!ts) return 'never';
@@ -290,7 +321,7 @@
     }
 
     function render() {
-        const days = dayKeysBack(range);
+        const days = rangeDays();
         const today = DATA.today;
         const agents = DATA.agents;
 
@@ -322,7 +353,7 @@
                 ${DATA.fleetBudget > 0
                     ? `<div class="progress"><div class="${todayCost >= DATA.fleetBudget ? 'hot' : ''}" style="width:${Math.min(100, Math.round(100 * todayCost / DATA.fleetBudget))}%"></div></div><div class="sub">${Math.round(100 * todayCost / DATA.fleetBudget)}% of ${C.fmtUSD(DATA.fleetBudget)} fleet budget</div>`
                     : '<div class="sub">API-equivalent value</div>'}</div>
-            <div class="card"><div class="label">Cost · ${range}d</div><div class="kpi">${C.fmtUSD(rangeCost)}</div><div class="sub">${C.fmtTok(rangeTokens)} tokens · ${rangeMsgs} msgs</div></div>
+            <div class="card"><div class="label">Cost · ${rangeLabel()}</div><div class="kpi">${C.fmtUSD(rangeCost)}</div><div class="sub">${C.fmtTok(rangeTokens)} tokens · ${rangeMsgs} msgs</div></div>
             <div class="card"><div class="label">Sessions</div><div class="kpi">${sessionsTotal}</div><div class="sub">all time, farm scope</div></div>
             <div class="card"><div class="label">5h window</div>${windowHtml}</div>
             <div class="card"><div class="label">Insights</div><div class="kpi">${ins.error + ins.warning + ins.info}</div>
@@ -339,7 +370,7 @@
 
         // 180d/365d: weekly buckets keep the bars readable (daily would be ~1px).
         let chartDays = days, chartSeries = series, bucketNote = '';
-        if (range > 120) {
+        if (days.length > 120) {
             chartDays = [];
             chartSeries = series.map(s => ({ name: s.name, values: [] }));
             for (let i = 0; i < days.length; i += 7) {
@@ -390,7 +421,7 @@
                 ${budgetBar}
                 <div class="spread" style="margin-top:8px">
                     <div><div class="label">today</div><strong>${C.fmtUSD(a.daily[today] ? a.daily[today].cost : 0)}</strong></div>
-                    <div><div class="label">${range}d</div><strong>${C.fmtUSD(sum(a, days, 'cost'))}</strong></div>
+                    <div><div class="label">${range === 'custom' ? days.length + 'd' : rangeLabel()}</div><strong>${C.fmtUSD(sum(a, days, 'cost'))}</strong></div>
                     <div>${C.sparkline(spark)}</div>
                 </div>
                 <div class="btnrow">
@@ -470,7 +501,18 @@
                 page: 'dashboard',
                 title: 'Agent Farm',
                 sub: `Generated ${new Date(DATA.generatedAt).toLocaleString()} · data: local Claude Code transcripts`,
-                controls: `<span class="seg">${[7, 14, 30, 90, 180, 365].map(r => `<button data-range="${r}" class="${r === range ? 'sel' : ''}">${r}d</button>`).join('')}</span>`,
+                // Every day of the first week, then the longer spans, then two
+                // dates. "Yesterday and today" and "that week in July" were
+                // both unaskable when the smallest step was 7 days.
+                controls: `<span class="seg">${[1, 2, 3, 4, 5, 6, 7].map(r =>
+                        `<button data-range="${r}" class="${r === range ? 'sel' : ''}" title="${r === 1 ? 'Today' : 'The last ' + r + ' days, today included'}">${r}</button>`).join('')}</span>
+                    <span class="seg">${[14, 30, 90, 180, 365].map(r =>
+                        `<button data-range="${r}" class="${r === range ? 'sel' : ''}">${r}d</button>`).join('')}</span>
+                    <span class="seg"><button data-range="custom" class="${range === 'custom' ? 'sel' : ''}" title="Between two dates">⇤⇥</button></span>
+                    ${range === 'custom' ? `<span class="seg" style="gap:4px">
+                        <input type="date" id="dash-from" value="${C.esc(rangeFrom)}" title="From this day">
+                        <input type="date" id="dash-to" value="${C.esc(rangeTo)}" title="To this day, included">
+                    </span>` : ''}`,
                 related: [{ nav: 'turns', label: 'Turns' }],
                 guide: 'dashboard'
             })}
@@ -490,7 +532,28 @@
 
         window.AFHeader.wire(vscode);
         document.querySelectorAll('[data-range]').forEach(b =>
-            b.addEventListener('click', () => { range = Number(b.dataset.range); render(); }));
+            b.addEventListener('click', () => {
+                const r = b.dataset.range;
+                if (r === 'custom') {
+                    range = 'custom';
+                    // open on the span you were already looking at, so the
+                    // dates start somewhere meaningful instead of empty
+                    if (!rangeFrom || !rangeTo) {
+                        const d = rangeDays();
+                        rangeFrom = d[0];
+                        rangeTo = d[d.length - 1];
+                    }
+                } else {
+                    range = Number(r);
+                }
+                render();
+            }));
+        const dateBox = (id, set) => {
+            const el = document.getElementById(id);
+            if (el) { el.addEventListener('change', () => { set(el.value); render(); }); }
+        };
+        dateBox('dash-from', v => { rangeFrom = v; });
+        dateBox('dash-to', v => { rangeTo = v; });
         document.querySelectorAll('[data-detail]').forEach(b =>
             b.addEventListener('click', ev => { ev.stopPropagation(); vscode.postMessage({ type: 'openAgent', agentId: b.dataset.detail }); }));
         document.querySelectorAll('[data-start]').forEach(b =>

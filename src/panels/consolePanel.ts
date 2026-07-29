@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
 import { ConsoleHost } from '../core/consolehost';
-import { ConsoleMessage, PERMISSION_GRANTS } from '../core/consoleproto';
+import { carriedTotals, ConsoleMessage, PERMISSION_GRANTS } from '../core/consoleproto';
 import {
     filterResumable, isResumeFiltered, RESUME_DEFAULT_N, RESUME_MAX, ResumeQuery
 } from '../core/consoleresume';
@@ -223,7 +223,8 @@ export class ConsolePanel {
             .filter(s => !s.isSidechain && !s.machine && s.cwd)
             .map(s => ({
                 s, title: s.title, agentName: s.agentName ?? '', tags: s.tags ?? [],
-                pinned: !!s.pinned, ts: s.lastTs || s.mtime, origin: sessionOrigin(s)
+                pinned: !!s.pinned, sessionId: s.sessionId,
+                ts: s.lastTs || s.mtime, origin: sessionOrigin(s)
             }));
         // Every agent that has a session to resume — including agents no longer
         // in the fleet, which is exactly when you go looking for an old session.
@@ -365,7 +366,10 @@ export class ConsolePanel {
                     effort: str('effort') || d.effort,
                     permissionMode: str('permissionMode') || d.permissionMode,
                     // resume means CONTINUE: what was said comes back with it
-                    history: this.deps.history(sessionId)
+                    history: this.deps.history(sessionId),
+                    // …and so does what it cost, or the composer's line would
+                    // describe this window's process instead of the session
+                    carried: carriedTotals(row)
                 });
                 // it is running again — it is no longer somewhere you "were"
                 this.deps.forgetLastWindow(sessionId);
@@ -404,6 +408,13 @@ export class ConsolePanel {
             }
             case 'interrupt':
                 host.interrupt(str('id'));
+                break;
+            case 'setModel':
+                // mid-session model switch — the CLI's own `/model`
+                if (!host.setModel(str('id'), str('model'))) {
+                    void vscode.window.showWarningMessage(
+                        'Agent Farm: that session cannot take a model change right now.');
+                }
                 break;
             case 'permissionMode':
                 // The honest grant: no dialog is answered, the session's rule is

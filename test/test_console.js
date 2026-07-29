@@ -19,7 +19,8 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 
 const {
     hostArgs, userMessageLine, controlLine, detectPermissionDenial, reduceEvent,
-    newSessionState, acceptUserText, shiftQueued, PERMISSION_GRANTS, resetIds
+    newSessionState, acceptUserText, shiftQueued, PERMISSION_GRANTS, resetIds,
+    carriedTotals
 } = require(path.join(__dirname, '..', 'out', 'core', 'consoleproto.js'));
 
 const NOW = 1785164000000;
@@ -393,11 +394,17 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     const controls = js.slice(js.indexOf('const controls = s'), js.indexOf("getElementById('app').innerHTML"));
     const split = controls.indexOf(": `<select id=\"c-agent\"");
     const liveRow = split > 0 ? controls.slice(0, split) : '';
-    ok('a running session gets NO agent/model/effort boxes at all (they were dead)',
-        liveRow.length > 100 && !/c-agent|c-model|c-effort/.test(liveRow));
+    // A running session shows only the controls that DO something. The agent
+    // (its folder) and the effort really are fixed once the process is up.
+    ok('a running session gets no agent or effort box (those are genuinely dead)',
+        liveRow.length > 100 && !/c-agent|c-effort/.test(liveRow));
     ok('…it shows them as a plain status line instead', /class="fixed"/.test(js));
-    ok('…and keeps the one control that really works mid-session',
-        /The one thing that CAN change mid-session/.test(js));
+    // ‼️ The MODEL is not one of them — `/model` changes it mid-conversation in
+    // a terminal, and `set_model` is a control request the CLI really accepts
+    // (verified against the installed binary), so the panel offers it too.
+    ok('…but the model is a live picker, because the CLI takes set_model',
+        /c-model-live/.test(liveRow) && /type: 'setModel'/.test(js));
+    ok('…alongside the permission mode', /id="c-perm"/.test(liveRow));
     ok('new-session mode is the only place the agent is picked',
         split > 0 && controls.indexOf('Choose an agent…') > split);
     ok('starting without an agent focuses the picker instead of swallowing the message',
@@ -457,6 +464,28 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     ok('any card can be put on the shelf from its own menu',
         web.some(m => m.command === 'agentfarm.pinSession'
             && /afConsole\(Session\|Resumable\)/.test(m.when)));
+    // The whole point of a right-click menu is not having to go anywhere else.
+    ok('…labelled from it', web.some(m => m.command === 'agentfarm.tagSession'
+        && /afConsole\(Session\|Resumable\)/.test(m.when)));
+    ok('…and its id copied, which is what the filter searches',
+        web.some(m => m.command === 'agentfarm.copySessionId'
+            && /afConsole\(Session\|Resumable\)/.test(m.when))
+        && ext.includes("registerCommand('agentfarm.copySessionId'"));
+    // A lane row and a live card are sessions too — same menu, same reach.
+    for (const c of ['agentfarm.pinSession', 'agentfarm.tagSession',
+        'agentfarm.copySessionId', 'agentfarm.resumeInConsole']) {
+        ok(`the Live Timeline offers ${c.replace('agentfarm.', '')} as well`,
+            web.some(m => m.command === c && m.when === "webviewSection == 'afTimelineSession'"));
+    }
+    // ‼️ Pinning WORKED and showed nothing: the trees were told, the pages
+    // were not, so the star appeared only when something else forced a
+    // repaint — which reads as "sometimes it works".
+    ok('a mark repaints every open surface, not just the trees',
+        /const saveMarks = [\s\S]{0,1400}ConsolePanel\.refreshIfOpen\(\)/.test(ext)
+        && /const saveMarks = [\s\S]{0,1400}TimelinePanel\.refreshIfOpen\(\)/.test(ext));
+    ok('…and the timeline can be redrawn without being opened',
+        /static refreshIfOpen\(\): void \{\s*TimelinePanel\.current\?\.refresh\(\);/.test(
+            fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'timeline.ts'), 'utf8')));
     // `enablement` disables a MENU ITEM; it does not stop the command being run
     // another way, so the handler still refuses to remove a live session.
     ok('removing a session that is still running is refused, with the order to follow',
@@ -513,6 +542,117 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         /private ownerPid:/.test(host) && /if \(pid && pid !== h\.child\.pid\) \{ killPid\(pid\); \}/.test(host));
     ok('…and the extension gives it that lookup',
         /sid => ownerOf\(readCliSessions\(claudeDir\(\)\), sid\)\?\.pid/.test(ext));
+}
+
+// ---------- ‼️ the model can change mid-conversation ----------
+// A terminal has always been able to: `/model` switches mid-session and the
+// next turn answers with the new one. The panel used to say a running session
+// "cannot change" its model — that was never a structural limit, only one we
+// had not looked up. `set_model` is in the installed CLI's own set of handled
+// control subtypes; it validates that `model` is a string and answers
+// success/error. So the Console offers it, and the state machine below is
+// built around the one awkward part of that reply: success carries NO payload.
+{
+    resetIds();
+    const started = { ...fresh(), model: 'claude-opus-5' };
+    const asked = { ...started, pendingModel: { requestId: 'model-1', model: 'claude-haiku-4-5' } };
+
+    // the switch is NOT applied on the request — only when the CLI agrees
+    ok('a model switch is pending until the CLI answers', asked.model === 'claude-opus-5');
+
+    const ok1 = reduce(asked, {
+        type: 'control_response',
+        response: { subtype: 'success', request_id: 'model-1' }
+    });
+    ok('…an accepted switch becomes the session\'s model', ok1.model === 'claude-haiku-4-5');
+    ok('…and stops being pending', ok1.pendingModel === undefined);
+    ok('…and says so in the conversation, with when it applies',
+        /model is now "claude-haiku-4-5" — from the next turn on/
+            .test(ok1.messages[ok1.messages.length - 1].text));
+
+    const bad = reduce(asked, {
+        type: 'control_response',
+        response: { subtype: 'error', request_id: 'model-1', error: 'unknown model' }
+    });
+    ok('a refused switch leaves the model alone', bad.model === 'claude-opus-5'
+        && bad.pendingModel === undefined);
+    ok('…and says why, as an error', bad.messages[bad.messages.length - 1].role === 'error'
+        && /unknown model/.test(bad.messages[bad.messages.length - 1].text));
+
+    // a reply to something else must not be mistaken for ours
+    const other = reduce(asked, {
+        type: 'control_response',
+        response: { subtype: 'success', request_id: 'int-7' }
+    });
+    ok('another request\'s reply is not our switch',
+        other.model === 'claude-opus-5' && !!other.pendingModel);
+
+    const host = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'consolehost.ts'), 'utf8');
+    ok('the host sends it as the CLI\'s own control request',
+        /controlLine\(requestId, 'set_model', \{ model: model\.trim\(\) \}\)/.test(host));
+    const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    ok('…and an agent can do it too, over the bridge', ext.includes("op: 'console.setModel'"));
+}
+
+// ---------- ‼️ a resumed session keeps what it spent ----------
+// The composer's own line says "this session"; the strip above it says "this
+// turn". Started empty, a resume made the first of those describe the PROCESS
+// — so on the first turn back both printed the same growing number, and the
+// conversation's real total was nowhere on the page.
+{
+    resetIds();
+    const past = carriedTotals({
+        cost: 0.42,
+        usage: { input: 900, output: 4100, cacheWrite: 15000, cacheRead: 480000 },
+        userTurns: 6,
+        lastCtxTokens: 132000
+    });
+    ok('the totals are read off the index row the resume list already uses',
+        past.tokens === 500000 && past.costUSD === 0.42 && past.turns === 6
+        && past.contextTokens === 132000);
+    ok('…and a row that spent nothing carries nothing, not undefined',
+        carriedTotals({}).tokens === 0 && carriedTotals({}).turns === 0);
+
+    const back = newSessionState({
+        id: 'c9', agentId: 'a', agentName: 'dev', cwd: 'D:/a/dev', now: NOW,
+        sessionId: 'sid-7', carried: past
+    });
+    ok('a resumed session opens on the conversation\'s figures, not on zero',
+        back.tokens === 500000 && back.costUSD === 0.42 && back.turns === 6
+        && back.contextTokens === 132000);
+    ok('…while a brand new one still starts at zero, with no ctx to claim',
+        fresh().tokens === 0 && fresh().turns === 0 && fresh().contextTokens === undefined);
+
+    // the turn is the DIFFERENCE — which is exactly what stopped being true
+    const turn = acceptUserText(back, 'go on then', NOW + 1000).state;
+    ok('the first turn back starts counting from what was already there',
+        turn.turnTokensAt === 500000);
+    const spoke = reduce(turn, {
+        type: 'assistant',
+        message: {
+            content: [{ type: 'text', text: 'right' }],
+            usage: {
+                input_tokens: 10, output_tokens: 190,
+                cache_creation_input_tokens: 800, cache_read_input_tokens: 129000
+            }
+        }
+    }, NOW + 2000);
+    const turnTokens = spoke.tokens - spoke.turnTokensAt;
+    ok('…so the turn shows the turn', turnTokens === 130000);
+    ok('…and the session shows the session', spoke.tokens === 630000);
+    ok('‼️ the two are no longer the same number', turnTokens !== spoke.tokens);
+
+    // every door into a resume carries them
+    const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'consolePanel.ts'), 'utf8');
+    const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    ok('the Console\'s own resume carries them', /carried: carriedTotals\(row\)/.test(panel));
+    ok('…so does Resume in Console', /carried: carriedTotals\(s\)/.test(ext));
+    ok('…and so does an agent\'s console.start', /carried: past \? carriedTotals\(past\) : undefined/.test(ext));
+    const host = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'consolehost.ts'), 'utf8');
+    ok('a session that is NOT a resume can never carry someone else\'s totals',
+        /carried: init\.resume \? init\.carried : undefined/.test(host));
+    ok('the bridge reports both figures, so an agent reads what the panel shows',
+        /turnTokens: s\.turnTokensAt !== undefined/.test(ext));
 }
 
 // ---------- the resume list: asked, answered by the host ----------

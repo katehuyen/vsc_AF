@@ -75,6 +75,14 @@ POOL.push(row({ title: 'nightly duty sweep', agentName: 'manager', ts: NOW - 2 *
     ok('…and so do the labels you put on it',
         filterResumable(POOL, { text: 'zen' }, NOW).total === 1);
 
+    // The id is the handle every other surface shows — a card, a menu, a log
+    // line — so somebody holding one can paste it in rather than hunt a name.
+    POOL.push(row({ title: 'nameless', sessionId: '407c78cb-1111-2222', ts: NOW - 3 * DAY }));
+    ok('an id finds its session', filterResumable(POOL, { text: '407c78cb' }, NOW).total === 1);
+    ok('…and it is still just text, so a partial id works too',
+        filterResumable(POOL, { text: '78CB-1111' }, NOW).total === 1);
+    POOL.pop();
+
     ok('one agent means exactly that agent',
         filterResumable(POOL, { agent: 'manager' }, NOW).total === 1);
     ok('…and "every agent" is not a filter at all',

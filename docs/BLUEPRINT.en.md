@@ -126,7 +126,7 @@ The fleet's overview board. Opens with the `Agent Farm: Open Dashboard` command 
 - **KPI cards**: active agent count, today's cost, cost for the selected range, session count, the 5-hour window, total finding count.
 - **Farm Status card (2.39.0):** just below the KPIs, an honest activation row per subsystem — **green dot = live in use, blue = installed but idle, grey = never used.** Nine rows: live monitoring, tasks/scheduling, triggers, workflows, media pipeline, external CLIs, asset ingest, smart oversight, secret vault. Each dormant row has a **one-click wake-up** button (set up example, add a key, the relevant setting/guide). If something is dormant the card opens expanded; if everything is live it collapses to a single summary. The external-CLI row also reminds you of the fail-soft nature of the adapters: if a profile exists but no session shows up, it may be a sign of format drift.
 - **Plan usage card (3.23.0):** to the **right of Farm status, on the same line** — the two boxes answer the paired questions "what can the farm do" and "how much subscription room is left to do it with". This is the only figure on the page that is **not** derived from local transcripts: it is your **real** rate-limit state as **Anthropic** reports it, the same numbers `/usage` prints inside Claude Code — **Current session (5h)** and **Current week (all models)**, plus the per-model weekly bars when your plan has them, each with its percentage, a bar (yellow at 75%, red at 90%) and its reset time as both a clock time and a countdown ("Resets 21:40 · in 2h 20m"). It **refreshes itself** on a beat (`agentFarm.planUsageRefreshMinutes`, default 5 minutes; 0 = manual only) and the **⟳ in its corner** reads it again on demand. The card reads the OAuth session Claude Code already stores on this machine and **never writes to it**: an expired token is reported honestly ("start a Claude Code session to refresh it") rather than silently renewed behind the CLI's back. No login of that kind (API key, gateway, macOS Keychain), no network, or a rate-limited endpoint each print their own one-line reason instead of a wrong number. Bridge: **`usage.plan`**.
-- **Daily cost by agent**: a stacked cost chart per agent. Range selector (widened in 2.13.0): **7 / 14 / 30 / 90 / 180 / 365 days**. Beyond 120 days the daily bars are automatically **grouped weekly** so they stay readable (a "weekly buckets" note in the title). Since all daily data already comes from session logs, the 1-year view adds no extra load.
+- **Daily cost by agent**: a stacked cost chart per agent. Range selector (widened in 2.13.0, **made askable in 3.38.0**): the first week **day by day — 1 2 3 4 5 6 7** — then **14 / 30 / 90 / 180 / 365 days**, then **⇤⇥** for any two dates. The jumps used to start at 7, so *"yesterday and today"* was not a question this page could be asked and neither was *"that week in July"*; the custom range opens on the span you were already looking at, refuses a backwards range, and names itself on the card (`Cost · 2026-07-10 → 2026-07-16`). Every path ends in the same list of day keys, so the KPI cards, the chart and the per-agent columns stay exactly as accurate as the daily buckets they sum. Beyond 120 days the daily bars are automatically **grouped weekly** so they stay readable (a "weekly buckets" note in the title). Since all daily data already comes from session logs, the 1-year view adds no extra load.
 - **Cost by model**: a donut chart showing how much was spent on which model.
 - **Token types**: input / output / cache write / cache read distribution. A high cache-read ratio means prompt caching is working efficiently — that's good.
 - **Activity heatmap**: message density by day-of-week × hour. Shows your work rhythm.
@@ -262,6 +262,8 @@ A card in the left panel **is** a session, so **right-click it**: Rename · Resu
 
 **The menu greys items out instead of hiding them.** *Remove from list* is there from the start, in grey: it is what comes **after** ending, and an item that only appears once the session ends teaches you nothing and changes the menu's shape under the pointer. So the order is visible before you need it — *End session* greys once the session has ended, *Interrupt turn* lights up only while a turn is running. The state comes from the card itself (`data-vscode-context` → the `enablement` clauses in `package.json`); the commands still refuse politely when they are invoked another way, since `enablement` disables a menu item, not a command.
 
+**The menu reaches further (3.38.0).** The whole point of a right-click menu is not having to go anywhere else, so Console cards also carry **📌 Pin · Label… · Copy Session ID · ⌨ Terminal**, and a **Live Timeline lane row or live-sessions card** — which is a session too — carries **📌 Pin · Label… · Copy Session ID · Resume in Console** on top of the menu it already had. Pinning from any of them now repaints **every open surface**: the trees used to be the only thing told, so a star appeared on a page only when something else happened to force a redraw, which reads as *"sometimes it works"*.
+
 ### Two lines of numbers: the turn above the box, the session below it (3.35.0)
 
 Both strips used to say **ctx** — the same session-wide figure twice, three centimetres apart — while the question you actually have about a running turn had no answer anywhere on the page.
@@ -270,6 +272,28 @@ Both strips used to say **ctx** — the same session-wide figure twice, three ce
 - **Below the box, the whole session:** `session 407c78cb · ~24.1k ctx · $0.12 (48.2k tokens) this session · 3 turns`. Context belongs here: it is what the window is holding, not what a turn did.
 - **Cost is never written without the tokens that bought it**, in one order everywhere on the page — the money first, the tokens in parentheses. `$0.03` of haiku and `$0.03` of opus are not the same event.
 - **Model and effort are stated where the rest of the launch decisions are:** the fixed line under the composer now reads `developer · opus-5 · high effort`.
+
+### ‼️ A resumed session remembers what it spent (3.38.0)
+
+A hosted process is not the session — it is **this window's turn at it**. Started empty, a resume made the line under the composer describe the process instead of the conversation: `$0.0000 · 0 tokens · 0 turns this session` about a conversation with two hundred turns behind it. And on the first turn back it printed the running turn's tokens **twice** — once above the box as the TURN, once below it as the SESSION — the same number growing in two places, three centimetres apart.
+
+The totals now come back with the transcript: cost, tokens, turns and context, off the same index row the resume list already reads, through every door into a resume (the Console's own list, *Resume in Console*, an agent's `console.start`). The turn is the **difference** it always was. And the strip above the box says which it is out loud: `~$0.031 (4.2k tokens) **this turn**` against `$0.12 (48.2k tokens) **this session**` below.
+
+### The model changes mid-conversation (3.38.0)
+
+`/model` switches the model mid-session in a terminal and the next turn answers with the new one. The panel used to say a running session's model "was decided when it started" — that was never a structural limit, only one nobody had looked up. **`set_model` is a control request the CLI really handles** (verified against the installed binary: it is in the CLI's own set of handled subtypes, it validates that `model` is a string, and it answers success or error).
+
+So the composer offers it beside the permission mode, and `console.setModel` puts it on the bridge for agents. The session, its context and its transcript are untouched; the switch applies **from the next turn**, and it is **pending until the CLI agrees** — `set_model`'s success carries no payload, so the request id is the only link back to what was asked for, and showing the new name before the answer arrives would be a promise the panel cannot keep. A refusal says so as an error and leaves the model alone.
+
+The agent (its folder) and the effort really are fixed once the process is up, and are stated as the plain status line they always were.
+
+### 🔒 "How many to show" is not a filter (3.38.0)
+
+The row count does not choose WHICH sessions, only how many of them you can see — so **clear filter** had no business resetting it. The lock beside the box pins it: **on by default**, the number you set is simply how long the list is, filter or no filter, and it is remembered between sessions. Click it off and it goes back to being part of the question, clearing with the rest.
+
+### A session can be found by its id (3.38.0)
+
+`#407c78cb` is the handle every other surface shows — a card, a menu, a log line — and it was the one thing the resume filter did not search. Paste any part of one into the text box and land on that session. **Copy Session ID** is on the right-click menu of every card, which is where you get it from.
 
 ### ‼️ A session that outlives the window that was reading it (3.37.0)
 

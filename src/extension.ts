@@ -142,7 +142,7 @@ import { PortfolioPanel } from './panels/portfolioPanel';
 import { ConsolePanel } from './panels/consolePanel';
 import { transcriptHistory } from './core/consolehistory';
 import { ConsoleHost, killPid } from './core/consolehost';
-import { ConsoleMessage } from './core/consoleproto';
+import { carriedTotals, ConsoleMessage } from './core/consoleproto';
 import { MissionNode, MissionsTreeProvider } from './views/missionsTree';
 import { TriggerManager } from './core/triggers';
 import { dayKey, expandEnvPath, fmtTokens, fmtUSD, normPath, readFileTail, relTime, remapStorageIds } from './core/util';
@@ -557,6 +557,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         await context.globalState.update(MARKS_KEY, marks);
         index.setMarks(marks);
         refreshAll();
+        // ‼️ The TREES were told and the PAGES were not, so pinning from a
+        // webview did the thing and showed nothing: the star or 📌 only
+        // appeared when something else happened to trigger a repaint — which
+        // reads as "sometimes it works". A mark is a visible fact everywhere
+        // it is shown, so every open surface hears about it at once.
+        ConsolePanel.refreshIfOpen();
+        SessionViewerPanel.refreshOpen();
+        DashboardPanel.refreshIfOpen();
+        AgentDetailPanel.refreshIfOpen();
+        PortfolioPanel.refreshIfOpen();
+        TimelinePanel.refreshIfOpen();
     };
     index.setMarks(sessionMarks());
 
@@ -2892,12 +2903,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const d = launchDefaults();
+                const resume = optStr(args, 'resume') || undefined;
+                // a resumed conversation brings its own totals with it, so the
+                // figures an agent reads back are the session's, not this
+                // process's (see CarriedTotals)
+                const past = resume ? index.all().find(s => s.sessionId === resume) : undefined;
                 const id = consoleHost.start({
                     agentId: agent.id, agentName: agent.name, cwd: agent.dir,
                     model: optStr(args, 'model') || d.model,
                     effort: optStr(args, 'effort') || d.effort,
                     permissionMode: optStr(args, 'permissionMode') || d.permissionMode,
-                    resume: optStr(args, 'resume') || undefined,
+                    resume,
+                    carried: past ? carriedTotals(past) : undefined,
                     firstPrompt: optStr(args, 'prompt') || undefined
                 });
                 ConsolePanel.refreshIfOpen();
@@ -2926,6 +2943,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     id: s.id, agent: s.agentName, sessionId: s.sessionId ?? null,
                     status: s.status, permissionMode: s.permissionMode,
                     cost: s.costUSD, turns: s.turns, queued: s.queued.length,
+                    // the whole conversation's tokens — a resumed session
+                    // carries what it spent before this window (CarriedTotals)
+                    tokens: s.tokens,
+                    // …and what the turn running right now has spent of them
+                    turnTokens: s.turnTokensAt !== undefined ? Math.max(0, s.tokens - s.turnTokensAt) : 0,
                     contextTokens: s.contextTokens ?? null,
                     pendingPermission: s.pendingPermission?.detail ?? null,
                     exitReason: s.exitReason ?? null,
@@ -2948,6 +2970,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(ok, 'no such live console session');
                 ConsolePanel.refreshIfOpen();
                 return { id, interrupted: true };
+            }
+        },
+        {
+            op: 'console.setModel',
+            describe: 'Switch the model a hosted session answers with, mid-conversation — the same thing /model does in a terminal. It applies from the next turn; the session, its context and its transcript are untouched. args: id, model (e.g. claude-opus-5, sonnet, haiku)',
+            handler: (args) => {
+                const id = argStr(args, 'id');
+                const model = argStr(args, 'model');
+                need(!!model, 'model is required');
+                need(consoleHost.setModel(id, model), 'no such live console session');
+                ConsolePanel.refreshIfOpen();
+                return { id, model, applied: 'from the next turn' };
             }
         },
         {
@@ -6250,6 +6284,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         : `Agent Farm: "${title}" taken off the shelf`, 4000);
             }),
 
+        // The id is the handle every surface shows and the resume filter
+        // searches — so it is worth one click, from wherever you can see it.
+        vscode.commands.registerCommand('agentfarm.copySessionId',
+            async (arg?: { session?: SessionInfo; sessionId?: string } | SessionInfo) => {
+                const s = arg && 'session' in arg && arg.session ? arg.session : arg as SessionInfo | undefined;
+                const sessionId = s?.sessionId || (arg as { sessionId?: string })?.sessionId;
+                if (!sessionId) {
+                    void vscode.window.showInformationMessage(
+                        'Agent Farm: this session has not reported its id yet — say something in it first.');
+                    return;
+                }
+                await vscode.env.clipboard.writeText(sessionId);
+                void vscode.window.setStatusBarMessage(
+                    `$(clippy) Agent Farm: ${sessionId.slice(0, 8)} copied`, 4000);
+            }),
+
         vscode.commands.registerCommand('agentfarm.tagSession',
             async (arg?: { session?: SessionInfo; sessionId?: string } | SessionInfo) => {
                 const s = arg && 'session' in arg && arg.session ? arg.session : arg as SessionInfo | undefined;
@@ -6637,8 +6687,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const id = already?.id ?? consoleHost.start({
                     agentId: agent?.id ?? '', agentName: s.agentName ?? 'session',
                     cwd: s.cwd, resume: s.sessionId, ...launchDefaults(),
-                    // resume means CONTINUE: the earlier conversation comes with it
-                    history: consoleHistory(s.sessionId)
+                    // resume means CONTINUE: the earlier conversation comes with
+                    // it, and so does what it has already spent
+                    history: consoleHistory(s.sessionId),
+                    carried: carriedTotals(s)
                 });
                 ConsolePanel.show(consoleDeps, { sessionId: id });
             }),

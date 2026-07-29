@@ -114,6 +114,12 @@ export class TimelinePanel {
         TimelinePanel.current = new TimelinePanel(panel, deps);
     }
 
+    /** Redraw if the page is open — for facts that change somewhere else (a
+     *  session pinned or labelled from another surface). Never opens it. */
+    static refreshIfOpen(): void {
+        TimelinePanel.current?.refresh();
+    }
+
     private constructor(readonly panel: vscode.WebviewPanel, private deps: TimelineDeps) {
         panel.webview.html = htmlShell(
             panel.webview,

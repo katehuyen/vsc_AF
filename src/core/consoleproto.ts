@@ -16,6 +16,13 @@
  *    the run reports `result:error_during_execution`.
  *  - **Permission mode can be changed live**: `{subtype:'set_permission_mode'}`
  *    answers with the new mode, and the next tool call obeys it.
+ *  - **So can the MODEL**: `{subtype:'set_model', model:'…'}` is a control
+ *    request the CLI accepts mid-session — the same thing `/model` does in an
+ *    interactive terminal. Verified against the installed binary (2026-07-29):
+ *    `set_model` is in the CLI's own set of handled subtypes, it validates that
+ *    `model` is a string, and it answers `success` or `error`. Unlike
+ *    set_permission_mode the success carries NO payload, so the request id is
+ *    what tells us which model was accepted — see `pendingModel`.
  *  - **A permission request is NOT a control request.** The tool simply comes
  *    back as an errored `tool_result` saying permission was never granted. So
  *    a panel cannot "answer a dialog" — there is no dialog. What it CAN do,
@@ -104,6 +111,16 @@ export interface ConsoleSessionState {
     exitReason?: string;
     /** last permission refusal still unanswered — the panel's call to action */
     pendingPermission?: { detail: string; tool?: string; ts: number };
+    /**
+     * A model switch we have asked for and not heard back about.
+     *
+     * `set_model` answers `success` with nothing in it, so the reply alone
+     * cannot say what was accepted — the request id is the only link back to
+     * the model we asked for. Showing the new model before the CLI has agreed
+     * to it would be a lie the panel tells about the next turn, so the switch
+     * is applied on the response, not on the request.
+     */
+    pendingModel?: { requestId: string; model: string };
 }
 
 /** The honest set of things a panel button can actually grant, live. */
@@ -356,6 +373,25 @@ export function reduceEvent(
     if (type === 'control_response') {
         const r = (o.response as Record<string, unknown> | undefined) ?? {};
         const inner = (r.response as Record<string, unknown> | undefined) ?? {};
+        // A model switch, answered. `success` carries no payload, so the id we
+        // sent it under is what says which model this is about.
+        const pend = state.pendingModel;
+        if (pend && r.request_id === pend.requestId) {
+            const failed = r.subtype === 'error';
+            return {
+                state: {
+                    ...state, lastTs: now, pendingModel: undefined,
+                    ...(failed ? {} : { model: pend.model }),
+                    messages: [...state.messages, {
+                        id: nextId(), ts: now, role: failed ? 'error' : 'system',
+                        text: failed
+                            ? `model stayed ${state.model ?? 'as it was'} — ${String(r.error ?? 'the CLI refused the switch')}`
+                            : `model is now "${pend.model}" — from the next turn on`
+                    }]
+                },
+                changed: true
+            };
+        }
         if (typeof inner.mode === 'string') {
             // the live permission-mode change was accepted
             return {
@@ -389,14 +425,51 @@ export function newSessionState(o: {
     id: string; agentId: string; agentName: string; cwd: string;
     model?: string; effort?: string; permissionMode?: string; now: number;
     sessionId?: string;
+    /** what a RESUMED conversation already spent — see CarriedTotals */
+    carried?: CarriedTotals;
 }): ConsoleSessionState {
+    const c = o.carried;
     return {
         id: o.id, agentId: o.agentId, agentName: o.agentName, cwd: o.cwd,
         sessionId: o.sessionId,
         model: o.model, effort: o.effort,
         permissionMode: o.permissionMode?.trim() || 'default',
         status: 'starting', messages: [], queued: [],
-        costUSD: 0, turns: 0, tokens: 0, startedAt: o.now, lastTs: o.now
+        costUSD: c?.costUSD ?? 0, turns: c?.turns ?? 0, tokens: c?.tokens ?? 0,
+        contextTokens: c?.contextTokens || undefined,
+        startedAt: o.now, lastTs: o.now
+    };
+}
+
+/**
+ * ‼️ WHAT A RESUMED CONVERSATION ALREADY SPENT.
+ *
+ * A hosted process is not the session — it is this window's turn at it. Started
+ * empty, a resume made the composer's own line ("$0.0000 · 0 tokens · 0 turns
+ * this session") describe the process instead of the conversation, and on the
+ * first turn back it printed the running turn's tokens twice: once above the
+ * box as the TURN and once below it as the SESSION, the same number growing in
+ * two places. The totals therefore come back with the transcript, from the same
+ * index row the resume list reads — so "this session" means the session, and
+ * the turn is the difference it always was (`turnTokensAt`).
+ */
+export interface CarriedTotals {
+    costUSD?: number;
+    tokens?: number;
+    turns?: number;
+    contextTokens?: number;
+}
+
+/** The carried totals of a transcript, off the index row the resume list uses. */
+export function carriedTotals(s: {
+    cost?: number; usage?: Usage; userTurns?: number; lastCtxTokens?: number;
+}): CarriedTotals {
+    const u = s.usage;
+    return {
+        costUSD: s.cost ?? 0,
+        tokens: u ? u.input + u.output + u.cacheWrite + u.cacheRead : 0,
+        turns: s.userTurns ?? 0,
+        contextTokens: s.lastCtxTokens ?? 0
     };
 }
 
