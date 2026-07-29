@@ -20,11 +20,20 @@
     let DATA = window.__DATA__ || { sessions: [], agents: [], resumable: [] };
 
     const saved = (typeof vscode.getState === 'function' && vscode.getState()) || {};
+    /** An unasked question — the resume list exactly as it was before it could
+     *  be filtered at all (see core/consoleresume.ts). */
+    const EMPTY_RQ = () => ({
+        text: '', agent: '', when: '', from: '', to: '',
+        pinnedOnly: false, userOnly: false, limit: 0
+    });
     let st = Object.assign({
         agentId: '', model: '', effort: '', permissionMode: '', draft: '', showResume: false,
         // which kinds of line the conversation shows; null = everything
-        kinds: null
+        kinds: null,
+        // is the miniature filter open, and what is it asking for
+        showRFilter: false, rq: EMPTY_RQ()
     }, saved.afConsole);
+    st.rq = Object.assign(EMPTY_RQ(), st.rq);
     const save = () => {
         const all = (typeof vscode.getState === 'function' && vscode.getState()) || {};
         all.afConsole = st;
@@ -61,6 +70,12 @@
         .cwrap { display:flex; gap:14px; align-items:stretch; flex:1 1 auto; min-height:0; }
         .clist { flex:0 0 250px; display:flex; flex-direction:column; gap:6px;
             min-width:0; min-height:0; overflow-y:auto; overflow-x:hidden; }
+        /* The column is four independent sections, not one block of html: the
+           filter you are TYPING in must not be destroyed and rebuilt every time
+           a streamed line arrives (that is the same bug the composer had). Each
+           section is written separately, and only when its content differs. */
+        .clist > div { display:flex; flex-direction:column; gap:6px; min-width:0; }
+        .clist > div:empty { display:none; }
         .cmain { flex:1 1 auto; display:flex; flex-direction:column; min-width:0; min-height:0; }
         .srow { border:1px solid var(--vscode-widget-border,#4443); border-radius:7px; padding:7px 9px;
             cursor:pointer; background:var(--vscode-editor-background); }
@@ -74,6 +89,10 @@
         .srow .h { display:flex; align-items:center; gap:6px; justify-content:space-between; }
         .srow .n { font-weight:600; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .srow .m { font-size:10px; color:var(--vscode-descriptionForeground); margin-top:2px; }
+        /* A meta line too long for 250px wraps at a "·", never inside a figure:
+           "ctx" on one line and "132.0k" on the next is not a reading. */
+        .srow .m.wrap { white-space:normal; }
+        .srow .m .pair { white-space:nowrap; }
         /* ---- whose turn is it (see phaseOf) --------------------------------
            A card carries its phase three ways at once — a coloured edge, a dot
            and a WORD — so it survives a light theme, a colourblind reader and a
@@ -141,6 +160,38 @@
             overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .working .spin { color:var(--vscode-charts-blue,#3794ff); font-size:13px; }
         .working .wmeta { margin-left:auto; opacity:.75; white-space:nowrap; }
+        /* ---- the resume section: a header row, a miniature filter, the rows --
+           Everything here is sized for a 250px column: 10px type, one-line
+           controls, and every box allowed to shrink (min-width:0) so nothing
+           can push the column wider than the page gave it. */
+        .rhead { flex-direction:row !important; gap:4px !important; align-items:stretch; margin-top:6px; }
+        .rhead .rtoggle { flex:1 1 auto; min-width:0; text-align:left; overflow:hidden;
+            text-overflow:ellipsis; white-space:nowrap; }
+        .rhead .rfilter { flex:none; width:28px; padding:0; font-size:11px; }
+        .rhead .rfilter.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground); }
+        .rpanel { gap:4px !important; padding:6px; border-radius:6px;
+            border:1px solid var(--vscode-widget-border,#4443); }
+        .rpanel input, .rpanel select { font-size:10px; padding:1px 3px; width:100%; min-width:0;
+            border-radius:3px; border:1px solid var(--vscode-widget-border,#4443);
+            background:var(--vscode-input-background); color:var(--vscode-input-foreground); }
+        .rrow { display:flex; gap:4px; align-items:center; }
+        .rrow > * { flex:1 1 0; min-width:0; }
+        /* A chip is as wide as its word; the row's slack goes to the count box,
+           which is the only thing in it you type into. */
+        .rrow > .rchip { flex:0 1 auto; }
+        .rchip { font-size:10px; padding:1px 5px; border-radius:9px; cursor:pointer; white-space:nowrap;
+            background:transparent; color:var(--vscode-foreground); opacity:.7;
+            border:1px solid var(--vscode-widget-border,#4444); }
+        .rchip.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground);
+            opacity:1; border-color:transparent; }
+        .rn { font-size:10px; display:flex; align-items:center; justify-content:flex-end; gap:3px;
+            opacity:.85; white-space:nowrap; }
+        /* the spinner arrows ate half the box at this size */
+        .rn input { width:38px; flex:none; text-align:right; -moz-appearance:textfield; }
+        .rn input::-webkit-outer-spin-button, .rn input::-webkit-inner-spin-button {
+            -webkit-appearance:none; margin:0; }
+        .rcount { flex-direction:row !important; gap:5px !important; align-items:baseline;
+            font-size:10px; opacity:.7; padding:1px 2px 0; }
         .backhead { font-size:10px; opacity:.7; margin:8px 0 2px; text-transform:uppercase; letter-spacing:.4px; }
         .srow.back { border-style:dashed; }
         .srow.back .only { background:none; border:none; opacity:.5; cursor:pointer; font-size:11px; padding:0 3px; }
@@ -208,7 +259,11 @@
         if (s < 60) { return s + 's'; }
         const m = Math.round(s / 60);
         if (m < 60) { return m + 'm'; }
-        return Math.round(m / 60) + 'h';
+        const h = Math.round(m / 60);
+        // Days, because the resume list now reaches back as far as you ask it
+        // to: "504h ago" is a number you have to do arithmetic on to read.
+        if (h < 24) { return h + 'h'; }
+        return Math.round(h / 24) + 'd';
     }
 
     const sel = () => (DATA.sessions || []).find(s => s.id === DATA.selected);
@@ -224,8 +279,19 @@
      * against each other without translating between two layouts.
      */
     const spend = (cost, tokens) => `${C.fmtUSD(cost || 0)}${tokens ? ` (${C.fmtTok(tokens)} tokens)` : ''}`;
-    /** the same figure, tight enough for a 250px card */
-    const spendShort = (cost, tokens) => `${C.fmtUSD(cost || 0)}${tokens ? ` (${C.fmtTok(tokens)})` : ''}`;
+    /**
+     * On a CARD there is room for one figure, and it is the tokens.
+     *
+     * A 250px row cannot carry both without the session's name losing the space
+     * it needs more, and of the two the tokens are the one that means something
+     * on its own: `$0.03` does not say whether that was haiku thinking briefly
+     * or opus barely starting, while `48.2k` is the same measure whatever ran.
+     * The money is one hover away, and both strips under the conversation carry
+     * it in full.
+     */
+    const tokBadge = tokens => (tokens ? `${C.fmtTok(tokens)} tok` : '');
+    const tokTip = (tokens, cost) => (tokens ? `${C.fmtTok(tokens)} tokens` : 'nothing spent yet')
+        + (cost ? ` · ${C.fmtUSD(cost)} spent` : '');
 
     /**
      * The right-click contract for a session row.
@@ -400,10 +466,10 @@
                  title="${C.esc(s.title || 'not named yet')} — ${C.esc(p.label)} — right-click for session actions">
                 <div class="h">
                     <span class="n"><span class="dot"></span>${who(s.agentName, s.sessionId)}</span>
-                    <span class="m" title="what this session has spent${s.tokens ? ' — and the tokens it bought' : ''}">${spendShort(s.cost, s.tokens)}</span>
+                    <span class="m" title="${C.esc(tokTip(s.tokens, s.cost))}">${tokBadge(s.tokens)}</span>
                 </div>
                 <div class="t2">${C.esc(s.title || '(no name yet)')}</div>
-                <div class="m"><span class="phase">${C.esc(p.label)}${waited ? ` · ${waited}` : ''}</span>${(s.queued || []).length ? ` · ${s.queued.length} waiting` : ''}${s.turns ? ` · ${s.turns} turns` : ''}${s.contextTokens ? ` · <span title="Approximate context in the model window right now">ctx ${C.fmtTok(s.contextTokens)}</span>` : ''}</div>
+                <div class="m"><span class="phase">${C.esc(p.label)}${waited ? ` · ${waited}` : ''}</span>${(s.queued || []).length ? ` · ${s.queued.length} waiting` : ''}${s.turns ? ` · ${s.turns} turns` : ''}${s.contextTokens ? ` · <span class="pair" title="Approximate context in the model window right now">ctx ${C.fmtTok(s.contextTokens)}</span>` : ''}</div>
             </div>`;
         }).join('');
         // One line above the cards, only when something is actually waiting:
@@ -416,20 +482,6 @@
                 <span class="cdot"></span>${need.length} waiting for you
                 <span class="cage">longest ${longest}</span>
             </button>` : '';
-        // A session a live process already owns cannot be joined — resuming it
-        // would start a second process on the same transcript. The row says so
-        // instead of offering it as if it were free.
-        const owned = new Set(DATA.owned || []);
-        const resume = st.showResume ? `<div style="margin-top:6px">${(DATA.resumable || []).map(r => `
-            <div class="srow${owned.has(r.sessionId) ? ' owned' : ''}" data-resume="${C.esc(r.sessionId)}"
-                 ${ctxAttr({
-                     webviewSection: 'afConsoleResumable', preventDefaultContextMenuItems: false,
-                     sessionId: r.sessionId, title: r.title || '', agentName: r.agentName || '', cwd: r.cwd || ''
-                 })}
-                 title="${owned.has(r.sessionId) ? 'Open right now in a terminal or another process — Agent Farm cannot join a running session' : C.esc(r.cwd) + ' — right-click for session actions'}">
-                <div class="n">${r.pinned ? '📌 ' : ''}${C.esc(r.title)}</div>
-                <div class="m">${who(r.agentName, r.sessionId)} · ${relTime(r.ts)} ago · ${C.fmtUSD(r.cost)}${r.contextTokens ? ` · <span title="Approximate context after this session's last reply — what resuming it starts from">ctx ${C.fmtTok(r.contextTokens)}</span>` : ''}</div>
-            </div>`).join('') || '<div class="empty">No transcripts yet.</div>'}</div>` : '';
         // Where you were when the last window went away. A hosted session ends
         // with its window — measured: `--resume` picks the SAME session back up,
         // same id, same transcript, and the model still remembers — so the only
@@ -450,9 +502,102 @@
         return `<button id="c-new">＋ New session</button>
             ${callout}
             ${back}
-            ${rows || '<div class="empty">No hosted sessions yet. Pick an agent below and say something — the process starts here, in the panel.</div>'}
-            <button class="secondary" id="c-toggle-resume" style="margin-top:6px">${st.showResume ? '▾' : '▸'} Resume an existing session</button>
-            ${resume}`;
+            ${rows || '<div class="empty">No hosted sessions yet. Pick an agent below and say something — the process starts here, in the panel.</div>'}`;
+    }
+
+    /**
+     * The resume section's header: open the list, and open its filter.
+     *
+     * Two buttons, because they are two decisions — "show me the old sessions"
+     * and "not these ones, THAT one". The filter button stays lit while a
+     * filter is set even with the panel collapsed: a list that is quietly
+     * hiding things must say so, or you go looking for a session that the panel
+     * decided not to show you.
+     */
+    function resumeHeadHtml() {
+        const on = DATA.resumeFiltered;
+        return `<div class="rhead">
+            <button class="secondary rtoggle" id="c-toggle-resume"
+                title="The sessions on your shelf and the transcripts on this machine — click one to carry it on in the panel">
+                ${st.showResume ? '▾' : '▸'} Resume an existing session
+            </button>
+            <button class="secondary rfilter${on ? ' on' : ''}" id="c-toggle-rfilter"
+                title="${on ? 'A filter is narrowing this list — click to see or clear it' : 'Filter these sessions: name, agent, when, your shelf, how many'}">⌕</button>
+        </div>`;
+    }
+
+    /**
+     * The miniature filter — the Sessions tables' own vocabulary, in 250px.
+     *
+     * ‼️ The typed values are deliberately NOT in this html. This section is
+     * re-rendered whenever its markup differs, and putting `value="…"` in it
+     * would mean every keystroke rebuilt the box you are typing in — the exact
+     * bug that made the composer unusable before 3.31.0. The boxes are filled
+     * in afterwards, imperatively, and never while they have the focus.
+     */
+    function resumePanelHtml() {
+        if (!st.showResume || !st.showRFilter) { return ''; }
+        const q = st.rq;
+        const agents = (DATA.resumeAgents || []);
+        const opt = (v, t, cur) => `<option value="${C.esc(v)}"${v === cur ? ' selected' : ''}>${C.esc(t)}</option>`;
+        const chip = (id, label, on, tip) =>
+            `<button class="rchip${on ? ' on' : ''}" id="${id}" title="${C.esc(tip)}">${label}</button>`;
+        return `<div class="rpanel">
+            <input type="text" id="c-rq-text" placeholder="name, agent or label…"
+                   title="Matched against the session's name, its agent and its labels">
+            <div class="rrow">
+                <select id="c-rq-agent" title="Only this agent's sessions">
+                    ${opt('', 'every agent', q.agent)}${agents.map(a => opt(a, a, q.agent)).join('')}
+                </select>
+                <select id="c-rq-when" title="When the session was last touched">
+                    ${opt('', 'any time', q.when)}${opt('1', 'last 24h', q.when)}${opt('7', 'last 7 days', q.when)}${opt('30', 'last 30 days', q.when)}${opt('90', 'last 90 days', q.when)}${opt('custom', 'between…', q.when)}
+                </select>
+            </div>
+            ${q.when === 'custom' ? `<div class="rrow">
+                <input type="date" id="c-rq-from" title="From this day">
+                <input type="date" id="c-rq-to" title="To this day, included">
+            </div>` : ''}
+            <div class="rrow">
+                ${chip('c-rq-pin', '📌 shelf', q.pinnedOnly, 'Only the sessions you pinned')}
+                ${chip('c-rq-user', '🧑 mine', q.userOnly, 'Hide automation runs — schedule, trigger, task, mission')}
+                <label class="rn" title="How many to list. Your shelf is always shown on top of this.">show
+                    <input type="number" id="c-rq-n" min="1" max="${Number(DATA.resumeMax) || 200}"
+                           placeholder="${Number(DATA.resumeDefaultN) || 15}">
+                </label>
+            </div>
+        </div>`;
+    }
+
+    /**
+     * The rows themselves, and one line saying how much of the whole they are.
+     *
+     * A session a live process already owns cannot be joined — resuming it
+     * would start a second process on the same transcript — so the row says so
+     * instead of offering it as if it were free.
+     */
+    function resumeListHtml() {
+        if (!st.showResume) { return ''; }
+        const owned = new Set(DATA.owned || []);
+        const list = DATA.resumable || [];
+        const rows = list.map(r => `
+            <div class="srow${owned.has(r.sessionId) ? ' owned' : ''}" data-resume="${C.esc(r.sessionId)}"
+                 ${ctxAttr({
+                     webviewSection: 'afConsoleResumable', preventDefaultContextMenuItems: false,
+                     sessionId: r.sessionId, title: r.title || '', agentName: r.agentName || '', cwd: r.cwd || ''
+                 })}
+                 title="${owned.has(r.sessionId) ? 'Open right now in a terminal or another process — Agent Farm cannot join a running session' : C.esc(r.cwd) + ' — right-click for session actions'}">
+                <div class="n">${r.pinned ? '📌 ' : ''}${C.esc(r.title)}</div>
+                <div class="m wrap">${who(r.agentName, r.sessionId)} · ${relTime(r.ts)} ago${r.tokens ? ` · <span class="pair" title="${C.esc(tokTip(r.tokens, r.cost))}">${tokBadge(r.tokens)}</span>` : ''}${r.contextTokens ? ` · <span class="pair" title="Approximate context after this session's last reply — what resuming it starts from">ctx ${C.fmtTok(r.contextTokens)}</span>` : ''}</div>
+            </div>`).join('');
+        // How many of how many — a list that silently ends at fifteen is why
+        // the filter had to exist in the first place.
+        const total = Number(DATA.resumeTotal) || 0;
+        const capped = list.length >= (Number(DATA.resumeMax) || 200);
+        const count = `<div class="rcount">
+            <span title="${capped ? 'The most this panel will list at once — narrow the filter to see further' : 'How many of your sessions this list is showing'}">${list.length} of ${total}${capped ? ' (max)' : ''}</span>
+            ${DATA.resumeFiltered ? '<span>·</span><button class="linkish" id="c-rq-clear" title="Back to the default list: your shelf and the newest sessions">clear filter</button>' : ''}
+        </div>`;
+        return (rows || `<div class="empty">${DATA.resumeFiltered ? 'No session matches this filter.' : 'No transcripts yet.'}</div>`) + count;
     }
 
     /**
@@ -601,8 +746,9 @@
             sub: s
                 ? `${C.esc(s.agentName)} · ${C.esc(s.status)}${s.exitReason ? ' — ' + C.esc(s.exitReason) : ''}`
                 : `${(DATA.sessions || []).length} hosted session(s) in this window`,
-            guide: 'console',
-            related: [{ nav: 'timeline', label: 'Live Timeline' }]
+            guide: 'console'
+            // No `related` here: Live Timeline is in the global nav already, and
+            // a page that adds it again gives the header the SAME button twice.
         });
     }
 
@@ -675,7 +821,9 @@
                     <select id="c-perm">${opts(DATA.permissions, s.permissionMode)}</select>
                 </label>
                 ${window.AFFilter.multi({
-                    id: 'c-kinds', label: 'show', allLabel: 'show: everything',
+                    // allLabel is what follows "show: " — repeating the word
+                    // here is how the button came to read "show: show: …"
+                    id: 'c-kinds', label: 'show', allLabel: 'everything',
                     options: KINDS, selected: st.kinds,
                     title: 'Which kinds of line the conversation shows — tick any combination'
                 })}
@@ -696,7 +844,12 @@
         document.getElementById('app').innerHTML = `${STYLE}
             <div id="c-head"></div>
             <div class="cwrap">
-                <div class="clist" id="c-list"></div>
+                <div class="clist">
+                    <div id="c-list"></div>
+                    <div id="c-rhead"></div>
+                    <div id="c-rpanel"></div>
+                    <div id="c-rlist"></div>
+                </div>
                 <div class="cmain">
                     <div class="talkwrap">
                         <div class="talk" id="talk"><div class="talkinner" id="talkinner"></div></div>
@@ -787,37 +940,126 @@
      * and **the clock** (see the tick below). Everything else on the page
      * changes only when the CLI says something.
      */
+    const byId = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
+
     function renderList() {
-        if (!slot('c-list', sessionListHtml())) { return; }
-        document.querySelectorAll('[data-sel]').forEach(r =>
-            r.addEventListener('click', () => vscode.postMessage({ type: 'select', id: r.dataset.sel })));
-        document.querySelectorAll('[data-resume]').forEach(r =>
-            r.addEventListener('click', () => vscode.postMessage({
-                type: 'resume', sessionId: r.dataset.resume,
-                model: st.model, effort: st.effort, permissionMode: st.permissionMode
-            })));
-        // "Where you left off": the same resume, from the shelf
-        document.querySelectorAll('[data-back]').forEach(r =>
-            r.addEventListener('click', ev => {
-                if (ev.target && ev.target.dataset && ev.target.dataset.backforget) { return; }
-                vscode.postMessage({
-                    type: 'resume', sessionId: r.dataset.back,
+        if (slot('c-list', sessionListHtml())) {
+            document.querySelectorAll('[data-sel]').forEach(r =>
+                r.addEventListener('click', () => vscode.postMessage({ type: 'select', id: r.dataset.sel })));
+            // "Where you left off": the same resume, from the shelf
+            document.querySelectorAll('[data-back]').forEach(r =>
+                r.addEventListener('click', ev => {
+                    if (ev.target && ev.target.dataset && ev.target.dataset.backforget) { return; }
+                    vscode.postMessage({
+                        type: 'resume', sessionId: r.dataset.back,
+                        model: st.model, effort: st.effort, permissionMode: st.permissionMode
+                    });
+                }));
+            document.querySelectorAll('[data-backforget]').forEach(b =>
+                b.addEventListener('click', ev => {
+                    ev.stopPropagation();
+                    vscode.postMessage({ type: 'forgetLastWindow', sessionId: b.dataset.backforget });
+                }));
+            byId('c-new', 'click', () => vscode.postMessage({ type: 'select', id: '' }));
+            // the nudge, answered: go to whichever has waited longest
+            byId('c-next', 'click', () => {
+                const next = needingYou()[0];
+                if (next) { vscode.postMessage({ type: 'select', id: next.id }); }
+            });
+        }
+        renderResume();
+    }
+
+    /** The query the host is answering right now — sent whenever it changes,
+     *  and once at startup if the section was left open. */
+    function postResume() {
+        vscode.postMessage({ type: 'resumeQuery', open: !!st.showResume, query: st.rq });
+    }
+
+    /** A change made in the panel: remember it, ask the host, redraw the rest.
+     *  The panel itself is NOT redrawn on a typed change (see resumePanelHtml). */
+    function rqChanged(structural) {
+        save();
+        postResume();
+        if (structural) { renderResume(); }
+    }
+
+    function renderResume() {
+        if (slot('c-rhead', resumeHeadHtml())) {
+            byId('c-toggle-resume', 'click', () => {
+                st.showResume = !st.showResume;
+                // opening the list is what makes the host compute it at all
+                rqChanged(true);
+            });
+            byId('c-toggle-rfilter', 'click', () => {
+                // asking for the filter while the list is closed opens the list:
+                // a filter over something you cannot see is a dead control
+                if (!st.showResume) { st.showResume = true; }
+                st.showRFilter = !st.showRFilter;
+                rqChanged(true);
+            });
+        }
+
+        if (slot('c-rpanel', resumePanelHtml())) { wireResumePanel(); }
+        fillResumePanel();
+
+        if (slot('c-rlist', resumeListHtml())) {
+            document.querySelectorAll('[data-resume]').forEach(r =>
+                r.addEventListener('click', () => vscode.postMessage({
+                    type: 'resume', sessionId: r.dataset.resume,
                     model: st.model, effort: st.effort, permissionMode: st.permissionMode
-                });
-            }));
-        document.querySelectorAll('[data-backforget]').forEach(b =>
-            b.addEventListener('click', ev => {
-                ev.stopPropagation();
-                vscode.postMessage({ type: 'forgetLastWindow', sessionId: b.dataset.backforget });
-            }));
-        const byId = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
-        byId('c-new', 'click', () => vscode.postMessage({ type: 'select', id: '' }));
-        // the nudge, answered: go to whichever has waited longest
-        byId('c-next', 'click', () => {
-            const next = needingYou()[0];
-            if (next) { vscode.postMessage({ type: 'select', id: next.id }); }
+                })));
+            byId('c-rq-clear', 'click', () => {
+                st.rq = EMPTY_RQ();
+                rqChanged(true);
+                fillResumePanel(true);
+            });
+        }
+    }
+
+    /** Typing is debounced: every keystroke otherwise asks the host to walk the
+     *  whole index and push a new snapshot back. */
+    let rqTimer = null;
+    function rqTyped(fn) {
+        fn();
+        if (rqTimer) { clearTimeout(rqTimer); }
+        rqTimer = setTimeout(() => { rqTimer = null; rqChanged(false); }, 250);
+    }
+
+    function wireResumePanel() {
+        const on = (id, ev, fn) => byId(id, ev, fn);
+        const el = id => document.getElementById(id);
+        on('c-rq-text', 'input', () => rqTyped(() => { st.rq.text = el('c-rq-text').value; }));
+        on('c-rq-agent', 'change', () => { st.rq.agent = el('c-rq-agent').value; rqChanged(false); });
+        on('c-rq-when', 'change', () => {
+            st.rq.when = el('c-rq-when').value;
+            // 'between…' brings its two date boxes with it — that IS structural
+            rqChanged(true);
         });
-        byId('c-toggle-resume', 'click', () => { st.showResume = !st.showResume; save(); paint(); });
+        on('c-rq-from', 'change', () => { st.rq.from = el('c-rq-from').value; rqChanged(false); });
+        on('c-rq-to', 'change', () => { st.rq.to = el('c-rq-to').value; rqChanged(false); });
+        on('c-rq-pin', 'click', () => { st.rq.pinnedOnly = !st.rq.pinnedOnly; rqChanged(true); });
+        on('c-rq-user', 'click', () => { st.rq.userOnly = !st.rq.userOnly; rqChanged(true); });
+        on('c-rq-n', 'input', () => rqTyped(() => {
+            const n = parseInt(el('c-rq-n').value, 10);
+            st.rq.limit = isFinite(n) && n > 0 ? n : 0;
+        }));
+    }
+
+    /** Put the remembered values back into the boxes — never into the one you
+     *  are typing in, which is the whole reason they are not in the markup. */
+    function fillResumePanel(force) {
+        const set = (id, v) => {
+            const e = document.getElementById(id);
+            if (!e || (!force && e === document.activeElement)) { return; }
+            if (e.value !== v) { e.value = v; }
+        };
+        set('c-rq-text', st.rq.text || '');
+        set('c-rq-agent', st.rq.agent || '');
+        set('c-rq-when', st.rq.when || '');
+        set('c-rq-from', st.rq.from || '');
+        set('c-rq-to', st.rq.to || '');
+        set('c-rq-n', st.rq.limit ? String(st.rq.limit) : '');
     }
 
     /**
@@ -972,4 +1214,8 @@
     if (DATA.presetAgent) { st.agentId = DATA.presetAgent; save(); }
 
     paint();
+    // The list you left open (and the question you left it asking) is state the
+    // HOST has to know about: it is the one that can see every session, and it
+    // computes nothing for a section nobody is looking at.
+    if (st.showResume) { postResume(); }
 })();

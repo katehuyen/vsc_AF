@@ -138,7 +138,11 @@ const html = allHtml;
 {
     ok('the card carries the agent AND the session id',
         /developer<span class="sid">\(#407c78cb\)<\/span>/.test(html().replace(/\s+</g, '<')));
-    ok('…the cost with the tokens it bought', html().includes('$0.12 (48200t)'));
+    // One figure fits a 250px card, and it is the TOKENS: "$0.03" does not say
+    // whether that was haiku thinking briefly or opus barely starting.
+    ok('…the tokens it spent, not the dollars', html().includes('48200t tok')
+        && !html().includes('$0.12 (48200t)'));
+    ok('…with the money one hover away', /title="48200t tokens · \$0\.12 spent"/.test(html()));
     ok('…and the context the window is holding now', html().includes('ctx 24100t'));
     ok('…with the session\'s own name under the agent', html().includes('Kalan eksikler'));
 }
@@ -522,6 +526,94 @@ const html = allHtml;
     sandbox.document.querySelectorAll('[data-backforget]')[0]._fn({ stopPropagation() { }, target: { dataset: { backforget: '9c67e970-aaaa' } } });
     ok('…and it can be taken off the shelf instead',
         posted.some(m => m.type === 'forgetLastWindow' && m.sessionId === '9c67e970-aaaa'));
+}
+
+// ---------- the resume list is a question now, not a fixed sentence ----------
+// "Your shelf plus the fifteen newest" answers "carry on with what I was just
+// doing" and nothing else: last Tuesday's session was indexed, on disk, and
+// unreachable from the panel. The controls are the Sessions tables' own
+// vocabulary, shrunk to a 250px column — and the ANSWER comes from the host,
+// because the page can only filter what it was sent.
+{
+    const head = () => (els['c-rhead'] ? els['c-rhead']._html : '');
+    const panel = () => (els['c-rpanel'] ? els['c-rpanel']._html : '');
+    const rlist = () => (els['c-rlist'] ? els['c-rlist']._html : '');
+    const lastQuery = () => posted.filter(m => m.type === 'resumeQuery').pop();
+    const withResume = (extra) => {
+        const d = data(CONVO.slice());
+        d.resumable = [{
+            sessionId: 'aaaa1111-0001', title: 'ZEN sürüm notları', agentName: 'developer',
+            cwd: 'D:/a/dev', pinned: true, ts: Date.now() - 5 * 86400000,
+            cost: 0.31, tokens: 812000, contextTokens: 132000
+        }];
+        d.resumeAgents = ['developer', 'manager'];
+        d.resumeTotal = 1240; d.resumeMax = 200; d.resumeDefaultN = 15; d.resumeFiltered = false;
+        return Object.assign(d, extra || {});
+    };
+
+    push(withResume());
+    ok('the section is closed until you ask for it', panel() === '' && rlist() === '');
+    ok('…and its header carries both openers', /id="c-toggle-resume"/.test(head())
+        && /id="c-toggle-rfilter"/.test(head()));
+
+    // asking for the filter opens the list too — a filter over something you
+    // cannot see is a dead control
+    posted.length = 0;
+    els['c-toggle-rfilter'].listeners.click();
+    ok('the filter button opens the list as well', state.afConsole.showResume === true
+        && state.afConsole.showRFilter === true);
+    ok('…and tells the host to start answering', lastQuery() && lastQuery().open === true);
+
+    push(withResume());
+    ok('the panel offers the same vocabulary the tables filter with',
+        /id="c-rq-text"/.test(panel()) && /id="c-rq-agent"/.test(panel())
+        && /id="c-rq-when"/.test(panel()) && /id="c-rq-pin"/.test(panel())
+        && /id="c-rq-user"/.test(panel()) && /id="c-rq-n"/.test(panel()));
+    ok('…every agent that HAS sessions, not just today\'s fleet',
+        /value="manager"/.test(panel()));
+    ok('…and how many to show, defaulting to what it always showed',
+        /placeholder="15"/.test(panel()));
+    // ‼️ The typed values are deliberately not in the markup: this section is
+    // rewritten whenever it differs, and a value= would rebuild the box you are
+    // typing in on every keystroke (the composer's own old bug).
+    ok('a typed value is never written into the markup',
+        !/<input[^>]*\svalue=/.test(panel()));
+
+    // a date range is two more boxes, and only when you ask for one
+    ok('no date boxes until the range is chosen', !/id="c-rq-from"/.test(panel()));
+    els['c-rq-when'].value = 'custom';
+    els['c-rq-when'].listeners.change();
+    push(withResume());
+    ok('"between…" brings its two dates with it',
+        /id="c-rq-from"/.test(panel()) && /id="c-rq-to"/.test(panel()));
+
+    // the count line, and the way out
+    posted.length = 0;
+    push(withResume({ resumeFiltered: true }));
+    ok('the list says how much of the whole it is showing', /1 of 1240/.test(rlist()));
+    ok('…and a filtered list offers the way back', /id="c-rq-clear"/.test(rlist()));
+    ok('…which the header also shows, lit, even when collapsed', /rfilter on/.test(head()));
+    els['c-rq-clear'].listeners.click();
+    ok('clearing asks the unfiltered question again', (() => {
+        const q = lastQuery().query;
+        return q.text === '' && q.when === '' && q.agent === ''
+            && q.pinnedOnly === false && q.userOnly === false && q.limit === 0;
+    })());
+
+    // the rows themselves
+    push(withResume());
+    ok('a resumable row leads with what it spent, in tokens',
+        />812000t tok</.test(rlist()));
+    ok('…with the dollars moved into the tooltip, where the space is free',
+        /title="812000t tokens · \$0\.31 spent"/.test(rlist()));
+    ok('…says how long ago in days, not in hours',
+        /5d ago/.test(rlist()) && !/120h ago/.test(rlist()));
+    ok('…and keeps a figure and its label on one line',
+        /class="pair"/.test(rlist()));
+    posted.length = 0;
+    sandbox.document.querySelectorAll('[data-resume]')[0]._fn({});
+    ok('…and still resumes when clicked',
+        posted.some(m => m.type === 'resume' && m.sessionId === 'aaaa1111-0001'));
 }
 
 // ---------- the composer stays on the window's bottom edge ----------

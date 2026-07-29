@@ -271,6 +271,17 @@ Both strips used to say **ctx** — the same session-wide figure twice, three ce
 - **Cost is never written without the tokens that bought it**, in one order everywhere on the page — the money first, the tokens in parentheses. `$0.03` of haiku and `$0.03` of opus are not the same event.
 - **Model and effort are stated where the rest of the launch decisions are:** the fixed line under the composer now reads `developer · opus-5 · high effort`.
 
+### The resume list, asked a question (3.36.0)
+
+The list under **Resume an existing session** used to be a fixed sentence: your shelf, plus the fifteen newest transcripts. That answers *"carry on with what I was just doing"* and nothing else — last Tuesday's session was indexed, alive on disk, and unreachable from the panel unless fourteen newer ones had not happened.
+
+The small button beside that row opens a **miniature filter inside the column**: text (name · agent · labels) · one agent · when (24h / 7 / 30 / 90 days / *between…* two dates) · **📌 shelf** · **🧑 mine** (hides schedule / trigger / task runs) · and **show N**, how many rows you want. Same vocabulary as the Sessions tables, deliberately not a second filtering language.
+
+- **The list says how much of the whole it is** — `20 of 1240` — with a **clear filter** link, and the filter button stays **lit** while anything is set, even collapsed: a list that is quietly hiding things has to say so.
+- **An unset filter changes nothing.** The default is exactly the old list, and **your shelf is never cut by the row count**.
+- **The host answers, not the page.** The page can only filter what it was sent, and the point is to reach a session that is *not* in the newest fifteen. A closed list costs nothing — this snapshot is rebuilt on every event of every hosted session — and the answer is capped at 200 rows however wide the question.
+- **A card leads with tokens now** (`482.0k tok`), with the money in the tooltip: a 250px row has space for one figure, the name needs the rest, and `$0.03` does not say whether that was haiku thinking briefly or opus barely starting. Both strips under the conversation still carry the cost in full.
+
 ### ‼️ The wait grows by itself (3.35.1)
 
 The left panel's whole design is *"the nudge is **time**, not animation"* — a card that has been waiting says `your turn · 41m`, and the line above the cards says `● 3 waiting for you · longest 41m`. Every figure there is written during a **data push**, and a push only arrives when the CLI says something; a session waiting for **you** says nothing, by definition. So those figures were written the moment the turn ended and then stood at `0s` for as long as you were away, telling you the opposite of what they exist to say.

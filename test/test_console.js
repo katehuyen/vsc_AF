@@ -466,6 +466,24 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         && /args\.forget === true/.test(ext));
 }
 
+// ---------- the resume list: asked, answered by the host ----------
+{
+    const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'consolePanel.ts'), 'utf8');
+    const js = fs.readFileSync(path.join(__dirname, '..', 'media', 'console.js'), 'utf8');
+    ok('the page asks, the host answers — the page cannot filter what it was never sent',
+        /case 'resumeQuery'/.test(panel) && /type: 'resumeQuery'/.test(js));
+    // The Console re-sends its whole state on every event of every session; a
+    // list nobody is looking at must not be built at all, let alone shipped.
+    ok('a closed list costs nothing', /if \(!this\.resumeOpen\)/.test(panel));
+    ok('…and the shelf still comes first, exempt from the row count',
+        /the shelf is never cut/.test(fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'consoleresume.ts'), 'utf8')));
+    ok('the filter is the Sessions tables\' vocabulary, not a second language',
+        /same vocabulary the Sessions tables filter with/.test(
+            fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'consoleresume.ts'), 'utf8')));
+    ok('a page carries no nav button the global nav already has',
+        !/related: \[\{ nav: 'timeline'/.test(js));
+}
+
 // ---------- the turn above the box, the session below it ----------
 {
     const js = fs.readFileSync(path.join(__dirname, '..', 'media', 'console.js'), 'utf8');

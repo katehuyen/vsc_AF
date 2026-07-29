@@ -2,9 +2,12 @@ import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
 import { ConsoleHost } from '../core/consolehost';
 import { ConsoleMessage, PERMISSION_GRANTS } from '../core/consoleproto';
+import {
+    filterResumable, isResumeFiltered, RESUME_DEFAULT_N, RESUME_MAX, ResumeQuery
+} from '../core/consoleresume';
 import { EFFORT_CHOICES, modelChoices, PERMISSION_CHOICES } from '../core/launch';
-import { Usage } from '../core/pricing';
-import { SessionIndex } from '../core/sessions';
+import { totalTokens, Usage } from '../core/pricing';
+import { SessionInfo, SessionIndex, sessionOrigin } from '../core/sessions';
 import { handleAfNav, htmlShell } from './base';
 
 /**
@@ -71,6 +74,17 @@ export class ConsolePanel {
     private selected?: string;
     /** agent to preselect in the composer (opened from an agent row) */
     private presetAgent?: string;
+    /**
+     * Is the resume list open, and what is it being asked for?
+     *
+     * Both live here rather than in the page because the ANSWER is built here:
+     * the page can only filter what it was sent, and the whole point of the
+     * filter is to reach a session that is not in the newest fifteen. When the
+     * section is closed nothing is computed at all — this snapshot is rebuilt
+     * on every event of every hosted session.
+     */
+    private resumeOpen = false;
+    private resumeQuery: ResumeQuery = {};
 
     static show(deps: ConsoleDeps, opts?: { sessionId?: string; agentId?: string }): void {
         if (ConsolePanel.current) {
@@ -176,20 +190,57 @@ export class ConsolePanel {
             lastWindow: this.deps.lastWindow()
                 .filter(r => !hosted.some(h => h.sessionId === r.sessionId
                     && h.status !== 'ended' && h.status !== 'error')),
-            // the shelf + recent transcripts, to resume one into the Console
-            resumable: [
-                ...this.deps.index.pinned(),
-                ...this.deps.index.all()
-                    .filter(s => !s.pinned && !s.isSidechain && !s.machine && s.cwd)
-                    .sort((a, b) => (b.lastTs || b.mtime) - (a.lastTs || a.mtime))
-                    .slice(0, 15)
-            ].slice(0, 25).map(s => ({
-                sessionId: s.sessionId, title: s.title, agentName: s.agentName ?? '',
-                cwd: s.cwd ?? '', pinned: !!s.pinned, ts: s.lastTs || s.mtime, cost: s.cost,
-                // "Ctx now" — the same figure the sessions tables show, so a row
-                // says what resuming it would cost you in window before you do
-                contextTokens: s.lastCtxTokens ?? 0
-            }))
+            // the shelf + the transcripts the query asks for (see resumeList)
+            ...this.resumeList()
+        };
+    }
+
+    /**
+     * The resume list: what it shows, how much of it there is, and who is in it.
+     *
+     * Closed, this costs nothing — and closed is the normal state, so the
+     * snapshot a streaming turn rebuilds ten times a second stays small. Open,
+     * it is one pass over the index with the page's own query applied
+     * (`core/consoleresume.ts`), which is the same work the unfiltered version
+     * always did.
+     */
+    private resumeList(): Record<string, unknown> {
+        if (!this.resumeOpen) {
+            return {
+                resumable: [], resumeTotal: 0, resumeAgents: [], resumeMax: RESUME_MAX,
+                resumeDefaultN: RESUME_DEFAULT_N, resumeFiltered: isResumeFiltered(this.resumeQuery)
+            };
+        }
+        const pool = this.deps.index.all()
+            .filter(s => !s.isSidechain && !s.machine && s.cwd)
+            .map(s => ({
+                s, title: s.title, agentName: s.agentName ?? '', tags: s.tags ?? [],
+                pinned: !!s.pinned, ts: s.lastTs || s.mtime, origin: sessionOrigin(s)
+            }));
+        // Every agent that has a session to resume — including agents no longer
+        // in the fleet, which is exactly when you go looking for an old session.
+        const agents = [...new Set(pool.map(r => r.agentName).filter(Boolean))].sort();
+        const hit = filterResumable(pool, this.resumeQuery, Date.now());
+        return {
+            resumable: hit.rows.map(r => this.resumeRow(r.s)),
+            resumeTotal: hit.total,
+            resumeAgents: agents,
+            resumeMax: RESUME_MAX,
+            resumeDefaultN: RESUME_DEFAULT_N,
+            resumeFiltered: isResumeFiltered(this.resumeQuery)
+        };
+    }
+
+    private resumeRow(s: SessionInfo): Record<string, unknown> {
+        return {
+            sessionId: s.sessionId, title: s.title, agentName: s.agentName ?? '',
+            cwd: s.cwd ?? '', pinned: !!s.pinned, ts: s.lastTs || s.mtime, cost: s.cost,
+            // what the session spent — the figure the card leads with, because
+            // "$0.03" alone does not say whether that was haiku or opus
+            tokens: totalTokens(s.usage),
+            // "Ctx now" — the same figure the sessions tables show, so a row
+            // says what resuming it would cost you in window before you do
+            contextTokens: s.lastCtxTokens ?? 0
         };
     }
 
@@ -291,6 +342,24 @@ export class ConsolePanel {
                 this.deps.forgetLastWindow(str('sessionId'));
                 this.refresh();
                 break;
+            // The page owns the controls, the host owns the answer: it can see
+            // every session, the page only what it was sent.
+            case 'resumeQuery': {
+                const q = (msg.query ?? {}) as ResumeQuery;
+                this.resumeOpen = msg.open === true;
+                this.resumeQuery = {
+                    text: typeof q.text === 'string' ? q.text : '',
+                    agent: typeof q.agent === 'string' ? q.agent : '',
+                    when: typeof q.when === 'string' ? q.when : '',
+                    from: typeof q.from === 'string' ? q.from : '',
+                    to: typeof q.to === 'string' ? q.to : '',
+                    pinnedOnly: q.pinnedOnly === true,
+                    userOnly: q.userOnly === true,
+                    limit: typeof q.limit === 'number' ? q.limit : undefined
+                };
+                this.refresh();
+                break;
+            }
             case 'send': {
                 const r = host.send(str('id'), str('text'));
                 if (!r) {

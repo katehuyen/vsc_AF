@@ -320,6 +320,17 @@ Sol paneldeki kart **bir oturumdur**, o hâlde **sağ tıklanır**: Rename · Re
 - **Maliyet, onu satın alan token'lar olmadan asla yazılmaz** — sayfanın her yerinde tek sıra: önce para, parantez içinde token. Haiku'nun `$0.03`'ü ile opus'un `$0.03`'ü aynı olay değildir.
 - **Model ve efor, diğer başlangıç kararlarının yanında:** kompozitörün altındaki sabit satır artık `developer · opus-5 · high effort` diyor.
 
+### Devam listesine soru sorulabiliyor (3.36.0)
+
+**Resume an existing session** altındaki liste sabit bir cümleydi: rafın, artı en yeni on beş transkript. Bu yalnızca *"az önce yaptığım işe devam et"*i cevaplar — geçen salı günkü oturum indekslenmişti, diskte duruyordu, ama ondan daha yeni on dört oturum olmadıkça panelden **ulaşılamazdı**.
+
+O satırın yanındaki küçük düğme, **kolonun içinde minyatür bir filtre** açıyor: metin (ad · ajan · etiket) · tek ajan · zaman (24s / 7 / 30 / 90 gün / *between…* iki tarih) · **📌 shelf** · **🧑 mine** (zamanlama / tetikleyici / görev koşularını gizler) · ve **show N**, kaç satır istediğin. Oturum tablolarındaki sözlüğün aynısı; bilerek ikinci bir filtre dili değil.
+
+- **Liste, bütünün ne kadarı olduğunu söyler** — `20 of 1240` — yanında **clear filter** bağlantısıyla; ve bir şey ayarlıysa filtre düğmesi **yanık kalır**, panel kapalıyken bile: sessizce bir şeyleri gizleyen liste bunu söylemek zorundadır.
+- **Filtre kullanılmazsa hiçbir şey değişmez.** Varsayılan tam olarak eski liste, ve **rafın satır sayısıyla asla kesilmez**.
+- **Cevabı sayfa değil host verir.** Sayfa yalnızca kendisine gönderileni süzebilir; oysa mesele en yeni on beşte **olmayan** bir oturuma ulaşmak. Kapalı liste hiçbir şeye mal olmaz — bu anlık görüntü her oturumun her olayında yeniden kuruluyor — ve soru ne kadar geniş olursa olsun cevap 200 satırla sınırlı.
+- **Kart artık token ile başlıyor** (`482.0k tok`), para ipucunda: 250px'lik bir satırda tek bir rakama yer var, gerisini adın kendisi istiyor, ve `$0.03` bunun kısa düşünen bir haiku mu yoksa daha yeni başlayan bir opus mu olduğunu söylemiyor. Konuşmanın altındaki iki şerit maliyeti tam olarak taşımaya devam ediyor.
+
 ### Oturumlar sekmeden uzun yaşar
 
 Console sekmesini kapatmak konuşmayı **öldürmez**; oturumlar sen bitirince ya da pencere kapanınca biter.
