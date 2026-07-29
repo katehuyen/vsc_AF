@@ -164,11 +164,37 @@
            Everything here is sized for a 250px column: 10px type, one-line
            controls, and every box allowed to shrink (min-width:0) so nothing
            can push the column wider than the page gave it. */
-        .rhead { flex-direction:row !important; gap:4px !important; align-items:stretch; margin-top:6px; }
-        .rhead .rtoggle { flex:1 1 auto; min-width:0; text-align:left; overflow:hidden;
+        /* ‼️ A ROW, said out loud. This was a plain block whose buttons happened
+           to sit side by side because they are inline — so the moment the label
+           grew (a "filtered" chip), the two icon buttons WRAPPED onto a second
+           line. Seen in the browser, not deduced. */
+        .rhead { display:flex; flex-direction:row !important; gap:4px !important;
+            align-items:stretch; margin-top:6px; }
+        .rhead .rtoggle { display:flex; align-items:center; gap:5px; flex:1 1 auto; min-width:0;
+            text-align:left; }
+        /* The LABEL gives way, never the chip: the label is always the same
+           sentence, the chip is the news. */
+        .rhead .rtoggle .rlabel { flex:1 1 auto; min-width:0; overflow:hidden;
             text-overflow:ellipsis; white-space:nowrap; }
         .rhead .rfilter { flex:none; width:28px; padding:0; font-size:11px; }
+        /* Two buttons, two different things to know at a glance:
+             ⌕ lit  = the panel is open (you are looking at the controls)
+             ⌦ lit  = a filter is SET (what you are looking at is narrowed)
+           They were one lit button before, which meant "open" and "filtered"
+           could not be told apart — and with the panel closed, a narrowed list
+           looked exactly like the whole list. The clear button is also the
+           fastest way out: it is next to the thing that caused it, not at the
+           bottom of a list you have to scroll to. */
         .rhead .rfilter.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground); }
+        .rhead .rclear.on { color:var(--vscode-editorWarning-foreground,#cca700);
+            border-color:color-mix(in srgb, var(--vscode-editorWarning-foreground,#cca700) 55%, transparent);
+            background:color-mix(in srgb, var(--vscode-editorWarning-foreground,#cca700) 14%, transparent); }
+        /* nothing to clear: there, so the row never changes shape, but plainly
+           not pressable */
+        .rhead .rclear:disabled { opacity:.3; cursor:default; }
+        .rfiltered { flex:none; font-size:10px; padding:1px 6px; border-radius:8px; white-space:nowrap;
+            color:var(--vscode-editorWarning-foreground,#cca700);
+            background:color-mix(in srgb, var(--vscode-editorWarning-foreground,#cca700) 14%, transparent); }
         .rpanel { gap:4px !important; padding:6px; border-radius:6px;
             border:1px solid var(--vscode-widget-border,#4443); }
         .rpanel input, .rpanel select { font-size:10px; padding:1px 3px; width:100%; min-width:0;
@@ -515,14 +541,17 @@
      * decided not to show you.
      */
     function resumeHeadHtml() {
-        const on = DATA.resumeFiltered;
+        const filtered = !!DATA.resumeFiltered;
         return `<div class="rhead">
             <button class="secondary rtoggle" id="c-toggle-resume"
                 title="The sessions on your shelf and the transcripts on this machine — click one to carry it on in the panel">
-                ${st.showResume ? '▾' : '▸'} Resume an existing session
+                <span class="rlabel">${st.showResume ? '▾' : '▸'} ${filtered ? 'Resume a session' : 'Resume an existing session'}</span>
+                ${filtered ? '<span class="rfiltered" title="This list is narrowed — the ⌦ button clears it">filtered</span>' : ''}
             </button>
-            <button class="secondary rfilter${on ? ' on' : ''}" id="c-toggle-rfilter"
-                title="${on ? 'A filter is narrowing this list — click to see or clear it' : 'Filter these sessions: name, agent, when, your shelf, how many'}">⌕</button>
+            <button class="secondary rfilter${st.showRFilter ? ' on' : ''}" id="c-toggle-rfilter"
+                title="Filter these sessions: name, agent, when, your shelf, how many">⌕</button>
+            <button class="secondary rfilter rclear${filtered ? ' on' : ''}" id="c-rq-clear"${filtered ? '' : ' disabled'}
+                title="${filtered ? 'Clear the filter — back to your shelf and the newest sessions' : 'No filter set'}">⌦</button>
         </div>`;
     }
 
@@ -593,9 +622,11 @@
         // the filter had to exist in the first place.
         const total = Number(DATA.resumeTotal) || 0;
         const capped = list.length >= (Number(DATA.resumeMax) || 200);
+        // The clear button lives in the header now, next to the thing that set
+        // the filter — at the bottom of a list you have to scroll to it.
         const count = `<div class="rcount">
             <span title="${capped ? 'The most this panel will list at once — narrow the filter to see further' : 'How many of your sessions this list is showing'}">${list.length} of ${total}${capped ? ' (max)' : ''}</span>
-            ${DATA.resumeFiltered ? '<span>·</span><button class="linkish" id="c-rq-clear" title="Back to the default list: your shelf and the newest sessions">clear filter</button>' : ''}
+            ${DATA.resumeFiltered ? '<span>·</span><span>filtered</span>' : ''}
         </div>`;
         return (rows || `<div class="empty">${DATA.resumeFiltered ? 'No session matches this filter.' : 'No transcripts yet.'}</div>`) + count;
     }
@@ -998,6 +1029,11 @@
                 st.showRFilter = !st.showRFilter;
                 rqChanged(true);
             });
+            byId('c-rq-clear', 'click', () => {
+                st.rq = EMPTY_RQ();
+                rqChanged(true);
+                fillResumePanel(true);
+            });
         }
 
         if (slot('c-rpanel', resumePanelHtml())) { wireResumePanel(); }
@@ -1009,11 +1045,6 @@
                     type: 'resume', sessionId: r.dataset.resume,
                     model: st.model, effort: st.effort, permissionMode: st.permissionMode
                 })));
-            byId('c-rq-clear', 'click', () => {
-                st.rq = EMPTY_RQ();
-                rqChanged(true);
-                fillResumePanel(true);
-            });
         }
     }
 

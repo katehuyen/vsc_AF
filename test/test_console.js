@@ -451,6 +451,12 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     ok('…as does the process they act on', /hostId: s\.id/.test(js));
     ok('the actions sit in their own group, under the naming ones',
         web.filter(m => /^2_run@/.test(m.group || '')).length === 3);
+    // The shelf is what the filter is FOR: pinning is how a session gets onto
+    // it, so it belongs on the card you are looking at — running or ended, in
+    // the hosted list or the resumable one.
+    ok('any card can be put on the shelf from its own menu',
+        web.some(m => m.command === 'agentfarm.pinSession'
+            && /afConsole\(Session\|Resumable\)/.test(m.when)));
     // `enablement` disables a MENU ITEM; it does not stop the command being run
     // another way, so the handler still refuses to remove a live session.
     ok('removing a session that is still running is refused, with the order to follow',
@@ -464,6 +470,49 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     ok('…and an agent can already do all three over the bridge',
         ext.includes("op: 'console.close'") && ext.includes("op: 'console.interrupt'")
         && /args\.forget === true/.test(ext));
+}
+
+// ---------- ‼️ a conversation that is running, ours, and unreachable ----------
+// An extension reload is not the clean shutdown `dispose()` assumes: the new
+// extension host starts with an empty session map while the old `claude` is
+// still alive, still holding its entry in the CLI registry. Everything
+// downstream then behaves correctly and traps you — the timeline draws it as
+// running (it is), the resume is refused (it must be), and the shelf keeps
+// offering "continue" on a conversation that can never be continued.
+{
+    const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'consolePanel.ts'), 'utf8');
+    const host = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'consolehost.ts'), 'utf8');
+
+    ok('a leftover of our own is recognised as such', /const leftoverOwner = /.test(ext));
+    ok('…only for a session THIS extension\'s Console started',
+        /consoleIds\.includes\(sessionId\)/.test(ext));
+    ok('…only when this window is not the one hosting it', /hostedHere/.test(ext));
+    // ‼️ "A leftover of ours" and "the conversation the OTHER window is in"
+    // look identical from here — both sdk-cli, both ours, neither hosted here.
+    // Offering to end the second would kill a conversation somebody is having,
+    // so each window writes down what it is reading, under its own pid.
+    ok('…and never a session another live window is reading',
+        /const readElsewhere = /.test(ext) && /if \(readElsewhere\(sessionId\)\) \{ return undefined; \}/.test(ext));
+    ok('…a claim that dies with the window that made it',
+        /console-hosting\.json/.test(ext) && /if \(k !== me && !pidAlive\(Number\(k\)\)\) \{ delete map\[k\]; \}/.test(ext));
+    ok('…and only when a program holds it, never somebody\'s terminal',
+        /owner\.entrypoint !== 'sdk-cli'/.test(ext));
+    ok('the way out is offered, never taken silently — it stops a real process',
+        /End it and continue here/.test(panel) && /End it and continue here/.test(ext));
+    ok('…from the panel AND from the side-panel resume',
+        /leftoverOwner\(s\.sessionId\)/.test(ext) && /this\.deps\.leftoverOwner\(sessionId\)/.test(panel));
+    // Resuming into a process that is still dying would put two of them on one
+    // transcript — the very thing the ownership rule exists to prevent.
+    ok('ending it waits until the session is really free',
+        /const endLeftover = /.test(ext) && /if \(!ownerOf\(readCliSessions\(claudeDir\(\)\), sessionId\)\) \{ return true; \}/.test(ext));
+    ok('…and says so plainly when it is not', /still holding that session/.test(panel));
+    // The child we hold is the shell wrapper; the CLI's registry names the
+    // process the session is actually about.
+    ok('End session ends the process the CLI itself registered, not just our shell',
+        /private ownerPid:/.test(host) && /if \(pid && pid !== h\.child\.pid\) \{ killPid\(pid\); \}/.test(host));
+    ok('…and the extension gives it that lookup',
+        /sid => ownerOf\(readCliSessions\(claudeDir\(\)\), sid\)\?\.pid/.test(ext));
 }
 
 // ---------- the resume list: asked, answered by the host ----------

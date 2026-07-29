@@ -320,6 +320,16 @@ Sol paneldeki kart **bir oturumdur**, o hâlde **sağ tıklanır**: Rename · Re
 - **Maliyet, onu satın alan token'lar olmadan asla yazılmaz** — sayfanın her yerinde tek sıra: önce para, parantez içinde token. Haiku'nun `$0.03`'ü ile opus'un `$0.03`'ü aynı olay değildir.
 - **Model ve efor, diğer başlangıç kararlarının yanında:** kompozitörün altındaki sabit satır artık `developer · opus-5 · high effort` diyor.
 
+### ‼️ Kendisini okuyan pencereden uzun yaşayan oturum (3.37.0)
+
+Console oturumu, eklenti sürecinin (extension host) başlattığı ve bir boru üzerinden okuduğu bir `claude`'dur. VS Code kapanınca biter — ama **eklentiyi yeniden yüklemek ya da güncellemek o temiz kapanış değildir**: yeni eklenti süreci boş bir oturum haritasıyla başlar, eski süreç ise hâlâ canlıdır ve CLI'ın oturum kaydındaki girdisini hâlâ tutuyordur.
+
+Bundan sonrası tek tek doğru davranır ve bütün bir tuzağa dönüşür. Live Timeline oturumu çalışıyor diye çizer (gerçekten çalışıyordur). Panel devam ettirmeyi reddeder (etmek zorundadır — Claude Code başka bir sürecin tuttuğu oturuma katılamaz). Ve raf, asla devam ettirilemeyecek bir konuşma için *click to continue* demeye devam eder.
+
+- **Çıkış yolu, duvara tosladığın yerde sunuluyor:** böyle bir oturumu devam ettirmeye kalktığında panel ne olduğunu söylüyor — *"Agent Farm'ın önceki bir penceresinden hâlâ çalışıyor (pid N) — kimse okumuyor"* — ve **End it and continue here** diyor. Transkript diskte kalır, `--resume` söylenen her şeyi geri getirir; devam ettirme, ölmekte olan süreçle yarışmak yerine kaydın oturumu gerçekten bıraktığını bekler. Gerçek bir süreci durdurduğu için her seferinde sorulur.
+- **Asla başkasının içinde olduğu bir konuşma değil.** Her pencere, okuduğu oturumları kendi eklenti-süreci pid'i altına yazıyor (`console-hosting.json`); iddia, onu ortaya atan pencereyle birlikte ölür — böylece "öteki pencere orada konuşuyor" ile "artık" asla karışmaz.
+- **End session artık CLI'ın kaydettiği süreci bitiriyor**, yalnızca Agent Farm'ın başlattığı kabuğu değil — yeni artıkların oluşmasını engelleyen şey budur.
+
 ### Devam listesine soru sorulabiliyor (3.36.0)
 
 **Resume an existing session** altındaki liste sabit bir cümleydi: rafın, artı en yeni on beş transkript. Bu yalnızca *"az önce yaptığım işe devam et"*i cevaplar — geçen salı günkü oturum indekslenmişti, diskte duruyordu, ama ondan daha yeni on dört oturum olmadıkça panelden **ulaşılamazdı**.

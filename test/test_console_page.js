@@ -591,8 +591,19 @@ const html = allHtml;
     posted.length = 0;
     push(withResume({ resumeFiltered: true }));
     ok('the list says how much of the whole it is showing', /1 of 1240/.test(rlist()));
-    ok('…and a filtered list offers the way back', /id="c-rq-clear"/.test(rlist()));
-    ok('…which the header also shows, lit, even when collapsed', /rfilter on/.test(head()));
+    // ‼️ Two buttons, two facts. One lit button had to mean both "the panel is
+    // open" and "the list is narrowed", so with the panel shut a filtered list
+    // looked exactly like the whole list — and the only way out was a link at
+    // the bottom of a list you had to scroll to.
+    ok('…the way out sits next to the thing that caused it',
+        /id="c-rq-clear"/.test(head()) && /class="secondary rfilter rclear on"/.test(head()));
+    ok('…and the header says, in a word, that you are seeing a narrowed list',
+        /class="rfiltered"[^>]*>filtered</.test(head()));
+    push(withResume());
+    ok('…and with nothing set, the button is there but plainly dead',
+        / disabled/.test(head()) && !/rclear on/.test(head()));
+
+    push(withResume({ resumeFiltered: true }));
     els['c-rq-clear'].listeners.click();
     ok('clearing asks the unfiltered question again', (() => {
         const q = lastQuery().query;

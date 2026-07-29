@@ -271,6 +271,16 @@ Both strips used to say **ctx** — the same session-wide figure twice, three ce
 - **Cost is never written without the tokens that bought it**, in one order everywhere on the page — the money first, the tokens in parentheses. `$0.03` of haiku and `$0.03` of opus are not the same event.
 - **Model and effort are stated where the rest of the launch decisions are:** the fixed line under the composer now reads `developer · opus-5 · high effort`.
 
+### ‼️ A session that outlives the window that was reading it (3.37.0)
+
+A Console session is a `claude` the extension host spawned and reads over a pipe. Closing VS Code ends it — but an **extension reload or update is not that clean shutdown**: the new extension host starts with an empty session map while the old process is still alive, still holding its entry in the CLI's session registry.
+
+Everything downstream then behaves correctly and the whole is a trap. The Live Timeline draws the session as running (it *is*). The panel refuses to resume it (it must — Claude Code cannot join a session another process holds). And the shelf keeps offering *click to continue* on a conversation that can never be continued.
+
+- **The way out is offered where you hit the wall:** resuming such a session says *"still running from an earlier window of Agent Farm (pid N) — nothing is reading it"* and offers **End it and continue here**. The transcript stays on disk, `--resume` brings back everything that was said, and the resume waits until the registry has really let go instead of racing a dying process. Asked every time, because it stops a real process.
+- **Never a conversation somebody else is in.** Each window records what it is reading under its own extension-host pid (`console-hosting.json`); a claim dies with the window that made it, so "another window is talking in it" can never be mistaken for a leftover.
+- **End session ends the process the CLI registered**, not just the shell Agent Farm spawned — which is what stops new leftovers being made.
+
 ### The resume list, asked a question (3.36.0)
 
 The list under **Resume an existing session** used to be a fixed sentence: your shelf, plus the fifteen newest transcripts. That answers *"carry on with what I was just doing"* and nothing else — last Tuesday's session was indexed, alive on disk, and unreachable from the panel unless fourteen newer ones had not happened.

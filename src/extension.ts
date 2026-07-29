@@ -101,7 +101,7 @@ import {
 } from './core/sessionmarks';
 import { INTERRUPT_KEY, resolveInterrupt, TermRecord } from './core/interrupt';
 import { QUICK_MENU, QUICK_MENU_GROUPS } from './core/quickmenu';
-import { describeOwner, mergeSessionNames, ownerOf, readCliSessions, sessionsDir } from './core/cliSessions';
+import { describeOwner, mergeSessionNames, ownerOf, pidAlive, readCliSessions, sessionsDir } from './core/cliSessions';
 import { revealPath } from './core/reveal';
 import {
     agentProjectMap, assignAgent, normalizeProjects, ProjectDef, projectOfAgent,
@@ -141,7 +141,7 @@ import { MissionsPanel } from './panels/missionsPanel';
 import { PortfolioPanel } from './panels/portfolioPanel';
 import { ConsolePanel } from './panels/consolePanel';
 import { transcriptHistory } from './core/consolehistory';
-import { ConsoleHost } from './core/consolehost';
+import { ConsoleHost, killPid } from './core/consolehost';
 import { ConsoleMessage } from './core/consoleproto';
 import { MissionNode, MissionsTreeProvider } from './views/missionsTree';
 import { TriggerManager } from './core/triggers';
@@ -5036,7 +5036,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // Long-lived claude processes this window owns, spoken to over the CLI's
     // streaming JSON channel. They deliberately outlive the panel tab (closing
     // a tab must not kill a conversation) and die with the window.
-    const consoleHost = new ConsoleHost();
+    // The second argument is what makes "End session" end the right process:
+    // the CLI's registry names the `claude` itself, while the child we hold is
+    // only the shell that started it (see ConsoleHost.close).
+    const consoleHost = new ConsoleHost(
+        () => 'claude',
+        sid => ownerOf(readCliSessions(claudeDir()), sid)?.pid);
     context.subscriptions.push({ dispose: () => consoleHost.dispose() });
     context.subscriptions.push(consoleHost.onChange(() => ConsolePanel.refreshIfOpen()));
 
@@ -5172,9 +5177,54 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
     };
 
+    /**
+     * Which EXTENSION HOST is reading which hosted session, right now.
+     *
+     * Without this, "a leftover of ours" and "a session the OTHER VS Code
+     * window is having a conversation in" look identical from here: both are
+     * `sdk-cli`, both are ours by session id, and neither is hosted by this
+     * window. Offering to end the second one would kill a live conversation
+     * somebody is in — so the claim "nothing is reading it" has to be checked,
+     * not assumed. Each window writes its own entry under its extension-host
+     * pid; a window that is gone leaves a pid that no longer exists, which is
+     * exactly what a leftover is.
+     */
+    interface HostingEntry { beat: number; sessionIds: string[] }
+    const hostingFile = path.join(context.globalStorageUri.fsPath, 'console-hosting.json');
+    const readHosting = (): Record<string, HostingEntry> => {
+        try {
+            const j = JSON.parse(fs.readFileSync(hostingFile, 'utf8')) as Record<string, HostingEntry>;
+            return j && typeof j === 'object' ? j : {};
+        } catch { return {}; }
+    };
+    const writeHosting = (): void => {
+        const me = String(process.pid);
+        const map = readHosting();
+        const mine = consoleHost.list()
+            .filter(s => s.sessionId && s.status !== 'ended' && s.status !== 'error')
+            .map(s => s.sessionId as string);
+        if (mine.length) { map[me] = { beat: Date.now(), sessionIds: mine }; } else { delete map[me]; }
+        // windows that are gone: their claim goes with them
+        for (const k of Object.keys(map)) {
+            if (k !== me && !pidAlive(Number(k))) { delete map[k]; }
+        }
+        try {
+            fs.mkdirSync(path.dirname(hostingFile), { recursive: true });
+            fs.writeFileSync(hostingFile, JSON.stringify(map, null, 1), 'utf8');
+        } catch { /* a convenience file — never break a session over it */ }
+    };
+    /** Is another live window reading this session? */
+    const readElsewhere = (sessionId: string): boolean => {
+        const me = String(process.pid);
+        const map = readHosting();
+        return Object.keys(map).some(k => k !== me
+            && (map[k]?.sessionIds || []).includes(sessionId) && pidAlive(Number(k)));
+    };
+
     context.subscriptions.push(consoleHost.onChange(() => {
         rememberConsoleSessions();
         rememberOpenConsoleSessions();
+        writeHosting();
         announceFinishedTurns();
     }));
     /**
@@ -5202,8 +5252,61 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         history: consoleHistory,
         lastWindow: () => lastWindow,
         forgetLastWindow,
+        // …declared just below; the panel only ever calls them from a message
+        leftoverOwner: (sessionId: string) => leftoverOwner(sessionId),
+        endLeftover: (sessionId: string, pid: number) => endLeftover(sessionId, pid),
         // a turn's cost while it is still running — see ConsoleDeps.estimateCost
         estimateCost: (model: string, u: Usage) => pricing.costFor(model, u)
+    };
+
+    /**
+     * ‼️ A conversation that is running, ours, and unreachable.
+     *
+     * A Console session is a `claude` the extension host spawned and reads over
+     * a pipe. `dispose()` ends it when the window goes — but an extension
+     * RELOAD or an update is not that clean shutdown: the new extension host
+     * starts with an empty session map while the old process is still alive,
+     * still holding its entry in the CLI's session registry.
+     *
+     * Everything then behaves correctly and the result is a trap. The Live
+     * Timeline draws it as running (it IS running). The panel refuses to
+     * resume it, because Claude Code cannot join a session another process
+     * holds — two processes on one transcript is exactly the 3.29.0 rule. And
+     * the shelf offers "click to continue" on a conversation that can never be
+     * continued. Nobody is reading it, and nobody can.
+     *
+     * `--resume` was measured to pick the same session back up with everything
+     * it remembers, so the way out is to end the leftover and resume. That is
+     * destructive, so it is never done silently — and it is only ever OFFERED
+     * for a session this extension's own Console started (`consoleIds`), which
+     * this window is not hosting, whose owner is a program rather than
+     * somebody's terminal.
+     */
+    const leftoverOwner = (sessionId: string): { pid: number } | undefined => {
+        if (!sessionId || !consoleIds.includes(sessionId)) { return undefined; }
+        const hostedHere = consoleHost.list().some(h => h.sessionId === sessionId
+            && h.status !== 'ended' && h.status !== 'error');
+        if (hostedHere) { return undefined; }
+        // …and not a conversation another window is having right now
+        if (readElsewhere(sessionId)) { return undefined; }
+        const owner = ownerOf(readCliSessions(claudeDir()), sessionId);
+        if (!owner || owner.entrypoint !== 'sdk-cli') { return undefined; }
+        return { pid: owner.pid };
+    };
+
+    /**
+     * End that leftover and wait until the CLI's registry really lets the
+     * session go — resuming into a process that is still dying would put two
+     * of them on the same transcript, which is the thing all of this exists to
+     * prevent. Returns false if it is still there when we run out of patience.
+     */
+    const endLeftover = async (sessionId: string, pid: number): Promise<boolean> => {
+        killPid(pid);
+        for (let i = 0; i < 20; i++) {
+            await new Promise(r => setTimeout(r, 200));
+            if (!ownerOf(readCliSessions(claudeDir()), sessionId)) { return true; }
+        }
+        return false;
     };
 
     /**
@@ -6497,6 +6600,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             async (arg?: { session?: SessionInfo } | SessionInfo) => {
                 const s = arg && 'session' in arg && arg.session ? arg.session : arg as SessionInfo | undefined;
                 if (!s?.sessionId || !s.cwd) { return; }
+                // our own leftover first — see leftoverOwner
+                const left = leftoverOwner(s.sessionId);
+                if (left) {
+                    const go = await vscode.window.showWarningMessage(
+                        `"${s.title}" is still running from an earlier window of Agent Farm (pid ${left.pid}) — nothing is reading it.`,
+                        {
+                            modal: true,
+                            detail: 'Claude Code cannot join a running session, so it cannot be picked up while that process holds it.\n\n'
+                                + 'Agent Farm can end the leftover and continue here: the transcript stays on disk and everything that was said comes back with it.'
+                        },
+                        'End it and continue here');
+                    if (go !== 'End it and continue here') { return; }
+                    if (!await endLeftover(s.sessionId, left.pid)) {
+                        void vscode.window.showWarningMessage(
+                            `Agent Farm: pid ${left.pid} is still holding that session — nothing was resumed.`);
+                        return;
+                    }
+                }
                 const owner = ownerOf(readCliSessions(claudeDir()), s.sessionId);
                 if (owner) {
                     const go = await vscode.window.showWarningMessage(

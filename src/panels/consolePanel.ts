@@ -56,6 +56,14 @@ export interface ConsoleDeps {
     /** take a row off that shelf (resumed, or not wanted) */
     forgetLastWindow(sessionId: string): void;
     /**
+     * Is this session held by a `claude` OUR Console started and nobody is
+     * reading any more — an extension reload's leftover? See the extension's
+     * `leftoverOwner`: it is the one owner a resume can honestly offer to end.
+     */
+    leftoverOwner(sessionId: string): { pid: number } | undefined;
+    /** end that leftover, resolving once the session is really free */
+    endLeftover(sessionId: string, pid: number): Promise<boolean>;
+    /**
      * What the tokens a running turn has spent are worth, at the rates the rest
      * of the extension prices everything else with.
      *
@@ -290,6 +298,32 @@ export class ConsolePanel {
                 const sessionId = str('sessionId');
                 const row = this.deps.index.all().find(s => s.sessionId === sessionId);
                 if (!row?.cwd) { return; }
+                // ‼️ First: is the thing holding it OUR OWN leftover?
+                //
+                // An extension reload leaves the hosted `claude` running with
+                // nobody on the other end of the pipe. Everything downstream
+                // then behaves correctly and traps you: the timeline draws it
+                // as running (it is), the resume is refused (it must be), and
+                // the shelf keeps offering "continue" on a conversation that
+                // can never be continued. The way out is to end that leftover
+                // — asked for explicitly, because it stops a real process.
+                const leftover = this.deps.leftoverOwner(sessionId);
+                if (leftover) {
+                    const go = await vscode.window.showWarningMessage(
+                        `"${row.title}" is still running from an earlier window of Agent Farm (pid ${leftover.pid}) — nothing is reading it.`,
+                        {
+                            modal: true,
+                            detail: 'Claude Code cannot join a running session, so this conversation cannot be picked up while that process holds it.\n\n'
+                                + 'Agent Farm can end the leftover and continue here: the transcript stays on disk and everything that was said comes back with it. Only whatever it was doing this second is lost.'
+                        },
+                        'End it and continue here');
+                    if (go !== 'End it and continue here') { return; }
+                    if (!await this.deps.endLeftover(sessionId, leftover.pid)) {
+                        void vscode.window.showWarningMessage(
+                            `Agent Farm: pid ${leftover.pid} is still holding that session — nothing was resumed. Stop it by hand and try again.`);
+                        return;
+                    }
+                }
                 // The guard that makes "same session" true instead of a story:
                 // if a process already owns this session id, resuming would
                 // start a second one on the same transcript.

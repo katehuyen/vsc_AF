@@ -38,6 +38,19 @@ export function killTree(child: cp.ChildProcess): void {
     try { child.kill(); } catch { /* already gone */ }
 }
 
+/** Stop one process and everything under it, by pid. Best effort, never throws:
+ *  a process that is already gone is the outcome we wanted. */
+export function killPid(pid: number): void {
+    if (!pid || pid < 1) { return; }
+    try {
+        if (process.platform === 'win32') {
+            cp.execFile('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true }, () => { });
+        } else {
+            process.kill(pid, 'SIGTERM');
+        }
+    } catch { /* already gone is fine */ }
+}
+
 export interface HostedSessionInit {
     agentId: string;
     agentName: string;
@@ -68,7 +81,18 @@ export class ConsoleHost {
 
     constructor(
         /** how to run the CLI — 'claude' unless the user overrode it */
-        private exe: () => string = () => 'claude'
+        private exe: () => string = () => 'claude',
+        /**
+         * The pid the CLI itself registered for a session, if the caller can
+         * look it up (`~/.claude/sessions/<pid>.json`).
+         *
+         * The child we hold is the `shell: true` wrapper, and a tree kill
+         * through it is one assumption deep: it works only as long as the real
+         * `claude` is still a descendant of that shell. The CLI's own registry
+         * names the process directly, so ending a session can stop the thing
+         * it is actually about instead of the thing that started it.
+         */
+        private ownerPid: (sessionId: string) => number | undefined = () => undefined
     ) {}
 
     onChange(fn: (id: string) => void): { dispose(): void } {
@@ -235,6 +259,15 @@ export class ConsoleHost {
         if (!h) { return; }
         try { h.child.stdin?.end(); } catch { /* already gone */ }
         killTree(h.child);
+        // …and the process the CLI itself registered for this session. A
+        // `claude` that survives its window keeps that registry entry, which
+        // tells everyone the session is open — and Claude Code cannot join a
+        // session another process holds, so a survivor does not just leak, it
+        // makes the conversation UNREACHABLE. Killing it by name closes that
+        // gap even when the shell tree above has already fallen apart.
+        const sid = h.state.sessionId;
+        const pid = sid ? this.ownerPid(sid) : undefined;
+        if (pid && pid !== h.child.pid) { killPid(pid); }
         this.mutate(id, s => ({ ...s, status: 'ended', exitReason: s.exitReason ?? 'closed by you' }));
     }
 

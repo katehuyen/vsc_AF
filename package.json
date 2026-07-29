@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.36.0",
+  "version": "3.37.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -2120,6 +2120,11 @@
           "command": "agentfarm.openSession",
           "when": "webviewSection =~ /^afConsole(Session|Resumable)$/",
           "group": "1_session@4"
+        },
+        {
+          "command": "agentfarm.pinSession",
+          "when": "webviewSection =~ /^afConsole(Session|Resumable)$/",
+          "group": "1_session@5"
         },
         {
           "command": "agentfarm.consoleInterruptTurn",
