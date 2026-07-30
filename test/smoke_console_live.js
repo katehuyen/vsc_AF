@@ -7,8 +7,9 @@
 // It proves the things unit tests cannot: a hosted process answers, a message
 // typed mid-turn is delivered INSIDE that turn (steering) while one you hold
 // back waits — editable — for the turn to end, an interrupt stops a running
-// turn, and a refused tool is unblocked by changing the session's permission
-// mode live (which is what the Console's permission box does).
+// turn, a tool that needs permission ASKS US and runs the moment we allow it,
+// an AskUserQuestion parks the turn and carries on with the answer we give it,
+// and the effort can be changed mid-conversation.
 // Model: haiku, shortest possible prompts.
 const fs = require('fs');
 const os = require('os');
@@ -109,23 +110,71 @@ const textOf = s => s.messages.filter(m => m.role === 'agent').map(m => m.text).
     ok('the queued message is sent after the interrupt', /PING2/.test(textOf(s)));
     ok('…and the session survived the interrupt', host.get(id).status !== 'ended');
 
-    // ---------- 4. a refused tool, then the live grant ----------
+    // ---------- 4. ‼️ the session ASKS US, and the turn waits ----------
+    // This is the whole two-way claim. A tool that needs permission no longer
+    // fails with "nobody granted it" — the CLI parks the turn on a control
+    // request and the panel answers it, exactly as a terminal does.
     host.send(id, 'Use the Write tool to create note.txt containing exactly: hello');
-    s = await waitFor(id, x => !!x.pendingPermission, 90_000);
-    ok('a permission refusal is detected as such', !!s.pendingPermission);
-    ok('…and the file was NOT written', !fs.existsSync(path.join(dir, 'note.txt')));
-    ok('changing the mode live is accepted', host.setPermissionMode(id, 'acceptEdits') === true);
-    s = await waitFor(id, x => x.permissionMode === 'acceptEdits', 30_000);
-    ok('the session reports the new mode', s.permissionMode === 'acceptEdits');
-    ok('…and the pending refusal is cleared', !s.pendingPermission);
-    host.send(id, 'Permission granted — please retry the action you were refused.');
+    s = await waitFor(id, x => !!x.pendingAsk, 90_000);
+    ok('the session asks for permission instead of failing', !!s.pendingAsk);
+    ok('…naming the tool and what it would do',
+        s.pendingAsk.tool === 'Write' && /note\.txt/.test(s.pendingAsk.detail));
+    ok('…marked as a permission, not a question',
+        s.pendingAsk.interactive === false && s.pendingAsk.questions.length === 0);
+    ok('…and the file has NOT been written while it waits',
+        !fs.existsSync(path.join(dir, 'note.txt')));
+    ok('…with the turn still open, not closed by the refusal', s.status === 'working');
+    ok('allowing it is accepted', host.answer(id, { kind: 'allow' }) === true);
     s = await waitFor(id, () => fs.existsSync(path.join(dir, 'note.txt')), 90_000);
-    ok('after the grant + retry the file is really written',
+    ok('…and the file is really written, in the SAME turn',
         fs.existsSync(path.join(dir, 'note.txt')));
     ok('the write shows up as a tool message with its file',
         s.messages.some(m => m.tool && m.tool.name === 'Write' && /note\.txt$/.test(m.tool.file || '')));
+    ok('…and nothing is left waiting', !host.get(id).pendingAsk);
 
-    // ---------- 5. closing ----------
+    // a deny is an answer too: the tool does not run and the agent is told why
+    await waitFor(id, x => x.status === 'idle', 60_000);
+    host.send(id, 'Use the Write tool to create secret.txt containing exactly: nope');
+    s = await waitFor(id, x => !!x.pendingAsk, 90_000);
+    ok('a second tool asks again', !!s.pendingAsk);
+    ok('denying it is accepted',
+        host.answer(id, { kind: 'deny', message: 'Not that file — leave it alone.' }) === true);
+    s = await waitFor(id, x => x.status === 'idle', 90_000);
+    ok('…the file is not written', !fs.existsSync(path.join(dir, 'secret.txt')));
+
+    // ---------- 5. ‼️ a QUESTION, answered mid-turn ----------
+    const idq = host.start({
+        agentId: 'x', agentName: 'ask', cwd: dir,
+        model: 'haiku', permissionMode: 'bypassPermissions',
+        firstPrompt: 'Use the AskUserQuestion tool to ask me whether I prefer tea or coffee, '
+            + 'then tell me what I chose.'
+    });
+    let a = await waitFor(idq, x => !!x.pendingAsk, 120_000);
+    ok('an AskUserQuestion parks the turn on a real question', !!a.pendingAsk);
+    ok('…the CLI marks it as one that EXISTS to ask', a.pendingAsk.interactive === true);
+    ok('…with its options, ready to be clicked',
+        a.pendingAsk.questions.length === 1 && a.pendingAsk.questions[0].options.length >= 2);
+    const q0 = a.pendingAsk.questions[0];
+    const chosen = (q0.options.find(o => /coffee|kahve/i.test(o.label)) || q0.options[1] || q0.options[0]).label;
+    ok('answering it is accepted',
+        host.answer(idq, { kind: 'answer', answers: { [q0.question]: chosen } }) === true);
+    // ‼️ The proof: the agent uses the answer WITHOUT a new prompt from us.
+    a = await waitFor(idq, x => x.status === 'idle' && textOf(x).length > 0, 120_000);
+    ok('…and the SAME turn carries on with what we said',
+        new RegExp(chosen, 'i').test(textOf(a)));
+    ok('…the answer is recorded in the conversation',
+        a.messages.some(m => m.role === 'ask' && (m.answer || '').includes(chosen)));
+    ok('…and exactly one turn ran — we never had to prompt again',
+        a.turns === 1);
+
+    // ---------- 6. effort, changed mid-conversation ----------
+    ok('asking for a new effort is accepted', host.setEffort(idq, 'high') === true);
+    a = await waitFor(idq, x => x.effort === 'high', 30_000);
+    ok('…and the session reports it once the CLI agrees', a.effort === 'high');
+    ok('…without a pending switch left over', !a.pendingEffort);
+    host.close(idq);
+
+    // ---------- 7. closing ----------
     host.close(id);
     s = await waitFor(id, x => x.status === 'ended', 15_000);
     ok('closing ends the session', s.status === 'ended');

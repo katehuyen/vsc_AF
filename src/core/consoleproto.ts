@@ -23,11 +23,32 @@
  *    `model` is a string, and it answers `success` or `error`. Unlike
  *    set_permission_mode the success carries NO payload, so the request id is
  *    what tells us which model was accepted — see `pendingModel`.
- *  - **A permission request is NOT a control request.** The tool simply comes
- *    back as an errored `tool_result` saying permission was never granted. So
- *    a panel cannot "answer a dialog" — there is no dialog. What it CAN do,
- *    honestly, is grant the mode and let the agent try again, which is what
- *    `PERMISSION_GRANTS` below describes and the Console offers by that name.
+ *  - **So can the EFFORT**: `{subtype:'apply_flag_settings', settings:{effortLevel}}`
+ *    is the very control request the CLI's own `/effort` command sends.
+ *    Measured (2026-07-30, sonnet): `get_settings.applied.effort` really moves
+ *    low → high → xhigh, and it answers with no payload — so, like set_model,
+ *    the request id is the only link back (see `pendingEffort`). On a model
+ *    with no effort levels (haiku) `applied.effort` stays null: the flag is
+ *    accepted and means nothing, which is why the picker says so rather than
+ *    pretending.
+ *  - **‼️ THE SESSION *CAN* ASK YOU SOMETHING MID-TURN — it just has to be
+ *    invited to.** With `--permission-prompt-tool stdio` on the command line
+ *    the CLI stops resolving permissions on its own and sends the host a
+ *    `control_request` of subtype `can_use_tool` (`tool_name`, `input`,
+ *    `tool_use_id`, and `requires_user_interaction:true` when the tool exists
+ *    purely to ask — AskUserQuestion). The turn STAYS OPEN until the host
+ *    answers `{behavior:'allow', updatedInput}` or `{behavior:'deny', message}`.
+ *    Measured end to end (2026-07-30, haiku): AskUserQuestion answered with
+ *    `updatedInput.answers[<question text>] = <option label>` came back as
+ *    "Your questions have been answered … you can now continue", and the agent
+ *    carried on in the SAME turn. No `initialize` handshake is needed — the
+ *    flag alone is what turns the channel two-way.
+ *
+ *    Without the flag the CLI has nobody to ask, so the tool comes back as an
+ *    errored `tool_result` and the turn ends — which is what the panel used to
+ *    see, and mistook for "there is no dialog". `PERMISSION_GRANTS` is still
+ *    the answer to a refusal that arrives that way (a permission RULE, a hook,
+ *    an older CLI), so it stays.
  *
  * Pure: builders, a parser and a reducer. No io, no vscode.
  */
@@ -45,9 +66,49 @@ export interface ConsoleToolUse {
     file?: string;
 }
 
+/** One question of an AskUserQuestion call, normalised. */
+export interface ConsoleAskQuestion {
+    question: string;
+    header?: string;
+    multiSelect?: boolean;
+    options: { label: string; description?: string }[];
+}
+
+/**
+ * ‼️ THE TURN IS WAITING FOR YOU — the panel's half of `can_use_tool`.
+ *
+ * Two different things arrive on the same wire and the difference is the CLI's
+ * own `requires_user_interaction` flag, not a guess of ours:
+ *   · `interactive` — the tool IS the question (AskUserQuestion). It is answered
+ *     by handing its own input back with `answers` filled in; there is nothing
+ *     to "permit".
+ *   · otherwise — an ordinary permission ask: this tool, with this input, may or
+ *     may not run. Allow or deny.
+ *
+ * Either way the turn is parked until `requestId` is answered, so a pending ask
+ * is never something the panel may drop on the floor (see ConsoleHost.close /
+ * interrupt, which deny it rather than leave a process waiting forever).
+ */
+export interface ConsoleAsk {
+    /** the control request id the answer must carry back */
+    requestId: string;
+    tool: string;
+    displayName?: string;
+    toolUseId?: string;
+    /** the CLI said this tool exists to ask you something */
+    interactive: boolean;
+    /** the tool's own input — handed back verbatim (plus answers) on allow */
+    input: Record<string, unknown>;
+    /** AskUserQuestion's questions; empty for a plain permission ask */
+    questions: ConsoleAskQuestion[];
+    /** one line describing what is being asked, for the row and the card */
+    detail: string;
+    ts: number;
+}
+
 export interface ConsoleMessage {
     id: string;
-    role: 'user' | 'agent' | 'tool' | 'result' | 'system' | 'error';
+    role: 'user' | 'agent' | 'tool' | 'result' | 'system' | 'error' | 'ask';
     ts: number;
     text?: string;
     /** said INTO a running turn (see acceptUserText) rather than starting one */
@@ -57,6 +118,9 @@ export interface ConsoleMessage {
     isError?: boolean;
     /** the CLI refused the tool because permission was never granted */
     permission?: { detail: string; tool?: string };
+    /** an 'ask' row: the question that was put to you, and what you said back */
+    ask?: ConsoleAsk;
+    answer?: string;
     /** result rows carry the turn's own numbers */
     cost?: number;
     turns?: number;
@@ -141,6 +205,15 @@ export interface ConsoleSessionState {
     /** last permission refusal still unanswered — the panel's call to action */
     pendingPermission?: { detail: string; tool?: string; ts: number };
     /**
+     * The question the CLI is holding the turn open for (see ConsoleAsk).
+     *
+     * ‼️ This is the difference between the Console and a terminal: a terminal
+     * asks you mid-turn and carries on with your answer, and the panel used to
+     * have no way to be asked at all — the tool failed, the agent wrapped up,
+     * and you had to start a NEW turn to say the one word it wanted.
+     */
+    pendingAsk?: ConsoleAsk;
+    /**
      * A model switch we have asked for and not heard back about.
      *
      * `set_model` answers `success` with nothing in it, so the reply alone
@@ -150,6 +223,14 @@ export interface ConsoleSessionState {
      * is applied on the response, not on the request.
      */
     pendingModel?: { requestId: string; model: string };
+    /**
+     * An effort switch we have asked for and not heard back about.
+     *
+     * `apply_flag_settings` answers `success` with nothing in it — exactly like
+     * `set_model` — so the same rule applies: the picker is not moved until the
+     * CLI has agreed. `'' `means "back to the CLI's own default".
+     */
+    pendingEffort?: { requestId: string; effort: string };
 }
 
 /** The honest set of things a panel button can actually grant, live. */
@@ -172,11 +253,20 @@ export const PERMISSION_GRANTS: { mode: string; label: string; detail: string }[
     }
 ];
 
-/** CLI args for a hosted session (the flags are launch.ts's vocabulary). */
+/**
+ * CLI args for a hosted session (the flags are launch.ts's vocabulary).
+ *
+ * ‼️ `--permission-prompt-tool stdio` is not optional and not a tuning knob: it
+ * is the flag that makes the channel TWO-WAY. Without it the CLI resolves every
+ * permission and every AskUserQuestion by itself — which, with no human on its
+ * end, means "nobody answered" — and the panel only ever learns about it from
+ * the errored tool_result that closes the turn.
+ */
 export function hostArgs(o: {
     model?: string; effort?: string; permissionMode?: string; resume?: string;
 }): string[] {
-    const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose'];
+    const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
+        '--permission-prompt-tool', 'stdio'];
     if (o.resume) { args.push('--resume', o.resume); }
     if (o.model?.trim()) { args.push('--model', o.model.trim()); }
     if (o.effort?.trim()) { args.push('--effort', o.effort.trim()); }
@@ -199,6 +289,53 @@ export function controlLine(requestId: string, subtype: string, extra: Record<st
         request_id: requestId,
         request: { subtype, ...extra }
     }) + '\n';
+}
+
+/**
+ * The answer to a `can_use_tool` — a control RESPONSE, not a request: the CLI
+ * asked, and this carries the verdict back under the id it asked under.
+ *
+ * `allow` hands the input back because that is the contract: the CLI runs
+ * whatever `updatedInput` says, which is how an AskUserQuestion is answered
+ * (the same input with `answers` filled in) rather than merely permitted.
+ */
+export function askAnswerLine(
+    requestId: string, verdict: { behavior: 'allow'; updatedInput: Record<string, unknown> }
+        | { behavior: 'deny'; message: string }
+): string {
+    return JSON.stringify({
+        type: 'control_response',
+        response: { subtype: 'success', request_id: requestId, response: verdict }
+    }) + '\n';
+}
+
+/**
+ * What an AskUserQuestion call is really asking, pulled out of its input.
+ *
+ * Deliberately forgiving: a question the panel cannot parse must still be
+ * ANSWERABLE (allow / deny is always offered), because a card that renders
+ * nothing would leave the turn parked forever with no way out.
+ */
+export function askQuestions(input: Record<string, unknown> | undefined): ConsoleAskQuestion[] {
+    const raw = input?.['questions'];
+    if (!Array.isArray(raw)) { return []; }
+    const out: ConsoleAskQuestion[] = [];
+    for (const q of raw) {
+        const o = q as Record<string, unknown> | undefined;
+        const text = String(o?.['question'] ?? '').trim();
+        if (!text) { continue; }
+        const opts = Array.isArray(o?.['options']) ? o!['options'] as Record<string, unknown>[] : [];
+        out.push({
+            question: text,
+            header: String(o?.['header'] ?? '').trim() || undefined,
+            multiSelect: o?.['multiSelect'] === true,
+            options: opts.map(x => ({
+                label: String(x?.['label'] ?? '').trim(),
+                description: String(x?.['description'] ?? '').trim() || undefined
+            })).filter(x => x.label)
+        });
+    }
+    return out;
 }
 
 /** Tools whose call means a file changed (the ✎ chips and the diff surface). */
@@ -406,6 +543,55 @@ export function reduceEvent(
         };
     }
 
+    // ---- the CLI asking US something (see ConsoleAsk) ----------------------
+    if (type === 'control_request') {
+        const req = (o.request as Record<string, unknown> | undefined) ?? {};
+        if (String(req.subtype ?? '') !== 'can_use_tool') { return { state, changed: false }; }
+        const tool = String(req.tool_name ?? 'a tool');
+        const input = (req.input as Record<string, unknown> | undefined) ?? {};
+        const questions = askQuestions(input);
+        const ask: ConsoleAsk = {
+            requestId: String(o.request_id ?? ''),
+            tool,
+            displayName: typeof req.display_name === 'string' ? req.display_name : undefined,
+            toolUseId: typeof req.tool_use_id === 'string' ? req.tool_use_id : undefined,
+            interactive: req.requires_user_interaction === true,
+            input,
+            questions,
+            detail: questions.length
+                ? questions.map(q => q.question).join(' · ').slice(0, 300)
+                : (shortArg(tool, input) || tool),
+            ts: now
+        };
+        if (!ask.requestId) { return { state, changed: false }; }
+        return {
+            state: {
+                ...state, lastTs: now, pendingAsk: ask,
+                messages: [...state.messages, { id: nextId(), ts: now, role: 'ask', ask }]
+            },
+            changed: true
+        };
+    }
+
+    // The CLI took the question back (the turn was interrupted, a hook settled
+    // it, another client answered). Nothing to answer any more.
+    if (type === 'control_cancel_request') {
+        const id = String(o.request_id ?? '');
+        if (!state.pendingAsk || (id && state.pendingAsk.requestId !== id)) {
+            return { state, changed: false };
+        }
+        return {
+            state: {
+                ...state, lastTs: now, pendingAsk: undefined,
+                messages: [...state.messages, {
+                    id: nextId(), ts: now, role: 'ask',
+                    answer: 'withdrawn — the session stopped waiting for an answer'
+                }]
+            },
+            changed: true
+        };
+    }
+
     if (type === 'control_response') {
         const r = (o.response as Record<string, unknown> | undefined) ?? {};
         const inner = (r.response as Record<string, unknown> | undefined) ?? {};
@@ -423,6 +609,25 @@ export function reduceEvent(
                         text: failed
                             ? `model stayed ${state.model ?? 'as it was'} — ${String(r.error ?? 'the CLI refused the switch')}`
                             : `model is now "${pend.model}" — from the next turn on`
+                    }]
+                },
+                changed: true
+            };
+        }
+        // …and an effort switch, answered the same empty way (see pendingEffort)
+        const pe = state.pendingEffort;
+        if (pe && r.request_id === pe.requestId) {
+            const failed = r.subtype === 'error';
+            const name = pe.effort || 'the CLI default';
+            return {
+                state: {
+                    ...state, lastTs: now, pendingEffort: undefined,
+                    ...(failed ? {} : { effort: pe.effort }),
+                    messages: [...state.messages, {
+                        id: nextId(), ts: now, role: failed ? 'error' : 'system',
+                        text: failed
+                            ? `effort stayed ${state.effort || 'as it was'} — ${String(r.error ?? 'the CLI refused the change')}`
+                            : `effort is now ${name} — from the next turn on`
                     }]
                 },
                 changed: true
@@ -567,6 +772,71 @@ export function acceptUserText(
             messages: [...state.messages, { id: nextId(), ts: now, role: 'user', text: t }]
         },
         send: true
+    };
+}
+
+/**
+ * What you said back to a `can_use_tool` — the three honest shapes.
+ *
+ * `answer` is the AskUserQuestion one and is NOT a permission verdict: the
+ * chosen labels ride back inside the tool's own input, keyed by the question
+ * text, because that is the map the tool itself reads (measured against the
+ * CLI: `answers["<question>"] = "<label>"` produces "Your questions have been
+ * answered …", anything else produces "The user did not answer the questions").
+ * `response` is the free-text way out — "neither, do this instead".
+ */
+export type AskDecision =
+    | { kind: 'answer'; answers?: Record<string, string | string[]>; response?: string }
+    | { kind: 'allow' }
+    | { kind: 'deny'; message?: string };
+
+/** One line saying what you chose, for the transcript row and the log. */
+export function describeAnswer(ask: ConsoleAsk, d: AskDecision): string {
+    if (d.kind === 'deny') {
+        return d.message?.trim() ? `declined — ${d.message.trim()}` : 'declined';
+    }
+    if (d.kind === 'allow') { return `allowed ${ask.tool}`; }
+    const picked = Object.entries(d.answers ?? {})
+        .map(([q, a]) => `${q} → ${Array.isArray(a) ? a.join(', ') : a}`)
+        .filter(s => !s.endsWith('→ '));
+    if (d.response?.trim()) { picked.push(d.response.trim()); }
+    return picked.length ? picked.join(' · ') : 'answered';
+}
+
+/**
+ * Answer the pending ask: the state that comes back has nothing pending, and
+ * `line` is what must go on the wire to un-park the turn.
+ *
+ * Answering when nothing is pending returns no line at all — a stale click from
+ * a panel that repainted must never write a control_response for a request the
+ * CLI has already taken back (that would be an id it does not recognise).
+ */
+export function answerAsk(
+    state: ConsoleSessionState, decision: AskDecision, now = Date.now()
+): { state: ConsoleSessionState; line?: string } {
+    const ask = state.pendingAsk;
+    if (!ask) { return { state }; }
+    const verdict = decision.kind === 'deny'
+        ? { behavior: 'deny' as const, message: decision.message?.trim() || 'Declined by the user.' }
+        : {
+            behavior: 'allow' as const,
+            updatedInput: decision.kind === 'answer'
+                ? {
+                    ...ask.input,
+                    ...(decision.answers && Object.keys(decision.answers).length
+                        ? { answers: decision.answers } : {}),
+                    ...(decision.response?.trim() ? { response: decision.response.trim() } : {})
+                }
+                : ask.input
+        };
+    return {
+        state: {
+            ...state, lastTs: now, pendingAsk: undefined,
+            messages: [...state.messages, {
+                id: nextId(), ts: now, role: 'ask', answer: describeAnswer(ask, decision)
+            }]
+        },
+        line: askAnswerLine(ask.requestId, verdict)
     };
 }
 

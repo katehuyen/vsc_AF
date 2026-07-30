@@ -234,7 +234,7 @@ The **💬 Console** tab (first in the global nav, `Ctrl+Alt+C`) hosts long-live
 
 ### The composer
 
-Under the box: **agent · model · effort · permission mode** — all from the launcher's own dictionary (`core/launch.ts`), so the extension has one vocabulary rather than two. `Ctrl+Enter` sends.
+Under the box: **agent · model · effort · permission mode** — all from the launcher's own dictionary (`core/launch.ts`), so the extension has one vocabulary rather than two. `Ctrl+Enter` sends. **All three tuning dimensions stay live once the session is running (3.44.0)** — the folder (agent) is the one thing that really is fixed once the process is up; model, effort and permission mode all travel as control requests the CLI accepts mid-conversation (`/model`, `/effort`, `set_permission_mode`), so a session opened from an agent row can change exactly as much as one opened from the composer.
 
 - **⎋ Interrupt** stops the running turn through the CLI's own control channel. **The turn ends; the session and its context stay.**
 - **‼️ Typing mid-turn steers that turn (3.39.0).** What you write while the agent works goes **into the running turn** — the CLI delivers it at the turn's next step, the same way the interactive terminal delivers what you type while it works. So "no, do it the other way" arrives while there is still something to redirect. The line joins the conversation marked **↯**, because it did not start the turn above it. **Measured, twice:** against the raw CLI (a message written to stdin six seconds into a tool-calling turn reached the model at that turn's next step) and through the Console's own host in `smoke_console_live.js`, where the word only counts if it lands **before** the line that closes the turn.
@@ -243,9 +243,22 @@ Under the box: **agent · model · effort · permission mode** — all from the 
 - **‼️ Three mini tools on the box itself: ⧉ copy · ✂ cut · ✕ clear (3.43.0).** They act on the **text**, never on the agent — nothing here sends, starts, stops or parks anything, which is exactly why they sit on the box and not in the control row below it. Starting a message over, or lifting a half-written one out to paste somewhere else, was otherwise a keyboard-only job (select all, then a chord) on a page where every other action is a button. They live in the box's bottom-right, **left of the resize grip** which owns the very corner, half-lit until you hover, and they **appear only while there is text** — copy, cut and clear on an empty box are three buttons lying about having work to do. **⧉ answers with a green ✓ for a moment:** cut and clear empty the box in front of you, so the box itself is the receipt, but copy leaves the screen identical — and a button that answers a click with nothing has taught you it does not work. The caret goes back to the box afterwards, so reaching for the mouse never costs you the keyboard.
 - Each row carries its own **cost · turns · the CLI's context estimate**.
 
-### Permissions, answered honestly
+### ‼️ The session can ask you something — and the turn waits (3.44.0)
 
-**Measured first:** Claude Code **does not ask the panel anything** — a tool without permission simply comes back as an errored result. So there is no fake "Allow once" button here. The Console detects the refusal and offers what it can really do: **change this session's permission rule, live, and ask the agent to retry** — `Allow file edits` · `Let it decide` · `⚠ Allow everything` · `Plan only`. The permission selector stays live for the whole session, which the terminal path cannot do at all.
+Every hosted session runs with **`--permission-prompt-tool stdio`**, the flag that turns the channel two-way. Without it, measured: the CLI resolves every permission and every `AskUserQuestion` **by itself** ("nobody answered"), the tool comes back as an errored result, and the turn ends — which is what the Console used to see, and mistook for "there is no dialog to answer". With it, measured against the real CLI: a `can_use_tool` control request arrives, **the turn stays open**, and the answer sent back over the same channel lets it carry on — in the same turn, not a new one.
+
+A card **between the conversation and the composer** appears the moment a turn parks on a question, and the session's row says **`asking you`** instead of the misleading `working` a turn that cannot proceed would otherwise show. Two shapes, and the CLI itself says which (`requires_user_interaction`):
+
+- **A question** (`AskUserQuestion`) — its own options, one click each; a multi-select question keeps collecting until you press **Answer**, a single-select one sends on the click that completes it. Free text is always offered too, for "neither — do this instead", which no list of options can hold. The measured contract: the chosen label rides back **inside the tool's own input**, keyed by the question's exact text (`answers["<question>"] = "<label>"`) — `allow` with the input untouched is *not* an answer and produces the same "did not answer" the tool falls back to on its own.
+- **A permission** (any other tool) — **Allow once** or **Deny**, with a reason. This is the one-off decision the earlier `PERMISSION_GRANTS` box could never make honestly, because the CLI never used to ask.
+
+Answering a question the CLI has already withdrawn (turn interrupted, session closed, answered from elsewhere) is silently a no-op — the request id is what makes an answer valid, not a click. Interrupting a turn or closing a session with a question still parked answers it with a deny first, so the process is never left holding a request nobody will ever respond to.
+
+**Not on the bridge on purpose:** an agent can answer a *question* (`console.answer`) but can never grant a tool *permission* — the same boundary the general Needs-You queue draws. Deciding whether a tool may touch the machine stays the user's call, in the panel.
+
+### The leftover case: a rule, not a dialog
+
+Most permission decisions now arrive as the card above. What is left is the refusal **nobody was asked about** — a permission RULE, a hook, or an older CLI without the flag — and for that the Console still offers what it can honestly do: **change this session's standing permission rule, live, and ask the agent to retry** — `Allow file edits` · `Let it decide` · `⚠ Allow everything` · `Plan only`. The permission selector stays live for the whole session, which the terminal path cannot do at all.
 
 ### Code changes, inline
 
@@ -390,7 +403,7 @@ All of them open the Console with that agent **preselected in the composer**; **
 - **New session:** agent · model · effort · permission-mode pickers + your text → **Start session**.
 - **Running session:** the agent/model/effort pickers are **gone** (they were decided when the process started and cannot change — dead boxes helped nobody). In their place a plain status line (`dev · haiku`) and **the one control that genuinely works live: the permission mode**.
 
-**Bridge:** `console.start` · `console.send` (goes **into** a running turn; `hold:true` parks it) · `console.queue` (read what is held · `edit` · `drop` · `send` · `clear`) · `console.sessions` · `console.interrupt` · `console.setModel` · `console.permissionMode` (with `retry`) · `console.close`.
+**Bridge:** `console.start` · `console.send` (goes **into** a running turn; `hold:true` parks it) · `console.queue` (read what is held · `edit` · `drop` · `send` · `clear`) · `console.sessions` (reports `asking` when a turn is parked on a question) · `console.interrupt` · `console.setModel` · `console.setEffort` · `console.answer` (settles a parked *question* — never a tool permission, which stays the user's call) · `console.permissionMode` (with `retry`) · `console.close`.
 
 > **Verification:** `test/smoke_console_live.js` drives **real** claude processes end to end (answer · mid-turn steering delivered inside the turn · hold + edit + hand-over · interrupt in flight · a refused write · the live grant · the retry that really writes the file · a clean close): **27/27 for $0.112**. It stays out of `npm test` because it spends money. The measurement also caught the one design error worth naming: the CLI emits **nothing at all** until its first stdin line, so holding the first message until the session "looks ready" deadlocks forever — the first message is now always sent.
 

@@ -184,6 +184,9 @@ export class ConsolePanel {
                 // until your next prompt starts a new turn (see lastTurn)
                 lastTurn: s.lastTurn ?? null,
                 pendingPermission: s.pendingPermission ?? null,
+                // the question the turn is parked on — the card and the composer
+                // both need it, and it outranks everything else on the page
+                pendingAsk: s.pendingAsk ?? null,
                 exitReason: s.exitReason ?? '',
                 messages: s.id === this.selected ? s.messages.slice(-400) : []
             })),
@@ -431,9 +434,45 @@ export class ConsolePanel {
                         'Agent Farm: that session cannot take a model change right now.');
                 }
                 break;
+            case 'setEffort':
+                // mid-session effort switch — the CLI's own `/effort`
+                if (!host.setEffort(str('id'), str('effort'))) {
+                    void vscode.window.showWarningMessage(
+                        'Agent Farm: that session cannot take an effort change right now.');
+                }
+                break;
+            // The answer to a parked question (see ConsoleAsk). The page sends
+            // what you picked; deciding what is answerable is the host's job.
+            case 'askAnswer': {
+                const kind = str('kind');
+                // The page is trusted, but this ends up inside a tool's input:
+                // only strings and lists of strings, keyed by question text.
+                const raw = (msg.answers && typeof msg.answers === 'object' && !Array.isArray(msg.answers))
+                    ? msg.answers as Record<string, unknown> : {};
+                const answers: Record<string, string | string[]> = {};
+                for (const [q, v] of Object.entries(raw)) {
+                    if (typeof v === 'string' && v) { answers[q] = v; }
+                    else if (Array.isArray(v)) {
+                        const list = v.filter(x => typeof x === 'string' && x) as string[];
+                        if (list.length) { answers[q] = list; }
+                    }
+                }
+                const done = host.answer(str('id'),
+                    kind === 'deny' ? { kind: 'deny', message: str('message') }
+                        : kind === 'allow' ? { kind: 'allow' }
+                            : { kind: 'answer', answers, response: str('response') });
+                if (!done) {
+                    // A stale click: the CLI already took the question back, or
+                    // it was answered from somewhere else. Say so — silence here
+                    // reads as a dead button on a session that looks stuck.
+                    void vscode.window.showInformationMessage(
+                        'Agent Farm: that question is no longer waiting for an answer.');
+                }
+                break;
+            }
             case 'permissionMode':
-                // The honest grant: no dialog is answered, the session's rule is
-                // changed and the agent is asked to try again.
+                // The standing RULE — how much may happen without stopping to
+                // ask at all. One specific request is settled by 'askAnswer'.
                 if (host.setPermissionMode(str('id'), str('mode')) && msg.retry === true) {
                     host.send(str('id'), 'Permission granted — please retry the action you were refused.');
                 }

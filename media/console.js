@@ -334,6 +334,34 @@
             background:color-mix(in srgb, var(--vscode-editorWarning-foreground,#cca700) 12%, transparent); }
         .permbox .t { font-weight:600; font-size:12px; }
         .permbox .d { font-size:11px; opacity:.85; margin:4px 0 8px; }
+        /* ---- the question the turn is parked on (see ConsoleAsk) -----------
+           It sits BETWEEN the conversation and the composer, not inside the
+           scroller: a question you have to scroll to find is a question that
+           looks like the session hung. Loud on purpose — it is the only thing
+           on the page that is holding a running turn still. */
+        .askbox { flex:none; margin:8px 0 0; padding:9px 11px; border-radius:8px;
+            border:1px solid var(--vscode-focusBorder,#3794ff);
+            background:color-mix(in srgb, var(--vscode-focusBorder,#3794ff) 10%, transparent); }
+        .askbox:empty { display:none; }
+        .askbox .t { font-weight:600; font-size:12px; display:flex; gap:6px; align-items:center; }
+        .askbox .t .tag { font-size:10px; padding:1px 6px; border-radius:8px; font-weight:600;
+            border:1px solid var(--vscode-focusBorder,#3794ff); }
+        .askbox .q { font-size:12px; margin:7px 0 4px; }
+        .askbox .qh { font-size:10px; text-transform:uppercase; letter-spacing:.5px; opacity:.7; }
+        .askbox .opts { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:4px; }
+        .askbox .opt { text-align:left; font:inherit; font-size:11px; padding:4px 9px; border-radius:6px;
+            cursor:pointer; border:1px solid var(--vscode-widget-border,#4444);
+            background:var(--vscode-editor-background); color:var(--vscode-foreground); }
+        .askbox .opt:hover { background:var(--vscode-list-hoverBackground); }
+        .askbox .opt.on { border-color:var(--vscode-focusBorder,#3794ff); font-weight:600;
+            background:color-mix(in srgb, var(--vscode-focusBorder,#3794ff) 18%, transparent); }
+        .askbox .opt .od { display:block; opacity:.7; font-weight:400; }
+        .askbox .free { width:100%; font:inherit; font-size:12px; border-radius:6px; padding:5px 8px;
+            margin:2px 0 6px; border:1px solid var(--vscode-widget-border,#4443);
+            background:var(--vscode-input-background); color:var(--vscode-input-foreground); }
+        .askbox .arow { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+        .askbox .note { font-size:10px; opacity:.7; margin-top:5px; }
+        .msg.ask .body { border-left:2px solid var(--vscode-focusBorder,#3794ff); padding-left:7px; }
         .composer { margin-top:8px; flex:none; border:1px solid var(--vscode-widget-border,#4443);
             border-radius:8px; padding:8px; }
         .composer textarea { width:100%; min-height:64px; max-height:30vh; resize:vertical; font:inherit;
@@ -520,6 +548,16 @@
         if (!s) { return { id: 'new', label: '', cls: '' }; }
         if (s.status === 'error') { return { id: 'over', label: 'error', cls: 'p-error' }; }
         if (s.status === 'ended') { return { id: 'over', label: 'ended', cls: 'p-over' }; }
+        // A parked question outranks "working": the turn IS running, but nothing
+        // will happen in it until you answer, and a card that says "working" for
+        // a session that is waiting on you is the one lie this panel cannot tell.
+        if (s.pendingAsk) {
+            return {
+                id: 'blocked',
+                label: (s.pendingAsk.questions || []).length ? 'asking you' : 'needs permission',
+                cls: 'p-blocked'
+            };
+        }
         if (s.pendingPermission) { return { id: 'blocked', label: 'needs permission', cls: 'p-blocked' }; }
         if (s.status === 'starting') { return { id: 'opening', label: 'starting…', cls: 'p-open' }; }
         if ((s.queued || []).length) { return { id: 'held', label: 'a message is held', cls: 'p-agent' }; }
@@ -629,7 +667,8 @@
         { v: 'tool', t: '🔧 Tool calls', is: m => m.role === 'tool' && !!m.tool },
         { v: 'result', t: '📄 Tool results', is: m => m.role === 'tool' && !m.tool && !m.isError },
         { v: 'error', t: '⚠ Errors', is: m => m.role === 'error' || (m.role === 'tool' && !!m.isError) },
-        { v: 'system', t: '⚙ System · turn totals', is: m => m.role === 'system' || m.role === 'result' }
+        { v: 'system', t: '⚙ System · turn totals', is: m => m.role === 'system' || m.role === 'result' },
+        { v: 'ask', t: '❓ Questions · your answers', is: m => m.role === 'ask' }
     ];
 
     /** st.kinds: null = everything (and a kind added later is included). */
@@ -658,6 +697,16 @@
             }
             return `<div class="msg tool${m.isError ? ' err' : ''}"><span class="who">${m.isError ? '⚠' : '↳'}</span><div class="body">${C.esc(m.text || '')}</div></div>`;
         }
+        // The record of a question and of what you said back. The CARD above the
+        // composer is where you answer; this is the transcript's memory of it,
+        // so scrolling back tells you why the agent took the turn it took.
+        if (m.role === 'ask') {
+            const a = m.ask;
+            const text = a
+                ? `asked: ${a.detail || a.tool}`
+                : `you: ${m.answer || ''}`;
+            return `<div class="msg ask"><span class="who">${a ? '❓' : '↩'}</span><div class="body">${C.esc(text)}</div></div>`;
+        }
         if (m.role === 'system') {
             return `<div class="msg sys"><span class="who"></span><div class="body">${C.esc(m.text || '')}</div></div>`;
         }
@@ -677,14 +726,147 @@
         return `<div class="msg res"><span class="who"></span><div class="body">${C.esc(bits.join(' · '))}</div></div>`;
     }
 
+    /**
+     * ‼️ THE ANSWER CARD — what makes the Console a conversation and not a form.
+     *
+     * The CLI is holding a running turn open until this is answered (see
+     * ConsoleAsk). Two shapes, and the CLI itself says which:
+     *   · a QUESTION (AskUserQuestion) — its own options, clicked; the turn goes
+     *     on with what you chose, exactly as in a terminal. Multi-select
+     *     questions keep collecting until you press Answer; single-select ones
+     *     send on the click, because a second press to confirm a one-of-four
+     *     choice is a step that exists only to be skipped.
+     *   · a PERMISSION — this tool, with this input: allow it or refuse it.
+     * Free text is always offered, because "neither — do it this way" is an
+     * answer a list of options cannot hold.
+     */
+    let askPick = { req: '', by: {} };   // which request the picks belong to
+
+    function askBoxHtml(s) {
+        const a = s && s.pendingAsk;
+        if (!a) { askPick = { req: '', by: {} }; return ''; }
+        if (askPick.req !== a.requestId) { askPick = { req: a.requestId, by: {} }; }
+        const qs = a.questions || [];
+        const body = qs.length
+            ? qs.map((q, qi) => {
+                const chosen = askPick.by[q.question] || [];
+                return `<div>
+                    ${q.header ? `<div class="qh">${C.esc(q.header)}</div>` : ''}
+                    <div class="q">${C.esc(q.question)}${q.multiSelect ? ' <span class="qh">(pick any)</span>' : ''}</div>
+                    <div class="opts">${(q.options || []).map((o, oi) => `
+                        <button class="opt${chosen.indexOf(o.label) >= 0 ? ' on' : ''}"
+                                data-askq="${qi}" data-asko="${oi}"
+                                title="${C.esc(o.description || o.label)}">${C.esc(o.label)}${
+                            o.description ? `<span class="od">${C.esc(o.description)}</span>` : ''}</button>`).join('')}
+                    </div>
+                </div>`;
+            }).join('')
+            : `<div class="q">${C.esc(a.detail || a.tool)}</div>`;
+        // The buttons differ by shape, and so does what "no" means: refusing a
+        // question is not refusing a tool, so the words are not shared.
+        const actions = qs.length
+            ? `<button id="c-ask-send">Answer</button>
+               <button class="secondary" id="c-ask-deny" title="The turn carries on and the agent is told you did not answer">Skip the question</button>`
+            : `<button id="c-ask-allow">Allow once</button>
+               <button class="secondary" id="c-ask-deny" title="The tool does not run; the agent is told why and carries on">Deny</button>`;
+        return `<div class="t">
+                <span class="tag">${qs.length ? '❓ waiting on you' : '🔐 permission'}</span>
+                ${C.esc(qs.length ? (a.displayName || a.tool) + ' is asking' : (a.displayName || a.tool) + ' wants to run')}
+            </div>
+            ${body}
+            <input class="free" id="c-ask-free" type="text"
+                   placeholder="${qs.length ? 'or say it in your own words — this reaches the agent as your answer' : 'a reason, if you deny it'}">
+            <div class="arow">${actions}</div>
+            <div class="note">The turn is still open — it picks this up and carries on, the same as answering in a terminal.</div>`;
+    }
+
+    function renderAsk() {
+        const s = sel();
+        // Ticking a second box in a multi-select rewrites the card, and the
+        // free-text line is INSIDE it: typed words would vanish under your
+        // hands. It is carried across, focus and caret included.
+        const old = document.getElementById('c-ask-free');
+        const kept = old ? old.value : '';
+        const hadFocus = old && document.activeElement === old;
+        const at = old ? old.selectionStart : 0;
+        if (!slot('c-ask', askBoxHtml(s))) { return; }
+        wireAsk(s);
+        const box = document.getElementById('c-ask-free');
+        if (box && kept) {
+            box.value = kept;
+            if (hadFocus) {
+                try { box.focus({ preventScroll: true }); box.setSelectionRange(at, at); } catch (e) { box.focus(); }
+            }
+        }
+    }
+
+    function wireAsk(s) {
+        const a = s && s.pendingAsk;
+        if (!a) { return; }
+        const free = () => {
+            const el = document.getElementById('c-ask-free');
+            return el ? el.value.trim() : '';
+        };
+        const answer = () => vscode.postMessage({
+            type: 'askAnswer', id: s.id, kind: 'answer',
+            answers: Object.keys(askPick.by).reduce((acc, q) => {
+                const list = askPick.by[q] || [];
+                if (list.length) { acc[q] = list.length > 1 ? list : list[0]; }
+                return acc;
+            }, {}),
+            response: free()
+        });
+        document.querySelectorAll('[data-askq]').forEach(b => b.addEventListener('click', () => {
+            const q = (a.questions || [])[Number(b.dataset.askq)];
+            const o = q && (q.options || [])[Number(b.dataset.asko)];
+            if (!q || !o) { return; }
+            const cur = askPick.by[q.question] || [];
+            if (q.multiSelect) {
+                const at = cur.indexOf(o.label);
+                askPick.by[q.question] = at >= 0
+                    ? cur.filter(x => x !== o.label)
+                    : cur.concat([o.label]);
+                renderAsk();
+                return;
+            }
+            askPick.by[q.question] = [o.label];
+            // A single-select question with every question answered IS the
+            // answer — clicking the last option is the press.
+            if ((a.questions || []).every(x => (askPick.by[x.question] || []).length)) { answer(); }
+            else { renderAsk(); }
+        }));
+        byId('c-ask-send', 'click', answer);
+        byId('c-ask-allow', 'click', () => vscode.postMessage({ type: 'askAnswer', id: s.id, kind: 'allow' }));
+        byId('c-ask-deny', 'click', () => vscode.postMessage({
+            type: 'askAnswer', id: s.id, kind: 'deny', message: free()
+        }));
+        const box = document.getElementById('c-ask-free');
+        if (box) {
+            box.addEventListener('keydown', ev => {
+                if (ev.key !== 'Enter') { return; }
+                ev.preventDefault();
+                if ((a.questions || []).length) { answer(); }
+                else if (box.value.trim()) { vscode.postMessage({ type: 'askAnswer', id: s.id, kind: 'deny', message: box.value.trim() }); }
+            });
+        }
+    }
+
+    /**
+     * The OTHER kind of refusal — the one nobody was asked about.
+     *
+     * Since the session is invited to ask (see askBoxHtml), most permission
+     * decisions arrive as a question you answer and the turn carries on. This
+     * box is what is left: a tool stopped by a permission RULE, a hook, or a CLI
+     * that does not know how to ask. Nothing was put to you, so there is nothing
+     * to allow — what a button can do is change the session's standing rule and
+     * ask the agent to try again.
+     */
     function permissionBox(s) {
         if (!s || !s.pendingPermission) { return ''; }
-        // Honest wording: the CLI never asked us anything — it refused the tool.
-        // What a button can really do is change the session's rule and retry.
         return `<div class="permbox">
             <div class="t">⚠ A tool was refused — permission was never granted for it</div>
             <div class="d">${C.esc(s.pendingPermission.detail)}</div>
-            <div class="d">This session runs in <strong>${C.esc(s.permissionMode)}</strong>. Claude Code does not ask the panel for a one-off approval, so there is nothing to click "allow once" on — what the panel can do is <strong>change this session's permission rule</strong> and ask the agent to try again:</div>
+            <div class="d">This one was settled before it ever reached you — by a permission RULE, a hook, or a CLI too old to ask. (When the session can ask, it does: the turn stops and the question appears above the box.) What the panel can do here is <strong>change this session's rule</strong> — it runs in <strong>${C.esc(s.permissionMode)}</strong> — and ask the agent to try again:</div>
             <div class="crow">
                 ${(DATA.grants || []).map(g => `<button class="secondary" data-grant="${C.esc(g.mode)}" title="${C.esc(g.detail)}">${C.esc(g.label)} + retry</button>`).join('')}
             </div>
@@ -1201,12 +1383,25 @@
         // decided when the process started and cannot change), and showing them
         // greyed out was just a row of dead boxes. What CAN change mid-session
         // is the permission mode, so that one stays a live control.
+        // ‼️ EVERY DIMENSION THAT CAN CHANGE MID-SESSION IS A LIVE CONTROL, AND
+        // THEY ARE THE SAME THREE IN THE SAME ORDER AS THE NEW-SESSION ROW.
+        // Only the AGENT is fixed, and for a real reason: it is the folder the
+        // process was started in, which nothing can move. Model, effort and
+        // permissions are all control requests the CLI accepts mid-conversation
+        // (/model, /effort, set_permission_mode), so a session opened from an
+        // agent row is not a lesser session than one opened from the composer —
+        // it just skipped the questions. Effort used to be printed here as dead
+        // text next to a live model picker, which said the panel could not
+        // change it. It can.
         const controls = s
-            ? `<span class="fixed" title="The agent decided this session's folder, and the effort it runs at, when it started">
-                    ${C.esc(s.agentName)}${s.effort ? ' · ' + C.esc(s.effort) + ' effort' : ''}
+            ? `<span class="fixed" title="The folder this session opened in — decided when the process started, and the one thing that cannot change">
+                    ${C.esc(s.agentName)}
                 </span>
                 <label class="permlbl" title="Switches the model mid-conversation — the same thing /model does in a terminal. It applies from the next turn.">model
                     <select id="c-model-live">${opts(DATA.models, s.model)}</select>
+                </label>
+                <label class="permlbl" title="How hard it thinks per turn — the same thing /effort does in a terminal. It applies from the next turn; on a model with no effort levels the CLI accepts it and it means nothing.">effort
+                    <select id="c-effort-live">${opts(DATA.efforts, s.effort)}</select>
                 </label>
                 <label class="permlbl" title="What it may do without asking — applied live">permissions
                     <select id="c-perm">${opts(DATA.permissions, s.permissionMode)}</select>
@@ -1249,6 +1444,7 @@
                         <button class="jump" id="c-jump" hidden></button>
                         <div class="hiddenote" id="c-hidden"></div>
                     </div>
+                    <div class="askbox" id="c-ask"></div>
                     <div class="working" id="c-working"></div>
                     <div class="composer">
                         <div class="qwait" id="c-queue"></div>
@@ -1362,6 +1558,12 @@
         byId('c-model-live', 'change', e => {
             const cur = sel();
             if (cur) { vscode.postMessage({ type: 'setModel', id: cur.id, model: e.target.value }); }
+        });
+        // Same contract as the model picker: asked for now, shown once the CLI
+        // has agreed (see pendingEffort).
+        byId('c-effort-live', 'change', e => {
+            const cur = sel();
+            if (cur) { vscode.postMessage({ type: 'setEffort', id: cur.id, effort: e.target.value }); }
         });
         byId('c-perm', 'change', e => {
             const mode = e.target.value;
@@ -1756,6 +1958,11 @@
                     type: 'permissionMode', id: DATA.selected, mode: b.dataset.grant, retry: true
                 })));
         }
+
+        // The parked question, between the conversation and the composer — its
+        // own slot, so a streamed line does not rebuild the card you are in the
+        // middle of clicking (the same rule the composer lives by).
+        renderAsk();
 
         renderLive();
         if (slot('c-queue', queueHtml(s))) {

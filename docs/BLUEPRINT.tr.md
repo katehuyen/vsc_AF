@@ -254,7 +254,7 @@ Filodaki son olayların canlı akışı: kullanıcı komutları (prompt), araç 
 
 ### Kompozitör
 
-Yazma kutusunun altında **ajan · model · efor · izin modu** — hepsi launcher'ın sözlüğünden (`core/launch.ts`), yani eklentide tek bir sözlük var. `Ctrl+Enter` gönderir.
+Yazma kutusunun altında **ajan · model · efor · izin modu** — hepsi launcher'ın sözlüğünden (`core/launch.ts`), yani eklentide tek bir sözlük var. `Ctrl+Enter` gönderir. **Oturum çalışırken üç ayar boyutu da canlı kalır (3.44.0)** — süreç açıldıktan sonra gerçekten sabit olan tek şey klasördür (ajan); model, efor ve izin modu üçü de CLI'ın konuşma ortasında kabul ettiği kontrol istekleri olarak gider (`/model`, `/effort`, `set_permission_mode`), yani bir ajan satırından açılan oturum, kompozitörden açılanla tam olarak aynı kadar değiştirilebilir.
 
 - **⎋ Interrupt:** çalışan turu durdurur — CLI'ın kendi kontrol kanalı üzerinden. **Tur biter, oturum ve bağlamı kalır.**
 - **‼️ Tur içinde yazmak o turu yönlendirir (3.39.0).** Ajan çalışırken yazdığın mesaj **çalışan turun içine** gider — CLI onu turun bir sonraki adımında modele teslim eder; terminalde çalışırken yazdıklarının teslim edildiği yolun aynısı. Böylece "hayır, şöyle yap" hâlâ yönlendirilecek bir iş varken varıyor. Satır konuşmaya **↯** işaretiyle girer, çünkü üstündeki turu o başlatmadı. **İki kez ölçüldü:** çıplak CLI'da (araç çağıran bir turun altıncı saniyesinde stdin'e yazılan mesaj, turun bir sonraki adımında modele ulaştı) ve Console'un kendi host'undan `smoke_console_live.js` içinde — orada kelime ancak turu **kapatan satırdan önce** düşerse sayılıyor.
@@ -263,9 +263,22 @@ Yazma kutusunun altında **ajan · model · efor · izin modu** — hepsi launch
 - **‼️ Kutunun üstünde üç mini araç: ⧉ kopyala · ✂ kes · ✕ temizle (3.43.0).** Bunlar **metne** dokunur, ajana asla — hiçbiri bir şey göndermez, başlatmaz, durdurmaz, park etmez; zaten bu yüzden altındaki kontrol satırında değil, kutunun kendi üstündeler. Yoksa mesajı baştan almak ya da yarım kalmışını başka yere yapıştırmak için almak, her eylemi bir düğme olan bir sayfada yalnızca klavyeyle yapılan bir iş kalıyordu (tümünü seç, sonra bir kısayol). Kutunun sağ altında, **köşenin sahibi olan yeniden boyutlandırma tutamağının solunda** dururlar; üzerine gelene kadar sönüktürler ve **yalnızca kutuda metin varken görünürler** — boş kutuda kopyala/kes/temizle, işi varmış gibi yapan üç düğmedir. **⧉ bir anlığına yeşil ✓ ile cevap verir:** kes ve temizle kutuyu gözünün önünde boşaltır, yani makbuz kutunun kendisidir; ama kopyala ekranda hiçbir şeyi değiştirmez — ve bir tıklamaya hiçbir şeyle cevap veren düğme, sana çalışmadığını öğretmiştir. İşlem sonrası imleç kutuya döner: fareye uzanmak klavyeyi kaybettirmez.
 - Her satırda oturumun kendi **maliyeti · tur sayısı · CLI'ın bağlam tahmini** durur.
 
-### İzinler — dürüst cevap
+### ‼️ Oturum sana bir şey sorabilir — ve tur bekler (3.44.0)
 
-**Önce ölçüldü:** Claude Code panele **hiçbir şey sormuyor**; izni olmayan bir araç yalnızca hatalı bir sonuçla geri dönüyor. Bu yüzden Console'da sahte bir "Allow once" düğmesi **yok**. Reddi tespit edip gerçekten yapabileceğini öneriyor: **bu oturumun izin kuralını canlı değiştirmek ve ajana tekrar denemesini söylemek** — `Allow file edits` · `Let it decide` · `⚠ Allow everything` · `Plan only`. İzin seçici oturum boyunca canlıdır; terminal yolunda bu hiç mümkün değildi.
+Her barındırılan oturum **`--permission-prompt-tool stdio`** ile çalışır — kanalı iki yönlü yapan bayrak budur. Bu bayrak olmadan, ölçülmüş hâliyle: CLI her izni ve her `AskUserQuestion` çağrısını **kendi başına** çözer ("kimse cevaplamadı"), araç hatalı bir sonuçla geri döner ve tur biter — Console'un eskiden gördüğü ve "cevaplanacak bir diyalog yok" diye yanlış yorumladığı durum tam olarak buydu. Bayrakla birlikte, gerçek CLI'a karşı ölçülmüş hâliyle: bir `can_use_tool` kontrol isteği gelir, **tur açık kalır**, ve aynı kanaldan geri gönderilen cevap turun devam etmesini sağlar — yeni bir turda değil, **aynı turda**.
+
+Tur bir soruda beklemeye başladığı an **konuşma ile kompozitör arasında** bir kart belirir, ve oturumun satırı — çalışamayan bir turun göstereceği yanıltıcı `working` yerine — **`asking you`** der. İki şekil var, ve hangisi olduğunu CLI'ın kendisi söylüyor (`requires_user_interaction`):
+
+- **Bir soru** (`AskUserQuestion`) — kendi seçenekleri, her biri tek tıkla; çoklu seçim sorusu **Answer**'a basana kadar toplamaya devam eder, tekli seçim ise onu tamamlayan tıklamada gönderir. Serbest metin de her zaman sunulur — "hiçbiri değil, şunu yap" için, ki bunu hiçbir seçenek listesi taşıyamaz. Ölçülmüş sözleşme: seçilen etiket **aracın kendi girdisinin içine**, sorunun tam metniyle anahtarlanarak geri gider (`answers["<soru>"] = "<etiket>"`) — girdi dokunulmadan `allow` göndermek bir cevap **DEĞİLDİR** ve aracın kendi düştüğü "cevaplanmadı" durumunu üretir.
+- **Bir izin** (başka herhangi bir araç) — **Allow once** ya da bir gerekçeyle **Deny**. Bu, eski `PERMISSION_GRANTS` kutusunun asla dürüstçe veremediği tek seferlik karardır, çünkü CLI eskiden hiç sormuyordu.
+
+CLI'ın çoktan geri aldığı bir soruyu cevaplamak (tur kesildi, oturum kapandı, başka yerden cevaplandı) sessizce hiçbir şey yapmaz — bir cevabı geçerli kılan tıklama değil, istek kimliğidir. Bir soru hâlâ beklerken turu kesmek ya da oturumu kapatmak, önce onu bir "deny" ile cevaplar; böylece süreç, kimsenin hiç cevap vermeyeceği bir isteği elinde tutarak kalmaz.
+
+**Bilerek köprülenmedi:** bir ajan bir *soruyu* cevaplayabilir (`console.answer`) ama bir araca izin **asla** veremez — genel Needs-You kuyruğunun çizdiği aynı sınır. Bir aracın makineye dokunup dokunamayacağına karar vermek, panelde, kullanıcının kararı olarak kalır.
+
+### Geriye kalan durum: bir kural, bir diyalog değil
+
+Artık izin kararlarının çoğu yukarıdaki kart olarak geliyor. Geriye kalan, **kimseye sorulmamış** ret — bir izin KURALI, bir hook, ya da bayrağı olmayan eski bir CLI — ve bunun için Console yine dürüstçe yapabileceğini sunuyor: **bu oturumun kalıcı izin kuralını canlı değiştirmek ve ajana tekrar denemesini söylemek** — `Allow file edits` · `Let it decide` · `⚠ Allow everything` · `Plan only`. İzin seçici oturum boyunca canlıdır; terminal yolunda bu hiç mümkün değildi.
 
 ### Kod değişiklikleri, akışın içinde
 
@@ -437,7 +450,7 @@ Bunların hepsi Console'u o ajan **kompozitörde seçili** olarak açar; **sen b
 - **Yeni oturum:** ajan · model · efor · izin modu seçicileri + metin → **Start session**.
 - **Çalışan oturum:** ajan/model/efor artık **gösterilmez** (süreç başlarken kararlaştırıldılar, değiştirilemezler; ölü kutu koymanın anlamı yok). Yerlerinde düz bir durum satırı (`dev · haiku`) ve **gerçekten canlı çalışan tek kontrol: izin modu**.
 
-**Köprü:** `console.start` · `console.send` (tur çalışıyorsa **turun içine** gider; `hold:true` bekletir) · `console.queue` (bekletilenleri oku · `edit` · `drop` · `send` · `clear`) · `console.sessions` · `console.interrupt` · `console.setModel` · `console.permissionMode` (`retry` ile) · `console.close`.
+**Köprü:** `console.start` · `console.send` (tur çalışıyorsa **turun içine** gider; `hold:true` bekletir) · `console.queue` (bekletilenleri oku · `edit` · `drop` · `send` · `clear`) · `console.sessions` (tur bir soruda bekliyorsa `asking` döner) · `console.interrupt` · `console.setModel` · `console.setEffort` · `console.answer` (bekleyen bir *soruyu* çözer — bir araç iznini asla; o kullanıcının kararı olarak kalır) · `console.permissionMode` (`retry` ile) · `console.close`.
 
 > **Doğrulama:** `test/smoke_console_live.js` **gerçek** claude süreçleriyle uçtan uca koşar (cevap · tur içine yönlendirme · bekletme + düzenleme + teslim · uçuşta kesme · reddedilen yazma · canlı izin verme · tekrar deneyip dosyayı gerçekten yazma · temiz kapanış): **27/27, $0,112**. Para harcadığı için `npm test`'in dışında tutulur. Ölçüm bir tasarım hatasını da yakaladı: **CLI ilk stdin satırını alana kadar hiçbir şey yayınlamıyor**, dolayısıyla ilk mesajı "oturum hazır görünene kadar" kuyrukta tutmak sonsuza kadar kilitleniyordu — ilk mesaj artık daima gönderilir.
 

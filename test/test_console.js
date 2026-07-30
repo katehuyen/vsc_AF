@@ -9,8 +9,10 @@
 //   1. the first message must be SENT, not queued — the CLI emits nothing at
 //      all until it receives stdin, so "wait until the session looks ready"
 //      deadlocks forever;
-//   2. a permission refusal is an errored tool_result, not a control request —
-//      so the panel must never render a dialog it cannot answer.
+//   2. the session CAN ask you something mid-turn — but only if the command
+//      line invites it to (`--permission-prompt-tool stdio`). Drop that flag and
+//      every question resolves itself as "nobody answered". See
+//      test_console_ask.js for the whole of that contract.
 const fs = require('fs');
 const path = require('path');
 
@@ -33,14 +35,21 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
 {
     const args = hostArgs({});
     ok('the streaming transport flags are always there',
-        args.join(' ') === '-p --input-format stream-json --output-format stream-json --verbose');
+        args.join(' ') === '-p --input-format stream-json --output-format stream-json --verbose '
+            + '--permission-prompt-tool stdio');
+    // ‼️ The flag that makes the channel two-way. Drop it and the CLI answers
+    // its own permission prompts and its own AskUserQuestion calls (with
+    // "nobody answered"), the tool fails, and the turn ends on a question the
+    // panel was never given the chance to hear. Measured, 2026-07-30.
+    ok('…including the one that lets the session ASK us something',
+        hostArgs({}).join(' ').includes('--permission-prompt-tool stdio'));
     ok('model / effort / permission mode are appended when set',
         hostArgs({ model: 'opus', effort: 'high', permissionMode: 'plan' }).join(' ')
             .endsWith('--model opus --effort high --permission-mode plan'));
     ok('resume comes right after the transport flags, before the tuning ones',
         hostArgs({ resume: 'sid-1', model: 'opus' }).join(' ')
-            .endsWith('--verbose --resume sid-1 --model opus'));
-    ok('empty values add nothing', hostArgs({ model: '  ', effort: '' }).length === 6);
+            .endsWith('stdio --resume sid-1 --model opus'));
+    ok('empty values add nothing', hostArgs({ model: '  ', effort: '' }).length === 8);
 
     const line = JSON.parse(userMessageLine('hello'));
     ok('a user message is one JSON line of the expected shape',
@@ -445,17 +454,29 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     const controls = js.slice(js.indexOf('const controls = s'), js.indexOf("getElementById('app').innerHTML"));
     const split = controls.indexOf(": `<select id=\"c-agent\"");
     const liveRow = split > 0 ? controls.slice(0, split) : '';
-    // A running session shows only the controls that DO something. The agent
-    // (its folder) and the effort really are fixed once the process is up.
-    ok('a running session gets no agent or effort box (those are genuinely dead)',
-        liveRow.length > 100 && !/c-agent|c-effort/.test(liveRow));
-    ok('…it shows them as a plain status line instead', /class="fixed"/.test(js));
-    // ‼️ The MODEL is not one of them — `/model` changes it mid-conversation in
-    // a terminal, and `set_model` is a control request the CLI really accepts
-    // (verified against the installed binary), so the panel offers it too.
+    // A running session shows only the controls that DO something — and the ONE
+    // thing that genuinely cannot change is the agent, because that is the
+    // folder the process was started in.
+    ok('a running session gets no agent box (the folder is genuinely fixed)',
+        liveRow.length > 100 && !/c-agent"/.test(liveRow));
+    ok('…it shows the agent as a plain status line instead', /class="fixed"/.test(js));
+    // ‼️ THE OTHER THREE ARE ALL LIVE, and the parity is the point: a session
+    // opened from an agent row must not be able to change LESS than one opened
+    // from the composer. `/model`, `/effort` and the permission mode are all
+    // control requests the CLI really accepts mid-conversation (measured).
     ok('…but the model is a live picker, because the CLI takes set_model',
         /c-model-live/.test(liveRow) && /type: 'setModel'/.test(js));
+    ok('…and so is the effort, because /effort is apply_flag_settings',
+        /c-effort-live/.test(liveRow) && /type: 'setEffort'/.test(js));
     ok('…alongside the permission mode', /id="c-perm"/.test(liveRow));
+    // The composer's two modes offer the same three dimensions, so nothing is
+    // reachable from one entry point and missing from the other.
+    {
+        const newRow = split > 0 ? controls.slice(split) : '';
+        const dims = row => ['model', 'effort', 'perm'].filter(d => new RegExp(`c-${d}`).test(row)).join(',');
+        ok('both composer modes offer model · effort · permissions',
+            dims(liveRow) === 'model,effort,perm' && dims(newRow) === 'model,effort,perm');
+    }
     ok('new-session mode is the only place the agent is picked',
         split > 0 && controls.indexOf('Choose an agent…') > split);
     ok('starting without an agent focuses the picker instead of swallowing the message',
@@ -878,7 +899,7 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
 {
     const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
     for (const op of ['console.start', 'console.send', 'console.sessions', 'console.interrupt',
-        'console.permissionMode', 'console.close']) {
+        'console.permissionMode', 'console.setEffort', 'console.answer', 'console.close']) {
         ok(`${op} is on the bridge`, ext.includes(`op: '${op}'`));
     }
     ok('the host outlives the panel, and dies with the window',
@@ -887,8 +908,11 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     ok('the panel does not kill sessions when its tab closes',
         /deliberately OUTLIVE the panel/.test(panel));
     const js = fs.readFileSync(path.join(__dirname, '..', 'media', 'console.js'), 'utf8');
-    ok('the permission box says what it can really do, not "allow once"',
-        /does not ask the panel for a one-off approval/.test(js));
+    // The box is now the LEFTOVER case — a refusal nobody was asked about — and
+    // it has to say which case it is, or it reads as a contradiction of the
+    // question card two centimetres below it.
+    ok('the permission box says what it can really do, and why nothing was asked',
+        /settled before it ever reached you/.test(js) && /change this session's rule/.test(js));
     ok('the composer carries agent · model · effort · permission mode',
         /c-agent/.test(js) && /c-model/.test(js) && /c-effort/.test(js) && /c-perm/.test(js));
     ok('interrupt and the queue are in the composer', /c-int/.test(js) && /c-clearq/.test(js));

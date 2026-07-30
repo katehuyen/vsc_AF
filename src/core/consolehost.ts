@@ -15,8 +15,9 @@
 
 import * as cp from 'child_process';
 import {
-    acceptUserText, CarriedTotals, ConsoleMessage, ConsoleSessionState, controlLine,
-    editQueued, hostArgs, newSessionState, reduceEvent, shiftQueued, takeQueued, userMessageLine
+    acceptUserText, answerAsk, AskDecision, CarriedTotals, ConsoleMessage, ConsoleSessionState,
+    controlLine, editQueued, hostArgs, newSessionState, reduceEvent, shiftQueued, takeQueued,
+    userMessageLine
 } from './consoleproto';
 
 /**
@@ -262,10 +263,38 @@ export class ConsoleHost {
         return !!this.send(id, text);
     }
 
-    /** Stop the running turn. The session survives — that is the whole point. */
+    /**
+     * Answer the question the turn is parked on (see ConsoleAsk).
+     *
+     * The line is written from the state the reducer produced, not from the
+     * caller's own idea of what was pending, so two clicks on a repainted panel
+     * can only answer once.
+     */
+    answer(id: string, decision: AskDecision): boolean {
+        const h = this.sessions.get(id);
+        if (!h?.state.pendingAsk) { return false; }
+        const r = answerAsk(h.state, decision, Date.now());
+        if (!r.line) { return false; }
+        h.state = r.state;
+        const wrote = this.write(id, r.line);
+        this.fire(id);
+        return wrote;
+    }
+
+    /**
+     * Stop the running turn. The session survives — that is the whole point.
+     *
+     * ‼️ A parked question is answered FIRST. `interrupt` ends the turn, but a
+     * `can_use_tool` the CLI is still waiting on belongs to the tool, not the
+     * turn: leaving it unanswered parks the process on a request nobody will
+     * ever send a response for, and Esc would look like it hung the session.
+     */
     interrupt(id: string): boolean {
         const h = this.sessions.get(id);
         if (!h) { return false; }
+        if (h.state.pendingAsk) {
+            this.answer(id, { kind: 'deny', message: 'The user interrupted the turn.' });
+        }
         return this.write(id, controlLine(`int-${++h.reqSeq}`, 'interrupt'));
     }
 
@@ -287,9 +316,30 @@ export class ConsoleHost {
     }
 
     /**
-     * Grant (or narrow) what this session may do, live. This is the honest
-     * answer to a permission refusal: the CLI never asks the panel anything,
-     * so the panel changes the rule and the agent tries again.
+     * Change how hard this session thinks, mid-conversation — the same thing
+     * `/effort` does in a terminal, and by the same means: `/effort` is itself
+     * an `apply_flag_settings` control request (see consoleproto's header).
+     *
+     * An empty value means "back to the CLI's own default" and travels as an
+     * explicit null, because leaving the key out would change nothing at all.
+     * Like `setModel`, the switch is recorded as *pending* and only becomes the
+     * session's effort when the CLI answers.
+     */
+    setEffort(id: string, effort: string): boolean {
+        const h = this.sessions.get(id);
+        if (!h) { return false; }
+        const want = effort.trim();
+        const requestId = `effort-${++h.reqSeq}`;
+        if (!this.write(id, controlLine(requestId, 'apply_flag_settings', {
+            settings: { effortLevel: want || null }
+        }))) { return false; }
+        this.mutate(id, s => ({ ...s, pendingEffort: { requestId, effort: want } }));
+        return true;
+    }
+
+    /**
+     * Grant (or narrow) what this session may do, live — the standing RULE, as
+     * opposed to `answer`, which settles one specific request.
      */
     setPermissionMode(id: string, mode: string): boolean {
         const h = this.sessions.get(id);
@@ -314,6 +364,13 @@ export class ConsoleHost {
     close(id: string): void {
         const h = this.sessions.get(id);
         if (!h) { return; }
+        // A question still on the table is answered before the pipe goes: the
+        // process is about to be killed either way, but a session ending on an
+        // unanswered request writes that half-finished tool call into the
+        // transcript, and a resume then reads back a turn that never resolved.
+        if (h.state.pendingAsk) {
+            this.answer(id, { kind: 'deny', message: 'The session was closed.' });
+        }
         try { h.child.stdin?.end(); } catch { /* already gone */ }
         killTree(h.child);
         // …and the process the CLI itself registered for this session. A

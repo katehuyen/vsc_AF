@@ -567,13 +567,15 @@ const html = allHtml;
     push(data(CONVO.slice(), { status: 'idle', lastTurn: null }));
     ok('a session with no finished turn shows an empty strip', working() === '');
 
-    // The agent's folder and the effort really are fixed once the process is
-    // up; the model is not — it is a live picker (see the setModel contract).
+    // The agent's folder really is fixed once the process is up; the model, the
+    // effort and the permission mode are not — all three are live pickers (see
+    // the setModel / setEffort contracts).
     push(data(CONVO.slice()));
-    ok('the composer states what the session is stuck with — its agent and effort',
-        /developer/.test(allHtml()) && /high effort/.test(allHtml()));
-    ok('…and offers the model as something you can still change',
-        /id="c-model-live"/.test(allHtml()));
+    ok('the composer states the one thing that cannot change — its agent',
+        /developer/.test(allHtml()) && /class="fixed"/.test(allHtml()));
+    ok('…and offers model, effort and permissions as things you can still change',
+        /id="c-model-live"/.test(allHtml()) && /id="c-effort-live"/.test(allHtml())
+        && /id="c-perm"/.test(allHtml()));
 }
 
 // ---------- the card hands its state to the right-click menu ----------

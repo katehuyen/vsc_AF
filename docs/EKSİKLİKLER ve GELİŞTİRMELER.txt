@@ -1,4 +1,8 @@
+EKSİK- console da konuşma kutusunun üstünde verilen canlı istatistik bilgisi satırında o tur için kullanılan model adı ve efford bilgisi de yazsın..interrupt stops it yazısını kaldır gerek yok..onun yerine koy
 
+EKLE- Consol konuşma kutusundaki sağ alt  köşede olan 3 tane Metin ile ilgili butona bir tane daha ekleyelim  en sol tarafa..O da yapıştırma görevini alsın yani Paste ..  panoda ne varsa yapıştıracak Fakat böyle aptalca hiç düşünmeden yapıştırmayacak imlecin yerine bakacak Eğer imleç kendisinden önce bir karakter var ve ona yapışık şekilde duruyorsa o zaman önce bir boşluk koyacak Ondan sonra yapıştıracak. fakat zaten boşluk varsa inle İşten önce o zaman direkt yapıştırabilir.
+
+DÜZELT- Ajan çalışırken kullanım verisi sorgulamayı 15 saniyeye ayarlamıştık ama 15 rate limit yaratıyor.. onu dokümasyondan internetten araştırıp rate litmit yaratmayacak en sık sorgulama neymiş bak bul ve onun çoz az üzerinde güvenli ama ona en yakın zaman aralığında yapalım.. böyle bir bilgi bulamazsan 35 saniyeyi deneyelim 15 saniye yerine
 
 
 

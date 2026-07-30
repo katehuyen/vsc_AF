@@ -2970,14 +2970,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'console.sessions',
-            describe: 'The Console sessions this window hosts: status, cost so far, turns, held messages (console.queue reads them), permission mode, the turn that just finished (lastTurn: ms/tokens/cost/outcome — null while a turn runs) and the last few messages. args: id? (one session, with more of its transcript), messages? (how many messages to include, default 0)',
+            describe: 'The Console sessions this window hosts: status, cost so far, turns, held messages (console.queue reads them), model, effort, permission mode, the turn that just finished (lastTurn: ms/tokens/cost/outcome — null while a turn runs), whatever the session is WAITING ON YOU for (asking: a question that has parked its turn — console.answer settles it) and the last few messages. args: id? (one session, with more of its transcript), messages? (how many messages to include, default 0)',
             handler: (args) => {
                 const want = optStr(args, 'id');
                 const take = typeof args.messages === 'number' ? Math.max(0, Math.floor(args.messages)) : 0;
                 const rows = consoleHost.list().filter(s => !want || s.id === want);
                 return rows.map(s => ({
                     id: s.id, agent: s.agentName, sessionId: s.sessionId ?? null,
-                    status: s.status, permissionMode: s.permissionMode,
+                    status: s.status, model: s.model ?? null, effort: s.effort ?? null,
+                    permissionMode: s.permissionMode,
                     cost: s.costUSD, turns: s.turns, held: s.queued.length,
                     // the whole conversation's tokens — a resumed session
                     // carries what it spent before this window (CarriedTotals)
@@ -2989,6 +2990,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     lastTurn: s.lastTurn ?? null,
                     contextTokens: s.contextTokens ?? null,
                     pendingPermission: s.pendingPermission?.detail ?? null,
+                    // ‼️ The turn is OPEN and standing still until this is
+                    // answered — `status` alone still says "working", which is
+                    // true and useless. `kind` says who may settle it:
+                    // a question → console.answer; a permission → the user.
+                    asking: s.pendingAsk
+                        ? {
+                            kind: s.pendingAsk.questions.length ? 'question' : 'permission',
+                            tool: s.pendingAsk.tool,
+                            questions: s.pendingAsk.questions,
+                            detail: s.pendingAsk.detail,
+                            waitingSince: s.pendingAsk.ts
+                        }
+                        : null,
                     exitReason: s.exitReason ?? null,
                     messages: take
                         ? s.messages.slice(-take).map(m => ({
@@ -3024,8 +3038,63 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            op: 'console.setEffort',
+            describe: 'Switch how hard a hosted session thinks, mid-conversation — the same thing /effort does in a terminal (low | medium | high | xhigh | max; empty = back to the CLI default). It applies from the next turn. A model with no effort levels accepts it and it means nothing. args: id, effort',
+            handler: (args) => {
+                const id = argStr(args, 'id');
+                const effort = argStr(args, 'effort');
+                need(!effort || EFFORT_CHOICES.some(c => c.id === effort),
+                    `unknown effort "${effort}" — one of: ${EFFORT_CHOICES.filter(c => c.id).map(c => c.id).join(', ')}`);
+                need(consoleHost.setEffort(id, effort), 'no such live console session');
+                ConsolePanel.refreshIfOpen();
+                return { id, effort, applied: 'from the next turn' };
+            }
+        },
+        {
+            op: 'console.answer',
+            /*
+             * ‼️ QUESTIONS ONLY — a tool APPROVAL is deliberately not on the
+             * bridge, the same call the general Needs-You queue makes: deciding
+             * that a tool may touch the machine is the user's, and an op that
+             * could grant it would put an agent in charge of its own permissions.
+             * A question the agent asked its user is the opposite case, and it
+             * is the same op `missions.answer` already is.
+             */
+            describe: 'Answer the question a hosted Console session parked its turn on (AskUserQuestion) — the turn is still open and carries on with the answer. console.sessions reports it as `asking`. args: id, answers? ({ "<question text>": "<option label>" | ["label","label"] }), response? (free text — "neither, do this instead"), skip? (true answers nothing and lets the turn go on). Tool PERMISSION requests are not answerable here: they are the user\'s own call, in the panel.',
+            handler: (args) => {
+                const id = argStr(args, 'id');
+                const s = consoleHost.get(id);
+                need(s, 'no such live console session (console.sessions lists them)');
+                const ask = s!.pendingAsk;
+                need(ask, 'that session is not waiting on an answer right now');
+                need(ask!.questions.length,
+                    `${ask!.tool} is asking for PERMISSION, not for an answer — that decision is the user's, in the Console panel`);
+                if (args.skip === true) {
+                    need(consoleHost.answer(id, { kind: 'deny', message: 'Skipped.' }), 'nothing was answered');
+                    ConsolePanel.refreshIfOpen();
+                    return { id, skipped: true };
+                }
+                const raw = (args.answers && typeof args.answers === 'object' && !Array.isArray(args.answers))
+                    ? args.answers as Record<string, unknown> : {};
+                const answers: Record<string, string | string[]> = {};
+                for (const [q, v] of Object.entries(raw)) {
+                    if (typeof v === 'string' && v) { answers[q] = v; }
+                    else if (Array.isArray(v)) {
+                        const list = v.filter(x => typeof x === 'string' && x) as string[];
+                        if (list.length) { answers[q] = list; }
+                    }
+                }
+                const response = argStr(args, 'response');
+                need(Object.keys(answers).length || response,
+                    'say something: answers (keyed by the question text) or response');
+                need(consoleHost.answer(id, { kind: 'answer', answers, response }), 'nothing was answered');
+                ConsolePanel.refreshIfOpen();
+                return { id, answers, response: response || undefined };
+            }
+        },
+        {
             op: 'console.permissionMode',
-            describe: 'Change what a hosted session may do, LIVE and mid-conversation (plan | acceptEdits | auto | manual | dontAsk | bypassPermissions). This is how a refused tool gets unblocked: Claude Code does not ask the panel for a one-off approval, so the rule is changed and the agent retries. args: id, mode, retry? (default false — true also tells the agent to try the refused action again)',
+            describe: 'Change a hosted session\'s standing permission RULE, live and mid-conversation (plan | acceptEdits | auto | manual | dontAsk | bypassPermissions) — how much it may do without stopping to ask at all. For a tool it HAS stopped to ask about, the one-off decision is the user\'s, in the Console panel. args: id, mode, retry? (default false — true also tells the agent to try a refused action again)',
             handler: (args) => {
                 const id = argStr(args, 'id');
                 const mode = argStr(args, 'mode');
