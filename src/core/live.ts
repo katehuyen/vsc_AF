@@ -705,6 +705,22 @@ export class LiveMonitor implements vscode.Disposable {
         return n;
     }
 
+    /**
+     * How many sessions are mid-turn RIGHT NOW — a prompt being worked on or a
+     * tool running. Waiting-for-you, stalled and idle sessions do not count:
+     * an open session that has finished its turn is spending nothing, which is
+     * the whole distinction the plan-usage beat switches on. Unlike
+     * `workingAgentIds()` this counts sessions, including ones whose folder
+     * matches no registered agent — they burn the same quota.
+     */
+    activeTurns(): number {
+        let n = 0;
+        for (const s of this.sessionsMap.values()) {
+            if (s.status === 'working' || s.status === 'tool') { n++; }
+        }
+        return n;
+    }
+
     workingAgentIds(): Set<string> {
         const ids = new Set<string>();
         for (const s of this.sessionsMap.values()) {

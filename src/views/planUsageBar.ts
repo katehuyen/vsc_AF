@@ -2,72 +2,114 @@ import * as vscode from 'vscode';
 import { barText, peakPercent, PlanUsageSnapshot, PlanUsageService, untilText } from '../core/planusage';
 
 /**
- * Your plan's two percentages, permanently in view.
+ * Your plan's session countdown and two percentages, permanently in view.
  *
  * ‼️ THE ONE NUMBER YOU WANT WITHOUT LOOKING FOR IT. "How much of my session
- * window and of my week have I burned?" is the question that decides whether to
- * start the next long turn — and the only place that answered it was a card on
- * the Dashboard, i.e. behind a page you had to open, which means you check it
- * after you have already spent the tokens rather than before.
+ * window and of my week have I burned — and how long until the window comes
+ * back?" is the question that decides whether to start the next long turn, and
+ * the only place that answered it was a card on the Dashboard, i.e. behind a
+ * page you had to open, which means you check it after you have already spent
+ * the tokens rather than before.
  *
  * The status bar is the honest home for it: it is the only surface in VS Code
  * that is visible while you work, in every window, without opening anything. It
  * is deliberately NOT a second panel, a tree row or a webview — all three fail
  * the requirement by definition (you have to open them).
  *
- *   $(dashboard) 5h 42% / wk 67%
+ *   $(dashboard) 3h 49m - 86% / wk 41%
  *
- * The two labels cost four characters and remove the one thing an unlabelled
- * "42% / 67%" cannot tell you: which is which. Everything else — every bar the
- * endpoint reports, the reset times, the plan tier, when it was last checked —
- * is in the tooltip, one hover away, and a click opens the Dashboard card.
+ * Everything else — every bar the endpoint reports, the reset times, the plan
+ * tier, which beat it is running on and when it was last checked — is in the
+ * tooltip, one hover away, and a click opens the Dashboard card.
  *
- * Cost: it shares `PlanUsageService`'s cache with the Dashboard card and the
- * `usage.plan` bridge op, so an open dashboard and this bar together still make
- * ONE request per `planUsageRefreshMinutes`. The bar is what keeps that beat
- * running when no page is open; `agentFarm.planUsageStatusBar` turns it off.
+ * ‼️ ONE BEAT, TWO WINDOWS (see `refreshMs`). This bar owns that beat: it wakes
+ * on the fast interval while an agent is mid-turn and on the slow one when the
+ * fleet is only waiting for prompts, refetches through the shared
+ * `PlanUsageService` cache, and hands the result to `onRefresh` so the
+ * Dashboard card follows the same beat instead of running its own. An open
+ * dashboard, this bar and an agent's `usage.plan` together still make ONE
+ * request per beat. `agentFarm.planUsageStatusBar` turns the indicator off.
  */
+
+/** The bar repaints at least this often even when nothing is fetched: the
+ *  countdown it prints has to keep moving between reads. */
+const PAINT_INTERVAL_MS = 60_000;
+
 export interface PlanUsageBarOptions {
     /** the shared cache — never a second one, or the beat doubles */
     service: PlanUsageService;
     /** live-read so a settings change is picked up without a reload */
     enabled(): boolean;
-    /** minutes between refreshes; 0 = only when something else asks */
-    refreshMinutes(): number;
+    /** ms between automatic reads in the CURRENT window; 0 = manual only */
+    beatMs(): number;
+    /** true while at least one session is mid-turn — the fast window */
+    active(): boolean;
     /** percent at which the bar turns yellow / red */
     warnAt(): number;
     dangerAt(): number;
+    /** called after every refresh, so other surfaces ride the same beat */
+    onRefresh?(snap: PlanUsageSnapshot | undefined): void;
 }
 
 export class PlanUsageBar implements vscode.Disposable {
     private item: vscode.StatusBarItem;
-    private timer: NodeJS.Timeout;
+    private timer?: NodeJS.Timeout;
+    /** last known side of the idle/active line, so only the EDGE acts */
+    private lastActive: boolean;
 
     constructor(private opts: PlanUsageBarOptions) {
         // Left, just after the farm item and the notices bell, so the three
         // Agent Farm indicators read as one cluster.
         this.item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 88);
         this.item.command = 'agentfarm.openDashboard';
+        this.lastActive = opts.active();
         this.paint();
         void this.tick();
-        // One minute is the heartbeat, not the request rate: the service's TTL
-        // decides when a tick actually reaches the network, and the countdown in
-        // the tooltip has to keep moving in between.
-        this.timer = setInterval(() => void this.tick(), 60_000);
     }
 
     /** Ask the service (it serves from cache until its TTL is up) and repaint. */
-    private async tick(): Promise<void> {
-        if (!this.opts.enabled()) { this.paint(); return; }
+    private async tick(force = false): Promise<void> {
         // 0 = the user turned the beat off; then this bar only ever shows what
-        // something else (the Dashboard card, an agent's usage.plan) fetched.
-        if (this.opts.refreshMinutes() > 0) {
-            try { await this.opts.service.get(false); } catch { /* the snapshot says why */ }
+        // something else (the Dashboard card's ⟳, an agent's usage.plan) read.
+        if (this.opts.enabled() && this.opts.beatMs() > 0) {
+            try { await this.opts.service.get(force); } catch { /* the snapshot says why */ }
+            this.opts.onRefresh?.(this.opts.service.current());
         }
         this.paint();
+        this.schedule();
     }
 
-    /** Settings changed — re-read them now rather than at the next minute. */
+    /**
+     * Arm the next wake-up. In the fast window that is the beat itself; in the
+     * slow one the beat is minutes, so we still wake every minute to move the
+     * countdown — the service's TTL decides which of those wakes costs a
+     * request. Re-armed after every tick, so a window change takes effect at
+     * the next wake at the latest, and immediately on the edge below.
+     */
+    private schedule(): void {
+        if (this.timer) { clearTimeout(this.timer); }
+        const beat = this.opts.beatMs();
+        const wait = beat > 0 ? Math.min(beat, PAINT_INTERVAL_MS) : PAINT_INTERVAL_MS;
+        this.timer = setTimeout(() => void this.tick(), wait);
+    }
+
+    /**
+     * A live hook event landed — did the fleet just cross the idle/active line?
+     *
+     * Both edges are worth one immediate read: a turn STARTING is the moment
+     * the figures begin to move, and a turn ENDING is the moment they settle at
+     * what it cost. In between, the fast beat carries it. Only the edge acts
+     * (this runs on every live event), and the service's 5-second floor keeps a
+     * burst of agents starting at once from becoming a burst of requests.
+     */
+    fleetChanged(): void {
+        const active = this.opts.active();
+        if (active === this.lastActive) { return; }
+        this.lastActive = active;
+        void this.tick(true);
+    }
+
+    /** Settings changed — re-read them now rather than at the next wake. */
     refresh(): void { void this.tick(); }
 
     paint(): void {
@@ -83,6 +125,16 @@ export class PlanUsageBar implements vscode.Disposable {
                 : undefined;
         this.item.tooltip = this.tooltip(snap);
         this.item.show();
+    }
+
+    /** Which beat is running, in words — a refresh rate you cannot see is a
+     *  refresh rate you cannot trust (and "why did it not move?" has an answer). */
+    private beatLine(): string {
+        const beat = this.opts.beatMs();
+        if (beat <= 0) { return '_Automatic refresh is off._'; }
+        return this.opts.active()
+            ? `_Live: an agent is working — re-read every ${Math.max(1, Math.round(beat / 1000))}s._`
+            : `_Idle: re-read every ${Math.max(1, Math.round(beat / 60000))} min._`;
     }
 
     private tooltip(snap: PlanUsageSnapshot | undefined): vscode.MarkdownString {
@@ -101,6 +153,7 @@ export class PlanUsageBar implements vscode.Disposable {
             if (snap.plan) { lines.push(`Plan: ${snap.plan}`, ''); }
             lines.push(`_Checked ${new Date(snap.fetchedAt).toLocaleTimeString()}_`, '');
         }
+        lines.push(this.beatLine(), '');
         lines.push('[Check now](command:agentfarm.planUsageRefresh) · _click the bar for the Dashboard card_');
         const md = new vscode.MarkdownString(lines.join('\n'));
         md.isTrusted = { enabledCommands: ['agentfarm.planUsageRefresh'] };
@@ -108,7 +161,7 @@ export class PlanUsageBar implements vscode.Disposable {
     }
 
     dispose(): void {
-        clearInterval(this.timer);
+        if (this.timer) { clearTimeout(this.timer); }
         this.item.dispose();
     }
 }

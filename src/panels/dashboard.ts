@@ -28,8 +28,9 @@ export interface DashboardDeps {
     planUsage?(): PlanUsageSnapshot | undefined;
     /** Plan usage card: refresh it; `force` bypasses the cache TTL. */
     refreshPlanUsage?(force: boolean): Promise<PlanUsageSnapshot | undefined>;
-    /** Plan usage card: auto-refresh beat in minutes; 0 = manual only. */
-    planUsageRefreshMinutes?(): number;
+    /** Plan usage card: the beat it must run on — ms between automatic reads
+     *  (0 = manual only) and which window that is (an agent mid-turn = fast). */
+    planUsageBeat?(): { ms: number; active: boolean };
     /** B1: per-project rollup for the Projects card (empty = no projects declared). */
     projects?(): ProjectRollup[];
     /** B1: agent name → project name, so rows can be grouped client-side. */
@@ -279,7 +280,7 @@ function buildData(deps: DashboardDeps, tableN = DASHBOARD_SESSION_TABLE_N): Rec
         // refresh itself (on its timer and on ⟳), so a render never blocks on
         // a network round trip.
         planUsage: deps.planUsage?.(),
-        planUsageRefreshMinutes: deps.planUsageRefreshMinutes?.() ?? 5,
+        planUsageBeat: deps.planUsageBeat?.() ?? { ms: 5 * 60000, active: false },
         // E3: external-CLI sessions (side list — excluded from every cost/usage
         // figure above; surfaced as an honest one-liner).
         externalSessions: (() => {
@@ -315,6 +316,17 @@ export class DashboardPanel {
 
     static refreshIfOpen(): void {
         DashboardPanel.current?.refresh();
+    }
+
+    /**
+     * Plan usage read by somebody else (the status-bar indicator's beat) —
+     * hand it to an open card so both surfaces show one figure on one beat.
+     * `push: true` marks it as unsolicited: the card's ⟳ must keep showing it
+     * is busy until ITS answer arrives, not until any answer arrives.
+     */
+    static pushPlanUsage(usage: PlanUsageSnapshot | undefined, beat: { ms: number; active: boolean }): void {
+        if (!DashboardPanel.current) { return; }
+        void DashboardPanel.current.panel.webview.postMessage({ type: 'planUsage', usage, beat, push: true });
     }
 
     private constructor(readonly panel: vscode.WebviewPanel, private deps: DashboardDeps) {
@@ -408,7 +420,11 @@ export class DashboardPanel {
                 // Answered out-of-band so a slow endpoint never stalls the page.
                 void (async () => {
                     const usage = await this.deps.refreshPlanUsage?.(msg.force === true);
-                    void this.panel.webview.postMessage({ type: 'planUsage', usage });
+                    // the beat rides along: it changes with the fleet, not with
+                    // a setting, so the card re-arms itself from every answer
+                    void this.panel.webview.postMessage({
+                        type: 'planUsage', usage, beat: this.deps.planUsageBeat?.()
+                    });
                 })();
                 break;
             }

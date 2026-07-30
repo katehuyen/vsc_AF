@@ -97,8 +97,20 @@ const sandbox = {
     // reads the query the keystroke produced without waiting on a clock
     setTimeout: (fn) => { fn(); return 0; },
     clearTimeout: () => { },
+    // the composer's ⧉/✂ tools write to the real clipboard in a webview; here
+    // the write is recorded, and the thenable resolves synchronously so the
+    // assertion sits right under the click that caused it
+    navigator: {
+        clipboard: {
+            writeText: v => { copied.push(v); return { then: fn => { fn(); } }; }
+        }
+    },
     console
 };
+/** Everything the page has copied to the clipboard, newest last. */
+const copied = [];
+/** Timers a test wants to hold instead of firing (the ✓ receipt's lifetime). */
+const heldTimers = [];
 const timers = [];
 const tickTimers = () => timers.forEach(fn => { if (fn) { fn(); } });
 const qsCache = {};
@@ -868,6 +880,67 @@ const html = allHtml;
     ok('⨯ drops it and it is never said',
         posted.some(m => m.type === 'queueTake' && m.index === 0));
     type('');
+}
+
+// ---------- the box's own three tools: copy · cut · clear --------------------
+// ‼️ They act on the TEXT and never on the agent. Starting a message over, or
+// lifting it out to paste elsewhere, was a keyboard-only job (select all, then
+// a chord) on a page whose every other control is a button.
+{
+    const type = v => { els['c-text'].value = v; els['c-text'].listeners.input(); };
+    const tools = () => els['c-tools'];
+    const click = id => els[id].listeners.click({ preventDefault() { } });
+
+    type('');
+    ok('an empty box shows no tools — a Clear with nothing to clear is a lie',
+        tools().hidden === true);
+    type('panoya alınacak metin');
+    ok('typing brings them out', tools().hidden === false);
+
+    // ⧉ copy — the box keeps the text, the clipboard gets it
+    posted.length = 0;
+    copied.length = 0;
+    els['c-text']._focus = 0;
+    click('c-copy');
+    ok('⧉ puts the draft on the clipboard', copied.length === 1 && copied[0] === 'panoya alınacak metin');
+    ok('…and leaves the box exactly as it was', els['c-text'].value === 'panoya alınacak metin');
+    ok('…having said nothing to the agent', posted.length === 0);
+    ok('…and hands the keyboard back to the box', els['c-text']._focus === 1);
+
+    // ‼️ the receipt: copy changes nothing you can see, so it must answer
+    heldTimers.length = 0;
+    sandbox.setTimeout = fn => { heldTimers.push(fn); return heldTimers.length; };
+    click('c-copy');
+    ok('⧉ answers the click with a ✓ you can see',
+        els['c-copy'].textContent === '✓' && /\bdone\b/.test(els['c-copy'].className || ''));
+    heldTimers.forEach(fn => fn());
+    ok('…which goes away on its own, leaving the tool as it was',
+        els['c-copy'].textContent === '⧉' && !/\bdone\b/.test(els['c-copy'].className || ''));
+    sandbox.setTimeout = fn => { fn(); return 0; };
+
+    // ✂ cut — copy AND empty
+    copied.length = 0;
+    click('c-cut');
+    ok('✂ copies it and empties the box in one click',
+        copied.length === 1 && copied[0] === 'panoya alınacak metin' && els['c-text'].value === '');
+    ok('…so the tools go with the text', tools().hidden === true);
+    ok('…and Send goes dead again, without waiting for the host',
+        els['c-send'].disabled === true);
+    ok('…still without a word to the agent', posted.length === 0);
+
+    // ✕ clear — no clipboard, no message, just gone
+    type('yanlış yazdım, baştan alayım');
+    copied.length = 0;
+    click('c-clear');
+    ok('✕ empties the box', els['c-text'].value === '' && tools().hidden === true);
+    ok('…without touching the clipboard', copied.length === 0);
+    ok('…and without sending anything', posted.length === 0);
+
+    // a tool on an empty box is a no-op, not a crash and not an empty copy
+    click('c-clear');
+    click('c-copy');
+    ok('a click with nothing in the box does nothing at all',
+        copied.length === 0 && posted.length === 0 && els['c-text'].value === '');
 }
 
 // ---------- what is allowed to move a card ----------

@@ -239,7 +239,7 @@ const LIVE_PAYLOAD = {
             insightTotals: { error: 0, warning: 0, info: 0 },
             unknownModels: [], externalSessions: {},
             farmStatus: [{ id: 'live', label: 'Live monitoring', state: 'active', detail: '4200 events' }],
-            planUsage: undefined, planUsageRefreshMinutes: 5
+            planUsage: undefined, planUsageBeat: { ms: 5 * 60000, active: false }
         };
         const sandbox = {
             acquireVsCodeApi: () => ({ postMessage: (m) => posted.push(m), getState: () => null, setState: () => { } }),
@@ -274,7 +274,7 @@ const LIVE_PAYLOAD = {
             card().includes('Reading your subscription limits') && !card().includes('%'));
         ok('the page asks the host for the figures on load',
             posted.some(p => p.type === 'planUsage' && p.force === false));
-        ok('the self-refresh beat is armed from the setting (5 min)',
+        ok('the self-refresh beat is armed from the host\'s beat (5 min idle)',
             intervals.length === 1 && intervals[0].ms === 5 * 60000);
 
         posted = [];
@@ -318,11 +318,36 @@ const LIVE_PAYLOAD = {
         // a dashboard data refresh must not blank the card or re-arm the beat
         msgHandler({ data: { type: 'data', data: Object.assign({}, DATA, { planUsage: snapshot }) } });
         ok('a routine dashboard refresh keeps the figures on screen', lastHtml.includes('>82%<'));
-        ok('the beat is not re-armed when the setting did not change', intervals.length === 1);
+        ok('the beat is not re-armed when it did not change', intervals.length === 1);
+
+        // ‼️ the fast window: the host pushes what the indicator just read, and
+        // the card MOVES TO THAT BEAT — a card sitting on a 5-minute timer
+        // through the turn it is meant to report is the bug being fixed here
+        posted = [];
+        msgHandler({ data: { type: 'planUsage', usage: snapshot, beat: { ms: 15000, active: true }, push: true } });
+        ok('an agent starting work re-arms the card to the fast beat',
+            intervals.length === 2 && intervals[1].ms === 15000 && intervals[0] === null);
+        ok('…and the card says which window it is in',
+            /updated .* · live · every 15 s while an agent works/.test(lastHtml));
+        ok('a host push costs the card no request of its own', posted.length === 0);
+
+        // …and back, when every agent is waiting for a prompt again
+        msgHandler({ data: { type: 'planUsage', usage: snapshot, beat: { ms: 300000, active: false }, push: true } });
+        ok('the turn ending puts the card back on the idle beat',
+            intervals.length === 3 && intervals[2].ms === 300000 && intervals[1] === null
+            && /auto every 5 min/.test(lastHtml));
+
+        // an unsolicited push must not steal the ⟳'s spinner
+        getEl('pu-refresh').listeners.click();
+        msgHandler({ data: { type: 'planUsage', usage: snapshot, beat: { ms: 300000, active: false }, push: true } });
+        ok('a push while ⟳ is out leaves it spinning for its own answer',
+            lastHtml.includes('>…</button>'));
+        msgHandler({ data: { type: 'planUsage', usage: snapshot, beat: { ms: 300000, active: false } } });
+        ok('…and the answer to the click is what clears it', lastHtml.includes('>⟳</button>'));
 
         // beat = 0 → manual only
-        msgHandler({ data: { type: 'data', data: Object.assign({}, DATA, { planUsage: snapshot, planUsageRefreshMinutes: 0 }) } });
-        ok('0 minutes disarms the timer and says so', intervals[0] === null
+        msgHandler({ data: { type: 'data', data: Object.assign({}, DATA, { planUsage: snapshot, planUsageBeat: { ms: 0, active: false } }) } });
+        ok('a 0 beat disarms the timer and says so', intervals[2] === null
             && lastHtml.includes('manual refresh only'));
     }
 
@@ -342,17 +367,34 @@ const LIVE_PAYLOAD = {
             { id: 'seven_day', title: 'Current week (all models)', percent: 67, resetsAt: now + 3 * 86400_000 }
         ]);
 
-        ok('both percentages, labelled so you never have to remember which is which',
-            BAR.barText(okSnap) === '$(dashboard) 5h 42% / wk 67%');
+        // ‼️ The first field is the TIME LEFT in the session window, not a
+        // label: a fixed "5h" is a constant (no information) that reads as a
+        // duration — so the one number the bar seemed to give about time was
+        // the one thing it could not tell you.
+        ok('the session window shows how long is left, then how much is gone',
+            BAR.barText(okSnap, now) === '$(dashboard) 2h - 42% / wk 67%');
+        ok('…to the minute, like the tooltip countdown',
+            BAR.barText(snap('ok', [
+                { id: 'five_hour', title: 's', percent: 86, resetsAt: now + (3 * 60 + 49) * 60_000 },
+                { id: 'seven_day', title: 'w', percent: 41, resetsAt: now + 4 * 86400_000 }
+            ]), now) === '$(dashboard) 3h 49m - 86% / wk 41%');
         // a plan that reports no plain weekly bar still gets a week figure
         ok('a per-model weekly limit stands in for the missing all-models one',
             BAR.barText(snap('ok', [
-                { id: 'five_hour', title: 's', percent: 10, resetsAt: 0 },
+                { id: 'five_hour', title: 's', percent: 10, resetsAt: now + 60 * 60_000 },
                 { id: 'seven_day_opus', title: 'w', percent: 55, resetsAt: 0 }
-            ])) === '$(dashboard) 5h 10% / wk 55%');
+            ]), now) === '$(dashboard) 1h - 10% / wk 55%');
         ok('one bar alone is shown alone, not padded with a made-up second',
-            BAR.barText(snap('ok', [{ id: 'five_hour', title: 's', percent: 10, resetsAt: 0 }]))
-            === '$(dashboard) 5h 10%');
+            BAR.barText(snap('ok', [{ id: 'five_hour', title: 's', percent: 10, resetsAt: now + 600_000 }]), now)
+            === '$(dashboard) 10m - 10%');
+        // ‼️ an unknown reset never becomes an invented span
+        ok('a session window with no reset time says "session", not a made-up countdown',
+            BAR.barText(snap('ok', [
+                { id: 'five_hour', title: 's', percent: 10, resetsAt: 0 },
+                { id: 'seven_day', title: 'w', percent: 55, resetsAt: 0 }
+            ]), now) === '$(dashboard) session 10% / wk 55%');
+        ok('a week-only plan is still readable', BAR.barText(snap('ok', [
+            { id: 'seven_day', title: 'w', percent: 55, resetsAt: 0 }]), now) === '$(dashboard) wk 55%');
 
         // ‼️ A machine with no subscription login has no figure and never will —
         // an indicator that says "unknown" forever is noise, not information.
@@ -384,6 +426,29 @@ const LIVE_PAYLOAD = {
         ok('…and days beyond a day', BAR.untilText(now + 50 * 3600_000, now) === 'in 2d 2h');
         ok('an unknown or past reset says nothing rather than "in 0m"',
             BAR.untilText(0, now) === '' && BAR.untilText(now - 1000, now) === '');
+        ok('the bar and the tooltip word ONE span — "in" is all that differs',
+            BAR.remainingText(now + 134 * 60_000, now) === '2h 14m'
+            && BAR.untilText(now + 134 * 60_000, now) === 'in ' + BAR.remainingText(now + 134 * 60_000, now)
+            && BAR.remainingText(0, now) === '');
+    }
+
+    // ---------- the beat: two windows, one decision ----------
+    // ‼️ The figures move only while a turn is actually RUNNING. A session that
+    // is open but waiting for the next prompt spends nothing, so it is idle —
+    // "sessions are open" is NOT the same question as "an agent is working".
+    {
+        const B = (active, mins, secs) => PU.refreshMs(active, mins, secs);
+        ok('idle: the user\'s minutes', B(false, 5, 15) === 300_000);
+        ok('active: seconds, because that is when the numbers are moving',
+            B(true, 5, 15) === 15_000);
+        ok('a fast beat can never outrun the service floor',
+            B(true, 5, 1) === PU.MIN_FETCH_INTERVAL_MS);
+        // ‼️ "off" must mean off in BOTH windows, or the setting is a lie
+        ok('automatic refresh off stays off even while an agent works',
+            B(false, 0, 15) === 0 && B(true, 0, 15) === 0);
+        ok('a nonsense minutes value is treated as off, not as a busy loop',
+            B(true, -3, 15) === 0 && B(false, NaN, 15) === 0);
+        ok('fractional minutes are honoured (30s idle beat)', B(false, 0.5, 15) === 30_000);
     }
 
     // ---------- one request budget, not two ----------
@@ -414,6 +479,46 @@ const LIVE_PAYLOAD = {
         // the shared beat is one beat — the setting says so out loud now
         ok('the refresh setting states that one beat serves every surface',
             /status-bar indicator, the Dashboard/.test(props['agentFarm.planUsageRefreshMinutes'].description));
+
+        // ---------- two windows, one decision, every surface ----------
+        ok('the fast window has its own setting, floored at the service floor',
+            props['agentFarm.planUsageActiveRefreshSeconds'].type === 'number'
+            && props['agentFarm.planUsageActiveRefreshSeconds'].default === 15
+            && props['agentFarm.planUsageActiveRefreshSeconds'].minimum === 5);
+        ok('…and it belongs to the cost category like its siblings',
+            /planUsageActiveRefreshSeconds: 'cost'/.test(
+                fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'settingsops.ts'), 'utf8')));
+        // ‼️ ONE function decides the beat; a second opinion is how two
+        // surfaces end up showing figures read minutes apart
+        ok('the TTL, the indicator and the card all read the one beat function',
+            /const planBeatMs = \(\) => refreshMs\(/.test(ext)
+            && /new PlanUsageService\(\{ ttlMs: planBeatMs \}\)/.test(ext)
+            && /beatMs: planBeatMs,/.test(ext)
+            && /planUsageBeat: planBeat,/.test(ext));
+        ok('the fast window is "a turn is RUNNING", not "a session is open"',
+            /const fleetActive = \(\) => live\.activeTurns\(\) > 0;/.test(ext));
+        ok('a live event can flip the window without waiting for the next tick',
+            /live\.onDidUpdate\(\(\) => planUsageBar\.fleetChanged\(\)\)/.test(ext));
+        ok('what the indicator reads is pushed to an open card in the same step',
+            /onRefresh: snap => DashboardPanel\.pushPlanUsage\(snap, planBeat\(\)\)/.test(ext));
+        ok('an agent asking usage.plan is told how live the answer is',
+            /beat: planBeat\(\),/.test(ext));
+
+        // the fleet-activity source itself
+        const liveSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'live.ts'), 'utf8');
+        ok('mid-turn means working or running a tool — nothing else counts',
+            /activeTurns\(\): number \{[\s\S]{0,220}s\.status === 'working' \|\| s\.status === 'tool'/.test(liveSrc));
+
+        // the indicator's own scheduler: the beat drives the wake-up, but the
+        // countdown it prints still has to move between reads
+        const barSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'views', 'planUsageBar.ts'), 'utf8');
+        ok('the wake-up follows the beat, capped so the countdown keeps moving',
+            /Math\.min\(beat, PAINT_INTERVAL_MS\)/.test(barSrc)
+            && /const PAINT_INTERVAL_MS = 60_000;/.test(barSrc));
+        ok('only the EDGE forces a read — not every live event',
+            /if \(active === this\.lastActive\) \{ return; \}[\s\S]{0,80}this\.tick\(true\)/.test(barSrc));
+        ok('the tooltip states which beat is running, so a still figure is explainable',
+            /an agent is working — re-read every/.test(barSrc) && /Automatic refresh is off/.test(barSrc));
     }
 
     console.log(`\n${pass} passed, ${fail} failed`);

@@ -340,6 +340,28 @@
             font-size:13px; border-radius:6px; padding:7px 9px;
             border:1px solid var(--vscode-widget-border,#4443);
             background:var(--vscode-input-background); color:var(--vscode-input-foreground); }
+        /* The box's own three text tools — copy · cut · clear.
+           Miniature and half-lit on purpose: they act on TEXT, never on the
+           agent, so they must not read as a second row of controls competing
+           with Send. They sit in the bottom-right of the box but LEFT of the
+           resize grip, which owns the very corner and would otherwise fight
+           them for the same 14 pixels. */
+        .tawrap { position:relative; }
+        .tatools { position:absolute; right:19px; bottom:8px; display:flex; gap:2px;
+            opacity:.4; transition:opacity .12s; }
+        .tatools[hidden] { display:none; }
+        .tawrap:hover .tatools, .tatools:hover { opacity:1; }
+        .tatool { width:17px; height:17px; padding:0; line-height:1; font-size:10px;
+            display:flex; align-items:center; justify-content:center; cursor:pointer;
+            border:1px solid var(--vscode-widget-border,#4443); border-radius:4px;
+            background:var(--vscode-input-background); color:var(--vscode-foreground); }
+        .tatool:hover { background:var(--vscode-list-hoverBackground); }
+        /* ‼️ COPY LEAVES THE SCREEN IDENTICAL. Cut and clear empty the box in
+           front of you — the box itself is the receipt — but copy changes
+           nothing you can see, and a button that answers a click with nothing
+           has taught you it does not work. Hence the green ✓ for a moment. */
+        .tatool.done { color:var(--vscode-charts-green,#4caf50);
+            border-color:var(--vscode-charts-green,#4caf50); }
         .crow { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-top:7px; }
         .crow select { font-size:11px; padding:2px 4px; }
         .crow .grow { flex:1; }
@@ -1230,7 +1252,14 @@
                     <div class="working" id="c-working"></div>
                     <div class="composer">
                         <div class="qwait" id="c-queue"></div>
-                        <textarea id="c-text" placeholder="${placeholder}"${dead ? ' disabled' : ''}></textarea>
+                        <div class="tawrap">
+                            <textarea id="c-text" placeholder="${placeholder}"${dead ? ' disabled' : ''}></textarea>
+                            <div class="tatools" id="c-tools" hidden>
+                                <button class="tatool" id="c-copy" title="Copy this message to the clipboard — nothing is sent, the box keeps it">⧉</button>
+                                <button class="tatool" id="c-cut" title="Cut: copy it to the clipboard and empty the box">✂</button>
+                                <button class="tatool" id="c-clear" title="Clear the box — the text goes, nothing is sent">✕</button>
+                            </div>
+                        </div>
                         <div class="crow" id="c-controls">${controls}</div>
                         <div class="crow" id="c-status" style="font-size:10px;opacity:.6"></div>
                     </div>
@@ -1284,6 +1313,28 @@
         const byId = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
         byId('c-jump', 'click', jumpToEnd);
         byId('c-send', 'click', () => send(false));
+
+        // ---- the box's three text tools ------------------------------------
+        // ‼️ NONE OF THESE TALKS TO THE AGENT. They copy, cut and clear the
+        // DRAFT — the same thing the keyboard does to any text box — so that
+        // starting a message over, or lifting it out to paste somewhere else,
+        // costs one click instead of select-all-plus-a-chord. That is exactly
+        // why they live ON the box and not in the control row below it, where
+        // every button sends, starts or stops something.
+        const tool = (id, fn) => byId(id, 'click', ev => {
+            if (ev && ev.preventDefault) { ev.preventDefault(); }
+            const box = document.getElementById('c-text');
+            if (!box || !box.value) { return; }   // nothing to act on: say nothing, do nothing
+            fn(box, box.value);
+            // A mouse click on a tool must not cost you the keyboard.
+            try { box.focus({ preventScroll: true }); } catch (e) { box.focus(); }
+        });
+        tool('c-copy', (box, value) => copyText(box, value, () => flashTool('c-copy')));
+        tool('c-cut', (box, value) => copyText(box, value, () => {
+            clearBox(box);
+            flashTool('c-cut');
+        }));
+        tool('c-clear', box => { clearBox(box); flashTool('c-clear'); });
         // The line filter is the same multi-select the Search and Notices pages
         // use: null = everything, [] = nothing, any subset in between.
         if (s) {
@@ -1543,6 +1594,71 @@
     const WAIT_TICK_MS = 10000;
     setInterval(renderList, WAIT_TICK_MS);
 
+    // ---- the box's text tools: copy · cut · clear ------------------------------
+
+    /**
+     * Put the draft on the clipboard, then report.
+     *
+     * The webview is a secure context, so the async API is the real path;
+     * `execCommand` is the fallback for a host that denies it. The receipt is
+     * only shown from `onDone`, i.e. once the write actually happened — a green
+     * ✓ for a copy that silently failed would be worse than no button at all.
+     */
+    function copyText(box, value, onDone) {
+        const nav = typeof navigator !== 'undefined' ? navigator : null;
+        if (nav && nav.clipboard && nav.clipboard.writeText) {
+            nav.clipboard.writeText(value).then(onDone, () => { if (legacyCopy(box)) { onDone(); } });
+            return;
+        }
+        if (legacyCopy(box)) { onDone(); }
+    }
+
+    /** Older path: select the box and let the host copy the selection. */
+    function legacyCopy(box) {
+        try {
+            box.select();
+            return document.execCommand('copy') !== false;
+        } catch (e) { return false; }   // nothing else to try — the box still holds the text
+    }
+
+    /** Empty the box for real: the draft is state, not just characters. */
+    function clearBox(box) {
+        box.value = '';
+        st.draft = '';
+        save();
+        renderLive();
+    }
+
+    /**
+     * The click's receipt — the glyph turns into a green ✓ for a moment.
+     *
+     * Written with `className` rather than `classList` because these buttons
+     * are rebuilt with the shell and the map below is the only place their
+     * original glyph is remembered.
+     */
+    const TOOL_GLYPH = { 'c-copy': '⧉', 'c-cut': '✂', 'c-clear': '✕' };
+    function flashTool(id) {
+        const b = document.getElementById(id);
+        if (!b) { return; }
+        b.textContent = '✓';
+        b.className = 'tatool done';
+        setTimeout(() => {
+            const el = document.getElementById(id);
+            if (!el) { return; }
+            el.textContent = TOOL_GLYPH[id];
+            el.className = 'tatool';
+        }, 900);
+    }
+
+    /** The tools exist only while there is something to act on: copy, cut and
+     *  clear on an empty box are three buttons lying about having work to do. */
+    function paintTools() {
+        const el = document.getElementById('c-tools');
+        if (!el) { return; }
+        const hide = !(st.draft || '');
+        if (el.hidden !== hide) { el.hidden = hide; }
+    }
+
     // ---- one pass over the changing parts -------------------------------------
 
     /**
@@ -1558,6 +1674,8 @@
      */
     function renderLive() {
         const s = sel();
+        // the box's own tools follow the same keystroke as the Send buttons
+        paintTools();
         if (slot('c-live', liveBitsHtml(s))) {
             byId('c-int', 'click', () => vscode.postMessage({ type: 'interrupt', id: DATA.selected }));
             byId('c-hold', 'click', () => send(true));
@@ -1683,6 +1801,7 @@
             box.value = box.value ? `${textValue}\n${box.value}` : textValue;
             st.draft = box.value;
             save();
+            renderLive();   // text arrived without a keystroke — the row must catch up
             try { box.focus({ preventScroll: true }); } catch (e) { box.focus(); }
         }
         vscode.postMessage({ type: 'queueTake', id, index });
@@ -1711,6 +1830,7 @@
         st.draft = '';
         save();
         if (text) { text.value = ''; }
+        renderLive();   // the box emptied itself — Send and the tools follow at once
         // You just said something: you are back at the bottom by definition.
         jumpToEnd();
     }

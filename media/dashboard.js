@@ -64,29 +64,41 @@
     // of band, so a slow endpoint never holds up a dashboard render.
     let puBusy = false;      // a request is in flight — the ⟳ shows it
     let puTimer = null;      // auto-refresh interval, re-armed when the beat changes
-    let puBeat = -1;         // minutes currently armed
+    let puBeat = -1;         // ms currently armed
 
     function askPlanUsage(force) {
         puBusy = true;
         vscode.postMessage({ type: 'planUsage', force: !!force });
     }
 
-    /** Arm (or disarm) the self-refresh beat. 0 minutes = manual only. */
+    /**
+     * Arm (or disarm) the self-refresh beat. The HOST decides the interval —
+     * the same beat the status-bar indicator runs on, which switches between
+     * the fast window (an agent is mid-turn, so the figures are moving) and the
+     * slow one (everything is waiting for a prompt). Every answer carries the
+     * current beat, so the card follows a window change instead of sitting on a
+     * five-minute timer through the turn it is meant to be reporting.
+     * 0 = manual only.
+     */
     function armPlanUsage() {
-        const mins = Number(DATA.planUsageRefreshMinutes) || 0;
-        if (mins === puBeat) { return; }
-        puBeat = mins;
+        const ms = Number((DATA.planUsageBeat || {}).ms) || 0;
+        if (ms === puBeat) { return; }
+        puBeat = ms;
         if (puTimer) { clearInterval(puTimer); puTimer = null; }
-        if (mins > 0) { puTimer = setInterval(() => askPlanUsage(false), mins * 60000); }
+        if (ms > 0) { puTimer = setInterval(() => askPlanUsage(false), ms); }
     }
 
     window.addEventListener('message', ev => {
         if (sessTable.onMessage(ev)) { return; }
         if (ev.data.type === 'compareWindow') { cmpRows = ev.data.rows || []; render(); return; }
         if (ev.data.type === 'planUsage') {
-            puBusy = false;
+            // an unsolicited push (the indicator's beat) must not clear the ⟳
+            // spinner — that belongs to the request the button actually sent
+            if (!ev.data.push) { puBusy = false; }
             if (ev.data.usage) { DATA.planUsage = ev.data.usage; }
+            if (ev.data.beat) { DATA.planUsageBeat = ev.data.beat; }
             render();
+            armPlanUsage();
             return;
         }
         if (ev.data.type === 'data') {
@@ -294,7 +306,12 @@
 
     function planCard() {
         const pu = DATA.planUsage;
-        const mins = Number(DATA.planUsageRefreshMinutes) || 0;
+        const beat = DATA.planUsageBeat || { ms: 0, active: false };
+        // the beat is a fact about the page, so it is stated on the page: how
+        // often these figures are re-read, and which of the two windows we are in
+        const beatText = !(beat.ms > 0) ? 'manual refresh only'
+            : beat.active ? 'live · every ' + Math.max(1, Math.round(beat.ms / 1000)) + ' s while an agent works'
+                : 'auto every ' + Math.max(1, Math.round(beat.ms / 60000)) + ' min';
         const btn = `<button class="pu-ref" id="pu-refresh" title="Read your subscription limits from Anthropic now">${puBusy ? '…' : '⟳'}</button>`;
         let body, foot;
         if (!pu) {
@@ -312,7 +329,7 @@
                     <div class="sub">${C.esc(puReset(b.resetsAt))}</div>
                 </div>`;
             }).join('');
-            foot = `<div class="sub muted" style="margin-top:10px">${pu.plan ? C.esc(pu.plan) + ' plan · ' : ''}updated ${new Date(pu.fetchedAt).toLocaleTimeString()} · ${mins > 0 ? 'auto every ' + mins + ' min' : 'manual refresh only'}</div>`;
+            foot = `<div class="sub muted" style="margin-top:10px">${pu.plan ? C.esc(pu.plan) + ' plan · ' : ''}updated ${new Date(pu.fetchedAt).toLocaleTimeString()} · ${beatText}</div>`;
         }
         return `<div class="card pucard">
             <div class="pu-head"><div class="label">Plan usage</div>${btn}</div>

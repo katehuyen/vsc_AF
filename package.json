@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.42.0",
+  "version": "3.43.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -2572,12 +2572,18 @@
           "type": "number",
           "default": 5,
           "minimum": 0,
-          "description": "How often your Claude subscription limits are re-read from Anthropic, in minutes. One beat is shared by the status-bar indicator, the Dashboard's \"Plan usage\" card and the usage.plan bridge op — they never make separate requests. 0 turns the automatic refresh off; the card's ⟳ and the indicator's \"Check now\" still work. Only the OAuth session Claude Code stores locally is read; it is never written to."
+          "description": "How often your Claude subscription limits are re-read from Anthropic while the fleet is IDLE, in minutes — nothing is running, so they can only change by the clock. While an agent is actually mid-turn the faster planUsageActiveRefreshSeconds beat takes over. One beat is shared by the status-bar indicator, the Dashboard's \"Plan usage\" card and the usage.plan bridge op — they never make separate requests. 0 turns the automatic refresh off in BOTH windows; the card's ⟳ and the indicator's \"Check now\" still work. Only the OAuth session Claude Code stores locally is read; it is never written to."
+        },
+        "agentFarm.planUsageActiveRefreshSeconds": {
+          "type": "number",
+          "default": 15,
+          "minimum": 5,
+          "description": "How often the same figures are re-read while at least one agent is mid-turn, in seconds — that is when they are actually moving, and when you are watching them. A session that is open but waiting for your next prompt is idle and uses the minutes setting above. The switch is instant in both directions: a turn starting and a turn ending each trigger one immediate read. Minimum 5 seconds; ignored when planUsageRefreshMinutes is 0 (automatic refresh off)."
         },
         "agentFarm.planUsageStatusBar": {
           "type": "boolean",
           "default": true,
-          "description": "Keep your plan's session (5h) and weekly usage percentages in the VS Code status bar — \"5h 42% / wk 67%\", visible while you work without opening anything. Hover for every limit with its reset time, click for the Dashboard card. Hidden automatically on a machine with no Claude subscription login (API key / Bedrock / Vertex)."
+          "description": "Keep your plan's session countdown and usage percentages in the VS Code status bar — \"3h 49m - 86% / wk 41%\": time left in the current session window, how much of it is gone, and how much of the week. Visible while you work without opening anything. Hover for every limit with its reset time and the beat it is running on, click for the Dashboard card. Hidden automatically on a machine with no Claude subscription login (API key / Bedrock / Vertex)."
         },
         "agentFarm.planUsageWarnPercent": {
           "type": "number",

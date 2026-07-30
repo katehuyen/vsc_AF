@@ -64,7 +64,7 @@ import {
 import { LiveMonitor, LiveSession } from './core/live';
 import { OwnerLease } from './core/owner';
 import { buildFarmStatus } from './core/farmstatus';
-import { PlanUsageService } from './core/planusage';
+import { PlanUsageService, refreshMs } from './core/planusage';
 import { matchTaskSession } from './core/taskcost';
 import {
     buildDelegationPrompt, delegationTitle, DismissEntry, filterDismissed,
@@ -2726,12 +2726,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'usage.plan',
-            describe: 'Your Claude SUBSCRIPTION rate-limit state as Anthropic reports it — the same figures /usage prints: session (5h) and weekly utilization % with reset times. This is the real quota, not the transcript-derived cost figures the rest of the farm reports. args: force? (default false — served from the dashboard card\'s cache)',
+            describe: 'Your Claude SUBSCRIPTION rate-limit state as Anthropic reports it — the same figures /usage prints: session (5h) and weekly utilization % with reset times. This is the real quota, not the transcript-derived cost figures the rest of the farm reports. Also returns `beat` — how often the farm is re-reading it (ms) and whether an agent is mid-turn, i.e. how stale a cached answer can be. args: force? (default false — served from the dashboard card\'s cache)',
             handler: async (args) => {
                 const snap = await planUsage.get(args.force === true);
                 return {
                     state: snap.state, plan: snap.plan, fetchedAt: snap.fetchedAt,
                     note: snap.note,
+                    beat: planBeat(),
                     bars: snap.bars.map(b => ({
                         id: b.id, title: b.title, percent: b.percent,
                         resetsAt: b.resetsAt ? new Date(b.resetsAt).toISOString() : null
@@ -4436,9 +4437,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // Plan usage — the subscription limits Anthropic itself reports (what
     // /usage prints), cached behind one service so the dashboard card, its ⟳
     // and the bridge op all share a single request budget.
-    const planUsage = new PlanUsageService({
-        ttlMs: () => Math.max(0, cfg().get<number>('planUsageRefreshMinutes', 5)) * 60000
-    });
+    //
+    // ‼️ ONE BEAT, TWO WINDOWS. The figures move only while a turn is actually
+    // RUNNING — an open session waiting for your next prompt spends nothing —
+    // so the beat follows the fleet rather than the clock: seconds while an
+    // agent is mid-turn (you are watching numbers that are moving), the user's
+    // minutes when everything is idle. One function decides it (`refreshMs`),
+    // and the service TTL, the status-bar indicator and the Dashboard card all
+    // read that one decision, so no surface can be on a different beat.
+    const fleetActive = () => live.activeTurns() > 0;
+    const planBeatMs = () => refreshMs(
+        fleetActive(),
+        Math.max(0, cfg().get<number>('planUsageRefreshMinutes', 5)),
+        Math.max(0, cfg().get<number>('planUsageActiveRefreshSeconds', 15)));
+    const planBeat = () => ({ ms: planBeatMs(), active: fleetActive() });
+    const planUsage = new PlanUsageService({ ttlMs: planBeatMs });
 
     // …and the two percentages that decide whether to start the next long turn,
     // permanently in the status bar rather than behind a page you have to open
@@ -4446,11 +4459,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const planUsageBar = new PlanUsageBar({
         service: planUsage,
         enabled: () => cfg().get<boolean>('planUsageStatusBar', true),
-        refreshMinutes: () => Math.max(0, cfg().get<number>('planUsageRefreshMinutes', 5)),
+        beatMs: planBeatMs,
+        active: fleetActive,
         warnAt: () => cfg().get<number>('planUsageWarnPercent', 80),
-        dangerAt: () => cfg().get<number>('planUsageDangerPercent', 95)
+        dangerAt: () => cfg().get<number>('planUsageDangerPercent', 95),
+        // whatever the indicator just read goes to an open Dashboard card in
+        // the same step: two surfaces on one beat can never drift apart
+        onRefresh: snap => DashboardPanel.pushPlanUsage(snap, planBeat())
     });
     context.subscriptions.push(planUsageBar);
+    // Every live hook event may have crossed the idle/active line; the bar acts
+    // on the EDGE only — a turn starting and a turn ending each earn one
+    // immediate read, the beat carries the rest.
+    context.subscriptions.push(live.onDidUpdate(() => planUsageBar.fleetChanged()));
 
     const dashboardDeps = {
         extensionUri: context.extensionUri,
@@ -4516,7 +4537,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             planUsageBar.paint();
             return snap;
         },
-        planUsageRefreshMinutes: () => Math.max(0, cfg().get<number>('planUsageRefreshMinutes', 5)),
+        planUsageBeat: planBeat,
         // B1: the project axis — the card's rollup and the map the rows group by.
         projects: () => projectRollup(),
         agentProjects: () => agentProjectMap(

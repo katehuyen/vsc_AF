@@ -125,24 +125,39 @@ export function buildBars(payload: unknown): PlanBar[] {
 
 // ---------- the status-bar projection (pure, so it is testable without VS Code) ----------
 
-/** "in 2h 14m" / "in 6m" / "" when the reset time is unknown or already past. */
-export function untilText(resetsAt: number, now = Date.now()): string {
+/** "2h 14m" / "6m" / "2d 2h" — "" when the reset time is unknown or already past. */
+export function remainingText(resetsAt: number, now = Date.now()): string {
     if (!resetsAt || resetsAt <= now) { return ''; }
     const mins = Math.round((resetsAt - now) / 60000);
-    if (mins < 60) { return `in ${mins}m`; }
+    if (mins < 60) { return `${mins}m`; }
     const h = Math.floor(mins / 60);
     const m = mins % 60;
-    if (h < 24) { return m ? `in ${h}h ${m}m` : `in ${h}h`; }
+    if (h < 24) { return m ? `${h}h ${m}m` : `${h}h`; }
     const d = Math.floor(h / 24);
-    return `in ${d}d ${h % 24}h`;
+    return `${d}d ${h % 24}h`;
+}
+
+/** The same span worded as a countdown: "in 2h 14m". */
+export function untilText(resetsAt: number, now = Date.now()): string {
+    const left = remainingText(resetsAt, now);
+    return left ? `in ${left}` : '';
 }
 
 /**
- * The whole indicator in one line: `$(dashboard) 5h 42% / wk 67%`.
+ * The whole indicator in one line: `$(dashboard) 3h 49m - 86% / wk 41%`.
  *
- * The two labels cost four characters and remove the one thing an unlabelled
- * "42% / 67%" cannot tell you — which is which. A plan that reports no plain
- * weekly limit falls back to a per-model one rather than showing nothing.
+ * ‼️ The first field is the TIME LEFT IN THE SESSION WINDOW, not a label. A
+ * fixed "5h" said only which window the percentage belongs to — a constant,
+ * i.e. no information — and it reads as a duration, so the one number the bar
+ * appeared to give you about time was the one thing it could not tell you.
+ * "3h 49m - 86%" answers both halves of the real question at once: how much is
+ * gone, and how long until it comes back. The week keeps its label, because
+ * a second bare span next to the first would be unreadable; its reset is in
+ * the tooltip, where there is room for every limit.
+ *
+ * A plan that reports no plain weekly limit falls back to a per-model one
+ * rather than showing nothing. A session window whose reset the endpoint did
+ * not state falls back to the word `session` — never to an invented span.
  *
  * Returns undefined when there is nothing to show **and never will be**: a
  * machine signed in with an API key (or Bedrock / Vertex) has no subscription
@@ -150,17 +165,41 @@ export function untilText(resetsAt: number, now = Date.now()): string {
  * that can come back (expired, a transient endpoint failure) stays visible as a
  * question instead — disappearing would read as "you have used nothing".
  */
-export function barText(snap: PlanUsageSnapshot | undefined): string | undefined {
+export function barText(snap: PlanUsageSnapshot | undefined, now = Date.now()): string | undefined {
     if (!snap || snap.state === 'no-auth') { return undefined; }
     if (snap.state !== 'ok' || !snap.bars.length) { return '$(dashboard) usage ?'; }
-    const pct = (id: string) => snap.bars.find(b => b.id === id)?.percent;
-    const session = pct('five_hour');
-    const week = pct('seven_day') ?? pct('seven_day_opus') ?? pct('seven_day_sonnet');
+    const bar = (id: string) => snap.bars.find(b => b.id === id);
+    const session = bar('five_hour');
+    const week = bar('seven_day') ?? bar('seven_day_opus') ?? bar('seven_day_sonnet');
     const parts: string[] = [];
-    if (session !== undefined) { parts.push(`5h ${session}%`); }
-    if (week !== undefined) { parts.push(`wk ${week}%`); }
+    if (session) {
+        const left = remainingText(session.resetsAt, now);
+        parts.push(left ? `${left} - ${session.percent}%` : `session ${session.percent}%`);
+    }
+    if (week) { parts.push(`wk ${week.percent}%`); }
     if (!parts.length) { return '$(dashboard) usage ?'; }
     return `$(dashboard) ${parts.join(' / ')}`;
+}
+
+/**
+ * The refresh beat in ms — the ONE decision every surface obeys.
+ *
+ * ‼️ TWO WINDOWS, because the figures move at two speeds. While an agent is
+ * mid-turn they change under you continuously, and that is exactly when you are
+ * watching them — a five-minute beat there means the bar is wrong for almost
+ * all of the turn it is supposed to be reporting. When every session is waiting
+ * for a prompt, nothing can move them except the clock, so re-reading every few
+ * seconds buys nothing. Idle sessions are still idle: what switches the fast
+ * window on is a turn actually RUNNING, not a session being open.
+ *
+ * `idleMinutes` = 0 means the user turned automatic refresh off; that answer
+ * holds in both windows — a fast beat starting behind their back would make the
+ * setting a lie. The floor is the service's own, so no beat can outrun it.
+ */
+export function refreshMs(active: boolean, idleMinutes: number, activeSeconds: number): number {
+    if (!(idleMinutes > 0)) { return 0; }
+    if (!active) { return Math.round(idleMinutes * 60_000); }
+    return Math.max(MIN_FETCH_INTERVAL_MS, Math.round(activeSeconds * 1000));
 }
 
 /** The worst percentage on the snapshot — what decides the indicator's colour.
