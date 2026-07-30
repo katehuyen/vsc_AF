@@ -77,7 +77,7 @@ Dördü de terminal yolu üzerinde çözüldü; Console'u (§1) beklemeden. Ayr�
 
 **A3. Kesme (interrupt) yok.** ⭐⭐ → **ÇÖZÜLDÜ.** Oturumun kendi terminaline **Esc yazılır** — tur biter, oturum ve bağlam kalır. Sessions tabloları (çalışan satır) · Timeline canlı kartları · Needs You (stalled) · `ctrl+alt+i` · sağ tık. Hedefleme: tam başlatma → ajanın en yeni terminali → harici pencere; **kimliği çözülemeyen oturuma dokunulmaz**. Harici terminal modunda pencere öne getirilip "Esc'e orada bas" denir (sahte düğme yok). Köprü: `sessions.interrupt`.
 
-**A4. Klavye kısayolu neredeyse yok.** ⭐ → **ÇÖZÜLDÜ.** `ctrl+alt+f` = **Quick Menu** (gruplu, yazarak süzülen; her satır kendi kısayolunu yazar) + altı doğrudan tuş (s · p · i · d · n · l), `ctrl+alt+q` olduğu gibi. Türkçe-Q'da AltGr'nin karakter ürettiği **Q/E/T** harflerine yeni tuş konmadı — bunu bir test denetliyor.
+**A4. Klavye kısayolu neredeyse yok.** ⭐ → **ÇÖZÜLDÜ.** `ctrl+alt+f` = **Quick Menu** (gruplu, yazarak süzülen; her satır kendi kısayolunu yazar) + altı doğrudan tuş (s · p · i · d · n · l) + kuyruğa ekleme `ctrl+alt+a`. Türkçe-Q'da AltGr'nin karakter ürettiği **Q/E/T** harflerine hiçbir tuş konmuyor (istisnasız) ve Ctrl+Q'ya da hiçbir şey bağlı değil — bunu bir test denetliyor.
 
 ### B. Kapsam ve veri modeli — **KAPANDI (3.25.0)**
 

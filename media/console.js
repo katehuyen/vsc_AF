@@ -210,6 +210,9 @@
         .working b { color:var(--vscode-foreground); font-weight:600;
             overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .working .spin { color:var(--vscode-charts-blue,#3794ff); font-size:13px; }
+        /* the finished turn's summary sits in the same strip, deliberately
+           quieter and motionless — a settled number, not a live one */
+        .working .dspin { color:var(--vscode-charts-green,#89d185); font-size:12px; }
         .working .wmeta { margin-left:auto; opacity:.75; white-space:nowrap; }
         /* ---- the resume section: a header row, a miniature filter, the rows --
            Everything here is sized for a 250px column: 10px type, one-line
@@ -442,13 +445,15 @@
     /**
      * The right-click contract for a session row.
      *
-     * `data-vscode-context` hands the row's identity to VS Code, which builds
-     * the menu from the `webview/context` entries in package.json — the
-     * standard Copy/Paste items stay (`preventDefaultContextMenuItems: false`)
-     * and the session's own actions are appended to them. This is deliberately
-     * NOT a `contextmenu` listener: hijacking the right-click to open a rename
-     * box straight away took the normal menu away from the page and left rename
-     * as the only thing a right-click could ever mean.
+     * The mechanism lives in `media/afSessionCtx.js` — one contract shared by
+     * every surface that lists sessions. `data-vscode-context` hands the row's
+     * identity to VS Code, which builds the menu from the `webview/context`
+     * entries in package.json — the standard Copy/Paste items stay
+     * (`preventDefaultContextMenuItems: false`) and the session's own actions
+     * are appended to them. This is deliberately NOT a `contextmenu` listener:
+     * hijacking the right-click to open a rename box straight away took the
+     * normal menu away from the page and left rename as the only thing a
+     * right-click could ever mean.
      *
      * Every key in this object becomes a **context key** while the menu is up,
      * which is how a card's own state reaches the menu: the `enablement` clause
@@ -458,8 +463,7 @@
      * would make the menu change shape under the pointer, and you would never
      * learn that removing is what comes after ending.
      */
-    const ctxAttr = o => `data-vscode-context="${JSON.stringify(o)
-        .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}"`;
+    const ctxAttr = o => window.AFSessionCtx.attr(o);
 
     /**
      * WHOSE TURN IS IT — the one question the left panel has to answer at a
@@ -920,8 +924,37 @@
         return list.length;
     }
 
+    /**
+     * The same strip, after the turn is over.
+     *
+     * ‼️ THE ONE MOMENT THE FIGURE WAS FINAL IS THE MOMENT IT USED TO DISAPPEAR.
+     * The live strip went blank the instant the ball came back to you, and the
+     * turn's closing line scrolled away with the conversation — so "what did the
+     * turn that just ended actually cost, and how long did it take?" had no
+     * answer on screen. It stays here, in the same place, until your next prompt
+     * starts a new turn (the host clears `lastTurn` then — see consoleproto.ts).
+     *
+     * It must not be mistakable for the live one, so: no motion, a settled glyph,
+     * the word "last turn", and the figures are the CLI's own — no "~".
+     */
+    const DONE_GLYPH = { done: '✓', interrupted: '⎋', failed: '⚠' };
+    function lastTurnHtml(s) {
+        const t = s && s.lastTurn;
+        if (!t) { return ''; }
+        const glyph = DONE_GLYPH[t.outcome] || '✓';
+        const word = t.outcome === 'interrupted' ? 'last turn interrupted'
+            : t.outcome === 'failed' ? 'last turn failed' : 'last turn';
+        const secs = t.ms ? Math.max(1, Math.round(t.ms / 1000)) : 0;
+        const money = t.cost || t.tokens
+            ? ` · <span title="What that turn cost, as the CLI reported it — not an estimate. The line under the box is the whole session.">${spend(t.cost, t.tokens)}</span>`
+            : '';
+        const lines = turnLines(s);
+        return `<span class="dspin">${glyph}</span> <b>${word}</b>
+            <span class="wmeta">${secs ? `${secs}s` : ''}${money}${lines ? ` · ${lines} line${lines === 1 ? '' : 's'}` : ''} · your turn now</span>`;
+    }
+
     function workingHtml(s) {
-        if (!s || s.status !== 'working') { return ''; }
+        if (!s || s.status !== 'working') { return lastTurnHtml(s); }
         const glyph = SPIN[spinAt % SPIN.length];
         const secs = s.turnStartedAt ? Math.max(0, Math.round((Date.now() - s.turnStartedAt) / 1000)) : 0;
         // what it reached for last — the honest version of "Thinking…"

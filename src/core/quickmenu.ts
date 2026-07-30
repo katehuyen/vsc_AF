@@ -110,7 +110,7 @@ export const QUICK_MENU: QuickMenuEntry[] = [
 
     // ---- Work: what you hand over ----
     {
-        group: 'Work', label: '$(inbox) Add to work queue', key: 'ctrl+alt+q',
+        group: 'Work', label: '$(inbox) Add to work queue', key: 'ctrl+alt+a',
         detail: 'capture something for an agent to pick up later',
         command: 'agentfarm.queueAdd'
     },

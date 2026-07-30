@@ -379,7 +379,11 @@
         const rowsHtml = shown.map(r => {
             const k = key(r);
             const o = open.has(k);
-            return `<tr class="click turnrow${o ? ' open' : ''}" data-turn="${C.esc(r.file)}" data-ts="${r.ts || 0}">
+            // A turn row IS a session row too — the session this turn belongs
+            // to — so right-clicking it offers that session's whole action set
+            // instead of Copy/Paste (afSessionCtx.js).
+            return `<tr class="click turnrow${o ? ' open' : ''}" data-turn="${C.esc(r.file)}" data-ts="${r.ts || 0}"
+                ${window.AFSessionCtx.row(r)} title="${window.AFSessionCtx.HINT}">
                 <td class="foldcell"><button class="fold" data-fold="${C.esc(k)}" title="${o ? 'Hide' : 'Show'} this turn's content">${o ? '▾' : '▸'}</button></td>
                 ${COLUMNS.map(c => CELL[c](r)).join('')}
             </tr>` + (o ? `<tr class="turnbody"><td></td><td colspan="${COLUMNS.length}">${turnBodyHtml(r)}</td></tr>` : '');

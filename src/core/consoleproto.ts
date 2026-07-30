@@ -109,6 +109,32 @@ export interface ConsoleSessionState {
      * it with the CLI's own number, which is why this is cleared there.
      */
     turnUsage?: Usage;
+    /**
+     * The turn that just FINISHED — kept until the next one starts.
+     *
+     * ‼️ A strip that answers "what is this turn costing me?" and then vanishes
+     * the instant the answer is final is the one moment it was never readable.
+     * The turn's own figures were pushed into the conversation as a result line
+     * and then scrolled away with it, while the live strip went blank the
+     * millisecond the ball came back to you — so the question you actually ask
+     * (what did the turn that just ended cost, and how long did it take?) had no
+     * answer anywhere. This is that answer, and it stays put until your next
+     * prompt starts a new turn.
+     *
+     * `cost` here is the CLI's OWN figure (`result.total_cost_usd`), not the
+     * running estimate: by the time this exists, the guessing is over.
+     */
+    lastTurn?: {
+        endedAt: number;
+        /** how long it ran, ms (undefined when the start was not observed) */
+        ms?: number;
+        /** tokens the turn spent */
+        tokens?: number;
+        /** the CLI's own cost for the turn, USD */
+        cost: number;
+        /** how it ended, in one word: 'done' | 'interrupted' | 'failed' */
+        outcome: 'done' | 'interrupted' | 'failed';
+    };
     lastTs: number;
     /** why it ended, when it did */
     exitReason?: string;
@@ -367,6 +393,13 @@ export function reduceEvent(
                 turnTokensAt: undefined,
                 // the estimate is over: the number above is the CLI's own
                 turnUsage: undefined,
+                // …and it is kept, so the strip above the composer still says
+                // what the turn that just ended cost (see lastTurn)
+                lastTurn: {
+                    endedAt: now, ms, tokens: spent || undefined, cost,
+                    outcome: !isError ? 'done'
+                        : sub === 'error_during_execution' ? 'interrupted' : 'failed'
+                },
                 sessionId: typeof o.session_id === 'string' ? o.session_id : state.sessionId
             },
             changed: true
@@ -527,6 +560,10 @@ export function acceptUserText(
         state: {
             ...state, lastTs: now, status: 'working', turnStartedAt: now, turnTokensAt: state.tokens,
             turnUsage: emptyUsage(),
+            // Your new prompt is what clears the finished turn's summary — the
+            // invariant the strip relies on: lastTurn exists exactly while the
+            // ball is yours and a turn has already run (see lastTurn).
+            lastTurn: undefined,
             messages: [...state.messages, { id: nextId(), ts: now, role: 'user', text: t }]
         },
         send: true

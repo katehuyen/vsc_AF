@@ -474,7 +474,12 @@
         const rows = evs.map(e => {
             const label = (EV_LABEL[e.kind] || e.kind) + (e.tool ? ` (${C.esc(e.tool)})` : '');
             const link = e.transcriptPath ? ` data-opensession="${C.esc(e.transcriptPath)}" data-ts="${e.ts}"` : '';
-            return `<div class="lerow${e.kind === 'permission' ? ' alert' : ''}"${link}${e.transcriptPath ? ' title="Open this moment in the session viewer"' : ''}>
+            // A feed row that has a transcript IS a session row — right-click
+            // gets that participant's session actions (afSessionCtx.js).
+            const ctx = e.transcriptPath
+                ? ' ' + window.AFSessionCtx.row({ file: e.transcriptPath, agentName: e.agentName })
+                : '';
+            return `<div class="lerow${e.kind === 'permission' ? ' alert' : ''}"${link}${ctx}${e.transcriptPath ? ` title="Open this moment in the session viewer — ${window.AFSessionCtx.HINT}"` : ''}>
                 <span class="muted small">${relT(e.ts)}</span> <b>${C.esc(e.agentName || '?')}</b> ${label}${e.detail ? ` <span class="muted">${C.esc(String(e.detail).slice(0, 110))}</span>` : ''}</div>`;
         }).join('');
         return `<div class="colsec">

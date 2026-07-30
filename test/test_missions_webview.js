@@ -8,8 +8,8 @@ const vm = require('vm');
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
-const code = fs.readFileSync(path.resolve(__dirname, '../media/pageHeader.js'), 'utf8') + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afFilters.js'), 'utf8')
-    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/missions.js'), 'utf8');
+const code = require(path.join(__dirname, 'lib_shared_media.js')).sharedMedia()
+    + fs.readFileSync(path.resolve(__dirname, '../media/missions.js'), 'utf8');
 const createAfmsDom = require(path.join(__dirname, 'lib_afms_dom.js'));
 
 let posted = [];

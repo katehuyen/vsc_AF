@@ -349,6 +349,19 @@ Toplamlar artık transkriptle birlikte geri geliyor: maliyet, token, tur ve cont
 
 Çalışan turun tahmini zaten hesaplanıyor — kutunun üstündeki şeridin gösterdiği şey o. Oturum satırı artık onu ekliyor ve bütün rakamı **`~`** ile işaretliyor: `~$5.75 (480.0k tokens) this session`. Çifte sayım imkânsız — tur kapandığında tahmin, CLI'ın kendi rakamının `s.cost`'a eklendiği **aynı adımda** siliniyor. Taban da bu pencerenin değil **oturumun**: devam ettirilen konuşma harcadığını yanında getirdiği için (bkz. *Devam ettirilen oturum ne harcadığını hatırlıyor*) `~` eski turların **üstünde** büyür, baştan saymaz.
 
+### ‼️ Turun rakamları turdan uzun yaşıyor (3.41.0)
+
+Kutunun üstündeki şerit, tur çalışırken *"bu tur bana ne kadara geliyor?"* sorusunu cevaplıyordu — ve cevap **kesinleştiği anda boşalıyordu**; yani okunmaya değdiği tek anda. Turun kendi rakamları konuşmaya bir kapanış satırı olarak düşüyor, sonra da onunla birlikte yukarı kayıp gidiyordu. Böylece sıra sana geçtiğinde asıl sorduğun soru — *biten tur ne kadara geldi, ne kadar sürdü?* — sayfanın hiçbir yerinde cevapsız kalıyordu.
+
+Biten tur artık **sen yeni bir prompt gönderip yeni bir tur başlatana kadar aynı yerde duruyor**:
+
+`✓ last turn — 41s · $0.031 (4.2k tokens) · 8 lines · your turn now`
+
+- Rakamlar **CLI'ın kendi rakamlarıdır** (`result.total_cost_usd`), bu yüzden `~` yok: bu satır varken tahmin işi bitmiştir.
+- Canlı şeritle karıştırılamaz — hareket yok, oturmuş bir glif ve açıkça **"last turn"** yazıyor. Kötü biten tur hangisi olduğunu söyler: **⎋ last turn interrupted** · **⚠ last turn failed**.
+- Değişmez kural tek cümle: `lastTurn` tam olarak **sıra sendeyken ve bir tur çalışmışken** vardır. Sonraki prompt'un onu siler (`acceptUserText`); çalışan bir turun *içine* yönlendirdiğin mesaj silmez — o bir tura katıldı, tur başlatmadı.
+- Köprüde: `console.sessions` artık `lastTurn` döndürüyor (`ms` · `tokens` · `cost` · `outcome`), tur çalışırken `null`.
+
 ### Model konuşmanın ortasında değişir (3.38.0)
 
 Terminalde `/model` oturumun ortasında modeli değiştirir ve bir sonraki tur yenisiyle cevap verir. Panel ise çalışan bir oturumun modeli için "başlarken karar verildi" diyordu — bu hiçbir zaman yapısal bir sınır değildi, sadece kimsenin bakmadığı bir şeydi. **`set_model`, CLI'ın gerçekten işlediği bir kontrol isteğidir** (kurulu ikili üzerinde doğrulandı: CLI'ın kendi işlenen alt-tür kümesinde var, `model`'in string olduğunu doğruluyor ve success/error cevabı veriyor).
@@ -429,6 +442,7 @@ Eskiden her oturum çıplak `claude` ile açılıyordu; model, efor, izin modu v
 | --- | --- | --- |
 | **▶ Start** | başlatır; açıklaması tam komut satırıdır | — |
 | Agent | hangi klasörde açılacağı | `cwd` |
+| Where | **terminalde mi, Console'da mı** — aşağıya bak | — |
 | Model | senin model bilgi tabanından (`agentFarm.modelAliases`) + serbest metin | `--model` |
 | Effort | low · medium · high · xhigh · max | `--effort` |
 | Permissions | plan · acceptEdits · auto · manual · dontAsk · ⚠ bypassPermissions | `--permission-mode` |
@@ -436,6 +450,20 @@ Eskiden her oturum çıplak `claude` ile açılıyordu; model, efor, izin modu v
 | First prompt | boş oturum yerine ilk mesajla açılır | konumsal argüman |
 
 Alt kısımda **profiller**: *Save this as a profile…* mevcut seçimi `agentFarm.launchProfiles`'a adıyla yazar ("derin inceleme" = opus + xhigh + plan gibi), *Load a profile…* geri yükler; *Make model/effort/permissions my defaults* seçimi `launchDefaults`'a taşır. Launcher, her ajan için **en son ne ile başlattığını hatırlar** — aynı tür oturumu ikinci açışın tek Enter'dır.
+
+#### Terminalde mi, Console'da mı — her başlatma soruyor (3.41.0)
+
+[Console](#console) geldiğinden beri bir oturumun yaşayabileceği iki yer var, ama başlatma komutları hâlâ tek yeri biliyordu: **Start session**, **Start session…** ve **Continue latest** hiç sormadan terminale gidiyordu — yani ürünün yeni yarısı, konuşma başlatan her düğmeden görünmezdi. Artık soru, nerede olursan ol, bir kez soruluyor:
+
+- **Ajan Detay sayfasında** üç düğme de adını koruyor ve altında **iki maddelik bir menü** açıyor — *In a terminal* / *In the Console* — nav düğmelerinin kullandığı menünün aynısı. (Yan yana iki düğme, tek tuşla verilen bir karar için araç çubuğunu iki katına çıkarırdı.)
+- **Diğer her yerde** — komut paleti, ağaçtaki satırın sağ tık menüsü, `Ctrl+Alt+S`, Dashboard'un ve Portfolio'nun kendi başlat düğmeleri — aynı iki kelimeyi soran bir **QuickPick** çıkıyor ve en son seçtiğini hatırlıyor (`• last used`).
+- **Launcher'da** bu bir satır: **Where** — model gibi, başlatmanın bir boyutu. Console modunda Start satırı komut satırı yerine başlatma özetini yazar, çünkü orada çalışan şey bir komut satırı değildir.
+- **Ajan için**: `sessions.start` artık `surface: "terminal" | "console"` alıyor (varsayılan `terminal`, doğrulanır, asla tahmin edilmez).
+
+Console yolunu "yaklaşık" değil **dürüst** yapan iki şey:
+
+- **Hosted oturumun `-n`'i yoktur.** Yazdığın ad, CLI oturum kimliğini bildirdiği anda Agent Farm'ın kendi başlık deposundan uygulanır — sessizce düşürülmez.
+- **`--continue` bir terminal kolaylığıdır:** klasörün en yeni oturumunu CLI'ın kendisi seçer. Hosted oturum ise **kimlikle** devam eder; bu yüzden *Continue latest → In the Console*, "en yeni"yi indeksten çözer (o ajanın klasörü, en yeniden başlayarak) ve *Resume in Console*'a verir. Devam edecek bir şey yoksa **söyler** ve yeni oturum önerir — geçmişini kaybetmiş gibi görünen boş bir konuşma açmaz.
 
 **Oturum adı nereden okunuyor (3.24.1, kuralı 3.29.0'da düzeltildi):** `-n` ile verilen ad **transkripte yazılmaz**; CLI'ın kendi canlı kaydında (`~/.claude/sessions/<pid>.json`) durur ve süreç bitince o dosya silinir. Agent Farm bu kaydı okuyup adı **hatırlar**.
 
@@ -457,6 +485,25 @@ Serbest metin (ad, ilk cümle) her zaman tırnaklanır: `"` tek tırnağa döner
 - **Session shelf…** (`Ctrl+Alt+P`, Recent Sessions başlığındaki 📌): rafın kendisi — önce pinliler, sonra son 20 oturum; **Enter oturumu terminalde devam ettirir**, satırdaki 📖 transkripti açar, 📌 rafa alır/çıkarır.
 
 Pin ve etiketler oturum **kimliğine** bağlıdır ve VS Code'un kalıcı deposunda tutulur; transcript dosyasına dokunulmaz, yeniden tarama ve yeniden başlatma onları etkilemez.
+
+### Oturum sağ tık menüsü — aynı on bir şey, her yerde (3.41.0)
+
+Bir oturum altı yerde görünüyor, sağ tık menüsü ise ikisinde vardı. Console kartında ya da Timeline kulvarında tüm set çıkıyordu; **Sessions tablosu satırında** (Dashboard, Ajan Detay), **Turns satırında**, bir **arama sonucunda** ya da bir **misyonun canlı akışında** yalnızca *Cut / Copy / Paste* çıkıyordu — yani "bunu nasıl yeniden adlandırırım?" sorusunun cevabı, o an hangi sayfaya baktığına bağlıydı.
+
+Artık hepsinde tek bir sözleşme var (`media/afSessionCtx.js` + `package.json`'da tek bir `webviewSection == 'afSessionRow'` bloğu):
+
+| Grup | Maddeler |
+| --- | --- |
+| açma | Open Transcript · **Resume in Terminal** · **Resume in Console** · Focus Session Terminal |
+| işaretleme | Rename Session… · Pin / Unpin · Label Session… · Copy Session ID |
+| durdurma | Interrupt Session · End Session · Clear From Live Timeline |
+
+Bunu "var" olmaktan çıkarıp **çalışır** yapan iki tasarım kuralı:
+
+- **Satır yalnızca bildiğini yayınlar.** `sessionId` *ya da* transcript yolu yeter — bir arama sonucu sadece yolu bilir, yeni bir Console kartı sadece kendi host kimliğini bilir. Host tarafındaki tek çözücü (`sessionFromArg`) gerisini oturum indeksinden tamamlar; satırın kendi `title`/`cwd`'si indekse üstün gelir, çünkü az önce yeniden adlandırılmış bir satır son taramadan yenidir. **Bir sonraki** oturum yüzeyini bedava yapan da bu: sözleşmeyi yayınla, menü gelsin.
+- **Normal menü yerinde kalır.** `preventDefaultContextMenuItems: false` — Copy/Paste hâlâ orada; ve bu bilerek bir `contextmenu` dinleyicisi *değil*: sağ tıkı gasp etmek sayfanın kendi menüsünü elinden alırdı.
+
+Timeline kartlarına eksik olan tek madde eklendi (**Resume in Terminal**), böylece bir konuşmayı geri almanın iki yolu, oturumun listelendiği her yerde yan yana duruyor.
 
 ### ⎋ Interrupt — çalışan bir turu durdurmak (A3)
 
@@ -480,9 +527,9 @@ Headless işler (task, mission) baştan beri durdurulabiliyordu — süreç bizi
 | Ctrl+Alt+D | Dashboard |
 | Ctrl+Alt+N | Needs You |
 | Ctrl+Alt+L | Live Timeline |
-| Ctrl+Alt+Q | Add to Work Queue *(2.x'ten beri)* |
+| Ctrl+Alt+A | Add to Work Queue |
 
-**Türkçe-Q klavye notu:** Windows'ta Ctrl+Alt = AltGr. Türkçe-Q düzeninde AltGr **Q/E/T** harflerinde karakter üretir (`@`, `€`, `₺`), bu yüzden yeni kısayolların hiçbiri o üç harfe konmadı. Tek istisna, geriye dönük uyumluluk için olduğu gibi bırakılan **Ctrl+Alt+Q**'dur (Add to Work Queue) — `@` yazarken kuyruk kutusu açılıyorsa VS Code'un Keyboard Shortcuts ekranından değiştirebilirsin.
+**Türkçe-Q klavye notu:** Windows'ta Ctrl+Alt = AltGr. Türkçe-Q düzeninde AltGr **Q/E/T** harflerinde karakter üretir (`@`, `€`, `₺`), bu yüzden hiçbir kısayol o üç harfe konmuyor — kural istisnasız her bağlama için geçerli ve bir test bunu denetliyor. **Q harfi Agent Farm'dan tamamen boş:** eklenti Ctrl+Q'ya da hiçbir şey bağlamıyor (o tuş VS Code'un kendi *Open View* komutu — `workbench.action.quickOpenView`).
 
 ## Projeler, Portföy ve Kod Değişiklikleri {#projeler-portfoy}
 
@@ -1415,7 +1462,7 @@ Sinyal yorgunluğuna karşı: on ayrı uyarı yerine haftada bir, üç cümlelik
 
 **Notices (ajan → sen):** her ajan sana söyleyeceği **tek şey için tek satır** bırakır. İki eksen: `type` (update · report · result · reminder · suggestion · warning · question) ve `level` (1 rutin → 4 ultra). Uzun içerik iki bacaklı gider: panoda **özet**, arkasında `10_REPORT`'a yazılan **tam rapor** ("📄 Open full report"). `question` tipi asenkron soru-cevap taşır: ajan sorar, sen UI'dan cevaplarsın (→answered) ya da cevapsız kaparsın (→declined), ajan bir sonraki turunda cevabı uygular ve kaydı kapatır. **Yaşlanma** için bkz. [Yaşam Panosu](#yasam-panosu).
 
-**İş Kuyruğu (sen → ajan):** kullanırken fark ettiğin düzeltmeleri sürtünmesiz düşürdüğün kanal (`Ctrl+Alt+Q`); kayıtlar **halledilene kadar kaybolmaz**. Boru hattı: `captured → grouped → delegated → done` (+ `blocked` = sana soru, tek dikkat çeken durum; `dropped` = geçersiz). Terminal olmayan bir kayıt **silinemez** — hatalı giriş `dropped`'a taşınır, o da "halledildi" sayılır. Bir notice tek tıkla kuyruk kaydına çevrilebilir (`queue.fromNotice`), bir soruyu cevaplamak otomatik kayıt açar; kayıt kaynağına `sourceNoticeId` ile geri bağlanır.
+**İş Kuyruğu (sen → ajan):** kullanırken fark ettiğin düzeltmeleri sürtünmesiz düşürdüğün kanal (`Ctrl+Alt+A`); kayıtlar **halledilene kadar kaybolmaz**. Boru hattı: `captured → grouped → delegated → done` (+ `blocked` = sana soru, tek dikkat çeken durum; `dropped` = geçersiz). Terminal olmayan bir kayıt **silinemez** — hatalı giriş `dropped`'a taşınır, o da "halledildi" sayılır. Bir notice tek tıkla kuyruk kaydına çevrilebilir (`queue.fromNotice`), bir soruyu cevaplamak otomatik kayıt açar; kayıt kaynağına `sourceNoticeId` ile geri bağlanır.
 
 **Olgunluk motoru — `queue.maturity` (3.18.1).** Gruplama/olgunluk kararı (grupla · bekle · delege et) düzyazıdan koda taşındı: eşikleri (`agentFarm.queue.groupSize`, `queue.maxAgeHours`) uygulayıp `{ actionable, reason, ripe[], ungrouped, starving[] }` döndürür. **`starving`, `queue.groups`'un gösteremediği şeydir:** hiç gruplanmamış bir kaydın `groupId`'si yoktur, yani yalnız grup özetine bakan bir süpürme, kullanıcının kendi cevabı tavanı aşmış hâlde çürürken "kuyruk boş" sonucuna varır — gerçekte olan buydu. **Her süpürme `queue.maturity` ile başlar.**
 

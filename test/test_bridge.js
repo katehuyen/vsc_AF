@@ -1163,11 +1163,15 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             'sessions.shelf', 'sessions.interrupt']) {
             ok(`extension.ts registers ${op}`, src.includes(`op: '${op}'`));
         }
-        const startBlock = src.slice(src.indexOf("op: 'sessions.start'"), src.indexOf("op: 'sessions.start'") + 1800);
+        const startBlock = src.slice(src.indexOf("op: 'sessions.start'"), src.indexOf("op: 'sessions.start'") + 3000);
         ok('sessions.start calls the shared launcher, not its own command builder',
             /startClaudeSession\(agent, o\)/.test(startBlock) && /validateLaunch/.test(startBlock));
         ok('sessions.start says it is interactive and points at tasks.add for headless work',
             /INTERACTIVE/.test(startBlock) && /tasks\.add/.test(startBlock));
+        // an agent can reach BOTH places a session can live — and the same
+        // shared starters the UI uses, not a second implementation
+        ok('sessions.start can also start it in the Console',
+            /startConsoleSession\(agent, o\)/.test(startBlock) && /surface/.test(startBlock));
         const intBlock = src.slice(src.indexOf("op: 'sessions.interrupt'"), src.indexOf("op: 'sessions.interrupt'") + 1600);
         ok('sessions.interrupt sends the Esc key with no newline',
             /sendText\(INTERRUPT_KEY, false\)/.test(intBlock));

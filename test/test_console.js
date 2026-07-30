@@ -203,6 +203,29 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         const bare = noMeter.messages[noMeter.messages.length - 1];
         ok('…a turn nobody timed reports nothing rather than a made-up zero',
             bare.ms === undefined && bare.tokens === undefined);
+
+        // ‼️ …and the figures OUTLIVE the turn. The strip above the composer went
+        // blank the instant the numbers became final, which is the one moment
+        // they were worth reading: lastTurn keeps them until the next prompt.
+        ok('the finished turn is kept, with the CLI\'s own cost',
+            done.lastTurn && done.lastTurn.ms === 12400 && done.lastTurn.tokens === 4200
+            && done.lastTurn.cost === 0.031 && done.lastTurn.outcome === 'done'
+            && done.lastTurn.endedAt === NOW + 12400);
+        ok('an interrupted turn says so instead of reading as finished',
+            reduce({ ...fresh(), status: 'working', turnStartedAt: NOW }, {
+                type: 'result', subtype: 'error_during_execution', is_error: true, total_cost_usd: 0.002
+            }, NOW + 900).lastTurn.outcome === 'interrupted');
+        ok('a failed turn says that',
+            reduce({ ...fresh(), status: 'working', turnStartedAt: NOW }, {
+                type: 'result', subtype: 'error_max_turns', is_error: true, total_cost_usd: 0
+            }, NOW + 900).lastTurn.outcome === 'failed');
+        // your next prompt is what retires it — the strip is about the PREVIOUS
+        // turn only while the ball is yours
+        ok('the next prompt clears the finished turn',
+            acceptUserText(done, 'and now this', NOW + 20000).state.lastTurn === undefined);
+        // a message steered INTO a running turn is not a new turn
+        const steered = acceptUserText({ ...done, status: 'working' }, 'also', NOW + 21000).state;
+        ok('steering a running turn does not touch it', steered.lastTurn === done.lastTurn);
     }
     // ---------- what the RUNNING turn is spending ----------
     // The CLI says what a turn cost only when the turn ends, so a strip that

@@ -79,6 +79,19 @@ export async function askExportOptions(
     return { view: true, foldedTitles: folded.v };
 }
 
+/**
+ * Where a session should run, as a webview stated it.
+ *
+ * A page whose button already ASKED (a two-item dropdown) sends the answer
+ * along so the command does not ask a second time; anything else sends nothing
+ * and gets the host's picker. Unknown values become undefined rather than a
+ * guess — a mistyped surface must fall back to being asked, never to silently
+ * running somewhere the user did not choose.
+ */
+export function runSurface(v: unknown): 'terminal' | 'console' | undefined {
+    return v === 'terminal' || v === 'console' ? v : undefined;
+}
+
 /** One router for the shared header's cross-navigation cluster
  *  (media/pageHeader.js posts {type:'afnav', to}). Pages with a scoped
  *  ⌕ Search intercept to === 'search' before delegating here. */
@@ -124,11 +137,12 @@ export function htmlShell(
     const nonce = getNonce();
     const css = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'common.css'));
     const charts = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'charts.js'));
-    // shared components (page header/toolbar + filter controls + sessions
-    // table); tiny, so they ship to every page rather than growing htmlShell
-    // a per-page script list
+    // shared components (page header/toolbar + filter controls + the session
+    // right-click contract + sessions table); tiny, so they ship to every page
+    // rather than growing htmlShell a per-page script list
     const header = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'pageHeader.js'));
     const filters = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afFilters.js'));
+    const sessCtx = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSessionCtx.js'));
     const sessTable = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'sessionsTable.js'));
     const script = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', scriptFile));
     // Global UI config shared by every page (not page data): the user's AI
@@ -162,6 +176,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${charts}"></script>
 <script nonce="${nonce}" src="${header}"></script>
 <script nonce="${nonce}" src="${filters}"></script>
+<script nonce="${nonce}" src="${sessCtx}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>
 <script nonce="${nonce}" src="${script}"></script>
 </body>

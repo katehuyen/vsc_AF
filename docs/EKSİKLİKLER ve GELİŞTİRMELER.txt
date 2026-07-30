@@ -1,9 +1,13 @@
-TAMAM (3.40.0) - EKSİK- komut satırından constitution.sync Anayasa sync fonksiyonunun arayüzden yapmanın imkanı yok
-   -> Dashboard başlığının alt satırında ⚖ Sync constitution düğmesi. Komut paletinin
-      çağırdığı komutun aynısını çağırıyor.
 
-TAMAM (3.40.0) - BUG-Resume edilen turda eski turları hesaplamadan sıfırdan başlatıyordu oturum hesaplarını console konuşma kutusunun altında.. Token'ı düzeltti biri bunu görip.. ama salak paraya el atmamış. Şimdi Token doğru ama para eksik geliyor o sıfırdan başladığı için.
-   -> Gerçek sebep: eski turlar 3.38.0'da zaten taşınıyordu; eksik olan ÇALIŞAN TUR'du.
-      CLI bir turun parasını ancak tur bitince bildiriyor, token ise her mesajda
-      artıyordu — yani satırın solu tırmanırken sağı duruyordu. Artık çalışan turun
-      tahmini de ekleniyor ve rakam ~ ile işaretleniyor: ~$5.75 (480.0k tokens).
+
+
+
+
+# BİTENLER
+-------------------------------
+
+
+
+EKSİK- komut satırından constitution.sync Anayasa sync fonksiyonunun arayüzden yapmanın imkanı yok
+
+BUG-Resume edilen turda eski turları hesaplamadan sıfırdan başlatıyordu oturum hesaplarını console konuşma kutusunun altında.. Token'ı düzeltti biri bunu görip.. ama salak paraya el atmamış. Şimdi Token doğru ama para eksik geliyor o sıfırdan başladığı için.

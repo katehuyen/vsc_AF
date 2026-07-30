@@ -2757,7 +2757,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'sessions.start',
-            describe: 'Start an INTERACTIVE claude session in an agent\'s folder — the same launch the Start Session… picker performs, with the same flags. Not a headless run: it opens a terminal a human then talks in (use tasks.add for work that should run by itself). args: agent (name|id), model? (alias or id), effort? (low|medium|high|xhigh|max), permissionMode? (plan|acceptEdits|auto|manual|dontAsk|bypassPermissions), name? (session display name), prompt? (first message), resume? (session id), continue? (true = latest session in that folder). Unset fields fall back to agentFarm.launchDefaults.',
+            describe: 'Start an INTERACTIVE claude session in an agent\'s folder — the same launch the Start Session… picker performs, with the same flags. Not a headless run: it opens a session a human then talks in (use tasks.add for work that should run by itself). args: agent (name|id), surface? (terminal = a claude terminal, the default | console = hosted in the Console panel), model? (alias or id), effort? (low|medium|high|xhigh|max), permissionMode? (plan|acceptEdits|auto|manual|dontAsk|bypassPermissions), name? (session display name), prompt? (first message), resume? (session id), continue? (true = latest session in that folder). Unset fields fall back to agentFarm.launchDefaults. surface=console ignores resume/continue — console.start and resumeInConsole own those.',
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const o: LaunchOptions = {
@@ -2771,9 +2771,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 };
                 const errors = validateLaunch(withDefaults(o, launchDefaults()));
                 need(!errors.length, errors.join(' · '));
+                const surface = optStr(args, 'surface') || 'terminal';
+                need(surface === 'terminal' || surface === 'console',
+                    `surface must be "terminal" or "console", not "${surface}"`);
+                if (surface === 'console') {
+                    startConsoleSession(agent, o);
+                    return { agent: agent.name, cwd: agent.dir, surface };
+                }
                 const command = startClaudeSession(agent, o);
                 need(command, 'launch rejected — see the warning in the window');
-                return { agent: agent.name, cwd: agent.dir, command };
+                return { agent: agent.name, cwd: agent.dir, surface, command };
             }
         },
         {
@@ -2961,7 +2968,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'console.sessions',
-            describe: 'The Console sessions this window hosts: status, cost so far, turns, held messages (console.queue reads them), permission mode and the last few messages. args: id? (one session, with more of its transcript), messages? (how many messages to include, default 0)',
+            describe: 'The Console sessions this window hosts: status, cost so far, turns, held messages (console.queue reads them), permission mode, the turn that just finished (lastTurn: ms/tokens/cost/outcome — null while a turn runs) and the last few messages. args: id? (one session, with more of its transcript), messages? (how many messages to include, default 0)',
             handler: (args) => {
                 const want = optStr(args, 'id');
                 const take = typeof args.messages === 'number' ? Math.max(0, Math.floor(args.messages)) : 0;
@@ -2975,6 +2982,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     tokens: s.tokens,
                     // …and what the turn running right now has spent of them
                     turnTokens: s.turnTokensAt !== undefined ? Math.max(0, s.tokens - s.turnTokensAt) : 0,
+                    // …and, once the ball is back with the user, what the turn
+                    // that just ended really cost (the CLI's own figure)
+                    lastTurn: s.lastTurn ?? null,
                     contextTokens: s.contextTokens ?? null,
                     pendingPermission: s.pendingPermission?.detail ?? null,
                     exitReason: s.exitReason ?? null,
@@ -4875,6 +4885,54 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return pick?.agent;
     };
 
+    /**
+     * resolveAgent's sibling for sessions: turn whatever a caller hands over
+     * into a SessionInfo.
+     *
+     * Session actions are reached from a dozen surfaces and each knows a
+     * different amount. A tree row passes the whole SessionInfo (Agents wraps it
+     * as `{kind:'session', session}`); a Console card passes its own identity
+     * keys; a Turns row knows the session id; a search hit knows only the
+     * transcript path. Resolving that here — instead of in eleven command
+     * handlers — is what lets a surface publish only what it has and still get
+     * the complete right-click menu (see media/afSessionCtx.js).
+     *
+     * The index is the authority on a session's figures; the caller's own
+     * `title`/`cwd`/`agentName` win over it, because a row that was just
+     * renamed is newer than the last scan.
+     */
+    interface SessionRef {
+        session?: SessionInfo;
+        sessionId?: string;
+        file?: string;
+        title?: string;
+        cwd?: string;
+        agentName?: string;
+    }
+    const sessionFromArg = (arg?: SessionRef | SessionInfo | string): SessionInfo | undefined => {
+        if (!arg) { return undefined; }
+        if (typeof arg === 'string') {
+            return index.all().find(s => s.sessionId === arg || s.file === arg);
+        }
+        const ref: SessionRef & Partial<SessionInfo> =
+            'session' in arg && (arg as SessionRef).session ? (arg as SessionRef).session! : arg;
+        const found = ref.sessionId
+            ? index.all().find(s => s.sessionId === ref.sessionId)
+            : ref.file ? index.all().find(s => s.file === ref.file) : undefined;
+        if (!found) {
+            // Not indexed (a brand-new Console session, an external transcript):
+            // hand back what the caller knew — the handlers already cope with a
+            // partial session, and inventing one would be worse.
+            return ref.sessionId || ref.file ? ref as SessionInfo : undefined;
+        }
+        return {
+            ...found,
+            ...(ref.title ? { title: ref.title } : {}),
+            ...(ref.cwd ? { cwd: ref.cwd } : {}),
+            ...(ref.agentName ? { agentName: ref.agentName } : {})
+        };
+    };
+
     // ---------- A1: the launcher ----------
     // One picker that stays open: every row is a dimension of the launch, the
     // top row is the trigger, and its description is the EXACT command line
@@ -4913,8 +4971,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const launchProfiles = (): LaunchProfile[] =>
         (cfg().get<LaunchProfile[]>('launchProfiles', []) ?? []).filter(p => p?.name);
 
-    const runLauncher = async (agent: AgentInfo, seed: LaunchOptions): Promise<void> => {
+    const runLauncher = async (
+        agent: AgentInfo, seed: LaunchOptions, surface: RunSurface = 'terminal'
+    ): Promise<void> => {
         let o: LaunchOptions = { ...seed };
+        let where: RunSurface = surface;
         const show = (v: string | undefined, empty = 'default') => (v?.trim() ? v.trim() : empty);
         for (;;) {
             const merged = withDefaults(o, launchDefaults());
@@ -4925,13 +4986,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             interface Row extends vscode.QuickPickItem { act?: string }
             const rows: Row[] = [
                 {
-                    label: '$(rocket) Start', description: command,
-                    detail: `runs in ${agent.dir}`, act: 'start'
+                    label: '$(rocket) Start',
+                    // In the Console the command line is not what runs (the panel
+                    // spawns its own streaming session), so printing it would be
+                    // a lie about the exact thing this row exists to be honest about.
+                    description: where === 'console' ? describeLaunch(merged) : command,
+                    detail: where === 'console'
+                        ? `runs in ${agent.dir}, hosted in the Console panel`
+                        : `runs in ${agent.dir}`,
+                    act: 'start'
                 },
                 { label: 'Session', kind: vscode.QuickPickItemKind.Separator },
                 {
                     label: '$(hubot) Agent', description: agent.name,
                     detail: 'which folder the session opens in', act: 'agent'
+                },
+                // WHERE is a dimension of the launch like the model is — the
+                // launcher used to decide it silently (always a terminal).
+                {
+                    label: '$(window) Where',
+                    description: where === 'console' ? 'the Console panel' : 'a terminal',
+                    detail: where === 'console'
+                        ? 'the conversation stays in Agent Farm; the name is applied once the session reports its id'
+                        : 'a real claude terminal — the full TUI, slash commands, /resume',
+                    act: 'where'
                 },
                 {
                     label: '$(star-full) Model', description: show(merged.model) + inherited(o.model, d.model),
@@ -4976,14 +5054,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             });
             if (!pick?.act) { return; } // Esc anywhere = launch nothing
             if (pick.act === 'start') {
-                const ran = startClaudeSession(agent, o);
-                if (!ran) { continue; } // invalid value — the picker stays up
+                if (where === 'console') {
+                    const errors = validateLaunch(merged);
+                    if (errors.length) {
+                        void vscode.window.showWarningMessage(`Agent Farm: ${errors.join(' · ')}`);
+                        continue; // invalid value — the picker stays up
+                    }
+                    startConsoleSession(agent, o);
+                } else {
+                    const ran = startClaudeSession(agent, o);
+                    if (!ran) { continue; } // invalid value — the picker stays up
+                }
                 const remembered = {
                     ...lastLaunch(),
                     [agent.id]: { model: o.model, effort: o.effort, permissionMode: o.permissionMode }
                 };
                 await context.globalState.update(LAST_LAUNCH_KEY, remembered);
+                await context.globalState.update(SURFACE_KEY, where);
                 return;
+            }
+            if (pick.act === 'where') {
+                const v = await pickRunSurface(`Session for ${agent.name}`);
+                if (v) { where = v; }
+                continue;
             }
             if (pick.act === 'agent') {
                 const next = await resolveAgent(undefined);
@@ -5368,6 +5461,79 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (!ownerOf(readCliSessions(claudeDir()), sessionId)) { return true; }
         }
         return false;
+    };
+
+    // ---------- WHERE does a session run: a terminal, or the Console? ----------
+    /**
+     * ‼️ A session has had TWO places to live since the Console arrived, and the
+     * start commands still only knew one.
+     *
+     * "Start session", "Continue latest" and the launcher all went straight to a
+     * terminal without a word — the Console was reachable only from its own page
+     * or from a resume, so the newer half of the product was invisible from every
+     * button that starts a conversation. The fix is not a second set of buttons
+     * (that doubles a toolbar for a choice you make in one keystroke); it is to
+     * ASK, in the one place every surface funnels through.
+     *
+     * Callers that already know (a webview dropdown, an automation) pass
+     * `surface` and are never asked. Everything else — the command palette, a
+     * tree row's context menu, a keybinding — gets this picker.
+     */
+    type RunSurface = 'terminal' | 'console';
+    const SURFACE_KEY = 'agentfarm.lastRunSurface';
+    const pickRunSurface = async (what: string): Promise<RunSurface | undefined> => {
+        interface Item extends vscode.QuickPickItem { surface: RunSurface }
+        const last = context.globalState.get<RunSurface>(SURFACE_KEY);
+        const items: Item[] = [
+            {
+                label: '$(terminal) In a terminal',
+                description: 'a real claude terminal — the full TUI, slash commands, /resume',
+                surface: 'terminal'
+            },
+            {
+                label: '$(comment-discussion) In the Console',
+                description: 'inside the panel — the conversation stays with Agent Farm',
+                surface: 'console'
+            }
+        ];
+        for (const it of items) {
+            if (it.surface === last) { it.description += ' • last used'; }
+        }
+        const pick = await vscode.window.showQuickPick(items, {
+            placeHolder: `${what} — where should it run?`, ignoreFocusOut: true
+        });
+        if (!pick) { return undefined; }
+        await context.globalState.update(SURFACE_KEY, pick.surface);
+        return pick.surface;
+    };
+
+    /**
+     * Start a hosted (Console) session for an agent, with the same launch
+     * options a terminal start would have used, and show it.
+     *
+     * A hosted session has no `-n` of its own — the name is Agent Farm's own
+     * title store — so a launch that asked for a name applies it the moment the
+     * CLI reports the session's id, rather than dropping it silently.
+     */
+    const startConsoleSession = (agent: AgentInfo, o: LaunchOptions = {}): void => {
+        const merged = withDefaults(o, launchDefaults());
+        const id = consoleHost.start({
+            agentId: agent.id, agentName: agent.name, cwd: agent.dir,
+            model: merged.model, effort: merged.effort, permissionMode: merged.permissionMode,
+            firstPrompt: o.prompt?.trim() || undefined
+        });
+        const wanted = o.name?.trim();
+        if (wanted) {
+            const sub = consoleHost.onChange(changed => {
+                if (changed !== id) { return; }
+                const sid = consoleHost.get(id)?.sessionId;
+                if (!sid) { return; }
+                sub.dispose();
+                void applySessionTitle(sid, wanted);
+            });
+            context.subscriptions.push(sub);
+        }
+        ConsolePanel.show(consoleDeps, { sessionId: id });
     };
 
     /**
@@ -5972,10 +6138,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // A menu hands its context to the command; only the id is guaranteed to
         // be in it, so the path is resolved here.
         vscode.commands.registerCommand('agentfarm.openSession',
-            (arg?: string | { file?: string; sessionId?: string }, focusTs?: number) => {
+            (arg?: string | SessionRef, focusTs?: number) => {
                 let file = typeof arg === 'string' ? arg : arg?.file;
                 if (!file && arg && typeof arg === 'object' && arg.sessionId) {
-                    file = index.all().find(s => s.sessionId === arg.sessionId)?.file;
+                    file = sessionFromArg(arg)?.file;
                     if (!file) {
                         void vscode.window.showInformationMessage(
                             'Agent Farm: no transcript on disk for that session yet.');
@@ -6226,11 +6392,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             refreshInsights();
         }),
 
-        // Tree elements differ per view: Agents wraps the session in {kind:'session', session},
-        // Recent Sessions passes the SessionInfo itself.
+        // Every surface hands over what it knows; sessionFromArg fills the rest
+        // in from the index (tree rows, Console cards, table rows, search hits).
         vscode.commands.registerCommand('agentfarm.resumeSession',
-            async (arg?: { session?: SessionInfo } | SessionInfo) => {
-                const s = arg && 'session' in arg && arg.session ? arg.session : arg as SessionInfo | undefined;
+            async (arg?: SessionRef | SessionInfo) => {
+                const s = sessionFromArg(arg);
                 if (!s?.sessionId) { return; }
                 // Claude Code cannot join a running session: resuming one that a
                 // process already owns starts a SECOND process on the same
@@ -6293,9 +6459,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // carries its own `pinned` flag, and reading that as an instruction
         // would turn every click on a pinned tree row into "pin it again".
         vscode.commands.registerCommand('agentfarm.pinSession',
-            async (arg?: { session?: SessionInfo; sessionId?: string; wantPinned?: boolean } | SessionInfo) => {
-                const s = arg && 'session' in arg && arg.session ? arg.session : arg as SessionInfo | undefined;
-                const sessionId = s?.sessionId || (arg as { sessionId?: string })?.sessionId;
+            async (arg?: (SessionRef & { wantPinned?: boolean }) | SessionInfo) => {
+                const s = sessionFromArg(arg);
+                const sessionId = s?.sessionId;
                 if (!sessionId) { return; }
                 const want = typeof (arg as { wantPinned?: boolean })?.wantPinned === 'boolean'
                     ? (arg as { wantPinned?: boolean }).wantPinned
@@ -6314,9 +6480,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // The id is the handle every surface shows and the resume filter
         // searches — so it is worth one click, from wherever you can see it.
         vscode.commands.registerCommand('agentfarm.copySessionId',
-            async (arg?: { session?: SessionInfo; sessionId?: string } | SessionInfo) => {
-                const s = arg && 'session' in arg && arg.session ? arg.session : arg as SessionInfo | undefined;
-                const sessionId = s?.sessionId || (arg as { sessionId?: string })?.sessionId;
+            async (arg?: SessionRef | SessionInfo) => {
+                const sessionId = sessionFromArg(arg)?.sessionId;
                 if (!sessionId) {
                     void vscode.window.showInformationMessage(
                         'Agent Farm: this session has not reported its id yet — say something in it first.');
@@ -6328,9 +6493,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }),
 
         vscode.commands.registerCommand('agentfarm.tagSession',
-            async (arg?: { session?: SessionInfo; sessionId?: string } | SessionInfo) => {
-                const s = arg && 'session' in arg && arg.session ? arg.session : arg as SessionInfo | undefined;
-                const sessionId = s?.sessionId || (arg as { sessionId?: string })?.sessionId;
+            async (arg?: SessionRef | SessionInfo) => {
+                const sessionId = sessionFromArg(arg)?.sessionId;
                 if (!sessionId) { return; }
                 const marks = sessionMarks();
                 const known = allTags(marks);
@@ -6410,22 +6574,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         // ---------- A3 ----------
         vscode.commands.registerCommand('agentfarm.interruptSession',
-            (arg?: { sessionId?: string; agentName?: string } | { session?: SessionInfo } | SessionInfo) => {
-                const unwrapped = arg && 'session' in arg && arg.session ? arg.session : arg;
-                void interruptSession(unwrapped as { sessionId?: string; agentName?: string } | undefined);
+            (arg?: SessionRef | SessionInfo) => {
+                void interruptSession(sessionFromArg(arg));
             }),
 
         vscode.commands.registerCommand('agentfarm.endSession',
-            async (arg?: { sessionId?: string; agentName?: string }) => {
-                const sessionId = await pickLiveSessionId(arg?.sessionId,
+            async (arg?: SessionRef | SessionInfo) => {
+                const s = sessionFromArg(arg);
+                const sessionId = await pickLiveSessionId(s?.sessionId,
                     'End which session? (its claude process is stopped)');
                 if (!sessionId) { return; }
-                await endLiveSession(sessionId, arg?.agentName);
+                await endLiveSession(sessionId, s?.agentName);
             }),
 
         vscode.commands.registerCommand('agentfarm.dismissSession',
-            async (arg?: { sessionId?: string; agentName?: string; gone?: boolean }) => {
-                if (arg?.gone) {
+            async (arg?: (SessionRef & { gone?: boolean }) | SessionInfo) => {
+                if ((arg as { gone?: boolean } | undefined)?.gone) {
                     // Sweep: every tracked session the OS no longer runs.
                     const owned = new Set(readCliSessions(claudeDir()).map(o => o.sessionId));
                     const registry = fs.existsSync(sessionsDir(claudeDir()));
@@ -6444,10 +6608,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         `Agent Farm: cleared ${dead.length} finished session(s) from the live timeline.`);
                     return;
                 }
-                const sessionId = await pickLiveSessionId(arg?.sessionId,
+                const ref = sessionFromArg(arg);
+                const sessionId = await pickLiveSessionId(ref?.sessionId,
                     'Clear which session from the live timeline?');
                 if (!sessionId) { return; }
-                const who = arg?.agentName
+                const who = ref?.agentName
                     ?? live.sessions().find(s => s.sessionId === sessionId)?.agentName
                     ?? sessionId.slice(0, 8);
                 // purge: card AND lane row leave together — see LiveMonitor.dismiss.
@@ -6674,9 +6839,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // Same ownership rule as everywhere else — a session a process already
         // owns cannot be joined, only jumped to.
         vscode.commands.registerCommand('agentfarm.resumeInConsole',
-            async (arg?: { session?: SessionInfo } | SessionInfo) => {
-                const s = arg && 'session' in arg && arg.session ? arg.session : arg as SessionInfo | undefined;
-                if (!s?.sessionId || !s.cwd) { return; }
+            async (arg?: SessionRef | SessionInfo) => {
+                const s = sessionFromArg(arg);
+                if (!s?.sessionId || !s.cwd) {
+                    // A row WAS right-clicked but the session has no id or no
+                    // folder yet (a Console session before its first turn, an
+                    // imported transcript): silence would read as a dead item.
+                    if (arg) {
+                        void vscode.window.showInformationMessage(s?.sessionId
+                            ? 'Agent Farm: that session has no working folder on record, so it cannot be resumed in the Console.'
+                            : 'Agent Farm: this session has not reported its id yet — say something in it first.');
+                    }
+                    return;
+                }
                 // our own leftover first — see leftoverOwner
                 const left = leftoverOwner(s.sessionId);
                 if (left) {
@@ -6901,8 +7076,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }),
 
         vscode.commands.registerCommand('agentfarm.renameSession',
-            async (arg?: { session?: SessionInfo } | SessionInfo) => {
-                const s = arg && 'session' in arg && arg.session ? arg.session : arg as SessionInfo | undefined;
+            async (arg?: SessionRef | SessionInfo) => {
+                const s = sessionFromArg(arg);
                 if (!s?.sessionId) {
                     // A row WAS right-clicked but carries no id yet: that only
                     // happens to a brand-new Console session before its first
@@ -7133,26 +7308,55 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // One click, no questions — but it now carries agentFarm.launchDefaults,
         // so "always opus, always acceptEdits" is set once instead of typed
         // into every terminal. Empty defaults = the bare `claude` of before.
-        vscode.commands.registerCommand('agentfarm.startSession', async (arg: AgentArg) => {
-            const agent = await resolveAgent(arg);
-            if (!agent) { return; }
-            startClaudeSession(agent);
-        }),
+        vscode.commands.registerCommand('agentfarm.startSession',
+            async (arg: AgentArg & { surface?: RunSurface }) => {
+                const agent = await resolveAgent(arg);
+                if (!agent) { return; }
+                const where = arg?.surface ?? await pickRunSurface(`New session for ${agent.name}`);
+                if (!where) { return; }
+                if (where === 'console') { startConsoleSession(agent); return; }
+                startClaudeSession(agent);
+            }),
 
-        vscode.commands.registerCommand('agentfarm.continueSession', async (arg: AgentArg) => {
-            const agent = await resolveAgent(arg);
-            if (!agent) { return; }
-            startClaudeSession(agent, { continueLast: true });
-        }),
+        vscode.commands.registerCommand('agentfarm.continueSession',
+            async (arg: AgentArg & { surface?: RunSurface }) => {
+                const agent = await resolveAgent(arg);
+                if (!agent) { return; }
+                const where = arg?.surface ?? await pickRunSurface(`Continue ${agent.name}'s latest session`);
+                if (!where) { return; }
+                if (where === 'terminal') {
+                    startClaudeSession(agent, { continueLast: true });
+                    return;
+                }
+                // `claude --continue` is a terminal affordance: it picks the most
+                // recent session in the folder itself. A hosted session resumes
+                // by ID, so "latest" has to be resolved here — and if there is
+                // none, say so instead of opening an empty conversation that
+                // looks like it lost the history.
+                const latest = index.all()
+                    .filter(s => !s.isSidechain && !s.machine && s.sessionId
+                        && normPath(s.cwd ?? '') === normPath(agent.dir))
+                    .sort((a, b) => (b.lastTs || b.mtime) - (a.lastTs || a.mtime))[0];
+                if (!latest) {
+                    const start = await vscode.window.showInformationMessage(
+                        `Agent Farm: ${agent.name} has no earlier session in ${agent.dir} to continue.`,
+                        'Start a new one in the Console');
+                    if (start) { startConsoleSession(agent); }
+                    return;
+                }
+                await vscode.commands.executeCommand('agentfarm.resumeInConsole', latest);
+            }),
 
-        // A1: the same start, with every dimension on the table first.
-        vscode.commands.registerCommand('agentfarm.launchSession', async (arg: AgentArg) => {
-            const agent = await resolveAgent(arg);
-            if (!agent) { return; }
-            // Seeded with what this agent was last launched with — the second
-            // time you start the same kind of session it is one Enter.
-            await runLauncher(agent, { ...(lastLaunch()[agent.id] ?? {}) });
-        }),
+        // A1: the same start, with every dimension on the table first — including
+        // WHERE it runs, which is a dimension like any other (see the Where row).
+        vscode.commands.registerCommand('agentfarm.launchSession',
+            async (arg: AgentArg & { surface?: RunSurface }) => {
+                const agent = await resolveAgent(arg);
+                if (!agent) { return; }
+                // Seeded with what this agent was last launched with — the second
+                // time you start the same kind of session it is one Enter.
+                await runLauncher(agent, { ...(lastLaunch()[agent.id] ?? {}) }, arg?.surface);
+            }),
 
         // E1: open a session with a different CLI (gemini/codex/…) WITHOUT touching
         // the claude path — a sibling command. The claude default stays untouched.
@@ -9508,14 +9712,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }),
 
         vscode.commands.registerCommand('agentfarm.focusSessionTerminal',
-            (rawArg?: { sessionId?: string; agentName?: string; cwd?: string }
-                | { session?: SessionInfo } | SessionInfo) => {
+            (rawArg?: SessionRef | SessionInfo) => {
                 // Tree rows pass a SessionInfo (or a {session} wrapper node),
-                // webviews pass a plain {sessionId, agentName, cwd} object —
-                // all three shapes carry the same three fields.
-                const arg = rawArg && 'session' in rawArg && rawArg.session
-                    ? rawArg.session
-                    : rawArg as { sessionId?: string; agentName?: string; cwd?: string } | undefined;
+                // webviews pass whatever the row knew — sessionFromArg makes one
+                // shape out of all of them.
+                const arg = sessionFromArg(rawArg);
                 // 1) exact hit — the terminal this very session was launched in
                 //    (bound at launch or by the live monitor via cwd; see termBindings)
                 const sid = arg?.sessionId;

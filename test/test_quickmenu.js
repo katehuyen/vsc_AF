@@ -10,6 +10,12 @@ const path = require('path');
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
+// ‼️ Print the offenders and STILL FAIL. This was written as
+// `cond || !console.log(detail)` — and `!undefined` is `true`, so every check
+// using it printed its diagnostic and then passed. The Turkish-Q AltGr rule and
+// the "the menu must not lie about its shortcuts" rule were both silently
+// disarmed that way; a rule that cannot fail is not a rule.
+const why = detail => { console.log('    ' + detail); return false; };
 
 const { QUICK_MENU, QUICK_MENU_GROUPS } =
     require(path.join(__dirname, '..', 'out', 'core', 'quickmenu.js'));
@@ -23,7 +29,7 @@ const keyOf = cmd => (keybindings.find(k => k.command === cmd) || {}).key;
 {
     const missing = QUICK_MENU.filter(e => !commandIds.has(e.command));
     ok('every menu row names a registered command',
-        missing.length === 0 || !console.log('    missing: ' + missing.map(m => m.command).join(', ')));
+        missing.length === 0 || why('missing: ' + missing.map(m => m.command).join(', ')));
     ok('every row has a label and a detail',
         QUICK_MENU.every(e => e.label.trim() && e.detail.trim()));
     ok('every row carries an icon', QUICK_MENU.every(e => /^\$\([a-z0-9-]+\)/.test(e.label)));
@@ -39,7 +45,7 @@ const keyOf = cmd => (keybindings.find(k => k.command === cmd) || {}).key;
 {
     const wrong = QUICK_MENU.filter(e => e.key && keyOf(e.command) !== e.key);
     ok('every printed shortcut matches package.json',
-        wrong.length === 0 || !console.log('    wrong: ' + wrong.map(w =>
+        wrong.length === 0 || why('wrong: ' + wrong.map(w =>
             `${w.command} says ${w.key}, bound ${keyOf(w.command)}`).join(' · ')));
     // the reverse: a bound key the menu forgot to advertise
     const unadvertised = keybindings.filter(k =>
@@ -81,16 +87,22 @@ const keyOf = cmd => (keybindings.find(k => k.command === cmd) || {}).key;
     ok('no two Agent Farm bindings share a key', new Set(keys).size === keys.length);
     ok('every binding has a mac form', keybindings.every(k => k.mac));
     ok('every bound command exists', keybindings.every(k => commandIds.has(k.command)));
-    ok('the existing ctrl+alt+q is untouched',
-        keyOf('agentfarm.queueAdd') === 'ctrl+alt+q');
-    // Turkish-Q: AltGr+Q/E/T type @ € ₺. Ctrl+Alt IS AltGr on Windows, so a new
-    // binding on those letters would eat a character the user types daily.
+    ok('add-to-queue is on ctrl+alt+a', keyOf('agentfarm.queueAdd') === 'ctrl+alt+a');
+    // ‼️ Turkish-Q: AltGr+Q/E/T type @ € ₺. Ctrl+Alt IS AltGr on Windows, so a
+    // binding on those letters eats a character the user types daily. This used
+    // to carry an exemption for queueAdd ("left as it was for backwards
+    // compatibility") — which is precisely the binding that fired every time an
+    // e-mail address was typed. There is no exemption any more: the rule holds
+    // for every binding, old ones included.
     const TR_ALTGR = ['q', 'e', 't'];
     const clashes = keybindings
-        .filter(k => k.command !== 'agentfarm.queueAdd')
         .filter(k => TR_ALTGR.includes(k.key.replace('ctrl+alt+', '')));
-    ok('no new binding sits on a Turkish AltGr character key',
-        clashes.length === 0 || !console.log('    clash: ' + clashes.map(c => c.key).join(', ')));
+    ok('no binding sits on a Turkish AltGr character key',
+        clashes.length === 0 || why('clash: ' + clashes.map(c => c.key).join(', ')));
+    // Ctrl+Q is VS Code's own "Open View" (workbench.action.quickOpenView) and
+    // is a global hotkey for many people — the extension never takes it.
+    ok('nothing in the extension binds a bare ctrl+q',
+        !keybindings.some(k => /^(ctrl|cmd)\+q$/.test(k.key)));
     ok('the hub key is ctrl+alt+f', keyOf('agentfarm.quickMenu') === 'ctrl+alt+f');
     ok('the keyboard set stays small enough to remember', keybindings.length <= 10);
 }

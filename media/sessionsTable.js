@@ -12,6 +12,10 @@
 // N — hosts must answer that message. The component owns exactly one container
 // div and re-renders only that, so host-page state (e.g. an open pricing
 // editor) is never clobbered.
+// Every row also carries the shared session right-click contract
+// (afSessionCtx.js), so the whole session action set — resume in a terminal or
+// in the Console, open, rename, focus terminal, pin, label, copy id, interrupt,
+// end, clear — is on the row wherever this table is embedded.
 (function () {
     'use strict';
 
@@ -374,7 +378,8 @@
             shown.forEach(r => { if (open.has(r.file)) { ensureTurns(r); } });
             const rowsHtml = shown.map(r => {
                 const o = open.has(r.file);
-                return `<tr class="click sessrow${o ? ' open' : ''}" data-session="${C.esc(r.file)}">
+                return `<tr class="click sessrow${o ? ' open' : ''}" data-session="${C.esc(r.file)}"
+                    ${window.AFSessionCtx.row(r)} title="${window.AFSessionCtx.HINT}">
                     <td class="foldcell"><button class="fold" data-fold="${C.esc(r.file)}" title="${o ? 'Hide' : 'List'} this session's turns">${o ? '▾' : '▸'}</button></td>
                     <td class="pincell"><button class="pinbtn${r.pinned ? ' on' : ''}" data-pin="${C.esc(r.sessionId || '')}" data-pinned="${r.pinned ? '1' : '0'}" title="${r.pinned ? 'Pinned — click to take it off your shelf' : 'Pin this session to your shelf (always listed first)'}">${r.pinned ? '★' : '☆'}</button></td>
                     ${cols.map(c => CELL[c](r)).join('')}

@@ -9,7 +9,7 @@ import { buildAgentTaskStats, TaskRecord } from '../core/taskstats';
 import { SessionIndex } from '../core/sessions';
 import { PriceRule, PricingEngine, totalTokens } from '../core/pricing';
 import { safeReadFile } from '../core/util';
-import { handleAfNav, htmlShell } from './base';
+import { handleAfNav, htmlShell, runSurface } from './base';
 import { AGENT_SESSION_TABLE_N, sessionRowPool } from './dashboard';
 import { buildData as buildViewerData } from './sessionViewer';
 
@@ -286,17 +286,24 @@ export class AgentDetailPanel {
                     agentName: typeof msg.agentName === 'string' ? msg.agentName : undefined
                 });
                 break;
+            // The three start buttons carry their own answer to "terminal or
+            // Console?" (their dropdown asked it), so the command does not ask
+            // again. Anything else that reaches these commands still gets the
+            // picker — see pickRunSurface.
             case 'startSession':
-                vscode.commands.executeCommand('agentfarm.startSession', { agentId: this.agentId });
+                vscode.commands.executeCommand('agentfarm.startSession',
+                    { agentId: this.agentId, surface: runSurface(msg.surface) });
                 break;
             case 'launchSession':
-                vscode.commands.executeCommand('agentfarm.launchSession', { agentId: this.agentId });
+                vscode.commands.executeCommand('agentfarm.launchSession',
+                    { agentId: this.agentId, surface: runSurface(msg.surface) });
                 break;
             case 'consoleSession':
                 vscode.commands.executeCommand('agentfarm.consoleForAgent', { agentId: this.agentId });
                 break;
             case 'continueSession':
-                vscode.commands.executeCommand('agentfarm.continueSession', { agentId: this.agentId });
+                vscode.commands.executeCommand('agentfarm.continueSession',
+                    { agentId: this.agentId, surface: runSurface(msg.surface) });
                 break;
             case 'reveal':
                 vscode.commands.executeCommand('agentfarm.revealAgent', { agentId: this.agentId });

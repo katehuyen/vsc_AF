@@ -180,6 +180,9 @@ export class ConsolePanel {
                 // ConsoleDeps.estimateCost.
                 turnTokens: s.turnTokensAt !== undefined ? Math.max(0, s.tokens - s.turnTokensAt) : 0,
                 turnCost: s.turnUsage ? this.deps.estimateCost(s.model ?? '', s.turnUsage) : 0,
+                // …and once it is over, the same strip keeps saying what it cost
+                // until your next prompt starts a new turn (see lastTurn)
+                lastTurn: s.lastTurn ?? null,
                 pendingPermission: s.pendingPermission ?? null,
                 exitReason: s.exitReason ?? '',
                 messages: s.id === this.selected ? s.messages.slice(-400) : []

@@ -288,6 +288,19 @@ The totals now come back with the transcript: cost, tokens, turns and context, o
 
 The running turn's estimate already exists — it is what the strip above the box shows — so the session line adds it and marks the whole thing **`~`**: `~$5.75 (480.0k tokens) this session`. Nothing can be double counted: when the turn closes, its estimate is cleared in the **same step** that adds the CLI's own figure to `s.cost`. And the base is the **session's**, not this window's — a resumed conversation comes back with what it already spent (see *A resumed session remembers what it spent*), so the `~` grows **on top of** the earlier turns instead of starting the sum over.
 
+### ‼️ The turn's figures outlive the turn (3.41.0)
+
+The strip above the box answered *"what is this turn costing me?"* while the turn ran — and went **blank the instant the answer became final**, which is the one moment it was worth reading. The turn's own numbers were pushed into the conversation as a closing line, and then scrolled away with it. So the question you actually ask when the ball comes back — *what did the turn that just ended cost, and how long did it take?* — had no answer anywhere on the page.
+
+The finished turn now **stays in the same place until your next prompt starts a new one**:
+
+`✓ last turn — 41s · $0.031 (4.2k tokens) · 8 lines · your turn now`
+
+- The figures are the **CLI's own** (`result.total_cost_usd`), so there is no `~`: by the time this exists, the guessing is over.
+- It cannot be mistaken for the live strip — no motion, a settled glyph, and it says **"last turn"** out loud. A turn that ended badly says which: **⎋ last turn interrupted** · **⚠ last turn failed**.
+- The invariant is one sentence: `lastTurn` exists exactly while **the ball is yours and a turn has already run**. Your next prompt clears it (`acceptUserText`), a message steered *into* a running turn does not — that joined a turn, it did not start one.
+- On the bridge: `console.sessions` returns `lastTurn` (`ms` · `tokens` · `cost` · `outcome`), `null` while a turn runs.
+
 ### The model changes mid-conversation (3.38.0)
 
 `/model` switches the model mid-session in a terminal and the next turn answers with the new one. The panel used to say a running session's model "was decided when it started" — that was never a structural limit, only one nobody had looked up. **`set_model` is a control request the CLI really handles** (verified against the installed binary: it is in the CLI's own set of handled subtypes, it validates that `model` is a string, and it answers success or error).
@@ -382,6 +395,7 @@ Every session used to open as a bare `claude`, with the model, the effort, the p
 | --- | --- | --- |
 | **▶ Start** | launches; its description is the full command line | — |
 | Agent | which folder it opens in | `cwd` |
+| Where | **a terminal or the Console** — see below | — |
 | Model | from your own model knowledge base (`agentFarm.modelAliases`) + free text | `--model` |
 | Effort | low · medium · high · xhigh · max | `--effort` |
 | Permissions | plan · acceptEdits · auto · manual · dontAsk · ⚠ bypassPermissions | `--permission-mode` |
@@ -389,6 +403,20 @@ Every session used to open as a bare `claude`, with the model, the effort, the p
 | First prompt | opens with an opening message instead of an empty session | positional argument |
 
 At the bottom sit the **profiles**: *Save this as a profile…* writes the current picks to `agentFarm.launchProfiles` under a name ("deep review" = opus + xhigh + plan), *Load a profile…* restores one, and *Make model/effort/permissions my defaults* promotes them to `launchDefaults`. The launcher **remembers what each agent was last launched with** — the second time you start the same kind of session it is one Enter.
+
+#### Terminal or Console — every start asks (3.41.0)
+
+A session has had two places to live since the [Console](#console) arrived, and the start commands still knew only one: **Start session**, **Start session…** and **Continue latest** all went to a terminal without a word, so the newer half of the product was invisible from every button that starts a conversation. Now the question is asked, once, wherever you are:
+
+- **On the Agent Detail page** all three buttons keep their names and open a **two-item menu** under themselves — *In a terminal* / *In the Console* — the same menu shape the claimed nav buttons use. (Two buttons side by side would double the toolbar for a choice made in one keystroke.)
+- **Everywhere else** — command palette, a tree row's right-click, `Ctrl+Alt+S`, the Dashboard's and Portfolio's own start buttons — a **QuickPick** asks the same two words and remembers what you picked last (`• last used`).
+- **In the launcher** it is the **Where** row, a dimension of the launch like the model is. In Console mode the Start row prints the launch summary instead of a command line, because a command line is not what runs there.
+- **For an agent**: `sessions.start` takes `surface: "terminal" | "console"` (default `terminal`, validated, never guessed).
+
+Two things make the Console path honest rather than approximate:
+
+- **A hosted session has no `-n`.** The name you typed is applied through Agent Farm's own title store the moment the CLI reports the session's id — it is not silently dropped.
+- **`--continue` is a terminal affordance:** the CLI picks the folder's newest session itself. A hosted session resumes by **id**, so *Continue latest → In the Console* resolves "latest" from the index (that agent's folder, newest first) and hands it to *Resume in Console*. If there is nothing to continue it **says so** and offers a new session, instead of opening an empty conversation that looks like it lost its history.
 
 **Where the session name is read from (3.24.1, rule corrected in 3.29.0):** the name given with `-n` is **never written to the transcript** — it lives in the CLI's own live registry (`~/.claude/sessions/<pid>.json`), a file deleted when the process exits. Agent Farm reads that registry and **remembers** the name.
 
@@ -408,6 +436,25 @@ Among hundreds of transcripts are the six you live in. **★** puts them on the 
 - **Session shelf…** (`Ctrl+Alt+P`, the 📌 in the Recent Sessions title): the shelf itself — pinned first, then the last 20 sessions; **Enter resumes the session in a terminal**, 📖 opens the transcript, 📌 pins or unpins.
 
 Pins and labels are attached to the session **id** and kept in VS Code's own storage: the transcript file is untouched, and re-scans and restarts leave them alone.
+
+### The session right-click — the same eleven things, everywhere (3.41.0)
+
+A session shows up in six places, and the right-click menu existed in two. On a Console card or a Timeline lane it offered the whole set; on a **Sessions table row** (Dashboard, Agent Detail), a **Turns row**, a **search hit** or a **mission's live feed** it offered *Cut / Copy / Paste* — so the answer to "how do I rename this?" depended on which page you happened to be looking at.
+
+One contract now, on every one of them (`media/afSessionCtx.js` + one `webviewSection == 'afSessionRow'` block in `package.json`):
+
+| Group | Items |
+| --- | --- |
+| open | Open Transcript · **Resume in Terminal** · **Resume in Console** · Focus Session Terminal |
+| mark | Rename Session… · Pin / Unpin · Label Session… · Copy Session ID |
+| stop | Interrupt Session · End Session · Clear From Live Timeline |
+
+Two design rules make it work rather than merely exist:
+
+- **A row publishes only what it knows.** `sessionId` *or* the transcript path is enough — a search hit knows only the path, a fresh Console card knows only its host id. One host-side resolver (`sessionFromArg`) fills the rest in from the session index, and the row's own `title`/`cwd` win over the index because a row that was just renamed is newer than the last scan. That is what makes the **next** session surface free: publish the contract, get the menu.
+- **The normal menu stays.** `preventDefaultContextMenuItems: false` — Copy/Paste are still there, and this is deliberately *not* a `contextmenu` listener: hijacking right-click would take the page's own menu away.
+
+Timeline cards gained the one item they were missing (**Resume in Terminal**), so the two ways to pick a conversation back up now sit side by side wherever a session is listed.
 
 ### ⎋ Interrupt — stopping a running turn (A3)
 
@@ -431,9 +478,9 @@ A 173-command extension had exactly one shortcut. Now there is a **hub** and six
 | Ctrl+Alt+D | Dashboard |
 | Ctrl+Alt+N | Needs You |
 | Ctrl+Alt+L | Live Timeline |
-| Ctrl+Alt+Q | Add to Work Queue *(unchanged)* |
+| Ctrl+Alt+A | Add to Work Queue |
 
-**Keyboard-layout note:** on Windows, Ctrl+Alt is AltGr. On a Turkish-Q layout AltGr types a character on **Q/E/T** (`@`, `€`, `₺`), so none of the new shortcuts sit on those three letters. The one exception is **Ctrl+Alt+Q** (Add to Work Queue), left as it was for backwards compatibility — if it eats your `@`, rebind it in Keyboard Shortcuts.
+**Keyboard-layout note:** on Windows, Ctrl+Alt is AltGr. On a Turkish-Q layout AltGr types a character on **Q/E/T** (`@`, `€`, `₺`), so no shortcut sits on those three letters — the rule holds for every binding, with no exemptions, and a test enforces it. **Q is free of Agent Farm entirely:** the extension binds nothing on Ctrl+Q either (that key is VS Code's own *Open View* — `workbench.action.quickOpenView`).
 
 ## Projects, Portfolio and Code Changes {#projeler-portfoy}
 
@@ -1364,7 +1411,7 @@ A two-way async channel; **🔔 Notices | 📥 Queue** are two tabs in the globa
 
 **Notices (agent → you):** every agent leaves **one row per thing it wants to tell you**. Two axes: `type` (update · report · result · reminder · suggestion · warning · question) and `level` (1 routine → 4 ultra). Long content travels on two legs: the **summary** on the board plus a full report written into `10_REPORT` behind it ("📄 Open full report"). The `question` type carries an async lifecycle: the agent asks, you answer in the UI (→answered) or close it unanswered (→declined), and the agent applies the answer and resolves it on its next turn. For **ageing**, see [the Living page](#yasam-panosu).
 
-**Work Queue (you → agent):** the frictionless channel for fixes you notice while working (`Ctrl+Alt+Q`); items **do not disappear until handled**. Pipeline: `captured → grouped → delegated → done` (+ `blocked` = a question for you, the only attention-grabbing state; `dropped` = invalid). A non-terminal item **cannot be deleted** — a bad entry moves to `dropped`, which counts as handled. A notice converts to a queue item in one click (`queue.fromNotice`), answering a question creates one automatically, and the item links back through `sourceNoticeId`.
+**Work Queue (you → agent):** the frictionless channel for fixes you notice while working (`Ctrl+Alt+A`); items **do not disappear until handled**. Pipeline: `captured → grouped → delegated → done` (+ `blocked` = a question for you, the only attention-grabbing state; `dropped` = invalid). A non-terminal item **cannot be deleted** — a bad entry moves to `dropped`, which counts as handled. A notice converts to a queue item in one click (`queue.fromNotice`), answering a question creates one automatically, and the item links back through `sourceNoticeId`.
 
 **Maturity engine — `queue.maturity` (3.18.1).** The grouping/maturity decision (group · wait · delegate) moved from prose into code: it applies the thresholds (`agentFarm.queue.groupSize`, `queue.maxAgeHours`) and returns `{ actionable, reason, ripe[], ungrouped, starving[] }`. **`starving` is what `queue.groups` cannot show you:** an item that was never grouped has no `groupId`, so a sweep reading only the group digest concludes "the queue is idle" while the user's own answer rots past the ceiling — which is exactly what happened. **Every sweep starts with `queue.maturity`.**
 

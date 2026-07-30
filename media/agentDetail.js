@@ -8,6 +8,20 @@
     // refreshes don't wipe half-typed rates. DATA still updates silently.
     let suspendRender = false;
 
+    // The two places a session can live. One vocabulary for all three start
+    // buttons, and the same words the host's own picker uses (pickRunSurface),
+    // so the answer reads the same whichever surface asked.
+    const SURFACES = [
+        {
+            id: 'terminal', label: 'In a terminal',
+            title: 'A real claude terminal — the full TUI, slash commands, /resume'
+        },
+        {
+            id: 'console', label: 'In the Console',
+            title: 'Inside the panel — the conversation stays with Agent Farm'
+        }
+    ];
+
     // Shared advanced Sessions table (sort box, turn accordion, single-open,
     // ⌨ jump-to-terminal) — the same component the dashboard uses. It re-renders
     // only its own container, so an open pricing editor is never clobbered.
@@ -202,9 +216,27 @@
                         title: 'Console — talk to this agent, or open the page'
                     }
                 },
-                actions: `<button id="start">Start session</button>
-                    <button class="secondary" id="launch" title="Start a session after picking model · effort · permission mode · name · first prompt">Start session…</button>
-                    <button class="secondary" id="continue">Continue latest</button>
+                // ‼️ Every button that STARTS a session asks where it runs: a
+                // terminal, or the Console. They used to go straight to a
+                // terminal without a word, which made the Console invisible from
+                // the one page you start sessions from. The menu is the header's
+                // own (AFHeader.menu), so it looks and behaves like the claimed
+                // nav buttons next to it.
+                actions: `${window.AFHeader.menu({
+                    id: 'start', label: 'Start session',
+                    title: 'Start a session for this agent — in a terminal or in the Console',
+                    items: SURFACES
+                })}
+                    ${window.AFHeader.menu({
+                        id: 'launch', label: 'Start session…',
+                        title: 'Start a session after picking model · effort · permission mode · name · first prompt',
+                        items: SURFACES
+                    })}
+                    ${window.AFHeader.menu({
+                        id: 'continue', label: 'Continue latest',
+                        title: 'Pick this agent\'s most recent session back up',
+                        items: SURFACES
+                    })}
                     <button class="secondary" id="reveal">Reveal folder</button>`,
                 searchTitle: "Search all of this agent's sessions",
                 guide: 'ajan-detay-sayfasi'
@@ -261,9 +293,13 @@
             navActions: { console: { onClick: () => vscode.postMessage({ type: 'consoleSession' }) } }
         });
         document.getElementById('addDuty').addEventListener('click', () => vscode.postMessage({ type: 'addDuty' }));
-        document.getElementById('start').addEventListener('click', () => vscode.postMessage({ type: 'startSession' }));
-        document.getElementById('launch').addEventListener('click', () => vscode.postMessage({ type: 'launchSession' }));
-        document.getElementById('continue').addEventListener('click', () => vscode.postMessage({ type: 'continueSession' }));
+        // the surface rides along, so the host never has to ask again
+        window.AFHeader.wireMenu(document, 'start',
+            surface => vscode.postMessage({ type: 'startSession', surface }));
+        window.AFHeader.wireMenu(document, 'launch',
+            surface => vscode.postMessage({ type: 'launchSession', surface }));
+        window.AFHeader.wireMenu(document, 'continue',
+            surface => vscode.postMessage({ type: 'continueSession', surface }));
         document.getElementById('reveal').addEventListener('click', () => vscode.postMessage({ type: 'reveal' }));
         document.querySelectorAll('[data-file]').forEach(el =>
             el.addEventListener('click', () => vscode.postMessage({ type: 'openFile', path: el.dataset.file })));

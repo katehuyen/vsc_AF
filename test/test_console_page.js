@@ -13,8 +13,8 @@ const createAfmsDom = require(path.join(__dirname, 'lib_afms_dom.js'));
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
-const code = fs.readFileSync(path.resolve(__dirname, '../media/afFilters.js'), 'utf8')
-    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/console.js'), 'utf8');
+const code = require(path.join(__dirname, 'lib_shared_media.js')).sharedMedia()
+    + fs.readFileSync(path.resolve(__dirname, '../media/console.js'), 'utf8');
 
 // ---------- fake DOM ----------
 const els = {};
@@ -531,6 +531,29 @@ const html = allHtml;
     // a turn nobody has spent anything on yet says nothing rather than "$0"
     push(data(CONVO.slice(), { status: 'working', turnStartedAt: Date.now(), turnTokens: 0, turnCost: 0 }));
     ok('a turn with nothing spent yet does not write "$0"', !/\$0/.test(working()));
+
+    // ‼️ THE STRIP SURVIVES THE TURN. It used to go blank the instant the figures
+    // became final — the one moment they were worth reading — so "what did that
+    // turn cost?" had no answer once the ball came back to you.
+    push(data(CONVO.slice(), {
+        status: 'idle', turnStartedAt: 0, turnTokens: 0, turnCost: 0,
+        lastTurn: { endedAt: Date.now(), ms: 41200, tokens: 4200, cost: 0.031, outcome: 'done' }
+    }));
+    ok('the finished turn stays on the strip', /last turn/.test(working()));
+    ok('…with its duration, cost and tokens', /41s/.test(working()) && /\$0\.031 \(4200t tokens\)/.test(working()));
+    ok('…as the CLI\'s own figure — no "~", and it says so',
+        !/~\$/.test(working()) && /as the CLI reported it/.test(working()));
+    ok('…and it hands the ball back out loud', /your turn now/.test(working()));
+    ok('…without pretending to still be running',
+        !/Interrupt stops it/.test(working()) && !/⠋|⠙|⠹/.test(working()));
+    // an interrupted / failed turn is not reported as a clean finish
+    push(data(CONVO.slice(), {
+        status: 'idle', lastTurn: { endedAt: Date.now(), ms: 900, tokens: 0, cost: 0, outcome: 'interrupted' }
+    }));
+    ok('an interrupted turn says so on the strip', /last turn interrupted/.test(working()));
+    // nothing has finished yet in this session → nothing to say
+    push(data(CONVO.slice(), { status: 'idle', lastTurn: null }));
+    ok('a session with no finished turn shows an empty strip', working() === '');
 
     // The agent's folder and the effort really are fixed once the process is
     // up; the model is not — it is a live picker (see the setModel contract).

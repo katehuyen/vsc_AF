@@ -223,5 +223,40 @@
             b.addEventListener('click', () => vscode.postMessage({ type: 'openGuide', anchor: b.dataset.afguide })));
     }
 
-    window.AFHeader = { html, wire, tabs };
+    /**
+     * The same "one button, two meanings" menu, for a page's OWN action buttons.
+     *
+     * ‼️ A BUTTON THAT STARTS SOMETHING SOMEWHERE MUST SAY WHERE. Start session /
+     * Start session… / Continue latest all went straight to a terminal without a
+     * word, so the Console — the other place a session can live — was invisible
+     * from every button that starts one. Two buttons side by side would double
+     * the row for a choice made in one keystroke, so the button keeps its name
+     * and opens the choice under itself. Same markup and same wiring as a claimed
+     * nav button, so the two menus look and behave identically.
+     *
+     *   menu({ id, label, title, items:[{ id, label, title }] }) → html
+     *   wireMenu(root, id, pick => …)                            → click handling
+     */
+    function menu(o) {
+        const items = (o.items || []).map(i =>
+            `<button data-afmenugo="${o.id}" data-afmenuitem="${i.id}"${i.title ? ` title="${i.title}"` : ''}>${i.label}</button>`
+        ).join('');
+        return `<span class="af-claim">
+            <button class="secondary" data-afclaim="${o.id}" aria-haspopup="true" aria-expanded="false"
+                title="${o.title || ''}">${o.label} ▾</button>
+            <div class="af-claim-menu" data-afclaimmenu="${o.id}" hidden>${items}</div>
+        </span>`;
+    }
+
+    function wireMenu(root, id, onPick) {
+        const scope = root || document;
+        scope.querySelectorAll(`[data-afmenugo="${id}"]`).forEach(b =>
+            b.addEventListener('click', () => {
+                const m = scope.querySelector(`[data-afclaimmenu="${id}"]`);
+                if (m) { m.hidden = true; }
+                onPick(b.dataset.afmenuitem);
+            }));
+    }
+
+    window.AFHeader = { html, wire, tabs, menu, wireMenu };
 })();

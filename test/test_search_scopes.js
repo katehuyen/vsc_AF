@@ -138,7 +138,8 @@ const TS = (m) => Date.parse(T(m));
 
 // ---------- webview: grouped rendering, scope pill, click routing ----------
 {
-    const code = fs.readFileSync(path.resolve(__dirname, '../media/pageHeader.js'), 'utf8') + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afFilters.js'), 'utf8') + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/search.js'), 'utf8');
+    const code = require(path.join(__dirname, 'lib_shared_media.js')).sharedMedia()
+        + fs.readFileSync(path.resolve(__dirname, '../media/search.js'), 'utf8');
     let posted = [];
     let msgHandler = null;
     const els = {};
@@ -237,7 +238,8 @@ const TS = (m) => Date.parse(T(m));
 
 // ---------- webview: agent picker (checkbox dropdown, fleet scope) ----------
 {
-    const code = fs.readFileSync(path.resolve(__dirname, '../media/pageHeader.js'), 'utf8') + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afFilters.js'), 'utf8') + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/search.js'), 'utf8');
+    const code = require(path.join(__dirname, 'lib_shared_media.js')).sharedMedia()
+        + fs.readFileSync(path.resolve(__dirname, '../media/search.js'), 'utf8');
     let posted = [];
     let msgHandler = null;
     const els = {};

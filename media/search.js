@@ -269,8 +269,14 @@
                 lastTurn = h.turn;
                 return th + hitLine(h, i);
             }).join('');
+            // The group header is a session row: right-click gets that
+            // session's full action set (afSessionCtx.js). A hit knows the
+            // transcript path but not always the session id — the host resolves
+            // one from the other, so the menu is the same as everywhere else.
             return `<div class="sessgroup">
-                <div class="sesshead" data-open-session="${C.esc(first.file)}" data-ts="${first.ts || 0}" title="Open this session">
+                <div class="sesshead" data-open-session="${C.esc(first.file)}" data-ts="${first.ts || 0}"
+                    ${window.AFSessionCtx.row(first)}
+                    title="Open this session — ${window.AFSessionCtx.HINT}">
                     <strong>${C.esc(first.agentName)}</strong> · ${C.esc(first.title)}
                     <span class="muted small" style="float:right">${g.hits.length} hit(s) · ${relTime(first.ts)}</span>
                 </div>

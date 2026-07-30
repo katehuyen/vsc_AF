@@ -39,13 +39,9 @@
 
     /**
      * The right-click contract for a session card — the same one the Console's
-     * rows use. `data-vscode-context` hands the card's identity to VS Code,
-     * which builds the menu from the `webview/context` entries in package.json;
-     * the normal Copy/Paste items stay. It is deliberately not a `contextmenu`
-     * listener: hijacking right-click would take the page's own menu away.
+     * rows and the Sessions tables use, from `media/afSessionCtx.js`.
      */
-    const ctxAttr = o => `data-vscode-context="${JSON.stringify(o)
-        .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}"`;
+    const ctxAttr = o => window.AFSessionCtx.attr(o);
 
     /**
      * The same contract for a SWIM-LANE row. A row is a session too — the one

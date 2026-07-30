@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.40.0",
+  "version": "3.41.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -199,8 +199,8 @@
       },
       {
         "command": "agentfarm.queueAdd",
-        "key": "ctrl+alt+q",
-        "mac": "cmd+alt+q"
+        "key": "ctrl+alt+a",
+        "mac": "cmd+alt+a"
       }
     ],
     "commands": [
@@ -2208,9 +2208,69 @@
           "group": "2_stop@2"
         },
         {
+          "command": "agentfarm.resumeSession",
+          "when": "webviewSection == 'afTimelineSession'",
+          "group": "1_session@8"
+        },
+        {
           "command": "agentfarm.dismissSession",
           "when": "webviewSection == 'afTimelineSession'",
           "group": "2_stop@3"
+        },
+        {
+          "command": "agentfarm.openSession",
+          "when": "webviewSection == 'afSessionRow'",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.resumeSession",
+          "when": "webviewSection == 'afSessionRow'",
+          "group": "1_open@2"
+        },
+        {
+          "command": "agentfarm.resumeInConsole",
+          "when": "webviewSection == 'afSessionRow'",
+          "group": "1_open@3"
+        },
+        {
+          "command": "agentfarm.focusSessionTerminal",
+          "when": "webviewSection == 'afSessionRow'",
+          "group": "1_open@4"
+        },
+        {
+          "command": "agentfarm.renameSession",
+          "when": "webviewSection == 'afSessionRow'",
+          "group": "2_mark@1"
+        },
+        {
+          "command": "agentfarm.pinSession",
+          "when": "webviewSection == 'afSessionRow'",
+          "group": "2_mark@2"
+        },
+        {
+          "command": "agentfarm.tagSession",
+          "when": "webviewSection == 'afSessionRow'",
+          "group": "2_mark@3"
+        },
+        {
+          "command": "agentfarm.copySessionId",
+          "when": "webviewSection == 'afSessionRow'",
+          "group": "2_mark@4"
+        },
+        {
+          "command": "agentfarm.interruptSession",
+          "when": "webviewSection == 'afSessionRow'",
+          "group": "3_stop@1"
+        },
+        {
+          "command": "agentfarm.endSession",
+          "when": "webviewSection == 'afSessionRow'",
+          "group": "3_stop@2"
+        },
+        {
+          "command": "agentfarm.dismissSession",
+          "when": "webviewSection == 'afSessionRow'",
+          "group": "3_stop@3"
         }
       ]
     },

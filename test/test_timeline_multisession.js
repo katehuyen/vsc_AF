@@ -3,7 +3,8 @@
 const fs = require('fs');
 const vm = require('vm');
 
-const code = fs.readFileSync(require('path').resolve(__dirname, '../media/pageHeader.js'), 'utf8') + '\n' + fs.readFileSync(require('path').resolve(__dirname, '../media/afFilters.js'), 'utf8') + '\n' + fs.readFileSync(require('path').resolve(__dirname, '../media/timeline.js'), 'utf8');
+const code = require(require('path').join(__dirname, 'lib_shared_media.js')).sharedMedia()
+    + fs.readFileSync(require('path').resolve(__dirname, '../media/timeline.js'), 'utf8');
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 

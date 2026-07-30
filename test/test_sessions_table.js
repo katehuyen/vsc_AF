@@ -7,8 +7,9 @@ const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
 
-const code = fs.readFileSync(path.resolve(__dirname, '../media/afFilters.js'), 'utf8')
-    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/sessionsTable.js'), 'utf8');
+const shared = require(path.join(__dirname, 'lib_shared_media.js'));
+const code = shared.sharedMedia()
+    + fs.readFileSync(path.resolve(__dirname, '../media/sessionsTable.js'), 'utf8');
 const createAfmsDom = require(path.join(__dirname, 'lib_afms_dom.js'));
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
@@ -449,6 +450,69 @@ const mkRow = (i, extra) => Object.assign({
 
     t.setRows([mkRow(1), mkRow(2)], 10);
     ok('nothing running, nothing to interrupt', stops().length === 0);
+}
+
+// ---------- part 7: the session right-click contract on every row ----------
+// Right-clicking a row on the Dashboard / an agent page used to offer nothing
+// but Copy/Paste, while the same session on a Console card or a Timeline lane
+// had eleven actions. The rows now carry the shared contract (afSessionCtx.js).
+{
+    posted = []; state = {};
+    const t = sandbox.window.AFSessionsTable.create({
+        vscode: vscodeStub, C, containerId: 'ctx',
+        columns: ['title', 'cost'], stateKey: 'ctx'
+    });
+    t.setRows([mkRow(1), mkRow(2)], 10);
+    const html = containers.ctx.innerHTML;
+
+    ok('every session row carries data-vscode-context',
+        (html.match(/data-vscode-context=/g) || []).length === 2);
+    ok('the shared session section is used', html.includes('afSessionRow'));
+    ok('the row publishes the identity the menu commands need',
+        html.includes('&quot;sessionId&quot;:&quot;sid1&quot;')
+        && html.includes('&quot;file&quot;:&quot;f1&quot;')
+        && html.includes('&quot;cwd&quot;:&quot;D:/a/dev&quot;')
+        && html.includes('&quot;agentName&quot;:&quot;dev&quot;'));
+    ok('the page keeps its own Copy/Paste menu',
+        html.includes('preventDefaultContextMenuItems&quot;:false'));
+
+    // …and the menu is discoverable at all
+    ok('rows say a right-click has actions', html.includes('right-click for session actions'));
+}
+
+// ---------- part 8: the menu itself is declared for the shared section ----------
+// A row that publishes a section nothing listens to is a right-click that still
+// shows only Copy/Paste — the contract has two halves and both must exist.
+{
+    const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../package.json'), 'utf8'));
+    const web = pkg.contributes.menus['webview/context'];
+    const onRow = id => web.some(m => m.command === id && m.when === "webviewSection == 'afSessionRow'");
+    const FULL = [
+        'agentfarm.openSession', 'agentfarm.resumeSession', 'agentfarm.resumeInConsole',
+        'agentfarm.focusSessionTerminal', 'agentfarm.renameSession', 'agentfarm.pinSession',
+        'agentfarm.tagSession', 'agentfarm.copySessionId', 'agentfarm.interruptSession',
+        'agentfarm.endSession', 'agentfarm.dismissSession'
+    ];
+    FULL.forEach(c => ok('afSessionRow menu has ' + c, onRow(c)));
+    // both ways of picking a session back up, everywhere a session is listed
+    ok('Timeline cards can also resume in a terminal',
+        web.some(m => m.command === 'agentfarm.resumeSession'
+            && m.when === "webviewSection == 'afTimelineSession'"));
+}
+
+// ---------- part 9: the other session surfaces publish the contract too ----------
+{
+    const read = f => fs.readFileSync(path.resolve(__dirname, '../media/' + f), 'utf8');
+    ['turns.js', 'search.js', 'missions.js'].forEach(f =>
+        ok(f + ' rows carry the session contract', /AFSessionCtx\.row\(/.test(read(f))));
+    // one implementation, not five copies of the escaping
+    ['console.js', 'timeline.js', 'sessionsTable.js'].forEach(f =>
+        ok(f + ' uses the shared helper, not its own escaper',
+            /AFSessionCtx\./.test(read(f)) && !/JSON\.stringify\(o\)\s*\n?\s*\.replace/.test(read(f))));
+    // and it ships to every page — the shell and the test loader agree
+    ok('afSessionCtx.js is loaded by the shared shell',
+        /afSessionCtx\.js/.test(fs.readFileSync(path.resolve(__dirname, '../src/panels/base.ts'), 'utf8')));
+    ok('the test shared-media list still matches htmlShell', shared.matchesShell());
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
