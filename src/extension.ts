@@ -173,6 +173,7 @@ import { SelectionPanel } from './panels/selectionPanel';
 import { SessionViewerPanel } from './panels/sessionViewer';
 import { TimelinePanel } from './panels/timeline';
 import { FarmStatusBar } from './views/statusBar';
+import { PlanUsageBar } from './views/planUsageBar';
 import { TaskNode, TasksTreeProvider } from './views/tasksTree';
 import {
     AgentNode, AgentsTreeProvider, FeedTreeProvider, InsightsTreeProvider, SessionsTreeProvider
@@ -4439,6 +4440,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ttlMs: () => Math.max(0, cfg().get<number>('planUsageRefreshMinutes', 5)) * 60000
     });
 
+    // …and the two percentages that decide whether to start the next long turn,
+    // permanently in the status bar rather than behind a page you have to open
+    // (see PlanUsageBar). Same service, so it shares the one request budget.
+    const planUsageBar = new PlanUsageBar({
+        service: planUsage,
+        enabled: () => cfg().get<boolean>('planUsageStatusBar', true),
+        refreshMinutes: () => Math.max(0, cfg().get<number>('planUsageRefreshMinutes', 5)),
+        warnAt: () => cfg().get<number>('planUsageWarnPercent', 80),
+        dangerAt: () => cfg().get<number>('planUsageDangerPercent', 95)
+    });
+    context.subscriptions.push(planUsageBar);
+
     const dashboardDeps = {
         extensionUri: context.extensionUri,
         getAgents: () => agents,
@@ -4494,9 +4507,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             });
         },
         // Plan usage card: cached snapshot for the render, an explicit refresh
-        // for the card's beat and its ⟳ button.
+        // for the card's beat and its ⟳ button. The status-bar indicator reads
+        // the same cache, so a refresh from here repaints it too — two surfaces
+        // showing the same figure must never show two different ones.
         planUsage: () => planUsage.current(),
-        refreshPlanUsage: (force: boolean) => planUsage.get(force),
+        refreshPlanUsage: async (force: boolean) => {
+            const snap = await planUsage.get(force);
+            planUsageBar.paint();
+            return snap;
+        },
         planUsageRefreshMinutes: () => Math.max(0, cfg().get<number>('planUsageRefreshMinutes', 5)),
         // B1: the project axis — the card's rollup and the map the rows group by.
         projects: () => projectRollup(),
@@ -5861,6 +5880,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push({ dispose: () => poller?.stop() });
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
         if (e.affectsConfiguration('agentFarm.telegram')) { void applyChatBridge(); }
+        // Turning the usage indicator on/off, or moving its thresholds, must
+        // show at once — a settings page you have to reload to believe is a
+        // settings page you stop trusting.
+        if (e.affectsConfiguration('agentFarm.planUsage')) { planUsageBar.refresh(); }
     }));
 
     // ---------- B1: projects ----------
@@ -7098,6 +7121,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         vscode.commands.registerCommand('agentfarm.openTimeline', () => {
             showTimeline();
+        }),
+
+        // The status-bar indicator's "Check now" — the same forced read the
+        // Dashboard card's ⟳ and the usage.plan bridge op perform, on the same
+        // cache, so there is one implementation and one request budget.
+        vscode.commands.registerCommand('agentfarm.planUsageRefresh', async () => {
+            const snap = await planUsage.get(true);
+            planUsageBar.paint();
+            DashboardPanel.refreshIfOpen();
+            if (snap.state !== 'ok') {
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: ${snap.note ?? 'the usage endpoint could not be read.'}`);
+            }
         }),
 
         vscode.commands.registerCommand('agentfarm.openCapabilities', () => {

@@ -44,6 +44,7 @@ const CATEGORY_OF: Record<string, string> = {
     // cost & budgets
     pricing: 'cost', budgets: 'cost', windowTokenLimit: 'cost',
     planUsageRefreshMinutes: 'cost',
+    planUsageStatusBar: 'cost', planUsageWarnPercent: 'cost', planUsageDangerPercent: 'cost',
     mediaBudgetMonthUSD: 'cost', mediaPricing: 'cost', trendAlertFactor: 'cost',
     costAnomalyMinUsd: 'cost', forecastDays: 'cost', agentRowCostUnit: 'cost',
     // tasks & automation

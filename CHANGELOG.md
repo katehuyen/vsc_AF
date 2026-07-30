@@ -2,6 +2,19 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.42.0 — Your plan's two percentages, permanently in view (2026-07-30)
+
+**‼️ The figure you need BEFORE you spend lived behind a page you had to open.** "How much of my session window and of my week have I burned?" is what decides whether to start the next long turn — and the only place that answered it was a card on the Dashboard, which means in practice you read it *after* the tokens were gone. The two percentages are now a **status-bar indicator**, in every window, while you work:
+
+**`$(dashboard) 5h 42% / wk 67%`**
+
+The status bar is the only surface in VS Code that is visible without opening something, which is what "always in view" has to mean — a second panel, a tree row or a webview all fail the requirement by definition. The two labels cost four characters and remove the one thing a bare `42% / 67%` cannot tell you: which is which. **Yellow** at `agentFarm.planUsageWarnPercent` (80), **red** at `agentFarm.planUsageDangerPercent` (95), driven by the **worst** limit on the plan — including ones the one-line text has no room to print. Hover for every limit with its reset countdown, the plan tier, when it was last checked and a **Check now** link; click for the Dashboard card; `agentFarm.planUsageStatusBar` turns it off.
+
+- **Three honesty rules, because a permanently visible number is a permanent claim.** A machine with **no subscription login** (API key / Bedrock / Vertex) has no percentages and never will, so the indicator is **not shown at all** — one that says "unknown" forever is noise, not information. A login that **can** come back (expired token, a transient endpoint failure) stays visible as **`usage ?`**, because vanishing would read as "you have used nothing". And an unreadable snapshot is never coloured as if it were full.
+- **One request budget, not two.** It shares the Dashboard card's `PlanUsageService` cache, so the indicator, an open dashboard and an agent's `usage.plan` together still make **one request per `planUsageRefreshMinutes`**; the card's ⟳ repaints the indicator in the same step, so the two surfaces can never show different numbers. What the indicator adds is keeping that beat alive when no page is open — and the setting now says out loud that one beat serves all three.
+- **`Agent Farm: Check Plan Usage Now`** — the tooltip's *Check now*, the palette, and the Quick Menu's System group all call the one forced read; nothing is reimplemented. It reports the endpoint's own reason when there is nothing to show. (Already on the bridge as `usage.plan { force: true }`.)
+- **The projection is pure and lives in `core/planusage.ts`** — no `vscode` import — so the text, the fallbacks and the colour peak are tested directly rather than through a mocked status bar. 24 checks added; suite: **81 files, 3454 checks green.** Verified against the live endpoint on a real account: `state: ok · plan: pro · five_hour 80% (in 4h 5m) · seven_day 40% (in 4d 5h)` → **`5h 80% / wk 40%`**, peak 80 (yellow).
+
 ## 3.41.0 — The same session menu everywhere, and a turn that does not vanish when it ends (2026-07-30)
 
 **‼️ The bug worth the version number: what you could do to a session depended on which page you were looking at.** A session shows up in six places. The right-click menu existed in **two** of them — a Console card, a Timeline lane — and offered eleven actions. On a **Sessions table row** (Dashboard, Agent Detail), a **Turns row**, a **search hit** or a **mission's live feed** the same session offered *Cut / Copy / Paste*. So "how do I rename this?" had no stable answer; it had a page-dependent one, which is worse than none.

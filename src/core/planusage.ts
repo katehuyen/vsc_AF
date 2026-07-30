@@ -123,6 +123,53 @@ export function buildBars(payload: unknown): PlanBar[] {
     return bars;
 }
 
+// ---------- the status-bar projection (pure, so it is testable without VS Code) ----------
+
+/** "in 2h 14m" / "in 6m" / "" when the reset time is unknown or already past. */
+export function untilText(resetsAt: number, now = Date.now()): string {
+    if (!resetsAt || resetsAt <= now) { return ''; }
+    const mins = Math.round((resetsAt - now) / 60000);
+    if (mins < 60) { return `in ${mins}m`; }
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    if (h < 24) { return m ? `in ${h}h ${m}m` : `in ${h}h`; }
+    const d = Math.floor(h / 24);
+    return `in ${d}d ${h % 24}h`;
+}
+
+/**
+ * The whole indicator in one line: `$(dashboard) 5h 42% / wk 67%`.
+ *
+ * The two labels cost four characters and remove the one thing an unlabelled
+ * "42% / 67%" cannot tell you — which is which. A plan that reports no plain
+ * weekly limit falls back to a per-model one rather than showing nothing.
+ *
+ * Returns undefined when there is nothing to show **and never will be**: a
+ * machine signed in with an API key (or Bedrock / Vertex) has no subscription
+ * percentages, and an indicator that says "unknown" forever is noise. A login
+ * that can come back (expired, a transient endpoint failure) stays visible as a
+ * question instead — disappearing would read as "you have used nothing".
+ */
+export function barText(snap: PlanUsageSnapshot | undefined): string | undefined {
+    if (!snap || snap.state === 'no-auth') { return undefined; }
+    if (snap.state !== 'ok' || !snap.bars.length) { return '$(dashboard) usage ?'; }
+    const pct = (id: string) => snap.bars.find(b => b.id === id)?.percent;
+    const session = pct('five_hour');
+    const week = pct('seven_day') ?? pct('seven_day_opus') ?? pct('seven_day_sonnet');
+    const parts: string[] = [];
+    if (session !== undefined) { parts.push(`5h ${session}%`); }
+    if (week !== undefined) { parts.push(`wk ${week}%`); }
+    if (!parts.length) { return '$(dashboard) usage ?'; }
+    return `$(dashboard) ${parts.join(' / ')}`;
+}
+
+/** The worst percentage on the snapshot — what decides the indicator's colour.
+ *  Every limit counts, including the ones the one-line text has no room for. */
+export function peakPercent(snap: PlanUsageSnapshot | undefined): number {
+    if (!snap || snap.state !== 'ok') { return 0; }
+    return snap.bars.reduce((max, b) => Math.max(max, b.percent), 0);
+}
+
 /** A snapshot for "we could not ask" — the card prints `note` verbatim. */
 export function unavailable(state: PlanUsageState, note: string, plan = '', now = Date.now()): PlanUsageSnapshot {
     return { state, bars: [], plan, fetchedAt: now, note };

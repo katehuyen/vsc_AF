@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.41.0",
+  "version": "3.42.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -345,6 +345,12 @@
         "title": "Open Live Timeline",
         "category": "Agent Farm",
         "icon": "$(pulse)"
+      },
+      {
+        "command": "agentfarm.planUsageRefresh",
+        "title": "Check Plan Usage Now (session 5h + weekly %)",
+        "category": "Agent Farm",
+        "icon": "$(dashboard)"
       },
       {
         "command": "agentfarm.installHooks",
@@ -2566,7 +2572,26 @@
           "type": "number",
           "default": 5,
           "minimum": 0,
-          "description": "Dashboard \"Plan usage\" card: how often it re-reads your Claude subscription limits from Anthropic, in minutes. 0 turns the automatic refresh off — the card's ⟳ button still works. The card reads the OAuth session Claude Code stores locally; it never writes to it."
+          "description": "How often your Claude subscription limits are re-read from Anthropic, in minutes. One beat is shared by the status-bar indicator, the Dashboard's \"Plan usage\" card and the usage.plan bridge op — they never make separate requests. 0 turns the automatic refresh off; the card's ⟳ and the indicator's \"Check now\" still work. Only the OAuth session Claude Code stores locally is read; it is never written to."
+        },
+        "agentFarm.planUsageStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Keep your plan's session (5h) and weekly usage percentages in the VS Code status bar — \"5h 42% / wk 67%\", visible while you work without opening anything. Hover for every limit with its reset time, click for the Dashboard card. Hidden automatically on a machine with no Claude subscription login (API key / Bedrock / Vertex)."
+        },
+        "agentFarm.planUsageWarnPercent": {
+          "type": "number",
+          "default": 80,
+          "minimum": 0,
+          "maximum": 100,
+          "description": "The status-bar usage indicator turns yellow once any of your plan's limits reaches this percentage."
+        },
+        "agentFarm.planUsageDangerPercent": {
+          "type": "number",
+          "default": 95,
+          "minimum": 0,
+          "maximum": 100,
+          "description": "…and red at this one. Set it to 101 to never go red."
         },
         "agentFarm.maxTranscriptMessages": {
           "type": "number",

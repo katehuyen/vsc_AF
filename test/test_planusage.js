@@ -326,6 +326,96 @@ const LIVE_PAYLOAD = {
             && lastHtml.includes('manual refresh only'));
     }
 
+    // ---------- the status-bar indicator: the same figures, without opening anything ----------
+    // ‼️ The question these two numbers answer ("can I afford the next long
+    // turn?") is asked BEFORE you spend, and the only place that answered it was
+    // a card behind a page you had to open — so in practice you read it after.
+    {
+        // the projection lives in core/, with no `vscode` import, precisely so
+        // it can be checked here — the view is only the plumbing around it
+        const BAR = PU;
+        const now = Date.now();
+        const snap = (state, bars, extra) => Object.assign(
+            { state, bars, plan: 'max', fetchedAt: now }, extra || {});
+        const okSnap = snap('ok', [
+            { id: 'five_hour', title: 'Current session', percent: 42, resetsAt: now + 2 * 3600_000 },
+            { id: 'seven_day', title: 'Current week (all models)', percent: 67, resetsAt: now + 3 * 86400_000 }
+        ]);
+
+        ok('both percentages, labelled so you never have to remember which is which',
+            BAR.barText(okSnap) === '$(dashboard) 5h 42% / wk 67%');
+        // a plan that reports no plain weekly bar still gets a week figure
+        ok('a per-model weekly limit stands in for the missing all-models one',
+            BAR.barText(snap('ok', [
+                { id: 'five_hour', title: 's', percent: 10, resetsAt: 0 },
+                { id: 'seven_day_opus', title: 'w', percent: 55, resetsAt: 0 }
+            ])) === '$(dashboard) 5h 10% / wk 55%');
+        ok('one bar alone is shown alone, not padded with a made-up second',
+            BAR.barText(snap('ok', [{ id: 'five_hour', title: 's', percent: 10, resetsAt: 0 }]))
+            === '$(dashboard) 5h 10%');
+
+        // ‼️ A machine with no subscription login has no figure and never will —
+        // an indicator that says "unknown" forever is noise, not information.
+        ok('no subscription login = no indicator at all',
+            BAR.barText(snap('no-auth', [])) === undefined);
+        ok('nothing fetched yet = no indicator yet', BAR.barText(undefined) === undefined);
+        // …but a login that WILL come back says so instead of disappearing
+        ok('an expired login is visible as a question, not a silence',
+            BAR.barText(snap('expired', [])) === '$(dashboard) usage ?');
+        ok('a transient endpoint failure the same way',
+            BAR.barText(snap('error', [])) === '$(dashboard) usage ?');
+        ok('…and so does an "ok" that somehow carries no bars',
+            BAR.barText(snap('ok', [])) === '$(dashboard) usage ?');
+
+        // colour is driven by the WORST limit, including ones not on the bar
+        ok('the peak is what decides the colour', BAR.peakPercent(okSnap) === 67);
+        ok('…even when the peak is a limit the bar does not print',
+            BAR.peakPercent(snap('ok', [
+                { id: 'five_hour', title: 's', percent: 3, resetsAt: 0 },
+                { id: 'seven_day_opus', title: 'o', percent: 99, resetsAt: 0 }
+            ])) === 99);
+        ok('an unreadable snapshot is never coloured as if it were full',
+            BAR.peakPercent(snap('error', [])) === 0 && BAR.peakPercent(undefined) === 0);
+
+        // the reset countdown in the tooltip
+        ok('a reset within the hour reads in minutes', BAR.untilText(now + 6 * 60_000, now) === 'in 6m');
+        ok('…hours and minutes above that', BAR.untilText(now + 134 * 60_000, now) === 'in 2h 14m');
+        ok('…a whole number of hours drops the minutes', BAR.untilText(now + 3 * 3600_000, now) === 'in 3h');
+        ok('…and days beyond a day', BAR.untilText(now + 50 * 3600_000, now) === 'in 2d 2h');
+        ok('an unknown or past reset says nothing rather than "in 0m"',
+            BAR.untilText(0, now) === '' && BAR.untilText(now - 1000, now) === '');
+    }
+
+    // ---------- one request budget, not two ----------
+    {
+        const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        ok('the indicator shares the dashboard card\'s service, not a second one',
+            /new PlanUsageBar\(\{\s*\n\s*service: planUsage,/.test(ext)
+            && (ext.match(/new PlanUsageService\(/g) || []).length === 1);
+        ok('the card\'s refresh repaints the indicator, so the two never disagree',
+            /refreshPlanUsage: async \(force: boolean\) => \{[\s\S]{0,160}planUsageBar\.paint\(\);/.test(ext));
+        ok('"Check now" is the same forced read, not a second implementation',
+            /registerCommand\('agentfarm\.planUsageRefresh'/.test(ext)
+            && /planUsage\.get\(true\)/.test(ext));
+        ok('…and it says why when there is nothing to show', /snap\.state !== 'ok'/.test(ext));
+        ok('turning it off in settings takes effect without a reload',
+            /affectsConfiguration\('agentFarm\.planUsage'\)\) \{ planUsageBar\.refresh\(\)/.test(ext));
+
+        const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+        const props = pkg.contributes.configuration.properties;
+        ok('a permanently visible indicator can be switched off',
+            props['agentFarm.planUsageStatusBar'].type === 'boolean'
+            && props['agentFarm.planUsageStatusBar'].default === true);
+        ok('…and its two thresholds are yours',
+            props['agentFarm.planUsageWarnPercent'].default === 80
+            && props['agentFarm.planUsageDangerPercent'].default === 95);
+        ok('the refresh command is in the palette',
+            pkg.contributes.commands.some(c => c.command === 'agentfarm.planUsageRefresh'));
+        // the shared beat is one beat — the setting says so out loud now
+        ok('the refresh setting states that one beat serves every surface',
+            /status-bar indicator, the Dashboard/.test(props['agentFarm.planUsageRefreshMinutes'].description));
+    }
+
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })();

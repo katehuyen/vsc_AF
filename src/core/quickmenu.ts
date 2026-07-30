@@ -137,6 +137,11 @@ export const QUICK_MENU: QuickMenuEntry[] = [
 
     // ---- System ----
     {
+        group: 'System', label: '$(dashboard) Check plan usage now',
+        detail: 'the session (5h) and weekly % Anthropic reports — the same figures the status-bar indicator shows',
+        command: 'agentfarm.planUsageRefresh'
+    },
+    {
         group: 'System', label: '$(project) Manage projects…',
         detail: 'group agents by customer / product, so every cost figure can be read per project',
         command: 'agentfarm.manageProjects'
