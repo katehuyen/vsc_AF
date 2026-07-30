@@ -804,10 +804,10 @@ const html = allHtml;
 
     type('');
     push(data(CONVO.slice(), { status: 'working', turnStartedAt: Date.now() - 3000 }));
-    ok('a running turn offers Hold', /id="c-hold"/.test(live()));
+    ok('a running turn offers Send after turn', /id="c-hold"/.test(live()) && />Send after turn</.test(live()));
     ok('…dead while there is nothing to park', /id="c-hold" disabled/.test(live()));
     ok('…and the tooltip says what would make it live',
-        /Nothing to hold yet — type the message first/.test(live()));
+        /Nothing to send yet — type the message first/.test(live()));
     ok('Send is dead on an empty box too, instead of eating the click',
         els['c-send'].disabled === true);
 

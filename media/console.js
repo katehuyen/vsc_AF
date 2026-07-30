@@ -982,17 +982,24 @@
     /**
      * The bits of the live composer row that change while a turn runs.
      *
-     * ‼️ HOLD PARKS WHAT IS IN THE BOX — SO AN EMPTY BOX MUST SAY SO.
+     * ‼️ SEND AFTER TURN PARKS WHAT IS IN THE BOX — SO AN EMPTY BOX MUST SAY SO.
+     *
+     * Named to sit next to its sibling: **Send into turn** delivers now, at the
+     * next step boundary; **Send after turn** delivers once the turn is fully
+     * done. (It used to say "⏸ Hold", which named the WAITING rather than the
+     * WHEN — true, but it read as a queue with no obvious reason to prefer it
+     * over just typing again once the turn ends, which is the question this
+     * button actually answers.)
      *
      * Both composer buttons hand their text to `send()`, which returns without
-     * a word when there is nothing to send. For Send that is invisible (you
-     * pressed it having typed nothing). For Hold it was the entire feature
-     * looking broken: the natural moment to reach for it is right AFTER a
-     * message has gone into the running turn — and by then the box is empty, so
-     * the button did nothing, said nothing, and the queue below it never
-     * appeared. A control that answers a click with silence has taught you it
-     * does not work, and everything downstream of it (the held line, its ✎ ⏩ ⨯)
-     * is then never seen either.
+     * a word when there is nothing to send. For Send into turn that is
+     * invisible (you pressed it having typed nothing). For Send after turn it
+     * was the entire feature looking broken: the natural moment to reach for it
+     * is right AFTER a message has gone into the running turn — and by then the
+     * box is empty, so the button did nothing, said nothing, and the queue
+     * below it never appeared. A control that answers a click with silence has
+     * taught you it does not work, and everything downstream of it (the held
+     * line, its ✎ ⏩ ⨯) is then never seen either.
      *
      * So the state is on the button: it is disabled while there is nothing to
      * park, and its tooltip says what would make it live. `st.draft` is the box
@@ -1005,20 +1012,20 @@
         const q = queuedOf(s).length;
         const empty = !(st.draft || '').trim();
         const hold = `<button class="secondary" id="c-hold"${empty ? ' disabled' : ''} title="${empty
-            ? 'Nothing to hold yet — type the message first. Hold parks what is in the box, above it and still editable, and hands it over when this turn ends.'
-            : 'Hold it back instead of saying it into this turn: it waits above the box — editable — and goes when the turn ends'}">⏸ Hold</button>`;
-        return `${q ? `<span class="qbadge" title="Held back — they go when this turn ends">${q} held</span> <button class="secondary" id="c-clearq">drop all</button>` : ''}
+            ? 'Nothing to send yet — type the message first. Send after turn parks it above the box, still editable, and hands it over once this turn ends completely.'
+            : 'Park it instead of sending it into this turn: it waits above the box — editable — and goes once the turn ends'}">Send after turn</button>`;
+        return `${q ? `<span class="qbadge" title="Waiting to be sent — they go once this turn ends">${q} held</span> <button class="secondary" id="c-clearq">drop all</button>` : ''}
             ${s.status === 'working' ? hold : ''}
             ${s.status === 'working' ? '<button class="secondary" id="c-int" title="Stop the running turn — the session and its context stay">⎋ Interrupt</button>' : ''}`;
     }
 
     /**
-     * What you chose to HOLD back — not said yet, and still yours.
+     * What you chose to send AFTER the turn — not said yet, and still yours.
      *
      * Typing while a turn runs sends the message into that turn (the agent
-     * picks it up at its next step). Hold is the other choice, for "say this
-     * next, not now" — and a message that has not been said must be as
-     * changeable as one you have not typed yet, which is why every line here
+     * picks it up at its next step). Send after turn is the other choice, for
+     * "say this next, not now" — and a message that has not been said must be
+     * as changeable as one you have not typed yet, which is why every line here
      * carries its own three verbs instead of one collective "clear":
      *   ✎ back into the box, to rewrite it (↑ in an empty box does the same)
      *   ⏩ never mind, say it into the running turn now
@@ -1202,7 +1209,7 @@
         const text = document.getElementById('c-text');
         if (text) {
             text.value = st.draft || '';
-            // The keystroke is what decides whether Hold and Send can act, so
+            // The keystroke is what decides whether Send after turn and Send can act, so
             // it repaints that row (see renderLive) — `slot()` makes every
             // keystroke but the one that flips "empty" a no-op.
             text.addEventListener('input', () => { st.draft = text.value; save(); renderLive(); });
@@ -1506,14 +1513,15 @@
     // ---- one pass over the changing parts -------------------------------------
 
     /**
-     * The composer's live half: Hold / Interrupt / the held-count, and the
-     * Send button's own two states.
+     * The composer's live half: Send after turn / Interrupt / the held-count,
+     * and the Send button's own two states.
      *
      * Its own function because it has TWO reasons to be redrawn, like the left
      * panel: a data push, and **a keystroke** — what the box holds decides
-     * whether Hold and Send can do anything at all (see liveBitsHtml), and a
-     * button whose enabled-ness only catches up when the CLI happens to say
-     * something is a button that is wrong most of the time you look at it.
+     * whether Send after turn and Send can do anything at all (see
+     * liveBitsHtml), and a button whose enabled-ness only catches up when the
+     * CLI happens to say something is a button that is wrong most of the time
+     * you look at it.
      */
     function renderLive() {
         const s = sel();
@@ -1527,15 +1535,15 @@
         const dead = s && (s.status === 'ended' || s.status === 'error');
         const empty = !(st.draft || '').trim();
         // It no longer waits for the turn to end, so it no longer says "Queue"
-        // — it goes into the turn that is running (Hold, next to it, is what
-        // waiting looks like now).
+        // — it goes into the turn that is running (Send after turn, next to it,
+        // is what waiting looks like now).
         const working = !!s && s.status === 'working';
         const label = s ? (working ? 'Send into turn' : 'Send') : 'Start session';
         if (sendBtn.textContent !== label) { sendBtn.textContent = label; }
         const tip = empty
             ? 'Nothing to send yet — type a message (Ctrl+Enter sends it too)'
             : working
-                ? 'Says it into the running turn — the agent picks it up at its next step, the way a terminal does. ⏸ Hold, next to it, parks it until the turn ends instead.'
+                ? 'Delivered at the next step boundary — the agent picks it up mid-turn, the way a terminal does. Send after turn, next to it, waits for the turn to end completely instead.'
                 : '';
         if (sendBtn.title !== tip) { sendBtn.title = tip; }
         sendBtn.disabled = !!dead || empty;
