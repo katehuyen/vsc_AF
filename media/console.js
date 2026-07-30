@@ -26,12 +26,51 @@
         text: '', agent: '', when: '', from: '', to: '',
         pinnedOnly: false, userOnly: false, limit: 0
     });
+
+    /**
+     * ‼️ WHERE A CARD SITS IS A DECISION, NOT A SIDE EFFECT.
+     *
+     * The hosted list arrives from the host newest-activity-first, and with two
+     * agents streaming in parallel that is a race: each writes one line, each
+     * jumps over the other, and the cards swap places every few hundred
+     * milliseconds. Reading a 250px column while it shuffles under the cursor
+     * is impossible, and clicking the card you meant becomes luck — which is
+     * why the panel's own design note two hundred lines down says "THE LIST
+     * NEVER REORDERS". The list did reorder; nothing here enforced it.
+     *
+     * Three answers, and you pick:
+     *   · `fixed`   — nothing ever moves. Cards sit where they arrived, newest
+     *                 first, and stay there. THE DEFAULT: a still list costs
+     *                 nothing to read, and the count above it already jumps you
+     *                 to whoever is waiting.
+     *   · `waiting` — the only thing that earns the top is the ball being
+     *                 YOURS: a session that needs permission, then one whose
+     *                 turn has ended and is waiting on you. It is a LIFT, not a
+     *                 new home — answer it and the card drops back where it
+     *                 arrived. Within each group nothing moves at all, and a
+     *                 phase changes a few times an hour rather than ten times a
+     *                 second, so this is calm as well as useful: it is the
+     *                 panel's actual subject, sorted.
+     *   · `active`  — busiest on top, DAMPED. A card climbs only after it has
+     *                 shown `minTicks` separate signs of life, and once the
+     *                 order changes it is held still for `holdSec` seconds. Set
+     *                 those to 1 and 0 and you have the old instant behaviour
+     *                 back, exactly.
+     */
+    const ORDER_MODES = [
+        { v: 'fixed', t: 'cards never move' },
+        { v: 'waiting', t: 'waiting for you first' },
+        { v: 'active', t: 'busiest on top' }
+    ];
+    const ORDER_DEFAULT = () => ({ mode: 'fixed', holdSec: 20, minTicks: 4 });
     let st = Object.assign({
         agentId: '', model: '', effort: '', permissionMode: '', draft: '', showResume: false,
         // which kinds of line the conversation shows; null = everything
         kinds: null,
         // is the miniature filter open, and what is it asking for
         showRFilter: false, rq: EMPTY_RQ(),
+        // is the card-order panel open, and what has it been told (see ORDER)
+        showOrder: false, order: ORDER_DEFAULT(),
         /**
          * Is "show N" pinned?
          *
@@ -45,6 +84,7 @@
         limitLocked: true
     }, saved.afConsole);
     st.rq = Object.assign(EMPTY_RQ(), st.rq);
+    st.order = Object.assign(ORDER_DEFAULT(), st.order);
     const save = () => {
         const all = (typeof vscode.getState === 'function' && vscode.getState()) || {};
         all.afConsole = st;
@@ -188,6 +228,18 @@
         .rhead .rtoggle .rlabel { flex:1 1 auto; min-width:0; overflow:hidden;
             text-overflow:ellipsis; white-space:nowrap; }
         .rhead .rfilter { flex:none; width:28px; padding:0; font-size:11px; }
+        /* the same header shape at the TOP of the column, where there is
+           nothing above it to be spaced away from */
+        .rhead.lhead { margin-top:0; }
+        /* Two things to know at a glance, the same split as ⌕/⌦ below:
+             filled  = the panel is open (you are looking at the controls)
+             outline = the order is NOT the plain "nothing moves" — cards can
+                       move under you, and that must be visible with the panel
+                       shut, or a list that shuffles looks like a bug. */
+        .rhead .rfilter.ordon { border-color:var(--vscode-charts-blue,#3794ff);
+            background:color-mix(in srgb, var(--vscode-charts-blue,#3794ff) 16%, transparent); }
+        .rhead .rfilter.ordon.on { background:var(--vscode-button-background); }
+        .rnote { font-size:10px; opacity:.7; line-height:1.35; }
         /* Two buttons, two different things to know at a glance:
              ⌕ lit  = the panel is open (you are looking at the controls)
              ⌦ lit  = a filter is SET (what you are looking at is narrowed)
@@ -362,6 +414,32 @@
         + (cost ? ` · ${C.fmtUSD(cost)} spent` : '');
 
     /**
+     * ‼️ WHAT THE SESSION HAS SPENT — WHILE IT IS SPENDING IT.
+     *
+     * `s.cost` is only ever the money the CLI has REPORTED, and the CLI reports
+     * a turn's cost when the turn ends. The tokens beside it are counted off
+     * every assistant message as it arrives. So for the whole length of a turn
+     * the one line under the box climbed on the left and stood at $0.0000 on
+     * the right — two halves of one figure disagreeing with each other, which
+     * reads as a broken number rather than a promise that will be kept in a
+     * minute. (On a session that has never finished a turn it stood at zero
+     * outright, which is what was reported.)
+     *
+     * The running turn's estimate already exists — it is what the strip above
+     * the box shows — so the session line adds it and marks the whole thing
+     * "~". Nothing is double counted: when the turn closes, its estimate is
+     * cleared in the same step that adds the CLI's own figure to `s.cost`.
+     *
+     * The base is the SESSION's, not this window's: a resumed conversation
+     * comes back with what it already spent (see CarriedTotals), so the "~"
+     * grows on top of the earlier turns instead of starting over.
+     */
+    function sessionSpend(s) {
+        const live = s && s.status === 'working' ? (s.turnCost || 0) : 0;
+        return { cost: (s && s.cost || 0) + live, tokens: (s && s.tokens) || 0, est: live > 0 };
+    }
+
+    /**
      * The right-click contract for a session row.
      *
      * `data-vscode-context` hands the row's identity to VS Code, which builds
@@ -407,8 +485,10 @@
      *   · COLOUR IS NEVER ALONE. Every state also says its word, so it survives
      *     a colourblind reader, a light theme and a high-contrast theme.
      *   · THE NUDGE IS TIME, NOT ANIMATION: "your turn · 6m" grows by itself.
-     *   · THE LIST NEVER REORDERS. Cards that jump are the definition of
-     *     irritating; the count above the list jumps you instead, on a click.
+     *   · THE LIST DOES NOT REORDER UNDER YOU. Cards that jump are the
+     *     definition of irritating, so nothing moves them by default and the
+     *     count above the list jumps you instead, on a click. What is allowed
+     *     to move a card is yours to set — see ORDER_MODES.
      */
     function phaseOf(s) {
         if (!s) { return { id: 'new', label: '', cls: '' }; }
@@ -426,6 +506,82 @@
     const needingYou = () => (DATA.sessions || [])
         .filter(s => ['you', 'blocked'].indexOf(phaseOf(s).id) >= 0)
         .sort((a, b) => (a.lastTs || 0) - (b.lastTs || 0));   // longest wait first
+
+    // ---- the order the cards are drawn in (see ORDER_MODES) -------------------
+    /** The display order as it stands — ids, so it survives every repaint. */
+    let orderIds = [];
+    /** id → how much this session has done since the order last changed. A
+     *  "tick" is one push in which its own clock moved: the panel cannot count
+     *  another session's lines (it is only sent its own), and a session that
+     *  says something moves `lastTs`, which is the same signal by a cheaper
+     *  name. */
+    let orderTicks = Object.create(null);
+    /** No card may climb before this moment — the damping (`holdSec`). */
+    let orderHeldUntil = 0;
+
+    /** A mode change takes effect now, not after the last hold expires. */
+    function orderChanged() {
+        orderHeldUntil = 0;
+        orderTicks = Object.create(null);
+    }
+
+    const orderRank = s => {
+        const id = phaseOf(s).id;
+        return id === 'blocked' ? 0 : id === 'you' ? 1 : 2;
+    };
+
+    function orderedSessions() {
+        const list = DATA.sessions || [];
+        const live = Object.create(null);
+        for (const s of list) { live[s.id] = s; }
+        const now = Date.now();
+
+        // Signs of life are counted whatever the mode: switching to "busiest on
+        // top" must not start every session from zero as if nothing had ever
+        // happened in this window.
+        for (const s of list) {
+            const t = orderTicks[s.id] || (orderTicks[s.id] = { lastTs: 0, ticks: 0 });
+            if (s.lastTs !== t.lastTs) { t.lastTs = s.lastTs; t.ticks++; }
+        }
+        for (const id of Object.keys(orderTicks)) { if (!live[id]) { delete orderTicks[id]; } }
+
+        // Sessions that ended go; sessions that are new arrive ON TOP, newest
+        // first — one you just started is the one you are about to talk to.
+        orderIds = orderIds.filter(id => live[id]);
+        const fresh = list.filter(s => orderIds.indexOf(s.id) < 0).map(s => s.id);
+        if (fresh.length) { orderIds = fresh.concat(orderIds); }
+
+        const o = st.order || {};
+        if (o.mode === 'active' && now >= orderHeldUntil) {
+            const need = Math.max(1, Number(o.minTicks) || 1);
+            // whoever has done the most since the order last changed, and only
+            // if that is enough to be worth moving the list for
+            let best = null;
+            for (const s of list) {
+                const t = orderTicks[s.id];
+                if (!t || t.ticks < need) { continue; }
+                if (!best || t.ticks > orderTicks[best.id].ticks
+                    || (t.ticks === orderTicks[best.id].ticks && (s.lastTs || 0) > (best.lastTs || 0))) {
+                    best = s;
+                }
+            }
+            if (best && orderIds[0] !== best.id) {
+                orderIds = [best.id].concat(orderIds.filter(id => id !== best.id));
+                orderHeldUntil = now + Math.max(0, Number(o.holdSec) || 0) * 1000;
+                for (const id of Object.keys(orderTicks)) { orderTicks[id].ticks = 0; }
+            } else if (best) {
+                // already on top: it has nothing to spend its activity on
+                orderTicks[best.id].ticks = 0;
+            }
+        }
+
+        const rows = orderIds.map(id => live[id]).filter(Boolean);
+        if (o.mode !== 'waiting') { return rows; }
+        // A stable PARTITION, not a sort: within a group the order above is
+        // untouched, so the only thing that ever moves a card is the ball
+        // becoming yours — and that happens once, not per streamed line.
+        return rows.slice().sort((a, b) => orderRank(a) - orderRank(b));
+    }
 
     /** `developer (#407c78cb)` — the id is how a row is matched against a tab,
      *  a terminal or a log line, so it rides with the agent's name. */
@@ -516,7 +672,7 @@
         // the row carries the agent, the session id, the session's own name and
         // its numbers: cost (with the tokens it bought) on the top line, and
         // "ctx now" — what the window is holding — on the bottom one.
-        const rows = (DATA.sessions || []).map(s => {
+        const rows = orderedSessions().map(s => {
             const p = phaseOf(s);
             // the nudge is the WAIT, and it grows on its own
             const waited = p.id === 'you' || p.id === 'blocked' ? relTime(s.lastTs) : '';
@@ -537,7 +693,7 @@
                  title="${C.esc(s.title || 'not named yet')} — ${C.esc(p.label)} — right-click for session actions">
                 <div class="h">
                     <span class="n"><span class="dot"></span>${who(s.agentName, s.sessionId)}</span>
-                    <span class="m" title="${C.esc(tokTip(s.tokens, s.cost))}">${tokBadge(s.tokens)}</span>
+                    <span class="m" title="${C.esc(tokTip(s.tokens, sessionSpend(s).cost))}">${tokBadge(s.tokens)}</span>
                 </div>
                 <div class="t2">${C.esc(s.title || '(no name yet)')}</div>
                 <div class="m"><span class="phase">${C.esc(p.label)}${waited ? ` · ${waited}` : ''}</span>${(s.queued || []).length ? ` · ${s.queued.length} held` : ''}${s.turns ? ` · ${s.turns} turns` : ''}${s.contextTokens ? ` · <span class="pair" title="Approximate context in the model window right now">ctx ${C.fmtTok(s.contextTokens)}</span>` : ''}</div>
@@ -570,10 +726,55 @@
                 <div class="t2">${C.esc(r.title || '(no name)')}</div>
                 <div class="m">ended ${relTime(r.endedAt)} ago · click to continue</div>
             </div>`).join('')}` : '';
-        return `<button id="c-new">＋ New session</button>
-            ${callout}
+        return `${callout}
             ${back}
             ${rows || '<div class="empty">No hosted sessions yet. Pick an agent below and say something — the process starts here, in the panel.</div>'}`;
+    }
+
+    /**
+     * The column's own header: start a session, and say how the cards below are
+     * ordered. Same shape as the resume section's header for the same reason —
+     * a full-width action with one small button on its right that opens a
+     * miniature panel — so the two ends of the column read as one control
+     * language rather than two.
+     */
+    function listHeadHtml() {
+        const mode = (st.order || {}).mode || 'fixed';
+        const m = ORDER_MODES.find(x => x.v === mode);
+        return `<div class="rhead lhead">
+            <button class="rtoggle" id="c-new" title="Start a new conversation — it runs here, in the panel">
+                <span class="rlabel">＋ New session</span>
+            </button>
+            <button class="secondary rfilter${st.showOrder ? ' on' : ''}${mode !== 'fixed' ? ' ordon' : ''}" id="c-toggle-order"
+                title="How the cards below are ordered — currently: ${C.esc(m ? m.t : mode)}">⇅</button>
+        </div>`;
+    }
+
+    /** ‼️ The numbers are deliberately NOT in this html — same reason as the
+     *  resume filter: the boxes are filled imperatively so typing in one does
+     *  not rebuild the box being typed in. */
+    function orderPanelHtml() {
+        if (!st.showOrder) { return ''; }
+        const o = st.order || ORDER_DEFAULT();
+        return `<div class="rpanel">
+            <select id="c-ord-mode" title="What is allowed to move a card">
+                ${ORDER_MODES.map(m =>
+                    `<option value="${m.v}"${m.v === o.mode ? ' selected' : ''}>${C.esc(m.t)}</option>`).join('')}
+            </select>
+            ${o.mode === 'active' ? `<div class="rrow">
+                <label class="rn" title="How many separate signs of life a session must show before it is allowed to climb. 1 = every single line moves it.">after
+                    <input type="number" id="c-ord-ticks" min="1" max="99">
+                </label>
+                <label class="rn" title="Once the order changes, how long it is held still before anything may climb again. 0 = no hold at all.">hold
+                    <input type="number" id="c-ord-hold" min="0" max="600">
+                </label>
+            </div>` : ''}
+            <div class="rnote">${o.mode === 'fixed'
+                ? 'Cards stay where they arrived — newest first. The count above the list is how you reach whoever is waiting.'
+                : o.mode === 'waiting'
+                    ? 'Only the ball being yours lifts a card — needs-permission first, then your turn — and it drops back once you have answered. Nothing moves while an agent works.'
+                    : 'A card climbs after <b>after</b> signs of life, then the order is held for <b>hold</b> seconds. <b>1</b> and <b>0</b> give you the instant version.'}</div>
+        </div>`;
     }
 
     /**
@@ -778,12 +979,36 @@
 
     const queuedOf = s => ((s && s.queued) || []);
 
-    /** The bits of the live composer row that change while a turn runs. */
+    /**
+     * The bits of the live composer row that change while a turn runs.
+     *
+     * ‼️ HOLD PARKS WHAT IS IN THE BOX — SO AN EMPTY BOX MUST SAY SO.
+     *
+     * Both composer buttons hand their text to `send()`, which returns without
+     * a word when there is nothing to send. For Send that is invisible (you
+     * pressed it having typed nothing). For Hold it was the entire feature
+     * looking broken: the natural moment to reach for it is right AFTER a
+     * message has gone into the running turn — and by then the box is empty, so
+     * the button did nothing, said nothing, and the queue below it never
+     * appeared. A control that answers a click with silence has taught you it
+     * does not work, and everything downstream of it (the held line, its ✎ ⏩ ⨯)
+     * is then never seen either.
+     *
+     * So the state is on the button: it is disabled while there is nothing to
+     * park, and its tooltip says what would make it live. `st.draft` is the box
+     * (the textarea writes it on every keystroke), and the row is repainted
+     * from the same keystroke — `slot()` means that costs one comparison until
+     * the emptiness actually flips.
+     */
     function liveBitsHtml(s) {
         if (!s) { return ''; }
         const q = queuedOf(s).length;
+        const empty = !(st.draft || '').trim();
+        const hold = `<button class="secondary" id="c-hold"${empty ? ' disabled' : ''} title="${empty
+            ? 'Nothing to hold yet — type the message first. Hold parks what is in the box, above it and still editable, and hands it over when this turn ends.'
+            : 'Hold it back instead of saying it into this turn: it waits above the box — editable — and goes when the turn ends'}">⏸ Hold</button>`;
         return `${q ? `<span class="qbadge" title="Held back — they go when this turn ends">${q} held</span> <button class="secondary" id="c-clearq">drop all</button>` : ''}
-            ${s.status === 'working' ? '<button class="secondary" id="c-hold" title="Hold it back instead of saying it into this turn: it waits below — editable — and goes when the turn ends">⏸ Hold</button>' : ''}
+            ${s.status === 'working' ? hold : ''}
             ${s.status === 'working' ? '<button class="secondary" id="c-int" title="Stop the running turn — the session and its context stay">⎋ Interrupt</button>' : ''}`;
     }
 
@@ -830,7 +1055,11 @@
         // conversation has cost and the tokens that bought it, how many turns.
         // (The turn that is running has its own line above the box — the two
         // used to say "ctx" at each other and nothing else.)
-        return `${s.sessionId ? 'session ' + C.esc(s.sessionId.slice(0, 8)) + ' · ' : ''}${s.contextTokens ? `<span title="Approximate context in the model window right now">~${C.fmtTok(s.contextTokens)} ctx</span> · ` : ''}<span title="Everything this session has spent, as the CLI reported it — and the tokens it bought">${spend(s.cost, s.tokens)}</span> this session · ${s.turns} turn${s.turns === 1 ? '' : 's'}
+        const sp = sessionSpend(s);
+        const spTip = sp.est
+            ? 'Everything this session has spent — the finished turns as the CLI reported them, plus what the running turn has spent so far, priced off the tokens seen (that is what the ~ is). A conversation you resumed brings its earlier turns with it.'
+            : 'Everything this session has spent, as the CLI reported it — and the tokens it bought. A conversation you resumed brings its earlier turns with it.';
+        return `${s.sessionId ? 'session ' + C.esc(s.sessionId.slice(0, 8)) + ' · ' : ''}${s.contextTokens ? `<span title="Approximate context in the model window right now">~${C.fmtTok(s.contextTokens)} ctx</span> · ` : ''}<span title="${spTip}">${sp.est ? '~' : ''}${spend(sp.cost, sp.tokens)}</span> this session · ${s.turns} turn${s.turns === 1 ? '' : 's'}
             <span class="grow"></span>
             ${s.sessionId ? '<button class="secondary" id="c-transcript">Open transcript</button>' : ''}
             ${dead ? '<button class="secondary" id="c-forget">Remove from list</button>' : '<button class="secondary" id="c-close">End session</button>'}`;
@@ -945,6 +1174,8 @@
             <div id="c-head"></div>
             <div class="cwrap">
                 <div class="clist">
+                    <div id="c-lhead"></div>
+                    <div id="c-opanel"></div>
                     <div id="c-list"></div>
                     <div id="c-rhead"></div>
                     <div id="c-rpanel"></div>
@@ -971,7 +1202,10 @@
         const text = document.getElementById('c-text');
         if (text) {
             text.value = st.draft || '';
-            text.addEventListener('input', () => { st.draft = text.value; save(); });
+            // The keystroke is what decides whether Hold and Send can act, so
+            // it repaints that row (see renderLive) — `slot()` makes every
+            // keystroke but the one that flips "empty" a no-op.
+            text.addEventListener('input', () => { st.draft = text.value; save(); renderLive(); });
             text.addEventListener('keydown', ev => {
                 if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); send(); }
                 // ↑ in an empty box pulls the last HELD message back to be
@@ -1061,6 +1295,17 @@
     const byId = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
 
     function renderList() {
+        if (slot('c-lhead', listHeadHtml())) {
+            byId('c-new', 'click', () => vscode.postMessage({ type: 'select', id: '' }));
+            byId('c-toggle-order', 'click', () => {
+                st.showOrder = !st.showOrder;
+                save();
+                renderList();
+            });
+        }
+        if (slot('c-opanel', orderPanelHtml())) { wireOrderPanel(); }
+        fillOrderPanel();
+
         if (slot('c-list', sessionListHtml())) {
             document.querySelectorAll('[data-sel]').forEach(r =>
                 r.addEventListener('click', () => vscode.postMessage({ type: 'select', id: r.dataset.sel })));
@@ -1078,7 +1323,6 @@
                     ev.stopPropagation();
                     vscode.postMessage({ type: 'forgetLastWindow', sessionId: b.dataset.backforget });
                 }));
-            byId('c-new', 'click', () => vscode.postMessage({ type: 'select', id: '' }));
             // the nudge, answered: go to whichever has waited longest
             byId('c-next', 'click', () => {
                 const next = needingYou()[0];
@@ -1086,6 +1330,37 @@
             });
         }
         renderResume();
+    }
+
+    function wireOrderPanel() {
+        byId('c-ord-mode', 'change', e => {
+            st.order.mode = e.target.value;
+            orderChanged();
+            save();
+            renderList();
+        });
+        // The numbers apply as you type — they only change how the NEXT climb
+        // is judged, so there is nothing to commit and nothing to undo.
+        const num = (id, key, min, max) => byId(id, 'input', e => {
+            const v = parseInt(e.target.value, 10);
+            st.order[key] = isFinite(v) ? Math.max(min, Math.min(max, v)) : min;
+            orderChanged();
+            save();
+        });
+        num('c-ord-ticks', 'minTicks', 1, 99);
+        num('c-ord-hold', 'holdSec', 0, 600);
+    }
+
+    /** Same rule as the resume filter: never write into a box that has the
+     *  focus, or the value jumps back while it is being typed. */
+    function fillOrderPanel() {
+        const set = (id, v) => {
+            const e = document.getElementById(id);
+            if (!e || e === document.activeElement) { return; }
+            if (e.value !== v) { e.value = v; }
+        };
+        set('c-ord-ticks', String(st.order.minTicks));
+        set('c-ord-hold', String(st.order.holdSec));
     }
 
     /** The query the host is answering right now — sent whenever it changes,
@@ -1230,6 +1505,42 @@
 
     // ---- one pass over the changing parts -------------------------------------
 
+    /**
+     * The composer's live half: Hold / Interrupt / the held-count, and the
+     * Send button's own two states.
+     *
+     * Its own function because it has TWO reasons to be redrawn, like the left
+     * panel: a data push, and **a keystroke** — what the box holds decides
+     * whether Hold and Send can do anything at all (see liveBitsHtml), and a
+     * button whose enabled-ness only catches up when the CLI happens to say
+     * something is a button that is wrong most of the time you look at it.
+     */
+    function renderLive() {
+        const s = sel();
+        if (slot('c-live', liveBitsHtml(s))) {
+            byId('c-int', 'click', () => vscode.postMessage({ type: 'interrupt', id: DATA.selected }));
+            byId('c-hold', 'click', () => send(true));
+            byId('c-clearq', 'click', () => vscode.postMessage({ type: 'clearQueue', id: DATA.selected }));
+        }
+        const sendBtn = document.getElementById('c-send');
+        if (!sendBtn) { return; }
+        const dead = s && (s.status === 'ended' || s.status === 'error');
+        const empty = !(st.draft || '').trim();
+        // It no longer waits for the turn to end, so it no longer says "Queue"
+        // — it goes into the turn that is running (Hold, next to it, is what
+        // waiting looks like now).
+        const working = !!s && s.status === 'working';
+        const label = s ? (working ? 'Send into turn' : 'Send') : 'Start session';
+        if (sendBtn.textContent !== label) { sendBtn.textContent = label; }
+        const tip = empty
+            ? 'Nothing to send yet — type a message (Ctrl+Enter sends it too)'
+            : working
+                ? 'Says it into the running turn — the agent picks it up at its next step, the way a terminal does. ⏸ Hold, next to it, parks it until the turn ends instead.'
+                : '';
+        if (sendBtn.title !== tip) { sendBtn.title = tip; }
+        sendBtn.disabled = !!dead || empty;
+    }
+
     function paint() {
         const s = sel();
         const key = `${DATA.selected || ''}|${s ? s.status === 'ended' || s.status === 'error' : 'none'}`;
@@ -1287,14 +1598,7 @@
                 })));
         }
 
-        // The composer's own row keeps its select and its filter menu — only the
-        // things that actually change mid-turn are rewritten.
-        if (slot('c-live', liveBitsHtml(s))) {
-            const byId = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
-            byId('c-int', 'click', () => vscode.postMessage({ type: 'interrupt', id: DATA.selected }));
-            byId('c-hold', 'click', () => send(true));
-            byId('c-clearq', 'click', () => vscode.postMessage({ type: 'clearQueue', id: DATA.selected }));
-        }
+        renderLive();
         if (slot('c-queue', queueHtml(s))) {
             const q = queuedOf(s);
             document.querySelectorAll('[data-qedit]').forEach(b =>
@@ -1314,19 +1618,6 @@
         // deliberately NOT a slot: it repaints itself on a timer while the turn
         // runs, so its html is never what `written` last saw
         paintWorking();
-        const sendBtn = document.getElementById('c-send');
-        if (sendBtn && s) {
-            // It no longer waits for the turn to end, so it no longer says
-            // "Queue" — it goes into the turn that is running (Hold, next to
-            // it, is what waiting looks like now).
-            const working = s.status === 'working';
-            const label = working ? 'Send into turn' : 'Send';
-            if (sendBtn.textContent !== label) { sendBtn.textContent = label; }
-            const tip = working
-                ? 'Says it into the running turn — the agent picks it up at its next step, the way a terminal does'
-                : '';
-            if (sendBtn.title !== tip) { sendBtn.title = tip; }
-        }
 
         if (slot('c-status', statusHtml(s))) {
             const byId = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };

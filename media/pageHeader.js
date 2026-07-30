@@ -93,7 +93,13 @@
      *   sub,         // optional line under the title
      *   controls,    // optional html — scope selectors (segments / filter selects)
      *   actions,     // optional html — page action buttons, most important first
-     *   related,     // optional [{nav, label}] — related panels, after Live Timeline
+     *   related,     // optional [{nav, label}] — related panels, after Live Timeline,
+     *                //   or [{action, label, title}] — a page-specific ACTION that
+     *                //   belongs with the destinations rather than with the scope
+     *                //   controls (a rare thing: a whole-farm operation a single
+     *                //   page owns). It posts { type:'headerAction', action } and
+     *                //   sits in the same row, so the page's controls above keep
+     *                //   their own line.
      *   searchTitle, // optional tooltip when ⌕ Search is page-scoped
      *   refresh,     // false to omit the Refresh button (pages with nothing to re-scan)
      *   navActions,  // optional { <navId>: {label, title} } — this page claims
@@ -136,6 +142,10 @@
             cluster.push(`<button class="secondary" data-afnav="${n.id}">${label}</button>`);
         }
         for (const r of o.related || []) {
+            if (r.action) {
+                cluster.push(`<button class="secondary" data-afact="${r.action}"${r.title ? ` title="${r.title}"` : ''}>${r.label}</button>`);
+                continue;
+            }
             cluster.push(`<button class="secondary" data-afnav="${r.nav}">${r.label}</button>`);
         }
         if (o.page !== 'search') {
@@ -164,13 +174,16 @@
      * Call after html() landed in the DOM (i.e. at the end of each render).
      * Posts { type:'afnav', to } — routed by one shared handler on the
      * extension side (handleAfNav; pages with a scoped ⌕ Search intercept
-     * to:'search' before delegating) — plus { type:'refresh' } and
+     * to:'search' before delegating) — plus { type:'headerAction', action }
+     * for a `related` entry that is an action, { type:'refresh' } and
      * { type:'openGuide', anchor }. hooks.onRefresh overrides the refresh
      * post for pages that must do extra client work first.
      */
     function wire(vscode, hooks) {
         document.querySelectorAll('[data-afnav]').forEach(b =>
             b.addEventListener('click', () => vscode.postMessage({ type: 'afnav', to: b.dataset.afnav })));
+        document.querySelectorAll('[data-afact]').forEach(b =>
+            b.addEventListener('click', () => vscode.postMessage({ type: 'headerAction', action: b.dataset.afact })));
         // A claimed nav button opens its menu; the menu's first item is the
         // page's own meaning, the second is the plain page (wired by data-afnav
         // above). Any click elsewhere, or Escape, closes it.

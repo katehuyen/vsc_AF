@@ -65,6 +65,14 @@ button.secondary {
     background: var(--vscode-button-secondaryBackground);
 }
 button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
+/* ‼️ A DISABLED BUTTON THAT LOOKS PRESSABLE IS THE SAME LIE AS ONE THAT DOES
+   NOTHING. Nothing here styled :disabled, so `disabled` was invisible — full
+   colour, hand cursor, and a click that goes nowhere; the one page that needed
+   it (the resume header's ⌦) had hand-rolled its own rule, which is the sign
+   that the rule belonged here. One place, every page. */
+button:disabled, .btn:disabled { opacity: .4; cursor: default; }
+button:disabled:hover, .btn:disabled:hover { background: var(--vscode-button-background); }
+button.secondary:disabled:hover { background: var(--vscode-button-secondaryBackground); }
 .btnrow { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
 
 /* wraps rather than squeezes: the timeline's range strip is 12 steps wide */

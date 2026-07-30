@@ -755,5 +755,174 @@ const html = allHtml;
     ok('the composer never grows or shrinks with them', /flex:none/.test(rule('.composer')));
 }
 
+// ---------- the session line moves while the session is spending ----------
+// `s.cost` is only what the CLI has REPORTED, and it reports a turn's cost when
+// the turn ends. So for the whole length of a turn the one line under the box
+// climbed on the left (tokens, counted per message) and stood still on the
+// right — and on a session that had not finished a turn yet it stood at zero
+// outright. Two halves of one figure disagreeing reads as a broken number.
+{
+    const status = () => els['c-status']._html;
+    push(data(CONVO.slice(), { status: 'idle', cost: 0.12, tokens: 48200, turnCost: 0, turnTokens: 0 }));
+    ok('between turns the line is the CLI\'s own figure, plainly',
+        status().includes('$0.12 (48200t tokens)') && !status().includes('~$0.12'));
+
+    push(data(CONVO.slice(), {
+        status: 'working', cost: 0.12, tokens: 52400, turnCost: 0.005, turnTokens: 4200
+    }));
+    ok('while a turn runs the money moves with the tokens',
+        status().includes('~$' + (0.12 + 0.005) + ' (52400t tokens)'));
+    ok('…and says out loud that the money is the estimate the tokens are',
+        /title="[^"]*priced off the tokens seen[^"]*">~\$/.test(status()));
+    ok('…the turn strip above the box still shows the TURN, not the session',
+        els['c-working']._html.includes('this turn'));
+
+    // The estimate is cleared in the same step that adds the CLI's figure to
+    // s.cost (consoleproto), so the two can never both be counted.
+    push(data(CONVO.slice(), { status: 'idle', cost: 0.125, tokens: 52400, turnCost: 0, turnTokens: 0 }));
+    ok('when the turn closes the estimate is replaced, not added to',
+        status().includes('$0.125 (52400t tokens)') && !status().includes('~$'));
+
+    // A resumed conversation carries its earlier turns (CarriedTotals): the
+    // host puts them in s.cost/s.tokens, so the running estimate grows on top
+    // of them instead of starting the sum over.
+    push(data(CONVO.slice(), {
+        status: 'working', cost: 5.5, tokens: 480000, turnCost: 0.25, turnTokens: 9000, turns: 212
+    }));
+    ok('a resumed session\'s estimate grows on top of what it already spent',
+        status().includes('~$' + (5.5 + 0.25) + ' (480000t tokens)') && status().includes('212 turns'));
+}
+
+// ---------- ⏸ Hold parks what is in the box, and says so when there is none --
+// The natural moment to reach for Hold is right AFTER something has gone into
+// the running turn — and by then the box is empty, so the button did nothing,
+// said nothing, and the queue below it never appeared. Everything downstream
+// (the held line and its ✎ ⏩ ⨯) was therefore never seen either.
+{
+    const live = () => els['c-live']._html;
+    const type = v => { els['c-text'].value = v; els['c-text'].listeners.input(); };
+
+    type('');
+    push(data(CONVO.slice(), { status: 'working', turnStartedAt: Date.now() - 3000 }));
+    ok('a running turn offers Hold', /id="c-hold"/.test(live()));
+    ok('…dead while there is nothing to park', /id="c-hold" disabled/.test(live()));
+    ok('…and the tooltip says what would make it live',
+        /Nothing to hold yet — type the message first/.test(live()));
+    ok('Send is dead on an empty box too, instead of eating the click',
+        els['c-send'].disabled === true);
+
+    type('dur, şöyle yap');
+    ok('typing brings Hold back to life', !/id="c-hold" disabled/.test(live()));
+    ok('…and Send with it', els['c-send'].disabled === false);
+    ok('…which is what "Send into turn" now means', els['c-send'].textContent === 'Send into turn');
+
+    posted.length = 0;
+    els['c-hold'].listeners.click();
+    ok('Hold parks it instead of saying it into the turn',
+        posted.some(m => m.type === 'send' && m.hold === true && m.text === 'dur, şöyle yap'));
+    ok('…and empties the box, so Hold goes dead again', els['c-text'].value === '');
+
+    // the host answers with the message in `queued` — the strip above the box
+    push(data(CONVO.slice(), { status: 'working', queued: ['dur, şöyle yap'] }));
+    ok('the held message is shown above the box, not swallowed',
+        els['c-queue']._html.includes('dur, şöyle yap') && /1 message held/.test(els['c-queue']._html));
+    ok('…with its own three verbs: rewrite it, say it now, drop it',
+        /data-qedit="0"/.test(els['c-queue']._html) && /data-qnow="0"/.test(els['c-queue']._html)
+        && /data-qdrop="0"/.test(els['c-queue']._html));
+    ok('…and the composer row says how many are waiting', /1 held/.test(live()));
+
+    posted.length = 0;
+    sandbox.document.querySelectorAll('[data-qedit]')[0]._fn({});
+    ok('✎ takes it out of the queue and back into the box',
+        posted.some(m => m.type === 'queueTake' && m.index === 0)
+        && els['c-text'].value === 'dur, şöyle yap');
+    posted.length = 0;
+    push(data(CONVO.slice(), { status: 'working', queued: ['sonra şunu da yap'] }));
+    sandbox.document.querySelectorAll('[data-qnow]')[0]._fn({});
+    ok('⏩ says it now, into the running turn',
+        posted.some(m => m.type === 'queueSend' && m.index === 0));
+    sandbox.document.querySelectorAll('[data-qdrop]')[0]._fn({});
+    ok('⨯ drops it and it is never said',
+        posted.some(m => m.type === 'queueTake' && m.index === 0));
+    type('');
+}
+
+// ---------- what is allowed to move a card ----------
+// Two agents streaming in parallel is a race: each writes one line, each jumps
+// over the other, and the column shuffles under the cursor several times a
+// second. Nothing moves a card unless you say so.
+{
+    const list = () => els['c-list']._html;
+    const first = () => (/alpha|beta/.exec(list()) || [''])[0];
+    const two = (aTs, bTs, over) => Object.assign(data([]), {
+        selected: 'A',
+        sessions: [
+            session([], Object.assign({ id: 'A', agentName: 'alpha', sessionId: 'aaaa1111', lastTs: aTs }, (over || {}).A)),
+            session([], Object.assign({ id: 'B', agentName: 'beta', sessionId: 'bbbb2222', lastTs: bTs }, (over || {}).B))
+        ].sort((x, y) => y.lastTs - x.lastTs)   // the host sends newest-activity first
+    });
+    const ord = () => state.afConsole.order;
+    const setMode = v => { els['c-ord-mode'].value = v; els['c-ord-mode'].listeners.change({ target: els['c-ord-mode'] }); };
+    const setNum = (id, v) => { els[id].value = String(v); els[id].listeners.input({ target: els[id] }); };
+
+    push(two(1000, 900));
+    ok('the header carries one small button next to ＋ New session',
+        /id="c-new"/.test(els['c-lhead']._html) && /id="c-toggle-order"/.test(els['c-lhead']._html));
+    ok('…and nothing else is shown until you open it',
+        els['c-opanel']._html === '' && ord().mode === 'fixed');
+    ok('the cards arrive newest first', first() === 'alpha');
+
+    push(two(1000, 5000));
+    ok('by DEFAULT a burst of activity does not move a card', first() === 'alpha');
+
+    els['c-toggle-order'].listeners.click();
+    ok('the ⇅ button opens a miniature panel, the way ⌕ does', /id="c-ord-mode"/.test(els['c-opanel']._html));
+
+    // "busiest on top", undamped, IS the old behaviour — expressible on purpose
+    setMode('active');
+    setNum('c-ord-ticks', 1);
+    setNum('c-ord-hold', 0);
+    push(two(1000, 6000));
+    ok('1 sign of life and no hold gives the instant version back', first() === 'beta');
+    push(two(7000, 6000));
+    ok('…both ways', first() === 'alpha');
+
+    // damped: once the order HAS changed it is held still, so the ping-pong
+    // two agents streaming in parallel produce happens once per hold, not
+    // several times a second
+    setNum('c-ord-hold', 30);
+    push(two(7000, 9000));
+    ok('the first climb after a change is allowed', first() === 'beta');
+    push(two(10000, 9000));
+    ok('…and then the list is held still for the hold you set', first() === 'beta');
+
+    // damped the other way: a card must earn the move
+    setNum('c-ord-hold', 0);
+    setNum('c-ord-ticks', 3);
+    push(two(11000, 9000));
+    push(two(12000, 9000));
+    ok('one line is not enough to climb when you asked for three', first() === 'beta');
+    push(two(13000, 9000));
+    ok('…the third one is', first() === 'alpha');
+
+    // the smarter order: the only thing that earns the top is the ball being YOURS
+    setMode('waiting');
+    push(two(20000, 1000, { A: { status: 'working' }, B: { status: 'idle', turns: 4 } }));
+    ok('"waiting for you first" lifts the one holding your ball', first() === 'beta');
+    // …and puts it back once you have answered: the lift is the phase, not a
+    // new home. Both working = nobody holds your ball = the arrival order,
+    // which activity never touches in this mode.
+    push(two(21000, 1000, { A: { status: 'working' }, B: { status: 'working' } }));
+    ok('…and puts it back once neither of them needs you', first() === 'alpha');
+    push(two(22000, 1000, { A: { status: 'idle', turns: 2, pendingPermission: { detail: 'x', ts: 1 } }, B: { status: 'idle', turns: 4 } }));
+    ok('…needs-permission outranks a plain your-turn', first() === 'alpha');
+
+    setMode('fixed');
+    ok('the setting is remembered, whatever it is', ord().mode === 'fixed'
+        && ord().minTicks === 3 && ord().holdSec === 0);
+    ok('…and closed, the column is a button and nothing else',
+        (els['c-toggle-order'].listeners.click(), els['c-opanel']._html === ''));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -504,8 +504,13 @@
                 // Every day of the first week, then the longer spans, then two
                 // dates. "Yesterday and today" and "that week in July" were
                 // both unaskable when the smallest step was 7 days.
+                // ‼️ Every one of these buttons says what its number MEANS. The
+                // first week was drawn as bare digits next to a "14d 30d 90d"
+                // segment, so one row of the same control had a unit and the
+                // other did not — and a lone "5" beside "14d" reads as anything
+                // but five days.
                 controls: `<span class="seg">${[1, 2, 3, 4, 5, 6, 7].map(r =>
-                        `<button data-range="${r}" class="${r === range ? 'sel' : ''}" title="${r === 1 ? 'Today' : 'The last ' + r + ' days, today included'}">${r}</button>`).join('')}</span>
+                        `<button data-range="${r}" class="${r === range ? 'sel' : ''}" title="${r === 1 ? 'Today' : 'The last ' + r + ' days, today included'}">${r}d</button>`).join('')}</span>
                     <span class="seg">${[14, 30, 90, 180, 365].map(r =>
                         `<button data-range="${r}" class="${r === range ? 'sel' : ''}">${r}d</button>`).join('')}</span>
                     <span class="seg"><button data-range="custom" class="${range === 'custom' ? 'sel' : ''}" title="Between two dates">⇤⇥</button></span>
@@ -513,7 +518,19 @@
                         <input type="date" id="dash-from" value="${C.esc(rangeFrom)}" title="From this day">
                         <input type="date" id="dash-to" value="${C.esc(rangeTo)}" title="To this day, included">
                     </span>` : ''}`,
-                related: [{ nav: 'turns', label: 'Turns' }],
+                // ⚖ Sync constitution had no button anywhere: mirroring the
+                // shared CLAUDE.md to the AGENTS.md files the other engines read
+                // was reachable from the command palette and the bridge only, so
+                // the one operation that touches EVERY agent at once was the one
+                // you could not click. It belongs on the board that is about the
+                // whole farm rather than any single agent.
+                related: [
+                    { nav: 'turns', label: 'Turns' },
+                    {
+                        action: 'syncConstitution', label: '⚖ Sync constitution',
+                        title: 'Mirror the shared constitution (the nest root\'s own CLAUDE.md) to the AGENTS.md files Codex and Antigravity read. CLAUDE.md is only read, never written; a hand-edited AGENTS.md is reported, not overwritten.'
+                    }
+                ],
                 guide: 'dashboard'
             })}
             ${kpis}

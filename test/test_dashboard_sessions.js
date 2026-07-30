@@ -514,9 +514,15 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 {
     const js = fs.readFileSync(path.join(__dirname, '..', 'media', 'dashboard.js'), 'utf8');
     // the controls string nests template literals, so read the file, not a slice
-    const bar = js.slice(js.indexOf('controls: `'), js.indexOf('related: [{ nav'));
+    const bar = js.slice(js.indexOf('controls: `'), js.indexOf('related: ['));
     ok('the first week is day by day', /\[1, 2, 3, 4, 5, 6, 7\]/.test(bar));
     ok('…the longer spans are still there', /\[14, 30, 90, 180, 365\]/.test(bar));
+    // ‼️ One control, one unit. The first week was drawn as bare digits beside a
+    // "14d 30d 90d" segment, so half the same bar had a unit and half did not —
+    // and a lone "5" next to "14d" reads as anything but five days.
+    ok('every range button carries its unit',
+        (bar.match(/\$\{r\}d<\/button>/g) || []).length === 2
+        && !/\$\{r\}<\/button>/.test(bar));
     ok('…and two dates are a range you can pick', /data-range="custom"/.test(bar)
         && /id="dash-from"/.test(bar) && /id="dash-to"/.test(bar));
 
@@ -533,6 +539,30 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     ok('a picked range says what it is on the card', /rangeLabel\(\)/.test(js));
     ok('…and "custom" opens on the span you were already looking at',
         /rangeFrom = d\[0\]/.test(js));
+}
+
+// ---------- ⚖ the shared constitution has a button ----------
+// It was reachable from the command palette and the bridge only — so the one
+// operation that touches EVERY agent at once was the one you could not click.
+{
+    const js = fs.readFileSync(path.join(__dirname, '..', 'media', 'dashboard.js'), 'utf8');
+    const head = fs.readFileSync(path.join(__dirname, '..', 'media', 'pageHeader.js'), 'utf8');
+    ok('the dashboard asks for a Sync constitution button',
+        /action: 'syncConstitution'/.test(js) && /Sync constitution/.test(js));
+    ok('…in the row with the destinations, not among the range controls',
+        js.indexOf("action: 'syncConstitution'") > js.indexOf('related: ['));
+    ok('the header renders a `related` entry that is an ACTION as a button',
+        /if \(r\.action\)/.test(head) && /data-afact="\$\{r\.action\}"/.test(head));
+    ok('…and wires it to one message the page owns',
+        /data-afact\]/.test(head) && /type: 'headerAction', action: b\.dataset\.afact/.test(head));
+
+    // The handler CALLS the palette command — the divergence checks, the modal
+    // and the .afbak backups are that command's, and there is one of them.
+    const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'dashboard.ts'), 'utf8');
+    ok('the panel routes headerAction to the command the palette calls',
+        /case 'headerAction'/.test(panel)
+        && /msg\.action === 'syncConstitution'/.test(panel)
+        && /executeCommand\('agentfarm\.syncConstitution'\)/.test(panel));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
