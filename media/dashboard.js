@@ -88,7 +88,26 @@
         if (ms > 0) { puTimer = setInterval(() => askPlanUsage(false), ms); }
     }
 
+    /**
+     * ‼️ A RETAINED PAGE COMES BACK WHERE YOU LEFT IT, NOT WHERE YOU WERE SENT.
+     *
+     * The host asks for this when the click that opened the page was on a
+     * status-bar indicator — cost today, the plan percentages — every one of
+     * which is drawn at the TOP of this page. Reveal alone restored the last
+     * scroll position, so the answer to the question you just asked was often
+     * three screens up and the click looked like it had done nothing.
+     *
+     * No smooth behaviour: this is not the reader scrolling, it is the page
+     * being opened, and an animation on arrival reads as a glitch.
+     */
+    function scrollToTop() {
+        if (window.scrollTo) { window.scrollTo(0, 0); }
+        if (document.documentElement) { document.documentElement.scrollTop = 0; }
+        if (document.body) { document.body.scrollTop = 0; }
+    }
+
     window.addEventListener('message', ev => {
+        if (ev.data.type === 'scrollTo') { if (ev.data.target === 'top') { scrollToTop(); } return; }
         if (sessTable.onMessage(ev)) { return; }
         if (ev.data.type === 'compareWindow') { cmpRows = ev.data.rows || []; render(); return; }
         if (ev.data.type === 'planUsage') {

@@ -180,6 +180,10 @@ export class ConsolePanel {
                 // ConsoleDeps.estimateCost.
                 turnTokens: s.turnTokensAt !== undefined ? Math.max(0, s.tokens - s.turnTokensAt) : 0,
                 turnCost: s.turnUsage ? this.deps.estimateCost(s.model ?? '', s.turnUsage) : 0,
+                // …and what it is thinking WITH. Not `model`/`effort` above: a
+                // switch applies from the next turn, so the pickers and the
+                // running turn can legitimately disagree (see turnModel).
+                turnModel: s.turnModel ?? '', turnEffort: s.turnEffort ?? '',
                 // …and once it is over, the same strip keeps saying what it cost
                 // until your next prompt starts a new turn (see lastTurn)
                 lastTurn: s.lastTurn ?? null,

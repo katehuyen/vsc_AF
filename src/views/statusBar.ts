@@ -3,6 +3,27 @@ import { LiveMonitor } from '../core/live';
 import { SessionIndex } from '../core/sessions';
 import { dayKey, fmtTokens, fmtUSD } from '../core/util';
 
+/**
+ * What a click on an Agent Farm status-bar indicator means: open the Dashboard
+ * **at the top**.
+ *
+ * ‼️ THE PAGE IS RETAINED WHEN HIDDEN, SO REVEALING IT IS NOT THE SAME AS
+ * OPENING IT. It comes back exactly where you last left it — and where you last
+ * left it is usually deep in the sessions table, with the KPI row and the plan
+ * usage card several screens above. Every one of these indicators shows a
+ * number from the TOP of that page (cost today, the plan percentages), so a
+ * click on one is a question the top of the page answers; landing anywhere else
+ * makes the click look broken and costs a scroll to undo.
+ *
+ * Shared by both indicators on purpose: two neighbours in the same cluster that
+ * answer the same gesture differently is itself the bug.
+ */
+export const OPEN_DASHBOARD_AT_TOP: vscode.Command = {
+    command: 'agentfarm.openDashboard',
+    title: 'Open the Dashboard at the top',
+    arguments: [{ scrollTo: 'top' }]
+};
+
 export interface StatusBarExtras {
     /** G1: count of items that block work (permission / browser approval / stalled). */
     blocking?: () => number;
@@ -19,7 +40,7 @@ export class FarmStatusBar implements vscode.Disposable {
     constructor(private index: SessionIndex, private live?: LiveMonitor,
         private extras?: StatusBarExtras) {
         this.item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 90);
-        this.item.command = 'agentfarm.openDashboard';
+        this.item.command = OPEN_DASHBOARD_AT_TOP;
         this.item.show();
         this.update();
         this.timer = setInterval(() => this.update(), 30_000);
@@ -48,7 +69,7 @@ export class FarmStatusBar implements vscode.Disposable {
             this.item.command = 'agentfarm.openNeeds';
         } else {
             this.item.backgroundColor = undefined;
-            this.item.command = 'agentfarm.openDashboard';
+            this.item.command = OPEN_DASHBOARD_AT_TOP;
         }
         this.item.text = text;
 

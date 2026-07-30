@@ -2726,13 +2726,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'usage.plan',
-            describe: 'Your Claude SUBSCRIPTION rate-limit state as Anthropic reports it — the same figures /usage prints: session (5h) and weekly utilization % with reset times. This is the real quota, not the transcript-derived cost figures the rest of the farm reports. Also returns `beat` — how often the farm is re-reading it (ms) and whether an agent is mid-turn, i.e. how stale a cached answer can be. args: force? (default false — served from the dashboard card\'s cache)',
+            describe: 'Your Claude SUBSCRIPTION rate-limit state as Anthropic reports it — the same figures /usage prints: session (5h) and weekly utilization % with reset times. This is the real quota, not the transcript-derived cost figures the rest of the farm reports. Also returns `beat` — how often the farm is re-reading it (ms) and whether an agent is mid-turn, i.e. how stale a cached answer can be — and `rateLimitedUntil` (ISO, or null): the endpoint itself pushed back and no automatic read happens until then, so a cached answer is deliberately stale rather than merely old. args: force? (default false — served from the dashboard card\'s cache; force asks even mid-backoff, so use it sparingly)',
             handler: async (args) => {
                 const snap = await planUsage.get(args.force === true);
+                const until = planUsage.rateLimitedUntil();
                 return {
                     state: snap.state, plan: snap.plan, fetchedAt: snap.fetchedAt,
                     note: snap.note,
                     beat: planBeat(),
+                    // ‼️ an agent must be able to tell "nothing has changed" from
+                    // "we are not allowed to look" — the two read identically
+                    // from a cached snapshot alone
+                    rateLimitedUntil: until > Date.now() ? new Date(until).toISOString() : null,
                     bars: snap.bars.map(b => ({
                         id: b.id, title: b.title, percent: b.percent,
                         resetsAt: b.resetsAt ? new Date(b.resetsAt).toISOString() : null
@@ -2970,7 +2975,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'console.sessions',
-            describe: 'The Console sessions this window hosts: status, cost so far, turns, held messages (console.queue reads them), model, effort, permission mode, the turn that just finished (lastTurn: ms/tokens/cost/outcome — null while a turn runs), whatever the session is WAITING ON YOU for (asking: a question that has parked its turn — console.answer settles it) and the last few messages. args: id? (one session, with more of its transcript), messages? (how many messages to include, default 0)',
+            describe: 'The Console sessions this window hosts: status, cost so far, turns, held messages (console.queue reads them), model, effort, permission mode, what the RUNNING turn is thinking with (turnModel/turnEffort — a switch applies from the next turn, so these can differ from model/effort), the turn that just finished (lastTurn: ms/tokens/cost/outcome/model/effort — null while a turn runs), whatever the session is WAITING ON YOU for (asking: a question that has parked its turn — console.answer settles it) and the last few messages. args: id? (one session, with more of its transcript), messages? (how many messages to include, default 0)',
             handler: (args) => {
                 const want = optStr(args, 'id');
                 const take = typeof args.messages === 'number' ? Math.max(0, Math.floor(args.messages)) : 0;
@@ -2983,8 +2988,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // the whole conversation's tokens — a resumed session
                     // carries what it spent before this window (CarriedTotals)
                     tokens: s.tokens,
-                    // …and what the turn running right now has spent of them
+                    // …and what the turn running right now has spent of them,
+                    // and what it is spending it ON (see turnModel)
                     turnTokens: s.turnTokensAt !== undefined ? Math.max(0, s.tokens - s.turnTokensAt) : 0,
+                    turnModel: s.turnModel ?? null, turnEffort: s.turnEffort ?? null,
                     // …and, once the ball is back with the user, what the turn
                     // that just ended really cost (the CLI's own figure)
                     lastTurn: s.lastTurn ?? null,
@@ -4518,9 +4525,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const planBeatMs = () => refreshMs(
         fleetActive(),
         Math.max(0, cfg().get<number>('planUsageRefreshMinutes', 5)),
-        Math.max(0, cfg().get<number>('planUsageActiveRefreshSeconds', 15)));
+        Math.max(0, cfg().get<number>('planUsageActiveRefreshSeconds', 60)));
     const planBeat = () => ({ ms: planBeatMs(), active: fleetActive() });
-    const planUsage = new PlanUsageService({ ttlMs: planBeatMs });
+    // …and the CLI version the request identifies itself with, which is what
+    // decides WHICH rate-limit bucket the endpoint puts us in (see planusage.ts).
+    // No `claude --version` is spawned for it: every transcript line carries the
+    // version that wrote it, so the newest session already knows.
+    const installedCliVersion = (): string | undefined => {
+        let best: { ts: number; version: string } | undefined;
+        for (const s of index.all()) {
+            const ts = s.lastTs || s.mtime;
+            if (s.version && (!best || ts > best.ts)) { best = { ts, version: s.version }; }
+        }
+        return best?.version;
+    };
+    const planUsage = new PlanUsageService({ ttlMs: planBeatMs, cliVersion: installedCliVersion });
 
     // …and the two percentages that decide whether to start the next long turn,
     // permanently in the status bar rather than behind a page you have to open
@@ -6212,8 +6231,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
 
     context.subscriptions.push(
-        vscode.commands.registerCommand('agentfarm.openDashboard', () => {
-            DashboardPanel.show(dashboardDeps);
+        // arg is optional: the palette, the nav and every notification pass
+        // nothing; the status-bar indicators pass { scrollTo: 'top' }.
+        vscode.commands.registerCommand('agentfarm.openDashboard', (arg?: { scrollTo?: 'top' }) => {
+            DashboardPanel.show(dashboardDeps, arg?.scrollTo === 'top' ? { scrollTo: 'top' } : undefined);
         }),
 
         vscode.commands.registerCommand('agentfarm.openMissions', () => {

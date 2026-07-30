@@ -16,18 +16,32 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 const code = require(path.join(__dirname, 'lib_shared_media.js')).sharedMedia()
     + fs.readFileSync(path.resolve(__dirname, '../media/console.js'), 'utf8');
 
+// ‼️ parseModel is stubbed with the REAL one, not a lookalike. The strip shortens
+// model ids the way every other surface does, and a hand-written stub here would
+// let the two drift while the test kept passing.
+const realParseModel = (() => {
+    const box = vm.createContext({ window: {} });
+    vm.runInContext(fs.readFileSync(path.resolve(__dirname, '../media/charts.js'), 'utf8'), box);
+    return box.window.AFCharts.parseModel;
+})();
+
 // ---------- fake DOM ----------
 const els = {};
 function mkEl(id) {
     return {
-        id, _html: '', listeners: {}, hidden: true, textContent: '',
+        // a freshly built element is NOT hidden — `hidden` is an attribute the
+        // page has to put there, and paste is the tool that never gets one
+        id, _html: '', listeners: {}, hidden: false, textContent: '',
         // _writes / _focus are how the test proves the page stopped rebuilding
         // itself (and re-focusing the textarea) on every streamed line.
         _writes: 0, _focus: 0,
         scrollTop: 0, scrollHeight: 1000, clientHeight: 300,
         set innerHTML(v) { this._html = v; this._writes++; }, get innerHTML() { return this._html; },
         addEventListener(ev, fn) { this.listeners[ev] = fn; },
-        focus() { this._focus++; }, value: ''
+        focus() { this._focus++; }, value: '',
+        // where the caret is — the whole argument of the ⎘ tool
+        selectionStart: 0, selectionEnd: 0,
+        setSelectionRange(a, b) { this.selectionStart = a; this.selectionEnd = b; }
     };
 }
 const app = () => els.app || (els.app = mkEl('app'));
@@ -48,7 +62,8 @@ const sandbox = {
         AFCharts: {
             esc: s => String(s === undefined || s === null ? '' : s).replace(/</g, '&lt;'),
             fmtUSD: v => '$' + (v || 0),
-            fmtTok: v => v + 't'
+            fmtTok: v => v + 't',
+            parseModel: realParseModel
         },
         AFHeader: { html: () => '<header>', wire: () => { } },
         addEventListener: (ev, fn) => { if (ev === 'message') { msgHandler = fn; } }
@@ -102,13 +117,23 @@ const sandbox = {
     // assertion sits right under the click that caused it
     navigator: {
         clipboard: {
-            writeText: v => { copied.push(v); return { then: fn => { fn(); } }; }
+            writeText: v => { copied.push(v); return { then: fn => { fn(); } }; },
+            // ⎘ reads it back; `clipText` is what a test puts there first, and
+            // the thenable resolves synchronously for the same reason
+            readText: () => ({
+                then: (fn, err) => {
+                    if (clipText === null) { if (err) { err(new Error('denied')); } return; }
+                    fn(clipText);
+                }
+            })
         }
     },
     console
 };
 /** Everything the page has copied to the clipboard, newest last. */
 const copied = [];
+/** What ⎘ will find on the clipboard; null = the host refuses the read. */
+let clipText = '';
 /** Timers a test wants to hold instead of firing (the ✓ receipt's lifetime). */
 const heldTimers = [];
 const timers = [];
@@ -478,7 +503,12 @@ const html = allHtml;
     ok('…saying what it is doing right now, not just "thinking"',
         /Read D:\/a\/b\.md/.test(working()));
     ok('…and how long it has been at it', /12s/.test(working()));
-    ok('…with the way to stop it', /Interrupt/.test(working()));
+    // ‼️ The way to stop it is a BUTTON, and it is on screen while the turn runs
+    // — the strip used to spend its last column spelling that out in words, two
+    // centimetres above the button itself (see workingHtml).
+    ok('…with the way to stop it on the composer, not spelled out on the strip',
+        /id="c-int"/.test(els['c-live'] ? els['c-live']._html : '')
+        && !/Interrupt/.test(working()));
 
     const first = /<span class="spin">(.)<\/span>/.exec(working())[1];
     let spun = false;
@@ -566,6 +596,56 @@ const html = allHtml;
     // nothing has finished yet in this session → nothing to say
     push(data(CONVO.slice(), { status: 'idle', lastTurn: null }));
     ok('a session with no finished turn shows an empty strip', working() === '');
+}
+
+// ---------- …and WHAT is doing the thinking ----------
+// ‼️ The strip priced the turn and timed it without ever saying what was doing
+// it — so "why is this one slow/dear?" ("opus 5 on xhigh") could only be
+// answered by looking at the pickers below, which describe the NEXT turn.
+{
+    const working = () => (els['c-working'] ? els['c-working']._html : '');
+
+    push(data(CONVO.slice(), {
+        status: 'working', turnStartedAt: Date.now() - 9000,
+        turnModel: 'claude-opus-5-20260514', turnEffort: 'xhigh'
+    }));
+    ok('the running turn names the model it is thinking with', />opus 5 · xhigh</.test(working()));
+    ok('…shortened the way every other surface shortens a model id',
+        !/claude-opus-5-20260514</.test(working()));
+    ok('…and the hover says it is the turn\'s, not the picker\'s',
+        /applies from the NEXT turn/.test(working()));
+
+    // an effort the session never asked for is the CLI's own default, and
+    // naming it would be a guess
+    push(data(CONVO.slice(), {
+        status: 'working', turnStartedAt: Date.now(), turnModel: 'claude-haiku-4-5', turnEffort: ''
+    }));
+    ok('a session with no effort chosen shows the model alone, not "default"',
+        /haiku 4\.5</.test(working()) && !/default/.test(working()));
+
+    // a model id we do not recognise is still the answer — printed, not dropped
+    push(data(CONVO.slice(), {
+        status: 'working', turnStartedAt: Date.now(), turnModel: 'some-local-llm-7b', turnEffort: ''
+    }));
+    ok('an unfamiliar model id is printed as it came, never invented',
+        /some-local-llm-7b</.test(working()));
+
+    // before system:init there is nothing honest to say
+    push(data(CONVO.slice(), {
+        status: 'working', turnStartedAt: Date.now(), turnModel: '', turnEffort: ''
+    }));
+    ok('a turn whose model the CLI has not named yet says nothing about it',
+        !/wbrain/.test(working()));
+
+    // …and the finished turn keeps what IT ran on, which a later switch cannot rewrite
+    push(data(CONVO.slice(), {
+        status: 'idle', lastTurn: {
+            endedAt: Date.now(), ms: 41200, tokens: 4200, cost: 0.031, outcome: 'done',
+            model: 'claude-sonnet-4-5-20250929', effort: 'medium'
+        }
+    }));
+    ok('the finished turn still says what it ran on', /sonnet 4\.5 · medium</.test(working()));
+    ok('…in the past tense, because it is over', /ran on/.test(working()));
 
     // The agent's folder really is fixed once the process is up; the model, the
     // effort and the permission mode are not — all three are live pickers (see
@@ -884,20 +964,24 @@ const html = allHtml;
     type('');
 }
 
-// ---------- the box's own three tools: copy · cut · clear --------------------
+// ---------- the box's own four tools: paste · copy · cut · clear -------------
 // ‼️ They act on the TEXT and never on the agent. Starting a message over, or
 // lifting it out to paste elsewhere, was a keyboard-only job (select all, then
 // a chord) on a page whose every other control is a button.
 {
     const type = v => { els['c-text'].value = v; els['c-text'].listeners.input(); };
-    const tools = () => els['c-tools'];
+    const drafty = () => ['c-copy', 'c-cut', 'c-clear'].map(id => els[id].hidden);
     const click = id => els[id].listeners.click({ preventDefault() { } });
 
     type('');
-    ok('an empty box shows no tools — a Clear with nothing to clear is a lie',
-        tools().hidden === true);
+    ok('an empty box shows no draft tools — a Clear with nothing to clear is a lie',
+        drafty().every(h => h === true));
+    // ‼️ …but PASTE is exactly the tool you want on an empty box: its input is
+    // the clipboard, so hiding it with the others would hide it when it matters.
+    ok('…while ⎘ stays, because an empty box is its normal case',
+        els['c-paste'].hidden === false);
     type('panoya alınacak metin');
-    ok('typing brings them out', tools().hidden === false);
+    ok('typing brings the other three out', drafty().every(h => h === false));
 
     // ⧉ copy — the box keeps the text, the clipboard gets it
     posted.length = 0;
@@ -925,7 +1009,7 @@ const html = allHtml;
     click('c-cut');
     ok('✂ copies it and empties the box in one click',
         copied.length === 1 && copied[0] === 'panoya alınacak metin' && els['c-text'].value === '');
-    ok('…so the tools go with the text', tools().hidden === true);
+    ok('…so the draft tools go with the text', drafty().every(h => h === true));
     ok('…and Send goes dead again, without waiting for the host',
         els['c-send'].disabled === true);
     ok('…still without a word to the agent', posted.length === 0);
@@ -934,7 +1018,7 @@ const html = allHtml;
     type('yanlış yazdım, baştan alayım');
     copied.length = 0;
     click('c-clear');
-    ok('✕ empties the box', els['c-text'].value === '' && tools().hidden === true);
+    ok('✕ empties the box', els['c-text'].value === '' && drafty().every(h => h === true));
     ok('…without touching the clipboard', copied.length === 0);
     ok('…and without sending anything', posted.length === 0);
 
@@ -943,6 +1027,106 @@ const html = allHtml;
     click('c-copy');
     ok('a click with nothing in the box does nothing at all',
         copied.length === 0 && posted.length === 0 && els['c-text'].value === '');
+}
+
+// ---------- ⎘ paste: the clipboard, at the caret, WITH the space ------------
+// ‼️ THE ONE THING A PASTE BUTTON GETS WRONG IS THE SPACE. What lands in a
+// prompt is almost always a name lifted from elsewhere, and it lands right after
+// the word you were typing — a splice at the caret welds them together and the
+// fix costs a click into the middle of what you just pasted.
+{
+    // put text in the box the way typing does (so the page's own draft follows),
+    // then stand the caret where the test wants it
+    const caret = (v, at, to) => {
+        els['c-text'].value = v;
+        els['c-text'].listeners.input();
+        els['c-text'].selectionStart = at;
+        els['c-text'].selectionEnd = to === undefined ? at : to;
+    };
+    const click = id => els[id].listeners.click({ preventDefault() { } });
+    const paste = () => click('c-paste');
+
+    clipText = 'src/core/live.ts';
+
+    // welded: a word character immediately left of the caret
+    caret('look at', 7);
+    paste();
+    ok('a paste onto the end of a word gets a space put in first',
+        els['c-text'].value === 'look at src/core/live.ts');
+    ok('…and the caret is left after what was pasted, not before it',
+        els['c-text'].selectionStart === 'look at src/core/live.ts'.length);
+    // ‼️ the DRAFT is state, not just characters: a paste that only wrote to the
+    // box would leave Send dead and Send-after-turn disabled on a full box
+    ok('…and the draft the Send buttons read went with it', els['c-send'].disabled === false);
+
+    // already spaced: nothing added, because a double space is the same bug
+    caret('look at ', 8);
+    paste();
+    ok('a space already there is not doubled', els['c-text'].value === 'look at src/core/live.ts');
+
+    // the very start of the box has no left neighbour at all
+    caret('', 0);
+    paste();
+    ok('a paste into an empty box is untouched', els['c-text'].value === 'src/core/live.ts');
+
+    // a newline is whitespace too, and so is an opening bracket
+    caret('read:\n', 6);
+    paste();
+    ok('a paste at the start of a new line is untouched', els['c-text'].value === 'read:\nsrc/core/live.ts');
+    caret('read (', 6);
+    paste();
+    ok('…and so is one right after an opening bracket', els['c-text'].value === 'read (src/core/live.ts');
+
+    // …and mid-text: what is to the RIGHT is left alone, because that is where
+    // the caret stays and the next keystroke is the user's
+    caret('open  now', 5);
+    paste();
+    ok('a paste in the middle leaves what follows it alone',
+        els['c-text'].value === 'open src/core/live.ts now');
+
+    // clipboard text that brings its own leading space is not given a second
+    clipText = ' already-spaced';
+    caret('word', 4);
+    paste();
+    ok('clipboard text that already starts with a space is not given another',
+        els['c-text'].value === 'word already-spaced');
+
+    // a SELECTION is replaced, exactly as Ctrl+V would
+    clipText = 'NEW';
+    caret('keep OLD end', 5, 8);
+    paste();
+    ok('a selection is replaced, not pushed aside', els['c-text'].value === 'keep NEW end');
+
+    // ‼️ the receipt: a paste is visible in the box, but the ✓ is what says the
+    // clipboard READ succeeded rather than silently returning nothing
+    clipText = 'x';
+    caret('', 0);
+    heldTimers.length = 0;
+    sandbox.setTimeout = fn => { heldTimers.push(fn); return heldTimers.length; };
+    paste();
+    ok('⎘ answers the click with a ✓ you can see',
+        els['c-paste'].textContent === '✓' && /\bdone\b/.test(els['c-paste'].className || ''));
+    heldTimers.forEach(fn => fn());
+    ok('…which goes away, leaving the tool as it was', els['c-paste'].textContent === '⎘');
+    sandbox.setTimeout = fn => { fn(); return 0; };
+
+    // nothing to paste, and a host that refuses: the box is untouched and
+    // nothing is said to the agent
+    posted.length = 0;
+    clipText = '';
+    caret('unchanged', 9);
+    paste();
+    ok('an empty clipboard changes nothing', els['c-text'].value === 'unchanged');
+    clipText = null;
+    paste();
+    ok('a refused clipboard read changes nothing and crashes nothing',
+        els['c-text'].value === 'unchanged' && posted.length === 0);
+    clipText = '';
+
+    // ‼️ and it never talks to the agent — it is a text tool like its neighbours
+    ok('…and no paste ever sent anything', !posted.some(m => m.type === 'send'));
+    els['c-text'].value = '';
+    els['c-text'].listeners.input();
 }
 
 // ---------- what is allowed to move a card ----------

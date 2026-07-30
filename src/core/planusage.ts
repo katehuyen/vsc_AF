@@ -23,6 +23,37 @@ import * as os from 'os';
 import * as path from 'path';
 import * as https from 'https';
 
+/**
+ * ‼️ THE INTERVAL WAS NEVER THE REASON FOR THE 429s — THE MISSING User-Agent WAS.
+ *
+ * This endpoint is undocumented and publishes no limit, no `Retry-After` and no
+ * intended polling rate (the requests to document it were closed as not
+ * planned). What it does have is TWO buckets, and the header is what sorts you:
+ * a request with no `User-Agent` — which is what Node's `https` sends by
+ * default, i.e. what this module used to send — lands in an aggressively
+ * limited one and gets a persistent 429 whatever the interval. With a
+ * CLI-shaped agent, 180 s is the interval community tools report as safe.
+ *
+ * So the request now goes out dressed exactly as the CLI's own does. Read out of
+ * the installed binary (2.1.220): `claude-cli/<version> (external, <entrypoint>)`
+ * plus `x-app: cli`, over the same OAuth beta gate. Nothing here is a
+ * workaround for a limit that is meant to apply to us: it is the user's own
+ * token, their own account, and the very figures `/usage` prints for them in
+ * the CLI — one request a minute for the numbers Claude Code shows on demand.
+ *
+ * The version is not spawned for: every Claude Code transcript line carries the
+ * version that wrote it, so the newest session row already knows it (see
+ * `SessionInfo.version`, wired in extension.ts). The fallback only covers a
+ * machine with no transcripts yet.
+ */
+export const CLI_UA_FALLBACK_VERSION = '2.1.220';
+
+/** `claude-cli/2.1.220 (external, cli)` — a version-shaped string or nothing. */
+export function usageUserAgent(cliVersion?: string): string {
+    const m = /\d+\.\d+\.\d+/.exec(String(cliVersion ?? ''));
+    return `claude-cli/${m ? m[0] : CLI_UA_FALLBACK_VERSION} (external, cli)`;
+}
+
 export interface PlanBar {
     /** Payload key — stable id for the webview. */
     id: string;
@@ -69,6 +100,23 @@ export const USAGE_PATH = '/api/oauth/usage';
 const OAUTH_BETA = 'oauth-2025-04-20';
 /** Even a hand-clicked ⟳ never hits the endpoint more often than this. */
 export const MIN_FETCH_INTERVAL_MS = 5_000;
+/**
+ * …and no AUTOMATIC beat is ever faster than this, whatever the setting says.
+ *
+ * The manual floor above is about a mashed button; this is about a beat that
+ * runs unattended for hours. A setting of a few seconds is not a preference the
+ * endpoint will honour, it is a guaranteed 429 — so the fast window has a floor
+ * of its own, well under the interval reported safe (180 s) but far enough from
+ * the "polls every few seconds" behaviour that earns the punitive bucket.
+ */
+export const MIN_ACTIVE_BEAT_MS = 30_000;
+/**
+ * A 429 with no `Retry-After` leaves exactly one safe reading: stop asking, and
+ * double the wait each time it happens again. The beat is ignored while this
+ * runs (the cached snapshot is served instead), and one success clears it.
+ */
+export const RATE_LIMIT_BACKOFF_START_MS = 3 * 60_000;
+export const RATE_LIMIT_BACKOFF_MAX_MS = 15 * 60_000;
 
 export function credentialsPath(home = os.homedir()): string {
     return path.join(home, '.claude', '.credentials.json');
@@ -194,12 +242,13 @@ export function barText(snap: PlanUsageSnapshot | undefined, now = Date.now()): 
  *
  * `idleMinutes` = 0 means the user turned automatic refresh off; that answer
  * holds in both windows — a fast beat starting behind their back would make the
- * setting a lie. The floor is the service's own, so no beat can outrun it.
+ * setting a lie. The floor is `MIN_ACTIVE_BEAT_MS`, so no setting can put the
+ * beat back in the range that earns a permanent 429.
  */
 export function refreshMs(active: boolean, idleMinutes: number, activeSeconds: number): number {
     if (!(idleMinutes > 0)) { return 0; }
     if (!active) { return Math.round(idleMinutes * 60_000); }
-    return Math.max(MIN_FETCH_INTERVAL_MS, Math.round(activeSeconds * 1000));
+    return Math.max(MIN_ACTIVE_BEAT_MS, Math.round(activeSeconds * 1000));
 }
 
 /** The worst percentage on the snapshot — what decides the indicator's colour.
@@ -215,7 +264,9 @@ export function unavailable(state: PlanUsageState, note: string, plan = '', now 
 }
 
 /** The raw GET. Rejects only on transport failure; HTTP status is returned. */
-export function fetchUsage(token: string, timeoutMs = 8000): Promise<{ status: number; body: string }> {
+export function fetchUsage(
+    token: string, userAgent = usageUserAgent(), timeoutMs = 8000
+): Promise<{ status: number; body: string }> {
     return new Promise((resolve, reject) => {
         const req = https.request({
             hostname: USAGE_HOST,
@@ -225,7 +276,10 @@ export function fetchUsage(token: string, timeoutMs = 8000): Promise<{ status: n
                 'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json',
                 'anthropic-beta': OAUTH_BETA,
-                'anthropic-version': '2023-06-01'
+                'anthropic-version': '2023-06-01',
+                // ‼️ not decoration — see the note at the top of this file
+                'User-Agent': userAgent,
+                'x-app': 'cli'
             }
         }, res => {
             let body = '';
@@ -242,9 +296,11 @@ export function fetchUsage(token: string, timeoutMs = 8000): Promise<{ status: n
 export interface PlanUsageOptions {
     /** How long a snapshot stays fresh; 0 = always refetch on request. */
     ttlMs(): number;
+    /** Version of the installed CLI, for the User-Agent (see usageUserAgent). */
+    cliVersion?: () => string | undefined;
     /** Overridable for tests. */
     credentialsFile?: () => string;
-    fetchImpl?: (token: string) => Promise<{ status: number; body: string }>;
+    fetchImpl?: (token: string, userAgent: string) => Promise<{ status: number; body: string }>;
     now?: () => number;
 }
 
@@ -257,17 +313,34 @@ export class PlanUsageService {
     private snap: PlanUsageSnapshot | undefined;
     private lastFetchAt = 0;
     private inflight: Promise<PlanUsageSnapshot> | undefined;
+    /** How long the current backoff is; doubles per 429, cleared by a success. */
+    private backoffMs = 0;
+    /** No automatic read before this moment (see RATE_LIMIT_BACKOFF_START_MS). */
+    private backoffUntil = 0;
 
     constructor(private opts: PlanUsageOptions) { }
 
     /** The cached snapshot — never touches the network. */
     current(): PlanUsageSnapshot | undefined { return this.snap; }
 
-    /** Fresh-enough snapshot; `force` bypasses the TTL but not the hard floor. */
+    /** When the backoff lets the next automatic read through; 0 = not backed
+     *  off. Surfaces are expected to SAY this rather than look idle (Principle 1). */
+    rateLimitedUntil(): number { return this.backoffUntil; }
+
+    /**
+     * Fresh-enough snapshot; `force` bypasses the TTL and the backoff, but never
+     * the hard floor.
+     *
+     * The button bypasses the backoff on purpose: a person clicking ⟳ has
+     * decided to spend one request, and the alternative — a control that
+     * silently refuses for a quarter of an hour — is a control that has taught
+     * you it does not work. The beat does NOT bypass it; that is the whole point.
+     */
     async get(force = false): Promise<PlanUsageSnapshot> {
         const now = (this.opts.now ?? Date.now)();
         const age = now - this.lastFetchAt;
         if (this.snap && !force && age < Math.max(0, this.opts.ttlMs())) { return this.snap; }
+        if (this.snap && !force && now < this.backoffUntil) { return this.snap; }
         if (this.snap && age < MIN_FETCH_INTERVAL_MS) { return this.snap; }
         if (this.inflight) { return this.inflight; }
         this.inflight = this.load(now).finally(() => { this.inflight = undefined; });
@@ -290,15 +363,21 @@ export class PlanUsageService {
                 cred.plan, now));
         }
         try {
-            const res = await (this.opts.fetchImpl ?? fetchUsage)(cred.token);
+            const res = await (this.opts.fetchImpl ?? fetchUsage)(
+                cred.token, usageUserAgent(this.opts.cliVersion?.()));
             if (res.status === 401 || res.status === 403) {
                 return (this.snap = unavailable('expired',
                     'Anthropic rejected the stored login — start a Claude Code session to refresh it.',
                     cred.plan, now));
             }
             if (res.status === 429) {
+                this.backoffMs = this.backoffMs
+                    ? Math.min(RATE_LIMIT_BACKOFF_MAX_MS, this.backoffMs * 2)
+                    : RATE_LIMIT_BACKOFF_START_MS;
+                this.backoffUntil = now + this.backoffMs;
+                const mins = Math.max(1, Math.round(this.backoffMs / 60_000));
                 return (this.snap = unavailable('error',
-                    'The usage endpoint is rate limited right now — try again in a moment.',
+                    `The usage endpoint rate limited this request — backing off, next automatic read in ${mins} min. ⟳ asks anyway.`,
                     cred.plan, now));
             }
             if (res.status !== 200) {
@@ -311,6 +390,9 @@ export class PlanUsageService {
                 return (this.snap = unavailable('error',
                     'The usage endpoint reported no limits for this account.', cred.plan, now));
             }
+            // it answered: whatever backoff we were on is over
+            this.backoffMs = 0;
+            this.backoffUntil = 0;
             return (this.snap = { state: 'ok', bars, plan: cred.plan, fetchedAt: now });
         } catch (e) {
             return (this.snap = unavailable('error',

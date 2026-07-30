@@ -163,6 +163,25 @@ export interface ConsoleSessionState {
     /** token total when this turn began — the difference is what the turn spent */
     turnTokensAt?: number;
     /**
+     * What the RUNNING turn is thinking with — the model and effort as they were
+     * when it started, not as they are now.
+     *
+     * ‼️ A MID-TURN SWITCH APPLIES FROM THE NEXT TURN, SO `model` IS NOT THIS
+     * TURN'S MODEL. `/model` and `/effort` are both accepted mid-conversation
+     * and both take effect one turn later (the CLI says so itself, and so does
+     * the line the switch writes into the transcript). Reading the live pickers
+     * for a strip that says "this turn" would therefore mislabel the turn you
+     * are watching the moment you touch either one — which is exactly when you
+     * are looking.
+     *
+     * `system:init` is the one thing allowed to correct these while the turn
+     * runs: on the first turn it is the CLI telling us what the model REALLY is
+     * (an alias, or nothing at all, is what we had until then), which is a
+     * correction and not a change.
+     */
+    turnModel?: string;
+    turnEffort?: string;
+    /**
      * What the RUNNING turn has spent so far, by kind of token.
      *
      * The CLI reports what a turn cost only when the turn **ends**
@@ -198,6 +217,9 @@ export interface ConsoleSessionState {
         cost: number;
         /** how it ended, in one word: 'done' | 'interrupted' | 'failed' */
         outcome: 'done' | 'interrupted' | 'failed';
+        /** what it was thinking with — see turnModel; '' when never known */
+        model?: string;
+        effort?: string;
     };
     lastTs: number;
     /** why it ended, when it did */
@@ -399,11 +421,17 @@ export function reduceEvent(
     if (type === 'system') {
         const sub = String(o.subtype ?? '');
         if (sub === 'init') {
+            const model = typeof o.model === 'string' ? o.model : state.model;
             return {
                 state: {
                     ...state,
                     sessionId: typeof o.session_id === 'string' ? o.session_id : state.sessionId,
-                    model: typeof o.model === 'string' ? o.model : state.model,
+                    model,
+                    // …and the turn that is running learns it too: init is the CLI
+                    // naming the model we only had an alias (or nothing) for, so
+                    // it is a correction to this turn, not a switch away from it
+                    // (see turnModel).
+                    ...(state.turnStartedAt ? { turnModel: model } : {}),
                     permissionMode: typeof o.permissionMode === 'string' ? o.permissionMode : state.permissionMode,
                     status: state.status === 'starting' ? 'idle' : state.status,
                     lastTs: now
@@ -528,14 +556,19 @@ export function reduceEvent(
                 turns: state.turns + 1,
                 turnStartedAt: undefined,
                 turnTokensAt: undefined,
+                turnModel: undefined,
+                turnEffort: undefined,
                 // the estimate is over: the number above is the CLI's own
                 turnUsage: undefined,
                 // …and it is kept, so the strip above the composer still says
-                // what the turn that just ended cost (see lastTurn)
+                // what the turn that just ended cost — and what it thought with,
+                // which a switch made in the meantime must not rewrite
+                // (see lastTurn)
                 lastTurn: {
                     endedAt: now, ms, tokens: spent || undefined, cost,
                     outcome: !isError ? 'done'
-                        : sub === 'error_during_execution' ? 'interrupted' : 'failed'
+                        : sub === 'error_during_execution' ? 'interrupted' : 'failed',
+                    model: state.turnModel, effort: state.turnEffort
                 },
                 sessionId: typeof o.session_id === 'string' ? o.session_id : state.sessionId
             },
@@ -764,6 +797,7 @@ export function acceptUserText(
     return {
         state: {
             ...state, lastTs: now, status: 'working', turnStartedAt: now, turnTokensAt: state.tokens,
+            turnModel: state.model, turnEffort: state.effort,
             turnUsage: emptyUsage(),
             // Your new prompt is what clears the finished turn's summary — the
             // invariant the strip relies on: lastTurn exists exactly while the
@@ -853,6 +887,7 @@ export function shiftQueued(
         state: {
             ...state, queued: rest, status: 'working', lastTs: now,
             turnStartedAt: now, turnTokensAt: state.tokens, turnUsage: emptyUsage(),
+            turnModel: state.model, turnEffort: state.effort,
             messages: [...state.messages, { id: nextId(), ts: now, role: 'user', text: next }]
         },
         text: next

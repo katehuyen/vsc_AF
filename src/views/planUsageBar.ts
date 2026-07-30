@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { barText, peakPercent, PlanUsageSnapshot, PlanUsageService, untilText } from '../core/planusage';
+import { OPEN_DASHBOARD_AT_TOP } from './statusBar';
 
 /**
  * Your plan's session countdown and two percentages, permanently in view.
@@ -61,7 +62,9 @@ export class PlanUsageBar implements vscode.Disposable {
         // Left, just after the farm item and the notices bell, so the three
         // Agent Farm indicators read as one cluster.
         this.item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 88);
-        this.item.command = 'agentfarm.openDashboard';
+        // …at the TOP of it, where the plan usage card is — see the contract in
+        // statusBar.ts, which both indicators share.
+        this.item.command = OPEN_DASHBOARD_AT_TOP;
         this.lastActive = opts.active();
         this.paint();
         void this.tick();
@@ -128,8 +131,14 @@ export class PlanUsageBar implements vscode.Disposable {
     }
 
     /** Which beat is running, in words — a refresh rate you cannot see is a
-     *  refresh rate you cannot trust (and "why did it not move?" has an answer). */
+     *  refresh rate you cannot trust (and "why did it not move?" has an answer).
+     *  A backoff outranks the beat here, because while one is running the beat is
+     *  NOT what is happening and the figures are deliberately going stale. */
     private beatLine(): string {
+        const until = this.opts.service.rateLimitedUntil();
+        if (until > Date.now()) {
+            return `_Rate limited — backing off, next automatic read ${untilText(until)}._`;
+        }
         const beat = this.opts.beatMs();
         if (beat <= 0) { return '_Automatic refresh is off._'; }
         return this.opts.active()

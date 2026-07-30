@@ -1014,7 +1014,7 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
 
         // the real registration must carry the same contract (this mirror can drift)
         const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
-        const block = src.slice(src.indexOf("op: 'usage.plan'"), src.indexOf("op: 'usage.plan'") + 1200);
+        const block = src.slice(src.indexOf("op: 'usage.plan'"), src.indexOf("op: 'usage.plan'") + 2200);
         ok('extension.ts registers usage.plan against the shared service',
             /force\?/.test(block) && /planUsage\.get\(args\.force === true\)/.test(block)
             && /resetsAt/.test(block));

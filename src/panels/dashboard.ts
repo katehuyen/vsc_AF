@@ -299,10 +299,21 @@ export class DashboardPanel {
     /** Sessions-table row count chosen in the webview's Show box (0 = all). */
     private tableN = DASHBOARD_SESSION_TABLE_N;
 
-    static show(deps: DashboardDeps): void {
+    /**
+     * `scrollTo: 'top'` is for the callers that come from a status-bar
+     * indicator (see OPEN_DASHBOARD_AT_TOP): the page is retained when hidden,
+     * so revealing it lands wherever the reader last left it, which is not where
+     * the number they just clicked is shown. A FRESH panel is at the top by
+     * definition and needs nothing — and could not be told anyway, since its
+     * script is not listening yet.
+     */
+    static show(deps: DashboardDeps, opts?: { scrollTo?: 'top' }): void {
         if (DashboardPanel.current) {
             DashboardPanel.current.panel.reveal();
             DashboardPanel.current.refresh();
+            if (opts?.scrollTo === 'top') {
+                void DashboardPanel.current.panel.webview.postMessage({ type: 'scrollTo', target: 'top' });
+            }
             return;
         }
         const panel = vscode.window.createWebviewPanel(

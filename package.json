@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.44.0",
+  "version": "3.45.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -2576,9 +2576,9 @@
         },
         "agentFarm.planUsageActiveRefreshSeconds": {
           "type": "number",
-          "default": 15,
-          "minimum": 5,
-          "description": "How often the same figures are re-read while at least one agent is mid-turn, in seconds — that is when they are actually moving, and when you are watching them. A session that is open but waiting for your next prompt is idle and uses the minutes setting above. The switch is instant in both directions: a turn starting and a turn ending each trigger one immediate read. Minimum 5 seconds; ignored when planUsageRefreshMinutes is 0 (automatic refresh off)."
+          "default": 60,
+          "minimum": 30,
+          "description": "How often the same figures are re-read while at least one agent is mid-turn, in seconds — that is when they are actually moving, and when you are watching them. A session that is open but waiting for your next prompt is idle and uses the minutes setting above. The switch is instant in both directions: a turn starting and a turn ending each trigger one immediate read. Minimum 30 seconds, and that floor is enforced in code: the endpoint is undocumented and answers a too-frequent poller with a persistent HTTP 429, so a fast setting is not a preference it will honour. A 429 is met with an automatic backoff (3 → 6 → 12 → 15 min) that one success clears; the ⟳ button asks anyway. Ignored when planUsageRefreshMinutes is 0 (automatic refresh off)."
         },
         "agentFarm.planUsageStatusBar": {
           "type": "boolean",

@@ -105,13 +105,15 @@ const LIVE_PAYLOAD = {
             { accessToken: 'tok', expiresAt: 4102444800000, subscriptionType: 'pro' }, over)
     }));
 
-    let calls = 0, reply = { status: 200, body: JSON.stringify(LIVE_PAYLOAD) }, sentToken = '';
+    let calls = 0, reply = { status: 200, body: JSON.stringify(LIVE_PAYLOAD) }, sentToken = '', sentUA = '';
     let clock = 1_000_000;
+    let cliVersion = '2.1.220';
     const svc = (ttl) => new PU.PlanUsageService({
         ttlMs: () => ttl,
         credentialsFile: () => credFile,
         now: () => clock,
-        fetchImpl: (t) => { calls++; sentToken = t; return Promise.resolve(reply); }
+        cliVersion: () => cliVersion,
+        fetchImpl: (t, ua) => { calls++; sentToken = t; sentUA = ua; return Promise.resolve(reply); }
     });
 
     // --- happy path + cache ---
@@ -123,6 +125,8 @@ const LIVE_PAYLOAD = {
     ok('a good response is state:ok with bars and the plan name',
         first.state === 'ok' && first.bars.length === 2 && first.plan === 'pro' && !first.note);
     ok('the stored token is what gets sent', sentToken === 'tok');
+    ok('…and so is the CLI-shaped User-Agent that decides the rate-limit bucket',
+        sentUA === 'claude-cli/2.1.220 (external, cli)');
     ok('the snapshot is now the cache', s.current() === first);
 
     clock += 30_000;
@@ -198,6 +202,107 @@ const LIVE_PAYLOAD = {
     r = await offline.get();
     ok('an offline machine → error carrying the transport reason',
         r.state === 'error' && /ENOTFOUND/.test(r.note) && r.plan === 'pro');
+
+    // ---------- the User-Agent: which bucket the endpoint puts us in ----------
+    // ‼️ THE HEADER, NOT THE INTERVAL, IS WHAT EARNED THE PERSISTENT 429s. A
+    // request with none (Node's default) lands in a punitive bucket whatever the
+    // interval, so this string is load-bearing, not decoration.
+    {
+        ok('the agent is shaped exactly like the CLI\'s own',
+            PU.usageUserAgent('2.1.220') === 'claude-cli/2.1.220 (external, cli)');
+        ok('…a version buried in a longer string is still found',
+            PU.usageUserAgent('claude-code 2.0.9 (win32)') === 'claude-cli/2.0.9 (external, cli)');
+        ok('…and a machine with no transcript yet still sends a version, never a blank',
+            PU.usageUserAgent() === `claude-cli/${PU.CLI_UA_FALLBACK_VERSION} (external, cli)`
+            && PU.usageUserAgent('') === PU.usageUserAgent()
+            && /^claude-cli\/\d+\.\d+\.\d+ \(external, cli\)$/.test(PU.usageUserAgent('nonsense')));
+    }
+
+    // ---------- a 429 is answered by backing off, not by asking again ----------
+    // The endpoint sends no Retry-After, so doubling is the only safe reading —
+    // and the state has to be VISIBLE, or the card just looks frozen.
+    {
+        calls = 0; clock += 10_000_000;
+        reply = { status: 429, body: '' };
+        const bo = svc(1_000);
+        const hit = await bo.get();
+        ok('a 429 says it is backing off and when it will try again',
+            hit.state === 'error' && /rate limited/.test(hit.note) && /3 min/.test(hit.note));
+        ok('…and the backoff is readable from outside, not just felt',
+            bo.rateLimitedUntil() === clock + PU.RATE_LIMIT_BACKOFF_START_MS);
+
+        clock += 60_000;                       // TTL long past, backoff not
+        await bo.get();
+        ok('the beat is refused while the backoff runs', calls === 1);
+
+        clock += PU.RATE_LIMIT_BACKOFF_START_MS;
+        await bo.get();
+        ok('once it expires the beat is let through again', calls === 2);
+        ok('…and a second 429 doubles the wait',
+            bo.rateLimitedUntil() === clock + 2 * PU.RATE_LIMIT_BACKOFF_START_MS);
+
+        // ‼️ the button is not the beat: a person clicking ⟳ has decided to
+        // spend the request, and a control that refuses for 15 minutes is a
+        // control that has taught you it is broken
+        clock += PU.MIN_FETCH_INTERVAL_MS + 1;
+        await bo.get(true);
+        ok('⟳ asks anyway, mid-backoff', calls === 3);
+
+        reply = { status: 200, body: JSON.stringify(LIVE_PAYLOAD) };
+        clock += 10_000_000;
+        const good = await bo.get(true);
+        ok('one success clears the backoff completely',
+            good.state === 'ok' && bo.rateLimitedUntil() === 0);
+
+        // and the doubling has a ceiling
+        reply = { status: 429, body: '' };
+        let last = 0;
+        for (let i = 0; i < 12; i++) {
+            clock += 10_000_000;
+            await bo.get();
+            last = bo.rateLimitedUntil() - clock;
+        }
+        ok('the doubling stops at the cap instead of running to hours',
+            last === PU.RATE_LIMIT_BACKOFF_MAX_MS);
+        reply = { status: 200, body: JSON.stringify(LIVE_PAYLOAD) };
+    }
+
+    // ---------- the indicator says which of the two it is doing ----------
+    {
+        const barSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'views', 'planUsageBar.ts'), 'utf8');
+        ok('a backoff outranks the beat in the tooltip — "why is it not moving?" has an answer',
+            /rateLimitedUntil\(\)/.test(barSrc) && /Rate limited — backing off/.test(barSrc));
+
+        // ---------- …and a click on it lands where its number is drawn ----------
+        // ‼️ The Dashboard is retained when hidden, so REVEALING it is not the
+        // same as OPENING it: it comes back where the reader last left it, which
+        // is usually deep in the sessions table — three screens below the card
+        // the indicator was clicked for.
+        const sbSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'views', 'statusBar.ts'), 'utf8');
+        ok('there is ONE contract for "a status-bar click opens the Dashboard at the top"',
+            /export const OPEN_DASHBOARD_AT_TOP: vscode\.Command = \{/.test(sbSrc)
+            && /arguments: \[\{ scrollTo: 'top' \}\]/.test(sbSrc));
+        ok('…and both indicators in the cluster obey it, so neighbours cannot disagree',
+            (sbSrc.match(/this\.item\.command = OPEN_DASHBOARD_AT_TOP;/g) || []).length === 2
+            && /this\.item\.command = OPEN_DASHBOARD_AT_TOP;/.test(barSrc));
+        ok('…while the warning state still goes to Needs You instead',
+            /this\.item\.command = 'agentfarm\.openNeeds';/.test(sbSrc));
+
+        const dashSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'dashboard.ts'), 'utf8');
+        const extSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        ok('the command forwards it, and the palette (which passes nothing) still works',
+            /registerCommand\('agentfarm\.openDashboard', \(arg\?: \{ scrollTo\?: 'top' \}\)/.test(extSrc)
+            && /arg\?\.scrollTo === 'top' \? \{ scrollTo: 'top' \} : undefined/.test(extSrc));
+        ok('…the panel only tells an ALREADY-OPEN page (a fresh one is at the top anyway)',
+            /if \(opts\?\.scrollTo === 'top'\) \{[\s\S]{0,140}postMessage\(\{ type: 'scrollTo', target: 'top' \}\)/
+                .test(dashSrc));
+        const dashJs = fs.readFileSync(path.join(__dirname, '..', 'media', 'dashboard.js'), 'utf8');
+        ok('…and the page acts on it before anything else can swallow the message',
+            /addEventListener\('message', ev => \{\s*\n\s*if \(ev\.data\.type === 'scrollTo'\)/.test(dashJs)
+            && /function scrollToTop\(\)/.test(dashJs));
+        ok('…instantly, because this is the page opening and not the reader scrolling',
+            !/scrollTo\(\{[\s\S]{0,60}smooth/.test(dashJs));
+    }
 
     // ---------- the webview card ----------
     {
@@ -440,9 +545,13 @@ const LIVE_PAYLOAD = {
         const B = (active, mins, secs) => PU.refreshMs(active, mins, secs);
         ok('idle: the user\'s minutes', B(false, 5, 15) === 300_000);
         ok('active: seconds, because that is when the numbers are moving',
-            B(true, 5, 15) === 15_000);
-        ok('a fast beat can never outrun the service floor',
-            B(true, 5, 1) === PU.MIN_FETCH_INTERVAL_MS);
+            B(true, 5, 60) === 60_000);
+        // ‼️ the endpoint punishes a fast poller with a PERSISTENT 429, so this
+        // floor is not a nicety — a few-second setting is a broken indicator
+        ok('a fast beat can never outrun the automatic-beat floor',
+            B(true, 5, 1) === PU.MIN_ACTIVE_BEAT_MS
+            && B(true, 5, 15) === PU.MIN_ACTIVE_BEAT_MS
+            && PU.MIN_ACTIVE_BEAT_MS > PU.MIN_FETCH_INTERVAL_MS);
         // ‼️ "off" must mean off in BOTH windows, or the setting is a lie
         ok('automatic refresh off stays off even while an agent works',
             B(false, 0, 15) === 0 && B(true, 0, 15) === 0);
@@ -481,10 +590,13 @@ const LIVE_PAYLOAD = {
             /status-bar indicator, the Dashboard/.test(props['agentFarm.planUsageRefreshMinutes'].description));
 
         // ---------- two windows, one decision, every surface ----------
-        ok('the fast window has its own setting, floored at the service floor',
+        ok('the fast window has its own setting, floored where the endpoint allows',
             props['agentFarm.planUsageActiveRefreshSeconds'].type === 'number'
-            && props['agentFarm.planUsageActiveRefreshSeconds'].default === 15
-            && props['agentFarm.planUsageActiveRefreshSeconds'].minimum === 5);
+            && props['agentFarm.planUsageActiveRefreshSeconds'].default === 60
+            && props['agentFarm.planUsageActiveRefreshSeconds'].minimum === 30);
+        ok('…and it warns that the limit, not taste, is what sets the floor',
+            /persistent HTTP 429/.test(props['agentFarm.planUsageActiveRefreshSeconds'].description)
+            && /backoff/.test(props['agentFarm.planUsageActiveRefreshSeconds'].description));
         ok('…and it belongs to the cost category like its siblings',
             /planUsageActiveRefreshSeconds: 'cost'/.test(
                 fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'settingsops.ts'), 'utf8')));
@@ -492,9 +604,15 @@ const LIVE_PAYLOAD = {
         // surfaces end up showing figures read minutes apart
         ok('the TTL, the indicator and the card all read the one beat function',
             /const planBeatMs = \(\) => refreshMs\(/.test(ext)
-            && /new PlanUsageService\(\{ ttlMs: planBeatMs \}\)/.test(ext)
+            && /new PlanUsageService\(\{ ttlMs: planBeatMs, cliVersion: installedCliVersion \}\)/.test(ext)
             && /beatMs: planBeatMs,/.test(ext)
             && /planUsageBeat: planBeat,/.test(ext));
+        // ‼️ the User-Agent is read off a transcript, not off a spawned process:
+        // every Claude Code line carries the version that wrote it
+        ok('the CLI version comes from the newest transcript, with no process spawned',
+            /const installedCliVersion = \(\)/.test(ext)
+            && /s\.lastTs \|\| s\.mtime/.test(ext)
+            && !/--version/.test(ext.slice(ext.indexOf('installedCliVersion'), ext.indexOf('installedCliVersion') + 500)));
         ok('the fast window is "a turn is RUNNING", not "a session is open"',
             /const fleetActive = \(\) => live\.activeTurns\(\) > 0;/.test(ext));
         ok('a live event can flip the window without waiting for the next tick',
@@ -503,6 +621,11 @@ const LIVE_PAYLOAD = {
             /onRefresh: snap => DashboardPanel\.pushPlanUsage\(snap, planBeat\(\)\)/.test(ext));
         ok('an agent asking usage.plan is told how live the answer is',
             /beat: planBeat\(\),/.test(ext));
+        // ‼️ "nothing changed" and "we are not allowed to look" read identically
+        // from a cached snapshot, so the op has to distinguish them
+        ok('…and whether the staleness is a backoff rather than just age',
+            /rateLimitedUntil: until > Date\.now\(\)/.test(ext)
+            && /rateLimitedUntil` \(ISO, or null\)/.test(ext));
 
         // the fleet-activity source itself
         const liveSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'live.ts'), 'utf8');

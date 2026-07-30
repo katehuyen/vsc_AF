@@ -1,16 +1,20 @@
-EKSİK- console da konuşma kutusunun üstünde verilen canlı istatistik bilgisi satırında o tur için kullanılan model adı ve efford bilgisi de yazsın..interrupt stops it yazısını kaldır gerek yok..onun yerine koy
-
-EKLE- Consol konuşma kutusundaki sağ alt  köşede olan 3 tane Metin ile ilgili butona bir tane daha ekleyelim  en sol tarafa..O da yapıştırma görevini alsın yani Paste ..  panoda ne varsa yapıştıracak Fakat böyle aptalca hiç düşünmeden yapıştırmayacak imlecin yerine bakacak Eğer imleç kendisinden önce bir karakter var ve ona yapışık şekilde duruyorsa o zaman önce bir boşluk koyacak Ondan sonra yapıştıracak. fakat zaten boşluk varsa inle İşten önce o zaman direkt yapıştırabilir.
-
-DÜZELT- Ajan çalışırken kullanım verisi sorgulamayı 15 saniyeye ayarlamıştık ama 15 rate limit yaratıyor.. onu dokümasyondan internetten araştırıp rate litmit yaratmayacak en sık sorgulama neymiş bak bul ve onun çoz az üzerinde güvenli ama ona en yakın zaman aralığında yapalım.. böyle bir bilgi bulamazsan 35 saniyeyi deneyelim 15 saniye yerine
-
 
 
 
 # BİTENLER
 -------------------------------
 
+EKSİK- console da konuşma kutusunun üstünde verilen canlı istatistik bilgisi satırında o tur için kullanılan model adı ve efford bilgisi de yazsın..interrupt stops it yazısını kaldır gerek yok..onun yerine koy
+  → 3.45.0. Şerit artık `41s · ~$0.031 · 6 lines · opus 5 · xhigh` ile kapanıyor; "⎋ Interrupt stops it" kalktı (Esc ipucu Interrupt düğmesinin tooltip'ine taşındı). Model/efor TUR-kapsamlı: anahtar sıradaki turdan geçerli olduğu için tur başında fotoğraflanıyor, biten tur da ikisini saklıyor.
 
+EKLE- Consol konuşma kutusundaki sağ alt köşede olan 3 tane Metin ile ilgili butona bir tane daha ekleyelim en sol tarafa..O da yapıştırma görevini alsın yani Paste .. panoda ne varsa yapıştıracak Fakat böyle aptalca hiç düşünmeden yapıştırmayacak imlecin yerine bakacak Eğer imleç kendisinden önce bir karakter var ve ona yapışık şekilde duruyorsa o zaman önce bir boşluk koyacak Ondan sonra yapıştıracak. fakat zaten boşluk varsa inle İşten önce o zaman direkt yapıştırabilir.
+  → 3.45.0. ⎘ en solda ve kalıcı (işi panoda olduğu için boş kutuda saklanmıyor). İmlecin solunda kelime karakteri varsa önce boşluk; boşluk/satır sonu/açılan parantez/kutu başı varsa dokunulmadan. Seçim Ctrl+V gibi değiştiriliyor, imleç yapıştırılanın arkasında kalıyor.
+
+DÜZELT- Ajan çalışırken kullanım verisi sorgulamayı 15 saniyeye ayarlamıştık ama 15 rate limit yaratıyor.. onu dokümasyondan internetten araştırıp rate litmit yaratmayacak en sık sorgulama neymiş bak bul ve onun çoz az üzerinde güvenli ama ona en yakın zaman aralığında yapalım.. böyle bir bilgi bulamazsan 35 saniyeyi deneyelim 15 saniye yerine
+  → 3.45.0. Araştırma sonucu: asıl sebep aralık değil, eksik User-Agent'tı (uç belgesiz, iki kova; UA'sız istek cezalı kovaya düşüp aralık ne olursa olsun kalıcı 429 alıyor). Artık istek CLI kılığında gidiyor (`claude-cli/<sürüm> (external, cli)` + `x-app: cli`, kurulu binary'den okundu). Aktif nabız 60 sn (kullanıcı kararı), kodda 30 sn taban; 429'da 3→6→12→15 dk geri çekilme, tek başarı siliyor, ⟳ yine de soruyor.
+
+DÜZELT- vscode durum çubuğunda usage yüzdelerini gösteriyor.. üzerine bastığın zaman dashboard açılıyor ama sayfa aşağı kaydırılmışsa istatistikler gözükmüyor. Buradan basarak açıyorsak sayfanın otomatik olarak en tepeye gitmesi lazım.
+  → 3.45.0. Durum çubuğu göstergelerinin ikisi de tek sözleşmeyi paylaşıyor (`OPEN_DASHBOARD_AT_TOP`): reveal ediliyor + sayfa anlık olarak en tepeye alınıyor. Komut paleti / nav / bildirimler sayfayı kaydırmadan açmaya devam ediyor.
 
 EKSİK- komut satırından constitution.sync Anayasa sync fonksiyonunun arayüzden yapmanın imkanı yok
 

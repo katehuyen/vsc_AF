@@ -236,6 +236,51 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         const steered = acceptUserText({ ...done, status: 'working' }, 'also', NOW + 21000).state;
         ok('steering a running turn does not touch it', steered.lastTurn === done.lastTurn);
     }
+    // ---------- what the running turn is thinking WITH ----------
+    // ‼️ `model` AND `effort` DESCRIBE THE NEXT TURN, NOT THIS ONE. Both switches
+    // are accepted mid-conversation and both take effect one turn later, so a
+    // strip that says "this turn" cannot read the live pickers — it would
+    // mislabel the turn you are watching the moment you touch either.
+    {
+        const base = { ...fresh(), model: 'claude-sonnet-4-5', effort: 'medium' };
+        const started = acceptUserText(base, 'go', NOW).state;
+        ok('a turn remembers the model and effort it STARTED on',
+            started.turnModel === 'claude-sonnet-4-5' && started.turnEffort === 'medium');
+
+        // a confirmed switch mid-turn moves the picker and leaves the turn alone
+        const switched = { ...started, model: 'claude-opus-5', effort: 'xhigh' };
+        ok('…and a switch made while it runs does not rewrite it',
+            switched.turnModel === 'claude-sonnet-4-5' && switched.turnEffort === 'medium');
+
+        // …but system:init is a CORRECTION, not a switch: it is the CLI naming
+        // the model we only had an alias (or nothing) for
+        const aliased = acceptUserText({ ...fresh(), model: 'sonnet' }, 'go', NOW).state;
+        const named = reduce(aliased, {
+            type: 'system', subtype: 'init', model: 'claude-sonnet-4-5-20250929'
+        }, NOW + 20);
+        ok('system:init names the model for the turn already running',
+            named.turnModel === 'claude-sonnet-4-5-20250929' && named.model === 'claude-sonnet-4-5-20250929');
+        const idleInit = reduce(fresh(), {
+            type: 'system', subtype: 'init', model: 'claude-sonnet-4-5-20250929'
+        }, NOW + 20);
+        ok('…and invents no turn to attach it to when none is running',
+            idleInit.turnModel === undefined);
+
+        // the finished turn keeps it too, so the strip does not lose it the
+        // instant the turn ends (and a later switch cannot backdate it)
+        const closed = reduce(switched, {
+            type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0.01
+        }, NOW + 3000);
+        ok('the finished turn is remembered with what IT ran on',
+            closed.lastTurn.model === 'claude-sonnet-4-5' && closed.lastTurn.effort === 'medium'
+            && closed.turnModel === undefined && closed.turnEffort === undefined);
+
+        // a HELD message becomes a turn of its own, so it takes its own snapshot
+        const held = acceptUserText({ ...closed, status: 'working' }, 'next', NOW + 3100, true).state;
+        const released = shiftQueued({ ...held, status: 'idle', model: 'claude-opus-5', effort: 'xhigh' }, NOW + 4000).state;
+        ok('a released held message starts a turn on the CURRENT model, not the old one',
+            released.turnModel === 'claude-opus-5' && released.turnEffort === 'xhigh');
+    }
     // ---------- what the RUNNING turn is spending ----------
     // The CLI says what a turn cost only when the turn ends, so a strip that
     // wants to answer "what is this one costing me?" while you watch it has to
