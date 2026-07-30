@@ -174,7 +174,37 @@ const textOf = s => s.messages.filter(m => m.role === 'agent').map(m => m.text).
     ok('…without a pending switch left over', !a.pendingEffort);
     host.close(idq);
 
-    // ---------- 7. closing ----------
+    // ---------- 7. ‼️ what a turn is REALLY running on, with nothing chosen ----------
+    // The case the panel used to have no answer for: the pickers are left alone
+    // — which is how a session is normally started — so there is no flag, no
+    // model name and no effort to read off them, while the turn still runs on a
+    // real model at a real effort resolved from the settings chain. The CLI
+    // resolves that chain itself and answers `get_settings`; the host asks at
+    // session start and at the start of every turn. Nearly free to prove: the
+    // first two sessions here never send a prompt at all.
+    const idb = host.start({ agentId: 'x', agentName: 'brain', cwd: dir, model: 'opus' });
+    let b = await waitFor(idb, x => !!x.applied, 30_000);
+    ok('a session with no effort chosen still learns what is in force', !!(b && b.applied));
+    ok('…the model, as the CLI names it', /opus/.test((b.applied || {}).model || ''));
+    ok('…and an effort NOBODY picked — it comes from the settings chain',
+        !!(b.applied || {}).effort);
+    ok('…while the picker still honestly says nothing was chosen', !b.effort);
+    host.close(idb);
+
+    // …and on a model with no effort levels the answer is "none", not "unknown"
+    const idh = host.start({ agentId: 'x', agentName: 'brainh', cwd: dir, model: 'haiku' });
+    let bh = await waitFor(idh, x => !!x.applied, 30_000);
+    ok('a model with no effort levels says exactly that',
+        !!bh.applied && /haiku/.test(bh.applied.model) && bh.applied.effort === '');
+    host.send(idh, 'Reply with exactly: BRAIN');
+    bh = await waitFor(idh, x => x.status === 'working' && !!x.turnModel, 30_000);
+    ok('the running turn is labelled with the CLI\'s own answer, not a picker',
+        /haiku/.test(bh.turnModel || ''));
+    bh = await waitFor(idh, x => x.status === 'idle' && !!x.lastTurn, 90_000);
+    ok('…and the turn that just ended keeps it', /haiku/.test((bh.lastTurn || {}).model || ''));
+    host.close(idh);
+
+    // ---------- 8. closing ----------
     host.close(id);
     s = await waitFor(id, x => x.status === 'ended', 15_000);
     ok('closing ends the session', s.status === 'ended');

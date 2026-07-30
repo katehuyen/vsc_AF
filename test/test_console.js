@@ -281,6 +281,98 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         ok('a released held message starts a turn on the CURRENT model, not the old one',
             released.turnModel === 'claude-opus-5' && released.turnEffort === 'xhigh');
     }
+    // ---------- …and where that pair really comes from: the CLI ----------
+    // ‼️ THE PICKERS CANNOT ANSWER IT. Left on "Default" — the normal way to
+    // start a session — model and effort are empty strings, because "Default"
+    // means "pass no flag"; the turn still runs on a real model at a real
+    // effort, resolved from the settings chain. So the strip asked the CLI:
+    // `get_settings` answers `applied:{model, effort}`, and effort is null on a
+    // model that has no effort levels. Measured against the real CLI on
+    // 2026-07-31 (2.1.220): no flags → "xhigh" (from ~/.claude/settings.json),
+    // --effort low → "low", haiku → null.
+    {
+        resetIds();
+        // nothing chosen anywhere — exactly the case that used to show nothing
+        const blank = newSessionState({
+            id: 'c2', agentId: 'a', agentName: 'dev', cwd: 'D:/a/dev', now: NOW
+        });
+        const running = { ...acceptUserText(blank, 'go', NOW).state,
+            pendingSettings: { requestId: 'settings-1', turnStartedAt: NOW } };
+        ok('a turn with nothing chosen starts out saying nothing',
+            !running.turnModel && !running.turnEffort);
+        const answered = reduce(running, {
+            type: 'control_response',
+            response: {
+                subtype: 'success', request_id: 'settings-1',
+                response: { applied: { model: 'claude-opus-5', effort: 'xhigh' } }
+            }
+        }, NOW + 30);
+        ok('…and the CLI\'s own answer names it, with no choice ever made',
+            answered.turnModel === 'claude-opus-5' && answered.turnEffort === 'xhigh');
+        ok('…which is remembered as what is IN FORCE, for the next turn to start from',
+            answered.applied.model === 'claude-opus-5' && answered.applied.effort === 'xhigh'
+            && answered.pendingSettings === undefined);
+        ok('…and it is bookkeeping, not conversation',
+            answered.messages.length === running.messages.length);
+        const next = acceptUserText(
+            reduce(answered, { type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0.01 },
+                NOW + 100),
+            'again', NOW + 200).state;
+        ok('the next turn starts from what the CLI last said, not from an empty picker',
+            next.turnModel === 'claude-opus-5' && next.turnEffort === 'xhigh');
+
+        // a model with no effort levels: the CLI answers null, and null is not
+        // "unknown" — it is the answer, so the strip shows a model and no effort
+        const haiku = reduce(
+            { ...running, pendingSettings: { requestId: 'settings-2', turnStartedAt: NOW } },
+            {
+                type: 'control_response',
+                response: {
+                    subtype: 'success', request_id: 'settings-2',
+                    response: { applied: { model: 'claude-haiku-4-5-20251001', effort: null } }
+                }
+            }, NOW + 30);
+        ok('a model with no effort levels reports one honestly: none',
+            haiku.turnModel === 'claude-haiku-4-5-20251001' && haiku.turnEffort === ''
+            && haiku.applied.effort === '');
+
+        // the probe is tagged with the turn it was asked for: a late answer
+        // must not relabel the turn that has started since
+        const late = reduce(
+            { ...answered, turnStartedAt: NOW + 5000,
+                pendingSettings: { requestId: 'settings-3', turnStartedAt: NOW } },
+            {
+                type: 'control_response',
+                response: {
+                    subtype: 'success', request_id: 'settings-3',
+                    response: { applied: { model: 'claude-sonnet-5', effort: 'low' } }
+                }
+            }, NOW + 5100);
+        ok('an answer about an older turn does not relabel the one running now',
+            late.turnModel === 'claude-opus-5' && late.turnEffort === 'xhigh'
+            && late.applied.model === 'claude-sonnet-5');
+
+        // an older CLI does not know the subtype: it says so, and nothing here
+        // may change or be shown for a question the user never asked
+        const refused = reduce(
+            { ...answered, pendingSettings: { requestId: 'settings-4', turnStartedAt: NOW } },
+            {
+                type: 'control_response',
+                response: { subtype: 'error', request_id: 'settings-4', error: 'unknown subtype' }
+            }, NOW + 40);
+        ok('a CLI that cannot answer changes nothing and says nothing',
+            refused.pendingSettings === undefined
+            && refused.turnModel === 'claude-opus-5' && refused.turnEffort === 'xhigh'
+            && refused.messages.length === answered.messages.length);
+
+        // …and the host is what asks, at the two moments it can be asked for
+        const host = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'consolehost.ts'), 'utf8');
+        ok('the host asks the CLI what is in force, as a control request',
+            /controlLine\(requestId, 'get_settings'\)/.test(host));
+        ok('…at the start of the session and at the start of every turn',
+            /this\.askSettings\(id\);/.test(host)
+            && /this\.askSettings\(id, h\.state\.turnStartedAt\)/.test(host));
+    }
     // ---------- what the RUNNING turn is spending ----------
     // The CLI says what a turn cost only when the turn ends, so a strip that
     // wants to answer "what is this one costing me?" while you watch it has to
@@ -809,7 +901,11 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'consolePanel.ts'), 'utf8');
     ok('cost is never written without the tokens it bought', /const spend = /.test(js));
     ok('the running turn is priced while it runs, not guessed at',
-        /estimateCost\(/.test(panel) && /turnUsage \? this\.deps\.estimateCost/.test(panel));
+        /estimateCost\(/.test(panel) && /s\.turnUsage\s*\n?\s*\? this\.deps\.estimateCost/.test(panel));
+    // …at the model IT is running on. `model` is the picker plus whatever a
+    // switch has since moved it to, i.e. possibly the NEXT turn's model.
+    ok('…and priced at the model the turn itself is running on',
+        /estimateCost\(s\.turnModel \|\| s\.model \|\| ''/.test(panel));
     ok('…and the panel says out loud that the live figure is an estimate',
         /is an estimate/.test(panel) || /an estimate/.test(panel));
 }

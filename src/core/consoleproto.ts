@@ -31,6 +31,17 @@
  *    with no effort levels (haiku) `applied.effort` stays null: the flag is
  *    accepted and means nothing, which is why the picker says so rather than
  *    pretending.
+ *  - **‼️ AND THE CLI WILL SAY WHAT IS REALLY IN FORCE**: `{subtype:'get_settings'}`
+ *    answers `{effective, sources, applied:{model, effort, advisor, ultracode}}`,
+ *    where `applied` is the CLI's OWN resolution of the whole precedence chain
+ *    — command-line flag over local over project over user settings, capped to
+ *    what the model actually supports. It is therefore the only honest answer
+ *    to "what is this turn running on?", and it costs nothing: a local question
+ *    about local settings, no tokens, no API call. Measured (2026-07-31, CLI
+ *    2.1.220): started with no flags at all it answers `effort:"xhigh"` off
+ *    `~/.claude/settings.json`; with `--effort low` it answers `"low"`; on a
+ *    model with no effort levels (haiku) it answers `null`. This is what the
+ *    turn strip shows — see `pendingSettings` / `applied`.
  *  - **‼️ THE SESSION *CAN* ASK YOU SOMETHING MID-TURN — it just has to be
  *    invited to.** With `--permission-prompt-tool stdio` on the command line
  *    the CLI stops resolving permissions on its own and sends the host a
@@ -163,21 +174,31 @@ export interface ConsoleSessionState {
     /** token total when this turn began — the difference is what the turn spent */
     turnTokensAt?: number;
     /**
-     * What the RUNNING turn is thinking with — the model and effort as they were
-     * when it started, not as they are now.
+     * What the RUNNING turn is thinking with — as the CLI itself answers it.
      *
-     * ‼️ A MID-TURN SWITCH APPLIES FROM THE NEXT TURN, SO `model` IS NOT THIS
-     * TURN'S MODEL. `/model` and `/effort` are both accepted mid-conversation
-     * and both take effect one turn later (the CLI says so itself, and so does
-     * the line the switch writes into the transcript). Reading the live pickers
-     * for a strip that says "this turn" would therefore mislabel the turn you
-     * are watching the moment you touch either one — which is exactly when you
-     * are looking.
+     * ‼️ THIS IS NOT WHAT THE PICKERS SAY. `model` and `effort` above are what
+     * was *asked for*, and asking for nothing is the normal case: leave both on
+     * "Default" and they are empty strings, while the turn still runs on a real
+     * model at a real effort — the one the CLI resolved out of the settings
+     * chain (`~/.claude/settings.json`, the project's own, a policy). A strip
+     * fed from the pickers therefore went blank exactly when the user had made
+     * no choice, i.e. most of the time, and said nothing about the turn it was
+     * pricing. These two are filled from `get_settings.applied` instead — the
+     * CLI's own resolution, asked at the start of every turn (see
+     * `pendingSettings`), so the answer belongs to THIS turn.
      *
-     * `system:init` is the one thing allowed to correct these while the turn
-     * runs: on the first turn it is the CLI telling us what the model REALLY is
-     * (an alias, or nothing at all, is what we had until then), which is a
-     * correction and not a change.
+     * An empty `turnEffort` next to a known `turnModel` is meaningful and not a
+     * gap: it is the CLI answering `effort: null`, i.e. this model has no effort
+     * levels at all (haiku).
+     *
+     * ‼️ A MID-TURN SWITCH APPLIES FROM THE NEXT TURN. `/model` and `/effort`
+     * are both accepted mid-conversation and both take effect one turn later,
+     * so the pair is taken once, when the turn starts, and is never rewritten
+     * by a switch made while it runs.
+     *
+     * `system:init` may still correct the model while the turn runs: on the
+     * first turn it is the CLI naming the model we only had an alias (or
+     * nothing) for, which is a correction and not a change.
      */
     turnModel?: string;
     turnEffort?: string;
@@ -253,6 +274,25 @@ export interface ConsoleSessionState {
      * CLI has agreed. `'' `means "back to the CLI's own default".
      */
     pendingEffort?: { requestId: string; effort: string };
+    /**
+     * A `get_settings` we have asked and not heard back about.
+     *
+     * `turnStartedAt` is what the probe was asked FOR: a probe fired at the
+     * start of a turn carries that turn's clock, so its answer can only be
+     * written into `turnModel`/`turnEffort` while that same turn is still the
+     * one running. Without it a late answer would relabel the wrong turn.
+     */
+    pendingSettings?: { requestId: string; turnStartedAt?: number };
+    /**
+     * What the CLI says is REALLY in force — its own `get_settings.applied`.
+     *
+     * Kept because it is the seed for the next turn's pair: the probe's answer
+     * arrives milliseconds after a turn begins, and until it does, the last
+     * thing the CLI told us is a far better answer than an empty picker.
+     * `effort: ''` means the CLI answered `null` — this model has no effort
+     * levels.
+     */
+    applied?: { model: string; effort: string };
 }
 
 /** The honest set of things a panel button can actually grant, live. */
@@ -666,6 +706,32 @@ export function reduceEvent(
                 changed: true
             };
         }
+        // …and the answer to "what is really in force?" (see pendingSettings).
+        // Silent bookkeeping: nothing about it belongs in the conversation, and
+        // an older CLI that does not know `get_settings` simply answers `error`
+        // — which must leave the session exactly as it was, not print a failure
+        // at the user about a question they never asked.
+        const ps = state.pendingSettings;
+        if (ps && r.request_id === ps.requestId) {
+            const cleared = { ...state, pendingSettings: undefined };
+            const ap = inner.applied as Record<string, unknown> | undefined;
+            if (r.subtype === 'error' || !ap) { return { state: cleared, changed: false }; }
+            const applied = {
+                model: typeof ap.model === 'string' ? ap.model : '',
+                // null = this model has no effort levels; '' says the same here
+                effort: typeof ap.effort === 'string' ? ap.effort : ''
+            };
+            // Only the turn the probe was fired for may be relabelled by it.
+            const forThisTurn = ps.turnStartedAt !== undefined
+                && state.turnStartedAt === ps.turnStartedAt;
+            return {
+                state: {
+                    ...cleared, applied,
+                    ...(forThisTurn ? { turnModel: applied.model, turnEffort: applied.effort } : {})
+                },
+                changed: true
+            };
+        }
         if (typeof inner.mode === 'string') {
             // the live permission-mode change was accepted
             return {
@@ -775,6 +841,22 @@ export function carriedTotals(s: {
  * released by hand, and `shiftQueued` hands it over when the turn ends. That is
  * for "I want to say this next", not for "stop what you are doing".
  */
+/**
+ * What a turn STARTS believing it is thinking with.
+ *
+ * The CLI's own last word first (`applied`), the pickers only as a fallback:
+ * a picker is a request and is empty whenever the user made no choice, whereas
+ * `applied` is an answer. Either way the probe fired with the turn overwrites
+ * this a few milliseconds later (see pendingSettings) — this is what the strip
+ * says in the meantime, so it must be the best thing known, not the emptiest.
+ */
+function turnBrain(state: ConsoleSessionState): { turnModel?: string; turnEffort?: string } {
+    return {
+        turnModel: state.applied?.model || state.model,
+        turnEffort: state.applied ? state.applied.effort : state.effort
+    };
+}
+
 export function acceptUserText(
     state: ConsoleSessionState, text: string, now: number, hold = false
 ): { state: ConsoleSessionState; send: boolean } {
@@ -797,7 +879,7 @@ export function acceptUserText(
     return {
         state: {
             ...state, lastTs: now, status: 'working', turnStartedAt: now, turnTokensAt: state.tokens,
-            turnModel: state.model, turnEffort: state.effort,
+            ...turnBrain(state),
             turnUsage: emptyUsage(),
             // Your new prompt is what clears the finished turn's summary — the
             // invariant the strip relies on: lastTurn exists exactly while the
@@ -887,7 +969,7 @@ export function shiftQueued(
         state: {
             ...state, queued: rest, status: 'working', lastTs: now,
             turnStartedAt: now, turnTokensAt: state.tokens, turnUsage: emptyUsage(),
-            turnModel: state.model, turnEffort: state.effort,
+            ...turnBrain(state),
             messages: [...state.messages, { id: nextId(), ts: now, role: 'user', text: next }]
         },
         text: next

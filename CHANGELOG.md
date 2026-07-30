@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.46.0 — The strip stops needing your permission to know what the turn is running on (2026-07-31)
+
+**‼️ The strip only spoke when you had made a choice — which is the rarest case, not the normal one.** 3.45.0 put the turn's model and effort at the end of the live strip, and read them off the composer's own pickers. But a picker left on **"Default"** means *pass no flag*, so with nothing chosen the effort was an empty string and the strip printed nothing at all — while the turn it was pricing ran on a real model at a real effort, resolved out of `~/.claude/settings.json`. The model looked fine only by accident (`system:init` names it, so the picker gets overwritten); effort has no such event, so it stayed blank forever unless the user set it by hand. Asking the user to choose something in order to be *told* what is already true is the wrong way round.
+
+**The CLI knows, and it will say so: `{subtype:'get_settings'}`** answers `applied:{model, effort}` — its own resolution of the whole precedence chain (command-line flag over local over project over user settings, capped to what the model actually supports). The host now asks at session start and again at the start of **every turn**, tagged with that turn's clock so a late answer cannot relabel the next one. It costs nothing: a local question about local settings, no tokens, no API call. Measured against the real CLI (2.1.220, 2026-07-31): no flags → `xhigh` off the user's settings; `--effort low` → `low`; **haiku → `null`**, i.e. this model has no effort levels — so an empty effort beside a known model is now an answer ("none"), not a gap. A CLI too old to know the subtype answers `error`, which changes nothing and is never shown.
+
+- **The running turn is priced at its own model.** The live cost estimate used `model`, which a mid-session `/model` may already have moved to the *next* turn's; it now uses the turn's own.
+- `console.sessions` gained `applied` (what is really in force) and says plainly that `model`/`effort` are only what was *asked for*.
+- 13 checks added (the answer filling the turn, the null-effort model, a late answer about an older turn, an old CLI's refusal changing nothing and printing nothing, the next turn seeding from what the CLI last said, and the two moments the host asks). Live smoke §7 proves it end to end on a real process with **nothing chosen** and no prompt sent. Suite: **82 files, 3614 checks green.**
+
 ## 3.45.0 — The strip says what is thinking, and the usage endpoint stops 429ing (2026-07-30)
 
 **‼️ The bug worth the version number: the 15-second usage beat was rate-limited into uselessness, and the interval was never the reason.** `/api/oauth/usage` is undocumented and publishes no limit, no `Retry-After` and no intended polling rate — the requests to document it were closed as *not planned* — but it has **two buckets**, and the `User-Agent` is what sorts you into one. A request with **none** — Node's `https` default, i.e. exactly what Agent Farm was sending — lands in an aggressively limited bucket and gets a **persistent 429 whatever the interval**, so polling less often would have fixed nothing. Three changes, in the order they matter:

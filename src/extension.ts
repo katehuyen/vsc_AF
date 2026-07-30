@@ -2975,7 +2975,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'console.sessions',
-            describe: 'The Console sessions this window hosts: status, cost so far, turns, held messages (console.queue reads them), model, effort, permission mode, what the RUNNING turn is thinking with (turnModel/turnEffort — a switch applies from the next turn, so these can differ from model/effort), the turn that just finished (lastTurn: ms/tokens/cost/outcome/model/effort — null while a turn runs), whatever the session is WAITING ON YOU for (asking: a question that has parked its turn — console.answer settles it) and the last few messages. args: id? (one session, with more of its transcript), messages? (how many messages to include, default 0)',
+            describe: 'The Console sessions this window hosts: status, cost so far, turns, held messages (console.queue reads them), model, effort and permission mode as they were ASKED for (empty = nothing was overridden), what is REALLY in force (applied: the CLI\'s own get_settings answer — model, and effort null on a model with no effort levels), what the RUNNING turn is thinking with (turnModel/turnEffort, taken from applied when the turn began — a switch applies from the next turn, so these can differ from model/effort), the turn that just finished (lastTurn: ms/tokens/cost/outcome/model/effort — null while a turn runs), whatever the session is WAITING ON YOU for (asking: a question that has parked its turn — console.answer settles it) and the last few messages. args: id? (one session, with more of its transcript), messages? (how many messages to include, default 0)',
             handler: (args) => {
                 const want = optStr(args, 'id');
                 const take = typeof args.messages === 'number' ? Math.max(0, Math.floor(args.messages)) : 0;
@@ -2983,6 +2983,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return rows.map(s => ({
                     id: s.id, agent: s.agentName, sessionId: s.sessionId ?? null,
                     status: s.status, model: s.model ?? null, effort: s.effort ?? null,
+                    // ‼️ …and what the CLI says is REALLY in force, which is the
+                    // only one of the two that survives "the user chose nothing"
+                    applied: s.applied
+                        ? { model: s.applied.model, effort: s.applied.effort || null }
+                        : null,
                     permissionMode: s.permissionMode,
                     cost: s.costUSD, turns: s.turns, held: s.queued.length,
                     // the whole conversation's tokens — a resumed session

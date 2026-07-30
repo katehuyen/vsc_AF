@@ -179,10 +179,15 @@ export class ConsolePanel {
                 // unit you are watching. The money is an estimate — see
                 // ConsoleDeps.estimateCost.
                 turnTokens: s.turnTokensAt !== undefined ? Math.max(0, s.tokens - s.turnTokensAt) : 0,
-                turnCost: s.turnUsage ? this.deps.estimateCost(s.model ?? '', s.turnUsage) : 0,
-                // …and what it is thinking WITH. Not `model`/`effort` above: a
-                // switch applies from the next turn, so the pickers and the
-                // running turn can legitimately disagree (see turnModel).
+                // …priced at the RUNNING turn's own model: a switch applies from
+                // the next turn, so `model` can already be the next one's.
+                turnCost: s.turnUsage
+                    ? this.deps.estimateCost(s.turnModel || s.model || '', s.turnUsage) : 0,
+                // …and what it is thinking WITH — the CLI's own answer for this
+                // turn (get_settings.applied), never the pickers: those are what
+                // was ASKED for, and "Default" asks for nothing at all while the
+                // turn still runs on a real model at a real effort (see
+                // consoleproto's turnModel).
                 turnModel: s.turnModel ?? '', turnEffort: s.turnEffort ?? '',
                 // …and once it is over, the same strip keeps saying what it cost
                 // until your next prompt starts a new turn (see lastTurn)

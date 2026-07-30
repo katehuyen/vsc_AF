@@ -214,8 +214,8 @@
            quieter and motionless — a settled number, not a live one */
         .working .dspin { color:var(--vscode-charts-green,#89d185); font-size:12px; }
         .working .wmeta { margin-left:auto; opacity:.75; white-space:nowrap; }
-        /* the model + effort field: the only part of the meta line that is a
-           CHOICE rather than a measurement, so it is the one part allowed a
+        /* the model + effort field: the only part of the meta line that is not
+           a measurement but the REASON for one, so it is the one part allowed a
            little weight — it is what the numbers next to it are explained by */
         .working .wbrain { color:var(--vscode-foreground); opacity:.9; }
         /* ---- the resume section: a header row, a miniature filter, the rows --
@@ -1165,9 +1165,19 @@
      * Effort rides along bare (`· xhigh`): the tooltip is where the word is
      * explained, and "effort: " on a strip this dense is three wasted columns.
      *
-     * Silence is meaningful. No model = the CLI has not said which one yet (it
-     * arrives with system:init); no effort = the session never asked for one, so
-     * the CLI's own default is in force and naming it would be a guess.
+     * ‼️ IT IS THE CLI'S ANSWER, NOT THE PICKERS'. The pair used to be read off
+     * the composer's own model/effort boxes, so it appeared only when the user
+     * had picked something — leave them on "Default", which is the normal way to
+     * start a session, and the strip said nothing at all while the turn ran on a
+     * real model at a real effort out of `~/.claude/settings.json`. Nothing here
+     * depends on a choice being made any more: the host asks the CLI itself
+     * (`get_settings.applied`) at the start of every turn — see
+     * core/consoleproto.ts.
+     *
+     * Silence is still meaningful, and now means something narrower: no model =
+     * the CLI has not answered yet (the first moments of the first turn); a
+     * model with no effort beside it = this model HAS no effort levels, which is
+     * the CLI's own `effort: null` and the honest thing to show.
      */
     function turnBrainHtml(model, effort, running) {
         const m = String(model || '').trim();
@@ -1181,7 +1191,8 @@
         const both = [label, e].filter(Boolean).join(' · ');
         const verb = running ? 'is running on' : 'ran on';
         const tip = `${label ? `${running ? 'This' : 'That'} turn ${verb} ${label}` : 'That turn'}${e
-            ? ` at ${e} reasoning effort` : ''} — as it was when the turn STARTED. A model or effort switch applies from the NEXT turn, so the pickers below can legitimately say something else.`;
+            ? ` at ${e} reasoning effort`
+            : label ? ' — a model with no effort levels' : ''} — the CLI's own answer for THIS turn, not the pickers below: it is what the settings chain really resolved to, whether or not anything was chosen. A model or effort switch applies from the NEXT turn, so the pickers can legitimately say something else.`;
         return ` · <span class="wbrain" title="${C.esc(tip)}">${C.esc(both)}</span>`;
     }
 

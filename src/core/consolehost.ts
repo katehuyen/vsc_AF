@@ -174,8 +174,36 @@ export class ConsoleHost {
             }));
         });
 
+        // Ask the CLI what it is actually going to think with, before a word is
+        // said. Nothing else can answer it: the flags above are only what was
+        // ASKED for, and the usual case is that nothing was (see askSettings).
+        this.askSettings(id);
         if (init.firstPrompt?.trim()) { this.send(id, init.firstPrompt); }
         return id;
+    }
+
+    /**
+     * "What are you really running on?" — `get_settings`, the CLI's own answer.
+     *
+     * ‼️ THE PANEL USED TO ANSWER THIS FROM ITS OWN PICKERS, WHICH IS TO SAY IT
+     * COULD NOT ANSWER IT AT ALL. A picker left on "Default" — the normal case
+     * — means "pass no flag", so the strip above the composer had nothing to
+     * print and printed nothing, while the turn it was pricing ran on a real
+     * model at a real effort resolved from the settings chain. The CLI resolves
+     * that chain itself and will state the result; asking is free (a local
+     * question about local settings: no tokens, no API call).
+     *
+     * Asked at the start of the session and again at the start of every turn,
+     * tagged with that turn's clock so a late answer cannot relabel the next
+     * turn (see pendingSettings). A CLI too old to know the subtype answers
+     * `error`, which changes nothing and is never shown.
+     */
+    private askSettings(id: string, turnStartedAt?: number): void {
+        const h = this.sessions.get(id);
+        if (!h) { return; }
+        const requestId = `settings-${++h.reqSeq}`;
+        if (!this.write(id, controlLine(requestId, 'get_settings'))) { return; }
+        h.state = { ...h.state, pendingSettings: { requestId, turnStartedAt } };
     }
 
     private mutate(id: string, fn: (s: ConsoleSessionState) => ConsoleSessionState): void {
@@ -206,7 +234,12 @@ export class ConsoleHost {
         if (h.state.status === 'idle' && h.state.queued.length) {
             const next = shiftQueued(h.state);
             h.state = next.state;
-            if (next.text) { this.write(id, userMessageLine(next.text)); }
+            if (next.text) {
+                // …and a released message is a turn of its own, so it asks the
+                // same question about itself (see askSettings)
+                this.askSettings(id, h.state.turnStartedAt);
+                this.write(id, userMessageLine(next.text));
+            }
         }
         this.fire(id);
     }
@@ -225,8 +258,16 @@ export class ConsoleHost {
     send(id: string, text: string, hold = false): { queued: boolean } | undefined {
         const h = this.sessions.get(id);
         if (!h || h.state.status === 'ended' || h.state.status === 'error') { return undefined; }
+        const startedBefore = h.state.turnStartedAt;
         const r = acceptUserText(h.state, text, Date.now(), hold);
         h.state = r.state;
+        // A NEW turn (not a message said into a running one) asks what it is
+        // about to run on, and asks it BEFORE the prompt goes down the pipe —
+        // the CLI is idle at that moment, so the answer comes straight back
+        // (see askSettings).
+        if (h.state.turnStartedAt && h.state.turnStartedAt !== startedBefore) {
+            this.askSettings(id, h.state.turnStartedAt);
+        }
         if (r.send) { this.write(id, userMessageLine(text.trim())); }
         this.fire(id);
         return { queued: !r.send };
