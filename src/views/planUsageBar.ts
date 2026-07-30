@@ -70,12 +70,20 @@ export class PlanUsageBar implements vscode.Disposable {
         void this.tick();
     }
 
-    /** Ask the service (it serves from cache until its TTL is up) and repaint. */
-    private async tick(force = false): Promise<void> {
+    /**
+     * Ask the service (it serves from cache until its TTL is up) and repaint.
+     *
+     * `why` is handed to the service rather than a boolean, because "the timer
+     * woke up" and "a turn just ended" are allowed to skip different things and
+     * neither of them is allowed to skip what a PERSON can skip.
+     */
+    private async tick(why: 'beat' | 'edge' = 'beat'): Promise<void> {
         // 0 = the user turned the beat off; then this bar only ever shows what
         // something else (the Dashboard card's ⟳, an agent's usage.plan) read.
         if (this.opts.enabled() && this.opts.beatMs() > 0) {
-            try { await this.opts.service.get(force); } catch { /* the snapshot says why */ }
+            try {
+                await (why === 'edge' ? this.opts.service.readOnEdge() : this.opts.service.get());
+            } catch { /* the snapshot says why */ }
             this.opts.onRefresh?.(this.opts.service.current());
         }
         this.paint();
@@ -99,17 +107,26 @@ export class PlanUsageBar implements vscode.Disposable {
     /**
      * A live hook event landed — did the fleet just cross the idle/active line?
      *
-     * Both edges are worth one immediate read: a turn STARTING is the moment
-     * the figures begin to move, and a turn ENDING is the moment they settle at
-     * what it cost. In between, the fast beat carries it. Only the edge acts
-     * (this runs on every live event), and the service's 5-second floor keeps a
-     * burst of agents starting at once from becoming a burst of requests.
+     * ‼️ ONLY THE FALLING EDGE EARNS A READ, and this used to be both.
+     *
+     * A turn **ending** is the moment the figures settle at what it cost — that
+     * is news, and worth pulling a read forward for. A turn **starting** is not:
+     * nothing has been spent yet at the instant a turn begins, so the answer is
+     * necessarily the one the last read already gave. It was costing a request
+     * to learn nothing, and doubling the traffic on the busiest events in the
+     * system to do it (see readOnEdge — this fires a couple of hundred times an
+     * hour on a working fleet, in bursts).
+     *
+     * `lastActive` still tracks BOTH directions: a rising edge that is not
+     * recorded turns the next fall into a no-op, and then the one edge that
+     * matters is the one that never fires.
      */
     fleetChanged(): void {
         const active = this.opts.active();
         if (active === this.lastActive) { return; }
         this.lastActive = active;
-        void this.tick(true);
+        // going idle = a turn just finished; going active = nothing spent yet
+        if (!active) { void this.tick('edge'); }
     }
 
     /** Settings changed — re-read them now rather than at the next wake. */

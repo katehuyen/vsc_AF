@@ -1014,10 +1014,14 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
 
         // the real registration must carry the same contract (this mirror can drift)
         const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
-        const block = src.slice(src.indexOf("op: 'usage.plan'"), src.indexOf("op: 'usage.plan'") + 2200);
+        const block = src.slice(src.indexOf("op: 'usage.plan'"), src.indexOf("op: 'usage.plan'") + 2600);
         ok('extension.ts registers usage.plan against the shared service',
-            /force\?/.test(block) && /planUsage\.get\(args\.force === true\)/.test(block)
-            && /resetsAt/.test(block));
+            /force\?/.test(block) && /resetsAt/.test(block));
+        // ‼️ `force` from an AGENT is not a person clicking ⟳: it may skip the
+        // cache, never a backoff, or a looping agent becomes a request storm
+        ok('…and an agent\'s force takes the edge path, not the human one',
+            /await planUsage\.readOnEdge\(\)/.test(block)
+            && !/planUsage\.get\(true\)/.test(block));
     }
 
     // ---------- session ops (§19.C): start · pin · tag · shelf · interrupt ----------

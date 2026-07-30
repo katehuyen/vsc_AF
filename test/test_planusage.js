@@ -267,6 +267,95 @@ const LIVE_PAYLOAD = {
         reply = { status: 200, body: JSON.stringify(LIVE_PAYLOAD) };
     }
 
+    // ---------- the turn-boundary edge, which is where the 429s really came from ----------
+    // ‼️ THE EDGE USED TO CLAIM THE BUTTON'S PRIVILEGES. It called `get(true)`, so
+    // it skipped the TTL *and* the backoff with only the 5-second hard floor
+    // underneath — and a working fleet crosses this edge a couple of hundred
+    // times an hour, in bursts. So the endpoint saw a request every few seconds
+    // however politely the BEAT was configured, and the backoff meant to rescue
+    // us was being walked through on the very events that caused it.
+    {
+        calls = 0; clock += 10_000_000;
+        reply = { status: 200, body: JSON.stringify(LIVE_PAYLOAD) };
+        const e = svc(60_000);
+        await e.get();
+        ok('the first read happens', calls === 1);
+
+        // the edge's whole point: skip a fresh TTL
+        clock += PU.EDGE_READ_FLOOR_MS + 1;
+        await e.readOnEdge();
+        ok('an edge read skips a TTL that is still fresh', calls === 2);
+
+        // …but it has a floor of its own, well above the button's
+        clock += 1_000;
+        await e.readOnEdge();
+        ok('a burst of edges collapses to one read', calls === 2);
+        ok('…because the edge floor is far above the hard floor',
+            PU.EDGE_READ_FLOOR_MS > PU.MIN_FETCH_INTERVAL_MS);
+
+        // ‼️ …and the floor is the USER'S interval, not a constant of ours: the
+        // edge must change WHEN a read happens, never HOW MANY. Set 60 s and no
+        // two automatic reads may be closer than 60 s, whoever asked.
+        {
+            let c2 = 0, k = 5_000_000;
+            const own = new PU.PlanUsageService({
+                ttlMs: () => 60_000, edgeFloorMs: () => 60_000,
+                credentialsFile: () => credFile, now: () => k,
+                cliVersion: () => '2.1.220',
+                fetchImpl: () => { c2++; return Promise.resolve({ status: 200, body: JSON.stringify(LIVE_PAYLOAD) }); }
+            });
+            await own.get();
+            k += 45_000;                       // a turn ends 45s in — inside the interval
+            await own.readOnEdge();
+            ok('an edge inside the configured interval does NOT buy a second read', c2 === 1);
+            k += 16_000;                       // now past 60s
+            await own.readOnEdge();
+            ok('…and is let through the moment the interval is up', c2 === 2);
+        }
+
+        // ‼️ and it NEVER walks through a backoff — the regression that made the
+        // backoff decorative
+        reply = { status: 429, body: '' };
+        clock += PU.EDGE_READ_FLOOR_MS + 1;
+        await e.readOnEdge();
+        ok('an edge read can be the one that gets rate limited', calls === 3
+            && e.rateLimitedUntil() === clock + PU.RATE_LIMIT_BACKOFF_START_MS);
+        reply = { status: 200, body: JSON.stringify(LIVE_PAYLOAD) };
+        // 200 turn boundaries in the next 100 seconds — a real burst, all of it
+        // inside the 3-minute backoff
+        for (let i = 0; i < 200; i++) {
+            clock += 500;
+            await e.readOnEdge();
+        }
+        ok('…and two hundred turn boundaries during a backoff cost ZERO requests', calls === 3);
+        clock += PU.RATE_LIMIT_BACKOFF_START_MS;
+        await e.readOnEdge();
+        ok('…then the edge is let through again once it expires', calls === 4);
+    }
+
+    // ---------- only the FALLING edge is news ----------
+    {
+        const barSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'views', 'planUsageBar.ts'), 'utf8');
+        // a turn STARTING has spent nothing yet, so the answer is necessarily the
+        // one the last read already gave — it was a request to learn nothing
+        ok('a turn ending earns a read; a turn starting does not',
+            /if \(!active\) \{ void this\.tick\('edge'\); \}/.test(barSrc));
+        ok('…but both directions are still RECORDED, or the next fall is a no-op',
+            /this\.lastActive = active;/.test(barSrc));
+        ok('…and nothing automatic calls get(true) any more',
+            !/tick\(true\)/.test(barSrc) && !/service\.get\(force\)/.test(barSrc));
+
+        // an agent forcing is not a person clicking
+        const extTs = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        ok('an agent\'s usage.plan force cannot spend a request through a backoff',
+            /\? await planUsage\.readOnEdge\(\)/.test(extTs)
+            && /force skips the cache but NOT a backoff/.test(extTs));
+        // the edge floor is wired to the SAME setting the beat reads, live
+        ok('the edge floor is the user\'s own active interval, read live',
+            /const planEdgeFloorMs = \(\) => refreshMs\(/.test(extTs)
+            && /edgeFloorMs: planEdgeFloorMs/.test(extTs));
+    }
+
     // ---------- the indicator says which of the two it is doing ----------
     {
         const barSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'views', 'planUsageBar.ts'), 'utf8');
@@ -604,7 +693,7 @@ const LIVE_PAYLOAD = {
         // surfaces end up showing figures read minutes apart
         ok('the TTL, the indicator and the card all read the one beat function',
             /const planBeatMs = \(\) => refreshMs\(/.test(ext)
-            && /new PlanUsageService\(\{ ttlMs: planBeatMs, cliVersion: installedCliVersion \}\)/.test(ext)
+            && /ttlMs: planBeatMs, edgeFloorMs: planEdgeFloorMs, cliVersion: installedCliVersion/.test(ext)
             && /beatMs: planBeatMs,/.test(ext)
             && /planUsageBeat: planBeat,/.test(ext));
         // ‼️ the User-Agent is read off a transcript, not off a spawned process:
@@ -638,8 +727,12 @@ const LIVE_PAYLOAD = {
         ok('the wake-up follows the beat, capped so the countdown keeps moving',
             /Math\.min\(beat, PAINT_INTERVAL_MS\)/.test(barSrc)
             && /const PAINT_INTERVAL_MS = 60_000;/.test(barSrc));
-        ok('only the EDGE forces a read — not every live event',
-            /if \(active === this\.lastActive\) \{ return; \}[\s\S]{0,80}this\.tick\(true\)/.test(barSrc));
+        // ‼️ this used to assert `tick(true)` on the edge, which is exactly the
+        // regression that kept the 429s coming: an automatic read with the
+        // button's privileges. The edge now reads on the edge PATH, and only
+        // when a turn has actually ended (see the falling-edge block above).
+        ok('only the edge reads at all — not every live event',
+            /if \(active === this\.lastActive\) \{ return; \}[\s\S]{0,600}this\.tick\('edge'\)/.test(barSrc));
         ok('the tooltip states which beat is running, so a still figure is explainable',
             /an agent is working — re-read every/.test(barSrc) && /Automatic refresh is off/.test(barSrc));
     }

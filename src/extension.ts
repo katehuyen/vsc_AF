@@ -2726,9 +2726,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'usage.plan',
-            describe: 'Your Claude SUBSCRIPTION rate-limit state as Anthropic reports it — the same figures /usage prints: session (5h) and weekly utilization % with reset times. This is the real quota, not the transcript-derived cost figures the rest of the farm reports. Also returns `beat` — how often the farm is re-reading it (ms) and whether an agent is mid-turn, i.e. how stale a cached answer can be — and `rateLimitedUntil` (ISO, or null): the endpoint itself pushed back and no automatic read happens until then, so a cached answer is deliberately stale rather than merely old. args: force? (default false — served from the dashboard card\'s cache; force asks even mid-backoff, so use it sparingly)',
+            describe: 'Your Claude SUBSCRIPTION rate-limit state as Anthropic reports it — the same figures /usage prints: session (5h) and weekly utilization % with reset times. This is the real quota, not the transcript-derived cost figures the rest of the farm reports. Also returns `beat` — how often the farm is re-reading it (ms) and whether an agent is mid-turn, i.e. how stale a cached answer can be — and `rateLimitedUntil` (ISO, or null): the endpoint itself pushed back and no automatic read happens until then, so a cached answer is deliberately stale rather than merely old. args: force? (default false — served from the dashboard card\'s cache; force skips the cache but NOT a backoff, and not the 30s floor, so a loop of forced calls cannot become a request storm: while `rateLimitedUntil` is set you get the cached snapshot whatever you pass)',
             handler: async (args) => {
-                const snap = await planUsage.get(args.force === true);
+                // ‼️ An agent forcing is not a person clicking ⟳. Only a human
+                // may spend a request through a backoff (see PlanUsageService.read).
+                const snap = args.force === true
+                    ? await planUsage.readOnEdge()
+                    : await planUsage.get();
                 const until = planUsage.rateLimitedUntil();
                 return {
                     state: snap.state, plan: snap.plan, fetchedAt: snap.fetchedAt,
@@ -4544,7 +4548,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         return best?.version;
     };
-    const planUsage = new PlanUsageService({ ttlMs: planBeatMs, cliVersion: installedCliVersion });
+    // ‼️ The turn-boundary edge spends from the SAME budget as the beat: its
+    // floor is the user's own active interval, so no two automatic reads are
+    // ever closer than the number they configured. Read live, so changing the
+    // setting changes both at once — the edge with a smaller floor than the beat
+    // is what made a politely configured beat irrelevant (see planusage.ts).
+    const planEdgeFloorMs = () => refreshMs(
+        true, 1, Math.max(0, cfg().get<number>('planUsageActiveRefreshSeconds', 60)));
+    const planUsage = new PlanUsageService({
+        ttlMs: planBeatMs, edgeFloorMs: planEdgeFloorMs, cliVersion: installedCliVersion
+    });
 
     // …and the two percentages that decide whether to start the next long turn,
     // permanently in the status bar rather than behind a page you have to open

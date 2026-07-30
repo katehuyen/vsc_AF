@@ -111,6 +111,25 @@ export const MIN_FETCH_INTERVAL_MS = 5_000;
  */
 export const MIN_ACTIVE_BEAT_MS = 30_000;
 /**
+ * …and the floor under the OTHER automatic reader: the turn-boundary edge.
+ *
+ * ‼️ THE EDGE SPENDS FROM THE SAME BUDGET AS THE BEAT — it changes WHEN a read
+ * happens, never HOW MANY. Its floor is therefore the user's own active
+ * interval (`edgeFloorMs`), so no two automatic reads are ever closer together
+ * than the number they configured: set 60 s and you get at most one read a
+ * minute, whether the timer or a finished turn asked for it. A turn boundary is
+ * an event the fleet produces hundreds of times an hour, in bursts, so an edge
+ * with a *smaller* floor than the beat is simply a fast poller wearing a
+ * different name — which is what it was.
+ *
+ * What the edge still buys, given it adds nothing: **phase**. The moment a turn
+ * ends is the moment the figures settle, and it is also the moment the beat
+ * switches to the slow idle window — so without the edge the settled number can
+ * sit unread for the whole idle interval (5 minutes by default) even though a
+ * read was already due.
+ */
+export const EDGE_READ_FLOOR_MS = MIN_ACTIVE_BEAT_MS;
+/**
  * A 429 with no `Retry-After` leaves exactly one safe reading: stop asking, and
  * double the wait each time it happens again. The beat is ignored while this
  * runs (the cached snapshot is served instead), and one success clears it.
@@ -296,6 +315,13 @@ export function fetchUsage(
 export interface PlanUsageOptions {
     /** How long a snapshot stays fresh; 0 = always refetch on request. */
     ttlMs(): number;
+    /**
+     * Closest two AUTOMATIC reads may ever be, in ms — the user's active
+     * interval. Defaults to `EDGE_READ_FLOOR_MS`. See that constant: this is
+     * what keeps the turn-boundary edge from spending more requests than the
+     * beat was configured for, rather than merely spending them elsewhere.
+     */
+    edgeFloorMs?(): number;
     /** Version of the installed CLI, for the User-Agent (see usageUserAgent). */
     cliVersion?: () => string | undefined;
     /** Overridable for tests. */
@@ -328,20 +354,54 @@ export class PlanUsageService {
     rateLimitedUntil(): number { return this.backoffUntil; }
 
     /**
-     * Fresh-enough snapshot; `force` bypasses the TTL and the backoff, but never
-     * the hard floor.
+     * Fresh-enough snapshot; `force` = a PERSON asked (see `read`).
      *
-     * The button bypasses the backoff on purpose: a person clicking ⟳ has
-     * decided to spend one request, and the alternative — a control that
-     * silently refuses for a quarter of an hour — is a control that has taught
-     * you it does not work. The beat does NOT bypass it; that is the whole point.
+     * The button bypasses the backoff on purpose: someone clicking ⟳ has decided
+     * to spend one request, and the alternative — a control that silently
+     * refuses for a quarter of an hour — is a control that has taught you it
+     * does not work. Nothing automatic gets that privilege.
      */
-    async get(force = false): Promise<PlanUsageSnapshot> {
+    get(force = false): Promise<PlanUsageSnapshot> { return this.read(force ? 'user' : 'beat'); }
+
+    /**
+     * A turn just ENDED, so the figures have just moved — worth skipping the TTL
+     * for, and nothing else.
+     *
+     * ‼️ THIS IS WHERE THE 429s WERE ACTUALLY COMING FROM. The edge used to call
+     * `get(true)`, i.e. it claimed the button's privileges: it skipped the TTL
+     * *and* the backoff, with only the 5-second hard floor left underneath. A
+     * fleet doing 136 turns an hour crosses this edge a couple of hundred times,
+     * in bursts — so the endpoint saw a request every few seconds however
+     * politely the *beat* was configured, and the backoff that was supposed to
+     * rescue us was being walked straight through on the very events that
+     * triggered it. An automatic read obeying no ceiling is not an optimisation,
+     * it is the bug.
+     */
+    readOnEdge(): Promise<PlanUsageSnapshot> { return this.read('edge'); }
+
+    /**
+     * The three reasons a read happens, and what each is allowed to skip.
+     *
+     * |        | skips the TTL | skips a backoff | floor                    |
+     * |--------|---------------|-----------------|--------------------------|
+     * | `beat` | no            | no              | 5 s                      |
+     * | `edge` | **yes**       | no              | **the active interval**  |
+     * | `user` | **yes**       | **yes**         | 5 s                      |
+     *
+     * Only `user` is a person. Everything else is this extension deciding to
+     * spend a request on its own, and it does that on a leash.
+     */
+    private read(reason: 'beat' | 'edge' | 'user'): Promise<PlanUsageSnapshot> {
         const now = (this.opts.now ?? Date.now)();
         const age = now - this.lastFetchAt;
-        if (this.snap && !force && age < Math.max(0, this.opts.ttlMs())) { return this.snap; }
-        if (this.snap && !force && now < this.backoffUntil) { return this.snap; }
-        if (this.snap && age < MIN_FETCH_INTERVAL_MS) { return this.snap; }
+        const floor = reason === 'edge'
+            ? Math.max(MIN_FETCH_INTERVAL_MS, this.opts.edgeFloorMs?.() ?? EDGE_READ_FLOOR_MS)
+            : MIN_FETCH_INTERVAL_MS;
+        if (this.snap) {
+            if (reason === 'beat' && age < Math.max(0, this.opts.ttlMs())) { return Promise.resolve(this.snap); }
+            if (reason !== 'user' && now < this.backoffUntil) { return Promise.resolve(this.snap); }
+            if (age < floor) { return Promise.resolve(this.snap); }
+        }
         if (this.inflight) { return this.inflight; }
         this.inflight = this.load(now).finally(() => { this.inflight = undefined; });
         return this.inflight;
