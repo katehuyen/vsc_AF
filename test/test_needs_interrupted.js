@@ -7,7 +7,7 @@ const { buildNeedsQueue, blockingCount } = require(path.join(__dirname, '..', 'o
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
-const base = { liveSessions: [], approvals: [], insights: [], deferredTasks: [] };
+const base = { liveSessions: [], approvals: [], insights: [] };
 
 {
     const items = buildNeedsQueue({

@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.46.1",
+  "version": "3.47.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -3223,6 +3223,11 @@
           "type": "number",
           "default": 24,
           "description": "Hours after which an UNREAD level-3+ notice counts as ignored: it escalates on the Living page and in the status bar. A board nobody reads is the same as one nobody wrote to."
+        },
+        "agentFarm.idleSessionNoticeMinutes": {
+          "type": "number",
+          "default": 30,
+          "description": "Minutes a session may sit waiting for your input before ONE notice is posted about it (0 disables). An idle session never blocks the farm, so it is not a Needs You row — but one left waiting all afternoon is a loop that quietly never closed."
         }
       }
     }

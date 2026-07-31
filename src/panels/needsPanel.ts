@@ -1,11 +1,13 @@
 import * as vscode from 'vscode';
-import { NeedItem } from '../core/needs';
+import { isClearable, NeedItem, needKey } from '../core/needs';
 import { handleAfNav, htmlShell } from './base';
 
 /**
  * G1 — "Needs You" panel: the single urgency-sorted queue of everything
  * blocked on the human. Rows carry one-click actions; the extension resolves
- * them (approve browser steps, open sessions, review suggestions…).
+ * them (approve browser steps, open sessions, reconcile drift…) — and a row
+ * you have seen and judged can be CLEARED, one by one, by selection or all at
+ * once, which is what turns the page from a noticeboard into a worklist.
  */
 
 export interface NeedsDeps {
@@ -13,6 +15,12 @@ export interface NeedsDeps {
     buildItems(): NeedItem[];
     /** Handle a row action; return true if the queue should re-render. */
     onAction(actionId: string, item: NeedItem): void | Promise<void>;
+    /** Hide rows by key; `undefined` = every clearable row. Returns how many. */
+    onClear(keys?: string[]): Promise<number>;
+    /** Bring every cleared row back. Returns how many were restored. */
+    onRestore(): Promise<number>;
+    /** How many currently-produced rows a clear is hiding. */
+    hiddenCount(): number;
     /** Fired by the extension whenever underlying state changes. */
     onDidChange: vscode.Event<void>;
 }
@@ -45,7 +53,7 @@ export class NeedsPanel {
             panel.webview,
             deps.extensionUri,
             'Needs You',
-            { items: deps.buildItems(), generatedAt: Date.now() },
+            this.data(),
             'needs.js'
         );
         panel.onDidDispose(() => this.dispose(), null, this.disposables);
@@ -53,14 +61,21 @@ export class NeedsPanel {
         this.disposables.push(deps.onDidChange(() => this.refresh()));
     }
 
-    refresh(): void {
-        void this.panel.webview.postMessage({
-            type: 'data',
-            data: { items: this.deps.buildItems(), generatedAt: Date.now() }
-        });
+    /** The page renders keys and clearability from here — never re-derived in JS. */
+    private data(): unknown {
+        const items = this.deps.buildItems().map(item => ({
+            ...item, key: needKey(item), clearable: isClearable(item)
+        }));
+        return { items, hidden: this.deps.hiddenCount(), generatedAt: Date.now() };
     }
 
-    private async onMessage(msg: { type: string; actionId?: string; item?: NeedItem }): Promise<void> {
+    refresh(): void {
+        void this.panel.webview.postMessage({ type: 'data', data: this.data() });
+    }
+
+    private async onMessage(
+        msg: { type: string; actionId?: string; item?: NeedItem; keys?: string[]; all?: boolean }
+    ): Promise<void> {
         if (msg.type === 'refresh') { this.refresh(); return; }
         if (msg.type === 'afnav') { handleAfNav((msg as { to?: unknown }).to); return; }
         if (msg.type === 'openGuide') {
@@ -69,6 +84,16 @@ export class NeedsPanel {
         }
         if (msg.type === 'action' && msg.actionId && msg.item) {
             await this.deps.onAction(msg.actionId, msg.item);
+            this.refresh();
+            return;
+        }
+        if (msg.type === 'clear') {
+            await this.deps.onClear(msg.all ? undefined : (msg.keys ?? []));
+            this.refresh();
+            return;
+        }
+        if (msg.type === 'restore') {
+            await this.deps.onRestore();
             this.refresh();
         }
     }

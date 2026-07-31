@@ -1476,14 +1476,25 @@ As the fleet grows, the bottleneck is you: who's waiting for permission, which b
 
 ### Approval Queue {#onay-kuyrugu}
 
-**Agent Farm: Open Needs You (Approval Queue)** — everything that comes to you in a single, urgency-sorted queue:
+**Agent Farm: Open Needs You (Approval Queue)** — everything the farm is **stuck on**, in a single urgency-sorted queue.
+
+**‼️ THE ADMISSION TEST — "if I never touch it, does the farm stay stuck?"** Only rows that pass it belong here. A fact about something that already happened (a blown budget), a proposal (an instruction suggestion), a state that resolves itself (a task parked for capacity) and an idle session are **news, not work**: they go to **Notices**, which is built to be read and kept. A page that mixes the two teaches you to ignore it — the one failure a blocking queue cannot afford.
 
 1. 🛡️ **Sessions waiting for permission** (from live hook data) — one click opens the session or the Timeline.
 2. 🌐 **Browser steps waiting for approval** — **Run / Reject** directly from the queue. The notification and the queue race; the first decision wins. If you miss the notification the request waits in the queue and the workflow doesn't advance until it gets approval.
-3. ⛓ **Interrupted workflow runs (2.42.0)** — chains cut off by a window close are no longer just a startup notification: they're a persistent row in the queue, the **Resume / Dismiss** buttons are on the row, and they count toward the status-bar badge until a decision is made. Missing the startup toast doesn't lose the run.
-4. ⏳ **Stalled sessions** · 💸 **budget overruns** · ⇄ **Antigravity conflicts** (one-click reconcile) · 💡 **open instruction suggestions** · 🕓 **parked tasks** (concurrency/quota) · 💬 **your-turn** sessions.
+3. 🎯 **Missions with an open question or a cut run** — **Answer… / Resume / Dismiss** on the row.
+4. ⛓ **Interrupted workflow runs** — chains cut off by a window close are a persistent row in the queue, the **Resume / Dismiss** buttons are on the row, and they count toward the status-bar badge until a decision is made. Missing the startup toast doesn't lose the run.
+5. ⏳ **Stalled sessions** · ⇄ **Antigravity conflicts** (one-click reconcile) — drift passes the test because no clock, no agent and no retry will ever clear it; only you will.
 
-The status bar now counts this queue: if `🔔 N need you` shows, clicking it opens the queue. Three blocking kinds are counted: permission, browser approval, stalled.
+**Clearing rows.** A row you have seen and judged goes away: the **✕** on the row, the checkboxes plus **🧹 Clear selected**, or **🧹 Clear all**. Cleared rows come back with **↩ Restore (N)**.
+
+**‼️ Clearing is self-healing — you can never permanently blind yourself to a condition.** The record is keyed on the row's identity (session + kind of problem; deliberately no timestamp and no message text, because those move while the problem stands still) and lives **only for as long as the row keeps being produced**. The moment the condition ends, the row stops appearing, the key goes stale and is dropped: the **same** wait stays cleared for its whole life, and the **next** one — a new permission prompt from the same session, the same session stalling again — arrives with a clean slate.
+
+**The one row that cannot be cleared: a browser approval.** A real agent is parked on `await` behind it; hiding the row would leave it parked forever with no surface left to answer from. Its clear is **Reject**, which settles the promise honestly — so the row carries a 🔒 instead of a checkbox.
+
+The status bar counts this queue: if `🔔 N need you` shows, clicking it opens the queue.
+
+**Agent side:** `needs.list` · `needs.clear` (`keys` or `all:true`) · `needs.restore`.
 
 ### Five concepts — which is which? {#gorev-kavramlari}
 

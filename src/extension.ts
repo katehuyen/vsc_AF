@@ -50,8 +50,10 @@ import {
 } from './core/duties';
 import { buildEvalReport, compareRuns, EvalCase, EvalStore, runEvalSet, summarizeRun } from './core/evals';
 import { buildInsights, Insight } from './core/health';
-import { ApprovalQueue, blockingCount, buildNeedsQueue, NeedItem } from './core/needs';
-import { NoticesStore, registerNoticesOps, reportFileStem } from './core/notices';
+import {
+    ApprovalQueue, blockingCount, buildNeedsQueue, filterDismissedNeeds, isClearable, NeedItem, needKey
+} from './core/needs';
+import { NoticeInput, NoticesStore, registerNoticesOps, reportFileStem } from './core/notices';
 import { registerQueueOps, WorkItem, WorkQueueStore } from './core/workqueue';
 import { PulseStore, runPulseSweep } from './core/pulse';
 import { buildTriggerStats, describeTriggerStat, triggerAlerts } from './core/triggerstats';
@@ -649,24 +651,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
     refreshAgents();
 
-    // Budget alerts: notify once per day per agent/fleet label.
-    const budgetNotified = new Set<string>();
-    const notifyBudgets = () => {
-        const today = new Date().toISOString().slice(0, 10);
-        for (const ins of insights) {
-            if (ins.category !== 'budget' || ins.severity !== 'error') { continue; }
-            const key = `${today}:${ins.agentName}`;
-            if (budgetNotified.has(key)) { continue; }
-            budgetNotified.add(key);
-            postForward('budget', `${ins.agentName} — ${ins.message}`);
-            void vscode.window.showWarningMessage(`Agent Farm: ${ins.agentName} — ${ins.message}`, 'Open Dashboard')
-                .then(choice => {
-                    if (choice === 'Open Dashboard') {
-                        void vscode.commands.executeCommand('agentfarm.openDashboard');
-                    }
-                });
+    // ---------- News, not work ----------
+    //
+    // ‼️ Everything the farm wants to TELL the user lands on Notices; only rows
+    // that BLOCK work go to Needs You (the admission test lives in core/needs.ts).
+    // A notice is permanent and re-readable, so each thing is announced exactly
+    // ONCE — and the guard has to be persisted, because an in-memory Set reposts
+    // every still-open item on the next VS Code restart. Entries age out after a
+    // month so the store cannot grow without bound.
+    const NEWS_KEY = 'agentfarm.newsPosted';
+    const NEWS_TTL_MS = 30 * 24 * 3600 * 1000;
+    const postNewsOnce = (key: string, input: NoticeInput): boolean => {
+        const posted = context.globalState.get<Record<string, number>>(NEWS_KEY, {});
+        if (posted[key]) { return false; }
+        noticesStore.add({ agentName: 'agent-farm', ...input });
+        const now = Date.now();
+        posted[key] = now;
+        for (const [k, ts] of Object.entries(posted)) {
+            if (now - ts > NEWS_TTL_MS) { delete posted[k]; }
         }
+        void context.globalState.update(NEWS_KEY, posted);
+        updateNoticesBadge();
+        NoticesPanel.refreshIfOpen();
+        return true;
     };
+    /** Assigned once the live monitor and the task manager exist (see below). */
+    let postFarmNews: () => void = () => { };
 
     let triggerManagerRef: TriggerManager | undefined;
     // cwd → agent mapping, shared by the live monitor and the external-CLI
@@ -1339,7 +1349,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     index.onDidUpdate(() => {
         insights = applyInsightDismiss(buildInsights(agents, index, healthConfig()));
-        notifyBudgets();
+        postFarmNews();
         agentsTree.refresh();
         sessionsTree.refresh();
         insightsTree.refresh();
@@ -4488,24 +4498,102 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         })
     );
 
-    // G1: the Needs You queue is assembled from live state + approvals + insights + parked tasks.
-    const buildNeeds = (): NeedItem[] => buildNeedsQueue({
+    // G1: the Needs You queue — live blockers + approvals + Antigravity drift.
+    const buildRawNeeds = (): NeedItem[] => buildNeedsQueue({
         // labelOf adds "#k" when one agent runs several sessions, so two
         // waiting sessions of the same agent stay tellable apart in the queue.
         liveSessions: live.sessions().map(s => ({ ...s, agentName: live.labelOf(s) })),
         approvals: approvalQueue.list(),
         insights,
-        deferredTasks: taskManager.tasks
-            .filter(t => t.status === 'queued' && t.autoStart)
-            .map(t => ({
-                id: t.id, title: t.title, agentName: t.agentName,
-                deferredReason: t.deferredReason, createdAt: t.createdAt
-            })),
         // F1: cut runs live in the queue too — the startup toast is easy to miss.
         interruptedRuns: taskManager.interruptedRuns(),
-        missionWaits: missionWaits(),
-        includeYourTurn: true
+        missionWaits: missionWaits()
     });
+
+    // Cleared rows: the key stays only while its row is still produced, so a
+    // clear ends by itself the moment the condition does (see needKey).
+    const NEEDS_CLEARED_KEY = 'agentfarm.clearedNeeds';
+    const clearedNeeds = () => context.globalState.get<Record<string, number>>(NEEDS_CLEARED_KEY, {});
+    let hiddenNeedsCount = 0;
+    const buildNeeds = (): NeedItem[] => {
+        const stored = clearedNeeds();
+        const res = filterDismissedNeeds(buildRawNeeds(), stored);
+        if (res.staleKeys.length) {
+            for (const k of res.staleKeys) { delete stored[k]; }
+            void context.globalState.update(NEEDS_CLEARED_KEY, stored);
+        }
+        hiddenNeedsCount = res.hiddenCount;
+        return res.visible;
+    };
+    /** Clear rows by key; `undefined` clears every clearable row on the page. */
+    const clearNeeds = async (keys?: string[]): Promise<number> => {
+        const stored = clearedNeeds();
+        const targets = keys ?? buildNeeds().filter(isClearable).map(needKey);
+        let n = 0;
+        for (const k of targets) { if (!stored[k]) { stored[k] = Date.now(); n++; } }
+        if (n) { await context.globalState.update(NEEDS_CLEARED_KEY, stored); needsEmitter.fire(); }
+        return n;
+    };
+    const restoreNeeds = async (): Promise<number> => {
+        const n = Object.keys(clearedNeeds()).length;
+        if (n) { await context.globalState.update(NEEDS_CLEARED_KEY, {}); needsEmitter.fire(); }
+        return n;
+    };
+
+    // The four things that used to sit on Needs You with nothing to do about
+    // them. Each is announced once, on the board built to hold announcements.
+    postFarmNews = () => {
+        const today = dayKey(Date.now());
+        for (const ins of insights) {
+            if (ins.category === 'budget' && ins.severity === 'error') {
+                if (postNewsOnce(`budget:${today}:${ins.agentName}`, {
+                    type: 'warning', level: 3,
+                    title: `Budget exceeded — ${ins.agentName}`,
+                    body: `${ins.message}\n\nToday's spend has passed the daily limit set for **${ins.agentName}**. `
+                        + 'Nothing was stopped — the limit is a warning line, not a brake. '
+                        + 'Raise it in `agentFarm.budgets`, or look at what spent it on the Dashboard.',
+                    tags: ['budget']
+                })) {
+                    postForward('budget', `${ins.agentName} — ${ins.message}`);
+                }
+            } else if (ins.suggestionId) {
+                postNewsOnce(`suggestion:${ins.suggestionId}`, {
+                    type: 'suggestion', level: 2,
+                    title: `Instruction suggestion — ${ins.agentName}`,
+                    body: `${ins.message}\n\nReview it with **Agent Farm: Review Instruction Suggestions**; `
+                        + 'it is applied to the agent\'s CLAUDE.md only if you accept it.',
+                    tags: ['instructions']
+                });
+            }
+        }
+        for (const t of taskManager.tasks) {
+            if (t.status !== 'queued' || !t.autoStart || !t.deferredReason) { continue; }
+            postNewsOnce(`parked:${t.id}`, {
+                type: 'update', level: 1,
+                title: `Task parked — ${t.title}`,
+                body: `**${t.agentName}** · ${t.deferredReason}\n\n`
+                    + 'It starts by itself once the blocker clears; the Board has it if you want it sooner.',
+                tags: ['tasks']
+            });
+        }
+        // An idle session is not a blocker — but one left waiting all afternoon
+        // is a loop that quietly never closed, so it earns a single line after a
+        // grace period long enough that ordinary back-and-forth never trips it.
+        const idleMin = Math.max(0, cfg().get<number>('idleSessionNoticeMinutes', 30));
+        if (idleMin > 0) {
+            const cutoff = Date.now() - idleMin * 60_000;
+            for (const s of live.sessions()) {
+                if (s.status !== 'waiting-input' || s.lastEventTs > cutoff) { continue; }
+                postNewsOnce(`idle:${s.sessionId}`, {
+                    type: 'reminder', level: 1,
+                    title: `${live.labelOf(s)} is waiting for you`,
+                    body: `The session finished its turn and has been idle for over ${idleMin} minutes.`
+                        + (s.lastPrompt ? `\n\nLast prompt: ${s.lastPrompt}` : ''),
+                    tags: ['sessions']
+                });
+            }
+        }
+    };
 
     const LAP_KEY = 'agentfarm.lapStartTs';
     const statusBar = new FarmStatusBar(index, live, {
@@ -4716,17 +4804,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 void vscode.commands.executeCommand('agentfarm.interruptSession',
                     { sessionId: item.ref.sessionId });
                 break;
-            case 'open-dashboard':
-                void vscode.commands.executeCommand('agentfarm.openDashboard');
-                break;
             case 'sync-antigravity':
                 await vscode.commands.executeCommand('agentfarm.syncAntigravity', { agentId: item.ref.agentId });
-                break;
-            case 'review-suggestion':
-                await vscode.commands.executeCommand('agentfarm.reviewSuggestions', item.ref.suggestionId);
-                break;
-            case 'open-board':
-                void vscode.commands.executeCommand('agentfarm.openBoard');
                 break;
             case 'resume-run':
                 if (item.ref.runId) { taskManager.resumeInterrupted(item.ref.runId); }
@@ -4760,8 +4839,42 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         extensionUri: context.extensionUri,
         buildItems: buildNeeds,
         onAction: handleNeedAction,
+        onClear: clearNeeds,
+        onRestore: restoreNeeds,
+        // buildItems() runs first on every render, so this is the count for the
+        // rows the page is showing — never a stale number from an earlier pass.
+        hiddenCount: () => hiddenNeedsCount,
         onDidChange: needsEmitter.event
     };
+
+    bridge.register([
+        {
+            op: 'needs.list',
+            describe: 'The Needs You queue — ONLY rows the farm is stuck on (permission waits, '
+                + 'approvals, missions with a question, cut runs, stalled sessions, Antigravity drift). '
+                + 'Budgets/suggestions/parked tasks/idle sessions are not here; they are posted to Notices. args: none',
+            handler: () => {
+                const items = buildNeeds().map(i => ({ ...i, key: needKey(i), clearable: isClearable(i) }));
+                return { items, blocking: blockingCount(items), hidden: hiddenNeedsCount };
+            }
+        },
+        {
+            op: 'needs.clear',
+            describe: 'Hide Needs You rows. args: keys? (string[] from needs.list) | all? (true = every '
+                + 'clearable row). A cleared row returns by itself if the same condition happens again; '
+                + 'rows holding a waiting agent (browser-approval) cannot be cleared — answer them instead.',
+            handler: async (args) => {
+                const keys = Array.isArray(args.keys) ? args.keys.map(String).filter(Boolean) : undefined;
+                need(keys?.length || args.all === true, 'Pass keys (string[]) or all:true.');
+                return { cleared: await clearNeeds(args.all === true ? undefined : keys) };
+            }
+        },
+        {
+            op: 'needs.restore',
+            describe: 'Bring every cleared Needs You row back. args: none',
+            handler: async () => ({ restored: await restoreNeeds() })
+        }
+    ]);
 
     // F1 command bar, callable with prefilled text (used by the kanban board).
     const runCommandBar = async (prefill?: string): Promise<void> => {

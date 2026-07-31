@@ -1,9 +1,16 @@
 /**
- * G1 — Approval queue ("Needs You"). One urgency-sorted list of everything
- * that is blocked on the human: permission waits, browser-step approvals,
- * stalled sessions, budget breaches, Antigravity conflicts, open instruction
- * suggestions and deferred task starts. Pure data in, pure data out — the
- * panel and the status bar both render from here.
+ * G1 — Approval queue ("Needs You"). One urgency-sorted list of the things the
+ * farm is STUCK on: permission waits, browser-step approvals, missions with an
+ * open question, cut workflow runs, stalled sessions, Antigravity drift.
+ *
+ * ‼️ THE ADMISSION TEST — "if I never touch it, does the farm stay stuck?"
+ * Only rows that pass it belong here. Facts about things that already happened
+ * (a blown budget), proposals (an instruction suggestion), states that resolve
+ * themselves (a task parked for capacity) and idle sessions are NEWS, not work:
+ * they go to Notices, which is built to be read and kept. A page that mixes the
+ * two teaches you to ignore it — the one failure a blocking queue cannot afford.
+ *
+ * Pure data in, pure data out — the panel and the status bar both render here.
  */
 
 export type NeedKind =
@@ -11,11 +18,7 @@ export type NeedKind =
     | 'browser-approval'  // a browser workflow step waits for Run/Reject
     | 'interrupted'       // a workflow run was cut by a window close — resume?
     | 'stalled'           // a working session stopped emitting events
-    | 'budget'            // daily budget exceeded
     | 'conflict'          // Antigravity two-sided drift needs reconciling
-    | 'suggestion'        // proposed CLAUDE.md rule awaiting review
-    | 'deferred'          // a task start is parked (concurrency / quota)
-    | 'your-turn'         // session finished its turn, waiting for input
     | 'mission';          // a mission waits on the human (question / interrupted)
 
 export interface NeedAction {
@@ -30,7 +33,6 @@ export interface NeedRef {
     suggestionId?: string;
     filePath?: string;
     agentId?: string;
-    taskId?: string;
     /** interrupted: the workflow run to resume/dismiss. */
     runId?: string;
     /** mission: the mission run waiting on the human. */
@@ -55,11 +57,7 @@ const URGENCY: Record<NeedKind, number> = {
     'browser-approval': 1,
     'interrupted': 2,
     'stalled': 2,
-    'budget': 3,
-    'conflict': 4,
-    'deferred': 5,
-    'suggestion': 6,
-    'your-turn': 7
+    'conflict': 3
 };
 
 export interface PendingApproval {
@@ -124,6 +122,8 @@ export interface NeedsInput {
         transcriptPath?: string;
     }[];
     approvals: PendingApproval[];
+    /** Only `antigravity` warnings are read — every other insight is news, and
+     *  news is posted to Notices by the host (see the admission test above). */
     insights: {
         severity: string;
         agentName: string;
@@ -132,13 +132,6 @@ export interface NeedsInput {
         message: string;
         filePath?: string;
         suggestionId?: string;
-    }[];
-    deferredTasks: {
-        id: string;
-        title: string;
-        agentName: string;
-        deferredReason?: string;
-        createdAt: number;
     }[];
     /** F1: workflow runs cut by a window close, awaiting a resume decision. */
     interruptedRuns?: {
@@ -155,8 +148,6 @@ export interface NeedsInput {
         detail: string;
         ts: number;
     }[];
-    /** Include waiting-input sessions as low-urgency "your turn" rows. */
-    includeYourTurn?: boolean;
 }
 
 export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
@@ -199,20 +190,6 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
                     { id: 'open-timeline', label: 'Timeline' }
                 ]
             });
-        } else if (input.includeYourTurn && s.status === 'waiting-input') {
-            items.push({
-                urgency: URGENCY['your-turn'],
-                kind: 'your-turn',
-                agentName,
-                title: `${agentName} finished its turn`,
-                detail: s.lastPrompt ?? '',
-                ts: s.lastEventTs,
-                ref: { sessionId: s.sessionId, transcriptPath: s.transcriptPath },
-                actions: [
-                    { id: 'focus-terminal', label: '⌨ Terminal' },
-                    { id: 'open-session', label: 'Open Session' }
-                ]
-            });
         }
     }
 
@@ -251,19 +228,11 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
         });
     }
 
+    // Antigravity drift is the one insight that passes the admission test: the
+    // two sides stay out of step until a human reconciles them — no clock, no
+    // agent and no retry will ever clear it.
     for (const ins of input.insights) {
-        if (ins.category === 'budget' && ins.severity === 'error') {
-            items.push({
-                urgency: URGENCY.budget,
-                kind: 'budget',
-                agentName: ins.agentName,
-                title: `Budget exceeded — ${ins.agentName}`,
-                detail: ins.message,
-                ts: 0,
-                ref: { agentId: ins.agentId },
-                actions: [{ id: 'open-dashboard', label: 'Dashboard' }]
-            });
-        } else if (ins.category === 'antigravity' && ins.severity === 'warning') {
+        if (ins.category === 'antigravity' && ins.severity === 'warning') {
             items.push({
                 urgency: URGENCY.conflict,
                 kind: 'conflict',
@@ -274,31 +243,7 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
                 ref: { agentId: ins.agentId, filePath: ins.filePath },
                 actions: [{ id: 'sync-antigravity', label: 'Reconcile…' }]
             });
-        } else if (ins.suggestionId) {
-            items.push({
-                urgency: URGENCY.suggestion,
-                kind: 'suggestion',
-                agentName: ins.agentName,
-                title: `Instruction suggestion — ${ins.agentName}`,
-                detail: ins.message,
-                ts: 0,
-                ref: { suggestionId: ins.suggestionId, agentId: ins.agentId },
-                actions: [{ id: 'review-suggestion', label: 'Review…' }]
-            });
         }
-    }
-
-    for (const t of input.deferredTasks) {
-        items.push({
-            urgency: URGENCY.deferred,
-            kind: 'deferred',
-            agentName: t.agentName,
-            title: `Task parked — ${t.title}`,
-            detail: t.deferredReason ?? 'waiting for capacity',
-            ts: t.createdAt,
-            ref: { taskId: t.id },
-            actions: [{ id: 'open-board', label: 'Open Board' }]
-        });
     }
 
     // F1: cut workflow runs — resuming spends money, so the human decides here.
@@ -327,4 +272,73 @@ export function blockingCount(items: NeedItem[]): number {
     return items.filter(i =>
         i.kind === 'permission' || i.kind === 'browser-approval'
         || i.kind === 'stalled' || i.kind === 'interrupted' || i.kind === 'mission').length;
+}
+
+// ---------------------------------------------------------------------------
+// Clearing rows
+// ---------------------------------------------------------------------------
+
+/**
+ * Identity of "the same problem" — deliberately WITHOUT any timestamp or
+ * message text, because those move while the problem stands still.
+ *
+ * ‼️ THIS IS WHAT MAKES CLEARING SELF-HEALING. A cleared key stays hidden only
+ * for as long as the row keeps being produced; the moment the condition ends,
+ * the row stops appearing, `filterDismissedNeeds` reports the key as stale and
+ * the host drops it. So the SAME wait stays cleared for its whole life, and the
+ * NEXT one — a new permission prompt from the same session, the same session
+ * stalling again — arrives with a clean slate. You can never permanently blind
+ * yourself to a condition by clearing it once.
+ */
+export function needKey(item: NeedItem): string {
+    const r = item.ref;
+    switch (item.kind) {
+        case 'permission':
+        case 'stalled':
+            return `${item.kind}|${r.sessionId ?? r.transcriptPath ?? '?'}`;
+        case 'browser-approval':
+            return `browser-approval|${r.approvalId ?? '?'}`;
+        case 'mission':
+            return `mission|${r.missionRunId ?? '?'}`;
+        case 'interrupted':
+            return `interrupted|${r.runId ?? '?'}`;
+        case 'conflict':
+            return `conflict|${r.agentId ?? '*'}|${r.filePath ?? '*'}`;
+    }
+}
+
+/**
+ * A row holding a LIVE promise cannot be cleared: `browser-approval` has an
+ * agent parked on `await`, and hiding the row would leave it parked forever
+ * with no surface left to answer from. Its clear is the Reject button, which
+ * settles the promise honestly. Everything else is safe to hide.
+ */
+export function isClearable(item: NeedItem): boolean {
+    return item.kind !== 'browser-approval';
+}
+
+export interface NeedsDismissResult {
+    visible: NeedItem[];
+    /** Rows currently produced but hidden by a clear — shown as "N cleared". */
+    hiddenCount: number;
+    /** Stored keys nothing produces any more; the host prunes them. */
+    staleKeys: string[];
+}
+
+export function filterDismissedNeeds(
+    items: NeedItem[],
+    dismissed: Record<string, number>
+): NeedsDismissResult {
+    const live = new Set(items.map(needKey));
+    const visible: NeedItem[] = [];
+    let hiddenCount = 0;
+    for (const item of items) {
+        if (dismissed[needKey(item)] && isClearable(item)) { hiddenCount++; }
+        else { visible.push(item); }
+    }
+    return {
+        visible,
+        hiddenCount,
+        staleKeys: Object.keys(dismissed).filter(k => !live.has(k))
+    };
 }

@@ -1527,14 +1527,25 @@ Filo büyüyünce dar boğaz sensin: kim izin bekliyor, hangi tarayıcı adımı
 
 ### Onay Kuyruğu
 
-**Agent Farm: Open Needs You (Approval Queue)** — sana gelen her şey tek, aciliyet sıralı kuyrukta:
+**Agent Farm: Open Needs You (Approval Queue)** — çiftliğin **takıldığı** her şey tek, aciliyet sıralı kuyrukta.
+
+**‼️ GİRİŞ SINAVI — "elimi hiç sürmezsem çiftlik burada takılı kalır mı?"** Yalnız bunu geçen satır bu sayfaya girer. Olmuş bitmiş bir olgu (aşılmış bütçe), bir teklif (talimat önerisi), kendi kendine çözülen bir durum (kapasite bekleyen park görev) ve boşta bekleyen oturum **iş değil haberdir**: okunmak ve saklanmak için yapılmış olan **Notices**'a gider. İkisini karıştıran sayfa sana kendisini görmezden gelmeyi öğretir — engel kuyruğunun göze alamayacağı tek başarısızlık budur.
 
 1. 🛡️ **İzin bekleyen oturumlar** (canlı hook verisinden) — tek tıkla oturumu veya Timeline'ı aç.
 2. 🌐 **Onay bekleyen tarayıcı adımları** — kuyruktan doğrudan **Run / Reject**. Bildirim ile kuyruk yarışır; ilk karar kazanır. Bildirimi kaçırırsan istek kuyrukta bekler, workflow onayını alana kadar ilerlemez.
-3. ⛓ **Yarıda kalan workflow koşuları (2.42.0)** — pencere kapanışında kesilen zincirler artık yalnız açılış bildirimi değil: kuyrukta kalıcı bir satırdır, **Resume / Dismiss** düğmeleri satırın üstündedir ve karar verilene dek durum çubuğu rozetine sayılır. Açılıştaki toast'ı kaçırmak koşuyu kaybettirmez.
-4. ⏳ **Takılmış (stalled) oturumlar** · 💸 **bütçe aşımları** · ⇄ **Antigravity çakışmaları** (tek tık uzlaştırma) · 💡 **açık talimat önerileri** · 🕓 **park edilmiş görevler** (eşzamanlılık/kota) · 💬 **sırası sende** oturumları.
+3. 🎯 **Sorusu olan / yarıda kalmış görevler (mission)** — **Answer… / Resume / Dismiss** satırın üstünde.
+4. ⛓ **Yarıda kalan workflow koşuları** — pencere kapanışında kesilen zincirler kuyrukta kalıcı bir satırdır, **Resume / Dismiss** düğmeleri satırın üstündedir ve karar verilene dek durum çubuğu rozetine sayılır. Açılıştaki toast'ı kaçırmak koşuyu kaybettirmez.
+5. ⏳ **Takılmış (stalled) oturumlar** · ⇄ **Antigravity çakışmaları** (tek tık uzlaştırma) — çakışma sınavı geçer çünkü onu ne saat, ne bir ajan, ne de yeniden deneme temizler; yalnız sen.
 
-Durum çubuğu artık bu kuyruğu sayar: `🔔 N need you` görünüyorsa tıklamak kuyruğu açar. İş engelleyen üç tür sayılır: izin, tarayıcı onayı, stalled.
+**Satırları temizleme.** Gördüğün ve hükmünü verdiğin satır kaybolur: satırdaki **✕**, seçim kutuları + **🧹 Clear selected**, ya da **🧹 Clear all**. Temizlenen satırlar **↩ Restore (N)** ile geri gelir.
+
+**‼️ Temizleme kendi kendini onarır — hiçbir uyarıyı kalıcı olarak köreltemezsin.** Kayıt, satırın kimliğine bağlanır (oturum + problem türü; zaman damgası ve mesaj metni yok, çünkü problem dururken onlar oynar) ve **yalnız satır üretilmeye devam ettiği sürece** yaşar. Koşul bittiği an satır üretilmez, kayıt bayatlar ve silinir: **aynı** bekleyiş ömrü boyunca gizli kalır, **sonraki** — aynı oturumun yeni izin isteği, aynı oturumun yeniden takılması — temiz sayfayla gelir.
+
+**Temizlenemeyen tek satır: tarayıcı onayı.** Onun arkasında `await`'te park etmiş gerçek bir ajan var; satırı gizlemek onu sonsuza dek orada bırakır ve cevap verecek yüzey kalmaz. Onun "clear"ı **Reject**'tir — sözü dürüstçe kapatır. O yüzden satırda seçim kutusu yerine 🔒 durur.
+
+Durum çubuğu bu kuyruğu sayar: `🔔 N need you` görünüyorsa tıklamak kuyruğu açar.
+
+**Ajan tarafı:** `needs.list` · `needs.clear` (`keys` veya `all:true`) · `needs.restore`.
 
 ### Beş Kavram — hangisi ne? {#gorev-kavramlari}
 
