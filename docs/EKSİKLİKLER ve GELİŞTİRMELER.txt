@@ -1,4 +1,4 @@
-
+-  dur devam ederken ara verip Ajan tarafından kullanıcıya sorulan sorular artık terminalde olduğu gibi console'da da  soru olarak çıkıyorlar ve kullanıcı rahatça basit Mouse klipleri ile Bu soruların cevaplarını seçebiliyor... bu Çok yararlı bir özellik terminale artık hiç gerek kalmadı neredeyse bütün fonksiyonları burada yapılabilir hale getirilmiş oluyor Bununla birlikte.. fakat bunda şöyle bir sorun ortaya çıkıyor Eğer sorulan sorular çok fazlaysa veya çok uzunsa Bunlar ekrana sığmayacak kadar fazla olduğu durumlarda kaydırılamadığı için hiçbir zaman aşağısını kullanıcı göremiyor ve soru ların hepsine cevap veremiyor süreci tamamlayamıyor orada süreç kilitlenip kalıyor sadece arayüz hatası yüzünden.. bu çıkan soruların ekranın altına doğru taştığı zamanlarda kaydırılabilir yukarı aşağı oynatılabilir olması gerekiyor
 
 
 

@@ -342,12 +342,33 @@
            It sits BETWEEN the conversation and the composer, not inside the
            scroller: a question you have to scroll to find is a question that
            looks like the session hung. Loud on purpose — it is the only thing
-           on the page that is holding a running turn still. */
+           on the page that is holding a running turn still.
+           ‼️ AND IT HAS A CEILING, because the thing holding the turn must never
+           be the thing that makes the turn unanswerable. Four questions with
+           described options is taller than a short window, and the card had no
+           ceiling and no scroller: everything past the fold — including the
+           Answer button — was simply unreachable, and the session sat blocked
+           on a question the user could not finish. So the card is a column:
+           the header and the answer strip are FIXED (the way out is always on
+           screen, whatever the questions do), and only the questions scroll. */
         .askbox { flex:none; margin:8px 0 0; padding:9px 11px; border-radius:8px;
+            display:flex; flex-direction:column; min-height:0; max-height:52vh;
             border:1px solid var(--vscode-focusBorder,#3794ff);
             background:color-mix(in srgb, var(--vscode-focusBorder,#3794ff) 10%, transparent); }
         .askbox:empty { display:none; }
+        .askbox .askbody { flex:1 1 auto; min-height:0; overflow-y:auto; overscroll-behavior:contain;
+            padding-right:3px; }
+        .askbox .askfoot { flex:none; }
+        /* the card is holding more than it can show: the questions are cut by a
+           line rather than by the window's edge, so "there is more below" is
+           visible without having to try scrolling first */
+        .askbox.more .askbody { border-bottom:1px solid color-mix(in srgb, var(--vscode-focusBorder,#3794ff) 45%, transparent); }
+        .askbox.more .askfoot { padding-top:6px; }
         .askbox .t { font-weight:600; font-size:12px; display:flex; gap:6px; align-items:center; }
+        /* how much of the card is still unanswered — the one number that says
+           whether anything is waiting for you out of sight */
+        .askbox .t .cnt { margin-left:auto; font-size:10px; font-weight:600; opacity:.85; white-space:nowrap; }
+        .askbox .t .cnt.done { opacity:.6; font-weight:400; }
         .askbox .t .tag { font-size:10px; padding:1px 6px; border-radius:8px; font-weight:600;
             border:1px solid var(--vscode-focusBorder,#3794ff); }
         .askbox .q { font-size:12px; margin:7px 0 4px; }
@@ -745,7 +766,9 @@
      *     choice is a step that exists only to be skipped.
      *   · a PERMISSION — this tool, with this input: allow it or refuse it.
      * Free text is always offered, because "neither — do it this way" is an
-     * answer a list of options cannot hold.
+     * answer a list of options cannot hold — and it lives in the FIXED strip
+     * beside the buttons, not among the questions, so that the way out of a
+     * card taller than the window is never itself below the fold.
      */
     let askPick = { req: '', by: {} };   // which request the picks belong to
 
@@ -776,15 +799,37 @@
                <button class="secondary" id="c-ask-deny" title="The turn carries on and the agent is told you did not answer">Skip the question</button>`
             : `<button id="c-ask-allow">Allow once</button>
                <button class="secondary" id="c-ask-deny" title="The tool does not run; the agent is told why and carries on">Deny</button>`;
+        // How many are still open, said in the header — with the questions
+        // scrollable, "am I done?" can no longer be answered by looking.
+        const done = qs.filter(q => (askPick.by[q.question] || []).length).length;
+        const count = qs.length > 1
+            ? `<span class="cnt${done === qs.length ? ' done' : ''}">${done}/${qs.length} answered</span>`
+            : '';
         return `<div class="t">
                 <span class="tag">${qs.length ? '❓ waiting on you' : '🔐 permission'}</span>
                 ${C.esc(qs.length ? (a.displayName || a.tool) + ' is asking' : (a.displayName || a.tool) + ' wants to run')}
+                ${count}
             </div>
-            ${body}
-            <input class="free" id="c-ask-free" type="text"
-                   placeholder="${qs.length ? 'or say it in your own words — this reaches the agent as your answer' : 'a reason, if you deny it'}">
-            <div class="arow">${actions}</div>
-            <div class="note">The turn is still open — it picks this up and carries on, the same as answering in a terminal.</div>`;
+            <div class="askbody" id="c-ask-body">${body}</div>
+            <div class="askfoot">
+                <input class="free" id="c-ask-free" type="text"
+                       placeholder="${qs.length ? 'or say it in your own words — this reaches the agent as your answer' : 'a reason, if you deny it'}">
+                <div class="arow">${actions}</div>
+                <div class="note">The turn is still open — it picks this up and carries on, the same as answering in a terminal.</div>
+            </div>`;
+    }
+
+    /**
+     * "There is more of this card than fits" — said with a line under the
+     * questions, because a scrollbar is something you have to already suspect
+     * is there. Measured, never assumed: the same card is short on a tall
+     * window and cut on a short one.
+     */
+    function markAskOverflow() {
+        const wrap = document.getElementById('c-ask');
+        if (!wrap) { return; }
+        const body = document.getElementById('c-ask-body');
+        wrap.className = body && body.scrollHeight > body.clientHeight + 1 ? 'askbox more' : 'askbox';
     }
 
     function renderAsk() {
@@ -796,8 +841,20 @@
         const kept = old ? old.value : '';
         const hadFocus = old && document.activeElement === old;
         const at = old ? old.selectionStart : 0;
-        if (!slot('c-ask', askBoxHtml(s))) { return; }
+        // …and so would your place in a card taller than the window: answering
+        // question 3 of 4 would throw the list back to question 1, which is the
+        // same bug wearing a different hat. A NEW question starts at the top —
+        // that one you have not read yet.
+        const oldBody = document.getElementById('c-ask-body');
+        const sameAsk = !!(s && s.pendingAsk && askPick.req === s.pendingAsk.requestId);
+        const scrolled = oldBody && sameAsk ? oldBody.scrollTop : 0;
+        if (!slot('c-ask', askBoxHtml(s))) { markAskOverflow(); return; }
         wireAsk(s);
+        const body = document.getElementById('c-ask-body');
+        // written either way: 0 is the answer for a question you have not read
+        // yet, and saying it is how the card cannot inherit the last one's place
+        if (body) { body.scrollTop = scrolled; }
+        markAskOverflow();
         const box = document.getElementById('c-ask-free');
         if (box && kept) {
             box.value = kept;
@@ -2208,6 +2265,10 @@
         }
     });
     if (DATA.presetAgent) { st.agentId = DATA.presetAgent; save(); }
+    // The answer card's ceiling is a share of the WINDOW, so dragging the panel
+    // taller or shorter changes whether it is cut — and nothing else on the page
+    // would repaint to say so.
+    if (window.addEventListener) { window.addEventListener('resize', markAskOverflow); }
 
     paint();
     // The list you left open (and the question you left it asking) is state the

@@ -87,6 +87,10 @@ export interface Notice {
      *  the work queue). A notice can spawn several; each remembers what the user
      *  wrote, so the linkage is visible inside the notice and clickable. */
     spawnedItems?: NoticeSpawnedRef[];
+    /** Set only on notices the FARM posts about a live condition (never on an
+     *  agent's own message): the identity of the thing being reported, so the
+     *  same condition ending can take the notice back (see dismissBySource). */
+    sourceKey?: string;
 }
 
 export interface NoticeSnapshot {
@@ -118,6 +122,8 @@ export interface NoticeInput {
     dueAt?: number;
     /** Absolute path to an already-written full report file (second leg). */
     reportPath?: string;
+    /** Identity of the live condition this notice reports (host-posted only). */
+    sourceKey?: string;
 }
 
 export interface NoticeFilter {
@@ -205,6 +211,8 @@ export function makeNotice(input: NoticeInput, now = Date.now()): Notice {
     };
     const reportPath = String(input.reportPath ?? '').trim();
     if (reportPath) { n.reportPath = reportPath.slice(0, 500); }
+    const sourceKey = String(input.sourceKey ?? '').trim();
+    if (sourceKey) { n.sourceKey = sourceKey.slice(0, 200); }
     if (type === 'question') { n.status = 'open'; }
     return n;
 }
@@ -251,6 +259,25 @@ export function capNotices(list: Notice[], max = MAX_NOTICES): Notice[] {
     const rest = list.filter(n => !sticky(n)).sort((a, b) => b.ts - a.ts);
     const room = Math.max(0, max - keep.length);
     return sortNotices([...keep, ...rest.slice(0, room)]);
+}
+
+/** Source-key prefix of the "this session is waiting for you" reminder. */
+export const IDLE_REMINDER_PREFIX = 'idle:';
+
+/**
+ * Which posted `idle:<sessionId>` reminders have stopped being true.
+ *
+ * ‼️ The question is answered by the FLEET, not by remembering what the user
+ * did: a reminder stands only while its session is still the one holding your
+ * ball. Answered, closed, resumed by the agent, gone from the fleet entirely —
+ * all the same verdict, so no way of dealing with a session has to be listed
+ * here to be handled. Keys of other kinds are left alone: they report other
+ * conditions, and each owns its own liveness test.
+ */
+export function staleReminderKeys(postedKeys: string[], waitingSessionIds: Iterable<string>): string[] {
+    const waiting = new Set(waitingSessionIds);
+    return postedKeys.filter(k =>
+        k.startsWith(IDLE_REMINDER_PREFIX) && !waiting.has(k.slice(IDLE_REMINDER_PREFIX.length)));
 }
 
 export class NoticesStore {
@@ -370,6 +397,31 @@ export class NoticesStore {
         this.notices = this.notices.filter(n => n.id !== id);
         if (this.notices.length === before) { return false; }
         this.save(); return true;
+    }
+
+    /**
+     * Take back a notice the farm posted about a condition that has since
+     * ended — "developer is waiting for you", once you have answered it.
+     *
+     * ‼️ A REMINDER THAT OUTLIVES WHAT IT REMINDS YOU OF IS WORSE THAN NO
+     * REMINDER: it is the line that teaches you the board is stale. The notice
+     * is posted from a live state, so it is withdrawn from the same state — the
+     * user does not have to tidy up after a condition they already dealt with.
+     *
+     * Two exceptions, both the user's own mark on it: a PINNED or STARRED
+     * notice was kept deliberately, and nothing automatic removes what a person
+     * decided to hold on to. Returns the ids actually removed.
+     */
+    dismissBySource(key: string): string[] {
+        const k = String(key ?? '').trim();
+        if (!k) { return []; }
+        const gone = this.notices.filter(n =>
+            n.sourceKey === k && !n.pinned && (n.stars ?? 0) === 0).map(n => n.id);
+        if (!gone.length) { return []; }
+        const set = new Set(gone);
+        this.notices = this.notices.filter(n => !set.has(n.id));
+        this.save();
+        return gone;
     }
 
     /** Bulk remove a set of ids; returns the removed notices (for UI undo). */

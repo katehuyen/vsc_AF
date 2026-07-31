@@ -53,7 +53,10 @@ import { buildInsights, Insight } from './core/health';
 import {
     ApprovalQueue, blockingCount, buildNeedsQueue, filterDismissedNeeds, isClearable, NeedItem, needKey
 } from './core/needs';
-import { NoticeInput, NoticesStore, registerNoticesOps, reportFileStem } from './core/notices';
+import {
+    IDLE_REMINDER_PREFIX, NoticeInput, NoticesStore, registerNoticesOps, reportFileStem,
+    staleReminderKeys
+} from './core/notices';
 import { registerQueueOps, WorkItem, WorkQueueStore } from './core/workqueue';
 import { PulseStore, runPulseSweep } from './core/pulse';
 import { buildTriggerStats, describeTriggerStat, triggerAlerts } from './core/triggerstats';
@@ -668,7 +671,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const postNewsOnce = (key: string, input: NoticeInput): boolean => {
         const posted = context.globalState.get<Record<string, number>>(NEWS_KEY, {});
         if (posted[key]) { return false; }
-        noticesStore.add({ agentName: 'agent-farm', ...input });
+        noticesStore.add({ agentName: 'agent-farm', sourceKey: key, ...input });
         const now = Date.now();
         posted[key] = now;
         for (const [k, ts] of Object.entries(posted)) {
@@ -677,6 +680,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         void context.globalState.update(NEWS_KEY, posted);
         updateNoticesBadge();
         NoticesPanel.refreshIfOpen();
+        return true;
+    };
+    /**
+     * The other half of "announced exactly once": a notice about a CONDITION is
+     * taken back when the condition ends.
+     *
+     * ‼️ The once-guard is what makes this necessary rather than optional. Left
+     * alone, the guard would keep a dead reminder on the board forever AND
+     * refuse to announce the next occurrence of the same thing, because the key
+     * still says "already told them". Withdrawing clears both: the line goes,
+     * and the key is freed so the condition arising again is news again.
+     * A pinned or starred notice stays (see dismissBySource) — but its key is
+     * still freed, so the user keeping a copy never costs them the next alert.
+     */
+    const retractNews = (key: string): boolean => {
+        const posted = context.globalState.get<Record<string, number>>(NEWS_KEY, {});
+        const removed = noticesStore.dismissBySource(key);
+        if (!posted[key] && !removed.length) { return false; }
+        if (posted[key]) { delete posted[key]; void context.globalState.update(NEWS_KEY, posted); }
+        if (removed.length) { updateNoticesBadge(); NoticesPanel.refreshIfOpen(); }
         return true;
     };
     /** Assigned once the live monitor and the task manager exist (see below). */
@@ -4544,6 +4567,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return n;
     };
 
+    /**
+     * ‼️ "developer is waiting for you" — and then you answered it.
+     *
+     * The reminder is a statement about a state ("this session is holding your
+     * ball"), so the moment the state ends the line is simply false: you typed
+     * a reply, you closed the session, the agent picked the turn back up. It is
+     * the one notice on the board nobody should ever have to tidy up, because
+     * the act that makes it obsolete IS the act of dealing with it.
+     *
+     * The test is the session's OWN status, not a memory of what the user did:
+     * still waiting on you = the reminder stands; anything else (working, ended,
+     * gone from the fleet entirely) = it is withdrawn. That covers every way out
+     * — the Console, a terminal, the ✕ on the card, the process dying — without
+     * this code having to enumerate them.
+     */
+    const retractAnsweredReminders = (): void => {
+        const keys = Object.keys(context.globalState.get<Record<string, number>>(NEWS_KEY, {}));
+        if (!keys.some(k => k.startsWith(IDLE_REMINDER_PREFIX))) { return; }
+        const stale = staleReminderKeys(keys, live.sessions()
+            .filter(s => s.status === 'waiting-input')
+            .map(s => s.sessionId));
+        for (const k of stale) { retractNews(k); }
+    };
+    // The live monitor hears the answer FIRST — hook events arrive while the
+    // transcript on disk is still being written — so the withdrawal rides the
+    // fleet's own beat rather than waiting for the next index pass.
+    live.onDidUpdate(retractAnsweredReminders, null, context.subscriptions);
+
     // The four things that used to sit on Needs You with nothing to do about
     // them. Each is announced once, on the board built to hold announcements.
     postFarmNews = () => {
@@ -4597,6 +4648,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 });
             }
         }
+        retractAnsweredReminders();
     };
 
     const LAP_KEY = 'agentfarm.lapStartTs';

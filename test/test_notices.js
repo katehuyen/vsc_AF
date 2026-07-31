@@ -11,7 +11,8 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 const {
     NoticesStore, makeNotice, filterNotices, capNotices, coerceType, coerceLevel,
     coerceSections, coerceStars, unreadCount, openQuestionCount, registerNoticesOps,
-    noticeMarkdown, buildNoticesMarkdown, NOTICE_TYPES, reportFileStem
+    noticeMarkdown, buildNoticesMarkdown, NOTICE_TYPES, reportFileStem,
+    staleReminderKeys, IDLE_REMINDER_PREFIX
 } = require(path.join(__dirname, '..', 'out', 'core', 'notices.js'));
 const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'bridge.js'));
 
@@ -185,6 +186,57 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
     const gone = store.dismissMany([a.id, b.id]);
     ok('dismissMany removes + returns them', gone.length === 2 && !store.notices.some(n => n.id === a.id) && !store.notices.some(n => n.id === b.id));
     ok('dismissMany is undoable via restore', store.restore(gone) === 2 && store.notices.some(n => n.id === a.id));
+
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+}
+
+// ---------- a reminder is withdrawn when what it reminds you of ends ----------
+//
+// "developer is waiting for you" is a statement about a live state, and the act
+// that makes it obsolete (answering that session) is the act of dealing with
+// it. Leaving it on the board is what teaches the user the board is stale — so
+// the farm takes its own line back, and the user tidies nothing.
+{
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-notices-source-'));
+    const store = new NoticesStore(path.join(dir, 'notices.json')); store.load();
+    const idle = store.add({ title: 'developer is waiting for you', type: 'reminder', sourceKey: 'idle:s1' });
+    const other = store.add({ title: 'manager is waiting for you', type: 'reminder', sourceKey: 'idle:s2' });
+    const plain = store.add({ title: 'an agent said something', type: 'update' });
+
+    ok('the source of a host-posted notice is remembered', idle.sourceKey === 'idle:s1');
+    ok('…and an agent\'s own notice carries none', plain.sourceKey === undefined);
+    ok('a source key longer than the field is cut, not rejected',
+        makeNotice({ title: 'x', sourceKey: 'k'.repeat(400) }).sourceKey.length === 200);
+    ok('an empty source key is simply absent', makeNotice({ title: 'x', sourceKey: '   ' }).sourceKey === undefined);
+
+    const removed = store.dismissBySource('idle:s1');
+    ok('the condition ending takes its own notice back', removed.length === 1 && removed[0] === idle.id);
+    ok('…and touches nothing else', store.notices.length === 2 &&
+        store.notices.some(n => n.id === other.id) && store.notices.some(n => n.id === plain.id));
+    ok('an unknown source removes nothing', store.dismissBySource('idle:nope').length === 0);
+    ok('an empty key is not a wildcard', store.dismissBySource('').length === 0 && store.notices.length === 2);
+
+    // ‼️ The user's own mark outranks the automatism: pinning or starring a line
+    // is a decision to keep it, and nothing automatic may undo a decision.
+    store.pin(other.id, true);
+    ok('a PINNED reminder survives its condition ending', store.dismissBySource('idle:s2').length === 0);
+    store.pin(other.id, false); store.setStars(other.id, 2);
+    ok('…and so does a STARRED one', store.dismissBySource('idle:s2').length === 0);
+    store.setStars(other.id, 0);
+    ok('unmarked again, it goes', store.dismissBySource('idle:s2').length === 1);
+
+    // The verdict itself: which posted keys have stopped being true. Answered,
+    // closed, resumed, gone from the fleet — one test covers all of them.
+    const posted = ['idle:s1', 'idle:s2', 'idle:s3', 'parked:t9', 'budget:2026-08-01:dev'];
+    const stale = staleReminderKeys(posted, ['s2']);
+    ok('a session still waiting on you keeps its reminder', stale.indexOf('idle:s2') < 0);
+    ok('every other session\'s reminder is stale — answered, closed or gone',
+        stale.indexOf('idle:s1') >= 0 && stale.indexOf('idle:s3') >= 0);
+    ok('news of other kinds is left alone — each owns its own liveness test',
+        !stale.some(k => k.indexOf('idle:') !== 0) && stale.length === 2);
+    ok('nothing waiting means nothing is still true', staleReminderKeys(posted, []).length === 3);
+    ok('no reminders posted, nothing to withdraw', staleReminderKeys(['parked:t1'], []).length === 0);
+    ok('the prefix is shared with the host, not retyped', IDLE_REMINDER_PREFIX === 'idle:');
 
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
 }

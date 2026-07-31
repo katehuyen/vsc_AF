@@ -79,6 +79,29 @@ const sandbox = {
         },
         querySelectorAll: sel => {
             if (sel.indexOf('[data-afms') === 0) { return []; }
+            // The answer card's option buttons carry TWO data attributes —
+            // which question, which option — and the page reads both off the
+            // element it was handed, so they are matched as the pair they are.
+            // Matched singly, every option of one question would collapse onto
+            // the same cached object and the wiring test would pass on a page
+            // that cannot tell option 1 from option 2.
+            if (sel === '[data-askq]') {
+                const out = [];
+                const re = /data-askq="(\d+)"\s+data-asko="(\d+)"/g;
+                const html = allHtml();
+                let hit;
+                while ((hit = re.exec(html))) {
+                    const key = `askq=${hit[1]},asko=${hit[2]}`;
+                    let el = qsCache[key];
+                    if (!el) {
+                        el = { dataset: { askq: hit[1], asko: hit[2] } };
+                        el.addEventListener = (_t, fn) => { el._fn = fn; };
+                        qsCache[key] = el;
+                    }
+                    out.push(el);
+                }
+                return out;
+            }
             // enough of a query engine for the rows the page wires by hand
             const m = /^\[data-([a-z]+)\]$/.exec(sel);
             if (!m) { return []; }
@@ -1204,6 +1227,84 @@ const html = allHtml;
         && ord().minTicks === 3 && ord().holdSec === 0);
     ok('…and closed, the column is a button and nothing else',
         (els['c-toggle-order'].listeners.click(), els['c-opanel']._html === ''));
+}
+
+// ---------- the answer card: a question you can always finish ----------
+//
+// ‼️ THE CARD THAT HOLDS THE TURN MUST NEVER BE THE THING THAT MAKES THE TURN
+// UNANSWERABLE. Four questions with described options are taller than a short
+// panel, and the card had no ceiling and no scroller: everything past the fold
+// — including the Answer button — was unreachable, and the session sat blocked
+// on a question the user could see but not finish. The fix is a column: header
+// and answer strip FIXED, questions scrolling between them.
+{
+    const askOf = (req, n) => ({
+        requestId: req, tool: 'AskUserQuestion', displayName: 'AskUserQuestion',
+        questions: Array.from({ length: n }, (_, i) => ({
+            question: `Question ${i + 1}?`, header: `H${i + 1}`, multiSelect: true,
+            options: [
+                { label: `A${i + 1}`, description: 'first' },
+                { label: `B${i + 1}`, description: 'second' }
+            ]
+        }))
+    });
+    const card = () => els['c-ask']._html;
+    const body = () => els['c-ask-body'];
+    const opt = (q, o) => qsCache[`askq=${q},asko=${o}`];
+    /** What is inside the scrolling part — the stub keeps the card as one
+     *  string, so the slice between the two markers IS the scroller. */
+    const scroller = () => card().slice(card().indexOf('id="c-ask-body"'), card().indexOf('class="askfoot"'));
+
+    push(data(CONVO.slice(), { pendingAsk: askOf('req-1', 4) }));
+    ok('the questions sit in their own scroller', /class="askbody" id="c-ask-body"/.test(card()));
+    ok('…and every question is in it', /Question 1\?/.test(scroller()) && /Question 4\?/.test(scroller()));
+    // The way OUT is never below the fold — it is not in the scrolling part at
+    // all. Free text included: "neither — do it this way" is an answer, and it
+    // is worthless if you have to scroll past four questions to reach it.
+    ok('the answer strip is outside the scroller', card().indexOf('class="askfoot"') > card().indexOf('id="c-ask-body"'));
+    ok('…and holds the buttons and the free-text line',
+        /askfoot[\s\S]*id="c-ask-free"[\s\S]*id="c-ask-send"/.test(card())
+        && !/id="c-ask-free"/.test(scroller()));
+
+    // A scroller answers "is there more?" only if you already suspect there is,
+    // so the card says it: a line under the questions, measured not assumed.
+    ok('a card taller than its ceiling is marked as cut', els['c-ask'].className === 'askbox more');
+    ok('…and how much of it is still unanswered is in the header', /0\/4 answered/.test(card()));
+
+    // Answering question 3 of 4 must not throw the list back to question 1 —
+    // that is the same bug wearing a different hat.
+    body().scrollTop = 140;
+    opt(2, 0)._fn();
+    ok('ticking an option keeps your place in the list', body().scrollTop === 140);
+    ok('…and the header counts it', /1\/4 answered/.test(card()));
+    ok('…without sending anything yet — a multi-select collects', !posted.some(m => m.type === 'askAnswer'));
+    opt(2, 1)._fn();
+    ok('a second tick in the same question is still one question answered', /1\/4 answered/.test(card()));
+
+    // A NEW question is one you have not read: it starts at the top.
+    push(data(CONVO.slice(), { pendingAsk: askOf('req-2', 2) }));
+    ok('a fresh question starts at the top', body().scrollTop === 0);
+    ok('…with its own count', /0\/2 answered/.test(card()));
+
+    // The ceiling is a share of the WINDOW, so the same card is short on a tall
+    // panel — and then there is nothing to warn about.
+    body().scrollHeight = 120; body().clientHeight = 300;
+    opt(0, 0)._fn();
+    ok('a card that fits is not marked as cut', els['c-ask'].className === 'askbox');
+    ok('…and one question of two is counted', /1\/2 answered/.test(card()));
+
+    // A permission ask has no questions: no count, but the same fixed strip —
+    // a tool call with a huge input is exactly as unanswerable when it overflows.
+    push(data(CONVO.slice(), {
+        pendingAsk: { requestId: 'p1', tool: 'Bash', displayName: 'Bash', detail: 'rm -rf /tmp/x' }
+    }));
+    ok('a permission ask gets the same scroller and strip',
+        /class="askbody" id="c-ask-body"/.test(card()) && /askfoot[\s\S]*id="c-ask-allow"/.test(card()));
+    ok('…and no answered-count, because there is nothing to count', !/answered<\/span>/.test(card()));
+
+    // …and when the turn is no longer parked on anything, the card leaves.
+    push(data(CONVO.slice(), { pendingAsk: null }));
+    ok('no question, no card', card() === '');
 }
 
 console.log(`${pass} passed, ${fail} failed`);
