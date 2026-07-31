@@ -25,6 +25,7 @@
            renamed, hidden or reordered — the buttons here are simply denser
            than the page's own body buttons, which keep their normal size. */
         .af-head-bar button { font-size:11px; padding:3px 8px; }
+        .af-head-bar .af-nav-n { opacity:.85; }
         /* A nav button a page has claimed (see navActions): ONE button, whose
            two meanings live in a menu under it. Two buttons side by side ate a
            quarter of the toolbar's width for a destination nobody reaches twice. */
@@ -72,17 +73,67 @@
         .af-tab .af-tab-n { opacity:.8; font-weight:400; }
     </style>`;
 
-    function tabs(active) {
+    /**
+     * The two live counts, read fresh from window.__AFUI__ — which the host
+     * keeps current by pushing { type:'afui' } (see afCounts below). 🔔 unread
+     * notices, 📥 queue items that need you.
+     */
+    function counts() {
         const ui = window.__AFUI__ || {};
-        const unread = (ui.notices && ui.notices.unread) || 0;
-        const blocked = (ui.queue && ui.queue.blocked) || 0;
+        return {
+            notices: (ui.notices && ui.notices.unread) || 0,
+            queue: (ui.queue && ui.queue.blocked) || 0
+        };
+    }
+
+    /** A count badge. ALWAYS rendered — empty at zero — and marked with
+     *  data-afcount, so a changed count is a text swap on an element that is
+     *  already there rather than a re-render (see afCounts). */
+    function badge(id, cls) {
+        const n = counts()[id] || 0;
+        return `<span class="${cls}" data-afcount="${id}">${n ? ` (${n})` : ''}</span>`;
+    }
+
+    function tabs(active) {
         const T = [
-            { id: 'notices', label: '🔔 Notices', n: unread },
-            { id: 'queue', label: '📥 Queue', n: blocked }
+            { id: 'notices', label: '🔔 Notices' },
+            { id: 'queue', label: '📥 Queue' }
         ];
         return `${TAB_STYLE}<div class="af-tabs">` + T.map(t =>
-            `<button class="af-tab ${t.id === active ? 'on' : ''}" data-afnav="${t.id}">${t.label}${t.n ? ` <span class="af-tab-n">(${t.n})</span>` : ''}</button>`
+            `<button class="af-tab ${t.id === active ? 'on' : ''}" data-afnav="${t.id}">${t.label}${badge(t.id, 'af-tab-n')}</button>`
         ).join('') + `</div>`;
+    }
+
+    /**
+     * ‼️ A NUMBER ON SCREEN MUST NEVER OUTLIVE THE THING IT COUNTS.
+     *
+     * The counts ride in window.__AFUI__, which the HTML shell writes ONCE — so
+     * a page that only refreshes its data kept showing the count it was BUILT
+     * with: delete 16 unread notices and the tab strip still said "🔔 Notices
+     * (16)" (and so did every other open page's nav) until that page was
+     * rebuilt. The host now pushes the pair on every change; here we take it,
+     * update __AFUI__ so the next render agrees, and repaint the badges in
+     * place — a full re-render would throw away scroll position, open menus and
+     * half-typed drafts for the sake of two digits.
+     *
+     * Wired once per page, on load, so it survives every re-render.
+     */
+    function paintCounts() {
+        const n = counts();
+        document.querySelectorAll('[data-afcount]').forEach(el => {
+            const v = n[el.dataset.afcount] || 0;
+            el.textContent = v ? ` (${v})` : '';
+        });
+    }
+
+    if (!window.__afCountsWired && typeof window.addEventListener === 'function') {
+        window.__afCountsWired = true;
+        window.addEventListener('message', ev => {
+            const m = ev && ev.data;
+            if (!m || m.type !== 'afui' || !m.afui) { return; }
+            window.__AFUI__ = Object.assign({}, window.__AFUI__, m.afui);
+            paintCounts();
+        });
     }
 
     /**
@@ -113,13 +164,12 @@
      */
     function html(o) {
         const cluster = [];
-        // 🔔 Notices carries the unread count in parentheses — "🔔 Notices (3)";
-        // the parens vanish once nothing is unread. Count is read live at render
-        // (window.__AFUI__.notices.unread, injected by htmlShell).
-        const unread = (window.__AFUI__ && window.__AFUI__.notices && window.__AFUI__.notices.unread) || 0;
         for (const n of NAV) {
             if (n.id === o.page) { continue; }
-            const label = (n.id === 'notices' && unread > 0) ? `${n.label} (${unread})` : n.label;
+            // 🔔 Notices carries the unread count in parentheses — "🔔 Notices
+            // (3)"; the parens vanish once nothing is unread. Its own badge
+            // element, so the live push can repaint it (see afCounts).
+            const label = n.id === 'notices' ? `${n.label}${badge('notices', 'af-nav-n')}` : n.label;
             // A page may claim a nav button for its own subject: on the agent
             // page "Console" should mean *talk to THIS agent*, on a session's
             // page *continue THIS session there*. The button stays one button
@@ -128,7 +178,9 @@
             // that used to work stops working and the toolbar keeps its width.
             const claim = (o.navActions || {})[n.id];
             if (claim) {
-                const plain = label.replace(/^[^\w]+\s*/, '');
+                // "Open Notices" — the bare page name, from the plain label:
+                // the menu item names a destination, not a count.
+                const plain = n.label.replace(/^[^\w]+\s*/, '');
                 cluster.push(`<span class="af-claim">
                     <button class="secondary" data-afclaim="${n.id}" aria-haspopup="true" aria-expanded="false"
                         title="${claim.title || ''}">${label} ▾</button>
@@ -258,5 +310,5 @@
             }));
     }
 
-    window.AFHeader = { html, wire, tabs, menu, wireMenu };
+    window.AFHeader = { html, wire, tabs, menu, wireMenu, counts, paintCounts };
 })();

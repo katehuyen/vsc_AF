@@ -4,9 +4,8 @@ import * as vscode from 'vscode';
  * The global nav's 🔔 Notices button shows the current unread count in
  * parentheses (see media/pageHeader.js). htmlShell has no direct handle on the
  * notices store, so the host registers a light provider here — same live-read
- * pattern as the AF UI config below, read fresh on every page render (the
- * status-bar bell carries the live count; a page's nav reflects the count as of
- * its last render). Returns 0 until the host wires it in activate().
+ * pattern as the AF UI config below. Returns 0 until the host wires it in
+ * activate().
  */
 let noticesUnreadProvider: (() => number) | undefined;
 export function setNoticesUnreadProvider(fn: () => number): void { noticesUnreadProvider = fn; }
@@ -15,11 +14,48 @@ function currentUnread(): number {
 }
 
 /** Live count of work-queue items that need the user (blocked) — feeds the
- *  Notices/Kuyruk tab strip's 📥 badge, same pattern as the unread provider. */
+ *  Notices/Queue tab strip's 📥 badge, same pattern as the unread provider. */
 let queueBlockedProvider: (() => number) | undefined;
 export function setQueueBlockedProvider(fn: () => number): void { queueBlockedProvider = fn; }
 function currentBlocked(): number {
     try { return queueBlockedProvider ? Math.max(0, Math.floor(queueBlockedProvider())) : 0; } catch { return 0; }
+}
+
+/**
+ * ‼️ THE COUNTS ARE PUSHED, NOT SNAPSHOTTED.
+ *
+ * Both numbers reach a page inside window.__AFUI__, which htmlShell writes into
+ * the HTML **once**. A data refresh (postMessage) does not rebuild that HTML, so
+ * without a push the badges freeze at the value the page was BUILT with: after
+ * deleting 16 unread notices the page said "0 unread" in its own subtitle while
+ * the tab strip above it still read "🔔 Notices (16)" — and every other open
+ * page kept the stale number in its nav too.
+ *
+ * So every live page is registered here and gets { type:'afui', afui } whenever
+ * either count changes; the header repaints its badges in place. Every Agent
+ * Farm panel is retainContextWhenHidden, so a page sitting in a background tab
+ * still receives the push — postMessage resolving false therefore means the
+ * panel is gone, and the entry is dropped. (A future non-retained panel would
+ * simply fall back to the old build-time snapshot, never to a broken page.)
+ */
+const livePages = new Set<vscode.Webview>();
+
+/** The count pair exactly as the webview sees it (window.__AFUI__). */
+function headerCounts(): { notices: { unread: number }; queue: { blocked: number } } {
+    return { notices: { unread: currentUnread() }, queue: { blocked: currentBlocked() } };
+}
+
+/** Push the current counts to every open page. Call wherever either count can
+ *  have changed — the host does it from the same place it repaints the
+ *  status-bar bell, so the two surfaces can never disagree. */
+export function pushHeaderCounts(): void {
+    const afui = headerCounts();
+    for (const w of [...livePages]) {
+        try {
+            void Promise.resolve(w.postMessage({ type: 'afui', afui }))
+                .then(delivered => { if (!delivered) { livePages.delete(w); } }, () => livePages.delete(w));
+        } catch { livePages.delete(w); }
+    }
 }
 
 export function getNonce(): string {
@@ -155,11 +191,12 @@ export function htmlShell(
             casing: cfg.get<string>('speakerLabelCase', 'page'),
             fallback: cfg.get<string>('speakerLabelFallback', 'agent')
         },
-        // Unread notice count for the global nav's 🔔 Notices badge.
-        notices: { unread: currentUnread() },
-        // Blocked work-queue count for the 📥 Kuyruk tab badge.
-        queue: { blocked: currentBlocked() }
+        // 🔔 unread notices + 📥 queue items that need you. Only the STARTING
+        // values — from here on they arrive by push (see pushHeaderCounts).
+        ...headerCounts()
     };
+    // This page is now live: it must receive count changes for as long as it exists.
+    livePages.add(webview);
     return `<!DOCTYPE html>
 <html lang="en">
 <head>

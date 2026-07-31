@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.47.1 — The header counts stop lying: a number on screen never outlives what it counts (2026-07-31)
+
+**‼️ Sixteen notices were deleted and the tab above them kept saying "🔔 Notices (16)".** The page's own subtitle said `0 unread` in the same breath — one screen, two numbers, one of them false. The cause was where the counts live: both badges (🔔 unread, 📥 needs you) are read out of `window.__AFUI__`, which the HTML shell writes **once, at build time**. Every mutation after that refreshes the page's *data* by `postMessage`, which does not rebuild the HTML — so the badge was frozen at the value the page had been *opened* with, on the Notices/Queue tab strip and in the 🔔 nav button of every other open page alike. It only ever corrected itself when the panel was closed and reopened.
+
+**The counts are now pushed, not snapshotted.** Every page built by the shell registers itself, and the pair is broadcast to all of them from the same function that repaints the status-bar bell — so the bell and the pages cannot disagree, and no future mutation path has to remember a second place to call. The badge is a `data-afcount` element that is **always** in the DOM (empty at zero, or there would be nothing to repaint), so an arriving push is a text swap: scroll position, open menus and half-typed drafts survive it, which a re-render would not. `__AFUI__` is updated alongside, so the next render agrees with what you can already see.
+
+- Every panel is `retainContextWhenHidden`, so a page in a background tab still receives the push; `postMessage` answering false therefore means the panel is gone, and its entry is dropped. A future non-retained panel would fall back to the old build-time snapshot — never to a broken page.
+- A claimed nav button ("Console ▾" on an agent's page) keeps its count on the button, while its menu item stays the plain destination — `Open Notices`, not `Open Notices (16)`.
+- 26 new checks in `test_header_counts.js`, driving the real `media/pageHeader.js`: the badge existing at zero, both places counting, a push emptying the 🔔 badge **without** re-rendering, the speaker config surviving a count push, and the host half of the contract (registration, broadcast shape, dead-page pruning, and the push sitting in the one function every notice/queue change already calls). Suite: **84 files, 3682 checks green.**
+
 ## 3.47.0 — Needs You holds only what needs you, and a row you have judged goes away (2026-07-31)
 
 **‼️ "Daily budget exceeded: $180 of $30.00 (599%)." — what, exactly, was the user supposed to do about that?** The row's only action was a button that opened the Dashboard. It was a fact about something that had already happened, it could not be answered, and it could not be removed: the queue is *derived* from live state on every render, so it had no notion of a row being dealt with. It sat there until the day rolled over. Two failures at once — the wrong content, and no control over it — and together they are the one failure a blocking queue cannot afford: a page that teaches you to ignore it.

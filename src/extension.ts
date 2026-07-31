@@ -168,7 +168,7 @@ import { NoticesPanel } from './panels/noticesPanel';
 import { QueuePanel } from './panels/queuePanel';
 import { openReportDoc } from './panels/openDoc';
 import { DocOpenStore, DOC_OPEN_LABELS, DOC_OPEN_MODES, DocOpenMode, registerDocOpenOps } from './core/docopen';
-import { setNoticesUnreadProvider, setQueueBlockedProvider } from './panels/base';
+import { pushHeaderCounts, setNoticesUnreadProvider, setQueueBlockedProvider } from './panels/base';
 import { SearchPanel } from './panels/searchPanel';
 import { FarmSettingsPanel } from './panels/settingsPanel';
 import { SelectionPanel } from './panels/selectionPanel';
@@ -471,6 +471,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 : 'Notices & work queue — agent↔you';
         }
         noticesBar.show();
+        // The bell is not the only place these two numbers are shown: every open
+        // page carries them in its header (🔔 nav badge, 🔔/📥 tab strip). They
+        // are repainted from HERE so the bell and the pages can never disagree.
+        pushHeaderCounts();
 
         // Insist ONCE per item, never in a loop: the point is that ignoring
         // something has a consequence, not that the farm becomes a nag.
