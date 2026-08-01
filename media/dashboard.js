@@ -563,7 +563,7 @@
                 related: [
                     { nav: 'turns', label: 'Turns' },
                     {
-                        action: 'syncConstitution', label: '⚖ Sync constitution',
+                        action: 'syncConstitution', label: '⚖ Sync Cons.',
                         title: 'Mirror the shared constitution (the nest root\'s own CLAUDE.md) to the AGENTS.md files Codex and Antigravity read. CLAUDE.md is only read, never written; a hand-edited AGENTS.md is reported, not overwritten.'
                     }
                 ],
