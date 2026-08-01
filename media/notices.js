@@ -324,7 +324,8 @@
     }
     function actionsHtml() {
         const undo = DATA.undoable || 0;
-        return `<span class="nt-grp nt-bulk">
+        return `<span class="nt-break"></span>
+            <span class="nt-grp nt-bulk">
                 <label class="nt-selall" title="Select / deselect all shown"><input type="checkbox" id="nt-selall"> all</label>
                 <button data-hact="bulkRead" title="Mark selected read (or all shown if none selected)">✓ Read</button>
                 <button class="secondary" data-hact="bulkUnread" title="Mark selected unread (or all shown)">○ Unread</button>
@@ -367,6 +368,11 @@
         .nt-grp { display:inline-flex; gap:6px; align-items:center; padding-right:8px; margin-right:2px; border-right:1px solid var(--vscode-panel-border); }
         .nt-grp:last-child { border-right:none; }
         .nt-bulk .nt-selall { display:inline-flex; gap:3px; align-items:center; font-size:11px; opacity:.85; cursor:pointer; }
+        /* Forces the action-button row to start fresh under the search/filter
+           controls row, instead of fighting them for space on one flex line —
+           that fight is what was stranding "all…Delete" up with the filters
+           while Clear read/Export MD wrapped to a line of their own below. */
+        .nt-break { flex-basis:100%; height:0; }
         button.danger:hover { background:var(--vscode-inputValidation-errorBackground, #5a1d1d); border-color:var(--vscode-editorError-foreground, #e51400); }
         .nt-trashic { color:var(--vscode-editorError-foreground, #e51400); }
         /* Small, deliberately subdued mark riding in front of "Clear read" —
