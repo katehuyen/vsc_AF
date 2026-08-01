@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
-import { ConsoleHost, describeAttachment, looksLikeUri } from '../core/consolehost';
+import { ConsoleHost, describeAttachment, looksLikeUri, safeAttachmentName } from '../core/consolehost';
 import { Attachment, ATTACH_LIMITS, carriedTotals, ConsoleMessage, PERMISSION_GRANTS } from '../core/consoleproto';
 import {
     filterResumable, isResumeFiltered, RESUME_DEFAULT_N, RESUME_MAX, ResumeQuery
@@ -242,6 +242,17 @@ export class ConsolePanel {
             permissions: PERMISSION_CHOICES,
             grants: PERMISSION_GRANTS,
             defaults: { model: d.model ?? '', effort: d.effort ?? '', permissionMode: d.permissionMode ?? '' },
+            // The page-wide drop zone, and a way to turn it off. It is on by
+            // default; the switch exists because a drag-and-drop that misbehaves
+            // on a particular machine must be something the user can END, not
+            // something they have to live with until a fix ships. 📎 and paste
+            // are unaffected — they are the routes that never listen for a drag.
+            dropZone: vscode.workspace.getConfiguration('agentFarm').get<boolean>('consoleDropZone', true),
+            // The ceiling has ONE definition (ATTACH_LIMITS) and the composer is
+            // told it rather than repeating the number — a limit typed twice is
+            // a limit that drifts, and the half that drifts is always the one
+            // that stages twenty temp files before refusing the twenty-first.
+            attachMax: ATTACH_LIMITS.count,
             // sessions a live process owns right now — the resume list marks
             // them instead of offering a second process on the same transcript
             owned: this.deps.liveOwners().map(o => o.sessionId),
@@ -346,13 +357,19 @@ export class ConsolePanel {
      * Old spills are swept on the way in (7 days): the folder is a staging
      * area, not an archive, and nothing else would ever delete from it.
      */
-    private async spillToTemp(name: string, base64: string): Promise<string | undefined> {
+    private async spillToTemp(name: string, base64: string, mediaType = ''): Promise<string | undefined> {
         try {
             const dir = path.join(os.tmpdir(), 'agentfarm-attachments');
             await fs.promises.mkdir(dir, { recursive: true });
             sweepSpills(dir);
-            // Keep the name the user knows, make the file unique.
-            const safe = path.basename(name).replace(/[^\w.\- ]+/g, '_') || 'attachment';
+            // ‼️ KEEP THE NAME THE USER KNOWS — `\w` is ASCII, so the old rule
+            // rewrote "deneme dosyası.txt" as "deneme dosyas_.txt": every
+            // Turkish letter replaced by an underscore in the one string the
+            // user has to recognise the file by. Only what a Windows filename
+            // genuinely cannot hold is replaced. The clipboard's own media type
+            // comes along because a pasted screenshot frequently has no name,
+            // and a suffix is what decides whether the model SEES it.
+            const safe = safeAttachmentName(path.basename(name), mediaType);
             const target = path.join(dir, `${Date.now().toString(36)}-${safe}`);
             await fs.promises.writeFile(target, Buffer.from(base64, 'base64'));
             return target;
@@ -526,9 +543,29 @@ export class ConsolePanel {
             // answers with real paths, and the composer only ever holds paths.
             case 'attachPick': {
                 void (async () => {
+                    // ‼️ `canSelectFiles` AND `canSelectFolders` TOGETHER IS NOT
+                    // "BOTH" ON WINDOWS — the native dialog has no such mode, so
+                    // Electron falls back to the FOLDER picker: every file
+                    // vanishes from the list and there is nothing left to select.
+                    // The button that exists to attach a file showed no files.
+                    // Files it is, with the filter row a file dialog is expected
+                    // to have; a FOLDER is attached by dropping it on the page
+                    // (the drop path takes folders exactly as it always did).
                     const picked = await vscode.window.showOpenDialog({
-                        canSelectMany: true, canSelectFiles: true, canSelectFolders: true,
-                        openLabel: 'Attach'
+                        canSelectMany: true, canSelectFiles: true, canSelectFolders: false,
+                        openLabel: 'Attach',
+                        title: 'Attach files to the message',
+                        // "All files" is first because it is the honest default:
+                        // this feature takes anything, and a picker that opens
+                        // narrowed teaches you it does not.
+                        filters: {
+                            'All files': ['*'],
+                            'Images (sent inside the message)': ['png', 'jpg', 'jpeg', 'gif', 'webp'],
+                            'Text and code': ['txt', 'md', 'json', 'yaml', 'yml', 'csv', 'log',
+                                'js', 'ts', 'tsx', 'jsx', 'py', 'java', 'cs', 'go', 'rs', 'sql',
+                                'html', 'css', 'sh', 'ps1', 'ini', 'xml'],
+                            'Documents': ['pdf', 'docx', 'xlsx', 'pptx', 'odt', 'ods']
+                        }
                     });
                     if (picked?.length) { this.postAttached(picked.map(u => u.fsPath)); }
                 })();
@@ -562,16 +599,28 @@ export class ConsolePanel {
                 // security), so the bytes land in a temp file and THAT is the
                 // path everything downstream already knows how to handle.
                 void (async () => {
-                    const files = Array.isArray(msg.files) ? msg.files as { name?: unknown; data?: unknown }[] : [];
+                    const files = Array.isArray(msg.files)
+                        ? msg.files as { name?: unknown; data?: unknown; type?: unknown }[]
+                        : [];
                     const written: string[] = [];
                     for (const f of files) {
                         const name = typeof f.name === 'string' && f.name ? f.name : 'attachment';
                         const data = typeof f.data === 'string' ? f.data : '';
                         if (!data) { continue; }
-                        const p = await this.spillToTemp(name, data);
+                        const p = await this.spillToTemp(name, data, typeof f.type === 'string' ? f.type : '');
                         if (p) { written.push(p); }
                     }
-                    if (written.length) { this.postAttached(written); }
+                    if (written.length) { this.postAttached(written); return; }
+                    // ‼️ AND IF NOTHING SURVIVED, SAY SO. Every gesture answers;
+                    // this was the one path that could still end in an unchanged
+                    // panel and no word about why (`spillToTemp` warns when a
+                    // write throws, but a payload that arrived empty warned
+                    // about nothing at all).
+                    if (files.length) {
+                        void vscode.window.showWarningMessage(
+                            'Agent Farm: nothing could be attached from that — the dropped data was empty. '
+                            + 'Use 📎 to pick the file instead.');
+                    }
                 })();
                 break;
             }

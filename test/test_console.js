@@ -154,8 +154,18 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         s.model === 'claude-haiku-4-5' && s.permissionMode === 'manual');
     ok('…and the session becomes usable', s.status === 'idle');
 
-    s = reduce(s, { type: 'system', subtype: 'thinking_tokens', estimated_tokens: 5120 });
-    ok('the CLI\'s own context estimate is kept', s.contextTokens === 5120);
+    // ‼️ `thinking_tokens` IS NOT A CONTEXT ESTIMATE — it was read as one, and
+    // that is why the ctx figure collapsed mid-turn. The CLI's own words for the
+    // event (out of the 2.1.220 binary): "Live thinking-token estimate …
+    // estimated_tokens is the running total for the current thinking block". It
+    // restarts near zero on every block and is emitted constantly — twelve times
+    // in one short measured turn — so a session truly holding 225k was shown
+    // dropping to ~100 and climbing 100 → 200 → 500, over and over.
+    s = { ...s, contextTokens: 225000 };
+    s = reduce(s, { type: 'system', subtype: 'thinking_tokens', estimated_tokens: 100 });
+    ok('a thinking-token estimate never touches the context figure', s.contextTokens === 225000);
+    s = reduce(s, { type: 'system', subtype: 'thinking_tokens', estimated_tokens: 512 });
+    ok('…however many of them arrive', s.contextTokens === 225000);
     const before = s.messages.length;
     s = reduce(s, { type: 'system', subtype: 'hook_started', hook_name: 'SessionStart' });
     ok('hook chatter is NOT rendered as conversation', s.messages.length === before);
@@ -408,6 +418,91 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         const next = shiftQueued({ ...closed, status: 'idle', queued: ['again'] }, NOW + 9);
         ok('…the next turn starts from zero again, not from the last one',
             next.state.turnUsage.input === 0 && next.state.turnUsage.cacheRead === 0);
+    }
+
+    // ---------- ‼️ ONE MESSAGE, SEVERAL LINES, ONE USAGE ----------
+    //
+    // The CLI emits a line per CONTENT BLOCK and repeats the whole message's
+    // usage on each of them. Measured against the real binary (haiku,
+    // 2026-08-01): one reply arrived as a `thinking` line and a `tool_use` line,
+    // both carrying in=10 out=3 cr=15642 cw=6961. Counting each line inflated
+    // the session total — on a real transcript 55.1M against a true 27.99M
+    // (1.97×), while the sessions table showed the honest figure for the very
+    // same conversation. The repeats are always consecutive (403 assistant lines
+    // / 194 messages, zero exceptions), which is why one remembered key is
+    // enough. ‼️ The stream spells it `request_id`; the written transcript
+    // spells the same field `requestId`.
+    {
+        const usage = {
+            input_tokens: 10, output_tokens: 3,
+            cache_read_input_tokens: 15642, cache_creation_input_tokens: 6961
+        };
+        const line = (blocks) => ({
+            type: 'assistant', request_id: 'req_1',
+            message: { id: 'msg_A', content: blocks, usage }
+        });
+        let m = acceptUserText(fresh(), 'go', NOW).state;
+        m = reduce(m, line([{ type: 'thinking', thinking: '…' }]));
+        const afterFirst = m.tokens;
+        ok('the first line of a message is counted', afterFirst === 22616);
+        m = reduce(m, line([{ type: 'tool_use', id: 't1', name: 'Read', input: { file_path: 'a.ts' } }]));
+        ok('‼️ the same usage arriving again is NOT counted twice', m.tokens === afterFirst);
+        ok('…but the line itself still joins the conversation — it is a real tool call',
+            m.messages.some(x => x.role === 'tool' && x.tool && x.tool.name === 'Read'));
+        // A genuinely new message pays again, even with an identical usage block.
+        m = reduce(m, {
+            type: 'assistant', request_id: 'req_2',
+            message: { id: 'msg_B', content: [{ type: 'text', text: 'done' }], usage }
+        });
+        ok('…and the next message is counted on its own', m.tokens === afterFirst * 2);
+        // Older CLIs, and any line without the pair, must not be silently
+        // dropped: unidentifiable is not the same as duplicate.
+        const anon = { type: 'assistant', message: { content: [{ type: 'text', text: 'x' }], usage } };
+        const a1 = reduce(m, anon);
+        ok('…a line carrying no id is counted rather than guessed at',
+            reduce(a1, anon).tokens === m.tokens + 22616 * 2);
+    }
+
+    // ---------- ctx is the WINDOW, and only a real measurement moves it ----------
+    {
+        const base = acceptUserText(fresh(), 'go', NOW).state;
+        const ctx = reduce(base, {
+            type: 'assistant', request_id: 'r1',
+            message: {
+                id: 'm1', content: [{ type: 'text', text: 'hi' }],
+                usage: {
+                    input_tokens: 100, output_tokens: 40,
+                    cache_read_input_tokens: 200000, cache_creation_input_tokens: 800
+                }
+            }
+        });
+        ok('ctx is what the window held — the same contextAfter() the sessions tables use',
+            ctx.contextTokens === 200940);
+        // ‼️ A SUB-AGENT'S WINDOW IS NOT THIS CONVERSATION'S. Its messages come
+        // down the same pipe marked with `parent_tool_use_id`, and they start a
+        // context of their own at a few hundred tokens. Its cost is real and is
+        // counted; letting it write the ctx figure is what made a 200k session
+        // read ~300 for the length of the sub-agent and snap back afterwards.
+        const sub = reduce(ctx, {
+            type: 'assistant', request_id: 'r2', parent_tool_use_id: 'toolu_9',
+            message: {
+                id: 'm2', content: [{ type: 'text', text: 'working' }],
+                usage: { input_tokens: 300, output_tokens: 20 }
+            }
+        });
+        ok('a sub-agent never overwrites the context figure', sub.contextTokens === 200940);
+        ok('…but what it spends is still spent', sub.tokens === ctx.tokens + 320);
+        // A synthetic row (an interrupt notice, a cancelled turn) carries a
+        // usage block of all zeros. Zero means "not measured", not "empty".
+        const zero = reduce(sub, {
+            type: 'assistant', request_id: 'r3',
+            message: {
+                id: 'm3', content: [{ type: 'text', text: 'x' }],
+                usage: { input_tokens: 0, output_tokens: 0 }
+            }
+        });
+        ok('…and a zero-usage row leaves the last real figure standing',
+            zero.contextTokens === 200940);
     }
     ok('…and bills it', s.costUSD === 0.0123 && s.turns === 1);
     s = reduce(s, { type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0.01 });

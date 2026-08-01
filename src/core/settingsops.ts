@@ -36,6 +36,7 @@ const CATEGORY_OF: Record<string, string> = {
     modelAliases: 'core', launchDefaults: 'core', launchProfiles: 'core', projects: 'core',
     // display & labels
     speakerLabelTemplate: 'display', speakerLabelCase: 'display', speakerLabelFallback: 'display',
+    consoleDropZone: 'display',
     // live monitoring & alerts
     liveMonitor: 'live', livePort: 'live', activeThresholdSeconds: 'live',
     stuckThresholdSeconds: 'live', notifyPermission: 'live', notifyStuck: 'live',

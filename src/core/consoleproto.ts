@@ -64,7 +64,7 @@
  * Pure: builders, a parser and a reducer. No io, no vscode.
  */
 
-import { addUsage, emptyUsage, Usage } from './pricing';
+import { addUsage, contextAfter, emptyUsage, totalTokens, Usage } from './pricing';
 
 export type ConsoleStatus = 'starting' | 'idle' | 'working' | 'ended' | 'error';
 
@@ -220,10 +220,37 @@ export interface ConsoleSessionState {
     /** everything this session has spent tokens on, summed off the assistant
      *  messages' own usage — the same total the sessions tables show */
     tokens: number;
-    /** what the model window held for the latest request — read off each
-     *  assistant message's own usage, the same arithmetic the sessions tables
-     *  do (the CLI's `system:thinking_tokens` event refines it when it comes) */
+    /**
+     * What the model window held for the latest request — `contextAfter` on
+     * each assistant message's own usage, which is the SAME function the
+     * sessions tables and the session viewer call, so the three surfaces cannot
+     * drift apart.
+     *
+     * ‼️ IT ONLY EVER MOVES ON A REAL MEASUREMENT. Two things used to knock it
+     * off a genuine 200k and start it climbing from ~100 again, and both are
+     * handled where the usage is read (see the `assistant` branch of
+     * reduceEvent): a `system:thinking_tokens` event, which is not context at
+     * all, and a sub-agent's own messages, whose window is not this
+     * conversation's. A zero means "no measurement", so the last real figure
+     * stands.
+     */
     contextTokens?: number;
+    /**
+     * The usage block already counted — `<message id>|<request id>`.
+     *
+     * ‼️ THE SAME USAGE ARRIVES SEVERAL TIMES. The CLI emits one line per
+     * CONTENT BLOCK, and every one of them repeats the whole message's usage:
+     * a `thinking` line and a `tool_use` line for one reply both said
+     * `in=10 out=3 cr=15642 cw=6961` (measured, haiku, 2026-08-01). Counting
+     * each line therefore inflated the session total — on a real transcript
+     * 55.1M against a true 27.99M, 1.97×, while the sessions table showed the
+     * honest figure for the very same conversation.
+     *
+     * One key is enough rather than a growing set: the repeats are always
+     * CONSECUTIVE (measured over 403 assistant lines / 194 messages — zero
+     * exceptions), so nothing has to be remembered beyond the last one.
+     */
+    lastUsageKey?: string;
     startedAt: number;
     /** when the turn that is running now started. A conversation surface has to
      *  say "still working" out loud — silence between your message and the
@@ -557,14 +584,24 @@ export function reduceEvent(
                 changed: true
             };
         }
-        if (sub === 'thinking_tokens' && typeof o.estimated_tokens === 'number') {
-            return { state: { ...state, contextTokens: o.estimated_tokens, lastTs: now }, changed: true };
-        }
+        // ‼️ `thinking_tokens` IS NOT CONTEXT, AND WRITING IT INTO THE CTX
+        // FIGURE IS WHY THAT FIGURE COLLAPSED MID-TURN. The CLI's own
+        // description of the event: "Live thinking-token estimate, digested
+        // from thinking_delta.estimated_tokens … estimated_tokens is the
+        // running total for the CURRENT THINKING BLOCK" (read out of the 2.1.220
+        // binary). It starts near zero on every block and climbs, and it is
+        // emitted constantly — TWELVE of them in one short measured turn — so a
+        // session sitting at a true 225k was repeatedly knocked down to ~100
+        // and shown climbing 100 → 200 → 500 until the next assistant message
+        // restored it. It says nothing about the window; the window is measured
+        // where the usage is (see the assistant branch).
         return { state, changed: false };   // hook lifecycle & friends
     }
 
     if (type === 'assistant') {
-        const msg = o.message as { content?: unknown; usage?: Record<string, unknown> } | undefined;
+        const msg = o.message as {
+            id?: unknown; content?: unknown; usage?: Record<string, unknown>;
+        } | undefined;
         const blocks = Array.isArray(msg?.content) ? msg!.content as Record<string, unknown>[] : [];
         let next = state;
         let changed = false;
@@ -572,27 +609,48 @@ export function reduceEvent(
         // arithmetic the index does on a transcript, so the number on a Console
         // row and the number in the sessions table mean the same thing. (The
         // result line's usage is the TURN's, and would double-count.)
+        //
+        // ‼️ AND EACH MESSAGE IS COUNTED ONCE. One line per content block, each
+        // repeating the same usage — see lastUsageKey for the measurement. The
+        // key is the CLI's own pair, in the spelling the STREAM uses:
+        // `request_id` here, `requestId` in the written transcript.
         const u = msg?.usage;
-        if (u) {
+        const usageKey = `${typeof msg?.id === 'string' ? msg.id : ''}|${typeof o.request_id === 'string' ? o.request_id : ''}`;
+        const repeat = usageKey !== '|' && usageKey === state.lastUsageKey;
+        if (u && !repeat) {
             const n = (k: string) => (typeof u[k] === 'number' ? u[k] as number : 0);
             const one: Usage = {
                 input: n('input_tokens'), output: n('output_tokens'),
                 cacheWrite: n('cache_creation_input_tokens'), cacheRead: n('cache_read_input_tokens')
             };
-            const spent = one.input + one.output + one.cacheRead + one.cacheWrite;
+            const spent = totalTokens(one);
             if (spent) {
                 // The turn keeps its own breakdown as well as the total: the
                 // total is what it spent, the breakdown is what it can be
                 // priced from while it is still running (see turnUsage).
                 const turn = { ...(next.turnUsage ?? emptyUsage()) };
                 addUsage(turn, one);
-                // "ctx now" is the same figure the sessions tables show: what the
-                // window held for the latest request. Taking it from the CLI's
-                // occasional `thinking_tokens` event alone left the number frozen
-                // at whatever the first one said, for the rest of the session.
-                next = { ...next, tokens: next.tokens + spent, contextTokens: spent, turnUsage: turn };
+                // ‼️ A SUB-AGENT SPENDS THIS SESSION'S TOKENS BUT DOES NOT SIT IN
+                // THIS SESSION'S WINDOW. A Task/Agent call streams its own
+                // assistant messages down the same pipe, marked with
+                // `parent_tool_use_id`, and they start a context of their own at
+                // a few hundred tokens. Their cost is real and is counted; their
+                // window is not this conversation's and must not overwrite it —
+                // otherwise ctx drops to ~200 for the length of the sub-agent
+                // and snaps back afterwards, the same false reading
+                // `thinking_tokens` used to produce.
+                const ofSubAgent = typeof o.parent_tool_use_id === 'string' && !!o.parent_tool_use_id;
+                const ctxNow = ofSubAgent ? 0 : contextAfter(u);
+                next = {
+                    ...next, tokens: next.tokens + spent, turnUsage: turn,
+                    // zero is "not measured here", so the last real figure stands
+                    ...(ctxNow > 0 ? { contextTokens: ctxNow } : {})
+                };
                 changed = true;
             }
+        }
+        if (usageKey !== '|' && usageKey !== next.lastUsageKey) {
+            next = { ...next, lastUsageKey: usageKey };
         }
         for (const b of blocks) {
             const bt = String(b.type ?? '');

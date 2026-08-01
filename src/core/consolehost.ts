@@ -45,6 +45,48 @@ export function looksLikeUri(s: string): boolean {
     return /^[a-z][a-z0-9+.-]+:/i.test(String(s ?? '').trim());
 }
 
+/**
+ * The staged copy of a dropped/pasted file keeps the name the user knows.
+ *
+ * ‼️ `\w` IS ASCII. The rule that produced these names replaced every letter
+ * outside it, so "deneme dosyası.txt" was staged as "deneme dosyas_.txt" — the
+ * one string the user has to recognise their own file by, quietly mangled.
+ * Only what a Windows filename genuinely cannot hold is replaced.
+ */
+export function safeAttachmentName(name: string, mediaType = ''): string {
+    const clean = (s: string) => String(s ?? '')
+        // eslint-disable-next-line no-control-regex
+        .replace(/[\\/:*?"<>|\x00-\x1f]+/g, '_')
+        .replace(/\s+/g, ' ')
+        .trim()
+        // Windows silently drops a trailing dot or space, and a name that
+        // cannot be opened by what it is called is worse than a renamed one.
+        .replace(/[. ]+$/, '');
+
+    const raw = clean(name);
+    // ‼️ THE EXTENSION IS NOT DECORATION — IT DECIDES HOW THE FILE TRAVELS.
+    // `describeAttachment` reads the suffix to tell an image (which is embedded,
+    // so the model can SEE it) from everything else (handed over as a path). So
+    // the two ways a suffix can go missing are both handled here rather than
+    // left to produce a screenshot the model is merely TOLD about:
+    //   · a pasted screenshot often arrives with no name at all, and the
+    //     clipboard's media type is the only thing that knows what it is;
+    //   · a very long name must be shortened from the MIDDLE, because a plain
+    //     slice() cuts the suffix off the end.
+    const dot = raw.lastIndexOf('.');
+    let stem = dot > 0 ? raw.slice(0, dot) : raw;
+    let ext = dot > 0 ? raw.slice(dot) : '';
+    if (!ext) {
+        const known = Object.entries(IMAGE_MEDIA_TYPES)
+            .find(([, m]) => m === String(mediaType ?? '').toLowerCase());
+        if (known) { ext = known[0]; }
+    }
+    if (!stem) { stem = 'attachment'; }
+    const room = 120 - ext.length;
+    if (room > 0 && stem.length > room) { stem = stem.slice(0, room); }
+    return `${stem}${ext}`.replace(/[. ]+$/, '') || 'attachment';
+}
+
 export function describeAttachment(fsPath: string): Attachment | null {
     let stat: fs.Stats;
     try { stat = fs.statSync(fsPath); } catch { return null; }

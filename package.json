@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.49.1",
+  "version": "3.50.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -3228,6 +3228,11 @@
           "type": "number",
           "default": 30,
           "description": "Minutes a session may sit waiting for your input before ONE notice is posted about it (0 disables). An idle session never blocks the farm, so it is not a Needs You row â€” but one left waiting all afternoon is a loop that quietly never closed."
+        },
+        "agentFarm.consoleDropZone": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether the Console page listens for a file dropped anywhere on it. Turn this off if drag-and-drop misbehaves on your machine; 📎 (Attach) and pasting a screenshot are unaffected either way."
         }
       }
     }

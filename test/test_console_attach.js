@@ -13,7 +13,9 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 
 const { userMessageLine, acceptUserText, newSessionState, ATTACH_LIMITS, IMAGE_MEDIA_TYPES } =
     require(path.join(__dirname, '..', 'out', 'core', 'consoleproto.js'));
-const { describeAttachment, looksLikeUri } = require(path.join(__dirname, '..', 'out', 'core', 'consolehost.js'));
+const {
+    describeAttachment, looksLikeUri, safeAttachmentName
+} = require(path.join(__dirname, '..', 'out', 'core', 'consolehost.js'));
 const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'bridge.js'));
 
 // a scratch folder with one of each kind of thing you can attach
@@ -174,6 +176,47 @@ fs.mkdirSync(subDir);
         looksLikeUri('vscode-remote://ssh/x') && looksLikeUri('untitled:Untitled-1'));
     ok('a posix path is a path', !looksLikeUri('/home/x/a.png') && !looksLikeUri('./rel/a.png'));
     ok('nothing is not a uri', !looksLikeUri('') && !looksLikeUri('   '));
+
+    // ---------- the name a staged file is given ----------
+    //
+    // ‼️ THE SUFFIX IS NOT DECORATION — IT DECIDES HOW THE FILE TRAVELS.
+    // `describeAttachment` reads it to tell an image (embedded, so the model
+    // SEES it) from everything else (handed over as a path). So a rule that
+    // loses the suffix does not merely rename a file: it turns a screenshot the
+    // model can look at into a filename it is merely told about.
+    ok('a name Windows can hold is kept exactly as it is',
+        safeAttachmentName('deneme dosyası.txt') === 'deneme dosyası.txt');
+    ok('…because `\\w` is ASCII, and that rule ate every Turkish letter',
+        safeAttachmentName('ÇĞİÖŞÜ öçşğü.png') === 'ÇĞİÖŞÜ öçşğü.png');
+    ok('what a filename genuinely cannot hold is replaced',
+        safeAttachmentName('a:b*c?d"e<f>g|h.png') === 'a_b_c_d_e_f_g_h.png');
+    ok('…and a trailing dot or space, which Windows silently drops',
+        safeAttachmentName('report. ') === 'report');
+    ok('an empty name still produces a file', safeAttachmentName('') === 'attachment');
+
+    // ‼️ A LONG NAME IS SHORTENED FROM THE MIDDLE. A plain slice() cut the
+    // suffix off the end, so a long-named screenshot stopped being an image.
+    const longName = 'ü'.repeat(400) + '.png';
+    const short = safeAttachmentName(longName);
+    ok('a very long name is cut down', short.length <= 120);
+    ok('‼️ …and it is still a .png afterwards', /\.png$/.test(short));
+
+    // ‼️ A PASTED SCREENSHOT OFTEN HAS NO NAME AT ALL — the clipboard's media
+    // type is the only thing that knows what it is.
+    ok('a nameless paste gets its suffix from the media type',
+        safeAttachmentName('attachment', 'image/png') === 'attachment.png');
+    ok('…jpeg too', safeAttachmentName('', 'image/jpeg') === 'attachment.jpg');
+    ok('…and a media type never overrides a suffix the file already has',
+        safeAttachmentName('shot.webp', 'image/png') === 'shot.webp');
+    ok('…nor invents one for a type that is not an image',
+        safeAttachmentName('notes', 'application/pdf') === 'notes');
+
+    // The staged name and the carrier rule have to agree, or the whole point
+    // of keeping the suffix is lost.
+    const staged = path.join(dir, safeAttachmentName('', 'image/png'));
+    fs.writeFileSync(staged, Buffer.from('x'));
+    ok('…so a nameless pasted screenshot really does travel as an image',
+        describeAttachment(staged).kind === 'image');
 
     const cat = reg.catalog();
     const entry = cat.find(o => o.op === 'console.send');

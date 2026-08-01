@@ -2130,6 +2130,9 @@
         const s = sel();
         // the box's own tools follow the same keystroke as the Send buttons
         paintTools();
+        // …and so does the chip list: what is hanging on the message is part of
+        // the message, so it is drawn wherever the message is (see paintChips).
+        paintChips();
         if (slot('c-live', liveBitsHtml(s))) {
             byId('c-int', 'click', () => vscode.postMessage({ type: 'interrupt', id: DATA.selected }));
             byId('c-hold', 'click', () => send(true));
@@ -2283,6 +2286,19 @@
 
     const IMG_RE = /\.(png|jpe?g|gif|webp)$/i;
 
+    /**
+     * A path a drag can be believed about: a Windows drive, a UNC share, a
+     * POSIX root or a `file:` URI. Deliberately ABSOLUTE-only — a dropped
+     * fragment like "src/a.ts" has no meaning without a working directory, and
+     * treating it as a file produced a warning instead of a paste.
+     */
+    const ABS_PATH_RE = /^(?:[a-z]:[\\/]|\\\\[^\\]|\/[^/]|file:\/\/)/i;
+
+    /** How many files may hang on one message — ATTACH_LIMITS.count, handed over
+     *  by the panel so the ceiling has ONE definition (it is also the host's
+     *  last line of defence, and a number typed twice is a number that drifts). */
+    const attachMax = () => (typeof DATA.attachMax === 'number' && DATA.attachMax > 0 ? DATA.attachMax : 20);
+
     function fmtBytes(n) {
         if (!n) { return ''; }
         return n < 1024 ? `${n} B`
@@ -2292,7 +2308,13 @@
 
     function attachBtnHtml() {
         const n = (st.attach || []).length;
-        return `<button class="secondary" id="c-attach" title="Attach files — click here, drop them on the box, or paste a screenshot. Images travel inside the message; everything else is handed over as a path the agent opens itself.">📎${n ? ' ' + n : ''}</button>`;
+        // ‼️ The button opens a FILE picker, and the tooltip says so, because it
+        // cannot open both: Windows has no dialog that selects files and folders
+        // at once, and asking for both gives you the folder picker — which is
+        // why this button used to open a window with no files in it at all. A
+        // folder is attached by dropping it, and that is worth one clause here
+        // rather than a dead end at the dialog.
+        return `<button class="secondary" id="c-attach" title="Attach files — click here, drop them anywhere on this page, or paste a screenshot into the box. A FOLDER can only be dropped, not picked (Windows has no files-and-folders dialog). Images travel inside the message; everything else is handed over as a path the agent opens itself.">📎${n ? ' ' + n : ''}</button>`;
     }
 
     function chipsHtml() {
@@ -2312,14 +2334,29 @@
         }).join('');
     }
 
+    /**
+     * ‼️ THE CHIP LIST IS A SLOT, AND THAT IS THE WHOLE FIX. It used to be
+     * written by hand from three places and NEVER from the render path, so
+     * `send()` — which empties `st.attach` — left the chips on screen for good:
+     * nothing redrew them until the shell was rebuilt. The panel then said the
+     * files were still hanging on the next message while the composer knew they
+     * were gone, so the next prompt went out WITHOUT them and looked as if it
+     * had taken them. A surface that lies about what it is about to send is
+     * worse than one that never had the feature.
+     *
+     * As a slot it is redrawn by `renderLive` — i.e. on every keystroke, every
+     * data push and every send — and costs nothing when the html has not
+     * changed.
+     */
     function paintChips() {
-        const box = document.getElementById('c-chips');
-        if (box) {
-            box.innerHTML = chipsHtml();
+        if (slot('c-chips', chipsHtml())) {
+            const box = document.getElementById('c-chips');
             // ONE listener on the container, not one per chip: the list is
             // rebuilt on every change, so per-chip listeners would pile up —
-            // and delegation needs nothing but addEventListener.
-            if (!box.__afWired && box.addEventListener) {
+            // and delegation needs nothing but addEventListener. The element
+            // itself survives every slot write and only goes with a shell
+            // rebuild, which is exactly when the flag goes with it.
+            if (box && !box.__afWired && box.addEventListener) {
                 box.__afWired = true;
                 box.addEventListener('click', ev => {
                     const t = ev && ev.target;
@@ -2327,7 +2364,6 @@
                     if (!p) { return; }
                     st.attach = (st.attach || []).filter(a => a.path !== p);
                     save();
-                    paintChips();
                     renderLive();
                 });
             }
@@ -2344,7 +2380,7 @@
         const have = new Set((st.attach || []).map(a => a.path));
         for (const f of files) {
             if (!f || !f.path || have.has(f.path)) { continue; }   // the same file twice is one file
-            if ((st.attach || []).length >= 20) {
+            if ((st.attach || []).length >= attachMax()) {
                 // Refusing quietly would be the one thing this feature must not
                 // do — the extension says it out loud.
                 vscode.postMessage({ type: 'attachTooMany' });
@@ -2357,25 +2393,47 @@
             }]);
         }
         save();
-        paintChips();
-        renderLive();   // Send and Hold both change meaning once a file is on
+        renderLive();   // draws the chips, and Send/Hold change meaning once a file is on
     }
 
-    /** A dropped/pasted file has bytes but no path — the extension gives it one. */
+    /**
+     * A dropped/pasted file has bytes but no path — the extension gives it one.
+     *
+     * The ceiling is applied HERE, against what is already hanging on the
+     * message, so twenty-one dropped files do not each get written into the temp
+     * folder before the twenty-first is refused. And every ending speaks: files
+     * that read, a refusal when there is no room, and a warning when nothing
+     * survived the read — that last one used to return in silence, which is the
+     * exact bug this whole feature keeps being reported for.
+     */
     function spill(fileList) {
-        const files = Array.from(fileList || []).slice(0, 20);
-        if (!files.length) { return; }
+        const all = Array.from(fileList || []);
+        if (!all.length) { return; }
+        const room = Math.max(0, attachMax() - (st.attach || []).length);
+        if (!room) { vscode.postMessage({ type: 'attachTooMany' }); return; }
+        const files = all.slice(0, room);
+        if (all.length > files.length) { vscode.postMessage({ type: 'attachTooMany' }); }
         let pending = files.length;
         const out = [];
+        const done = () => {
+            if (--pending > 0) { return; }
+            if (out.length) { vscode.postMessage({ type: 'attachDrop', files: out }); }
+            else { vscode.postMessage({ type: 'attachNothing' }); }
+        };
         for (const f of files) {
             const r = new FileReader();
             r.onload = () => {
                 const s = String(r.result || '');
                 const comma = s.indexOf(',');
-                out.push({ name: f.name || 'attachment', data: comma >= 0 ? s.slice(comma + 1) : '' });
-                if (--pending === 0) { vscode.postMessage({ type: 'attachDrop', files: out }); }
+                const data = comma >= 0 ? s.slice(comma + 1) : '';
+                // The clipboard's own media type comes along: a pasted
+                // screenshot often has no name at all, and the SUFFIX is what
+                // decides whether the model sees the picture or is merely told
+                // a file exists (see safeAttachmentName).
+                if (data) { out.push({ name: f.name || 'attachment', type: f.type || '', data }); }
+                done();
             };
-            r.onerror = () => { if (--pending === 0 && out.length) { vscode.postMessage({ type: 'attachDrop', files: out }); } };
+            r.onerror = done;
             r.readAsDataURL(f);
         }
     }
@@ -2388,21 +2446,86 @@
         // place for a hand carrying a file to let go. The box is still the thing
         // that LIGHTS UP, because that is where the file is going.
         wirePaste();
+        // ‼️ A USER-OWNED OFF SWITCH, ON PURPOSE. Drag-and-drop is a browser
+        // API this host does not control end to end — if it ever misbehaves on
+        // a particular machine, the fix cannot wait on a release. 📎 and paste
+        // are untouched by this: they never listen for a drag.
+        if (DATA.dropZone === false) { return; }
         // The page survives every rebuild, so it is wired ONCE — a listener per
         // shell rebuild would spill the same drop several times over.
         const page = document.getElementById('app');
         if (!page || page.__afDropWired) { return; }
         page.__afDropWired = true;
+
+        /**
+         * ‼️ THE HIGHLIGHT IS A STATE, NOT A PER-EVENT INSTRUCTION.
+         *
+         * `dragover` fires continuously — many times a second, for as long as
+         * the hand is over the page — and `dragleave` BUBBLES from every child
+         * the pointer crosses. Turning the outline on in one and off in the
+         * other therefore added and removed a full-page `outline` dozens of
+         * times a second for the whole duration of a drag: a style
+         * recalculation and a repaint per frame, plus a `getElementById` per
+         * frame, for a border that was already drawn. On this machine a drag
+         * ended with the display driver resetting. Now the class is written
+         * ONLY when the answer actually changes, and `dragenter`/`dragleave` are
+         * counted so crossing a child is not a departure.
+         */
+        let lit_on = false;
+        let depth = 0;
         const lit = on => {
+            if (lit_on === on) { return; }      // nothing changed — touch nothing
+            lit_on = on;
             const composer = document.getElementById('c-composer');
             if (composer && composer.classList) { composer.classList[on ? 'add' : 'remove']('drop'); }
         };
-        const stop = ev => { ev.preventDefault(); ev.stopPropagation(); };
-        page.addEventListener('dragover', ev => { stop(ev); lit(true); });
-        page.addEventListener('dragleave', ev => { stop(ev); lit(false); });
+
+        /**
+         * Is this drag OURS to take?
+         *
+         * ‼️ A PAGE-WIDE DROP TARGET MUST NOT EAT THE TEXT DRAGS IT DOES NOT
+         * WANT. Claiming every drag (preventDefault on all of them) silently
+         * killed dropping selected text into the message box — an ordinary
+         * thing to do that used to work. So:
+         *   · Files / uri-list — a real file, always ours;
+         *   · plain text — only when it is let go OUTSIDE the box. Some drags
+         *     carry a path as text and nothing else; inside the box the same
+         *     data is just text, and the browser's own handling is right.
+         * `types` is readable during the drag; the DATA is not (by design), so
+         * this is the whole of what can be known before the drop.
+         */
+        const oursToTake = ev => {
+            const dt = ev.dataTransfer;
+            if (!dt) { return false; }
+            const types = dt.types ? Array.prototype.slice.call(dt.types) : [];
+            if (types.indexOf('Files') >= 0 || types.indexOf('text/uri-list') >= 0) { return true; }
+            const t = ev.target;
+            return !(t && t.id === 'c-text');
+        };
+
+        page.addEventListener('dragenter', ev => {
+            if (!oursToTake(ev)) { return; }
+            ev.preventDefault();
+            depth++;
+            lit(true);
+        });
+        page.addEventListener('dragover', ev => {
+            if (!oursToTake(ev)) { return; }
+            // preventDefault is what makes the page a valid drop target at all;
+            // dropEffect is what makes the cursor say "copy" instead of the
+            // "no entry" sign Windows shows by default.
+            ev.preventDefault();
+            try { ev.dataTransfer.dropEffect = 'copy'; } catch (e) { /* older webview */ }
+        });
+        page.addEventListener('dragleave', () => {
+            depth = Math.max(0, depth - 1);
+            if (!depth) { lit(false); }
+        });
         page.addEventListener('drop', ev => {
-            stop(ev);
+            depth = 0;
             lit(false);
+            if (!oursToTake(ev)) { return; }   // a text drag into the box stays the box's
+            ev.preventDefault();
             const dt = ev.dataTransfer;
             if (!dt) { return; }
             // Dragged out of the VS Code Explorer: real URIs, no staging needed.
@@ -2414,11 +2537,13 @@
             // Dragged out of the OS file manager: bytes only.
             if (dt.files && dt.files.length) { spill(dt.files); return; }
             // Some drags carry the path as PLAIN TEXT and nothing else (VS Code
-            // does it for a file dragged with a modifier held). A line that looks
-            // like a path is worth handing over — the host decides if it exists.
+            // does it for a file dragged with a modifier held). Only an ABSOLUTE
+            // path is taken for one: the old test — "contains a slash" — read
+            // every dragged sentence and every URL as a filename, and each one
+            // became a warning about a file that never existed.
             const plain = (dt.getData('text/plain') || '').split(/\r?\n/)
                 .map(x => x.trim())
-                .filter(x => /[\\/]/.test(x) && x.length < 500);
+                .filter(x => x.length < 500 && ABS_PATH_RE.test(x));
             if (plain.length) { vscode.postMessage({ type: 'attachUris', uris: plain }); return; }
             // ‼️ AND IF NOTHING CAME OUT OF IT, SAY SO. Silence here is the bug
             // the user reported from the other side: you drop a file, the page

@@ -35,6 +35,20 @@ function mkEl(id) {
         // _writes / _focus are how the test proves the page stopped rebuilding
         // itself (and re-focusing the textarea) on every streamed line.
         _writes: 0, _focus: 0,
+        // ‼️ _classWrites counts how often the drop highlight is WRITTEN, not
+        // whether it is on. A drag fires `dragover` many times a second and
+        // `dragleave` bubbles from every child crossed, so a highlight rewritten
+        // per event meant a style recalculation and a full-page repaint per
+        // frame for the whole drag — which is what this counter pins down.
+        _classes: {}, _classWrites: 0,
+        get classList() {
+            const self = this;
+            return {
+                add(c) { self._classWrites++; self._classes[c] = true; },
+                remove(c) { self._classWrites++; delete self._classes[c]; },
+                contains(c) { return !!self._classes[c]; }
+            };
+        },
         scrollTop: 0, scrollHeight: 1000, clientHeight: 300,
         set innerHTML(v) { this._html = v; this._writes++; }, get innerHTML() { return this._html; },
         addEventListener(ev, fn) { this.listeners[ev] = fn; },
@@ -1388,6 +1402,171 @@ const html = allHtml;
         /embedded/.test(els['c-chips']._html) && /2 KB/.test(els['c-chips']._html));
     ok('…and the button carries the count', els['c-attach'].textContent === '📎 1');
     ok('…with a way to take it off again', /data-drop="D:\/a\/shot\.png"/.test(els['c-chips']._html));
+
+    // ---- ‼️ AND THE MOMENT IT IS SENT, IT IS GONE FROM THE COMPOSER ----
+    //
+    // This is the bug reported from the other side: attach files, send, and the
+    // chips were still sitting there while you typed the next message. The
+    // composer had emptied `st.attach` — nothing redrew the list, because it was
+    // written by hand from three places and never from the render path — so the
+    // panel showed files hanging on a message that would go out WITHOUT them.
+    // A surface that lies about what it is about to send is worse than one that
+    // never had the feature.
+    posted = [];
+    els['c-text'].value = 'here you go';
+    els['c-text'].listeners.input();
+    els['c-send'].listeners.click();
+    const sent = [...posted].reverse().find(m => m.type === 'send' || m.type === 'start');
+    ok('the files really do go with the message',
+        sent && sent.attach && sent.attach.length === 1 && sent.attach[0].path === 'D:/a/shot.png');
+    ok('‼️ …and the chips are gone the moment it is sent', els['c-chips']._html === '');
+    ok('…the count goes with them', els['c-attach'].textContent === '📎');
+    ok('…and a second send carries nothing it was not given', (() => {
+        posted = [];
+        els['c-text'].value = 'and again';
+        els['c-text'].listeners.input();
+        els['c-send'].listeners.click();
+        const two = [...posted].reverse().find(m => m.type === 'send' || m.type === 'start');
+        return two && (!two.attach || two.attach.length === 0);
+    })());
+
+    // A refused send hands the message back whole — text AND files — so the
+    // refusal costs you nothing you had already done.
+    msgHandler({
+        data: {
+            type: 'restore', text: 'here you go',
+            files: [{ path: 'D:/a/shot.png', name: 'shot.png', bytes: 2048, kind: 'image' }]
+        }
+    });
+    ok('a refused send puts the files back on screen', /shot\.png/.test(els['c-chips']._html));
+    // …and take it off again, so the rest of the suite starts clean. One
+    // listener on the container, not one per chip — the list is rebuilt on
+    // every change, so per-chip listeners would pile up.
+    els['c-chips'].listeners.click({
+        target: { getAttribute: k => (k === 'data-drop' ? 'D:/a/shot.png' : null) }
+    });
+    ok('✕ takes a chip off, and the list follows', els['c-chips']._html === '');
+}
+
+// ---------- the drag itself: a highlight is a STATE, not a per-frame command ----
+//
+// ‼️ A DRAG THAT REPAINTS THE PAGE SIXTY TIMES A SECOND IS A REAL COST, NOT A
+// STYLE DETAIL. `dragover` fires continuously while the hand is over the page
+// and `dragleave` bubbles up from every child the pointer crosses, so turning
+// the outline on in one and off in the other wrote the class dozens of times a
+// second for the whole drag — a style recalculation and a full-page repaint per
+// frame, on a machine whose display driver reset during exactly this gesture.
+{
+    const app = els.app;
+    const dt = (types, files) => ({
+        types: types || [], files: files || [],
+        getData: () => '', dropEffect: ''
+    });
+    const ev = (over, target) => ({
+        preventDefault() { this._prevented = true; },
+        stopPropagation() { },
+        dataTransfer: over, target: target || { id: 'talk' }, _prevented: false
+    });
+
+    const composer = sandbox.document.getElementById('c-composer');
+    composer._classWrites = 0;
+    const e1 = ev(dt(['Files']));
+    app.listeners.dragenter(e1);
+    ok('a file drag lights the composer', composer.classList.contains('drop'));
+    ok('…and the page claims the drag, or the browser refuses the drop', e1._prevented);
+    const writes = composer._classWrites;
+    for (let i = 0; i < 40; i++) { app.listeners.dragover(ev(dt(['Files']))); }
+    ok('‼️ forty dragover frames write the highlight ZERO more times',
+        composer._classWrites === writes);
+    const over = ev(dt(['Files']));
+    app.listeners.dragover(over);
+    ok('…and the cursor is told this is a copy', over.dataTransfer.dropEffect === 'copy');
+
+    // Crossing a child element fires dragleave without the hand ever leaving.
+    app.listeners.dragenter(ev(dt(['Files'])));
+    app.listeners.dragleave(ev(dt(['Files'])));
+    ok('crossing a child is not a departure — the highlight stays',
+        composer.classList.contains('drop'));
+    app.listeners.dragleave(ev(dt(['Files'])));
+    ok('…and leaving for real puts it out', !composer.classList.contains('drop'));
+
+    // ---- a text drag is NOT ours ----
+    // Claiming every drag killed dropping selected text into the message box,
+    // an ordinary thing to do that used to work.
+    posted = [];
+    const textIntoBox = ev(dt(['text/plain']), { id: 'c-text' });
+    app.listeners.dragover(textIntoBox);
+    ok('‼️ text dragged into the box is left to the box', !textIntoBox._prevented);
+    app.listeners.drop({
+        preventDefault() { this._prevented = true; }, stopPropagation() { },
+        dataTransfer: { types: ['text/plain'], files: [], getData: () => 'some notes' },
+        target: { id: 'c-text' }, _prevented: false
+    });
+    ok('…and dropping it there attaches nothing and warns about nothing',
+        !posted.some(m => String(m.type).indexOf('attach') === 0));
+
+    // ---- what counts as a path, when text is all there is ----
+    const dropText = (s, target) => {
+        posted = [];
+        app.listeners.drop({
+            preventDefault() { }, stopPropagation() { },
+            dataTransfer: { types: ['text/plain'], files: [], getData: k => (k === 'text/plain' ? s : '') },
+            target: target || { id: 'talk' }
+        });
+        return [...posted].reverse();
+    };
+    ok('an absolute Windows path dropped as text is a file',
+        dropText('D:\\zone\\a.png').some(m => m.type === 'attachUris'));
+    ok('…a UNC share too', dropText('\\\\server\\share\\a.png').some(m => m.type === 'attachUris'));
+    ok('…and a posix path', dropText('/home/me/a.png').some(m => m.type === 'attachUris'));
+    // ‼️ "contains a slash" read every dragged sentence and every URL as a
+    // filename, and each one became a warning about a file that never existed.
+    ok('‼️ a relative fragment is NOT a file — it has no meaning without a cwd',
+        !dropText('src/core/a.ts').some(m => m.type === 'attachUris'));
+    ok('…nor is a dragged sentence with a slash in it',
+        !dropText('this and/or that').some(m => m.type === 'attachUris'));
+
+    // ---- bytes: the ceiling, the media type, and the ending that speaks ----
+    const dropFiles = files => {
+        posted = [];
+        app.listeners.drop({
+            preventDefault() { }, stopPropagation() { },
+            dataTransfer: { types: ['Files'], files, getData: () => '' },
+            target: { id: 'talk' }
+        });
+        return [...posted].reverse();
+    };
+    const found = (out, t) => out.find(m => m.type === t);
+
+    // ‼️ The clipboard's media type travels with the bytes: a pasted screenshot
+    // frequently has no name, and the SUFFIX is what decides whether the model
+    // sees the picture (see safeAttachmentName).
+    const typed = dropFiles([{ name: '', type: 'image/png' }]);
+    ok('a pasted screenshot hands over its media type, not just its bytes',
+        found(typed, 'attachDrop') && found(typed, 'attachDrop').files[0].type === 'image/png');
+
+    // The ceiling is applied HERE, against what is already on the message, so
+    // twenty-one dropped files do not each get written into the temp folder
+    // before the twenty-first is refused.
+    const many = [];
+    for (let i = 0; i < 25; i++) { many.push({ name: `f${i}.txt`, type: 'text/plain' }); }
+    const capped = dropFiles(many);
+    ok('more files than the limit are refused out loud', !!found(capped, 'attachTooMany'));
+    ok('…and only what fits is ever staged',
+        found(capped, 'attachDrop') && found(capped, 'attachDrop').files.length === 20);
+
+    // ‼️ AND A READ THAT PRODUCED NOTHING SAYS SO. This path used to return in
+    // silence, which is the exact complaint this feature keeps drawing: the
+    // page does not move, and "nothing was attached" cannot be told from
+    // "attached, but never shown".
+    const realReader = sandbox.FileReader;
+    sandbox.FileReader = function () {
+        this.readAsDataURL = function () { if (this.onerror) { this.onerror(); } };
+    };
+    const broke = dropFiles([{ name: 'a.png' }, { name: 'b.png' }]);
+    ok('‼️ a drop whose bytes could not be read is answered, not swallowed',
+        !!found(broke, 'attachNothing') && !found(broke, 'attachDrop'));
+    sandbox.FileReader = realReader;
 }
 
 console.log(`${pass} passed, ${fail} failed`);
