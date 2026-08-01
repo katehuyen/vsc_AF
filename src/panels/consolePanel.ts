@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
-import { ConsoleHost, describeAttachment } from '../core/consolehost';
+import { ConsoleHost, describeAttachment, looksLikeUri } from '../core/consolehost';
 import { Attachment, ATTACH_LIMITS, carriedTotals, ConsoleMessage, PERMISSION_GRANTS } from '../core/consoleproto';
 import {
     filterResumable, isResumeFiltered, RESUME_DEFAULT_N, RESUME_MAX, ResumeQuery
@@ -326,7 +326,17 @@ export class ConsolePanel {
      */
     private postAttached(paths: string[]): void {
         const files = paths.map(describeAttachment).filter(Boolean);
-        if (files.length) { void this.panel.webview.postMessage({ type: 'attached', files }); }
+        if (files.length) { void this.panel.webview.postMessage({ type: 'attached', files }); return; }
+        // ‼️ A GESTURE THAT PRODUCES NOTHING MUST SAY SO. Every path here failed
+        // `statSync` — dropped from an archive, from a remote/virtual folder, or
+        // a name the drag carried without a file behind it. Returning quietly
+        // leaves the user looking at an unchanged panel with no way to tell
+        // "nothing was attached" from "attached, and the panel never shows it".
+        if (paths.length) {
+            void vscode.window.showWarningMessage(
+                'Agent Farm: nothing could be attached from that — the files were not readable at those paths. '
+                + 'Use 📎 to pick them instead.');
+        }
     }
 
     /**
@@ -525,15 +535,27 @@ export class ConsolePanel {
                 break;
             }
             case 'attachUris': {
-                // Dragged out of the VS Code Explorer — that drag carries real URIs.
+                // Dragged out of the VS Code Explorer — that drag carries real
+                // URIs. It can also carry the path as PLAIN TEXT and nothing
+                // else, and `Uri.parse` does not refuse those: it reads
+                // `D:\a\b.png` as a URI with a made-up scheme and hands back a
+                // path that never existed. So the shape decides the reader.
                 const uris = Array.isArray(msg.uris) ? msg.uris as string[] : [];
                 const paths: string[] = [];
                 for (const u of uris) {
-                    try { paths.push(vscode.Uri.parse(u).fsPath); } catch { /* not a uri we can use */ }
+                    try {
+                        paths.push(looksLikeUri(u) ? vscode.Uri.parse(u).fsPath : vscode.Uri.file(u).fsPath);
+                    } catch { /* not a path we can use */ }
                 }
                 if (paths.length) { this.postAttached(paths); }
                 break;
             }
+            case 'attachNothing':
+                // The drop landed, and carried nothing this panel can open.
+                void vscode.window.showWarningMessage(
+                    'Agent Farm: that drop carried no file — drag from the Explorer or a file manager, '
+                    + 'or use 📎 to pick one.');
+                break;
             case 'attachDrop': {
                 // Dropped from the OS file manager, or pasted from the clipboard:
                 // the webview sees the BYTES but never the path (browser

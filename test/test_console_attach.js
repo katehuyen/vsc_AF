@@ -13,7 +13,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 
 const { userMessageLine, acceptUserText, newSessionState, ATTACH_LIMITS, IMAGE_MEDIA_TYPES } =
     require(path.join(__dirname, '..', 'out', 'core', 'consoleproto.js'));
-const { describeAttachment } = require(path.join(__dirname, '..', 'out', 'core', 'consolehost.js'));
+const { describeAttachment, looksLikeUri } = require(path.join(__dirname, '..', 'out', 'core', 'consolehost.js'));
 const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'bridge.js'));
 
 // a scratch folder with one of each kind of thing you can attach
@@ -161,6 +161,19 @@ fs.mkdirSync(subDir);
     const missing = await reg.dispatch('console.send', { id: 'x', text: 'hi', attach: [path.join(dir, 'nope.png')] });
     ok('a path that does not exist is dropped, not invented',
         missing.ok && missing.result.attached.length === 0);
+
+    // ---------- what a DROP hands over: a uri, or a bare path ----------
+    //
+    // ‼️ `Uri.parse` does not refuse `D:\a\b.png` — it reads it as a URI in the
+    // scheme "d" and hands back a path that never existed, so the attachment
+    // vanishes with no error anywhere. The colon test therefore needs TWO
+    // characters in front of it, and a Windows drive letter has one.
+    ok('a windows path is a path, not a uri', !looksLikeUri('D:\\zone\\a.png') && !looksLikeUri('C:/x/y'));
+    ok('a file uri is a uri', looksLikeUri('file:///d:/zone/a.png'));
+    ok('…and so is anything else with a real scheme',
+        looksLikeUri('vscode-remote://ssh/x') && looksLikeUri('untitled:Untitled-1'));
+    ok('a posix path is a path', !looksLikeUri('/home/x/a.png') && !looksLikeUri('./rel/a.png'));
+    ok('nothing is not a uri', !looksLikeUri('') && !looksLikeUri('   '));
 
     const cat = reg.catalog();
     const entry = cat.find(o => o.op === 'console.send');

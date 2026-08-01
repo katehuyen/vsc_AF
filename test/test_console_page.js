@@ -128,6 +128,15 @@ const sandbox = {
         querySelector: sel => (sel.indexOf('[data-afms') === 0 ? afms.querySelector(sel) : null),
         addEventListener: () => { }
     },
+    // a dropped/pasted file is read as a data URL before it is handed over;
+    // here the read lands synchronously so the assertion sits under the drop
+    FileReader: function () {
+        this.readAsDataURL = function (f) {
+            this.result = `data:application/octet-stream;base64,${Buffer.from(f.name || 'x').toString('base64')}`;
+            if (this.onload) { this.onload(); }
+        };
+    },
+    Buffer,
     // the working strip turns its glyph on a timer; the test drives it by hand
     setInterval: (fn) => { timers.push(fn); return timers.length; },
     clearInterval: (h) => { timers[h - 1] = null; },
@@ -1305,6 +1314,80 @@ const html = allHtml;
     // …and when the turn is no longer parked on anything, the card leaves.
     push(data(CONVO.slice(), { pendingAsk: null }));
     ok('no question, no card', card() === '');
+}
+
+// ---------- attaching files: the gesture has to reach the extension ----------
+//
+// ‼️ A BUTTON THAT DRAWS, HOVERS AND PRESSES BUT IS WIRED TO NOTHING IS THE
+// MOST EXPENSIVE KIND OF BROKEN — 📎 opened no dialog and reported no error, so
+// there was nothing to tell "the picker is broken" from "the panel ignored my
+// files". It was wired in `buildShell`, where the button does not exist yet:
+// it is drawn by statusHtml into the `c-status` SLOT, which is empty at that
+// moment and rewritten on every data update. A control is wired where it is
+// DRAWN, and this suite is what says so.
+{
+    const clicks = () => posted.filter(m => m.type === 'attachPick').length;
+    const before = clicks();
+    ok('📎 is on the page', /id="c-attach"/.test(els['c-status']._html));
+    ok('…and it is wired — the bug was that it was not', !!els['c-attach'].listeners.click);
+    els['c-attach'].listeners.click();
+    ok('…so pressing it asks the extension for the file dialog', clicks() === before + 1);
+
+    // The row it lives in is rewritten on every data update, and a listener
+    // does not survive a rewrite: it has to be re-attached with the row.
+    push(data(CONVO.slice(), { turns: 9 }));
+    ok('the status row was rewritten', /9 turns/.test(els['c-status']._html));
+    els['c-attach'].listeners.click();
+    ok('…and 📎 still works after it', clicks() === before + 2);
+
+    // ---- dropping ----
+    // The drop target is the whole PAGE, not the box: a file let go two
+    // centimetres from a target nobody knew about looks exactly like a feature
+    // that does not work.
+    const drop = dt => els.app.listeners.drop({
+        preventDefault() { }, stopPropagation() { }, dataTransfer: dt
+    });
+    const last = t => [...posted].reverse().find(m => m.type === t);
+    ok('the page itself takes the drop', !!els.app.listeners.drop && !!els.app.listeners.dragover);
+
+    posted = [];
+    drop({ getData: k => (k === 'text/uri-list' ? 'file:///d:/a/b.png\n#comment' : ''), files: [] });
+    ok('a drag from the Explorer hands over its uris',
+        last('attachUris') && last('attachUris').uris.join() === 'file:///d:/a/b.png');
+
+    posted = [];
+    drop({ getData: () => '', files: [{ name: 'shot.png' }] });
+    ok('a drag from the file manager hands over the bytes — the path is the host\'s job',
+        last('attachDrop') && last('attachDrop').files[0].name === 'shot.png');
+
+    // Some drags carry the path as plain text and nothing else.
+    posted = [];
+    drop({ getData: k => (k === 'text/plain' ? 'D:\\zone\\a.png' : ''), files: [] });
+    ok('a path arriving as plain text is still a file',
+        last('attachUris') && last('attachUris').uris.join() === 'D:\\zone\\a.png');
+
+    // ‼️ AND A DROP THAT CARRIED NOTHING SAYS SO. Silence is the bug seen from
+    // the other side: the panel does not move, and "nothing was attached" is
+    // indistinguishable from "attached, but never shown".
+    posted = [];
+    drop({ getData: () => '', files: [] });
+    ok('a drop with nothing in it is answered, not ignored', !!last('attachNothing'));
+    posted = [];
+    drop({ getData: k => (k === 'text/plain' ? 'just some words' : ''), files: [] });
+    ok('…and so is a drop of plain words that name no file', !!last('attachNothing'));
+
+    // ---- and what arrives is VISIBLE ----
+    msgHandler({
+        data: {
+            type: 'attached',
+            files: [{ path: 'D:/a/shot.png', name: 'shot.png', bytes: 2048, kind: 'image' }]
+        }
+    });
+    ok('an attached file shows up as a chip', /shot\.png/.test(els['c-chips']._html));
+    ok('…saying how it will travel, and how big it is',
+        /embedded/.test(els['c-chips']._html) && /2 KB/.test(els['c-chips']._html));
+    ok('…and the button carries the count', els['c-attach'].textContent === '📎 1');
+    ok('…with a way to take it off again', /data-drop="D:\/a\/shot\.png"/.test(els['c-chips']._html));
 }
 
 console.log(`${pass} passed, ${fail} failed`);

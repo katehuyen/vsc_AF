@@ -31,6 +31,20 @@ import {
  * An image can ride inside the message; anything else — including a folder —
  * travels as a path for the agent's own `Read` (see Attachment).
  */
+/**
+ * Is this dropped string a URI, or a plain path?
+ *
+ * ‼️ THE TEST NEEDS TWO CHARACTERS BEFORE THE COLON. A drag can carry
+ * `file:///d:/a/b.png` or bare `D:\a\b.png`, and the naive scheme test reads
+ * the second as a URI in the scheme "d" — `Uri.parse` does not refuse it, it
+ * quietly hands back a path that never existed, and the attachment vanishes
+ * with no error anywhere. Kept here rather than in the panel so the rule is
+ * testable without vscode.
+ */
+export function looksLikeUri(s: string): boolean {
+    return /^[a-z][a-z0-9+.-]+:/i.test(String(s ?? '').trim());
+}
+
 export function describeAttachment(fsPath: string): Attachment | null {
     let stat: fs.Stats;
     try { stat = fs.statSync(fsPath); } catch { return null; }

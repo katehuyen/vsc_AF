@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.49.1 — The 📎 that could be pressed and did nothing (2026-08-01)
+
+**‼️ 3.49.0 shipped the attachment feature with its button wired to nothing.** 📎 drew, hovered and pressed like a button, and no dialog ever opened — no error, no message, nothing in the panel. That is the most expensive kind of broken: with no signal at all there is nothing to tell "the picker is broken" from "the panel ignored my files", so the only conclusion available to the user is that the whole feature is dead. It was, from the only entry point most people would try first.
+
+**The cause was one line in the wrong function.** The click was attached in `buildShell`, which runs while `c-status` — the row 📎 is drawn into — is still **empty**; `getElementById` answered null and the listener bound to nothing. Even if it had existed, that row is rewritten on every data update, and a listener does not survive its element. **A control is now wired where it is drawn**, in the same block that already wires "End session" and "Open transcript". The suite gained the check that was missing on the way in: the button exists, it is *wired*, pressing it reaches the extension, and it still does after the row has been rewritten.
+
+**Dropping was the same failure from the other side: silent.** Three fixes, one principle — a gesture that produces nothing must say so.
+
+- **The drop target is the whole page, not the box.** A file let go two centimetres from a target nobody knew about is indistinguishable from a feature that does not work — and the composer is the smallest, bottom-most strip on the page, i.e. the least likely place for a hand carrying a file to let go. Anywhere on the Console now takes the drop; the box is still the thing that lights up, because that is where the file is going.
+- **A drop that carried nothing is answered.** Empty drop, or plain words that name no file → a warning that says what to do instead. Same for paths that turn out not to be readable: previously `postAttached` returned quietly and the panel simply did not move.
+- **A path dragged as plain text is now a file.** Some drags carry no URI list and no bytes — just the path as text. It is handed over, and the host decides whether it exists. **`Uri.parse` does not refuse `D:\zone\a.png`:** it reads it as a URI in the scheme `d` and hands back a path that never existed, so the attachment vanished with no error anywhere. The scheme test needs two characters before the colon, and a Windows drive letter has one (`looksLikeUri`, in core so it is testable without vscode).
+
+- 20 checks added, driving the real `media/console.js`: 📎 wired and surviving a row rewrite, all four drop shapes (Explorer URIs, file-manager bytes, a plain-text path, nothing at all), the chip that proves a file arrived — its name, its size, how it will travel and its ✕ — and the drive-letter case that had been silently eating attachments. Suite: **85 files, 3768 checks green.**
+
 ## 3.49.0 — Files go with what you say, and the file decides how it travels (2026-08-01)
 
 **‼️ The Console was meant to be the terminal's equal, and you could not hand it a screenshot.** Everything else had been carried across — steering a running turn, answering an `AskUserQuestion` in place, holding a message back — but the one thing a terminal does with a keystroke, pasting a picture of the thing you are asking about, had no equivalent here at all. The gap was never in the protocol: the console speaks to `claude -p --input-format stream-json`, and `userMessageLine` was already building `content` as an **array** in Anthropic message format. An image block always belonged next to the text block. Nothing was blocking it but the absence of a way to ask.

@@ -1661,7 +1661,13 @@
         const byId = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
         byId('c-jump', 'click', jumpToEnd);
         byId('c-send', 'click', () => send(false));
-        byId('c-attach', 'click', () => vscode.postMessage({ type: 'attachPick' }));
+        // ‼️ 📎 IS NOT WIRED HERE, AND THAT IS THE WHOLE POINT. It is drawn by
+        // statusHtml into the `c-status` SLOT, which is empty at this moment and
+        // rewritten on every data update — so a listener attached here binds to
+        // nothing on the first pass and to a discarded element on every one
+        // after. It was silently dead: the button drew, hovered and pressed, and
+        // nothing happened, which is the most expensive kind of broken.
+        // A control is wired where it is DRAWN (see renderStatus).
         wireAttach();
         paintChips();
 
@@ -2235,6 +2241,9 @@
 
         if (slot('c-status', statusHtml(s))) {
             const byId = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
+            // 📎 lives in this row, so it is wired in this row — every rewrite
+            // hands it a new element, and a listener from the last one is gone.
+            byId('c-attach', 'click', () => vscode.postMessage({ type: 'attachPick' }));
             byId('c-goto-live', 'click', () => {
                 const live = (DATA.sessions || []).find(x => x.agentId === st.agentId
                     && x.status !== 'ended' && x.status !== 'error');
@@ -2372,14 +2381,28 @@
     }
 
     function wireAttach() {
-        const composer = document.getElementById('c-composer');
-        if (!composer) { return; }
+        // ‼️ THE DROP TARGET IS THE WHOLE PAGE, NOT THE BOX. A drop that lands
+        // two centimetres from a target the user never knew about is
+        // indistinguishable from a feature that does not work — and the box is
+        // the smallest, bottom-most strip on the page, i.e. the least likely
+        // place for a hand carrying a file to let go. The box is still the thing
+        // that LIGHTS UP, because that is where the file is going.
+        wirePaste();
+        // The page survives every rebuild, so it is wired ONCE — a listener per
+        // shell rebuild would spill the same drop several times over.
+        const page = document.getElementById('app');
+        if (!page || page.__afDropWired) { return; }
+        page.__afDropWired = true;
+        const lit = on => {
+            const composer = document.getElementById('c-composer');
+            if (composer && composer.classList) { composer.classList[on ? 'add' : 'remove']('drop'); }
+        };
         const stop = ev => { ev.preventDefault(); ev.stopPropagation(); };
-        composer.addEventListener('dragover', ev => { stop(ev); composer.classList.add('drop'); });
-        composer.addEventListener('dragleave', ev => { stop(ev); composer.classList.remove('drop'); });
-        composer.addEventListener('drop', ev => {
+        page.addEventListener('dragover', ev => { stop(ev); lit(true); });
+        page.addEventListener('dragleave', ev => { stop(ev); lit(false); });
+        page.addEventListener('drop', ev => {
             stop(ev);
-            composer.classList.remove('drop');
+            lit(false);
             const dt = ev.dataTransfer;
             if (!dt) { return; }
             // Dragged out of the VS Code Explorer: real URIs, no staging needed.
@@ -2389,18 +2412,33 @@
                 if (uris.length) { vscode.postMessage({ type: 'attachUris', uris }); return; }
             }
             // Dragged out of the OS file manager: bytes only.
-            if (dt.files && dt.files.length) { spill(dt.files); }
+            if (dt.files && dt.files.length) { spill(dt.files); return; }
+            // Some drags carry the path as PLAIN TEXT and nothing else (VS Code
+            // does it for a file dragged with a modifier held). A line that looks
+            // like a path is worth handing over — the host decides if it exists.
+            const plain = (dt.getData('text/plain') || '').split(/\r?\n/)
+                .map(x => x.trim())
+                .filter(x => /[\\/]/.test(x) && x.length < 500);
+            if (plain.length) { vscode.postMessage({ type: 'attachUris', uris: plain }); return; }
+            // ‼️ AND IF NOTHING CAME OUT OF IT, SAY SO. Silence here is the bug
+            // the user reported from the other side: you drop a file, the page
+            // does not move, and there is no way to tell "nothing was attached"
+            // from "attached, but the panel never shows it".
+            vscode.postMessage({ type: 'attachNothing' });
         });
-        // A pasted screenshot is the whole reason this feature exists. Only
-        // hijack the paste when the clipboard actually carries a file —
-        // pasting text must keep working exactly as it did.
+    }
+
+    /** A pasted screenshot is the whole reason this feature exists. Only hijack
+     *  the paste when the clipboard actually carries a file — pasting text must
+     *  keep working exactly as it did. The BOX is rebuilt with the shell, so
+     *  unlike the page-level drop this is wired on every rebuild. */
+    function wirePaste() {
         const box = document.getElementById('c-text');
-        if (box) {
-            box.addEventListener('paste', ev => {
-                const items = ev.clipboardData && ev.clipboardData.files;
-                if (items && items.length) { ev.preventDefault(); spill(items); }
-            });
-        }
+        if (!box) { return; }
+        box.addEventListener('paste', ev => {
+            const items = ev.clipboardData && ev.clipboardData.files;
+            if (items && items.length) { ev.preventDefault(); spill(items); }
+        });
     }
 
     function send(hold) {
