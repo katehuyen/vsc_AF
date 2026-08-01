@@ -324,19 +324,23 @@
     }
     function actionsHtml() {
         const undo = DATA.undoable || 0;
-        return `<span class="nt-grp">
+        return `<span class="nt-grp nt-bulk">
+                <label class="nt-selall" title="Select / deselect all shown"><input type="checkbox" id="nt-selall"> all</label>
+                <button data-hact="bulkRead" title="Mark selected read (or all shown if none selected)">✓ Read</button>
+                <button class="secondary" data-hact="bulkUnread" title="Mark selected unread (or all shown)">○ Unread</button>
+                <button class="secondary danger" data-hact="bulkDelete" title="Delete selected (or all shown if none selected)"><span class="nt-trashic">🗑</span> Delete</button>
+            </span>
+            <span class="nt-break"></span>
+            <span class="nt-grp">
+                <button class="secondary" data-hact="clearRead" title="Delete read notices — pinned, starred and unhandled questions are kept"><span class="nt-cleardot">●</span> Clear read</button>
+            </span>
+            <span class="nt-grp">
                 <button class="secondary" data-hact="expandAll" title="Open every shown notice">⊕ Expand all</button>
                 <button class="secondary" data-hact="collapseAll" title="Close all">⊖ Collapse all</button>
                 <button class="secondary ${singleMode ? 'on' : ''}" data-hact="single" aria-pressed="${singleMode}" title="Only one notice open at a time: opening one folds the previous${singleMode ? ' — currently ON' : ''}">${singleMode ? '◉' : '◯'} Single-open</button>
             </span>
-            <span class="nt-grp nt-bulk">
-                <label class="nt-selall" title="Select / deselect all shown"><input type="checkbox" id="nt-selall"> all</label>
-                <button data-hact="bulkRead" title="Mark selected read (or all shown if none selected)">✓ Read</button>
-                <button class="secondary" data-hact="bulkUnread" title="Mark selected unread (or all shown)">○ Unread</button>
-                <button class="secondary danger" data-hact="bulkDelete" title="Delete selected (or all shown if none selected)">🗑 Delete</button>
-            </span>
             <span class="nt-grp">
-                <button class="secondary" data-hact="clearRead" title="Delete read notices — pinned, starred and unhandled questions are kept">Clear read</button>
+                <button class="secondary" data-hact="needs" title="Open the Needs You page">🙋 Needs You</button>
                 <button data-hact="export">⬇ Export MD</button>
                 <button class="secondary nt-undo" data-hact="undo" ${undo ? '' : 'disabled'} title="${undo ? 'Restore the ' + undo + ' notice(s) just deleted' : 'Nothing to undo'}">↶ Undo</button>
             </span>`;
@@ -364,7 +368,15 @@
         .nt-grp { display:inline-flex; gap:6px; align-items:center; padding-right:8px; margin-right:2px; border-right:1px solid var(--vscode-panel-border); }
         .nt-grp:last-child { border-right:none; }
         .nt-bulk .nt-selall { display:inline-flex; gap:3px; align-items:center; font-size:11px; opacity:.85; cursor:pointer; }
+        /* Forces the bulk-selection group onto its own line; the clear/expand/
+           export group always starts a fresh row under it. */
+        .nt-break { flex-basis:100%; height:0; }
         button.danger:hover { background:var(--vscode-inputValidation-errorBackground, #5a1d1d); border-color:var(--vscode-editorError-foreground, #e51400); }
+        .nt-trashic { color:var(--vscode-editorError-foreground, #e51400); }
+        /* Small, deliberately subdued mark riding in front of "Clear read" —
+           reddish like the trash icon so both read as "this deletes things",
+           but muted so it doesn't compete with the trash icon's alarm. */
+        .nt-cleardot { color:var(--vscode-editorError-foreground, #e51400); opacity:.55; font-size:8px; vertical-align:1px; }
         .nt-undo { color:var(--vscode-charts-yellow, #e2c08d); }
         .nt-row { display:flex; gap:8px; align-items:center; padding:8px 10px; cursor:pointer; }
         .nt-row:hover { background:var(--vscode-list-hoverBackground); }
@@ -485,6 +497,7 @@
         document.querySelectorAll('[data-hact]').forEach(b => b.addEventListener('click', () => {
             const a = b.dataset.hact;
             if (a === 'clearRead') { vscode.postMessage({ type: 'clearRead' }); }
+            else if (a === 'needs') { vscode.postMessage({ type: 'afnav', to: 'needs' }); }
             else if (a === 'export') { vscode.postMessage({ type: 'exportChoose', shown: items.map(n => n.id), open: [...expanded] }); }
             else if (a === 'undo') { vscode.postMessage({ type: 'undo' }); }
             else if (a === 'expandAll') { items.forEach(n => expanded.add(n.id)); render(); }

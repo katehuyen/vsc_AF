@@ -368,12 +368,14 @@ const LIVE_PAYLOAD = {
         // is usually deep in the sessions table — three screens below the card
         // the indicator was clicked for.
         const sbSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'views', 'statusBar.ts'), 'utf8');
-        ok('there is ONE contract for "a status-bar click opens the Dashboard at the top"',
+        ok('there is ONE contract for "a click on the plan-usage indicator opens the Dashboard at the top"',
             /export const OPEN_DASHBOARD_AT_TOP: vscode\.Command = \{/.test(sbSrc)
             && /arguments: \[\{ scrollTo: 'top' \}\]/.test(sbSrc));
-        ok('…and both indicators in the cluster obey it, so neighbours cannot disagree',
-            (sbSrc.match(/this\.item\.command = OPEN_DASHBOARD_AT_TOP;/g) || []).length === 2
-            && /this\.item\.command = OPEN_DASHBOARD_AT_TOP;/.test(barSrc));
+        ok('…and the plan-usage indicator obeys it',
+            /this\.item\.command = OPEN_DASHBOARD_AT_TOP;/.test(barSrc));
+        ok('…while the "N active • cost" indicator opens Live Timeline instead — a deliberate divergence',
+            /export const OPEN_LIVE_TIMELINE: vscode\.Command = \{/.test(sbSrc)
+            && (sbSrc.match(/this\.item\.command = OPEN_LIVE_TIMELINE;/g) || []).length === 2);
         ok('…while the warning state still goes to Needs You instead',
             /this\.item\.command = 'agentfarm\.openNeeds';/.test(sbSrc));
 

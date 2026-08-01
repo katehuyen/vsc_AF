@@ -4,24 +4,29 @@ import { SessionIndex } from '../core/sessions';
 import { dayKey, fmtTokens, fmtUSD } from '../core/util';
 
 /**
- * What a click on an Agent Farm status-bar indicator means: open the Dashboard
- * **at the top**.
+ * What a click on the plan-usage status-bar indicator means: open the
+ * Dashboard **at the top**.
  *
  * ‼️ THE PAGE IS RETAINED WHEN HIDDEN, SO REVEALING IT IS NOT THE SAME AS
  * OPENING IT. It comes back exactly where you last left it — and where you last
  * left it is usually deep in the sessions table, with the KPI row and the plan
- * usage card several screens above. Every one of these indicators shows a
- * number from the TOP of that page (cost today, the plan percentages), so a
- * click on one is a question the top of the page answers; landing anywhere else
- * makes the click look broken and costs a scroll to undo.
- *
- * Shared by both indicators on purpose: two neighbours in the same cluster that
- * answer the same gesture differently is itself the bug.
+ * usage card several screens above. The plan-usage indicator shows a number
+ * from the TOP of that page (the plan percentages), so a click on it is a
+ * question the top of the page answers; landing anywhere else makes the click
+ * look broken and costs a scroll to undo.
  */
 export const OPEN_DASHBOARD_AT_TOP: vscode.Command = {
     command: 'agentfarm.openDashboard',
     title: 'Open the Dashboard at the top',
     arguments: [{ scrollTo: 'top' }]
+};
+
+/** What a click on the "N active • $X today" indicator means when nothing is
+ *  waiting on you: open Live Timeline — the running-now view that indicator's
+ *  own numbers (active agents, cost) feed into. */
+export const OPEN_LIVE_TIMELINE: vscode.Command = {
+    command: 'agentfarm.openTimeline',
+    title: 'Open Live Timeline'
 };
 
 export interface StatusBarExtras {
@@ -40,7 +45,7 @@ export class FarmStatusBar implements vscode.Disposable {
     constructor(private index: SessionIndex, private live?: LiveMonitor,
         private extras?: StatusBarExtras) {
         this.item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 90);
-        this.item.command = OPEN_DASHBOARD_AT_TOP;
+        this.item.command = OPEN_LIVE_TIMELINE;
         this.item.show();
         this.update();
         this.timer = setInterval(() => this.update(), 30_000);
@@ -69,7 +74,7 @@ export class FarmStatusBar implements vscode.Disposable {
             this.item.command = 'agentfarm.openNeeds';
         } else {
             this.item.backgroundColor = undefined;
-            this.item.command = OPEN_DASHBOARD_AT_TOP;
+            this.item.command = OPEN_LIVE_TIMELINE;
         }
         this.item.text = text;
 
@@ -92,7 +97,7 @@ export class FarmStatusBar implements vscode.Disposable {
             `Trailing 5h window: ${fmtTokens(win.tokens)} tokens • ${win.msgs} msgs\n\n` +
             lapLine +
             `${liveLine}\n\n` +
-            `_Click to open the dashboard_`
+            (waiting > 0 ? `_Click to open Needs You_` : `_Click to open Live Timeline_`)
         );
         tooltip.isTrusted = { enabledCommands: ['agentfarm.lapReset', 'agentfarm.lapClear'] };
         this.item.tooltip = tooltip;

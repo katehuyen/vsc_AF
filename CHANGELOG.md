@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.51.0 — Notices toolbar reorganised, and the main status-bar indicator opens Live Timeline (2026-08-02)
+
+**The Notices toolbar's view controls (Expand all / Collapse all / Single-open) now sit on their own row**, between Clear read and Export MD, with the same vertical separators the toolbar already used between button groups. The bulk-selection row (select-all, Read, Unread, Delete) keeps its own line above. The bulk Delete button's trash icon is now tinted red, and a small, deliberately subdued reddish mark rides in front of Clear read — both read as "this deletes things" without either one shouting.
+
+**There was no way to open Needs You except by acting on a live alert.** The status-bar bell only carries the command when something is actually waiting; there is no page or nav button for it otherwise. A **🙋 Needs You** button now sits immediately left of Export MD on the Notices page, wired through the existing shared `afnav` router — no new bridge plumbing needed, since navigation-only buttons are outside the bridge contract.
+
+**The "N active • $X today" status-bar indicator now opens Live Timeline instead of the Dashboard** when nothing needs you — the running-now view its own numbers (active agents, live cost) actually feed into. The neighbouring plan-usage indicator (`3h 49m - 86% / wk 41%`) is unchanged and still opens the Dashboard at the top; the two indicators sharing one command was a deliberate design constraint, so this is a scoped, explicit divergence, not a drift — recorded as two separate command constants (`OPEN_DASHBOARD_AT_TOP`, `OPEN_LIVE_TIMELINE`) so the two contracts cannot blur back together silently. The warning state (bell, waiting count) still goes to Needs You either way.
+
+- Tests updated for the new two-indicator contract. Suite: **85 files, 3814 checks green.**
+
 ## 3.50.0 — The composer stops lying about what it is sending, and ctx stops resetting (2026-08-01)
 
 **‼️ The worst bug in the attachment feature was that it kept the files on screen after they had gone.** Attach, send, start typing the next message — and the chips were still sitting there. They were not attached to anything: `send()` had emptied the list, and **nothing ever redrew it**. The chip list was written by hand from three places and never from the render path, so it survived until the shell happened to be rebuilt. Meanwhile the next prompt went out **without** the files it appeared to be carrying. A surface that lies about what it is about to send is worse than one that never had the feature. The list is now a **slot**, drawn by `renderLive` — every keystroke, every data push, every send — and the suite proves it by reproducing the exact reported bug and failing on it.
