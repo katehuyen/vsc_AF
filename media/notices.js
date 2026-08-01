@@ -330,7 +330,6 @@
                 <button class="secondary" data-hact="bulkUnread" title="Mark selected unread (or all shown)">○ Unread</button>
                 <button class="secondary danger" data-hact="bulkDelete" title="Delete selected (or all shown if none selected)"><span class="nt-trashic">🗑</span> Delete</button>
             </span>
-            <span class="nt-break"></span>
             <span class="nt-grp">
                 <button class="secondary" data-hact="clearRead" title="Delete read notices — pinned, starred and unhandled questions are kept"><span class="nt-cleardot">●</span> Clear read</button>
             </span>
@@ -368,9 +367,6 @@
         .nt-grp { display:inline-flex; gap:6px; align-items:center; padding-right:8px; margin-right:2px; border-right:1px solid var(--vscode-panel-border); }
         .nt-grp:last-child { border-right:none; }
         .nt-bulk .nt-selall { display:inline-flex; gap:3px; align-items:center; font-size:11px; opacity:.85; cursor:pointer; }
-        /* Forces the bulk-selection group onto its own line; the clear/expand/
-           export group always starts a fresh row under it. */
-        .nt-break { flex-basis:100%; height:0; }
         button.danger:hover { background:var(--vscode-inputValidation-errorBackground, #5a1d1d); border-color:var(--vscode-editorError-foreground, #e51400); }
         .nt-trashic { color:var(--vscode-editorError-foreground, #e51400); }
         /* Small, deliberately subdued mark riding in front of "Clear read" —
