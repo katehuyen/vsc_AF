@@ -3980,7 +3980,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const reportDir = (): string => {
         const cfg = vscode.workspace.getConfiguration('agentFarm').get<string>('reportDir');
         return (cfg && cfg.trim())
-            || path.join('D:', 'zone', 'know', 'note', 'obsidian', '01_INBOX', '00_AGENT_AREA', '00_OUTPUT', '10_REPORT');
+            || path.join('D:', 'zone', 'know', 'note', 'obsidian', '00_AGENT_AREA', '00_OUTPUT', '10_REPORT');
     };
     const writeReport = (a: { title: string; name?: string; body: string; agentName?: string }): string => {
         const dir = reportDir();
@@ -4023,7 +4023,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const cevapDir = (): string => {
         const cfg = vscode.workspace.getConfiguration('agentFarm').get<string>('answerDir');
         return (cfg && cfg.trim())
-            || path.join('D:', 'zone', 'know', 'note', 'obsidian', '01_INBOX', '00_AGENT_AREA', '00_OUTPUT', '01_CEVAPLAR');
+            || path.join('D:', 'zone', 'know', 'note', 'obsidian', '00_AGENT_AREA', '00_OUTPUT', '01_CEVAPLAR');
     };
     const writeAnswer = (a: { title: string; name?: string; body: string; agentName?: string }): string => {
         const dir = cevapDir();

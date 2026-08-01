@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.51.0",
+  "version": "3.51.1",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -2707,12 +2707,12 @@
         "agentFarm.reportDir": {
           "type": "string",
           "default": "",
-          "description": "Default folder where agents' full 'notices.post report' files are written (naming YYYY-MM-DD_<name>.md). Empty = D:\\zone\\know\\note\\obsidian\\01_INBOX\\00_AGENT_AREA\\00_OUTPUT\\10_REPORT."
+          "description": "Default folder where agents' full 'notices.post report' files are written (naming YYYY-MM-DD_<name>.md). Empty = D:\\zone\\know\\note\\obsidian\\00_AGENT_AREA\\00_OUTPUT\\10_REPORT."
         },
         "agentFarm.answerDir": {
           "type": "string",
           "default": "",
-          "description": "Folder where a work item's detailed answer (not a user-requested report) is written by queue.stamp (naming YYYY-MM-DD_<agent>_<name>.md). Empty = D:\\zone\\know\\note\\obsidian\\01_INBOX\\00_AGENT_AREA\\00_OUTPUT\\01_CEVAPLAR."
+          "description": "Folder where a work item's detailed answer (not a user-requested report) is written by queue.stamp (naming YYYY-MM-DD_<agent>_<name>.md). Empty = D:\\zone\\know\\note\\obsidian\\00_AGENT_AREA\\00_OUTPUT\\01_CEVAPLAR."
         },
         "agentFarm.queue.targets": {
           "type": "array",

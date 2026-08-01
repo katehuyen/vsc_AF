@@ -2,6 +2,10 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.51.1 — AGENT_AREA moved up a level, so the report and answer defaults follow it (2026-08-02)
+
+**The vault's `00_AGENT_AREA` terminal is no longer under `01_INBOX`; it now sits at the vault root.** Both built-in output folders were hardcoded to the old location, and neither `agentFarm.reportDir` nor `agentFarm.answerDir` is set on this machine — so every `notices.post report` and every `queue.stamp` answer would have been written into a path that no longer exists, silently recreating the old tree beside the real one instead of failing. The two fallbacks (and the two setting descriptions that quote them) now point at `00_AGENT_AREA/00_OUTPUT/10_REPORT` and `…/01_CEVAPLAR`. Folder move only — no behaviour, naming or contract change; an explicitly configured `reportDir`/`answerDir` still wins as before.
+
 ## 3.51.0 — Notices toolbar reorganised, and the main status-bar indicator opens Live Timeline (2026-08-02)
 
 **The Notices toolbar's view controls (Expand all / Collapse all / Single-open) now sit on their own row**, between Clear read and Export MD, with the same vertical separators the toolbar already used between button groups. The bulk-selection row (select-all, Read, Unread, Delete) keeps its own line above. The bulk Delete button's trash icon is now tinted red, and a small, deliberately subdued reddish mark rides in front of Clear read — both read as "this deletes things" without either one shouting.
