@@ -117,6 +117,63 @@ export interface ConsoleAsk {
     ts: number;
 }
 
+/**
+ * A file hung on a user message.
+ *
+ * ‼️ TWO CARRIERS, AND THE FILE TYPE PICKS ONE — not a preference, a capability.
+ * The model cannot open a file, so an image has to travel INSIDE the message as
+ * a base64 block. Everything else travels as a PATH, because the agent already
+ * has this disk and `Read` opens it: that is cheaper on context (a 10 MB log
+ * embedded is 10 MB on every later turn), it pages through PDFs and notebooks,
+ * and it re-reads a file that changed mid-conversation. Embedding a text file
+ * would be the worse answer, not the more generous one.
+ */
+export interface Attachment {
+    /** absolute path on this machine */
+    path: string;
+    /** what the chip shows */
+    name: string;
+    bytes: number;
+    kind: 'image' | 'path';
+    /** image only, e.g. 'image/png' */
+    mediaType?: string;
+    /** image only — base64, read at SEND time so a file swapped meanwhile is caught */
+    data?: string;
+}
+
+/**
+ * Attachment ceilings — ONE definition, used by the composer for the early
+ * warning and by the host as the last line of defence.
+ *
+ * ‼️ Over the limit the send is REFUSED, never silently downscaled. A quietly
+ * shrunk screenshot still gets an answer — a confidently wrong one.
+ */
+export const ATTACH_LIMITS = {
+    /** per image, base64 payload rides in the message itself */
+    perImageBytes: 5 * 1024 * 1024,
+    /** everything embedded in one message */
+    totalBytes: 20 * 1024 * 1024,
+    /** files hung on one message, images and paths together */
+    count: 20
+};
+
+/** Extensions the API can take as an image block. Anything else goes by path. */
+export const IMAGE_MEDIA_TYPES: Record<string, string> = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp'
+};
+
+/** What the transcript remembers about an attachment (never the payload). */
+export interface AttachmentNote {
+    name: string;
+    kind: 'image' | 'path';
+    path: string;
+    bytes: number;
+}
+
 export interface ConsoleMessage {
     id: string;
     role: 'user' | 'agent' | 'tool' | 'result' | 'system' | 'error' | 'ask';
@@ -124,6 +181,8 @@ export interface ConsoleMessage {
     text?: string;
     /** said INTO a running turn (see acceptUserText) rather than starting one */
     steer?: boolean;
+    /** files that went with this message — shown in the talk, payload not kept */
+    attach?: AttachmentNote[];
     tool?: ConsoleToolUse;
     /** tool result: did it fail? */
     isError?: boolean;
@@ -336,12 +395,31 @@ export function hostArgs(o: {
     return args;
 }
 
-/** A user turn, as the stream expects it. */
-export function userMessageLine(text: string): string {
-    return JSON.stringify({
-        type: 'user',
-        message: { role: 'user', content: [{ type: 'text', text }] }
-    }) + '\n';
+/**
+ * A user turn, as the stream expects it.
+ *
+ * `content` was always an array — the console speaks Anthropic message format
+ * to `claude -p --input-format stream-json` — so an image block sits next to
+ * the text block natively. Images go FIRST: a question that follows its picture
+ * reads the way it was meant to.
+ *
+ * Path attachments are not a second channel; they become part of the sentence
+ * the model reads, in backticks so a path with spaces stays one token to it.
+ */
+export function userMessageLine(text: string, attachments: Attachment[] = []): string {
+    const images = attachments.filter(a => a.kind === 'image' && a.data && a.mediaType);
+    const paths = attachments.filter(a => a.kind !== 'image');
+    const body = paths.length
+        ? `${text}${text ? '\n\n' : ''}Attached file${paths.length === 1 ? '' : 's'} on this machine — open with Read:\n`
+            + paths.map(a => `- \`${a.path}\``).join('\n')
+        : text;
+    const content: unknown[] = images.map(a => ({
+        type: 'image',
+        source: { type: 'base64', media_type: a.mediaType, data: a.data }
+    }));
+    // An images-only message is legal; an EMPTY text block is not worth sending.
+    if (body) { content.push({ type: 'text', text: body }); }
+    return JSON.stringify({ type: 'user', message: { role: 'user', content } }) + '\n';
 }
 
 /** A control request (interrupt / set_permission_mode). */
@@ -858,12 +936,17 @@ function turnBrain(state: ConsoleSessionState): { turnModel?: string; turnEffort
 }
 
 export function acceptUserText(
-    state: ConsoleSessionState, text: string, now: number, hold = false
+    state: ConsoleSessionState, text: string, now: number, hold = false, attach: AttachmentNote[] = []
 ): { state: ConsoleSessionState; send: boolean } {
     const t = text.trim();
-    if (!t) { return { state, send: false }; }
+    // A message carrying files is a message, even with nothing typed — a
+    // screenshot on its own is a legitimate thing to say.
+    if (!t && !attach.length) { return { state, send: false }; }
     if (state.status === 'working') {
         if (hold) {
+            // Callers must not get here with attachments: the queue carries
+            // strings, so the files would vanish silently. consolehost.send
+            // refuses that combination before it reaches this point.
             return { state: { ...state, lastTs: now, queued: [...state.queued, t] }, send: false };
         }
         // Into the running turn: the turn's own clock and totals are NOT reset,
@@ -871,7 +954,10 @@ export function acceptUserText(
         return {
             state: {
                 ...state, lastTs: now,
-                messages: [...state.messages, { id: nextId(), ts: now, role: 'user', text: t, steer: true }]
+                messages: [...state.messages, {
+                    id: nextId(), ts: now, role: 'user', text: t, steer: true,
+                    ...(attach.length ? { attach } : {})
+                }]
             },
             send: true
         };
@@ -885,7 +971,10 @@ export function acceptUserText(
             // invariant the strip relies on: lastTurn exists exactly while the
             // ball is yours and a turn has already run (see lastTurn).
             lastTurn: undefined,
-            messages: [...state.messages, { id: nextId(), ts: now, role: 'user', text: t }]
+            messages: [...state.messages, {
+                id: nextId(), ts: now, role: 'user', text: t,
+                ...(attach.length ? { attach } : {})
+            }]
         },
         send: true
     };

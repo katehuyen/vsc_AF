@@ -146,7 +146,7 @@ import { MissionsPanel } from './panels/missionsPanel';
 import { PortfolioPanel } from './panels/portfolioPanel';
 import { ConsolePanel } from './panels/consolePanel';
 import { transcriptHistory } from './core/consolehistory';
-import { ConsoleHost, killPid } from './core/consolehost';
+import { ConsoleHost, describeAttachment, killPid } from './core/consolehost';
 import { carriedTotals, ConsoleMessage } from './core/consoleproto';
 import { MissionNode, MissionsTreeProvider } from './views/missionsTree';
 import { TriggerManager } from './core/triggers';
@@ -2978,13 +2978,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'console.send',
-            describe: 'Say something in a hosted Console session. While a turn is running this goes INTO that turn — the CLI delivers it at the turn\'s next step, the same steering a terminal does — so it can still redirect work in progress. args: id (console id from console.start), text, hold? (default false — true parks it instead: it waits, editable via console.queue, and is handed over when the turn ends)',
+            describe: 'Say something in a hosted Console session. While a turn is running this goes INTO that turn — the CLI delivers it at the turn\'s next step, the same steering a terminal does — so it can still redirect work in progress. args: id (console id from console.start), text, hold? (default false — true parks it instead: it waits, editable via console.queue, and is handed over when the turn ends), attach? (array of absolute paths to hang on the message: an image — png/jpg/gif/webp — is embedded in the message so the model can SEE it, anything else including a folder is handed over as a path for the agent to open with Read. Limits: 5 MB per image, 20 MB and 20 files per message; over them the send is refused, never shrunk. A message with attachments cannot be held.)',
             handler: (args) => {
                 const id = argStr(args, 'id');
-                const r = consoleHost.send(id, argStr(args, 'text'), args.hold === true);
+                const paths = Array.isArray(args.attach) ? args.attach as unknown[] : [];
+                const attach = paths
+                    .filter((p): p is string => typeof p === 'string')
+                    .map(describeAttachment)
+                    .filter((a): a is NonNullable<typeof a> => !!a);
+                const missing = paths.length - attach.length;
+                const r = consoleHost.send(id, argStr(args, 'text'), args.hold === true, attach);
                 need(r, 'no such live console session (console.sessions lists them)');
+                // A refusal is an answer, not a success with a note.
+                if (r!.refused) { throw new Error(r!.refused); }
                 ConsolePanel.refreshIfOpen();
-                return { id, held: r!.queued, deliveredInto: r!.queued ? null : 'the running turn' };
+                return {
+                    id, held: r!.queued, deliveredInto: r!.queued ? null : 'the running turn',
+                    attached: attach.map(a => ({ name: a.name, kind: a.kind })),
+                    ...(missing ? { skipped: `${missing} path(s) did not exist` } : {})
+                };
             }
         },
         {

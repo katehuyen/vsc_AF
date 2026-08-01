@@ -807,13 +807,18 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     ok('holding, and acting on what is held, reach the bridge in the same commit',
         ext.includes("op: 'console.queue'")
         && /console\.send[\s\S]{0,900}hold\?/.test(ext)
-        && /consoleHost\.send\(id, argStr\(args, 'text'\), args\.hold === true\)/.test(ext));
+        && /consoleHost\.send\(id, argStr\(args, 'text'\), args\.hold === true/.test(ext));
+    // Attachments went the same way in the same commit — an agent can hand a
+    // screenshot to a console session, not just the person at the keyboard.
+    ok('attaching files reaches the bridge too',
+        /console\.send[\s\S]{0,1400}attach\?/.test(ext)
+        && /consoleHost\.send\(id, argStr\(args, 'text'\), args\.hold === true, attach\)/.test(ext));
     ok('…and console.send no longer promises the old "sent when the turn ends"',
         !/QUEUED and sent when that turn ends/.test(ext));
     const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'consolePanel.ts'), 'utf8');
     ok('the panel carries the same three verbs to the host',
         /case 'queueTake'/.test(panel) && /case 'queueSend'/.test(panel)
-        && /host\.send\(str\('id'\), str\('text'\), msg\.hold === true\)/.test(panel));
+        && /host\.send\(str\('id'\), str\('text'\), msg\.hold === true, attachmentsOf\(msg\)\)/.test(panel));
 }
 
 // ---------- ‼️ a resumed session keeps what it spent ----------

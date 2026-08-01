@@ -14,11 +14,38 @@
  */
 
 import * as cp from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
 import {
-    acceptUserText, answerAsk, AskDecision, CarriedTotals, ConsoleMessage, ConsoleSessionState,
-    controlLine, editQueued, hostArgs, newSessionState, reduceEvent, shiftQueued, takeQueued,
-    userMessageLine
+    acceptUserText, answerAsk, AskDecision, Attachment, AttachmentNote, ATTACH_LIMITS,
+    CarriedTotals, ConsoleMessage, ConsoleSessionState, controlLine, editQueued, hostArgs,
+    IMAGE_MEDIA_TYPES, newSessionState, reduceEvent, shiftQueued, takeQueued, userMessageLine
 } from './consoleproto';
+
+/**
+ * What a path IS, as far as attaching goes.
+ *
+ * ‼️ THE CARRIER IS DECIDED HERE AND NOWHERE ELSE — not in the composer, not
+ * by the caller. Panel, bridge and any future entry point all come through
+ * this function, so a `.png` behaves identically however it was attached.
+ * An image can ride inside the message; anything else — including a folder —
+ * travels as a path for the agent's own `Read` (see Attachment).
+ */
+export function describeAttachment(fsPath: string): Attachment | null {
+    let stat: fs.Stats;
+    try { stat = fs.statSync(fsPath); } catch { return null; }
+    const name = path.basename(fsPath);
+    if (stat.isDirectory()) { return { path: fsPath, name, bytes: 0, kind: 'path' }; }
+    const mediaType = IMAGE_MEDIA_TYPES[path.extname(fsPath).toLowerCase()];
+    return mediaType
+        ? { path: fsPath, name, bytes: stat.size, kind: 'image', mediaType }
+        : { path: fsPath, name, bytes: stat.size, kind: 'path' };
+}
+
+/** Bytes as the refusal message should say them — "4.7 MB", not "4928307". */
+function mb(bytes: number): string {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 /**
  * Kill a spawned process AND everything under it.
@@ -69,6 +96,8 @@ export interface HostedSessionInit {
     carried?: CarriedTotals;
     /** first message, sent as soon as the process is up */
     firstPrompt?: string;
+    /** files hung on that first message — a new session can start with a screenshot */
+    firstAttachments?: Attachment[];
 }
 
 interface Hosted {
@@ -178,7 +207,10 @@ export class ConsoleHost {
         // said. Nothing else can answer it: the flags above are only what was
         // ASKED for, and the usual case is that nothing was (see askSettings).
         this.askSettings(id);
-        if (init.firstPrompt?.trim()) { this.send(id, init.firstPrompt); }
+        const firstFiles = init.firstAttachments ?? [];
+        if (init.firstPrompt?.trim() || firstFiles.length) {
+            this.send(id, init.firstPrompt ?? '', false, firstFiles);
+        }
         return id;
     }
 
@@ -255,11 +287,25 @@ export class ConsoleHost {
      * delivers it at the turn's next step — measured, see acceptUserText);
      * `hold` instead parks it in the queue until the turn ends.
      */
-    send(id: string, text: string, hold = false): { queued: boolean } | undefined {
+    send(
+        id: string, text: string, hold = false, attachments: Attachment[] = []
+    ): { queued: boolean; refused?: string } | undefined {
         const h = this.sessions.get(id);
         if (!h || h.state.status === 'ended' || h.state.status === 'error') { return undefined; }
+        let ready: Attachment[] = [];
+        if (attachments.length) {
+            // The queue carries strings (shiftQueued/takeQueued), so a held
+            // message cannot hold a file. Refusing beats dropping it silently.
+            if (hold) {
+                return { queued: false, refused: 'A message with attachments cannot be held — send it, or remove the files first.' };
+            }
+            const loaded = this.loadAttachments(attachments);
+            if (loaded.refused) { return { queued: false, refused: loaded.refused }; }
+            ready = loaded.ready;
+        }
+        const notes: AttachmentNote[] = ready.map(a => ({ name: a.name, kind: a.kind, path: a.path, bytes: a.bytes }));
         const startedBefore = h.state.turnStartedAt;
-        const r = acceptUserText(h.state, text, Date.now(), hold);
+        const r = acceptUserText(h.state, text, Date.now(), hold, notes);
         h.state = r.state;
         // A NEW turn (not a message said into a running one) asks what it is
         // about to run on, and asks it BEFORE the prompt goes down the pipe —
@@ -268,9 +314,46 @@ export class ConsoleHost {
         if (h.state.turnStartedAt && h.state.turnStartedAt !== startedBefore) {
             this.askSettings(id, h.state.turnStartedAt);
         }
-        if (r.send) { this.write(id, userMessageLine(text.trim())); }
+        if (r.send) { this.write(id, userMessageLine(text.trim(), ready)); }
         this.fire(id);
         return { queued: !r.send };
+    }
+
+    /**
+     * Turn the composer's list into something the stream can carry.
+     *
+     * ‼️ THE BYTES ARE READ HERE, AT SEND TIME — not when the file was hung on
+     * the message. A file deleted or swapped in between is caught now, which is
+     * the only moment where saying so is still useful.
+     */
+    private loadAttachments(list: Attachment[]): { ready: Attachment[]; refused?: string } {
+        if (list.length > ATTACH_LIMITS.count) {
+            return { ready: [], refused: `Too many files: ${list.length}, the limit is ${ATTACH_LIMITS.count}.` };
+        }
+        const ready: Attachment[] = [];
+        let total = 0;
+        for (const a of list) {
+            let stat: fs.Stats;
+            try { stat = fs.statSync(a.path); }
+            catch { return { ready: [], refused: `This file is no longer there: ${a.name}` }; }
+            // A folder is a perfectly good thing to point an agent at; it just
+            // cannot be read as bytes, so it always travels as a path.
+            if (stat.isDirectory()) {
+                ready.push({ ...a, kind: 'path', bytes: 0, data: undefined, mediaType: undefined });
+                continue;
+            }
+            if (a.kind !== 'image') { ready.push({ ...a, bytes: stat.size, data: undefined }); continue; }
+            if (stat.size > ATTACH_LIMITS.perImageBytes) {
+                return { ready: [], refused: `${a.name} is ${mb(stat.size)} — the limit per image is ${mb(ATTACH_LIMITS.perImageBytes)}.` };
+            }
+            total += stat.size;
+            if (total > ATTACH_LIMITS.totalBytes) {
+                return { ready: [], refused: `These files add up to more than ${mb(ATTACH_LIMITS.totalBytes)} — send them in two messages.` };
+            }
+            try { ready.push({ ...a, bytes: stat.size, data: fs.readFileSync(a.path).toString('base64') }); }
+            catch { return { ready: [], refused: `This file could not be read: ${a.name}` }; }
+        }
+        return { ready };
     }
 
     /** Change a held message before it is said. Empty text drops it. */

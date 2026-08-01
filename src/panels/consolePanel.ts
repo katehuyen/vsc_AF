@@ -1,7 +1,10 @@
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
-import { ConsoleHost } from '../core/consolehost';
-import { carriedTotals, ConsoleMessage, PERMISSION_GRANTS } from '../core/consoleproto';
+import { ConsoleHost, describeAttachment } from '../core/consolehost';
+import { Attachment, ATTACH_LIMITS, carriedTotals, ConsoleMessage, PERMISSION_GRANTS } from '../core/consoleproto';
 import {
     filterResumable, isResumeFiltered, RESUME_DEFAULT_N, RESUME_MAX, ResumeQuery
 } from '../core/consoleresume';
@@ -9,6 +12,40 @@ import { EFFORT_CHOICES, modelChoices, PERMISSION_CHOICES } from '../core/launch
 import { totalTokens, Usage } from '../core/pricing';
 import { SessionInfo, SessionIndex, sessionOrigin } from '../core/sessions';
 import { handleAfNav, htmlShell } from './base';
+
+/**
+ * The composer's chip list, back as attachments.
+ *
+ * Only the PATH is trusted from the webview — everything else is re-derived
+ * here, so a file swapped since it was hung on the message is described as it
+ * is now, not as it was.
+ */
+function attachmentsOf(msg: Record<string, unknown>): Attachment[] {
+    const raw = Array.isArray(msg.attach) ? msg.attach as { path?: unknown }[] : [];
+    const seen = new Set<string>();
+    const out: Attachment[] = [];
+    for (const a of raw) {
+        if (typeof a?.path !== 'string' || seen.has(a.path)) { continue; }
+        seen.add(a.path);
+        const d = describeAttachment(a.path);
+        if (d) { out.push(d); }
+        if (out.length >= ATTACH_LIMITS.count) { break; }
+    }
+    return out;
+}
+
+/** Staged drops older than a week — the folder is a staging area, not an archive. */
+function sweepSpills(dir: string): void {
+    const week = 7 * 24 * 60 * 60 * 1000;
+    try {
+        for (const f of fs.readdirSync(dir)) {
+            const p = path.join(dir, f);
+            try {
+                if (Date.now() - fs.statSync(p).mtimeMs > week) { fs.unlinkSync(p); }
+            } catch { /* in use or already gone — not worth a word */ }
+        }
+    } catch { /* no folder yet */ }
+}
 
 /**
  * DALGA 1 — the Console: the panel stops being a window onto the terminal and
@@ -280,6 +317,41 @@ export class ConsolePanel {
         void this.panel.webview.postMessage({ type: 'data', data });
     }
 
+    /**
+     * Hand the composer real paths.
+     *
+     * This is the ONLY way a file gets into the chip list, whichever gesture
+     * started it — so the composer never has to know about temp files, URIs or
+     * the difference between the three drops.
+     */
+    private postAttached(paths: string[]): void {
+        const files = paths.map(describeAttachment).filter(Boolean);
+        if (files.length) { void this.panel.webview.postMessage({ type: 'attached', files }); }
+    }
+
+    /**
+     * Bytes with no path of their own — an OS drag or a pasted screenshot —
+     * get one under the system temp dir.
+     *
+     * Old spills are swept on the way in (7 days): the folder is a staging
+     * area, not an archive, and nothing else would ever delete from it.
+     */
+    private async spillToTemp(name: string, base64: string): Promise<string | undefined> {
+        try {
+            const dir = path.join(os.tmpdir(), 'agentfarm-attachments');
+            await fs.promises.mkdir(dir, { recursive: true });
+            sweepSpills(dir);
+            // Keep the name the user knows, make the file unique.
+            const safe = path.basename(name).replace(/[^\w.\- ]+/g, '_') || 'attachment';
+            const target = path.join(dir, `${Date.now().toString(36)}-${safe}`);
+            await fs.promises.writeFile(target, Buffer.from(base64, 'base64'));
+            return target;
+        } catch {
+            void vscode.window.showWarningMessage('Agent Farm: that dropped file could not be staged for sending.');
+            return undefined;
+        }
+    }
+
     private agentById(id: string): AgentInfo | undefined {
         return this.deps.getAgents().find(a => a.id === id);
     }
@@ -306,7 +378,8 @@ export class ConsolePanel {
                     model: str('model') || d.model,
                     effort: str('effort') || d.effort,
                     permissionMode: str('permissionMode') || d.permissionMode,
-                    firstPrompt: str('text') || undefined
+                    firstPrompt: str('text') || undefined,
+                    firstAttachments: attachmentsOf(msg)
                 });
                 this.refresh();
                 break;
@@ -417,11 +490,67 @@ export class ConsolePanel {
             case 'send': {
                 // `hold` is the composer's Hold button: park it instead of
                 // saying it into the running turn (see acceptUserText).
-                const r = host.send(str('id'), str('text'), msg.hold === true);
+                const r = host.send(str('id'), str('text'), msg.hold === true, attachmentsOf(msg));
                 if (!r) {
                     void vscode.window.showWarningMessage(
                         'Agent Farm: that session has ended — start a new one to keep talking.');
+                } else if (r.refused) {
+                    // The composer cleared itself the moment you pressed Send.
+                    // A refusal therefore has to GIVE THE MESSAGE BACK — text
+                    // and files — or the refusal costs you what you wrote.
+                    void vscode.window.showWarningMessage(`Agent Farm: ${r.refused}`);
+                    void this.panel.webview.postMessage({
+                        type: 'restore',
+                        text: str('text'),
+                        files: attachmentsOf(msg)
+                    });
                 }
+                break;
+            }
+            case 'attachTooMany':
+                void vscode.window.showWarningMessage(
+                    `Agent Farm: ${ATTACH_LIMITS.count} files is the limit for one message — send the rest in another.`);
+                break;
+            // ---- attachments -------------------------------------------------
+            // Three ways in, one way out: whatever the user did, the panel
+            // answers with real paths, and the composer only ever holds paths.
+            case 'attachPick': {
+                void (async () => {
+                    const picked = await vscode.window.showOpenDialog({
+                        canSelectMany: true, canSelectFiles: true, canSelectFolders: true,
+                        openLabel: 'Attach'
+                    });
+                    if (picked?.length) { this.postAttached(picked.map(u => u.fsPath)); }
+                })();
+                break;
+            }
+            case 'attachUris': {
+                // Dragged out of the VS Code Explorer — that drag carries real URIs.
+                const uris = Array.isArray(msg.uris) ? msg.uris as string[] : [];
+                const paths: string[] = [];
+                for (const u of uris) {
+                    try { paths.push(vscode.Uri.parse(u).fsPath); } catch { /* not a uri we can use */ }
+                }
+                if (paths.length) { this.postAttached(paths); }
+                break;
+            }
+            case 'attachDrop': {
+                // Dropped from the OS file manager, or pasted from the clipboard:
+                // the webview sees the BYTES but never the path (browser
+                // security), so the bytes land in a temp file and THAT is the
+                // path everything downstream already knows how to handle.
+                void (async () => {
+                    const files = Array.isArray(msg.files) ? msg.files as { name?: unknown; data?: unknown }[] : [];
+                    const written: string[] = [];
+                    for (const f of files) {
+                        const name = typeof f.name === 'string' && f.name ? f.name : 'attachment';
+                        const data = typeof f.data === 'string' ? f.data : '';
+                        if (!data) { continue; }
+                        const p = await this.spillToTemp(name, data);
+                        if (p) { written.push(p); }
+                    }
+                    if (written.length) { this.postAttached(written); }
+                })();
                 break;
             }
             // A held message can still be changed, dropped or said now — the

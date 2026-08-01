@@ -65,6 +65,9 @@
     const ORDER_DEFAULT = () => ({ mode: 'fixed', holdSec: 20, minTicks: 4 });
     let st = Object.assign({
         agentId: '', model: '', effort: '', permissionMode: '', draft: '', showResume: false,
+        // files hung on the message being written — paths only, never payload;
+        // the bytes are read in the extension at send time (see loadAttachments)
+        attach: [],
         // which kinds of line the conversation shows; null = everything
         kinds: null,
         // is the miniature filter open, and what is it asking for
@@ -418,6 +421,22 @@
            has taught you it does not work. Hence the green ✓ for a moment. */
         .tatool.done { color:var(--vscode-charts-green,#4caf50);
             border-color:var(--vscode-charts-green,#4caf50); }
+        /* Attached files sit ABOVE the box, between the talk and what you are
+           writing — the same place the eye already goes for "what am I about
+           to send". Each chip says which carrier it will use, because an
+           embedded file leaves this machine in full and a path does not. */
+        .chips { display:flex; flex-wrap:wrap; gap:4px; margin-bottom:6px; }
+        .chip { display:flex; align-items:center; gap:5px; font-size:11px; padding:2px 4px 2px 6px;
+            border:1px solid var(--vscode-widget-border,#4443); border-radius:10px;
+            background:var(--vscode-input-background); max-width:100%; }
+        .chip .nm { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:220px; }
+        .chip .sz { opacity:.55; }
+        .chip .kd { font-size:9px; padding:0 4px; border-radius:6px; opacity:.8;
+            border:1px solid var(--vscode-widget-border,#4443); }
+        .chip .x { cursor:pointer; opacity:.6; padding:0 2px; }
+        .chip .x:hover { opacity:1; color:var(--vscode-charts-red,#e51400); }
+        /* the whole composer is the drop target — a small one would be a game */
+        .composer.drop { outline:2px dashed var(--vscode-focusBorder,#007fd4); outline-offset:3px; }
         .crow { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-top:7px; }
         .crow select { font-size:11px; padding:2px 4px; }
         .crow .grow { flex:1; }
@@ -1367,9 +1386,17 @@
         if (!s) { return ''; }
         const q = queuedOf(s).length;
         const empty = !(st.draft || '').trim();
-        const hold = `<button class="secondary" id="c-hold"${empty ? ' disabled' : ''} title="${empty
-            ? 'Nothing to send yet — type the message first. Send after turn parks it above the box, still editable, and hands it over once this turn ends completely.'
-            : 'Park it instead of sending it into this turn: it waits above the box — editable — and goes once the turn ends'}">Send after turn</button>`;
+        // ‼️ A HELD MESSAGE CANNOT CARRY FILES. The queue keeps strings
+        // (shiftQueued/takeQueued in consoleproto), so parking a message with
+        // an attachment would drop the file on the way. Saying so beats losing
+        // it quietly — widening the queue is the next step, not this one.
+        const hasFiles = (st.attach || []).length > 0;
+        const holdOff = empty || hasFiles;
+        const hold = `<button class="secondary" id="c-hold"${holdOff ? ' disabled' : ''} title="${hasFiles
+            ? 'A message with attached files cannot be parked — send it now, or remove the files first.'
+            : empty
+                ? 'Nothing to send yet — type the message first. Send after turn parks it above the box, still editable, and hands it over once this turn ends completely.'
+                : 'Park it instead of sending it into this turn: it waits above the box — editable — and goes once the turn ends'}">Send after turn</button>`;
         return `${q ? `<span class="qbadge" title="Waiting to be sent — they go once this turn ends">${q} held</span> <button class="secondary" id="c-clearq">drop all</button>` : ''}
             ${s.status === 'working' ? hold : ''}
             ${s.status === 'working' ? '<button class="secondary" id="c-int" title="Stop the running turn — the session and its context stay. Esc in the message box does the same.">⎋ Interrupt</button>' : ''}`;
@@ -1409,9 +1436,12 @@
                 ? (DATA.sessions || []).find(x => x.agentId === st.agentId
                     && x.status !== 'ended' && x.status !== 'error')
                 : undefined;
-            return live
+            const intro = live
                 ? `${C.esc(live.agentName)} already has a session running here — <button class="linkish" id="c-goto-live">open it</button> instead, or say something below to start a second one.`
                 : `A new session opens in the chosen agent's folder and runs here, in the panel.`;
+            // ‼️ Attaching to the FIRST message of a session is normal — the
+            // button cannot wait for a session to exist.
+            return `${intro}<span class="grow"></span>${attachBtnHtml()}`;
         }
         const dead = s.status === 'ended' || s.status === 'error';
         // The whole session, in one line: what the window is holding, what the
@@ -1424,6 +1454,7 @@
             : 'Everything this session has spent, as the CLI reported it — and the tokens it bought. A conversation you resumed brings its earlier turns with it.';
         return `${s.sessionId ? 'session ' + C.esc(s.sessionId.slice(0, 8)) + ' · ' : ''}${s.contextTokens ? `<span title="Approximate context in the model window right now">~${C.fmtTok(s.contextTokens)} ctx</span> · ` : ''}<span title="${spTip}">${sp.est ? '~' : ''}${spend(sp.cost, sp.tokens)}</span> this session · ${s.turns} turn${s.turns === 1 ? '' : 's'}
             <span class="grow"></span>
+            ${attachBtnHtml()}
             ${s.sessionId ? '<button class="secondary" id="c-transcript">Open transcript</button>' : ''}
             ${dead ? '<button class="secondary" id="c-forget">Remove from list</button>' : '<button class="secondary" id="c-close">End session</button>'}`;
     }
@@ -1565,8 +1596,9 @@
                     </div>
                     <div class="askbox" id="c-ask"></div>
                     <div class="working" id="c-working"></div>
-                    <div class="composer">
+                    <div class="composer" id="c-composer">
                         <div class="qwait" id="c-queue"></div>
+                        <div class="chips" id="c-chips"></div>
                         <div class="tawrap">
                             <textarea id="c-text" placeholder="${placeholder}"${dead ? ' disabled' : ''}></textarea>
                             <div class="tatools" id="c-tools">
@@ -1629,6 +1661,9 @@
         const byId = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
         byId('c-jump', 'click', jumpToEnd);
         byId('c-send', 'click', () => send(false));
+        byId('c-attach', 'click', () => vscode.postMessage({ type: 'attachPick' }));
+        wireAttach();
+        paintChips();
 
         // ---- the box's four text tools -------------------------------------
         // ‼️ NONE OF THESE TALKS TO THE AGENT. They paste into, copy, cut and
@@ -2097,7 +2132,9 @@
         const sendBtn = document.getElementById('c-send');
         if (!sendBtn) { return; }
         const dead = s && (s.status === 'ended' || s.status === 'error');
-        const empty = !(st.draft || '').trim();
+        // Files alone are a message — Send must not stay greyed out when the
+        // box is empty but a screenshot is attached.
+        const empty = !(st.draft || '').trim() && !(st.attach || []).length;
         // It no longer waits for the turn to end, so it no longer says "Queue"
         // — it goes into the turn that is running (Send after turn, next to it,
         // is what waiting looks like now).
@@ -2225,13 +2262,156 @@
         vscode.postMessage({ type: 'queueTake', id, index });
     }
 
+    // ---- attachments ---------------------------------------------------------
+    // ‼️ THE COMPOSER ONLY EVER HOLDS PATHS, never bytes. The extension reads
+    // the file at SEND time (consolehost.loadAttachments), which is why a 5 MB
+    // screenshot is not sitting in webview state and why a file deleted between
+    // attaching and sending is reported instead of silently sent as it was.
+    //
+    // Three gestures, one answer: click, drop and paste all end up asking the
+    // extension for a real path, because a webview cannot see one (browser
+    // security — a dropped File has a name and bytes, never a location).
+
+    const IMG_RE = /\.(png|jpe?g|gif|webp)$/i;
+
+    function fmtBytes(n) {
+        if (!n) { return ''; }
+        return n < 1024 ? `${n} B`
+            : n < 1024 * 1024 ? `${(n / 1024).toFixed(0)} KB`
+                : `${(n / (1024 * 1024)).toFixed(1)} MB`;
+    }
+
+    function attachBtnHtml() {
+        const n = (st.attach || []).length;
+        return `<button class="secondary" id="c-attach" title="Attach files — click here, drop them on the box, or paste a screenshot. Images travel inside the message; everything else is handed over as a path the agent opens itself.">📎${n ? ' ' + n : ''}</button>`;
+    }
+
+    function chipsHtml() {
+        const list = st.attach || [];
+        return list.map(a => {
+            const img = a.kind === 'image';
+            const kd = img ? 'embedded' : 'path';
+            const tip = img
+                ? 'This image travels inside the message — it leaves this machine in full.'
+                : 'Only the path is sent; the agent opens the file itself with Read.';
+            return `<span class="chip" title="${C.esc(a.path)}">
+                <span class="nm">${C.esc(a.name)}</span>
+                ${a.bytes ? `<span class="sz">${fmtBytes(a.bytes)}</span>` : ''}
+                <span class="kd" title="${tip}">${kd}</span>
+                <span class="x" data-drop="${C.esc(a.path)}" title="Remove">✕</span>
+            </span>`;
+        }).join('');
+    }
+
+    function paintChips() {
+        const box = document.getElementById('c-chips');
+        if (box) {
+            box.innerHTML = chipsHtml();
+            // ONE listener on the container, not one per chip: the list is
+            // rebuilt on every change, so per-chip listeners would pile up —
+            // and delegation needs nothing but addEventListener.
+            if (!box.__afWired && box.addEventListener) {
+                box.__afWired = true;
+                box.addEventListener('click', ev => {
+                    const t = ev && ev.target;
+                    const p = t && t.getAttribute && t.getAttribute('data-drop');
+                    if (!p) { return; }
+                    st.attach = (st.attach || []).filter(a => a.path !== p);
+                    save();
+                    paintChips();
+                    renderLive();
+                });
+            }
+        }
+        const btn = document.getElementById('c-attach');
+        if (btn) {
+            const n = (st.attach || []).length;
+            const label = `📎${n ? ' ' + n : ''}`;
+            if (btn.textContent !== label) { btn.textContent = label; }
+        }
+    }
+
+    function addAttachments(files) {
+        const have = new Set((st.attach || []).map(a => a.path));
+        for (const f of files) {
+            if (!f || !f.path || have.has(f.path)) { continue; }   // the same file twice is one file
+            if ((st.attach || []).length >= 20) {
+                // Refusing quietly would be the one thing this feature must not
+                // do — the extension says it out loud.
+                vscode.postMessage({ type: 'attachTooMany' });
+                break;
+            }
+            have.add(f.path);
+            st.attach = (st.attach || []).concat([{
+                path: f.path, name: f.name || f.path, bytes: f.bytes || 0,
+                kind: f.kind || (IMG_RE.test(f.path) ? 'image' : 'path')
+            }]);
+        }
+        save();
+        paintChips();
+        renderLive();   // Send and Hold both change meaning once a file is on
+    }
+
+    /** A dropped/pasted file has bytes but no path — the extension gives it one. */
+    function spill(fileList) {
+        const files = Array.from(fileList || []).slice(0, 20);
+        if (!files.length) { return; }
+        let pending = files.length;
+        const out = [];
+        for (const f of files) {
+            const r = new FileReader();
+            r.onload = () => {
+                const s = String(r.result || '');
+                const comma = s.indexOf(',');
+                out.push({ name: f.name || 'attachment', data: comma >= 0 ? s.slice(comma + 1) : '' });
+                if (--pending === 0) { vscode.postMessage({ type: 'attachDrop', files: out }); }
+            };
+            r.onerror = () => { if (--pending === 0 && out.length) { vscode.postMessage({ type: 'attachDrop', files: out }); } };
+            r.readAsDataURL(f);
+        }
+    }
+
+    function wireAttach() {
+        const composer = document.getElementById('c-composer');
+        if (!composer) { return; }
+        const stop = ev => { ev.preventDefault(); ev.stopPropagation(); };
+        composer.addEventListener('dragover', ev => { stop(ev); composer.classList.add('drop'); });
+        composer.addEventListener('dragleave', ev => { stop(ev); composer.classList.remove('drop'); });
+        composer.addEventListener('drop', ev => {
+            stop(ev);
+            composer.classList.remove('drop');
+            const dt = ev.dataTransfer;
+            if (!dt) { return; }
+            // Dragged out of the VS Code Explorer: real URIs, no staging needed.
+            const uriList = dt.getData('text/uri-list');
+            if (uriList) {
+                const uris = uriList.split(/\r?\n/).map(s => s.trim()).filter(s => s && !s.startsWith('#'));
+                if (uris.length) { vscode.postMessage({ type: 'attachUris', uris }); return; }
+            }
+            // Dragged out of the OS file manager: bytes only.
+            if (dt.files && dt.files.length) { spill(dt.files); }
+        });
+        // A pasted screenshot is the whole reason this feature exists. Only
+        // hijack the paste when the clipboard actually carries a file —
+        // pasting text must keep working exactly as it did.
+        const box = document.getElementById('c-text');
+        if (box) {
+            box.addEventListener('paste', ev => {
+                const items = ev.clipboardData && ev.clipboardData.files;
+                if (items && items.length) { ev.preventDefault(); spill(items); }
+            });
+        }
+    }
+
     function send(hold) {
         const text = document.getElementById('c-text');
         const value = text ? text.value.trim() : '';
-        if (!value) { return; }
+        const files = (st.attach || []).slice();
+        // A screenshot on its own is a message; empty AND fileless is not.
+        if (!value && !files.length) { return; }
         const cur = sel();
         if (cur && cur.status !== 'ended' && cur.status !== 'error') {
-            vscode.postMessage({ type: 'send', id: cur.id, text: value, hold: hold === true });
+            vscode.postMessage({ type: 'send', id: cur.id, text: value, hold: hold === true, attach: files });
         } else {
             if (!st.agentId) {
                 // the picker is right there; say what is missing rather than
@@ -2242,10 +2422,12 @@
             }
             vscode.postMessage({
                 type: 'start', agentId: st.agentId, text: value,
-                model: st.model, effort: st.effort, permissionMode: st.permissionMode
+                model: st.model, effort: st.effort, permissionMode: st.permissionMode,
+                attach: files
             });
         }
         st.draft = '';
+        st.attach = [];
         save();
         if (text) { text.value = ''; }
         renderLive();   // the box emptied itself — Send and the tools follow at once
@@ -2254,6 +2436,21 @@
     }
 
     window.addEventListener('message', ev => {
+        // The extension answers every attach gesture the same way: with real
+        // paths. The composer never learns where they came from.
+        if (ev.data && ev.data.type === 'attached') {
+            addAttachments(ev.data.files || []);
+            return;
+        }
+        // A refused send gives the message back whole — text and files — so
+        // nothing has to be retyped or re-attached.
+        if (ev.data && ev.data.type === 'restore') {
+            const box = document.getElementById('c-text');
+            if (ev.data.text && box && !box.value) { box.value = ev.data.text; st.draft = ev.data.text; }
+            addAttachments(ev.data.files || []);
+            renderLive();
+            return;
+        }
         if (ev.data && ev.data.type === 'data') {
             const wasOn = DATA.selected;
             DATA = ev.data.data;
