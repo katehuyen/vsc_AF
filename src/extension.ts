@@ -6770,9 +6770,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * store to "this project's rows", stated per store and per route:
      *
      *   sessions  → the resolution order (explicit · no-project · code root · agent rule)
-     *   tasks     → `task.projectId`, plus the task's own session when it has one
+     *   tasks     → `task.projectId` and nothing else. A task records no session
+     *               id, and its working directory is normally the AGENT's folder
+     *               rather than a code root — inferring a project from that is
+     *               the agent-owns-a-project rule wearing a different hat. So a
+     *               task stamped before 3.54.0 stays unfiled until there is a
+     *               deliberate backfill; the timeline shows no Task chip at all
+     *               in that case, which is the honest shape of "none", not a
+     *               claim that the project ran none.
      *   missions  → a run whose STEP TASKS belong here; a mission is not a
-     *               project member in its own right until Faz 5 gives it a field
+     *               project member in its own right until it gets its own field
      *   commits   → a commit in a declared code root
      *
      * Notices and queue items are absent on purpose. They carry no project

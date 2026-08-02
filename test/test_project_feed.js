@@ -100,6 +100,38 @@ const session = {
     ok('the default limit is a real number', FEED_DEFAULT_LIMIT > 0);
 }
 
+// ---------- ‼️ filter BEFORE the cap, or the cap hides the answer ----------
+// The one that justifies the whole host-side filter. A cap applied to the
+// merged list and a filter applied afterwards are NOT interchangeable: turns
+// outnumber everything else by an order of magnitude, so the newest 300 events
+// are almost all turns, and a reader who has switched turns off is left
+// looking at a fraction of the sessions while the page tells them the rest is
+// merely "older".
+{
+    const many = [];
+    for (let i = 0; i < 50; i++) {
+        const last = T - i * 3600000;
+        many.push({
+            sessionId: 's' + i, file: 'F' + i, title: 'session ' + i,
+            firstTs: last - 1800000, lastTs: last, cost: 1,
+            turns: Array.from({ length: 20 }, (_, t) => ({
+                n: t + 1, label: 'turn', ts: last - t * 60000, cost: 0.05, tokens: 10, models: ['opus']
+            }))
+        });
+    }
+    const capThenFilter = buildProjectFeed({ sessions: many }, { limit: 300 })
+        .events.filter(e => e.kind === 'session').length;
+    const filterThenCap = buildProjectFeed({ sessions: many }, { kinds: ['session'], limit: 300 })
+        .events.filter(e => e.kind === 'session').length;
+
+    ok('‼️ capping first loses most of the sessions (this is the bug, pinned)',
+        capThenFilter < 20 && capThenFilter > 0);
+    ok('‼️ filtering first keeps every one of them', filterThenCap === 50);
+    const feed = buildProjectFeed({ sessions: many }, { kinds: ['session'], limit: 300 });
+    ok('…and the counts still describe the whole project, so the chip is honest',
+        feed.counts.turn === 1000 && feed.counts.session === 50);
+}
+
 // ---------- no double counting ----------
 {
     const feed = buildProjectFeed({ sessions: [session] });
