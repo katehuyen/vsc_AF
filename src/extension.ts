@@ -1025,13 +1025,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     /** Where new project folders are offered, and what a rescan walks. */
     const projectsRoot = (): string => (cfg().get<string>('projectsRoot', '') || '').trim();
     const projectSkeleton = () => normalizeSkeleton(cfg().get('projectSkeleton', []));
-    /** The window's active project — the stamp new work carries. Window-scoped
+    /** The window's active project — what sessions started here are filed under. Window-scoped
      *  on purpose: it means "what am I working on right now", which is not a
      *  property of an agent and not a thing to share between windows. */
     const activeProjectId = (): string => context.workspaceState.get<string>('af.activeProject', '');
     const activeProject = (): Project | undefined => {
         const id = activeProjectId();
         return id ? projectStore.get(id) : undefined;
+    };
+
+    /**
+     * THE ACTIVE PROJECT'S STAMP — the write the status bar has always promised.
+     *
+     * `af.activeProject` used to be read by the tree, the page and the bar, and
+     * by nothing that filed anything: "new work is stamped with it" was true of
+     * no code path. This is that path, and both ways of starting a session go
+     * through it — the Console (via ConsoleHost) and a terminal launch.
+     *
+     * Two rules make it safe to apply after the fact, which it must be, since a
+     * session has no id until the CLI reports one:
+     *  - the project stamped is the one the session STARTED in, carried on the
+     *    console state / the terminal binding, not whatever the bar says now;
+     *  - `stampSession` refuses to touch a session the table already has a
+     *    decision about, so a resume never overwrites what the user chose —
+     *    including their choice that it belongs to no project (K4/2).
+     * The set only spares the store a disk read per change event.
+     */
+    const stamped = new Set<string>();
+    const stampSessionProject = (sessionId: string, projectId: string): void => {
+        if (!sessionId || !projectId || stamped.has(sessionId)) { return; }
+        stamped.add(sessionId);
+        if (projectStore.stampSession(sessionId, projectId)) { projectsChanged(); }
     };
 
     const taskManager = new TaskManager(
@@ -3382,7 +3406,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.current',
-            describe: 'Read or set the ACTIVE project of this window — the stamp new work carries. Pass nothing to read it, a project to set it, or "" to clear it. args: project?',
+            describe: 'Read or set the ACTIVE project of this window — sessions started here are filed under it as soon as they report an id (a session already filed by hand is never re-stamped). Pass nothing to read it, a project to set it, or "" to clear it. args: project?',
             handler: async (args) => {
                 if (args.project !== undefined) {
                     const raw = String(args.project ?? '').trim();
@@ -3397,6 +3421,36 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
                 const current = activeProject();
                 return current ? projectView(current) : { id: null, name: null };
+            }
+        },
+        {
+            op: 'projects.sessions',
+            describe: 'The sessions that belong to one project, newest first, with WHY each one belongs (explicit = filed by hand or stamped when it started · path = it ran under a code root · agent = the agent rule). This is the data behind the page\'s Sessions button. args: project (id or name), limit? (default 50), all? (true ignores limit)',
+            handler: (args) => {
+                const key = argStr(args, 'project');
+                const p = projectStore.get(key);
+                need(p, `no project called "${key}" — projects.list shows them`);
+                const limit = args.all === true ? 0 : Math.max(1, Number(args.limit) || 50);
+                const rows = index.all()
+                    .filter(s => projectStore.resolve({
+                        sessionId: s.sessionId, agentId: s.agentId, agentName: s.agentName, cwd: s.cwd
+                    }).projectId === (p as Project).id)
+                    .sort((a, b) => (b.lastTs || b.mtime || 0) - (a.lastTs || a.mtime || 0));
+                const shown = limit ? rows.slice(0, limit) : rows;
+                return {
+                    project: (p as Project).name,
+                    total: rows.length,
+                    cost: Math.round(rows.reduce((n, s) => n + s.cost, 0) * 10000) / 10000,
+                    sessions: shown.map(s => ({
+                        sessionId: s.sessionId, title: s.title, agent: s.agentName ?? null,
+                        cwd: s.cwd ?? null, cost: s.cost, turns: s.turns,
+                        lastTs: s.lastTs || s.mtime || 0,
+                        via: projectStore.resolve({
+                            sessionId: s.sessionId, agentId: s.agentId,
+                            agentName: s.agentName, cwd: s.cwd
+                        }).via
+                    }))
+                };
             }
         },
         {
@@ -5267,7 +5321,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      *  external windows by their pinned, per-launch-unique wt title. sessionId
      *  is bound right at launch when known (resume / external CLI), otherwise
      *  by the live monitor when a new session with the same cwd shows up. */
-    interface TermBinding { title: string; cwd?: string; term?: vscode.Terminal; launchedAt: number; sessionId?: string }
+    interface TermBinding {
+        title: string; cwd?: string; term?: vscode.Terminal; launchedAt: number; sessionId?: string;
+        /** the active project when this terminal was launched — see the stamp */
+        projectId?: string;
+    }
     const termBindings: TermBinding[] = [];
     // persisted so a fresh "#n" never collides with a window from the previous run
     let launchSeq = context.globalState.get<number>('agentfarm.termLaunchSeq', 0);
@@ -5289,14 +5347,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // alone can't tell session #1's window from session #3's.
         const title = `${name} #${launchSeq}`;
         if (termBindings.length > 200) { termBindings.splice(0, termBindings.length - 200); }
+        // The stamp is taken HERE, when the terminal is launched — not when the
+        // session id turns up minutes later, by which time the active project
+        // may be something else entirely.
+        const projectId = activeProjectId() || undefined;
         if (cfg().get<boolean>('externalTerminal', false)) {
             // title pinned so agentfarm.focusSessionTerminal can find the window later
             openExternalTerminal(cwd, command, title);
-            termBindings.push({ title, cwd, launchedAt: Date.now(), sessionId });
+            termBindings.push({ title, cwd, launchedAt: Date.now(), sessionId, projectId });
+            if (sessionId && projectId) { stampSessionProject(sessionId, projectId); }
             return undefined;
         }
         const terminal = vscode.window.createTerminal({ name: title, cwd, env });
-        termBindings.push({ title, cwd, term: terminal, launchedAt: Date.now(), sessionId });
+        termBindings.push({ title, cwd, term: terminal, launchedAt: Date.now(), sessionId, projectId });
+        if (sessionId && projectId) { stampSessionProject(sessionId, projectId); }
         terminal.show();
         terminal.sendText(command, true);
         return terminal;
@@ -5358,7 +5422,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const n = normPath(s.cwd!);
             const hit = termBindings.find(b => !b.sessionId && b.cwd && normPath(b.cwd) === n
                 && s.startedAt >= b.launchedAt - 5000 && s.startedAt <= b.launchedAt + 300000);
-            if (hit) { hit.sessionId = s.sessionId; }
+            if (hit) {
+                hit.sessionId = s.sessionId;
+                // The session this launch was waiting for finally has an id —
+                // the only moment a terminal session can be filed under the
+                // project it was started in.
+                if (hit.projectId) { stampSessionProject(s.sessionId, hit.projectId); }
+            }
         }
     }, null, context.subscriptions);
 
@@ -5683,9 +5753,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // only the shell that started it (see ConsoleHost.close).
     const consoleHost = new ConsoleHost(
         () => 'claude',
-        sid => ownerOf(readCliSessions(claudeDir()), sid)?.pid);
+        sid => ownerOf(readCliSessions(claudeDir()), sid)?.pid,
+        () => activeProjectId() || undefined);
     context.subscriptions.push({ dispose: () => consoleHost.dispose() });
-    context.subscriptions.push(consoleHost.onChange(() => ConsolePanel.refreshIfOpen()));
+    context.subscriptions.push(consoleHost.onChange(id => {
+        // The first change that carries an id is the earliest a hosted session
+        // can be filed — see stampSessionProject.
+        const s = consoleHost.get(id);
+        if (s?.sessionId && s.projectId) { stampSessionProject(s.sessionId, s.projectId); }
+        ConsolePanel.refreshIfOpen();
+    }));
 
     /**
      * Remember which sessions the Console hosted.
@@ -6513,8 +6590,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const p = activeProject();
         projectBar.text = p ? `◧ ${p.name}` : '◧ No project';
         projectBar.tooltip = p
-            ? `Active project: ${p.name}\nNew sessions, tasks and notices started here are filed under it.\nClick to change or clear.`
-            : 'No active project. Click to pick one — new work will then be filed under it automatically.';
+            ? `Active project: ${p.name}\nSessions you start here — Console or terminal — are filed under it.\nAnything you already filed by hand keeps what you chose.\nClick to change or clear.`
+            : 'No active project. Click to pick one — sessions you start here will then be filed under it.';
         projectBar.show();
     };
     paintProjectBar();
@@ -6525,6 +6602,49 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         paintProjectBar();
         ProjectsPanel.refreshIfOpen();
         refreshAll();
+    };
+
+    /**
+     * Create a project — the one implementation.
+     *
+     * The page's form, the palette command and "new project from this session"
+     * all land here, so the folder skeleton, the error wording and the refresh
+     * cannot differ depending on which button was pressed. A folder is built
+     * only when one was chosen; a project without one is legal and says so on
+     * its own row until somebody picks it.
+     */
+    const createProject = (input: {
+        name: string; folder?: string; kind?: string; status?: string; summary?: string;
+        repos?: string[]; sessionIds?: string[];
+    }): { id?: string; error?: string; warning?: string } => {
+        const name = String(input.name ?? '').trim();
+        const folder = String(input.folder ?? '').trim();
+        const res = projectStore.create({
+            name,
+            ...(folder ? { folder } : {}),
+            ...(input.kind ? { kind: input.kind as never } : {}),
+            ...(input.status ? { status: input.status as never } : {}),
+            ...(input.summary?.trim() ? { summary: input.summary.trim() } : {}),
+            ...(input.repos?.length ? { repos: input.repos } : {})
+        });
+        if (res.error || !res.project) { return { error: res.error ?? 'could not create the project' }; }
+        let warning: string | undefined;
+        if (folder) {
+            const built = createSkeleton(folder, res.project, projectSkeleton());
+            if (built.failed.length) {
+                warning = `"${name}" was created, but part of its folder could not be: ${built.failed[0].error}`;
+            }
+        }
+        if (input.sessionIds?.length) { projectStore.assignSessions(input.sessionIds, res.project.id); }
+        projectsChanged();
+        return { id: res.project.id, warning };
+    };
+
+    /** Where a new project's folder would go, if the user does not say otherwise. */
+    const suggestedProjectFolder = (name: string): string => {
+        const root = projectsRoot();
+        const leaf = folderNameFor(String(name ?? '').trim());
+        return root && leaf ? path.join(root, leaf) : '';
     };
 
     const projectsPanelDeps = (): ProjectsPanelDeps => ({
@@ -6553,9 +6673,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             return res.error ?? warn;
         },
         remove: id => { projectStore.remove(id); },
-        create: async () => {
-            const created = await vscode.commands.executeCommand<Project | undefined>('agentfarm.newProject');
-            return created?.id;
+        create: input => createProject(input),
+        suggestFolder: name => suggestedProjectFolder(name),
+        browseFolder: async start => {
+            const root = projectsRoot();
+            const from = (start ?? '').trim() || root;
+            const picked = await vscode.window.showOpenDialog({
+                canSelectFolders: true, canSelectFiles: false, canSelectMany: false,
+                openLabel: 'Use this folder',
+                ...(from && dirExists(from) ? { defaultUri: vscode.Uri.file(from) } : {})
+            });
+            return picked?.length ? picked[0].fsPath : undefined;
         },
         pickFolder: async id => {
             const root = projectsRoot();
@@ -6584,10 +6712,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         rescan: async () => { await vscode.commands.executeCommand('agentfarm.rescanProjects'); },
         // Until the project page grows its own Sessions tab, this goes where the
-        // sessions already are — the dashboard's table, which has a project
-        // filter. Sending the user somewhere real beats a button that does
-        // nothing.
-        openSessions: () => { void vscode.commands.executeCommand('agentfarm.openDashboard'); },
+        // sessions already are — the dashboard's table, ALREADY SCOPED to this
+        // project and scrolled to. Handing over an unfiltered page and leaving
+        // the reader to find the filter themselves is the same as doing nothing.
+        openSessions: id => {
+            const p = projectStore.get(id);
+            if (!p) { return; }
+            void vscode.commands.executeCommand('agentfarm.openDashboard', { projectFilter: p.name });
+        },
         onChange: () => { projectsTree.refresh(); paintProjectBar(); }
     });
 
@@ -6775,9 +6907,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(
         // arg is optional: the palette, the nav and every notification pass
         // nothing; the status-bar indicators pass { scrollTo: 'top' }.
-        vscode.commands.registerCommand('agentfarm.openDashboard', (arg?: { scrollTo?: 'top' }) => {
-            DashboardPanel.show(dashboardDeps, arg?.scrollTo === 'top' ? { scrollTo: 'top' } : undefined);
-        }),
+        vscode.commands.registerCommand('agentfarm.openDashboard',
+            (arg?: { scrollTo?: 'top'; projectFilter?: string }) => {
+                const opts: { scrollTo?: 'top'; projectFilter?: string } = {};
+                if (arg?.scrollTo === 'top') { opts.scrollTo = 'top'; }
+                if (typeof arg?.projectFilter === 'string') { opts.projectFilter = arg.projectFilter; }
+                DashboardPanel.show(dashboardDeps, Object.keys(opts).length ? opts : undefined);
+            }),
 
         vscode.commands.registerCommand('agentfarm.openMissions', () => {
             MissionsPanel.show(missionsPanelDeps);
@@ -7325,19 +7461,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     description: p.summary ?? p.status,
                     id: p.id
                 })),
-                ...(current ? [{ label: '$(circle-slash) No project', description: 'stop stamping new work', act: 'none' }] : []),
-                { label: '$(add) New project…', act: 'new' }
+                ...(current ? [{ label: '$(circle-slash) No project', description: 'stop filing new sessions', act: 'none' }] : []),
+                { label: '$(add) New project…', description: 'opens the form on the Projects page', act: 'new' }
             ], {
-                placeHolder: 'Active project — new sessions, tasks and notices started in this window are filed under it',
+                placeHolder: 'Active project — sessions you start in this window are filed under it',
                 ignoreFocusOut: true
             });
             if (!pick) { return; }
             if (pick.act === 'new') {
-                const created = await vscode.commands.executeCommand<Project | undefined>('agentfarm.newProject');
-                await context.workspaceState.update('af.activeProject', created?.id ?? '');
-            } else {
-                await context.workspaceState.update('af.activeProject', pick.act === 'none' ? '' : (pick.id ?? ''));
+                // creation lives on the page now — it makes the project, and
+                // "Make active" is right there on it
+                void vscode.commands.executeCommand('agentfarm.newProject');
+                return;
             }
+            await context.workspaceState.update('af.activeProject', pick.act === 'none' ? '' : (pick.id ?? ''));
             projectsChanged();
         }),
 
@@ -7437,24 +7574,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }),
 
         // The fastest possible backfill: the session already knows the folder
-        // the work happened in, so the new project starts with a code root that
-        // will claim every past and future session from the same place.
-        vscode.commands.registerCommand('agentfarm.projectFromSession', async (arg?: SessionCtxArg) => {
+        // the work happened in, so the form opens with that folder as a code
+        // root — which will claim every past and future session from the same
+        // place — and with the selected sessions ready to be filed the moment
+        // the project exists.
+        vscode.commands.registerCommand('agentfarm.projectFromSession', (arg?: SessionCtxArg) => {
             const ids = sessionIdsFromArg(arg);
             const first = ids.length ? sessionFromArg(ids[0]) : undefined;
             const suggestedName = (first?.title ?? '').split(/[.\n]/)[0].trim().slice(0, 60);
-            const created = await vscode.commands.executeCommand<Project | undefined>(
-                'agentfarm.newProject', { suggestName: suggestedName });
-            if (!created) { return; }
-            if (first?.cwd) {
-                projectStore.update(created.id, { repos: [first.cwd] });
-            }
-            if (ids.length) { projectStore.assignSessions(ids, created.id); }
-            projectsChanged();
-            void vscode.window.showInformationMessage(
-                `Agent Farm: "${created.name}" created` +
-                (first?.cwd ? ` with ${first.cwd} as a code root` : '') +
-                (ids.length ? ` · ${ids.length} session(s) filed under it` : '') + '.');
+            ProjectsPanel.show(projectsPanelDeps(), undefined, {
+                suggestName: suggestedName,
+                ...(first?.cwd ? { repos: [first.cwd] } : {}),
+                ...(ids.length ? { sessionIds: ids } : {})
+            });
         }),
 
         // Turn a one-off assignment into a standing rule: everything that ever
@@ -7481,93 +7613,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }),
 
         // ---------- managing projects ----------
-        // Creating a project is a folder decision as much as a name one, so the
-        // folder is asked for HERE rather than left to be discovered missing
-        // later. Everything else about a project is edited on its own page.
-        vscode.commands.registerCommand('agentfarm.newProject', async (
-            seed?: { suggestName?: string }
-        ): Promise<Project | undefined> => {
-            const name = (await vscode.window.showInputBox({
-                prompt: 'Project name — a product, a customer, a piece of work',
-                value: seed?.suggestName ?? '',
-                ignoreFocusOut: true,
-                validateInput: v => {
-                    const t = (v ?? '').trim();
-                    if (!t) { return 'a project needs a name'; }
-                    if (projectStore.get(t)) { return `"${t}" already exists`; }
-                    if (!folderNameFor(t)) { return 'that name has no usable characters for a folder'; }
-                    return undefined;
-                }
-            }))?.trim();
-            if (!name) { return undefined; }
-
-            const root = projectsRoot();
-            const suggested = root ? path.join(root, folderNameFor(name)) : '';
-            interface Row extends vscode.QuickPickItem { act: string }
-            const where = await vscode.window.showQuickPick<Row>([
-                ...(suggested ? [{
-                    label: '$(new-folder) Create it here',
-                    detail: suggested, act: 'suggested'
-                }] : []),
-                { label: '$(folder-opened) Choose a folder…', detail: 'an existing folder, or a new one you pick', act: 'pick' },
-                { label: '$(circle-slash) Decide later', detail: 'the project is created without documents; it will say so until you choose one', act: 'none' }
-            ], { placeHolder: `Where should "${name}" keep its documents?`, ignoreFocusOut: true });
-            if (!where) { return undefined; }
-
-            let folder = '';
-            if (where.act === 'suggested') { folder = suggested; }
-            if (where.act === 'pick') {
-                const picked = await vscode.window.showOpenDialog({
-                    canSelectFolders: true, canSelectFiles: false, canSelectMany: false,
-                    openLabel: 'Use this folder',
-                    ...(root && dirExists(root) ? { defaultUri: vscode.Uri.file(root) } : {})
-                });
-                if (!picked?.length) { return undefined; }
-                folder = picked[0].fsPath;
-            }
-
-            const res = projectStore.create({ name, ...(folder ? { folder } : {}) });
-            if (res.error || !res.project) {
-                void vscode.window.showWarningMessage(`Agent Farm: ${res.error ?? 'could not create the project'}`);
-                return undefined;
-            }
-            if (folder) {
-                const built = createSkeleton(folder, res.project, projectSkeleton());
-                if (built.failed.length) {
-                    void vscode.window.showWarningMessage(
-                        `Agent Farm: "${name}" was created, but part of its folder could not be: ${built.failed[0].error}`);
-                }
-            }
-            projectsChanged();
-            void vscode.window.showInformationMessage(
-                folder ? `Agent Farm: "${name}" created — its documents are in ${folder}`
-                    : `Agent Farm: "${name}" created. It has no folder yet.`);
-            return res.project;
+        // A project is created ON THE PAGE — the form is right there, with the
+        // name, the folder and the rest of the fields in one place. This command
+        // exists so the palette, the tree and the dashboard's link all arrive at
+        // that same form instead of each growing its own prompt sequence.
+        vscode.commands.registerCommand('agentfarm.newProject', (seed?: { suggestName?: string }): void => {
+            ProjectsPanel.show(projectsPanelDeps(), undefined,
+                { suggestName: seed?.suggestName ?? '' });
         }),
 
-        vscode.commands.registerCommand('agentfarm.manageProjects', async () => {
-            const projects = projectStore.all();
-            interface Row extends vscode.QuickPickItem { act?: string; id?: string }
-            const pick = await vscode.window.showQuickPick<Row>([
-                { label: '$(add) New project…', detail: 'name it, and say where its documents live', act: 'new' },
-                ...(projects.length ? [{ label: 'Projects', kind: vscode.QuickPickItemKind.Separator } as Row] : []),
-                ...projects.map(p => {
-                    const warn = projectWarnings(p);
-                    const roll = projectRollup().find(r => r.name === p.name);
-                    return {
-                        label: `${p.icon ? p.icon + ' ' : '$(project) '}${p.name}`,
-                        description: `${p.status} · ${roll?.sessions ?? 0} sessions · ${fmtUSD(roll?.cost ?? 0)}`,
-                        detail: warn.length ? `⚠️ ${warn.join(' · ')}` : (p.folder ?? 'no folder'),
-                        act: 'open', id: p.id
-                    } as Row;
-                })
-            ], { placeHolder: 'Projects', ignoreFocusOut: true });
-            if (!pick?.act) { return; }
-            if (pick.act === 'new') {
-                await vscode.commands.executeCommand('agentfarm.newProject');
-                return;
-            }
-            if (pick.id) { await vscode.commands.executeCommand('agentfarm.openProject', { id: pick.id }); }
+        // The palette entry people already know. It used to open a quick-pick
+        // list of projects; the page IS that list, and it can also edit them.
+        vscode.commands.registerCommand('agentfarm.manageProjects', () => {
+            ProjectsPanel.show(projectsPanelDeps());
         }),
 
         // Which project should this agent's sessions fall to when nothing else
@@ -7589,7 +7647,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 ...(projects.some(has)
                     ? [{ label: '$(circle-slash) No rule', description: 'take this agent out of every project rule', act: 'none' }]
                     : []),
-                { label: '$(add) New project…', act: 'new' }
+                { label: '$(add) New project…', description: 'opens the form on the Projects page', act: 'new' }
             ], {
                 placeHolder: `Default project for ${agent.name}'s sessions (an explicit assignment still wins)`,
                 ignoreFocusOut: true
@@ -7604,8 +7662,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (pick.act === 'none') {
                 for (const p of projects) { if (has(p)) { setRule(p, false); } }
             } else if (pick.act === 'new') {
-                const created = await vscode.commands.executeCommand<Project | undefined>('agentfarm.newProject');
-                if (created) { setRule(created, true); }
+                // the page owns creation; its form has the agent rules on it
+                void vscode.commands.executeCommand('agentfarm.newProject');
+                return;
             } else if (pick.id) {
                 // the rule moves rather than accumulating: two projects claiming
                 // the same agent by rule would make the fallback arbitrary

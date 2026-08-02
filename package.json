@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.52.1",
+  "version": "3.53.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -434,7 +434,7 @@
       },
       {
         "command": "agentfarm.manageProjects",
-        "title": "Manage Projectsâ€¦ (group agents by customer / product)",
+        "title": "Manage Projects (open the projects page)",
         "category": "Agent Farm",
         "icon": "$(project)"
       },
@@ -478,7 +478,7 @@
       },
       {
         "command": "agentfarm.setActiveProject",
-        "title": "Set Active Project (the stamp new work carries)",
+        "title": "Set Active Project (sessions started here are filed under it)",
         "category": "Agent Farm"
       },
       {

@@ -299,6 +299,9 @@ export class DashboardPanel {
     /** Sessions-table row count chosen in the webview's Show box (0 = all). */
     private tableN = DASHBOARD_SESSION_TABLE_N;
 
+    /** A project name the sessions table must be scoped to on arrival. */
+    private pendingProjectFilter?: string;
+
     /**
      * `scrollTo: 'top'` is for the callers that come from a status-bar
      * indicator (see OPEN_DASHBOARD_AT_TOP): the page is retained when hidden,
@@ -306,11 +309,23 @@ export class DashboardPanel {
      * the number they just clicked is shown. A FRESH panel is at the top by
      * definition and needs nothing — and could not be told anyway, since its
      * script is not listening yet.
+     *
+     * `projectFilter` is the same problem with a different answer. A caller
+     * asking for ONE project's sessions cannot be answered by a message on a
+     * fresh panel either, so it travels in the initial payload instead; on a
+     * panel that is already up, it goes as a message. Either way the table
+     * arrives scoped — landing on an unfiltered dashboard would make the button
+     * that sent you look broken.
      */
-    static show(deps: DashboardDeps, opts?: { scrollTo?: 'top' }): void {
+    static show(deps: DashboardDeps, opts?: { scrollTo?: 'top'; projectFilter?: string }): void {
         if (DashboardPanel.current) {
             DashboardPanel.current.panel.reveal();
             DashboardPanel.current.refresh();
+            if (opts?.projectFilter !== undefined) {
+                void DashboardPanel.current.panel.webview.postMessage({
+                    type: 'projectFilter', name: opts.projectFilter
+                });
+            }
             if (opts?.scrollTo === 'top') {
                 void DashboardPanel.current.panel.webview.postMessage({ type: 'scrollTo', target: 'top' });
             }
@@ -322,7 +337,7 @@ export class DashboardPanel {
             vscode.ViewColumn.One,
             { enableScripts: true, retainContextWhenHidden: true }
         );
-        DashboardPanel.current = new DashboardPanel(panel, deps);
+        DashboardPanel.current = new DashboardPanel(panel, deps, opts?.projectFilter);
     }
 
     static refreshIfOpen(): void {
@@ -340,7 +355,8 @@ export class DashboardPanel {
         void DashboardPanel.current.panel.webview.postMessage({ type: 'planUsage', usage, beat, push: true });
     }
 
-    private constructor(readonly panel: vscode.WebviewPanel, private deps: DashboardDeps) {
+    private constructor(readonly panel: vscode.WebviewPanel, private deps: DashboardDeps, projectFilter?: string) {
+        this.pendingProjectFilter = projectFilter;
         this.render();
         panel.onDidDispose(() => this.dispose(), null, this.disposables);
         panel.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
@@ -348,11 +364,18 @@ export class DashboardPanel {
     }
 
     private render(): void {
+        const data = buildData(this.deps, this.tableN) as Record<string, unknown>;
+        // consumed once, by the page's first paint — a filter that reapplied on
+        // every refresh would fight the reader's own filter box
+        if (this.pendingProjectFilter !== undefined) {
+            data.projectFilter = this.pendingProjectFilter;
+            this.pendingProjectFilter = undefined;
+        }
         this.panel.webview.html = htmlShell(
             this.panel.webview,
             this.deps.extensionUri,
             'Agent Farm Dashboard',
-            buildData(this.deps, this.tableN),
+            data,
             'dashboard.js'
         );
     }
@@ -407,7 +430,9 @@ export class DashboardPanel {
                 });
                 break;
             case 'manageProjects':
-                void vscode.commands.executeCommand('agentfarm.manageProjects');
+                // the page, not a quick-pick: a project is edited where it can
+                // be seen
+                void vscode.commands.executeCommand('agentfarm.openProjects');
                 break;
             case 'pinSession':
                 // the star already flipped in the webview — pass the state it

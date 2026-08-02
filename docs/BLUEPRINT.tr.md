@@ -583,9 +583,12 @@ Headless işler (task, mission) baştan beri durdurulabiliyordu — süreç bizi
 
 Bu adımlardan ikisi süs değil. **En uzun kök kazanır**, sessiz bir yanlış atfı düzeltir: `…/miropharm` ile `…/miropharm/muvu_talkScribe/ZEN` birlikte tanımlıyken ilk-eşleşen her ZEN oturumunu yanlış projeye veriyordu ve iki cevap da makul görünüyordu. **Açık "projesizlik"** gerçek bir durumdur: o olmadan, bir oturumu projeden çıkarmak kuralların onu hemen geri almasına yol açıyordu ve kimse sebebini öğrenemiyordu.
 
+**Aktif proje — gerçekte ne yapar.** *(3.53.0.)* Bir proje seçmek, **o pencerede başlattığın oturumları o projeye dosyalar**: Console, oturum kimliğini taşıyan ilk olayda damgalar; terminal başlatması, canlı izleyici kimliği o başlatmaya bağladığı anda damgalar. Kaydedilen proje, oturumun **başladığı** projedir — kimlik geldiğinde durum çubuğu ne diyorsa o değil. Damga, elle dosyalamadan bilinçli olarak daha zayıftır: yalnızca bağ tablosunda hiçbir karar yokken yazar. Böylece başka bir projeye koyduğun — ya da her projeden açıkça çıkardığın — bir oturumu devam ettirmek, senin seçtiğini korur. Görevler, misyonlar ve bildirimler **henüz** damgalanmıyor ve arayüzde hiçbir yer damgalandığını söylemiyor.
+
 **Yüzeyler.**
 - **Sol panel bölmesi** (Agents'ın altında): **aktif proje** satırı, hiç proje seçili olmasa bile hep oradadır — görünmeden uygulanan bir damga, tam olarak kimsenin körü körüne güvenmemesi gereken otomasyondur. **Unassigned** hep en alttadır ve baştan utandırıcı bir sayı gösterir, çünkü sessizce başarısız olan kural, kural değildir.
-- **Kendi sayfası** (`◧ Projects`, global nav'da ikinci): her alan burada düzenlenir — ad, durum, tür, simge ve renk, klasör seçici, kod kökleri, **rolleriyle** taraflar (kim karar verir, kim öder, kim yapar, kime sorulur), günlük *ve* toplam bütçe, tarihler, etiketler, ajan kuralları. `settings.json`'a hiçbir şey girmez.
+- **Kendi sayfası** (`◧ Projects`, global nav'da ikinci): her alan burada düzenlenir — ad, durum, tür, simge ve renk, klasör seçici, kod kökleri, **rolleriyle** taraflar (kim karar verir, kim öder, kim yapar, kime sorulur), günlük *ve* toplam bütçe, tarihler, etiketler, ajan kuralları. `settings.json`'a hiçbir şey girmez. **Proje oluşturmak da burada** *(3.53.0)*: form adı ve belge klasörünü (Browse ile, ve sen devralana kadar adı izleyen bir öneriyle) artı durum, tür, özet ve kod köklerini sorar. Diğer bütün yollar — komut paleti, sol panelin boş durumu, "bu oturumdan yeni proje", aktif-proje ve ajan-kuralı seçicilerindeki "New project…" maddeleri — aynı formu açar; altta tek uygulama vardır, böylece klasör iskeleti ve hata metni hangi düğmeye basıldığına göre değişemez.
+- **Bir projedeki `Sessions (n)`**, oturum tablosunu **o projeye daraltılmış** olarak açar ve oraya kaydırır *(3.53.0)*.
 - **Her oturum satırında, her yerde.** Paylaşımlı sağ tık sözleşmesine eklenen tek madde, oturum listeleyen altı yüzeye birden ulaşır (Console · Missions · Search · sessions tabloları · Live Timeline · Turns) ve dört gerçekten farklı sonuç sunar: ata, aktar, **çıkar ve çıkmış kalsın**, ya da kararı unut da kurallar yeniden konuşsun. Yanlarında: **bu oturumdan yeni proje** (var olan en hızlı geriye dönük doldurma — oturum işin yapıldığı klasörü zaten biliyor) ve **oturumun klasörünü kod kökü olarak ekle**, ki tek seferlik atamayı kalıcı kurala çevirir.
 - **Durum çubuğu:** `◧ <proje>` ya da `◧ No project`.
 
@@ -594,7 +597,7 @@ Bu adımlardan ikisi süs değil. **En uzun kök kazanır**, sessiz bir yanlış
 **Göç.** `agentFarm.projects` aktivasyonda bir kez içeri alınır: ajan listeleri *kurala*, klasörler kod köküne, not tek satırlık özete dönüşür. Klasör uydurulmaz — her proje kendi klasörünü sorar. İşaretçi, ayar **okunduğunda** değil, ayarda gerçekten bir şey **görüldüğünde** konur: Settings Sync aktivasyondan sonra inebilir ve boş okuma, ayarın boş olduğunun kanıtı değildir.
 
 **Ayarlar:** `agentFarm.projectsRoot` · `agentFarm.projectSkeleton` · `agentFarm.projectStaleDays`.
-**Köprü:** `projects.list` · `get` · `create` · `set` · `rename` · `assign` · `current` · `health` · `rescan`.
+**Köprü:** `projects.list` · `get` · `create` · `set` · `rename` · `assign` · `current` · `health` · `rescan` · `sessions` (bir projenin oturumları, her biri *neden* ait olduğuyla).
 
 ### Agent Portfolio — filo tek ekranda
 

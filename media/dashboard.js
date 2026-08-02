@@ -106,8 +106,16 @@
         if (document.body) { document.body.scrollTop = 0; }
     }
 
+    /** Bring the sessions table into view — a filter applied off-screen looks
+     *  like nothing happened. */
+    function scrollToSessions() {
+        const el = document.getElementById('sessblock');
+        if (el && el.scrollIntoView) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+    }
+
     window.addEventListener('message', ev => {
         if (ev.data.type === 'scrollTo') { if (ev.data.target === 'top') { scrollToTop(); } return; }
+        if (ev.data.type === 'projectFilter') { sessTable.setProjectFilter(ev.data.name); scrollToSessions(); return; }
         if (sessTable.onMessage(ev)) { return; }
         if (ev.data.type === 'compareWindow') { cmpRows = ev.data.rows || []; render(); return; }
         if (ev.data.type === 'planUsage') {
@@ -521,8 +529,8 @@
                     </tr>`;
                 }).join('')}
             </table></div>
-            <p class="footnote">An agent belongs to exactly one project, so these rows add up to the fleet total. <a data-manage-projects style="cursor:pointer">Manage projects →</a></p>`
-            : `<p class="footnote">No projects declared yet — group your agents by customer / product and every figure here can be read per project. <a data-manage-projects style="cursor:pointer">Set them up →</a></p>`;
+            <p class="footnote">Every SESSION lands in exactly one bucket, so these rows add up to the fleet total — an agent itself may feed several projects. <a data-manage-projects style="cursor:pointer">Manage projects →</a></p>`
+            : `<p class="footnote">No projects yet — a project is a folder plus a name, and once one exists every figure here can be read per project. <a data-manage-projects style="cursor:pointer">Set them up →</a></p>`;
 
         const unknown = DATA.unknownModels.length
             ? `<p class="footnote">⚠ No pricing rule matched: ${DATA.unknownModels.map(C.esc).join(', ')} — their cost is counted as $0. <a data-status-kind="settings" data-status-value="agentFarm.pricing" style="cursor:pointer">Add a rule in agentFarm.pricing →</a></p>`
@@ -673,6 +681,10 @@
     }
 
     render();
+    // Somebody sent us here to look at one project (the Projects page's
+    // "Sessions" button). Scope the table now that it exists — before the first
+    // render there is nothing to scope.
+    if (DATA.projectFilter !== undefined) { sessTable.setProjectFilter(DATA.projectFilter); }
     armPlanUsage();
     askPlanUsage(false);   // first fill — the host serves its cache if it is fresh
 })();

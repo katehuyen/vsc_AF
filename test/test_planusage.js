@@ -381,9 +381,14 @@ const LIVE_PAYLOAD = {
 
         const dashSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'dashboard.ts'), 'utf8');
         const extSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        // The command carries two independent arrival instructions now (the
+        // other one scopes the sessions table to a project), so it builds an
+        // options object instead of a ternary — and the palette, which passes
+        // neither, must still open a plain dashboard.
         ok('the command forwards it, and the palette (which passes nothing) still works',
-            /registerCommand\('agentfarm\.openDashboard', \(arg\?: \{ scrollTo\?: 'top' \}\)/.test(extSrc)
-            && /arg\?\.scrollTo === 'top' \? \{ scrollTo: 'top' \} : undefined/.test(extSrc));
+            /registerCommand\('agentfarm\.openDashboard',\s*\n?\s*\(arg\?: \{ scrollTo\?: 'top'; projectFilter\?: string \}\)/.test(extSrc)
+            && /if \(arg\?\.scrollTo === 'top'\) \{ opts\.scrollTo = 'top'; \}/.test(extSrc)
+            && /Object\.keys\(opts\)\.length \? opts : undefined/.test(extSrc));
         ok('…the panel only tells an ALREADY-OPEN page (a fresh one is at the top anyway)',
             /if \(opts\?\.scrollTo === 'top'\) \{[\s\S]{0,140}postMessage\(\{ type: 'scrollTo', target: 'top' \}\)/
                 .test(dashSrc));

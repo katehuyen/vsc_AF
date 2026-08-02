@@ -25,8 +25,15 @@ export interface ProjectsPanelDeps {
     /** Rename, optionally moving the folder with it. Returns an error/warning. */
     rename(id: string, name: string, renameFolder: boolean): string | undefined;
     remove(id: string): void;
-    /** Run the create flow (name + folder). Returns the new project's id. */
-    create(): Promise<string | undefined>;
+    /** Create one from the page's own form. */
+    create(input: {
+        name: string; folder?: string; kind?: string; status?: string; summary?: string;
+        repos?: string[]; sessionIds?: string[];
+    }): { id?: string; error?: string; warning?: string };
+    /** Where this name's folder would go by default (empty = no projects root set). */
+    suggestFolder(name: string): string;
+    /** Open the OS folder picker for the form. Undefined = the user cancelled. */
+    browseFolder(start?: string): Promise<string | undefined>;
     /** Ask for a folder and attach it (the "Relink" answer to a missing one). */
     pickFolder(id: string): Promise<void>;
     /** Build any missing skeleton files in the project's folder. */
@@ -39,15 +46,26 @@ export interface ProjectsPanelDeps {
     onChange?(): void;
 }
 
+/** What the "new project" form opens with. Everything is optional: the palette
+ *  sends an empty seed, a session sends what it already knows about itself. */
+export interface NewProjectSeed {
+    suggestName?: string;
+    repos?: string[];
+    /** sessions to file under the project the moment it exists */
+    sessionIds?: string[];
+}
+
 export class ProjectsPanel {
     private static current: ProjectsPanel | undefined;
     private disposables: vscode.Disposable[] = [];
     private focusId?: string;
+    private seed?: NewProjectSeed;
 
-    static show(deps: ProjectsPanelDeps, focusId?: string): void {
+    static show(deps: ProjectsPanelDeps, focusId?: string, newForm?: NewProjectSeed): void {
         if (ProjectsPanel.current) {
             ProjectsPanel.current.deps = deps;
             ProjectsPanel.current.focusId = focusId;
+            ProjectsPanel.current.seed = newForm;
             ProjectsPanel.current.panel.reveal();
             ProjectsPanel.current.refresh();
             return;
@@ -58,20 +76,28 @@ export class ProjectsPanel {
             vscode.ViewColumn.One,
             { enableScripts: true, retainContextWhenHidden: true }
         );
-        ProjectsPanel.current = new ProjectsPanel(panel, deps, focusId);
+        ProjectsPanel.current = new ProjectsPanel(panel, deps, focusId, newForm);
     }
 
     static refreshIfOpen(): void { ProjectsPanel.current?.refresh(); }
 
-    private constructor(readonly panel: vscode.WebviewPanel, private deps: ProjectsPanelDeps, focusId?: string) {
+    private constructor(
+        readonly panel: vscode.WebviewPanel, private deps: ProjectsPanelDeps,
+        focusId?: string, newForm?: NewProjectSeed
+    ) {
         this.focusId = focusId;
+        this.seed = newForm;
         this.render();
         panel.onDidDispose(() => this.dispose(), null, this.disposables);
         panel.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
     }
 
+    /** Both are one-shot: they say what to OPEN with, and re-sending them on
+     *  every refresh would drag the reader back to a form they had left. */
     private payload(): Record<string, unknown> {
-        return { ...this.deps.data(), focusId: this.focusId ?? null };
+        const seed = this.seed;
+        this.seed = undefined;
+        return { ...this.deps.data(), focusId: this.focusId ?? null, newForm: seed ?? null };
     }
 
     private render(): void {
@@ -104,9 +130,31 @@ export class ProjectsPanel {
                 this.refresh();
                 break;
             case 'create': {
-                const created = await this.deps.create();
-                this.focusId = created;
-                this.done(undefined, created ? 'Project created.' : undefined);
+                const form = (msg.form ?? {}) as Record<string, unknown>;
+                const res = this.deps.create({
+                    name: String(form.name ?? ''),
+                    folder: typeof form.folder === 'string' ? form.folder : undefined,
+                    kind: typeof form.kind === 'string' && form.kind ? form.kind : undefined,
+                    status: typeof form.status === 'string' && form.status ? form.status : undefined,
+                    summary: typeof form.summary === 'string' ? form.summary : undefined,
+                    repos: Array.isArray(form.repos) ? form.repos.map(String) : undefined,
+                    sessionIds: Array.isArray(form.sessionIds) ? form.sessionIds.map(String) : undefined
+                });
+                if (res.id) { this.focusId = res.id; }
+                this.done(res.error ?? res.warning, res.id && !res.error && !res.warning ? 'Project created.' : undefined);
+                break;
+            }
+            case 'suggestFolder':
+                void this.panel.webview.postMessage({
+                    type: 'suggestedFolder', folder: this.deps.suggestFolder(String(msg.name ?? ''))
+                });
+                break;
+            case 'browseFolder': {
+                const picked = await this.deps.browseFolder(
+                    typeof msg.start === 'string' ? msg.start : undefined);
+                if (picked) {
+                    void this.panel.webview.postMessage({ type: 'pickedFolder', folder: picked });
+                }
                 break;
             }
             case 'save':

@@ -9,14 +9,40 @@
     let selectedId = DATA.focusId || (DATA.projects[0] && DATA.projects[0].id) || '';
     let flash = null;          // { error } | { ok } — the answer to the last action
     let people = null;         // people rows while being edited (null = read from DATA)
+    // The new-project form, open on the page instead of in a prompt sequence.
+    // null = closed. `folderTouched` stops the name from overwriting a folder
+    // the user picked or typed themselves.
+    let creating = null;
+
+    const newForm = seed => ({
+        name: (seed && seed.suggestName) || '',
+        folder: '',
+        folderTouched: false,
+        kind: '',
+        status: 'active',
+        summary: '',
+        repos: (seed && seed.repos) || [],
+        sessionIds: (seed && seed.sessionIds) || []
+    });
 
     window.addEventListener('message', ev => {
         if (ev.data.type === 'result') {
             flash = ev.data.error ? { error: ev.data.error } : (ev.data.ok ? { ok: ev.data.ok } : null);
+            // a create that came back clean has nothing left to show
+            if (creating && !ev.data.error) { creating = null; }
             return;                                   // the data message repaints
+        }
+        if (ev.data.type === 'suggestedFolder') {
+            if (creating && !creating.folderTouched) { creating.folder = ev.data.folder || ''; render(); }
+            return;
+        }
+        if (ev.data.type === 'pickedFolder') {
+            if (creating) { creating.folder = ev.data.folder; creating.folderTouched = true; render(); }
+            return;
         }
         if (ev.data.type === 'data') {
             DATA = ev.data.data;
+            if (DATA.newForm) { creating = newForm(DATA.newForm); askSuggestion(creating.name); }
             if (DATA.focusId) { selectedId = DATA.focusId; }
             if (!DATA.projects.some(p => p.id === selectedId)) {
                 selectedId = (DATA.projects[0] && DATA.projects[0].id) || '';
@@ -25,6 +51,13 @@
             render();
         }
     });
+
+    /** Ask the host where this name's folder would go. The page cannot work it
+     *  out itself — it does not know the projects root or how a name becomes a
+     *  folder name, and guessing would put the two out of step. */
+    function askSuggestion(name) {
+        vscode.postMessage({ type: 'suggestFolder', name: name || '' });
+    }
 
     const STATUS_META = {
         planned: { label: 'Planned', icon: '○' },
@@ -53,7 +86,7 @@
                     <div class="pj-item ${p.id === selectedId ? 'on' : ''}" data-pick="${C.esc(p.id)}">
                         <span class="pj-dot" style="${p.color ? `background:${C.esc(p.color)}` : ''}"></span>
                         <span class="pj-name">${p.icon ? C.esc(p.icon) + ' ' : ''}${C.esc(p.name)}</span>
-                        ${p.id === DATA.activeId ? '<span class="pj-badge" title="Active project — new work is stamped with it">◧</span>' : ''}
+                        ${p.id === DATA.activeId ? '<span class="pj-badge" title="Active project — sessions started in this window are filed under it">◧</span>' : ''}
                         ${p.warnings.length ? `<span class="pj-warn" title="${C.esc(p.warnings.join(' · '))}">⚠️</span>` : ''}
                         <span class="muted small">${p.sessions}</span>
                     </div>`).join('');
@@ -68,6 +101,50 @@
             <div class="pj-unassigned" title="Sessions no project claims">
                 ⊘ Unassigned <span class="muted">${unassigned.sessions} sessions · ${money(unassigned.cost)}</span>
             </div>
+        </div>`;
+    }
+
+    /** The create form — the whole of it, on the page. A project starts as a
+     *  name and a folder; everything else is here because asking for it once,
+     *  now, beats discovering later that nobody ever set it. */
+    function createHtml() {
+        const c = creating;
+        const kinds = ['', 'product', 'customer', 'internal', 'research', 'personal', 'ops'];
+        const kindOpts = kinds
+            .map(k => `<option value="${k}"${c.kind === k ? ' selected' : ''}>${k || '—'}</option>`).join('');
+        const statusOpts = Object.keys(STATUS_META)
+            .map(s => `<option value="${s}"${c.status === s ? ' selected' : ''}>${STATUS_META[s].label}</option>`).join('');
+        const taken = DATA.projects.some(p => p.name.toLowerCase() === c.name.trim().toLowerCase());
+        const problem = !c.name.trim() ? 'A project needs a name.'
+            : (taken ? `"${c.name.trim()}" already exists.` : '');
+        const carried = c.sessionIds.length
+            ? `<p class="muted small">${c.sessionIds.length} session(s) will be filed under it as soon as it exists.</p>` : '';
+        return `
+        <div class="pj-head"><h2>New project</h2></div>
+        ${carried}
+        <div class="pj-grid">
+            <label class="pj-wide">Name <span class="muted small">a product, a customer, a piece of work</span>
+                <input id="n-name" value="${C.esc(c.name)}" placeholder="Agent Farm" autofocus>
+            </label>
+            <label class="pj-wide">Documents folder
+                <div class="pj-row">
+                    <input id="n-folder" value="${C.esc(c.folder)}" placeholder="leave empty to decide later">
+                    <button class="secondary" data-act="nBrowse">Browse…</button>
+                </div>
+            </label>
+            <label>Status<select id="n-status">${statusOpts}</select></label>
+            <label>Kind<select id="n-kind">${kindOpts}</select></label>
+            <label class="pj-wide">Summary<input id="n-summary" value="${C.esc(c.summary)}" placeholder="one line"></label>
+            <label class="pj-wide">Code roots <span class="muted small">one per line — sessions working under them fall to this project</span>
+                <textarea id="n-repos" rows="2">${C.esc(c.repos.join('\n'))}</textarea>
+            </label>
+        </div>
+        ${problem ? `<p class="pj-flash bad">${C.esc(problem)}</p>` : ''}
+        ${!c.folder.trim() && !problem
+            ? '<p class="muted small">No folder: the project is created anyway and will say so on its row until you choose one.</p>' : ''}
+        <div class="btnrow pj-actions">
+            <button data-act="nCreate" ${problem ? 'disabled' : ''}>Create project</button>
+            <button class="secondary" data-act="nCancel">Cancel</button>
         </div>`;
     }
 
@@ -119,8 +196,8 @@
             <h2>${p.icon ? C.esc(p.icon) + ' ' : ''}${C.esc(p.name)}</h2>
             <div class="btnrow">
                 ${p.id === DATA.activeId
-                ? '<button class="secondary" data-act="clearActive" title="Stop stamping new work with this project">◧ Active — clear</button>'
-                : '<button class="secondary" data-act="setActive" title="New sessions, tasks and notices get stamped with this project">◧ Make active</button>'}
+                ? '<button class="secondary" data-act="clearActive" title="Stop filing new sessions under this project">◧ Active — clear</button>'
+                : '<button class="secondary" data-act="setActive" title="Sessions you start in this window get filed under this project">◧ Make active</button>'}
                 <button class="secondary" data-act="openSessions">Sessions (${p.sessions})</button>
                 ${p.folderState === 'ok' ? '<button class="secondary" data-act="revealFolder">📁 Folder</button>' : ''}
             </div>
@@ -229,7 +306,8 @@
             ${note}
             <div class="pj-wrap">
                 ${listHtml()}
-                <div class="pj-main">${p ? formHtml(p) : '<p class="muted">Pick a project, or create one.</p>'}</div>
+                <div class="pj-main">${creating ? createHtml()
+                : (p ? formHtml(p) : '<p class="muted">Pick a project, or create one.</p>')}</div>
             </div>`;
         window.AFHeader.wire(vscode);
         flash = null;
@@ -267,7 +345,46 @@
 
     function wire() {
         document.querySelectorAll('[data-pick]').forEach(el =>
-            el.addEventListener('click', () => { selectedId = el.dataset.pick; people = null; render(); }));
+            el.addEventListener('click', () => {
+                selectedId = el.dataset.pick; people = null; creating = null; render();
+            }));
+
+        // The create form keeps its own state so a repaint never loses a
+        // half-typed name. The folder follows the name until the user takes it
+        // over — after that it is theirs.
+        if (creating) {
+            const bind = (id, key) => {
+                const el = document.getElementById(id);
+                if (el) { el.addEventListener('input', () => { creating[key] = el.value; }); }
+            };
+            const name = document.getElementById('n-name');
+            if (name) {
+                name.addEventListener('input', () => {
+                    creating.name = name.value;
+                    if (!creating.folderTouched) { askSuggestion(name.value); }
+                });
+                name.focus();
+                name.setSelectionRange(name.value.length, name.value.length);
+            }
+            const folder = document.getElementById('n-folder');
+            if (folder) {
+                folder.addEventListener('input', () => {
+                    creating.folder = folder.value;
+                    creating.folderTouched = true;
+                });
+            }
+            bind('n-summary', 'summary');
+            ['n-status', 'n-kind'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) { el.addEventListener('change', () => { creating[id.slice(2)] = el.value; }); }
+            });
+            const repos = document.getElementById('n-repos');
+            if (repos) {
+                repos.addEventListener('input', () => {
+                    creating.repos = repos.value.split('\n').map(s => s.trim()).filter(Boolean);
+                });
+            }
+        }
 
         document.querySelectorAll('[data-rmperson]').forEach(el =>
             el.addEventListener('click', () => { people.splice(Number(el.dataset.rmperson), 1); render(); }));
@@ -280,7 +397,24 @@
             const p = sel();
             const id = p ? p.id : '';
             switch (el.dataset.act) {
-                case 'create': vscode.postMessage({ type: 'create' }); break;
+                case 'create':
+                    creating = newForm(null);
+                    render();
+                    askSuggestion('');
+                    break;
+                case 'nCancel': creating = null; render(); break;
+                case 'nBrowse': vscode.postMessage({ type: 'browseFolder', start: creating.folder }); break;
+                case 'nCreate':
+                    vscode.postMessage({
+                        type: 'create',
+                        form: {
+                            name: creating.name.trim(), folder: creating.folder.trim(),
+                            kind: creating.kind, status: creating.status,
+                            summary: creating.summary, repos: creating.repos,
+                            sessionIds: creating.sessionIds
+                        }
+                    });
+                    break;
                 case 'rescan': vscode.postMessage({ type: 'rescan' }); break;
                 case 'addPerson': people.push({ name: '', role: 'contact', kind: 'person' }); render(); break;
                 case 'pickFolder': vscode.postMessage({ type: 'pickFolder', id }); break;
@@ -309,5 +443,9 @@
         }));
     }
 
+    // A fresh panel gets its seed in the initial payload — its script was not
+    // listening when the message would have been sent.
+    if (DATA.newForm) { creating = newForm(DATA.newForm); }
     render();
+    if (creating) { askSuggestion(creating.name); }
 })();

@@ -156,6 +156,38 @@ const readFile = f => JSON.parse(fs.readFileSync(f, 'utf8'));
     ok('resolve on an unknown session', store.resolve({ sessionId: 'zzz' }).via === 'none');
 }
 
+// ---------- the active project's STAMP ----------
+// Weaker than an assignment on purpose: it arrives after the session started,
+// so it may only fill a blank. Everything below is a decision the user made and
+// the status bar must not be able to undo it on a resume.
+{
+    const { store } = newStore();
+    const a = store.create({ name: 'A' }).project;
+    const b = store.create({ name: 'B' }).project;
+
+    ok('a session nobody decided about takes the stamp',
+        store.stampSession('s1', a.id) === true && store.links().sessions.s1 === a.id);
+    ok('stamping the same session again does nothing',
+        store.stampSession('s1', b.id) === false && store.links().sessions.s1 === a.id);
+
+    store.assignSession('s2', b.id);
+    ok('‼️ a hand-filed session is NOT re-stamped',
+        store.stampSession('s2', a.id) === false && store.links().sessions.s2 === b.id);
+
+    store.assignSession('s3', '');
+    ok('‼️ explicitly-no-project survives the stamp',
+        store.stampSession('s3', a.id) === false && store.links().sessions.s3 === '');
+
+    store.assignSession('s4', a.id);
+    store.assignSession('s4', undefined);          // "forget the decision"
+    ok('a forgotten decision leaves the session stampable again',
+        store.stampSession('s4', b.id) === true && store.links().sessions.s4 === b.id);
+
+    ok('an unknown project cannot stamp', store.stampSession('s5', 'nope') === false);
+    ok('…and wrote nothing', !('s5' in store.links().sessions));
+    ok('a blank session id cannot be stamped', store.stampSession('', a.id) === false);
+}
+
 // ---------- bulk assignment writes ONCE ----------
 {
     const { store } = newStore();

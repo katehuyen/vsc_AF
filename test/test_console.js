@@ -149,6 +149,21 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
             reduce(resumed, { type: 'system', subtype: 'init', session_id: 'sid-2' }).sessionId === 'sid-2');
         const host = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'consolehost.ts'), 'utf8');
         ok('…the host seeds it from --resume', /sessionId: init\.resume/.test(host));
+
+        // The active project rides on the state because the stamp cannot be
+        // written until the id arrives, and by then the status bar may say
+        // something else. The host reads it ITSELF rather than trusting six
+        // call sites to attach it — a stamp that depends on every caller
+        // remembering is one that stops being applied the day a seventh
+        // appears.
+        const started = newSessionState({
+            id: 'c10', agentId: 'a', agentName: 'dev', cwd: 'D:/a/dev', now: NOW,
+            projectId: 'prj_abc'
+        });
+        ok('a session remembers the project it was started in', started.projectId === 'prj_abc');
+        ok('…and one started without an active project claims none', fresh().projectId === undefined);
+        ok('‼️ the host fills it from the active project itself, not from its callers',
+            /projectId: init\.projectId \?\? this\.activeProjectId\(\)/.test(host));
     }
     ok('…the model and the permission mode it really started in',
         s.model === 'claude-haiku-4-5' && s.permissionMode === 'manual');

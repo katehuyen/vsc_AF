@@ -173,7 +173,7 @@ export class PortfolioPanel {
                 void vscode.commands.executeCommand('agentfarm.assignProject', { agentId });
                 break;
             case 'manageProjects':
-                void vscode.commands.executeCommand('agentfarm.manageProjects');
+                void vscode.commands.executeCommand('agentfarm.openProjects');
                 break;
             case 'reveal':
                 void vscode.commands.executeCommand('agentfarm.revealAgent', { agentId });

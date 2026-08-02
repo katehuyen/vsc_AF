@@ -324,6 +324,31 @@ export class ProjectStore {
         return true;
     }
 
+    /**
+     * The ACTIVE PROJECT's stamp, applied when a session Agent Farm started
+     * first reports its id.
+     *
+     * It is deliberately weaker than `assignSession`: it writes only when the
+     * table holds **no decision at all** about that session. A stamp is the
+     * window's default, not an instruction, and it arrives after the fact —
+     * a resumed session the user had put on another project, or explicitly
+     * taken off every project (`''`), must not be quietly overwritten by
+     * whatever the status bar happens to say now. Same reason the suggestion
+     * engine never applies itself (K4/2).
+     *
+     * Returns true when a stamp was actually written.
+     */
+    stampSession(sessionId: string, projectId: string): boolean {
+        this.syncFromDisk();
+        const id = String(sessionId ?? '').trim();
+        if (!id || id in this.linkTable.sessions) { return false; }
+        const project = this.get(projectId);
+        if (!project) { return false; }
+        this.linkTable = setSessionProject(this.linkTable, id, project.id);
+        this.save();
+        return true;
+    }
+
     /** The same, for a selection. One save for the whole batch: assigning
      *  ninety sessions must not write the store ninety times. Returns how many
      *  rows actually changed — and 0 if `value` names a project that does not

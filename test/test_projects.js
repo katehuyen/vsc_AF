@@ -476,9 +476,13 @@ const P = (id, extra) => Object.assign(
     const ext = read('src', 'extension.ts');
     for (const op of ['projects.list', 'projects.get', 'projects.create', 'projects.set',
         'projects.rename', 'projects.assign', 'projects.current', 'projects.health',
-        'projects.rescan']) {
+        'projects.rescan', 'projects.sessions']) {
         ok(`${op} is on the bridge`, ext.includes(`op: '${op}'`));
     }
+    // The page's Sessions button reads this; an agent asking the same question
+    // must not have to reimplement the resolution order to answer it.
+    ok('projects.sessions reports WHY each session belongs',
+        /via: projectStore\.resolve\(\{/.test(ext));
     ok('the store is created and loaded on activate',
         /new ProjectStore\(/.test(ext) && /projectStore\.load\(\)/.test(ext));
     ok('the legacy setting is imported once, on activate', /migrateLegacy\(cfg\(\)\.get\('projects'/.test(ext));

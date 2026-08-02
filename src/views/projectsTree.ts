@@ -107,12 +107,14 @@ export class ProjectsTreeProvider implements vscode.TreeDataProvider<ProjectNode
                 row ? `Active: ${row.project.name}` : 'No active project', C.None);
             item.iconPath = new vscode.ThemeIcon(row ? 'circle-filled' : 'circle-outline');
             item.description = row
-                ? 'new work is stamped with it'
-                : 'pick one and new work gets stamped';
+                ? 'sessions started here are filed under it'
+                : 'pick one and sessions get filed under it';
             item.tooltip = new vscode.MarkdownString(
-                'The **active project** of this window. While one is set, sessions, tasks, ' +
-                'missions and notices you start here are filed under it — visibly, and ' +
-                'reversibly from any session row.');
+                'The **active project** of this window. While one is set, every session you ' +
+                'start here — in the Console or in a terminal — is filed under it as soon as ' +
+                'it reports its id: visibly, and reversibly from any session row.\n\n' +
+                'A session you already filed by hand is never re-stamped, and neither is one ' +
+                'you took off every project.');
             item.command = { command: 'agentfarm.setActiveProject', title: 'Set active project' };
             item.contextValue = 'afActiveProject';
             return item;

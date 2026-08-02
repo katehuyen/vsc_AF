@@ -207,6 +207,11 @@ export interface ConsoleSessionState {
     cwd: string;
     /** claude's session id — known up-front on a resume, otherwise once system:init arrives */
     sessionId?: string;
+    /** The active project this session was STARTED under, if there was one. Kept
+     *  on the state because the stamp can only be written once `sessionId`
+     *  arrives, and by then the status bar may already say something else — the
+     *  project a session belongs to is the one it began in. */
+    projectId?: string;
     model?: string;
     effort?: string;
     permissionMode: string;
@@ -901,6 +906,8 @@ export function newSessionState(o: {
     id: string; agentId: string; agentName: string; cwd: string;
     model?: string; effort?: string; permissionMode?: string; now: number;
     sessionId?: string;
+    /** the window's active project at the moment this session was started */
+    projectId?: string;
     /** what a RESUMED conversation already spent — see CarriedTotals */
     carried?: CarriedTotals;
 }): ConsoleSessionState {
@@ -908,6 +915,7 @@ export function newSessionState(o: {
     return {
         id: o.id, agentId: o.agentId, agentName: o.agentName, cwd: o.cwd,
         sessionId: o.sessionId,
+        projectId: o.projectId,
         model: o.model, effort: o.effort,
         permissionMode: o.permissionMode?.trim() || 'default',
         status: 'starting', messages: [], queued: [],

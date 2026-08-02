@@ -534,9 +534,12 @@ A 173-command extension had exactly one shortcut. Now there is a **hub** and six
 
 Two of those steps are not decoration. **Longest root wins** fixes a silent misattribution: with `…/miropharm` and `…/miropharm/muvu_talkScribe/ZEN` both declared, first-match handed every ZEN session to the wrong project and both answers looked plausible. **Explicit "no project"** is a real state: without it, taking a session off a project let the rules put it straight back and nobody would learn why.
 
+**The active project — what it actually does.** *(3.53.0.)* Setting one **files the sessions you start in that window**: the Console stamps at the first event carrying a session id, a terminal launch stamps when the live monitor binds an id to it, and the project recorded is the one the session **started** in — not whatever the bar says by the time the id arrives. The stamp is deliberately weaker than filing by hand: it writes only where the link table holds nothing at all, so resuming a session you had put elsewhere — or had explicitly taken off every project — keeps what you chose. Tasks, missions and notices are **not** stamped yet, and nothing in the UI says they are.
+
 **Surfaces.**
 - **Sidebar section** (under Agents): the **active project** row is always there, even when none is set — a stamp applied invisibly is exactly the automation nobody should have to trust blindly. **Unassigned** is always last, showing a number that starts out embarrassing, because a rule that fails quietly is not a rule.
-- **Its own page** (`◧ Projects`, second in the global nav): every field is edited here — name, status, kind, icon and colour, folder picker, code roots, people **with their roles** (who decides, who pays, who does the work, who you ask), daily *and* total budget, dates, tags, agent rules. Nothing goes into `settings.json`.
+- **Its own page** (`◧ Projects`, second in the global nav): every field is edited here — name, status, kind, icon and colour, folder picker, code roots, people **with their roles** (who decides, who pays, who does the work, who you ask), daily *and* total budget, dates, tags, agent rules. Nothing goes into `settings.json`. **Creating one happens here too** *(3.53.0)*: the form asks for the name and the documents folder (with Browse, and a suggestion that follows the name until you take it over) plus status, kind, summary and code roots. Every other route — the palette, the sidebar's empty state, "new project from this session", the "New project…" entries inside the active-project and agent-rule pickers — opens that same form, over one implementation, so the folder skeleton and the error wording cannot differ by which button was pressed.
+- **`Sessions (n)`** on a project opens the sessions table **already scoped to it**, and scrolls to it *(3.53.0)*.
 - **Every session row, everywhere.** One entry on the shared right-click contract reaches all six surfaces that list sessions (Console · Missions · Search · the sessions tables · Live Timeline · Turns), with four genuinely different outcomes: file it, move it, take it off *and keep it off*, or forget the decision so the rules speak again. Beside them: **new project from this session** (the fastest backfill there is — the session already knows the folder the work happened in) and **add this session's folder as a code root**, which turns a one-off assignment into a standing rule.
 - **Status bar:** `◧ <project>`, or `◧ No project`.
 
@@ -545,7 +548,7 @@ Two of those steps are not decoration. **Longest root wins** fixes a silent misa
 **Migration.** `agentFarm.projects` is imported once on activation: agent lists become *rules*, folders become code roots, notes become the one-line summary. No folder is invented — each project asks for one. The marker is set when the setting is seen to **hold** something, not merely when it is read: Settings Sync can land after activation, and an empty read is not proof of an empty setting.
 
 **Settings:** `agentFarm.projectsRoot` · `agentFarm.projectSkeleton` · `agentFarm.projectStaleDays`.
-**Bridge:** `projects.list` · `get` · `create` · `set` · `rename` · `assign` · `current` · `health` · `rescan`.
+**Bridge:** `projects.list` · `get` · `create` · `set` · `rename` · `assign` · `current` · `health` · `rescan` · `sessions` (one project's sessions, each with *why* it belongs).
 
 ### Agent Portfolio — the fleet on one screen
 

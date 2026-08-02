@@ -144,6 +144,9 @@ export interface HostedSessionInit {
     permissionMode?: string;
     /** resume an existing claude session instead of starting a new one */
     resume?: string;
+    /** the window's active project — recorded on the session so the stamp can be
+     *  written once the CLI reports its id (see ConsoleSessionState.projectId) */
+    projectId?: string;
     /** the conversation this session already had, read off its transcript —
      *  display only (consolehistory.ts), never sent anywhere */
     history?: ConsoleMessage[];
@@ -181,7 +184,16 @@ export class ConsoleHost {
          * names the process directly, so ending a session can stop the thing
          * it is actually about instead of the thing that started it.
          */
-        private ownerPid: (sessionId: string) => number | undefined = () => undefined
+        private ownerPid: (sessionId: string) => number | undefined = () => undefined,
+        /**
+         * The window's active project, read at spawn time.
+         *
+         * It is asked for HERE rather than passed by each caller on purpose:
+         * there are six places that start a session, and a stamp that depends
+         * on all six remembering to attach it is a stamp that will silently
+         * stop being applied the first time a seventh appears.
+         */
+        private activeProjectId: () => string | undefined = () => undefined
     ) {}
 
     onChange(fn: (id: string) => void): { dispose(): void } {
@@ -218,6 +230,7 @@ export class ConsoleHost {
             now: Date.now(),
             // a resumed session already HAS an id — see newSessionState
             sessionId: init.resume,
+            projectId: init.projectId ?? this.activeProjectId(),
             // …and a past: what it spent before this window picked it up
             carried: init.resume ? init.carried : undefined
         });

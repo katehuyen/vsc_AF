@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.53.0 — The active project actually files something, and a project is created on its page (2026-08-02)
+
+**The status bar was promising a write nobody made.** "New work is stamped with it" was on the tree, the page, the bar and the palette — and `af.activeProject` was read by all four and by nothing that files anything. Setting an active project changed a label and nothing else. It files sessions now: the Console stamps at the first event that carries a session id, a terminal launch stamps the moment the live monitor binds an id to it, and the project recorded is the one the session **started** in, not whatever the bar says by the time the id arrives.
+
+**The stamp cannot overwrite a decision you made.** It is deliberately weaker than filing a session by hand: it writes only where the link table holds nothing at all. Resume a session you had put on another project — or one you had explicitly taken off every project — and it keeps what you chose. Both cases are pinned by tests, because the stamp arrives after the fact and this is the only thing that makes that safe.
+
+**What is promised is now what happens.** The same surfaces also claimed tasks, missions and notices were being filed; none of them is, yet. Every one of those sentences now says sessions, and a test fails if the old wording comes back.
+
+**A project is created ON the projects page.** The `＋ New project` button used to hand off to an input box and two quick-picks — the exact "type it into a prompt" workflow the page exists to replace. The form is on the page now: name, documents folder (with Browse, and a suggestion that follows the name until you take it over), status, kind, summary and code roots, in one place, with the name checked for collisions as you type. Every other route lands on the same form — the palette, the sidebar's empty state, "new project from this session" (which arrives with the session's folder as a code root and files the selected sessions the moment the project exists), and the "New project…" entries inside the active-project and agent-rule pickers. One implementation underneath, so the folder skeleton and the error wording cannot differ depending on which button was pressed.
+
+**"Sessions (n)" on a project no longer opens an unfiltered dashboard.** It opens the sessions table already scoped to that project and scrolls to it. The dashboard's own footnote is corrected too: every *session* lands in exactly one bucket — an agent may feed several projects, which has been true since 3.52.0 and was still being denied in print.
+
+**Bridge:** `projects.sessions` — one project's sessions, newest first, each with *why* it belongs (filed by hand or stamped · matched a code root · matched the agent rule). The page's button and an agent asking the same question now read the same answer.
+
 ## 3.52.1 — A transcript could not say what day it was written (2026-08-02)
 
 **Every clock in the Session Viewer was a time of day.** Message meta lines print `toLocaleTimeString` — `14:32`, and never `14:32 of which day` — so an old session read like a conversation with no date on it: the text looks identical whether it ran this morning or last spring. The only date anywhere was the session's Span card, far above, and it says nothing about the individual turn you are looking at.
