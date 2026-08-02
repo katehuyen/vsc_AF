@@ -193,7 +193,16 @@ export class ConsoleHost {
          * on all six remembering to attach it is a stamp that will silently
          * stop being applied the first time a seventh appears.
          */
-        private activeProjectId: () => string | undefined = () => undefined
+        private activeProjectId: () => string | undefined = () => undefined,
+        /**
+         * Write the project's context file and return its path.
+         *
+         * Called on EVERY spawn, first start and resume alike — the appended
+         * system prompt does not survive `--resume` (measured), and the brief
+         * it carries has to be current anyway.
+         */
+        private projectContextFile: (projectId: string | undefined) => string | undefined =
+            () => undefined
     ) {}
 
     onChange(fn: (id: string) => void): { dispose(): void } {
@@ -216,7 +225,8 @@ export class ConsoleHost {
     /** Start a hosted session. Returns our id; the CLI's own id arrives later. */
     start(init: HostedSessionInit): string {
         const id = `cs${++this.seq}-${Date.now().toString(36)}`;
-        const args = hostArgs(init);
+        const projectId = init.projectId ?? this.activeProjectId();
+        const args = hostArgs({ ...init, projectContextFile: this.projectContextFile(projectId) });
         // shell:true — `claude` is a .cmd shim on Windows. Nothing user-typed
         // reaches the command line: prompts travel on stdin as JSON, and the
         // flag values come from fixed vocabularies (launch.ts).
@@ -230,7 +240,7 @@ export class ConsoleHost {
             now: Date.now(),
             // a resumed session already HAS an id — see newSessionState
             sessionId: init.resume,
-            projectId: init.projectId ?? this.activeProjectId(),
+            projectId,
             // …and a past: what it spent before this window picked it up
             carried: init.resume ? init.carried : undefined
         });

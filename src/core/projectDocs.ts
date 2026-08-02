@@ -515,6 +515,130 @@ export function insertLogEntry(file: string, entry: string): WriteResult {
 }
 
 // ---------------------------------------------------------------------------
+// brief
+// ---------------------------------------------------------------------------
+
+/** Where the generated brief lives inside a project folder. */
+export const BRIEF_REL = path.join('_AF', 'BRIEF.md');
+
+/** How many worklog lines the brief carries — enough to say what just happened,
+ *  not so many that the system prompt turns into a diary. */
+const BRIEF_LOG_LINES = 6;
+
+/**
+ * Read the newest entries out of a worklog.
+ *
+ * The anchor marks where new entries are inserted, so what follows it is the
+ * recent end of the log. With no anchor (a log the user rewrote their own way)
+ * the tail of the file is the honest answer.
+ */
+function recentLog(file: string | undefined, max = BRIEF_LOG_LINES): string[] {
+    if (!file) { return []; }
+    let text = '';
+    try { text = fs.readFileSync(file, 'utf8'); } catch { return []; }
+    const at = text.indexOf(LOG_ANCHOR);
+    const body = at >= 0 ? text.slice(at + LOG_ANCHOR.length) : text;
+    const lines = body.split(/\r?\n/)
+        .map(l => l.trim())
+        .filter(l => l && !l.startsWith('---') && !l.startsWith('#') && !l.startsWith('<!--'));
+    return at >= 0 ? lines.slice(0, max) : lines.slice(-max);
+}
+
+export interface BriefInput {
+    project: Project;
+    /** which file carries which role, as scanRoles found them */
+    roles?: RoleMap;
+    /** absolute code roots, already detokenised */
+    repos?: string[];
+    now?: number;
+}
+
+/**
+ * The project's current state, in the form an agent can act on.
+ *
+ * A SUMMARY AND AN INDEX — not a copy of the documents. Its most useful section
+ * is the role map: an agent that knows which file holds the worklog can write to
+ * the right place without reading the folder, which is the difference between
+ * one tool call and ten.
+ *
+ * Generated, so it carries the managed banner and `af-role: brief`; a human
+ * editing it would lose their edit on the next spawn, and the banner says so.
+ */
+export function buildBrief(o: BriefInput): string {
+    const p = o.project;
+    const roles = o.roles ?? {};
+    const now = o.now ?? Date.now();
+    const day = (ms?: number) => (ms ? new Date(ms).toISOString().slice(0, 10) : '');
+    const rel = (file: string) => (p.folder ? path.relative(p.folder, file) || path.basename(file) : file);
+
+    const out: string[] = [];
+    out.push('---', 'af-role: brief', '---', '', MANAGED_BANNER, '');
+    out.push(`# ${p.name} — brief`);
+    out.push('');
+
+    const facts: string[] = [`- Status: ${p.status}`];
+    if (p.kind) { facts.push(`- Kind: ${p.kind}`); }
+    if (p.summary?.trim()) { facts.push(`- Summary: ${p.summary.trim()}`); }
+    if (p.startedAt) { facts.push(`- Started: ${day(p.startedAt)}`); }
+    if (p.dueAt) { facts.push(`- Due: ${day(p.dueAt)}`); }
+    if (p.tags?.length) { facts.push(`- Tags: ${p.tags.join(', ')}`); }
+    out.push(...facts);
+
+    const people = (p.people ?? []).filter(x => x.name?.trim());
+    if (people.length) {
+        out.push('', '## People');
+        for (const x of people) {
+            const bits = [x.role, x.kind === 'company' ? 'company' : undefined, x.contact]
+                .filter(Boolean).join(' · ');
+            out.push(`- ${x.name}${bits ? ` — ${bits}` : ''}`);
+        }
+    }
+
+    const repos = (o.repos ?? []).filter(r => r?.trim());
+    if (repos.length) {
+        out.push('', '## Code');
+        for (const r of repos) { out.push(`- ${r}`); }
+    }
+
+    // The point of the whole file: where to write, without reading the folder.
+    const known = PROJECT_DOC_ROLES.filter(r => r !== 'brief' && roles[r]);
+    if (known.length) {
+        out.push('', '## Where things are');
+        for (const role of known) { out.push(`- ${role}: ${rel(roles[role] as string)}`); }
+    }
+
+    const log = recentLog(roles.log);
+    if (log.length) {
+        out.push('', '## Recently');
+        for (const line of log) { out.push(line.startsWith('-') ? line : `- ${line}`); }
+    }
+
+    out.push('', '## Writing back');
+    out.push(roles.log
+        ? `- Record what you did in the worklog (${rel(roles.log)}) before you finish.`
+        : '- This project has no worklog file yet; create one with `af-role: log` if you need it.');
+    if (roles.plan) { out.push(`- Plan items live in ${rel(roles.plan)} — tick them there, do not rewrite the file.`); }
+    if (roles.charter) { out.push(`- The charter (${rel(roles.charter)}) is the long answer to "what is this".`); }
+    out.push('- Do not reformat the user\'s documents, their icons or their task metadata.');
+    out.push('');
+    out.push(`_generated ${new Date(now).toISOString().slice(0, 16).replace('T', ' ')}_`);
+    return out.join('\n') + '\n';
+}
+
+/**
+ * Write the brief into the project folder.
+ *
+ * Unguarded on purpose — this is a machine file inside `_AF/`, regenerated
+ * every time a session starts, and the banner tells anyone who opens it that
+ * their edits will not survive. That is the opposite of the rule for the user's
+ * own documents, and the difference is exactly who owns the file.
+ */
+export function writeBrief(folder: string, content: string): WriteResult {
+    if (!folder?.trim()) { return { ok: false, error: 'the project has no folder' }; }
+    return safeWriteDoc(path.join(folder, BRIEF_REL), content);
+}
+
+// ---------------------------------------------------------------------------
 // rescan
 // ---------------------------------------------------------------------------
 

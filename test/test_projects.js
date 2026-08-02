@@ -476,9 +476,12 @@ const P = (id, extra) => Object.assign(
     const ext = read('src', 'extension.ts');
     for (const op of ['projects.list', 'projects.get', 'projects.create', 'projects.set',
         'projects.rename', 'projects.assign', 'projects.current', 'projects.health',
-        'projects.rescan', 'projects.sessions']) {
+        'projects.rescan', 'projects.sessions', 'projects.brief']) {
         ok(`${op} is on the bridge`, ext.includes(`op: '${op}'`));
     }
+    ok('projects.brief can also hand back the exact text a session is given',
+        /if \(args\.context === true\)/.test(ext));
+    ok('the context-extra setting is declared', !!props['agentFarm.projectContextExtra']);
     // The page's Sessions button reads this; an agent asking the same question
     // must not have to reimplement the resolution order to answer it.
     ok('projects.sessions reports WHY each session belongs',

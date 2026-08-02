@@ -2,6 +2,26 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.54.0 — Picking a project puts the agent inside it (2026-08-02)
+
+**Until now, choosing a project filed your sessions and nothing else.** The agent still started every conversation knowing nothing: which project, where its documents live, what state it is in, what was done last week — all of it had to be typed, every time, or looked up by the agent at your expense. A project you could see but the agent could not was a label with bookkeeping attached.
+
+**A session started under a project now arrives already knowing it.** Before your first message, it is given the project's name, its documents folder, its code roots, and a generated BRIEF of its current state: status, summary, the people and their roles, **which file holds which role** (charter · plan · worklog · people · deliverables), and the latest worklog entries. Measured end to end against the real CLI: asked "what am I working on and who is the client", a session answers correctly with the user having said nothing at all; asked which file to record its work in, it names the worklog.
+
+**The channel is a file, and that was measured rather than assumed.** All three ways Agent Farm starts a session run through a shell, and multi-line text does not survive that on any of them — as an argv entry the arguments are concatenated unquoted (`error: unknown option '---'`), inside a command string the newlines break the line. `--append-system-prompt-file` carries it intact through all three. It exists despite being absent from `claude --help`'s flag list, which is why the original design had recorded it as unavailable and reached for inline text. The path is quoted, because an unquoted one through a folder called "John Doe" arrives cut at the space.
+
+**The flag is passed again on every spawn, resumes included.** An appended system prompt does **not** survive `--resume` — a session seeded with a fact and resumed without the flag cannot recall it, while re-passing restores it. Both halves are measured, in a test that takes care not to let the seeding turn leak the answer into the conversation history. It is added in the one place each command line is built, so "every spawn" holds by construction rather than by everyone remembering.
+
+**You can read exactly what is being sent.** The channel leaves no trace in the transcript, so a chip sits above the Console composer: `◧ <project> — project context active`, and hovering it shows **the text itself**, verbatim — not a description of it. When no project is set it says so instead of disappearing. Session rows carry the project they were started under. 3.50.0 was titled "the composer stops lying about what it is sending"; sending something on your behalf that you cannot inspect would be that same fault through a quieter channel.
+
+**Cost, measured, not estimated:** a full context — skeleton, people, role map, three worklog entries — is **538 input tokens** (1632 characters; 3.03 chars per token, not the 4 the English rule of thumb assumes). It lands in cache-creation, so every turn after the first re-reads it at a tenth of the price. The brief is capped and cut on a line boundary, with the path to the full text appended, so the system prompt cannot grow without bound as the project does.
+
+**Tasks carry it too — from when they were created, not when they run.** A queued task can start hours later in a window that has moved on to something else; giving it that project's context would be worse than giving it none. Named CLI profiles run a different binary and are left alone.
+
+**Your own rules can ride along.** `agentFarm.projectContextExtra` adds one line of your choosing to every project context — where an installation points its agents at its own conventions. Empty by default: Agent Farm ships general, and what an agent should *do* with a project is yours to say.
+
+**Bridge:** `projects.brief` — the brief, or with `context:true` the exact text a session receives.
+
 ## 3.53.0 — The active project actually files something, and a project is created on its page (2026-08-02)
 
 **The status bar was promising a write nobody made.** "New work is stamped with it" was on the tree, the page, the bar and the palette — and `af.activeProject` was read by all four and by nothing that files anything. Setting an active project changed a label and nothing else. It files sessions now: the Console stamps at the first event that carries a session id, a terminal launch stamps the moment the live monitor binds an id to it, and the project recorded is the one the session **started** in, not whatever the bar says by the time the id arrives.

@@ -583,7 +583,26 @@ Headless işler (task, mission) baştan beri durdurulabiliyordu — süreç bizi
 
 Bu adımlardan ikisi süs değil. **En uzun kök kazanır**, sessiz bir yanlış atfı düzeltir: `…/miropharm` ile `…/miropharm/muvu_talkScribe/ZEN` birlikte tanımlıyken ilk-eşleşen her ZEN oturumunu yanlış projeye veriyordu ve iki cevap da makul görünüyordu. **Açık "projesizlik"** gerçek bir durumdur: o olmadan, bir oturumu projeden çıkarmak kuralların onu hemen geri almasına yol açıyordu ve kimse sebebini öğrenemiyordu.
 
-**Aktif proje — gerçekte ne yapar.** *(3.53.0.)* Bir proje seçmek, **o pencerede başlattığın oturumları o projeye dosyalar**: Console, oturum kimliğini taşıyan ilk olayda damgalar; terminal başlatması, canlı izleyici kimliği o başlatmaya bağladığı anda damgalar. Kaydedilen proje, oturumun **başladığı** projedir — kimlik geldiğinde durum çubuğu ne diyorsa o değil. Damga, elle dosyalamadan bilinçli olarak daha zayıftır: yalnızca bağ tablosunda hiçbir karar yokken yazar. Böylece başka bir projeye koyduğun — ya da her projeden açıkça çıkardığın — bir oturumu devam ettirmek, senin seçtiğini korur. Görevler, misyonlar ve bildirimler **henüz** damgalanmıyor ve arayüzde hiçbir yer damgalandığını söylemiyor.
+**Aktif proje — gerçekte ne yapar.** *(3.53.0.)* Bir proje seçmek, **o pencerede başlattığın oturumları o projeye dosyalar**: Console, oturum kimliğini taşıyan ilk olayda damgalar; terminal başlatması, canlı izleyici kimliği o başlatmaya bağladığı anda damgalar. Kaydedilen proje, oturumun **başladığı** projedir — kimlik geldiğinde durum çubuğu ne diyorsa o değil. Damga, elle dosyalamadan bilinçli olarak daha zayıftır: yalnızca bağ tablosunda hiçbir karar yokken yazar. Böylece başka bir projeye koyduğun — ya da her projeden açıkça çıkardığın — bir oturumu devam ettirmek, senin seçtiğini korur. Misyonlar ve bildirimler **henüz** damgalanmıyor ve arayüzde hiçbir yer damgalandığını söylemiyor.
+
+### Proje oturumu protokolü — bir projeyi seçmek ajanı onun içine sokar
+
+*(3.54.0.)* Bir projenin altında başlayan oturum, **daha ilk mesajdan önce o projeyi bilir**; kullanıcı tek kelime yazmaz. Ajana projenin adı, belge klasörü, kod kökleri ve güncel durumunu anlatan üretilmiş bir **brief** verilir: durum, özet, rolleriyle taraflar, **hangi `af-role`'ün hangi dosyada olduğu** ve son çalışma günlüğü satırları. Kendini asıl amorti eden kısım rol haritasıdır — çalışma günlüğünün nerede olduğunu bilen ajan, onu bulmak için klasörü okumak yerine doğrudan yazar.
+
+**Kanal `--append-system-prompt-file`'dır ve bunun her parçası ölçüldü** (`test/smoke_project_context.mjs`, gerçek CLI üzerinde):
+
+- Üç spawn yolu da bir shell altında çalışır. **Satır içi çok satırlı metin hiçbirinden sağ çıkmaz** — argv girdisi olarak argümanlar tırnaksız birleştirilir (`unknown option '---'`), komut dizesi içindeyse satır sonları komutu böler. Dosya yolu üçünden de sağ çıkar.
+- Bayrak, `claude --help` bayrak listesinde görünmese de **vardır**.
+- Yolu **Agent Farm tırnaklar**; tırnaksız bırakılan "John Doe" klasöründen geçen bir yol boşlukta kesilir.
+- Bağlam **`--resume` ile hayatta kalmaz**, bu yüzden her spawn'da yeniden verilir — her komut satırının kurulduğu tek noktadan, ki bu "her spawn" ifadesini hatırlamaya değil yapıya bağlar.
+
+**Burada şeffaflık isteğe bağlı değildir.** Kanal transkriptte iz bırakmaz; bu yüzden Console'da besteci alanının üstünde bir çip durur — `◧ <proje> — project context active` — ve üstüne gelindiğinde **metnin birebir kendisi** görünür. Proje seçili değilken kaybolmaz, bunu söyler. Oturum satırları da başlatıldıkları projeyi taşır.
+
+**Maliyet:** tam bir bağlam **538 girdi token'ı**dır (1632 karakter — token başına 3.03 karakter; İngilizce için varsayılan 4 değil) ve cache-creation'a düşer, yani sonraki turlar onu ×0.1'e okur. Brief 2500 karakterle sınırlanır, satır sınırında kesilir ve tam metnin yolu eklenir.
+
+**Kapsam.** Console oturumları, terminal başlatmaları ve headless görevler bunu taşır — görev, **oluşturulduğu** projeyi taşır, çünkü kuyruktaki bir görev saatler sonra, başka bir şeye geçmiş bir pencerede başlayabilir. Adlandırılmış CLI profilleri başka bir binary çalıştırır ve dokunulmaz. Kendi terminalinde devam ettirdiğin oturum hiçbir şey almaz (ölçüldü) — ama `_AF/BRIEF.md` proje klasöründe gerçek bir dosyadır, oradan okunabilir.
+
+**`agentFarm.projectContextExtra`** her bağlama kendi tek satırını ekler — bir kurulumun ajanlarını kendi kurallarına bağladığı yer. Varsayılanı boştur.
 
 **Yüzeyler.**
 - **Sol panel bölmesi** (Agents'ın altında): **aktif proje** satırı, hiç proje seçili olmasa bile hep oradadır — görünmeden uygulanan bir damga, tam olarak kimsenin körü körüne güvenmemesi gereken otomasyondur. **Unassigned** hep en alttadır ve baştan utandırıcı bir sayı gösterir, çünkü sessizce başarısız olan kural, kural değildir.
@@ -596,8 +615,8 @@ Bu adımlardan ikisi süs değil. **En uzun kök kazanır**, sessiz bir yanlış
 
 **Göç.** `agentFarm.projects` aktivasyonda bir kez içeri alınır: ajan listeleri *kurala*, klasörler kod köküne, not tek satırlık özete dönüşür. Klasör uydurulmaz — her proje kendi klasörünü sorar. İşaretçi, ayar **okunduğunda** değil, ayarda gerçekten bir şey **görüldüğünde** konur: Settings Sync aktivasyondan sonra inebilir ve boş okuma, ayarın boş olduğunun kanıtı değildir.
 
-**Ayarlar:** `agentFarm.projectsRoot` · `agentFarm.projectSkeleton` · `agentFarm.projectStaleDays`.
-**Köprü:** `projects.list` · `get` · `create` · `set` · `rename` · `assign` · `current` · `health` · `rescan` · `sessions` (bir projenin oturumları, her biri *neden* ait olduğuyla).
+**Ayarlar:** `agentFarm.projectsRoot` · `agentFarm.projectSkeleton` · `agentFarm.projectStaleDays` · `agentFarm.projectContextExtra`.
+**Köprü:** `projects.list` · `get` · `create` · `set` · `rename` · `assign` · `current` · `health` · `rescan` · `sessions` (bir projenin oturumları, her biri *neden* ait olduğuyla) · `brief` (durum özeti; `context:true` bir oturuma verilen metnin birebir kendisini döndürür).
 
 ### Agent Portfolio — filo tek ekranda
 

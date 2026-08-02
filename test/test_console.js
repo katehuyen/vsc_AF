@@ -163,7 +163,12 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         ok('a session remembers the project it was started in', started.projectId === 'prj_abc');
         ok('…and one started without an active project claims none', fresh().projectId === undefined);
         ok('‼️ the host fills it from the active project itself, not from its callers',
-            /projectId: init\.projectId \?\? this\.activeProjectId\(\)/.test(host));
+            /const projectId = init\.projectId \?\? this\.activeProjectId\(\);/.test(host));
+        // ‼️ And the project context goes on EVERY spawn built here — first
+        // start and resume alike, because it is not inherited across --resume
+        // (measured: test/smoke_project_context.mjs).
+        ok('…and the same spawn asks for that project\'s context file',
+            /hostArgs\(\{ \.\.\.init, projectContextFile: this\.projectContextFile\(projectId\) \}\)/.test(host));
     }
     ok('…the model and the permission mode it really started in',
         s.model === 'claude-haiku-4-5' && s.permissionMode === 'manual');

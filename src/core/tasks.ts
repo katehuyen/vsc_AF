@@ -50,6 +50,13 @@ export interface FarmTask {
     autoStart?: boolean;
     /** J1: run in this directory instead of the agent folder (worktree runs). */
     workDir?: string;
+    /**
+     * The project this task belongs to — recorded when it is CREATED, not when
+     * it runs. A queued task can sit for hours; by the time it starts, the
+     * window's active project may be something else entirely, and giving it
+     * that project's context would be worse than giving it none.
+     */
+    projectId?: string;
     /** Set when this task is a mission delegation (Missions panel links through it). */
     missionId?: string;
     /** Explicit model for THIS task (e.g. a mission's per-member override).
@@ -384,6 +391,15 @@ export interface TaskManagerOptions {
     mediaPollMs?: () => number;
     /** I5: model policy — extra --model args (and reason) for a task launch. */
     modelArgsFor?: (task: FarmTask) => { args: string; reason: string } | undefined;
+    /**
+     * The project context file for a task, written fresh at launch time from the
+     * project the task was CREATED under (`task.projectId`). Undefined = no
+     * project, and then no flag is added at all: a session with no project must
+     * look exactly as it did before this existed.
+     */
+    projectContextFile?: (task: FarmTask) => string | undefined;
+    /** The window's active project, read when a task is CREATED (see addTask). */
+    activeProjectId?: () => string | undefined;
     /** J5: alternative CLI profiles ({prompt}/{args} templates). */
     cliProfiles?: () => CliProfile[];
     /** F3: global browser-step allowlist + per-step approval gate. */
@@ -863,8 +879,14 @@ export class TaskManager implements vscode.Disposable {
 
     addTask(
         agent: AgentInfo, title: string, prompt: string, mode: TaskMode,
-        extra?: Partial<Pick<FarmTask, 'fromSchedule' | 'fromTrigger' | 'workflowId' | 'workflowRunId' | 'stepIndex'>>
+        extra?: Partial<Pick<FarmTask,
+            'fromSchedule' | 'fromTrigger' | 'workflowId' | 'workflowRunId' | 'stepIndex' | 'projectId'>>
     ): FarmTask {
+        // The active project is read HERE, at creation, and stamped on the task
+        // — five call sites make tasks, and a project that depended on all five
+        // remembering to attach it would quietly stop being attached the day a
+        // sixth appeared. An explicit `extra.projectId` still wins: a mission
+        // step knows its own project better than the window does.
         const task: FarmTask = {
             id: newId(),
             agentId: agent.id,
@@ -874,6 +896,7 @@ export class TaskManager implements vscode.Disposable {
             mode,
             status: 'queued',
             createdAt: Date.now(),
+            ...(this.opts.activeProjectId?.() ? { projectId: this.opts.activeProjectId() } : {}),
             ...extra
         };
         this.tasks.push(task);
@@ -1009,6 +1032,17 @@ export class TaskManager implements vscode.Disposable {
         if (task.outputContract === 'json') {
             extra = (extra ? extra + ' ' : '') + '--output-format json';
         }
+        // The project this task was created under, told to the agent before its
+        // prompt. A FILE, and quoted: this string goes to a shell, where an
+        // unquoted path breaks on a space and inline multi-line text breaks
+        // outright (measured — see core/projectContext.ts).
+        const ctxFile = this.opts.projectContextFile?.(task);
+        if (ctxFile && !ctxFile.includes('"')) {
+            extra = (extra ? extra + ' ' : '') + `--append-system-prompt-file "${ctxFile}"`;
+        }
+        // A named CLI profile runs a DIFFERENT binary, which knows nothing about
+        // --append-system-prompt-file; the project context is claude's channel
+        // and stays on claude's path.
         const command = profile
             ? buildCliCommand(profile.headless, task.prompt, this.extraArgs())
             : `claude ${extra ? extra + ' ' : ''}-p "${p}"`;

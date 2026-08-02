@@ -111,6 +111,30 @@ export interface ConsoleDeps {
      * CLI's own figure, and every session total on this page is the CLI's.
      */
     estimateCost(model: string, usage: Usage): number;
+
+    /**
+     * The projects a session can be started under, and which one is active.
+     *
+     * The picker sets the WINDOW'S active project rather than a console-only
+     * one. Two separate notions of "the project I am working on" — one in the
+     * status bar, one above the composer — would disagree within a minute, and
+     * the user would have no way to tell which one the session actually got.
+     */
+    projects(): { id: string; name: string; icon?: string; color?: string; status: string }[];
+    activeProjectId(): string;
+    setActiveProject(id: string): void;
+    /**
+     * ‼️ THE EXACT TEXT A SESSION IS GIVEN — read back off the file that was
+     * handed to the CLI, not rebuilt for display.
+     *
+     * The channel is invisible: it never appears in the transcript, so the user
+     * cannot see it the way they see their own message. That makes showing it
+     * an obligation rather than a nicety — 3.50.0 was titled "the composer
+     * stops lying about what it is sending", and sending something on the
+     * user's behalf that they cannot inspect is the same fault with a different
+     * channel. Describing the text would be no better; it has to be the text.
+     */
+    projectContextText(projectId: string): string;
 }
 
 export class ConsolePanel {
@@ -234,6 +258,12 @@ export class ConsolePanel {
                 // both need it, and it outranks everything else on the page
                 pendingAsk: s.pendingAsk ?? null,
                 exitReason: s.exitReason ?? '',
+                // the project this session was STARTED under — a badge on the
+                // card, because the stamp is otherwise invisible and a session
+                // filed somewhere the user did not expect must be noticeable
+                projectId: s.projectId ?? '',
+                projectName: s.projectId
+                    ? (this.deps.projects().find(p => p.id === s.projectId)?.name ?? '') : '',
                 messages: s.id === this.selected ? s.messages.slice(-400) : []
             })),
             agents: this.deps.getAgents().map(a => ({ id: a.id, name: a.name, dir: a.dir })),
@@ -261,6 +291,15 @@ export class ConsolePanel {
             lastWindow: this.deps.lastWindow()
                 .filter(r => !hosted.some(h => h.sessionId === r.sessionId
                     && h.status !== 'ended' && h.status !== 'error')),
+            // The project a new session will be started under, and the exact
+            // text it will be given. Open projects only: starting work under an
+            // archived project is not a thing anybody means to do.
+            projects: this.deps.projects()
+                .filter(p => p.status !== 'done' && p.status !== 'archived')
+                .map(p => ({ id: p.id, name: p.name, icon: p.icon ?? '', color: p.color ?? '' })),
+            activeProjectId: this.deps.activeProjectId(),
+            // see ConsoleDeps.projectContextText — the chip shows this verbatim
+            projectContext: this.deps.projectContextText(this.deps.activeProjectId()),
             // the shelf + the transcripts the query asks for (see resumeList)
             ...this.resumeList()
         };
@@ -391,6 +430,12 @@ export class ConsolePanel {
             case 'refresh': this.refresh(); break;
             case 'select':
                 this.selected = str('id');
+                this.refresh();
+                break;
+            // The picker above the composer moves the WINDOW's active project —
+            // the same one the status bar shows. See ConsoleDeps.projects.
+            case 'setProject':
+                this.deps.setActiveProject(str('id'));
                 this.refresh();
                 break;
             case 'start': {

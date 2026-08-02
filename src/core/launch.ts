@@ -36,6 +36,15 @@ export interface LaunchOptions {
     resume?: string;
     /** --continue (mutually exclusive with resume) */
     continueLast?: boolean;
+    /**
+     * --append-system-prompt-file <path>: the project this session belongs to,
+     * told to the agent before the user types anything (see projectContext.ts).
+     *
+     * A FILE and not inline text, measured: this command line is handed to a
+     * shell, and multi-line text does not survive that on any platform. The
+     * path is quoted here for the same reason a name is.
+     */
+    projectContextFile?: string;
 }
 
 /** The three dimensions the launcher offers. Kept verbatim from `claude --help`
@@ -95,6 +104,13 @@ export function buildLaunchCommand(exe: string, o: LaunchOptions = {}): string {
     if (o.model?.trim()) { parts.push('--model', o.model.trim()); }
     if (o.effort?.trim()) { parts.push('--effort', o.effort.trim()); }
     if (o.permissionMode?.trim()) { parts.push('--permission-mode', o.permissionMode.trim()); }
+    // The project context rides on EVERY launch, resumes included — the flag
+    // does not survive --resume (measured; see consoleproto.hostArgs). Quoted
+    // with plain quotes rather than quoteArg: quoteArg collapses whitespace,
+    // which is right for a name typed by a person and wrong for a path.
+    if (o.projectContextFile?.trim() && !o.projectContextFile.includes('"')) {
+        parts.push('--append-system-prompt-file', `"${o.projectContextFile.trim()}"`);
+    }
     if (o.name?.trim()) { parts.push('-n', quoteArg(o.name)); }
     // The first prompt is the positional argument and must stay last.
     if (o.prompt?.trim()) { parts.push(quoteArg(o.prompt)); }

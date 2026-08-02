@@ -65,6 +65,7 @@
  */
 
 import { addUsage, contextAfter, emptyUsage, totalTokens, Usage } from './pricing';
+import { isQuotableContextPath, quoteContextPath } from './projectContext';
 
 export type ConsoleStatus = 'starting' | 'idle' | 'working' | 'ended' | 'error';
 
@@ -417,6 +418,8 @@ export const PERMISSION_GRANTS: { mode: string; label: string; detail: string }[
  */
 export function hostArgs(o: {
     model?: string; effort?: string; permissionMode?: string; resume?: string;
+    /** the project context file — see projectContext.ts */
+    projectContextFile?: string;
 }): string[] {
     const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
         '--permission-prompt-tool', 'stdio'];
@@ -424,6 +427,18 @@ export function hostArgs(o: {
     if (o.model?.trim()) { args.push('--model', o.model.trim()); }
     if (o.effort?.trim()) { args.push('--effort', o.effort.trim()); }
     if (o.permissionMode?.trim()) { args.push('--permission-mode', o.permissionMode.trim()); }
+    // ‼️ THE PROJECT CONTEXT GOES ON EVERY SPAWN, INCLUDING RESUMES.
+    // Measured (test/smoke_project_context.mjs): an appended system prompt does
+    // NOT survive `--resume` — a session seeded with it, resumed without it,
+    // cannot answer a question only the context could answer. This is the one
+    // place a hosted session's command line is built, which is what makes
+    // "every spawn" true by construction instead of by everyone remembering.
+    //
+    // Quoted because the spawn runs under `shell: true`: an unquoted path
+    // through a folder with a space in it arrives cut at the space.
+    if (isQuotableContextPath(o.projectContextFile ?? '')) {
+        args.push('--append-system-prompt-file', quoteContextPath(o.projectContextFile as string));
+    }
     return args;
 }
 

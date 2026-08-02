@@ -392,6 +392,19 @@
         .msg.ask .body { border-left:2px solid var(--vscode-focusBorder,#3794ff); padding-left:7px; }
         .composer { margin-top:8px; flex:none; border:1px solid var(--vscode-widget-border,#4443);
             border-radius:8px; padding:8px; }
+        /* The project chip. Quiet by design — it is a statement of fact about
+           every message sent from this box, not a control. It is what the user
+           hovers to READ THE TEXT the session is being given, which is the only
+           way an invisible channel can be honest. */
+        .pchip { font-size:10px; opacity:.85; margin-bottom:6px; cursor:help;
+            display:inline-flex; align-items:center; gap:6px; padding:2px 7px; border-radius:9px;
+            border:1px solid var(--vscode-widget-border,#4443);
+            background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); }
+        .pchip.none { opacity:.45; background:none; color:inherit; }
+        .pchip-hint { opacity:.6; font-style:italic; }
+        /* the same fact, on a session row: which project it was started under */
+        .pbadge { font-size:9px; opacity:.75; padding:0 4px; border-radius:7px;
+            border:1px solid var(--vscode-widget-border,#4443); }
         .composer textarea { width:100%; min-height:64px; max-height:30vh; resize:vertical; font:inherit;
             font-size:13px; border-radius:6px; padding:7px 9px;
             border:1px solid var(--vscode-widget-border,#4443);
@@ -987,7 +1000,7 @@
                     <span class="m" title="${C.esc(tokTip(s.tokens, sessionSpend(s).cost))}">${tokBadge(s.tokens)}</span>
                 </div>
                 <div class="t2">${C.esc(s.title || '(no name yet)')}</div>
-                <div class="m"><span class="phase">${C.esc(p.label)}${waited ? ` · ${waited}` : ''}</span>${(s.queued || []).length ? ` · ${s.queued.length} held` : ''}${s.turns ? ` · ${s.turns} turns` : ''}${s.contextTokens ? ` · <span class="pair" title="Approximate context in the model window right now">ctx ${C.fmtTok(s.contextTokens)}</span>` : ''}</div>
+                <div class="m"><span class="phase">${C.esc(p.label)}${waited ? ` · ${waited}` : ''}</span>${(s.queued || []).length ? ` · ${s.queued.length} held` : ''}${s.turns ? ` · ${s.turns} turns` : ''}${s.contextTokens ? ` · <span class="pair" title="Approximate context in the model window right now">ctx ${C.fmtTok(s.contextTokens)}</span>` : ''}${s.projectName ? ` · <span class="pbadge" title="Started under this project — it was told about it, and the session is filed under it">◧ ${C.esc(s.projectName)}</span>` : ''}</div>
             </div>`;
         }).join('');
         // One line above the cards, only when something is actually waiting:
@@ -1573,6 +1586,10 @@
                 <select id="c-model" title="Model for the new session (--model)">${opts(DATA.models, st.model)}</select>
                 <select id="c-effort" title="Reasoning effort (--effort)">${opts(DATA.efforts, st.effort)}</select>
                 <select id="c-perm" title="What it may do without asking (--permission-mode)">${opts(DATA.permissions, st.permissionMode)}</select>
+                <select id="c-proj" title="Project — the session is told about it before you type, and is filed under it. This is the window's active project, the same one the status bar shows.">
+                    <option value=""${DATA.activeProjectId ? '' : ' selected'}>◧ No project</option>
+                    ${(DATA.projects || []).map(p => `<option value="${C.esc(p.id)}"${p.id === DATA.activeProjectId ? ' selected' : ''}>${p.icon ? C.esc(p.icon) + ' ' : '◧ '}${C.esc(p.name)}</option>`).join('')}
+                </select>
                 <span class="grow"></span>
                 <span id="c-live"></span>
                 <button id="c-send">Start session</button>`;
@@ -1597,6 +1614,7 @@
                     <div class="askbox" id="c-ask"></div>
                     <div class="working" id="c-working"></div>
                     <div class="composer" id="c-composer">
+                        <div id="c-project"></div>
                         <div class="qwait" id="c-queue"></div>
                         <div class="chips" id="c-chips"></div>
                         <div class="tawrap">
@@ -1754,6 +1772,11 @@
                 st.permissionMode = mode; save();
             }
         });
+        // The project picker moves the WINDOW's active project — the same one
+        // the status bar and the sidebar show. A console-only project would be
+        // a second answer to "what am I working on", and the two would disagree
+        // within a minute.
+        byId('c-proj', 'change', e => vscode.postMessage({ type: 'setProject', id: e.target.value }));
         resetTail();
     }
 
@@ -2159,6 +2182,36 @@
         sendBtn.disabled = !!dead || empty;
     }
 
+    /**
+     * ‼️ THE PROJECT CHIP — the transparency debt of an invisible channel.
+     *
+     * The project context is sent as an appended system prompt, which never
+     * appears in the transcript: the user cannot see it the way they see their
+     * own message. 3.50.0 was titled "the composer stops lying about what it is
+     * sending"; sending something on someone's behalf that they cannot inspect
+     * is that same fault through a different channel.
+     *
+     * So the chip shows the text VERBATIM on hover — not a description of it,
+     * not a summary. It is read back off the file the CLI is handed, so it
+     * cannot drift from what was actually sent.
+     *
+     * It is also drawn when NO project is set, saying so: "nothing is being
+     * added" is information too, and its absence is what would make the
+     * presence of a stamp feel arbitrary.
+     */
+    function projectChipHtml() {
+        const id = DATA.activeProjectId || '';
+        const p = (DATA.projects || []).find(x => x.id === id);
+        if (!p) {
+            return `<div class="pchip none" title="No project — sessions you start here are told nothing extra and are filed nowhere. Pick one in the row below.">◧ No project</div>`;
+        }
+        const ctx = DATA.projectContext || '';
+        const tip = ctx
+            ? `This exact text is added to the session's system prompt, before your first message:\n\n${ctx}`
+            : 'This session is filed under the project. Its context could not be read back — the folder may have moved.';
+        return `<div class="pchip" title="${C.esc(tip)}">◧ ${C.esc(p.name)} — project context active<span class="pchip-hint">hover to read what is sent</span></div>`;
+    }
+
     function paint() {
         const s = sel();
         const key = `${DATA.selected || ''}|${s ? s.status === 'ended' || s.status === 'error' : 'none'}`;
@@ -2197,6 +2250,9 @@
 
         const hidden = s ? (s.messages || []).length - shown.length : 0;
         slot('c-hidden', hidden ? `${hidden} line(s) hidden by <b>show</b>` : '');
+
+        // What a session started here is being told — see projectChipHtml.
+        slot('c-project', projectChipHtml());
 
         if (slot('c-head', headerHtml(s))) {
             window.AFHeader.wire(vscode, { onRefresh: () => vscode.postMessage({ type: 'refresh' }) });

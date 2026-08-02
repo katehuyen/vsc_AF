@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.53.0",
+  "version": "3.54.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -3349,6 +3349,11 @@
           "type": "number",
           "default": 21,
           "description": "Days of silence after which a project still marked active is flagged as quiet. 0 turns the check off. A project list without this becomes a graveyard nobody dares tidy."
+        },
+        "agentFarm.projectContextExtra": {
+          "type": "string",
+          "default": "",
+          "description": "One line of your own added to the project context every session gets (see the ◧ chip above the Console composer). This is where an installation points its agents at its own rules — e.g. \"Your constitution's _REF/project-session.md applies to this session.\" Empty by default: Agent Farm ships general, and what an agent should DO with a project is yours to say."
         },
         "agentFarm.noticeStaleHours": {
           "type": "number",

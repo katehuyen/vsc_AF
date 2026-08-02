@@ -534,7 +534,26 @@ A 173-command extension had exactly one shortcut. Now there is a **hub** and six
 
 Two of those steps are not decoration. **Longest root wins** fixes a silent misattribution: with `…/miropharm` and `…/miropharm/muvu_talkScribe/ZEN` both declared, first-match handed every ZEN session to the wrong project and both answers looked plausible. **Explicit "no project"** is a real state: without it, taking a session off a project let the rules put it straight back and nobody would learn why.
 
-**The active project — what it actually does.** *(3.53.0.)* Setting one **files the sessions you start in that window**: the Console stamps at the first event carrying a session id, a terminal launch stamps when the live monitor binds an id to it, and the project recorded is the one the session **started** in — not whatever the bar says by the time the id arrives. The stamp is deliberately weaker than filing by hand: it writes only where the link table holds nothing at all, so resuming a session you had put elsewhere — or had explicitly taken off every project — keeps what you chose. Tasks, missions and notices are **not** stamped yet, and nothing in the UI says they are.
+**The active project — what it actually does.** *(3.53.0.)* Setting one **files the sessions you start in that window**: the Console stamps at the first event carrying a session id, a terminal launch stamps when the live monitor binds an id to it, and the project recorded is the one the session **started** in — not whatever the bar says by the time the id arrives. The stamp is deliberately weaker than filing by hand: it writes only where the link table holds nothing at all, so resuming a session you had put elsewhere — or had explicitly taken off every project — keeps what you chose. Missions and notices are **not** stamped yet, and nothing in the UI says they are.
+
+### The project session protocol — picking a project puts the agent inside it
+
+*(3.54.0.)* A session started under a project **arrives already knowing it**, with the user writing nothing. Before the first message it is given the project's name, its documents folder, its code roots, and a generated **brief**: status, summary, people with their roles, **which file holds which `af-role`**, and the latest worklog lines. The role map is the part that pays for itself — an agent that knows where the worklog is writes to it instead of reading the folder to find out.
+
+**The channel is `--append-system-prompt-file`, and every part of that was measured** (`test/smoke_project_context.mjs`, against the real CLI):
+
+- All three spawn paths run under a shell. **Inline multi-line text survives none of them** — as an argv entry the arguments are concatenated unquoted (`unknown option '---'`); in a command string the newlines break the line. A file path survives all three.
+- The flag **exists** even though `claude --help` does not list it among the flags.
+- The path is **quoted by Agent Farm**; unquoted, one through a folder named "John Doe" arrives cut at the space.
+- The context **does not survive `--resume`**, so it is passed again on every spawn — from the single place each command line is built, which is what makes that true by construction.
+
+**Transparency is not optional here.** The channel leaves no trace in the transcript, so the Console shows a chip above the composer — `◧ <project> — project context active` — whose hover is **the text itself, verbatim**. With no project it says so rather than vanishing. Session rows carry the project they were started under.
+
+**Cost:** a full context is **538 input tokens** (1632 characters — 3.03 chars/token, not the 4 the English rule of thumb assumes), landing in cache-creation so later turns re-read it at ×0.1. The brief is capped at 2500 characters, cut on a line boundary, with the path to the full text appended.
+
+**Reach.** Console sessions, terminal launches and headless tasks all carry it — a task from the project it was **created** under, because a queued task can start hours later in a window that has moved on. A named CLI profile runs a different binary and is left alone. A session you resume yourself in your own terminal gets nothing (measured) — but `_AF/BRIEF.md` is a real file in the project folder, so it can still be read there.
+
+**`agentFarm.projectContextExtra`** adds one line of your own to every context — where an installation points its agents at its own rules. Empty by default.
 
 **Surfaces.**
 - **Sidebar section** (under Agents): the **active project** row is always there, even when none is set — a stamp applied invisibly is exactly the automation nobody should have to trust blindly. **Unassigned** is always last, showing a number that starts out embarrassing, because a rule that fails quietly is not a rule.
@@ -547,8 +566,8 @@ Two of those steps are not decoration. **Longest root wins** fixes a silent misa
 
 **Migration.** `agentFarm.projects` is imported once on activation: agent lists become *rules*, folders become code roots, notes become the one-line summary. No folder is invented — each project asks for one. The marker is set when the setting is seen to **hold** something, not merely when it is read: Settings Sync can land after activation, and an empty read is not proof of an empty setting.
 
-**Settings:** `agentFarm.projectsRoot` · `agentFarm.projectSkeleton` · `agentFarm.projectStaleDays`.
-**Bridge:** `projects.list` · `get` · `create` · `set` · `rename` · `assign` · `current` · `health` · `rescan` · `sessions` (one project's sessions, each with *why* it belongs).
+**Settings:** `agentFarm.projectsRoot` · `agentFarm.projectSkeleton` · `agentFarm.projectStaleDays` · `agentFarm.projectContextExtra`.
+**Bridge:** `projects.list` · `get` · `create` · `set` · `rename` · `assign` · `current` · `health` · `rescan` · `sessions` (one project's sessions, each with *why* it belongs) · `brief` (the state summary; `context:true` returns the exact text a session is given).
 
 ### Agent Portfolio — the fleet on one screen
 

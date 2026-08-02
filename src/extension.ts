@@ -120,9 +120,10 @@ import { ProjectStore } from './core/projectStore';
 import { ProjectsPanel, ProjectsPanelDeps } from './panels/projectsPanel';
 import { ProjectsTreeProvider } from './views/projectsTree';
 import {
-    createSkeleton, dirExists, DEFAULT_SKELETON, normalizeSkeleton, renameProjectFolder,
-    scanProjectsRoot, scanRoles
+    BRIEF_REL, buildBrief, createSkeleton, dirExists, DEFAULT_SKELETON, normalizeSkeleton,
+    renameProjectFolder, scanProjectsRoot, scanRoles, writeBrief
 } from './core/projectDocs';
+import { buildProjectContext, contextFileName, isQuotableContextPath } from './core/projectContext';
 import { collectEdits, fileStats, groupByFile } from './core/codeedits';
 import { contentAtHead, gitRoot, repoRelative } from './core/gitfile';
 import { buildSnapshot } from './core/websnapshot';
@@ -1058,6 +1059,94 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (projectStore.stampSession(sessionId, projectId)) { projectsChanged(); }
     };
 
+    // ---------- the project session protocol ----------
+    /**
+     * Everything a session is told about its project, as a file on disk.
+     *
+     * ‼️ THE CHANNEL IS A FILE BECAUSE IT WAS MEASURED TO BE THE ONLY ONE THAT
+     * WORKS (test/smoke_project_context.mjs). All three spawn paths run under
+     * `shell: true`, and inline multi-line text does not survive any of them.
+     *
+     * Regenerated on every spawn rather than cached: the brief describes the
+     * project's CURRENT state, and a session started an hour after the last one
+     * must not be handed an hour-old answer. Written under globalStorage — not
+     * in the project folder — because a project is allowed to have no folder,
+     * and this must work for it too.
+     *
+     * Returns the path, or undefined when there is nothing to say. Undefined
+     * means no flag at all: a session with no project looks exactly as it did
+     * before any of this existed.
+     */
+    const contextDir = path.join(context.globalStorageUri.fsPath, 'project-context');
+
+    /**
+     * Compose the context — and touch NOTHING on disk.
+     *
+     * Separate from writing it because the two have completely different
+     * frequencies. Writing happens once per spawn; the Console asks for the
+     * TEXT on every repaint, and the panel repaints on every event of every
+     * hosted session. Composing scans the project folder and reads its worklog,
+     * so a streaming turn would have run that scan — and two file writes —
+     * dozens of times a second.
+     */
+    const composeProjectContext = (projectId: string | undefined) => {
+        const p = projectId ? projectStore.get(projectId) : undefined;
+        if (!p) { return undefined; }
+        // Already absolute: the store expands its tokenised paths on load.
+        const folder = (p.folder ?? '').trim();
+        const repos = (p.repos ?? []).filter(r => !!r?.trim());
+        const hasFolder = !!folder && dirExists(folder);
+        const roles = hasFolder ? scanRoles(folder) : {};
+        const brief = buildBrief({ project: p, roles, repos });
+        const briefPath = hasFolder ? path.join(folder, BRIEF_REL) : undefined;
+        const text = buildProjectContext({
+            name: p.name, id: p.id, folder, repos, brief, briefPath,
+            generatedAt: Date.now(),
+            extra: cfg().get<string>('projectContextExtra', '')
+        });
+        return { project: p, folder, hasFolder, brief, text };
+    };
+
+    /**
+     * Write it, and hand back the path the CLI is given. Called once per spawn.
+     *
+     * The brief also goes into the project's OWN folder, where it is useful on
+     * its own: a session the user starts in their own terminal never gets the
+     * flag (measured), but it can still read `_AF/BRIEF.md`.
+     */
+    const projectContextFileFor = (projectId: string | undefined): string | undefined => {
+        const c = composeProjectContext(projectId);
+        if (!c) { return undefined; }
+        if (c.hasFolder) { writeBrief(c.folder, c.brief); }
+        const file = path.join(contextDir, contextFileName(c.project.id));
+        try {
+            fs.mkdirSync(contextDir, { recursive: true });
+            fs.writeFileSync(file, c.text, 'utf8');
+        } catch {
+            return undefined;   // no context beats a half-written one
+        }
+        return isQuotableContextPath(file) ? file : undefined;
+    };
+
+    /**
+     * The text for the transparency chip — the same composition the spawn uses,
+     * cached briefly so a repaint is free.
+     *
+     * It is composed rather than read back off the last file on purpose: the
+     * chip must describe what the NEXT session will get, and the last file was
+     * written for the last one, possibly before the user edited the project.
+     */
+    let contextPreview = { id: '', ts: 0, text: '' };
+    const projectContextPreviewFor = (projectId: string): string => {
+        if (!projectId) { return ''; }
+        const now = Date.now();
+        if (contextPreview.id === projectId && now - contextPreview.ts < 15000) {
+            return contextPreview.text;
+        }
+        contextPreview = { id: projectId, ts: now, text: composeProjectContext(projectId)?.text ?? '' };
+        return contextPreview.text;
+    };
+
     const taskManager = new TaskManager(
         path.join(context.globalStorageUri.fsPath, 'farm-tasks.json'),
         () => agents,
@@ -1110,6 +1199,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             forward: postForward,
             // J5: alternative CLI executors (gemini / codex / …).
             cliProfiles: () => cfg().get<CliProfile[]>('cliProfiles', []),
+            // The project the task was CREATED under — not the active one now.
+            // A queued task can start hours later, in a window that has moved on.
+            activeProjectId: () => activeProjectId() || undefined,
+            projectContextFile: (task) => projectContextFileFor(task.projectId),
             // I5: rule-based model routing + quota-pressure downgrade.
             modelArgsFor: (task) => {
                 const limit = cfg().get<number>('windowTokenLimit', 0);
@@ -3424,6 +3517,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            op: 'projects.brief',
+            describe: 'The project\'s BRIEF — the state summary a session started under it is given as an appended system prompt (status, people, code roots, which file holds which af-role, the latest worklog lines). Regenerating writes it to the project\'s _AF/BRIEF.md when it has a folder. Pass context:true to get the exact text a session receives instead, verbatim. args: project (id or name), context? (default false)',
+            handler: (args) => {
+                const key = argStr(args, 'project');
+                const p = projectStore.get(key);
+                need(p, `no project called "${key}" — projects.list shows them`);
+                const project = p as Project;
+                // Generating is what writes both files; asking for the brief and
+                // asking what a session gets must not be two code paths that can
+                // disagree about what the project's state is.
+                const file = projectContextFileFor(project.id);
+                if (args.context === true) {
+                    const text = composeProjectContext(project.id)?.text ?? '';
+                    need(text, 'the context could not be generated — the project folder may have moved');
+                    return { project: project.name, contextFile: file ?? null, context: text };
+                }
+                const folder = (project.folder ?? '').trim();
+                const roles = folder && dirExists(folder) ? scanRoles(folder) : {};
+                return {
+                    project: project.name,
+                    briefFile: folder && dirExists(folder) ? path.join(folder, BRIEF_REL) : null,
+                    brief: buildBrief({ project, roles, repos: project.repos ?? [] })
+                };
+            }
+        },
+        {
             op: 'projects.sessions',
             describe: 'The sessions that belong to one project, newest first, with WHY each one belongs (explicit = filed by hand or stamped when it started · path = it ran under a code root · agent = the agent rule). This is the data behind the page\'s Sessions button. args: project (id or name), limit? (default 50), all? (true ignores limit)',
             handler: (args) => {
@@ -5392,7 +5511,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             void vscode.window.showWarningMessage(`Agent Farm: ${errors.join(' · ')}`);
             return undefined;
         }
-        const command = buildLaunchCommand('claude', merged);
+        // A terminal session gets the same project context a Console one does —
+        // including on a resume, where the flag is not inherited (measured).
+        const command = buildLaunchCommand('claude', {
+            ...merged,
+            projectContextFile: merged.projectContextFile
+                ?? projectContextFileFor(activeProjectId() || undefined)
+        });
         // Terminal name stays "claude: <agent>" — agentfarm.focusSessionTerminal
         // and the interrupt resolver both find windows by that exact shape.
         launchClaudeTerminal(`claude: ${agent.name}`, cwd ?? agent.dir, command, undefined, sessionId);
@@ -5754,7 +5879,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const consoleHost = new ConsoleHost(
         () => 'claude',
         sid => ownerOf(readCliSessions(claudeDir()), sid)?.pid,
-        () => activeProjectId() || undefined);
+        () => activeProjectId() || undefined,
+        projectContextFileFor);
     context.subscriptions.push({ dispose: () => consoleHost.dispose() });
     context.subscriptions.push(consoleHost.onChange(id => {
         // The first change that carries an id is the earliest a hosted session
@@ -5975,7 +6101,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         leftoverOwner: (sessionId: string) => leftoverOwner(sessionId),
         endLeftover: (sessionId: string, pid: number) => endLeftover(sessionId, pid),
         // a turn's cost while it is still running — see ConsoleDeps.estimateCost
-        estimateCost: (model: string, u: Usage) => pricing.costFor(model, u)
+        estimateCost: (model: string, u: Usage) => pricing.costFor(model, u),
+        projects: () => projectStore.all().map(p => ({
+            id: p.id, name: p.name, icon: p.icon, color: p.color, status: p.status
+        })),
+        activeProjectId: () => activeProjectId(),
+        setActiveProject: (id: string) => {
+            void context.workspaceState.update('af.activeProject', id || '').then(() => projectsChanged());
+        },
+        // The chip's text — the same composition the spawn writes, so what the
+        // chip shows is what the next session will actually be given. Cached,
+        // because this is asked for on every repaint (see the preview above).
+        projectContextText: (projectId: string) => projectContextPreviewFor(projectId)
     };
 
     /**
