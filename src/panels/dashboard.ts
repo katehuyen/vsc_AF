@@ -6,7 +6,7 @@ import { SessionIndex, SessionInfo, sessionOrigin } from '../core/sessions';
 import { PricingEngine, totalTokens } from '../core/pricing';
 import { SubsystemStatus } from '../core/farmstatus';
 import { PlanUsageSnapshot } from '../core/planusage';
-import { ProjectRollup } from '../core/projects';
+import { LegacyProjectRollup as ProjectRollup } from '../core/projects';
 import { dayKey } from '../core/util';
 import { handleAfNav, htmlShell } from './base';
 import { buildData as buildViewerData } from './sessionViewer';
