@@ -38,13 +38,13 @@
     "views": {
       "agentFarm": [
         {
-          "id": "agentfarm.projects",
-          "name": "Projects",
+          "id": "agentfarm.agents",
+          "name": "Agents",
           "icon": "media/agentfarm.svg"
         },
         {
-          "id": "agentfarm.agents",
-          "name": "Agents",
+          "id": "agentfarm.projects",
+          "name": "Projects",
           "icon": "media/agentfarm.svg"
         },
         {

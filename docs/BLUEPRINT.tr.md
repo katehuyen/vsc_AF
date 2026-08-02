@@ -570,16 +570,30 @@ Headless işler (task, mission) baştan beri durdurulabiliyordu — süreç bizi
 
 *(3.25.0)* Çiftlik ajanları ve oturumları biliyordu; **onların üstünde** bir gruplama, **yan yana** bir filo görünümü ve **altında** ajanın ürettiği asıl şeyi — kodu — göremiyordu. Üçü de bu sürümde geldi.
 
-### Projeler — eksik eksen
+### Projeler — her şeyin altında toplandığı şemsiye
 
-**`agentFarm.projects`**: bir ada bağlanmış ajan (ve/veya klasör) kümesi — bir müşteri, bir ürün, bir sözleşme.
+*(3.52.0 — yeniden yazıldı.)* Proje eskiden `agentFarm.projects` içinde, maliyeti müşteri başına toplamak için ajanları gruplayan bir isimdi. Artık bir **varlık**: değişmez bir id, serbestçe seçilen bir ad, bir durum, bir belge **klasörü**, kod kökleri, taraflar, bütçeler ve tarihler — ama hâlâ neredeyse hiç kendi verisi yok. Oturumlar, görevler, misyonlar, bildirimler ve commit'ler bulundukları yerde yaşamaya devam ediyor; proje onların üzerindeki **birleştirme** katmanı.
 
-- **Dashboard'da Projects tablosu:** proje başına oturum · bugün · toplam · token · son etkinlik, ve günlük bütçe verdiysen yüzdesi. **Satıra tıklamak alttaki Sessions tablosunu o projeye daraltır** (kapsam da otomatik "All" olur — "bu projedeki her şey" otomasyon koşularını gizlemesin diye).
-- **Sessions tablolarında Project kolonu + Projects filtresi** (çok seçimli, diğer filtrelerle birleşir).
-- **Portföy sayfası** projeye göre gruplar.
-- **Tek sahiplik kuralı:** *bir ajan en fazla bir projeye aittir* — bir projeye atamak onu eskisinden çıkarır. Sebebi aritmetik: örtüşen üyelik "bu müşteriye ne harcadım"ı çift saydırır, toplanamayan sayı hiç sayı olmamasından kötüdür. Hiçbir projeye girmeyen her şey **Unassigned** kovasına düşer, böylece satırlar **daima filo toplamına eşittir**.
-- **Kurulum:** `Manage Projects…` komutu (oluştur · üyeler · klasörler · günlük bütçe · not · yeniden adlandır · sil) ya da ajan sağ tık menüsünde **Assign Agent to Project…**. Klasör eşlemesi (`paths`) ve pickerin kapsamadığı her şey için ayarın kendisi de düzenlenebilir.
-- **Köprü:** `projects.list` · `projects.assign` · `projects.set`.
+**Nerede duruyor.** İki depo, her birinin tek sahibi. Projenin **klasörü** insanın yazdığı her şeyi tutar (tanım · plan · taraflar · çalışma günlüğü, artı notlar, kararlar, teslimler, kaynaklar, arşiv) — git ile seyahat eder, eklenti çalışmadan Obsidian'da açılır ve kayıt defterini yeniden kurabilir. `globalStorage/projects.json` yalnızca kayıt defterini ve **oturum bağ tablosunu** tutar. O tablo buradaki tek **yeniden üretilemeyen** şeydir — bu yüzden atomik yazılır ve depo her mutasyondan önce diski yeniden okur (iki pencere, tek dosya).
+
+**Eklenti hiçbir dosya adına bağımlı değil.** Tanım, plan, günlük ve diğerleri frontmatter'daki `af-role` satırıyla bulunur. Yeniden adlandır, alt klasöre taşı, istediğin dilde yaz — hiçbir şey kırılmaz. Aynı `af-id`, **Obsidian'da yeniden adlandırılmış** bir klasörün sonraki taramada aynı proje olarak tanınmasını ve kopyalanmış bir klasörün sessizce aslıymış gibi davranmak yerine raporlanmasını sağlar. `agentFarm.projectSkeleton` gönderilen düzeni tamamen değiştirir (kendi adlandırma kuralı olan vault'lar için); `af-id` koymayı unutan özel bir şablona o anahtar eklenir, ama **beyan ettiği** bir anahtara asla dokunulmaz.
+
+**Üyelik — tek sıra, beş adım.** Bir ajan gerçekte kaç projede çalışıyorsa o kadarına ait olabilir; eski tek sahiplik kuralı kalktı. Maliyet artık **oturuma** asılı — zaten çalışma dizini, zamanı ve doları olan atom — ve şöyle çözülür: açık atama → açık **projesizlik** → en uzun eşleşen klasör kökü → ajan kuralı → `Unassigned`. Her oturum yine tam olarak tek kovaya düşer, yani rakamlar hâlâ filo toplamına eşittir.
+
+Bu adımlardan ikisi süs değil. **En uzun kök kazanır**, sessiz bir yanlış atfı düzeltir: `…/miropharm` ile `…/miropharm/muvu_talkScribe/ZEN` birlikte tanımlıyken ilk-eşleşen her ZEN oturumunu yanlış projeye veriyordu ve iki cevap da makul görünüyordu. **Açık "projesizlik"** gerçek bir durumdur: o olmadan, bir oturumu projeden çıkarmak kuralların onu hemen geri almasına yol açıyordu ve kimse sebebini öğrenemiyordu.
+
+**Yüzeyler.**
+- **Sol panel bölmesi** (Agents'ın altında): **aktif proje** satırı, hiç proje seçili olmasa bile hep oradadır — görünmeden uygulanan bir damga, tam olarak kimsenin körü körüne güvenmemesi gereken otomasyondur. **Unassigned** hep en alttadır ve baştan utandırıcı bir sayı gösterir, çünkü sessizce başarısız olan kural, kural değildir.
+- **Kendi sayfası** (`◧ Projects`, global nav'da ikinci): her alan burada düzenlenir — ad, durum, tür, simge ve renk, klasör seçici, kod kökleri, **rolleriyle** taraflar (kim karar verir, kim öder, kim yapar, kime sorulur), günlük *ve* toplam bütçe, tarihler, etiketler, ajan kuralları. `settings.json`'a hiçbir şey girmez.
+- **Her oturum satırında, her yerde.** Paylaşımlı sağ tık sözleşmesine eklenen tek madde, oturum listeleyen altı yüzeye birden ulaşır (Console · Missions · Search · sessions tabloları · Live Timeline · Turns) ve dört gerçekten farklı sonuç sunar: ata, aktar, **çıkar ve çıkmış kalsın**, ya da kararı unut da kurallar yeniden konuşsun. Yanlarında: **bu oturumdan yeni proje** (var olan en hızlı geriye dönük doldurma — oturum işin yapıldığı klasörü zaten biliyor) ve **oturumun klasörünü kod kökü olarak ekle**, ki tek seferlik atamayı kalıcı kurala çevirir.
+- **Durum çubuğu:** `◧ <proje>` ya da `◧ No project`.
+
+**Klasör kaybolursa.** Proje onunla birlikte kaybolmaz. Listede bir uyarı ve üç cevapla kalır — yeniden bağla · yeniden oluştur · yoksay — ve belge olmayan her şey (oturumlar, maliyet, zaman çizelgesi) çalışmaya devam eder. Hiçbir şey sessizce yeniden oluşturulmaz: taşınmış bir klasör ikinci bir kopyaya dönüşmemeli.
+
+**Göç.** `agentFarm.projects` aktivasyonda bir kez içeri alınır: ajan listeleri *kurala*, klasörler kod köküne, not tek satırlık özete dönüşür. Klasör uydurulmaz — her proje kendi klasörünü sorar. İşaretçi, ayar **okunduğunda** değil, ayarda gerçekten bir şey **görüldüğünde** konur: Settings Sync aktivasyondan sonra inebilir ve boş okuma, ayarın boş olduğunun kanıtı değildir.
+
+**Ayarlar:** `agentFarm.projectsRoot` · `agentFarm.projectSkeleton` · `agentFarm.projectStaleDays`.
+**Köprü:** `projects.list` · `get` · `create` · `set` · `rename` · `assign` · `current` · `health` · `rescan`.
 
 ### Agent Portfolio — filo tek ekranda
 

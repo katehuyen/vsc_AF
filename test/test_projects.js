@@ -431,7 +431,7 @@ const P = (id, extra) => Object.assign(
     // the sidebar section
     const views = pkg.contributes.views.agentFarm.map(v => v.id);
     ok('‼️ Projects has its own sidebar view', views.includes('agentfarm.projects'));
-    ok('‼️ …and it sits ABOVE Agents — the umbrella comes first', views[0] === 'agentfarm.projects');
+    ok('…directly under Agents', views.indexOf('agentfarm.projects') === views.indexOf('agentfarm.agents') + 1);
 
     // the page and the commands behind it
     for (const c of ['agentfarm.openProjects', 'agentfarm.openProject', 'agentfarm.newProject',

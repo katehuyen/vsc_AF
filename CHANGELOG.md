@@ -6,7 +6,7 @@ All notable changes to Agent Farm. Detailed release notes live in the built-in g
 
 **"Project" used to be a name in a settings file.** It grouped agents so cost could be summed per customer, and that was all it could ever do: no page, no folder, no plan, nothing to open. This release turns it into the entity everything else hangs under — while it still owns almost no data of its own, because sessions, tasks, missions, notices and commits keep living exactly where they already lived. The project is the **join** over them.
 
-**Its own sidebar section, above Agents.** The umbrella comes first. The tree opens with the **active project** — always visible, even when there is none, because a stamp being applied invisibly is precisely the kind of automation nobody should have to take on trust — and closes with **Unassigned**, which deliberately shows a number that starts out embarrassing. A rule that fails quietly is not a rule.
+**Its own sidebar section, directly under Agents.** The tree opens with the **active project** — always visible, even when there is none, because a stamp being applied invisibly is precisely the kind of automation nobody should have to take on trust — and closes with **Unassigned**, which deliberately shows a number that starts out embarrassing. A rule that fails quietly is not a rule.
 
 **Its own page (`◧ Projects`, second in the global nav).** Everything about a project is edited there: name, status, kind, icon and colour, documents folder, code roots, people with their roles, both budgets, dates, tags, and which agents fall to it by default. Nothing has to be typed into `settings.json` any more.
 

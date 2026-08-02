@@ -6,9 +6,8 @@ import { relTime } from '../core/util';
 /**
  * Projects — the sidebar.
  *
- * It sits ABOVE Agents in the container on purpose: the project is the umbrella
- * everything else hangs under, and a navigator that buried it under the fleet
- * would teach the wrong shape.
+ * It sits directly under Agents: the fleet is what you look at first, and the
+ * project is the umbrella over what that fleet is doing.
  *
  * Two nodes here are not decoration.
  *

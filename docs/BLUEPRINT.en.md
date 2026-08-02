@@ -521,16 +521,30 @@ A 173-command extension had exactly one shortcut. Now there is a **hub** and six
 
 *(3.25.0)* The farm knew agents and sessions — and nothing **above** them (a grouping), nothing **across** them (the fleet as a portfolio) and nothing **below** them (the code an agent actually produces). All three arrived here.
 
-### Projects — the missing axis
+### Projects — the umbrella everything hangs under
 
-**`agentFarm.projects`** names a set of agents (and/or folders): a customer, a product, a contract.
+*(3.52.0 — rebuilt.)* A project used to be a name in `agentFarm.projects` that grouped agents so cost could be summed per customer. It is now an **entity**: an immutable id, a freely chosen name, a status, a documents **folder**, code roots, people, budgets and dates — while still owning almost no data of its own. Sessions, tasks, missions, notices and commits keep living exactly where they lived; the project is the **join** over them.
 
-- **A Projects table on the Dashboard:** per project — sessions · today · total · tokens · last activity, plus a percentage when you set a daily budget. **Clicking a row scopes the Sessions table below it** to that project (and widens the origin scope, so "everything on this project" does not quietly exclude its automation runs).
-- **A Project column and filter** on the Sessions tables (multi-pick, combines with every other filter).
-- The **Portfolio** page groups by it.
-- **The one-owner rule:** *an agent belongs to at most one project* — assigning it moves it. The reason is arithmetic: overlapping membership double-counts "what did I spend on this customer", and a number you cannot add up is worse than none. Everything unclaimed lands in an **Unassigned** bucket, so the rows **always sum to the fleet total**.
-- **Setting it up:** the `Manage Projects…` command (create · members · folders · daily budget · note · rename · delete) or **Assign Agent to Project…** on an agent row. The setting itself covers folder mapping (`paths`) and anything the picker does not.
-- **Bridge:** `projects.list` · `projects.assign` · `projects.set`.
+**Where it lives.** Two stores, one owner each. The project's **folder** holds everything a human writes (charter · plan · people · worklog, plus notes, decisions, deliverables, resources, archive) — it travels in git, opens in Obsidian with no extension running, and can rebuild the registry. `globalStorage/projects.json` holds only the registry and the **session link table**. That table is the one thing here that cannot be rebuilt from anything on disk, which is why it is written atomically and why the store re-reads before every mutation (two windows, one file).
+
+**Agent Farm never depends on a document's file name.** Charter, plan, worklog and the rest are found by an `af-role` line in their frontmatter. Rename them, move them into a subfolder, write them in any language — nothing breaks. The same `af-id` is what lets a folder **renamed in Obsidian** be recognised as the same project on the next rescan, and a duplicated folder be reported instead of quietly claiming to be the original. `agentFarm.projectSkeleton` replaces the shipped layout wholesale for vaults with their own naming convention; a custom template that forgets `af-id` gets it added, but a key it *declares* is never overwritten.
+
+**Membership — one order, five steps.** An agent may work on as many projects as it actually does; the old one-owner rule is gone. Cost hangs off the **session** instead — the atom that already has a working directory, a time and a dollar figure — and resolves as: explicit assignment → explicit **no project** → longest matching folder root → agent rule → `Unassigned`. Every session still lands in exactly one bucket, so the figures still sum to the fleet total.
+
+Two of those steps are not decoration. **Longest root wins** fixes a silent misattribution: with `…/miropharm` and `…/miropharm/muvu_talkScribe/ZEN` both declared, first-match handed every ZEN session to the wrong project and both answers looked plausible. **Explicit "no project"** is a real state: without it, taking a session off a project let the rules put it straight back and nobody would learn why.
+
+**Surfaces.**
+- **Sidebar section** (under Agents): the **active project** row is always there, even when none is set — a stamp applied invisibly is exactly the automation nobody should have to trust blindly. **Unassigned** is always last, showing a number that starts out embarrassing, because a rule that fails quietly is not a rule.
+- **Its own page** (`◧ Projects`, second in the global nav): every field is edited here — name, status, kind, icon and colour, folder picker, code roots, people **with their roles** (who decides, who pays, who does the work, who you ask), daily *and* total budget, dates, tags, agent rules. Nothing goes into `settings.json`.
+- **Every session row, everywhere.** One entry on the shared right-click contract reaches all six surfaces that list sessions (Console · Missions · Search · the sessions tables · Live Timeline · Turns), with four genuinely different outcomes: file it, move it, take it off *and keep it off*, or forget the decision so the rules speak again. Beside them: **new project from this session** (the fastest backfill there is — the session already knows the folder the work happened in) and **add this session's folder as a code root**, which turns a one-off assignment into a standing rule.
+- **Status bar:** `◧ <project>`, or `◧ No project`.
+
+**When the folder is gone.** The project does not vanish with it. It stays in the list with a warning and three answers — relink · recreate · ignore — and everything that is not documents (sessions, cost, timeline) keeps working. Nothing is ever recreated silently: a folder that moved must not become a second copy.
+
+**Migration.** `agentFarm.projects` is imported once on activation: agent lists become *rules*, folders become code roots, notes become the one-line summary. No folder is invented — each project asks for one. The marker is set when the setting is seen to **hold** something, not merely when it is read: Settings Sync can land after activation, and an empty read is not proof of an empty setting.
+
+**Settings:** `agentFarm.projectsRoot` · `agentFarm.projectSkeleton` · `agentFarm.projectStaleDays`.
+**Bridge:** `projects.list` · `get` · `create` · `set` · `rename` · `assign` · `current` · `health` · `rescan`.
 
 ### Agent Portfolio — the fleet on one screen
 
