@@ -139,6 +139,53 @@ const warnsBefore = warnMsgs.length;
 mgr.resumeWorkflowFromTask(orphan);
 check('resume: missing workflow warns, does not throw', warnMsgs.length === warnsBefore + 1);
 
+// ---- N. which tasks the window's active project speaks for ----
+// A task carries the project it was created under, and that project's context
+// goes into its system prompt. The stamp is only honest for a task A PERSON just
+// made: a schedule firing at 03:00, a trigger, a retry minutes later — nobody
+// was looking at the window then, and telling an unattended run "work on this
+// project and record what you did in its worklog" is worse than telling it
+// nothing.
+{
+    const pstore = path.join(tmp, 'farm-tasks-proj.json');
+    let active = 'prj_alpha';
+    const pm = new TaskManager(pstore, agents, () => false, () => '', {
+        quotaCheck: () => 'test hold',
+        activeProjectId: () => active
+    });
+
+    const byHand = pm.addTask(agent, 'elle', 'iş', 'headless');
+    check('project: a task made by hand takes the window\'s active project',
+        byHand.projectId === 'prj_alpha');
+
+    // the retry must not follow the window somewhere else
+    byHand.status = 'failed'; byHand.endedAt = Date.now();
+    active = 'prj_beta';
+    const again = pm.retryTask(byHand);
+    check('project: a retry keeps the ORIGINAL\'s project, not whatever is active now',
+        again.projectId === 'prj_alpha');
+
+    // and a retry of a projectless task must not acquire one
+    const orphanTask = pm.addTask(agent, 'projesiz', 'iş2', 'headless', { projectId: undefined });
+    check('project: an explicit "no project" beats the window stamp', !orphanTask.projectId);
+    orphanTask.status = 'failed'; orphanTask.endedAt = Date.now();
+    check('project: retrying a projectless task does not give it one',
+        !pm.retryTask(orphanTask).projectId);
+
+    // a schedule fires from a timer — see fireSchedule
+    const sched = {
+        id: 's1', title: 'gece taraması', prompt: 'tara', mode: 'headless', agentId: 'a1',
+        kind: 'daily', at: '03:00', enabled: true
+    };
+    pm.schedules.push(sched);
+    pm.runScheduleNow(sched);
+    const fired = pm.tasks.find(t => t.fromSchedule === 's1');
+    check('‼️ project: a schedule\'s task gets NO project, whatever the window shows',
+        !!fired && !fired.projectId);
+
+    pm.dispose();
+}
+
 mgr.dispose();
 mgr2.dispose();
 Module._load = origLoad;

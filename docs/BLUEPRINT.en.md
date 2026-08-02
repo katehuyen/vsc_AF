@@ -553,6 +553,8 @@ Two of those steps are not decoration. **Longest root wins** fixes a silent misa
 
 **Reach.** Console sessions, terminal launches and headless tasks all carry it — a task from the project it was **created** under, because a queued task can start hours later in a window that has moved on. A named CLI profile runs a different binary and is left alone. A session you resume yourself in your own terminal gets nothing (measured) — but `_AF/BRIEF.md` is a real file in the project folder, so it can still be read there.
 
+**The window only speaks for tasks a person made** *(3.54.1)*. "Created under" is the right stamp when someone was looking at the window when the task appeared. A **schedule** firing at 03:00, a **trigger** reacting to a file, an **auto-delegated insight** — nobody was, and handing an unattended run a project's context plus "record what you did in its worklog" is worse than handing it nothing. Those three get no project. Binding a schedule to a project is something to declare **on the schedule**, not to infer from a window; Run Now is included, because a button that produces a different run from the timer is not a test of the timer. **Retries and later workflow steps inherit their origin** — the original task's project, or the project the *run* started under, including when that was none.
+
 **`agentFarm.projectContextExtra`** adds one line of your own to every context — where an installation points its agents at its own rules. Empty by default.
 
 **Surfaces.**

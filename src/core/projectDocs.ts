@@ -169,16 +169,40 @@ export interface TemplateVars {
     yymmdd: string;
 }
 
+/**
+ * ‼️ EVERY DATE THIS MODULE PRINTS IS LOCAL, AND THAT IS NOT A PREFERENCE.
+ *
+ * A project's Started/Due is stored as LOCAL midnight — the page's date picker
+ * builds it as `new Date(value + 'T00:00:00')`. Formatting that through
+ * `toISOString()` prints the day BEFORE anywhere east of UTC: measured at +07, a
+ * due date entered as 15 August reached the agent as 14 August, and a form that
+ * read the value back the same way lost another day on every save.
+ *
+ * One pair of helpers, used by everything here, so the two cannot diverge again.
+ */
+function pad2(n: number): string { return String(n).padStart(2, '0'); }
+
+/** YYYY-MM-DD, local. */
+export function localDay(ms: number): string {
+    const d = new Date(ms);
+    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+/** YYYY-MM-DD HH:MM, local — the same shape the context header uses, so the two
+ *  stamps inside one brief cannot disagree by a timezone. */
+function localStamp(ms: number): string {
+    const d = new Date(ms);
+    return `${localDay(ms)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
 export function templateVars(project: Project, now = new Date()): TemplateVars {
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
-    const d = String(now.getDate()).padStart(2, '0');
+    const date = localDay(now.getTime());
     return {
         project: project.name,
         id: project.id,
         status: project.status,
-        date: `${y}-${m}-${d}`,
-        yymmdd: `${String(y).slice(2)}${m}${d}`
+        date,
+        yymmdd: date.slice(2).replace(/-/g, '')
     };
 }
 
@@ -568,7 +592,7 @@ export function buildBrief(o: BriefInput): string {
     const p = o.project;
     const roles = o.roles ?? {};
     const now = o.now ?? Date.now();
-    const day = (ms?: number) => (ms ? new Date(ms).toISOString().slice(0, 10) : '');
+    const day = (ms?: number) => (ms ? localDay(ms) : '');
     const rel = (file: string) => (p.folder ? path.relative(p.folder, file) || path.basename(file) : file);
 
     const out: string[] = [];
@@ -621,7 +645,7 @@ export function buildBrief(o: BriefInput): string {
     if (roles.charter) { out.push(`- The charter (${rel(roles.charter)}) is the long answer to "what is this".`); }
     out.push('- Do not reformat the user\'s documents, their icons or their task metadata.');
     out.push('');
-    out.push(`_generated ${new Date(now).toISOString().slice(0, 16).replace('T', ' ')}_`);
+    out.push(`_generated ${localStamp(now)}_`);
     return out.join('\n') + '\n';
 }
 
@@ -635,7 +659,33 @@ export function buildBrief(o: BriefInput): string {
  */
 export function writeBrief(folder: string, content: string): WriteResult {
     if (!folder?.trim()) { return { ok: false, error: 'the project has no folder' }; }
+    ensureAfIgnored(folder);
     return safeWriteDoc(path.join(folder, BRIEF_REL), content);
+}
+
+/**
+ * Keep `_AF/` out of the user's version control.
+ *
+ * The brief is rewritten on EVERY session start, and the project folder lives in
+ * a vault that is very often a git repository — so without this, starting work
+ * is a diff, and the user's vault is never clean again. `*` ignores the
+ * ignore-file too, which is what makes the folder vanish from `git status`
+ * entirely instead of leaving one file to commit.
+ *
+ * Written once and never rewritten: a user who decides they DO want the brief in
+ * git deletes this file, and we must not put it back on the next spawn.
+ */
+function ensureAfIgnored(folder: string): void {
+    const dir = path.join(folder, path.dirname(BRIEF_REL));
+    const file = path.join(dir, '.gitignore');
+    try {
+        if (fs.existsSync(file)) { return; }
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(file,
+            '# Agent Farm regenerates this folder every time a session starts.\n' +
+            '# It is machine output, not content — delete this file if you want it in git.\n*\n',
+            'utf8');
+    } catch { /* an unwritable folder is the caller's problem, not this one's */ }
 }
 
 // ---------------------------------------------------------------------------

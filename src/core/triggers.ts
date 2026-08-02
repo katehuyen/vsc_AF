@@ -161,7 +161,10 @@ export class TriggerManager implements vscode.Disposable {
             return;
         }
         const prompt = substitute(action.prompt);
-        const task = this.tasks.addTask(agent, action.title, prompt, action.mode, { fromTrigger: trigger.id });
+        // No project: a trigger fires off a file change or a webhook, not off a
+        // person working in a project. See TaskManager.addTask.
+        const task = this.tasks.addTask(agent, action.title, prompt, action.mode,
+            { fromTrigger: trigger.id, projectId: undefined });
         if (action.model) { task.model = action.model; }
         void vscode.window.showInformationMessage(
             `Agent Farm: trigger "${trigger.title}" fired (${reason}) → task "${action.title}".`);
@@ -198,7 +201,7 @@ export class TriggerManager implements vscode.Disposable {
         const agent = this.getAgents().find(a => a.name === result.agent);
         if (!agent) { return; }
         const task = this.tasks.addTask(agent, `${action.title} → ${agent.name}`, prompt, action.mode,
-            { fromTrigger: trigger.id });
+            { fromTrigger: trigger.id, projectId: undefined });
         if ((action as { model?: string }).model) { task.model = (action as { model?: string }).model; }
         void vscode.window.showInformationMessage(
             `Agent Farm: dispatch "${trigger.title}" (${reason}) → ${agent.name} [${result.method}: ${truncate(result.reason, 60)}].`);

@@ -73,7 +73,15 @@
     ];
 
     const money = n => '$' + (Number(n) || 0).toFixed(2);
-    const dateValue = ms => (ms ? new Date(ms).toISOString().slice(0, 10) : '');
+    // ‼️ These two are a PAIR and must agree on a timezone. dateMs builds LOCAL
+    // midnight, so reading the value back through toISOString() printed the day
+    // before anywhere east of UTC — and since the form writes back what it
+    // displayed, the date walked one day earlier on every single save.
+    const dateValue = ms => {
+        if (!ms) { return ''; }
+        const d = new Date(ms), p = n => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    };
     const dateMs = v => (v ? new Date(v + 'T00:00:00').getTime() : '');
     const sel = () => DATA.projects.find(p => p.id === selectedId);
 

@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.54.1 — The brief was telling the agent the wrong day, and automation was being told the wrong project (2026-08-02)
+
+**A project's dates arrived a day early.** Started and Due are stored as *local* midnight — the page's date picker builds them that way — and the brief printed them through `toISOString()`, which is UTC. Everywhere east of UTC that is the previous day: this machine is at +07, so a project due on 15 August was telling every session it was due on the 14th. The same mismatch was in the project form, and it was worse there, because the form writes back what it displays: the date walked one day earlier **every time the project was saved**. Both sides now build the date from local parts, which is what `templateVars` in the same file was already doing.
+
+**The brief carried two generation times seven hours apart.** Its header stamp is local and its footer was UTC — `(generated 2026-08-02 19:29)` above `_generated 2026-08-02 12:29_`, in one file, leaving the reader to guess. The footer is local now.
+
+**A schedule firing at 03:00 was being told it was working on a project.** The stamp is meant to record the project a task was created under, and for a task a person just made, the window's active project is exactly that. For a task a *timer* made it is not: nobody was looking at the window, and an unattended watch agent was being handed a project's full context and the instruction to record what it did in that project's worklog — about work the project knows nothing about. Schedules (both timed and Run Now, which must produce the same run or it is not a test), triggers and auto-delegated insights now get no project at all; binding a schedule to a project is something to declare on the schedule, not to infer from a window.
+
+**A retry could change projects mid-flight.** `retryTask` copied the attempt, the contract, the CLI, the working directory and the mission — but not the project, so a rerun picked up whatever the window had moved on to, and a retry of a projectless task could quietly acquire one. Retries now keep the original's project, including when the original had none, and a workflow's later steps take the project the *run* started under rather than re-reading the window an hour in.
+
+**`_AF/` no longer dirties the vault.** The brief is rewritten on every single session start, and a project folder normally lives in a git-backed vault — so starting work made the vault dirty and it never came clean. The folder now carries its own `.gitignore` (written once; delete it and it stays deleted, for anyone who does want the brief in git).
+
 ## 3.54.0 — Picking a project puts the agent inside it (2026-08-02)
 
 **Until now, choosing a project filed your sessions and nothing else.** The agent still started every conversation knowing nothing: which project, where its documents live, what state it is in, what was done last week — all of it had to be typed, every time, or looked up by the agent at your expense. A project you could see but the agent could not was a label with bookkeeping attached.

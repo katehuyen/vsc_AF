@@ -882,11 +882,21 @@ export class TaskManager implements vscode.Disposable {
         extra?: Partial<Pick<FarmTask,
             'fromSchedule' | 'fromTrigger' | 'workflowId' | 'workflowRunId' | 'stepIndex' | 'projectId'>>
     ): FarmTask {
-        // The active project is read HERE, at creation, and stamped on the task
-        // — five call sites make tasks, and a project that depended on all five
-        // remembering to attach it would quietly stop being attached the day a
-        // sixth appeared. An explicit `extra.projectId` still wins: a mission
-        // step knows its own project better than the window does.
+        // The window's active project is stamped on the task HERE, at creation —
+        // a dozen call sites make tasks, and a project that depended on all of
+        // them remembering to attach it would quietly stop being attached the day
+        // another appeared.
+        //
+        // ‼️ BUT THE WINDOW ONLY SPEAKS FOR TASKS A PERSON JUST MADE. A schedule
+        // firing at 03:00, a trigger, a retry, the next step of a workflow — none
+        // of those was created "in" whatever project the window happens to be
+        // showing, because nobody was looking at the window. Those call sites
+        // state their own origin project, and passing the key with `undefined`
+        // is how they say NO PROJECT: no context, no worklog instruction, exactly
+        // the way an automated run behaved before any of this existed.
+        const projectId = extra && 'projectId' in extra
+            ? extra.projectId
+            : this.opts.activeProjectId?.();
         const task: FarmTask = {
             id: newId(),
             agentId: agent.id,
@@ -896,9 +906,9 @@ export class TaskManager implements vscode.Disposable {
             mode,
             status: 'queued',
             createdAt: Date.now(),
-            ...(this.opts.activeProjectId?.() ? { projectId: this.opts.activeProjectId() } : {}),
             ...extra
         };
+        if (projectId) { task.projectId = projectId; } else { delete task.projectId; }
         this.tasks.push(task);
         this.save();
         return task;
@@ -1133,8 +1143,14 @@ export class TaskManager implements vscode.Disposable {
                     `~${Math.round(DELAY_MS / 60000)} dk sonra otomatik yeniden denenecek (deneme ${attempt + 1}/${CAP}); limit temizlenince kosacak.\n`);
             }
         } catch { /* best-effort note */ }
+        // Same work, same project — and it fires minutes later, from a timer, in
+        // a window that may be showing something else entirely by then.
+        const projectId = task.projectId;
         setTimeout(() => {
-            try { const t = this.addTask(agent, nextTitle, prompt, mode); this.startTask(t); } catch { /* ignore */ }
+            try {
+                const t = this.addTask(agent, nextTitle, prompt, mode, { projectId });
+                this.startTask(t);
+            } catch { /* ignore */ }
         }, DELAY_MS);
     }
 
@@ -1262,7 +1278,7 @@ export class TaskManager implements vscode.Disposable {
                 task.mode,
                 {
                     workflowId: task.workflowId, workflowRunId: task.workflowRunId,
-                    stepIndex: task.stepIndex
+                    stepIndex: task.stepIndex, projectId: task.projectId
                 });
             retry.attempt = attempt + 1;
             retry.outputContract = task.outputContract;
@@ -1364,7 +1380,10 @@ export class TaskManager implements vscode.Disposable {
         }
         const baseTitle = task.title.replace(/ \(retry \d+\)$/i, '');
         const attempt = (task.attempt ?? 0) + 1;
-        const copy = this.addTask(agent, `${baseTitle} (retry ${attempt})`, newPrompt ?? task.prompt, task.mode);
+        // The retry belongs to the ORIGINAL's project, not to whatever the window
+        // moved on to in the meantime — a rerun of the same work is the same work.
+        const copy = this.addTask(agent, `${baseTitle} (retry ${attempt})`, newPrompt ?? task.prompt, task.mode,
+            { projectId: task.projectId });
         copy.attempt = attempt;
         copy.outputContract = task.outputContract;
         copy.cli = task.cli;
@@ -1654,9 +1673,24 @@ export class TaskManager implements vscode.Disposable {
         }
         const prompt = this.substitute(step.prompt, handoff);
         const task = this.addTask(agent, `${w.title} ${index + 1}/${w.steps.length}: ${step.title}`,
-            prompt, step.mode, { workflowId: w.id, workflowRunId: runId, stepIndex: index });
+            prompt, step.mode,
+            { workflowId: w.id, workflowRunId: runId, stepIndex: index, ...this.runProject(runId) });
         if (step.outputContract) { task.outputContract = step.outputContract; }
         this.startTask(task);
+    }
+
+    /**
+     * What a workflow step inherits from its run.
+     *
+     * The FIRST step is made by a person pressing something, so the window speaks
+     * for it and this returns nothing (the active-project stamp applies). Every
+     * step after it is made by the previous step finishing — possibly an hour
+     * later, in a window that has moved on — so it takes the project the run
+     * started under, whatever that was, including none.
+     */
+    private runProject(runId: string): { projectId?: string } {
+        const first = this.tasks.find(t => t.workflowRunId === runId);
+        return first ? { projectId: first.projectId } : {};
     }
 
     /** B3: a chain step that is an HTTP call; the response becomes the next handoff. */
@@ -1985,7 +2019,8 @@ export class TaskManager implements vscode.Disposable {
         }
         const prompt = buildBrowserPrompt(url, goal, allowHosts);
         const task = this.addTask(agent, `${w.title} ${index + 1}/${w.steps.length}: ${step.title}`,
-            prompt, 'headless', { workflowId: w.id, workflowRunId: runId, stepIndex: index });
+            prompt, 'headless',
+            { workflowId: w.id, workflowRunId: runId, stepIndex: index, ...this.runProject(runId) });
         this.startTask(task);
     }
 
@@ -2339,7 +2374,10 @@ export class TaskManager implements vscode.Disposable {
             void vscode.window.showWarningMessage(`Agent Farm: agent for schedule "${s.title}" not found.`);
             return;
         }
-        const task = this.addTask(agent, s.title, s.prompt, s.mode, { fromSchedule: s.id });
+        // No project — see fireSchedule. Run Now must produce the same run the
+        // timer would, or the button is not a test of anything.
+        const task = this.addTask(agent, s.title, s.prompt, s.mode,
+            { fromSchedule: s.id, projectId: undefined });
         if (s.model) { task.model = s.model; }
         this.logAutomation({
             kind: 'schedule', id: s.id, title: s.title, outcome: 'fired', reason: 'run now (manual)'
@@ -2441,7 +2479,15 @@ export class TaskManager implements vscode.Disposable {
         if (s.kind === 'once') { s.enabled = false; }
         const agent = this.getAgents().find(a => a.id === s.agentId);
         if (!agent) { return; }
-        const task = this.addTask(agent, s.title, s.prompt, s.mode, { fromSchedule: s.id });
+        // ‼️ A SCHEDULE HAS NO PROJECT, so its task gets none.
+        // A schedule fires from a timer — nobody was in a project when it went
+        // off. Stamping it with whatever the window happened to be showing at
+        // 03:00 would tell an unattended watch agent "work on this project, and
+        // record what you did in its worklog", about work it knows nothing
+        // about. Binding a schedule to a project is a thing to DECLARE on the
+        // schedule, not to infer from a window.
+        const task = this.addTask(agent, s.title, s.prompt, s.mode,
+            { fromSchedule: s.id, projectId: undefined });
         if (s.model) { task.model = s.model; }
         this.logAutomation({
             kind: 'schedule', id: s.id, title: s.title,

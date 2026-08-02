@@ -148,8 +148,10 @@ const project = {
     ok('a headless task carries it',
         /--append-system-prompt-file "\$\{ctxFile\}"/.test(tasksSrc));
     ok('‼️ the task is stamped with the project it was CREATED under',
-        /activeProjectId\?\.\(\) \? \{ projectId: this\.opts\.activeProjectId\(\) \} : \{\}/.test(tasksSrc)
+        /'projectId' in extra[\s\S]{0,80}activeProjectId\?\.\(\)/.test(tasksSrc)
         && /projectContextFile\?\.\(task\)/.test(tasksSrc));
+    // The behaviour behind that expression — who the stamp speaks for — is
+    // exercised for real in test_lifecycle.js, which can load a TaskManager.
 }
 
 // ---------- the brief ----------
@@ -183,9 +185,32 @@ const project = {
     ok('it is marked as generated, so nobody edits it by hand',
         brief.includes('af:managed') && brief.includes('af-role: brief'));
 
+    // ‼️ DATES ARE LOCAL, BOTH OF THEM.
+    // Started/Due are stored as LOCAL midnight (the page's picker builds
+    // `value + 'T00:00:00'`), so printing them through toISOString() lands on the
+    // previous day everywhere east of UTC — measured at +07, a 15 August due date
+    // reached the agent as 14 August. Built here the same way the store does, so
+    // the assertion holds in every timezone rather than only in this one.
+    {
+        const dated = buildBrief({
+            project: { ...p, startedAt: new Date(2026, 0, 14).getTime(), dueAt: new Date(2026, 7, 15).getTime() },
+            roles, repos: p.repos, now: new Date(2026, 7, 2, 9, 30).getTime()
+        });
+        ok('‼️ a stored date comes back as the day it was entered, not the day before',
+            dated.includes('- Started: 2026-01-14') && dated.includes('- Due: 2026-08-15'));
+        // The header stamp (projectContext) is local; a UTC footer put two times
+        // seven hours apart inside one file and left the reader to pick.
+        ok('…and the generated stamp is local too, so the brief agrees with its own header',
+            dated.includes('_generated 2026-08-02 09:30_'));
+    }
+
     const w = writeBrief(dir, brief);
     ok('it writes into _AF/', w.ok && fs.existsSync(path.join(dir, BRIEF_REL)));
     ok('…and writing again just replaces it', writeBrief(dir, brief).ok);
+    // _AF/ is regenerated on every single spawn, and the project folder usually
+    // lives in a git-backed vault: without this the user's vault is never clean.
+    ok('‼️ _AF/ is kept out of the user\'s git',
+        fs.readFileSync(path.join(dir, '_AF', '.gitignore'), 'utf8').includes('*'));
     ok('a project with no folder cannot be written, and says so',
         writeBrief('', brief).ok === false);
 

@@ -1607,7 +1607,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (!picks.length) { return; }
         for (const ins of picks) {
             const agent = agents.find(a => a.id === ins.agentId)!;
-            const task = taskManager.addTask(agent, delegationTitle([ins]), buildDelegationPrompt([ins]), 'headless');
+            // No project: this fires off an insight scan on a timer, not off
+            // anyone working in a project (see TaskManager.addTask).
+            const task = taskManager.addTask(agent, delegationTitle([ins]), buildDelegationPrompt([ins]),
+                'headless', { projectId: undefined });
             taskManager.startTask(task);
             last[insightKey(ins)] = Date.now();
         }

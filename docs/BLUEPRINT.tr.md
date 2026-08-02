@@ -602,6 +602,8 @@ Bu adımlardan ikisi süs değil. **En uzun kök kazanır**, sessiz bir yanlış
 
 **Kapsam.** Console oturumları, terminal başlatmaları ve headless görevler bunu taşır — görev, **oluşturulduğu** projeyi taşır, çünkü kuyruktaki bir görev saatler sonra, başka bir şeye geçmiş bir pencerede başlayabilir. Adlandırılmış CLI profilleri başka bir binary çalıştırır ve dokunulmaz. Kendi terminalinde devam ettirdiğin oturum hiçbir şey almaz (ölçüldü) — ama `_AF/BRIEF.md` proje klasöründe gerçek bir dosyadır, oradan okunabilir.
 
+**Pencere yalnızca bir insanın oluşturduğu görev adına konuşur** *(3.54.1)*. "Oluşturulduğu proje" damgası, görev ortaya çıktığında pencereye bakan biri varsa doğrudur. 03:00'te ateşlenen bir **zamanlama**, bir dosya değişikliğine tepki veren bir **tetikleyici**, otomatik devredilen bir **içgörü** — bunların hiçbirinde kimse bakmıyordu, ve gözetimsiz bir koşuya bir projenin bağlamını artı "yaptığını o projenin günlüğüne yaz" talimatını vermek, hiçbir şey vermemekten kötüdür. Bu üçü proje almaz. Bir zamanlamayı projeye bağlamak **zamanlamanın üzerinde beyan edilecek** bir şeydir, pencereden çıkarsanacak değil; Şimdi Çalıştır da buna dahildir, çünkü zamanlayıcıdan farklı bir koşu üreten bir düğme zamanlayıcının testi değildir. **Yeniden denemeler ve sonraki iş akışı adımları kendi kökenini devralır** — özgün görevin projesi ya da koşunun başladığı proje; o proje "yok" olsa bile.
+
 **`agentFarm.projectContextExtra`** her bağlama kendi tek satırını ekler — bir kurulumun ajanlarını kendi kurallarına bağladığı yer. Varsayılanı boştur.
 
 **Yüzeyler.**
