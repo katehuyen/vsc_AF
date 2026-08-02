@@ -132,9 +132,16 @@ export class ProjectsPanel {
     private payload(): Record<string, unknown> {
         const seed = this.seed;
         this.seed = undefined;
+        // ‼️ A focus jump moves the reader to another project before the page
+        // has had a chance to say so. Shipping the open tab built for the
+        // project they just LEFT prints one frame of somebody else's money
+        // under this project's name — a wrong number is worse than "reading…",
+        // because it looks like an answer. The page's `view` message arrives a
+        // moment later and brings the real one.
+        const stale = !!this.focusId && this.focusId !== this.tabProject;
         // A "new project" form owns the whole right-hand side, so a tab's data
         // would be built for a project nobody is looking at.
-        const tabData = seed
+        const tabData = seed || stale
             ? {} : this.deps.tabData(this.tabProject, this.tab, this.tableN, this.feedKinds);
         return {
             ...this.deps.data(),

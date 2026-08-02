@@ -120,8 +120,8 @@ import { ProjectStore } from './core/projectStore';
 import { ProjectsPanel, ProjectsPanelDeps } from './panels/projectsPanel';
 import { ProjectsTreeProvider } from './views/projectsTree';
 import {
-    BRIEF_REL, buildBrief, createSkeleton, dirExists, DEFAULT_SKELETON, normalizeSkeleton,
-    renameProjectFolder, scanProjectsRoot, scanRoles, writeBrief
+    BRIEF_REL, buildBrief, createSkeleton, dirExists, DEFAULT_SKELETON, localStamp,
+    normalizeSkeleton, renameProjectFolder, scanProjectsRoot, scanRoles, writeBrief
 } from './core/projectDocs';
 import { buildProjectContext, contextFileName, isQuotableContextPath } from './core/projectContext';
 import { collectEdits, fileStats, groupByFile } from './core/codeedits';
@@ -1056,6 +1056,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      *    including their choice that it belongs to no project (K4/2).
      * The set only spares the store a disk read per change event.
      */
+    /**
+     * ‼️ THE PROJECT A SESSION ALREADY BELONGS TO — what a RESUME must be told.
+     *
+     * A resume is not a new session and the window's active project has nothing
+     * to do with it. Handing a resumed session the active project's brief was
+     * the Faz 2 promise going wrong in the place it is least visible: the agent
+     * reads a state summary for a project it is not working on, and believes it.
+     * The answer is the membership order (`projects.ts`), which is where "what
+     * does this session belong to" is decided for every other surface too.
+     */
+    const sessionOwnProject = (
+        s: { sessionId?: string; agentId?: string; agentName?: string; cwd?: string }
+    ): string => projectStore.resolve({
+        sessionId: s.sessionId ?? '', agentId: s.agentId,
+        agentName: s.agentName, cwd: s.cwd
+    }).projectId ?? '';
+
     const stamped = new Set<string>();
     const stampSessionProject = (sessionId: string, projectId: string): void => {
         if (!sessionId || !projectId || stamped.has(sessionId)) { return; }
@@ -1149,6 +1166,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         contextPreview = { id: projectId, ts: now, text: composeProjectContext(projectId)?.text ?? '' };
         return contextPreview.text;
+    };
+
+    /**
+     * The `project` argument a bridge launch may carry, as a project id.
+     *
+     * Three answers, and they are genuinely different: **absent** = inherit the
+     * window's active project (what every launch has always done), **""** =
+     * explicitly no project, **a name or id** = that one. Collapsing the first
+     * two would make an agent that never mentions projects silently unfile
+     * every session it starts.
+     */
+    const resolveLaunchProject = (raw: unknown): string | undefined => {
+        if (raw === undefined) { return undefined; }
+        const key = String(raw ?? '').trim();
+        if (!key) { return ''; }
+        const p = projectStore.get(key);
+        need(p, `no project called "${key}" — projects.list shows them`);
+        return (p as Project).id;
     };
 
     const taskManager = new TaskManager(
@@ -2968,7 +3003,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'sessions.start',
-            describe: 'Start an INTERACTIVE claude session in an agent\'s folder — the same launch the Start Session… picker performs, with the same flags. Not a headless run: it opens a session a human then talks in (use tasks.add for work that should run by itself). args: agent (name|id), surface? (terminal = a claude terminal, the default | console = hosted in the Console panel), model? (alias or id), effort? (low|medium|high|xhigh|max), permissionMode? (plan|acceptEdits|auto|manual|dontAsk|bypassPermissions), name? (session display name), prompt? (first message), resume? (session id), continue? (true = latest session in that folder). Unset fields fall back to agentFarm.launchDefaults. surface=console ignores resume/continue — console.start and resumeInConsole own those.',
+            describe: 'Start an INTERACTIVE claude session in an agent\'s folder — the same launch the Start Session… picker performs, with the same flags. Not a headless run: it opens a session a human then talks in (use tasks.add for work that should run by itself). args: agent (name|id), surface? (terminal = a claude terminal, the default | console = hosted in the Console panel), model? (alias or id), effort? (low|medium|high|xhigh|max), permissionMode? (plan|acceptEdits|auto|manual|dontAsk|bypassPermissions), name? (session display name), prompt? (first message), resume? (session id), continue? (true = latest session in that folder), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none). Unset fields fall back to agentFarm.launchDefaults. surface=console ignores resume/continue — console.start and resumeInConsole own those.',
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const o: LaunchOptions = {
@@ -2985,11 +3020,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const surface = optStr(args, 'surface') || 'terminal';
                 need(surface === 'terminal' || surface === 'console',
                     `surface must be "terminal" or "console", not "${surface}"`);
+                // ‼️ Per-SESSION, never a write to the window's active project:
+                // an agent starting work under project X must not move the
+                // project the person in front of the window is working in.
+                const project = resolveLaunchProject(args.project);
                 if (surface === 'console') {
-                    startConsoleSession(agent, o);
+                    startConsoleSession(agent, o, project);
                     return { agent: agent.name, cwd: agent.dir, surface };
                 }
-                const command = startClaudeSession(agent, o);
+                const command = startClaudeSession(agent, o, undefined, undefined, project);
                 need(command, 'launch rejected — see the warning in the window');
                 return { agent: agent.name, cwd: agent.dir, surface, command };
             }
@@ -3117,7 +3156,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'console.start',
-            describe: 'Open a Console session — a claude process this VS Code window HOSTS, not a terminal it launched: it stays alive between turns, streams its events into the panel, and can be interrupted and re-permissioned live. args: agent (name|id), prompt? (first message), model?, effort?, permissionMode?, resume? (claude session id to continue). Returns the console id to talk to.',
+            describe: 'Open a Console session — a claude process this VS Code window HOSTS, not a terminal it launched: it stays alive between turns, streams its events into the panel, and can be interrupted and re-permissioned live. args: agent (name|id), prompt? (first message), model?, effort?, permissionMode?, resume? (claude session id to continue), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none). Returns the console id to talk to.',
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const d = launchDefaults();
@@ -3126,6 +3165,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // figures an agent reads back are the session's, not this
                 // process's (see CarriedTotals)
                 const past = resume ? index.all().find(s => s.sessionId === resume) : undefined;
+                // ‼️ The project is per-SESSION here, never a write to the
+                // window's active project: a background agent starting a session
+                // under project X must not silently move the project the person
+                // in front of the window is working in.
+                const projectId = resolveLaunchProject(args.project);
                 const id = consoleHost.start({
                     agentId: agent.id, agentName: agent.name, cwd: agent.dir,
                     model: optStr(args, 'model') || d.model,
@@ -3133,10 +3177,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     permissionMode: optStr(args, 'permissionMode') || d.permissionMode,
                     resume,
                     carried: past ? carriedTotals(past) : undefined,
+                    ...(projectId !== undefined ? { projectId } : {}),
                     firstPrompt: optStr(args, 'prompt') || undefined
                 });
                 ConsolePanel.refreshIfOpen();
-                return { id, agent: agent.name, cwd: agent.dir };
+                return {
+                    id, agent: agent.name, cwd: agent.dir,
+                    project: consoleHost.get(id)?.projectId
+                        ? (projectStore.get(consoleHost.get(id)!.projectId!)?.name ?? null) : null
+                };
             }
         },
         {
@@ -3603,7 +3652,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     truncated: feed.truncated,
                     unfiled: UNFILED_EVENT_KINDS,
                     events: feed.events.map(e => ({
-                        ts: e.ts, at: new Date(e.ts).toISOString(), kind: e.kind,
+                        // ‼️ LOCAL, like every other date the project axis prints.
+                        // toISOString() would tell the agent a different hour —
+                        // and east of UTC a different DAY — than the page it is
+                        // describing. `ts` stays the unambiguous machine value.
+                        ts: e.ts, at: localStamp(e.ts), kind: e.kind,
                         title: e.title, detail: e.detail ?? null, agent: e.agent ?? null,
                         cost: e.cost ?? null, link: e.link ?? null
                     }))
@@ -5513,7 +5566,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // is only passed for external-CLI sessions — claude terminals get none.
     const launchClaudeTerminal = (
         name: string, cwd: string | undefined, command: string,
-        env?: Record<string, string>, sessionId?: string
+        env?: Record<string, string>, sessionId?: string, project?: string
     ): vscode.Terminal | undefined => {
         launchSeq += 1;
         void context.globalState.update('agentfarm.termLaunchSeq', launchSeq);
@@ -5523,8 +5576,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (termBindings.length > 200) { termBindings.splice(0, termBindings.length - 200); }
         // The stamp is taken HERE, when the terminal is launched — not when the
         // session id turns up minutes later, by which time the active project
-        // may be something else entirely.
-        const projectId = activeProjectId() || undefined;
+        // may be something else entirely. `project` overrides it for ONE launch
+        // (an agent asking for a specific one over the bridge): undefined means
+        // inherit the window's, '' means explicitly no project.
+        const projectId = (project !== undefined ? project : activeProjectId()) || undefined;
         if (cfg().get<boolean>('externalTerminal', false)) {
             // title pinned so agentfarm.focusSessionTerminal can find the window later
             openExternalTerminal(cwd, command, title);
@@ -5558,7 +5613,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      *  left open; an invalid value is reported here rather than in a terminal
      *  the user then has to read. Returns the command line that ran. */
     const startClaudeSession = (
-        agent: AgentInfo, o: LaunchOptions = {}, sessionId?: string, cwd?: string
+        agent: AgentInfo, o: LaunchOptions = {}, sessionId?: string, cwd?: string,
+        project?: string
     ): string | undefined => {
         const merged = withDefaults(o, launchDefaults());
         const errors = validateLaunch(merged);
@@ -5566,16 +5622,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             void vscode.window.showWarningMessage(`Agent Farm: ${errors.join(' · ')}`);
             return undefined;
         }
+        // The project is resolved ONCE and used for both halves of the launch —
+        // what the session is TOLD (the context file) and what it is FILED under
+        // (the stamp). Two reads of `activeProjectId()` could land either side
+        // of a change and file a session under a project it was never told about.
+        const projectId = project !== undefined ? project : activeProjectId();
         // A terminal session gets the same project context a Console one does —
         // including on a resume, where the flag is not inherited (measured).
         const command = buildLaunchCommand('claude', {
             ...merged,
             projectContextFile: merged.projectContextFile
-                ?? projectContextFileFor(activeProjectId() || undefined)
+                ?? projectContextFileFor(projectId || undefined)
         });
         // Terminal name stays "claude: <agent>" — agentfarm.focusSessionTerminal
         // and the interrupt resolver both find windows by that exact shape.
-        launchClaudeTerminal(`claude: ${agent.name}`, cwd ?? agent.dir, command, undefined, sessionId);
+        launchClaudeTerminal(`claude: ${agent.name}`, cwd ?? agent.dir, command,
+            undefined, sessionId, projectId);
         // A named launch should show its name in the panel within seconds, not
         // at the next quiet scan: the CLI writes its session file a moment
         // after boot, so look twice while the user is still watching. The name
@@ -5749,6 +5811,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         : 'a real claude terminal — the full TUI, slash commands, /resume',
                     act: 'where'
                 },
+                // WHICH PROJECT is a dimension too, and the launcher was the one
+                // start path that did not show it — see pickRunSurface.
+                activeProjectRow(),
                 {
                     label: '$(star-full) Model', description: show(merged.model) + inherited(o.model, d.model),
                     detail: 'from your agentFarm.modelAliases list — --model', act: 'model'
@@ -5812,8 +5877,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return;
             }
             if (pick.act === 'where') {
+                // no project row in the sub-picker: this picker already has one,
+                // and the same question asked twice is the same answer twice
                 const v = await pickRunSurface(`Session for ${agent.name}`);
                 if (v) { where = v; }
+                continue;
+            }
+            if (pick.act === 'project') {
+                await chooseActiveProject(`Project for ${agent.name}'s session`);
                 continue;
             }
             if (pick.act === 'agent') {
@@ -5939,9 +6010,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push({ dispose: () => consoleHost.dispose() });
     context.subscriptions.push(consoleHost.onChange(id => {
         // The first change that carries an id is the earliest a hosted session
-        // can be filed — see stampSessionProject.
+        // can be filed — see stampSessionProject. A RESUME is not filed: it
+        // already belongs somewhere (ConsoleSessionState.resumed).
         const s = consoleHost.get(id);
-        if (s?.sessionId && s.projectId) { stampSessionProject(s.sessionId, s.projectId); }
+        if (s?.sessionId && s.projectId && !s.resumed) {
+            stampSessionProject(s.sessionId, s.projectId);
+        }
         ConsolePanel.refreshIfOpen();
     }));
 
@@ -6238,30 +6312,106 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      */
     type RunSurface = 'terminal' | 'console';
     const SURFACE_KEY = 'agentfarm.lastRunSurface';
-    const pickRunSurface = async (what: string): Promise<RunSurface | undefined> => {
-        interface Item extends vscode.QuickPickItem { surface: RunSurface }
-        const last = context.globalState.get<RunSurface>(SURFACE_KEY);
-        const items: Item[] = [
-            {
-                label: '$(terminal) In a terminal',
-                description: 'a real claude terminal — the full TUI, slash commands, /resume',
-                surface: 'terminal'
-            },
-            {
-                label: '$(comment-discussion) In the Console',
-                description: 'inside the panel — the conversation stays with Agent Farm',
-                surface: 'console'
-            }
-        ];
-        for (const it of items) {
-            if (it.surface === last) { it.description += ' • last used'; }
+
+    /**
+     * The active-project picker, as a function rather than only a command.
+     *
+     * One list, one wording, one write — the status bar, the tree and every
+     * "start a session" pre-flight open THIS. A second list built next to a
+     * start button would drift from this one (different filter, different
+     * "No project" wording) and the two would disagree about what is on offer.
+     */
+    const chooseActiveProject = async (
+        placeHolder = 'Active project — sessions you start in this window are filed under it'
+    ): Promise<void> => {
+        const current = activeProjectId();
+        const projects = projectStore.all().filter(p => !CLOSED_PROJECT_STATUSES.includes(p.status));
+        interface Row extends vscode.QuickPickItem { id?: string; act?: string }
+        const pick = await vscode.window.showQuickPick<Row>([
+            ...projects.map(p => ({
+                label: `${p.id === current ? '$(check) ' : '$(blank) '}${p.icon ? p.icon + ' ' : ''}${p.name}`,
+                description: p.summary ?? p.status,
+                id: p.id
+            })),
+            ...(current ? [{ label: '$(circle-slash) No project', description: 'stop filing new sessions', act: 'none' }] : []),
+            { label: '$(add) New project…', description: 'opens the form on the Projects page', act: 'new' }
+        ], { placeHolder, ignoreFocusOut: true });
+        if (!pick) { return; }
+        if (pick.act === 'new') {
+            // creation lives on the page now — it makes the project, and
+            // "Make active" is right there on it
+            void vscode.commands.executeCommand('agentfarm.newProject');
+            return;
         }
-        const pick = await vscode.window.showQuickPick(items, {
-            placeHolder: `${what} — where should it run?`, ignoreFocusOut: true
-        });
-        if (!pick) { return undefined; }
-        await context.globalState.update(SURFACE_KEY, pick.surface);
-        return pick.surface;
+        await context.workspaceState.update('af.activeProject', pick.act === 'none' ? '' : (pick.id ?? ''));
+        projectsChanged();
+    };
+
+    /** The project a launch will file under, as one picker row. Says the same
+     *  thing the Console's chip says, in the vocabulary of a QuickPick. */
+    const activeProjectRow = (): vscode.QuickPickItem & { act: string } => {
+        const p = activeProject();
+        return {
+            label: `$(project) Project`,
+            description: p ? `${p.icon ? p.icon + ' ' : '◧ '}${p.name}` : '◧ No project',
+            detail: p
+                ? 'the session is told about it before you type, and is filed under it'
+                : 'nothing extra is sent and the session is filed nowhere — pick one here',
+            act: 'project'
+        };
+    };
+
+    /**
+     * ‼️ A NEW SESSION IS OFFERED THE SAME CHOICES WHEREVER IT IS STARTED FROM.
+     *
+     * `project: true` adds the project row. It is not decoration: the Console's
+     * composer has had a project box since 3.54.0 and no other start path had
+     * one, so pressing ▶ on an agent in the sidebar filed the session under
+     * whatever the status bar happened to say and never mentioned it — the same
+     * "new session", two different offers, decided by which button you pressed.
+     *
+     * A RESUME does not get the row. Its project was decided when it started
+     * (`stampSession` refuses to overwrite that), so asking again would be a
+     * question whose answer is thrown away.
+     */
+    const pickRunSurface = async (
+        what: string, opts: { project?: boolean } = {}
+    ): Promise<RunSurface | undefined> => {
+        interface Item extends vscode.QuickPickItem { surface?: RunSurface; act?: string }
+        const last = context.globalState.get<RunSurface>(SURFACE_KEY);
+        for (;;) {
+            const items: Item[] = [
+                {
+                    label: '$(terminal) In a terminal',
+                    description: 'a real claude terminal — the full TUI, slash commands, /resume',
+                    surface: 'terminal'
+                },
+                {
+                    label: '$(comment-discussion) In the Console',
+                    description: 'inside the panel — the conversation stays with Agent Farm',
+                    surface: 'console'
+                }
+            ];
+            for (const it of items) {
+                if (it.surface === last) { it.description += ' • last used'; }
+            }
+            if (opts.project) {
+                items.push(
+                    { label: 'Filed under', kind: vscode.QuickPickItemKind.Separator },
+                    activeProjectRow());
+            }
+            const pick = await vscode.window.showQuickPick(items, {
+                placeHolder: `${what} — where should it run?`, ignoreFocusOut: true
+            });
+            if (!pick) { return undefined; }
+            if (pick.act === 'project') {
+                await chooseActiveProject();
+                continue;   // back to this picker, now showing what it will file under
+            }
+            if (!pick.surface) { continue; }
+            await context.globalState.update(SURFACE_KEY, pick.surface);
+            return pick.surface;
+        }
     };
 
     /**
@@ -6272,11 +6422,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * title store — so a launch that asked for a name applies it the moment the
      * CLI reports the session's id, rather than dropping it silently.
      */
-    const startConsoleSession = (agent: AgentInfo, o: LaunchOptions = {}): void => {
+    const startConsoleSession = (
+        agent: AgentInfo, o: LaunchOptions = {}, project?: string
+    ): void => {
         const merged = withDefaults(o, launchDefaults());
         const id = consoleHost.start({
             agentId: agent.id, agentName: agent.name, cwd: agent.dir,
             model: merged.model, effort: merged.effort, permissionMode: merged.permissionMode,
+            // undefined = inherit the window's active project (ConsoleHost does
+            // the read); '' = explicitly none. See launchClaudeTerminal.
+            ...(project !== undefined ? { projectId: project } : {}),
             firstPrompt: o.prompt?.trim() || undefined
         });
         const wanted = o.name?.trim();
@@ -6825,13 +6980,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * thread on a process spawn.
      */
     const commitCache = new Map<string, FeedCommit[]>();
-    let commitWarmAt = 0;
+    /** ‼️ Per REPO, not one clock for the whole window — which is what the design
+     *  and the changelog both say it is. A single timer meant that opening
+     *  project A and then switching to B within the interval never spawned B's
+     *  `git log` at all: B's timeline showed no commits, and said nothing about
+     *  why, until the clock happened to run out. */
+    const COMMIT_CACHE_MS = 60_000;
+    const commitWarmAt = new Map<string, number>();
     const warmProjectCommits = (repos: string[]): void => {
         const now = Date.now();
-        if (now - commitWarmAt < 30_000) { return; }
-        commitWarmAt = now;
         for (const repo of repos) {
             if (!repo?.trim() || !dirExists(repo)) { continue; }
+            if (now - (commitWarmAt.get(repo) ?? 0) < COMMIT_CACHE_MS) { continue; }
+            commitWarmAt.set(repo, now);
             recentCommits(repo, { max: 120, sinceDays: 180 }, rows => {
                 const mapped = rows.map(r => ({
                     repo, hash: r.hash, ts: r.ts, author: r.author, subject: r.subject
@@ -7718,8 +7879,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // Resume carries the launch defaults too: picking up yesterday's
                 // conversation should not silently drop today's model choice.
                 const merged = withDefaults({ resume: s.sessionId }, launchDefaults());
+                // ‼️ …and it carries the project context too — the flag does not
+                // survive `--resume` (measured), so a resumed session that is
+                // not re-told knows nothing about its project. It is the
+                // SESSION's project, never the window's: see sessionOwnProject.
+                const own = sessionOwnProject(s);
                 launchClaudeTerminal(`claude: ${s.agentName ?? s.sessionId.slice(0, 8)}`, cwd,
-                    buildLaunchCommand('claude', merged), undefined, s.sessionId);
+                    buildLaunchCommand('claude', {
+                        ...merged, projectContextFile: projectContextFileFor(own || undefined)
+                    }),
+                    // '' = do not stamp. A resume does not decide where a session
+                    // belongs; it already belongs somewhere, or deliberately nowhere.
+                    undefined, s.sessionId, '');
             }),
 
         // ---------- A2: the shelf (pin + tags) ----------
@@ -7910,30 +8081,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 projectsChanged();
                 return;
             }
-            const current = activeProjectId();
-            const projects = projectStore.all().filter(p => !CLOSED_PROJECT_STATUSES.includes(p.status));
-            interface Row extends vscode.QuickPickItem { id?: string; act?: string }
-            const pick = await vscode.window.showQuickPick<Row>([
-                ...projects.map(p => ({
-                    label: `${p.id === current ? '$(check) ' : '$(blank) '}${p.icon ? p.icon + ' ' : ''}${p.name}`,
-                    description: p.summary ?? p.status,
-                    id: p.id
-                })),
-                ...(current ? [{ label: '$(circle-slash) No project', description: 'stop filing new sessions', act: 'none' }] : []),
-                { label: '$(add) New project…', description: 'opens the form on the Projects page', act: 'new' }
-            ], {
-                placeHolder: 'Active project — sessions you start in this window are filed under it',
-                ignoreFocusOut: true
-            });
-            if (!pick) { return; }
-            if (pick.act === 'new') {
-                // creation lives on the page now — it makes the project, and
-                // "Make active" is right there on it
-                void vscode.commands.executeCommand('agentfarm.newProject');
-                return;
-            }
-            await context.workspaceState.update('af.activeProject', pick.act === 'none' ? '' : (pick.id ?? ''));
-            projectsChanged();
+            await chooseActiveProject();
         }),
 
         vscode.commands.registerCommand('agentfarm.rescanProjects', async () => {
@@ -8245,6 +8393,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const id = already?.id ?? consoleHost.start({
                     agentId: agent?.id ?? '', agentName: s.agentName ?? 'session',
                     cwd: s.cwd, resume: s.sessionId, ...launchDefaults(),
+                    // ‼️ …and the project it is TOLD about is its OWN, never the
+                    // window's active one — see sessionOwnProject. The context
+                    // does not survive `--resume` (measured), so this is the
+                    // spawn that has to re-tell it.
+                    projectId: sessionOwnProject(s),
                     // resume means CONTINUE: the earlier conversation comes with
                     // it, and so does what it has already spent
                     history: consoleHistory(s.sessionId),
@@ -8681,7 +8834,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             async (arg: AgentArg & { surface?: RunSurface }) => {
                 const agent = await resolveAgent(arg);
                 if (!agent) { return; }
-                const where = arg?.surface ?? await pickRunSurface(`New session for ${agent.name}`);
+                // `project: true` — a new session gets the project box wherever
+                // it is started from, not only in the Console's composer.
+                const where = arg?.surface
+                    ?? await pickRunSurface(`New session for ${agent.name}`, { project: true });
                 if (!where) { return; }
                 if (where === 'console') { startConsoleSession(agent); return; }
                 startClaudeSession(agent);

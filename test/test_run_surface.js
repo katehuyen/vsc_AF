@@ -38,13 +38,12 @@ const base = read('src/panels/base.ts');
 
 // ---------- every start command asks (or is told) ----------
 {
-    const asks = cmd => {
+    const body = cmd => {
         // the handler runs from the command registration to the next one
         const i = ext.indexOf(`registerCommand('agentfarm.${cmd}'`);
-        if (i < 0) { return false; }
-        const body = ext.slice(i, i + 2200);
-        return /arg\?\.surface \?\? await pickRunSurface\(/.test(body);
+        return i < 0 ? '' : ext.slice(i, i + 2200);
     };
+    const asks = cmd => /arg\?\.surface\s*\n?\s*\?\? await pickRunSurface\(/.test(body(cmd));
     ['startSession', 'continueSession'].forEach(c =>
         ok(`agentfarm.${c} asks where it should run`, asks(c)));
     // the launcher asks inside itself instead: WHERE is one of its rows
@@ -56,9 +55,44 @@ const base = read('src/panels/base.ts');
         /runLauncher\(agent, \{ \.\.\.\(lastLaunch\(\)\[agent\.id\] \?\? \{\}\) \}, arg\?\.surface\)/.test(ext));
 }
 
+// ---------- ‼️ …AND UNDER WHICH PROJECT — the same offer on every path ----------
+// The Console's composer grew a project box in 3.54.0 and no other start path
+// did. So ▶ on an agent in the sidebar filed the session under whatever the
+// status bar happened to say, without ever showing it: the same "new session",
+// two different offers, decided by which button you pressed. WHERE it runs and
+// WHAT it belongs to are dimensions of the same launch and travel together.
+{
+    ok('the surface picker can carry the project too',
+        /const pickRunSurface = async \(\s*\n?\s*what: string, opts: \{ project\?: boolean \} = \{\}/.test(ext));
+    ok('…drawn by one shared row, so it says what the Console\'s chip says',
+        /const activeProjectRow = \(\)/.test(ext)
+        && /'◧ No project'/.test(ext)
+        && /the session is told about it before you type, and is filed under it/.test(ext));
+    ok('…opening the one shared list rather than a second one built next to it',
+        /const chooseActiveProject = async \(/.test(ext)
+        && /if \(pick\.act === 'project'\) \{\s*\n\s*await chooseActiveProject\(\);\s*\n\s*continue;/.test(ext));
+    ok('…and the command that used to own that list now calls it',
+        /registerCommand\('agentfarm\.setActiveProject', async \(arg\?: \{ id\?: string \}\) => \{[\s\S]{0,400}await chooseActiveProject\(\);/.test(ext));
+
+    const startBody = ext.slice(ext.indexOf("registerCommand('agentfarm.startSession'"),
+        ext.indexOf("registerCommand('agentfarm.startSession'") + 1200);
+    ok('‼️ one-click Start asks for the project as well as the place',
+        /pickRunSurface\(`New session for \$\{agent\.name\}`, \{ project: true \}\)/.test(startBody));
+    ok('the launcher shows it as one of its rows', /activeProjectRow\(\),/.test(ext));
+    ok('…and its Where sub-picker does NOT repeat the question',
+        /const v = await pickRunSurface\(`Session for \$\{agent\.name\}`\);/.test(ext));
+
+    // A RESUME must not be asked: its project was decided when it started and
+    // stampSession refuses to overwrite that, so the answer would be discarded.
+    const contBody = ext.slice(ext.indexOf("registerCommand('agentfarm.continueSession'"),
+        ext.indexOf("registerCommand('agentfarm.continueSession'") + 1200);
+    ok('…and a resume is not asked a question whose answer is thrown away',
+        !/project: true/.test(contBody));
+}
+
 // ---------- the Console path is honest, not approximate ----------
 {
-    ok('a hosted start exists', /const startConsoleSession = \(agent: AgentInfo/.test(ext));
+    ok('a hosted start exists', /const startConsoleSession = \(\s*\n?\s*agent: AgentInfo/.test(ext));
     ok('…and passes the launch options the CLI accepts there',
         /model: merged\.model, effort: merged\.effort, permissionMode: merged\.permissionMode/.test(ext)
         && /firstPrompt: o\.prompt\?\.trim\(\)/.test(ext));
@@ -122,7 +156,7 @@ const base = read('src/panels/base.ts');
     ok('sessions.start documents the surface argument', /surface\? \(terminal/.test(op));
     ok('…validates it instead of guessing', /surface must be "terminal" or "console"/.test(op));
     ok('…defaults to the terminal, as it always did', /optStr\(args, 'surface'\) \|\| 'terminal'/.test(op));
-    ok('…and really starts a hosted session for console', /startConsoleSession\(agent, o\)/.test(op));
+    ok('…and really starts a hosted session for console', /startConsoleSession\(agent, o[,)]/.test(op));
     ok('…reporting back where it went', /surface \};/.test(op));
 }
 

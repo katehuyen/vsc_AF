@@ -213,6 +213,13 @@ export interface ConsoleSessionState {
      *  arrives, and by then the status bar may already say something else — the
      *  project a session belongs to is the one it began in. */
     projectId?: string;
+    /** ‼️ This window picked an EXISTING session up rather than starting one.
+     *  The project stamp is only written for sessions that started here: a
+     *  resume already belongs somewhere (or deliberately nowhere), and writing
+     *  an explicit assignment for it would silently freeze a membership the
+     *  rules were deriving — and, if the window's project had been used, move
+     *  the session into a project it never ran in. */
+    resumed?: boolean;
     model?: string;
     effort?: string;
     permissionMode: string;
@@ -923,6 +930,8 @@ export function newSessionState(o: {
     sessionId?: string;
     /** the window's active project at the moment this session was started */
     projectId?: string;
+    /** an existing session picked up, not a new one — see ConsoleSessionState.resumed */
+    resumed?: boolean;
     /** what a RESUMED conversation already spent — see CarriedTotals */
     carried?: CarriedTotals;
 }): ConsoleSessionState {
@@ -931,6 +940,8 @@ export function newSessionState(o: {
         id: o.id, agentId: o.agentId, agentName: o.agentName, cwd: o.cwd,
         sessionId: o.sessionId,
         projectId: o.projectId,
+        // a resume is the one case that arrives with an id already — see `resumed`
+        ...(o.resumed ? { resumed: true } : {}),
         model: o.model, effort: o.effort,
         permissionMode: o.permissionMode?.trim() || 'default',
         status: 'starting', messages: [], queued: [],

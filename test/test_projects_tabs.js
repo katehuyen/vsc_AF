@@ -308,6 +308,15 @@ const feedData = () => ({
     const r = run({ ...baseData(), tab: 'timeline', tabData: {} });
     ok('a tab waiting for its payload says so instead of drawing an empty page',
         /Reading the project…/.test(r.html()));
+
+    // ‼️ …and the Sessions tab is the one where drawing it anyway produces an
+    // ANSWER rather than a blank: the shared table's own empty state reads "No
+    // sessions yet.", which under a project with two hundred of them is not a
+    // missing payload, it is a lie the reader has no reason to doubt.
+    const s = run({ ...baseData(), tab: 'sessions', tabData: {} });
+    ok('‼️ the sessions tab waits too — an empty shared table would claim "No sessions yet."',
+        /Reading the project…/.test(s.html())
+        && !s.html().includes('id="pj-sessions"'));
 }
 
 console.log(`${pass} passed, ${fail} failed`);

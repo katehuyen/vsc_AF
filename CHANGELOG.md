@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.56.0 — The same "new session", wherever you press it (2026-08-03)
+
+**A project box appeared in one place and nowhere else.** The Console's composer had one; the ▶ on an agent row in the sidebar did not. So starting a session from the sidebar filed it under whatever the status bar happened to say and never mentioned it — the same action, two different offers, decided by which button you pressed. **Where** a session runs and **what** it belongs to are dimensions of the same launch: they travel together now. The one-click Start shows both, the full launcher carries **Project** as a row next to Model and Effort, and both open the same list the status bar opens — not a second list built next to a start button, which would have drifted from it within a release. A **resume** is not asked: its project was decided when it started, so the answer would be thrown away.
+
+**A resume was being told the wrong project — and quietly moved into it.** Resuming a session inherited the *window's* active project. A session belonging to *A*, resumed while the bar said *B*, was handed *B*'s brief: the agent read a state summary for a project it was not working on, with nothing in the transcript to suggest it should doubt it. And a session that belonged to *A* only through a rule had an **explicit** *B* assignment written for it — explicit beats every rule, so the move was permanent and silent. The project now comes from the membership order, the same answer every other surface gives, and a resume writes nothing. **The terminal resume was not passing the project context at all**, which the release that introduced it says it does — the flag does not survive `--resume` (measured), so that path had been silently context-free since 3.54.0.
+
+**Fixed in the project page, from re-reading what 3.55.0 shipped:**
+- **Jumping to another project printed its predecessor's money under the new name for one frame.** The host builds one tab at a time; a focus jump moves the reader before the page has asked for anything, so the open tab arrived built for the project just left. A wrong number reads as an answer — the tab now waits.
+- **The Sessions tab was the worst case of that**, because the shared table's empty state says "No sessions yet." — under a project with two hundred of them. It says "Reading…" until its own rows arrive.
+- **`git log` was cached on one clock for the whole window, not per repository** as the design and the last changelog both say. Opening project A and switching to B inside the interval never spawned B's `git log` at all: B's timeline showed no commits and said nothing about why.
+- **`projects.timeline` printed UTC timestamps** into an axis whose every other date is local — the same class of bug 3.54.1 fixed in the brief.
+
+**Bridge:** `console.start` and `sessions.start` take `project` (id or name; omitted = inherit the window's, `""` = none). Per **session**, never a write to the window's active project: a background agent must not move the project the person in front of the window is working in.
+
 ## 3.55.0 — You can see the project (2026-08-02)
 
 **A project had a page you could only edit.** It knew its name, its folder, its people and its budgets — and it could not tell you a single thing that had happened on it. To find out you left: the Dashboard for the sessions, the Tasks page for the runs, a terminal for the commits, and you reassembled the week in your head. The project was the one thing that knew all four belonged together, and it was the one surface that would not say so.

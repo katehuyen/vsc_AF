@@ -58,6 +58,13 @@ const treeTs = read('src', 'views', 'projectsTree.ts');
         /const seed = this\.seed;\s*\n\s*this\.seed = undefined;/.test(panelTs));
     ok('‼️ a FRESH panel reads the seed off the initial payload, not off a message it missed',
         /if \(DATA\.newForm\) \{ creating = newForm\(DATA\.newForm\); \}\s*\n\s*render\(\);/.test(pageJs));
+    // ‼️ A jump to another project (a tree row, "open project", a fresh create)
+    // moves the reader before the page has asked for anything. Sending the open
+    // tab built for the project they LEFT prints one frame of another project's
+    // money under this project's name — and a wrong number reads as an answer.
+    ok('‼️ a focus jump does not ship the tab data of the project just left',
+        /const stale = !!this\.focusId && this\.focusId !== this\.tabProject;/.test(panelTs)
+        && /const tabData = seed \|\| stale\s*\n?\s*\? \{\}/.test(panelTs));
 }
 
 // ---------- "Sessions" goes somewhere real ----------
@@ -80,10 +87,25 @@ const treeTs = read('src', 'views', 'projectsTree.ts');
     ok('there is one stamp function and it is the only writer',
         /const stampSessionProject = \(sessionId: string, projectId: string\): void =>/.test(extTs));
     ok('…the Console stamps on the first change that carries an id',
-        /consoleHost\.onChange\(id => \{[\s\S]{0,320}stampSessionProject\(s\.sessionId, s\.projectId\)/.test(extTs));
+        /consoleHost\.onChange\(id => \{[\s\S]{0,420}stampSessionProject\(s\.sessionId, s\.projectId\)/.test(extTs));
+    // ‼️ A RESUME is not a start. Filing it under the window's active project
+    // both told the agent the wrong project's brief and moved a session into a
+    // project it had never run in — an explicit assignment beats every rule, so
+    // the move would have been permanent and silent.
+    ok('‼️ …but a RESUME is not filed, and is told about its OWN project',
+        /const sessionOwnProject = \(/.test(extTs)
+        && /if \(s\?\.sessionId && s\.projectId && !s\.resumed\)/.test(extTs)
+        && /projectId: sessionOwnProject\(s\)/.test(extTs));
+    ok('…and a terminal resume is re-told too — the flag does not survive --resume',
+        /const own = sessionOwnProject\(s\);[\s\S]{0,400}projectContextFile: projectContextFileFor\(own \|\| undefined\)/.test(extTs));
     ok('…a terminal launch takes the project at LAUNCH time, not when the id turns up',
-        /const projectId = activeProjectId\(\) \|\| undefined;/.test(extTs)
+        /const projectId = \(project !== undefined \? project : activeProjectId\(\)\) \|\| undefined;/.test(extTs)
         && /termBindings\.push\(\{ title, cwd, term: terminal, launchedAt: Date\.now\(\), sessionId, projectId \}\)/.test(extTs));
+    // ‼️ ONE read, used for both halves. Reading activeProjectId() again for the
+    // stamp could land the other side of a change and file a session under a
+    // project it was never told about.
+    ok('…and what a terminal session is TOLD and what it is FILED under come from one read',
+        /const projectId = project !== undefined \? project : activeProjectId\(\);[\s\S]{0,600}projectContextFileFor\(projectId \|\| undefined\)[\s\S]{0,400}sessionId, projectId\);/.test(extTs));
     ok('…and stamps it the moment the live monitor binds an id to that launch',
         /if \(hit\.projectId\) \{ stampSessionProject\(s\.sessionId, hit\.projectId\); \}/.test(extTs));
 

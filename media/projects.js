@@ -721,6 +721,11 @@
      *  right-click contract all come along, and none of it is reimplemented
      *  here. It owns the container div; this page only supplies the rows. */
     function sessionsHtml() {
+        // ‼️ Wait for THIS project's rows. The host builds one tab at a time, so
+        // the first paint after a tab switch (or a jump to another project) has
+        // no rows yet — and an empty table says "No sessions yet.", which is an
+        // answer, and the wrong one. "Reading…" is the truth for that frame.
+        if (!Array.isArray(td().rows)) { return '<p class="muted">Reading the project…</p>'; }
         // The tab answers "which sessions"; the button goes on answering the
         // other question — "…and how do they sit against the whole fleet",
         // which is the Dashboard, scoped. Two destinations, not two copies.

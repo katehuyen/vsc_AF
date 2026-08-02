@@ -189,8 +189,10 @@ export function localDay(ms: number): string {
 }
 
 /** YYYY-MM-DD HH:MM, local — the same shape the context header uses, so the two
- *  stamps inside one brief cannot disagree by a timezone. */
-function localStamp(ms: number): string {
+ *  stamps inside one brief cannot disagree by a timezone. Exported because the
+ *  bridge prints project timestamps too, and a UTC one there would tell an agent
+ *  a different hour (and east of UTC, a different day) than the page shows. */
+export function localStamp(ms: number): string {
     const d = new Date(ms);
     return `${localDay(ms)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }

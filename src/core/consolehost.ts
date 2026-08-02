@@ -241,6 +241,7 @@ export class ConsoleHost {
             // a resumed session already HAS an id — see newSessionState
             sessionId: init.resume,
             projectId,
+            resumed: !!init.resume,
             // …and a past: what it spent before this window picked it up
             carried: init.resume ? init.carried : undefined
         });
