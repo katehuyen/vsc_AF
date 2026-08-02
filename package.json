@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.51.1",
+  "version": "3.52.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -37,6 +37,11 @@
     },
     "views": {
       "agentFarm": [
+        {
+          "id": "agentfarm.projects",
+          "name": "Projects",
+          "icon": "media/agentfarm.svg"
+        },
         {
           "id": "agentfarm.agents",
           "name": "Agents",
@@ -438,6 +443,49 @@
         "title": "Assign Agent to Projectâ€¦",
         "category": "Agent Farm",
         "icon": "$(project)"
+      },
+      {
+        "command": "agentfarm.assignSessionProject",
+        "title": "Project: file this session\u2026 (attach \u00b7 move \u00b7 take off \u00b7 leave to the rules)",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.projectFromSession",
+        "title": "Project: new project from this session\u2026",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.addSessionFolderToProject",
+        "title": "Project: add this session\u0027s folder as a code root\u2026",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.openProjects",
+        "title": "Open Projects",
+        "category": "Agent Farm",
+        "icon": "$(project)"
+      },
+      {
+        "command": "agentfarm.openProject",
+        "title": "Open Project",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.newProject",
+        "title": "New Project\u2026 (name it, and say where its documents live)",
+        "category": "Agent Farm",
+        "icon": "$(add)"
+      },
+      {
+        "command": "agentfarm.setActiveProject",
+        "title": "Set Active Project (the stamp new work carries)",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.rescanProjects",
+        "title": "Rescan Project Folders (pick up renames made in Obsidian)",
+        "category": "Agent Farm",
+        "icon": "$(refresh)"
       },
       {
         "command": "agentfarm.openPortfolio",
@@ -1340,6 +1388,21 @@
     "menus": {
       "view/title": [
         {
+          "command": "agentfarm.newProject",
+          "when": "view == agentfarm.projects",
+          "group": "navigation@1"
+        },
+        {
+          "command": "agentfarm.openProjects",
+          "when": "view == agentfarm.projects",
+          "group": "navigation@2"
+        },
+        {
+          "command": "agentfarm.rescanProjects",
+          "when": "view == agentfarm.projects",
+          "group": "navigation@3"
+        },
+        {
           "command": "agentfarm.openDashboard",
           "when": "view == agentfarm.agents",
           "group": "navigation@1"
@@ -1536,6 +1599,16 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "agentfarm.openProject",
+          "when": "view == agentfarm.projects && viewItem == afProject",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.setActiveProject",
+          "when": "view == agentfarm.projects && viewItem == afProject",
+          "group": "1_open@2"
+        },
         {
           "command": "agentfarm.fixInsight",
           "when": "view == agentfarm.insights && viewItem == insight-fixable",
@@ -2113,6 +2186,21 @@
         }
       ],
       "webview/context": [
+        {
+          "command": "agentfarm.assignSessionProject",
+          "when": "webviewSection == 'afSessionRow'",
+          "group": "4_project@1"
+        },
+        {
+          "command": "agentfarm.projectFromSession",
+          "when": "webviewSection == 'afSessionRow'",
+          "group": "4_project@2"
+        },
+        {
+          "command": "agentfarm.addSessionFolderToProject",
+          "when": "webviewSection == 'afSessionRow'",
+          "group": "4_project@3"
+        },
         {
           "command": "agentfarm.resumeInConsole",
           "when": "webviewSection == 'afConsoleResumable'",
@@ -3218,6 +3306,49 @@
           "items": {
             "type": "object"
           }
+        },
+        "agentFarm.projectsRoot": {
+          "type": "string",
+          "default": "",
+          "description": "Folder that holds your project folders. A new project is offered a folder inside it, and Rescan Project Folders walks it. Leave empty to choose a folder by hand for every project."
+        },
+        "agentFarm.projectSkeleton": {
+          "type": "array",
+          "default": [],
+          "description": "What a new project folder is built out of. Empty = the shipped default (Charter / Plan / People / Worklog, plus 10_Notes, 20_Decisions, 30_Deliverables, 40_Resources, 90_Archive, _AF). Set your own to follow a vault naming convention: a path ending in / is a folder; {project} {id} {status} {date} {yymmdd} expand; and \"role\" is what Agent Farm looks a document up by \u2014 never its file name, so you can rename anything afterwards.",
+          "items": {
+            "type": "object",
+            "required": [
+              "path"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "path inside the project folder; a trailing / means a folder"
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "charter",
+                  "plan",
+                  "people",
+                  "log",
+                  "deliverables",
+                  "brief"
+                ],
+                "description": "what this document IS \u2014 how Agent Farm finds it, whatever it is called"
+              },
+              "template": {
+                "type": "string",
+                "description": "initial content; the placeholders above expand"
+              }
+            }
+          }
+        },
+        "agentFarm.projectStaleDays": {
+          "type": "number",
+          "default": 21,
+          "description": "Days of silence after which a project still marked active is flagged as quiet. 0 turns the check off. A project list without this becomes a graveyard nobody dares tidy."
         },
         "agentFarm.noticeStaleHours": {
           "type": "number",

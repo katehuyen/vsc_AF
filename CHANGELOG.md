@@ -2,6 +2,28 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.52.0 — A project is a thing now, with a folder, a sidebar and a page (2026-08-02)
+
+**"Project" used to be a name in a settings file.** It grouped agents so cost could be summed per customer, and that was all it could ever do: no page, no folder, no plan, nothing to open. This release turns it into the entity everything else hangs under — while it still owns almost no data of its own, because sessions, tasks, missions, notices and commits keep living exactly where they already lived. The project is the **join** over them.
+
+**Its own sidebar section, above Agents.** The umbrella comes first. The tree opens with the **active project** — always visible, even when there is none, because a stamp being applied invisibly is precisely the kind of automation nobody should have to take on trust — and closes with **Unassigned**, which deliberately shows a number that starts out embarrassing. A rule that fails quietly is not a rule.
+
+**Its own page (`◧ Projects`, second in the global nav).** Everything about a project is edited there: name, status, kind, icon and colour, documents folder, code roots, people with their roles, both budgets, dates, tags, and which agents fall to it by default. Nothing has to be typed into `settings.json` any more.
+
+**A folder is part of what a project IS.** Creating one asks where its documents live and builds a starter structure there (charter · plan · people · worklog, plus notes, decisions, deliverables, resources, archive). Nothing that already exists is ever overwritten, so "Recreate" is safe on a folder that was moved and half-restored. If the folder later disappears the project does **not** vanish with it: it stays in the list with a warning and three answers — relink, recreate, ignore — and everything that is not documents (sessions, cost, timeline) keeps working. `agentFarm.projectSkeleton` replaces the shipped layout wholesale, for vaults with their own naming convention.
+
+**Agent Farm never depends on a document's file name.** Charter, plan, worklog and the rest are found by an `af-role` line in their frontmatter. Rename them, move them into a subfolder, write them in any language — nothing breaks. The same key is what lets a folder **renamed in Obsidian** be recognised as the same project on the next rescan, and a duplicated folder be reported instead of quietly claiming to be the original.
+
+**The rule that made the old model wrong is gone: an agent may work on as many projects as it actually does.** Cost now hangs off the SESSION — the atom that already has a working directory, a time and a dollar figure — and membership resolves in a fixed order: an explicit assignment, then an explicit *no project*, then the longest matching folder root, then the agent rule. Every session still lands in exactly one bucket, so the figures still add up to the fleet total.
+
+Two of those steps are new and neither is decoration. **Longest root wins** fixes a silent misattribution: with `…/miropharm` and `…/miropharm/muvu_talkScribe/ZEN` both declared, first-match handed every ZEN session to the wrong project, and both answers looked plausible. **Explicit "no project"** is a real state: without it, taking a session off a project let the folder and agent rules put it straight back, and the user would never learn why.
+
+**Filing a session is on every session row, everywhere.** One entry on the shared right-click contract reaches all six surfaces that list sessions — Console, Missions, Search, the sessions tables, Live Timeline and Turns — with four outcomes that are genuinely different: file it, move it, take it off (and keep it off), or forget the decision so the rules speak again. Two more sit next to them: **new project from this session** (the fastest backfill there is — the session already knows the folder the work happened in) and **add this session's folder as a code root**, which turns a one-off assignment into a standing rule.
+
+**Migration is automatic and happens once.** The old `agentFarm.projects` setting is imported on first run: agent lists become *rules*, folders become code roots, notes become the one-line summary. No folder is invented — each project asks for one. The marker is set when the setting is seen to hold something, not merely when it is read, because Settings Sync can land after activation and an empty read is not proof of an empty setting.
+
+**Bridge:** `projects.list` · `get` · `create` · `set` · `rename` · `assign` · `current` · `health` · `rescan`. New settings: `agentFarm.projectsRoot`, `agentFarm.projectSkeleton`, `agentFarm.projectStaleDays`.
+
 ## 3.51.1 — AGENT_AREA moved up a level, so the report and answer defaults follow it (2026-08-02)
 
 **The vault's `00_AGENT_AREA` terminal is no longer under `01_INBOX`; it now sits at the vault root.** Both built-in output folders were hardcoded to the old location, and neither `agentFarm.reportDir` nor `agentFarm.answerDir` is set on this machine — so every `notices.post report` and every `queue.stamp` answer would have been written into a path that no longer exists, silently recreating the old tree beside the real one instead of failing. The two fallbacks (and the two setting descriptions that quote them) now point at `00_AGENT_AREA/00_OUTPUT/10_REPORT` and `…/01_CEVAPLAR`. Folder move only — no behaviour, naming or contract change; an explicitly configured `reportDir`/`answerDir` still wins as before.

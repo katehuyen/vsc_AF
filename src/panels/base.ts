@@ -134,6 +134,7 @@ export function runSurface(v: unknown): 'terminal' | 'console' | undefined {
 export function handleAfNav(to: unknown): void {
     const commands: Record<string, string> = {
         dashboard: 'agentfarm.openDashboard',
+        projects: 'agentfarm.openProjects',
         living: 'agentfarm.openLiving',
         timeline: 'agentfarm.openTimeline',
         needs: 'agentfarm.openNeeds',

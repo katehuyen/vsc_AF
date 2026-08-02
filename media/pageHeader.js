@@ -49,6 +49,7 @@
     // sequence — they do not pile up on the left.
     const NAV = [
         { id: 'dashboard', label: 'Dashboard' },
+        { id: 'projects', label: '◧ Projects' },
         { id: 'console', label: '💬 Console' },
         { id: 'living', label: '💓 Living' },
         { id: 'notices', label: '🔔 Notices' },

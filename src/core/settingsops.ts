@@ -34,6 +34,8 @@ const CATEGORY_OF: Record<string, string> = {
     agentRoots: 'core', excludeAgentDirs: 'core', claudeDir: 'core', extraClaudeDirs: 'core',
     includeUnmatchedProjects: 'core', guideLanguage: 'core', newAgentModel: 'core',
     modelAliases: 'core', launchDefaults: 'core', launchProfiles: 'core', projects: 'core',
+    // projects — the umbrella everything else hangs under
+    projectsRoot: 'core', projectSkeleton: 'core', projectStaleDays: 'core',
     // display & labels
     speakerLabelTemplate: 'display', speakerLabelCase: 'display', speakerLabelFallback: 'display',
     consoleDropZone: 'display',

@@ -416,5 +416,77 @@ const P = (id, extra) => Object.assign(
         resolveSessionProject({ sessionId: 's', agentName: 'developer' }, migrated).projectId === migrated[0].id);
 }
 
+// ---------- the project surfaces are actually wired ----------
+// A feature nobody can reach is not a feature. These assert the three places a
+// project has to exist: its own sidebar view, its own page, and — the one that
+// matters most — the SHARED session right-click contract, where one entry
+// reaches every surface that lists a session.
+{
+    const fs = require('fs');
+    const read = (...p) => fs.readFileSync(path.join(__dirname, '..', ...p), 'utf8');
+    const pkg = JSON.parse(read('package.json'));
+    const cmds = new Set(pkg.contributes.commands.map(c => c.command));
+    const menus = pkg.contributes.menus;
+
+    // the sidebar section
+    const views = pkg.contributes.views.agentFarm.map(v => v.id);
+    ok('‼️ Projects has its own sidebar view', views.includes('agentfarm.projects'));
+    ok('‼️ …and it sits ABOVE Agents — the umbrella comes first', views[0] === 'agentfarm.projects');
+
+    // the page and the commands behind it
+    for (const c of ['agentfarm.openProjects', 'agentfarm.openProject', 'agentfarm.newProject',
+        'agentfarm.setActiveProject', 'agentfarm.rescanProjects']) {
+        ok(`${c} is a command`, cmds.has(c));
+    }
+    ok('the page is in the global nav', /id: 'projects'/.test(read('media', 'pageHeader.js')));
+    ok('…and the nav routes to it', /projects: 'agentfarm\.openProjects'/.test(read('src', 'panels', 'base.ts')));
+    ok('the page script exists', !!read('media', 'projects.js'));
+
+    // ‼️ the shared session contract — one entry, every surface
+    const sessionMenu = (menus['webview/context'] || [])
+        .filter(m => /afSessionRow/.test(m.when || '')).map(m => m.command);
+    for (const c of ['agentfarm.assignSessionProject', 'agentfarm.projectFromSession',
+        'agentfarm.addSessionFolderToProject']) {
+        ok(`${c} is on every session row`, sessionMenu.includes(c) && cmds.has(c));
+    }
+    // the pages that inherit those items by using the contract
+    const users = ['console.js', 'missions.js', 'search.js', 'sessionsTable.js', 'timeline.js', 'turns.js']
+        .filter(f => /AFSessionCtx/.test(read('media', f)));
+    ok('the contract is used by every session-listing page', users.length === 6);
+
+    // the view's own buttons and row menu
+    const titleBtns = (menus['view/title'] || [])
+        .filter(m => m.when === 'view == agentfarm.projects').map(m => m.command);
+    ok('the view has a New Project button', titleBtns.includes('agentfarm.newProject'));
+    ok('…and a rescan button', titleBtns.includes('agentfarm.rescanProjects'));
+    const rowMenu = (menus['view/item/context'] || [])
+        .filter(m => /viewItem == afProject\b/.test(m.when || '')).map(m => m.command);
+    ok('a project row opens', rowMenu.includes('agentfarm.openProject'));
+    ok('…and can be made active', rowMenu.includes('agentfarm.setActiveProject'));
+
+    // settings
+    const props = pkg.contributes.configuration.properties;
+    for (const s of ['agentFarm.projectsRoot', 'agentFarm.projectSkeleton', 'agentFarm.projectStaleDays']) {
+        ok(`${s} is declared`, !!props[s]);
+    }
+    ok('the skeleton setting explains that role, not the file name, is what matters',
+        /never its file name/i.test(props['agentFarm.projectSkeleton'].description));
+
+    // the bridge — every user-triggerable function reaches an agent too
+    const ext = read('src', 'extension.ts');
+    for (const op of ['projects.list', 'projects.get', 'projects.create', 'projects.set',
+        'projects.rename', 'projects.assign', 'projects.current', 'projects.health',
+        'projects.rescan']) {
+        ok(`${op} is on the bridge`, ext.includes(`op: '${op}'`));
+    }
+    ok('the store is created and loaded on activate',
+        /new ProjectStore\(/.test(ext) && /projectStore\.load\(\)/.test(ext));
+    ok('the legacy setting is imported once, on activate', /migrateLegacy\(cfg\(\)\.get\('projects'/.test(ext));
+    ok('the active project is window-scoped, not shared between windows',
+        /workspaceState\.get<string>\('af\.activeProject'/.test(ext));
+    ok('the status bar always shows the active project, even when there is none',
+        /No project/.test(ext));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

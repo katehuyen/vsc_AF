@@ -1109,10 +1109,13 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     const nav = fs.readFileSync(path.join(__dirname, '..', 'media', 'pageHeader.js'), 'utf8');
     const order = (nav.match(/\{ id: '([a-z]+)'/g) || []).map(s => s.replace(/.*'([a-z]+)'.*/, '$1'));
     ok('Dashboard leads', order[0] === 'dashboard');
-    ok('Console follows it', order[1] === 'console');
-    ok('the vital signs come next', order.slice(2, 5).join(',') === 'living,notices,queue');
-    ok('then what is happening right now', order[5] === 'timeline');
-    ok('then who does the work, then the work', order.slice(6, 8).join(',') === 'portfolio,tasks');
+    // Projects sits second on purpose: it is the umbrella the rest of the work
+    // hangs under, so it comes before the places that work happens.
+    ok('Projects is the umbrella, so it comes next', order[1] === 'projects');
+    ok('Console follows it', order[2] === 'console');
+    ok('the vital signs come next', order.slice(3, 6).join(',') === 'living,notices,queue');
+    ok('then what is happening right now', order[6] === 'timeline');
+    ok('then who does the work, then the work', order.slice(7, 9).join(',') === 'portfolio,tasks');
     const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
     const title = pkg.contributes.menus['view/title']
         .filter(m => m.when === 'view == agentfarm.agents')

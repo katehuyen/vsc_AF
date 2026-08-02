@@ -110,8 +110,19 @@ import { describeOwner, mergeSessionNames, ownerOf, pidAlive, readCliSessions, s
 import { revealPath } from './core/reveal';
 import {
     agentProjectMap, assignAgent, normalizeProjects, ProjectDef, projectOfAgent,
-    projectOfSession, rollupProjects, UNASSIGNED
+    projectOfSession, rollupProjects, UNASSIGNED,
+    // the project entity (core/projects.ts) — the registry these surfaces now read
+    CLOSED_STATUSES as CLOSED_PROJECT_STATUSES, folderNameFor, folderState,
+    PROJECT_KINDS, PROJECT_STATUSES, Project, ProjectStatus,
+    resolveSessionProject, rollupProjectSessions, UNASSIGNED_ID
 } from './core/projects';
+import { ProjectStore } from './core/projectStore';
+import { ProjectsPanel, ProjectsPanelDeps } from './panels/projectsPanel';
+import { ProjectsTreeProvider } from './views/projectsTree';
+import {
+    createSkeleton, dirExists, DEFAULT_SKELETON, normalizeSkeleton, renameProjectFolder,
+    scanProjectsRoot, scanRoles
+} from './core/projectDocs';
 import { collectEdits, fileStats, groupByFile } from './core/codeedits';
 import { contentAtHead, gitRoot, repoRelative } from './core/gitfile';
 import { buildSnapshot } from './core/websnapshot';
@@ -994,6 +1005,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         globalStorage: context.globalStorageUri.fsPath,
         home: os.homedir()
     });
+
+    // Projects — the registry and the session link table (core/projectStore.ts).
+    // Everything a human writes about a project lives in the project's own
+    // FOLDER; this file only records what exists and what the user explicitly
+    // put where. The one-time import off the old `agentFarm.projects` setting
+    // runs here, and only ever once (see ProjectStore.migrateLegacy).
+    const projectStore = new ProjectStore(
+        path.join(context.globalStorageUri.fsPath, 'projects.json'), portableRoots);
+    projectStore.load();
+    {
+        const imported = projectStore.migrateLegacy(cfg().get('projects', []));
+        if (imported) {
+            void vscode.window.showInformationMessage(
+                `Agent Farm: ${imported} project${imported === 1 ? '' : 's'} moved off the old setting. ` +
+                'Each one still needs a folder — open Projects to choose it.');
+        }
+    }
+    /** Where new project folders are offered, and what a rescan walks. */
+    const projectsRoot = (): string => (cfg().get<string>('projectsRoot', '') || '').trim();
+    const projectSkeleton = () => normalizeSkeleton(cfg().get('projectSkeleton', []));
+    /** The window's active project — the stamp new work carries. Window-scoped
+     *  on purpose: it means "what am I working on right now", which is not a
+     *  property of an agent and not a thing to share between windows. */
+    const activeProjectId = (): string => context.workspaceState.get<string>('af.activeProject', '');
+    const activeProject = (): Project | undefined => {
+        const id = activeProjectId();
+        return id ? projectStore.get(id) : undefined;
+    };
 
     const taskManager = new TaskManager(
         path.join(context.globalStorageUri.fsPath, 'farm-tasks.json'),
@@ -3210,72 +3249,194 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.list',
-            describe: 'Projects (agentFarm.projects) with their cost rollup — the answer to "what did this customer cost". Every session lands in exactly one bucket (a named project or "Unassigned"), so the rows add up to the fleet total. args: none',
-            handler: () => projectRollup().map(p => ({
-                project: p.name, agents: p.agents, sessions: p.sessions,
-                cost: p.cost, todayCost: p.todayCost, tokens: p.tokens,
-                budgetUSD: p.budgetUSD ?? null, note: p.note ?? null,
-                lastTs: p.lastTs
-            }))
+            describe: 'Every project with its cost rollup and current warnings. A session belongs to exactly ONE project (explicit assignment first, then the longest matching folder root, then the agent rule), so the rows always add up to the fleet total — anything unclaimed is in "Unassigned". args: status? (planned|active|paused|done|archived — filter)',
+            handler: (args) => {
+                const status = optStr(args, 'status').trim().toLowerCase();
+                return projectStore.all()
+                    .filter(p => !status || p.status === status)
+                    .map(p => projectView(p));
+            }
         },
         {
-            op: 'projects.assign',
-            describe: 'Put an agent in a project (creating the project when it does not exist yet), or take it out. An agent belongs to at most one project — assigning moves it. args: agent (name|id), project (omit or "" to unassign)',
-            handler: async (args) => {
-                const agent = findAgent(argStr(args, 'agent'));
-                const project = optStr(args, 'project').trim();
-                let defs = projectDefs();
-                if (!project) {
-                    defs = defs.map(p => {
-                        const rest = (p.agents ?? []).filter(a => a.toLowerCase() !== agent.name.toLowerCase());
-                        return rest.length ? { ...p, agents: rest } : { ...p, agents: undefined };
-                    });
-                } else {
-                    if (!defs.some(p => p.name.toLowerCase() === project.toLowerCase())) {
-                        defs = [...defs, { name: project }];
-                    }
-                    defs = assignAgent(defs, project, agent.name, true);
+            op: 'projects.get',
+            describe: 'One project in full: identity, folder and its state, repos, people, budgets, cost rollup, warnings, and which document holds which role (charter/plan/log/people/deliverables — found by frontmatter, never by file name). args: project (id or name)',
+            handler: (args) => {
+                const p = projectStore.get(argStr(args, 'project'));
+                need(p, 'no such project — projects.list shows them');
+                const project = p as Project;
+                const docs = project.folder && dirExists(project.folder) ? scanRoles(project.folder) : {};
+                return { ...projectView(project), docs };
+            }
+        },
+        {
+            op: 'projects.create',
+            describe: 'Create a project and build its folder. The folder is where everything a human writes about the project lives; pass folder? to say where, otherwise agentFarm.projectsRoot/<name> is used. Nothing existing is ever overwritten. args: name, folder?, kind? (product|customer|internal|research|personal|ops), status?, summary?, repos? (code roots), agents? (rule), budgetUSD?, budgetTotalUSD?, parentId?, tags?, skipFolder? (true = register it without touching disk)',
+            handler: (args) => {
+                const name = argStr(args, 'name').trim();
+                need(name, 'a project needs a name');
+                const explicit = optStr(args, 'folder').trim();
+                const root = projectsRoot();
+                const folder = explicit || (root ? path.join(root, folderNameFor(name)) : '');
+                const res = projectStore.create({
+                    name,
+                    ...(folder ? { folder } : {}),
+                    ...(PROJECT_KINDS.includes(optStr(args, 'kind') as never)
+                        ? { kind: optStr(args, 'kind') as Project['kind'] } : {}),
+                    ...(PROJECT_STATUSES.includes(optStr(args, 'status') as never)
+                        ? { status: optStr(args, 'status') as ProjectStatus } : {}),
+                    ...(optStr(args, 'summary') ? { summary: optStr(args, 'summary') } : {}),
+                    ...(Array.isArray(args.repos) ? { repos: args.repos as string[] } : {}),
+                    ...(Array.isArray(args.agents) ? { match: { agents: args.agents as string[] } } : {}),
+                    ...(typeof args.budgetUSD === 'number' ? { budgetUSD: args.budgetUSD } : {}),
+                    ...(typeof args.budgetTotalUSD === 'number' ? { budgetTotalUSD: args.budgetTotalUSD } : {}),
+                    ...(optStr(args, 'parentId') ? { parentId: optStr(args, 'parentId') } : {}),
+                    ...(Array.isArray(args.tags) ? { tags: args.tags as string[] } : {})
+                });
+                need(!res.error, res.error ?? '');
+                const project = res.project as Project;
+                let skeleton: { created: string[]; skipped: string[]; failed: unknown[] } | undefined;
+                if (project.folder && args.skipFolder !== true) {
+                    skeleton = createSkeleton(project.folder, project, projectSkeleton());
                 }
-                const ok = await saveProjects(defs);
-                need(ok, 'could not write agentFarm.projects');
+                projectsChanged();
                 return {
-                    agent: agent.name,
-                    project: projectOfAgent({ id: agent.id, name: agent.name, dir: agent.dir }, projectDefs()) ?? null
+                    ...projectView(project),
+                    folderCreated: skeleton?.created.length ?? 0,
+                    folderSkipped: skeleton?.skipped.length ?? 0,
+                    folderFailed: skeleton?.failed ?? []
                 };
             }
         },
         {
             op: 'projects.set',
-            describe: 'Create or update a project definition. args: project (name), agents? (array of agent names — replaces the list), paths? (array of folders), budgetUSD? (daily), note?, delete? (true removes the project; its agents are untouched)',
-            handler: async (args) => {
-                const name = argStr(args, 'project').trim();
-                need(name, 'project name required');
-                const defs = projectDefs();
+            describe: 'Update a project. Any field may be changed; passing "" clears an optional one (folder, parentId, budgets…). The id never changes, so nothing linked to the project is affected. args: project (id or name), status?, kind?, summary?, folder?, repos?, agents? (rule list), budgetUSD?, budgetTotalUSD?, parentId?, tags?, color?, icon?, dueAt?, delete? (true removes the project — its FOLDER is never touched and sub-projects are orphaned, not deleted)',
+            handler: (args) => {
+                const p = projectStore.get(argStr(args, 'project'));
+                need(p, 'no such project — projects.list shows them');
+                const project = p as Project;
                 if (args.delete === true) {
-                    const ok = await saveProjects(defs.filter(p => p.name.toLowerCase() !== name.toLowerCase()));
-                    need(ok, 'could not write agentFarm.projects');
-                    return { project: name, deleted: true };
+                    projectStore.remove(project.id);
+                    projectsChanged();
+                    return { id: project.id, name: project.name, deleted: true, folderKept: project.folder ?? null };
                 }
-                const strList = (v: unknown) => Array.isArray(v)
-                    ? v.filter((x): x is string => typeof x === 'string' && !!x.trim()).map(x => x.trim())
-                    : undefined;
-                const patch: Partial<ProjectDef> = {};
-                const agentList = strList(args.agents);
-                if (agentList) { patch.agents = agentList; }
-                const pathList = strList(args.paths);
-                if (pathList) { patch.paths = pathList; }
-                if (typeof args.budgetUSD === 'number') { patch.budgetUSD = args.budgetUSD; }
-                const note = optStr(args, 'note');
-                if (note) { patch.note = note; }
-                const exists = defs.some(p => p.name.toLowerCase() === name.toLowerCase());
-                let next = exists
-                    ? defs.map(p => (p.name.toLowerCase() === name.toLowerCase() ? { ...p, ...patch } : p))
-                    : [...defs, { name, ...patch }];
-                // keep the one-project-per-agent rule even when set from outside
-                for (const a of patch.agents ?? []) { next = assignAgent(next, name, a, true); }
-                const ok = await saveProjects(next);
-                need(ok, 'could not write agentFarm.projects');
-                return { project: name, created: !exists, agents: patch.agents ?? null };
+                const patch: Record<string, unknown> = {};
+                for (const key of ['status', 'kind', 'summary', 'folder', 'parentId', 'color', 'icon']) {
+                    if (args[key] !== undefined) { patch[key] = String(args[key]); }
+                }
+                for (const key of ['budgetUSD', 'budgetTotalUSD', 'dueAt', 'startedAt']) {
+                    if (typeof args[key] === 'number') { patch[key] = args[key]; }
+                }
+                if (Array.isArray(args.repos)) { patch.repos = args.repos; }
+                if (Array.isArray(args.tags)) { patch.tags = args.tags; }
+                if (Array.isArray(args.agents)) { patch.match = { agents: args.agents }; }
+                const res = projectStore.update(project.id, patch);
+                need(!res.error, res.error ?? '');
+                projectsChanged();
+                return projectView(res.project as Project);
+            }
+        },
+        {
+            op: 'projects.rename',
+            describe: 'Rename a project, and its folder with it. The id is immutable, so every session, task and notice stays attached. If the folder cannot be renamed (Obsidian may be holding a file inside it open) the NAME still changes, the old folder path is kept, and the failure is reported — a name and a folder that disagree is cosmetic; a project pointing at a folder that is not there is broken. args: project (id or name), name (the new one), renameFolder? (default true)',
+            handler: (args) => {
+                const p = projectStore.get(argStr(args, 'project'));
+                need(p, 'no such project — projects.list shows them');
+                const project = p as Project;
+                const next = argStr(args, 'name').trim();
+                need(next, 'a project needs a name');
+                let folderError: string | undefined;
+                let folder = project.folder;
+                if (args.renameFolder !== false && project.folder && dirExists(project.folder)) {
+                    const moved = renameProjectFolder(project.folder, next);
+                    folder = moved.path;
+                    if (!moved.ok) { folderError = moved.error; }
+                }
+                const res = projectStore.update(project.id, { name: next, ...(folder ? { folder } : {}) });
+                need(!res.error, res.error ?? '');
+                projectsChanged();
+                return { ...projectView(res.project as Project), folderError: folderError ?? null };
+            }
+        },
+        {
+            op: 'projects.assign',
+            describe: 'Attach a SESSION to a project, move it to another, or take it out. Three states, and the difference matters: a project id/name attaches (or transfers); "" means EXPLICITLY no project, which the folder and agent rules may not overrule; "forget" drops the decision so the rules speak again. args: session or sessions (id or array of ids), project ("" = none, "forget" = clear the decision). To set an agent RULE instead, use projects.set { agents: [...] }.',
+            handler: (args) => {
+                const one = optStr(args, 'session').trim();
+                const many = Array.isArray(args.sessions)
+                    ? (args.sessions as unknown[]).map(x => String(x ?? '').trim()).filter(Boolean)
+                    : [];
+                const ids = one ? [one, ...many] : many;
+                need(ids.length, 'session (or sessions) required');
+                const raw = optStr(args, 'project').trim();
+                const value = raw.toLowerCase() === 'forget' ? undefined : raw;
+                if (value) {
+                    need(projectStore.get(value), `no project called "${value}" — projects.list shows them`);
+                }
+                const changed = projectStore.assignSessions(ids, value);
+                projectsChanged();
+                return {
+                    sessions: ids.length, changed,
+                    project: value ? (projectStore.get(value) as Project).name : (value === '' ? null : 'forgotten')
+                };
+            }
+        },
+        {
+            op: 'projects.current',
+            describe: 'Read or set the ACTIVE project of this window — the stamp new work carries. Pass nothing to read it, a project to set it, or "" to clear it. args: project?',
+            handler: async (args) => {
+                if (args.project !== undefined) {
+                    const raw = String(args.project ?? '').trim();
+                    if (!raw) {
+                        await context.workspaceState.update('af.activeProject', '');
+                    } else {
+                        const p = projectStore.get(raw);
+                        need(p, `no project called "${raw}" — projects.list shows them`);
+                        await context.workspaceState.update('af.activeProject', (p as Project).id);
+                    }
+                    projectsChanged();
+                }
+                const current = activeProject();
+                return current ? projectView(current) : { id: null, name: null };
+            }
+        },
+        {
+            op: 'projects.health',
+            describe: 'Everything currently wrong across all projects: folders that are not there, folders never chosen, budgets exceeded today, and projects marked active that nothing has touched for agentFarm.projectStaleDays. args: none',
+            handler: () => projectStore.all()
+                .map(p => ({ id: p.id, name: p.name, status: p.status, warnings: projectWarnings(p) }))
+                .filter(r => r.warnings.length)
+        },
+        {
+            op: 'projects.rescan',
+            describe: 'Walk agentFarm.projectsRoot and reconcile the registry with what is actually on disk. Identity comes from the charter\'s af-id, so a folder RENAMED in Obsidian is recognised as the same project and its name is updated here. Folders with no charter are reported, never imported silently. The session link table is kept — scanning cannot rebuild it. args: root? (defaults to agentFarm.projectsRoot), adopt? (true also registers folders that have a charter this store does not know)',
+            handler: (args) => {
+                const root = optStr(args, 'root').trim() || projectsRoot();
+                need(root, 'no projects root — set agentFarm.projectsRoot or pass root');
+                need(dirExists(root), `not a folder: ${root}`);
+                const found = scanProjectsRoot(root);
+                const renamed: { id: string; from: string; to: string }[] = [];
+                const adopted: string[] = [];
+                for (const f of found) {
+                    if (f.id) {
+                        const known = projectStore.get(f.id);
+                        if (known) {
+                            if (known.name !== f.name || known.folder !== f.folder) {
+                                const res = projectStore.update(known.id, { name: f.name, folder: f.folder });
+                                if (!res.error) { renamed.push({ id: known.id, from: known.name, to: f.name }); }
+                            }
+                            continue;
+                        }
+                    }
+                    if (args.adopt === true && f.id) {
+                        const res = projectStore.create({ name: f.name, folder: f.folder });
+                        if (res.project) { adopted.push(res.project.name); }
+                    }
+                }
+                projectsChanged();
+                return {
+                    root, found: found.length, renamed, adopted,
+                    unregistered: found.filter(f => f.unregistered).map(f => f.name)
+                };
             }
         },
         {
@@ -6194,59 +6355,241 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (e.affectsConfiguration('agentFarm.planUsage')) { planUsageBar.refresh(); }
     }));
 
-    // ---------- B1: projects ----------
-    // A project is a name over a set of agents and/or folders. Membership is
-    // declared once (agentFarm.projects) and every surface resolves through
-    // core/projects.ts — so "what did this customer cost" is one sum, not a
-    // per-page interpretation.
-    const projectDefs = (): ProjectDef[] => normalizeProjects(cfg().get('projects', []));
-    const saveProjects = async (next: ProjectDef[]): Promise<boolean> => {
-        try {
-            await cfg().update('projects', next, vscode.ConfigurationTarget.Global);
-            refreshAll();
-            return true;
-        } catch (e) {
-            void vscode.window.showWarningMessage(
-                `Agent Farm: could not write agentFarm.projects — ${String(e)}`);
-            return false;
-        }
-    };
-    /** Sessions reduced to what the project rollup needs (today's cost included). */
+    // ---------- projects ----------
+    // The registry is projectStore; these are the two shapes the surfaces ask
+    // for. `legacyDefs` exists only while the pages still speak ProjectDef —
+    // it is an adapter over the real projects, never a second source of truth.
+    const legacyDefs = (): ProjectDef[] => projectStore.all().map(p => {
+        const def: ProjectDef = { name: p.name };
+        if (p.match?.agents?.length) { def.agents = p.match.agents; }
+        const paths = [p.folder, ...(p.repos ?? [])].filter((x): x is string => !!x);
+        if (paths.length) { def.paths = paths; }
+        if (p.budgetUSD) { def.budgetUSD = p.budgetUSD; }
+        if (p.summary) { def.note = p.summary; }
+        return def;
+    });
+    /** Back-compat alias while the pages are converted. */
+    const projectDefs = legacyDefs;
+    /**
+     * The cost rollup every project surface reads.
+     *
+     * This one goes through the ENTITY resolution (explicit assignment first,
+     * then explicit-none, then longest path root, then the agent rule), not the
+     * old settings matching — otherwise a session the user put on a project by
+     * hand would be counted somewhere else, and the number on screen would
+     * contradict the assignment they just made. The output keeps the old shape
+     * so the dashboard's card and the webviews stay untouched.
+     */
     const projectRollup = () => {
         const today = dayKey(Date.now());
-        return rollupProjects(
-            projectDefs(),
+        const projects = projectStore.all();
+        const rolled = rollupProjectSessions(
+            projects,
             index.all().map(s => ({
-                agentId: s.agentId, agentName: s.agentName, cwd: s.cwd,
+                sessionId: s.sessionId, agentId: s.agentId, agentName: s.agentName, cwd: s.cwd,
                 cost: s.cost, tokens: totalTokens(s.usage),
                 todayCost: s.daily[today]?.cost ?? 0,
                 lastTs: s.lastTs || s.mtime || 0
             })),
-            agents.map(a => ({ id: a.id, name: a.name, dir: a.dir }))
-        );
+            projectStore.links());
+        return rolled.map(r => ({
+            name: r.id === UNASSIGNED_ID ? UNASSIGNED : r.name,
+            agents: r.agents, sessions: r.sessions, cost: r.cost, tokens: r.tokens,
+            todayCost: r.todayCost, lastTs: r.lastTs,
+            ...(r.budgetUSD ? { budgetUSD: r.budgetUSD } : {}),
+            ...(projects.find(p => p.id === r.id)?.summary
+                ? { note: projects.find(p => p.id === r.id)?.summary }
+                : {})
+        }));
     };
 
-    /** Pick agents for a project — pre-ticked with the ones it already has. */
-    const pickProjectAgents = async (project: ProjectDef): Promise<string[] | undefined> => {
-        const owned = new Set((project.agents ?? []).map(a => a.toLowerCase()));
-        const defs = projectDefs();
-        const picks = await vscode.window.showQuickPick(
-            agents.map(a => {
-                const other = projectOfAgent({ id: a.id, name: a.name, dir: a.dir }, defs);
-                const taken = other && other !== project.name;
-                return {
-                    label: a.name,
-                    description: taken ? `currently in "${other}" — picking it moves it here` : a.dir,
-                    picked: owned.has(a.name.toLowerCase()),
-                    name: a.name
-                };
-            }),
-            {
-                canPickMany: true, ignoreFocusOut: true,
-                placeHolder: `Which agents belong to "${project.name}"? (an agent belongs to one project)`
-            });
-        return picks?.map(p => p.name);
+    /** A project's folder state, with the filesystem supplied. */
+    const projectFolderState = (p: Project) => folderState(p, dirExists);
+    /** Everything wrong with a project right now — one list, one vocabulary. */
+    const projectWarnings = (p: Project): string[] => {
+        const out: string[] = [];
+        const state = projectFolderState(p);
+        if (state === 'unset') { out.push('no folder chosen yet'); }
+        if (state === 'missing') { out.push(`folder not found: ${p.folder}`); }
+        const roll = projectRollup().find(r => r.name === p.name);
+        if (p.budgetUSD && roll && roll.todayCost > p.budgetUSD) {
+            out.push(`over today's budget (${fmtUSD(roll.todayCost)} of ${fmtUSD(p.budgetUSD)})`);
+        }
+        const staleDays = cfg().get<number>('projectStaleDays', 21);
+        if (p.status === 'active' && staleDays > 0 && roll?.lastTs) {
+            const days = Math.floor((Date.now() - roll.lastTs) / 86400000);
+            if (days >= staleDays) { out.push(`active but quiet for ${days} days`); }
+        }
+        return out;
     };
+    /** One project, as every bridge op reports it. */
+    const projectView = (p: Project) => {
+        const roll = projectRollup().find(r => r.name === p.name);
+        return {
+            id: p.id, name: p.name, status: p.status, kind: p.kind ?? null,
+            folder: p.folder ?? null, folderState: projectFolderState(p),
+            repos: p.repos ?? [], parentId: p.parentId ?? null,
+            summary: p.summary ?? null, tags: p.tags ?? [],
+            people: p.people ?? [], agentRules: p.match?.agents ?? [],
+            budgetUSD: p.budgetUSD ?? null, budgetTotalUSD: p.budgetTotalUSD ?? null,
+            sessions: roll?.sessions ?? 0, cost: roll?.cost ?? 0,
+            todayCost: roll?.todayCost ?? 0, tokens: roll?.tokens ?? 0,
+            lastTs: roll?.lastTs ?? 0,
+            warnings: projectWarnings(p)
+        };
+    };
+    /**
+     * What a session row hands a project command.
+     *
+     * The shared right-click contract (media/afSessionCtx.js) puts `sessionId`
+     * and `file` on every session row on every page. A surface that also knows
+     * about a multi-row SELECTION adds `afSelectedSessions`, and then the same
+     * menu item acts on all of them — so "file ninety sessions" is the same
+     * command as "file this one", not a separate feature nobody finds.
+     */
+    interface SessionCtxArg {
+        sessionId?: string;
+        file?: string;
+        afSelectedSessions?: unknown;
+    }
+    const sessionIdsFromArg = (arg?: SessionCtxArg | SessionInfo | string): string[] => {
+        if (typeof arg === 'string') { return [arg]; }
+        const ctx = (arg ?? {}) as SessionCtxArg;
+        const many = Array.isArray(ctx.afSelectedSessions)
+            ? ctx.afSelectedSessions.map(x => String(x ?? '').trim()).filter(Boolean)
+            : [];
+        if (many.length) { return [...new Set(many)]; }
+        if (ctx.sessionId) { return [ctx.sessionId]; }
+        if (ctx.file) {
+            const found = index.all().find(s => s.file === ctx.file);
+            if (found) { return [found.sessionId]; }
+        }
+        return [];
+    };
+
+    /** Every session that resolves to one project, newest first. */
+    const sessionsOfProject = (id: string, limit = 0): SessionInfo[] => {
+        const projects = projectStore.all();
+        const links = projectStore.links();
+        const hits = index.all()
+            .filter(s => resolveSessionProject(
+                { sessionId: s.sessionId, agentId: s.agentId, agentName: s.agentName, cwd: s.cwd },
+                projects, links).projectId === id)
+            .sort((a, b) => (b.lastTs || b.mtime) - (a.lastTs || a.mtime));
+        return limit > 0 ? hits.slice(0, limit) : hits;
+    };
+    const unassignedTotals = () => {
+        const row = projectRollup().find(r => r.name === UNASSIGNED);
+        return { sessions: row?.sessions ?? 0, cost: row?.cost ?? 0 };
+    };
+
+    const projectsTree = new ProjectsTreeProvider({
+        rows: () => {
+            const roll = projectRollup();
+            return projectStore.all().map(p => {
+                const r = roll.find(x => x.name === p.name);
+                return {
+                    project: p,
+                    sessions: r?.sessions ?? 0, cost: r?.cost ?? 0,
+                    todayCost: r?.todayCost ?? 0, lastTs: r?.lastTs ?? 0,
+                    warnings: projectWarnings(p),
+                    folderOk: projectFolderState(p) === 'ok'
+                };
+            });
+        },
+        sessionsFor: (id, limit) => sessionsOfProject(id, limit),
+        unassigned: unassignedTotals,
+        activeId: activeProjectId
+    });
+    context.subscriptions.push(
+        vscode.window.registerTreeDataProvider('agentfarm.projects', projectsTree));
+
+    /** The active project, always on screen — a stamp being applied invisibly
+     *  is exactly the automation nobody should have to trust blindly. */
+    const projectBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 91);
+    projectBar.command = 'agentfarm.setActiveProject';
+    context.subscriptions.push(projectBar);
+    const paintProjectBar = (): void => {
+        const p = activeProject();
+        projectBar.text = p ? `◧ ${p.name}` : '◧ No project';
+        projectBar.tooltip = p
+            ? `Active project: ${p.name}\nNew sessions, tasks and notices started here are filed under it.\nClick to change or clear.`
+            : 'No active project. Click to pick one — new work will then be filed under it automatically.';
+        projectBar.show();
+    };
+    paintProjectBar();
+
+    /** After any change to the registry: repaint everything that shows it. */
+    const projectsChanged = (): void => {
+        projectsTree.refresh();
+        paintProjectBar();
+        ProjectsPanel.refreshIfOpen();
+        refreshAll();
+    };
+
+    const projectsPanelDeps = (): ProjectsPanelDeps => ({
+        extensionUri: context.extensionUri,
+        data: () => ({
+            generatedAt: Date.now(),
+            projects: projectStore.all().map(p => projectView(p)),
+            agents: agents.map(a => a.name),
+            activeId: activeProjectId(),
+            activeName: activeProject()?.name ?? '',
+            projectsRoot: projectsRoot(),
+            unassigned: unassignedTotals()
+        }),
+        save: (id, patch) => projectStore.update(id, patch as never).error,
+        rename: (id, name, renameFolder) => {
+            const p = projectStore.get(id);
+            if (!p) { return 'no such project'; }
+            let folder = p.folder;
+            let warn: string | undefined;
+            if (renameFolder && p.folder && dirExists(p.folder)) {
+                const moved = renameProjectFolder(p.folder, name);
+                folder = moved.path;
+                if (!moved.ok) { warn = moved.error; }
+            }
+            const res = projectStore.update(id, { name, ...(folder ? { folder } : {}) });
+            return res.error ?? warn;
+        },
+        remove: id => { projectStore.remove(id); },
+        create: async () => {
+            const created = await vscode.commands.executeCommand<Project | undefined>('agentfarm.newProject');
+            return created?.id;
+        },
+        pickFolder: async id => {
+            const root = projectsRoot();
+            const picked = await vscode.window.showOpenDialog({
+                canSelectFolders: true, canSelectFiles: false, canSelectMany: false,
+                openLabel: 'Use this folder',
+                ...(root && dirExists(root) ? { defaultUri: vscode.Uri.file(root) } : {})
+            });
+            if (!picked?.length) { return; }
+            const p = projectStore.get(id);
+            projectStore.update(id, { folder: picked[0].fsPath });
+            if (p) { createSkeleton(picked[0].fsPath, { ...p, folder: picked[0].fsPath }, projectSkeleton()); }
+        },
+        recreateFolder: id => {
+            const p = projectStore.get(id);
+            if (p?.folder) { createSkeleton(p.folder, p, projectSkeleton()); }
+        },
+        revealFolder: id => {
+            const p = projectStore.get(id);
+            if (p?.folder && dirExists(p.folder)) {
+                void vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(p.folder));
+            }
+        },
+        setActive: async id => {
+            await context.workspaceState.update('af.activeProject', id || '');
+        },
+        rescan: async () => { await vscode.commands.executeCommand('agentfarm.rescanProjects'); },
+        // Until the project page grows its own Sessions tab, this goes where the
+        // sessions already are — the dashboard's table, which has a project
+        // filter. Sending the user somewhere real beats a button that does
+        // nothing.
+        openSessions: () => { void vscode.commands.executeCommand('agentfarm.openDashboard'); },
+        onChange: () => { projectsTree.refresh(); paintProjectBar(); }
+    });
 
     // ---------- A3: interrupt ----------
     // The only thing that stops a running turn is the key a person would press.
@@ -6958,154 +7301,317 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     `Agent Farm: ${who} cleared from the live timeline — the session itself was not touched.`);
             }),
 
-        // ---------- B1: managing projects ----------
-        vscode.commands.registerCommand('agentfarm.manageProjects', async () => {
-            for (;;) {
-                const defs = projectDefs();
-                const roll = projectRollup();
-                interface Row extends vscode.QuickPickItem { act?: string; project?: string }
-                const rows: Row[] = [
-                    { label: '$(add) New project…', detail: 'a name over a set of agents / folders', act: 'new' },
-                    ...(defs.length ? [{ label: 'Projects', kind: vscode.QuickPickItemKind.Separator } as Row] : []),
-                    ...defs.map(p => {
-                        const r = roll.find(x => x.name === p.name);
-                        return {
-                            label: `$(project) ${p.name}`,
-                            description: `${r?.agents.length ?? 0} agents · ${fmtUSD(r?.cost ?? 0)} total` +
-                                (p.budgetUSD ? ` · budget ${fmtUSD(p.budgetUSD)}/day` : ''),
-                            detail: [(p.agents ?? []).join(', '), ...(p.paths ?? [])].filter(Boolean).join(' · ')
-                                || 'no members yet',
-                            act: 'edit', project: p.name
-                        } as Row;
-                    }),
-                    { label: '', kind: vscode.QuickPickItemKind.Separator },
-                    {
-                        label: '$(json) Edit agentFarm.projects directly…',
-                        detail: 'paths, notes and anything the picker does not cover', act: 'settings'
-                    }
-                ];
-                const pick = await vscode.window.showQuickPick(rows, {
-                    placeHolder: 'Projects — one name over a set of agents; every cost figure can then be grouped by it',
-                    ignoreFocusOut: true
-                });
-                if (!pick?.act) { return; }
-                if (pick.act === 'settings') {
-                    void vscode.commands.executeCommand('workbench.action.openSettings', 'agentFarm.projects');
-                    return;
-                }
-                if (pick.act === 'new') {
-                    const name = await vscode.window.showInputBox({
-                        prompt: 'Project name (a customer, a product, a contract)', ignoreFocusOut: true
-                    });
-                    if (!name?.trim()) { continue; }
-                    if (defs.some(p => p.name.toLowerCase() === name.trim().toLowerCase())) {
-                        void vscode.window.showWarningMessage(`Agent Farm: "${name.trim()}" already exists.`);
-                        continue;
-                    }
-                    const fresh: ProjectDef = { name: name.trim() };
-                    const picked = await pickProjectAgents(fresh);
-                    if (picked?.length) { fresh.agents = picked; }
-                    let next = [...defs, fresh];
-                    // moving an agent in also takes it out of wherever it was
-                    for (const a of picked ?? []) { next = assignAgent(next, fresh.name, a, true); }
-                    await saveProjects(next);
-                    continue;
-                }
-                // ---- edit one project ----
-                const project = defs.find(p => p.name === pick.project);
-                if (!project) { continue; }
-                const action = await vscode.window.showQuickPick([
-                    { label: '$(person-add) Members…', description: (project.agents ?? []).join(', ') || 'none', act: 'members' },
-                    { label: '$(folder) Folders…', description: (project.paths ?? []).join(' · ') || 'none', act: 'paths' },
-                    { label: '$(dashboard) Daily budget…', description: project.budgetUSD ? fmtUSD(project.budgetUSD) : 'none', act: 'budget' },
-                    { label: '$(edit) Rename…', act: 'rename' },
-                    { label: '$(note) Note…', description: project.note ?? '', act: 'note' },
-                    { label: '$(trash) Delete project', description: 'the agents themselves are untouched', act: 'delete' }
-                ], { placeHolder: project.name, ignoreFocusOut: true });
-                if (!action) { continue; }
-                if (action.act === 'members') {
-                    const picked = await pickProjectAgents(project);
-                    if (!picked) { continue; }
-                    let next = defs;
-                    for (const a of agents.map(x => x.name)) {
-                        next = assignAgent(next, project.name, a, picked.includes(a));
-                    }
-                    await saveProjects(next);
-                } else if (action.act === 'paths') {
-                    const value = await vscode.window.showInputBox({
-                        prompt: 'Folders that belong to this project, comma separated (sessions under them count here)',
-                        value: (project.paths ?? []).join(', '), ignoreFocusOut: true
-                    });
-                    if (value === undefined) { continue; }
-                    const paths = value.split(',').map(s => s.trim()).filter(Boolean);
-                    await saveProjects(defs.map(p => p.name === project.name
-                        ? { ...p, ...(paths.length ? { paths } : { paths: undefined }) } : p));
-                } else if (action.act === 'budget') {
-                    const value = await vscode.window.showInputBox({
-                        prompt: 'Daily budget in USD for the whole project (empty = none)',
-                        value: project.budgetUSD ? String(project.budgetUSD) : '', ignoreFocusOut: true
-                    });
-                    if (value === undefined) { continue; }
-                    const n = Number(value.trim());
-                    await saveProjects(defs.map(p => p.name === project.name
-                        ? { ...p, budgetUSD: value.trim() && isFinite(n) && n > 0 ? n : undefined } : p));
-                } else if (action.act === 'rename') {
-                    const value = await vscode.window.showInputBox({
-                        prompt: 'New name', value: project.name, ignoreFocusOut: true
-                    });
-                    if (!value?.trim() || value.trim() === project.name) { continue; }
-                    await saveProjects(defs.map(p => p.name === project.name ? { ...p, name: value.trim() } : p));
-                } else if (action.act === 'note') {
-                    const value = await vscode.window.showInputBox({
-                        prompt: 'Note (customer, contract, anything the name does not say)',
-                        value: project.note ?? '', ignoreFocusOut: true
-                    });
-                    if (value === undefined) { continue; }
-                    await saveProjects(defs.map(p => p.name === project.name
-                        ? { ...p, note: value.trim() || undefined } : p));
-                } else if (action.act === 'delete') {
-                    const yes = await vscode.window.showWarningMessage(
-                        `Delete project "${project.name}"? Its agents and their sessions are untouched — only the grouping goes.`,
-                        { modal: true }, 'Delete');
-                    if (yes !== 'Delete') { continue; }
-                    await saveProjects(defs.filter(p => p.name !== project.name));
-                }
-            }
+        // ---------- the project page, the tree and the active project ----------
+        vscode.commands.registerCommand('agentfarm.openProjects', () => {
+            ProjectsPanel.show(projectsPanelDeps());
+        }),
+        vscode.commands.registerCommand('agentfarm.openProject', (arg?: { id?: string } | string) => {
+            const id = typeof arg === 'string' ? arg : arg?.id;
+            ProjectsPanel.show(projectsPanelDeps(), id);
         }),
 
-        // Straight from an agent row: which project does this one belong to?
+        vscode.commands.registerCommand('agentfarm.setActiveProject', async (arg?: { id?: string }) => {
+            if (arg?.id !== undefined) {
+                await context.workspaceState.update('af.activeProject', arg.id);
+                projectsChanged();
+                return;
+            }
+            const current = activeProjectId();
+            const projects = projectStore.all().filter(p => !CLOSED_PROJECT_STATUSES.includes(p.status));
+            interface Row extends vscode.QuickPickItem { id?: string; act?: string }
+            const pick = await vscode.window.showQuickPick<Row>([
+                ...projects.map(p => ({
+                    label: `${p.id === current ? '$(check) ' : '$(blank) '}${p.icon ? p.icon + ' ' : ''}${p.name}`,
+                    description: p.summary ?? p.status,
+                    id: p.id
+                })),
+                ...(current ? [{ label: '$(circle-slash) No project', description: 'stop stamping new work', act: 'none' }] : []),
+                { label: '$(add) New project…', act: 'new' }
+            ], {
+                placeHolder: 'Active project — new sessions, tasks and notices started in this window are filed under it',
+                ignoreFocusOut: true
+            });
+            if (!pick) { return; }
+            if (pick.act === 'new') {
+                const created = await vscode.commands.executeCommand<Project | undefined>('agentfarm.newProject');
+                await context.workspaceState.update('af.activeProject', created?.id ?? '');
+            } else {
+                await context.workspaceState.update('af.activeProject', pick.act === 'none' ? '' : (pick.id ?? ''));
+            }
+            projectsChanged();
+        }),
+
+        vscode.commands.registerCommand('agentfarm.rescanProjects', async () => {
+            const root = projectsRoot();
+            if (!root) {
+                const answer = await vscode.window.showWarningMessage(
+                    'Agent Farm: no projects root is set, so there is nothing to scan.',
+                    'Set agentFarm.projectsRoot');
+                if (answer) {
+                    void vscode.commands.executeCommand('workbench.action.openSettings', 'agentFarm.projectsRoot');
+                }
+                return;
+            }
+            if (!dirExists(root)) {
+                void vscode.window.showWarningMessage(`Agent Farm: the projects root is not there — ${root}`);
+                return;
+            }
+            const found = scanProjectsRoot(root);
+            let renamed = 0;
+            const strangers: typeof found = [];
+            for (const f of found) {
+                const known = f.id ? projectStore.get(f.id) : undefined;
+                if (!known) { strangers.push(f); continue; }
+                if (known.name !== f.name || known.folder !== f.folder) {
+                    if (!projectStore.update(known.id, { name: f.name, folder: f.folder }).error) { renamed++; }
+                }
+            }
+            projectsChanged();
+            // Folders that look like projects but this machine has never seen are
+            // OFFERED, never adopted silently: a scan that quietly invents
+            // projects out of directories is a scan nobody can trust twice.
+            const adoptable = strangers.filter(s => s.id);
+            let adopted = 0;
+            if (adoptable.length) {
+                const picks = await vscode.window.showQuickPick(
+                    adoptable.map(s => ({ label: s.name, description: s.folder, picked: true, s })),
+                    {
+                        canPickMany: true, ignoreFocusOut: true,
+                        placeHolder: `${adoptable.length} folder(s) look like projects this window does not know — add them?`
+                    });
+                for (const p of picks ?? []) {
+                    if (!projectStore.create({ name: p.s.name, folder: p.s.folder }).error) { adopted++; }
+                }
+                projectsChanged();
+            }
+            const noCharter = strangers.filter(s => !s.id).length;
+            void vscode.window.showInformationMessage(
+                `Agent Farm: scanned ${found.length} folder(s) — ${renamed} updated, ${adopted} added` +
+                (noCharter ? `, ${noCharter} skipped (no project charter in them)` : '') + '.');
+        }),
+
+        // ---------- a session's project, from wherever a session is shown ----------
+        // One command behind one menu item, and the shared session contract
+        // (media/afSessionCtx.js) puts that item on every surface at once.
+        vscode.commands.registerCommand('agentfarm.assignSessionProject', async (arg?: SessionCtxArg) => {
+            const ids = sessionIdsFromArg(arg);
+            if (!ids.length) {
+                void vscode.window.showWarningMessage('Agent Farm: no session to file.');
+                return;
+            }
+            const links = projectStore.links();
+            const decided = ids.length === 1 ? links.sessions[ids[0]] : undefined;
+            const many = ids.length > 1 ? ` (${ids.length} sessions)` : '';
+            interface Row extends vscode.QuickPickItem { id?: string; act?: string }
+            const pick = await vscode.window.showQuickPick<Row>([
+                ...projectStore.all().map(p => ({
+                    label: `${decided === p.id ? '$(check) ' : '$(blank) '}${p.icon ? p.icon + ' ' : ''}${p.name}`,
+                    description: p.status, id: p.id
+                })),
+                { label: '', kind: vscode.QuickPickItemKind.Separator } as Row,
+                {
+                    label: `${decided === '' ? '$(check) ' : '$(blank) '}$(circle-slash) No project`,
+                    description: 'and keep it that way — folder and agent rules will not claim it back',
+                    act: 'none'
+                },
+                {
+                    label: '$(discard) Forget the decision',
+                    description: 'let the folder / agent rules decide again',
+                    act: 'forget'
+                },
+                { label: '$(add) New project from this session…', act: 'fromSession' }
+            ], { placeHolder: `Project for this session${many}`, ignoreFocusOut: true });
+            if (!pick) { return; }
+            if (pick.act === 'fromSession') {
+                await vscode.commands.executeCommand('agentfarm.projectFromSession', arg);
+                return;
+            }
+            const value = pick.act === 'forget' ? undefined : (pick.act === 'none' ? '' : (pick.id ?? ''));
+            const changed = projectStore.assignSessions(ids, value);
+            projectsChanged();
+            const where = pick.act === 'forget' ? 'left to the rules'
+                : pick.act === 'none' ? 'taken off every project'
+                    : `filed under "${projectStore.get(pick.id ?? '')?.name}"`;
+            void vscode.window.showInformationMessage(
+                `Agent Farm: ${changed} session${changed === 1 ? '' : 's'} ${where}.`);
+        }),
+
+        // The fastest possible backfill: the session already knows the folder
+        // the work happened in, so the new project starts with a code root that
+        // will claim every past and future session from the same place.
+        vscode.commands.registerCommand('agentfarm.projectFromSession', async (arg?: SessionCtxArg) => {
+            const ids = sessionIdsFromArg(arg);
+            const first = ids.length ? sessionFromArg(ids[0]) : undefined;
+            const suggestedName = (first?.title ?? '').split(/[.\n]/)[0].trim().slice(0, 60);
+            const created = await vscode.commands.executeCommand<Project | undefined>(
+                'agentfarm.newProject', { suggestName: suggestedName });
+            if (!created) { return; }
+            if (first?.cwd) {
+                projectStore.update(created.id, { repos: [first.cwd] });
+            }
+            if (ids.length) { projectStore.assignSessions(ids, created.id); }
+            projectsChanged();
+            void vscode.window.showInformationMessage(
+                `Agent Farm: "${created.name}" created` +
+                (first?.cwd ? ` with ${first.cwd} as a code root` : '') +
+                (ids.length ? ` · ${ids.length} session(s) filed under it` : '') + '.');
+        }),
+
+        // Turn a one-off assignment into a standing rule: everything that ever
+        // ran in this folder belongs to the project, not just this session.
+        vscode.commands.registerCommand('agentfarm.addSessionFolderToProject', async (arg?: SessionCtxArg) => {
+            const ids = sessionIdsFromArg(arg);
+            const s = ids.length ? sessionFromArg(ids[0]) : undefined;
+            if (!s?.cwd) {
+                void vscode.window.showWarningMessage('Agent Farm: this session does not say where it ran.');
+                return;
+            }
+            const pick = await vscode.window.showQuickPick(
+                projectStore.all().map(p => ({ label: p.name, description: (p.repos ?? []).join(' · '), id: p.id })),
+                { placeHolder: `Add ${s.cwd} as a code root of…`, ignoreFocusOut: true });
+            if (!pick) { return; }
+            const p = projectStore.get(pick.id);
+            if (!p) { return; }
+            const repos = [...(p.repos ?? [])];
+            if (!repos.some(r => normPath(r) === normPath(s.cwd ?? ''))) { repos.push(s.cwd); }
+            projectStore.update(p.id, { repos });
+            projectsChanged();
+            void vscode.window.showInformationMessage(
+                `Agent Farm: sessions under ${s.cwd} now fall to "${p.name}".`);
+        }),
+
+        // ---------- managing projects ----------
+        // Creating a project is a folder decision as much as a name one, so the
+        // folder is asked for HERE rather than left to be discovered missing
+        // later. Everything else about a project is edited on its own page.
+        vscode.commands.registerCommand('agentfarm.newProject', async (
+            seed?: { suggestName?: string }
+        ): Promise<Project | undefined> => {
+            const name = (await vscode.window.showInputBox({
+                prompt: 'Project name — a product, a customer, a piece of work',
+                value: seed?.suggestName ?? '',
+                ignoreFocusOut: true,
+                validateInput: v => {
+                    const t = (v ?? '').trim();
+                    if (!t) { return 'a project needs a name'; }
+                    if (projectStore.get(t)) { return `"${t}" already exists`; }
+                    if (!folderNameFor(t)) { return 'that name has no usable characters for a folder'; }
+                    return undefined;
+                }
+            }))?.trim();
+            if (!name) { return undefined; }
+
+            const root = projectsRoot();
+            const suggested = root ? path.join(root, folderNameFor(name)) : '';
+            interface Row extends vscode.QuickPickItem { act: string }
+            const where = await vscode.window.showQuickPick<Row>([
+                ...(suggested ? [{
+                    label: '$(new-folder) Create it here',
+                    detail: suggested, act: 'suggested'
+                }] : []),
+                { label: '$(folder-opened) Choose a folder…', detail: 'an existing folder, or a new one you pick', act: 'pick' },
+                { label: '$(circle-slash) Decide later', detail: 'the project is created without documents; it will say so until you choose one', act: 'none' }
+            ], { placeHolder: `Where should "${name}" keep its documents?`, ignoreFocusOut: true });
+            if (!where) { return undefined; }
+
+            let folder = '';
+            if (where.act === 'suggested') { folder = suggested; }
+            if (where.act === 'pick') {
+                const picked = await vscode.window.showOpenDialog({
+                    canSelectFolders: true, canSelectFiles: false, canSelectMany: false,
+                    openLabel: 'Use this folder',
+                    ...(root && dirExists(root) ? { defaultUri: vscode.Uri.file(root) } : {})
+                });
+                if (!picked?.length) { return undefined; }
+                folder = picked[0].fsPath;
+            }
+
+            const res = projectStore.create({ name, ...(folder ? { folder } : {}) });
+            if (res.error || !res.project) {
+                void vscode.window.showWarningMessage(`Agent Farm: ${res.error ?? 'could not create the project'}`);
+                return undefined;
+            }
+            if (folder) {
+                const built = createSkeleton(folder, res.project, projectSkeleton());
+                if (built.failed.length) {
+                    void vscode.window.showWarningMessage(
+                        `Agent Farm: "${name}" was created, but part of its folder could not be: ${built.failed[0].error}`);
+                }
+            }
+            projectsChanged();
+            void vscode.window.showInformationMessage(
+                folder ? `Agent Farm: "${name}" created — its documents are in ${folder}`
+                    : `Agent Farm: "${name}" created. It has no folder yet.`);
+            return res.project;
+        }),
+
+        vscode.commands.registerCommand('agentfarm.manageProjects', async () => {
+            const projects = projectStore.all();
+            interface Row extends vscode.QuickPickItem { act?: string; id?: string }
+            const pick = await vscode.window.showQuickPick<Row>([
+                { label: '$(add) New project…', detail: 'name it, and say where its documents live', act: 'new' },
+                ...(projects.length ? [{ label: 'Projects', kind: vscode.QuickPickItemKind.Separator } as Row] : []),
+                ...projects.map(p => {
+                    const warn = projectWarnings(p);
+                    const roll = projectRollup().find(r => r.name === p.name);
+                    return {
+                        label: `${p.icon ? p.icon + ' ' : '$(project) '}${p.name}`,
+                        description: `${p.status} · ${roll?.sessions ?? 0} sessions · ${fmtUSD(roll?.cost ?? 0)}`,
+                        detail: warn.length ? `⚠️ ${warn.join(' · ')}` : (p.folder ?? 'no folder'),
+                        act: 'open', id: p.id
+                    } as Row;
+                })
+            ], { placeHolder: 'Projects', ignoreFocusOut: true });
+            if (!pick?.act) { return; }
+            if (pick.act === 'new') {
+                await vscode.commands.executeCommand('agentfarm.newProject');
+                return;
+            }
+            if (pick.id) { await vscode.commands.executeCommand('agentfarm.openProject', { id: pick.id }); }
+        }),
+
+        // Which project should this agent's sessions fall to when nothing else
+        // claims them? A RULE, not membership — the agent may feed several
+        // projects, and an explicit session assignment always outranks this.
         vscode.commands.registerCommand('agentfarm.assignProject', async (arg: AgentArg) => {
             const agent = await resolveAgent(arg);
             if (!agent) { return; }
-            const defs = projectDefs();
-            const current = projectOfAgent({ id: agent.id, name: agent.name, dir: agent.dir }, defs);
-            interface Row extends vscode.QuickPickItem { project?: string; act?: string }
+            const projects = projectStore.all();
+            const has = (p: Project) =>
+                (p.match?.agents ?? []).some(a => a.toLowerCase() === agent.name.toLowerCase());
+            interface Row extends vscode.QuickPickItem { id?: string; act?: string }
             const pick = await vscode.window.showQuickPick<Row>([
-                ...defs.map(p => ({
-                    label: (p.name === current ? '$(check) ' : '$(blank) ') + p.name,
-                    description: (p.agents ?? []).join(', '),
-                    project: p.name
+                ...projects.map(p => ({
+                    label: `${has(p) ? '$(check) ' : '$(blank) '}${p.name}`,
+                    description: (p.match?.agents ?? []).join(', ') || 'no agent rules',
+                    id: p.id
                 })),
-                ...(current ? [{ label: '$(circle-slash) None', description: 'take it out of ' + current, act: 'none' }] : []),
+                ...(projects.some(has)
+                    ? [{ label: '$(circle-slash) No rule', description: 'take this agent out of every project rule', act: 'none' }]
+                    : []),
                 { label: '$(add) New project…', act: 'new' }
-            ], { placeHolder: `Project for ${agent.name}`, ignoreFocusOut: true });
+            ], {
+                placeHolder: `Default project for ${agent.name}'s sessions (an explicit assignment still wins)`,
+                ignoreFocusOut: true
+            });
             if (!pick) { return; }
+
+            const setRule = (p: Project, on: boolean): void => {
+                const rest = (p.match?.agents ?? []).filter(a => a.toLowerCase() !== agent.name.toLowerCase());
+                const next = on ? [...rest, agent.name] : rest;
+                projectStore.update(p.id, { match: next.length ? { agents: next } : undefined });
+            };
             if (pick.act === 'none') {
-                await saveProjects(defs.map(p => ({
-                    ...p,
-                    agents: (p.agents ?? []).filter(a => a.toLowerCase() !== agent.name.toLowerCase())
-                })).map(p => (p.agents?.length ? p : { ...p, agents: undefined })));
-                return;
+                for (const p of projects) { if (has(p)) { setRule(p, false); } }
+            } else if (pick.act === 'new') {
+                const created = await vscode.commands.executeCommand<Project | undefined>('agentfarm.newProject');
+                if (created) { setRule(created, true); }
+            } else if (pick.id) {
+                // the rule moves rather than accumulating: two projects claiming
+                // the same agent by rule would make the fallback arbitrary
+                for (const p of projects) { setRule(p, p.id === pick.id); }
             }
-            if (pick.act === 'new') {
-                const name = await vscode.window.showInputBox({ prompt: 'Project name', ignoreFocusOut: true });
-                if (!name?.trim()) { return; }
-                await saveProjects(assignAgent([...defs, { name: name.trim() }], name.trim(), agent.name, true));
-                return;
-            }
-            if (pick.project) {
-                await saveProjects(assignAgent(defs, pick.project, agent.name, true));
-            }
+            projectsChanged();
         }),
 
         // ---------- DALGA 1: the Console ----------
