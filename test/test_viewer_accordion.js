@@ -53,7 +53,11 @@ function makeSandbox(opts) {
                 totalTokens: 0, cost: 0, errors: 0, toolCalls: 0,
                 context: { tokens: 0, limit: 0 },
                 turnCount: 3, turnTotals: {},
-                turns: [{ n: 1, label: 'one' }, { n: 2, label: 'two' }, { n: 3, label: 'three' }],
+                turns: [
+                    { n: 1, label: 'one', ts: Date.UTC(2026, 4, 12, 11, 32) },
+                    { n: 2, label: 'two' },
+                    { n: 3, label: 'three' }
+                ],
                 messageCount: 7, truncatedCount: 0,
                 messages: [
                     // turnless preamble (arrives before the first prompt); assistant
@@ -124,7 +128,15 @@ function makeSandbox(opts) {
         count(html, '<span class="tcaret">▸</span>') === 3
         && count(html, '<span class="tcaret">▾</span>') === 0);
     ok('folded band shows its message count', html.includes('2 msgs'));
-    ok('folded band tooltip flips to expand', html.includes('Click to expand this turn'));
+    // The band's hover is the turn's start date — never "click to expand", which
+    // the caret and the controls row already say. Labelled, dated, and carrying
+    // how long ago it was; turn 2 has no ts of its own and falls back to the
+    // timestamp of the message that opens it.
+    ok('band tooltip is the turn start stamp, not a click hint',
+        !html.includes('Click to expand')
+        && html.includes('title="Turn started · ')
+        && /title="Turn started · [^"]*2026[^"]*\(\d+ (day|month|year)s? ago\)"/.test(html)
+        && count(html, 'title="Turn started · ') === 4);  // 3 bands + 1 breakdown row
 
     t.click('t-expandall');
     html = t.appHtml();

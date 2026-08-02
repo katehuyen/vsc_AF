@@ -103,6 +103,50 @@
         return ts ? new Date(ts).toLocaleString() : '—';
     }
 
+    /**
+     * A turn band's hover: WHEN that turn began.
+     *
+     * Every clock on this page is a time of day — the message meta lines print
+     * `toLocaleTimeString`, which answers "14:32" and never "14:32 of which
+     * day". Reading an old session, that is the one thing you cannot recover
+     * from the text: the transcript looks the same whether it ran this morning
+     * or last spring. The band is where the date belongs, because a turn is the
+     * unit this page navigates by.
+     *
+     * Date then time, in the reader's own locale (the rest of the page already
+     * defers to it), and the elapsed time in full words — a tooltip has room to
+     * be read as a sentence, unlike the `3d` shorthand the compact strips
+     * elsewhere are forced into. Date and time are formatted apart on purpose:
+     * one `toLocaleString` lets the locale drop a weekday into the middle of
+     * the number run (tr-TR: "12 May 2026 Sal 18:32"), which is exactly the
+     * kind of stamp you have to re-read.
+     */
+    function fmtStamp(ts) {
+        const d = new Date(ts);
+        return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+            + ', ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function agoWords(ts) {
+        const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+        if (s < 45) { return 'just now'; }
+        const w = (n, unit) => `${n} ${unit}${n === 1 ? '' : 's'} ago`;
+        const m = Math.round(s / 60);
+        if (m < 60) { return w(m, 'minute'); }
+        const h = Math.round(m / 60);
+        if (h < 24) { return w(h, 'hour'); }
+        const d = Math.round(h / 24);
+        if (d < 31) { return w(d, 'day'); }
+        const mo = Math.round(d / 30.44);
+        if (mo < 12) { return w(mo, 'month'); }
+        return w(Math.round(d / 365.25), 'year');
+    }
+
+    /** Labelled, so the hover says what the date IS and not just a bare number. */
+    function turnStartedTip(ts) {
+        return ts ? `Turn started · ${fmtStamp(ts)} (${agoWords(ts)})` : '';
+    }
+
     function matchesRole(m) {
         if (!roleSel.size) { return true; }
         return ROLE_CHIPS.some(c => roleSel.has(c.id) && c.match(m));
@@ -162,7 +206,10 @@
             : '';
         const info = turnInfo(m.turn);
         const closed = collapsed.has(m.turn);
-        return `<div class="turnhdr${closed ? ' closed' : ''}" data-turn="${m.turn}" title="Click to ${closed ? 'expand' : 'collapse'} this turn">
+        // The hover carries the turn's date, not "click to expand": the caret,
+        // the fold state and the controls row already say the band is clickable,
+        // so the one tooltip a turn gets is spent on what nothing else shows.
+        return `<div class="turnhdr${closed ? ' closed' : ''}" data-turn="${m.turn}" title="${C.esc(turnStartedTip((info && info.ts) || m.ts))}">
             <span class="tcaret">${closed ? '▸' : '▾'}</span>
             <label class="turnsel" title="Include this turn in Export MD">
                 <input type="checkbox" data-turnsel="${m.turn}"${exportOff.has(m.turn) ? '' : ' checked'}></label>
@@ -474,7 +521,7 @@
             </div>
             <div class="tablewrap"><table>
                 <thead><tr><th>md</th><th>#</th><th>prompt</th><th>model</th><th class="num">tokens</th><th class="num">cost</th></tr></thead>
-                <tbody>${turns.map(t => `<tr class="click" data-turn="${t.n}">
+                <tbody>${turns.map(t => `<tr class="click" data-turn="${t.n}" title="${C.esc(turnStartedTip(t.ts))}">
                     <td class="selcell"><input type="checkbox" data-turnsel="${t.n}"${exportOff.has(t.n) ? '' : ' checked'} title="Include in Export MD"><button class="only" data-only="${t.n}" title="Export only this turn">only</button></td>
                     <td>${t.n}</td><td>${C.esc(t.label || '—')}</td>
                     <td>${turnTags(t).map(x => `<span class="tag">${C.esc(x)}</span>`).join('') || '—'}</td>

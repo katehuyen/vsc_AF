@@ -2,6 +2,14 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.52.1 — A transcript could not say what day it was written (2026-08-02)
+
+**Every clock in the Session Viewer was a time of day.** Message meta lines print `toLocaleTimeString` — `14:32`, and never `14:32 of which day` — so an old session read like a conversation with no date on it: the text looks identical whether it ran this morning or last spring. The only date anywhere was the session's Span card, far above, and it says nothing about the individual turn you are looking at.
+
+**The turn band's hover now carries it:** `Turn started · 12 May 2026, 18:32 (3 days ago)` — labelled, so it says what the date *is* instead of dropping a bare number; date then time, each formatted separately in the reader's own locale (one `toLocaleString` lets a locale wedge the weekday into the middle of the number run — tr-TR renders "12 May 2026 Sal 18:32", exactly the kind of stamp you have to read twice); and the elapsed time in full words, minutes through years, because a tooltip has room for a sentence where the compact strips elsewhere are stuck with `3d`. The same hover is on every row of the Turn breakdown table.
+
+**It replaced "Click to expand this turn."** A band gets one tooltip, and that one was spending it on something three other things already say: the ▸/▾ caret, the fold state itself, and the `Turns:` controls row that reads "click a turn band to fold/unfold it". The date had nowhere else to go.
+
 ## 3.52.0 — A project is a thing now, with a folder, a sidebar and a page (2026-08-02)
 
 **"Project" used to be a name in a settings file.** It grouped agents so cost could be summed per customer, and that was all it could ever do: no page, no folder, no plan, nothing to open. This release turns it into the entity everything else hangs under — while it still owns almost no data of its own, because sessions, tasks, missions, notices and commits keep living exactly where they already lived. The project is the **join** over them.
