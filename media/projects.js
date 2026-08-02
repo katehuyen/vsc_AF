@@ -14,6 +14,35 @@
     // the user picked or typed themselves.
     let creating = null;
 
+    /**
+     * The project's own tabs.
+     *
+     * `settings` is the editor Faz 1 shipped as the whole page — it was always
+     * meant to end up as one tab here, and the reading tabs are what the page
+     * is actually for. The order is the order of the questions: what is this
+     * doing right now → what has happened → which sessions → what it cost →
+     * change it.
+     */
+    const TABS = [
+        { id: 'overview', label: 'Overview', tip: 'What this project is doing right now' },
+        { id: 'timeline', label: 'Timeline', tip: 'Everything that happened, newest first' },
+        { id: 'sessions', label: 'Sessions', tip: 'The same sessions table as everywhere else, scoped to this project' },
+        { id: 'cost', label: 'Cost', tip: 'Where the money went, and where it is going' },
+        { id: 'settings', label: '⚙ Settings', tip: 'Edit the project' }
+    ];
+    // ‼️ Seeded from the payload, not hard-coded to the first tab. The PANEL
+    // remembers which tab is open (it is what decides which data to build) and
+    // it outlives this script: reopening the page rebuilds the HTML, so a page
+    // that always started on Overview would show Overview while the host was
+    // still building — and sending — the timeline.
+    let tab = (DATA.tab && TABS.some(t => t.id === DATA.tab)) ? DATA.tab : 'overview';
+    /** Timeline chips the reader switched OFF — an exclusion set, so a kind
+     *  that appears for the first time is visible instead of hidden. */
+    let feedOff = new Set(['turn']);   // turns are the noisiest source; opt in
+    /** The embedded sessions table (created lazily — the component wants a
+     *  container that exists). */
+    let sessTable = null;
+
     const newForm = seed => ({
         name: (seed && seed.suggestName) || '',
         folder: '',
@@ -49,8 +78,53 @@
             }
             people = null;
             render();
+            return;
         }
+        // the sessions table asks the host for a row's turn breakdown
+        if (sessTable && sessTable.onMessage(ev)) { return; }
     });
+
+    /** The kinds the timeline is currently showing, as the host wants them.
+     *  Empty means "everything off" — a state the page draws by itself rather
+     *  than asking the host for a list it would then throw away. */
+    function wantedKinds() {
+        const feed = td().feed;
+        const counts = (feed && feed.counts) || null;
+        // Before the first feed lands there are no counts to filter — but the
+        // default exclusion is already known, so ask for it straight away
+        // rather than letting the opening request spend its whole row budget
+        // on the one kind that starts switched off.
+        const present = counts ? Object.keys(counts) : Object.keys(KIND_META);
+        return present.filter(k => !feedOff.has(k));
+    }
+
+    /**
+     * Tell the host which project, tab and event kinds are being read.
+     *
+     * The host builds ONLY the open tab's data (a 300-row feed on every fleet
+     * refresh, to draw a form, is how a read-only page starts costing frames).
+     *
+     * ‼️ THE KIND FILTER GOES WITH IT, AND THAT IS NOT AN OPTIMISATION.
+     * Measured on a project with 150 sessions: 3000 of its 3690 events are
+     * TURNS. A feed capped at 300 rows and filtered afterwards in the page is
+     * therefore 81% rows the reader has switched off — the timeline showed
+     * about fifty sessions-and-commits and claimed the rest was "older", when
+     * the rest was simply turns. Filtering before the cap means the 300 rows
+     * are 300 rows of what you are actually looking at.
+     *
+     * Only ever posted when the answer CHANGED — the host echoes back what it
+     * built, and without that comparison the two would refresh each other for
+     * ever.
+     */
+    function syncView() {
+        const want = creating ? '' : selectedId;
+        const kinds = wantedKinds();
+        const echoed = DATA.feedKinds || [];
+        const sameKinds = tab !== 'timeline' || !kinds.length
+            || (kinds.length === echoed.length && kinds.every(k => echoed.indexOf(k) >= 0));
+        if (DATA.tabProject === want && DATA.tab === tab && sameKinds) { return; }
+        vscode.postMessage({ type: 'view', project: want, tab: tab, kinds: kinds });
+    }
 
     /** Ask the host where this name's folder would go. The page cannot work it
      *  out itself — it does not know the projects root or how a name becomes a
@@ -186,7 +260,39 @@
         </tr>`).join('');
     }
 
-    function formHtml(p) {
+    /**
+     * The identity strip — on every tab, because it is the answer to "which
+     * project am I looking at" and a tab that drops it makes the reader scroll
+     * back to find out.
+     */
+    function headHtml(p) {
+        return `
+        <div class="pj-head">
+            <h2>${p.icon ? C.esc(p.icon) + ' ' : ''}${C.esc(p.name)}</h2>
+            <div class="btnrow">
+                ${p.id === DATA.activeId
+                ? '<button class="secondary" data-act="clearActive" title="Stop filing new sessions under this project">◧ Active — clear</button>'
+                : '<button class="secondary" data-act="setActive" title="Sessions you start in this window get filed under this project">◧ Make active</button>'}
+                ${p.folderState === 'ok' ? '<button class="secondary" data-act="revealFolder">📁 Folder</button>' : ''}
+            </div>
+        </div>
+        ${p.summary ? `<p class="muted small pj-summary">${C.esc(p.summary)}</p>` : ''}
+        ${warningsHtml(p)}
+        <div class="pj-stats">
+            <span><b>${p.sessions}</b> sessions</span>
+            <span><b>${money(p.cost)}</b> total</span>
+            <span><b>${money(p.todayCost)}</b> today</span>
+            <span>${p.lastTs ? 'last ' + new Date(p.lastTs).toLocaleDateString() : 'no activity yet'}</span>
+        </div>`;
+    }
+
+    function tabsHtml() {
+        return `<div class="pj-tabs">${TABS.map(t =>
+            `<button class="pj-tab ${t.id === tab ? 'on' : ''}" data-tab="${t.id}" title="${C.esc(t.tip)}">${C.esc(t.label)}</button>`
+        ).join('')}</div>`;
+    }
+
+    function settingsHtml(p) {
         const statusOpts = Object.keys(STATUS_META)
             .map(s => `<option value="${s}"${p.status === s ? ' selected' : ''}>${STATUS_META[s].label}</option>`).join('');
         const kinds = ['', 'product', 'customer', 'internal', 'research', 'personal', 'ops'];
@@ -200,24 +306,6 @@
             <label class="pj-chk"><input type="checkbox" data-agent="${C.esc(a)}" ${p.agentRules.indexOf(a) >= 0 ? 'checked' : ''}> ${C.esc(a)}</label>`).join('');
 
         return `
-        <div class="pj-head">
-            <h2>${p.icon ? C.esc(p.icon) + ' ' : ''}${C.esc(p.name)}</h2>
-            <div class="btnrow">
-                ${p.id === DATA.activeId
-                ? '<button class="secondary" data-act="clearActive" title="Stop filing new sessions under this project">◧ Active — clear</button>'
-                : '<button class="secondary" data-act="setActive" title="Sessions you start in this window get filed under this project">◧ Make active</button>'}
-                <button class="secondary" data-act="openSessions">Sessions (${p.sessions})</button>
-                ${p.folderState === 'ok' ? '<button class="secondary" data-act="revealFolder">📁 Folder</button>' : ''}
-            </div>
-        </div>
-        ${warningsHtml(p)}
-        <div class="pj-stats">
-            <span><b>${p.sessions}</b> sessions</span>
-            <span><b>${money(p.cost)}</b> total</span>
-            <span><b>${money(p.todayCost)}</b> today</span>
-            <span>${p.lastTs ? 'last ' + new Date(p.lastTs).toLocaleDateString() : 'no activity yet'}</span>
-        </div>
-
         <div class="pj-grid">
             <label>Name<input id="f-name" value="${C.esc(p.name)}"></label>
             <label class="pj-chk pj-inline"><input type="checkbox" id="f-renamefolder" checked> also rename the folder</label>
@@ -263,6 +351,249 @@
         </div>`;
     }
 
+    // -----------------------------------------------------------------------
+    // the tabs that READ rather than edit
+    // -----------------------------------------------------------------------
+
+    /** The host only builds the open tab's data, so an arriving payload can be
+     *  for the tab you just left. Everything below tolerates an empty object. */
+    const td = () => DATA.tabData || {};
+
+    const relTime = ts => {
+        if (!ts) { return ''; }
+        const s = Math.round((Date.now() - ts) / 1000);
+        if (s < 60) { return s + 's ago'; }
+        const m = Math.round(s / 60);
+        if (m < 60) { return m + 'm ago'; }
+        const h = Math.round(m / 60);
+        if (h < 48) { return h + 'h ago'; }
+        return Math.round(h / 24) + 'd ago';
+    };
+
+    const KIND_META = {
+        session: { glyph: '💬', label: 'Sessions' },
+        turn: { glyph: '↳', label: 'Turns' },
+        task: { glyph: '⚙', label: 'Tasks' },
+        mission: { glyph: '🎯', label: 'Missions' },
+        commit: { glyph: '⎇', label: 'Commits' },
+        files: { glyph: '✎', label: 'File writes' },
+        notice: { glyph: '🔔', label: 'Notices' },
+        queue: { glyph: '📥', label: 'Queue' },
+        decision: { glyph: '⚖', label: 'Decisions' },
+        deliverable: { glyph: '📦', label: 'Deliverables' },
+        plan: { glyph: '☑', label: 'Plan items' }
+    };
+    const kindMeta = k => KIND_META[k] || { glyph: '·', label: k };
+
+    /** One feed row. The whole row is the link — a 4-pixel target inside a row
+     *  the reader is already pointing at is a target they have to aim for. */
+    function eventRow(e, i) {
+        const meta = kindMeta(e.kind);
+        const when = new Date(e.ts);
+        return `<div class="pj-ev ${e.tone ? 'tone-' + e.tone : ''} ${e.link ? 'clickable' : ''}" ${e.link ? `data-ev="${i}"` : ''}
+                title="${C.esc(when.toLocaleString())}${e.link ? ' — click to open' : ''}">
+            <span class="pj-ev-g" title="${C.esc(meta.label)}">${meta.glyph}</span>
+            <span class="pj-ev-t">${C.esc(e.title)}</span>
+            <span class="pj-ev-d">${C.esc(e.detail || '')}</span>
+            <span class="pj-ev-a">${C.esc(e.agent || '')}</span>
+            <span class="pj-ev-c">${e.cost ? money(e.cost) : ''}</span>
+            <span class="pj-ev-w">${C.esc(relTime(e.ts))}</span>
+        </div>`;
+    }
+
+    function overviewHtml(p) {
+        const d = td();
+        if (!d.activity) { return '<p class="muted">Reading the project…</p>'; }
+        const run = d.activity.running || [];
+        const next = d.activity.next || [];
+        const cost = d.cost || { total: 0, today: 0, burn: {} };
+        const burn = cost.burn || {};
+
+        const runHtml = run.length
+            ? run.map(r => `<div class="pj-now">
+                    <span class="pj-dotlive"></span>
+                    <span class="pj-ev-t">${C.esc(r.title || '(untitled)')}</span>
+                    <span class="muted small">${C.esc(r.what)}${r.agent ? ' · ' + C.esc(r.agent) : ''} · started ${C.esc(relTime(r.since))}</span>
+                </div>`).join('')
+            : '<p class="muted small">Nothing running on this project right now.</p>';
+
+        const nextHtml = next.length
+            ? next.map(t => `<div class="pj-next">
+                    <span class="pj-ev-t">${C.esc(t.title)}</span>
+                    <span class="muted small">${C.esc(t.agent)} · queued ${C.esc(relTime(t.createdAt))}${t.held ? ' · held: ' + C.esc(t.held) : ''}</span>
+                </div>`).join('')
+            : '<p class="muted small">Nothing queued.</p>';
+
+        const recent = (d.recent || []).slice(0, 8);
+        return `
+        <div class="pj-cards">
+            <div class="pj-card">
+                <div class="pj-card-h">Running now</div>
+                ${runHtml}
+            </div>
+            <div class="pj-card">
+                <div class="pj-card-h">Next up <span class="muted small">queued tasks</span></div>
+                ${nextHtml}
+            </div>
+            <div class="pj-card">
+                <div class="pj-card-h">Money</div>
+                <div class="pj-money">
+                    <span><b>${money(cost.total)}</b><small>total</small></span>
+                    <span><b>${money(cost.today)}</b><small>today${p.budgetUSD ? ` · ${burn.todayPct != null ? burn.todayPct : 0}% of budget` : ''}</small></span>
+                    <span><b>${money(burn.perDay7 || 0)}</b><small>per day, last 7</small></span>
+                    ${burn.projectedAtDue != null
+                ? `<span><b>${money(burn.projectedAtDue)}</b><small>projected at the due date</small></span>` : ''}
+                    ${burn.daysToBudget != null
+                ? `<span><b>${burn.daysToBudget}</b><small>days of budget left at that rate</small></span>` : ''}
+                </div>
+            </div>
+        </div>
+        <div class="pj-card">
+            <div class="pj-card-h">Latest <span class="muted small">the newest of everything — the Timeline tab has the rest</span></div>
+            ${recent.length ? recent.map(eventRow).join('') : '<p class="muted small">Nothing has happened on this project yet.</p>'}
+        </div>`;
+    }
+
+    /**
+     * ‼️ THE FILTER IS CLIENT-SIDE, AND THE COUNTS COME FROM THE HOST.
+     *
+     * Chips that round-trip to the extension for every click feel broken on a
+     * list this size, so the whole (capped) feed ships once per repaint and the
+     * chips filter it here. The COUNTS, though, are computed host-side over
+     * everything before any filter — so a chip says how many rows turning it on
+     * would actually add, which is the only number that makes it worth reading.
+     */
+    function timelineHtml() {
+        const d = td();
+        const feed = d.feed;
+        if (!feed) { return '<p class="muted">Reading the project…</p>'; }
+        const counts = feed.counts || {};
+        const present = Object.keys(counts).filter(k => counts[k] > 0);
+        if (!present.length) {
+            return `<p class="muted">Nothing has happened on this project yet — no sessions, no tasks, no commits in its code roots.</p>${unfiledNote()}`;
+        }
+        const chips = present.map(k => {
+            const meta = kindMeta(k);
+            const on = !feedOff.has(k);
+            return `<button class="pj-chip ${on ? 'on' : ''}" data-kind="${k}" title="${C.esc(meta.label)} — ${counts[k]} in this project">
+                ${meta.glyph} ${C.esc(meta.label)} <span class="muted">${counts[k]}</span></button>`;
+        }).join('');
+
+        // ‼️ The row carries its index in the UNFILTERED list, because that is
+        // what the click handler looks the event up in. Numbering the filtered
+        // rows instead would open the wrong thing the moment a chip is off.
+        const rows = (feed.events || [])
+            .map((e, i) => ({ e: e, i: i }))
+            .filter(x => !feedOff.has(x.e.kind));
+        return `
+        <div class="pj-chips-row">
+            ${chips}
+            <span class="grow"></span>
+            <button class="pj-chip" data-kind="__all">All</button>
+            <button class="pj-chip" data-kind="__none">None</button>
+        </div>
+        <div class="pj-feed">
+            ${rows.length ? rows.map(x => eventRow(x.e, x.i)).join('')
+                : '<p class="muted small">Every kind is switched off — turn one back on above.</p>'}
+        </div>
+        ${feed.truncated ? '<p class="muted small">Older rows are not shown — this list is capped so the page stays fast.</p>' : ''}
+        ${unfiledNote()}`;
+    }
+
+    /**
+     * Say what is NOT in the timeline, by name.
+     *
+     * A filter row that silently has no Notices chip reads as a bug. Naming the
+     * gap is one line, and it is the difference between "there is nothing" and
+     * "this cannot be shown yet" — which are completely different answers to
+     * the reader's question.
+     */
+    function unfiledNote() {
+        const missing = (DATA.unfiledKinds || []).map(k => kindMeta(k).label);
+        if (!missing.length) { return ''; }
+        return `<p class="muted small pj-unfiled">Not here yet: ${C.esc(missing.join(' · '))}.
+            Notices and queue items carry no project of their own, and an agent may work on several
+            projects — so guessing one from who posted it would file them wrong. Plan items, decisions
+            and deliverables are documents nothing writes to yet.</p>`;
+    }
+
+    function costHtml(p) {
+        const c = td().cost;
+        // ‼️ Overview carries a cost object TOO — the headline figures only.
+        // Clicking through to this tab repaints once with that slim object
+        // still in hand, before the host's answer lands. Checking for the full
+        // shape (not just "is there a cost?") is what stops that one frame from
+        // being a crash: `c.days.length` on the slim object throws, and a
+        // webview that throws mid-render leaves the page frozen on the tab you
+        // just left with no error anywhere the user can see.
+        if (!c || !Array.isArray(c.days)) { return '<p class="muted">Reading the project…</p>'; }
+        if (!c.total && !c.days.length) {
+            return '<p class="muted">No spend on this project yet.</p>';
+        }
+        const days = c.days.slice(-45);
+        const chart = days.length
+            ? C.stackedBars(days.map(x => x.day.slice(5)),
+                [{ name: 'cost', values: days.map(x => x.cost) }], { fmt: C.fmtUSD })
+            : '';
+        const agents = c.byAgent.length
+            ? C.hbars(c.byAgent.map(a => ({ name: a.agent, value: a.cost })), { fmt: C.fmtUSD })
+            : '<p class="muted small">No agent has spent anything here.</p>';
+        const models = c.byModel.length
+            ? C.hbars(c.byModel.map(m => ({ name: m.model, value: m.cost })), { fmt: C.fmtUSD })
+            : '<p class="muted small">No single-model turn to attribute.</p>';
+        const burn = c.burn || {};
+        const budgetLine = [
+            p.budgetUSD ? `daily budget ${money(p.budgetUSD)} — today is ${burn.todayPct != null ? burn.todayPct : 0}% of it` : '',
+            p.budgetTotalUSD ? `total budget ${money(p.budgetTotalUSD)} — ${burn.budgetUsedPct != null ? burn.budgetUsedPct : 0}% used` : '',
+            burn.daysToBudget != null ? `${burn.daysToBudget} days left at the last-7-days rate` : '',
+            burn.projectedAtDue != null ? `projected ${money(burn.projectedAtDue)} by the due date` : ''
+        ].filter(Boolean);
+
+        return `
+        <div class="pj-money pj-money-top">
+            <span><b>${money(c.total)}</b><small>total</small></span>
+            <span><b>${money(c.today)}</b><small>today</small></span>
+            <span><b>${money(burn.perDay7 || 0)}</b><small>per day · last 7</small></span>
+            <span><b>${money(burn.perDay30 || 0)}</b><small>per day · last 30</small></span>
+        </div>
+        ${budgetLine.length ? `<p class="muted small">${C.esc(budgetLine.join(' · '))}</p>` : ''}
+        <div class="pj-card">
+            <div class="pj-card-h">By day <span class="muted small">last ${days.length} day(s) with spend</span></div>
+            ${chart}
+        </div>
+        <div class="pj-cards">
+            <div class="pj-card">
+                <div class="pj-card-h">By agent</div>
+                ${agents}
+            </div>
+            <div class="pj-card">
+                <div class="pj-card-h">By model</div>
+                ${models}
+                ${costCaveat(c)}
+            </div>
+        </div>`;
+    }
+
+    /**
+     * ‼️ SAY WHAT THE BREAKDOWN CANNOT CLAIM.
+     *
+     * Cost is billed per TURN, not per model. A turn served by two models cannot
+     * be split without inventing a ratio, and a session with no per-turn detail
+     * cannot be split at all. Both are shown as their own figure instead of
+     * being folded into whichever model happened to sort first — a chart that
+     * silently adds up to less than the total is worse than one that says why.
+     */
+    function costCaveat(c) {
+        const bits = [];
+        if (c.mixedTurnCost) {
+            bits.push(`${money(c.mixedTurnCost)} came from turns served by more than one model — the transcript bills the turn, not the model, so it cannot be split`);
+        }
+        if (c.unattributed) {
+            bits.push(`${money(c.unattributed)} is from sessions with no per-turn detail`);
+        }
+        return bits.length ? `<p class="muted small">${C.esc(bits.join('. '))}.</p>` : '';
+    }
+
     function render() {
         const p = sel();
         const note = flash
@@ -304,6 +635,46 @@
                 .pj-flash { padding:7px 11px; border-radius:5px; margin:8px 0; font-size:12px; }
                 .pj-flash.good { background:var(--vscode-inputValidation-infoBackground, #0a3); color:var(--vscode-foreground); }
                 .pj-flash.bad { background:var(--vscode-inputValidation-errorBackground, #a00); color:var(--vscode-foreground); }
+                .pj-summary { margin:4px 0 0; }
+                /* tabs */
+                .pj-tabs { display:flex; gap:2px; margin:14px 0 12px; border-bottom:1px solid var(--vscode-panel-border); }
+                .pj-tab { background:none; border:none; border-bottom:2px solid transparent; border-radius:0;
+                    padding:6px 12px; font-size:12px; opacity:.7; cursor:pointer; color:inherit; }
+                .pj-tab:hover { opacity:1; background:var(--vscode-list-hoverBackground); }
+                .pj-tab.on { opacity:1; border-bottom-color:var(--vscode-focusBorder,#3794ff); font-weight:600; }
+                /* cards */
+                .pj-cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px,1fr)); gap:12px; margin-bottom:12px; }
+                .pj-card { border:1px solid var(--vscode-widget-border,#4443); border-radius:7px; padding:10px 12px; margin-bottom:12px; }
+                .pj-card-h { font-size:11px; text-transform:uppercase; opacity:.6; margin-bottom:8px; }
+                .pj-now, .pj-next { display:flex; flex-direction:column; gap:1px; padding:4px 0; }
+                .pj-dotlive { width:7px; height:7px; border-radius:50%; display:inline-block; margin-right:5px;
+                    background:var(--vscode-charts-green,#3fb950); }
+                .pj-money { display:flex; gap:22px; flex-wrap:wrap; }
+                .pj-money span { display:flex; flex-direction:column; }
+                .pj-money b { font-size:16px; }
+                .pj-money small { opacity:.6; font-size:11px; }
+                .pj-money-top { margin:4px 0 10px; }
+                /* timeline */
+                .pj-chips-row { display:flex; gap:5px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }
+                .pj-chip { font-size:11px; padding:2px 9px; border-radius:11px; cursor:pointer;
+                    border:1px solid var(--vscode-widget-border,#4443); background:none; color:inherit; opacity:.5; }
+                .pj-chip.on { opacity:1; background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); }
+                .pj-feed { display:flex; flex-direction:column; }
+                .pj-ev { display:grid; grid-template-columns:18px minmax(0,2fr) minmax(0,1.6fr) 90px 62px 74px;
+                    gap:8px; align-items:baseline; padding:3px 6px; border-radius:4px; font-size:12px;
+                    border-left:2px solid transparent; }
+                .pj-ev:hover { background:var(--vscode-list-hoverBackground); }
+                .pj-ev.clickable { cursor:pointer; }
+                .pj-ev.tone-ok { border-left-color:var(--vscode-charts-green,#3fb950); }
+                .pj-ev.tone-bad { border-left-color:var(--vscode-editorError-foreground,#f14c4c); }
+                .pj-ev.tone-warn { border-left-color:var(--vscode-charts-yellow,#d7ba7d); }
+                .pj-ev-g { text-align:center; opacity:.8; }
+                .pj-ev-t { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+                .pj-ev-d, .pj-ev-a, .pj-ev-c, .pj-ev-w { opacity:.6; font-size:11px;
+                    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+                .pj-ev-c, .pj-ev-w { text-align:right; }
+                .pj-unfiled { margin-top:14px; max-width:70ch; }
+                .grow { flex:1; }
             </style>
             ${window.AFHeader.html({
                 page: 'projects',
@@ -315,11 +686,64 @@
             <div class="pj-wrap">
                 ${listHtml()}
                 <div class="pj-main">${creating ? createHtml()
-                : (p ? formHtml(p) : '<p class="muted">Pick a project, or create one.</p>')}</div>
+                : (p ? headHtml(p) + tabsHtml() + tabBodyHtml(p)
+                    : '<p class="muted">Pick a project, or create one.</p>')}</div>
             </div>`;
         window.AFHeader.wire(vscode);
         flash = null;
         wire();
+        // The shared table renders into its own container, which this repaint
+        // just replaced — so it is (re)filled after the DOM exists, never before.
+        if (p && !creating && tab === 'sessions') { mountSessions(); }
+        syncView();
+    }
+
+    /**
+     * The open tab's body.
+     *
+     * Every reading tab is drawn from `DATA.tabData`, which the host builds for
+     * the OPEN tab only. A payload that arrived for the tab you just left leaves
+     * the new one saying "reading…" for exactly one repaint — which is honest,
+     * and cheaper than shipping four tabs' worth of data forever.
+     */
+    function tabBodyHtml(p) {
+        switch (tab) {
+            case 'timeline': return timelineHtml();
+            case 'sessions': return sessionsHtml();
+            case 'cost': return costHtml(p);
+            case 'settings': return settingsHtml(p);
+            default: return overviewHtml(p);
+        }
+    }
+
+    /** The Sessions tab is the SHARED table (media/sessionsTable.js), whole:
+     *  its columns, filters, sorts, fold-open turn breakdown and the session
+     *  right-click contract all come along, and none of it is reimplemented
+     *  here. It owns the container div; this page only supplies the rows. */
+    function sessionsHtml() {
+        // The tab answers "which sessions"; the button goes on answering the
+        // other question — "…and how do they sit against the whole fleet",
+        // which is the Dashboard, scoped. Two destinations, not two copies.
+        return `<div class="btnrow" style="margin-bottom:8px">
+                <button class="secondary" data-act="openSessions"
+                    title="Open the Dashboard filtered to this project — the same table, with the fleet's cards around it">
+                    ⇱ Open in Dashboard</button>
+            </div>
+            <div id="pj-sessions"></div>`;
+    }
+
+    function mountSessions() {
+        const d = td();
+        if (!sessTable) {
+            sessTable = window.AFSessionsTable.create({
+                vscode, C,
+                containerId: 'pj-sessions',
+                columns: ['origin', 'title', 'agent', 'when', 'duration', 'turns', 'tools', 'files', 'errors', 'tokens', 'cost'],
+                tableN: 25,
+                stateKey: 'project'
+            });
+        }
+        sessTable.setRows(d.rows || [], d.tableN);
     }
 
     /** Read the whole form back. Empty clears the field — that is how the page
@@ -355,6 +779,34 @@
         document.querySelectorAll('[data-pick]').forEach(el =>
             el.addEventListener('click', () => {
                 selectedId = el.dataset.pick; people = null; creating = null; render();
+            }));
+
+        document.querySelectorAll('[data-tab]').forEach(el =>
+            el.addEventListener('click', () => { tab = el.dataset.tab; render(); }));
+
+        // Timeline chips. An exclusion set, so a kind appearing for the first
+        // time shows up instead of being hidden by a filter nobody set.
+        document.querySelectorAll('[data-kind]').forEach(el =>
+            el.addEventListener('click', () => {
+                const k = el.dataset.kind;
+                const feed = td().feed;
+                const present = Object.keys((feed && feed.counts) || {});
+                if (k === '__all') { feedOff = new Set(); }
+                else if (k === '__none') { feedOff = new Set(present); }
+                else if (feedOff.has(k)) { feedOff.delete(k); }
+                else { feedOff.add(k); }
+                render();
+            }));
+
+        // A feed row opens what it is about. The index is carried on the row
+        // rather than the link itself: a serialised link in a data attribute is
+        // a string the page would have to re-parse and re-trust.
+        document.querySelectorAll('[data-ev]').forEach(el =>
+            el.addEventListener('click', () => {
+                const d = td();
+                const list = tab === 'timeline' ? (d.feed && d.feed.events) : d.recent;
+                const ev = (list || [])[Number(el.dataset.ev)];
+                if (ev && ev.link) { vscode.postMessage({ type: 'openLink', link: ev.link }); }
             }));
 
         // The create form keeps its own state so a repaint never loses a

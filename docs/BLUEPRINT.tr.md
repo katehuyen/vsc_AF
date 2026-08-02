@@ -617,8 +617,24 @@ Bu adımlardan ikisi süs değil. **En uzun kök kazanır**, sessiz bir yanlış
 
 **Göç.** `agentFarm.projects` aktivasyonda bir kez içeri alınır: ajan listeleri *kurala*, klasörler kod köküne, not tek satırlık özete dönüşür. Klasör uydurulmaz — her proje kendi klasörünü sorar. İşaretçi, ayar **okunduğunda** değil, ayarda gerçekten bir şey **görüldüğünde** konur: Settings Sync aktivasyondan sonra inebilir ve boş okuma, ayarın boş olduğunun kanıtı değildir.
 
+### Proje sayfası — Overview · Timeline · Sessions · Cost
+
+*(3.55.0.)* Sayfa yalnızca **düzenlenebiliyordu**; ne olduğunu anlatamıyordu. Artık sekmeleri var, ve Faz 1'in düzenleyicisi onlardan biri (⚙ Settings).
+
+**Timeline, projenin dokunduğu her şeyin birleşimi** — koşan oturumlar, içlerindeki turlar, her oturumun ne yazdığı, görevler, misyon koşuları ve turları, ve projenin beyan ettiği kod köklerindeki git commit'leri. Her satır ait olduğu şeye derin bağlantı. Bir oturum **tek** satırdır (bittiği yere damgalanır, çünkü liste en yeniden okunur) ve bir oturumun dosya yazımları da **tek** satırdır: dosya başına satır olsaydı tek bir refactor bütün günü sahiplenirdi.
+
+**Aidiyet tek yerde kararlaştırılır.** `core/projectFeed.ts` saftır ve kendisine zaten projeye ait satırlar verilir; yargı çözümleme sırasında (`core/projects.ts`) kalır. Oturumlar o sıradan, görevler `projectId`'den, misyonlar adım görevlerinden, commit'ler beyan edilmiş bir kod kökünden gelir. **Bildirimler ve kuyruk maddeleri bilerek yoktur** — proje bağı taşımıyorlar, ve bunu kimin gönderdiğinden çıkarsamak "bir ajan bir projeye aittir" hatasının kibar yazı tipiyle yazılmış hâlidir. Plan maddeleri, kararlar ve teslimler Faz 4'tür. Sayfa beşini de sessizce atlamak yerine **adıyla söyler**.
+
+**‼️ Tür süzgeci satır sınırından ÖNCE uygulanır, ve bu bir ölçümdür.** 150 oturumlu bir projede 3690 olayın 3000'i turdur. 300'de kesip sonra sayfada süzmek, okuyucuya kapattığı türden %81 oranında dolu 300 satır verir — timeline ~50 oturum gösterip gerisine "daha eski" der, oysa gerisi turlardır. Bu yüzden sayfa istediği türleri gönderir ve host süzdükten sonra keser. `counts` yine her şey üzerinden, herhangi bir süzgeçten önce alınır; böylece bir çip, açılırsa kaç satır ekleyeceğini söyler. Turlar kapalı başlar.
+
+**Maliyet, ve bir maliyet kırılımının iddia EDEMEYECEĞİ şey.** Toplam · bugün · günlük seri · 7 ve 30 günlük yakma hızı · bitiş tarihindeki öngörü · bütçe menzili. Model kırılımı **tur** granülasyonundan türetilir, çünkü transkriptin bir modeli faturaladığı tek yer orasıdır — iki modelin hizmet ettiği bir tur, uydurma bir oranla bölünmek yerine `mixedTurnCost` olarak bildirilir; tur ayrıntısı olmayan oturumlar `unattributed`'a düşer. `byModel + mixedTurnCost + unattributed = total`.
+
+**Sessions, `media/sessionsTable.js`'in bütün olarak gömülmesidir**; sütunlar, süzgeçler, sıralamalar, açılan tur dökümü ve paylaşılan sağ tık sözleşmesi bedava gelir. Bir buton, sekmenin cevaplamadığı "filonun bütününe göre nerede duruyor" sorusu için Dashboard'ı projeye daraltılmış açar.
+
+**Sayfanın kendi maliyeti, ölçüldü:** 150 oturum · 3000 tur · 200 görev · 10 misyon · 120 commit → bütün akış ve rollup için **42 ms**. `git log` depo başına 60 sn önbellekli okunur ve bir repaint sırasında asla satır içi çalıştırılmaz; her sekmenin verisi yalnızca o sekme açıkken üretilir, çünkü bu sayfa her filo yenilemesinde yeniden çizilir.
+
 **Ayarlar:** `agentFarm.projectsRoot` · `agentFarm.projectSkeleton` · `agentFarm.projectStaleDays` · `agentFarm.projectContextExtra`.
-**Köprü:** `projects.list` · `get` · `create` · `set` · `rename` · `assign` · `current` · `health` · `rescan` · `sessions` (bir projenin oturumları, her biri *neden* ait olduğuyla) · `brief` (durum özeti; `context:true` bir oturuma verilen metnin birebir kendisini döndürür).
+**Köprü:** `projects.list` · `get` · `create` · `set` · `rename` · `assign` · `current` · `health` · `rescan` · `sessions` (bir projenin oturumları, her biri *neden* ait olduğuyla) · `brief` (durum özeti; `context:true` bir oturuma verilen metnin birebir kendisini döndürür) · `timeline` (sayfanın kendi akışı; `counts` süzgeçten önce alınır, `unfiled` henüz dosyalanamayanı adıyla söyler) · `cost` (sayfanın kendi rollup'ı, çekinceleriyle).
 
 ### Agent Portfolio — filo tek ekranda
 

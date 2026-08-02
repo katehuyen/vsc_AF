@@ -2,6 +2,30 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.55.0 — You can see the project (2026-08-02)
+
+**A project had a page you could only edit.** It knew its name, its folder, its people and its budgets — and it could not tell you a single thing that had happened on it. To find out you left: the Dashboard for the sessions, the Tasks page for the runs, a terminal for the commits, and you reassembled the week in your head. The project was the one thing that knew all four belonged together, and it was the one surface that would not say so.
+
+**It has tabs now: Overview · Timeline · Sessions · Cost**, with the editor Faz 1 shipped moved to a fifth (⚙ Settings) where it always belonged.
+
+**Timeline is the join.** One chronological list — the sessions that ran, the turns inside them, what each session wrote, the tasks, the mission runs and their rounds, and the git commits in the project's own code roots. Every row opens what it is about. A session is **one** row, not a "started" and an "ended" that the reader has to reunite, and it is stamped where it finished, because a list read newest-first should put a three-hour session where it ended. What a session wrote is one row too — one row per file and a single refactor owns the whole day.
+
+**The filter runs where the cut happens, and that was measured rather than assumed.** On a project with 150 sessions, 3000 of its 3690 events are turns. Capping the feed at 300 rows and filtering afterwards in the page therefore hands you 300 rows that are 81% the one kind you switched off: the timeline showed about fifty sessions and commits and called everything else "older", when everything else was turns. So the kinds you are looking at go to the host and the cut happens after the filter. The chip counts are still taken over *everything*, before any filter, so a chip tells you how many rows turning it on would actually add. Turns start off.
+
+**It says what it cannot show, by name.** Notices and queue items carry no project of their own, and an agent may work on several projects — so guessing one from who posted a notice would file it wrong, and that is exactly the misattribution the entity model was rebuilt to remove. Plan items, decisions and deliverables are documents nothing writes to yet. A filter row that silently has no Notices chip reads as a bug; naming the gap costs a line and makes it a limit.
+
+**Cost, and what a cost breakdown is not allowed to claim.** Total, today, a per-day series, a burn rate over 7 and 30 days, what that projects by the due date and how much budget it leaves. The by-model breakdown only claims what the transcript actually bills: cost is recorded per **turn**, so a turn served by two models cannot be split without inventing a ratio — that money is printed as its own figure, next to the money from sessions that have no per-turn detail at all. `byModel + mixed + unattributed = total`, and the chart says why it does not add up on its own.
+
+**Sessions is the shared table, whole.** The same component the Dashboard and the agent pages use, scoped to the project — so its columns, filters, sorts, fold-open turn breakdown and the entire session right-click contract arrive with it, rather than being reimplemented into a fourth set of bugs. A button opens the Dashboard filtered to the project for when the question is how it sits against the whole fleet.
+
+**Overview answers "what is happening", not "what is this".** What is running right now, what is queued next (and what is holding it), the money headline, and the newest of everything.
+
+**A project is now marked the same way everywhere.** It has had a colour and an icon since 3.52.0, and the sessions tables — the surface that lists sessions *by project* — were the one place still showing a bare name. Two tooltips there were also still telling you to manage projects in `agentFarm.projects`, a setting that has not existed since that release.
+
+**Measured:** a project with 150 sessions, 3000 turns, 200 tasks, 10 missions and 120 commits builds its whole feed and cost rollup in **42 ms**. `git log` is read per repository behind a 60-second cache and never inline on a repaint, and each tab's data is built only while that tab is the open one.
+
+**Bridge:** `projects.timeline` (the same feed, with `counts` before the filter and `unfiled` naming what cannot be filed yet) · `projects.cost` (the same rollup, caveats included).
+
 ## 3.54.1 — The brief was telling the agent the wrong day, and automation was being told the wrong project (2026-08-02)
 
 **A project's dates arrived a day early.** Started and Due are stored as *local* midnight — the page's date picker builds them that way — and the brief printed them through `toISOString()`, which is UTC. Everywhere east of UTC that is the previous day: this machine is at +07, so a project due on 15 August was telling every session it was due on the 14th. The same mismatch was in the project form, and it was worse there, because the form writes back what it displays: the date walked one day earlier **every time the project was saved**. Both sides now build the date from local parts, which is what `templateVars` in the same file was already doing.

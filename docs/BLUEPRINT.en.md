@@ -568,8 +568,24 @@ Two of those steps are not decoration. **Longest root wins** fixes a silent misa
 
 **Migration.** `agentFarm.projects` is imported once on activation: agent lists become *rules*, folders become code roots, notes become the one-line summary. No folder is invented — each project asks for one. The marker is set when the setting is seen to **hold** something, not merely when it is read: Settings Sync can land after activation, and an empty read is not proof of an empty setting.
 
+### The project page — Overview · Timeline · Sessions · Cost
+
+*(3.55.0.)* The page could only be **edited**; it could not say what had happened. It has tabs now, and the Faz 1 editor is one of them (⚙ Settings).
+
+**Timeline is the join over everything a project touches** — sessions, the turns inside them, what each session wrote, tasks, mission runs and their rounds, and git commits in the project's declared code roots. Each row deep-links to what it is about. A session is **one** row (stamped where it ended, since the list is read newest-first), and a session's file writes are **one** row: per-file rows would let a single refactor own the day.
+
+**Membership is decided in one place.** `core/projectFeed.ts` is pure and takes rows that already belong to the project; the judgment stays in the resolution order (`core/projects.ts`). Sessions resolve through that order, tasks carry `projectId`, missions come in through their step tasks, commits through a declared code root. **Notices and queue items are absent on purpose** — they carry no project link, and deriving one from who posted it is the "an agent owns one project" mistake in a friendlier font. Plan items, decisions and deliverables are Faz 4. The page **names** all five rather than quietly having no chip for them.
+
+**‼️ The kind filter is applied BEFORE the row cap, and that is a measurement.** On a 150-session project, 3000 of 3690 events are turns. Capping at 300 and filtering in the page gives the reader 300 rows that are 81% the kind they switched off — the timeline showed ~50 sessions and called the rest "older" when the rest was turns. So the page sends the kinds it wants and the host cuts after filtering. `counts` is still taken over everything before any filter, so a chip says how many rows turning it on would add. Turns start off.
+
+**Cost, and the thing a cost breakdown may not claim.** Total · today · a per-day series · burn over 7 and 30 days · what it projects at the due date · budget runway. The by-model split is derived at **turn** granularity, because that is the only place the transcript bills a model — a turn served by two models is reported as `mixedTurnCost` rather than divided by an invented ratio, and sessions with no per-turn detail land in `unattributed`. `byModel + mixedTurnCost + unattributed = total`.
+
+**Sessions is `media/sessionsTable.js` embedded whole**, so columns, filters, sorts, the fold-open turn breakdown and the shared right-click contract come free. A button opens the Dashboard scoped to the project, for the fleet-context question the tab does not answer.
+
+**Cost of the page itself, measured:** 150 sessions · 3000 turns · 200 tasks · 10 missions · 120 commits → **42 ms** for the whole feed and rollup. `git log` is cached per repository for 60 s and never spawned inline on a repaint; each tab's data is built only while that tab is open, because this page repaints on every fleet refresh.
+
 **Settings:** `agentFarm.projectsRoot` · `agentFarm.projectSkeleton` · `agentFarm.projectStaleDays` · `agentFarm.projectContextExtra`.
-**Bridge:** `projects.list` · `get` · `create` · `set` · `rename` · `assign` · `current` · `health` · `rescan` · `sessions` (one project's sessions, each with *why* it belongs) · `brief` (the state summary; `context:true` returns the exact text a session is given).
+**Bridge:** `projects.list` · `get` · `create` · `set` · `rename` · `assign` · `current` · `health` · `rescan` · `sessions` (one project's sessions, each with *why* it belongs) · `brief` (the state summary; `context:true` returns the exact text a session is given) · `timeline` (the page's own feed, with `counts` taken before the filter and `unfiled` naming what cannot be filed yet) · `cost` (the page's own rollup, caveats included).
 
 ### Agent Portfolio — the fleet on one screen
 

@@ -264,6 +264,10 @@ export class ConsolePanel {
                 projectId: s.projectId ?? '',
                 projectName: s.projectId
                     ? (this.deps.projects().find(p => p.id === s.projectId)?.name ?? '') : '',
+                // the project's own mark, so a card, a table row and the sidebar
+                // all point at the same thing in the same way
+                projectIcon: s.projectId
+                    ? (this.deps.projects().find(p => p.id === s.projectId)?.icon ?? '') : '',
                 messages: s.id === this.selected ? s.messages.slice(-400) : []
             })),
             agents: this.deps.getAgents().map(a => ({ id: a.id, name: a.name, dir: a.dir })),

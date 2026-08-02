@@ -20,6 +20,20 @@ export interface ProjectsPanelDeps {
     extensionUri: vscode.Uri;
     /** Everything the page shows, assembled by the host. */
     data(): Record<string, unknown>;
+    /**
+     * The open tab's own data — and nothing else.
+     *
+     * ‼️ This page repaints on every fleet refresh, so the payload is per TAB
+     * rather than "everything, always": a timeline of three hundred rows, a
+     * cost rollup and a pooled sessions table shipped on every refresh in order
+     * to draw a form is how a read-only page starts costing the window frames.
+     * The panel remembers which tab is open and asks for that one.
+     */
+    tabData(projectId: string, tab: string, tableN: number, kinds: string[]): Record<string, unknown>;
+    /** Per-turn breakdown for an expanded row in the Sessions tab. */
+    sessionTurns(projectId: string, file: string): unknown;
+    /** Open whatever a feed row points at — the one route for every kind. */
+    openLink(link: { to: string;[k: string]: unknown }): void;
     /** Apply a field patch. Returns an error message, or undefined on success. */
     save(id: string, patch: Record<string, unknown>): string | undefined;
     /** Rename, optionally moving the folder with it. Returns an error/warning. */
@@ -55,11 +69,32 @@ export interface NewProjectSeed {
     sessionIds?: string[];
 }
 
+/** The project page's tabs. `settings` is the editor Faz 1 shipped — it was
+ *  always meant to become a tab here rather than stay the whole page. */
+const TABS = ['overview', 'timeline', 'sessions', 'cost', 'settings'] as const;
+const DEFAULT_TAB = 'overview';
+/** Sessions-table Show box default for this page. */
+const PROJECT_TABLE_N = 25;
+
 export class ProjectsPanel {
     private static current: ProjectsPanel | undefined;
     private disposables: vscode.Disposable[] = [];
     private focusId?: string;
     private seed?: NewProjectSeed;
+    /** Which tab is open, and for WHICH project — switching projects must not
+     *  leave you on a tab you were reading about something else. */
+    private tab: string = DEFAULT_TAB;
+    private tabProject = '';
+    private tableN = PROJECT_TABLE_N;
+    /**
+     * The event kinds the Timeline is showing.
+     *
+     * Filtered HOST-side, before the row cap: on a real project most events are
+     * turns, so filtering after the cap gives the reader three hundred rows of
+     * the one kind they switched off. Empty = no filter yet (the first paint,
+     * before the page has said what it wants).
+     */
+    private feedKinds: string[] = [];
 
     static show(deps: ProjectsPanelDeps, focusId?: string, newForm?: NewProjectSeed): void {
         if (ProjectsPanel.current) {
@@ -97,7 +132,21 @@ export class ProjectsPanel {
     private payload(): Record<string, unknown> {
         const seed = this.seed;
         this.seed = undefined;
-        return { ...this.deps.data(), focusId: this.focusId ?? null, newForm: seed ?? null };
+        // A "new project" form owns the whole right-hand side, so a tab's data
+        // would be built for a project nobody is looking at.
+        const tabData = seed
+            ? {} : this.deps.tabData(this.tabProject, this.tab, this.tableN, this.feedKinds);
+        return {
+            ...this.deps.data(),
+            focusId: this.focusId ?? null,
+            newForm: seed ?? null,
+            tab: this.tab,
+            tabProject: this.tabProject,
+            // echoed back so the page can tell whether its request landed —
+            // without it, page and host ask each other to refresh for ever
+            feedKinds: this.feedKinds,
+            tabData
+        };
     }
 
     private render(): void {
@@ -128,6 +177,73 @@ export class ProjectsPanel {
                 break;
             case 'refresh':
                 this.refresh();
+                break;
+            // Which project is being looked at, and on which tab. The page owns
+            // the selection; the host owns the data, and it will not build a
+            // tab's payload for a project the reader is not on.
+            case 'view': {
+                const wanted = String(msg.tab ?? '');
+                const project = String(msg.project ?? '');
+                if (project !== this.tabProject) { this.tableN = PROJECT_TABLE_N; }
+                this.tabProject = project;
+                this.tab = (TABS as readonly string[]).includes(wanted) ? wanted : DEFAULT_TAB;
+                this.feedKinds = Array.isArray(msg.kinds)
+                    ? msg.kinds.map(k => String(k)).filter(Boolean) : [];
+                this.refresh();
+                break;
+            }
+            case 'setTableN': {
+                // The pool is rebuilt host-side so the requested top-N is a real
+                // top-N, not a re-slice of the last one.
+                const n = typeof msg.n === 'number' && isFinite(msg.n) ? Math.floor(msg.n) : -1;
+                if (n < 0) { break; }
+                this.tableN = n;
+                this.refresh();
+                break;
+            }
+            case 'sessionTurns': {
+                const file = typeof msg.file === 'string' ? msg.file : '';
+                if (!file) { break; }
+                void this.panel.webview.postMessage({
+                    type: 'sessionTurns', file,
+                    turns: this.deps.sessionTurns(this.tabProject, file)
+                });
+                break;
+            }
+            case 'openLink':
+                if (msg.link && typeof msg.link === 'object') {
+                    this.deps.openLink(msg.link as { to: string });
+                }
+                break;
+            // The shared sessions table (media/sessionsTable.js) is embedded
+            // whole in the Sessions tab, which means its four row actions are
+            // ours to answer. They go straight to the commands every other
+            // surface uses — a second implementation here would be a second set
+            // of bugs for the same four buttons.
+            case 'openSession':
+                void vscode.commands.executeCommand('agentfarm.openSession', msg.file,
+                    typeof msg.ts === 'number' && msg.ts > 0 ? msg.ts : undefined);
+                break;
+            case 'focusTerminal':
+                void vscode.commands.executeCommand('agentfarm.focusSessionTerminal', {
+                    sessionId: typeof msg.sessionId === 'string' && msg.sessionId ? msg.sessionId : undefined,
+                    agentName: typeof msg.agentName === 'string' ? msg.agentName : undefined,
+                    cwd: typeof msg.cwd === 'string' && msg.cwd ? msg.cwd : undefined
+                });
+                break;
+            case 'pinSession':
+                // the star already flipped in the webview — pass the state it
+                // wants, not a toggle, so the two can never disagree
+                void vscode.commands.executeCommand('agentfarm.pinSession', {
+                    sessionId: typeof msg.sessionId === 'string' ? msg.sessionId : '',
+                    wantPinned: msg.pinned === true
+                });
+                break;
+            case 'interruptSession':
+                void vscode.commands.executeCommand('agentfarm.interruptSession', {
+                    sessionId: typeof msg.sessionId === 'string' && msg.sessionId ? msg.sessionId : undefined,
+                    agentName: typeof msg.agentName === 'string' ? msg.agentName : undefined
+                });
                 break;
             case 'create': {
                 const form = (msg.form ?? {}) as Record<string, unknown>;

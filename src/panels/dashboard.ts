@@ -35,6 +35,9 @@ export interface DashboardDeps {
     projects?(): ProjectRollup[];
     /** B1: agent name → project name, so rows can be grouped client-side. */
     agentProjects?(): Record<string, string>;
+    /** A project's colour and icon by name — so the sessions table marks a
+     *  project the same way the sidebar and its own page do. */
+    projectStyle?(name: string): { icon?: string; color?: string } | undefined;
 }
 
 interface AgentSummary {
@@ -80,7 +83,17 @@ export function sessionRowPool(
     isActive?: (s: SessionInfo) => boolean,
     n = SESSION_TABLE_N,
     /** B1: which project owns this session (undefined = none declared). */
-    projectOf?: (s: SessionInfo) => string | undefined
+    projectOf?: (s: SessionInfo) => string | undefined,
+    /**
+     * The project's own colour and icon, by name.
+     *
+     * A project has had both since 3.52.0, and every surface that shows one is
+     * supposed to be recognisable at a glance — the sidebar and the Projects
+     * page were, and the table that lists sessions BY project was not. Optional
+     * because the dashboard can be asked for rows before the registry is
+     * available, and a missing mark must degrade to the plain name.
+     */
+    projectStyle?: (name: string) => { icon?: string; color?: string } | undefined
 ): unknown[] {
     const rows = sessions.map(s => ({
         file: s.file,
@@ -111,6 +124,8 @@ export function sessionRowPool(
         tags: s.tags ?? [],
         // B1: the project this session's work belongs to ('' = none declared)
         project: projectOf?.(s) ?? '',
+        projectIcon: projectStyle?.(projectOf?.(s) ?? '')?.icon ?? '',
+        projectColor: projectStyle?.(projectOf?.(s) ?? '')?.color ?? '',
         // B3: how many distinct files this session wrote to (counted during the
         // index's own parse — the per-edit detail is read on demand)
         files: Object.keys(s.filesEdited ?? {}).length,
@@ -249,7 +264,8 @@ function buildData(deps: DashboardDeps, tableN = DASHBOARD_SESSION_TABLE_N): Rec
 
     const projectByAgent = deps.agentProjects?.() ?? {};
     const sessionRows = sessionRowPool(sessions, s => deps.index.isSessionActive(s, now), tableN,
-        s => (s.agentName ? projectByAgent[s.agentName] : undefined));
+        s => (s.agentName ? projectByAgent[s.agentName] : undefined),
+        name => deps.projectStyle?.(name));
 
     const win = deps.index.windowUsage(now);
 

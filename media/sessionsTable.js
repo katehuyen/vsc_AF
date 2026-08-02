@@ -77,6 +77,9 @@
         .af-frange input[type=date] { padding:1px 4px; }
         .af-ftext { width:180px; padding:2px 6px; }
         .af-count { width:52px; padding:1px 4px; }
+        /* the project's own colour, the same mark the sidebar and its page use */
+        .af-pdot { display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:5px;
+            background:var(--vscode-panel-border); vertical-align:middle; }
         .foldcell { width:22px; }
         /* Origin: one narrow glyph column — the eye scans a single strip to tell
            your own dialogs from automation runs. The word is in the tooltip. */
@@ -259,7 +262,7 @@
                     }) : ''}
                     ${projectNames().length > 1 ? window.AFFilter.multi({
                         id: PROJECT_MS, label: 'Projects', options: projectNames(), selected: filters.projects,
-                        title: 'Which projects to list — declared in agentFarm.projects (Manage Projects…)'
+                        title: 'Which projects to list — manage them on the ◧ Projects page'
                     }) : ''}
                     ${flag('af-factive', 'Active now', filters.activeOnly, 'Only sessions with a live terminal working right now')}
                     ${flag('af-ferrors', 'Has errors', filters.errorsOnly, 'Only sessions with at least one tool error')}
@@ -302,7 +305,7 @@
         const HEAD = {
             origin: '<th class="origcell" title="Who started the session — 🧑 you, in an interactive session · 🤖 automation (schedule / trigger / task / mission). Switch the scope with the 🧑 chip above.">By</th>',
             agent: '<th>Agent</th>',
-            project: '<th title="Which project this session\'s work belongs to — declared in agentFarm.projects (Manage Projects…)">Project</th>',
+            project: '<th title="Which project this session\'s work belongs to. Resolved in a fixed order: filed by hand · explicitly taken off every project · the longest matching code root · the agent rule. Edit any of it on the ◧ Projects page.">Project</th>',
             files: '<th class="num" title="Distinct files this session wrote to (Edit / Write / MultiEdit / NotebookEdit) — open the session to see the changes themselves">Files</th>',
             title: '<th>Title</th>',
             when: '<th class="num">When</th>',
@@ -327,7 +330,13 @@
             title: r => hasAgentCol
                 ? `<td title="${titleTip(r)}">${C.esc(r.title)}${tagChips(r)}</td>`
                 : `<td title="${titleTip(r)}">${dot(r)}${C.esc(r.title)}${tagChips(r)}${subBadge(r)}${termBtn(r)}${stopBtn(r)}</td>`,
-            project: r => `<td class="${r.project ? '' : 'muted'}">${C.esc(r.project || '—')}</td>`,
+            // A project is recognisable by its colour and icon everywhere else
+            // it appears (sidebar, status bar, its own page); the table that
+            // lists sessions BY project was the one place showing a bare name.
+            project: r => `<td class="${r.project ? '' : 'muted'}">${r.project
+                ? `<span class="af-pdot" style="${r.projectColor ? `background:${C.esc(r.projectColor)}` : ''}"></span>` +
+                (r.projectIcon ? C.esc(r.projectIcon) + ' ' : '') + C.esc(r.project)
+                : '—'}</td>`,
             files: r => `<td class="num">${r.files || ''}</td>`,
             when: r => `<td class="num">${relTime(r.ts)}</td>`,
             duration: r => `<td class="num">${r.durationMin || 0}m</td>`,

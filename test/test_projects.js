@@ -476,9 +476,21 @@ const P = (id, extra) => Object.assign(
     const ext = read('src', 'extension.ts');
     for (const op of ['projects.list', 'projects.get', 'projects.create', 'projects.set',
         'projects.rename', 'projects.assign', 'projects.current', 'projects.health',
-        'projects.rescan', 'projects.sessions', 'projects.brief']) {
+        'projects.rescan', 'projects.sessions', 'projects.brief',
+        'projects.timeline', 'projects.cost']) {
         ok(`${op} is on the bridge`, ext.includes(`op: '${op}'`));
     }
+    // The page and an agent must read the SAME answer — one builder, two callers.
+    ok('the timeline op goes through the page\'s own feed builder',
+        /const feed = projectFeedFor\(\(p as Project\)\.id, \{/.test(ext));
+    ok('…and the cost op through the page\'s own rollup',
+        /\.\.\.projectCostFor\(project\.id\)/.test(ext));
+    ok('‼️ the timeline op tells an agent what it CANNOT show, by name',
+        /unfiled: UNFILED_EVENT_KINDS/.test(ext));
+    ok('…and refuses an event kind it does not have rather than returning nothing',
+        /unknown event kind\(s\)/.test(ext));
+    ok('‼️ the cost op warns that a multi-model turn is not split',
+        /mixedTurnCost/.test(ext) && /cannot be split/.test(ext));
     ok('projects.brief can also hand back the exact text a session is given',
         /if \(args\.context === true\)/.test(ext));
     ok('the context-extra setting is declared', !!props['agentFarm.projectContextExtra']);

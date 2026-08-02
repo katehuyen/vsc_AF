@@ -125,7 +125,11 @@ import {
 } from './core/projectDocs';
 import { buildProjectContext, contextFileName, isQuotableContextPath } from './core/projectContext';
 import { collectEdits, fileStats, groupByFile } from './core/codeedits';
-import { contentAtHead, gitRoot, repoRelative } from './core/gitfile';
+import { contentAtHead, gitRoot, recentCommits, repoRelative } from './core/gitfile';
+import {
+    buildProjectCost, buildProjectFeed, FeedCommit, FeedSession, PROJECT_EVENT_KINDS,
+    ProjectCost, ProjectEventKind, ProjectFeed, ProjectFeedOptions, UNFILED_EVENT_KINDS
+} from './core/projectFeed';
 import { buildSnapshot } from './core/websnapshot';
 import {
     describeRecord, InsightHistoryStore, normalizeHistory, pruneHistory,
@@ -173,7 +177,7 @@ import { registerTurnsOps } from './core/turns';
 import { TurnsPanel } from './panels/turnsPanel';
 import { ToolboxTreeProvider } from './views/toolboxTree';
 import { MemoryGraphPanel } from './panels/memoryGraph';
-import { DashboardPanel } from './panels/dashboard';
+import { DashboardPanel, sessionRowPool } from './panels/dashboard';
 import { StudioPanel } from './panels/studioPanel';
 import { GuidePanel } from './panels/guide';
 import { AirtablePanel } from './panels/airtablePanel';
@@ -187,7 +191,7 @@ import { pushHeaderCounts, setNoticesUnreadProvider, setQueueBlockedProvider } f
 import { SearchPanel } from './panels/searchPanel';
 import { FarmSettingsPanel } from './panels/settingsPanel';
 import { SelectionPanel } from './panels/selectionPanel';
-import { SessionViewerPanel } from './panels/sessionViewer';
+import { buildData as buildViewerData, SessionViewerPanel } from './panels/sessionViewer';
 import { TimelinePanel } from './panels/timeline';
 import { FarmStatusBar } from './views/statusBar';
 import { PlanUsageBar } from './views/planUsageBar';
@@ -3576,6 +3580,53 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            op: 'projects.timeline',
+            describe: `One project's whole history as a single chronological list, newest first — sessions, the turns inside them, what each session wrote (aggregated), tasks, mission runs and their rounds, and git commits in the project's code roots. Every row carries a link to what it is about. \`counts\` reports every kind BEFORE the filter, so you can see what turning one on would add. NOT here yet, and not faked from an agent name: notices and queue items carry no project link, and decisions/deliverables/plan items are documents nothing writes yet — \`unfiled\` names them. args: project (id or name), kinds? (comma list or array of ${PROJECT_EVENT_KINDS.join('|')}; default all), sinceDays? (default 0 = everything), limit? (default 100), all? (true ignores limit)`,
+            handler: (args) => {
+                const key = argStr(args, 'project');
+                const p = projectStore.get(key);
+                need(p, `no project called "${key}" — projects.list shows them`);
+                const raw = args.kinds;
+                const asked = (Array.isArray(raw) ? raw.map(String)
+                    : String(raw ?? '').split(',')).map(s => s.trim()).filter(Boolean);
+                const bad = asked.filter(k => !PROJECT_EVENT_KINDS.includes(k as ProjectEventKind));
+                need(!bad.length, `unknown event kind(s): ${bad.join(', ')} — pick from ${PROJECT_EVENT_KINDS.join(', ')}`);
+                const sinceDays = Math.max(0, Number(args.sinceDays) || 0);
+                const feed = projectFeedFor((p as Project).id, {
+                    ...(asked.length ? { kinds: asked as ProjectEventKind[] } : {}),
+                    ...(sinceDays ? { since: Date.now() - sinceDays * 86400000 } : {}),
+                    limit: args.all === true ? 0 : Math.max(1, Number(args.limit) || 100)
+                });
+                return {
+                    project: (p as Project).name,
+                    counts: feed.counts,
+                    truncated: feed.truncated,
+                    unfiled: UNFILED_EVENT_KINDS,
+                    events: feed.events.map(e => ({
+                        ts: e.ts, at: new Date(e.ts).toISOString(), kind: e.kind,
+                        title: e.title, detail: e.detail ?? null, agent: e.agent ?? null,
+                        cost: e.cost ?? null, link: e.link ?? null
+                    }))
+                };
+            }
+        },
+        {
+            op: 'projects.cost',
+            describe: 'One project\'s money: the total, today, a per-day series (oldest first, for a burn curve), a breakdown by agent and by model, and the burn rate with what it projects. ‼️ The model breakdown claims only what the transcript actually bills: cost is recorded per TURN, so a turn served by two models cannot be split and is reported separately as `mixedTurnCost` rather than guessed at; sessions with no per-turn detail land in `unattributed`. byModel + mixedTurnCost + unattributed = total. args: project (id or name)',
+            handler: (args) => {
+                const key = argStr(args, 'project');
+                const p = projectStore.get(key);
+                need(p, `no project called "${key}" — projects.list shows them`);
+                const project = p as Project;
+                return {
+                    project: project.name,
+                    budgetUSD: project.budgetUSD ?? null,
+                    budgetTotalUSD: project.budgetTotalUSD ?? null,
+                    ...projectCostFor(project.id)
+                };
+            }
+        },
+        {
             op: 'projects.health',
             describe: 'Everything currently wrong across all projects: folders that are not there, folders never chosen, budgets exceeded today, and projects marked active that nothing has touched for agentFarm.projectStaleDays. args: none',
             handler: () => projectStore.all()
@@ -5140,7 +5191,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // B1: the project axis — the card's rollup and the map the rows group by.
         projects: () => projectRollup(),
         agentProjects: () => agentProjectMap(
-            agents.map(a => ({ id: a.id, name: a.name, dir: a.dir })), projectDefs())
+            agents.map(a => ({ id: a.id, name: a.name, dir: a.dir })), projectDefs()),
+        projectStyle: (name: string) => projectStyleOf(name)
     };
     const detailDeps = {
         extensionUri: context.extensionUri,
@@ -6700,6 +6752,175 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return { sessions: row?.sessions ?? 0, cost: row?.cost ?? 0 };
     };
 
+    /** A project's colour and icon, by name — every surface that names a
+     *  project should show the same mark for it, not just the ones that
+     *  happened to be written after the fields existed. */
+    const projectStyleOf = (name: string) => {
+        const p = projectStore.all().find(x => x.name === name);
+        return p ? { icon: p.icon, color: p.color } : undefined;
+    };
+
+    // ---------- the project feed: sessions · tasks · missions · commits ----------
+    /**
+     * ‼️ MEMBERSHIP IS DECIDED HERE, ONCE, AND NOWHERE ELSE.
+     *
+     * `projectFeed.ts` deliberately does not know what belongs to a project —
+     * that judgment lives in the resolution order (`projects.ts`) and it must
+     * keep living in exactly one place. What follows is the mapping from each
+     * store to "this project's rows", stated per store and per route:
+     *
+     *   sessions  → the resolution order (explicit · no-project · code root · agent rule)
+     *   tasks     → `task.projectId`, plus the task's own session when it has one
+     *   missions  → a run whose STEP TASKS belong here; a mission is not a
+     *               project member in its own right until Faz 5 gives it a field
+     *   commits   → a commit in a declared code root
+     *
+     * Notices and queue items are absent on purpose. They carry no project
+     * link, and deriving one from who posted it would reintroduce exactly the
+     * "an agent owns one project" mistake the entity model was rebuilt to kill.
+     */
+    const feedSessionsOf = (id: string): FeedSession[] =>
+        sessionsOfProject(id).map(s => ({
+            sessionId: s.sessionId,
+            file: s.file,
+            title: s.title,
+            agentName: s.agentName,
+            firstTs: s.firstTs,
+            lastTs: s.lastTs || s.mtime,
+            cost: s.cost,
+            turns: (s.turns ?? []).map(t => ({
+                n: t.n, label: t.label, ts: t.ts, cost: t.cost, tokens: t.tokens, models: t.models
+            })),
+            filesEdited: s.filesEdited,
+            models: s.models,
+            daily: Object.fromEntries(Object.entries(s.daily ?? {}).map(([d, b]) => [d, b.cost])),
+            live: live.sessions().some(x => x.sessionId === s.sessionId && x.status !== 'idle')
+        }));
+
+    const tasksOfProject = (id: string): FarmTask[] =>
+        taskManager.tasks.filter(t => t.projectId === id);
+
+    /** The runs whose delegated steps landed on this project. */
+    const missionsOfProject = (id: string) => {
+        const missionIds = new Set(
+            tasksOfProject(id).map(t => t.missionId).filter((x): x is string => !!x));
+        return missionStore.runs.filter(r => missionIds.has(r.id));
+    };
+
+    /**
+     * Commits in the project's code roots.
+     *
+     * Read out of a cache the panel warms, never spawned inline: `data()` is
+     * called on every repaint of a page that refreshes on a timer, and a
+     * project with four repos would otherwise start four `git log` processes
+     * each time. The first paint after opening a project shows no commits and
+     * the next one does — which is the right trade for never blocking the UI
+     * thread on a process spawn.
+     */
+    const commitCache = new Map<string, FeedCommit[]>();
+    let commitWarmAt = 0;
+    const warmProjectCommits = (repos: string[]): void => {
+        const now = Date.now();
+        if (now - commitWarmAt < 30_000) { return; }
+        commitWarmAt = now;
+        for (const repo of repos) {
+            if (!repo?.trim() || !dirExists(repo)) { continue; }
+            recentCommits(repo, { max: 120, sinceDays: 180 }, rows => {
+                const mapped = rows.map(r => ({
+                    repo, hash: r.hash, ts: r.ts, author: r.author, subject: r.subject
+                }));
+                const before = commitCache.get(repo);
+                commitCache.set(repo, mapped);
+                // only repaint when the answer actually changed, or a page open
+                // on a busy repo would flicker once a minute for nothing
+                if (!before || before.length !== mapped.length || before[0]?.hash !== mapped[0]?.hash) {
+                    ProjectsPanel.refreshIfOpen();
+                }
+            });
+        }
+    };
+    const commitsOfProject = (p: Project): FeedCommit[] => {
+        const repos = (p.repos ?? []).filter(r => !!r?.trim());
+        warmProjectCommits(repos);
+        return repos.flatMap(r => commitCache.get(r) ?? []);
+    };
+
+    /** One project's whole timeline. `opts` is what the page's filter row sends. */
+    const projectFeedFor = (id: string, opts: ProjectFeedOptions = {}): ProjectFeed => {
+        const p = projectStore.get(id);
+        if (!p) { return buildProjectFeed({}, opts); }
+        return buildProjectFeed({
+            sessions: feedSessionsOf(id),
+            tasks: tasksOfProject(id).map(t => ({
+                id: t.id, title: t.title, agentName: t.agentName, status: t.status,
+                createdAt: t.createdAt, startedAt: t.startedAt, endedAt: t.endedAt,
+                costUSD: t.costUSD, missionId: t.missionId
+            })),
+            missions: missionsOfProject(id).map(r => ({
+                id: r.id,
+                title: missionStore.spec(r.specId)?.title ?? r.id,
+                status: r.status,
+                startedAt: r.startedAt,
+                endedAt: r.endedAt,
+                totalCostUSD: r.totalCostUSD,
+                rounds: r.rounds.map(x => ({
+                    n: x.n, at: x.at, thought: x.thought, action: x.action
+                }))
+            })),
+            commits: commitsOfProject(p)
+        }, opts);
+    };
+
+    /**
+     * What is happening on this project RIGHT NOW, and what is lined up next.
+     *
+     * Two different questions and two different answers: "running" is the
+     * present tense (a live session, a task the runner has started), "next" is
+     * the queue. Schedules are deliberately absent — they carry no project
+     * (see `TaskManager.addTask`), and listing the fleet's schedules under a
+     * project would be the same misattribution in a friendlier font.
+     */
+    const projectActivity = (id: string) => {
+        const tasks = tasksOfProject(id);
+        const liveIds = new Set(live.sessions().map(s => s.sessionId));
+        const running = [
+            ...sessionsOfProject(id)
+                .filter(s => liveIds.has(s.sessionId))
+                .map(s => ({
+                    what: 'session' as const, title: s.title, agent: s.agentName ?? '',
+                    since: s.firstTs, id: s.sessionId, file: s.file
+                })),
+            ...tasks.filter(t => t.status === 'running').map(t => ({
+                what: 'task' as const, title: t.title, agent: t.agentName ?? '',
+                since: t.startedAt ?? t.createdAt, id: t.id, file: ''
+            }))
+        ].sort((a, b) => b.since - a.since);
+        const next = tasks
+            .filter(t => t.status === 'queued')
+            .sort((a, b) => a.createdAt - b.createdAt)
+            .slice(0, 5)
+            .map(t => ({
+                title: t.title, agent: t.agentName ?? '', status: t.status,
+                // a queued task held back by the automation gate is not simply
+                // "waiting its turn", and the row has to say which it is
+                held: t.deferredReason ?? '',
+                createdAt: t.createdAt, id: t.id
+            }));
+        return { running, next };
+    };
+
+    /** One project's money, broken down as far as the data honestly allows. */
+    const projectCostFor = (id: string): ProjectCost => {
+        const p = projectStore.get(id);
+        return buildProjectCost({
+            sessions: feedSessionsOf(id),
+            budgetUSD: p?.budgetUSD,
+            budgetTotalUSD: p?.budgetTotalUSD,
+            startedAt: p?.startedAt,
+            dueAt: p?.dueAt
+        });
+    };
+
     const projectsTree = new ProjectsTreeProvider({
         rows: () => {
             const roll = projectRollup();
@@ -6796,8 +7017,98 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             activeId: activeProjectId(),
             activeName: activeProject()?.name ?? '',
             projectsRoot: projectsRoot(),
-            unassigned: unassignedTotals()
+            unassigned: unassignedTotals(),
+            // Named so the page can say WHY a filter chip is missing instead of
+            // just not having one — see UNFILED_EVENT_KINDS.
+            unfiledKinds: UNFILED_EVENT_KINDS
         }),
+        /**
+         * ‼️ ONLY WHAT THE OPEN TAB NEEDS.
+         *
+         * This page repaints on every fleet refresh. Shipping a 300-row feed,
+         * a full cost rollup and a pooled sessions table on every one of those
+         * — to draw a form — is how a read-only page becomes the reason the
+         * window stutters. The tab says what it needs and gets that.
+         */
+        tabData: (id, tab, tableN, kinds) => {
+            if (!id || !projectStore.get(id)) { return {}; }
+            switch (tab) {
+                case 'timeline': {
+                    // ‼️ Filtered BEFORE the cap. Measured on a 150-session
+                    // project: 3000 of 3690 events are turns, so capping first
+                    // and filtering in the page hands the reader 300 rows of
+                    // the one kind they switched off. `counts` is still taken
+                    // over everything, so the chips keep telling the truth.
+                    const wanted = (kinds ?? [])
+                        .filter(k => PROJECT_EVENT_KINDS.includes(k as ProjectEventKind));
+                    const feed = projectFeedFor(id, {
+                        ...(wanted.length ? { kinds: wanted as ProjectEventKind[] } : {}),
+                        limit: 300
+                    });
+                    return { feed };
+                }
+                case 'sessions':
+                    return {
+                        rows: sessionRowPool(sessionsOfProject(id),
+                            s => index.isSessionActive(s), tableN,
+                            () => projectStore.get(id)?.name, projectStyleOf),
+                        tableN
+                    };
+                case 'cost':
+                    return { cost: projectCostFor(id) };
+                case 'overview': {
+                    const feed = projectFeedFor(id, { limit: 8 });
+                    const cost = projectCostFor(id);
+                    return {
+                        recent: feed.events,
+                        counts: feed.counts,
+                        activity: projectActivity(id),
+                        // the headline figures only — the Cost tab has the rest
+                        cost: { total: cost.total, today: cost.today, burn: cost.burn }
+                    };
+                }
+                default:
+                    return {};
+            }
+        },
+        sessionTurns: (id, file) => {
+            // The webview may only ask about files that belong to THIS project;
+            // a page must never be able to point the host at an arbitrary path.
+            if (!sessionsOfProject(id).some(s => s.file === file)) { return []; }
+            try {
+                return buildViewerData(file, {
+                    extensionUri: context.extensionUri,
+                    getPricing: () => pricing,
+                    maxMessages: () => 1,
+                    contextLimitFor: () => 0
+                }).turns;
+            } catch { return []; }
+        },
+        /** One entry point for every clickable row in the feed. */
+        openLink: link => {
+            switch (link.to) {
+                case 'session':
+                    void vscode.commands.executeCommand('agentfarm.openSession',
+                        link.file, typeof link.ts === 'number' ? link.ts : undefined);
+                    break;
+                case 'task':
+                    void vscode.commands.executeCommand('agentfarm.openTasks', link.id);
+                    break;
+                case 'mission':
+                    void vscode.commands.executeCommand('agentfarm.openMissions', link.id);
+                    break;
+                case 'file':
+                    void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(String(link.path)));
+                    break;
+                case 'commit':
+                    // No commit viewer of our own: hand it to whatever the user
+                    // already uses for git rather than growing a second one.
+                    void vscode.env.clipboard.writeText(String(link.hash));
+                    void vscode.window.showInformationMessage(
+                        `Agent Farm: commit ${String(link.hash).slice(0, 8)} copied — open it in your git tool.`);
+                    break;
+            }
+        },
         save: (id, patch) => projectStore.update(id, patch as never).error,
         rename: (id, name, renameFolder) => {
             const p = projectStore.get(id);
