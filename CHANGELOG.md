@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.59.1 — What a turn's tokens are made of (2026-08-03)
+
+A session that used to report ~77M tokens for an hour of work started reporting ~17M for an hour that felt the same, and 6.107/6.108 were the suspects. **They are not.** Nothing in the token path changed between 3.57.0 and 3.59.0 — `sessions.ts`, `sessionViewer.ts` and `pricing.ts` do not appear in the diff, and `extension.ts` gained no line containing `token` or `usage`. The two figures were re-derived from the transcripts by a script that shares no code with the extension: **77.87M and 17.13M** — the same numbers the page showed.
+
+**The turn total is the sum of every API call's whole window, so it measures calls × context, not wall-clock time.** The 77M turn made **286 calls carrying ~271k of context each** in 55 minutes; the 17M turn made **101 calls at ~170k** in 42 minutes. Same hour, 2.8× the calls, 1.6× the context — 4.5× the tokens. Nothing is broken; the second turn was cheaper work.
+
+**And that total is not the subscription quota.** Measured against the live `five_hour` figure on the day: **83% utilization ↔ 20.2M raw transcript tokens** in the window. 98–99% of a total like that is `cache_read`, which the plan bills at a fraction — so reading a quota percentage off the token count, in either direction, gives the wrong answer. The dashboard's plan-usage card reads Anthropic's own numbers and remains the only place that states the quota.
+
+*Fixed on the way:* **a harness `isMeta` line in array form opened a turn on the transcript page.** The string form was skipped; the array form was not, so the page counted one turn more than the session index did, and every turn after it carried the number — and the tokens — of the one before. Measured: 16 such lines across 353 real transcripts.
+
 ## 3.59.0 — The backlog (2026-08-03)
 
 A project could say where it was going (**Plan**) and what had happened (**Timeline**), but it had nowhere to keep the hundred small things somebody notices along the way. Those lived in a text file outside the system and were pasted into a chat one at a time — which meant every fix was described twice, and the list itself could not be ordered, filed or filtered. **Faz 4.5** gives a project a backlog.

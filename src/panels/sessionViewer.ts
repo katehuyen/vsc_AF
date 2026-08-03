@@ -341,7 +341,13 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
                             isError: !!b.is_error,
                             sidechain: line.isSidechain
                         });
-                    } else if (b?.type === 'text' && b.text) {
+                    } else if (b?.type === 'text' && b.text && !line.isMeta) {
+                        // isMeta is the harness talking, not the user. A string-content
+                        // meta line was already skipped above; the array form was not,
+                        // so it opened a turn nobody asked for — and every turn after it
+                        // carried the number, and the tokens, of the one before. The
+                        // session index never counted it, so the same transcript showed
+                        // one turn count on the page and another in the tables.
                         messages.push({ role: 'user', ts, text: b.text, sidechain: line.isSidechain });
                         if (!line.isSidechain) { inTurn++; }
                         if (!title) { title = titleCandidate(b.text); }
