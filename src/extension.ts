@@ -112,22 +112,30 @@ import {
     agentProjectMap, assignAgent, normalizeProjects, ProjectDef, projectOfAgent,
     projectOfSession, rollupProjects, UNASSIGNED,
     // the project entity (core/projects.ts) — the registry these surfaces now read
-    CLOSED_STATUSES as CLOSED_PROJECT_STATUSES, folderNameFor, folderState,
-    PROJECT_KINDS, PROJECT_STATUSES, Project, ProjectStatus,
+    CLOSED_STATUSES as CLOSED_PROJECT_STATUSES, coercePerson, folderNameFor, folderState,
+    PROJECT_KINDS, PROJECT_STATUSES, Project, ProjectPerson, ProjectStatus,
     resolveSessionProject, rollupProjectSessions, UNASSIGNED_ID
 } from './core/projects';
 import { ProjectStore } from './core/projectStore';
 import { ProjectsPanel, ProjectsPanelDeps } from './panels/projectsPanel';
 import { ProjectsTreeProvider } from './views/projectsTree';
 import {
-    BRIEF_REL, buildBrief, createSkeleton, dirExists, DEFAULT_SKELETON, localStamp,
-    normalizeSkeleton, renameProjectFolder, scanProjectsRoot, scanRoles, writeBrief
+    addDecision, addDeliverableRow, BRIEF_REL, buildBrief, createSkeleton, DecisionDoc,
+    dirExists, DEFAULT_SKELETON, insertLogEntry, listProjectDocs, localDay, localStamp,
+    normalizeSkeleton, parseDeliverables, ProjectDocRole, readProjectDoc,
+    renameProjectFolder, resolveInFolder, scanProjectFolder, scanProjectsRoot, scanRoles,
+    writeBrief, writeProjectDoc
 } from './core/projectDocs';
-import { buildProjectContext, contextFileName, isQuotableContextPath } from './core/projectContext';
+import {
+    addPlanItem, checkPlanItem, planSummary, PlanTarget
+} from './core/projectPlan';
+import {
+    buildProjectContext, contextFileName, isQuotableContextPath, PROJECT_BRIEF_MAX
+} from './core/projectContext';
 import { collectEdits, fileStats, groupByFile } from './core/codeedits';
 import { contentAtHead, gitRoot, recentCommits, repoRelative } from './core/gitfile';
 import {
-    buildProjectCost, buildProjectFeed, FeedCommit, FeedSession, PROJECT_EVENT_KINDS,
+    buildProjectCost, buildProjectFeed, FeedCommit, FeedDoc, FeedSession, PROJECT_EVENT_KINDS,
     ProjectCost, ProjectEventKind, ProjectFeed, ProjectFeedOptions, UNFILED_EVENT_KINDS
 } from './core/projectFeed';
 import { buildSnapshot } from './core/websnapshot';
@@ -1117,11 +1125,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const folder = (p.folder ?? '').trim();
         const repos = (p.repos ?? []).filter(r => !!r?.trim());
         const hasFolder = !!folder && dirExists(folder);
-        const roles = hasFolder ? scanRoles(folder) : {};
-        const brief = buildBrief({ project: p, roles, repos });
+        const scan = hasFolder ? scanProjectFolder(folder) : { roles: {}, decisions: [] };
+        const seed = { project: p, roles: scan.roles, repos, decisions: scan.decisions };
+        // ‼️ TWO briefs, on purpose, and they must not be the same text.
+        // The FILE is the full one — it is what the "[cut to fit — the full
+        // brief is at …]" line in the injected copy points at, so a file holding
+        // the same shortened text would make that pointer a lie. The INJECTED
+        // one is built to a budget, which shortens its lists instead of letting
+        // the system-prompt cap slice the tail off; the tail is "Writing back",
+        // the only part of a brief an agent has to act on.
+        const brief = buildBrief(seed);
         const briefPath = hasFolder ? path.join(folder, BRIEF_REL) : undefined;
         const text = buildProjectContext({
-            name: p.name, id: p.id, folder, repos, brief, briefPath,
+            name: p.name, id: p.id, folder, repos, briefPath,
+            brief: buildBrief({ ...seed, maxChars: PROJECT_BRIEF_MAX }),
             generatedAt: Date.now(),
             extra: cfg().get<string>('projectContextExtra', '')
         });
@@ -3574,7 +3591,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.brief',
-            describe: 'The project\'s BRIEF — the state summary a session started under it is given as an appended system prompt (status, people, code roots, which file holds which af-role, the latest worklog lines). Regenerating writes it to the project\'s _AF/BRIEF.md when it has a folder. Pass context:true to get the exact text a session receives instead, verbatim. args: project (id or name), context? (default false)',
+            describe: 'The project\'s BRIEF — the state summary a session started under it is given as an appended system prompt (status, people, code roots, which file holds which af-role, the OPEN plan items, the latest decisions, the latest worklog lines, and where to write back). Regenerating writes it to the project\'s _AF/BRIEF.md when it has a folder; that file is the FULL brief, while the injected copy is built to a character budget that shortens its lists rather than letting the cap slice the "writing back" instructions off the end. Pass context:true to get the exact text a session receives instead, verbatim. args: project (id or name), context? (default false)',
             handler: (args) => {
                 const key = argStr(args, 'project');
                 const p = projectStore.get(key);
@@ -3590,11 +3607,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     return { project: project.name, contextFile: file ?? null, context: text };
                 }
                 const folder = (project.folder ?? '').trim();
-                const roles = folder && dirExists(folder) ? scanRoles(folder) : {};
+                const scan = folder && dirExists(folder)
+                    ? scanProjectFolder(folder) : { roles: {}, decisions: [] as DecisionDoc[] };
                 return {
                     project: project.name,
                     briefFile: folder && dirExists(folder) ? path.join(folder, BRIEF_REL) : null,
-                    brief: buildBrief({ project, roles, repos: project.repos ?? [] })
+                    brief: buildBrief({
+                        project, roles: scan.roles, decisions: scan.decisions,
+                        repos: project.repos ?? []
+                    })
                 };
             }
         },
@@ -3630,7 +3651,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.timeline',
-            describe: `One project's whole history as a single chronological list, newest first — sessions, the turns inside them, what each session wrote (aggregated), tasks, mission runs and their rounds, and git commits in the project's code roots. Every row carries a link to what it is about. \`counts\` reports every kind BEFORE the filter, so you can see what turning one on would add. NOT here yet, and not faked from an agent name: notices and queue items carry no project link, and decisions/deliverables/plan items are documents nothing writes yet — \`unfiled\` names them. args: project (id or name), kinds? (comma list or array of ${PROJECT_EVENT_KINDS.join('|')}; default all), sinceDays? (default 0 = everything), limit? (default 100), all? (true ignores limit)`,
+            describe: `One project's whole history as a single chronological list, newest first — sessions, the turns inside them, what each session wrote (aggregated), tasks, mission runs and their rounds, git commits in the project's code roots, and what its own documents record: decision records, deliverable rows and plan items the plan file marks completed. Every row carries a link to what it is about. \`counts\` reports every kind BEFORE the filter, so you can see what turning one on would add. ‼️ A document event needs a REAL date to appear — a decision states af-date, a deliverable states its Date column, a plan item carries the ✅ date Obsidian's Tasks plugin wrote; anything undated is left out rather than stamped with the file's save time. NOT here at all, and not faked from an agent name: notices and queue items carry no project link — \`unfiled\` names them. args: project (id or name), kinds? (comma list or array of ${PROJECT_EVENT_KINDS.join('|')}; default all), sinceDays? (default 0 = everything), limit? (default 100), all? (true ignores limit)`,
             handler: (args) => {
                 const key = argStr(args, 'project');
                 const p = projectStore.get(key);
@@ -3717,6 +3738,239 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     root, found: found.length, renamed, adopted,
                     unregistered: found.filter(f => f.unregistered).map(f => f.name)
                 };
+            }
+        },
+        // ---- the project's documents: the write side of the project axis ----
+        // These are what makes a project record feed itself. An agent that
+        // finishes a piece of work writes the worklog line, ticks the plan item
+        // and records the decision itself, so the next session's brief is built
+        // out of what actually happened rather than out of what somebody
+        // remembered to type.
+        {
+            op: 'projects.doc.list',
+            describe: 'Everything in a project\'s documents folder: files and folders with their size, last-modified time, and the af-role each markdown file declares (charter|plan|people|log|deliverables|brief|decision — found by frontmatter, never by file name), plus the decision records on their own with the date each one states. `path` values are relative to the project folder and are the handle projects.doc.read/write take back. args: project (id or name)',
+            handler: (args) => {
+                const { project, folder, scan } = projectDocsFor(argStr(args, 'project'));
+                return {
+                    project: project.name,
+                    folder,
+                    roles: Object.fromEntries(Object.entries(scan.roles)
+                        .map(([role, file]) => [role, relDoc(folder, file as string)])),
+                    decisions: scan.decisions.map(d => ({
+                        path: relDoc(folder, d.file), title: d.title,
+                        date: localDay(d.ts), datedBy: d.fromMtime ? 'file mtime' : 'af-date'
+                    })),
+                    entries: listProjectDocs(folder).map(e => ({
+                        path: e.rel, name: e.name, dir: e.dir, size: e.size,
+                        modified: localStamp(e.mtimeMs),
+                        role: e.role ?? null, managed: !!e.managed
+                    }))
+                };
+            }
+        },
+        {
+            op: 'projects.doc.read',
+            describe: 'Read one document out of a project\'s folder. `path` is relative to the project folder (projects.doc.list gives them); anything pointing outside it is refused. Returns `mtimeMs` — hand that back to projects.doc.write as expectMtime and the write will refuse rather than overwrite an edit made in Obsidian in between. args: project (id or name), path',
+            handler: (args) => {
+                const { project, folder } = projectDocsFor(argStr(args, 'project'));
+                const rel = argStr(args, 'path');
+                const res = readProjectDoc(folder, rel);
+                need(res.ok, res.error ?? 'could not read that document');
+                return {
+                    project: project.name, path: rel,
+                    text: res.text ?? '', mtimeMs: res.mtimeMs ?? 0,
+                    size: res.size ?? 0, truncated: !!res.truncated
+                };
+            }
+        },
+        {
+            op: 'projects.doc.write',
+            describe: '‼️ Write a document in a project\'s folder — the user\'s own file, so this is deliberately hard to do by accident. Creating a file that is not there needs nothing; REPLACING one that exists requires expectMtime from projects.doc.read, and the write refuses if the file changed since (Obsidian may be holding it open). Use append:true to add to the end without reading it first, which cannot destroy anything. Writes are atomic — a crash mid-write cannot leave half a document. args: project (id or name), path (relative to the project folder), content, expectMtime? (from doc.read), append? (default false)',
+            handler: (args) => {
+                const { project, folder } = projectDocsFor(argStr(args, 'project'));
+                const rel = argStr(args, 'path');
+                const content = String(args.content ?? '');
+                const existing = readProjectDoc(folder, rel);
+                if (args.append === true) {
+                    const before = existing.ok ? (existing.text ?? '') : '';
+                    need(!existing.ok || !existing.truncated,
+                        'that document is too large to append to safely — edit it in your editor');
+                    const pad = !before || before.endsWith('\n') ? '' : '\n';
+                    const res = writeProjectDoc(folder, rel, before + pad + content,
+                        existing.ok ? existing.mtimeMs : undefined);
+                    need(res.ok, res.error ?? 'the write failed');
+                    projectDocWritten(project.id);
+                    return { project: project.name, path: rel, appended: true, mtimeMs: res.mtimeMs ?? 0 };
+                }
+                // ‼️ An overwrite with no expectMtime is a blind overwrite, and
+                // this is the one place it can be stopped. Read it first.
+                need(!existing.ok || typeof args.expectMtime === 'number',
+                    `${rel} already exists — read it with projects.doc.read and pass its mtimeMs as expectMtime, or use append:true`);
+                const res = writeProjectDoc(folder, rel, content,
+                    typeof args.expectMtime === 'number' ? args.expectMtime : undefined);
+                need(res.ok, res.error ?? 'the write failed');
+                projectDocWritten(project.id);
+                return {
+                    project: project.name, path: rel,
+                    created: !existing.ok, mtimeMs: res.mtimeMs ?? 0
+                };
+            }
+        },
+        {
+            op: 'projects.log',
+            describe: 'Add a line to the project\'s worklog — the closing duty of a session that DID something, and what the next session\'s brief is built out of. The entry goes in at the `<!-- af:log-top -->` anchor so the newest is on top; a user who moves that line changes where entries go, and one who removes it gets them appended. A date prefix is added unless the entry already starts with one. args: project (id or name), entry (one line, in whatever language the project is written in), raw? (true writes the line exactly as given)',
+            handler: (args) => {
+                const { project, folder, scan } = projectDocsFor(argStr(args, 'project'));
+                need(scan.roles.log,
+                    `"${project.name}" has no worklog — a file with \`af-role: log\` in its frontmatter is one`);
+                const entry = argStr(args, 'entry').replace(/\r?\n+/g, ' ').trim();
+                need(entry, 'an entry needs some text');
+                // The shape follows what is already in these files rather than
+                // imposing one: a line that brought its own date or bullet is
+                // left exactly as written.
+                const dated = /^-?\s*\d{4}-\d{2}-\d{2}/.test(entry);
+                const line = args.raw === true || dated || entry.startsWith('-')
+                    ? (entry.startsWith('-') ? entry : `- ${entry}`)
+                    : `- ${localDay(Date.now())} — ${entry}`;
+                const res = insertLogEntry(scan.roles.log as string, line);
+                need(res.ok, res.error ?? 'the worklog could not be written');
+                projectDocWritten(project.id);
+                return { project: project.name, file: relDoc(folder, scan.roles.log as string), line };
+            }
+        },
+        {
+            op: 'projects.plan',
+            describe: 'The project\'s plan as items rather than text: every checkbox line in the file with `af-role: plan`, its section, whether it is done, and the Obsidian Tasks id (🆔) and dates (📅 due, ✅ completed) the line carries. Address an item in plan.check by its id, its line, or a unique piece of its text. args: project (id or name), open? (true returns only what is left to do)',
+            handler: (args) => {
+                const { project, folder, scan } = projectDocsFor(argStr(args, 'project'));
+                need(scan.roles.plan,
+                    `"${project.name}" has no plan document — a file with \`af-role: plan\` in its frontmatter is one`);
+                const file = scan.roles.plan as string;
+                const read = readProjectDoc(folder, relDoc(folder, file));
+                need(read.ok, read.error ?? 'could not read the plan');
+                const sum = planSummary(read.text ?? '');
+                const wanted = args.open === true ? sum.items.filter(i => !i.done) : sum.items;
+                return {
+                    project: project.name, file: relDoc(folder, file),
+                    open: sum.open, done: sum.done,
+                    sections: sum.sections.map(s => s.title),
+                    items: wanted.map(i => ({
+                        line: i.line + 1, text: i.text, done: i.done, section: i.section,
+                        id: i.id ?? null, due: i.due ?? null, completed: i.doneOn ?? null
+                    }))
+                };
+            }
+        },
+        {
+            op: 'projects.plan.add',
+            describe: 'Add an open item to the project\'s plan. It goes after the last item of the section you name (or at the end of the file when you name none), using the bullet the document already uses. `meta` is written verbatim after the text, which is how the vault\'s own task metadata (📅 2026-09-01 🆔 afprj-09) gets on the line without this op needing to understand any of it. args: project (id or name), item (the text), section? (a heading in the plan), meta?',
+            handler: (args) => {
+                const { project, folder, scan } = projectDocsFor(argStr(args, 'project'));
+                need(scan.roles.plan,
+                    `"${project.name}" has no plan document — a file with \`af-role: plan\` in its frontmatter is one`);
+                const item = argStr(args, 'item').trim();
+                need(item, 'an item needs some text');
+                const out = editProjectDoc(folder, scan.roles.plan as string,
+                    text => addPlanItem(text, item, {
+                        ...(optStr(args, 'section') ? { section: optStr(args, 'section') } : {}),
+                        ...(optStr(args, 'meta') ? { meta: optStr(args, 'meta') } : {})
+                    }));
+                projectDocWritten(project.id);
+                return { project: project.name, file: relDoc(folder, out.file), added: item };
+            }
+        },
+        {
+            op: 'projects.plan.check',
+            describe: '‼️ Tick (or untick) one plan item — EXACTLY ONE CHARACTER of the document changes. The space inside `[ ]` becomes an `x` and nothing else is touched: not the bullet, not the spacing, not the icons, not the Obsidian Tasks metadata, not the line endings. No ✅ done-date is added either — Agent Farm does not write metadata it does not own; Obsidian\'s Tasks plugin does that when you tick the box THERE. Say which item by id (🆔), by line, or by a piece of its text; text that matches more than one item is an error, never a guess. args: project (id or name), item? (text), id?, line? (1-based, as projects.plan reports it), done? (default true)',
+            handler: (args) => {
+                const { project, folder, scan } = projectDocsFor(argStr(args, 'project'));
+                need(scan.roles.plan,
+                    `"${project.name}" has no plan document — a file with \`af-role: plan\` in its frontmatter is one`);
+                const target: PlanTarget = {
+                    ...(optStr(args, 'id') ? { id: optStr(args, 'id') } : {}),
+                    ...(typeof args.line === 'number' ? { line: Math.max(0, args.line - 1) } : {}),
+                    ...(optStr(args, 'item') ? { text: optStr(args, 'item') } : {})
+                };
+                need(target.id || target.line !== undefined || target.text,
+                    'say which item: id, line or item (text)');
+                const done = args.done !== false;
+                let touched = '';
+                const out = editProjectDoc(folder, scan.roles.plan as string, text => {
+                    const res = checkPlanItem(text, target, done);
+                    if (res.item) { touched = res.item.text; }
+                    return res;
+                });
+                projectDocWritten(project.id);
+                return {
+                    project: project.name, file: relDoc(folder, out.file),
+                    item: touched, done, note: out.note ?? null
+                };
+            }
+        },
+        {
+            op: 'projects.decision.add',
+            describe: 'Record a decision — its own file, the ADR pattern, because a decision appended to a shared document becomes a line nobody can link to and two agents writing at once lose one of them. Written into the folder the existing decisions are in (or the one the skeleton declares it holds decisions in), with `af-role: decision` and `af-date` so it is found by frontmatter rather than by name, and it turns up on the project timeline at the date it states. A name already taken gets a suffix — this can never overwrite a record that exists. Write these for anything that will be asked "why is it like this?" in three months. args: project (id or name), title, body? (markdown, in the project\'s own language)',
+            handler: (args) => {
+                const { project, folder } = projectDocsFor(argStr(args, 'project'));
+                const res = addDecision(folder, {
+                    title: argStr(args, 'title'),
+                    ...(optStr(args, 'body') ? { body: optStr(args, 'body') } : {}),
+                    skeleton: projectSkeleton()
+                });
+                need(res.ok, res.error ?? 'the decision could not be written');
+                projectDocWritten(project.id);
+                return {
+                    project: project.name,
+                    file: relDoc(folder, res.file as string),
+                    title: res.decision?.title ?? '',
+                    date: localDay(res.decision?.ts ?? Date.now())
+                };
+            }
+        },
+        {
+            op: 'projects.deliver',
+            describe: 'Record a deliverable — what shipped, which version, when, and where it went. It becomes a row in the project\'s deliverables table (the document with `af-role: deliverables`), inserted after the table\'s last row rather than at the end of the file, and filled by the table\'s OWN column names so a user who renamed or reordered them still gets each value in the right place. A row whose date is a real YYYY-MM-DD also appears on the project timeline. args: project (id or name), what, version?, date? (YYYY-MM-DD, default today), where?',
+            handler: (args) => {
+                const { project, folder, scan } = projectDocsFor(argStr(args, 'project'));
+                need(scan.roles.deliverables,
+                    `"${project.name}" has no deliverables document — a file with \`af-role: deliverables\` in its frontmatter is one`);
+                const what = argStr(args, 'what').trim();
+                need(what, 'a deliverable needs a name');
+                const out = editProjectDoc(folder, scan.roles.deliverables as string,
+                    text => addDeliverableRow(text, {
+                        what,
+                        ...(optStr(args, 'version') ? { version: optStr(args, 'version') } : {}),
+                        ...(optStr(args, 'date') ? { date: optStr(args, 'date') } : {}),
+                        ...(optStr(args, 'where') ? { where: optStr(args, 'where') } : {})
+                    }));
+                projectDocWritten(project.id);
+                return { project: project.name, file: relDoc(folder, out.file), what };
+            }
+        },
+        {
+            op: 'projects.people.set',
+            describe: 'Who the project\'s people are and what each of them IS to it — who decides (owner), who pays (client/sponsor), who does the work (contributor), who you ask (contact), who supplies (vendor). These are separate questions and one name rarely answers all of them. This is the registry list the brief carries into every session; the project\'s own People document is prose and is not touched. Pass `people` to replace the whole list, or `add` to append one. args: project (id or name), people? (array of {name, role, kind: person|company|self, contact?, link?, note?}), add? (one of the same)',
+            handler: (args) => {
+                const p = projectStore.get(argStr(args, 'project'));
+                need(p, 'no such project — projects.list shows them');
+                const project = p as Project;
+                // The SAME coercion the store and the page go through — an
+                // unknown role must land on 'contact' identically whichever door
+                // the person came in by.
+                let people: ProjectPerson[];
+                if (args.add !== undefined) {
+                    const one = coercePerson(args.add);
+                    need(one, 'add needs at least a name');
+                    people = [...(project.people ?? []), one as ProjectPerson];
+                } else {
+                    need(Array.isArray(args.people), 'pass people (an array) or add (one person)');
+                    people = (args.people as unknown[])
+                        .map(x => coercePerson(x)).filter((x): x is ProjectPerson => !!x);
+                }
+                const res = projectStore.update(project.id, { people });
+                need(!res.error, res.error ?? '');
+                projectsChanged();
+                return { project: project.name, people: (res.project as Project).people ?? [] };
             }
         },
         {
@@ -7013,11 +7267,78 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return repos.flatMap(r => commitCache.get(r) ?? []);
     };
 
+    /**
+     * What the project's OWN documents record — decisions, deliverables and the
+     * plan items their document says are finished.
+     *
+     * ‼️ Read through a cache, because this walks a folder. `projectFeedFor` is
+     * called on every repaint of a page that refreshes on a timer, and a vault
+     * folder scan per frame is exactly the cost the commit cache exists to
+     * avoid. Our own writes clear it immediately (`projectDocsTouched`), so the
+     * only thing the TTL is covering is an edit made in Obsidian — which shows
+     * up within half a minute rather than instantly, and that is the right
+     * trade for never scanning inside a paint.
+     *
+     * ‼️ NOTHING HERE INVENTS A DATE. A decision without `af-date` falls back to
+     * its file's mtime — a real time, the file was written then — but a plan
+     * item with no ✅ and a deliverable row whose Date column says "Q3" are left
+     * out entirely. Stamping them with the file's save time would put a hundred
+     * rows at one instant and call it history.
+     */
+    const DOC_FEED_CACHE_MS = 30_000;
+    const docFeedCache = new Map<string, { at: number; docs: FeedDoc[] }>();
+    const projectDocsTouched = (id: string): void => { docFeedCache.delete(id); };
+    const buildDocFeed = (p: Project): FeedDoc[] => {
+        const folder = (p.folder ?? '').trim();
+        if (!folder || !dirExists(folder)) { return []; }
+        const out: FeedDoc[] = [];
+        const scan = scanProjectFolder(folder);
+        for (const d of scan.decisions) {
+            out.push({
+                kind: 'decision', ts: d.ts, title: d.title,
+                detail: d.fromMtime ? 'no af-date — filed at the file\'s own time' : '',
+                path: d.file
+            });
+        }
+        if (scan.roles.deliverables) {
+            const read = readProjectDoc(folder, path.relative(folder, scan.roles.deliverables));
+            for (const row of parseDeliverables(read.text ?? '').rows) {
+                if (!row.ts) { continue; }
+                out.push({
+                    kind: 'deliverable', ts: row.ts, title: row.what,
+                    detail: [row.version, row.where].filter(Boolean).join(' · '),
+                    path: scan.roles.deliverables
+                });
+            }
+        }
+        if (scan.roles.plan) {
+            const read = readProjectDoc(folder, path.relative(folder, scan.roles.plan));
+            for (const item of planSummary(read.text ?? '').items) {
+                if (!item.done || !item.doneOn) { continue; }
+                const ts = new Date(`${item.doneOn}T00:00:00`).getTime();
+                if (!isFinite(ts)) { continue; }
+                out.push({
+                    kind: 'plan', ts, title: item.text,
+                    detail: item.section, path: scan.roles.plan
+                });
+            }
+        }
+        return out;
+    };
+    const docFeedOf = (p: Project): FeedDoc[] => {
+        const hit = docFeedCache.get(p.id);
+        if (hit && Date.now() - hit.at < DOC_FEED_CACHE_MS) { return hit.docs; }
+        const docs = buildDocFeed(p);
+        docFeedCache.set(p.id, { at: Date.now(), docs });
+        return docs;
+    };
+
     /** One project's whole timeline. `opts` is what the page's filter row sends. */
     const projectFeedFor = (id: string, opts: ProjectFeedOptions = {}): ProjectFeed => {
         const p = projectStore.get(id);
         if (!p) { return buildProjectFeed({}, opts); }
         return buildProjectFeed({
+            docs: docFeedOf(p),
             sessions: feedSessionsOf(id),
             tasks: tasksOfProject(id).map(t => ({
                 id: t.id, title: t.title, agentName: t.agentName, status: t.status,
@@ -7133,6 +7454,136 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         refreshAll();
     };
 
+    // ---------- the documents: one resolution, one write path ----------
+    /**
+     * The project a document op was asked about, with its folder proven to be
+     * there — and one folder walk to answer everything that follows.
+     *
+     * Every document op goes through this, so "no such project", "no folder yet"
+     * and "the folder has moved" are three different sentences written once
+     * instead of ten times slightly differently. `need` throws the message
+     * straight back to the caller, which is what the bridge does with it.
+     */
+    const projectDocsFor = (key: string) => {
+        const p = projectStore.get(key);
+        need(p, `no project called "${key}" — projects.list shows them`);
+        const project = p as Project;
+        const folder = (project.folder ?? '').trim();
+        need(folder, `"${project.name}" has no documents folder yet — projects.set { folder } gives it one`);
+        need(dirExists(folder), `"${project.name}" points at a folder that is not there: ${folder}`);
+        return { project, folder, scan: scanProjectFolder(folder) };
+    };
+
+    /** Paths handed OUT are relative to the project folder — the same handle
+     *  `projects.doc.list` returns and `doc.read`/`doc.write` take back. */
+    const relDoc = (folder: string, file: string): string =>
+        path.relative(folder, file).replace(/\\/g, '/');
+
+    /**
+     * Read a document, change it, write it back — guarded, atomically.
+     *
+     * ‼️ The mtime is taken on the read immediately before the write and handed
+     * to it. That is what makes this safe to run against a file open in
+     * Obsidian: if the user saved between our read and our write, the write
+     * refuses instead of erasing what they typed. Refusing costs one message;
+     * overwriting costs their afternoon.
+     */
+    const editProjectDoc = (
+        folder: string, file: string,
+        change: (text: string) => { ok: boolean; text?: string; error?: string; note?: string }
+    ): { file: string; note?: string } => {
+        const rel = relDoc(folder, file);
+        const read = readProjectDoc(folder, rel);
+        need(read.ok, read.error ?? 'could not read the document');
+        need(!read.truncated, 'that document is too large to rewrite safely — edit it in your editor');
+        const next = change(read.text ?? '');
+        need(next.ok, next.error ?? 'nothing to write');
+        const written = writeProjectDoc(folder, rel, next.text as string, read.mtimeMs);
+        need(written.ok, written.error ?? 'the write failed');
+        return { file, ...(next.note ? { note: next.note } : {}) };
+    };
+
+    /** Everything a document write has to refresh: the timeline's cached folder
+     *  scan (ours, so it must be immediate, not in 30 seconds) and the surfaces. */
+    const projectDocWritten = (id: string): void => {
+        projectDocsTouched(id);
+        projectsChanged();
+    };
+
+    // ---------- what the page's document tabs are drawn from ----------
+    /**
+     * The state of one af-role document, said honestly.
+     *
+     * A tab whose document does not exist must say WHICH document is missing
+     * and what makes a file that one — "nothing here" reads as a bug, and the
+     * answer ("a file with `af-role: plan` in its frontmatter") is the whole
+     * mechanism in one sentence.
+     */
+    const projectRoleDocView = (id: string, role: ProjectDocRole) => {
+        const p = projectStore.get(id);
+        const folder = (p?.folder ?? '').trim();
+        if (!p) { return { state: 'no-project' as const }; }
+        if (!folder) { return { state: 'no-folder' as const, role }; }
+        if (!dirExists(folder)) { return { state: 'folder-missing' as const, role, folder }; }
+        const file = scanProjectFolder(folder).roles[role];
+        if (!file) { return { state: 'no-doc' as const, role, folder }; }
+        return { state: 'ok' as const, role, folder, path: relDoc(folder, file) };
+    };
+
+    const projectPlanView = (id: string) => {
+        const doc = projectRoleDocView(id, 'plan');
+        if (doc.state !== 'ok') { return doc; }
+        const read = readProjectDoc(doc.folder, doc.path);
+        if (!read.ok) { return { state: 'unreadable' as const, path: doc.path, error: read.error }; }
+        const sum = planSummary(read.text ?? '');
+        return {
+            ...doc,
+            open: sum.open, done: sum.done,
+            sections: sum.sections.map(s => ({
+                title: s.title,
+                items: s.items.map(i => ({
+                    // 1-based, the way an editor numbers lines and the way the
+                    // bridge op reports them — two numbering schemes for one
+                    // line is how the wrong box gets ticked.
+                    line: i.line + 1, text: i.text, done: i.done, depth: i.depth,
+                    id: i.id ?? null, due: i.due ?? null, completed: i.doneOn ?? null
+                }))
+            }))
+        };
+    };
+
+    /**
+     * The documents tab: the folder tree, and the one file being read.
+     *
+     * ‼️ The page names a file by its path RELATIVE to the project folder and
+     * the host resolves it (`readProjectDoc` refuses anything that climbs out).
+     * A webview that could hand back an absolute path would turn a document
+     * viewer into a file reader for the whole disk.
+     */
+    const projectDocsView = (id: string, rel: string) => {
+        const p = projectStore.get(id);
+        const folder = (p?.folder ?? '').trim();
+        if (!p) { return { state: 'no-project' as const }; }
+        if (!folder) { return { state: 'no-folder' as const }; }
+        if (!dirExists(folder)) { return { state: 'folder-missing' as const, folder }; }
+        const entries = listProjectDocs(folder).map(e => ({
+            path: e.rel, name: e.name, dir: e.dir, size: e.size,
+            mtimeMs: e.mtimeMs, role: e.role ?? null, managed: !!e.managed
+        }));
+        let selected: Record<string, unknown> | null = null;
+        if (rel && entries.some(e => e.path === rel && !e.dir)) {
+            const read = readProjectDoc(folder, rel);
+            selected = read.ok
+                ? {
+                    path: rel, text: read.text ?? '', size: read.size ?? 0,
+                    mtimeMs: read.mtimeMs ?? 0, truncated: !!read.truncated,
+                    role: entries.find(e => e.path === rel)?.role ?? null
+                }
+                : { path: rel, error: read.error ?? 'could not read it' };
+        }
+        return { state: 'ok' as const, folder, entries, selected };
+    };
+
     /**
      * Create a project — the one implementation.
      *
@@ -7198,9 +7649,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * — to draw a form — is how a read-only page becomes the reason the
          * window stutters. The tab says what it needs and gets that.
          */
-        tabData: (id, tab, tableN, kinds) => {
+        tabData: ({ project: id, tab, tableN, kinds, doc }) => {
             if (!id || !projectStore.get(id)) { return {}; }
             switch (tab) {
+                case 'plan':
+                    return { plan: projectPlanView(id) };
+                case 'docs':
+                    return { docs: projectDocsView(id, doc) };
+                case 'people':
+                    // The registry rows come with `data()` already; what this
+                    // tab adds is WHERE the project's own people document is,
+                    // so the two are one click apart instead of one search.
+                    return { peopleDoc: projectRoleDocView(id, 'people') };
                 case 'timeline': {
                     // ‼️ Filtered BEFORE the cap. Measured on a 150-session
                     // project: 3000 of 3690 events are turns, so capping first
@@ -7338,6 +7798,90 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const p = projectStore.get(id);
             if (!p) { return; }
             void vscode.commands.executeCommand('agentfarm.openDashboard', { projectFilter: p.name });
+        },
+
+        // ---- Faz 4: the page writes into the user's documents ----
+        // Every one of these goes through the SAME guarded, atomic path the
+        // bridge ops use (`editProjectDoc`), so a tick from the page and a tick
+        // from an agent cannot differ in what they are willing to overwrite.
+        planCheck: (id, target, done) => {
+            const p = projectStore.get(id);
+            if (!p) { return { error: 'no such project' }; }
+            const folder = (p.folder ?? '').trim();
+            const file = folder && dirExists(folder) ? scanProjectFolder(folder).roles.plan : undefined;
+            if (!file) { return { error: 'this project has no plan document' }; }
+            let note: string | undefined;
+            try {
+                const out = editProjectDoc(folder, file, text => {
+                    const res = checkPlanItem(text, target, done);
+                    return res;
+                });
+                note = out.note;
+            } catch (e) {
+                return { error: String((e as Error)?.message ?? e) };
+            }
+            projectDocWritten(id);
+            return { ...(note ? { note } : {}) };
+        },
+        planAdd: (id, item, section) => {
+            const p = projectStore.get(id);
+            if (!p) { return { error: 'no such project' }; }
+            const folder = (p.folder ?? '').trim();
+            const file = folder && dirExists(folder) ? scanProjectFolder(folder).roles.plan : undefined;
+            if (!file) { return { error: 'this project has no plan document' }; }
+            try {
+                editProjectDoc(folder, file,
+                    text => addPlanItem(text, item, section ? { section } : {}));
+            } catch (e) {
+                return { error: String((e as Error)?.message ?? e) };
+            }
+            projectDocWritten(id);
+            return {};
+        },
+        openProjectDoc: (id, rel, mode) => {
+            const p = projectStore.get(id);
+            const folder = (p?.folder ?? '').trim();
+            // Resolved host-side: the page hands over a path relative to the
+            // project folder and never an absolute one it could have invented.
+            const file = folder ? resolveInFolder(folder, rel) : undefined;
+            if (!file) {
+                void vscode.window.showWarningMessage(
+                    'Agent Farm: that document is not inside the project folder.');
+                return;
+            }
+            openDoc(file, mode);
+        },
+        docOpenModes: () => {
+            const cfgNow = docOpenStore.get();
+            return {
+                mode: cfgNow.defaultMode,
+                modes: [...DOC_OPEN_MODES],
+                labels: { ...DOC_OPEN_LABELS }
+            };
+        },
+        newProjectDoc: (id, folder, name) => {
+            const p = projectStore.get(id);
+            const root = (p?.folder ?? '').trim();
+            if (!root || !dirExists(root)) { return { error: 'this project has no folder on disk' }; }
+            const leaf = String(name ?? '').trim().replace(/[\\/:*?"<>|]/g, ' ').trim();
+            if (!leaf) { return { error: 'a note needs a name' }; }
+            const rel = `${String(folder ?? '').trim().replace(/^\/+|\/+$/g, '')}/${leaf}`
+                .replace(/^\/+/, '');
+            const withExt = /\.[a-z0-9]+$/i.test(rel) ? rel : `${rel}.md`;
+            const target = resolveInFolder(root, withExt);
+            if (!target) { return { error: 'that path is not inside the project folder' }; }
+            if (fs.existsSync(target)) { return { error: `${withExt} already exists` }; }
+            // A new note is a create, so no mtime guard applies — but it still
+            // goes through the atomic path, and it still cannot land outside.
+            const res = writeProjectDoc(root, withExt, `# ${leaf.replace(/\.md$/i, '')}\n\n`);
+            if (!res.ok) { return { error: res.error ?? 'could not create it' }; }
+            projectDocWritten(id);
+            return { path: withExt };
+        },
+        savePeople: (id, people) => {
+            const rows = (people ?? []).map(x => coercePerson(x))
+                .filter((x): x is ProjectPerson => !!x);
+            return projectStore.update(id, { people: rows }).error;
         },
         onChange: () => { projectsTree.refresh(); paintProjectBar(); }
     });

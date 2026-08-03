@@ -18,13 +18,19 @@
  *
  * **What can honestly be filed to a project today, and what cannot.** Sessions
  * resolve through the membership order; tasks carry a `projectId`; commits
- * belong to a declared code root. Notices and queue items carry no project
- * link at all yet, and plan items, decisions and deliverables are documents
- * nothing writes yet. Their event kinds exist here so those sources plug in
- * without touching the merge — but nothing invents them from an agent name in
- * the meantime. An agent may work on several projects; deriving a notice's
- * project from who posted it would be exactly the misattribution the entity
- * model was rebuilt to kill.
+ * belong to a declared code root; decisions, deliverables and completed plan
+ * items come out of the project's OWN folder, so their membership is not a
+ * guess at all. Notices and queue items still carry no project link and are
+ * absent — an agent may work on several projects, so deriving a notice's project
+ * from who posted it would be exactly the misattribution the entity model was
+ * rebuilt to kill.
+ *
+ * ‼️ A DOCUMENT EVENT NEEDS A REAL DATE OR IT DOES NOT APPEAR.
+ * A decision states `af-date`; a deliverable row states its Date column; a plan
+ * item carries the ✅ date the user's own Tasks plugin wrote when they ticked it
+ * in Obsidian. Anything without one is left out rather than stamped with the
+ * file's mtime — a hundred plan items all landing at the moment somebody saved
+ * the file is a timeline that looks precise and says nothing.
  */
 
 // ---------------------------------------------------------------------------
@@ -44,9 +50,9 @@ export type ProjectEventKind =
     | 'files'        // what a session wrote, aggregated — never one row per file
     | 'notice'       // ⧗ not filed to projects yet
     | 'queue'        // ⧗ not filed to projects yet
-    | 'decision'     // ⧗ documents — nothing writes them yet
-    | 'deliverable'  // ⧗
-    | 'plan';        // ⧗
+    | 'decision'     // a decision record in the project folder
+    | 'deliverable'  // a row in the project's deliverables table
+    | 'plan';        // a plan item the document records as completed
 
 export const PROJECT_EVENT_KINDS: ProjectEventKind[] =
     ['session', 'turn', 'task', 'mission', 'commit', 'files',
@@ -59,8 +65,7 @@ export const PROJECT_EVENT_KINDS: ProjectEventKind[] =
  * that can never light up is a promise the product does not keep; naming the
  * gap costs one line and is the difference between "empty" and "broken".
  */
-export const UNFILED_EVENT_KINDS: ProjectEventKind[] =
-    ['notice', 'queue', 'decision', 'deliverable', 'plan'];
+export const UNFILED_EVENT_KINDS: ProjectEventKind[] = ['notice', 'queue'];
 
 /** What clicking a row opens. Kept as data rather than a command string so the
  *  page and the bridge can each do the right thing with it. */
@@ -155,12 +160,19 @@ export interface FeedCommit {
     subject: string;
 }
 
-/** The slots Faz 4 / Faz 5 fill. Empty today, and the page says so. */
+/**
+ * Something the project's own documents record, already dated by them.
+ *
+ * The caller does the reading (this module touches no filesystem) AND the
+ * dating: a doc with no real date must not reach here at all, because there is
+ * nowhere in this merge to say "the time is made up".
+ */
 export interface FeedDoc {
     kind: 'decision' | 'deliverable' | 'plan' | 'notice' | 'queue';
     ts: number;
     title: string;
     detail?: string;
+    /** The file it lives in — the row opens it. */
     path?: string;
 }
 
@@ -368,6 +380,10 @@ export function buildProjectFeed(
     for (const m of input.missions ?? []) { all.push(...missionEvents(m)); }
     for (const c of input.commits ?? []) { all.push(commitEvent(c)); }
     for (const d of input.docs ?? []) {
+        // A document event with no real date is dropped, not placed. Sorting it
+        // to 1970 or to "now" both put it somewhere it did not happen, and the
+        // reader has no way to tell which rows were guesses.
+        if (!(d.ts > 0)) { continue; }
         all.push({
             ts: d.ts, kind: d.kind, title: short(d.title), detail: d.detail,
             ...(d.path ? { link: { to: 'file' as const, path: d.path } } : {})

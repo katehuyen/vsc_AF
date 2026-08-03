@@ -146,11 +146,40 @@ const session = {
         UNFILED_EVENT_KINDS.every(k => PROJECT_EVENT_KINDS.includes(k)));
     ok('‼️ notices and queue items are named as not-yet-filed rather than faked',
         UNFILED_EVENT_KINDS.includes('notice') && UNFILED_EVENT_KINDS.includes('queue'));
-    // …but the slot works the moment something fills it
-    const withDocs = buildProjectFeed({ docs: [
-        { kind: 'decision', ts: T, title: 'file channel', path: 'D:\\v\\p\\20_Decisions\\x.md' }] });
+    ok('‼️ decisions, deliverables and plan items are NO LONGER unfiled — they come out of the project\'s own documents',
+        !UNFILED_EVENT_KINDS.includes('decision') && !UNFILED_EVENT_KINDS.includes('deliverable')
+        && !UNFILED_EVENT_KINDS.includes('plan'));
+
+    const withDocs = buildProjectFeed({
+        docs: [
+            { kind: 'decision', ts: T, title: 'file channel', path: 'D:\\v\\p\\20_Decisions\\x.md' },
+            { kind: 'deliverable', ts: T - DAY, title: 'VSIX 3.57.0', detail: '3.57.0 · local' },
+            { kind: 'plan', ts: T - 2 * DAY, title: 'Faz 3', detail: 'Milestones' }
+        ]
+    });
     ok('a document event plugs in with no change to the merge',
-        withDocs.events.length === 1 && withDocs.events[0].link.to === 'file');
+        withDocs.events.length === 3 && withDocs.events[0].link.to === 'file');
+    ok('…and it takes its place in the one chronology, newest first',
+        withDocs.events.map(e => e.kind).join() === 'decision,deliverable,plan');
+    ok('…and each kind is counted so its chip can show a real number',
+        withDocs.counts.decision === 1 && withDocs.counts.deliverable === 1 && withDocs.counts.plan === 1);
+
+    // ‼️ A document event with no real date is DROPPED. Sorting it to 1970 or
+    // to "now" both put it somewhere it did not happen, and the reader has no
+    // way to tell which rows were guesses.
+    const undated = buildProjectFeed({
+        docs: [
+            { kind: 'deliverable', ts: 0, title: 'ships in Q3' },
+            { kind: 'plan', ts: 0, title: 'ticked, but the document records no date' },
+            { kind: 'decision', ts: T, title: 'dated, so it appears' }
+        ]
+    });
+    ok('‼️ an undated document event is left OUT rather than stamped with a guess',
+        undated.events.length === 1 && undated.events[0].title === 'dated, so it appears');
+    ok('…and it is not counted either, so no chip promises a row that is not there',
+        !undated.counts.deliverable && !undated.counts.plan);
+    ok('a document event carries no cost — it is a record, not a spend',
+        feedSpend(withDocs.events) === 0);
 }
 
 // ---------- cost ----------
