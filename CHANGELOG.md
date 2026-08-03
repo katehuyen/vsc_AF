@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.60.1 — The garbage on the end of menu titles: one file, mis-decoded up to three times (2026-08-04)
+
+Command palette entries, right-click rows and sidebar hovers had been carrying two or three junk characters glued to their ends — `Agent Farm: Delete Key`, `Set Secret`, every title that ends in an ellipsis. **All of it came from one file.** `package.json` had at some point been read as CP1252 and written back as UTF-8, which expands every non-ASCII character into two or three others; it happened more than once, so strings carry **two and in places three** layers of the same damage. **124 strings are repaired.**
+
+**Why it looked random.** Only strings containing a non-ASCII character were touched, so `Open Dashboard` came through clean while `Set Secret…` did not — and what the eye read as "two odd characters at the end" was almost always the trailing `…`. The same accident ate `—` `·` `→` `×` `✓`, the emoji in the Insights welcome, and the word `Türkçe` in the guide-language setting.
+
+**Half the damage was invisible.** CP1252 has five undefined slots (`0x81 0x8D 0x8F 0x90 0x9D`), and those bytes came through as bare C1 control characters — nothing on screen, a box in some fonts, and no way to find them by looking. That is why this was never spotted in a diff.
+
+**A test now owns it, because the eye cannot.** `test/test_encoding.js` walks every `.json` `.ts` `.js` `.html` `.css` `.md` in the repo (303 files) and fails on any run that reverses cleanly to valid UTF-8, or on any C1 control at all. A run that does *not* reverse is not reported — Turkish prose produces lead+continuation pairs by accident (`aç…` is `ç` followed by an ellipsis) and those are not damage. `node test/test_encoding.js --fix` repairs in place and refuses to write JSON it just broke.
+
 ## 3.60.0 — A turn says how many calls, how long, and where it left the window (2026-08-04)
 
 Two days were spent proving the token counter was not broken. It was not — four shipped builds (3.57.0 / 3.57.1 / 3.58.0 / 3.59.1) were unzipped and run over the same six transcripts, and all four returned the same figure to four decimal places, tokens, turns, cost, messages and tool calls alike. But the investigation only took two days because **the surfaces answered the wrong question about a turn**, and this release fixes that.
