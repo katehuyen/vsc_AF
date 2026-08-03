@@ -1347,6 +1347,12 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
                 handler: a => {
                     const p = argStr(a, 'path');
                     const existing = readProjectDoc(dir, p);
+                    // ‼️ Everything below reads a failed read as "nothing to
+                    // lose". That is only true when the file is genuinely NOT
+                    // THERE — a file that exists but could not be read would
+                    // otherwise take the create path and be replaced.
+                    need(existing.ok || existing.missing === true,
+                        `${p} is there but could not be read — refusing to write over it`);
                     need(!existing.ok || typeof a.expectMtime === 'number',
                         `${p} already exists — read it first and pass expectMtime, or use append:true`);
                     const w = writeProjectDoc(dir, p, String(a.content || ''),
@@ -1486,6 +1492,21 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             { project: 'Agent Farm', path: '10_Notes/new.md', content: '# new\n' });
         ok('a file that is not there yet needs no guard — nothing can be lost', created.ok);
 
+        // ‼️ "not there" and "there but unreadable" are two answers, and the
+        // guard above only holds for the first. A file that EXISTS but could
+        // not be read used to look identical to one that is absent, so the
+        // create path replaced it — the blind overwrite this op exists to make
+        // impossible. A folder standing where a file is asked for is the same
+        // failure and the one a test can produce anywhere.
+        fs.mkdirSync(path.join(dir, '10_Notes', 'held.md'));
+        const held = await reg.dispatch('projects.doc.write',
+            { project: 'Agent Farm', path: '10_Notes/held.md', content: 'wiped' });
+        ok('‼️ a document that is there but unreadable is NOT treated as absent', !held.ok);
+        ok('…and the refusal says so rather than reporting a create',
+            /could not be read/.test(held.error || ''));
+        ok('…and what was there is still there',
+            fs.statSync(path.join(dir, '10_Notes', 'held.md')).isDirectory());
+
         // ---- and extension.ts really registers every one of them ----
         const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
         for (const op of ['projects.doc.list', 'projects.doc.read', 'projects.doc.write',
@@ -1501,6 +1522,10 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             src.indexOf("op: 'projects.doc.write'") + 2600);
         ok('…and doc.write\'s contract says how to replace a file safely',
             /expectMtime/.test(writeBlock) && /append/.test(writeBlock));
+        ok('‼️ …and the real op tells an unreadable document apart from an absent one',
+            /existing\.missing === true/.test(writeBlock));
+        ok('‼️ plan.check\'s contract says a line and a text together are a CHECK',
+            /goes stale/.test(checkBlock));
         ok('the ops call the shared guarded path rather than writing files themselves',
             /editProjectDoc\(folder,/.test(src) && !/fs\.writeFileSync\(.*roles\.plan/.test(src));
 

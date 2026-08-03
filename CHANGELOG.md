@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.57.1 — Three ways the write side could still lose something (2026-08-03)
+
+An audit of everything 3.57.0 shipped, looking for the cases where a write that was *supposed* to refuse would instead go through. Three of them were real.
+
+**‼️ A document that could not be read was treated as a document that was not there.** `readProjectDoc` answered `ok: false` for both, and every caller that decides whether a write is safe reads that as "nothing to lose" — so a file held open by a syncing client, or one whose permissions changed, took the *create* path and was replaced. `insertLogEntry` was the worst of them: it caught the failed read, carried on with an empty string, and would have replaced an entire worklog with the single line being added. A read now says **`missing`** only when the file is genuinely absent; the worklog refuses and says why, and `projects.doc.write` refuses to write over a document nobody can see. This is exactly the blind overwrite that op exists to prevent — it just had a door left open behind it.
+
+**‼️ A stale line number could tick the wrong box, silently.** The Plan tab holds each item's line for as long as the page stays open, and the same file is open in Obsidian at the same time — one paragraph inserted there and every number below it points one item down. Ticking the wrong box in somebody's plan is not visible; they find out weeks later. The page now sends the **text it believes is on that line**, and a mismatch is a refusal that says what is there now and to reload. With an 🆔 nothing changes: an id does not move. The check is opt-in, so `plan.check` by line alone still works.
+
+**The people table was unsaved work, and any repaint ate it.** Every payload from the host cleared the editor — and a commit picked up in the background is enough to cause one. Since the editor moved to its own tab with its own Save, that window is as long as the user takes to fill the table. The rows now survive a refresh and are only cleared by switching **project**, where they would belong to somebody else. The page owes the other half of that deal too, so it says **unsaved** next to a Save that is only enabled when there is something to save.
+
+Also: `_AF/` is no longer offered as a place to put a new note — it is rewritten on every session start, so a note filed there is gone by the next spawn.
+
 ## 3.57.0 — The project keeps itself (2026-08-03)
 
 **A project's folder was written once and never again.** From the day it was created it had a charter, a plan, a worklog and a deliverables table — and nothing wrote a line into any of them. Not the page, not an agent, not an op. The record only grew when somebody remembered to open Obsidian, which is to say it mostly did not. The project could be read; it could not be *kept*.

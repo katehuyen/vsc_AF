@@ -264,6 +264,21 @@ const tick = () => { const t = Date.now(); while (Date.now() - t < 3) { /* spin 
     const na = fs.readFileSync(noAnchor, 'utf8');
     ok('with no anchor it appends instead of refusing', na.includes('- added'));
     ok('…and the user\'s content is untouched', na.includes('- mine') && na.startsWith('# My log'));
+
+    // ‼️ A LOG THAT CANNOT BE READ IS NOT AN EMPTY LOG.
+    // The read used to be wrapped in `catch { existing = '' }`, so ANY failure
+    // to read — a file a syncing client is holding, a permission that changed —
+    // became "there is nothing there" and the whole worklog was replaced by the
+    // one line being added. A directory standing where the file should be is
+    // the same class of failure (EISDIR) and is the one a test can produce on
+    // every platform.
+    const asFolder = path.join(dir, 'Unreadable.md');
+    fs.mkdirSync(asFolder);
+    const refused = insertLogEntry(asFolder, '- must not land');
+    ok('‼️ a log that is there but unreadable is refused, not overwritten', !refused.ok);
+    ok('…and it says so rather than reporting success', /could not be read/.test(refused.error || ''));
+    ok('…and what was there is still there',
+        fs.existsSync(asFolder) && fs.statSync(asFolder).isDirectory());
 }
 
 // ---------- rescan ----------
@@ -407,6 +422,19 @@ const {
         readProjectDoc(dir, '../../x').ok === false);
     ok('reading a folder is not reading a document', readProjectDoc(dir, '10_Notes').ok === false);
     ok('writing outside the folder is refused', writeProjectDoc(dir, '../x.md', 'no').ok === false);
+
+    // ‼️ "NOT THERE" AND "THERE BUT UNREADABLE" ARE DIFFERENT ANSWERS.
+    // Everything that decides whether a write can destroy something reads the
+    // failed read as "nothing to lose". If a file that EXISTS but could not be
+    // read came back looking the same as one that is absent, the create path
+    // would replace it — which is precisely the blind overwrite the write side
+    // exists to make impossible.
+    const gone = readProjectDoc(dir, '10_Notes/never-written.md');
+    ok('a file that is not there says so', !gone.ok && gone.missing === true);
+    ok('‼️ a folder standing where a file was asked for does NOT claim to be missing',
+        readProjectDoc(dir, '10_Notes').missing !== true);
+    ok('a path outside the folder does not claim to be missing either',
+        readProjectDoc(dir, '../x.md').missing !== true);
 }
 
 // ---------- the tree ----------
@@ -425,6 +453,11 @@ const {
         entries.findIndex(e => e.dir) < entries.findIndex(e => !e.dir));
     ok('the machine folder\'s own dotfile is not offered as a document',
         !entries.some(e => e.name.startsWith('.')));
+    // ‼️ The machine FOLDER is marked too, not just the brief inside it — that
+    // is what lets a caller keep it out of "where shall I put this note?". A
+    // note filed under `_AF/` is gone at the next session start.
+    ok('‼️ the machine folder itself is marked as generated', by['_AF'].managed === true);
+    ok('…and a folder the user owns is not', by['10_Notes'].managed !== true);
 }
 
 // ---------- ‼️ the write refuses rather than overwriting Obsidian ----------

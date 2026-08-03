@@ -73,13 +73,23 @@
             return;
         }
         if (ev.data.type === 'data') {
+            const was = selectedId;
             DATA = ev.data.data;
             if (DATA.newForm) { creating = newForm(DATA.newForm); askSuggestion(creating.name); }
             if (DATA.focusId) { selectedId = DATA.focusId; }
             if (!DATA.projects.some(p => p.id === selectedId)) {
                 selectedId = (DATA.projects[0] && DATA.projects[0].id) || '';
             }
-            people = null;
+            // ‼️ THE PEOPLE TABLE IS UNSAVED WORK, AND A PAYLOAD IS NOT A REASON
+            // TO THROW IT AWAY. Clearing it on every `data` message meant any
+            // refresh that arrived while somebody was filling the table — a new
+            // commit picked up in the background is enough — silently put the
+            // old rows back and took the half-typed ones with them. Since the
+            // editor moved to its own tab it is only written by "Save people",
+            // so that window is as long as the user takes. Only a change of
+            // PROJECT invalidates the rows, because then they are somebody
+            // else's people.
+            if (selectedId !== was) { people = null; }
             render();
             return;
         }
@@ -246,6 +256,38 @@
             <div>${p.warnings.map(w => `⚠️ ${C.esc(w)}`).join('<br>')}</div>
             ${buttons ? `<div class="btnrow">${buttons}</div>` : ''}
         </div>`;
+    }
+
+    /**
+     * Whether the table on screen says something different from what the
+     * project actually holds.
+     *
+     * The rows now survive a repaint (they are unsaved work, not a view of the
+     * data), which means the page owes the reader the other half of that deal:
+     * saying so. A table that looks identical whether or not Save was pressed
+     * is how somebody closes the tab having changed nothing.
+     */
+    function peopleDirty(p) {
+        if (people === null || !p) { return false; }
+        const key = x => ['name', 'role', 'kind', 'contact', 'link', 'note']
+            .map(k => String((x && x[k]) || '')).join(' · ');
+        const mine = people.filter(x => (x.name || '').trim()).map(key);
+        const saved = (p.people || []).map(key);
+        return mine.length !== saved.length || mine.some((k, i) => k !== saved[i]);
+    }
+
+    const PEOPLE_UNSAVED = 'unsaved — these rows are not on the project yet';
+    const PEOPLE_SAVED = 'saved';
+
+    /** Refresh only the two things that answer "is this saved?", without a
+     *  repaint. Called from the input handler, which must not redraw. */
+    function markPeopleState() {
+        const btn = document.querySelector('[data-act="savePeople"]');
+        if (!btn) { return; }
+        const dirty = peopleDirty(sel());
+        btn.disabled = !dirty;
+        const note = document.getElementById('pj-people-state');
+        if (note) { note.textContent = dirty ? PEOPLE_UNSAVED : PEOPLE_SAVED; }
     }
 
     function peopleRows(p) {
@@ -822,7 +864,7 @@
                     <label class="pj-plan-item${i.done ? ' done' : ''}" style="padding-left:${8 + i.depth * 12}px"
                         title="line ${i.line}${i.id ? ' · 🆔 ' + C.esc(i.id) : ''}">
                         <input type="checkbox" data-plan="${i.line}" data-planid="${C.esc(i.id || '')}"
-                            ${i.done ? 'checked' : ''}>
+                            data-plantext="${C.esc(i.text || '')}" ${i.done ? 'checked' : ''}>
                         <span class="pj-plan-t">${C.esc(i.text || '(empty)')}</span>
                         ${i.due ? `<span class="pj-plan-m" title="due">📅 ${C.esc(i.due)}</span>` : ''}
                         ${i.completed ? `<span class="pj-plan-m" title="completed">✅ ${C.esc(i.completed)}</span>` : ''}
@@ -882,8 +924,11 @@
         }).join('');
 
         const sel = d.selected;
+        // ‼️ A managed folder is not offered as somewhere to put a note. `_AF/`
+        // is rewritten on every session start, so a note filed there is gone by
+        // the next spawn — offering it is offering to lose the user's writing.
         const folders = ['']
-            .concat(entries.filter(e => e.dir).map(e => e.path))
+            .concat(entries.filter(e => e.dir && !e.managed).map(e => e.path))
             .map(f => `<option value="${C.esc(f)}">${C.esc(f || '(project root)')}</option>`).join('');
 
         const pane = !sel
@@ -945,7 +990,8 @@
         <table class="pj-people"><tbody>${peopleRows(p)}</tbody></table>
         <div class="btnrow pj-actions">
             <button class="secondary" data-act="addPerson">＋ Add person</button>
-            <button data-act="savePeople">Save people</button>
+            <button data-act="savePeople"${peopleDirty(p) ? '' : ' disabled'}>Save people</button>
+            <span class="muted small" id="pj-people-state">${peopleDirty(p) ? PEOPLE_UNSAVED : PEOPLE_SAVED}</span>
         </div>`;
     }
 
@@ -1106,6 +1152,13 @@
         // A checkbox flips in the DOM the moment it is clicked, so the message
         // carries the state it WANTS rather than a toggle — the host and the
         // page can never end up disagreeing about which way it went.
+        //
+        // ‼️ And it carries the item's TEXT, which is not decoration. This page
+        // holds a line number for as long as it stays open, and the file is
+        // open in Obsidian at the same time: one inserted paragraph there and
+        // the number points at the next item down. The host checks the text
+        // against that line and refuses on a mismatch, so a stale page says
+        // "reload" instead of quietly ticking the wrong box.
         document.querySelectorAll('[data-plan]').forEach(el =>
             el.addEventListener('click', () => {
                 const p = sel();
@@ -1113,6 +1166,7 @@
                     type: 'planCheck', id: p ? p.id : '',
                     line: Number(el.dataset.plan),
                     itemId: el.dataset.planid || '',
+                    text: el.dataset.plantext || '',
                     done: el.checked === true
                 });
             }));
@@ -1121,8 +1175,17 @@
             el.addEventListener('click', () => { people.splice(Number(el.dataset.rmperson), 1); render(); }));
 
         // keep edits to the people table in memory so a repaint does not lose them
+        //
+        // ‼️ Typing does NOT repaint — that would move the caret out from under
+        // the person typing. So the two things a repaint would have refreshed
+        // are refreshed by hand: the Save button (disabled while there is
+        // nothing to save, and a Save you cannot press is a table you cannot
+        // save) and the word next to it.
         document.querySelectorAll('[data-p]').forEach(el =>
-            el.addEventListener('input', () => { people[Number(el.dataset.i)][el.dataset.p] = el.value; }));
+            el.addEventListener('input', () => {
+                people[Number(el.dataset.i)][el.dataset.p] = el.value;
+                markPeopleState();
+            }));
 
         document.querySelectorAll('[data-act]').forEach(el => el.addEventListener('click', () => {
             const p = sel();
@@ -1149,9 +1212,16 @@
                 case 'rescan': vscode.postMessage({ type: 'rescan' }); break;
                 case 'addPerson': people.push({ name: '', role: 'contact', kind: 'person' }); render(); break;
                 case 'savePeople':
+                    // ‼️ `people === null` means the editor never rendered, so
+                    // there is nothing on screen to save — and posting `[]` for
+                    // it would delete every person the project has. The button
+                    // is only drawn on the tab that fills it, so this cannot
+                    // happen today; it stays because the cost of being wrong
+                    // about that later is somebody's contact list.
+                    if (people === null) { break; }
                     vscode.postMessage({
                         type: 'savePeople', id,
-                        people: (people || []).filter(x => (x.name || '').trim())
+                        people: people.filter(x => (x.name || '').trim())
                     });
                     break;
                 case 'planAdd': {

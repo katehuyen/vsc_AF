@@ -173,8 +173,17 @@ export interface PlanEditResult {
 export interface PlanTarget {
     id?: string;
     line?: number;
-    /** Matched case-insensitively against the item's display text; a unique
-     *  substring is enough, an ambiguous one is an error rather than a guess. */
+    /**
+     * Matched case-insensitively against the item's display text; a unique
+     * substring is enough, an ambiguous one is an error rather than a guess.
+     *
+     * ‼️ WITH `line` IT IS A CHECK, NOT A SEARCH — and that is the point.
+     * A line number goes stale the moment somebody inserts a paragraph in
+     * Obsidian, and a page holds one for as long as it stays open. Passing what
+     * you believe is ON that line turns "the document moved under you" from a
+     * tick on the wrong item into a refusal. Ticking the wrong box in
+     * somebody's plan is silent; they find out weeks later.
+     */
     text?: string;
 }
 
@@ -186,7 +195,15 @@ function locate(items: PlanItem[], target: PlanTarget): { item?: PlanItem; error
     }
     if (typeof target.line === 'number' && target.line >= 0) {
         const hit = items.find(i => i.line === target.line);
-        return hit ? { item: hit } : { error: `line ${target.line} is not a plan item` };
+        if (!hit) { return { error: `line ${target.line + 1} is not a plan item` }; }
+        const claimed = String(target.text ?? '').trim();
+        if (claimed && hit.text.trim() !== claimed) {
+            return {
+                error: `line ${target.line + 1} now reads "${hit.text}", not "${claimed}"`
+                    + ' — the document changed since you read it; reload and try again'
+            };
+        }
+        return { item: hit };
     }
     const needle = String(target.text ?? '').trim().toLowerCase();
     if (!needle) { return { error: 'say which item: id, line or text' }; }

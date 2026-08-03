@@ -127,6 +127,31 @@ const VAULT = [
     ok('no target at all is refused', !checkPlanItem(VAULT, {}).ok);
     ok('ticking what is already ticked is not an error and changes nothing',
         checkPlanItem(VAULT, { id: 'afprj-03' }, true).text === VAULT);
+
+    // ‼️ A LINE NUMBER GOES STALE, AND A PAGE HOLDS ONE FOR AS LONG AS IT IS
+    // OPEN. The plan tab draws checkboxes with the line they were on; the same
+    // file is open in Obsidian. One paragraph inserted there and every number
+    // below it points one item down — and ticking the wrong box in somebody's
+    // plan is silent, so they find out weeks later. Sending WHAT you believe is
+    // on that line turns it into a refusal.
+    // one paragraph inserted at the top of the file in Obsidian: line 4 was the
+    // nested sub-item, and is now the milestone above it
+    const moved = '\r\n' + VAULT;
+    const wrong = checkPlanItem(moved, { line: 4, text: 'alt madde' }, true);
+    ok('‼️ a line whose text no longer matches is REFUSED, not ticked', !wrong.ok);
+    ok('…and it says what is there now and what to do', /now reads/.test(wrong.error || '')
+        && /reload/.test(wrong.error || ''));
+    ok('…and nothing was written', wrong.text === undefined);
+    ok('…and the box it would have ticked is still open',
+        !parsePlanItems(moved).find(i => i.line === 4).done);
+    ok('the same claim against the line it really moved to goes through',
+        checkPlanItem(moved, { line: 5, text: 'alt madde' }, true).ok);
+    ok('a line target with no claimed text still works — the check is opt-in',
+        checkPlanItem(moved, { line: 5 }, true).ok);
+    ok('an id beats a stale line, because an id does not move',
+        checkPlanItem(moved, { id: 'afprj-04', line: 3 }, true).item.text === 'Faz 4 — belgeler');
+    ok('a line that is not an item at all names itself the way an editor numbers it',
+        /line 1 is not a plan item/.test(checkPlanItem(VAULT, { line: 0 }).error || ''));
 }
 
 // ---------- adding ----------

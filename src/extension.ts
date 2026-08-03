@@ -3791,6 +3791,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const rel = argStr(args, 'path');
                 const content = String(args.content ?? '');
                 const existing = readProjectDoc(folder, rel);
+                // ‼️ "not there" and "there but unreadable" are two answers and
+                // only one of them makes a write harmless. Everything below
+                // reads `!existing.ok` as "nothing to lose" — so a file that IS
+                // there and merely could not be read (held open by a syncing
+                // client, permissions changed, a drive that blinked) would take
+                // the create path and be replaced. Refusing here is what makes
+                // that reading true everywhere after it.
+                need(existing.ok || existing.missing === true,
+                    `${rel} is there but could not be read (${existing.error ?? 'unknown reason'})`
+                    + ' — refusing to write over a document nobody can see');
                 if (args.append === true) {
                     const before = existing.ok ? (existing.text ?? '') : '';
                     need(!existing.ok || !existing.truncated,
@@ -3881,7 +3891,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.plan.check',
-            describe: '‼️ Tick (or untick) one plan item — EXACTLY ONE CHARACTER of the document changes. The space inside `[ ]` becomes an `x` and nothing else is touched: not the bullet, not the spacing, not the icons, not the Obsidian Tasks metadata, not the line endings. No ✅ done-date is added either — Agent Farm does not write metadata it does not own; Obsidian\'s Tasks plugin does that when you tick the box THERE. Say which item by id (🆔), by line, or by a piece of its text; text that matches more than one item is an error, never a guess. args: project (id or name), item? (text), id?, line? (1-based, as projects.plan reports it), done? (default true)',
+            describe: '‼️ Tick (or untick) one plan item — EXACTLY ONE CHARACTER of the document changes. The space inside `[ ]` becomes an `x` and nothing else is touched: not the bullet, not the spacing, not the icons, not the Obsidian Tasks metadata, not the line endings. No ✅ done-date is added either — Agent Farm does not write metadata it does not own; Obsidian\'s Tasks plugin does that when you tick the box THERE. Say which item by id (🆔), by line, or by a piece of its text; text that matches more than one item is an error, never a guess. Pass `line` AND `item` together and the text is checked against that line rather than searched for — a mismatch is refused, because a line number goes stale the moment the file gains a paragraph in Obsidian. args: project (id or name), item? (text), id?, line? (1-based, as projects.plan reports it), done? (default true)',
             handler: (args) => {
                 const { project, folder, scan } = projectDocsFor(argStr(args, 'project'));
                 need(scan.roles.plan,

@@ -599,22 +599,42 @@ export function insertLogEntry(file: string, entry: string): WriteResult {
     const text = String(entry ?? '').trim();
     if (!text) { return { ok: false, error: 'nothing to write' }; }
     let existing = '';
-    try { existing = fs.readFileSync(file, 'utf8'); } catch { existing = ''; }
+    let mtimeMs: number | undefined;
+    try {
+        mtimeMs = docMtime(file) || undefined;
+        existing = fs.readFileSync(file, 'utf8');
+    } catch (e) {
+        // ‼️ A LOG THAT CANNOT BE READ IS NOT AN EMPTY LOG.
+        // Swallowing the error and carrying on with '' turns one unreadable
+        // read — a file a syncing client is holding, a permission that changed
+        // — into a whole worklog replaced by the single line we were adding.
+        // Only a file that is genuinely NOT THERE is written from scratch.
+        if (!isMissing(e)) {
+            return {
+                ok: false,
+                error: `the worklog is there but could not be read (${String(e)}) — nothing was written`
+            };
+        }
+        existing = '';
+        mtimeMs = undefined;
+    }
 
+    // The guard is the mtime taken before the read: the write refuses if the
+    // file moved under us, rather than deciding it knows better.
     if (!existing.trim()) {
-        return safeWriteDoc(file, `${LOG_ANCHOR}\n\n${text}\n`);
+        return safeWriteDoc(file, `${LOG_ANCHOR}\n\n${text}\n`, mtimeMs);
     }
     const at = existing.indexOf(LOG_ANCHOR);
     if (at < 0) {
         const sep = existing.endsWith('\n') ? '' : '\n';
-        return safeWriteDoc(file, `${existing}${sep}\n${text}\n`);
+        return safeWriteDoc(file, `${existing}${sep}\n${text}\n`, mtimeMs);
     }
     const after = at + LOG_ANCHOR.length;
     const head = existing.slice(0, after);
     // drop the blank line that sat between the anchor and whatever follows, so
     // repeated inserts do not grow a gap
     const tail = existing.slice(after).replace(/^\s*\n/, '');
-    return safeWriteDoc(file, `${head}\n\n${text}\n\n${tail}`);
+    return safeWriteDoc(file, `${head}\n\n${text}\n\n${tail}`, mtimeMs);
 }
 
 // ---------------------------------------------------------------------------
@@ -656,6 +676,11 @@ export interface ProjectDocEntry {
     managed?: boolean;
 }
 
+/** Agent Farm's own folder inside a project, with forward slashes — the tree
+ *  marks it and its contents `managed` so nothing offers it as a place to put
+ *  something that must survive. */
+const AF_DIR = '_AF';
+
 /** Depth the document tree walks, and the ceiling on entries. A folder somebody
  *  pointed at their whole disk degrades into a short list, never a hung window. */
 const DOC_TREE_DEPTH = 3;
@@ -694,6 +719,13 @@ export function listProjectDocs(dir: string): ProjectDocEntry[] {
                 rel, name: e.name, dir: e.isDirectory(),
                 size: e.isDirectory() ? 0 : stat.size, mtimeMs: stat.mtimeMs
             };
+            // The machine folder and everything under it is ours and is
+            // rewritten on every spawn. Marking the FOLDER too is what lets a
+            // caller keep it out of "where shall I put this note?" — the
+            // answer would be lost on the next session start. This is not the
+            // name dependency K5 forbids: `_AF` is Agent Farm's own output,
+            // named by Agent Farm, not something the user chose.
+            if (rel === AF_DIR || rel.startsWith(AF_DIR + '/')) { entry.managed = true; }
             if (!e.isDirectory() && e.name.toLowerCase().endsWith('.md')) {
                 const head = probe(full);
                 const role = String(readAfFrontmatter(head)['af-role'] ?? '').trim().toLowerCase();
@@ -719,6 +751,20 @@ export interface ReadDocResult {
     size?: number;
     /** True when only the head of a large file was returned. */
     truncated?: boolean;
+    /**
+     * ‼️ THE FILE IS NOT THERE — as opposed to being there and unreadable.
+     *
+     * These are two different answers and only one of them means a write can
+     * destroy nothing. A caller that reads "could not read it" as "there is
+     * nothing there" writes its content over a document that exists: a worklog
+     * held open by a syncing client, a note whose permissions changed, a file
+     * on a drive that blinked. The read fails, the write succeeds, and the
+     * document is gone with no error anywhere.
+     *
+     * Absent on every other failure ON PURPOSE, so a caller that does not know
+     * about this flag gets the safe reading rather than the destructive one.
+     */
+    missing?: boolean;
 }
 
 export function readProjectDoc(dir: string, rel: string): ReadDocResult {
@@ -741,8 +787,18 @@ export function readProjectDoc(dir: string, rel: string): ReadDocResult {
         }
         return { ok: true, text, mtimeMs: stat.mtimeMs, size: stat.size, truncated };
     } catch (e) {
-        return { ok: false, error: String(e) };
+        return {
+            ok: false, error: String(e),
+            ...(isMissing(e) ? { missing: true } : {})
+        };
     }
+}
+
+/** Node's "no such file", told apart from every other reason a read fails.
+ *  ENOTDIR belongs here too: a path whose parent is a FILE cannot exist. */
+function isMissing(e: unknown): boolean {
+    const code = (e as NodeJS.ErrnoException | undefined)?.code;
+    return code === 'ENOENT' || code === 'ENOTDIR';
 }
 
 /** Write a document inside the project folder, through the guarded atomic path. */
@@ -1012,8 +1068,10 @@ export function addDeliverableRow(text: string, input: DeliverableInput): { ok: 
 // brief
 // ---------------------------------------------------------------------------
 
-/** Where the generated brief lives inside a project folder. */
-export const BRIEF_REL = path.join('_AF', 'BRIEF.md');
+/** Where the generated brief lives inside a project folder. Built from
+ *  `AF_DIR` so the tree's "this is ours" rule and the brief's own home can
+ *  never drift apart. */
+export const BRIEF_REL = path.join(AF_DIR, 'BRIEF.md');
 
 /** How many worklog lines the brief carries — enough to say what just happened,
  *  not so many that the system prompt turns into a diary. */
