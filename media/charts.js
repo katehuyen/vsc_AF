@@ -30,6 +30,52 @@
     }
 
     /**
+     * A duration read at a glance: `34s` · `3m-29s` · `1h-4m-23s` · `1d-7h-54m-41s`.
+     *
+     * ‼️ SECONDS ALONE STOP BEING AN ANSWER AT ABOUT TWO MINUTES. The strips
+     * counted seconds forever, so a turn that ran an hour said `3847s` — a
+     * number the reader has to divide before it means anything, and the longer
+     * the turn the less it says. A unit appears only once it is REACHED, and
+     * from there down every unit is always written: `1h-0m-5s`, never `1h-5s`,
+     * so the string can be read left to right without checking which fields
+     * happen to be present.
+     */
+    function fmtDur(ms) {
+        const s = Math.max(0, Math.round(Number(ms) / 1000) || 0);
+        const d = Math.floor(s / 86400);
+        const h = Math.floor((s % 86400) / 3600);
+        const m = Math.floor((s % 3600) / 60);
+        const sec = s % 60;
+        if (d) { return d + 'd-' + h + 'h-' + m + 'm-' + sec + 's'; }
+        if (h) { return h + 'h-' + m + 'm-' + sec + 's'; }
+        if (m) { return m + 'm-' + sec + 's'; }
+        return sec + 's';
+    }
+
+    /**
+     * The turn's size, in the one shape every surface uses: `14api/26`.
+     *
+     * ‼️ ONE NUMBER HERE WAS TWO QUESTIONS. "26" is how many STEPS the agent
+     * took — each reply fragment and each tool call is one — while what it
+     * actually spent is decided by how many API CALLS those steps took, and a
+     * single call routinely carries several steps. A run whose call count
+     * halved while its step count held looked unchanged, and the token total
+     * moving underneath it looked like a counting bug. Both numbers, always, in
+     * the same order, everywhere.
+     */
+    function fmtSteps(apiCalls, steps) {
+        const a = Number(apiCalls) || 0;
+        const s = Number(steps) || 0;
+        if (!a) { return String(s); }
+        return a + 'api/' + s;
+    }
+
+    /** The one sentence that explains `14api/26` wherever it is shown. */
+    const STEPS_TIP = 'API calls / steps — a step is one reply fragment or one '
+        + 'tool call; a single API call usually carries several of them. The '
+        + 'tokens follow the CALLS, not the steps.';
+
+    /**
      * Stacked bar chart.
      * days: ['2026-07-01', ...]; series: [{name, values:[...]}]
      * fmt: value formatter for tooltip/axis.
@@ -218,5 +264,5 @@
         return renderSpeaker(rawModel, pageUpper, (window.__AFUI__ || {}).speaker);
     }
 
-    window.AFCharts = { stackedBars, donut, hbars, heatmap, sparkline, esc, fmtUSD, fmtTok, aiName, parseModel, renderSpeaker, aiLabel, PALETTE };
+    window.AFCharts = { stackedBars, donut, hbars, heatmap, sparkline, esc, fmtUSD, fmtTok, fmtDur, fmtSteps, STEPS_TIP, aiName, parseModel, renderSpeaker, aiLabel, PALETTE };
 })();

@@ -285,7 +285,27 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
     // Turn accounting runs inside the parse loop: usage on assistant lines whose content
     // never renders (e.g. thinking-only stream lines) must still bill to the open turn.
     let inTurn = 0;
-    const turnTotals: Record<number, { tokens: number; cost: number }> = {};
+    /**
+     * Per-turn accounting.
+     *
+     * `apiCalls` and `steps` are two different questions and the surfaces used
+     * to answer only the second: a STEP is one reply fragment or one tool call,
+     * an API CALL is one round trip, and one call routinely carries several
+     * steps. The tokens follow the calls, so a turn whose call count halved
+     * while its steps held looked unchanged while its total moved.
+     *
+     * `endTs` and `endCtx` close the other gap: the turn row said what it spent
+     * but never how long it took or where it left the window.
+     */
+    const turnTotals: Record<number, {
+        tokens: number; cost: number; apiCalls: number; steps: number;
+        endTs: number; endCtx: number;
+    }> = {};
+    const turnAcc = (n: number): {
+        tokens: number; cost: number; apiCalls: number; steps: number;
+        endTs: number; endCtx: number;
+    } => (turnTotals[n] ?? (turnTotals[n] =
+        { tokens: 0, cost: 0, apiCalls: 0, steps: 0, endTs: 0, endCtx: 0 }));
     // Which model(s) served each turn — the model can change mid-session (it does
     // in ~1 of 4 real sessions), so this is per turn, not per session.
     const turnModels: Record<number, Set<string>> = {};
@@ -379,7 +399,13 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
                 ctxTokens = ctxNow;
                 ctxTs = ts || ctxTs;
                 if (msg.model && msg.model !== '<synthetic>') { ctxModel = msg.model; }
+                // Where the turn left the window. A sub-agent's messages are
+                // not this conversation's window (see contextAfter's callers in
+                // consoleproto) but a sidechain line here belongs to the same
+                // conversation, so it counts.
+                if (inTurn > 0) { turnAcc(inTurn).endCtx = ctxNow; }
             }
+            if (inTurn > 0 && ts) { turnAcc(inTurn).endTs = Math.max(turnAcc(inTurn).endTs, ts); }
             let msgTokens = 0, msgCost = 0;
             const key = `${msg.id ?? ''}:${line.requestId ?? ''}`;
             if (msg.usage && (key === ':' || !seen.has(key))) {
@@ -400,9 +426,13 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
                     : deps.getPricing().costFor(msg.model ?? '', u, ts);
                 cost += msgCost;
                 if (inTurn > 0 && (msgTokens || msgCost)) {
-                    const t = turnTotals[inTurn] ?? (turnTotals[inTurn] = { tokens: 0, cost: 0 });
+                    const t = turnAcc(inTurn);
                     t.tokens += msgTokens;
                     t.cost += msgCost;
+                    // One round trip. Counted HERE, inside the dedup guard, so
+                    // it is the same set of lines the tokens came from — the
+                    // two figures can never tell different stories.
+                    t.apiCalls++;
                 }
             }
             if (Array.isArray(msg.content)) {
@@ -413,9 +443,11 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
                             model: msg.model, tokens: msgTokens, cost: msgCost,
                             sidechain: line.isSidechain
                         });
+                        if (inTurn > 0) { turnAcc(inTurn).steps++; }
                         msgTokens = 0; msgCost = 0; // attribute once
                     } else if (b?.type === 'tool_use' && b.name) {
                         toolCalls++;
+                        if (inTurn > 0) { turnAcc(inTurn).steps++; }
                         // Tool-only assistant turns still cost tokens — attribute them to the first tool block.
                         messages.push({
                             role: 'tool', ts, tool: b.name,
@@ -450,14 +482,24 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
     // `models`/`attrs` are verbatim transcript values — see ATTR_KEYS.
     const turns: {
         n: number; label: string; ts: number; tokens: number; cost: number;
+        apiCalls: number; steps: number; ms: number; endCtx: number;
         models: string[]; attrs: Record<string, string>;
     }[] = [];
     for (let n = 1; n <= turnNo; n++) {
+        const acc = turnTotals[n];
+        const startTs = turnTs[n] ?? 0;
         turns.push({
             n, label: turnLabels[n] ?? '',
-            ts: turnTs[n] ?? 0,
-            tokens: turnTotals[n]?.tokens ?? 0,
-            cost: turnTotals[n]?.cost ?? 0,
+            ts: startTs,
+            tokens: acc?.tokens ?? 0,
+            cost: acc?.cost ?? 0,
+            apiCalls: acc?.apiCalls ?? 0,
+            steps: acc?.steps ?? 0,
+            // How long the turn ran: from the prompt to its last recorded line.
+            // A turn still running has no end yet — 0, and the surfaces then
+            // count from `ts` themselves rather than showing a frozen figure.
+            ms: startTs && acc?.endTs && acc.endTs > startTs ? acc.endTs - startTs : 0,
+            endCtx: acc?.endCtx ?? 0,
             models: [...(turnModels[n] ?? [])],
             attrs: turnAttrs[n] ?? {}
         });

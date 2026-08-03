@@ -1214,14 +1214,29 @@
      *  move once per paint, whatever the timer's drift does */
     let spinAt = 0;
 
-    /** How many lines this turn has produced: everything since your own last
+    /** How many STEPS this turn has taken: everything since your own last
      *  message. The count you can see growing IS the turn. */
-    function turnLines(s) {
+    function turnSteps(s) {
         const list = (s && s.messages) || [];
         for (let i = list.length - 1; i >= 0; i--) {
             if (list[i].role === 'user') { return list.length - 1 - i; }
         }
         return list.length;
+    }
+
+    /**
+     * The turn's size, in the shape every surface uses: `14api/26`.
+     *
+     * ‼️ THE STRIP USED TO SAY ONLY THE SECOND NUMBER, AND IT IS THE ONE THAT
+     * EXPLAINS THE LEAST. Steps are what you watch scroll past; round trips are
+     * what the tokens are charged for, and one trip carries several steps. A
+     * turn doing the same visible work in half the round trips reads as
+     * unchanged here while its token figure halves — which is exactly how a
+     * correct counter comes to look broken.
+     */
+    function stepsHtml(apiCalls, steps) {
+        if (!steps && !apiCalls) { return ''; }
+        return ` · <span title="${C.esc(C.STEPS_TIP)}">${C.esc(C.fmtSteps(apiCalls, steps))}</span>`;
     }
 
     /**
@@ -1292,19 +1307,17 @@
         const glyph = DONE_GLYPH[t.outcome] || '✓';
         const word = t.outcome === 'interrupted' ? 'last turn interrupted'
             : t.outcome === 'failed' ? 'last turn failed' : 'last turn';
-        const secs = t.ms ? Math.max(1, Math.round(t.ms / 1000)) : 0;
         const money = t.cost || t.tokens
             ? ` · <span title="What that turn cost, as the CLI reported it — not an estimate. The line under the box is the whole session.">${spend(t.cost, t.tokens)}</span>`
             : '';
-        const lines = turnLines(s);
         return `<span class="dspin">${glyph}</span> <b>${word}</b>
-            <span class="wmeta">${secs ? `${secs}s` : ''}${money}${lines ? ` · ${lines} line${lines === 1 ? '' : 's'}` : ''}${turnBrainHtml(t.model, t.effort, false)} · your turn now</span>`;
+            <span class="wmeta">${t.ms ? C.fmtDur(t.ms) : ''}${money}${stepsHtml(t.apiCalls, turnSteps(s))}${turnBrainHtml(t.model, t.effort, false)} · your turn now</span>`;
     }
 
     function workingHtml(s) {
         if (!s || s.status !== 'working') { return lastTurnHtml(s); }
         const glyph = SPIN[spinAt % SPIN.length];
-        const secs = s.turnStartedAt ? Math.max(0, Math.round((Date.now() - s.turnStartedAt) / 1000)) : 0;
+        const ran = s.turnStartedAt ? Math.max(0, Date.now() - s.turnStartedAt) : 0;
         // what it reached for last — the honest version of "Thinking…"
         let doing = 'working';
         for (let i = (s.messages || []).length - 1; i >= 0; i--) {
@@ -1326,7 +1339,6 @@
         const cost = s.turnTokens || s.turnCost
             ? ` · <span title="What THIS TURN has spent so far — the line under the box is the whole session. The money is an estimate at the usual rates; the turn's closing line carries the CLI's own figure.">~${spend(s.turnCost, s.turnTokens)} this turn</span>`
             : '';
-        const lines = turnLines(s);
         // ‼️ "⎋ Interrupt stops it" used to close this line and is gone on
         // purpose: it is a permanent instruction about a button that is on
         // screen, two centimetres below, already labelled "⎋ Interrupt" — so it
@@ -1335,7 +1347,7 @@
         // tooltip, where a key hint belongs. What took its place is the one thing
         // nothing else on screen was saying: WHAT this turn is thinking with.
         return `<span class="spin">${glyph}</span> <b>${C.esc(doing)}</b>
-            <span class="wmeta">${secs}s${cost}${lines ? ` · ${lines} line${lines === 1 ? '' : 's'}` : ''}${q ? ` · ${q} held` : ''}${turnBrainHtml(s.turnModel, s.turnEffort, true)}</span>`;
+            <span class="wmeta">${C.fmtDur(ran)}${cost}${stepsHtml(s.turnApiCalls, turnSteps(s))}${q ? ` · ${q} held` : ''}${turnBrainHtml(s.turnModel, s.turnEffort, true)}</span>`;
     }
 
     /** The glyph has to turn on its own — a data push only arrives when the CLI

@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.60.0 — A turn says how many calls, how long, and where it left the window (2026-08-04)
+
+Two days were spent proving the token counter was not broken. It was not — four shipped builds (3.57.0 / 3.57.1 / 3.58.0 / 3.59.1) were unzipped and run over the same six transcripts, and all four returned the same figure to four decimal places, tokens, turns, cost, messages and tool calls alike. But the investigation only took two days because **the surfaces answered the wrong question about a turn**, and this release fixes that.
+
+**‼️ One number was two questions.** A turn showed a count labelled `msgs` on the transcript page and `lines` on the Console strip; both meant *steps* — one reply fragment or one tool call. What the tokens actually follow is **API calls**, and a single call routinely carries several steps (measured over 35 610 assistant lines / 17 310 calls: **2.06 steps per call**). So a run that halved its round trips while its visible steps held looked unchanged, and the token total moving underneath it looked like a counting fault. Every surface now writes the pair: **`14api/26`** — calls first, steps second, one shared formatter, one shared tooltip. `steps` is the name everywhere; `msgs` and `lines` are gone.
+
+**A turn row now says how long it ran and where it left the context window.** Both were already measured and neither was shown: the row could price a turn but not tell you it took forty minutes, and the only context figure on the page was the session's. `took` is the turn's own running time (prompt → last line), `ctx` is what the window held when it ended. On the Turns page these sit beside `Duration`, which is a *different* measurement — the gap to the next turn, including however long the ball sat with you — and each now says which it is in its tooltip.
+
+**Durations are written the same way everywhere:** `34s` · `3m-29s` · `1h-4m-23s` · `1d-7h-54m-41s`. The strips counted seconds forever, so a turn that ran an hour said `3847s`. A unit appears only once it is reached, and from there down every unit is always written (`1h-0m-5s`, never `1h-5s`) so the string reads left to right without checking which fields happen to be present. The webview and node copies of the formatter are held identical by a test that runs both across every unit boundary — a Markdown export must not describe a turn differently from the table it came from.
+
+*Also:* the Console strip's own dedup was found sound but resting on an assumption — it keeps one usage key, not a set, on the grounds that repeats are always consecutive. Measured across 18 300 repeats: zero exceptions, so it is correct today. It is on the backlog as a `#bug` anyway, because a measurement is not an invariant.
+
 ## 3.59.1 — What a turn's tokens are made of (2026-08-03)
 
 A session that used to report ~77M tokens for an hour of work started reporting ~17M for an hour that felt the same, and 6.107/6.108 were the suspects. **They are not.** Nothing in the token path changed between 3.57.0 and 3.59.0 — `sessions.ts`, `sessionViewer.ts` and `pricing.ts` do not appear in the diff, and `extension.ts` gained no line containing `token` or `usage`. The two figures were re-derived from the transcripts by a script that shares no code with the extension: **77.87M and 17.13M** — the same numbers the page showed.

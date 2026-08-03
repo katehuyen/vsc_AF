@@ -381,14 +381,20 @@
             // name table here, so tomorrow's model shows up on its own
             const tags = t => (t.models || []).map(m => m.replace(/^claude-/, ''))
                 .concat(Object.values(t.attrs || {}));
+            // The same four figures the viewer's turn band carries, in the same
+            // order and the same words — a turn read here and read there must
+            // not look like two different turns.
             return `<table class="turnmini">
-                <tr><th>#</th><th>prompt</th><th>model</th><th class="num">tokens</th><th class="num">cost</th></tr>
+                <tr><th>#</th><th>prompt</th><th>model</th><th class="num" title="${C.esc(C.STEPS_TIP)}">steps</th><th class="num">took</th><th class="num">tokens</th><th class="num">cost</th><th class="num" title="What the window held when the turn ended">ctx</th></tr>
                 ${c.turns.map(t => `<tr class="click" data-turnjump="${C.esc(r.file)}" data-turnts="${t.ts || 0}"
                     title="Open the transcript at turn ${t.n}">
                     <td class="num">${t.n}</td><td title="${C.esc(t.label || '')}">${C.esc(t.label || '—')}</td>
                     <td>${tags(t).map(x => `<span class="tag">${C.esc(x)}</span>`).join('') || '—'}</td>
+                    <td class="num">${t.steps || t.apiCalls ? C.esc(C.fmtSteps(t.apiCalls, t.steps)) : '—'}</td>
+                    <td class="num">${t.ms ? C.esc(C.fmtDur(t.ms)) : '—'}</td>
                     <td class="num">${t.tokens ? C.fmtTok(t.tokens) : '—'}</td>
                     <td class="num">${t.cost ? C.fmtUSD(t.cost) : '—'}</td>
+                    <td class="num">${t.endCtx ? C.fmtTok(t.endCtx) : '—'}</td>
                 </tr>`).join('')}
             </table>`;
         }

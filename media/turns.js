@@ -16,7 +16,7 @@
         { id: 'recent', label: 'Recent', key: r => r.ts || 0 },
         { id: 'cost', label: 'Cost', key: r => r.cost || 0 },
         { id: 'tokens', label: 'Tokens', key: r => r.tokens || 0 },
-        { id: 'duration', label: 'Duration', key: r => r.durationMin || 0 },
+        { id: 'duration', label: 'Duration', key: r => r.durationMs || 0 },
         { id: 'tools', label: 'Tools', key: r => r.tools || 0 },
         { id: 'errors', label: 'Errors', key: r => r.errors || 0 },
         { id: 'turnno', label: 'Turn #', key: r => r.n || 0 }
@@ -25,7 +25,7 @@
     const FRANGES = [
         { id: 'tokens', label: 'Tokens', get: r => r.tokens || 0 },
         { id: 'cost', label: 'Cost $', get: r => r.cost || 0 },
-        { id: 'duration', label: 'Minutes', get: r => r.durationMin || 0 },
+        { id: 'duration', label: 'Duration', get: r => r.durationMs || 0 },
         { id: 'tools', label: 'Tools', get: r => r.tools || 0 },
         { id: 'errors', label: 'Errors', get: r => r.errors || 0 },
         { id: 'turnno', label: 'Turn #', get: r => r.n || 0 }
@@ -66,7 +66,7 @@
     // Visible column order — origin first (one narrow glyph strip to scan),
     // Tokens right after Model, next to the figures that explain it. HEAD/CELL
     // are keyed so the order lives in ONE list.
-    const COLUMNS = ['origin', 'agent', 'label', 'session', 'n', 'models', 'tokens', 'when', 'duration', 'tools', 'errors', 'cost'];
+    const COLUMNS = ['origin', 'agent', 'label', 'session', 'n', 'models', 'steps', 'tokens', 'ctx', 'when', 'took', 'duration', 'tools', 'errors', 'cost'];
     // How much of a long text a cell shows before it is cut (the full string is
     // always in the cell's tooltip). The CSS caps match these.
     const LABEL_CHARS = 77;
@@ -325,7 +325,10 @@
         models: '<th>Model</th>',
         tokens: '<th class="num">Tokens</th>',
         when: '<th class="num">When</th>',
-        duration: '<th class="num" title="Until the next turn opened (last turn: until the session\'s end)">Duration</th>',
+        duration: '<th class="num" title="Until the next turn opened (last turn: until the session\'s end) — this includes the time the ball was with you. &quot;Took&quot; is the turn\'s own running time.">Duration</th>',
+        steps: `<th class="num" title="${C.esc(C.STEPS_TIP)}">Steps</th>`,
+        took: '<th class="num" title="How long the turn itself ran — its prompt to its last line">Took</th>',
+        ctx: '<th class="num" title="What the model\'s window held when this turn ended">Ctx</th>',
         tools: '<th class="num">Tools</th>',
         errors: '<th class="num">Err</th>',
         cost: '<th class="num">Cost</th>'
@@ -345,7 +348,10 @@
             `<span class="tag">${C.esc(m.replace(/^claude-/, ''))}</span>`).join('') || '—'}</td>`,
         tokens: r => `<td class="num">${r.tokens ? C.fmtTok(r.tokens) : '—'}</td>`,
         when: r => `<td class="num">${relTime(r.ts)}</td>`,
-        duration: r => `<td class="num">${r.durationMin || 0}m</td>`,
+        duration: r => `<td class="num">${r.durationMs ? C.esc(C.fmtDur(r.durationMs)) : '—'}</td>`,
+        steps: r => `<td class="num">${r.steps || r.apiCalls ? C.esc(C.fmtSteps(r.apiCalls, r.steps)) : '—'}</td>`,
+        took: r => `<td class="num">${r.ms ? C.esc(C.fmtDur(r.ms)) : '—'}</td>`,
+        ctx: r => `<td class="num">${r.endCtx ? C.fmtTok(r.endCtx) : '—'}</td>`,
         tools: r => `<td class="num">${r.tools || 0}</td>`,
         errors: r => `<td class="num">${r.errors || ''}</td>`,
         cost: r => `<td class="num"><strong>${r.cost ? C.fmtUSD(r.cost) : '—'}</strong></td>`

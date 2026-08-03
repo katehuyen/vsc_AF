@@ -43,7 +43,6 @@
     const savedState = (typeof vscode.getState === 'function' && vscode.getState()) || {};
     let singleOpen = savedState.singleOpen !== undefined ? !!savedState.singleOpen : true;
     filesOpen = savedState.filesOpen === true;
-    let turnCounts = null; // per-turn message counts, rebuilt when DATA changes
 
     /** Remember a display choice across re-renders, reloads and restores. */
     function keepState(patch) {
@@ -83,7 +82,6 @@
         }
         if (ev.data.type !== 'data') { return; }
         DATA = ev.data.data;
-        turnCounts = null;
         foldNewTurns();
         if (ev.data.auto && replay.active) {
             // live update while replaying: keep position/controls, just refresh the counter.
@@ -174,14 +172,6 @@
             .concat(Object.values(info.attrs || {}));
     }
 
-    function turnMsgCount(n) {
-        if (!turnCounts) {
-            turnCounts = {};
-            (DATA.messages || []).forEach(m => { if (m.turn) { turnCounts[m.turn] = (turnCounts[m.turn] || 0) + 1; } });
-        }
-        return turnCounts[n] || 0;
-    }
-
     /** Expand a turn, honoring single-open mode (which folds every other turn). */
     function expandTurn(n) {
         if (singleOpen) { (DATA.turns || []).forEach(t => { if (t.n !== n) { collapsed.add(t.n); } }); }
@@ -205,6 +195,22 @@
             ? `${C.fmtTok(t.tokens)} tok · ${C.fmtUSD(t.cost)}`
             : '';
         const info = turnInfo(m.turn);
+        // ‼️ WHAT THE BAND SAID AND WHAT THE READER ASKS WERE TWO LISTS.
+        // It priced the turn and named the model, and left out the two things
+        // you ask about a turn you are looking at: how long it took, and where
+        // it left the context window. Both were already measured. The step
+        // count also became honest here — `14api/26` rather than a single
+        // number that reads as calls but counts steps (see charts.js).
+        const bits = [];
+        if (info && info.ms) { bits.push(`<span title="How long this turn ran, prompt to last line">${C.esc(C.fmtDur(info.ms))}</span>`); }
+        if (info && (info.apiCalls || info.steps)) {
+            bits.push(`<span title="${C.esc(C.STEPS_TIP)}">${C.esc(C.fmtSteps(info.apiCalls, info.steps))}</span>`);
+        }
+        if (total) { bits.push(total); }
+        if (info && info.endCtx) {
+            bits.push(`<span title="What the model's window held when this turn ended — the session's own figure is the Context card above">ctx ${C.fmtTok(info.endCtx)}</span>`);
+        }
+        const stats = bits.join(' · ');
         const closed = collapsed.has(m.turn);
         // The hover carries the turn's date, not "click to expand": the caret,
         // the fold state and the controls row already say the band is clickable,
@@ -216,7 +222,7 @@
             <span class="turnnum">Turn ${m.turn}/${DATA.turnCount || '?'}</span>
             <span class="turnlabel">${C.esc((info && info.label) || '')}</span>
             <span class="turntags">${turnTags(info).map(t => `<span class="tag">${C.esc(t)}</span>`).join('')}</span>
-            <span class="turnstats">${closed ? `${turnMsgCount(m.turn)} msgs${total ? ' · ' : ''}` : ''}${total}</span>
+            <span class="turnstats">${stats}</span>
             <span class="turnnav">
                 <button class="tnav" data-tnav="prev" data-from="${m.turn}" title="Jump to previous turn">↑</button>
                 <button class="tnav" data-tnav="next" data-from="${m.turn}" title="Jump to next turn">↓</button>

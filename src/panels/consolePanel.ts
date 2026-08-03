@@ -240,6 +240,10 @@ export class ConsolePanel {
                 // unit you are watching. The money is an estimate — see
                 // ConsoleDeps.estimateCost.
                 turnTokens: s.turnTokensAt !== undefined ? Math.max(0, s.tokens - s.turnTokensAt) : 0,
+                // …how many ROUND TRIPS those tokens took, beside how many steps
+                // the strip can see — the two are different numbers and the
+                // tokens follow this one (see turnApiCalls).
+                turnApiCalls: s.turnApiCalls ?? 0,
                 // …priced at the RUNNING turn's own model: a switch applies from
                 // the next turn, so `model` can already be the next one's.
                 turnCost: s.turnUsage

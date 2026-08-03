@@ -3293,6 +3293,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // …and what the turn running right now has spent of them,
                     // and what it is spending it ON (see turnModel)
                     turnTokens: s.turnTokensAt !== undefined ? Math.max(0, s.tokens - s.turnTokensAt) : 0,
+                    // …in how many round trips (the tokens follow these, not the
+                    // visible steps — see ConsoleSessionState.turnApiCalls)
+                    turnApiCalls: s.turnApiCalls ?? 0,
                     turnModel: s.turnModel ?? null, turnEffort: s.turnEffort ?? null,
                     // …and, once the ball is back with the user, what the turn
                     // that just ended really cost (the CLI's own figure)

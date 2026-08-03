@@ -313,6 +313,18 @@ export interface ConsoleSessionState {
      */
     turnUsage?: Usage;
     /**
+     * Round trips to the model in the RUNNING turn.
+     *
+     * ‼️ THE STRIP COUNTED STEPS AND CALLED IT THE TURN'S SIZE. A step is one
+     * reply fragment or one tool call; several of them ride on a single API
+     * call, and it is the CALLS the tokens follow. So a turn doing the same
+     * visible amount of work with half the round trips read as unchanged while
+     * its token figure moved underneath it. Incremented where the usage is
+     * counted — inside the repeat guard — so it can never drift from the
+     * tokens beside it.
+     */
+    turnApiCalls?: number;
+    /**
      * The turn that just FINISHED — kept until the next one starts.
      *
      * ‼️ A strip that answers "what is this turn costing me?" and then vanishes
@@ -335,6 +347,8 @@ export interface ConsoleSessionState {
         tokens?: number;
         /** the CLI's own cost for the turn, USD */
         cost: number;
+        /** round trips the turn took — see turnApiCalls */
+        apiCalls?: number;
         /** how it ended, in one word: 'done' | 'interrupted' | 'failed' */
         outcome: 'done' | 'interrupted' | 'failed';
         /** what it was thinking with — see turnModel; '' when never known */
@@ -670,6 +684,10 @@ export function reduceEvent(
                 const ctxNow = ofSubAgent ? 0 : contextAfter(u);
                 next = {
                     ...next, tokens: next.tokens + spent, turnUsage: turn,
+                    // One round trip — see turnApiCalls. A sub-agent's calls are
+                    // spent by this turn and are counted here for the same
+                    // reason their tokens are: they are what the turn cost.
+                    turnApiCalls: (next.turnApiCalls ?? 0) + 1,
                     // zero is "not measured here", so the last real figure stands
                     ...(ctxNow > 0 ? { contextTokens: ctxNow } : {})
                 };
@@ -763,12 +781,14 @@ export function reduceEvent(
                 turnEffort: undefined,
                 // the estimate is over: the number above is the CLI's own
                 turnUsage: undefined,
+                turnApiCalls: undefined,
                 // …and it is kept, so the strip above the composer still says
                 // what the turn that just ended cost — and what it thought with,
                 // which a switch made in the meantime must not rewrite
                 // (see lastTurn)
                 lastTurn: {
                     endedAt: now, ms, tokens: spent || undefined, cost,
+                    apiCalls: state.turnApiCalls || undefined,
                     outcome: !isError ? 'done'
                         : sub === 'error_during_execution' ? 'interrupted' : 'failed',
                     model: state.turnModel, effort: state.turnEffort
@@ -1059,6 +1079,7 @@ export function acceptUserText(
             ...state, lastTs: now, status: 'working', turnStartedAt: now, turnTokensAt: state.tokens,
             ...turnBrain(state),
             turnUsage: emptyUsage(),
+            turnApiCalls: 0,
             // Your new prompt is what clears the finished turn's summary — the
             // invariant the strip relies on: lastTurn exists exactly while the
             // ball is yours and a turn has already run (see lastTurn).
@@ -1150,6 +1171,7 @@ export function shiftQueued(
         state: {
             ...state, queued: rest, status: 'working', lastTs: now,
             turnStartedAt: now, turnTokensAt: state.tokens, turnUsage: emptyUsage(),
+            turnApiCalls: 0,
             ...turnBrain(state),
             messages: [...state.messages, { id: nextId(), ts: now, role: 'user', text: next }]
         },

@@ -16,14 +16,16 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 const code = require(path.join(__dirname, 'lib_shared_media.js')).sharedMedia()
     + fs.readFileSync(path.resolve(__dirname, '../media/console.js'), 'utf8');
 
-// ‼️ parseModel is stubbed with the REAL one, not a lookalike. The strip shortens
-// model ids the way every other surface does, and a hand-written stub here would
-// let the two drift while the test kept passing.
-const realParseModel = (() => {
+// ‼️ These are stubbed with the REAL ones, not lookalikes. The strip shortens
+// model ids, writes durations and writes the api/steps pair the way every other
+// surface does, and a hand-written stub here would let the two drift while the
+// test kept passing.
+const realCharts = (() => {
     const box = vm.createContext({ window: {} });
     vm.runInContext(fs.readFileSync(path.resolve(__dirname, '../media/charts.js'), 'utf8'), box);
-    return box.window.AFCharts.parseModel;
+    return box.window.AFCharts;
 })();
+const realParseModel = realCharts.parseModel;
 
 // ---------- fake DOM ----------
 const els = {};
@@ -77,6 +79,9 @@ const sandbox = {
             esc: s => String(s === undefined || s === null ? '' : s).replace(/</g, '&lt;'),
             fmtUSD: v => '$' + (v || 0),
             fmtTok: v => v + 't',
+            fmtDur: realCharts.fmtDur,
+            fmtSteps: realCharts.fmtSteps,
+            STEPS_TIP: realCharts.STEPS_TIP,
             parseModel: realParseModel
         },
         AFHeader: { html: () => '<header>', wire: () => { } },
@@ -606,7 +611,16 @@ const html = allHtml;
     ok('…marked as the estimate it is until the turn closes', /estimate/.test(working()));
     // everything since your own last message: agent, three tool lines, the
     // turn's own result line, and the one that just streamed in
-    ok('…with the lines it has produced so far', / · 6 lines/.test(working()));
+    // ‼️ …AND HOW MANY ROUND TRIPS CARRIED THEM. The steps are what you watch
+    // scroll past; the tokens are charged per API CALL, and one call carries
+    // several steps. Showing only the steps let a turn whose call count halved
+    // read as unchanged while its token figure moved — see charts.js fmtSteps.
+    ok('…with the steps it has produced, and the calls that carried them',
+        />6</.test(working()) && !/· \d+ lines?/.test(working()));
+    // The strip counts in the shared format the moment a turn passes a minute —
+    // it used to say "3847s" for a turn that ran an hour.
+    ok('…and its age in the shared duration format, not raw seconds',
+        working().includes('41s'));
     ok('…and the seconds it has been at it', /41s/.test(working()));
     ok('the session-wide context figure is NOT repeated up here', !/ctx/.test(working()));
 

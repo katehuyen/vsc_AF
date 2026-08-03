@@ -40,6 +40,23 @@ export interface SessionTurn {
     ts: number;
     tokens: number;
     cost: number;
+    /**
+     * Round trips to the model inside this turn.
+     *
+     * ‼️ NOT THE SAME NUMBER AS `steps`, AND THAT IS THE POINT. One API call
+     * carries several content blocks, so a turn's step count can hold steady
+     * while its call count halves — and the tokens follow the CALLS. Surfaces
+     * that showed only one of the two made a change in the other look like a
+     * counting fault. Counted inside the dedup guard, off the same lines the
+     * tokens come from.
+     */
+    apiCalls: number;
+    /** Reply fragments + tool calls — what the agent visibly did. */
+    steps: number;
+    /** Prompt → last recorded line, in ms. 0 while the turn is still open. */
+    ms: number;
+    /** What the window held when the turn ended (0 = never measured). */
+    endCtx: number;
     /** Tool calls answered inside this turn (sidechain work bills to the open turn). */
     tools: number;
     /** Tool errors inside this turn. */
@@ -261,7 +278,8 @@ export function parseSessionFile(
     const openTurn = (text: string, tsIn: number) => {
         info.turns.push({
             n: info.turns.length + 1, label: turnLabel(text), ts: tsIn,
-            tokens: 0, cost: 0, tools: 0, errors: 0, models: []
+            tokens: 0, cost: 0, apiCalls: 0, steps: 0, ms: 0, endCtx: 0,
+            tools: 0, errors: 0, models: []
         });
         turnModelSets.push(new Set());
     };
@@ -347,6 +365,16 @@ export function parseSessionFile(
             // stands — see contextAfter.
             const ctxNow = contextAfter(msg.usage);
             if (ctxNow > 0) { info.lastCtxTokens = ctxNow; }
+            {
+                // Where the turn stands: how long it has run and where it left
+                // the window. Both track the LAST line seen, so a turn still
+                // being written reports what it has reached so far.
+                const t = curTurn();
+                if (t) {
+                    if (ctxNow > 0) { t.endCtx = ctxNow; }
+                    if (ts && t.ts && ts > t.ts) { t.ms = ts - t.ts; }
+                }
+            }
 
             let msgCost = 0;
             let msgTokens = 0;
@@ -372,6 +400,10 @@ export function parseSessionFile(
                     // matching the viewer's turn-total accounting.
                     t.tokens += msgTokens;
                     t.cost += msgCost;
+                    // One round trip, counted off the same line the tokens came
+                    // from (inside the dedup guard) so the two can never
+                    // disagree — see SessionTurn.apiCalls.
+                    t.apiCalls++;
                 }
 
                 if (ts) {
@@ -393,13 +425,20 @@ export function parseSessionFile(
             info.assistantMsgs++;
 
             if (Array.isArray(msg.content)) {
-                for (const block of msg.content as { type?: string; name?: string; input?: Record<string, unknown> }[]) {
+                for (const block of msg.content as { type?: string; name?: string; text?: string; input?: Record<string, unknown> }[]) {
+                    // A step is one thing the agent visibly did: a fragment of
+                    // reply, or a tool call. Counted on the same blocks the
+                    // viewer renders, so the two surfaces agree on the number.
+                    if (block?.type === 'text' && block.text?.trim()) {
+                        const t = curTurn();
+                        if (t) { t.steps++; }
+                    }
                     if (block?.type === 'tool_use' && block.name) {
                         info.toolCalls++;
                         info.tools[block.name] = (info.tools[block.name] ?? 0) + 1;
                         {
                             const t = curTurn();
-                            if (t) { t.tools++; }
+                            if (t) { t.tools++; t.steps++; }
                         }
                         if (block.name === 'Skill') {
                             const skillName = String(block.input?.['skill'] ?? '').trim();
