@@ -515,6 +515,27 @@ const {
         full.includes('Person Number 7') && full.length > tight.length);
     ok('a budget nothing can satisfy still returns a whole document rather than a sliced one',
         /## Writing back/.test(buildBrief({ ...seed, maxChars: 50 })));
+
+    // ‼️ HOW LONG ONE ENTRY IS, WHICH IS NOT THE SAME QUESTION AS HOW MANY.
+    // Found by generating this installation's OWN brief rather than a fixture:
+    // a single worklog entry here is over 2000 characters, so dropping to one
+    // log line still overshot the 2500-character system-prompt budget and the
+    // tail was sliced off anyway. Shortening the count without shortening the
+    // entry only looks like a fix.
+    const fatDir = freshDir();
+    const fat = P({ folder: fatDir, summary: 'a project whose worklog entries are paragraphs' });
+    createSkeleton(fatDir, fat);
+    const fatRoles = scanProjectFolder(fatDir).roles;
+    insertLogEntry(fatRoles.log, '- 2026-08-03 — ' + 'kelime '.repeat(400).trim() + '.');
+    const fatSeed = { project: fat, roles: scanProjectFolder(fatDir).roles, repos: [] };
+    const fatFull = buildBrief(fatSeed);
+    const fatTight = buildBrief({ ...fatSeed, maxChars: 2500 });
+    ok('‼️ ONE enormous worklog entry still fits the budget', fatTight.length <= 2500);
+    ok('‼️ …and the instructions survive it, which is the whole point of the budget',
+        /## Writing back/.test(fatTight) && /worklog/.test(fatTight));
+    ok('…the entry was shortened visibly, not silently', /…/.test(fatTight));
+    ok('…and the FULL brief on disk keeps the whole entry — it is what the pointer points at',
+        fatFull.length > 2500 && !/…/.test(fatFull));
 }
 
 try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch { /* best effort */ }

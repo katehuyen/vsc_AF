@@ -1076,19 +1076,49 @@ export interface BriefInput {
     maxChars?: number;
 }
 
-/** How many entries each list carries, most generous first. When a budget is
- *  set the brief is built at the first level that fits. Decisions give way
- *  before worklog lines, and plan items last: "what is left to do" is the
- *  question a session opens with, and the decision records are one folder
- *  listing away for an agent that wants them. */
-const BRIEF_LEVELS = [
+interface BriefLevel {
+    plan: number; decisions: number; log: number; people: number;
+    /**
+     * ‼️ HOW LONG ONE ENTRY MAY BE, WHICH IS NOT THE SAME QUESTION AS HOW MANY.
+     *
+     * Measured on this installation's own project: a single worklog entry is
+     * over 2000 characters, because that is how the user writes them. Dropping
+     * to ONE log line therefore still overshot a 2500-character budget, and the
+     * tail — the "writing back" instructions — was sliced off anyway. Shortening
+     * the count without shortening the entry only looks like a fix.
+     *
+     * Undefined at the top level, on purpose: the unbudgeted brief is the FULL
+     * text that `_AF/BRIEF.md` holds and the "[cut to fit]" pointer points at,
+     * so it must not clip anything either.
+     */
+    chars?: number;
+}
+
+/** How much each list carries, most generous first. When a budget is set the
+ *  brief is built at the first level that fits. Decisions give way before
+ *  worklog lines, and plan items last: "what is left to do" is the question a
+ *  session opens with, and the decision records are one folder listing away for
+ *  an agent that wants them. */
+const BRIEF_LEVELS: BriefLevel[] = [
     { plan: 6, decisions: 5, log: 6, people: 8 },
-    { plan: 6, decisions: 3, log: 5, people: 6 },
-    { plan: 5, decisions: 2, log: 4, people: 4 },
-    { plan: 4, decisions: 1, log: 3, people: 3 },
-    { plan: 3, decisions: 0, log: 2, people: 2 },
-    { plan: 2, decisions: 0, log: 1, people: 1 }
+    { plan: 6, decisions: 3, log: 5, people: 6, chars: 400 },
+    { plan: 5, decisions: 2, log: 4, people: 4, chars: 300 },
+    { plan: 4, decisions: 1, log: 3, people: 3, chars: 220 },
+    { plan: 3, decisions: 0, log: 2, people: 2, chars: 160 },
+    { plan: 2, decisions: 0, log: 1, people: 1, chars: 110 }
 ];
+
+/** One entry, shortened on a word boundary and visibly so. The `…` matters: a
+ *  sentence that simply stops reads as corrupted input, one that ends in an
+ *  ellipsis reads as a summary — and the document it came from is named three
+ *  lines further down. */
+function clipEntry(text: string, max?: number): string {
+    const t = String(text ?? '').trim();
+    if (!max || t.length <= max) { return t; }
+    const head = t.slice(0, max);
+    const space = head.lastIndexOf(' ');
+    return (space > max * 0.6 ? head.slice(0, space) : head).trimEnd() + '…';
+}
 
 /**
  * The project's current state, in the form an agent can act on.
@@ -1135,8 +1165,6 @@ function briefSource(o: BriefInput): BriefSource {
         log: recentLog(roles.log, widest.log)
     };
 }
-
-type BriefLevel = typeof BRIEF_LEVELS[number];
 
 function renderBrief(o: BriefInput, level: BriefLevel, source?: BriefSource): string {
     const p = o.project;
@@ -1197,20 +1225,25 @@ function renderBrief(o: BriefInput, level: BriefLevel, source?: BriefSource): st
         out.push('', '## Open plan items');
         for (const item of open) {
             const where = item.section ? ` _(${item.section})_` : '';
-            out.push(`- ${item.text}${where}`);
+            out.push(`- ${clipEntry(item.text, level.chars)}${where}`);
         }
     }
 
     const decisions = (o.decisions ?? []).slice(0, level.decisions);
     if (decisions.length) {
         out.push('', '## Recent decisions');
-        for (const d of decisions) { out.push(`- ${day(d.ts)} — ${d.title}`); }
+        for (const d of decisions) {
+            out.push(`- ${day(d.ts)} — ${clipEntry(d.title, level.chars)}`);
+        }
     }
 
     const log = src.log.slice(0, level.log);
     if (log.length) {
         out.push('', '## Recently');
-        for (const line of log) { out.push(line.startsWith('-') ? line : `- ${line}`); }
+        for (const line of log) {
+            const body = clipEntry(line.replace(/^-\s*/, ''), level.chars);
+            out.push(`- ${body}`);
+        }
     }
 
     out.push('', '## Writing back');
