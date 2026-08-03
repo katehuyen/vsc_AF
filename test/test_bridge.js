@@ -1335,6 +1335,8 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         } = require(path.join(__dirname, '..', 'out', 'core', 'projectDocs.js'));
         const { addPlanItem, checkPlanItem, planSummary } =
             require(path.join(__dirname, '..', 'out', 'core', 'projectPlan.js'));
+        const { addBacklogItem, nextBacklog, parseBacklog, setBacklogState } =
+            require(path.join(__dirname, '..', 'out', 'core', 'projectBacklog.js'));
 
         const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-bridge-docs-'));
         const project = {
@@ -1533,13 +1535,133 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         ok('…and what was there is still there',
             fs.statSync(path.join(dir, '10_Notes', 'held.md')).isDirectory());
 
+        // ---- the backlog family, dispatched the same way ----
+        // The ops themselves live in extension.ts (they need the project store);
+        // what is exercised here is the CONTRACT an agent depends on — that the
+        // handler shape works through the registry, and that a refusal comes
+        // back as a refusal rather than a silent success.
+        {
+            const backlogFile = path.join(dir, 'Backlog.md');
+            fs.writeFileSync(backlogFile, [
+                '---', 'af-role: backlog', '---', '', '# Agent Farm — Backlog', '',
+                '## 📥 Inbox', '', '- [ ] something I noticed', '',
+                '## P — Projects', '',
+                '- [ ] P-1 first thing #bug ⏫ [efor:: S]',
+                '- [ ] P-2 second thing [efor:: XL]', ''
+            ].join('\n'));
+            const readBacklog = () => fs.readFileSync(backlogFile, 'utf8');
+            const editBacklog = change => {
+                const r = change(readBacklog());
+                need(r.ok, r.error || 'nothing to write');
+                fs.writeFileSync(backlogFile, r.text);
+                return r;
+            };
+            reg.register([
+                {
+                    op: 'projects.backlog', describe: 'the backlog as items. args: project, open?',
+                    handler: () => {
+                        const s = parseBacklog(readBacklog());
+                        return {
+                            counts: { open: s.open, unclassified: s.unclassified },
+                            areas: s.areas.map(a => a.code),
+                            items: s.items.map(i => ({ code: i.code || null, text: i.text, state: i.state }))
+                        };
+                    }
+                },
+                {
+                    op: 'projects.backlog.next',
+                    describe: 'what to work on. args: project, limit?, maxEffort?',
+                    handler: a => {
+                        const r = nextBacklog(readBacklog(), {
+                            ...(typeof a.limit === 'number' ? { limit: a.limit } : {}),
+                            ...(optStr(a, 'maxEffort') ? { maxEffort: optStr(a, 'maxEffort') } : {})
+                        });
+                        return { items: r.items.map(i => i.code || null) };
+                    }
+                },
+                {
+                    op: 'projects.backlog.add', describe: 'add an item. args: project, text, area?',
+                    handler: a => {
+                        const body = argStr(a, 'text').trim();
+                        need(body, 'an item needs some text');
+                        const r = editBacklog(t => addBacklogItem(t, {
+                            text: body,
+                            ...(optStr(a, 'area') ? { area: optStr(a, 'area') } : {})
+                        }));
+                        return { code: r.code || null };
+                    }
+                },
+                {
+                    op: 'projects.backlog.check', describe: 'change state. args: project, code?, state?',
+                    handler: a => {
+                        const target = {
+                            ...(optStr(a, 'code') ? { code: optStr(a, 'code') } : {}),
+                            ...(optStr(a, 'item') ? { text: optStr(a, 'item') } : {})
+                        };
+                        need(target.code || target.text, 'say which item: code, line or item (text)');
+                        const r = editBacklog(t => setBacklogState(t, target, optStr(a, 'state') || 'done'));
+                        return { code: r.item.code || null, state: r.item.state };
+                    }
+                }
+            ]);
+
+            const listed = await reg.dispatch('projects.backlog', { project: 'Agent Farm' });
+            ok('projects.backlog reads the file\'s own lines',
+                listed.ok && listed.result.counts.open === 3
+                && listed.result.counts.unclassified === 1
+                && listed.result.areas.join() === 'P');
+
+            const up = await reg.dispatch('projects.backlog.next', { project: 'Agent Farm', limit: 5 });
+            ok('‼️ projects.backlog.next keeps an XL item out of a turn by default',
+                up.ok && up.result.items.indexOf('P-2') < 0 && up.result.items.indexOf('P-1') >= 0);
+
+            const wide = await reg.dispatch('projects.backlog.next',
+                { project: 'Agent Farm', limit: 5, maxEffort: 'XL' });
+            ok('…and lets it through when the caller raises the ceiling',
+                wide.ok && wide.result.items.indexOf('P-2') >= 0);
+
+            const capture = await reg.dispatch('projects.backlog.add',
+                { project: 'Agent Farm', text: 'a passing thought' });
+            ok('projects.backlog.add with no area captures without a code — friction-free',
+                capture.ok && capture.result.code === null
+                && /- \[ \] a passing thought/.test(readBacklog()));
+            const filed = await reg.dispatch('projects.backlog.add',
+                { project: 'Agent Farm', text: 'a real item', area: 'P' });
+            ok('…and with an area it is given the next free code', filed.ok && filed.result.code === 'P-3');
+
+            const closed = await reg.dispatch('projects.backlog.check',
+                { project: 'Agent Farm', code: 'P-1' });
+            ok('projects.backlog.check closes the item it was pointed at',
+                closed.ok && closed.result.state === 'done');
+            ok('‼️ …and the line keeps its code, its tag, its icon and its field',
+                /- \[x\] P-1 first thing #bug ⏫ \[efor:: S\]/.test(readBacklog()));
+            const noAim = await reg.dispatch('projects.backlog.check', { project: 'Agent Farm' });
+            ok('…and a check with nothing to aim at is refused',
+                !noAim.ok && /which item/.test(noAim.error));
+        }
+
         // ---- and extension.ts really registers every one of them ----
         const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
         for (const op of ['projects.doc.list', 'projects.doc.read', 'projects.doc.write',
             'projects.log', 'projects.plan', 'projects.plan.add', 'projects.plan.check',
-            'projects.decision.add', 'projects.deliver', 'projects.people.set']) {
+            'projects.decision.add', 'projects.deliver', 'projects.people.set',
+            'projects.backlog', 'projects.backlog.next', 'projects.backlog.add',
+            'projects.backlog.check', 'projects.backlog.set', 'projects.backlog.code',
+            'projects.backlog.move', 'projects.backlog.archive', 'projects.backlog.promote']) {
             ok(`extension.ts registers ${op}`, src.includes(`op: '${op}'`));
         }
+        const nextBlock = src.slice(src.indexOf("op: 'projects.backlog.next'"),
+            src.indexOf("op: 'projects.backlog.next'") + 2600);
+        ok('‼️ backlog.next\'s contract explains the effort ceiling rather than hiding it',
+            /maxEffort/.test(nextBlock) && /half done/.test(nextBlock));
+        const blCheckBlock = src.slice(src.indexOf("op: 'projects.backlog.check'"),
+            src.indexOf("op: 'projects.backlog.check'") + 2600);
+        ok('‼️ backlog.check\'s contract states the one-character promise',
+            /EXACTLY ONE CHARACTER/.test(blCheckBlock));
+        const moveBlock = src.slice(src.indexOf("op: 'projects.backlog.move'"),
+            src.indexOf("op: 'projects.backlog.move'") + 2600);
+        ok('‼️ backlog.move\'s contract promises the code does not change',
+            /THE CODE DOES NOT CHANGE/.test(moveBlock));
         const checkBlock = src.slice(src.indexOf("op: 'projects.plan.check'"),
             src.indexOf("op: 'projects.plan.check'") + 2600);
         ok('‼️ plan.check\'s contract states the one-character promise and the ✅ it will not write',

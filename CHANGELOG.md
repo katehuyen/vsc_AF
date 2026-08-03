@@ -2,6 +2,26 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.59.0 — The backlog (2026-08-03)
+
+A project could say where it was going (**Plan**) and what had happened (**Timeline**), but it had nowhere to keep the hundred small things somebody notices along the way. Those lived in a text file outside the system and were pasted into a chat one at a time — which meant every fix was described twice, and the list itself could not be ordered, filed or filtered. **Faz 4.5** gives a project a backlog.
+
+**‼️ It is a document, not a database.** `Backlog.md` in the project folder, found by `af-role: backlog` like every other project document, and made of lines the vault already understands: the checkbox is the state (`[ ]` open · `[/]` doing · `[x]` done · `[-]` cancelled), `#bug` is the kind, Obsidian Tasks' own 🔺⏫🔼🔽⏬ is the priority, `⛔ P-5.1` is what it waits on. Only *effort* needed a field of its own, and that is Dataview's `[efor:: S]`. So the backlog is editable in Obsidian on a phone, travels in git with the vault, and every line stays inside the user's existing task queries. Nothing new was invented that could be borrowed.
+
+**Every item has a permanent code, and the code is not the order.** `P-5.3` — an area letter, then a dotted path where each level is itself a valid code (`P-5` is a real item, the epic above it). Numbers only ever count up, so a cancelled item's number stays spent and a note from three months ago quoting `K-8` still means that item. Ordering is the **order of the lines in the file**: drag one in Obsidian, or press ▲▼ on the row, and nothing is renumbered. That separation is what makes "do the top five" a sentence you can say without checking anything first. *(ATC codes were the model; the letter/digit alternation was not copied, because `C09AA05` can be written but not dictated.)*
+
+**‼️ Capture costs nothing.** An item may be one line of plain text — no code, no priority, no size. It lands in the `📥` inbox and is filed later by whoever has the context, which may be an agent. `Agent Farm: Add to Backlog` (**Ctrl+Alt+B**) takes a thought from anywhere in VS Code without asking a single follow-up question. A box that asks "which area?" is a form, and the thought that has to wait for a form does not get written down at all.
+
+**`projects.backlog.next` is what "do the top five" runs on.** It drops containers (work lives at the leaves), holds back anything waiting on an unfinished `⛔` item *and says which*, and applies an **effort ceiling that defaults to M** — because "five you can manage" means five that fit in the turn, and without a ceiling an agent picks an XL, leaves it half done and wastes the run. An item nobody has sized is never excluded by that ceiling; a fresh backlog would otherwise answer "nothing to do".
+
+**And the top of it is already in the brief.** Every project session now opens with a `## Next in backlog` section — code, words, badges — so "do the first three" needs no explanation, no paste and no lookup. The rest of the feature is only useful because of this line. The brief's fixed tail grew, so its budget levels grew a floor: at the narrowest width the plan drops to one line while the backlog keeps three, and a project summary is now clipped like every other entry instead of spending the whole budget on itself.
+
+**Nine bridge ops** (`projects.backlog` · `.next` · `.add` · `.check` · `.set` · `.code` · `.move` · `.archive` · `.promote`) and a **Backlog tab** where the row is the editor: the priority and effort badges cycle on click, the checkbox closes the item, and the actions appear on hover rather than walling off two hundred lines with five buttons each. `.promote` moves a work-queue item into a project's backlog — the flow handing over to the stock, one direction only.
+
+Two promises are kept in code and tested: closing a box changes **exactly one character** of the document (no ✅ date is invented — Obsidian's own Tasks plugin writes that when you tick it there), and a **duplicate code or a mismatched parent is reported on the row, never silently corrected**. Archiving moves closed items under a heading at the end of the *same* file, deliberately: a code must never be reissued, and the cheapest guarantee of that is that every code the project ever used is still in the file the generator reads.
+
+*Also fixed on the way: a checkbox inside an HTML comment was being read as a real item, which meant every project created from the shipped template opened with a phantom task — and it reached the brief, where an agent would have gone and done it. Comments are skipped now, like fenced code always was.*
+
 ## 3.58.0 — Twelve sessions, one menu (2026-08-03)
 
 Two pieces of Phase 1 that were put aside rather than done. Both are closed.

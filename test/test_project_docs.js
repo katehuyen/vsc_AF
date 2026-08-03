@@ -32,7 +32,7 @@ const tick = () => { const t = Date.now(); while (Date.now() - t < 3) { /* spin 
 
 // ---------- vocabulary ----------
 {
-    ok('roles complete', PROJECT_DOC_ROLES.join() === 'charter,plan,people,log,deliverables,brief');
+    ok('roles complete', PROJECT_DOC_ROLES.join() === 'charter,plan,people,log,deliverables,backlog,brief');
     ok('the default skeleton carries a charter', DEFAULT_SKELETON.some(e => e.role === 'charter'));
     ok('…a plan, people, a log and deliverables',
         ['plan', 'people', 'log', 'deliverables'].every(r => DEFAULT_SKELETON.some(e => e.role === r)));

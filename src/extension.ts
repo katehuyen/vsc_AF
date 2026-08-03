@@ -118,14 +118,19 @@ import { ProjectsPanel, ProjectsPanelDeps } from './panels/projectsPanel';
 import { ProjectsTreeProvider } from './views/projectsTree';
 import {
     addDecision, addDeliverableRow, BRIEF_REL, buildBrief, createSkeleton, DecisionDoc,
-    dirExists, DEFAULT_SKELETON, insertLogEntry, listProjectDocs, localDay, localStamp,
-    normalizeSkeleton, parseDeliverables, ProjectDocRole, readProjectDoc,
+    dirExists, DEFAULT_SKELETON, ensureRoleDoc, insertLogEntry, listProjectDocs, localDay,
+    localStamp, normalizeSkeleton, parseDeliverables, ProjectDocRole, readProjectDoc,
     renameProjectFolder, resolveInFolder, scanProjectFolder, scanProjectsRoot, scanRoles,
     writeBrief, writeProjectDoc
 } from './core/projectDocs';
 import {
     addPlanItem, checkPlanItem, planSummary, PlanTarget
 } from './core/projectPlan';
+import {
+    addBacklogItem, archiveBacklogDone, BACKLOG_EFFORTS, BACKLOG_PRIORITIES, BACKLOG_STATES,
+    BacklogEffort, BacklogItem, BacklogPriority, BacklogState, BacklogTarget, codeBacklogItem,
+    moveBacklogItem, nextBacklog, parseBacklog, setBacklogFields, setBacklogState
+} from './core/projectBacklog';
 import {
     buildProjectContext, contextFileName, isQuotableContextPath, PROJECT_BRIEF_MAX
 } from './core/projectContext';
@@ -3928,6 +3933,233 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            op: 'projects.backlog',
+            describe: 'The project\'s BACKLOG — its standing pile of work, which is not the plan (that is the phase-sized roadmap) and not the work queue (that is the global user→agent channel). Every checkbox line in the file with `af-role: backlog`, with the axes read off it: `code` (P-5.3 — permanent, and what you quote back), `state` (open|doing|done|cancelled, from the checkbox itself), `kinds` (#tags), `priority` (Obsidian Tasks icons), `effort` (XS|S|M|L|XL), `blockedBy` (⛔), `plan` (which plan item it serves), `score` (priority÷effort), `container` (has children — work lives at the leaves) and `warn` when the line says something inconsistent. Also returns the AREAS the file\'s `## P — Name` headings declare. ORDER IS FILE ORDER, which is the user\'s own prioritisation. args: project (id or name), open? (true drops closed items), area?, kind?, state?, code? (that item and its subtree), limit?',
+            handler: (args) => {
+                const { project, folder, file, text } = backlogDoc(argStr(args, 'project'));
+                const sum = parseBacklog(text);
+                const area = optStr(args, 'area')?.toUpperCase();
+                const kind = optStr(args, 'kind')?.toLowerCase();
+                const state = optStr(args, 'state');
+                const code = optStr(args, 'code')?.toUpperCase();
+                let items = sum.items;
+                if (args.open === true) { items = items.filter(i => i.state === 'open' || i.state === 'doing'); }
+                if (area) { items = items.filter(i => i.area === area); }
+                if (kind) { items = items.filter(i => i.kinds.includes(kind)); }
+                if (state) { items = items.filter(i => i.state === state); }
+                if (code) { items = items.filter(i => i.code === code || i.code?.startsWith(`${code}.`)); }
+                const limit = typeof args.limit === 'number' ? Math.max(1, args.limit) : 200;
+                return {
+                    project: project.name, file: relDoc(folder, file),
+                    counts: {
+                        open: sum.open, doing: sum.doing, done: sum.done,
+                        cancelled: sum.cancelled, unclassified: sum.unclassified
+                    },
+                    areas: sum.areas,
+                    sections: sum.sections,
+                    shown: Math.min(items.length, limit), matched: items.length,
+                    items: items.slice(0, limit).map(backlogOut)
+                };
+            }
+        },
+        {
+            op: 'projects.backlog.next',
+            describe: '‼️ WHAT TO WORK ON — the op behind "do the top five from the backlog". Returns items that are actually startable: containers are dropped (work lives at the leaves), anything waiting on an unfinished ⛔ item is dropped (doing it now would be doing it out of order) and reported separately under `blocked`, and the order is the FILE\'S order unless you ask otherwise — the user arranging the file IS the prioritisation. `maxEffort` defaults to M on purpose: "five you can manage" means five that fit in the turn, and without a ceiling an agent picks an XL, leaves it half done, and wastes the run. An item with no effort stated is never excluded by the ceiling (it has not been sized; excluding it would empty a fresh backlog). args: project (id or name), limit? (default 5, max 50), area?, kind?, minPriority? (highest|high|medium|normal|low|lowest), maxEffort? (XS|S|M|L|XL, default M), sort? (file|score|priority, default file), includeBlocked?',
+            handler: (args) => {
+                const { project, folder, file, text } = backlogDoc(argStr(args, 'project'));
+                const res = nextBacklog(text, {
+                    ...(typeof args.limit === 'number' ? { limit: args.limit } : {}),
+                    ...(optStr(args, 'area') ? { area: optStr(args, 'area')?.toUpperCase() as string } : {}),
+                    ...(optStr(args, 'kind') ? { kind: optStr(args, 'kind') as string } : {}),
+                    ...(BACKLOG_PRIORITIES.includes(optStr(args, 'minPriority') as BacklogPriority)
+                        ? { minPriority: optStr(args, 'minPriority') as BacklogPriority } : {}),
+                    ...(BACKLOG_EFFORTS.includes(optStr(args, 'maxEffort')?.toUpperCase() as BacklogEffort)
+                        ? { maxEffort: optStr(args, 'maxEffort')?.toUpperCase() as BacklogEffort } : {}),
+                    ...(['file', 'score', 'priority'].includes(optStr(args, 'sort') ?? '')
+                        ? { sort: optStr(args, 'sort') as 'file' | 'score' | 'priority' } : {}),
+                    ...(args.includeBlocked === true ? { includeBlocked: true } : {})
+                });
+                return {
+                    project: project.name, file: relDoc(folder, file),
+                    considered: res.considered,
+                    items: res.items.map(backlogOut),
+                    blocked: res.blocked.map(b => ({ code: b.item.code ?? null, text: b.item.text, waitingOn: b.waitingOn }))
+                };
+            }
+        },
+        {
+            op: 'projects.backlog.add',
+            describe: 'Put an item in the backlog. EVERYTHING EXCEPT THE TEXT IS OPTIONAL, deliberately: a system that demands a code before it will take a thought does not get the thought. With `area` (or `parent`) the item is filed there and given the next free code — codes only ever count UP, so a cancelled item\'s number stays spent and a note from three months ago quoting K-8 still means this item. With neither, it lands in the 📥 inbox with no code, to be classified later by whoever has the context (see projects.backlog.code). Creates the backlog document from the skeleton if the project has none. args: project (id or name), text, area? (1-2 capital letters), parent? (a code — the area comes from it), kind?/kinds?, priority? (highest|high|medium|normal|low|lowest), effort? (XS|S|M|L|XL), due? (YYYY-MM-DD), plan? (a plan item\'s 🆔), from?, blockedBy? (code or array)',
+            handler: (args) => {
+                const { project, folder, file, text } = backlogDoc(argStr(args, 'project'), true);
+                const body = argStr(args, 'text').trim();
+                need(body, 'an item needs some text');
+                let code: string | undefined;
+                const out = editProjectDoc(folder, file, src => {
+                    const res = addBacklogItem(src, {
+                        text: body,
+                        ...(optStr(args, 'area') ? { area: optStr(args, 'area') as string } : {}),
+                        ...(optStr(args, 'parent') ? { parent: optStr(args, 'parent') as string } : {}),
+                        ...(BACKLOG_PRIORITIES.includes(optStr(args, 'priority') as BacklogPriority)
+                            ? { priority: optStr(args, 'priority') as BacklogPriority } : {}),
+                        ...(BACKLOG_EFFORTS.includes(optStr(args, 'effort')?.toUpperCase() as BacklogEffort)
+                            ? { effort: optStr(args, 'effort')?.toUpperCase() as BacklogEffort } : {}),
+                        kinds: listArg(args, 'kinds', 'kind'),
+                        ...(optStr(args, 'due') ? { due: optStr(args, 'due') as string } : {}),
+                        ...(optStr(args, 'plan') ? { plan: optStr(args, 'plan') as string } : {}),
+                        ...(optStr(args, 'from') ? { from: optStr(args, 'from') as string } : {}),
+                        blockedBy: listArg(args, 'blockedBy', 'blocks')
+                    });
+                    if (res.code) { code = res.code; }
+                    return res;
+                });
+                void text;
+                projectDocWritten(project.id);
+                return {
+                    project: project.name, file: relDoc(folder, out.file),
+                    code: code ?? null, added: body, note: out.note ?? null
+                };
+            }
+        },
+        {
+            op: 'projects.backlog.check',
+            describe: '‼️ Move one backlog item between states — EXACTLY ONE CHARACTER of the document changes, the one inside `[ ]`. `[ ]` open · `[/]` doing · `[x]` done · `[-]` cancelled. Nothing else on the line is touched: not the bullet, not the icons, not the Tasks metadata, not the line endings, and no ✅ done-date is invented (Obsidian\'s Tasks plugin writes that when the box is ticked THERE). Say which item by `code` (the stable handle), by `line`, or by a unique piece of its text; text matching more than one item is an error rather than a guess. args: project (id or name), code?, line? (1-based, as projects.backlog reports it), item? (text), state? (open|doing|done|cancelled, default done)',
+            handler: (args) => {
+                const { project, folder, file } = backlogDoc(argStr(args, 'project'));
+                const target = backlogTarget(args);
+                const state = (optStr(args, 'state') ?? 'done') as BacklogState;
+                need(BACKLOG_STATES.includes(state),
+                    `state must be one of ${BACKLOG_STATES.join(', ')}`);
+                let touched = ''; let code: string | null = null;
+                const out = editProjectDoc(folder, file, src => {
+                    const res = setBacklogState(src, target, state);
+                    if (res.item) { touched = res.item.text; code = res.item.code ?? null; }
+                    return res;
+                });
+                projectDocWritten(project.id);
+                return {
+                    project: project.name, file: relDoc(folder, out.file),
+                    code, item: touched, state, note: out.note ?? null
+                };
+            }
+        },
+        {
+            op: 'projects.backlog.set',
+            describe: 'Change an item\'s axes — priority, effort, kinds, due date, plan link, what it waits on, or its words. Honest about what it does: unlike backlog.check this REBUILDS the line, in a fixed order (`code text #kinds PRIO [fields] ⛔ 🆔 📅`), which is the price of being able to set a priority without hand-writing markdown. It never touches a line it was not asked about and never drops a piece it did not understand — anything unrecognised rides along in the text. Pass `null` for effort/due/plan to clear one; `kinds`/`blockedBy` REPLACE what is there (an empty array clears them). args: project (id or name), code?/line?/item? (which one), priority?, effort?, kinds?, due?, plan?, blockedBy?, text? (new words)',
+            handler: (args) => {
+                const { project, folder, file } = backlogDoc(argStr(args, 'project'));
+                const target = backlogTarget(args);
+                const has = (k: string) => Object.prototype.hasOwnProperty.call(args, k);
+                let after: BacklogItem | undefined;
+                const out = editProjectDoc(folder, file, src => {
+                    const res = setBacklogFields(src, target, {
+                        ...(BACKLOG_PRIORITIES.includes(optStr(args, 'priority') as BacklogPriority)
+                            ? { priority: optStr(args, 'priority') as BacklogPriority } : {}),
+                        ...(has('effort')
+                            ? { effort: (args.effort === null ? null : optStr(args, 'effort')?.toUpperCase() as BacklogEffort) }
+                            : {}),
+                        ...(has('kinds') || has('kind') ? { kinds: listArg(args, 'kinds', 'kind') } : {}),
+                        ...(has('due') ? { due: args.due === null ? null : optStr(args, 'due') as string } : {}),
+                        ...(has('plan') ? { plan: args.plan === null ? null : optStr(args, 'plan') as string } : {}),
+                        ...(has('blockedBy') ? { blockedBy: listArg(args, 'blockedBy', 'blocks') } : {}),
+                        ...(optStr(args, 'text') ? { text: optStr(args, 'text') as string } : {})
+                    });
+                    if (res.item) { after = res.item; }
+                    return res;
+                });
+                projectDocWritten(project.id);
+                return {
+                    project: project.name, file: relDoc(folder, out.file),
+                    item: after ? backlogOut(after) : null
+                };
+            }
+        },
+        {
+            op: 'projects.backlog.code',
+            describe: 'Classify a capture: give a coded home to an item that has none, moving it out of the 📥 inbox into its area (or under a parent) and handing it the next free code. This is the second half of friction-free capture — writing the note costs nothing, and the cost of filing it is paid later by whoever has the context, which may well be an agent doing a sweep. Refuses an item that already has a code; re-parenting an existing one is a different and rarer thing (projects.backlog.set, then say so in the item). args: project (id or name), line?/item? (which capture), area? (1-2 capital letters), parent? (a code — the area comes from it)',
+            handler: (args) => {
+                const { project, folder, file } = backlogDoc(argStr(args, 'project'));
+                const target = backlogTarget(args);
+                const area = optStr(args, 'area') ?? '';
+                const parent = optStr(args, 'parent');
+                need(area || parent, 'say where it goes: area or parent');
+                let code: string | null = null;
+                const out = editProjectDoc(folder, file, src => {
+                    const res = codeBacklogItem(src, target, area, parent);
+                    if (res.code) { code = res.code; }
+                    return res;
+                });
+                projectDocWritten(project.id);
+                return { project: project.name, file: relDoc(folder, out.file), code };
+            }
+        },
+        {
+            op: 'projects.backlog.move',
+            describe: 'Nudge an item up or down among its siblings, carrying its children with it. ‼️ THE CODE DOES NOT CHANGE — order and identity are separate here, which is what lets "do the top five" work without renumbering anything and keeps every note that ever quoted a code pointing at the same item. This is the one edit that genuinely reorders lines, so it rejoins the document; it uses the file\'s OWN line ending, so a CRLF file stays CRLF. args: project (id or name), code?/line?/item? (which one), dir (up|down)',
+            handler: (args) => {
+                const { project, folder, file } = backlogDoc(argStr(args, 'project'));
+                const target = backlogTarget(args);
+                const dir = optStr(args, 'dir') === 'up' ? 'up' : 'down';
+                const out = editProjectDoc(folder, file, src => moveBacklogItem(src, target, dir));
+                projectDocWritten(project.id);
+                return { project: project.name, file: relDoc(folder, out.file), dir, note: out.note ?? null };
+            }
+        },
+        {
+            op: 'projects.backlog.archive',
+            describe: 'Move closed items (done, and cancelled unless you say otherwise) under an archive heading AT THE END OF THE SAME FILE. Deliberately not a separate file: a code must never be handed out twice, and the cheapest guarantee of that is that every code the project has ever used is still in the file the generator reads. Containers are left where they are — a parent whose children are archived would otherwise lose the context that explains it. args: project (id or name), cancelled? (default true — also archive cancelled items)',
+            handler: (args) => {
+                const { project, folder, file } = backlogDoc(argStr(args, 'project'));
+                let moved = 0;
+                const out = editProjectDoc(folder, file, src => {
+                    const res = archiveBacklogDone(src, { cancelled: args.cancelled !== false });
+                    moved = res.moved;
+                    return res;
+                });
+                projectDocWritten(project.id);
+                return { project: project.name, file: relDoc(folder, out.file), moved, note: out.note ?? null };
+            }
+        },
+        {
+            op: 'projects.backlog.promote',
+            describe: 'Move a work-queue item into a project\'s backlog: the flow hands over to the stock. The queue is where "whose is this, who should do it" gets answered; once the answer is "that project, when its turn comes", the item belongs here instead. The queue item is stamped and closed as `done` with a pointer to the code it became, and the new backlog item carries `[from:: <queue id>]` so the origin stays legible from either end. One direction only — a backlog item is never pushed back into the queue. args: project (id or name), item (queue item id), area?, parent?, priority?, effort?, kind?/kinds?',
+            handler: (args) => {
+                const { project, folder, file } = backlogDoc(argStr(args, 'project'), true);
+                const id = argStr(args, 'item');
+                const q = workQueueStore.get(id);
+                need(q, `no queue item ${id} — queue.list shows them`);
+                const source = q as WorkItem;
+                let code: string | undefined;
+                const out = editProjectDoc(folder, file, src => {
+                    const res = addBacklogItem(src, {
+                        text: source.text,
+                        ...(optStr(args, 'area') ? { area: optStr(args, 'area') as string } : {}),
+                        ...(optStr(args, 'parent') ? { parent: optStr(args, 'parent') as string } : {}),
+                        ...(BACKLOG_PRIORITIES.includes(optStr(args, 'priority') as BacklogPriority)
+                            ? { priority: optStr(args, 'priority') as BacklogPriority }
+                            : (source.urgency === 'urgent' ? { priority: 'highest' as BacklogPriority }
+                                : source.urgency === 'soon' ? { priority: 'high' as BacklogPriority } : {})),
+                        ...(BACKLOG_EFFORTS.includes(optStr(args, 'effort')?.toUpperCase() as BacklogEffort)
+                            ? { effort: optStr(args, 'effort')?.toUpperCase() as BacklogEffort } : {}),
+                        kinds: listArg(args, 'kinds', 'kind'),
+                        from: source.id
+                    });
+                    if (res.code) { code = res.code; }
+                    return res;
+                });
+                workQueueStore.stamp(id, {
+                    stamp: `-DONE- backlog ${code ?? '(inbox)'}`,
+                    resolution: `Moved into ${project.name}'s backlog as ${code ?? 'an unclassified capture'}.`
+                });
+                projectDocWritten(project.id);
+                QueuePanel.refreshIfOpen();
+                return {
+                    project: project.name, file: relDoc(folder, out.file),
+                    code: code ?? null, from: id
+                };
+            }
+        },
+        {
             op: 'projects.decision.add',
             describe: 'Record a decision — its own file, the ADR pattern, because a decision appended to a shared document becomes a line nobody can link to and two agents writing at once lose one of them. Written into the folder the existing decisions are in (or the one the skeleton declares it holds decisions in), with `af-role: decision` and `af-date` so it is found by frontmatter rather than by name, and it turns up on the project timeline at the date it states. A name already taken gets a suffix — this can never overwrite a record that exists. Write these for anything that will be asked "why is it like this?" in three months. args: project (id or name), title, body? (markdown, in the project\'s own language)',
             handler: (args) => {
@@ -7568,6 +7800,69 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return { file, ...(next.note ? { note: next.note } : {}) };
     };
 
+    // ---------- the backlog: one resolution, one shape out ----------
+    /**
+     * The project's backlog document, read and ready.
+     *
+     * `create` is what the ADD paths pass: a project whose folder predates this
+     * feature has no backlog file, and answering the user's first attempt to jot
+     * something down with "add a file carrying `af-role: backlog`" is a wall
+     * where the whole point was that capture costs nothing. Reading ops do NOT
+     * create — an empty answer to "what is in the backlog" is honest, and
+     * writing a file to answer a question nobody asked is not.
+     */
+    const backlogDoc = (key: string, create = false) => {
+        const { project, folder, scan } = projectDocsFor(key);
+        let file = scan.roles.backlog;
+        if (!file && create) {
+            const made = ensureRoleDoc(folder, project, 'backlog', projectSkeleton());
+            need(!made.error, made.error ?? 'the backlog document could not be created');
+            file = made.file as string;
+        }
+        need(file,
+            `"${project.name}" has no backlog document — a file with \`af-role: backlog\` in its frontmatter is one`);
+        const read = readProjectDoc(folder, relDoc(folder, file as string));
+        need(read.ok, read.error ?? 'could not read the backlog');
+        return { project, folder, file: file as string, text: read.text ?? '' };
+    };
+
+    /** How every backlog op says WHICH item: code (stable), line (exact but
+     *  perishable), or text (what a person has to hand). */
+    const backlogTarget = (args: Record<string, unknown>): BacklogTarget => {
+        const t: BacklogTarget = {
+            ...(optStr(args, 'code') ? { code: optStr(args, 'code') as string } : {}),
+            ...(typeof args.line === 'number' ? { line: Math.max(0, (args.line as number) - 1) } : {}),
+            ...(optStr(args, 'item') ? { text: optStr(args, 'item') as string } : {})
+        };
+        need(t.code || t.line !== undefined || t.text, 'say which item: code, line or item (text)');
+        return t;
+    };
+
+    /** One item as the bridge reports it. `line` is 1-BASED here and 0-based
+     *  inside the parser — the boundary is this function, so a caller can read a
+     *  number off the answer and hand it straight back. */
+    const backlogOut = (i: BacklogItem) => ({
+        code: i.code ?? null, text: i.text, state: i.state, area: i.area ?? null,
+        parent: i.parent ?? null, line: i.line + 1, depth: i.depth, section: i.section,
+        kinds: i.kinds, priority: i.priority, effort: i.effort ?? null,
+        blockedBy: i.blockedBy, plan: i.plan ?? null, from: i.from ?? null,
+        due: i.due ?? null, score: Math.round(i.score * 100) / 100,
+        container: i.container, inbox: i.inbox, ...(i.warn ? { warn: i.warn } : {})
+    });
+
+    /** A list argument that tolerates a single value, an array, or a
+     *  comma-separated string — because all three are what people actually send. */
+    const listArg = (args: Record<string, unknown>, ...keys: string[]): string[] => {
+        for (const k of keys) {
+            const v = args[k];
+            if (Array.isArray(v)) { return v.map(x => String(x).trim()).filter(Boolean); }
+            if (typeof v === 'string' && v.trim()) {
+                return v.split(',').map(x => x.trim()).filter(Boolean);
+            }
+        }
+        return [];
+    };
+
     /** Everything a document write has to refresh: the timeline's cached folder
      *  scan (ours, so it must be immediate, not in 30 seconds) and the surfaces. */
     const projectDocWritten = (id: string): void => {
@@ -7614,6 +7909,38 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     id: i.id ?? null, due: i.due ?? null, completed: i.doneOn ?? null
                 }))
             }))
+        };
+    };
+
+    /**
+     * The backlog tab.
+     *
+     * The whole file is shipped rather than a filtered slice, and that is a
+     * deliberate trade: a few hundred rows are nothing to send, while filtering
+     * host-side would mean a round trip for every chip the reader clicks. What
+     * the host DOES compute is `next` — the five startable items — because that
+     * answer depends on the blocking graph and the leaf rule, and a page that
+     * worked it out for itself would be a second implementation of the one thing
+     * an agent and a human must agree on.
+     */
+    const projectBacklogView = (id: string) => {
+        const doc = projectRoleDocView(id, 'backlog');
+        if (doc.state !== 'ok') { return doc; }
+        const read = readProjectDoc(doc.folder, doc.path);
+        if (!read.ok) { return { state: 'unreadable' as const, path: doc.path, error: read.error }; }
+        const text = read.text ?? '';
+        const sum = parseBacklog(text);
+        const up = nextBacklog(text, { limit: 5, maxEffort: 'XL' });
+        return {
+            ...doc,
+            counts: {
+                open: sum.open, doing: sum.doing, done: sum.done,
+                cancelled: sum.cancelled, unclassified: sum.unclassified
+            },
+            areas: sum.areas,
+            items: sum.items.map(backlogOut),
+            next: up.items.map(i => i.code ?? `line ${i.line + 1}`),
+            blocked: up.blocked.map(b => ({ code: b.item.code ?? null, waitingOn: b.waitingOn }))
         };
     };
 
@@ -7719,6 +8046,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             switch (tab) {
                 case 'plan':
                     return { plan: projectPlanView(id) };
+                case 'backlog':
+                    return { backlog: projectBacklogView(id) };
                 case 'docs':
                     return { docs: projectDocsView(id, doc) };
                 case 'people':
@@ -7903,6 +8232,97 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             projectDocWritten(id);
             return {};
         },
+        // ---- Faz 4.5: the backlog, written from the row it is on ----
+        // One private helper behind all six, so "no such project", "no backlog
+        // document" and the guarded write path are written once. A page action
+        // and a bridge op end up in exactly the same code — which is what keeps
+        // the two from disagreeing about what they will overwrite.
+        ...(() => {
+            const edit = (
+                id: string,
+                change: (text: string) => { ok: boolean; text?: string; error?: string; note?: string },
+                create = false
+            ): { error?: string; note?: string } => {
+                const p = projectStore.get(id);
+                if (!p) { return { error: 'no such project' }; }
+                const folder = (p.folder ?? '').trim();
+                if (!folder || !dirExists(folder)) { return { error: 'this project has no folder' }; }
+                let file = scanProjectFolder(folder).roles.backlog;
+                if (!file && create) {
+                    const made = ensureRoleDoc(folder, p, 'backlog', projectSkeleton());
+                    if (made.error) { return { error: made.error }; }
+                    file = made.file;
+                }
+                if (!file) { return { error: 'this project has no backlog document' }; }
+                try {
+                    const out = editProjectDoc(folder, file, change);
+                    projectDocWritten(id);
+                    return { ...(out.note ? { note: out.note } : {}) };
+                } catch (e) {
+                    return { error: String((e as Error)?.message ?? e) };
+                }
+            };
+            return {
+                backlogAdd: (id: string, input: {
+                    text: string; area?: string; parent?: string;
+                    priority?: string; effort?: string; kinds?: string[];
+                }) => {
+                    let code: string | undefined;
+                    const res = edit(id, text => {
+                        const r = addBacklogItem(text, {
+                            text: input.text,
+                            ...(input.area ? { area: input.area } : {}),
+                            ...(input.parent ? { parent: input.parent } : {}),
+                            ...(BACKLOG_PRIORITIES.includes(input.priority as BacklogPriority)
+                                ? { priority: input.priority as BacklogPriority } : {}),
+                            ...(BACKLOG_EFFORTS.includes(input.effort as BacklogEffort)
+                                ? { effort: input.effort as BacklogEffort } : {}),
+                            ...(input.kinds?.length ? { kinds: input.kinds } : {})
+                        });
+                        if (r.code) { code = r.code; }
+                        return r;
+                    }, true);
+                    return { ...res, ...(code ? { code } : {}) };
+                },
+                backlogState: (id: string, target: BacklogTarget, state: string) =>
+                    edit(id, text => setBacklogState(text, target, state as BacklogState)),
+                backlogSet: (id: string, target: BacklogTarget, fields: Record<string, unknown>) =>
+                    edit(id, text => setBacklogFields(text, target, {
+                        ...(BACKLOG_PRIORITIES.includes(fields.priority as BacklogPriority)
+                            ? { priority: fields.priority as BacklogPriority } : {}),
+                        ...(Object.prototype.hasOwnProperty.call(fields, 'effort')
+                            ? {
+                                effort: (fields.effort === null || fields.effort === ''
+                                    ? null : fields.effort as BacklogEffort)
+                            } : {}),
+                        ...(Array.isArray(fields.kinds) ? { kinds: fields.kinds.map(String) } : {}),
+                        ...(Object.prototype.hasOwnProperty.call(fields, 'due')
+                            ? { due: (fields.due ? String(fields.due) : null) } : {}),
+                        ...(typeof fields.text === 'string' && fields.text ? { text: fields.text } : {})
+                    })),
+                backlogMove: (id: string, target: BacklogTarget, dir: string) =>
+                    edit(id, text => moveBacklogItem(text, target, dir === 'up' ? 'up' : 'down')),
+                backlogCode: (id: string, target: BacklogTarget, area: string, parent?: string) => {
+                    let code: string | undefined;
+                    const res = edit(id, text => {
+                        const r = codeBacklogItem(text, target, area, parent);
+                        if (r.code) { code = r.code; }
+                        return r;
+                    });
+                    return { ...res, ...(code ? { code } : {}) };
+                },
+                backlogArchive: (id: string) => {
+                    let moved = 0;
+                    const res = edit(id, text => {
+                        const r = archiveBacklogDone(text);
+                        moved = r.moved;
+                        return r;
+                    });
+                    return { ...res, moved };
+                }
+            };
+        })(),
+
         openProjectDoc: (id, rel, mode) => {
             const p = projectStore.get(id);
             const folder = (p?.folder ?? '').trim();
@@ -12140,6 +12560,52 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             updateNoticesBadge(); QueuePanel.refreshIfOpen();
             void vscode.window.showInformationMessage('📥 Added to the queue.', 'Open queue')
                 .then(p => { if (p) { showQueuePanel(item.id); } });
+        }),
+
+        /**
+         * Jot something into a project's backlog without leaving what you were
+         * doing.
+         *
+         * ‼️ It goes in UNCODED, into the inbox, and that is the design rather
+         * than a shortcut. The moment this box asks "which area?" it stops being
+         * a place to dump a thought and becomes a form — and the thought that
+         * has to wait for a form does not get written down at all. Filing is a
+         * separate, later job (the Backlog tab's `file…`, or an agent's
+         * `projects.backlog.code`) done by whoever has the context.
+         */
+        vscode.commands.registerCommand('agentfarm.backlogAdd', async (arg?: unknown) => {
+            const seedId = typeof arg === 'string' ? arg : '';
+            let target = seedId ? projectStore.get(seedId) : activeProject();
+            if (!target) {
+                const open = projectStore.all()
+                    .filter((p: Project) => !CLOSED_PROJECT_STATUSES.includes(p.status));
+                if (!open.length) {
+                    void vscode.window.showWarningMessage('No project to add to — create one first.');
+                    return;
+                }
+                const pick = await vscode.window.showQuickPick(
+                    open.map((p: Project) => ({ label: p.name, projectId: p.id })),
+                    { placeHolder: 'Which project\'s backlog?', ignoreFocusOut: true });
+                if (!pick) { return; }
+                target = projectStore.get(pick.projectId);
+            }
+            if (!target) { return; }
+            const text = await vscode.window.showInputBox({
+                prompt: `Add to ${target.name}'s backlog — one line is enough; file it later`,
+                placeHolder: 'e.g. the console history search is case sensitive',
+                ignoreFocusOut: true
+            });
+            if (!text || !text.trim()) { return; }
+            const res = projectsPanelDeps().backlogAdd(target.id, { text: text.trim() });
+            if (res.error) {
+                void vscode.window.showErrorMessage(`Could not add it: ${res.error}`);
+                return;
+            }
+            const name = target.name;
+            const id = target.id;
+            void vscode.window.showInformationMessage(
+                `📋 Added to ${name}'s backlog${res.code ? ` as ${res.code}` : ' (inbox)'}.`, 'Open backlog')
+                .then(p => { if (p) { ProjectsPanel.show(projectsPanelDeps(), id); } });
         }),
 
         vscode.commands.registerCommand('agentfarm.configureDocOpen', () => {

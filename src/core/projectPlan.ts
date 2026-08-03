@@ -63,10 +63,14 @@ export interface PlanItem {
  * out of the plan: `- [a](http://x)` has a single character between brackets
  * too, and without this it would be read as a completed task called "(http://x)"
  * — which a caller could then "untick", editing a link in the user's prose. */
-const TASK_LINE = /^(\s*)(?:[-*+]|\d+[.)])\s+\[(.)\](?:\s(.*))?$/;
+/* Exported because the backlog is the SAME kind of line — a project's backlog
+ * file is checkbox lines too, and a line that counts as a task in the plan must
+ * count as one there. Two copies of this regex would drift apart on the first
+ * edge case somebody fixes in one of them. */
+export const TASK_LINE = /^(\s*)(?:[-*+]|\d+[.)])\s+\[(.)\](?:\s(.*))?$/;
 
 /** Obsidian Tasks metadata, stripped for display and never for writing. */
-const TASK_META = /\s*(?:🆔|⛔|⏫|🔼|🔽|⏬|🔺|📅|⏳|🛫|➕|✅|❌|🔁|🏁)\s*[^\s🆔⛔⏫🔼🔽⏬🔺📅⏳🛫➕✅❌🔁🏁]*/gu;
+export const TASK_META = /\s*(?:🆔|⛔|⏫|🔼|🔽|⏬|🔺|📅|⏳|🛫|➕|✅|❌|🔁|🏁)\s*[^\s🆔⛔⏫🔼🔽⏬🔺📅⏳🛫➕✅❌🔁🏁]*/gu;
 
 const idOf = (line: string): string | undefined =>
     /🆔\s*([A-Za-z0-9_-]+)/u.exec(line)?.[1];
@@ -229,7 +233,7 @@ function locate(items: PlanItem[], target: PlanTarget): { item?: PlanItem; error
  * file with mixed endings, so a request to tick one box would come back as a
  * whole-file diff in the user's vault — and in git.
  */
-function lineStartOffset(src: string, line: number): number {
+export function lineStartOffset(src: string, line: number): number {
     let at = 0;
     for (let n = 0; n < line; n++) {
         const nl = src.indexOf('\n', at);
@@ -240,7 +244,7 @@ function lineStartOffset(src: string, line: number): number {
 }
 
 /** The ending the document itself uses, for a line we are ADDING. */
-const eolOf = (src: string): string => (/\r\n/.test(src) ? '\r\n' : '\n');
+export const eolOf = (src: string): string => (/\r\n/.test(src) ? '\r\n' : '\n');
 
 /**
  * Tick (or untick) one item.

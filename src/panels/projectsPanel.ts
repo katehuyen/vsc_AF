@@ -84,6 +84,27 @@ export interface ProjectsPanelDeps {
         { error?: string; note?: string };
     /** Add an open plan item, optionally under a named section. */
     planAdd(id: string, item: string, section: string): { error?: string };
+
+    // ---- Faz 4.5: the backlog, edited from the row it is on ----
+    /** Quick capture. With no area it lands in the inbox without a code, which
+     *  is the point: writing a note down must cost nothing. */
+    backlogAdd(id: string, input: {
+        text: string; area?: string; parent?: string;
+        priority?: string; effort?: string; kinds?: string[];
+    }): { error?: string; code?: string; note?: string };
+    /** Move one item between open/doing/done/cancelled — one character. */
+    backlogState(id: string, target: { code?: string; line?: number }, state: string):
+        { error?: string; note?: string };
+    /** Set an item's axes from the row's own controls. */
+    backlogSet(id: string, target: { code?: string; line?: number }, fields: Record<string, unknown>):
+        { error?: string };
+    /** Nudge it among its siblings. The code does not change. */
+    backlogMove(id: string, target: { code?: string; line?: number }, dir: string): { error?: string; note?: string };
+    /** Give an inbox capture a code and file it under an area. */
+    backlogCode(id: string, target: { line?: number }, area: string, parent?: string):
+        { error?: string; code?: string };
+    /** Sweep closed items under the archive heading. */
+    backlogArchive(id: string): { error?: string; moved?: number };
     /** Open a document the way the user opens report links elsewhere — VS Code,
      *  the rendered preview, Obsidian, or their own app. */
     openProjectDoc(id: string, rel: string, mode?: string): void;
@@ -94,6 +115,21 @@ export interface ProjectsPanelDeps {
     /** Replace the project's people. Returns an error message, or undefined. */
     savePeople(id: string, people: unknown[]): string | undefined;
     onChange?(): void;
+}
+
+/**
+ * Which backlog row a page message is about.
+ *
+ * ‼️ The code wins whenever there is one, and that is not a preference. The page
+ * shows 1-based lines because that is what an editor shows, the parser counts
+ * from 0, and the conversion happens HERE, once — but a line number also goes
+ * stale the moment somebody inserts a paragraph in Obsidian while this panel
+ * sits open, and editing the wrong row in a backlog is silent. A code survives
+ * the file being reordered; only an uncoded inbox capture has to risk the line.
+ */
+function backlogRowTarget(msg: Record<string, unknown>): { code?: string; line?: number } {
+    if (typeof msg.code === 'string' && msg.code) { return { code: msg.code }; }
+    return typeof msg.line === 'number' && msg.line > 0 ? { line: msg.line - 1 } : {};
 }
 
 /** What the "new project" form opens with. Everything is optional: the palette
@@ -107,7 +143,7 @@ export interface NewProjectSeed {
 
 /** The project page's tabs. `settings` is the editor Faz 1 shipped — it was
  *  always meant to become a tab here rather than stay the whole page. */
-const TABS = ['overview', 'timeline', 'sessions', 'plan', 'docs', 'people', 'cost', 'settings'] as const;
+const TABS = ['overview', 'timeline', 'sessions', 'plan', 'backlog', 'docs', 'people', 'cost', 'settings'] as const;
 const DEFAULT_TAB = 'overview';
 /** Sessions-table Show box default for this page. */
 const PROJECT_TABLE_N = 25;
@@ -419,6 +455,62 @@ export class ProjectsPanel {
                 if (!item) { break; }
                 const res = this.deps.planAdd(id, item, String(msg.section ?? ''));
                 this.done(res.error, res.error ? undefined : 'Added to the plan.');
+                break;
+            }
+            // ---- the backlog. Every one of these addresses a row by its CODE
+            // when it has one and falls back to the line only for an
+            // unclassified capture — a code survives the file being reordered
+            // under an open panel, a line number does not.
+            case 'backlogAdd': {
+                if (!id) { break; }
+                const text = String(msg.text ?? '').trim();
+                if (!text) { break; }
+                const res = this.deps.backlogAdd(id, {
+                    text,
+                    ...(typeof msg.area === 'string' && msg.area ? { area: msg.area } : {}),
+                    ...(typeof msg.parent === 'string' && msg.parent ? { parent: msg.parent } : {}),
+                    ...(typeof msg.priority === 'string' && msg.priority ? { priority: msg.priority } : {}),
+                    ...(typeof msg.effort === 'string' && msg.effort ? { effort: msg.effort } : {}),
+                    ...(Array.isArray(msg.kinds) ? { kinds: msg.kinds.map(String) } : {})
+                });
+                this.done(res.error, res.error ? undefined
+                    : (res.code ? `Added as ${res.code}.` : 'Added to the inbox.'));
+                break;
+            }
+            case 'backlogState': {
+                if (!id) { break; }
+                const res = this.deps.backlogState(id, backlogRowTarget(msg), String(msg.state ?? 'done'));
+                this.done(res.error, res.error ? undefined : (res.note ?? 'Backlog updated.'));
+                break;
+            }
+            case 'backlogSet': {
+                if (!id) { break; }
+                const fields = (msg.fields ?? {}) as Record<string, unknown>;
+                const res = this.deps.backlogSet(id, backlogRowTarget(msg), fields);
+                this.done(res.error, res.error ? undefined : 'Backlog updated.');
+                break;
+            }
+            case 'backlogMove': {
+                if (!id) { break; }
+                const res = this.deps.backlogMove(id, backlogRowTarget(msg), String(msg.dir ?? 'down'));
+                this.done(res.error, res.error ? undefined : (res.note ?? 'Moved.'));
+                break;
+            }
+            case 'backlogCode': {
+                if (!id) { break; }
+                const area = String(msg.area ?? '').trim();
+                const parent = String(msg.parent ?? '').trim();
+                if (!area && !parent) { break; }
+                const res = this.deps.backlogCode(id, backlogRowTarget(msg), area,
+                    parent ? parent : undefined);
+                this.done(res.error, res.error ? undefined : `Filed as ${res.code ?? 'coded'}.`);
+                break;
+            }
+            case 'backlogArchive': {
+                if (!id) { break; }
+                const res = this.deps.backlogArchive(id);
+                this.done(res.error, res.error ? undefined
+                    : (res.moved ? `${res.moved} closed item${res.moved === 1 ? '' : 's'} archived.` : 'Nothing closed to archive.'));
                 break;
             }
             case 'savePeople':

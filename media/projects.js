@@ -28,6 +28,7 @@
         { id: 'timeline', label: 'Timeline', tip: 'Everything that happened, newest first' },
         { id: 'sessions', label: 'Sessions', tip: 'The same sessions table as everywhere else, scoped to this project' },
         { id: 'plan', label: 'Plan', tip: 'The plan document\'s own checkboxes — ticking one here changes that one character in the file' },
+        { id: 'backlog', label: 'Backlog', tip: 'The standing pile of work: coded, ranked, filtered. Not the roadmap (that is Plan) and not the global queue' },
         { id: 'docs', label: 'Docs', tip: 'The project folder, and any document in it' },
         { id: 'people', label: 'People', tip: 'Who decides, who pays, who does the work, who you ask' },
         { id: 'cost', label: 'Cost', tip: 'Where the money went, and where it is going' },
@@ -734,6 +735,34 @@
                 .pj-plan-item.done .pj-plan-t { opacity:.55; text-decoration:line-through; }
                 .pj-plan-t { flex:1; min-width:0; }
                 .pj-plan-m { opacity:.6; font-size:11px; white-space:nowrap; }
+                /* backlog */
+                .pj-bl-row { display:flex; align-items:baseline; gap:6px; padding:3px 6px;
+                    border-radius:4px; font-size:13px; border-left:2px solid transparent; }
+                .pj-bl-row:hover { background:var(--vscode-list-hoverBackground); }
+                .pj-bl-row.closed .pj-bl-t { opacity:.5; text-decoration:line-through; }
+                .pj-bl-row.doing { border-left-color:var(--vscode-charts-yellow,#d7ba7d); }
+                .pj-bl-row.next { border-left-color:var(--vscode-charts-green,#3fb950); }
+                .pj-bl-row.container .pj-bl-t { font-weight:600; }
+                .pj-bl-code { font-size:11px; opacity:.85; white-space:nowrap;
+                    background:var(--vscode-textCodeBlock-background,#8881); padding:0 5px; border-radius:4px; }
+                .pj-bl-code.unfiled { background:none; }
+                .pj-bl-t { flex:1; min-width:0; }
+                .pj-bl-kind { font-size:10px; padding:0 5px; border-radius:8px; opacity:.85; white-space:nowrap;
+                    background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); }
+                .pj-bl-badge { background:none; border:none; color:inherit; cursor:pointer;
+                    font-size:11px; padding:0 4px; border-radius:4px; opacity:.75; min-width:22px; }
+                .pj-bl-badge:hover { opacity:1; background:var(--vscode-toolbar-hoverBackground,#8882); }
+                .pj-bl-m { opacity:.6; font-size:11px; white-space:nowrap; }
+                .pj-bl-m.blocked { color:var(--vscode-editorWarning-foreground); opacity:.9; }
+                .pj-bl-m.warn { color:var(--vscode-editorWarning-foreground); opacity:1; cursor:help; }
+                /* The row actions stay out of the way until the row is under the
+                   pointer: five buttons on every one of two hundred lines is a
+                   wall, and the list has to stay readable to be usable. */
+                .pj-bl-acts { display:flex; gap:2px; visibility:hidden; }
+                .pj-bl-row:hover .pj-bl-acts { visibility:visible; }
+                .pj-bl-acts button { padding:0 6px; font-size:11px; }
+                .pj-bl-q { flex:0 0 180px; }
+                .pj-bl-next .pj-bl-nextrow { display:flex; gap:6px; flex-wrap:wrap; }
                 .pj-docs { display:flex; gap:14px; align-items:flex-start; }
                 .pj-doc-tree { flex:0 0 260px; max-height:60vh; overflow:auto;
                     border:1px solid var(--vscode-widget-border,#4443); border-radius:7px; padding:6px 4px; }
@@ -787,6 +816,7 @@
             case 'timeline': return timelineHtml();
             case 'sessions': return sessionsHtml();
             case 'plan': return planHtml();
+            case 'backlog': return backlogHtml();
             case 'docs': return docsHtml();
             case 'people': return peopleHtml(p);
             case 'cost': return costHtml(p);
@@ -893,6 +923,175 @@
             the space inside <code>[ ]</code>. Your bullet, spacing, icons and Obsidian Tasks metadata are
             untouched, and no ✅ completion date is added: Agent Farm does not write metadata it does not own.
             Tick the box in Obsidian instead if you want its Tasks plugin to date it.</p>`;
+    }
+
+    // -----------------------------------------------------------------------
+    // the backlog
+    // -----------------------------------------------------------------------
+
+    /** What the reader has narrowed the list to. Page-side on purpose: the host
+     *  ships the whole file, so a chip is a repaint rather than a round trip. */
+    let blFilter = { area: '', kind: '', state: 'live', q: '' };
+    let blSort = 'file';
+    /** Closed items are folded away by default — a backlog you have to scroll
+     *  past three months of finished work to read is one nobody opens. */
+    let blShowClosed = false;
+
+    const PRIO_ORDER = ['lowest', 'low', 'normal', 'medium', 'high', 'highest'];
+    const PRIO_ICON = { highest: '🔺', high: '⏫', medium: '🔼', normal: '·', low: '🔽', lowest: '⏬' };
+    const EFFORT_ORDER = ['', 'XS', 'S', 'M', 'L', 'XL'];
+
+    /**
+     * The backlog tab.
+     *
+     * ‼️ THE ROW IS THE EDITOR. There is no dialog and no "edit" mode: the
+     * priority badge cycles when you click it, the effort badge cycles when you
+     * click it, the checkbox closes the item. Anything that takes three clicks
+     * to change will not be kept up to date, and a backlog whose fields are
+     * stale is worse than one with no fields at all — it sorts wrongly and
+     * nobody knows it.
+     */
+    function backlogHtml() {
+        const d = td().backlog;
+        if (!d || d.state !== 'ok') { return docStateHtml(d, 'backlog document'); }
+        const all = d.items || [];
+        const areas = d.areas || [];
+        const c = d.counts || {};
+        const nextCodes = d.next || [];
+        const blockedBy = {};
+        for (const b of (d.blocked || [])) { if (b.code) { blockedBy[b.code] = b.waitingOn; } }
+
+        const q = blFilter.q.trim().toLowerCase();
+        const shown = all.filter(i => {
+            const live = i.state === 'open' || i.state === 'doing';
+            if (blFilter.state === 'live' && !live) { return blShowClosed; }
+            if (blFilter.state === 'inbox' && i.code) { return false; }
+            if (blFilter.state !== 'live' && blFilter.state !== 'inbox'
+                && blFilter.state && i.state !== blFilter.state) { return false; }
+            if (blFilter.area && i.area !== blFilter.area) { return false; }
+            if (blFilter.kind && (i.kinds || []).indexOf(blFilter.kind) < 0) { return false; }
+            if (q && (i.text || '').toLowerCase().indexOf(q) < 0
+                && (i.code || '').toLowerCase().indexOf(q) < 0) { return false; }
+            return true;
+        });
+        const ordered = blSort === 'file' ? shown : shown.slice().sort((a, b) =>
+            blSort === 'score' ? (b.score - a.score) || (a.line - b.line)
+                : (PRIO_ORDER.indexOf(b.priority) - PRIO_ORDER.indexOf(a.priority)) || (a.line - b.line));
+
+        const kinds = [];
+        for (const i of all) { for (const k of (i.kinds || [])) { if (kinds.indexOf(k) < 0) { kinds.push(k); } } }
+        const areaOpts = ['<option value="">— area —</option>']
+            .concat(areas.map(a => `<option value="${C.esc(a.code)}">${C.esc(a.code)} · ${C.esc(a.label)}</option>`))
+            .join('');
+
+        const rows = ordered.map(i => backlogRowHtml(i, nextCodes.indexOf(i.code) >= 0, blockedBy[i.code])).join('');
+
+        return `
+        <div class="pj-docbar">
+            <span><b>${c.open || 0}</b> open${c.doing ? ` · <b>${c.doing}</b> doing` : ''}
+                · ${c.done || 0} done${c.unclassified ? ` · <b>${c.unclassified}</b> unfiled` : ''}</span>
+            <span class="muted small">${C.esc(d.path)}</span>
+            <span class="grow"></span>
+            <button class="secondary" data-act="blArchive"
+                title="Move closed items under an archive heading at the end of the same file">🗄 Archive closed</button>
+            ${openWithHtml(d.path)}
+        </div>
+
+        <div class="pj-card">
+            <div class="pj-card-h">Capture</div>
+            <div class="pj-row">
+                <input id="bl-new" placeholder="what needs doing — no code needed, file it later">
+                <select id="bl-area" title="Leave empty and it lands in the inbox, uncoded">${areaOpts}</select>
+                <select id="bl-prio" title="Priority">
+                    ${PRIO_ORDER.slice().reverse().map(p =>
+            `<option value="${p}"${p === 'normal' ? ' selected' : ''}>${PRIO_ICON[p]} ${p}</option>`).join('')}
+                </select>
+                <select id="bl-effort" title="Effort">
+                    ${EFFORT_ORDER.map(e => `<option value="${e}">${e || '— size —'}</option>`).join('')}
+                </select>
+                <button data-act="blAdd">Add</button>
+            </div>
+        </div>
+
+        <div class="pj-chips-row">
+            <button class="pj-chip${!blFilter.area ? ' on' : ''}" data-blarea="">all areas</button>
+            ${areas.map(a => `<button class="pj-chip${blFilter.area === a.code ? ' on' : ''}"
+                data-blarea="${C.esc(a.code)}" title="${C.esc(a.label)} — ${a.open} open of ${a.total}">
+                ${C.esc(a.code)} <span class="muted">${a.open}</span></button>`).join('')}
+            <span class="grow"></span>
+            ${kinds.map(k => `<button class="pj-chip${blFilter.kind === k ? ' on' : ''}"
+                data-blkind="${C.esc(k)}">#${C.esc(k)}</button>`).join('')}
+        </div>
+        <div class="pj-chips-row">
+            <input id="bl-q" class="pj-bl-q" placeholder="search" value="${C.esc(blFilter.q)}">
+            <select id="bl-state" title="Which states to show">
+                <option value="live"${blFilter.state === 'live' ? ' selected' : ''}>open + doing</option>
+                <option value="inbox"${blFilter.state === 'inbox' ? ' selected' : ''}>📥 unfiled only</option>
+                <option value="doing"${blFilter.state === 'doing' ? ' selected' : ''}>doing</option>
+                <option value="done"${blFilter.state === 'done' ? ' selected' : ''}>done</option>
+                <option value="cancelled"${blFilter.state === 'cancelled' ? ' selected' : ''}>cancelled</option>
+            </select>
+            <select id="bl-sort" title="Ordering. File order is your own — it is what 'do the top five' follows">
+                <option value="file"${blSort === 'file' ? ' selected' : ''}>file order (yours)</option>
+                <option value="score"${blSort === 'score' ? ' selected' : ''}>score (priority ÷ effort)</option>
+                <option value="priority"${blSort === 'priority' ? ' selected' : ''}>priority</option>
+            </select>
+            <label class="pj-chk"><input type="checkbox" id="bl-closed" ${blShowClosed ? 'checked' : ''}> show closed</label>
+            <span class="grow"></span>
+            <span class="muted small">${ordered.length} of ${all.length}</span>
+        </div>
+
+        ${nextCodes.length ? `<div class="pj-card pj-bl-next">
+            <div class="pj-card-h">Next up — what an agent gets from <code>projects.backlog.next</code></div>
+            <div class="pj-bl-nextrow">${nextCodes.map(x =>
+            `<code class="pj-bl-code">${C.esc(x)}</code>`).join('')}</div>
+        </div>` : ''}
+
+        ${rows || '<p class="muted small">Nothing matches. The file is <code>' + C.esc(d.path) + '</code> — edit it in Obsidian any time; this page reads whatever is there.</p>'}
+
+        <p class="muted small pj-unfiled">A code is permanent and is not the order: dragging a line in
+            Obsidian (or pressing ▲▼ here) changes what comes first and leaves <code>P-5.3</code> meaning
+            the same item for ever. Clicking a badge cycles it. Closing a box changes exactly one
+            character of your file and adds no ✅ date — Agent Farm does not write metadata it does not own.</p>`;
+    }
+
+    /** One row. `data-code` is the handle whenever the item has one; the line
+     *  number only rides along for an uncoded capture, because a line goes stale
+     *  the moment the file is edited in Obsidian under an open panel. */
+    function backlogRowHtml(i, isNext, waitingOn) {
+        const closed = i.state === 'done' || i.state === 'cancelled';
+        const cls = ['pj-bl-row'];
+        if (closed) { cls.push('closed'); }
+        if (i.state === 'doing') { cls.push('doing'); }
+        if (isNext) { cls.push('next'); }
+        if (i.container) { cls.push('container'); }
+        const badges = [];
+        for (const k of (i.kinds || [])) { badges.push(`<span class="pj-bl-kind">#${C.esc(k)}</span>`); }
+        return `<div class="${cls.join(' ')}" style="padding-left:${6 + (i.depth || 0) * 10}px"
+            data-blrow data-code="${C.esc(i.code || '')}" data-line="${i.line}"
+            data-prio="${C.esc(i.priority || 'normal')}" data-effort="${C.esc(i.effort || '')}">
+            <input type="checkbox" data-blcheck ${i.state === 'done' ? 'checked' : ''}
+                title="${i.state === 'done' ? 'Reopen' : 'Close as done'}">
+            ${i.code
+                ? `<code class="pj-bl-code" title="Permanent code — quote this at an agent">${C.esc(i.code)}</code>`
+                : '<span class="pj-bl-code unfiled" title="No code yet — pick an area to file it">📥</span>'}
+            <span class="pj-bl-t">${C.esc(i.text || '(empty)')}</span>
+            ${badges.join('')}
+            <button class="pj-bl-badge" data-blprio title="Priority — click to cycle">${PRIO_ICON[i.priority] || '·'}</button>
+            <button class="pj-bl-badge" data-bleffort title="Effort — click to cycle">${C.esc(i.effort || '–')}</button>
+            ${i.due ? `<span class="pj-bl-m" title="due">📅 ${C.esc(i.due)}</span>` : ''}
+            ${i.plan ? `<span class="pj-bl-m" title="plan item">🆔 ${C.esc(i.plan)}</span>` : ''}
+            ${waitingOn && waitingOn.length
+                ? `<span class="pj-bl-m blocked" title="Waiting on ${C.esc(waitingOn.join(', '))}">⛔ ${C.esc(waitingOn.join(' '))}</span>` : ''}
+            ${i.warn ? `<span class="pj-bl-m warn" title="${C.esc(i.warn)}">⚠</span>` : ''}
+            <span class="pj-bl-acts">
+                ${!i.code ? '<button data-blfile title="File it under an area and give it a code">file…</button>' : ''}
+                <button data-blstate="doing" title="Mark in progress">▶</button>
+                <button data-blstate="cancelled" title="Cancel — it stays in the file, with its code spent">✕</button>
+                <button data-blmove="up" title="Move up among its siblings">▲</button>
+                <button data-blmove="down" title="Move down among its siblings">▼</button>
+            </span>
+        </div>`;
     }
 
     /**
@@ -1171,6 +1370,108 @@
                 });
             }));
 
+        // ---- the backlog. Filters are page-side (a repaint, not a round trip);
+        // anything that WRITES goes to the host, which owns the file.
+        const blRow = el => el.closest('[data-blrow]');
+        /** How the host is told which row: the code when there is one, else the
+         *  line. The panel converts and, for a coded item, ignores the line
+         *  entirely — a code cannot go stale, a line number can. */
+        const blWho = row => ({
+            code: row.dataset.code || '',
+            line: Number(row.dataset.line) + 1
+        });
+        /** The row's CURRENT value, read off the DOM the host last painted —
+         *  never off the badge's glyph, which would make the cycle depend on a
+         *  lookup table staying in step with a font. */
+        const blPrioOf = row => row.dataset.prio || 'normal';
+        const blEffortOf = row => row.dataset.effort || '';
+        const blPost = (type, row, extra) => {
+            const p = sel();
+            vscode.postMessage(Object.assign(
+                { type: type, id: p ? p.id : '' }, blWho(row), extra || {}));
+        };
+
+        // Enter sends the capture. The whole promise of this box is that writing
+        // a thought down costs nothing; reaching for the mouse is a cost.
+        const blNew = document.getElementById('bl-new');
+        if (blNew) {
+            blNew.addEventListener('keydown', ev => {
+                if (ev.key !== 'Enter') { return; }
+                ev.preventDefault();
+                const btn = document.querySelector('[data-act="blAdd"]');
+                if (btn) { btn.click(); }
+            });
+        }
+
+        document.querySelectorAll('[data-blarea]').forEach(el =>
+            el.addEventListener('click', () => {
+                blFilter.area = el.dataset.blarea === blFilter.area ? '' : el.dataset.blarea;
+                render();
+            }));
+        document.querySelectorAll('[data-blkind]').forEach(el =>
+            el.addEventListener('click', () => {
+                blFilter.kind = el.dataset.blkind === blFilter.kind ? '' : el.dataset.blkind;
+                render();
+            }));
+        const blq = document.getElementById('bl-q');
+        if (blq) {
+            // ‼️ Repainting on every keystroke would move the caret out from
+            // under the person typing, so the box is filtered on input WITHOUT a
+            // repaint of itself: the rows are redrawn and focus is put back.
+            blq.addEventListener('input', () => {
+                blFilter.q = blq.value;
+                render();
+                const again = document.getElementById('bl-q');
+                if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
+            });
+        }
+        const blState = document.getElementById('bl-state');
+        if (blState) { blState.addEventListener('change', () => { blFilter.state = blState.value; render(); }); }
+        const blSortSel = document.getElementById('bl-sort');
+        if (blSortSel) { blSortSel.addEventListener('change', () => { blSort = blSortSel.value; render(); }); }
+        const blClosed = document.getElementById('bl-closed');
+        if (blClosed) { blClosed.addEventListener('change', () => { blShowClosed = blClosed.checked; render(); }); }
+
+        document.querySelectorAll('[data-blcheck]').forEach(el =>
+            el.addEventListener('click', () =>
+                blPost('backlogState', blRow(el), { state: el.checked ? 'done' : 'open' })));
+        document.querySelectorAll('[data-blstate]').forEach(el =>
+            el.addEventListener('click', () =>
+                blPost('backlogState', blRow(el), { state: el.dataset.blstate })));
+        document.querySelectorAll('[data-blmove]').forEach(el =>
+            el.addEventListener('click', () =>
+                blPost('backlogMove', blRow(el), { dir: el.dataset.blmove })));
+
+        // A badge CYCLES rather than opening a menu: the whole value of these
+        // fields is that they are cheap enough to keep true.
+        document.querySelectorAll('[data-blprio]').forEach(el =>
+            el.addEventListener('click', () => {
+                const row = blRow(el);
+                const now = PRIO_ORDER.indexOf(blPrioOf(row));
+                blPost('backlogSet', row, {
+                    fields: { priority: PRIO_ORDER[(now + 1) % PRIO_ORDER.length] }
+                });
+            }));
+        document.querySelectorAll('[data-bleffort]').forEach(el =>
+            el.addEventListener('click', () => {
+                const row = blRow(el);
+                const now = EFFORT_ORDER.indexOf(blEffortOf(row));
+                blPost('backlogSet', row, {
+                    fields: { effort: EFFORT_ORDER[(now + 1) % EFFORT_ORDER.length] }
+                });
+            }));
+        document.querySelectorAll('[data-blfile]').forEach(el =>
+            el.addEventListener('click', () => {
+                const row = blRow(el);
+                const area = (document.getElementById('bl-area') || {}).value || '';
+                if (!area) {
+                    flash = { error: 'Pick an area in the capture box first — that is where it will be filed.' };
+                    render();
+                    return;
+                }
+                blPost('backlogCode', row, { area: area });
+            }));
+
         document.querySelectorAll('[data-rmperson]').forEach(el =>
             el.addEventListener('click', () => { people.splice(Number(el.dataset.rmperson), 1); render(); }));
 
@@ -1234,6 +1535,18 @@
                     });
                     break;
                 }
+                case 'blAdd': {
+                    const box = document.getElementById('bl-new');
+                    const text = ((box && box.value) || '').trim();
+                    if (!text) { break; }
+                    const val = elId => (document.getElementById(elId) || {}).value || '';
+                    vscode.postMessage({
+                        type: 'backlogAdd', id, text,
+                        area: val('bl-area'), priority: val('bl-prio'), effort: val('bl-effort')
+                    });
+                    break;
+                }
+                case 'blArchive': vscode.postMessage({ type: 'backlogArchive', id }); break;
                 case 'newDoc': {
                     const name = ((document.getElementById('doc-name') || {}).value || '').trim();
                     if (!name) { break; }
