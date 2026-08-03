@@ -7,127 +7,52 @@ let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
 const {
-    normalizeProjects, projectOfAgent, projectOfSession, agentProjectMap,
-    projectNames, assignAgent, rollupProjects, normalizePath, UNASSIGNED,
-    // the entity model (see "PROJECT ENTITY" below)
+    normalizePath, UNASSIGNED, agentProject, agentProjectNames,
     PROJECT_STATUSES, CLOSED_STATUSES, PROJECT_KINDS, PERSON_ROLES, PERSON_KINDS,
     UNASSIGNED_ID, emptyLinks, newProjectId, folderNameFor, sameName,
     projectById, projectByName, findProject,
     coerceStatus, coercePerson, coerceProject, coerceProjects, coerceLinks,
     matchRoots, resolveSessionProject, setSessionProject, pruneLinks,
-    rollupProjectSessions, folderState, renameProject, migrateLegacyProjects
+    rollupProjectSessions, folderState, renameProject
 } = require(path.join(__dirname, '..', 'out', 'core', 'projects.js'));
 
-// ---------- normalizing what settings.json holds ----------
+// ---------- an agent's project ----------
+// ‼️ ONE resolution, shared with sessions. The portfolio page and the
+// dashboard's per-agent map both group by this, and they sit beside cost
+// figures grouped by `resolveSessionProject` — a second implementation here
+// would let the two disagree with no way for a reader to tell which is right.
 {
-    ok('a non-array is no projects', normalizeProjects(undefined).length === 0
-        && normalizeProjects({}).length === 0);
-    const p = normalizeProjects([
-        { name: ' Acme ', agents: ['dev', '', 'psikolog'], paths: ['D:/work/acme/'], budgetUSD: 5, note: ' retainer ' },
-        { name: 'Acme' },                       // duplicate name
-        { name: '' },                           // no name
-        { name: 'Empty', agents: [], budgetUSD: -3 },
-        'nope', null
-    ]);
-    ok('names are trimmed', p[0].name === 'Acme');
-    ok('blank members dropped', p[0].agents.join('|') === 'dev|psikolog');
-    ok('a duplicate name is ignored', p.filter(x => x.name === 'Acme').length === 1);
-    ok('nameless / junk entries are dropped', p.length === 2);
-    ok('an empty member list is not stored', p[1].agents === undefined);
-    ok('a negative budget is not a budget', p[1].budgetUSD === undefined);
-    ok('the note is kept, trimmed', p[0].note === 'retainer');
-}
-
-// ---------- resolution ----------
-{
-    const projects = normalizeProjects([
-        { name: 'Acme', agents: ['dev'], paths: ['D:/work/acme'] },
-        { name: 'Inhouse', agents: ['psikolog', 'manager'] }
-    ]);
-    ok('an agent resolves by name', projectOfAgent({ name: 'dev' }, projects) === 'Acme');
-    ok('…case-insensitively', projectOfAgent({ name: 'DEV' }, projects) === 'Acme');
-    ok('an agent resolves by id too', projectOfAgent({ id: 'psikolog' }, projects) === 'Inhouse');
-    ok('an unlisted agent has no project', projectOfAgent({ name: 'explorer' }, projects) === undefined);
-    ok('an agent inside a project folder resolves by path',
-        projectOfAgent({ name: 'x', dir: 'D:\\work\\acme\\sub' }, projects) === 'Acme');
-
-    ok('a session follows its agent',
-        projectOfSession({ agentName: 'dev', cwd: 'C:/elsewhere' }, projects) === 'Acme');
-    ok('an agentless session resolves by cwd',
-        projectOfSession({ cwd: 'D:/work/acme/site' }, projects) === 'Acme');
-    ok('a path that merely starts with the same letters does NOT match',
-        projectOfSession({ cwd: 'D:/work/acme-other' }, projects) === undefined);
-    ok('the folder itself matches', projectOfSession({ cwd: 'D:/work/acme' }, projects) === 'Acme');
-    ok('slashes and case do not matter',
-        projectOfSession({ cwd: 'd:\\WORK\\Acme\\deep\\er' }, projects) === 'Acme');
-    ok('nothing matching = no project', projectOfSession({ cwd: 'E:/other' }, projects) === undefined);
-    ok('normalizePath strips the trailing slash', normalizePath('D:/a/b/') === 'd:/a/b');
-
-    ok('the agent→project map is what a webview needs',
-        JSON.stringify(agentProjectMap([{ name: 'dev' }, { name: 'psikolog' }, { name: 'x' }], projects))
-        === JSON.stringify({ dev: 'Acme', psikolog: 'Inhouse' }));
-    ok('project names list keeps declaration order and appends Unassigned',
-        projectNames(projects).join('|') === 'Acme|Inhouse|' + UNASSIGNED);
-    ok('…and can leave it out', projectNames(projects, false).join('|') === 'Acme|Inhouse');
-}
-
-// ---------- the one-owner rule ----------
-{
-    const projects = normalizeProjects([
-        { name: 'Acme', agents: ['dev', 'psikolog'] },
-        { name: 'Inhouse', agents: ['manager'] }
-    ]);
-    const moved = assignAgent(projects, 'Inhouse', 'dev', true);
-    ok('assigning moves the agent OUT of its old project',
-        (moved.find(p => p.name === 'Acme').agents || []).join('|') === 'psikolog');
-    ok('…and INTO the new one',
-        moved.find(p => p.name === 'Inhouse').agents.join('|') === 'manager|dev');
-    ok('an agent is never in two projects at once',
-        moved.filter(p => (p.agents || []).some(a => a === 'dev')).length === 1);
-    const off = assignAgent(projects, 'Acme', 'dev', false);
-    ok('removing works', (off.find(p => p.name === 'Acme').agents || []).join('|') === 'psikolog');
-    const empty = assignAgent(normalizeProjects([{ name: 'Solo', agents: ['dev'] }]), 'Solo', 'dev', false);
-    ok('an emptied list is dropped, not stored as []', empty[0].agents === undefined);
-    ok('the input is not mutated', projects[0].agents.join('|') === 'dev|psikolog');
-}
-
-// ---------- the rollup: buckets must add up ----------
-{
-    const projects = normalizeProjects([
-        { name: 'Acme', agents: ['dev'], budgetUSD: 4, note: 'retainer' },
-        { name: 'Inhouse', agents: ['psikolog'] }
-    ]);
-    const sessions = [
-        { agentName: 'dev', cost: 3, tokens: 100, todayCost: 1, lastTs: 500 },
-        { agentName: 'dev', cost: 2, tokens: 50, todayCost: 2, lastTs: 900 },
-        { agentName: 'psikolog', cost: 1, tokens: 10, todayCost: 0, lastTs: 100 },
-        { agentName: 'explorer', cost: 7, tokens: 70, todayCost: 4, lastTs: 300 }   // no project
+    const TA = 1700000000000;
+    const A = (id, extra) => Object.assign(
+        { id, name: id, status: 'active', createdAt: TA, updatedAt: TA }, extra || {});
+    const projects = [
+        A('prj_acme00001', { name: 'Acme', match: { agents: ['dev'] }, repos: ['D:/work/acme'] }),
+        A('prj_house0001', { name: 'Inhouse', match: { agents: ['psikolog', 'manager'] } })
     ];
-    const roll = rollupProjects(projects, sessions,
-        [{ name: 'dev' }, { name: 'psikolog' }, { name: 'explorer' }]);
-    const by = Object.fromEntries(roll.map(r => [r.name, r]));
-    ok('per-project cost is summed', by.Acme.cost === 5 && by.Inhouse.cost === 1);
-    ok('today is summed separately', by.Acme.todayCost === 3);
-    ok('sessions are counted', by.Acme.sessions === 2);
-    ok('the newest activity wins', by.Acme.lastTs === 900);
-    ok('unclaimed work lands in Unassigned, not nowhere', by[UNASSIGNED].cost === 7);
-    ok('the buckets add up to the fleet total',
-        roll.reduce((n, r) => n + r.cost, 0) === sessions.reduce((n, s) => n + s.cost, 0));
-    ok('an agent with no sessions still shows under its project',
-        by.Inhouse.agents.indexOf('psikolog') >= 0);
-    ok('budget and note travel with the bucket', by.Acme.budgetUSD === 4 && by.Acme.note === 'retainer');
-    ok('Unassigned is listed last', roll[roll.length - 1].name === UNASSIGNED);
-    ok('declared projects keep their order', roll[0].name === 'Acme' && roll[1].name === 'Inhouse');
-    const none = rollupProjects([], sessions, []);
-    ok('with no projects declared everything is one honest bucket',
-        none.length === 1 && none[0].name === UNASSIGNED && none[0].cost === 13);
+    ok('an agent resolves by its rule, by name', agentProject({ name: 'dev' }, projects).name === 'Acme');
+    ok('…case-insensitively', agentProject({ name: 'DEV' }, projects).name === 'Acme');
+    ok('an agent resolves by id too', agentProject({ id: 'psikolog' }, projects).name === 'Inhouse');
+    ok('an unruled agent has no project', agentProject({ name: 'explorer' }, projects) === undefined);
+    ok('an agent whose folder sits under a code root resolves by path',
+        agentProject({ name: 'x', dir: 'D:\\work\\acme\\sub' }, projects).name === 'Acme');
+    ok('a path that merely starts with the same letters does NOT match',
+        agentProject({ name: 'x', dir: 'D:/work/acme-other' }, projects) === undefined);
+    ok('normalizePath strips the trailing slash', normalizePath('D:/a/b/') === 'd:/a/b');
+    ok('the agent→project map is what a webview needs',
+        JSON.stringify(agentProjectNames([{ name: 'dev' }, { name: 'psikolog' }, { name: 'x' }], projects))
+        === JSON.stringify({ dev: 'Acme', psikolog: 'Inhouse' }));
 }
 
 // ---------- the surfaces are actually wired ----------
 {
     const fs = require('fs');
     const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
-    ok('agentFarm.projects is a declared setting', !!pkg.contributes.configuration.properties['agentFarm.projects']);
+    // ‼️ The settings-based model is GONE, not deprecated. A project is an
+    // entity in the store with a folder of its own; a second definition of the
+    // same thing sitting in settings.json is a second answer waiting to
+    // disagree with the first.
+    ok('‼️ the old agentFarm.projects setting is no longer declared',
+        !pkg.contributes.configuration.properties['agentFarm.projects']);
     const ids = new Set(pkg.contributes.commands.map(c => c.command));
     ok('Manage Projects… exists', ids.has('agentfarm.manageProjects'));
     ok('Assign Agent to Project… exists', ids.has('agentfarm.assignProject'));
@@ -150,9 +75,8 @@ const {
 }
 
 // ===========================================================================
-// PROJECT ENTITY — the model the umbrella is built on. Everything above this
-// line tests the settings-based grouping it replaces; both live side by side
-// until the store is wired in.
+// PROJECT ENTITY — the model the umbrella is built on, and the only one there
+// is. The settings-based grouping it replaced is gone with its setting.
 // ===========================================================================
 
 const T0 = 1700000000000;
@@ -394,28 +318,6 @@ const P = (id, extra) => Object.assign(
     ok('a rejection returns the list unchanged', renameProject(list, 'prj_a', '   ').projects === list);
 }
 
-// ---------- migration off agentFarm.projects ----------
-{
-    const migrated = migrateLegacyProjects([
-        { name: 'Me.DEV.AgentFarm', agents: ['basit', 'developer', 'manager'] },
-        { name: 'Customer X', paths: ['D:\\work\\x'], budgetUSD: 3, note: 'fixed price' },
-        { name: '' }, 'junk'
-    ], T0);
-    ok('one project per usable legacy entry', migrated.length === 2);
-    ok('names carried', migrated[0].name === 'Me.DEV.AgentFarm');
-    ok('agents become a RULE, not membership', migrated[0].match.agents.join() === 'basit,developer,manager');
-    ok('paths become code roots', migrated[1].repos.join() === 'D:\\work\\x');
-    ok('budget carried', migrated[1].budgetUSD === 3);
-    ok('the note becomes the one-line summary', migrated[1].summary === 'fixed price');
-    ok('everything starts active', migrated.every(p => p.status === 'active'));
-    ok('ids are fresh and unique', new Set(migrated.map(p => p.id)).size === 2);
-    ok('‼️ no folder is invented — the user is asked instead',
-        migrated.every(p => p.folder === undefined));
-    ok('empty input, empty output', migrateLegacyProjects(null).length === 0);
-    ok('a migrated agent rule resolves exactly as the old setting did',
-        resolveSessionProject({ sessionId: 's', agentName: 'developer' }, migrated).projectId === migrated[0].id);
-}
-
 // ---------- the project surfaces are actually wired ----------
 // A feature nobody can reach is not a feature. These assert the three places a
 // project has to exist: its own sidebar view, its own page, and — the one that
@@ -500,7 +402,8 @@ const P = (id, extra) => Object.assign(
         /via: projectStore\.resolve\(\{/.test(ext));
     ok('the store is created and loaded on activate',
         /new ProjectStore\(/.test(ext) && /projectStore\.load\(\)/.test(ext));
-    ok('the legacy setting is imported once, on activate', /migrateLegacy\(cfg\(\)\.get\('projects'/.test(ext));
+    ok('‼️ nothing reads the old setting any more — it is gone, not deprecated',
+        !/migrateLegacy/.test(ext) && !/ProjectDef/.test(ext));
     ok('the active project is window-scoped, not shared between windows',
         /workspaceState\.get<string>\('af\.activeProject'/.test(ext));
     ok('the status bar always shows the active project, even when there is none',

@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.57.1",
+  "version": "3.58.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -2419,45 +2419,6 @@
             "fable"
           ],
           "description": "Your model name knowledge base: the names/ids offered in every model picker (the per-agent model dropdown in Agent folders, the mission model suggestions, the Start Sessionâ€¦ launcher). Add a new model name here ONCE and it appears in every picker permanently â€” model names change over time, this list is yours to keep current. Every picker also accepts a custom free-text entry for anything not listed."
-        },
-        "agentFarm.projects": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "name": {
-                "type": "string",
-                "description": "project name â€” a customer, a product, a contract"
-              },
-              "agents": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                },
-                "description": "agent names that belong to this project"
-              },
-              "paths": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                },
-                "description": "folders whose sessions belong to this project (matched by prefix)"
-              },
-              "budgetUSD": {
-                "type": "number",
-                "description": "optional daily budget in USD for the whole project"
-              },
-              "note": {
-                "type": "string",
-                "description": "free note â€” customer, contract, anything the name does not say"
-              }
-            },
-            "required": [
-              "name"
-            ]
-          },
-          "default": [],
-          "markdownDescription": "Groups your agents (and folders) into **projects** â€” a customer, a product, a contract. Once declared, the Dashboard shows a per-project cost table, the Sessions tables gain a Project column and filter, and the Agent Portfolio groups by it, so \"what did I spend on this customer this month\" and \"show me everything on this project\" become one lookup. **An agent belongs to exactly one project** (the first that claims it): overlapping membership would double-count the money. Sessions outside every project fall into an honest `Unassigned` bucket, so the rows always add up to the fleet total. Easiest way in: the **Manage Projectsâ€¦** command (or *Assign Agent to Projectâ€¦* on an agent row)."
         },
         "agentFarm.web.enabled": {
           "type": "boolean",

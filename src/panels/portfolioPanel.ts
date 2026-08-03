@@ -4,7 +4,7 @@ import { watchStatus } from '../core/duties';
 import { Insight } from '../core/health';
 import { LiveMonitor, LiveStatus } from '../core/live';
 import { totalTokens } from '../core/pricing';
-import { ProjectDef, projectOfAgent, UNASSIGNED } from '../core/projects';
+import { agentProject, Project, UNASSIGNED } from '../core/projects';
 import { SessionIndex } from '../core/sessions';
 import { dayKey } from '../core/util';
 import { handleAfNav, htmlShell } from './base';
@@ -28,7 +28,7 @@ export interface PortfolioDeps {
     index: SessionIndex;
     getInsights(): Insight[];
     live?: LiveMonitor;
-    projects(): ProjectDef[];
+    projects(): Project[];
     budgets(): Record<string, number>;
 }
 
@@ -94,7 +94,10 @@ export function buildPortfolioRows(deps: PortfolioDeps, now = Date.now()): Portf
             id: a.id,
             name: a.name,
             dir: a.dir,
-            project: projectOfAgent({ id: a.id, name: a.name, dir: a.dir }, projects) ?? UNASSIGNED,
+            // The SAME resolution the cost table uses — this page sits next to
+            // figures grouped the same way, and two answers to "whose job is
+            // this agent on" would leave a reader no way to tell which is lying.
+            project: agentProject({ id: a.id, name: a.name, dir: a.dir }, projects)?.name ?? UNASSIGNED,
             status: live?.status ?? 'idle',
             active: live ? (live.status === 'working' || live.status === 'tool')
                 : deps.index.isAgentActive(a.id, now),

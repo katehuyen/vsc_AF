@@ -109,12 +109,9 @@ import { QUICK_MENU, QUICK_MENU_GROUPS } from './core/quickmenu';
 import { describeOwner, mergeSessionNames, ownerOf, pidAlive, readCliSessions, sessionsDir } from './core/cliSessions';
 import { revealPath } from './core/reveal';
 import {
-    agentProjectMap, assignAgent, normalizeProjects, ProjectDef, projectOfAgent,
-    projectOfSession, rollupProjects, UNASSIGNED,
-    // the project entity (core/projects.ts) — the registry these surfaces now read
-    CLOSED_STATUSES as CLOSED_PROJECT_STATUSES, coercePerson, folderNameFor, folderState,
-    PROJECT_KINDS, PROJECT_STATUSES, Project, ProjectPerson, ProjectStatus,
-    resolveSessionProject, rollupProjectSessions, UNASSIGNED_ID
+    agentProjectNames, CLOSED_STATUSES as CLOSED_PROJECT_STATUSES, coercePerson,
+    folderNameFor, folderState, PROJECT_KINDS, PROJECT_STATUSES, Project, ProjectPerson,
+    ProjectStatus, resolveSessionProject, rollupProjectSessions, UNASSIGNED, UNASSIGNED_ID
 } from './core/projects';
 import { ProjectStore } from './core/projectStore';
 import { ProjectsPanel, ProjectsPanelDeps } from './panels/projectsPanel';
@@ -154,7 +151,7 @@ import {
     applySuggestionToClaudeMd, collectUserMessages, scanCorrections, SuggestionStore
 } from './core/suggest';
 import { buildWeeklyFactsText, generateWeeklySummary, isoWeek, WeeklyFacts } from './core/summary';
-import { argStr, BridgeRegistry, need, optStr, parseBridgeRequest } from './core/bridge';
+import { argSessionIds, argStr, BridgeRegistry, need, optStr, parseBridgeRequest } from './core/bridge';
 import {
     archivedOutputBody, buildCliCommand, CliProfile, FarmSchedule, FarmTask, FarmTemplate,
     FarmTrigger, FarmWorkflow, MissedPolicy, newId, parseSeedSchedules, PREV_OUTPUT_PLACEHOLDER,
@@ -1022,19 +1019,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // Projects — the registry and the session link table (core/projectStore.ts).
     // Everything a human writes about a project lives in the project's own
     // FOLDER; this file only records what exists and what the user explicitly
-    // put where. The one-time import off the old `agentFarm.projects` setting
-    // runs here, and only ever once (see ProjectStore.migrateLegacy).
+    // put where.
     const projectStore = new ProjectStore(
         path.join(context.globalStorageUri.fsPath, 'projects.json'), portableRoots);
     projectStore.load();
-    {
-        const imported = projectStore.migrateLegacy(cfg().get('projects', []));
-        if (imported) {
-            void vscode.window.showInformationMessage(
-                `Agent Farm: ${imported} project${imported === 1 ? '' : 's'} moved off the old setting. ` +
-                'Each one still needs a folder — open Projects to choose it.');
-        }
-    }
     /** Where new project folders are offered, and what a rescan walks. */
     const projectsRoot = (): string => (cfg().get<string>('projectsRoot', '') || '').trim();
     const projectSkeleton = () => normalizeSkeleton(cfg().get('projectSkeleton', []));
@@ -3061,25 +3049,35 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'sessions.pin',
-            describe: 'Put a session on the user\'s shelf, or take it off. Pinned sessions are listed first on every sessions surface and are never cut by a row limit. args: sessionId, pinned? (default: toggle)',
+            describe: 'Put a session on the user\'s shelf, or take it off. Pinned sessions are listed first on every sessions surface and are never cut by a row limit. Pass sessionIds to move a whole set at once — they all end up the SAME way, so `pinned` is required there (a per-session toggle over a set would invert the ones already pinned). args: sessionId or sessionIds (array), pinned? (default: toggle, single only)',
             handler: async (args) => {
-                const sessionId = argStr(args, 'sessionId');
-                const marks = sessionMarks();
+                const ids = argSessionIds(args);
+                need(ids.length, 'sessionId (or sessionIds) required');
                 const want = typeof args.pinned === 'boolean' ? args.pinned : undefined;
-                const next = togglePin(marks, sessionId, want);
-                await saveMarks(next);
-                return { sessionId, pinned: isPinned(next, sessionId) };
+                need(ids.length === 1 || want !== undefined,
+                    'pinned (true/false) is required for a set — say which way they should all go');
+                let marks = sessionMarks();
+                for (const id of ids) { marks = togglePin(marks, id, want); }
+                await saveMarks(marks);
+                return ids.length === 1
+                    ? { sessionId: ids[0], pinned: isPinned(marks, ids[0]) }
+                    : { sessions: ids.length, pinned: want };
             }
         },
         {
             op: 'sessions.tag',
-            describe: 'Set the user\'s labels on a session (replaces them; empty clears). Labels are searched by the sessions tables\' text filter. args: sessionId, tags (array or comma-separated string)',
+            describe: 'Set the user\'s labels on a session (replaces them; empty clears). Labels are searched by the sessions tables\' text filter. Pass sessionIds to put the same labels on a whole set — it REPLACES what each of them carries rather than merging. args: sessionId or sessionIds (array), tags (array or comma-separated string)',
             handler: async (args) => {
-                const sessionId = argStr(args, 'sessionId');
+                const ids = argSessionIds(args);
+                need(ids.length, 'sessionId (or sessionIds) required');
                 const raw = Array.isArray(args.tags) ? args.tags.join(', ') : optStr(args, 'tags');
-                const next = setTags(sessionMarks(), sessionId, parseTags(raw));
+                const tags = parseTags(raw);
+                let next = sessionMarks();
+                for (const id of ids) { next = setTags(next, id, tags); }
                 await saveMarks(next);
-                return { sessionId, tags: tagsOf(next, sessionId) };
+                return ids.length === 1
+                    ? { sessionId: ids[0], tags: tagsOf(next, ids[0]) }
+                    : { sessions: ids.length, tags };
             }
         },
         {
@@ -3145,17 +3143,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'sessions.end',
-            describe: 'End a live session — not its turn (that is sessions.interrupt) but the session: the claude process that owns it is stopped, and it leaves the Live Timeline. A Console-hosted session is closed through the Console instead. The transcript stays on disk and can be resumed. Asks the user to confirm first. args: sessionId',
+            describe: 'End a live session — not its turn (that is sessions.interrupt) but the session: the claude process that owns it is stopped, and it leaves the Live Timeline. A Console-hosted session is closed through the Console instead. The transcript stays on disk and can be resumed. Asks the user to confirm first. Pass sessionIds to end a whole set (it asks once, per session). args: sessionId or sessionIds (array)',
             handler: async (args) => {
-                const sessionId = argStr(args, 'sessionId');
-                const before = live.sessions().some(s => s.sessionId === sessionId);
-                await endLiveSession(sessionId);
-                return { sessionId, tracked: before, ended: !live.sessions().some(s => s.sessionId === sessionId) };
+                const ids = argSessionIds(args);
+                need(ids.length, 'sessionId (or sessionIds) required');
+                const out: { sessionId: string; tracked: boolean; ended: boolean }[] = [];
+                for (const sessionId of ids) {
+                    const before = live.sessions().some(s => s.sessionId === sessionId);
+                    await endLiveSession(sessionId);
+                    out.push({
+                        sessionId, tracked: before,
+                        ended: !live.sessions().some(s => s.sessionId === sessionId)
+                    });
+                }
+                return ids.length === 1 ? out[0] : { sessions: out.length, results: out };
             }
         },
         {
             op: 'sessions.dismiss',
-            describe: 'Take a session off the Live Timeline WHOLE — its card and its swim-lane row, in every range — without touching the session itself: the way to clear what a claude that died without a SessionEnd hook left behind. It comes back if it reports another event. args: sessionId, or gone:true to clear every tracked session whose process the OS no longer knows',
+            describe: 'Take a session off the Live Timeline WHOLE — its card and its swim-lane row, in every range — without touching the session itself: the way to clear what a claude that died without a SessionEnd hook left behind. It comes back if it reports another event. args: sessionId or sessionIds (array), or gone:true to clear every tracked session whose process the OS no longer knows',
             handler: (args) => {
                 if (args.gone === true) {
                     if (!fs.existsSync(sessionsDir(claudeDir()))) {
@@ -3167,8 +3173,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     for (const s of dead) { live.dismiss(s.sessionId, 'cleared (no live process)', true); }
                     return { cleared: dead.length, sessions: dead.map(s => s.sessionId) };
                 }
-                const sessionId = argStr(args, 'sessionId');
-                return { sessionId, cleared: live.dismiss(sessionId, 'cleared in Agent Farm', true) };
+                const ids = argSessionIds(args);
+                need(ids.length, 'sessionId (or sessionIds) required, or gone:true');
+                const cleared = ids.filter(id => live.dismiss(id, 'cleared in Agent Farm', true));
+                return ids.length === 1
+                    ? { sessionId: ids[0], cleared: cleared.length === 1 }
+                    : { sessions: ids.length, cleared: cleared.length };
             }
         },
         {
@@ -5485,7 +5495,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     .filter(k => cfg().get<boolean>(k, false)).length,
                 qualitySamples: qualityStore.scores.length,
                 secretCount: vault.names().length,
-                projectCount: projectDefs().length,
+                projectCount: projectStore.all().length,
                 web: { ...webCfg(), serving: !!webServer },
                 chat: {
                     enabled: chatCfg().enabled,
@@ -5507,8 +5517,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         planUsageBeat: planBeat,
         // B1: the project axis — the card's rollup and the map the rows group by.
         projects: () => projectRollup(),
-        agentProjects: () => agentProjectMap(
-            agents.map(a => ({ id: a.id, name: a.name, dir: a.dir })), projectDefs()),
+        agentProjects: () => agentProjectNames(
+            agents.map(a => ({ id: a.id, name: a.name, dir: a.dir })), projectStore.all()),
         projectStyle: (name: string) => projectStyleOf(name)
     };
     const detailDeps = {
@@ -5972,7 +5982,63 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         title?: string;
         cwd?: string;
         agentName?: string;
+        /**
+         * ‼️ THE SELECTION, WHEN THE ROW THAT WAS RIGHT-CLICKED IS IN ONE.
+         *
+         * The sessions tables put these on a selected row's
+         * `data-vscode-context`, so the whole right-click menu becomes a bulk
+         * menu with no new command, no new message and nothing for a page that
+         * embeds the table to answer. A row that is NOT selected carries
+         * neither key, which is what makes "the menu acts on what you pointed
+         * at" true without any click-time bookkeeping.
+         *
+         * `afSelectedSessions` is the ids — the same key the project commands
+         * have taken since the selection contract was written. `afSelectedFiles`
+         * carries the transcript paths beside them, because a session that has
+         * not reported an id yet still has a file, and dropping it silently
+         * would make a bulk action quietly act on fewer rows than the bar says.
+         */
+        afSelectedSessions?: unknown;
+        afSelectedFiles?: unknown;
     }
+
+    /**
+     * Every session a command was invoked on — one when it was one row, all of
+     * them when the row was part of a selection.
+     *
+     * Commands that are only meaningful on a single session (open it, rename
+     * it, resume it) keep using `sessionFromArg` and act on the row that was
+     * clicked; a bulk "open" is twelve editors nobody asked for. The ones that
+     * are meaningful in bulk — pin, label, file to a project, interrupt, end,
+     * clear — go through here.
+     */
+    const sessionsFromArg = (arg?: SessionRef | SessionInfo | string): SessionInfo[] => {
+        const ref = arg && typeof arg === 'object' ? arg as SessionRef : undefined;
+        const strings = (v: unknown): string[] => (Array.isArray(v)
+            ? v.map(x => String(x ?? '').trim()).filter(Boolean) : []);
+        const keys = [...strings(ref?.afSelectedSessions), ...strings(ref?.afSelectedFiles)];
+        if (!keys.length) {
+            const one = sessionFromArg(arg);
+            return one ? [one] : [];
+        }
+        const out: SessionInfo[] = [];
+        const seen = new Set<string>();
+        for (const key of keys) {
+            const s = sessionFromArg(key);
+            // A path and an id can name the SAME session — the table sends both
+            // lists, so without this every bulk action would run twice on every
+            // row (and "end 12 sessions" would ask 24 times).
+            const mark = s?.file || s?.sessionId || '';
+            if (!s || !mark || seen.has(mark)) { continue; }
+            seen.add(mark);
+            out.push(s);
+        }
+        return out;
+    };
+
+    /** "3 sessions" / "this session" — the phrase a confirmation needs. */
+    const sessionCountLabel = (n: number, one: string): string =>
+        (n === 1 ? one : `${n} sessions`);
     const sessionFromArg = (arg?: SessionRef | SessionInfo | string): SessionInfo | undefined => {
         if (!arg) { return undefined; }
         if (typeof arg === 'string') {
@@ -6753,12 +6819,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             index,
             getInsights: () => insights,
             live,
-            projects: () => projectDefs(),
+            projects: () => projectStore.all(),
             budgets: () => cfg().get<Record<string, number>>('budgets', {})
         }, now);
         const today = dayKey(now);
-        const projectByAgent = agentProjectMap(
-            agents.map(a => ({ id: a.id, name: a.name, dir: a.dir })), projectDefs());
+        const projectByAgent = agentProjectNames(
+            agents.map(a => ({ id: a.id, name: a.name, dir: a.dir })), projectStore.all());
         const needsRows = buildNeeds().map(n => ({
             kind: n.kind, agent: n.agentName, title: n.title, detail: n.detail, ts: n.ts
         }));
@@ -7044,20 +7110,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }));
 
     // ---------- projects ----------
-    // The registry is projectStore; these are the two shapes the surfaces ask
-    // for. `legacyDefs` exists only while the pages still speak ProjectDef —
-    // it is an adapter over the real projects, never a second source of truth.
-    const legacyDefs = (): ProjectDef[] => projectStore.all().map(p => {
-        const def: ProjectDef = { name: p.name };
-        if (p.match?.agents?.length) { def.agents = p.match.agents; }
-        const paths = [p.folder, ...(p.repos ?? [])].filter((x): x is string => !!x);
-        if (paths.length) { def.paths = paths; }
-        if (p.budgetUSD) { def.budgetUSD = p.budgetUSD; }
-        if (p.summary) { def.note = p.summary; }
-        return def;
-    });
-    /** Back-compat alias while the pages are converted. */
-    const projectDefs = legacyDefs;
+    // The registry is projectStore, and every surface asks it directly. There
+    // is one shape of a project and one resolution order behind it — a second
+    // shape of the same fact is a second answer waiting to disagree.
     /**
      * The cost rollup every project surface reads.
      *
@@ -8455,52 +8510,77 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // would turn every click on a pinned tree row into "pin it again".
         vscode.commands.registerCommand('agentfarm.pinSession',
             async (arg?: (SessionRef & { wantPinned?: boolean }) | SessionInfo) => {
-                const s = sessionFromArg(arg);
-                const sessionId = s?.sessionId;
-                if (!sessionId) { return; }
-                const want = typeof (arg as { wantPinned?: boolean })?.wantPinned === 'boolean'
+                // ‼️ On a selection the whole set moves the SAME way, decided by
+                // the row that was clicked. Toggling each one individually would
+                // invert the ones already pinned — "pin these twelve" would come
+                // back with four of them unpinned, and the reader would have to
+                // work out why.
+                const list = sessionsFromArg(arg).filter(s => !!s.sessionId);
+                if (!list.length) { return; }
+                const explicit = typeof (arg as { wantPinned?: boolean })?.wantPinned === 'boolean'
                     ? (arg as { wantPinned?: boolean }).wantPinned
                     : undefined;
-                const marks = sessionMarks();
-                const next = togglePin(marks, sessionId, want);
-                await saveMarks(next);
-                const nowPinned = isPinned(next, sessionId);
-                const title = s?.title || index.all().find(x => x.sessionId === sessionId)?.title || sessionId.slice(0, 8);
+                let marks = sessionMarks();
+                const want = explicit !== undefined
+                    ? explicit
+                    : !isPinned(marks, (sessionFromArg(arg)?.sessionId ?? list[0].sessionId) as string);
+                for (const s of list) { marks = togglePin(marks, s.sessionId as string, want); }
+                await saveMarks(marks);
+                const title = list.length === 1
+                    ? `"${list[0].title || (list[0].sessionId as string).slice(0, 8)}"`
+                    : `${list.length} sessions`;
                 void vscode.window.setStatusBarMessage(
-                    nowPinned
-                        ? `$(pinned) Agent Farm: "${title}" is on your shelf`
-                        : `Agent Farm: "${title}" taken off the shelf`, 4000);
+                    want
+                        ? `$(pinned) Agent Farm: ${title} on your shelf`
+                        : `Agent Farm: ${title} taken off the shelf`, 4000);
             }),
 
         // The id is the handle every surface shows and the resume filter
         // searches — so it is worth one click, from wherever you can see it.
         vscode.commands.registerCommand('agentfarm.copySessionId',
             async (arg?: SessionRef | SessionInfo) => {
-                const sessionId = sessionFromArg(arg)?.sessionId;
-                if (!sessionId) {
+                const ids = sessionsFromArg(arg)
+                    .map(s => s.sessionId).filter((x): x is string => !!x);
+                if (!ids.length) {
                     void vscode.window.showInformationMessage(
                         'Agent Farm: this session has not reported its id yet — say something in it first.');
                     return;
                 }
-                await vscode.env.clipboard.writeText(sessionId);
+                // One per line on a selection: that is what pastes into a
+                // command, a note or a filter without further editing.
+                await vscode.env.clipboard.writeText(ids.join('\n'));
                 void vscode.window.setStatusBarMessage(
-                    `$(clippy) Agent Farm: ${sessionId.slice(0, 8)} copied`, 4000);
+                    `$(clippy) Agent Farm: ${ids.length === 1 ? ids[0].slice(0, 8) : `${ids.length} ids`} copied`, 4000);
             }),
 
         vscode.commands.registerCommand('agentfarm.tagSession',
             async (arg?: SessionRef | SessionInfo) => {
-                const sessionId = sessionFromArg(arg)?.sessionId;
-                if (!sessionId) { return; }
+                const list = sessionsFromArg(arg).filter(s => !!s.sessionId);
+                if (!list.length) { return; }
                 const marks = sessionMarks();
                 const known = allTags(marks);
+                // The box opens on what the CLICKED row has. On a selection that
+                // is a starting point, not a merge: showing the union of twelve
+                // sessions' labels and writing it back would put every label on
+                // every one of them.
+                const clicked = sessionFromArg(arg)?.sessionId ?? (list[0].sessionId as string);
                 const value = await vscode.window.showInputBox({
-                    prompt: 'Labels for this session, comma separated (empty = none)',
+                    prompt: list.length === 1
+                        ? 'Labels for this session, comma separated (empty = none)'
+                        : `Labels for all ${list.length} selected sessions, comma separated (empty = none) — this REPLACES what each of them carries`,
                     placeHolder: known.length ? `in use: ${known.join(', ')}` : 'e.g. zen, release, customer-x',
-                    value: tagsOf(marks, sessionId).join(', '),
+                    value: tagsOf(marks, clicked).join(', '),
                     ignoreFocusOut: true
                 });
                 if (value === undefined) { return; }
-                await saveMarks(setTags(marks, sessionId, parseTags(value)));
+                const tags = parseTags(value);
+                let next = marks;
+                for (const s of list) { next = setTags(next, s.sessionId as string, tags); }
+                await saveMarks(next);
+                if (list.length > 1) {
+                    void vscode.window.setStatusBarMessage(
+                        `Agent Farm: ${list.length} sessions labelled`, 4000);
+                }
             }),
 
         // The shelf itself: pinned first, then the recent list, one Enter to
@@ -8570,12 +8650,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // ---------- A3 ----------
         vscode.commands.registerCommand('agentfarm.interruptSession',
             (arg?: SessionRef | SessionInfo) => {
-                void interruptSession(sessionFromArg(arg));
+                const list = sessionsFromArg(arg);
+                if (list.length <= 1) { void interruptSession(list[0]); return; }
+                // Esc into each one's own terminal, one after another — the same
+                // single-session path, not a second implementation of it.
+                void (async () => { for (const s of list) { await interruptSession(s); } })();
             }),
 
         vscode.commands.registerCommand('agentfarm.endSession',
             async (arg?: SessionRef | SessionInfo) => {
-                const s = sessionFromArg(arg);
+                const list = sessionsFromArg(arg);
+                if (list.length > 1) {
+                    // ‼️ Stopping twelve claude processes is not something to
+                    // discover afterwards. The single-session path asks its own
+                    // way (pickLiveSessionId); a bulk end asks once, plainly,
+                    // and names the number.
+                    const yes = await vscode.window.showWarningMessage(
+                        `End ${list.length} sessions?`,
+                        {
+                            modal: true,
+                            detail: 'Each one\'s claude process is stopped. The transcripts stay where they are — nothing is deleted.'
+                        },
+                        `End ${list.length} sessions`);
+                    if (!yes) { return; }
+                    let ended = 0;
+                    for (const s of list) {
+                        if (!s.sessionId) { continue; }
+                        await endLiveSession(s.sessionId, s.agentName);
+                        ended++;
+                    }
+                    void vscode.window.showInformationMessage(
+                        `Agent Farm: ended ${ended} session${ended === 1 ? '' : 's'}.`);
+                    return;
+                }
+                const s = list[0];
                 const sessionId = await pickLiveSessionId(s?.sessionId,
                     'End which session? (its claude process is stopped)');
                 if (!sessionId) { return; }
@@ -8603,7 +8711,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         `Agent Farm: cleared ${dead.length} finished session(s) from the live timeline.`);
                     return;
                 }
-                const ref = sessionFromArg(arg);
+                const list = sessionsFromArg(arg);
+                if (list.length > 1) {
+                    // Clearing is not destructive — the session itself is
+                    // untouched — so a selection needs no confirmation, only an
+                    // honest count of what actually left the timeline.
+                    let cleared = 0;
+                    for (const s of list) {
+                        if (s.sessionId && live.dismiss(s.sessionId, 'cleared in Agent Farm', true)) { cleared++; }
+                    }
+                    void vscode.window.showInformationMessage(cleared
+                        ? `Agent Farm: cleared ${cleared} of ${list.length} from the live timeline — the sessions themselves were not touched.`
+                        : 'Agent Farm: none of those are on the live timeline.');
+                    return;
+                }
+                const ref = list[0];
                 const sessionId = await pickLiveSessionId(ref?.sessionId,
                     'Clear which session from the live timeline?');
                 if (!sessionId) { return; }
@@ -9072,7 +9194,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 index,
                 getInsights: () => insights,
                 live,
-                projects: () => projectDefs(),
+                projects: () => projectStore.all(),
                 budgets: () => cfg().get<Record<string, number>>('budgets', {})
             });
         }),

@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.58.0 — Twelve sessions, one menu (2026-08-03)
+
+Two pieces of Phase 1 that were put aside rather than done. Both are closed.
+
+**‼️ The sessions tables hold a selection now — and it does not get a bar of its own.** A checkbox on every row, **shift-click** for a range in the order you are looking at them, a header box that takes everything *listed* (never the rows a filter is hiding), and a strip that says how many, what they cost and how many are running. The actions are the ones that were already there: the selection rides along on the row's `data-vscode-context`, so the right-click menu that has been the whole session action set since 3.20 becomes a **bulk** menu — pin, label, file to a project, copy ids, interrupt, end, clear — with no new command, no new message, and nothing for a page that embeds the table to answer. A bulk action bar would have been a second, shorter copy of that menu, and the copy is the one that goes out of date.
+
+Three details are the whole difference between this working and this being a trap. A row **outside** the selection carries no selection, so the menu always acts on what you pointed at. A bulk **pin** decides the direction once, from the row you clicked, and moves the whole set that way — toggling each one on its own state would have given back "pin these twelve" with four of them unpinned. And **ending** a set asks first, modally, naming the number; **clearing** does not, because it destroys nothing. The selection is not persisted (a set restored from last week is an action half-taken), and a row that leaves the pool leaves the selection with it.
+
+**The bridge learned the same plural**, because a thing the panel can do to a set and the bridge can only do one at a time is two surfaces drifting apart: `sessions.pin` · `sessions.tag` · `sessions.end` · `sessions.dismiss` all take `sessionIds` now, through one shared helper, and a session named twice is done once. `sessions.pin` **refuses to toggle** a set — it has to be told which way they all go.
+
+**And the old settings-based project model is gone, not deprecated.** `agentFarm.projects`, the one-time import that read it, and the adapter that flattened real projects back into its shape have all been removed. A project is an entity in the registry with a folder of its own; a second definition of the same thing living in `settings.json` is a second answer waiting to disagree with the first. An agent's project is now resolved by the **same** function a session's is, so the portfolio page and the cost table beside it cannot tell you different things about whose job something is. *(If you still had projects only in that setting and never opened the Projects page, they were imported long before this release — the registry has been the source since 3.52.)*
+
 ## 3.57.1 — Three ways the write side could still lose something (2026-08-03)
 
 An audit of everything 3.57.0 shipped, looking for the cases where a write that was *supposed* to refuse would instead go through. Three of them were real.

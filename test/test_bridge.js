@@ -9,7 +9,7 @@ const os = require('os');
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
-const { BridgeRegistry, parseBridgeRequest, need, argStr, optStr } =
+const { BridgeRegistry, parseBridgeRequest, need, argStr, optStr, argSessionIds } =
     require(path.join(__dirname, '..', 'out', 'core', 'bridge.js'));
 const { antigravityStatus, syncToAntigravity } =
     require(path.join(__dirname, '..', 'out', 'core', 'antigravity.js'));
@@ -74,6 +74,32 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
 
     const fine = await reg.dispatch('x.strict', { name: ' ali ', extra: 7 });
     ok('argStr trims; optStr ignores non-strings', fine.ok && fine.result.name === 'ali' && got === '');
+
+    // ---------- one spelling of "which sessions" ----------
+    // ‼️ Once a panel can do something to a SELECTION, the bridge has to be able
+    // to do it to a set or the two surfaces have drifted (_REF/agentfarm-dev.md).
+    // One helper, so no op invents its own plural key.
+    ok('a single sessionId is a set of one', argSessionIds({ sessionId: ' a ' }).join() === 'a');
+    ok('sessionIds is the plural', argSessionIds({ sessionIds: ['a', 'b'] }).join() === 'a,b');
+    ok('both together are merged, singular first',
+        argSessionIds({ sessionId: 'a', sessionIds: ['b'] }).join() === 'a,b');
+    ok('‼️ the same session named twice is done ONCE',
+        argSessionIds({ sessionId: 'a', sessionIds: ['a', 'b', 'a'] }).join() === 'a,b');
+    ok('blanks and junk are dropped', argSessionIds({ sessionIds: ['', '  ', null] }).length === 0);
+    ok('nothing given is an empty set, not a crash', argSessionIds({}).length === 0);
+
+    // and the ops that can act on a set actually say so in their contract
+    {
+        const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        for (const op of ['sessions.pin', 'sessions.tag', 'sessions.end', 'sessions.dismiss']) {
+            const block = src.slice(src.indexOf(`op: '${op}'`), src.indexOf(`op: '${op}'`) + 2000);
+            ok(`${op} takes a set and its describe says so`,
+                /argSessionIds\(args\)/.test(block) && /sessionIds/.test(block));
+        }
+        const pin = src.slice(src.indexOf("op: 'sessions.pin'"), src.indexOf("op: 'sessions.pin'") + 1400);
+        ok('‼️ a bulk pin refuses to toggle — a set must be told which way to go',
+            /pinned \(true\/false\) is required for a set/.test(pin));
+    }
 
     // ---------- §19.C: agents.sync op contract (cross-engine forward sync) ----------
     // Registers the real handler shape (backed by the compiled antigravity + codex

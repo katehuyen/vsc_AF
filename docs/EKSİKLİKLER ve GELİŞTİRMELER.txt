@@ -10,11 +10,13 @@
 
 - tur suresini sadece saniye olarak gösteriyor belli bir zaman sonra dakika ve saat dolunca saat olarak da göstermeye başlaması lazım hatta öyle ki gün bile olması lazım eğer teorik olarak bir şeyler çok uzarsa diye..örnek 1h-23m-42s 
 
-- console sol panelde aktif kartların üzerine sağ klik ile  basıldığında end sesssion  seçeneği var ve  ondan sonra da remove from list benzeri bir seçenek çıkıyor..  ama bir tane daha seçenek olsun ikisini birlikte yapan E.. & R... Session  şeklinde yani tek basmada hem sonlandırsın hem listeden çıkarsın aktif kartlar listesinden yani..  kelimeleri tam hatırlamadığım için sadece baş harflerini yazdım sen doğrusunu yazarsın
+- console sol panelde aktif kartların üzerine sağ klik ile basıldığında end sesssion  seçeneği var ve  ondan sonra da remove from list benzeri bir seçenek çıkıyor..  ama bir tane daha seçenek olsun ikisini birlikte yapan End & Remove Session  şeklinde yani tek basmada hem sonlandırsın hem listeden çıkarsın aktif kartlar listesinden yani..
+
+- dashboard  içindeki oturumlar tablosu project sütununda proje isminin başında bir. Var gri renkte bir. Konulmuş o noktanın bir fonksiyonu var mı yok mu yani eğer bir fonksiyon yoksa kaldıralım varsa bir rengi ile ilgili kalabilir ama neden gri aktif olan bir şey için onu anlamadım yani eğer rengi ile ilgiliyse herhalde aktif olanlara gri seçilmemiştir diye düşünüyorum.. ya da sırf şekil olsun diye konulduysa kaldıralım gerek yok.. bir de üzerine gelince proje isminin tool tip olarak tüm proje ismi çıksın, çünkü bazen uzun proje isimleri oraya sığmazsa oraya yazağından daha fazlasını yani tümünü görebilmek lazım o şekilde.  yine yanındaki Title  sütununda tool tip  çok yanlış kullanılmış sütunda ne yazıyorsa aynısı çıkıyor yani aynısı çıkıyorsa benim ona ihtiyacım yok ki.. sütun dar olduğu için orada çıkmayan şeylerin de görülmesi lazım ki o zaman bir işe yarasın mesela onun 5 katı uzunlukta olursa bir işe yarar. onda da değişiklik yap.  bu sayfanın dışında bir de ajanların kendi sayfasında böyle bir oturumlar tablosu var biliyorsun, orada projeler hiç eklenmemiş ne filtreye eklenmiş ne de tabloya eklenmiş.  filtreye de tabloya da ekleyelim fakat tabloya çok dar ekleyelim yer kaplamasın  ve tooltip  düzenlemelerini iki sütun içinde burada da aynı şekilde yapalım.
 
 - eklentinin token sayacı doğru çalışıyor mu test edelim
 
-
+- vscode  durum çubuğunda proje isminin çıkması çok fazla yer kaplıyor.  projenin ismini oraya yazmayalım sadece  ikon ve Project  t yazsın sabit olarak üzerine geldiğin zaman tooltip  içinde zaten gereken bilgiler yazıyor.  eğer ilave bilgi gerekiyorsa buraya koyup bütün bilgiler buradan olsun üstelik başka türlü tıklamalar falan olursa da buraya link olarak ilave et zenginleştirmek açısından. bir de yeri durum çubuğunda çok erken gelmiş bunu daha sağa kaydırmak lazım kalan kullanım yüzdesi kısmının daha sağına geçsin bu ondan sonra gelsin yani.
 
 
 # BİTENLER
