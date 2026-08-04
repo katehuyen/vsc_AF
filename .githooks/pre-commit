@@ -1,0 +1,18 @@
+#!/bin/sh
+# Encoding guard. package.json has been silently re-encoded twice now (v6.116 and
+# again after) by a tool that read it as CP1252 and wrote it back as UTF-8 — a
+# version bump was the only intended change both times, and 135 lines of command
+# titles came along for the ride. test_encoding.js catches it; this makes running
+# it something nobody has to remember.
+#
+# Installed by "npm install" (the prepare script). To skip once: git commit --no-verify
+node test/test_encoding.js >/dev/null 2>&1 && exit 0
+
+echo ""
+echo "COMMIT BLOCKED — mojibake in the working tree."
+node test/test_encoding.js | tail -20
+echo ""
+echo "Repair with:  node test/test_encoding.js --fix"
+echo "Cause: a tool read a UTF-8 file as CP1252 and wrote it back as UTF-8."
+echo "In Windows PowerShell 5.1 that is Get-Content without -Encoding UTF8."
+exit 1

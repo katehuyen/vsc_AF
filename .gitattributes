@@ -1,0 +1,3 @@
+# core.autocrlf=true would hand the hook a CRLF shebang on a fresh clone and sh
+# would refuse to run it — a guard that silently stops guarding is worse than none.
+.githooks/** text eol=lf

@@ -1,4 +1,5 @@
 .vscode/**
+.githooks/**
 src/**
 node_modules/**
 tsconfig.json

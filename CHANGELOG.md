@@ -2,6 +2,12 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.65.0 — The garbage characters came back, so this time a hook holds the line (2026-08-05)
+
+**Every stray character in the command palette, the right-click rows, the sidebar tooltips, the settings descriptions, the walkthrough and the empty-view messages came from one file.** `package.json` had been read as CP1252 and written back as UTF-8 — 135 lines of collateral damage on a commit whose only intended change was `"version": "3.63.0"` → `"3.63.1"`. The repaired file is now byte-identical to the last undamaged copy apart from the version line, which is the proof that the repair neither missed anything nor over-corrected. Roughly half of it was invisible: CP1252's five undefined slots come through as bare C1 controls that render as nothing, which is why it survives review.
+
+**This is the second time the same fix has been made, so it is no longer left to memory.** `test/test_encoding.js` already existed and already catches this; what was missing was anything that runs it. Two places now do: `.githooks/pre-commit` blocks the commit and prints the repair command, and `npm run package` refuses to build a VSIX over a damaged tree. The hook installs itself on `npm install` (the `prepare` script points `core.hooksPath` at `.githooks`), so a fresh clone is protected without a setup step.
+
 ## 3.63.1 — The step-glyph key, where you will actually look for it (2026-08-04)
 
 The chips are one character each, and a glyph is only as good as the place you can re-learn it. Two keys, both hung on labels that are always on screen and never move: the Console puts it on the **session id** at the far left of the line under the composer (hover), and the session page puts it on the **Activity card** — the card that counts those very steps. Hover it for the whole scheme in words; **click it** to pin the strip open under the cards. Folded by default, because a legend you have already learned is clutter, and it stays open across re-renders once you open it.
