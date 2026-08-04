@@ -79,6 +79,12 @@ const sandbox = {
             esc: s => String(s === undefined || s === null ? '' : s).replace(/</g, '&lt;'),
             fmtUSD: v => '$' + (v || 0),
             fmtTok: v => v + 't',
+            STEP_KIND: {},
+
+            stepChip: () => '',
+
+            stepKindLegend: () => '',
+
             fmtTokW(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' [w' + this.fmtTok(Math.round(w)) + ']' : ''); },
             fmtTokWText(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' (w' + this.fmtTok(Math.round(w)) + ')' : ''); },
             WEIGHTED_TIP: 'weighted',

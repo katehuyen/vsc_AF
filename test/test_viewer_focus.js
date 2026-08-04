@@ -100,6 +100,12 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
             AFCharts: {
                 esc: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'),
                 fmtTok: (n) => String(n || 0),
+            STEP_KIND: {},
+
+            stepChip: () => '',
+
+            stepKindLegend: () => '',
+
             fmtTokW(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' [w' + this.fmtTok(Math.round(w)) + ']' : ''); },
             fmtTokWText(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' (w' + this.fmtTok(Math.round(w)) + ')' : ''); },
             WEIGHTED_TIP: 'weighted',

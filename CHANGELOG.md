@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.62.0 — Every cache write was being under-charged, and every step now says what KIND of step it is (2026-08-04)
+
+**‼️ A CORRECTION FIRST: 3.61.0's cache-write weight was wrong, on 100% of the data.** It was set from the published price ratio for a **5-minute** cache write (1.25x a fresh input token) without first checking what the transcripts actually contain. They contain the answer, in a field nobody had read: `usage.cache_creation` splits the write by TTL, and across 3 813 assistant lines in the 40 newest transcripts **17 923 938 of 17 923 938 cache-creation tokens were `ephemeral_1h` and zero were 5-minute**. A 1-hour write costs **2x** input, so every ⚖ figure was 1.6x light on the single most expensive thing in a turn. `toUsage()` now reads the split and prices each half at its own rate, everywhere — a usage block that reports no split is charged at the **1-hour** rate, because under-stating what a turn cost the limit is the exact failure this whole line of work exists to fix.
+
+**Every step now says what KIND of step it is.** A turn was a list of things that looked alike: `Read D:/x.ts` and the model reasoning for nine seconds drew the same sort of row, though one runs on this machine for free and the other is billed at the output rate — so "where did my limit go?" had no answer on any page. Nine categories, each with one glyph and one sentence saying what it costs: **◈ thinking** · **▸ reply** · **⌘ local tool** · **⇄ MCP tool** · **⌗ web** · **⑂ sub-agent** · **⚙ harness** · **↩ tool result** · **· local only**. They are not invented — every one was counted in this machine's own transcripts first (60 files, 21 705 lines): Bash 1349, Edit 1086, Read 636, PowerShell 425, Grep 230, Write 168, `mcp__obsidian__*` 45, `mcp__playwright__*` 13, WebFetch 5, WebSearch 5, and the harness tools besides.
+
+**‼️ Thinking was the invisible one.** 1 737 thinking blocks against 878 text blocks — the model reasons about twice as often as it speaks, every one of those tokens is billed at the **output** rate, the dearest there is, and nothing anywhere counted them. The rows are still not rendered (they are the model's private working) but the turn now says how many there were.
+
+**And each step carries what its API call spent** — raw and ⚖ — written **once per call, on its first block**. One call carries several steps and repeats its whole usage on each of them, so a row with no figure did not cost nothing: it rode on the call above it, and the tooltip says exactly that. Live in the Console conversation, in the working strip (the spinner now leads with the category of what is happening), in the transcript page's meta line, and in the Markdown export.
+
+*Also:* a browser driven over MCP (`mcp__playwright__*`, `mcp__chrome-devtools__*`) is filed as **web**, not MCP — it is traffic to the open internet whatever the server is called. A tool nobody has listed reads as **local**, which is the assumption that costs nothing when it is wrong. The webview's copy of the category table is held identical to `src/core/stepkind.ts` by `test_step_kinds.js`, so a chip in the Console and a cell in the viewer cannot describe one step two ways.
+
 ## 3.61.0 — Every token figure now carries what it cost the LIMIT, not just what it measured (2026-08-04)
 
 Five investigations have now gone looking for a token-counting bug. There is not one, and this release settles it with the experiment nobody had run — then fixes the thing that actually misled everyone.

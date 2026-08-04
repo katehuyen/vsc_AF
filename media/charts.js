@@ -69,6 +69,48 @@
     }
 
     /**
+     * ‼️ WHAT KIND OF STEP THIS IS — the webview's copy of `src/core/stepkind.ts`.
+     *
+     * A turn was a list of things that looked alike: a file read off this disk
+     * and the model reasoning for nine seconds drew the same row, though one
+     * costs nothing to run and the other is billed at the output rate. Without
+     * the kind, "where did my limit go?" has no answer on the page.
+     *
+     * Held identical to the TypeScript table by `test_step_kinds.js` — a chip in
+     * the Console and a cell in the viewer must not describe one step two ways.
+     */
+    const STEP_KIND = {
+        think: { glyph: '◈', label: 'thinking', cost: 'model reasoning — billed as output tokens, the dearest kind' },
+        say: { glyph: '▸', label: 'reply', cost: 'model writing — billed as output tokens' },
+        local: { glyph: '⌘', label: 'local tool', cost: 'runs on this machine — no tokens to run; its result is paid on the next call' },
+        mcp: { glyph: '⇄', label: 'MCP tool', cost: 'a request to an MCP server — no model tokens; its result is paid on the next call' },
+        web: { glyph: '⌗', label: 'web', cost: 'out to the internet — no model tokens; the page comes back into context' },
+        subagent: { glyph: '⑂', label: 'sub-agent', cost: "its own conversation with its own context, spending this session's budget" },
+        harness: { glyph: '⚙', label: 'harness', cost: 'inside the CLI — no model, no network' },
+        result: { glyph: '↩', label: 'tool result', cost: 'free to produce; this is what makes the next call bigger' },
+        none: { glyph: '·', label: 'local only', cost: 'never reached a model' }
+    };
+
+    /** `◈` with the explanation on hover. Empty string for an unknown kind, so
+     *  a row from an older transcript simply carries no chip. */
+    function stepChip(kind, tokens, wTokens) {
+        const s = STEP_KIND[kind];
+        if (!s) { return ''; }
+        const cost = tokens > 0
+            ? '\nThis call: ' + fmtTokWText(tokens, wTokens)
+            : '\nThis row rode on the call above it — one API call carries several steps and its cost is written once.';
+        return '<span class="skind sk-' + kind + '" title="' + esc(s.label + ' — ' + s.cost + cost) + '">'
+            + s.glyph + '</span>';
+    }
+
+    /** The legend, for the one place that explains the whole scheme. */
+    function stepKindLegend() {
+        return Object.keys(STEP_KIND).map(k =>
+            '<span class="skleg" title="' + esc(STEP_KIND[k].cost) + '"><span class="skind sk-' + k + '">'
+            + STEP_KIND[k].glyph + '</span> ' + esc(STEP_KIND[k].label) + '</span>').join(' ');
+    }
+
+    /**
      * A duration read at a glance: `34s` · `3m-29s` · `1h-4m-23s` · `1d-7h-54m-41s`.
      *
      * ‼️ SECONDS ALONE STOP BEING AN ANSWER AT ABOUT TWO MINUTES. The strips
@@ -303,5 +345,5 @@
         return renderSpeaker(rawModel, pageUpper, (window.__AFUI__ || {}).speaker);
     }
 
-    window.AFCharts = { stackedBars, donut, hbars, heatmap, sparkline, esc, fmtUSD, fmtTok, fmtTokW, fmtTokWText, WEIGHTED_TIP, fmtDur, fmtSteps, STEPS_TIP, aiName, parseModel, renderSpeaker, aiLabel, PALETTE };
+    window.AFCharts = { stackedBars, donut, hbars, heatmap, sparkline, esc, fmtUSD, fmtTok, fmtTokW, fmtTokWText, WEIGHTED_TIP, STEP_KIND, stepChip, stepKindLegend, fmtDur, fmtSteps, STEPS_TIP, aiName, parseModel, renderSpeaker, aiLabel, PALETTE };
 })();

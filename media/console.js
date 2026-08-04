@@ -336,6 +336,9 @@
         .filechip { display:inline-block; font-size:10px; padding:1px 7px; margin-left:6px; border-radius:8px;
             cursor:pointer; border:1px solid var(--vscode-widget-border,#4444); }
         .filechip:hover { background:var(--vscode-list-hoverBackground); }
+        /* what THIS call spent, hung on the step that spent it — an annotation,
+           never a headline competing with the row's own words */
+        .steptok { float:right; font-size:10px; opacity:.5; margin-left:8px; cursor:help; }
         .permbox { margin:10px; padding:9px 11px; border-radius:8px;
             border:1px solid var(--vscode-editorWarning-foreground,#cca700);
             background:color-mix(in srgb, var(--vscode-editorWarning-foreground,#cca700) 12%, transparent); }
@@ -751,8 +754,19 @@
             // not the question that reply was answering.
             return `<div class="msg user${m.steer ? ' steer' : ''}"${m.steer ? ' title="Said into the running turn — the agent picks it up at its next step"' : ''}><span class="who">you</span><div class="body">${C.esc(m.text || '')}</div></div>`;
         }
+        // ‼️ EVERY STEP ROW SAYS WHAT KIND OF STEP IT IS AND WHAT IT COST.
+        // The conversation used to show only WHAT happened: a file read off
+        // this disk and the model reasoning for nine seconds drew the same kind
+        // of row, though one is free to run and the other is billed at the
+        // output rate. The chip is the category, the figure beside it is what
+        // that API call spent — written ONCE per call, on its first block, so
+        // a row with no figure rode on the one above it (see stepkind.ts).
+        const step = m => C.stepChip(m.kind, m.stepTokens, m.stepWTokens)
+            + (m.stepTokens > 0
+                ? `<span class="steptok" title="What this API call spent — one call carries several steps and the figure is written once.">${C.fmtTokW(m.stepTokens, m.stepWTokens)}</span>`
+                : '');
         if (m.role === 'agent') {
-            return `<div class="msg"><span class="who">agent</span><div class="body">${C.esc(m.text || '')}</div></div>`;
+            return `<div class="msg"><span class="who">agent</span><div class="body">${C.esc(m.text || '')}${step(m)}</div></div>`;
         }
         if (m.role === 'tool') {
             if (m.tool) {
@@ -760,9 +774,9 @@
                     ? `<span class="filechip" data-open="${C.esc(m.tool.file)}" title="Open this file">✎ open</span>
                        <span class="filechip" data-diff="${C.esc(m.tool.file)}" title="Diff it against git HEAD">vs HEAD</span>`
                     : '';
-                return `<div class="msg tool"><span class="who">🔧</span><div class="body"><strong>${C.esc(m.tool.name)}</strong> ${C.esc(m.tool.detail)}${chip}</div></div>`;
+                return `<div class="msg tool"><span class="who">🔧</span><div class="body">${C.stepChip(m.kind, m.stepTokens, m.stepWTokens)}<strong>${C.esc(m.tool.name)}</strong> ${C.esc(m.tool.detail)}${chip}${m.stepTokens > 0 ? `<span class="steptok" title="What this API call spent — one call carries several steps and the figure is written once.">${C.fmtTokW(m.stepTokens, m.stepWTokens)}</span>` : ''}</div></div>`;
             }
-            return `<div class="msg tool${m.isError ? ' err' : ''}"><span class="who">${m.isError ? '⚠' : '↳'}</span><div class="body">${C.esc(m.text || '')}</div></div>`;
+            return `<div class="msg tool${m.isError ? ' err' : ''}"><span class="who">${m.isError ? '⚠' : '↳'}</span><div class="body">${C.stepChip(m.kind)}${C.esc(m.text || '')}</div></div>`;
         }
         // The record of a question and of what you said back. The CARD above the
         // composer is where you answer; this is the transcript's memory of it,
@@ -1326,15 +1340,23 @@
         const glyph = SPIN[spinAt % SPIN.length];
         const ran = s.turnStartedAt ? Math.max(0, Date.now() - s.turnStartedAt) : 0;
         // what it reached for last — the honest version of "Thinking…"
+        // ‼️ AND WHAT KIND OF WORK THAT IS. "working" and a tool name told you
+        // WHAT was happening and never WHERE IT COSTS: a Read off this disk is
+        // free to run while the model writing is billed at the output rate. The
+        // chip in front says which, with the explanation on hover.
         let doing = 'working';
+        let doingKind = '';
         for (let i = (s.messages || []).length - 1; i >= 0; i--) {
             const m = s.messages[i];
             if (m.role === 'user') { break; }
             if (m.role === 'tool' && m.tool) {
                 doing = m.tool.detail ? `${m.tool.name} ${m.tool.detail}` : m.tool.name;
+                doingKind = m.kind || '';
                 break;
             }
+            if (m.role === 'agent' && m.text) { doingKind = m.kind || 'say'; doing = 'writing'; break; }
         }
+        const doingChip = doingKind ? C.stepChip(doingKind) + ' ' : '';
         const q = queuedOf(s).length;
         // What this turn is spending, as it spends it. The CLI only reports a
         // turn's real cost when the turn ends, so the money here is priced off
@@ -1353,7 +1375,7 @@
         // already says. The Esc key it also taught now lives in that button's
         // tooltip, where a key hint belongs. What took its place is the one thing
         // nothing else on screen was saying: WHAT this turn is thinking with.
-        return `<span class="spin">${glyph}</span> <b>${C.esc(doing)}</b>
+        return `<span class="spin">${glyph}</span> ${doingChip}<b>${C.esc(doing)}</b>
             <span class="wmeta">${C.fmtDur(ran)}${cost}${stepsHtml(s.turnApiCalls, turnSteps(s))}${q ? ` · ${q} held` : ''}${turnBrainHtml(s.turnModel, s.turnEffort, true)}</span>`;
     }
 

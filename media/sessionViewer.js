@@ -306,11 +306,17 @@
             : { user: 'USER', tool: 'TOOL CALL', toolResult: 'TOOL RESULT', system: 'SYSTEM' }[m.role]);
         const hide = m.turn && collapsed.has(m.turn) ? ' tclosed' : '';
         const cls = m.role + (m.isError ? ' error' : '') + hide;
+        // ‼️ THE KIND LEADS THE META LINE. The transcript could always say what
+        // a step DID; it could never say what sort of thing it was, so a free
+        // local Read and a billed model reply read identically. The chip is
+        // first because it is the question you ask before any other — see
+        // charts.js STEP_KIND. A row with no token figure did not cost nothing:
+        // one API call carries several steps and the figure is written once.
         const meta = [
-            roleLabel + (m.tool ? ` · ${C.esc(m.tool)}` : ''),
+            C.stepChip(m.kind, m.tokens, m.wTokens) + roleLabel + (m.tool ? ` · ${C.esc(m.tool)}` : ''),
             m.ts ? new Date(m.ts).toLocaleTimeString() : '',
             m.model ? C.esc(m.model.replace(/^claude-/, '')) : '',
-            m.tokens ? C.fmtTok(m.tokens) + ' tok' : '',
+            m.tokens ? C.fmtTokW(m.tokens, m.wTokens) + ' tok' : '',
             m.cost ? C.fmtUSD(m.cost) : '',
             m.sidechain ? 'subagent' : '',
             m.isError ? 'ERROR' : ''
@@ -456,10 +462,16 @@
                 lines.push('', `## Turn ${m.turn}/${DATA.turnCount || '?'}${info && info.label ? ' — ' + info.label : ''}${stats}`);
             }
             if (row.headerOnly) { continue; } // folded turn: title only, skip body
+            // The export carries the kind too — a Markdown file handed to
+            // someone else must not lose the one column that says where the
+            // cost came from (see charts.js STEP_KIND).
+            const kindBit = C.STEP_KIND[m.kind]
+                ? `${C.STEP_KIND[m.kind].glyph} ${C.STEP_KIND[m.kind].label}` : '';
             const bits = [
+                kindBit,
                 m.ts ? new Date(m.ts).toLocaleTimeString() : '',
                 m.model ? m.model.replace(/^claude-/, '') : '',
-                m.tokens ? C.fmtTok(m.tokens) + ' tok' : '',
+                m.tokens ? C.fmtTokWText(m.tokens, m.wTokens) + ' tok' : '',
                 m.cost ? C.fmtUSD(m.cost) : '',
                 m.sidechain ? 'subagent' : '',
                 m.isError ? '⚠ ERROR' : ''
@@ -872,6 +884,7 @@
                 <div class="card"><div class="label">Span</div><div class="kpi">${durMin}m</div><div class="sub">${fmtTime(DATA.firstTs)} → ${fmtTime(DATA.lastTs)}</div></div>
                 <div class="card"><div class="label">Activity</div><div class="kpi">${DATA.toolCalls}</div><div class="sub">tool calls · ${DATA.errors} errors · ${C.esc((DATA.models || []).map(m => m.replace(/^claude-/, '')).join(', '))}</div></div>
             </div>
+            <div class="steplegend">${C.stepKindLegend()}</div>
             ${fileBoxHtml()}
             ${turnBoxHtml()}
             ${replay.active ? `

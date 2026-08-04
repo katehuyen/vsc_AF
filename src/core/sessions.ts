@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo } from './agents';
-import { addUsage, contextAfter, emptyUsage, PricingEngine, totalTokens, Usage, weightedTokens } from './pricing';
+import { addUsage, contextAfter, emptyUsage, PricingEngine, RawUsage, toUsage, totalTokens, Usage, weightedTokens } from './pricing';
 import { normalizeMarks, SessionMarks } from './sessionmarks';
 import { dayKey, normPath, truncate } from './util';
 
@@ -195,12 +195,7 @@ interface JsonlLine {
         role?: string;
         model?: string;
         content?: unknown;
-        usage?: {
-            input_tokens?: number;
-            output_tokens?: number;
-            cache_creation_input_tokens?: number;
-            cache_read_input_tokens?: number;
-        };
+        usage?: RawUsage;
     };
 }
 
@@ -400,12 +395,10 @@ export function parseSessionFile(
             const alreadyCounted = usageKey !== ':' && seenUsageKeys.has(usageKey);
             if (!alreadyCounted && msg.usage) {
                 if (usageKey !== ':') { seenUsageKeys.add(usageKey); }
-                const u: Usage = {
-                    input: msg.usage.input_tokens ?? 0,
-                    output: msg.usage.output_tokens ?? 0,
-                    cacheWrite: msg.usage.cache_creation_input_tokens ?? 0,
-                    cacheRead: msg.usage.cache_read_input_tokens ?? 0
-                };
+                // ‼️ Read through toUsage, never field by field: the flat
+                // cache-creation number throws away the TTL split, and a
+                // 1-hour write costs 1.6x what a 5-minute one does.
+                const u: Usage = toUsage(msg.usage);
                 addUsage(info.usage, u);
                 msgTokens = totalTokens(u);
                 // Weighted off the SAME line, inside the SAME dedup guard, from

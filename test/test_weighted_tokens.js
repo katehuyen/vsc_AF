@@ -41,8 +41,25 @@ const U = (input, output, cacheWrite, cacheRead) => ({ input, output, cacheWrite
     // Sonnet is the unit: one fresh input token = 1.
     ok('sonnet input token is the unit', weightedTokens('claude-sonnet-5', U(1, 0, 0, 0)) === 1);
     ok('an output token is five', weightedTokens('claude-sonnet-5', U(0, 1, 0, 0)) === 5);
-    ok('a cache-write token is 1.25', near(weightedTokens('claude-sonnet-5', U(0, 0, 1, 0)), 1.25));
     ok('a cache-read token is a tenth', near(weightedTokens('claude-sonnet-5', U(0, 0, 0, 1)), 0.1));
+
+    // ‼️ CACHE WRITES ARE PRICED BY TTL AND THE DEFAULT MUST BE THE EXPENSIVE
+    // ONE. A 5-minute write is 1.25x input, a 1-hour write is 2x. The first
+    // shipped weighting assumed 5-minute — measured on this machine, 17.92M of
+    // 17.92M cache-creation tokens were `ephemeral_1h` and ZERO were 5-minute,
+    // i.e. the assumption was wrong on 100% of the data. A usage block that
+    // does not report the split is therefore charged at the 1-hour rate:
+    // under-stating what a turn cost the limit is the failure being fixed.
+    const cw = (total, oneHour) => ({ input: 0, output: 0, cacheWrite: total, cacheRead: 0, cacheWrite1h: oneHour });
+    ok('a 5-minute cache write is 1.25', near(weightedTokens('claude-sonnet-5', cw(1, 0)), 1.25));
+    ok('a 1-hour cache write is 2', near(weightedTokens('claude-sonnet-5', cw(1, 1)), 2));
+    ok('an unreported split is charged as 1-hour, never as the cheap one',
+        near(weightedTokens('claude-sonnet-5', U(0, 0, 1, 0)), 2));
+    ok('a mixed write is split, not rounded to one side',
+        near(weightedTokens('claude-sonnet-5', cw(10, 4)), 4 * 2 + 6 * 1.25));
+    ok('a nonsense split (1h > total) cannot exceed the total',
+        near(weightedTokens('claude-sonnet-5', cw(2, 99)), 2 * 2));
+    ok('opus scales the TTL rates too', near(weightedTokens('claude-opus-5', cw(1, 1)), 10));
 
     // ‼️ The model matters: an hour of haiku is not an hour of opus against the
     // limit, and a figure that said it was would send the user optimizing the

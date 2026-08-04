@@ -64,8 +64,9 @@
  * Pure: builders, a parser and a reducer. No io, no vscode.
  */
 
-import { addUsage, contextAfter, emptyUsage, totalTokens, Usage, weightedTokens } from './pricing';
+import { addUsage, contextAfter, emptyUsage, RawUsage, toUsage, totalTokens, Usage, weightedTokens } from './pricing';
 import { isQuotableContextPath, quoteContextPath } from './projectContext';
+import { StepKind, stepKindForTool } from './stepkind';
 
 export type ConsoleStatus = 'starting' | 'idle' | 'working' | 'ended' | 'error';
 
@@ -198,6 +199,26 @@ export interface ConsoleMessage {
     /** how long the turn took, and what it spent — the summary line that closes it */
     ms?: number;
     tokens?: number;
+    /**
+     * WHAT KIND of step this row is — see stepkind.ts.
+     *
+     * ‼️ The conversation showed WHAT happened and never WHERE IT COST. A row
+     * saying `Read D:/x.ts` and a row saying the model thought for nine seconds
+     * looked like the same sort of event; one is free to run and one is billed
+     * at the output rate. Set on every row that represents a step.
+     */
+    kind?: StepKind;
+    /**
+     * What this step's API call spent, attributed ONCE.
+     *
+     * A single call carries several blocks and repeats its whole usage on each
+     * of them, so the figure is hung on the FIRST block of the call and the
+     * rest carry nothing — the same rule the session viewer has always used.
+     * A row with no figure did not cost nothing; it rode on the call above it.
+     */
+    stepTokens?: number;
+    /** …and the same step against the plan limit (see QUOTA_WEIGHTS). */
+    stepWTokens?: number;
 }
 
 export interface ConsoleSessionState {
@@ -339,6 +360,17 @@ export interface ConsoleSessionState {
      * tokens beside it.
      */
     turnApiCalls?: number;
+    /**
+     * Thinking blocks in the RUNNING turn.
+     *
+     * ‼️ THE BIGGEST OUTPUT SPENDER WAS THE ONE THING NOTHING COUNTED. Measured
+     * on this machine (60 transcripts, 21 705 lines): 1 737 thinking blocks
+     * against 878 text blocks — the model reasons about twice as often as it
+     * speaks, and every one of those tokens is billed at the output rate. The
+     * rows are still not rendered (they are the model's private working), but
+     * the strip says how many there were.
+     */
+    turnThinking?: number;
     /**
      * The turn that just FINISHED — kept until the next one starts.
      *
@@ -663,6 +695,9 @@ export function reduceEvent(
         const blocks = Array.isArray(msg?.content) ? msg!.content as Record<string, unknown>[] : [];
         let next = state;
         let changed = false;
+        // What THIS call spent, to hang on its first visible block (see the
+        // `charge` below). Stays 0 on a repeated line, which is the point.
+        let stepSpent = 0, stepWSpent = 0;
         // Tokens are counted off each assistant message's own usage — the same
         // arithmetic the index does on a transcript, so the number on a Console
         // row and the number in the sessions table mean the same thing. (The
@@ -676,12 +711,11 @@ export function reduceEvent(
         const usageKey = `${typeof msg?.id === 'string' ? msg.id : ''}|${typeof o.request_id === 'string' ? o.request_id : ''}`;
         const repeat = usageKey !== '|' && usageKey === state.lastUsageKey;
         if (u && !repeat) {
-            const n = (k: string) => (typeof u[k] === 'number' ? u[k] as number : 0);
-            const one: Usage = {
-                input: n('input_tokens'), output: n('output_tokens'),
-                cacheWrite: n('cache_creation_input_tokens'), cacheRead: n('cache_read_input_tokens')
-            };
+            // ‼️ Through toUsage, so the live strip charges a 1-hour cache write
+            // at the 1-hour rate — the same reading the transcript side does.
+            const one: Usage = toUsage(u as RawUsage);
             const spent = totalTokens(one);
+            stepSpent = spent;
             if (spent) {
                 // The turn keeps its own breakdown as well as the total: the
                 // total is what it spent, the breakdown is what it can be
@@ -704,6 +738,7 @@ export function reduceEvent(
                 // at the parent's rate. See ConsoleState.wTokens.
                 const wSpent = weightedTokens(
                     (typeof msg?.model === 'string' && msg.model) || state.turnModel || state.model || '', one);
+                stepWSpent = wSpent;
                 next = {
                     ...next, tokens: next.tokens + spent, turnUsage: turn,
                     wTokens: next.wTokens + wSpent,
@@ -721,10 +756,23 @@ export function reduceEvent(
         if (usageKey !== '|' && usageKey !== next.lastUsageKey) {
             next = { ...next, lastUsageKey: usageKey };
         }
+        // ‼️ THE CALL'S COST IS HUNG ON ITS FIRST VISIBLE BLOCK AND NOWHERE
+        // ELSE. One call carries several blocks and repeats its whole usage on
+        // each; writing the figure on every block would say a turn cost four
+        // times what it did. `charge` is spent once and then empties itself.
+        let charge: { stepTokens: number; stepWTokens: number } | undefined =
+            stepSpent > 0 ? { stepTokens: stepSpent, stepWTokens: Math.round(stepWSpent) } : undefined;
+        const takeCharge = () => { const c = charge; charge = undefined; return c ?? {}; };
         for (const b of blocks) {
             const bt = String(b.type ?? '');
             if (bt === 'text' && String(b.text ?? '').trim()) {
-                next = { ...next, messages: [...next.messages, { id: nextId(), ts: now, role: 'agent', text: String(b.text) }], lastTs: now };
+                next = {
+                    ...next, lastTs: now,
+                    messages: [...next.messages, {
+                        id: nextId(), ts: now, role: 'agent', text: String(b.text),
+                        kind: 'say', ...takeCharge()
+                    }]
+                };
                 changed = true;
             } else if (bt === 'tool_use' && b.name) {
                 const name = String(b.name);
@@ -736,12 +784,19 @@ export function reduceEvent(
                     ...next, lastTs: now,
                     messages: [...next.messages, {
                         id: nextId(), ts: now, role: 'tool',
-                        tool: { id: typeof b.id === 'string' ? b.id : undefined, name, detail: shortArg(name, input), file }
+                        tool: { id: typeof b.id === 'string' ? b.id : undefined, name, detail: shortArg(name, input), file },
+                        kind: stepKindForTool(name), ...takeCharge()
                     }]
                 };
                 changed = true;
             }
-            // 'thinking' blocks are deliberately not rendered
+            // 'thinking' blocks are deliberately not rendered as rows — but the
+            // turn is TOLD about them, because they are the biggest output-token
+            // spender in a turn and used to be invisible everywhere.
+            else if (bt === 'thinking' || bt === 'redacted_thinking') {
+                next = { ...next, turnThinking: (next.turnThinking ?? 0) + 1 };
+                changed = true;
+            }
         }
         return { state: changed ? { ...next, status: 'working' } : next, changed };
     }
@@ -763,6 +818,9 @@ export function reduceEvent(
                 messages: [...next.messages, {
                     id: nextId(), ts: now, role: 'tool', isError,
                     text: text.replace(/\s+/g, ' ').trim().slice(0, 400),
+                    // Free to produce, and the reason the NEXT call is bigger —
+                    // which is exactly what a reader cannot otherwise see.
+                    kind: 'result',
                     ...(denial ? { permission: denial } : {})
                 }]
             };
@@ -806,6 +864,7 @@ export function reduceEvent(
                 // the estimate is over: the number above is the CLI's own
                 turnUsage: undefined,
                 turnWTokens: undefined,
+                turnThinking: undefined,
                 turnApiCalls: undefined,
                 // …and it is kept, so the strip above the composer still says
                 // what the turn that just ended cost — and what it thought with,

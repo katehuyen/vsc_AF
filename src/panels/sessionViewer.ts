@@ -3,8 +3,9 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { contextAfter, PricingEngine, totalTokens, Usage, weightedTokens } from '../core/pricing';
+import { addUsage, contextAfter, emptyUsage, PricingEngine, RawUsage, toUsage, totalTokens, Usage, weightedTokens } from '../core/pricing';
 import { sessionOrigin } from '../core/sessions';
+import { StepKind, stepKindForTool } from '../core/stepkind';
 import { collectEdits, fileStats, groupByFile } from '../core/codeedits';
 import { askExportOptions, handleAfNav, htmlShell } from './base';
 
@@ -41,7 +42,13 @@ interface ViewMessage {
     sidechain?: boolean;
     model?: string;
     tokens?: number;
+    /** the same step against the plan limit — see QUOTA_WEIGHTS */
+    wTokens?: number;
     cost?: number;
+    /** WHAT KIND of step this is, and therefore where its cost comes from —
+     *  see stepkind.ts. The transcript said what happened and never what it
+     *  was: a local Read and a nine-second think looked like the same event. */
+    kind?: StepKind;
     /** 1-based turn number (a turn starts at each top-level user prompt). */
     turn?: number;
     /** True on the message that opens a turn — the viewer draws the turn divider here. */
@@ -270,7 +277,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
     try { raw = fs.readFileSync(file, 'utf8'); } catch { /* gone */ }
 
     const messages: ViewMessage[] = [];
-    const usage: Usage = { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 };
+    const usage: Usage = emptyUsage();
     const models = new Set<string>();
     const seen = new Set<string>();
     let cost = 0, wTokens = 0, errors = 0, toolCalls = 0, firstTs = 0, lastTs = 0;
@@ -321,7 +328,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
             costUSD?: number; toolUseResult?: unknown;
             message?: {
                 id?: string; model?: string; content?: unknown;
-                usage?: { input_tokens?: number; output_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number };
+                usage?: RawUsage;
             };
         };
         try { line = JSON.parse(lineText); } catch { continue; }
@@ -358,7 +365,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
                         messages.push({
                             role: 'toolResult', ts,
                             text: clipTool(contentToText(b.content) || String(b.text ?? '')),
-                            isError: !!b.is_error,
+                            isError: !!b.is_error, kind: 'result',
                             sidechain: line.isSidechain
                         });
                     } else if (b?.type === 'text' && b.text && !line.isMeta) {
@@ -410,16 +417,11 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
             const key = `${msg.id ?? ''}:${line.requestId ?? ''}`;
             if (msg.usage && (key === ':' || !seen.has(key))) {
                 if (key !== ':') { seen.add(key); }
-                const u: Usage = {
-                    input: msg.usage.input_tokens ?? 0,
-                    output: msg.usage.output_tokens ?? 0,
-                    cacheWrite: msg.usage.cache_creation_input_tokens ?? 0,
-                    cacheRead: msg.usage.cache_read_input_tokens ?? 0
-                };
-                usage.input += u.input;
-                usage.output += u.output;
-                usage.cacheWrite += u.cacheWrite;
-                usage.cacheRead += u.cacheRead;
+                // ‼️ toUsage, never field by field — the flat cache-creation
+                // number hides the TTL split and a 1-hour write costs 1.6x a
+                // 5-minute one (see Usage.cacheWrite1h).
+                const u: Usage = toUsage(msg.usage);
+                addUsage(usage, u);
                 msgTokens = totalTokens(u);
                 // …and what the same line charged the plan limit, off the model
                 // that served it. Same line, same dedup guard as the raw figure.
@@ -445,11 +447,12 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
                     if (b?.type === 'text' && b.text?.trim()) {
                         messages.push({
                             role: 'assistant', ts, text: b.text,
-                            model: msg.model, tokens: msgTokens, cost: msgCost,
+                            model: msg.model, tokens: msgTokens, wTokens: Math.round(msgWTokens) || undefined,
+                            cost: msgCost, kind: 'say',
                             sidechain: line.isSidechain
                         });
                         if (inTurn > 0) { turnAcc(inTurn).steps++; }
-                        msgTokens = 0; msgCost = 0; // attribute once
+                        msgTokens = 0; msgCost = 0; msgWTokens = 0; // attribute once
                     } else if (b?.type === 'tool_use' && b.name) {
                         toolCalls++;
                         if (inTurn > 0) { turnAcc(inTurn).steps++; }
@@ -458,10 +461,11 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
                             role: 'tool', ts, tool: b.name,
                             input: clipTool(JSON.stringify(b.input ?? {}, null, 2)),
                             model: msgTokens ? msg.model : undefined,
-                            tokens: msgTokens || undefined, cost: msgCost || undefined,
+                            tokens: msgTokens || undefined, wTokens: Math.round(msgWTokens) || undefined,
+                            cost: msgCost || undefined, kind: stepKindForTool(b.name),
                             sidechain: line.isSidechain
                         });
-                        msgTokens = 0; msgCost = 0;
+                        msgTokens = 0; msgCost = 0; msgWTokens = 0;
                     }
                 }
             }
