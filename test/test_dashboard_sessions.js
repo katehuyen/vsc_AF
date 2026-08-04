@@ -170,6 +170,31 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     ok('turns are computed before the maxMessages cut', data.messages.length === 1 && data.turnCount === 2);
     ok('a transcript with no entrypoint opens as your own session', data.origin === 'user');
 
+    // ---- an isMeta line in ARRAY form must not open a turn (measured: 16 such
+    // lines across 353 real transcripts). The string form was already skipped;
+    // the array form was not, so the page counted one turn more than the session
+    // index did and billed the second turn's tokens to a phantom third one.
+    const t3 = '2026-07-15T10:10:00.000Z';
+    const metaTmp = path.join(require('os').tmpdir(), `af-meta-${Date.now()}.jsonl`);
+    fs.writeFileSync(metaTmp, [
+        { type: 'user', timestamp: t1, message: { content: 'first ask' } },
+        { type: 'assistant', timestamp: t1, message: { id: 'm1', model: 'claude-x', content: [{ type: 'text', text: 'hi' }], usage: { input_tokens: 10, output_tokens: 5 } } },
+        // the harness injecting context — array content, isMeta, no user behind it
+        { type: 'user', timestamp: t2, isMeta: true, message: { content: [{ type: 'text', text: '<system-reminder>ignore me</system-reminder>' }] } },
+        { type: 'assistant', timestamp: t2, message: { id: 'm2', model: 'claude-x', content: [{ type: 'text', text: 'still turn 1' }], usage: { input_tokens: 7, output_tokens: 3 } } },
+        { type: 'user', timestamp: t3, message: { content: 'second ask' } },
+        { type: 'assistant', timestamp: t3, message: { id: 'm3', model: 'claude-x', content: [{ type: 'text', text: 'yo' }], usage: { input_tokens: 20, output_tokens: 1 } } }
+    ].map(l => JSON.stringify(l)).join('\n'));
+    const metaData = viewer.buildData(metaTmp, {
+        extensionUri: {}, getPricing: () => ({ costFor: () => 0 }), maxMessages: () => 50, contextLimitFor: () => 0
+    });
+    fs.unlinkSync(metaTmp);
+    ok('a meta line in array form opens no turn', metaData.turns.length === 2);
+    ok('…the work after it still bills to the turn the user opened',
+        metaData.turns[0].tokens === 25 && metaData.turns[1].tokens === 21);
+    ok('…and it is not rendered as a user message either',
+        !metaData.messages.some(m => String(m.text || '').includes('ignore me')));
+
     // the viewer states the origin too — an sdk-cli transcript is an automation run
     const autoTmp = path.join(require('os').tmpdir(), `af-origin-${Date.now()}.jsonl`);
     fs.writeFileSync(autoTmp, JSON.stringify({
@@ -366,7 +391,10 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
         }),
         window: {
             AFCharts: {
-                esc: (s) => String(s === undefined || s === null ? '' : s), fmtTok: (n) => String(n || 0), fmtUSD: (n) => '$' + (n || 0),
+                esc: (s) => String(s === undefined || s === null ? '' : s), fmtTok: (n) => String(n || 0),
+            fmtTokW(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' [w' + this.fmtTok(Math.round(w)) + ']' : ''); },
+            fmtTokWText(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' (w' + this.fmtTok(Math.round(w)) + ')' : ''); },
+            WEIGHTED_TIP: 'weighted', fmtUSD: (n) => '$' + (n || 0),
                 stackedBars: () => '', donut: () => '', hbars: () => '', heatmap: () => '', sparkline: () => ''
             },
             __DATA__: {

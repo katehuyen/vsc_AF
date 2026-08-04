@@ -9,7 +9,7 @@ const os = require('os');
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
-const { BridgeRegistry, parseBridgeRequest, need, argStr, optStr } =
+const { BridgeRegistry, parseBridgeRequest, need, argStr, optStr, argSessionIds } =
     require(path.join(__dirname, '..', 'out', 'core', 'bridge.js'));
 const { antigravityStatus, syncToAntigravity } =
     require(path.join(__dirname, '..', 'out', 'core', 'antigravity.js'));
@@ -74,6 +74,32 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
 
     const fine = await reg.dispatch('x.strict', { name: ' ali ', extra: 7 });
     ok('argStr trims; optStr ignores non-strings', fine.ok && fine.result.name === 'ali' && got === '');
+
+    // ---------- one spelling of "which sessions" ----------
+    // ‼️ Once a panel can do something to a SELECTION, the bridge has to be able
+    // to do it to a set or the two surfaces have drifted (_REF/agentfarm-dev.md).
+    // One helper, so no op invents its own plural key.
+    ok('a single sessionId is a set of one', argSessionIds({ sessionId: ' a ' }).join() === 'a');
+    ok('sessionIds is the plural', argSessionIds({ sessionIds: ['a', 'b'] }).join() === 'a,b');
+    ok('both together are merged, singular first',
+        argSessionIds({ sessionId: 'a', sessionIds: ['b'] }).join() === 'a,b');
+    ok('‼️ the same session named twice is done ONCE',
+        argSessionIds({ sessionId: 'a', sessionIds: ['a', 'b', 'a'] }).join() === 'a,b');
+    ok('blanks and junk are dropped', argSessionIds({ sessionIds: ['', '  ', null] }).length === 0);
+    ok('nothing given is an empty set, not a crash', argSessionIds({}).length === 0);
+
+    // and the ops that can act on a set actually say so in their contract
+    {
+        const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        for (const op of ['sessions.pin', 'sessions.tag', 'sessions.end', 'sessions.dismiss']) {
+            const block = src.slice(src.indexOf(`op: '${op}'`), src.indexOf(`op: '${op}'`) + 2000);
+            ok(`${op} takes a set and its describe says so`,
+                /argSessionIds\(args\)/.test(block) && /sessionIds/.test(block));
+        }
+        const pin = src.slice(src.indexOf("op: 'sessions.pin'"), src.indexOf("op: 'sessions.pin'") + 1400);
+        ok('‼️ a bulk pin refuses to toggle — a set must be told which way to go',
+            /pinned \(true\/false\) is required for a set/.test(pin));
+    }
 
     // ---------- §19.C: agents.sync op contract (cross-engine forward sync) ----------
     // Registers the real handler shape (backed by the compiled antigravity + codex
@@ -1024,6 +1050,46 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             && !/planUsage\.get\(true\)/.test(block));
     }
 
+    // ---------- usage.window — the 5h window in BOTH units ----------
+    // ‼️ The op exists because one unit was never enough. `tokens` is what the
+    // transcripts add up to; `wTokens` is what the plan limit charges for it,
+    // and the two are not proportional (measured 0.80x-3.86x over 32 days). An
+    // agent asked "have I got room for this?" off the raw figure alone was
+    // reading a number that moves with context size, not with the wall.
+    {
+        const reg = new BridgeRegistry();
+        const win = { tokens: 121_400_000, wTokens: 72_100_000, cost: 180.5, msgs: 412, windowStart: Date.parse('2026-08-03T01:54:35Z') };
+        reg.register({
+            op: 'usage.window',
+            describe: 'The rolling 5-hour window in both units: tokens (raw) and wTokens (weighted). args: none',
+            handler: () => ({
+                windowStart: new Date(win.windowStart).toISOString(),
+                tokens: win.tokens, wTokens: win.wTokens,
+                cost: win.cost, msgs: win.msgs,
+                ratio: win.wTokens > 0 ? Math.round(100 * win.tokens / win.wTokens) / 100 : null,
+                limit: null, weightedLimit: null, pct: null, lap: null
+            })
+        });
+        ok('usage.window appears in the catalog', reg.catalog().some(c => c.op === 'usage.window'));
+        const r = await reg.dispatch('usage.window', {});
+        ok('dispatch returns BOTH figures, never one',
+            r.ok && r.result.tokens === 121_400_000 && r.result.wTokens === 72_100_000);
+        ok('…and the ratio between them, so the gap is readable without arithmetic',
+            r.result.ratio === 1.68);
+        ok('…with no ceiling configured it says so rather than inventing a percent',
+            r.result.pct === null && r.result.limit === null && r.result.weightedLimit === null);
+
+        // the real registration must carry the same contract (this mirror can drift)
+        const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        const block = src.slice(src.indexOf("op: 'usage.window'"), src.indexOf("op: 'usage.window'") + 2600);
+        ok('extension.ts registers usage.window off the index\'s own window',
+            /index\.windowUsage\(\)/.test(block) && /wTokens: win\.wTokens/.test(block));
+        ok('…and reads the percent through the shared brake, not its own arithmetic',
+            /windowPct\(\)/.test(block));
+        ok('…and its describe warns the two units are not interchangeable',
+            /NOT INTERCHANGEABLE/.test(block));
+    }
+
     // ---------- session ops (§19.C): start · pin · tag · shelf · interrupt ----------
     // Interaction and control reach the bridge with the feature, not after it:
     // an agent asked "start me a planning session on the dev agent" or "what am
@@ -1293,6 +1359,365 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             /endLiveSession\(sessionId\)/.test(endBlock));
         ok('…and its contract points at sessions.interrupt for the lesser action',
             /sessions\.interrupt/.test(endBlock));
+    }
+
+    // ---------- the project document ops (Faz 4) ----------
+    // The WRITE side of the project axis: what lets an agent finish a piece of
+    // work by recording it, so the next session's brief is built out of what
+    // happened rather than out of what somebody remembered to type. The pure
+    // logic is proved in test_project_docs.js and test_project_plan.js; what is
+    // checked here is that the ops dispatch, that they refuse the things they
+    // promise to refuse, and that extension.ts actually registers all of them.
+    {
+        const {
+            addDecision, addDeliverableRow, createSkeleton, insertLogEntry, readProjectDoc,
+            scanProjectFolder, writeProjectDoc
+        } = require(path.join(__dirname, '..', 'out', 'core', 'projectDocs.js'));
+        const { addPlanItem, checkPlanItem, planSummary } =
+            require(path.join(__dirname, '..', 'out', 'core', 'projectPlan.js'));
+        const { addBacklogItem, nextBacklog, parseBacklog, setBacklogState } =
+            require(path.join(__dirname, '..', 'out', 'core', 'projectBacklog.js'));
+
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-bridge-docs-'));
+        const project = {
+            id: 'prj_docs0001', name: 'Agent Farm', status: 'active',
+            folder: dir, createdAt: 1, updatedAt: 1
+        };
+        createSkeleton(dir, project);
+        const roles = () => scanProjectFolder(dir).roles;
+        fs.writeFileSync(roles().plan, '---\naf-role: plan\n---\n\n# Plan\n\n## Milestones\n'
+            + '- [ ] Faz 4 — belgeler 🆔 afprj-04\n- [ ] Faz 5 — iş\n');
+
+        // The same handler shapes extension.ts registers, over the same pure
+        // functions — a second implementation here would prove nothing.
+        const rel = f => path.relative(dir, f).replace(/\\/g, '/');
+        const edit = (file, change) => {
+            const read = readProjectDoc(dir, rel(file));
+            need(read.ok, read.error || 'unreadable');
+            const next = change(read.text || '');
+            need(next.ok, next.error || 'nothing to write');
+            const w = writeProjectDoc(dir, rel(file), next.text, read.mtimeMs);
+            need(w.ok, w.error || 'write failed');
+            return next;
+        };
+        const reg = new BridgeRegistry();
+        reg.register([
+            {
+                op: 'projects.doc.read', describe: 'read one. args: project, path',
+                handler: a => {
+                    const r = readProjectDoc(dir, argStr(a, 'path'));
+                    need(r.ok, r.error || 'could not read that document');
+                    return { text: r.text, mtimeMs: r.mtimeMs };
+                }
+            },
+            {
+                op: 'projects.doc.write', describe: 'write one. args: project, path, content, expectMtime?, append?',
+                handler: a => {
+                    const p = argStr(a, 'path');
+                    const existing = readProjectDoc(dir, p);
+                    // ‼️ Everything below reads a failed read as "nothing to
+                    // lose". That is only true when the file is genuinely NOT
+                    // THERE — a file that exists but could not be read would
+                    // otherwise take the create path and be replaced.
+                    need(existing.ok || existing.missing === true,
+                        `${p} is there but could not be read — refusing to write over it`);
+                    need(!existing.ok || typeof a.expectMtime === 'number',
+                        `${p} already exists — read it first and pass expectMtime, or use append:true`);
+                    const w = writeProjectDoc(dir, p, String(a.content || ''),
+                        typeof a.expectMtime === 'number' ? a.expectMtime : undefined);
+                    need(w.ok, w.error || 'the write failed');
+                    return { path: p, created: !existing.ok };
+                }
+            },
+            {
+                op: 'projects.log', describe: 'add a worklog line. args: project, entry',
+                handler: a => {
+                    const entry = argStr(a, 'entry').trim();
+                    need(entry, 'an entry needs some text');
+                    const line = /^-?\s*\d{4}-\d{2}-\d{2}/.test(entry) || entry.startsWith('-')
+                        ? (entry.startsWith('-') ? entry : `- ${entry}`)
+                        : `- 2026-08-03 — ${entry}`;
+                    const r = insertLogEntry(roles().log, line);
+                    need(r.ok, r.error || 'the worklog could not be written');
+                    return { line };
+                }
+            },
+            {
+                op: 'projects.plan', describe: 'the plan as items. args: project, open?',
+                handler: a => {
+                    const sum = planSummary(readProjectDoc(dir, rel(roles().plan)).text || '');
+                    return {
+                        open: sum.open, done: sum.done,
+                        items: (a.open === true ? sum.items.filter(i => !i.done) : sum.items)
+                            .map(i => ({ line: i.line + 1, text: i.text, done: i.done, id: i.id || null }))
+                    };
+                }
+            },
+            {
+                op: 'projects.plan.add', describe: 'add an item. args: project, item, section?',
+                handler: a => {
+                    edit(roles().plan, t => addPlanItem(t, argStr(a, 'item'),
+                        optStr(a, 'section') ? { section: optStr(a, 'section') } : {}));
+                    return { added: argStr(a, 'item') };
+                }
+            },
+            {
+                op: 'projects.plan.check', describe: 'tick one item. args: project, item?/id?/line?, done?',
+                handler: a => {
+                    const target = {
+                        ...(optStr(a, 'id') ? { id: optStr(a, 'id') } : {}),
+                        ...(typeof a.line === 'number' ? { line: a.line - 1 } : {}),
+                        ...(optStr(a, 'item') ? { text: optStr(a, 'item') } : {})
+                    };
+                    need(target.id || target.line !== undefined || target.text,
+                        'say which item: id, line or item (text)');
+                    const out = edit(roles().plan, t => checkPlanItem(t, target, a.done !== false));
+                    return { item: out.item.text, done: a.done !== false, note: out.note || null };
+                }
+            },
+            {
+                op: 'projects.decision.add', describe: 'record a decision. args: project, title, body?',
+                handler: a => {
+                    const r = addDecision(dir, { title: argStr(a, 'title'), body: optStr(a, 'body') });
+                    need(r.ok, r.error || 'the decision could not be written');
+                    return { file: rel(r.file), title: r.decision.title };
+                }
+            },
+            {
+                op: 'projects.deliver', describe: 'record a deliverable. args: project, what, version?, date?, where?',
+                handler: a => {
+                    const what = argStr(a, 'what').trim();
+                    need(what, 'a deliverable needs a name');
+                    edit(roles().deliverables, t => addDeliverableRow(t, {
+                        what, version: optStr(a, 'version'),
+                        date: optStr(a, 'date'), where: optStr(a, 'where')
+                    }));
+                    return { what };
+                }
+            }
+        ]);
+
+        const planBefore = await reg.dispatch('projects.plan', { project: 'Agent Farm' });
+        ok('projects.plan returns the document\'s own checkboxes',
+            planBefore.ok && planBefore.result.open === 2 && planBefore.result.items[0].id === 'afprj-04');
+
+        const ticked = await reg.dispatch('projects.plan.check', { project: 'Agent Farm', id: 'afprj-04' });
+        ok('projects.plan.check ticks the item it was pointed at',
+            ticked.ok && ticked.result.item === 'Faz 4 — belgeler');
+        ok('‼️ …and the line keeps its Tasks metadata, with no ✅ invented',
+            fs.readFileSync(roles().plan, 'utf8').includes('- [x] Faz 4 — belgeler 🆔 afprj-04'));
+        const ambiguous = await reg.dispatch('projects.plan.check',
+            { project: 'Agent Farm', item: 'Faz' });
+        ok('‼️ an ambiguous item is refused rather than guessed at',
+            !ambiguous.ok && /be more specific/.test(ambiguous.error));
+        const noTarget = await reg.dispatch('projects.plan.check', { project: 'Agent Farm' });
+        ok('…and so is a check with nothing to aim at', !noTarget.ok && /which item/.test(noTarget.error));
+
+        const added = await reg.dispatch('projects.plan.add',
+            { project: 'Agent Farm', item: 'Faz 6 — zekâ', section: 'Milestones' });
+        ok('projects.plan.add joins the section it names', added.ok
+            && fs.readFileSync(roles().plan, 'utf8').includes('- [ ] Faz 6 — zekâ'));
+
+        const logged = await reg.dispatch('projects.log',
+            { project: 'Agent Farm', entry: 'Faz 4 shipped.' });
+        ok('projects.log dates the entry and puts it at the anchor',
+            logged.ok && /^- 2026-08-03 — Faz 4 shipped\.$/.test(logged.result.line));
+        const logBody = fs.readFileSync(roles().log, 'utf8');
+        ok('…newest first, directly below the anchor the user can move',
+            logBody.indexOf('Faz 4 shipped') > logBody.indexOf('af:log-top'));
+        ok('an empty entry is refused',
+            !(await reg.dispatch('projects.log', { project: 'Agent Farm', entry: '  ' })).ok);
+
+        const decided = await reg.dispatch('projects.decision.add',
+            { project: 'Agent Farm', title: 'Ticking writes one character', body: 'And nothing else.' });
+        ok('projects.decision.add writes its own file, found by frontmatter',
+            decided.ok && /20_Decisions\//.test(decided.result.file)
+            && /af-role: decision/.test(fs.readFileSync(path.join(dir, decided.result.file), 'utf8')));
+        ok('a decision with no title is refused',
+            !(await reg.dispatch('projects.decision.add', { project: 'Agent Farm', title: '' })).ok);
+
+        const delivered = await reg.dispatch('projects.deliver',
+            { project: 'Agent Farm', what: 'VSIX', version: '3.57.0', date: '2026-08-03', where: 'local' });
+        ok('projects.deliver adds a row to the user\'s own table',
+            delivered.ok && /\| VSIX \| 3\.57\.0 \| 2026-08-03 \| local \|/
+                .test(fs.readFileSync(roles().deliverables, 'utf8')));
+
+        // ‼️ the boundary, from the outside
+        const escaped = await reg.dispatch('projects.doc.read',
+            { project: 'Agent Farm', path: '../../anything' });
+        ok('‼️ a path climbing out of the project folder is refused', !escaped.ok);
+        const blind = await reg.dispatch('projects.doc.write',
+            { project: 'Agent Farm', path: 'Plan.md', content: 'wiped' });
+        ok('‼️ overwriting an existing document without expectMtime is refused — read it first',
+            !blind.ok && /read it first/.test(blind.error));
+        const read = await reg.dispatch('projects.doc.read', { project: 'Agent Farm', path: 'Plan.md' });
+        const guarded = await reg.dispatch('projects.doc.write', {
+            project: 'Agent Farm', path: 'Plan.md',
+            content: read.result.text, expectMtime: read.result.mtimeMs
+        });
+        ok('…and it goes through once the caller has actually read it', guarded.ok);
+        const created = await reg.dispatch('projects.doc.write',
+            { project: 'Agent Farm', path: '10_Notes/new.md', content: '# new\n' });
+        ok('a file that is not there yet needs no guard — nothing can be lost', created.ok);
+
+        // ‼️ "not there" and "there but unreadable" are two answers, and the
+        // guard above only holds for the first. A file that EXISTS but could
+        // not be read used to look identical to one that is absent, so the
+        // create path replaced it — the blind overwrite this op exists to make
+        // impossible. A folder standing where a file is asked for is the same
+        // failure and the one a test can produce anywhere.
+        fs.mkdirSync(path.join(dir, '10_Notes', 'held.md'));
+        const held = await reg.dispatch('projects.doc.write',
+            { project: 'Agent Farm', path: '10_Notes/held.md', content: 'wiped' });
+        ok('‼️ a document that is there but unreadable is NOT treated as absent', !held.ok);
+        ok('…and the refusal says so rather than reporting a create',
+            /could not be read/.test(held.error || ''));
+        ok('…and what was there is still there',
+            fs.statSync(path.join(dir, '10_Notes', 'held.md')).isDirectory());
+
+        // ---- the backlog family, dispatched the same way ----
+        // The ops themselves live in extension.ts (they need the project store);
+        // what is exercised here is the CONTRACT an agent depends on — that the
+        // handler shape works through the registry, and that a refusal comes
+        // back as a refusal rather than a silent success.
+        {
+            const backlogFile = path.join(dir, 'Backlog.md');
+            fs.writeFileSync(backlogFile, [
+                '---', 'af-role: backlog', '---', '', '# Agent Farm — Backlog', '',
+                '## 📥 Inbox', '', '- [ ] something I noticed', '',
+                '## P — Projects', '',
+                '- [ ] P-1 first thing #bug ⏫ [efor:: S]',
+                '- [ ] P-2 second thing [efor:: XL]', ''
+            ].join('\n'));
+            const readBacklog = () => fs.readFileSync(backlogFile, 'utf8');
+            const editBacklog = change => {
+                const r = change(readBacklog());
+                need(r.ok, r.error || 'nothing to write');
+                fs.writeFileSync(backlogFile, r.text);
+                return r;
+            };
+            reg.register([
+                {
+                    op: 'projects.backlog', describe: 'the backlog as items. args: project, open?',
+                    handler: () => {
+                        const s = parseBacklog(readBacklog());
+                        return {
+                            counts: { open: s.open, unclassified: s.unclassified },
+                            areas: s.areas.map(a => a.code),
+                            items: s.items.map(i => ({ code: i.code || null, text: i.text, state: i.state }))
+                        };
+                    }
+                },
+                {
+                    op: 'projects.backlog.next',
+                    describe: 'what to work on. args: project, limit?, maxEffort?',
+                    handler: a => {
+                        const r = nextBacklog(readBacklog(), {
+                            ...(typeof a.limit === 'number' ? { limit: a.limit } : {}),
+                            ...(optStr(a, 'maxEffort') ? { maxEffort: optStr(a, 'maxEffort') } : {})
+                        });
+                        return { items: r.items.map(i => i.code || null) };
+                    }
+                },
+                {
+                    op: 'projects.backlog.add', describe: 'add an item. args: project, text, area?',
+                    handler: a => {
+                        const body = argStr(a, 'text').trim();
+                        need(body, 'an item needs some text');
+                        const r = editBacklog(t => addBacklogItem(t, {
+                            text: body,
+                            ...(optStr(a, 'area') ? { area: optStr(a, 'area') } : {})
+                        }));
+                        return { code: r.code || null };
+                    }
+                },
+                {
+                    op: 'projects.backlog.check', describe: 'change state. args: project, code?, state?',
+                    handler: a => {
+                        const target = {
+                            ...(optStr(a, 'code') ? { code: optStr(a, 'code') } : {}),
+                            ...(optStr(a, 'item') ? { text: optStr(a, 'item') } : {})
+                        };
+                        need(target.code || target.text, 'say which item: code, line or item (text)');
+                        const r = editBacklog(t => setBacklogState(t, target, optStr(a, 'state') || 'done'));
+                        return { code: r.item.code || null, state: r.item.state };
+                    }
+                }
+            ]);
+
+            const listed = await reg.dispatch('projects.backlog', { project: 'Agent Farm' });
+            ok('projects.backlog reads the file\'s own lines',
+                listed.ok && listed.result.counts.open === 3
+                && listed.result.counts.unclassified === 1
+                && listed.result.areas.join() === 'P');
+
+            const up = await reg.dispatch('projects.backlog.next', { project: 'Agent Farm', limit: 5 });
+            ok('‼️ projects.backlog.next keeps an XL item out of a turn by default',
+                up.ok && up.result.items.indexOf('P-2') < 0 && up.result.items.indexOf('P-1') >= 0);
+
+            const wide = await reg.dispatch('projects.backlog.next',
+                { project: 'Agent Farm', limit: 5, maxEffort: 'XL' });
+            ok('…and lets it through when the caller raises the ceiling',
+                wide.ok && wide.result.items.indexOf('P-2') >= 0);
+
+            const capture = await reg.dispatch('projects.backlog.add',
+                { project: 'Agent Farm', text: 'a passing thought' });
+            ok('projects.backlog.add with no area captures without a code — friction-free',
+                capture.ok && capture.result.code === null
+                && /- \[ \] a passing thought/.test(readBacklog()));
+            const filed = await reg.dispatch('projects.backlog.add',
+                { project: 'Agent Farm', text: 'a real item', area: 'P' });
+            ok('…and with an area it is given the next free code', filed.ok && filed.result.code === 'P-3');
+
+            const closed = await reg.dispatch('projects.backlog.check',
+                { project: 'Agent Farm', code: 'P-1' });
+            ok('projects.backlog.check closes the item it was pointed at',
+                closed.ok && closed.result.state === 'done');
+            ok('‼️ …and the line keeps its code, its tag, its icon and its field',
+                /- \[x\] P-1 first thing #bug ⏫ \[efor:: S\]/.test(readBacklog()));
+            const noAim = await reg.dispatch('projects.backlog.check', { project: 'Agent Farm' });
+            ok('…and a check with nothing to aim at is refused',
+                !noAim.ok && /which item/.test(noAim.error));
+        }
+
+        // ---- and extension.ts really registers every one of them ----
+        const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        for (const op of ['projects.doc.list', 'projects.doc.read', 'projects.doc.write',
+            'projects.log', 'projects.plan', 'projects.plan.add', 'projects.plan.check',
+            'projects.decision.add', 'projects.deliver', 'projects.people.set',
+            'projects.backlog', 'projects.backlog.next', 'projects.backlog.add',
+            'projects.backlog.check', 'projects.backlog.set', 'projects.backlog.code',
+            'projects.backlog.move', 'projects.backlog.archive', 'projects.backlog.promote']) {
+            ok(`extension.ts registers ${op}`, src.includes(`op: '${op}'`));
+        }
+        const nextBlock = src.slice(src.indexOf("op: 'projects.backlog.next'"),
+            src.indexOf("op: 'projects.backlog.next'") + 2600);
+        ok('‼️ backlog.next\'s contract explains the effort ceiling rather than hiding it',
+            /maxEffort/.test(nextBlock) && /half done/.test(nextBlock));
+        const blCheckBlock = src.slice(src.indexOf("op: 'projects.backlog.check'"),
+            src.indexOf("op: 'projects.backlog.check'") + 2600);
+        ok('‼️ backlog.check\'s contract states the one-character promise',
+            /EXACTLY ONE CHARACTER/.test(blCheckBlock));
+        const moveBlock = src.slice(src.indexOf("op: 'projects.backlog.move'"),
+            src.indexOf("op: 'projects.backlog.move'") + 2600);
+        ok('‼️ backlog.move\'s contract promises the code does not change',
+            /THE CODE DOES NOT CHANGE/.test(moveBlock));
+        const checkBlock = src.slice(src.indexOf("op: 'projects.plan.check'"),
+            src.indexOf("op: 'projects.plan.check'") + 2600);
+        ok('‼️ plan.check\'s contract states the one-character promise and the ✅ it will not write',
+            /EXACTLY ONE CHARACTER/.test(checkBlock) && /done-date/.test(checkBlock));
+        const writeBlock = src.slice(src.indexOf("op: 'projects.doc.write'"),
+            src.indexOf("op: 'projects.doc.write'") + 2600);
+        ok('…and doc.write\'s contract says how to replace a file safely',
+            /expectMtime/.test(writeBlock) && /append/.test(writeBlock));
+        ok('‼️ …and the real op tells an unreadable document apart from an absent one',
+            /existing\.missing === true/.test(writeBlock));
+        ok('‼️ plan.check\'s contract says a line and a text together are a CHECK',
+            /goes stale/.test(checkBlock));
+        ok('the ops call the shared guarded path rather than writing files themselves',
+            /editProjectDoc\(folder,/.test(src) && !/fs\.writeFileSync\(.*roles\.plan/.test(src));
+
+        try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ }
     }
 
     console.log(`\n${pass} passed, ${fail} failed`);

@@ -16,6 +16,25 @@ import { handleAfNav, htmlShell } from './base';
  * second view.
  */
 
+/**
+ * What the page is looking at, in one object.
+ *
+ * An argument list rather than an object was fine at four; the Docs tab needs a
+ * fifth (which document is selected) and the next tab will need a sixth, and a
+ * five-positional call is where a caller eventually swaps two strings and the
+ * bug is invisible at the call site.
+ */
+export interface TabRequest {
+    project: string;
+    tab: string;
+    /** Sessions-table "Show" box. */
+    tableN: number;
+    /** Timeline kinds the reader has switched ON. */
+    kinds: string[];
+    /** Docs tab: which file is open, relative to the project folder. */
+    doc: string;
+}
+
 export interface ProjectsPanelDeps {
     extensionUri: vscode.Uri;
     /** Everything the page shows, assembled by the host. */
@@ -29,7 +48,7 @@ export interface ProjectsPanelDeps {
      * to draw a form is how a read-only page starts costing the window frames.
      * The panel remembers which tab is open and asks for that one.
      */
-    tabData(projectId: string, tab: string, tableN: number, kinds: string[]): Record<string, unknown>;
+    tabData(req: TabRequest): Record<string, unknown>;
     /** Per-turn breakdown for an expanded row in the Sessions tab. */
     sessionTurns(projectId: string, file: string): unknown;
     /** Open whatever a feed row points at — the one route for every kind. */
@@ -57,7 +76,60 @@ export interface ProjectsPanelDeps {
     rescan(): Promise<void>;
     /** Show this project's sessions wherever sessions are shown. */
     openSessions(id: string): void;
+
+    // ---- Faz 4: the documents are editable from here, carefully ----
+    /** Tick or untick one plan item. Returns an error, or a note about what the
+     *  edit deliberately did NOT do. */
+    planCheck(id: string, target: { id?: string; line?: number; text?: string }, done: boolean):
+        { error?: string; note?: string };
+    /** Add an open plan item, optionally under a named section. */
+    planAdd(id: string, item: string, section: string): { error?: string };
+
+    // ---- Faz 4.5: the backlog, edited from the row it is on ----
+    /** Quick capture. With no area it lands in the inbox without a code, which
+     *  is the point: writing a note down must cost nothing. */
+    backlogAdd(id: string, input: {
+        text: string; area?: string; parent?: string;
+        priority?: string; effort?: string; kinds?: string[];
+    }): { error?: string; code?: string; note?: string };
+    /** Move one item between open/doing/done/cancelled — one character. */
+    backlogState(id: string, target: { code?: string; line?: number }, state: string):
+        { error?: string; note?: string };
+    /** Set an item's axes from the row's own controls. */
+    backlogSet(id: string, target: { code?: string; line?: number }, fields: Record<string, unknown>):
+        { error?: string };
+    /** Nudge it among its siblings. The code does not change. */
+    backlogMove(id: string, target: { code?: string; line?: number }, dir: string): { error?: string; note?: string };
+    /** Give an inbox capture a code and file it under an area. */
+    backlogCode(id: string, target: { line?: number }, area: string, parent?: string):
+        { error?: string; code?: string };
+    /** Sweep closed items under the archive heading. */
+    backlogArchive(id: string): { error?: string; moved?: number };
+    /** Open a document the way the user opens report links elsewhere — VS Code,
+     *  the rendered preview, Obsidian, or their own app. */
+    openProjectDoc(id: string, rel: string, mode?: string): void;
+    /** The doc-open modes and which one is default, for the split button. */
+    docOpenModes(): { mode: string; modes: string[]; labels: Record<string, string> };
+    /** A new note, in a folder inside the project. */
+    newProjectDoc(id: string, folder: string, name: string): { error?: string; path?: string };
+    /** Replace the project's people. Returns an error message, or undefined. */
+    savePeople(id: string, people: unknown[]): string | undefined;
     onChange?(): void;
+}
+
+/**
+ * Which backlog row a page message is about.
+ *
+ * ‼️ The code wins whenever there is one, and that is not a preference. The page
+ * shows 1-based lines because that is what an editor shows, the parser counts
+ * from 0, and the conversion happens HERE, once — but a line number also goes
+ * stale the moment somebody inserts a paragraph in Obsidian while this panel
+ * sits open, and editing the wrong row in a backlog is silent. A code survives
+ * the file being reordered; only an uncoded inbox capture has to risk the line.
+ */
+function backlogRowTarget(msg: Record<string, unknown>): { code?: string; line?: number } {
+    if (typeof msg.code === 'string' && msg.code) { return { code: msg.code }; }
+    return typeof msg.line === 'number' && msg.line > 0 ? { line: msg.line - 1 } : {};
 }
 
 /** What the "new project" form opens with. Everything is optional: the palette
@@ -71,7 +143,7 @@ export interface NewProjectSeed {
 
 /** The project page's tabs. `settings` is the editor Faz 1 shipped — it was
  *  always meant to become a tab here rather than stay the whole page. */
-const TABS = ['overview', 'timeline', 'sessions', 'cost', 'settings'] as const;
+const TABS = ['overview', 'timeline', 'sessions', 'plan', 'backlog', 'docs', 'people', 'cost', 'settings'] as const;
 const DEFAULT_TAB = 'overview';
 /** Sessions-table Show box default for this page. */
 const PROJECT_TABLE_N = 25;
@@ -95,6 +167,11 @@ export class ProjectsPanel {
      * before the page has said what it wants).
      */
     private feedKinds: string[] = [];
+    /** Docs tab: which document is open, relative to the project folder. Held
+     *  here rather than in the page because the HOST reads the file — the page
+     *  never gets to name a path the host has not already resolved inside the
+     *  project folder. */
+    private docPath = '';
 
     static show(deps: ProjectsPanelDeps, focusId?: string, newForm?: NewProjectSeed): void {
         if (ProjectsPanel.current) {
@@ -141,8 +218,10 @@ export class ProjectsPanel {
         const stale = !!this.focusId && this.focusId !== this.tabProject;
         // A "new project" form owns the whole right-hand side, so a tab's data
         // would be built for a project nobody is looking at.
-        const tabData = seed || stale
-            ? {} : this.deps.tabData(this.tabProject, this.tab, this.tableN, this.feedKinds);
+        const tabData = seed || stale ? {} : this.deps.tabData({
+            project: this.tabProject, tab: this.tab, tableN: this.tableN,
+            kinds: this.feedKinds, doc: this.docPath
+        });
         return {
             ...this.deps.data(),
             focusId: this.focusId ?? null,
@@ -152,6 +231,8 @@ export class ProjectsPanel {
             // echoed back so the page can tell whether its request landed —
             // without it, page and host ask each other to refresh for ever
             feedKinds: this.feedKinds,
+            docPath: this.docPath,
+            docOpen: this.deps.docOpenModes(),
             tabData
         };
     }
@@ -191,7 +272,11 @@ export class ProjectsPanel {
             case 'view': {
                 const wanted = String(msg.tab ?? '');
                 const project = String(msg.project ?? '');
-                if (project !== this.tabProject) { this.tableN = PROJECT_TABLE_N; }
+                // A document opened in project A must not stay open when the
+                // reader jumps to B: the path would be resolved inside B's
+                // folder, and either fail or — worse — hit a file with the same
+                // name and print it under the wrong project's name.
+                if (project !== this.tabProject) { this.tableN = PROJECT_TABLE_N; this.docPath = ''; }
                 this.tabProject = project;
                 this.tab = (TABS as readonly string[]).includes(wanted) ? wanted : DEFAULT_TAB;
                 this.feedKinds = Array.isArray(msg.kinds)
@@ -329,6 +414,110 @@ export class ProjectsPanel {
             case 'rescan':
                 await this.deps.rescan();
                 this.done();
+                break;
+
+            // ---- documents ----
+            case 'selectDoc':
+                this.docPath = String(msg.path ?? '');
+                this.refresh();
+                break;
+            case 'openDoc':
+                if (id) {
+                    this.deps.openProjectDoc(id, String(msg.path ?? ''),
+                        typeof msg.mode === 'string' ? msg.mode : undefined);
+                }
+                break;
+            case 'newDoc': {
+                if (!id) { break; }
+                const res = this.deps.newProjectDoc(id,
+                    String(msg.folder ?? ''), String(msg.name ?? ''));
+                if (res.path) { this.docPath = res.path; }
+                this.done(res.error, res.error ? undefined : 'Note created.');
+                break;
+            }
+            case 'planCheck': {
+                if (!id) { break; }
+                const res = this.deps.planCheck(id, {
+                    ...(typeof msg.itemId === 'string' && msg.itemId ? { id: msg.itemId } : {}),
+                    // ‼️ The page shows 1-based line numbers because that is what
+                    // an editor shows; the parser counts from 0. The conversion
+                    // happens HERE, once — two numbering schemes for one line is
+                    // how the wrong box gets ticked.
+                    ...(typeof msg.line === 'number' && msg.line > 0 ? { line: msg.line - 1 } : {}),
+                    ...(typeof msg.text === 'string' && msg.text ? { text: msg.text } : {})
+                }, msg.done !== false);
+                this.done(res.error, res.error ? undefined : (res.note ?? 'Plan updated.'));
+                break;
+            }
+            case 'planAdd': {
+                if (!id) { break; }
+                const item = String(msg.item ?? '').trim();
+                if (!item) { break; }
+                const res = this.deps.planAdd(id, item, String(msg.section ?? ''));
+                this.done(res.error, res.error ? undefined : 'Added to the plan.');
+                break;
+            }
+            // ---- the backlog. Every one of these addresses a row by its CODE
+            // when it has one and falls back to the line only for an
+            // unclassified capture — a code survives the file being reordered
+            // under an open panel, a line number does not.
+            case 'backlogAdd': {
+                if (!id) { break; }
+                const text = String(msg.text ?? '').trim();
+                if (!text) { break; }
+                const res = this.deps.backlogAdd(id, {
+                    text,
+                    ...(typeof msg.area === 'string' && msg.area ? { area: msg.area } : {}),
+                    ...(typeof msg.parent === 'string' && msg.parent ? { parent: msg.parent } : {}),
+                    ...(typeof msg.priority === 'string' && msg.priority ? { priority: msg.priority } : {}),
+                    ...(typeof msg.effort === 'string' && msg.effort ? { effort: msg.effort } : {}),
+                    ...(Array.isArray(msg.kinds) ? { kinds: msg.kinds.map(String) } : {})
+                });
+                this.done(res.error, res.error ? undefined
+                    : (res.code ? `Added as ${res.code}.` : 'Added to the inbox.'));
+                break;
+            }
+            case 'backlogState': {
+                if (!id) { break; }
+                const res = this.deps.backlogState(id, backlogRowTarget(msg), String(msg.state ?? 'done'));
+                this.done(res.error, res.error ? undefined : (res.note ?? 'Backlog updated.'));
+                break;
+            }
+            case 'backlogSet': {
+                if (!id) { break; }
+                const fields = (msg.fields ?? {}) as Record<string, unknown>;
+                const res = this.deps.backlogSet(id, backlogRowTarget(msg), fields);
+                this.done(res.error, res.error ? undefined : 'Backlog updated.');
+                break;
+            }
+            case 'backlogMove': {
+                if (!id) { break; }
+                const res = this.deps.backlogMove(id, backlogRowTarget(msg), String(msg.dir ?? 'down'));
+                this.done(res.error, res.error ? undefined : (res.note ?? 'Moved.'));
+                break;
+            }
+            case 'backlogCode': {
+                if (!id) { break; }
+                const area = String(msg.area ?? '').trim();
+                const parent = String(msg.parent ?? '').trim();
+                if (!area && !parent) { break; }
+                const res = this.deps.backlogCode(id, backlogRowTarget(msg), area,
+                    parent ? parent : undefined);
+                this.done(res.error, res.error ? undefined : `Filed as ${res.code ?? 'coded'}.`);
+                break;
+            }
+            case 'backlogArchive': {
+                if (!id) { break; }
+                const res = this.deps.backlogArchive(id);
+                this.done(res.error, res.error ? undefined
+                    : (res.moved ? `${res.moved} closed item${res.moved === 1 ? '' : 's'} archived.` : 'Nothing closed to archive.'));
+                break;
+            }
+            case 'savePeople':
+                if (id && Array.isArray(msg.people)) {
+                    const error = this.deps.savePeople(id, msg.people);
+                    this.done(error, error ? undefined : 'People saved.');
+                }
                 break;
         }
     }

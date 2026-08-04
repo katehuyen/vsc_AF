@@ -11,6 +11,24 @@ export interface Usage {
     output: number;
     cacheWrite: number;
     cacheRead: number;
+    /**
+     * How much of `cacheWrite` was written with a ONE-HOUR time to live.
+     *
+     * ‼️ NOT A DETAIL — IT IS A 1.6x PRICE DIFFERENCE ON THE MOST EXPENSIVE
+     * THING IN A TURN. A 5-minute cache write costs 1.25x a fresh input token;
+     * a 1-hour one costs 2x. The API reports the split in `usage.cache_creation`
+     * and the flat `cache_creation_input_tokens` is only their sum, so a
+     * weighting that assumes 5-minute under-counts every write. Measured on
+     * this machine (3 813 assistant lines, 40 newest transcripts): **17.92M of
+     * 17.92M cache-creation tokens were `ephemeral_1h`, and zero were 5-minute**
+     * — i.e. the assumption was wrong on 100% of the data.
+     *
+     * Optional because older transcripts predate the breakdown; absent means
+     * "not reported", and `weightedTokens` then falls back to the 1-hour rate
+     * rather than the cheap one — under-stating what a turn cost the limit is
+     * the failure that started this whole investigation.
+     */
+    cacheWrite1h?: number;
 }
 
 /** A raw usage block as the API and the transcripts write it. */
@@ -19,6 +37,27 @@ export interface RawUsage {
     output_tokens?: number;
     cache_read_input_tokens?: number;
     cache_creation_input_tokens?: number;
+    /** The cache-write split by TTL — see Usage.cacheWrite1h. */
+    cache_creation?: {
+        ephemeral_5m_input_tokens?: number;
+        ephemeral_1h_input_tokens?: number;
+    };
+}
+
+/** Read a raw usage block into the shape the extension counts in — including
+ *  the cache-write TTL split, which the flat field throws away. */
+export function toUsage(u: RawUsage | undefined | null): Usage {
+    const n = (v: number | undefined): number => (typeof v === 'number' && v > 0 ? v : 0);
+    const cacheWrite = n(u?.cache_creation_input_tokens);
+    const split = u?.cache_creation;
+    return {
+        input: n(u?.input_tokens),
+        output: n(u?.output_tokens),
+        cacheWrite,
+        cacheRead: n(u?.cache_read_input_tokens),
+        // No split reported → treat the whole write as 1-hour. See cacheWrite1h.
+        cacheWrite1h: split ? n(split.ephemeral_1h_input_tokens) : cacheWrite
+    };
 }
 
 /**
@@ -128,7 +167,7 @@ export class PricingEngine {
 }
 
 export function emptyUsage(): Usage {
-    return { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 };
+    return { input: 0, output: 0, cacheWrite: 0, cacheRead: 0, cacheWrite1h: 0 };
 }
 
 export function addUsage(a: Usage, b: Usage): void {
@@ -136,10 +175,145 @@ export function addUsage(a: Usage, b: Usage): void {
     a.output += b.output;
     a.cacheWrite += b.cacheWrite;
     a.cacheRead += b.cacheRead;
+    // A Usage built by hand (tests, external CLIs) may not carry the split; an
+    // absent one means the whole write was 1-hour — see Usage.cacheWrite1h.
+    a.cacheWrite1h = (a.cacheWrite1h ?? 0) + (b.cacheWrite1h ?? b.cacheWrite);
 }
 
 export function totalTokens(u: Usage): number {
     return u.input + u.output + u.cacheWrite + u.cacheRead;
+}
+
+/**
+ * What a token is WORTH against the plan's rolling limit, by model family.
+ *
+ * ‼️ THE RAW TOKEN TOTAL IS NOT WHAT FILLS THE LIMIT, AND IT IS NOT EVEN
+ * PROPORTIONAL TO IT. A cache-read token is a tenth of a fresh input token; an
+ * output token is five; and 94-99% of any raw total is cache reads, so the raw
+ * figure is dominated by the cheapest thing in it. Measured across 32 days of
+ * this machine's transcripts, the ratio raw/weighted of a peak 5-hour window
+ * ranges 0.80x to 3.86x — the raw number lands on either side of the weighted
+ * one depending purely on how big the contexts were and which model ran. So a
+ * day that shows 75M raw and a day that shows 25M raw can hit the very same
+ * wall, and a surface printing only the raw number makes that look like a
+ * counting fault. It is not a fault: it is the wrong unit.
+ *
+ * (Same corpus, top eight windows by weighted total: 75.5M-96.7M, a ±13% band
+ * around a ceiling, against 111M-175M raw for those same windows.)
+ *
+ * The numbers are normalized so that **one Sonnet input token = 1**, which
+ * keeps the figure in the same order of magnitude as the raw count and keeps
+ * a Haiku test from looking as expensive as Opus work. They follow the
+ * published price RATIOS, deliberately as their own table rather than off
+ * `PriceRule`: the user edits pricing to correct billing, and correcting a
+ * dollar rate must not silently move what the limit gauge says.
+ *
+ * ‼️ AN APPROXIMATION, AND SAID SO ON THE SURFACES. The plan's exact formula
+ * is not published; this tracks it in shape and magnitude, not to the digit.
+ * The honest ground truth for "how full am I" stays the plan usage endpoint
+ * (planusage.ts) — this is what makes a per-turn / per-session number
+ * comparable to it.
+ */
+export interface QuotaWeight {
+    match: string;
+    input: number;
+    output: number;
+    /** 5-minute cache write — 1.25x this model's input token. */
+    cacheWrite: number;
+    /** 1-hour cache write — 2x input. ‼️ On this machine EVERY write measured
+     *  was 1-hour, so this is the rate that actually applies. */
+    cacheWrite1h: number;
+    cacheRead: number;
+}
+
+export const QUOTA_WEIGHTS: QuotaWeight[] = [
+    { match: 'opus', input: 5, output: 25, cacheWrite: 6.25, cacheWrite1h: 10, cacheRead: 0.5 },
+    { match: 'fable|mythos', input: 5, output: 25, cacheWrite: 6.25, cacheWrite1h: 10, cacheRead: 0.5 },
+    { match: 'sonnet', input: 1, output: 5, cacheWrite: 1.25, cacheWrite1h: 2, cacheRead: 0.1 },
+    { match: 'haiku', input: 1 / 3, output: 5 / 3, cacheWrite: 5 / 12, cacheWrite1h: 2 / 3, cacheRead: 1 / 30 }
+];
+
+/**
+ * How the ⚖ figure is derived. Settable because the numbers behind it are the
+ * provider's, not ours: a rate card changes and nobody should need a build.
+ *
+ *  · `model-aware` — the table as written: Opus is five Sonnets, Haiku a third.
+ *    The default, because the constitution runs tests on haiku and a figure
+ *    that priced a haiku test like opus work would mislead in the one
+ *    direction that matters.
+ *  · `model-flat` — the Sonnet row for every model, i.e. weight the KINDS of
+ *    token (output / cache-write / cache-read) and ignore which model ran.
+ *    On this machine's 32 days this clustered the peak windows very slightly
+ *    tighter (top-eight max/min 1.19 against 1.28), so it is offered rather
+ *    than argued about.
+ *  · `raw` — ⚖ equals the raw total; the feature off without ripping it out.
+ */
+export type QuotaWeightMode = 'model-aware' | 'model-flat' | 'raw';
+
+interface QuotaConfig { weights: QuotaWeight[]; mode: QuotaWeightMode }
+
+/**
+ * ‼️ MODULE-LEVEL ON PURPOSE, AND THIS IS THE ONE PLACE IT IS ALLOWED.
+ *
+ * Everything else in the extension takes its rates as an argument (see
+ * `PricingEngine`), which is the better shape. It cannot be done here: the ⚖
+ * figure is counted inside `reduceEvent`, and consoleproto is deliberately a
+ * PURE reducer with no dependencies — threading a rate table through it would
+ * mean changing the signature of the console protocol to carry a setting. So
+ * the table lives beside the function that uses it and the host sets it once
+ * on activation and again whenever the configuration changes (`setQuotaConfig`).
+ * Read-only for every consumer; there is exactly one writer.
+ */
+let ACTIVE: QuotaConfig = { weights: QUOTA_WEIGHTS, mode: 'model-aware' };
+let COMPILED_QUOTA = compileQuota(QUOTA_WEIGHTS);
+
+function compileQuota(rules: QuotaWeight[]): { re: RegExp; w: QuotaWeight }[] {
+    const out: { re: RegExp; w: QuotaWeight }[] = [];
+    for (const w of rules) {
+        try { out.push({ re: new RegExp(w.match, 'i'), w }); } catch { /* invalid user regex — skip */ }
+    }
+    return out.length ? out : compileQuota(QUOTA_WEIGHTS);
+}
+
+/** Install the user's weights / mode. An empty or unusable table falls back to
+ *  the shipped one rather than making every turn read as free. */
+export function setQuotaConfig(cfg: Partial<QuotaConfig>): void {
+    const weights = Array.isArray(cfg.weights) && cfg.weights.length
+        ? cfg.weights.filter(w => w && typeof w.match === 'string')
+        : QUOTA_WEIGHTS;
+    ACTIVE = {
+        weights: weights.length ? weights : QUOTA_WEIGHTS,
+        mode: cfg.mode ?? ACTIVE.mode
+    };
+    COMPILED_QUOTA = compileQuota(ACTIVE.weights);
+}
+
+/** What is in force right now — for the surfaces that explain themselves. */
+export function quotaConfig(): QuotaConfig {
+    return { weights: ACTIVE.weights, mode: ACTIVE.mode };
+}
+
+/** The row a model is weighed by — the fallback is the LAST row rather than a
+ *  zero, so a model id nobody has seen yet still costs something. */
+function quotaRowFor(model: string): QuotaWeight {
+    if (ACTIVE.mode === 'model-flat') {
+        return COMPILED_QUOTA.find(c => /sonnet/i.test(c.w.match))?.w ?? COMPILED_QUOTA[0].w;
+    }
+    return COMPILED_QUOTA.find(c => c.re.test(model || ''))?.w
+        ?? COMPILED_QUOTA.find(c => /sonnet/i.test(c.w.match))?.w
+        ?? COMPILED_QUOTA[0].w;
+}
+
+/** Sonnet-input-equivalent tokens — see QUOTA_WEIGHTS and QuotaWeightMode. */
+export function weightedTokens(model: string, u: Usage): number {
+    if (ACTIVE.mode === 'raw') { return totalTokens(u); }
+    const hit = quotaRowFor(model);
+    // The write is split by TTL and the two are priced differently. An unsplit
+    // Usage is charged entirely at the 1-hour rate — see Usage.cacheWrite1h.
+    const w1h = Math.min(u.cacheWrite, u.cacheWrite1h ?? u.cacheWrite);
+    const w5m = Math.max(0, u.cacheWrite - w1h);
+    return w1h * hit.cacheWrite1h + w5m * hit.cacheWrite
+        + u.input * hit.input + u.output * hit.output + u.cacheRead * hit.cacheRead;
 }
 
 /** Known context-window sizes by model id. First match wins, so 1M-window

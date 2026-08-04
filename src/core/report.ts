@@ -37,30 +37,33 @@ export function buildFleetReport(
     const all = index.all().filter(s => inRange(s, cutoff));
     const totalCost = all.reduce((a, s) => a + s.cost, 0);
     const totalTok = all.reduce((a, s) => a + totalTokens(s.usage), 0);
+    const totalW = all.reduce((a, s) => a + s.wTokens, 0);
     const totalTools = all.reduce((a, s) => a + s.toolCalls, 0);
     const totalErrors = all.reduce((a, s) => a + s.errors, 0);
     lines.push('## Fleet totals');
     lines.push('');
-    lines.push(`- Sessions: **${all.length}** · Cost: **${fmtUSD(totalCost)}** · Tokens: **${fmtTokens(totalTok)}**`);
+    lines.push(`- Sessions: **${all.length}** · Cost: **${fmtUSD(totalCost)}** · ` +
+        `Tokens: **${fmtTokens(totalTok)}** · ⚖ **${fmtTokens(Math.round(totalW))}** against the limit`);
     lines.push(`- Tool calls: **${totalTools}** · Errors: **${totalErrors}**${totalTools ? ` (${pct(totalErrors / totalTools)})` : ''}`);
     lines.push('');
 
     // Per-agent comparison
     lines.push('## Agent comparison');
     lines.push('');
-    lines.push('| Agent | Sessions | Cost | Tokens | Tools | Err % | Quality | Cache eff. | Ctx load | Memory files |');
-    lines.push('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |');
+    lines.push('| Agent | Sessions | Cost | Tokens | ⚖ Weighted | Tools | Err % | Quality | Cache eff. | Ctx load | Memory files |');
+    lines.push('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |');
     for (const agent of agents) {
         const sessions = index.forAgent(agent.id).filter(s => inRange(s, cutoff));
         const cost = sessions.reduce((a, s) => a + s.cost, 0);
         const tok = sessions.reduce((a, s) => a + totalTokens(s.usage), 0);
+        const wTok = sessions.reduce((a, s) => a + s.wTokens, 0);
         const tools = sessions.reduce((a, s) => a + s.toolCalls, 0);
         const errors = sessions.reduce((a, s) => a + s.errors, 0);
         const input = sessions.reduce((a, s) => a + s.usage.input + s.usage.cacheRead + s.usage.cacheWrite, 0);
         const cacheRead = sessions.reduce((a, s) => a + s.usage.cacheRead, 0);
         const q = quality?.(agent.id);
         const qCell = q?.avg !== undefined ? `${q.avg.toFixed(1)}/5 (${q.count})` : '—';
-        lines.push(`| ${agent.name} | ${sessions.length} | ${fmtUSD(cost)} | ${fmtTokens(tok)} | ${tools} | ` +
+        lines.push(`| ${agent.name} | ${sessions.length} | ${fmtUSD(cost)} | ${fmtTokens(tok)} | ${fmtTokens(Math.round(wTok))} | ${tools} | ` +
             `${tools ? pct(errors / tools) : '—'} | ${qCell} | ${input ? pct(cacheRead / input) : '—'} | ` +
             `~${fmtTokens(agent.contextLoad.total)} | ${agent.memoryFiles.length} |`);
     }
@@ -96,10 +99,11 @@ export function buildFleetReport(
     if (top.length) {
         lines.push('## Most expensive sessions');
         lines.push('');
-        lines.push('| Agent | Session | Cost | Tokens | Tools |');
-        lines.push('| --- | --- | ---: | ---: | ---: |');
+        lines.push('| Agent | Session | Cost | Tokens | ⚖ Weighted | Tools |');
+        lines.push('| --- | --- | ---: | ---: | ---: | ---: |');
         for (const s of top) {
-            lines.push(`| ${s.agentName ?? '?'} | ${s.title.replace(/\|/g, '\\|')} | ${fmtUSD(s.cost)} | ${fmtTokens(totalTokens(s.usage))} | ${s.toolCalls} |`);
+            lines.push(`| ${s.agentName ?? '?'} | ${s.title.replace(/\|/g, '\\|')} | ${fmtUSD(s.cost)} | ` +
+                `${fmtTokens(totalTokens(s.usage))} | ${fmtTokens(Math.round(s.wTokens))} | ${s.toolCalls} |`);
         }
         lines.push('');
     }

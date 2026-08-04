@@ -336,6 +336,12 @@
         .filechip { display:inline-block; font-size:10px; padding:1px 7px; margin-left:6px; border-radius:8px;
             cursor:pointer; border:1px solid var(--vscode-widget-border,#4444); }
         .filechip:hover { background:var(--vscode-list-hoverBackground); }
+        /* what THIS call spent, hung on the step that spent it — an annotation,
+           never a headline competing with the row's own words */
+        .steptok { float:right; font-size:10px; opacity:.5; margin-left:8px; cursor:help; }
+        /* the session id doubles as the step-kind key — dotted underline is the
+           web's own promise that hovering will explain something */
+        .sidlegend { cursor:help; border-bottom:1px dotted var(--vscode-descriptionForeground,#888); }
         .permbox { margin:10px; padding:9px 11px; border-radius:8px;
             border:1px solid var(--vscode-editorWarning-foreground,#cca700);
             background:color-mix(in srgb, var(--vscode-editorWarning-foreground,#cca700) 12%, transparent); }
@@ -511,7 +517,8 @@
      * shape, so the live estimate and the CLI's own final figure can be read
      * against each other without translating between two layouts.
      */
-    const spend = (cost, tokens) => `${C.fmtUSD(cost || 0)}${tokens ? ` (${C.fmtTok(tokens)} tokens)` : ''}`;
+    const spend = (cost, tokens, wTokens) =>
+        `${C.fmtUSD(cost || 0)}${tokens ? ` (${C.fmtTokW(tokens, wTokens)} tokens)` : ''}`;
     /**
      * On a CARD there is room for one figure, and it is the tokens.
      *
@@ -522,8 +529,11 @@
      * The money is one hover away, and both strips under the conversation carry
      * it in full.
      */
-    const tokBadge = tokens => (tokens ? `${C.fmtTok(tokens)} tok` : '');
-    const tokTip = (tokens, cost) => (tokens ? `${C.fmtTok(tokens)} tokens` : 'nothing spent yet')
+    const tokBadge = (tokens, wTokens) => (tokens ? `${C.fmtTokW(tokens, wTokens)} tok` : '');
+    // The card has room for one line of hover, so the weighted figure is spelled
+    // out there rather than left as a glyph — see charts.js WEIGHTED_TIP.
+    const tokTip = (tokens, cost, wTokens) => (tokens ? `${C.fmtTok(tokens)} raw tokens` : 'nothing spent yet')
+        + (wTokens ? ` · ⚖ ${C.fmtTok(Math.round(wTokens))} against the 5h limit` : '')
         + (cost ? ` · ${C.fmtUSD(cost)} spent` : '');
 
     /**
@@ -549,7 +559,10 @@
      */
     function sessionSpend(s) {
         const live = s && s.status === 'working' ? (s.turnCost || 0) : 0;
-        return { cost: (s && s.cost || 0) + live, tokens: (s && s.tokens) || 0, est: live > 0 };
+        return {
+            cost: (s && s.cost || 0) + live, tokens: (s && s.tokens) || 0,
+            wTokens: (s && s.wTokens) || 0, est: live > 0
+        };
     }
 
     /**
@@ -744,8 +757,19 @@
             // not the question that reply was answering.
             return `<div class="msg user${m.steer ? ' steer' : ''}"${m.steer ? ' title="Said into the running turn — the agent picks it up at its next step"' : ''}><span class="who">you</span><div class="body">${C.esc(m.text || '')}</div></div>`;
         }
+        // ‼️ EVERY STEP ROW SAYS WHAT KIND OF STEP IT IS AND WHAT IT COST.
+        // The conversation used to show only WHAT happened: a file read off
+        // this disk and the model reasoning for nine seconds drew the same kind
+        // of row, though one is free to run and the other is billed at the
+        // output rate. The chip is the category, the figure beside it is what
+        // that API call spent — written ONCE per call, on its first block, so
+        // a row with no figure rode on the one above it (see stepkind.ts).
+        const step = m => C.stepChip(m.kind, m.stepTokens, m.stepWTokens)
+            + (m.stepTokens > 0
+                ? `<span class="steptok" title="What this API call spent — one call carries several steps and the figure is written once.">${C.fmtTokW(m.stepTokens, m.stepWTokens)}</span>`
+                : '');
         if (m.role === 'agent') {
-            return `<div class="msg"><span class="who">agent</span><div class="body">${C.esc(m.text || '')}</div></div>`;
+            return `<div class="msg"><span class="who">agent</span><div class="body">${C.esc(m.text || '')}${step(m)}</div></div>`;
         }
         if (m.role === 'tool') {
             if (m.tool) {
@@ -753,9 +777,9 @@
                     ? `<span class="filechip" data-open="${C.esc(m.tool.file)}" title="Open this file">✎ open</span>
                        <span class="filechip" data-diff="${C.esc(m.tool.file)}" title="Diff it against git HEAD">vs HEAD</span>`
                     : '';
-                return `<div class="msg tool"><span class="who">🔧</span><div class="body"><strong>${C.esc(m.tool.name)}</strong> ${C.esc(m.tool.detail)}${chip}</div></div>`;
+                return `<div class="msg tool"><span class="who">🔧</span><div class="body">${C.stepChip(m.kind, m.stepTokens, m.stepWTokens)}<strong>${C.esc(m.tool.name)}</strong> ${C.esc(m.tool.detail)}${chip}${m.stepTokens > 0 ? `<span class="steptok" title="What this API call spent — one call carries several steps and the figure is written once.">${C.fmtTokW(m.stepTokens, m.stepWTokens)}</span>` : ''}</div></div>`;
             }
-            return `<div class="msg tool${m.isError ? ' err' : ''}"><span class="who">${m.isError ? '⚠' : '↳'}</span><div class="body">${C.esc(m.text || '')}</div></div>`;
+            return `<div class="msg tool${m.isError ? ' err' : ''}"><span class="who">${m.isError ? '⚠' : '↳'}</span><div class="body">${C.stepChip(m.kind)}${C.esc(m.text || '')}</div></div>`;
         }
         // The record of a question and of what you said back. The CARD above the
         // composer is where you answer; this is the transcript's memory of it,
@@ -997,7 +1021,7 @@
                  title="${C.esc(s.title || 'not named yet')} — ${C.esc(p.label)} — right-click for session actions">
                 <div class="h">
                     <span class="n"><span class="dot"></span>${who(s.agentName, s.sessionId)}</span>
-                    <span class="m" title="${C.esc(tokTip(s.tokens, sessionSpend(s).cost))}">${tokBadge(s.tokens)}</span>
+                    <span class="m" title="${C.esc(tokTip(s.tokens, sessionSpend(s).cost, s.wTokens))}">${tokBadge(s.tokens, s.wTokens)}</span>
                 </div>
                 <div class="t2">${C.esc(s.title || '(no name yet)')}</div>
                 <div class="m"><span class="phase">${C.esc(p.label)}${waited ? ` · ${waited}` : ''}</span>${(s.queued || []).length ? ` · ${s.queued.length} held` : ''}${s.turns ? ` · ${s.turns} turns` : ''}${s.contextTokens ? ` · <span class="pair" title="Approximate context in the model window right now">ctx ${C.fmtTok(s.contextTokens)}</span>` : ''}${s.projectName ? ` · <span class="pbadge" title="Started under this project — it was told about it, and the session is filed under it">${s.projectIcon ? C.esc(s.projectIcon) : '◧'} ${C.esc(s.projectName)}</span>` : ''}</div>
@@ -1174,7 +1198,7 @@
                  })}
                  title="${owned.has(r.sessionId) ? 'Open right now in a terminal or another process — Agent Farm cannot join a running session' : C.esc(r.cwd) + ' — right-click for session actions'}">
                 <div class="n">${r.pinned ? '📌 ' : ''}${C.esc(r.title)}</div>
-                <div class="m wrap">${who(r.agentName, r.sessionId)} · ${relTime(r.ts)} ago${r.tokens ? ` · <span class="pair" title="${C.esc(tokTip(r.tokens, r.cost))}">${tokBadge(r.tokens)}</span>` : ''}${r.contextTokens ? ` · <span class="pair" title="Approximate context after this session's last reply — what resuming it starts from">ctx ${C.fmtTok(r.contextTokens)}</span>` : ''}</div>
+                <div class="m wrap">${who(r.agentName, r.sessionId)} · ${relTime(r.ts)} ago${r.tokens ? ` · <span class="pair" title="${C.esc(tokTip(r.tokens, r.cost, r.wTokens))}">${tokBadge(r.tokens, r.wTokens)}</span>` : ''}${r.contextTokens ? ` · <span class="pair" title="Approximate context after this session's last reply — what resuming it starts from">ctx ${C.fmtTok(r.contextTokens)}</span>` : ''}</div>
             </div>`).join('');
         // How many of how many — a list that silently ends at fifteen is why
         // the filter had to exist in the first place.
@@ -1214,14 +1238,29 @@
      *  move once per paint, whatever the timer's drift does */
     let spinAt = 0;
 
-    /** How many lines this turn has produced: everything since your own last
+    /** How many STEPS this turn has taken: everything since your own last
      *  message. The count you can see growing IS the turn. */
-    function turnLines(s) {
+    function turnSteps(s) {
         const list = (s && s.messages) || [];
         for (let i = list.length - 1; i >= 0; i--) {
             if (list[i].role === 'user') { return list.length - 1 - i; }
         }
         return list.length;
+    }
+
+    /**
+     * The turn's size, in the shape every surface uses: `14api/26`.
+     *
+     * ‼️ THE STRIP USED TO SAY ONLY THE SECOND NUMBER, AND IT IS THE ONE THAT
+     * EXPLAINS THE LEAST. Steps are what you watch scroll past; round trips are
+     * what the tokens are charged for, and one trip carries several steps. A
+     * turn doing the same visible work in half the round trips reads as
+     * unchanged here while its token figure halves — which is exactly how a
+     * correct counter comes to look broken.
+     */
+    function stepsHtml(apiCalls, steps) {
+        if (!steps && !apiCalls) { return ''; }
+        return ` · <span title="${C.esc(C.STEPS_TIP)}">${C.esc(C.fmtSteps(apiCalls, steps))}</span>`;
     }
 
     /**
@@ -1292,29 +1331,35 @@
         const glyph = DONE_GLYPH[t.outcome] || '✓';
         const word = t.outcome === 'interrupted' ? 'last turn interrupted'
             : t.outcome === 'failed' ? 'last turn failed' : 'last turn';
-        const secs = t.ms ? Math.max(1, Math.round(t.ms / 1000)) : 0;
         const money = t.cost || t.tokens
-            ? ` · <span title="What that turn cost, as the CLI reported it — not an estimate. The line under the box is the whole session.">${spend(t.cost, t.tokens)}</span>`
+            ? ` · <span title="What that turn cost, as the CLI reported it — not an estimate. The line under the box is the whole session.">${spend(t.cost, t.tokens, t.wTokens)}</span>`
             : '';
-        const lines = turnLines(s);
         return `<span class="dspin">${glyph}</span> <b>${word}</b>
-            <span class="wmeta">${secs ? `${secs}s` : ''}${money}${lines ? ` · ${lines} line${lines === 1 ? '' : 's'}` : ''}${turnBrainHtml(t.model, t.effort, false)} · your turn now</span>`;
+            <span class="wmeta">${t.ms ? C.fmtDur(t.ms) : ''}${money}${stepsHtml(t.apiCalls, turnSteps(s))}${turnBrainHtml(t.model, t.effort, false)} · your turn now</span>`;
     }
 
     function workingHtml(s) {
         if (!s || s.status !== 'working') { return lastTurnHtml(s); }
         const glyph = SPIN[spinAt % SPIN.length];
-        const secs = s.turnStartedAt ? Math.max(0, Math.round((Date.now() - s.turnStartedAt) / 1000)) : 0;
+        const ran = s.turnStartedAt ? Math.max(0, Date.now() - s.turnStartedAt) : 0;
         // what it reached for last — the honest version of "Thinking…"
+        // ‼️ AND WHAT KIND OF WORK THAT IS. "working" and a tool name told you
+        // WHAT was happening and never WHERE IT COSTS: a Read off this disk is
+        // free to run while the model writing is billed at the output rate. The
+        // chip in front says which, with the explanation on hover.
         let doing = 'working';
+        let doingKind = '';
         for (let i = (s.messages || []).length - 1; i >= 0; i--) {
             const m = s.messages[i];
             if (m.role === 'user') { break; }
             if (m.role === 'tool' && m.tool) {
                 doing = m.tool.detail ? `${m.tool.name} ${m.tool.detail}` : m.tool.name;
+                doingKind = m.kind || '';
                 break;
             }
+            if (m.role === 'agent' && m.text) { doingKind = m.kind || 'say'; doing = 'writing'; break; }
         }
+        const doingChip = doingKind ? C.stepChip(doingKind) + ' ' : '';
         const q = queuedOf(s).length;
         // What this turn is spending, as it spends it. The CLI only reports a
         // turn's real cost when the turn ends, so the money here is priced off
@@ -1324,9 +1369,8 @@
         // session" and the two are three centimetres apart; unlabelled, the
         // smaller number reads as a second opinion about the same thing.
         const cost = s.turnTokens || s.turnCost
-            ? ` · <span title="What THIS TURN has spent so far — the line under the box is the whole session. The money is an estimate at the usual rates; the turn's closing line carries the CLI's own figure.">~${spend(s.turnCost, s.turnTokens)} this turn</span>`
+            ? ` · <span title="What THIS TURN has spent so far — the line under the box is the whole session. The money is an estimate at the usual rates; the turn's closing line carries the CLI's own figure.">~${spend(s.turnCost, s.turnTokens, s.turnWTokens)} this turn</span>`
             : '';
-        const lines = turnLines(s);
         // ‼️ "⎋ Interrupt stops it" used to close this line and is gone on
         // purpose: it is a permanent instruction about a button that is on
         // screen, two centimetres below, already labelled "⎋ Interrupt" — so it
@@ -1334,8 +1378,8 @@
         // already says. The Esc key it also taught now lives in that button's
         // tooltip, where a key hint belongs. What took its place is the one thing
         // nothing else on screen was saying: WHAT this turn is thinking with.
-        return `<span class="spin">${glyph}</span> <b>${C.esc(doing)}</b>
-            <span class="wmeta">${secs}s${cost}${lines ? ` · ${lines} line${lines === 1 ? '' : 's'}` : ''}${q ? ` · ${q} held` : ''}${turnBrainHtml(s.turnModel, s.turnEffort, true)}</span>`;
+        return `<span class="spin">${glyph}</span> ${doingChip}<b>${C.esc(doing)}</b>
+            <span class="wmeta">${C.fmtDur(ran)}${cost}${stepsHtml(s.turnApiCalls, turnSteps(s))}${q ? ` · ${q} held` : ''}${turnBrainHtml(s.turnModel, s.turnEffort, true)}</span>`;
     }
 
     /** The glyph has to turn on its own — a data push only arrives when the CLI
@@ -1465,7 +1509,13 @@
         const spTip = sp.est
             ? 'Everything this session has spent — the finished turns as the CLI reported them, plus what the running turn has spent so far, priced off the tokens seen (that is what the ~ is). A conversation you resumed brings its earlier turns with it.'
             : 'Everything this session has spent, as the CLI reported it — and the tokens it bought. A conversation you resumed brings its earlier turns with it.';
-        return `${s.sessionId ? 'session ' + C.esc(s.sessionId.slice(0, 8)) + ' · ' : ''}${s.contextTokens ? `<span title="Approximate context in the model window right now">~${C.fmtTok(s.contextTokens)} ctx</span> · ` : ''}<span title="${spTip}">${sp.est ? '~' : ''}${spend(sp.cost, sp.tokens)}</span> this session · ${s.turns} turn${s.turns === 1 ? '' : 's'}
+        // ‼️ THE LEGEND HANGS ON THE SESSION ID. The step chips are one glyph
+        // each and there is no room on this strip for a key, so the one label
+        // that is always on screen and never moves carries it: hover the id and
+        // the whole scheme is there — every glyph, and what each one costs.
+        return `${s.sessionId
+            ? `<span class="sidlegend" title="${C.esc(C.stepKindLegendText())}">session ${C.esc(s.sessionId.slice(0, 8))}</span> · `
+            : ''}${s.contextTokens ? `<span title="Approximate context in the model window right now">~${C.fmtTok(s.contextTokens)} ctx</span> · ` : ''}<span title="${spTip}">${sp.est ? '~' : ''}${spend(sp.cost, sp.tokens, sp.wTokens)}</span> this session · ${s.turns} turn${s.turns === 1 ? '' : 's'}
             <span class="grow"></span>
             ${attachBtnHtml()}
             ${s.sessionId ? '<button class="secondary" id="c-transcript">Open transcript</button>' : ''}

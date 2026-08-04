@@ -137,11 +137,17 @@ const {
     const fs = require('fs');
     const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
     const cmd = ext.slice(ext.indexOf("registerCommand('agentfarm.pinSession'"),
-        ext.indexOf("registerCommand('agentfarm.pinSession'") + 1400);
+        ext.indexOf("registerCommand('agentfarm.pinSession'") + 2000);
     ok('the pin command reads wantPinned, never the row\'s own pinned flag',
         /wantPinned/.test(cmd) && !/\?\.pinned === 'boolean'/.test(cmd));
-    ok('…and falls back to a real toggle when no state is asked for',
-        /togglePin\(marks, sessionId, want\)/.test(cmd));
+    ok('…and falls back to a real toggle read off the marks, not off the row',
+        /!isPinned\(marks,/.test(cmd) && /togglePin\(marks,/.test(cmd));
+    // ‼️ On a SELECTION the whole set must move the same way, decided once by
+    // the row that was clicked. Toggling each one on its own state would invert
+    // the ones already pinned, so "pin these twelve" would come back with four
+    // of them unpinned and no explanation anywhere.
+    ok('‼️ a bulk pin decides the direction ONCE and applies it to all of them',
+        /for \(const s of list\) \{ marks = togglePin\(marks, s\.sessionId as string, want\); \}/.test(cmd));
     for (const panel of ['dashboard.ts', 'agentDetail.ts']) {
         const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', panel), 'utf8');
         const block = src.slice(src.indexOf("case 'pinSession'"), src.indexOf("case 'pinSession'") + 500);

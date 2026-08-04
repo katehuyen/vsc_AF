@@ -81,6 +81,16 @@
         .af-pdot { display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:5px;
             background:var(--vscode-panel-border); vertical-align:middle; }
         .foldcell { width:22px; }
+        /* Selection: one narrow always-present column. Always present rather
+           than a mode you switch on — a checkbox that appears only after you
+           find the button that reveals it is a feature nobody finds. */
+        .selcell { width:20px; text-align:center; }
+        .selcell input { margin:0; cursor:pointer; vertical-align:middle; }
+        tr.sessrow.picked > td { background:color-mix(in srgb, var(--vscode-textLink-foreground) 26%, transparent); }
+        .af-selbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:0 0 8px;
+            padding:5px 10px; border-radius:5px;
+            background:var(--vscode-editorWidget-background, #8881);
+            border:1px solid var(--vscode-widget-border, #4444); font-size:11px; }
         /* Origin: one narrow glyph column — the eye scans a single strip to tell
            your own dialogs from automation runs. The word is in the tooltip. */
         .origcell { width:20px; text-align:center; font-size:11px; line-height:1;
@@ -166,6 +176,21 @@
         const open = new Set();
         const turnCache = {}; // file -> { ts, turns|null } (null = request in flight)
         let shown = [];       // exactly what's on screen, set by the last render
+        /**
+         * ‼️ THE SELECTION IS SESSION-LOCAL AND DELIBERATELY NOT PERSISTED.
+         *
+         * A selection restored from a previous window is a set of rows somebody
+         * chose for a reason they no longer remember, sitting behind a menu
+         * whose commands act on all of them. Sort, filters and single-open are
+         * a way of LOOKING at the table and are worth keeping; "these twelve
+         * sessions" is an action half-taken.
+         *
+         * Keyed by transcript file, because that is the one handle every row
+         * has (a session that never started has no id yet).
+         */
+        const picked = new Set();
+        /** Anchor for shift-click ranges — the last row clicked without shift. */
+        let anchor = '';
 
         function saveState() {
             if (typeof vscode.setState !== 'function') { return; }
@@ -343,7 +368,7 @@
             turns: r => `<td class="num">${r.turns || 0}</td>`,
             tools: r => `<td class="num">${r.toolCalls || 0}</td>`,
             errors: r => `<td class="num">${r.errors || ''}</td>`,
-            tokens: r => `<td class="num">${C.fmtTok(r.tokens)}</td>`,
+            tokens: r => `<td class="num">${C.fmtTokW(r.tokens, r.wTokens)}</td>`,
             ctx: r => `<td class="num">${r.ctx ? '~' + C.fmtTok(r.ctx) : '—'}</td>`,
             cost: r => `<td class="num"><strong>${C.fmtUSD(r.cost)}</strong></td>`
         };
@@ -356,14 +381,20 @@
             // name table here, so tomorrow's model shows up on its own
             const tags = t => (t.models || []).map(m => m.replace(/^claude-/, ''))
                 .concat(Object.values(t.attrs || {}));
+            // The same four figures the viewer's turn band carries, in the same
+            // order and the same words — a turn read here and read there must
+            // not look like two different turns.
             return `<table class="turnmini">
-                <tr><th>#</th><th>prompt</th><th>model</th><th class="num">tokens</th><th class="num">cost</th></tr>
+                <tr><th>#</th><th>prompt</th><th>model</th><th class="num" title="${C.esc(C.STEPS_TIP)}">steps</th><th class="num">took</th><th class="num">tokens</th><th class="num">cost</th><th class="num" title="What the window held when the turn ended">ctx</th></tr>
                 ${c.turns.map(t => `<tr class="click" data-turnjump="${C.esc(r.file)}" data-turnts="${t.ts || 0}"
                     title="Open the transcript at turn ${t.n}">
                     <td class="num">${t.n}</td><td title="${C.esc(t.label || '')}">${C.esc(t.label || '—')}</td>
                     <td>${tags(t).map(x => `<span class="tag">${C.esc(x)}</span>`).join('') || '—'}</td>
-                    <td class="num">${t.tokens ? C.fmtTok(t.tokens) : '—'}</td>
+                    <td class="num">${t.steps || t.apiCalls ? C.esc(C.fmtSteps(t.apiCalls, t.steps)) : '—'}</td>
+                    <td class="num">${t.ms ? C.esc(C.fmtDur(t.ms)) : '—'}</td>
+                    <td class="num">${t.tokens ? C.fmtTokW(t.tokens, t.wTokens) : '—'}</td>
                     <td class="num">${t.cost ? C.fmtUSD(t.cost) : '—'}</td>
+                    <td class="num">${t.endCtx ? C.fmtTok(t.endCtx) : '—'}</td>
                 </tr>`).join('')}
             </table>`;
         }
@@ -385,15 +416,23 @@
                 shown = pinnedRows.concat(shown.filter(r => !r.pinned).slice(0, tableN));
             }
             shown.forEach(r => { if (open.has(r.file)) { ensureTurns(r); } });
+            // The rows the selection actually covers — what a bulk command
+            // would act on, and what the bar has to be able to say out loud.
+            const chosen = shown.filter(r => picked.has(r.file));
             const rowsHtml = shown.map(r => {
                 const o = open.has(r.file);
-                return `<tr class="click sessrow${o ? ' open' : ''}" data-session="${C.esc(r.file)}"
-                    ${window.AFSessionCtx.row(r)} title="${window.AFSessionCtx.HINT}">
+                const on = picked.has(r.file);
+                return `<tr class="click sessrow${o ? ' open' : ''}${on ? ' picked' : ''}" data-session="${C.esc(r.file)}"
+                    ${window.AFSessionCtx.row(r, on ? bulkContext(chosen) : undefined)}
+                    title="${on ? bulkHint(chosen.length) : window.AFSessionCtx.HINT}">
+                    <td class="selcell"><input type="checkbox" data-sel="${C.esc(r.file)}"${on ? ' checked' : ''}
+                        title="Select this session — shift-click for a range, then right-click any selected row"></td>
                     <td class="foldcell"><button class="fold" data-fold="${C.esc(r.file)}" title="${o ? 'Hide' : 'List'} this session's turns">${o ? '▾' : '▸'}</button></td>
                     <td class="pincell"><button class="pinbtn${r.pinned ? ' on' : ''}" data-pin="${C.esc(r.sessionId || '')}" data-pinned="${r.pinned ? '1' : '0'}" title="${r.pinned ? 'Pinned — click to take it off your shelf' : 'Pin this session to your shelf (always listed first)'}">${r.pinned ? '★' : '☆'}</button></td>
                     ${cols.map(c => CELL[c](r)).join('')}
-                </tr>` + (o ? `<tr class="sessturns"><td colspan="2"></td><td colspan="${cols.length}">${turnPanelHtml(r)}</td></tr>` : '');
+                </tr>` + (o ? `<tr class="sessturns"><td colspan="3"></td><td colspan="${cols.length}">${turnPanelHtml(r)}</td></tr>` : '');
             }).join('');
+            const allOn = shown.length > 0 && chosen.length === shown.length;
             return `${STYLE}
             <div class="chiprow">
                 <span class="muted small">Sort by:</span>
@@ -410,10 +449,62 @@
                 <span class="muted small">${hidden > 0 ? `${pool.length}/${rows.length} sessions` : '— ▸ lists a session\'s turns with per-turn tokens/cost · ● = active now · ctx = context after the last reply'}</span>
             </div>
             ${filterPanelHtml()}
+            ${selBarHtml(chosen)}
             <div class="tablewrap"><table>
-                <tr><th></th><th class="pincell" title="Your shelf — ★ pins a session so it is always listed first and never cut by the row limit">★</th>${cols.map(c => HEAD[c]).join('')}</tr>
-                ${rowsHtml || `<tr><td colspan="${cols.length + 2}" class="muted">${rows.length ? 'No sessions match the filters.' : 'No sessions yet.'}</td></tr>`}
+                <tr>
+                    <th class="selcell"><input type="checkbox" class="af-selall"${allOn ? ' checked' : ''}
+                        title="${allOn ? 'Clear the selection' : 'Select every session listed here'}"></th>
+                    <th></th>
+                    <th class="pincell" title="Your shelf — ★ pins a session so it is always listed first and never cut by the row limit">★</th>${cols.map(c => HEAD[c]).join('')}</tr>
+                ${rowsHtml || `<tr><td colspan="${cols.length + 3}" class="muted">${rows.length ? 'No sessions match the filters.' : 'No sessions yet.'}</td></tr>`}
             </table></div>`;
+        }
+
+        /**
+         * What a selected row hands to the right-click menu on top of its own
+         * identity.
+         *
+         * ‼️ THE SELECTION TRAVELS AS CONTEXT, NOT AS A MESSAGE OF ITS OWN.
+         * The row's menu is already the whole session action set, built by VS
+         * Code from `webview/context`; adding `sessionIds` to the context makes
+         * every one of those commands able to act on all of them without this
+         * component knowing which commands exist, and without any host that
+         * embeds the table having to answer a new message. A bulk action bar
+         * with its own buttons would be a second, shorter copy of that menu —
+         * and the copy is the one that goes out of date.
+         *
+         * It is attached ONLY to rows that are in the selection. A right-click
+         * on an unselected row is then, correctly, about that row alone: the
+         * context is static, so this is what makes "the menu acts on what you
+         * pointed at" true without any click-time bookkeeping.
+         */
+        function bulkContext(chosen) {
+            return {
+                // `afSelectedSessions` is the key the project commands have
+                // taken since the selection contract was written; the paths ride
+                // beside it so a row whose session has not reported an id yet is
+                // still part of the action rather than silently dropped.
+                afSelectedSessions: chosen.map(r => r.sessionId || '').filter(Boolean),
+                afSelectedFiles: chosen.map(r => r.file).filter(Boolean),
+                afSelectionCount: chosen.length
+            };
+        }
+        const bulkHint = n =>
+            `${n} session${n === 1 ? '' : 's'} selected — right-click to act on all of them`;
+
+        /** The bar only exists while something is selected: an empty one would
+         *  be a permanent strip of chrome saying nothing. */
+        function selBarHtml(chosen) {
+            if (!chosen.length) { return ''; }
+            const cost = chosen.reduce((n, r) => n + (r.cost || 0), 0);
+            const live = chosen.filter(r => r.active).length;
+            return `<div class="af-selbar">
+                <b>${chosen.length}</b> selected
+                <span class="muted">${C.fmtUSD(cost)}${live ? ` · ${live} running` : ''}</span>
+                <span class="muted">— right-click any selected row for the action menu:
+                    pin, label, file to a project, interrupt, end.</span>
+                <button class="chip af-selclear">Clear</button>
+            </div>`;
         }
 
         function renderSection() {
@@ -522,6 +613,51 @@
                 });
                 wireEl('.af-fclear', 'click', () => { filters = FDEF(); apply(); });
             }
+            // ---- selection ----
+            // ‼️ The checkbox stops the click from reaching the row underneath,
+            // which opens the transcript. Selecting twelve sessions must not
+            // also open twelve editors.
+            root.querySelectorAll('[data-sel]').forEach(box =>
+                box.addEventListener('click', ev => {
+                    ev.stopPropagation();
+                    const file = box.dataset.sel;
+                    const want = box.checked === true;
+                    // Shift extends from the last row clicked WITHOUT shift, in
+                    // the order the table is currently showing — the range a
+                    // reader means is the one they can see, not the one the
+                    // underlying pool happens to be in.
+                    if (ev.shiftKey && anchor && anchor !== file) {
+                        const order = shown.map(r => r.file);
+                        const a = order.indexOf(anchor), b = order.indexOf(file);
+                        if (a >= 0 && b >= 0) {
+                            for (const f of order.slice(Math.min(a, b), Math.max(a, b) + 1)) {
+                                if (want) { picked.add(f); } else { picked.delete(f); }
+                            }
+                        }
+                    } else {
+                        if (want) { picked.add(file); } else { picked.delete(file); }
+                        anchor = file;
+                    }
+                    renderSection();
+                }));
+            const selAll = root.querySelector('.af-selall');
+            if (selAll) {
+                selAll.addEventListener('click', ev => {
+                    ev.stopPropagation();
+                    // "every session listed here" — the rows on screen, not the
+                    // whole pool. Selecting rows the filter is hiding would put
+                    // sessions the reader cannot see into a bulk action.
+                    const all = shown.length > 0 && shown.every(r => picked.has(r.file));
+                    shown.forEach(r => { if (all) { picked.delete(r.file); } else { picked.add(r.file); } });
+                    anchor = '';
+                    renderSection();
+                });
+            }
+            const selClear = root.querySelector('.af-selclear');
+            if (selClear) {
+                selClear.addEventListener('click', () => { picked.clear(); anchor = ''; renderSection(); });
+            }
+
             root.querySelectorAll('[data-session]').forEach(row =>
                 row.addEventListener('click', () =>
                     vscode.postMessage({ type: 'openSession', file: row.dataset.session })));
@@ -592,6 +728,15 @@
         function setRows(r, n) {
             rows = r || [];
             if (n !== undefined && n !== null) { tableN = n; }
+            // ‼️ A selection must never outlive the row it points at. The host
+            // resends the pool on its own beat, and a session that has been
+            // cleared away would otherwise stay silently in the set — counted
+            // in the bar and handed to the next bulk command as a path to a
+            // file nobody can see.
+            if (picked.size) {
+                const alive = new Set(rows.map(x => x.file));
+                for (const f of [...picked]) { if (!alive.has(f)) { picked.delete(f); } }
+            }
             renderSection();
         }
 

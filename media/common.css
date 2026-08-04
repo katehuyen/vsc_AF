@@ -20,6 +20,24 @@ hr { border: none; border-top: 1px solid var(--vscode-widget-border, #4443); mar
 blockquote { border-left: 3px solid var(--vscode-textLink-foreground); margin: 8px 0; padding: 4px 12px; opacity: .9; }
 
 .muted { opacity: .65; }
+/* The weighted-token twin that rides beside every raw token figure (⚖).
+   Dimmed and a size down so it reads as an annotation on the number it
+   follows, never as a competing headline — see charts.js fmtTokW. */
+.wtok { opacity: .62; font-size: .88em; white-space: nowrap; margin-left: .35em; cursor: help; }
+/* Step kind (see charts.js STEP_KIND): one glyph, colour-coded by where the
+   cost comes from — model time is warm, free local work is cool, and the row
+   that merely brings a result back is dimmed. A chip, never a headline. */
+.skind { display: inline-block; width: 1.1em; text-align: center; cursor: help; opacity: .8; }
+.sk-think, .sk-say { color: var(--vscode-charts-orange, #d18616); opacity: 1; }
+.sk-local { color: var(--vscode-charts-blue, #3794ff); }
+.sk-mcp { color: var(--vscode-charts-purple, #b180d7); }
+.sk-web { color: var(--vscode-charts-green, #4caf50); }
+.sk-subagent { color: var(--vscode-charts-yellow, #cca700); }
+.sk-harness { color: var(--vscode-descriptionForeground, #999); }
+.sk-result, .sk-none { opacity: .45; }
+.skleg { margin-right: .9em; white-space: nowrap; font-size: 11px; opacity: .8; cursor: help; }
+.steplegend { margin: 6px 0 10px; padding: 5px 8px; border-radius: 4px;
+    background: color-mix(in srgb, var(--vscode-foreground) 6%, transparent); }
 .small { font-size: 11px; }
 .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: stretch; }
 .spread { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }

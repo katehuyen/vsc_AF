@@ -112,3 +112,25 @@ export function optStr(args: Record<string, unknown>, key: string): string {
     const v = args[key];
     return typeof v === 'string' ? v.trim() : '';
 }
+
+/**
+ * The session (or sessions) an op was called about — `sessionId`, `sessionIds`,
+ * or both.
+ *
+ * ‼️ ONE spelling of "which sessions", shared by every op that can act on more
+ * than one. The alternative is each op inventing its own plural key and an
+ * agent having to remember which is which; and once the panels can do a thing
+ * to a selection, the bridge has to be able to do it to a set or the two
+ * surfaces have drifted (`_REF/agentfarm-dev.md`). Duplicates are collapsed —
+ * an op told the same session twice must not do the work twice.
+ */
+export function argSessionIds(args: Record<string, unknown>): string[] {
+    const out: string[] = [];
+    const push = (v: unknown): void => {
+        const s = String(v ?? '').trim();
+        if (s && !out.includes(s)) { out.push(s); }
+    };
+    push(args.sessionId);
+    if (Array.isArray(args.sessionIds)) { for (const v of args.sessionIds) { push(v); } }
+    return out;
+}

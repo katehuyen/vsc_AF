@@ -45,7 +45,7 @@ function blankInfo(file: string, sessionId: string, source: string, mtime: numbe
         file, sessionId, isSidechain: false, source,
         title: `${source} session`, autoTitle: `${source} session`,
         firstTs: mtime, lastTs: mtime, mtime,
-        models: [], usage: emptyUsage(), cost: 0,
+        models: [], usage: emptyUsage(), wTokens: 0, cost: 0,
         userTurns: 0, assistantMsgs: 0, toolCalls: 0, tools: {},
         skillCalls: {}, memoryReads: {}, filesEdited: {}, errors: 0,
         daily: {}, heat: new Array(168).fill(0), events: [], recentMsgs: [], turns: []

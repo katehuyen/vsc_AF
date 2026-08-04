@@ -2,13 +2,16 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo } from './agents';
-import { addUsage, contextAfter, emptyUsage, PricingEngine, totalTokens, Usage } from './pricing';
+import { addUsage, contextAfter, emptyUsage, PricingEngine, RawUsage, toUsage, totalTokens, Usage, weightedTokens } from './pricing';
 import { normalizeMarks, SessionMarks } from './sessionmarks';
 import { dayKey, normPath, truncate } from './util';
 
 export interface DailyBucket {
     cost: number;
     usage: Usage;
+    /** Sonnet-input-equivalent tokens — what the day cost the plan limit, as
+     *  opposed to `usage`'s raw sum. See QUOTA_WEIGHTS. */
+    wTokens: number;
     assistantMsgs: number;
 }
 
@@ -25,6 +28,8 @@ export interface FeedEvent {
 export interface RecentMsg {
     ts: number;
     tokens: number;
+    /** Sonnet-input-equivalent tokens — see QUOTA_WEIGHTS. */
+    wTokens: number;
     cost: number;
 }
 
@@ -39,7 +44,33 @@ export interface SessionTurn {
     /** Opening prompt time — other surfaces deep-link via openSession(file, ts). */
     ts: number;
     tokens: number;
+    /**
+     * The same turn measured in what the plan limit actually charges —
+     * Sonnet-input-equivalent tokens, see QUOTA_WEIGHTS. Carried next to
+     * `tokens` everywhere rather than instead of it: the raw figure says how
+     * much text moved, this one says how much of the window it burned, and
+     * showing only the first is what made a turn with fewer calls but a bigger
+     * context look like a miscount.
+     */
+    wTokens: number;
     cost: number;
+    /**
+     * Round trips to the model inside this turn.
+     *
+     * ‼️ NOT THE SAME NUMBER AS `steps`, AND THAT IS THE POINT. One API call
+     * carries several content blocks, so a turn's step count can hold steady
+     * while its call count halves — and the tokens follow the CALLS. Surfaces
+     * that showed only one of the two made a change in the other look like a
+     * counting fault. Counted inside the dedup guard, off the same lines the
+     * tokens come from.
+     */
+    apiCalls: number;
+    /** Reply fragments + tool calls — what the agent visibly did. */
+    steps: number;
+    /** Prompt → last recorded line, in ms. 0 while the turn is still open. */
+    ms: number;
+    /** What the window held when the turn ended (0 = never measured). */
+    endCtx: number;
     /** Tool calls answered inside this turn (sidechain work bills to the open turn). */
     tools: number;
     /** Tool errors inside this turn. */
@@ -76,6 +107,8 @@ export interface SessionInfo {
     mtime: number;
     models: string[];
     usage: Usage;
+    /** Sonnet-input-equivalent tokens for the whole session — see QUOTA_WEIGHTS. */
+    wTokens: number;
     cost: number;
     userTurns: number;
     assistantMsgs: number;
@@ -162,12 +195,7 @@ interface JsonlLine {
         role?: string;
         model?: string;
         content?: unknown;
-        usage?: {
-            input_tokens?: number;
-            output_tokens?: number;
-            cache_creation_input_tokens?: number;
-            cache_read_input_tokens?: number;
-        };
+        usage?: RawUsage;
     };
 }
 
@@ -237,6 +265,7 @@ export function parseSessionFile(
         mtime: st.mtimeMs,
         models: [],
         usage: emptyUsage(),
+        wTokens: 0,
         cost: 0,
         userTurns: 0,
         assistantMsgs: 0,
@@ -261,7 +290,8 @@ export function parseSessionFile(
     const openTurn = (text: string, tsIn: number) => {
         info.turns.push({
             n: info.turns.length + 1, label: turnLabel(text), ts: tsIn,
-            tokens: 0, cost: 0, tools: 0, errors: 0, models: []
+            tokens: 0, wTokens: 0, cost: 0, apiCalls: 0, steps: 0, ms: 0, endCtx: 0,
+            tools: 0, errors: 0, models: []
         });
         turnModelSets.push(new Set());
     };
@@ -347,59 +377,88 @@ export function parseSessionFile(
             // stands — see contextAfter.
             const ctxNow = contextAfter(msg.usage);
             if (ctxNow > 0) { info.lastCtxTokens = ctxNow; }
+            {
+                // Where the turn stands: how long it has run and where it left
+                // the window. Both track the LAST line seen, so a turn still
+                // being written reports what it has reached so far.
+                const t = curTurn();
+                if (t) {
+                    if (ctxNow > 0) { t.endCtx = ctxNow; }
+                    if (ts && t.ts && ts > t.ts) { t.ms = ts - t.ts; }
+                }
+            }
 
             let msgCost = 0;
             let msgTokens = 0;
+            let msgWTokens = 0;
             const usageKey = `${msg.id ?? ''}:${line.requestId ?? ''}`;
             const alreadyCounted = usageKey !== ':' && seenUsageKeys.has(usageKey);
             if (!alreadyCounted && msg.usage) {
                 if (usageKey !== ':') { seenUsageKeys.add(usageKey); }
-                const u: Usage = {
-                    input: msg.usage.input_tokens ?? 0,
-                    output: msg.usage.output_tokens ?? 0,
-                    cacheWrite: msg.usage.cache_creation_input_tokens ?? 0,
-                    cacheRead: msg.usage.cache_read_input_tokens ?? 0
-                };
+                // ‼️ Read through toUsage, never field by field: the flat
+                // cache-creation number throws away the TTL split, and a
+                // 1-hour write costs 1.6x what a 5-minute one does.
+                const u: Usage = toUsage(msg.usage);
                 addUsage(info.usage, u);
                 msgTokens = totalTokens(u);
+                // Weighted off the SAME line, inside the SAME dedup guard, from
+                // the model that actually served it — so the raw figure and the
+                // limit figure can never tell two different stories about one
+                // reply. Never taken from `costUSD`: that is billing, and the
+                // user may re-rate it (see QUOTA_WEIGHTS).
+                msgWTokens = weightedTokens(msg.model ?? '', u);
                 msgCost = typeof line.costUSD === 'number'
                     ? line.costUSD
                     : pricing.costFor(msg.model ?? '', u, ts);
                 info.cost += msgCost;
+                info.wTokens += msgWTokens;
                 const t = curTurn();
                 if (t && (msgTokens || msgCost)) {
                     // Usage bills to the open turn — including sidechain work,
                     // matching the viewer's turn-total accounting.
                     t.tokens += msgTokens;
+                    t.wTokens += msgWTokens;
                     t.cost += msgCost;
+                    // One round trip, counted off the same line the tokens came
+                    // from (inside the dedup guard) so the two can never
+                    // disagree — see SessionTurn.apiCalls.
+                    t.apiCalls++;
                 }
 
                 if (ts) {
                     const day = dayKey(ts);
                     const bucket = info.daily[day] ??
-                        (info.daily[day] = { cost: 0, usage: emptyUsage(), assistantMsgs: 0 });
+                        (info.daily[day] = { cost: 0, usage: emptyUsage(), wTokens: 0, assistantMsgs: 0 });
                     bucket.cost += msgCost;
                     addUsage(bucket.usage, u);
+                    bucket.wTokens += msgWTokens;
                     bucket.assistantMsgs++;
 
                     const d = new Date(ts);
                     info.heat[d.getDay() * 24 + d.getHours()]++;
 
                     if (now - ts < RECENT_MSG_WINDOW_MS) {
-                        info.recentMsgs.push({ ts, tokens: msgTokens, cost: msgCost });
+                        info.recentMsgs.push({ ts, tokens: msgTokens, wTokens: msgWTokens, cost: msgCost });
                     }
                 }
             }
             info.assistantMsgs++;
 
             if (Array.isArray(msg.content)) {
-                for (const block of msg.content as { type?: string; name?: string; input?: Record<string, unknown> }[]) {
+                for (const block of msg.content as { type?: string; name?: string; text?: string; input?: Record<string, unknown> }[]) {
+                    // A step is one thing the agent visibly did: a fragment of
+                    // reply, or a tool call. Counted on the same blocks the
+                    // viewer renders, so the two surfaces agree on the number.
+                    if (block?.type === 'text' && block.text?.trim()) {
+                        const t = curTurn();
+                        if (t) { t.steps++; }
+                    }
                     if (block?.type === 'tool_use' && block.name) {
                         info.toolCalls++;
                         info.tools[block.name] = (info.tools[block.name] ?? 0) + 1;
                         {
                             const t = curTurn();
-                            if (t) { t.tools++; }
+                            if (t) { t.tools++; t.steps++; }
                         }
                         if (block.name === 'Skill') {
                             const skillName = String(block.input?.['skill'] ?? '').trim();
@@ -763,34 +822,46 @@ export class SessionIndex implements vscode.Disposable {
     }
 
     /** Usage within the trailing 5-hour window (subscription pacing approximation). */
-    windowUsage(now = Date.now()): { tokens: number; cost: number; msgs: number; windowStart: number } {
+    /**
+     * The rolling 5-hour window — the same span the plan's limit resets on.
+     *
+     * ‼️ `wTokens` IS THE ONE THAT BELONGS NEXT TO THE LIMIT, NOT `tokens`.
+     * Measured over 32 days: the eight heaviest windows sit inside a ±13% band
+     * by weighted total (75.5M-96.7M — a ceiling being hit) while the RAW
+     * totals of those same windows span 111M-175M. Reading the limit off the
+     * raw figure therefore says the wall moved when only the shape of the work
+     * did — see QUOTA_WEIGHTS.
+     */
+    windowUsage(now = Date.now()): { tokens: number; wTokens: number; cost: number; msgs: number; windowStart: number } {
         const windowStart = now - 5 * 3600 * 1000;
-        let tokens = 0, cost = 0, msgs = 0;
+        let tokens = 0, wTokens = 0, cost = 0, msgs = 0;
         for (const s of this.sessions.values()) {
             for (const m of s.recentMsgs) {
                 if (m.ts >= windowStart) {
                     tokens += m.tokens;
+                    wTokens += m.wTokens;
                     cost += m.cost;
                     msgs++;
                 }
             }
         }
-        return { tokens, cost, msgs, windowStart };
+        return { tokens, wTokens: Math.round(wTokens), cost, msgs, windowStart };
     }
 
     /** Usage since a user-set lap mark (trip meter). Sources recentMsgs, so it only sees the last 48h. */
-    lapUsage(sinceTs: number): { tokens: number; cost: number; msgs: number } {
-        let tokens = 0, cost = 0, msgs = 0;
+    lapUsage(sinceTs: number): { tokens: number; wTokens: number; cost: number; msgs: number } {
+        let tokens = 0, wTokens = 0, cost = 0, msgs = 0;
         for (const s of this.sessions.values()) {
             for (const m of s.recentMsgs) {
                 if (m.ts >= sinceTs) {
                     tokens += m.tokens;
+                    wTokens += m.wTokens;
                     cost += m.cost;
                     msgs++;
                 }
             }
         }
-        return { tokens, cost, msgs };
+        return { tokens, wTokens: Math.round(wTokens), cost, msgs };
     }
 
     updatePricing(pricing: PricingEngine): void {

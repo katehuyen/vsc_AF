@@ -42,6 +42,8 @@ function makeContainer() {
             } else if (sel === '[data-turnjump]') {
                 grab(/data-turnjump="([^"]*)" data-turnts="(\d+)"/g,
                     m => ({ turnjump: m[1], turnts: m[2] }));
+            } else if (sel === '[data-sel]') {
+                grab(/data-sel="([^"]*)"/g, m => ({ sel: m[1] }));
             } else if (sel === '[data-pin]') {
                 grab(/data-pin="([^"]*)" data-pinned="([^"]*)"/g, m => ({ pin: m[1], pinned: m[2] }));
             } else if (sel === '[data-stop]') {
@@ -77,6 +79,9 @@ const vscodeStub = {
 const C = {
     esc: s => String(s === undefined || s === null ? '' : s).replace(/</g, '&lt;'),
     fmtTok: v => v + 't',
+            fmtTokW(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' [w' + this.fmtTok(Math.round(w)) + ']' : ''); },
+            fmtTokWText(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' (w' + this.fmtTok(Math.round(w)) + ')' : ''); },
+            WEIGHTED_TIP: 'weighted',
     fmtUSD: v => '$' + v
 };
 const ev = () => ({ stopPropagation() { } });
@@ -513,6 +518,92 @@ const mkRow = (i, extra) => Object.assign({
     ok('afSessionCtx.js is loaded by the shared shell',
         /afSessionCtx\.js/.test(fs.readFileSync(path.resolve(__dirname, '../src/panels/base.ts'), 'utf8')));
     ok('the test shared-media list still matches htmlShell', shared.matchesShell());
+}
+
+// ---------- part 10: multi-select, and what it hands the right-click menu ----------
+// ‼️ The selection does not get an action bar of its own. The row's menu is
+// already the whole session action set; the selection rides ALONG on the row's
+// `data-vscode-context`, so every one of those commands becomes a bulk command
+// with no new message and nothing for a host that embeds this table to answer.
+{
+    posted = []; state = {};
+    const t = sandbox.window.AFSessionsTable.create({
+        vscode: vscodeStub, C, containerId: 'multi',
+        columns: ['title', 'when', 'cost'], stateKey: 'multi'
+    });
+    const rows = [mkRow(1), mkRow(2), mkRow(3), mkRow(4)];
+    t.setRows(rows, 0);
+    const html = () => containers.multi.innerHTML;
+    const boxes = () => containers.multi.querySelectorAll('[data-sel]');
+    const pick = (file, shift) => {
+        const el = boxes().find(b => b.dataset.sel === file);
+        el.checked = true;
+        el._fn({ stopPropagation() { }, shiftKey: !!shift });
+    };
+    const ctxOf = file => {
+        const at = html().indexOf(`data-session="${file}"`);
+        const tag = html().slice(at, html().indexOf('>', at));
+        const m = /data-vscode-context="([^"]*)"/.exec(tag);
+        return m ? JSON.parse(m[1].replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&amp;/g, '&')) : null;
+    };
+
+    ok('every row carries a selection box', boxes().length === 4);
+    ok('nothing is selected to begin with', !/class="af-selbar"/.test(html()));
+    ok('an unselected row\'s menu is about that row alone', !ctxOf('f1').afSelectedSessions);
+
+    pick('f1');
+    ok('picking one shows the bar and counts it', /class="af-selbar"/.test(html()) && /<b>1<\/b> selected/.test(html()));
+    ok('…and that row now hands the menu the selection',
+        ctxOf('f1').afSelectedSessions.join() === 'sid1');
+    ok('…while a row outside the selection still does not',
+        !ctxOf('f3').afSelectedSessions);
+
+    // ‼️ shift extends over what is ON SCREEN, in the order the reader sees
+    pick('f3', true);
+    ok('shift-click takes the whole range, not just the two ends',
+        ctxOf('f2').afSelectedSessions.join() === 'sid1,sid2,sid3');
+    ok('the bar counts the range', /<b>3<\/b> selected/.test(html()));
+    ok('the transcript paths travel too — a session with no id yet is still in it',
+        ctxOf('f2').afSelectedFiles.join() === 'f1,f2,f3');
+
+    // select-all covers what is listed, then clears
+    containers.multi.querySelector('.af-selall')._fn({ stopPropagation() { } });
+    ok('select-all takes every listed row', ctxOf('f4').afSelectedSessions.length === 4);
+    containers.multi.querySelector('.af-selall')._fn({ stopPropagation() { } });
+    ok('…and pressing it again clears them', !/class="af-selbar"/.test(html()));
+
+    // ‼️ a selection must not outlive the row it points at
+    pick('f1'); pick('f2');
+    t.setRows([mkRow(2), mkRow(3)], 0);
+    ok('a row that left the pool leaves the selection with it',
+        /<b>1<\/b> selected/.test(html()) && ctxOf('f2').afSelectedSessions.join() === 'sid2');
+
+    // the checkbox must not open the transcript underneath it
+    ok('selecting posts nothing — it is not a navigation',
+        !posted.some(p => p.type === 'openSession'));
+}
+
+// ---------- part 11: the host side of a bulk action ----------
+{
+    const ext = fs.readFileSync(path.resolve(__dirname, '../src/extension.ts'), 'utf8');
+    ok('the host reads the selection off the context, under the contract\'s own key',
+        /afSelectedSessions/.test(ext) && /afSelectedFiles/.test(ext));
+    ok('a command with no selection still acts on the row that was clicked',
+        /const one = sessionFromArg\(arg\);/.test(ext));
+    // ‼️ The table sends ids AND paths, and they name the same sessions. Without
+    // de-duplication every bulk action would run twice on every row — and "end
+    // 12 sessions" would ask twenty-four times.
+    ok('‼️ ids and paths naming the same session are collapsed to one',
+        /if \(!s \|\| !mark \|\| seen\.has\(mark\)\) \{ continue; \}/.test(ext));
+    const endCmd = ext.slice(ext.indexOf("registerCommand('agentfarm.endSession'"),
+        ext.indexOf("registerCommand('agentfarm.endSession'") + 1600);
+    ok('‼️ ending a whole selection asks first, and names the number',
+        /showWarningMessage\(\s*`End \$\{list\.length\} sessions\?`/.test(endCmd)
+        && /modal: true/.test(endCmd));
+    const dismissCmd = ext.slice(ext.indexOf("registerCommand('agentfarm.dismissSession'"),
+        ext.indexOf("registerCommand('agentfarm.dismissSession'") + 2600);
+    ok('clearing a selection does not ask — it destroys nothing — but reports honestly',
+        /cleared \$\{cleared\} of \$\{list\.length\}/.test(dismissCmd));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

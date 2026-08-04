@@ -13,6 +13,13 @@ const code = fs.readFileSync(require('path').resolve(__dirname, '../media/pageHe
 
 const count = (html, needle) => html.split(needle).length - 1;
 
+/** The real duration / api-steps formatters — see the note in the sandbox. */
+const realCharts = (() => {
+    const box = vm.createContext({ window: {} });
+    vm.runInContext(fs.readFileSync(require('path').resolve(__dirname, '../media/charts.js'), 'utf8'), box);
+    return box.window.AFCharts;
+})();
+
 function makeSandbox(opts) {
     const state = { saved: null, initial: (opts && opts.initialState) || undefined };
     const els = {};
@@ -43,7 +50,23 @@ function makeSandbox(opts) {
             AFCharts: {
                 esc: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'),
                 fmtTok: (n) => String(n || 0),
+            STEP_KIND: {},
+
+            stepChip: () => '',
+
+            stepKindLegend: () => '',
+
+            stepKindLegendText: () => 'legend',
+
+            fmtTokW(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' [w' + this.fmtTok(Math.round(w)) + ']' : ''); },
+            fmtTokWText(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' (w' + this.fmtTok(Math.round(w)) + ')' : ''); },
+            WEIGHTED_TIP: 'weighted',
                 fmtUSD: (n) => '$' + (n || 0),
+                // the REAL ones — the band's duration and api/steps strings are
+                // the same strings every other surface writes (see charts.js)
+                fmtDur: realCharts.fmtDur,
+                fmtSteps: realCharts.fmtSteps,
+                STEPS_TIP: realCharts.STEPS_TIP,
                 aiLabel: (m, u) => { const n = /^claude/i.test(m || '') ? 'claude' : /^gemini/i.test(m || '') ? 'gemini' : /^gpt|codex/i.test(m || '') ? 'codex' : 'agent'; return u ? n.toUpperCase() : n; }
             },
             __DATA__: {
@@ -54,7 +77,9 @@ function makeSandbox(opts) {
                 context: { tokens: 0, limit: 0 },
                 turnCount: 3, turnTotals: {},
                 turns: [
-                    { n: 1, label: 'one', ts: Date.UTC(2026, 4, 12, 11, 32) },
+                    // ms / apiCalls / steps / endCtx are what the band reports
+                    // about a turn besides its price — see turnHdrHtml.
+                    { n: 1, label: 'one', ts: Date.UTC(2026, 4, 12, 11, 32), ms: 3723000, apiCalls: 14, steps: 26, endCtx: 202300 },
                     { n: 2, label: 'two' },
                     { n: 3, label: 'three' }
                 ],
@@ -127,7 +152,19 @@ function makeSandbox(opts) {
     ok('folded bands carry a ▸ caret',
         count(html, '<span class="tcaret">▸</span>') === 3
         && count(html, '<span class="tcaret">▾</span>') === 0);
-    ok('folded band shows its message count', html.includes('2 msgs'));
+    // ‼️ The band answers the four questions a turn raises, folded or not: how
+    // long, how many round trips (and the steps they carried), what it cost,
+    // and where it left the window. It used to show a single step count, only
+    // while folded — the number that explains the least, hidden the rest of the
+    // time. `14api/26` is the shape every surface uses (charts.js fmtSteps).
+    ok('band says how long the turn ran, in the shared duration format',
+        html.includes('1h-2m-3s'));
+    ok('band says round trips AND steps, never one number for both',
+        html.includes('14api/26') && !html.includes('26 msgs'));
+    ok('band says where the turn left the window',
+        html.includes('ctx 202300'));
+    ok('a turn with none of it measured says nothing rather than zeros',
+        !html.includes('0s') && !html.includes('ctx 0'));
     // The band's hover is the turn's start date — never "click to expand", which
     // the caret and the controls row already say. Labelled, dated, and carrying
     // how long ago it was; turn 2 has no ts of its own and falls back to the

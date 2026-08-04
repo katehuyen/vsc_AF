@@ -27,6 +27,10 @@
         { id: 'overview', label: 'Overview', tip: 'What this project is doing right now' },
         { id: 'timeline', label: 'Timeline', tip: 'Everything that happened, newest first' },
         { id: 'sessions', label: 'Sessions', tip: 'The same sessions table as everywhere else, scoped to this project' },
+        { id: 'plan', label: 'Plan', tip: 'The plan document\'s own checkboxes — ticking one here changes that one character in the file' },
+        { id: 'backlog', label: 'Backlog', tip: 'The standing pile of work: coded, ranked, filtered. Not the roadmap (that is Plan) and not the global queue' },
+        { id: 'docs', label: 'Docs', tip: 'The project folder, and any document in it' },
+        { id: 'people', label: 'People', tip: 'Who decides, who pays, who does the work, who you ask' },
         { id: 'cost', label: 'Cost', tip: 'Where the money went, and where it is going' },
         { id: 'settings', label: '⚙ Settings', tip: 'Edit the project' }
     ];
@@ -70,13 +74,23 @@
             return;
         }
         if (ev.data.type === 'data') {
+            const was = selectedId;
             DATA = ev.data.data;
             if (DATA.newForm) { creating = newForm(DATA.newForm); askSuggestion(creating.name); }
             if (DATA.focusId) { selectedId = DATA.focusId; }
             if (!DATA.projects.some(p => p.id === selectedId)) {
                 selectedId = (DATA.projects[0] && DATA.projects[0].id) || '';
             }
-            people = null;
+            // ‼️ THE PEOPLE TABLE IS UNSAVED WORK, AND A PAYLOAD IS NOT A REASON
+            // TO THROW IT AWAY. Clearing it on every `data` message meant any
+            // refresh that arrived while somebody was filling the table — a new
+            // commit picked up in the background is enough — silently put the
+            // old rows back and took the half-typed ones with them. Since the
+            // editor moved to its own tab it is only written by "Save people",
+            // so that window is as long as the user takes. Only a change of
+            // PROJECT invalidates the rows, because then they are somebody
+            // else's people.
+            if (selectedId !== was) { people = null; }
             render();
             return;
         }
@@ -245,6 +259,38 @@
         </div>`;
     }
 
+    /**
+     * Whether the table on screen says something different from what the
+     * project actually holds.
+     *
+     * The rows now survive a repaint (they are unsaved work, not a view of the
+     * data), which means the page owes the reader the other half of that deal:
+     * saying so. A table that looks identical whether or not Save was pressed
+     * is how somebody closes the tab having changed nothing.
+     */
+    function peopleDirty(p) {
+        if (people === null || !p) { return false; }
+        const key = x => ['name', 'role', 'kind', 'contact', 'link', 'note']
+            .map(k => String((x && x[k]) || '')).join(' · ');
+        const mine = people.filter(x => (x.name || '').trim()).map(key);
+        const saved = (p.people || []).map(key);
+        return mine.length !== saved.length || mine.some((k, i) => k !== saved[i]);
+    }
+
+    const PEOPLE_UNSAVED = 'unsaved — these rows are not on the project yet';
+    const PEOPLE_SAVED = 'saved';
+
+    /** Refresh only the two things that answer "is this saved?", without a
+     *  repaint. Called from the input handler, which must not redraw. */
+    function markPeopleState() {
+        const btn = document.querySelector('[data-act="savePeople"]');
+        if (!btn) { return; }
+        const dirty = peopleDirty(sel());
+        btn.disabled = !dirty;
+        const note = document.getElementById('pj-people-state');
+        if (note) { note.textContent = dirty ? PEOPLE_UNSAVED : PEOPLE_SAVED; }
+    }
+
     function peopleRows(p) {
         if (people === null) { people = (p.people || []).map(x => Object.assign({}, x)); }
         const roles = ['owner', 'client', 'sponsor', 'contributor', 'contact', 'vendor'];
@@ -338,10 +384,9 @@
                 <div class="pj-chks">${agentBoxes || '<span class="muted small">no agents discovered</span>'}</div>
             </div>
 
-            <div class="pj-wide">
-                <div class="pj-sub">People <span class="muted small">who decides, who pays, who does the work, who you ask</span></div>
-                <table class="pj-people"><tbody>${peopleRows(p)}</tbody></table>
-                <button class="secondary" data-act="addPerson">＋ Add person</button>
+            <div class="pj-wide muted small">
+                People live on their own <b>People</b> tab — they are a question about the
+                project, not a setting on it.
             </div>
         </div>
 
@@ -510,11 +555,14 @@
      */
     function unfiledNote() {
         const missing = (DATA.unfiledKinds || []).map(k => kindMeta(k).label);
-        if (!missing.length) { return ''; }
-        return `<p class="muted small pj-unfiled">Not here yet: ${C.esc(missing.join(' · '))}.
-            Notices and queue items carry no project of their own, and an agent may work on several
-            projects — so guessing one from who posted it would file them wrong. Plan items, decisions
-            and deliverables are documents nothing writes to yet.</p>`;
+        return `<p class="muted small pj-unfiled">${missing.length
+            ? `Not here: ${C.esc(missing.join(' · '))} — they carry no project of their own, and an
+               agent may work on several projects, so guessing one from who posted it would file them
+               wrong. `
+            : ''}Decisions, deliverables and plan items come from the project's own documents and
+            appear at the date those documents state — a decision's <code>af-date</code>, a
+            deliverable's Date column, the ✅ Obsidian writes when you tick a plan item there. Anything
+            undated is left out rather than stamped with the moment the file happened to be saved.</p>`;
     }
 
     function costHtml(p) {
@@ -675,6 +723,63 @@
                 .pj-ev-c, .pj-ev-w { text-align:right; }
                 .pj-unfiled { margin-top:14px; max-width:70ch; }
                 .grow { flex:1; }
+                /* documents · plan · people */
+                .pj-docbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+                    padding:6px 0 10px; border-bottom:1px solid var(--vscode-panel-border); margin-bottom:10px; }
+                .pj-open { display:flex; gap:4px; }
+                .pj-open button { padding:2px 9px; font-size:11px; }
+                .pj-plan-sec { margin-bottom:14px; }
+                .pj-plan-item { display:flex; align-items:baseline; gap:7px; padding:3px 6px;
+                    border-radius:4px; cursor:pointer; font-size:13px; }
+                .pj-plan-item:hover { background:var(--vscode-list-hoverBackground); }
+                .pj-plan-item.done .pj-plan-t { opacity:.55; text-decoration:line-through; }
+                .pj-plan-t { flex:1; min-width:0; }
+                .pj-plan-m { opacity:.6; font-size:11px; white-space:nowrap; }
+                /* backlog */
+                .pj-bl-row { display:flex; align-items:baseline; gap:6px; padding:3px 6px;
+                    border-radius:4px; font-size:13px; border-left:2px solid transparent; }
+                .pj-bl-row:hover { background:var(--vscode-list-hoverBackground); }
+                .pj-bl-row.closed .pj-bl-t { opacity:.5; text-decoration:line-through; }
+                .pj-bl-row.doing { border-left-color:var(--vscode-charts-yellow,#d7ba7d); }
+                .pj-bl-row.next { border-left-color:var(--vscode-charts-green,#3fb950); }
+                .pj-bl-row.container .pj-bl-t { font-weight:600; }
+                .pj-bl-code { font-size:11px; opacity:.85; white-space:nowrap;
+                    background:var(--vscode-textCodeBlock-background,#8881); padding:0 5px; border-radius:4px; }
+                .pj-bl-code.unfiled { background:none; }
+                .pj-bl-t { flex:1; min-width:0; }
+                .pj-bl-kind { font-size:10px; padding:0 5px; border-radius:8px; opacity:.85; white-space:nowrap;
+                    background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); }
+                .pj-bl-badge { background:none; border:none; color:inherit; cursor:pointer;
+                    font-size:11px; padding:0 4px; border-radius:4px; opacity:.75; min-width:22px; }
+                .pj-bl-badge:hover { opacity:1; background:var(--vscode-toolbar-hoverBackground,#8882); }
+                .pj-bl-m { opacity:.6; font-size:11px; white-space:nowrap; }
+                .pj-bl-m.blocked { color:var(--vscode-editorWarning-foreground); opacity:.9; }
+                .pj-bl-m.warn { color:var(--vscode-editorWarning-foreground); opacity:1; cursor:help; }
+                /* The row actions stay out of the way until the row is under the
+                   pointer: five buttons on every one of two hundred lines is a
+                   wall, and the list has to stay readable to be usable. */
+                .pj-bl-acts { display:flex; gap:2px; visibility:hidden; }
+                .pj-bl-row:hover .pj-bl-acts { visibility:visible; }
+                .pj-bl-acts button { padding:0 6px; font-size:11px; }
+                .pj-bl-q { flex:0 0 180px; }
+                .pj-bl-next .pj-bl-nextrow { display:flex; gap:6px; flex-wrap:wrap; }
+                .pj-docs { display:flex; gap:14px; align-items:flex-start; }
+                .pj-doc-tree { flex:0 0 260px; max-height:60vh; overflow:auto;
+                    border:1px solid var(--vscode-widget-border,#4443); border-radius:7px; padding:6px 4px; }
+                .pj-doc-row { display:flex; align-items:baseline; gap:6px; padding:2px 6px;
+                    border-radius:4px; font-size:12px; cursor:pointer; }
+                .pj-doc-row.dir { cursor:default; opacity:.75; }
+                .pj-doc-row:not(.dir):hover { background:var(--vscode-list-hoverBackground); }
+                .pj-doc-row.on { background:var(--vscode-list-activeSelectionBackground);
+                    color:var(--vscode-list-activeSelectionForeground); }
+                .pj-doc-g { opacity:.7; }
+                .pj-doc-n { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+                .pj-doc-r { font-size:10px; padding:0 5px; border-radius:8px; opacity:.85;
+                    background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); }
+                .pj-doc-pane { flex:1; min-width:0; }
+                .pj-doc-text { max-height:58vh; overflow:auto; white-space:pre-wrap; word-break:break-word;
+                    font-size:12px; padding:10px 12px; border-radius:7px;
+                    background:var(--vscode-textCodeBlock-background,#8881); }
             </style>
             ${window.AFHeader.html({
                 page: 'projects',
@@ -710,10 +815,383 @@
         switch (tab) {
             case 'timeline': return timelineHtml();
             case 'sessions': return sessionsHtml();
+            case 'plan': return planHtml();
+            case 'backlog': return backlogHtml();
+            case 'docs': return docsHtml();
+            case 'people': return peopleHtml(p);
             case 'cost': return costHtml(p);
             case 'settings': return settingsHtml(p);
             default: return overviewHtml(p);
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // the tabs that write into the user's own documents
+    // -----------------------------------------------------------------------
+
+    /**
+     * Why a document tab has nothing to show, in the words that say what to do
+     * about it.
+     *
+     * "No plan" is four different situations — the project has no folder, the
+     * folder has moved, the folder is there but holds no plan document, or the
+     * file could not be read — and they need four different sentences. One
+     * blank panel for all four reads as a bug in every one of them.
+     */
+    function docStateHtml(d, what) {
+        if (!d || !d.state) { return '<p class="muted">Reading the project…</p>'; }
+        switch (d.state) {
+            case 'no-folder':
+                return `<p class="muted">This project has no documents folder yet. Choose one in
+                    <b>⚙ Settings</b> and Agent Farm will build the skeleton — ${C.esc(what)} included.</p>`;
+            case 'folder-missing':
+                return `<p class="muted">Its folder is not where it was: <code>${C.esc(d.folder || '')}</code>.
+                    Use <b>Relink…</b> above to point at where it went.</p>`;
+            case 'no-doc':
+                return `<p class="muted">No ${C.esc(what)} in this project's folder yet.
+                    Agent Farm finds documents by an <code>af-role: ${C.esc(d.role || '')}</code> line in
+                    their frontmatter and never by their name, so any file you put that line in becomes
+                    this one — or press <b>Recreate</b> on the project to get the shipped skeleton back.</p>`;
+            case 'unreadable':
+                return `<p class="muted">${C.esc(d.path || '')} could not be read: ${C.esc(d.error || '')}</p>`;
+            default:
+                return '<p class="muted">Reading the project…</p>';
+        }
+    }
+
+    /** The buttons that open a file the way the user opens report links
+     *  everywhere else — the doc-open modes, not a viewer of our own. */
+    function openWithHtml(relPath) {
+        const cfg = DATA.docOpen || { mode: 'vscode', modes: ['vscode'], labels: {} };
+        const label = m => (cfg.labels && cfg.labels[m]) || m;
+        const rest = (cfg.modes || []).filter(m => m !== cfg.mode);
+        return `<span class="pj-open">
+            <button data-open="${C.esc(cfg.mode)}" data-path="${C.esc(relPath)}"
+                title="${C.esc(label(cfg.mode))}">Open</button>
+            ${rest.map(m => `<button class="secondary" data-open="${C.esc(m)}" data-path="${C.esc(relPath)}"
+                title="${C.esc(label(m))}">${C.esc(shortMode(m))}</button>`).join('')}
+        </span>`;
+    }
+    const MODE_SHORT = { vscode: 'Editor', preview: 'Preview', obsidian: 'Obsidian', custom: 'App' };
+    const shortMode = m => MODE_SHORT[m] || m;
+
+    /**
+     * The plan — the user's own checkboxes, drawn as checkboxes.
+     *
+     * ‼️ The label under each box says what ticking it does NOT do, because the
+     * surprising part is the restraint: Obsidian's Tasks plugin writes a ✅ date
+     * when you tick a box in Obsidian, and this page deliberately does not. A
+     * user who expects one and does not get it would think the tick failed.
+     */
+    function planHtml() {
+        const d = td().plan;
+        if (!d || d.state !== 'ok') { return docStateHtml(d, 'plan document'); }
+        const sections = d.sections || [];
+        const rows = sections.map(s => `
+            <div class="pj-plan-sec">
+                <div class="pj-card-h">${C.esc(s.title || '(no section)')}</div>
+                ${s.items.map(i => `
+                    <label class="pj-plan-item${i.done ? ' done' : ''}" style="padding-left:${8 + i.depth * 12}px"
+                        title="line ${i.line}${i.id ? ' · 🆔 ' + C.esc(i.id) : ''}">
+                        <input type="checkbox" data-plan="${i.line}" data-planid="${C.esc(i.id || '')}"
+                            data-plantext="${C.esc(i.text || '')}" ${i.done ? 'checked' : ''}>
+                        <span class="pj-plan-t">${C.esc(i.text || '(empty)')}</span>
+                        ${i.due ? `<span class="pj-plan-m" title="due">📅 ${C.esc(i.due)}</span>` : ''}
+                        ${i.completed ? `<span class="pj-plan-m" title="completed">✅ ${C.esc(i.completed)}</span>` : ''}
+                    </label>`).join('')}
+            </div>`).join('');
+        const sectionOpts = ['<option value="">end of the file</option>']
+            .concat(sections.filter(s => s.title)
+                .map(s => `<option value="${C.esc(s.title)}">${C.esc(s.title)}</option>`)).join('');
+        return `
+        <div class="pj-docbar">
+            <span><b>${d.open}</b> open · <b>${d.done}</b> done</span>
+            <span class="muted small">${C.esc(d.path)}</span>
+            <span class="grow"></span>
+            ${openWithHtml(d.path)}
+        </div>
+        ${rows || '<p class="muted small">The plan document has no checkbox lines yet.</p>'}
+        <div class="pj-card">
+            <div class="pj-card-h">Add an item</div>
+            <div class="pj-row">
+                <input id="plan-new" placeholder="what needs doing">
+                <select id="plan-sec">${sectionOpts}</select>
+                <button data-act="planAdd">Add</button>
+            </div>
+        </div>
+        <p class="muted small pj-unfiled">Ticking a box here changes exactly one character of your file —
+            the space inside <code>[ ]</code>. Your bullet, spacing, icons and Obsidian Tasks metadata are
+            untouched, and no ✅ completion date is added: Agent Farm does not write metadata it does not own.
+            Tick the box in Obsidian instead if you want its Tasks plugin to date it.</p>`;
+    }
+
+    // -----------------------------------------------------------------------
+    // the backlog
+    // -----------------------------------------------------------------------
+
+    /** What the reader has narrowed the list to. Page-side on purpose: the host
+     *  ships the whole file, so a chip is a repaint rather than a round trip. */
+    let blFilter = { area: '', kind: '', state: 'live', q: '' };
+    let blSort = 'file';
+    /** Closed items are folded away by default — a backlog you have to scroll
+     *  past three months of finished work to read is one nobody opens. */
+    let blShowClosed = false;
+
+    const PRIO_ORDER = ['lowest', 'low', 'normal', 'medium', 'high', 'highest'];
+    const PRIO_ICON = { highest: '🔺', high: '⏫', medium: '🔼', normal: '·', low: '🔽', lowest: '⏬' };
+    const EFFORT_ORDER = ['', 'XS', 'S', 'M', 'L', 'XL'];
+
+    /**
+     * The backlog tab.
+     *
+     * ‼️ THE ROW IS THE EDITOR. There is no dialog and no "edit" mode: the
+     * priority badge cycles when you click it, the effort badge cycles when you
+     * click it, the checkbox closes the item. Anything that takes three clicks
+     * to change will not be kept up to date, and a backlog whose fields are
+     * stale is worse than one with no fields at all — it sorts wrongly and
+     * nobody knows it.
+     */
+    function backlogHtml() {
+        const d = td().backlog;
+        if (!d || d.state !== 'ok') { return docStateHtml(d, 'backlog document'); }
+        const all = d.items || [];
+        const areas = d.areas || [];
+        const c = d.counts || {};
+        const nextCodes = d.next || [];
+        const blockedBy = {};
+        for (const b of (d.blocked || [])) { if (b.code) { blockedBy[b.code] = b.waitingOn; } }
+
+        const q = blFilter.q.trim().toLowerCase();
+        const shown = all.filter(i => {
+            const live = i.state === 'open' || i.state === 'doing';
+            if (blFilter.state === 'live' && !live) { return blShowClosed; }
+            if (blFilter.state === 'inbox' && i.code) { return false; }
+            if (blFilter.state !== 'live' && blFilter.state !== 'inbox'
+                && blFilter.state && i.state !== blFilter.state) { return false; }
+            if (blFilter.area && i.area !== blFilter.area) { return false; }
+            if (blFilter.kind && (i.kinds || []).indexOf(blFilter.kind) < 0) { return false; }
+            if (q && (i.text || '').toLowerCase().indexOf(q) < 0
+                && (i.code || '').toLowerCase().indexOf(q) < 0) { return false; }
+            return true;
+        });
+        const ordered = blSort === 'file' ? shown : shown.slice().sort((a, b) =>
+            blSort === 'score' ? (b.score - a.score) || (a.line - b.line)
+                : (PRIO_ORDER.indexOf(b.priority) - PRIO_ORDER.indexOf(a.priority)) || (a.line - b.line));
+
+        const kinds = [];
+        for (const i of all) { for (const k of (i.kinds || [])) { if (kinds.indexOf(k) < 0) { kinds.push(k); } } }
+        const areaOpts = ['<option value="">— area —</option>']
+            .concat(areas.map(a => `<option value="${C.esc(a.code)}">${C.esc(a.code)} · ${C.esc(a.label)}</option>`))
+            .join('');
+
+        const rows = ordered.map(i => backlogRowHtml(i, nextCodes.indexOf(i.code) >= 0, blockedBy[i.code])).join('');
+
+        return `
+        <div class="pj-docbar">
+            <span><b>${c.open || 0}</b> open${c.doing ? ` · <b>${c.doing}</b> doing` : ''}
+                · ${c.done || 0} done${c.unclassified ? ` · <b>${c.unclassified}</b> unfiled` : ''}</span>
+            <span class="muted small">${C.esc(d.path)}</span>
+            <span class="grow"></span>
+            <button class="secondary" data-act="blArchive"
+                title="Move closed items under an archive heading at the end of the same file">🗄 Archive closed</button>
+            ${openWithHtml(d.path)}
+        </div>
+
+        <div class="pj-card">
+            <div class="pj-card-h">Capture</div>
+            <div class="pj-row">
+                <input id="bl-new" placeholder="what needs doing — no code needed, file it later">
+                <select id="bl-area" title="Leave empty and it lands in the inbox, uncoded">${areaOpts}</select>
+                <select id="bl-prio" title="Priority">
+                    ${PRIO_ORDER.slice().reverse().map(p =>
+            `<option value="${p}"${p === 'normal' ? ' selected' : ''}>${PRIO_ICON[p]} ${p}</option>`).join('')}
+                </select>
+                <select id="bl-effort" title="Effort">
+                    ${EFFORT_ORDER.map(e => `<option value="${e}">${e || '— size —'}</option>`).join('')}
+                </select>
+                <button data-act="blAdd">Add</button>
+            </div>
+        </div>
+
+        <div class="pj-chips-row">
+            <button class="pj-chip${!blFilter.area ? ' on' : ''}" data-blarea="">all areas</button>
+            ${areas.map(a => `<button class="pj-chip${blFilter.area === a.code ? ' on' : ''}"
+                data-blarea="${C.esc(a.code)}" title="${C.esc(a.label)} — ${a.open} open of ${a.total}">
+                ${C.esc(a.code)} <span class="muted">${a.open}</span></button>`).join('')}
+            <span class="grow"></span>
+            ${kinds.map(k => `<button class="pj-chip${blFilter.kind === k ? ' on' : ''}"
+                data-blkind="${C.esc(k)}">#${C.esc(k)}</button>`).join('')}
+        </div>
+        <div class="pj-chips-row">
+            <input id="bl-q" class="pj-bl-q" placeholder="search" value="${C.esc(blFilter.q)}">
+            <select id="bl-state" title="Which states to show">
+                <option value="live"${blFilter.state === 'live' ? ' selected' : ''}>open + doing</option>
+                <option value="inbox"${blFilter.state === 'inbox' ? ' selected' : ''}>📥 unfiled only</option>
+                <option value="doing"${blFilter.state === 'doing' ? ' selected' : ''}>doing</option>
+                <option value="done"${blFilter.state === 'done' ? ' selected' : ''}>done</option>
+                <option value="cancelled"${blFilter.state === 'cancelled' ? ' selected' : ''}>cancelled</option>
+            </select>
+            <select id="bl-sort" title="Ordering. File order is your own — it is what 'do the top five' follows">
+                <option value="file"${blSort === 'file' ? ' selected' : ''}>file order (yours)</option>
+                <option value="score"${blSort === 'score' ? ' selected' : ''}>score (priority ÷ effort)</option>
+                <option value="priority"${blSort === 'priority' ? ' selected' : ''}>priority</option>
+            </select>
+            <label class="pj-chk"><input type="checkbox" id="bl-closed" ${blShowClosed ? 'checked' : ''}> show closed</label>
+            <span class="grow"></span>
+            <span class="muted small">${ordered.length} of ${all.length}</span>
+        </div>
+
+        ${nextCodes.length ? `<div class="pj-card pj-bl-next">
+            <div class="pj-card-h">Next up — what an agent gets from <code>projects.backlog.next</code></div>
+            <div class="pj-bl-nextrow">${nextCodes.map(x =>
+            `<code class="pj-bl-code">${C.esc(x)}</code>`).join('')}</div>
+        </div>` : ''}
+
+        ${rows || '<p class="muted small">Nothing matches. The file is <code>' + C.esc(d.path) + '</code> — edit it in Obsidian any time; this page reads whatever is there.</p>'}
+
+        <p class="muted small pj-unfiled">A code is permanent and is not the order: dragging a line in
+            Obsidian (or pressing ▲▼ here) changes what comes first and leaves <code>P-5.3</code> meaning
+            the same item for ever. Clicking a badge cycles it. Closing a box changes exactly one
+            character of your file and adds no ✅ date — Agent Farm does not write metadata it does not own.</p>`;
+    }
+
+    /** One row. `data-code` is the handle whenever the item has one; the line
+     *  number only rides along for an uncoded capture, because a line goes stale
+     *  the moment the file is edited in Obsidian under an open panel. */
+    function backlogRowHtml(i, isNext, waitingOn) {
+        const closed = i.state === 'done' || i.state === 'cancelled';
+        const cls = ['pj-bl-row'];
+        if (closed) { cls.push('closed'); }
+        if (i.state === 'doing') { cls.push('doing'); }
+        if (isNext) { cls.push('next'); }
+        if (i.container) { cls.push('container'); }
+        const badges = [];
+        for (const k of (i.kinds || [])) { badges.push(`<span class="pj-bl-kind">#${C.esc(k)}</span>`); }
+        return `<div class="${cls.join(' ')}" style="padding-left:${6 + (i.depth || 0) * 10}px"
+            data-blrow data-code="${C.esc(i.code || '')}" data-line="${i.line}"
+            data-prio="${C.esc(i.priority || 'normal')}" data-effort="${C.esc(i.effort || '')}">
+            <input type="checkbox" data-blcheck ${i.state === 'done' ? 'checked' : ''}
+                title="${i.state === 'done' ? 'Reopen' : 'Close as done'}">
+            ${i.code
+                ? `<code class="pj-bl-code" title="Permanent code — quote this at an agent">${C.esc(i.code)}</code>`
+                : '<span class="pj-bl-code unfiled" title="No code yet — pick an area to file it">📥</span>'}
+            <span class="pj-bl-t">${C.esc(i.text || '(empty)')}</span>
+            ${badges.join('')}
+            <button class="pj-bl-badge" data-blprio title="Priority — click to cycle">${PRIO_ICON[i.priority] || '·'}</button>
+            <button class="pj-bl-badge" data-bleffort title="Effort — click to cycle">${C.esc(i.effort || '–')}</button>
+            ${i.due ? `<span class="pj-bl-m" title="due">📅 ${C.esc(i.due)}</span>` : ''}
+            ${i.plan ? `<span class="pj-bl-m" title="plan item">🆔 ${C.esc(i.plan)}</span>` : ''}
+            ${waitingOn && waitingOn.length
+                ? `<span class="pj-bl-m blocked" title="Waiting on ${C.esc(waitingOn.join(', '))}">⛔ ${C.esc(waitingOn.join(' '))}</span>` : ''}
+            ${i.warn ? `<span class="pj-bl-m warn" title="${C.esc(i.warn)}">⚠</span>` : ''}
+            <span class="pj-bl-acts">
+                ${!i.code ? '<button data-blfile title="File it under an area and give it a code">file…</button>' : ''}
+                <button data-blstate="doing" title="Mark in progress">▶</button>
+                <button data-blstate="cancelled" title="Cancel — it stays in the file, with its code spent">✕</button>
+                <button data-blmove="up" title="Move up among its siblings">▲</button>
+                <button data-blmove="down" title="Move down among its siblings">▼</button>
+            </span>
+        </div>`;
+    }
+
+    /**
+     * The folder, and one document out of it.
+     *
+     * The pane shows the file as it is on disk rather than a rendering of it.
+     * That is deliberate: the rendered views the user already has (VS Code's
+     * markdown preview, Obsidian itself) are one button away and are the real
+     * thing, and a third half-renderer here would be a third markdown dialect
+     * to keep in step with the other two.
+     */
+    function docsHtml() {
+        const d = td().docs;
+        if (!d || d.state !== 'ok') { return docStateHtml(d, 'documents folder'); }
+        const entries = d.entries || [];
+        const tree = entries.map(e => {
+            const depth = e.path.split('/').length - 1;
+            const on = !e.dir && d.selected && d.selected.path === e.path;
+            const glyph = e.dir ? '📁' : (e.role ? '◆' : '·');
+            return `<div class="pj-doc-row${on ? ' on' : ''}${e.dir ? ' dir' : ''}"
+                    style="padding-left:${6 + depth * 14}px"
+                    ${e.dir ? '' : `data-doc="${C.esc(e.path)}"`}
+                    title="${C.esc(e.path)}${e.managed ? ' — generated by Agent Farm' : ''}">
+                <span class="pj-doc-g">${glyph}</span>
+                <span class="pj-doc-n">${C.esc(e.name)}</span>
+                ${e.role ? `<span class="pj-doc-r">${C.esc(e.role)}</span>` : ''}
+                ${e.managed ? '<span class="pj-doc-r" title="regenerated by Agent Farm — edits here are lost">auto</span>' : ''}
+            </div>`;
+        }).join('');
+
+        const sel = d.selected;
+        // ‼️ A managed folder is not offered as somewhere to put a note. `_AF/`
+        // is rewritten on every session start, so a note filed there is gone by
+        // the next spawn — offering it is offering to lose the user's writing.
+        const folders = ['']
+            .concat(entries.filter(e => e.dir && !e.managed).map(e => e.path))
+            .map(f => `<option value="${C.esc(f)}">${C.esc(f || '(project root)')}</option>`).join('');
+
+        const pane = !sel
+            ? '<p class="muted small">Pick a document on the left.</p>'
+            : (sel.error
+                ? `<p class="muted">${C.esc(sel.error)}</p>`
+                : `<div class="pj-docbar">
+                        <span><b>${C.esc(sel.path)}</b></span>
+                        ${sel.role ? `<span class="pj-doc-r">${C.esc(sel.role)}</span>` : ''}
+                        <span class="muted small">${Math.round((sel.size || 0) / 102.4) / 10} KB</span>
+                        <span class="grow"></span>
+                        ${openWithHtml(sel.path)}
+                   </div>
+                   ${sel.truncated ? '<p class="muted small">Only the first part is shown — open it to read the rest.</p>' : ''}
+                   <pre class="pj-doc-text">${C.esc(sel.text || '')}</pre>`);
+
+        return `
+        <div class="pj-docs">
+            <div class="pj-doc-tree">
+                ${tree || '<p class="muted small">The folder is empty.</p>'}
+                ${entries.length >= 500 ? '<p class="muted small">Only the first 500 entries are listed.</p>' : ''}
+            </div>
+            <div class="pj-doc-pane">${pane}</div>
+        </div>
+        <div class="pj-card">
+            <div class="pj-card-h">New note</div>
+            <div class="pj-row">
+                <select id="doc-folder">${folders}</select>
+                <input id="doc-name" placeholder="name (.md is added)">
+                <button data-act="newDoc">Create</button>
+            </div>
+        </div>`;
+    }
+
+    /**
+     * People — the registry list, which is what the brief carries into every
+     * session, next to a pointer at the project's own People document.
+     *
+     * ‼️ These are two different things and the page must not pretend to sync
+     * them. The list here is structured data Agent Farm owns and injects; the
+     * document is the user's prose about the same people, and rewriting it from
+     * this table would be a program editing an essay.
+     */
+    function peopleHtml(p) {
+        const doc = td().peopleDoc;
+        const link = doc && doc.state === 'ok'
+            ? `<div class="pj-docbar">
+                    <span class="muted small">The project's own people document:</span>
+                    <span><b>${C.esc(doc.path)}</b></span>
+                    <span class="grow"></span>
+                    ${openWithHtml(doc.path)}
+               </div>`
+            : '';
+        return `
+        ${link}
+        <div class="pj-sub">Who decides (owner) · who pays (client, sponsor) · who does the work
+            (contributor) · who you ask (contact) · who supplies (vendor).
+            <span class="muted small">This list is what every session started under the project is told.</span></div>
+        <table class="pj-people"><tbody>${peopleRows(p)}</tbody></table>
+        <div class="btnrow pj-actions">
+            <button class="secondary" data-act="addPerson">＋ Add person</button>
+            <button data-act="savePeople"${peopleDirty(p) ? '' : ' disabled'}>Save people</button>
+            <span class="muted small" id="pj-people-state">${peopleDirty(p) ? PEOPLE_UNSAVED : PEOPLE_SAVED}</span>
+        </div>`;
     }
 
     /** The Sessions tab is the SHARED table (media/sessionsTable.js), whole:
@@ -775,8 +1253,12 @@
             match: {
                 agents: [...document.querySelectorAll('[data-agent]')]
                     .filter(el => el.checked).map(el => el.dataset.agent)
-            },
-            people: (people || []).filter(x => (x.name || '').trim())
+            }
+            // ‼️ People are NOT in this patch. They moved to their own tab, and
+            // `people` is null until that tab renders the editor — so sending
+            // `people: (people || [])` from the Settings tab would post an empty
+            // list and delete every person on the project, on a Save the user
+            // pressed to change a budget.
         };
     }
 
@@ -851,12 +1333,160 @@
             }
         }
 
+        // ---- documents ----
+        document.querySelectorAll('[data-doc]').forEach(el =>
+            el.addEventListener('click', () => {
+                vscode.postMessage({ type: 'selectDoc', path: el.dataset.doc });
+            }));
+
+        document.querySelectorAll('[data-open]').forEach(el =>
+            el.addEventListener('click', () => {
+                const p = sel();
+                vscode.postMessage({
+                    type: 'openDoc', id: p ? p.id : '',
+                    path: el.dataset.path, mode: el.dataset.open
+                });
+            }));
+
+        // A checkbox flips in the DOM the moment it is clicked, so the message
+        // carries the state it WANTS rather than a toggle — the host and the
+        // page can never end up disagreeing about which way it went.
+        //
+        // ‼️ And it carries the item's TEXT, which is not decoration. This page
+        // holds a line number for as long as it stays open, and the file is
+        // open in Obsidian at the same time: one inserted paragraph there and
+        // the number points at the next item down. The host checks the text
+        // against that line and refuses on a mismatch, so a stale page says
+        // "reload" instead of quietly ticking the wrong box.
+        document.querySelectorAll('[data-plan]').forEach(el =>
+            el.addEventListener('click', () => {
+                const p = sel();
+                vscode.postMessage({
+                    type: 'planCheck', id: p ? p.id : '',
+                    line: Number(el.dataset.plan),
+                    itemId: el.dataset.planid || '',
+                    text: el.dataset.plantext || '',
+                    done: el.checked === true
+                });
+            }));
+
+        // ---- the backlog. Filters are page-side (a repaint, not a round trip);
+        // anything that WRITES goes to the host, which owns the file.
+        const blRow = el => el.closest('[data-blrow]');
+        /** How the host is told which row: the code when there is one, else the
+         *  line. The panel converts and, for a coded item, ignores the line
+         *  entirely — a code cannot go stale, a line number can. */
+        const blWho = row => ({
+            code: row.dataset.code || '',
+            line: Number(row.dataset.line) + 1
+        });
+        /** The row's CURRENT value, read off the DOM the host last painted —
+         *  never off the badge's glyph, which would make the cycle depend on a
+         *  lookup table staying in step with a font. */
+        const blPrioOf = row => row.dataset.prio || 'normal';
+        const blEffortOf = row => row.dataset.effort || '';
+        const blPost = (type, row, extra) => {
+            const p = sel();
+            vscode.postMessage(Object.assign(
+                { type: type, id: p ? p.id : '' }, blWho(row), extra || {}));
+        };
+
+        // Enter sends the capture. The whole promise of this box is that writing
+        // a thought down costs nothing; reaching for the mouse is a cost.
+        const blNew = document.getElementById('bl-new');
+        if (blNew) {
+            blNew.addEventListener('keydown', ev => {
+                if (ev.key !== 'Enter') { return; }
+                ev.preventDefault();
+                const btn = document.querySelector('[data-act="blAdd"]');
+                if (btn) { btn.click(); }
+            });
+        }
+
+        document.querySelectorAll('[data-blarea]').forEach(el =>
+            el.addEventListener('click', () => {
+                blFilter.area = el.dataset.blarea === blFilter.area ? '' : el.dataset.blarea;
+                render();
+            }));
+        document.querySelectorAll('[data-blkind]').forEach(el =>
+            el.addEventListener('click', () => {
+                blFilter.kind = el.dataset.blkind === blFilter.kind ? '' : el.dataset.blkind;
+                render();
+            }));
+        const blq = document.getElementById('bl-q');
+        if (blq) {
+            // ‼️ Repainting on every keystroke would move the caret out from
+            // under the person typing, so the box is filtered on input WITHOUT a
+            // repaint of itself: the rows are redrawn and focus is put back.
+            blq.addEventListener('input', () => {
+                blFilter.q = blq.value;
+                render();
+                const again = document.getElementById('bl-q');
+                if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
+            });
+        }
+        const blState = document.getElementById('bl-state');
+        if (blState) { blState.addEventListener('change', () => { blFilter.state = blState.value; render(); }); }
+        const blSortSel = document.getElementById('bl-sort');
+        if (blSortSel) { blSortSel.addEventListener('change', () => { blSort = blSortSel.value; render(); }); }
+        const blClosed = document.getElementById('bl-closed');
+        if (blClosed) { blClosed.addEventListener('change', () => { blShowClosed = blClosed.checked; render(); }); }
+
+        document.querySelectorAll('[data-blcheck]').forEach(el =>
+            el.addEventListener('click', () =>
+                blPost('backlogState', blRow(el), { state: el.checked ? 'done' : 'open' })));
+        document.querySelectorAll('[data-blstate]').forEach(el =>
+            el.addEventListener('click', () =>
+                blPost('backlogState', blRow(el), { state: el.dataset.blstate })));
+        document.querySelectorAll('[data-blmove]').forEach(el =>
+            el.addEventListener('click', () =>
+                blPost('backlogMove', blRow(el), { dir: el.dataset.blmove })));
+
+        // A badge CYCLES rather than opening a menu: the whole value of these
+        // fields is that they are cheap enough to keep true.
+        document.querySelectorAll('[data-blprio]').forEach(el =>
+            el.addEventListener('click', () => {
+                const row = blRow(el);
+                const now = PRIO_ORDER.indexOf(blPrioOf(row));
+                blPost('backlogSet', row, {
+                    fields: { priority: PRIO_ORDER[(now + 1) % PRIO_ORDER.length] }
+                });
+            }));
+        document.querySelectorAll('[data-bleffort]').forEach(el =>
+            el.addEventListener('click', () => {
+                const row = blRow(el);
+                const now = EFFORT_ORDER.indexOf(blEffortOf(row));
+                blPost('backlogSet', row, {
+                    fields: { effort: EFFORT_ORDER[(now + 1) % EFFORT_ORDER.length] }
+                });
+            }));
+        document.querySelectorAll('[data-blfile]').forEach(el =>
+            el.addEventListener('click', () => {
+                const row = blRow(el);
+                const area = (document.getElementById('bl-area') || {}).value || '';
+                if (!area) {
+                    flash = { error: 'Pick an area in the capture box first — that is where it will be filed.' };
+                    render();
+                    return;
+                }
+                blPost('backlogCode', row, { area: area });
+            }));
+
         document.querySelectorAll('[data-rmperson]').forEach(el =>
             el.addEventListener('click', () => { people.splice(Number(el.dataset.rmperson), 1); render(); }));
 
         // keep edits to the people table in memory so a repaint does not lose them
+        //
+        // ‼️ Typing does NOT repaint — that would move the caret out from under
+        // the person typing. So the two things a repaint would have refreshed
+        // are refreshed by hand: the Save button (disabled while there is
+        // nothing to save, and a Save you cannot press is a table you cannot
+        // save) and the word next to it.
         document.querySelectorAll('[data-p]').forEach(el =>
-            el.addEventListener('input', () => { people[Number(el.dataset.i)][el.dataset.p] = el.value; }));
+            el.addEventListener('input', () => {
+                people[Number(el.dataset.i)][el.dataset.p] = el.value;
+                markPeopleState();
+            }));
 
         document.querySelectorAll('[data-act]').forEach(el => el.addEventListener('click', () => {
             const p = sel();
@@ -882,6 +1512,50 @@
                     break;
                 case 'rescan': vscode.postMessage({ type: 'rescan' }); break;
                 case 'addPerson': people.push({ name: '', role: 'contact', kind: 'person' }); render(); break;
+                case 'savePeople':
+                    // ‼️ `people === null` means the editor never rendered, so
+                    // there is nothing on screen to save — and posting `[]` for
+                    // it would delete every person the project has. The button
+                    // is only drawn on the tab that fills it, so this cannot
+                    // happen today; it stays because the cost of being wrong
+                    // about that later is somebody's contact list.
+                    if (people === null) { break; }
+                    vscode.postMessage({
+                        type: 'savePeople', id,
+                        people: people.filter(x => (x.name || '').trim())
+                    });
+                    break;
+                case 'planAdd': {
+                    const box = document.getElementById('plan-new');
+                    const item = ((box && box.value) || '').trim();
+                    if (!item) { break; }
+                    vscode.postMessage({
+                        type: 'planAdd', id, item,
+                        section: (document.getElementById('plan-sec') || {}).value || ''
+                    });
+                    break;
+                }
+                case 'blAdd': {
+                    const box = document.getElementById('bl-new');
+                    const text = ((box && box.value) || '').trim();
+                    if (!text) { break; }
+                    const val = elId => (document.getElementById(elId) || {}).value || '';
+                    vscode.postMessage({
+                        type: 'backlogAdd', id, text,
+                        area: val('bl-area'), priority: val('bl-prio'), effort: val('bl-effort')
+                    });
+                    break;
+                }
+                case 'blArchive': vscode.postMessage({ type: 'backlogArchive', id }); break;
+                case 'newDoc': {
+                    const name = ((document.getElementById('doc-name') || {}).value || '').trim();
+                    if (!name) { break; }
+                    vscode.postMessage({
+                        type: 'newDoc', id, name,
+                        folder: (document.getElementById('doc-folder') || {}).value || ''
+                    });
+                    break;
+                }
                 case 'pickFolder': vscode.postMessage({ type: 'pickFolder', id }); break;
                 case 'clearFolder': vscode.postMessage({ type: 'save', id, patch: { folder: '' } }); break;
                 case 'recreateFolder': vscode.postMessage({ type: 'recreateFolder', id }); break;

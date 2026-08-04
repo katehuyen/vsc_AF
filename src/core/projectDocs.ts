@@ -1,5 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { BacklogItem, nextBacklog } from './projectBacklog';
+import { openPlanItems } from './projectPlan';
 import { folderNameFor, Project } from './projects';
 
 /**
@@ -34,9 +36,10 @@ import { folderNameFor, Project } from './projects';
 // ---------------------------------------------------------------------------
 
 /** What a document IS, independent of what it is called. */
-export type ProjectDocRole = 'charter' | 'plan' | 'people' | 'log' | 'deliverables' | 'brief';
+export type ProjectDocRole =
+    'charter' | 'plan' | 'people' | 'log' | 'deliverables' | 'backlog' | 'brief';
 export const PROJECT_DOC_ROLES: ProjectDocRole[] =
-    ['charter', 'plan', 'people', 'log', 'deliverables', 'brief'];
+    ['charter', 'plan', 'people', 'log', 'deliverables', 'backlog', 'brief'];
 
 /** Where new log entries go. The user can move this line to change that — the
  *  mechanism is a marker, not a hard-coded position. */
@@ -56,6 +59,18 @@ export interface SkeletonEntry {
     role?: ProjectDocRole;
     /** Initial content. `{project}` `{id}` `{status}` `{date}` `{yymmdd}` expand. */
     template?: string;
+    /**
+     * What a FOLDER is for.
+     *
+     * Decisions are one file each, so they cannot be found by a singular
+     * `af-role` the way the charter is — and Agent Farm is not allowed to go
+     * looking for a folder called "Decisions", because that would be exactly the
+     * dependency on a NAME that K5 forbids (a German vault would call it
+     * something else and the feature would silently stop working). So the
+     * skeleton says which folder holds them, and a vault with its own layout
+     * says so in `agentFarm.projectSkeleton`.
+     */
+    holds?: 'decisions';
 }
 
 const CHARTER_TEMPLATE = `---
@@ -118,6 +133,43 @@ af-role: deliverables
 `;
 
 /**
+ * The backlog's starting file.
+ *
+ * The legend is the documentation: somebody opening this in Obsidian six months
+ * from now needs to know what `[efor:: S]` means, and the one place they will
+ * certainly look is the file itself. It is an HTML comment, so it is invisible
+ * in reading view and costs nothing to keep.
+ *
+ * One area (`X — General`) is seeded rather than a full dictionary — a project
+ * invents its own areas as it grows, and shipping ten headings nobody asked for
+ * is the kind of guessing that makes people delete the file.
+ */
+const BACKLOG_TEMPLATE = `---
+af-role: backlog
+---
+
+# {project} — Backlog
+
+<!-- Every field is OPTIONAL: a line of plain text is a valid item.
+
+     - [ ] P-5.3 What to do  #bug 🔺 [efor:: S] ⛔ P-5.1 [plan:: afprj-05]
+
+     code  <AREA>-<n>[.<n>]  permanent, never reissued, says where in the tree
+     #tag  the kind          bug · feat · ux · chore · debt · idea · doc
+     🔺⏫🔼🔽⏬               priority (no icon = normal)
+     [efor:: XS|S|M|L|XL]    XS≈5min · S≈½h · M≈½day · L≈a day · XL=split it
+     ⛔ CODE                 waits on that item
+     [plan:: 🆔]             which plan item it belongs to
+     [ ] open · [/] doing · [x] done · [-] cancelled
+
+     ORDER IS THE ORDER OF THESE LINES. Move one and its code does not change. -->
+
+## 📥 Inbox
+
+## X — General
+`;
+
+/**
  * The shipped default. English, because anything hard-coded is (the user writes
  * the CONTENT in whatever language they like). Folders carry a numeric prefix
  * purely so the file explorer orders them the same way everywhere; that is a
@@ -126,10 +178,11 @@ af-role: deliverables
 export const DEFAULT_SKELETON: SkeletonEntry[] = [
     { path: 'Charter.md', role: 'charter', template: CHARTER_TEMPLATE },
     { path: 'Plan.md', role: 'plan', template: PLAN_TEMPLATE },
+    { path: 'Backlog.md', role: 'backlog', template: BACKLOG_TEMPLATE },
     { path: 'People.md', role: 'people', template: PEOPLE_TEMPLATE },
     { path: 'Worklog.md', role: 'log', template: LOG_TEMPLATE },
     { path: '10_Notes/' },
-    { path: '20_Decisions/' },
+    { path: '20_Decisions/', holds: 'decisions' },
     { path: '30_Deliverables/Deliverables.md', role: 'deliverables', template: DELIVERABLES_TEMPLATE },
     { path: '40_Resources/' },
     { path: '90_Archive/' },
@@ -154,6 +207,7 @@ export function normalizeSkeleton(raw: unknown): SkeletonEntry[] {
         const entry: SkeletonEntry = { path: rel };
         if (PROJECT_DOC_ROLES.includes(o.role as ProjectDocRole)) { entry.role = o.role as ProjectDocRole; }
         if (typeof o.template === 'string' && o.template) { entry.template = o.template; }
+        if (o.holds === 'decisions') { entry.holds = 'decisions'; }
         out.push(entry);
     }
     return out.length ? out : DEFAULT_SKELETON;
@@ -280,6 +334,39 @@ export function createSkeleton(
     return result;
 }
 
+export interface EnsureRoleResult {
+    /** Absolute path of the document that now holds the role. */
+    file?: string;
+    /** True when this call is what brought it into being. */
+    created?: boolean;
+    error?: string;
+}
+
+/**
+ * Make sure a role has a document, creating it from the skeleton if it does not.
+ *
+ * Written for the backlog, which arrived after projects that already exist had
+ * their folders built: those folders have no `Backlog.md`, and telling somebody
+ * "add a file with `af-role: backlog` in its frontmatter" the first time they
+ * try to jot a note down is a wall where there should be a door. A role that is
+ * already held — under ANY file name, since discovery is by frontmatter — is
+ * returned untouched.
+ */
+export function ensureRoleDoc(
+    dir: string, project: Project, role: ProjectDocRole,
+    skeleton: SkeletonEntry[] = DEFAULT_SKELETON, now = new Date()
+): EnsureRoleResult {
+    const held = scanRoles(dir)[role];
+    if (held) { return { file: held }; }
+    const entry = skeleton.find(e => e.role === role)
+        ?? DEFAULT_SKELETON.find(e => e.role === role);
+    if (!entry) { return { error: `no skeleton entry declares af-role: ${role}` }; }
+    const res = createSkeleton(dir, project, [entry], now);
+    if (res.failed.length) { return { error: res.failed[0].error }; }
+    const made = scanRoles(dir)[role];
+    return made ? { file: made, created: res.created.length > 0 } : { error: `could not create the ${role} document` };
+}
+
 // ---------------------------------------------------------------------------
 // frontmatter · role discovery
 // ---------------------------------------------------------------------------
@@ -372,21 +459,84 @@ function markdownFiles(dir: string): string[] {
 export type RoleMap = Partial<Record<ProjectDocRole, string>>;
 
 /**
- * Which file holds which role. First one found wins and the rest are ignored:
- * two files claiming `charter` is a mistake in the folder, and picking one
- * quietly is better than refusing to show the project at all.
+ * A decision record — one file, one decision (the ADR pattern).
+ *
+ * Not a `ProjectDocRole`: those are singular ("the charter"), and a project
+ * accumulates decisions. They are found the same way everything else is, by
+ * `af-role: decision` in the frontmatter, so they can live anywhere in the
+ * folder and be called anything.
  */
-export function scanRoles(dir: string): RoleMap {
-    const map: RoleMap = {};
-    if (!dirExists(dir)) { return map; }
+export interface DecisionDoc {
+    file: string;
+    title: string;
+    /** LOCAL midnight of `af-date`, or the file's mtime when it has none. Never
+     *  invented: the timeline shows decisions at a real recorded time. */
+    ts: number;
+    /** True when the time came from the filesystem rather than the document. */
+    fromMtime: boolean;
+}
+
+export interface ProjectFolderScan {
+    roles: RoleMap;
+    /** Newest first. */
+    decisions: DecisionDoc[];
+}
+
+/** `af-date: 2026-08-03` → LOCAL midnight, like every other date here. */
+function dayToMs(value: string): number {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value ?? '').trim());
+    if (!m) { return 0; }
+    const ms = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime();
+    return isFinite(ms) ? ms : 0;
+}
+
+/** The first `# heading`, which is where a decision states what it decided. */
+function firstHeading(text: string): string {
+    const m = /^#\s+(.+)$/m.exec(String(text ?? ''));
+    return m ? m[1].trim() : '';
+}
+
+/**
+ * One walk of the project folder, answering both questions it can answer.
+ *
+ * Roles and decisions used to be two scans of the same directory tree. The brief
+ * is rebuilt on every spawn and the Console asks for its text on a timer, so the
+ * second walk was a real cost for an answer the first walk already had in hand.
+ */
+export function scanProjectFolder(dir: string): ProjectFolderScan {
+    const roles: RoleMap = {};
+    const decisions: DecisionDoc[] = [];
+    if (!dirExists(dir)) { return { roles, decisions }; }
     for (const file of markdownFiles(dir)) {
-        const fm = readAfFrontmatter(probe(file));
+        const head = probe(file);
+        const fm = readAfFrontmatter(head);
         const role = fm['af-role'];
         if (typeof role !== 'string') { continue; }
-        const key = role.trim().toLowerCase() as ProjectDocRole;
-        if (PROJECT_DOC_ROLES.includes(key) && !map[key]) { map[key] = file; }
+        const key = role.trim().toLowerCase();
+        if (key === 'decision') {
+            const stated = dayToMs(String(fm['af-date'] ?? ''));
+            decisions.push({
+                file,
+                title: firstHeading(head) || path.basename(file).replace(/\.md$/i, ''),
+                ts: stated || docMtime(file),
+                fromMtime: !stated
+            });
+            continue;
+        }
+        // First one found wins and the rest are ignored: two files claiming
+        // `charter` is a mistake in the folder, and picking one quietly is
+        // better than refusing to show the project at all.
+        if (PROJECT_DOC_ROLES.includes(key as ProjectDocRole) && !roles[key as ProjectDocRole]) {
+            roles[key as ProjectDocRole] = file;
+        }
     }
-    return map;
+    decisions.sort((a, b) => b.ts - a.ts || a.title.localeCompare(b.title));
+    return { roles, decisions };
+}
+
+/** Which file holds which role. */
+export function scanRoles(dir: string): RoleMap {
+    return scanProjectFolder(dir).roles;
 }
 
 /**
@@ -522,30 +672,479 @@ export function insertLogEntry(file: string, entry: string): WriteResult {
     const text = String(entry ?? '').trim();
     if (!text) { return { ok: false, error: 'nothing to write' }; }
     let existing = '';
-    try { existing = fs.readFileSync(file, 'utf8'); } catch { existing = ''; }
+    let mtimeMs: number | undefined;
+    try {
+        mtimeMs = docMtime(file) || undefined;
+        existing = fs.readFileSync(file, 'utf8');
+    } catch (e) {
+        // ‼️ A LOG THAT CANNOT BE READ IS NOT AN EMPTY LOG.
+        // Swallowing the error and carrying on with '' turns one unreadable
+        // read — a file a syncing client is holding, a permission that changed
+        // — into a whole worklog replaced by the single line we were adding.
+        // Only a file that is genuinely NOT THERE is written from scratch.
+        if (!isMissing(e)) {
+            return {
+                ok: false,
+                error: `the worklog is there but could not be read (${String(e)}) — nothing was written`
+            };
+        }
+        existing = '';
+        mtimeMs = undefined;
+    }
 
+    // The guard is the mtime taken before the read: the write refuses if the
+    // file moved under us, rather than deciding it knows better.
     if (!existing.trim()) {
-        return safeWriteDoc(file, `${LOG_ANCHOR}\n\n${text}\n`);
+        return safeWriteDoc(file, `${LOG_ANCHOR}\n\n${text}\n`, mtimeMs);
     }
     const at = existing.indexOf(LOG_ANCHOR);
     if (at < 0) {
         const sep = existing.endsWith('\n') ? '' : '\n';
-        return safeWriteDoc(file, `${existing}${sep}\n${text}\n`);
+        return safeWriteDoc(file, `${existing}${sep}\n${text}\n`, mtimeMs);
     }
     const after = at + LOG_ANCHOR.length;
     const head = existing.slice(0, after);
     // drop the blank line that sat between the anchor and whatever follows, so
     // repeated inserts do not grow a gap
     const tail = existing.slice(after).replace(/^\s*\n/, '');
-    return safeWriteDoc(file, `${head}\n\n${text}\n\n${tail}`);
+    return safeWriteDoc(file, `${head}\n\n${text}\n\n${tail}`, mtimeMs);
+}
+
+// ---------------------------------------------------------------------------
+// documents — listing and reading, always from inside the folder
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve a path the caller supplied, or refuse.
+ *
+ * ‼️ EVERY path that arrives from a webview or the bridge comes through here.
+ * The project folder is the boundary: a page that could hand back `../../.ssh`
+ * would turn a document viewer into a file-system reader, and a bridge op that
+ * accepted one would turn an agent into the same thing. Absolute paths, drive
+ * letters and `..` are rejected outright rather than sanitised — a path climbing
+ * out of the folder is never a typo worth guessing at.
+ */
+export function resolveInFolder(dir: string, rel: string): string | undefined {
+    if (!dir?.trim()) { return undefined; }
+    const wanted = String(rel ?? '').trim().replace(/\\/g, '/');
+    if (!wanted || wanted.startsWith('/') || /^[A-Za-z]:/.test(wanted)
+        || /(^|\/)\.\.(\/|$)/.test(wanted)) { return undefined; }
+    const base = path.resolve(dir);
+    const target = path.resolve(base, wanted);
+    return target === base || target.startsWith(base + path.sep) ? target : undefined;
+}
+
+export interface ProjectDocEntry {
+    /** Path relative to the project folder, with forward slashes — the handle
+     *  every other op takes, so nothing outside this module holds an absolute
+     *  path it could be tricked into using. */
+    rel: string;
+    name: string;
+    dir: boolean;
+    size: number;
+    mtimeMs: number;
+    /** The af-role it carries, when it has one. */
+    role?: ProjectDocRole | 'decision';
+    /** Generated by Agent Farm and regenerated without asking. */
+    managed?: boolean;
+}
+
+/** Agent Farm's own folder inside a project, with forward slashes — the tree
+ *  marks it and its contents `managed` so nothing offers it as a place to put
+ *  something that must survive. */
+const AF_DIR = '_AF';
+
+/** Depth the document tree walks, and the ceiling on entries. A folder somebody
+ *  pointed at their whole disk degrades into a short list, never a hung window. */
+const DOC_TREE_DEPTH = 3;
+const DOC_TREE_CAP = 500;
+/** Bigger than this and the reader gets the head plus an honest note — a 40 MB
+ *  file posted into a webview freezes it. */
+export const DOC_READ_CAP = 512 * 1024;
+
+/**
+ * The project folder as a flat, sorted list of entries.
+ *
+ * Flat rather than nested: the page draws the nesting from `rel`, and a flat
+ * list is what both the bridge and the tests can compare without walking a
+ * structure. Folders come before files at each level so the result reads the way
+ * a file explorer does.
+ */
+export function listProjectDocs(dir: string): ProjectDocEntry[] {
+    const out: ProjectDocEntry[] = [];
+    if (!dirExists(dir)) { return out; }
+    const base = path.resolve(dir);
+    const walk = (current: string, depth: number): void => {
+        if (out.length >= DOC_TREE_CAP) { return; }
+        let entries: fs.Dirent[] = [];
+        try { entries = fs.readdirSync(current, { withFileTypes: true }); } catch { return; }
+        const sorted = entries
+            .filter(e => !e.name.startsWith('.'))
+            .sort((a, b) => (Number(b.isDirectory()) - Number(a.isDirectory()))
+                || a.name.localeCompare(b.name));
+        for (const e of sorted) {
+            if (out.length >= DOC_TREE_CAP) { return; }
+            const full = path.join(current, e.name);
+            const rel = path.relative(base, full).replace(/\\/g, '/');
+            let stat: fs.Stats | undefined;
+            try { stat = fs.statSync(full); } catch { continue; }
+            const entry: ProjectDocEntry = {
+                rel, name: e.name, dir: e.isDirectory(),
+                size: e.isDirectory() ? 0 : stat.size, mtimeMs: stat.mtimeMs
+            };
+            // The machine folder and everything under it is ours and is
+            // rewritten on every spawn. Marking the FOLDER too is what lets a
+            // caller keep it out of "where shall I put this note?" — the
+            // answer would be lost on the next session start. This is not the
+            // name dependency K5 forbids: `_AF` is Agent Farm's own output,
+            // named by Agent Farm, not something the user chose.
+            if (rel === AF_DIR || rel.startsWith(AF_DIR + '/')) { entry.managed = true; }
+            if (!e.isDirectory() && e.name.toLowerCase().endsWith('.md')) {
+                const head = probe(full);
+                const role = String(readAfFrontmatter(head)['af-role'] ?? '').trim().toLowerCase();
+                if (role === 'decision' || PROJECT_DOC_ROLES.includes(role as ProjectDocRole)) {
+                    entry.role = role as ProjectDocEntry['role'];
+                }
+                if (head.includes(MANAGED_BANNER)) { entry.managed = true; }
+            }
+            out.push(entry);
+            if (e.isDirectory() && depth < DOC_TREE_DEPTH) { walk(full, depth + 1); }
+        }
+    };
+    walk(base, 0);
+    return out;
+}
+
+export interface ReadDocResult {
+    ok: boolean;
+    error?: string;
+    text?: string;
+    /** Hand this back on the next write to prove nothing changed in between. */
+    mtimeMs?: number;
+    size?: number;
+    /** True when only the head of a large file was returned. */
+    truncated?: boolean;
+    /**
+     * ‼️ THE FILE IS NOT THERE — as opposed to being there and unreadable.
+     *
+     * These are two different answers and only one of them means a write can
+     * destroy nothing. A caller that reads "could not read it" as "there is
+     * nothing there" writes its content over a document that exists: a worklog
+     * held open by a syncing client, a note whose permissions changed, a file
+     * on a drive that blinked. The read fails, the write succeeds, and the
+     * document is gone with no error anywhere.
+     *
+     * Absent on every other failure ON PURPOSE, so a caller that does not know
+     * about this flag gets the safe reading rather than the destructive one.
+     */
+    missing?: boolean;
+}
+
+export function readProjectDoc(dir: string, rel: string): ReadDocResult {
+    const file = resolveInFolder(dir, rel);
+    if (!file) { return { ok: false, error: 'that path is not inside the project folder' }; }
+    try {
+        const stat = fs.statSync(file);
+        if (stat.isDirectory()) { return { ok: false, error: 'that is a folder' }; }
+        const truncated = stat.size > DOC_READ_CAP;
+        let text: string;
+        if (truncated) {
+            const fd = fs.openSync(file, 'r');
+            try {
+                const buf = Buffer.alloc(DOC_READ_CAP);
+                const read = fs.readSync(fd, buf, 0, DOC_READ_CAP, 0);
+                text = buf.slice(0, read).toString('utf8');
+            } finally { fs.closeSync(fd); }
+        } else {
+            text = fs.readFileSync(file, 'utf8');
+        }
+        return { ok: true, text, mtimeMs: stat.mtimeMs, size: stat.size, truncated };
+    } catch (e) {
+        return {
+            ok: false, error: String(e),
+            ...(isMissing(e) ? { missing: true } : {})
+        };
+    }
+}
+
+/** Node's "no such file", told apart from every other reason a read fails.
+ *  ENOTDIR belongs here too: a path whose parent is a FILE cannot exist. */
+function isMissing(e: unknown): boolean {
+    const code = (e as NodeJS.ErrnoException | undefined)?.code;
+    return code === 'ENOENT' || code === 'ENOTDIR';
+}
+
+/** Write a document inside the project folder, through the guarded atomic path. */
+export function writeProjectDoc(
+    dir: string, rel: string, content: string, expectedMtimeMs?: number
+): WriteResult {
+    const file = resolveInFolder(dir, rel);
+    if (!file) { return { ok: false, error: 'that path is not inside the project folder' }; }
+    return safeWriteDoc(file, content, expectedMtimeMs);
+}
+
+// ---------------------------------------------------------------------------
+// decisions — one file each
+// ---------------------------------------------------------------------------
+
+/**
+ * Where a NEW decision goes.
+ *
+ * In order: next to the decisions that are already there (whatever the user
+ * called that folder — following them is always right); then the folder the
+ * skeleton declares it `holds: 'decisions'`; then the project root, which is
+ * ugly but never wrong. At no point is a folder matched by its NAME.
+ */
+export function decisionsFolder(
+    dir: string, skeleton: SkeletonEntry[] = DEFAULT_SKELETON, existing?: DecisionDoc[]
+): string {
+    const known = (existing ?? scanProjectFolder(dir).decisions)[0];
+    if (known) { return path.dirname(known.file); }
+    const declared = skeleton.find(e => e.holds === 'decisions');
+    if (declared) {
+        const target = resolveInFolder(dir, declared.path.replace(/\/$/, ''));
+        if (target) { return target; }
+    }
+    return dir;
+}
+
+/** A file name a person can read in a folder listing. The extension never looks
+ *  at it — discovery is by `af-role` — so this is purely for the human. */
+function decisionFileName(title: string, day: string): string {
+    const slug = String(title ?? '')
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 60) || 'decision';
+    return `${day}-${slug}.md`;
+}
+
+export interface AddDecisionInput {
+    title: string;
+    /** The body, in whatever language and shape the project writes in. */
+    body?: string;
+    /** Defaults to today. */
+    now?: Date;
+    skeleton?: SkeletonEntry[];
+}
+
+export interface AddDecisionResult {
+    ok: boolean;
+    error?: string;
+    file?: string;
+    decision?: DecisionDoc;
+}
+
+/**
+ * Record a decision.
+ *
+ * Its own file, because that is the only shape that survives: appended to a
+ * shared document, decisions become a list nobody can link to, and two agents
+ * writing at once lose one of them. A file per decision has neither problem, and
+ * a name that is already taken gets a suffix rather than an overwrite — this
+ * function must never be able to destroy a record that already exists.
+ */
+export function addDecision(dir: string, input: AddDecisionInput): AddDecisionResult {
+    const title = String(input.title ?? '').trim();
+    if (!title) { return { ok: false, error: 'a decision needs a title' }; }
+    if (!dirExists(dir)) { return { ok: false, error: 'the project has no folder on disk' }; }
+    const now = input.now ?? new Date();
+    const day = localDay(now.getTime());
+    const folder = decisionsFolder(dir, input.skeleton ?? DEFAULT_SKELETON);
+    try { fs.mkdirSync(folder, { recursive: true }); } catch (e) {
+        return { ok: false, error: String(e) };
+    }
+    let file = path.join(folder, decisionFileName(title, day));
+    for (let n = 2; fs.existsSync(file) && n < 100; n++) {
+        file = path.join(folder, decisionFileName(title, day).replace(/\.md$/, `-${n}.md`));
+    }
+    if (fs.existsSync(file)) { return { ok: false, error: 'too many decisions with that name today' }; }
+    const body = String(input.body ?? '').trim();
+    const content = `---\naf-role: decision\naf-date: ${day}\n---\n\n# ${title}\n\n${body}${body ? '\n' : ''}`;
+    const res = safeWriteDoc(file, content);
+    if (!res.ok) { return { ok: false, error: res.error }; }
+    return {
+        ok: true, file,
+        decision: { file, title, ts: dayToMs(day), fromMtime: false }
+    };
+}
+
+// ---------------------------------------------------------------------------
+// deliverables — rows in the user's own table
+// ---------------------------------------------------------------------------
+
+export interface DeliverableRow {
+    /** The row's cells, exactly as the table has them. */
+    cells: string[];
+    what: string;
+    version?: string;
+    /** The date column as written. */
+    date?: string;
+    where?: string;
+    /** LOCAL midnight of `date` when it parses, 0 when it does not. A row whose
+     *  date says "Q3" has no place on a timeline and does not get invented one. */
+    ts: number;
+}
+
+export interface DeliverableTable {
+    /** Header cells as written, so a caller can say what the columns are. */
+    header: string[];
+    rows: DeliverableRow[];
+    /** Line index of the last row of the table, -1 when there is no table. */
+    lastLine: number;
+    /** Line index of the header. */
+    headerLine: number;
+}
+
+const TABLE_SEP = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
+
+const splitRow = (line: string): string[] =>
+    line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
+
+const DELIVERABLE_FIELDS = ['what', 'version', 'date', 'where'] as const;
+export type DeliverableField = typeof DELIVERABLE_FIELDS[number];
+
+/**
+ * Which cell is which — the ONE rule, used by both reading and writing.
+ *
+ * Two passes, and the order matters. First every field the header names is
+ * claimed by name, so a user who REORDERED the columns gets each value where it
+ * belongs. Only then are the fields the header did not name laid over the
+ * columns nobody claimed, in the shipped order — which is the best a guess can
+ * do for a table written in another language, and is why a `Date` column in an
+ * otherwise Turkish table still receives the date.
+ *
+ * -1 means "this table has no column for that", and the value is left out rather
+ * than pushed into somebody else's column. Read and write share this function
+ * because a table parsed one way and appended to another way is a table that
+ * grows crooked one row at a time.
+ */
+function columnMap(header: string[]): Record<DeliverableField, number> {
+    const out: Record<DeliverableField, number> = { what: -1, version: -1, date: -1, where: -1 };
+    const taken = new Set<number>();
+    for (const field of DELIVERABLE_FIELDS) {
+        const at = header.findIndex(h => h.toLowerCase() === field);
+        if (at >= 0 && !taken.has(at)) { out[field] = at; taken.add(at); }
+    }
+    let cursor = 0;
+    for (const field of DELIVERABLE_FIELDS) {
+        if (out[field] >= 0) { continue; }
+        while (cursor < header.length && taken.has(cursor)) { cursor++; }
+        if (cursor >= header.length) { break; }
+        out[field] = cursor;
+        taken.add(cursor);
+    }
+    return out;
+}
+
+/**
+ * Read the deliverables table out of a document.
+ *
+ * The LAST table in the file wins: the shipped template has exactly one, and a
+ * document that grew a second one has its log at the bottom, where new rows are
+ * appended. Anything that is not a table is left alone and unread — the prose
+ * around the table is the user's.
+ */
+export function parseDeliverables(text: string): DeliverableTable {
+    const lines = String(text ?? '').split(/\r?\n/);
+    let headerLine = -1;
+    for (let i = 0; i < lines.length - 1; i++) {
+        if (lines[i].includes('|') && TABLE_SEP.test(lines[i + 1])) { headerLine = i; }
+    }
+    if (headerLine < 0) { return { header: [], rows: [], lastLine: -1, headerLine: -1 }; }
+    const header = splitRow(lines[headerLine]);
+    const col = columnMap(header);
+    const rows: DeliverableRow[] = [];
+    let lastLine = headerLine + 1;
+    for (let i = headerLine + 2; i < lines.length; i++) {
+        const line = lines[i];
+        if (!line.trim()) { break; }
+        if (!line.includes('|')) { break; }
+        const cells = splitRow(line);
+        lastLine = i;
+        const cell = (at: number) => (at >= 0 ? (cells[at] ?? '') : '');
+        const date = cell(col.date);
+        if (!cells.some(c => c)) { continue; }
+        rows.push({
+            cells,
+            what: cell(col.what),
+            ...(cell(col.version) ? { version: cell(col.version) } : {}),
+            ...(date ? { date } : {}),
+            ...(cell(col.where) ? { where: cell(col.where) } : {}),
+            ts: dayToMs(date)
+        });
+    }
+    return { header, rows, lastLine, headerLine };
+}
+
+export interface DeliverableInput {
+    what: string;
+    version?: string;
+    /** Defaults to today, in the same YYYY-MM-DD the rest of the axis uses. */
+    date?: string;
+    where?: string;
+    now?: Date;
+}
+
+/**
+ * Add a row to the deliverables table.
+ *
+ * Inserted after the table's last row — not at the end of the document, which
+ * would drop it into whatever prose follows. With no table at all the shipped
+ * header is written first, which is the only case where this function decides
+ * what a column is called.
+ */
+export function addDeliverableRow(text: string, input: DeliverableInput): { ok: boolean; text?: string; error?: string } {
+    const what = String(input.what ?? '').trim();
+    if (!what) { return { ok: false, error: 'a deliverable needs a name' }; }
+    const src = String(text ?? '');
+    const eol = /\r\n/.test(src) ? '\r\n' : '\n';
+    const day = String(input.date ?? '').trim() || localDay((input.now ?? new Date()).getTime());
+    const table = parseDeliverables(src);
+    const clean = (s: string) => String(s ?? '').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ').trim();
+
+    if (table.headerLine < 0) {
+        const head = `| What | Version | Date | Where |${eol}|---|---|---|---|${eol}`;
+        const row = `| ${clean(what)} | ${clean(input.version ?? '')} | ${clean(day)} | ${clean(input.where ?? '')} |${eol}`;
+        const pad = !src || src.endsWith('\n') ? '' : eol;
+        return { ok: true, text: `${src}${pad}${eol}${head}${row}` };
+    }
+    // ‼️ Exactly as many cells as the table has columns. One more and every
+    // renderer draws a ragged table from this row onwards.
+    const cells = new Array(table.header.length).fill('');
+    const col = columnMap(table.header);
+    const values: Record<DeliverableField, string> = {
+        what, version: input.version ?? '', date: day, where: input.where ?? ''
+    };
+    for (const field of DELIVERABLE_FIELDS) {
+        if (col[field] >= 0) { cells[col[field]] = clean(values[field]); }
+    }
+    const row = `| ${cells.join(' | ')} |`;
+
+    const lines = src.split(/\r?\n/);
+    const at = table.lastLine + 1;
+    // Offset splice, like every other write here: rejoining the whole document
+    // would rewrite the line endings of lines nobody asked us to touch.
+    let off = 0;
+    for (let n = 0; n < at && off >= 0; n++) {
+        const nl = src.indexOf('\n', off);
+        off = nl < 0 ? -1 : nl + 1;
+    }
+    if (off < 0 || at >= lines.length) {
+        const pad = !src || src.endsWith('\n') ? '' : eol;
+        return { ok: true, text: `${src}${pad}${row}${eol}` };
+    }
+    return { ok: true, text: src.slice(0, off) + row + eol + src.slice(off) };
 }
 
 // ---------------------------------------------------------------------------
 // brief
 // ---------------------------------------------------------------------------
 
-/** Where the generated brief lives inside a project folder. */
-export const BRIEF_REL = path.join('_AF', 'BRIEF.md');
+/** Where the generated brief lives inside a project folder. Built from
+ *  `AF_DIR` so the tree's "this is ours" rule and the brief's own home can
+ *  never drift apart. */
+export const BRIEF_REL = path.join(AF_DIR, 'BRIEF.md');
 
 /** How many worklog lines the brief carries — enough to say what just happened,
  *  not so many that the system prompt turns into a diary. */
@@ -558,10 +1157,17 @@ const BRIEF_LOG_LINES = 6;
  * recent end of the log. With no anchor (a log the user rewrote their own way)
  * the tail of the file is the honest answer.
  */
+/** A document's text, or '' — a brief must be buildable for a project whose
+ *  folder has just been moved, not throw halfway through. */
+function readTextOrEmpty(file: string | undefined): string {
+    if (!file) { return ''; }
+    try { return fs.readFileSync(file, 'utf8'); } catch { return ''; }
+}
+
 function recentLog(file: string | undefined, max = BRIEF_LOG_LINES): string[] {
     if (!file) { return []; }
-    let text = '';
-    try { text = fs.readFileSync(file, 'utf8'); } catch { return []; }
+    const text = readTextOrEmpty(file);
+    if (!text) { return []; }
     const at = text.indexOf(LOG_ANCHOR);
     const body = at >= 0 ? text.slice(at + LOG_ANCHOR.length) : text;
     const lines = body.split(/\r?\n/)
@@ -576,7 +1182,79 @@ export interface BriefInput {
     roles?: RoleMap;
     /** absolute code roots, already detokenised */
     repos?: string[];
+    /** The project's decision records, newest first — from the SAME folder walk
+     *  that produced `roles` (`scanProjectFolder`), so building a brief stays
+     *  one pass over the directory even though it answers three questions. */
+    decisions?: DecisionDoc[];
     now?: number;
+    /**
+     * Fit the brief into this many characters by carrying FEWER list entries.
+     *
+     * ‼️ THE CALLER THAT INJECTS A BRIEF MUST PASS THIS, AND HERE IS WHY.
+     * The system prompt has a hard cap, and the cap used to be applied by
+     * slicing the finished text (`trimBrief`). The brief's last section is
+     * "Writing back" — where the worklog is, where the plan is, what not to
+     * reformat — so growing the brief pushed the ONE part an agent has to act on
+     * off the end, and the agent was left with a nice summary and no idea where
+     * to write. Shortening the lists instead keeps the document's shape whole:
+     * fewer worklog lines is a smaller answer to the same question, a missing
+     * instruction is no answer at all.
+     *
+     * Left undefined for the copy written to `_AF/BRIEF.md`, which is the FULL
+     * text — that file is what the "[cut to fit]" pointer points at, so it has
+     * to hold more than the injected copy, not the same thing.
+     */
+    maxChars?: number;
+}
+
+interface BriefLevel {
+    plan: number; backlog: number; decisions: number; log: number; people: number;
+    /**
+     * ‼️ HOW LONG ONE ENTRY MAY BE, WHICH IS NOT THE SAME QUESTION AS HOW MANY.
+     *
+     * Measured on this installation's own project: a single worklog entry is
+     * over 2000 characters, because that is how the user writes them. Dropping
+     * to ONE log line therefore still overshot a 2500-character budget, and the
+     * tail — the "writing back" instructions — was sliced off anyway. Shortening
+     * the count without shortening the entry only looks like a fix.
+     *
+     * Undefined at the top level, on purpose: the unbudgeted brief is the FULL
+     * text that `_AF/BRIEF.md` holds and the "[cut to fit]" pointer points at,
+     * so it must not clip anything either.
+     */
+    chars?: number;
+}
+
+/** How much each list carries, most generous first. When a budget is set the
+ *  brief is built at the first level that fits. Decisions give way before
+ *  worklog lines, and plan items last: "what is left to do" is the question a
+ *  session opens with, and the decision records are one folder listing away for
+ *  an agent that wants them. */
+const BRIEF_LEVELS: BriefLevel[] = [
+    { plan: 6, backlog: 5, decisions: 5, log: 6, people: 8 },
+    { plan: 6, backlog: 5, decisions: 3, log: 5, people: 6, chars: 400 },
+    { plan: 5, backlog: 4, decisions: 2, log: 4, people: 4, chars: 300 },
+    { plan: 4, backlog: 4, decisions: 1, log: 3, people: 3, chars: 220 },
+    { plan: 3, backlog: 3, decisions: 0, log: 2, people: 2, chars: 160 },
+    { plan: 2, backlog: 3, decisions: 0, log: 1, people: 1, chars: 110 },
+    // ‼️ The floor. The plan drops to a single line while the backlog keeps
+    // three, and that asymmetry is the point: at this width the brief has to
+    // choose what it IS, and what it is is the answer to "what do I do next and
+    // where do I write down that I did it". The roadmap is one document away;
+    // the backlog is the list about to be acted on.
+    { plan: 1, backlog: 3, decisions: 0, log: 1, people: 1, chars: 70 }
+];
+
+/** One entry, shortened on a word boundary and visibly so. The `…` matters: a
+ *  sentence that simply stops reads as corrupted input, one that ends in an
+ *  ellipsis reads as a summary — and the document it came from is named three
+ *  lines further down. */
+function clipEntry(text: string, max?: number): string {
+    const t = String(text ?? '').trim();
+    if (!max || t.length <= max) { return t; }
+    const head = t.slice(0, max);
+    const space = head.lastIndexOf(' ');
+    return (space > max * 0.6 ? head.slice(0, space) : head).trimEnd() + '…';
 }
 
 /**
@@ -591,9 +1269,69 @@ export interface BriefInput {
  * editing it would lose their edit on the next spawn, and the banner says so.
  */
 export function buildBrief(o: BriefInput): string {
+    const budget = Number(o.maxChars) > 0 ? Number(o.maxChars) : 0;
+    if (!budget) { return renderBrief(o, BRIEF_LEVELS[0]); }
+    // The lists are read ONCE and handed to every attempt: the loop is choosing
+    // how much to print, not re-reading the folder up to six times.
+    const source = briefSource(o);
+    for (const level of BRIEF_LEVELS) {
+        const text = renderBrief(o, level, source);
+        if (text.length <= budget) { return text; }
+    }
+    // Still over: the fixed part alone (a very long summary, a wall of code
+    // roots) does not fit, and `trimBrief` is the backstop for that. It is the
+    // only case where the tail can still be lost, and it is not one this
+    // function can honestly solve by dropping more rows.
+    return renderBrief(o, BRIEF_LEVELS[BRIEF_LEVELS.length - 1], source);
+}
+
+interface BriefSource {
+    plan: { text: string; section: string }[];
+    backlog: BacklogItem[];
+    log: string[];
+}
+
+/** The three lists that come off disk, read once per brief. */
+function briefSource(o: BriefInput): BriefSource {
+    const roles = o.roles ?? {};
+    const widest = BRIEF_LEVELS[0];
+    return {
+        plan: roles.plan
+            ? openPlanItems(readTextOrEmpty(roles.plan), widest.plan)
+                .map(i => ({ text: i.text, section: i.section }))
+            : [],
+        // ‼️ No effort ceiling here, unlike an agent asking what to work on: the
+        // brief is telling the reader what is at the TOP OF THE PILE, and hiding
+        // the big one at position two would misrepresent the pile.
+        backlog: roles.backlog
+            ? nextBacklog(readTextOrEmpty(roles.backlog), { limit: widest.backlog, maxEffort: 'XL' }).items
+            : [],
+        log: recentLog(roles.log, widest.log)
+    };
+}
+
+/** One backlog line as the brief prints it: code first (that is what gets quoted
+ *  back at an agent), then the words, then only the badges that are set. */
+function briefBacklogLine(item: BacklogItem, chars?: number): string {
+    const badges = [
+        ...item.kinds.map(k => `#${k}`),
+        item.priority !== 'normal' ? BRIEF_PRIORITY[item.priority] : '',
+        item.effort ?? '',
+        item.state === 'doing' ? '(in progress)' : ''
+    ].filter(Boolean).join(' ');
+    const head = item.code ? `${item.code} ` : '';
+    return `- ${head}${clipEntry(item.text, chars)}${badges ? `  ${badges}` : ''}`;
+}
+
+const BRIEF_PRIORITY: Record<string, string> = {
+    highest: '🔺', high: '⏫', medium: '🔼', normal: '', low: '🔽', lowest: '⏬'
+};
+
+function renderBrief(o: BriefInput, level: BriefLevel, source?: BriefSource): string {
     const p = o.project;
     const roles = o.roles ?? {};
     const now = o.now ?? Date.now();
+    const src = source ?? briefSource(o);
     const day = (ms?: number) => (ms ? localDay(ms) : '');
     const rel = (file: string) => (p.folder ? path.relative(p.folder, file) || path.basename(file) : file);
 
@@ -604,19 +1342,28 @@ export function buildBrief(o: BriefInput): string {
 
     const facts: string[] = [`- Status: ${p.status}`];
     if (p.kind) { facts.push(`- Kind: ${p.kind}`); }
-    if (p.summary?.trim()) { facts.push(`- Summary: ${p.summary.trim()}`); }
+    // ‼️ Clipped like every other entry. A summary is the one FACT a user can
+    // make arbitrarily long, and an unclipped one spent the whole budget on
+    // itself while the lists below it were being cut row by row to make room.
+    if (p.summary?.trim()) { facts.push(`- Summary: ${clipEntry(p.summary.trim(), level.chars)}`); }
     if (p.startedAt) { facts.push(`- Started: ${day(p.startedAt)}`); }
     if (p.dueAt) { facts.push(`- Due: ${day(p.dueAt)}`); }
     if (p.tags?.length) { facts.push(`- Tags: ${p.tags.join(', ')}`); }
     out.push(...facts);
 
-    const people = (p.people ?? []).filter(x => x.name?.trim());
+    const allPeople = (p.people ?? []).filter(x => x.name?.trim());
+    const people = allPeople.slice(0, level.people);
     if (people.length) {
         out.push('', '## People');
         for (const x of people) {
             const bits = [x.role, x.kind === 'company' ? 'company' : undefined, x.contact]
                 .filter(Boolean).join(' · ');
             out.push(`- ${x.name}${bits ? ` — ${bits}` : ''}`);
+        }
+        // A list that was shortened says so, rather than looking like the whole
+        // team is four people.
+        if (allPeople.length > people.length) {
+            out.push(`- _…and ${allPeople.length - people.length} more (see the people document)_`);
         }
     }
 
@@ -633,10 +1380,45 @@ export function buildBrief(o: BriefInput): string {
         for (const role of known) { out.push(`- ${role}: ${rel(roles[role] as string)}`); }
     }
 
-    const log = recentLog(roles.log);
+    // ‼️ What is still OPEN, not the whole plan. An agent handed a project needs
+    // the answer to "what is left", and the plan file's own checkboxes are the
+    // only place that answer already exists — copying the finished ones in too
+    // would spend the brief's budget telling it what it does not have to do.
+    const open = src.plan.slice(0, level.plan);
+    if (open.length) {
+        out.push('', '## Open plan items');
+        for (const item of open) {
+            const where = item.section ? ` _(${item.section})_` : '';
+            out.push(`- ${clipEntry(item.text, level.chars)}${where}`);
+        }
+    }
+
+    // ‼️ THE LINE THAT MAKES "do the top five" WORK WITHOUT A CONVERSATION.
+    // The user's whole complaint was having to paste the work in every time; the
+    // answer is that the top of the backlog is ALREADY in front of the agent
+    // when the session opens. Everything else in this feature — the codes, the
+    // ordering, the next-engine — is only useful if this section is here.
+    const backlog = src.backlog.slice(0, level.backlog);
+    if (backlog.length) {
+        out.push('', '## Next in backlog');
+        for (const item of backlog) { out.push(briefBacklogLine(item, level.chars)); }
+    }
+
+    const decisions = (o.decisions ?? []).slice(0, level.decisions);
+    if (decisions.length) {
+        out.push('', '## Recent decisions');
+        for (const d of decisions) {
+            out.push(`- ${day(d.ts)} — ${clipEntry(d.title, level.chars)}`);
+        }
+    }
+
+    const log = src.log.slice(0, level.log);
     if (log.length) {
         out.push('', '## Recently');
-        for (const line of log) { out.push(line.startsWith('-') ? line : `- ${line}`); }
+        for (const line of log) {
+            const body = clipEntry(line.replace(/^-\s*/, ''), level.chars);
+            out.push(`- ${body}`);
+        }
     }
 
     out.push('', '## Writing back');
@@ -644,6 +1426,13 @@ export function buildBrief(o: BriefInput): string {
         ? `- Record what you did in the worklog (${rel(roles.log)}) before you finish.`
         : '- This project has no worklog file yet; create one with `af-role: log` if you need it.');
     if (roles.plan) { out.push(`- Plan items live in ${rel(roles.plan)} — tick them there, do not rewrite the file.`); }
+    // Kept to one line: this section is the FIXED tail of every brief ever
+    // generated, so a sentence here is paid for on every session start.
+    if (roles.backlog) {
+        out.push(`- Backlog: ${rel(roles.backlog)} — quote an item by its code;`
+            + ' `projects.backlog.next` picks, `.check` closes.');
+    }
+    out.push('- A decision worth asking "why is it like this?" about in three months gets its own record.');
     if (roles.charter) { out.push(`- The charter (${rel(roles.charter)}) is the long answer to "what is this".`); }
     out.push('- Do not reformat the user\'s documents, their icons or their task metadata.');
     out.push('');

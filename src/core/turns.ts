@@ -24,9 +24,23 @@ export interface TurnRow {
     /** Opening prompt snippet — the row's identity. */
     label: string;
     ts: number;
-    /** Minutes until the next turn opened (last turn: until the session's end). */
-    durationMin: number;
+    /**
+     * Milliseconds until the next turn opened (last turn: until the session's
+     * end). Milliseconds rather than minutes because every surface formats a
+     * duration with the same helper now, and rounding to minutes here threw
+     * away what that helper shows below one (see charts.js fmtDur).
+     */
+    durationMs: number;
+    /** How long the turn itself ran — prompt to its last line. */
+    ms: number;
+    /** Round trips, and the visible steps they carried — see SessionTurn. */
+    apiCalls: number;
+    steps: number;
+    /** What the window held when the turn ended. */
+    endCtx: number;
     tokens: number;
+    /** The same turn against the plan limit — see SessionTurn.wTokens. */
+    wTokens: number;
     cost: number;
     tools: number;
     errors: number;
@@ -54,8 +68,13 @@ export function turnRowsFor(s: SessionInfo, active: boolean): TurnRow[] {
             of: s.turns.length,
             label: t.label,
             ts: t.ts,
-            durationMin: t.ts && endTs >= t.ts ? Math.round((endTs - t.ts) / 60000) : 0,
+            durationMs: t.ts && endTs >= t.ts ? endTs - t.ts : 0,
+            ms: t.ms,
+            apiCalls: t.apiCalls,
+            steps: t.steps,
+            endCtx: t.endCtx,
             tokens: t.tokens,
+            wTokens: t.wTokens,
             cost: t.cost,
             tools: t.tools,
             errors: t.errors,
@@ -98,6 +117,7 @@ export function registerTurnsOps(
                 .map(r => ({
                     agent: r.agentName, session: r.session, turn: `${r.n}/${r.of}`,
                     label: r.label, ts: r.ts, origin: r.origin, tokens: r.tokens,
+                    wTokens: Math.round(r.wTokens),
                     cost: Math.round(r.cost * 10000) / 10000,
                     tools: r.tools, errors: r.errors, models: r.models
                 }));

@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.56.0",
+  "version": "3.63.1",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -94,7 +94,7 @@
       },
       {
         "view": "agentfarm.insights",
-        "contents": "No health findings right now Ã¢Å“â€œ\nWhen findings appear, each row offers inline actions: Ã°Å¸â€ºÂ  Fix (mechanical categories), Ã°Å¸Å¡â‚¬ Delegate to an agent, Ã¢Å“â€¢ Dismiss for a day/week/forever.\n[Restore Dismissed Insightsâ€¦](command:agentfarm.restoreInsights)"
+        "contents": "No health findings right now âœ“\nWhen findings appear, each row offers inline actions: ðŸ›  Fix (mechanical categories), ðŸš€ Delegate to an agent, âœ• Dismiss for a day/week/forever.\n[Restore Dismissed Insightsâ€¦](command:agentfarm.restoreInsights)"
       }
     ],
     "walkthroughs": [
@@ -105,7 +105,7 @@
         "steps": [
           {
             "id": "agents",
-            "title": "1 Ã‚Â· Introduce your agents",
+            "title": "1 Â· Introduce your agents",
             "description": "Agent Farm treats every folder with a CLAUDE.md under your root folders as an agent.\n[Add Agent Root](command:agentfarm.addAgentRoot)",
             "media": {
               "markdown": "docs/walkthrough/01-agents.en.md"
@@ -116,7 +116,7 @@
           },
           {
             "id": "hooks",
-            "title": "2 Ã‚Â· Install the live hooks",
+            "title": "2 Â· Install the live hooks",
             "description": "Hooks forward every agent event (prompt, tool, permission wait) to the local listener â€” the timeline and notifications run on them.\n[Install Live Hooks](command:agentfarm.installHooks)",
             "media": {
               "markdown": "docs/walkthrough/02-hooks.en.md"
@@ -127,7 +127,7 @@
           },
           {
             "id": "dashboard",
-            "title": "3 Ã‚Â· Open the Dashboard",
+            "title": "3 Â· Open the Dashboard",
             "description": "Costs, health and the Farm Status card â€” which subsystem is dormant, at a glance.\n[Open Dashboard](command:agentfarm.openDashboard)",
             "media": {
               "markdown": "docs/walkthrough/03-dashboard.en.md"
@@ -138,7 +138,7 @@
           },
           {
             "id": "example",
-            "title": "4 Ã‚Â· Set up your first automation",
+            "title": "4 Â· Set up your first automation",
             "description": "A working example in one click: an inbox duty, a morning briefing or a two-agent chain.\n[Set Up Example Automation](command:agentfarm.setupExample)",
             "media": {
               "markdown": "docs/walkthrough/04-example.en.md"
@@ -149,8 +149,8 @@
           },
           {
             "id": "guide",
-            "title": "5 Ã‚Â· Explore the guide",
-            "description": "The built-in guide (English by default, TÃƒÂ¼rkÃƒÂ§e selectable; 25 scenarios): media pipeline, webhook bridge, multi-agent chainsâ€¦\n[Open Guide](command:agentfarm.openGuide)",
+            "title": "5 Â· Explore the guide",
+            "description": "The built-in guide (English by default, TÃ¼rkÃ§e selectable; 25 scenarios): media pipeline, webhook bridge, multi-agent chainsâ€¦\n[Open Guide](command:agentfarm.openGuide)",
             "media": {
               "markdown": "docs/walkthrough/05-guide.en.md"
             },
@@ -206,6 +206,11 @@
         "command": "agentfarm.queueAdd",
         "key": "ctrl+alt+a",
         "mac": "cmd+alt+a"
+      },
+      {
+        "command": "agentfarm.backlogAdd",
+        "key": "ctrl+alt+b",
+        "mac": "cmd+alt+b"
       }
     ],
     "commands": [
@@ -1059,19 +1064,19 @@
       },
       {
         "command": "agentfarm.openCapabilities",
-        "title": "Open Capability Matrix (Skills Ãƒâ€” MCP Ãƒâ€” Agents)",
+        "title": "Open Capability Matrix (Skills Ã— MCP Ã— Agents)",
         "category": "Agent Farm",
         "icon": "$(table)"
       },
       {
         "command": "agentfarm.openToolbox",
-        "title": "Open Toolbox (Skills Ã‚Â· Subagents Ã‚Â· Commands Ã‚Â· MCP Ã‚Â· Hooks Ã‚Â· Plugins)",
+        "title": "Open Toolbox (Skills Â· Subagents Â· Commands Â· MCP Â· Hooks Â· Plugins)",
         "category": "Agent Farm",
         "icon": "$(tools)"
       },
       {
         "command": "agentfarm.openAirtable",
-        "title": "Open Airtable Engine (instances Ã‚Â· folders Ã‚Â· agent tools)",
+        "title": "Open Airtable Engine (instances Â· folders Â· agent tools)",
         "category": "Agent Farm",
         "icon": "$(database)"
       },
@@ -1232,13 +1237,13 @@
       },
       {
         "command": "agentfarm.openNotices",
-        "title": "Open Notices (Agent Ã¢â€ â€™ You message board)",
+        "title": "Open Notices (Agent â†’ You message board)",
         "category": "Agent Farm",
         "icon": "$(bell)"
       },
       {
         "command": "agentfarm.openQueue",
-        "title": "Open Work Queue (You Ã¢â€ â€™ Agent async work channel)",
+        "title": "Open Work Queue (You â†’ Agent async work channel)",
         "category": "Agent Farm",
         "icon": "$(inbox)"
       },
@@ -1249,6 +1254,12 @@
         "icon": "$(add)"
       },
       {
+        "command": "agentfarm.backlogAdd",
+        "title": "Add to Backlog",
+        "category": "Agent Farm",
+        "icon": "$(checklist)"
+      },
+      {
         "command": "agentfarm.configureDocOpen",
         "title": "Configure Report/Answer Open Mode",
         "category": "Agent Farm",
@@ -1256,7 +1267,7 @@
       },
       {
         "command": "agentfarm.openTasks",
-        "title": "Open Tasks (Board Ã‚Â· Automations Ã‚Â· Reusables Ã‚Â· Analytics)",
+        "title": "Open Tasks (Board Â· Automations Â· Reusables Â· Analytics)",
         "category": "Agent Farm",
         "icon": "$(layout)"
       },
@@ -2379,10 +2390,10 @@
           ],
           "enumDescriptions": [
             "English",
-            "TÃƒÂ¼rkÃƒÂ§e"
+            "TÃ¼rkÃ§e"
           ],
           "default": "en",
-          "description": "Language for the in-app help surfaces (Guide, Quick Start, Examples). English by default; choose TÃƒÂ¼rkÃƒÂ§e for Turkish. You can also switch from the language toggle inside the guide panel. More languages can be added over time."
+          "description": "Language for the in-app help surfaces (Guide, Quick Start, Examples). English by default; choose TÃ¼rkÃ§e for Turkish. You can also switch from the language toggle inside the guide panel. More languages can be added over time."
         },
         "agentFarm.agentRoots": {
           "type": "array",
@@ -2419,45 +2430,6 @@
             "fable"
           ],
           "description": "Your model name knowledge base: the names/ids offered in every model picker (the per-agent model dropdown in Agent folders, the mission model suggestions, the Start Sessionâ€¦ launcher). Add a new model name here ONCE and it appears in every picker permanently â€” model names change over time, this list is yours to keep current. Every picker also accepts a custom free-text entry for anything not listed."
-        },
-        "agentFarm.projects": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "name": {
-                "type": "string",
-                "description": "project name â€” a customer, a product, a contract"
-              },
-              "agents": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                },
-                "description": "agent names that belong to this project"
-              },
-              "paths": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                },
-                "description": "folders whose sessions belong to this project (matched by prefix)"
-              },
-              "budgetUSD": {
-                "type": "number",
-                "description": "optional daily budget in USD for the whole project"
-              },
-              "note": {
-                "type": "string",
-                "description": "free note â€” customer, contract, anything the name does not say"
-              }
-            },
-            "required": [
-              "name"
-            ]
-          },
-          "default": [],
-          "markdownDescription": "Groups your agents (and folders) into **projects** â€” a customer, a product, a contract. Once declared, the Dashboard shows a per-project cost table, the Sessions tables gain a Project column and filter, and the Agent Portfolio groups by it, so \"what did I spend on this customer this month\" and \"show me everything on this project\" become one lookup. **An agent belongs to exactly one project** (the first that claims it): overlapping membership would double-count the money. Sessions outside every project fall into an honest `Unassigned` bucket, so the rows always add up to the fleet total. Easiest way in: the **Manage Projectsâ€¦** command (or *Assign Agent to Projectâ€¦* on an agent row)."
         },
         "agentFarm.web.enabled": {
           "type": "boolean",
@@ -2584,7 +2556,7 @@
         "agentFarm.speakerLabelTemplate": {
           "type": "string",
           "default": "{ai}",
-          "markdownDescription": "How the AI participant is labelled in conversations (Turns page, Session Viewer, and their Markdown exports) â€” where it used to say `ASSISTANT`/`claude`. The label is **derived from each message's model id**, so a Gemini or Codex turn labels itself correctly. Compose it from these tokens; anything else is literal text, so a template with no tokens is a fixed label of your own:\n\n- `{ai}` â€” engine: `claude` Ã‚Â· `gemini` Ã‚Â· `codex`\n- `{model}` â€” model family: `opus` Ã‚Â· `sonnet` Ã‚Â· `haiku` Ã‚Â· `gpt` Ã‚Â· â€¦\n- `{version}` â€” version: `4.8` Ã‚Â· `3.5` Ã‚Â· â€¦\n- `{raw}` â€” raw model id (`opus-4-8`, vendor prefix stripped)\n\nExamples: `{ai}` Ã¢â€ â€™ CLAUDE Ã‚Â· `{model} {version}` Ã¢â€ â€™ OPUS 4.8 Ã‚Â· `{ai} {model} ({version})` Ã¢â€ â€™ Claude Opus (4.8) Ã‚Â· `MyBot` Ã¢â€ â€™ a fixed label. Empty = `{ai}`. Case is set by `speakerLabelCase`; `speakerLabelFallback` covers unknown models."
+          "markdownDescription": "How the AI participant is labelled in conversations (Turns page, Session Viewer, and their Markdown exports) â€” where it used to say `ASSISTANT`/`claude`. The label is **derived from each message's model id**, so a Gemini or Codex turn labels itself correctly. Compose it from these tokens; anything else is literal text, so a template with no tokens is a fixed label of your own:\n\n- `{ai}` â€” engine: `claude` Â· `gemini` Â· `codex`\n- `{model}` â€” model family: `opus` Â· `sonnet` Â· `haiku` Â· `gpt` Â· â€¦\n- `{version}` â€” version: `4.8` Â· `3.5` Â· â€¦\n- `{raw}` â€” raw model id (`opus-4-8`, vendor prefix stripped)\n\nExamples: `{ai}` â†’ CLAUDE Â· `{model} {version}` â†’ OPUS 4.8 Â· `{ai} {model} ({version})` â†’ Claude Opus (4.8) Â· `MyBot` â†’ a fixed label. Empty = `{ai}`. Case is set by `speakerLabelCase`; `speakerLabelFallback` covers unknown models."
         },
         "agentFarm.speakerLabelCase": {
           "type": "string",
@@ -2629,7 +2601,7 @@
             }
           },
           "default": [],
-          "description": "Additional (read-only, synced) Claude data folders from other machines â€” e.g. a Syncthing/OneDrive copy of the laptop's ~/.claude. Their sessions appear with a Ã¢â€¡â€ž machine badge."
+          "description": "Additional (read-only, synced) Claude data folders from other machines â€” e.g. a Syncthing/OneDrive copy of the laptop's ~/.claude. Their sessions appear with a â‡„ machine badge."
         },
         "agentFarm.activeThresholdSeconds": {
           "type": "number",
@@ -2655,6 +2627,75 @@
           "type": "number",
           "default": 0,
           "description": "Optional token limit for the rolling 5-hour usage window (subscription plans). 0 hides the progress bar and shows raw totals."
+        },
+        "agentFarm.quotaWeightMode": {
+          "type": "string",
+          "enum": [
+            "model-aware",
+            "model-flat",
+            "raw"
+          ],
+          "enumDescriptions": [
+            "Weigh the kinds of token AND the model: one Sonnet input token = 1, Opus = 5, Haiku = 1/3. The default â€” a haiku test must not read as expensive as opus work.",
+            "Weigh only the KINDS of token (output x5, 1h cache-write x2, 5m cache-write x1.25, cache-read x0.1) and ignore which model ran.",
+            "Turn the weighting off: the âš– figure becomes the raw total."
+          ],
+          "default": "model-aware",
+          "description": "How the âš– figure (what work costs the plan's rolling limit, as opposed to how many tokens moved) is derived. Calibrated against the real endpoint on 2026-08-04 by sampling utilization twice inside one window: 29% â†’ 82% over 28 minutes and 96 API calls cost 38.13M raw / 24.86M weighted-model-aware / 4.97M weighted-model-flat, i.e. a full 5-hour limit of about 72M raw, 47M model-aware or 9.4M model-flat FOR THAT WORKLOAD. Almost all of it ran on Opus, so that sample cannot tell model-aware and model-flat apart â€” sample a day with real haiku or sonnet work to separate them."
+        },
+        "agentFarm.quotaWeights": {
+          "type": "array",
+          "default": [],
+          "description": "Override the âš– weight table. Empty = use the built-in one. Each entry: { match (regex on the model id), input, output, cacheWrite (5-minute TTL), cacheWrite1h (1-hour TTL), cacheRead } â€” all relative to ONE SONNET INPUT TOKEN = 1. Built in: opus and fable { input 5, output 25, cacheWrite 6.25, cacheWrite1h 10, cacheRead 0.5 }, sonnet { 1, 5, 1.25, 2, 0.1 }, haiku { 0.333, 1.667, 0.417, 0.667, 0.033 }. â€¼ï¸ CACHE WRITES ARE PRICED BY TTL AND THE 1-HOUR RATE IS THE ONE THAT APPLIES HERE: measured on this machine, 17 923 938 of 17 923 938 cache-creation tokens were 1-hour and none were 5-minute. A usage block that reports no split is charged at the 1-hour rate. Deliberately separate from agentFarm.pricing: correcting a billing rate must not silently move the limit gauge. First matching rule wins; an unmatched model falls back to the sonnet row, never to zero.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "match": {
+                "type": "string",
+                "description": "Regex matched against the model id (case-insensitive)."
+              },
+              "input": {
+                "type": "number",
+                "description": "Weight of one fresh input token."
+              },
+              "output": {
+                "type": "number",
+                "description": "Weight of one output token â€” thinking is billed here too, and it is the biggest spender in a turn."
+              },
+              "cacheWrite": {
+                "type": "number",
+                "description": "Weight of one 5-minute-TTL cache-creation token."
+              },
+              "cacheWrite1h": {
+                "type": "number",
+                "description": "Weight of one 1-hour-TTL cache-creation token â€” the rate that actually applies on this machine."
+              },
+              "cacheRead": {
+                "type": "number",
+                "description": "Weight of one cache-read token. This is 94-99% of any raw total, which is why the raw figure says so little about the limit."
+              }
+            }
+          }
+        },
+        "agentFarm.quotaBrakeBasis": {
+          "type": "string",
+          "enum": [
+            "whichever",
+            "weighted",
+            "raw"
+          ],
+          "enumDescriptions": [
+            "Brake on whichever ceiling is further along â€” the safe default when both are configured.",
+            "Brake only on the âš– weighted figure against windowWeightedTokenLimit.",
+            "Brake only on the raw total against windowTokenLimit â€” how it behaved before the weighted figure existed."
+          ],
+          "default": "whichever",
+          "description": "Which figure the quota guard (quotaGuardPercent) and the model-downgrade rule (quotaDowngradePercent) read when deciding how full the 5-hour window is. A ceiling that is not configured is simply not consulted, whatever this says â€” set windowTokenLimit and/or windowWeightedTokenLimit first."
+        },
+        "agentFarm.windowWeightedTokenLimit": {
+          "type": "number",
+          "default": 0,
+          "description": "Optional limit for the rolling 5-hour window measured in WEIGHTED tokens (âš–) instead of raw ones. A cache-read token is a tenth of a fresh input token and an output token is five, while 94-99% of a raw total is cache reads â€” so the raw total of a full window ranges 111M-175M across days that hit the very same wall, and the weighted total of those same windows sits at 18-21M. Set this to what your plan actually allows (watch the âš– figure in the status bar for a window where you hit the limit) and the quota guard and the model-downgrade rule brake on it. 0 = off; the raw windowTokenLimit keeps working exactly as before, and setting both brakes on whichever is further along."
         },
         "agentFarm.planUsageRefreshMinutes": {
           "type": "number",
@@ -2967,7 +3008,7 @@
             }
           },
           "default": [],
-          "description": "Dispatcher routing rules for 'dispatch' triggers â€” first matching regex wins. Example: [{\"match\": \"uyku|kaygÃ„Â±\", \"agent\": \"psikolog\"}]."
+          "description": "Dispatcher routing rules for 'dispatch' triggers â€” first matching regex wins. Example: [{\"match\": \"uyku|kaygÄ±\", \"agent\": \"psikolog\"}]."
         },
         "agentFarm.dispatchClassifier": {
           "type": "boolean",
@@ -3353,7 +3394,7 @@
         "agentFarm.projectContextExtra": {
           "type": "string",
           "default": "",
-          "description": "One line of your own added to the project context every session gets (see the ◧ chip above the Console composer). This is where an installation points its agents at its own rules — e.g. \"Your constitution's _REF/project-session.md applies to this session.\" Empty by default: Agent Farm ships general, and what an agent should DO with a project is yours to say."
+          "description": "One line of your own added to the project context every session gets (see the â—§ chip above the Console composer). This is where an installation points its agents at its own rules â€” e.g. \"Your constitution's _REF/project-session.md applies to this session.\" Empty by default: Agent Farm ships general, and what an agent should DO with a project is yours to say."
         },
         "agentFarm.noticeStaleHours": {
           "type": "number",
@@ -3368,7 +3409,7 @@
         "agentFarm.consoleDropZone": {
           "type": "boolean",
           "default": true,
-          "description": "Whether the Console page listens for a file dropped anywhere on it. Turn this off if drag-and-drop misbehaves on your machine; 📎 (Attach) and pasting a screenshot are unaffected either way."
+          "description": "Whether the Console page listens for a file dropped anywhere on it. Turn this off if drag-and-drop misbehaves on your machine; ðŸ“Ž (Attach) and pasting a screenshot are unaffected either way."
         }
       }
     }

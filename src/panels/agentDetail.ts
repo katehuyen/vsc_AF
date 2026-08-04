@@ -26,9 +26,9 @@ export interface AgentDetailDeps {
 
 function buildData(agent: AgentInfo, deps: AgentDetailDeps, tableN = AGENT_SESSION_TABLE_N): Record<string, unknown> {
     const sessions = deps.index.forAgent(agent.id).sort((a, b) => b.mtime - a.mtime);
-    const daily: Record<string, { cost: number; tokens: number; msgs: number }> = {};
+    const daily: Record<string, { cost: number; tokens: number; wTokens: number; msgs: number }> = {};
     const tools: Record<string, number> = {};
-    const models: Record<string, { cost: number; tokens: number }> = {};
+    const models: Record<string, { cost: number; tokens: number; wTokens: number }> = {};
     let totalCost = 0, totalToolCalls = 0, totalErrors = 0;
 
     for (const s of sessions) {
@@ -36,18 +36,20 @@ function buildData(agent: AgentInfo, deps: AgentDetailDeps, tableN = AGENT_SESSI
         totalToolCalls += s.toolCalls;
         totalErrors += s.errors;
         for (const [day, b] of Object.entries(s.daily)) {
-            const d = daily[day] ?? (daily[day] = { cost: 0, tokens: 0, msgs: 0 });
+            const d = daily[day] ?? (daily[day] = { cost: 0, tokens: 0, wTokens: 0, msgs: 0 });
             d.cost += b.cost;
             d.tokens += totalTokens(b.usage);
+            d.wTokens += b.wTokens;
             d.msgs += b.assistantMsgs;
         }
         for (const [tool, n] of Object.entries(s.tools)) {
             tools[tool] = (tools[tool] ?? 0) + n;
         }
         for (const m of s.models) {
-            const mm = models[m] ?? (models[m] = { cost: 0, tokens: 0 });
+            const mm = models[m] ?? (models[m] = { cost: 0, tokens: 0, wTokens: 0 });
             mm.cost += s.cost / s.models.length;
             mm.tokens += totalTokens(s.usage) / s.models.length;
+            mm.wTokens += s.wTokens / s.models.length;
         }
     }
 
