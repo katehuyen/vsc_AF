@@ -2,6 +2,12 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.65.1 — The second row of an agent had an empty gutter (2026-08-05)
+
+**A swim-lane row with no toggles under it looks broken, and one row in three was drawn that way.** The YOUR-TURN toggles (♪ ◎ ▣ ▭) were drawn on an agent's *first* row only — the reasoning being that they are one setting per agent and one setting should not appear twice. What that produced instead was `developer #2` sitting there with an empty gutter while `developer #1` and every single-session agent had four controls, and the row you happen to be watching is as often as not the second one.
+
+Every row carries them now. They all point at the same agent key, so they show the same state and move together, and on an agent that has more than one row the tooltip says so in words — *"This agent has 2 rows here and they all carry this same one setting"* — with the pointer to the per-session chips on the card below for alerting on exactly one session. The tooltip also stopped calling an unnamed row's session id an agent name.
+
 ## 3.65.0 — The garbage characters came back, so this time a hook holds the line (2026-08-05)
 
 **Every stray character in the command palette, the right-click rows, the sidebar tooltips, the settings descriptions, the walkthrough and the empty-view messages came from one file.** `package.json` had been read as CP1252 and written back as UTF-8 — 135 lines of collateral damage on a commit whose only intended change was `"version": "3.63.0"` → `"3.63.1"`. The repaired file is now byte-identical to the last undamaged copy apart from the version line, which is the proof that the repair neither missed anything nor over-corrected. Roughly half of it was invisible: CP1252's five undefined slots come through as bare C1 controls that render as nothing, which is why it survives review.

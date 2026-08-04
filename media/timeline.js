@@ -314,12 +314,17 @@
                 if (s.file) { t.file = s.file; }
             }
             const anon = unresolved.has(agent);
+            // A row nobody can name is labelled by what it IS: a session id.
+            const who = anon ? '#' + agent : agent;
             tracks.forEach((t, i) => lanes.push({
                 agent,
-                // A row nobody can name is labelled by what it IS: a session id.
-                name: (anon ? '#' + agent : agent) + (tracks.length > 1 ? ` #${i + 1}` : ''),
+                who,
+                name: who + (tracks.length > 1 ? ` #${i + 1}` : ''),
                 anon,
-                firstOfAgent: i === 0,
+                // How many rows this agent has here. The YOUR-TURN toggles are one
+                // setting per agent, so every row draws them and this is what the
+                // tooltip needs to say so out loud.
+                rowsOfAgent: tracks.length,
                 segments: t.segments,
                 marks: t.marks,
                 // Which session(s) this row is drawing — the row's tooltip, its
@@ -361,9 +366,13 @@
         lanes.forEach((lane, i) => {
             const y = padT + i * rowH;
             const name = lane.name;
-            // Gutter: row label on top; the agent-default YOUR-TURN toggles
-            // (♪ ◎ ▣ ▭) only on the agent's FIRST row — they cover every session
-            // of that agent (per-session overrides live on the session cards).
+            // Gutter: row label on top, the agent-default YOUR-TURN toggles
+            // (♪ ◎ ▣ ▭) under it — on EVERY row. They used to be drawn only on the
+            // agent's first row, on the reasoning that one setting should not appear
+            // twice; what that actually produced was a second row that looked broken,
+            // and the row you were watching was as often as not the one without any
+            // controls. One setting shown in both of its places is the lesser evil,
+            // and the tooltip on a repeated row says which it is.
             // The label is not decoration: hovering it tells you everything about
             // the session behind the row (id, status, cost, tokens, turns, where
             // it runs), and clicking opens that session's transcript.
@@ -378,14 +387,18 @@
                 `<text x="4" y="${y + 14}" font-size="11" font-weight="600" text-anchor="start" fill="currentColor" opacity="0.85">${C.esc(name.length > 14 ? name.slice(0, 13) + '…' : name)}</text>` +
                 `<title>${C.esc(tip)}</title></g>`;
             const ty = y + 23;
-            if (lane.firstOfAgent) { TURN_ACTIONS.forEach((a, ai) => {
+            const rows = lane.rowsOfAgent || 1;
+            const shared = rows > 1
+                ? ` This agent has ${rows} rows here and they all carry this same one setting — turning it on here turns it on for all ${rows}.`
+                : '';
+            TURN_ACTIONS.forEach((a, ai) => {
                 const gx = 4 + ai * 18;
                 const on = actionsFor(lane.agent).indexOf(a.id) !== -1;
                 out += `<g class="af-toggle" data-agent="${C.esc(lane.agent)}" data-action="${a.id}" style="cursor:pointer">` +
                     `<rect x="${gx}" y="${ty}" width="15" height="15" rx="3" fill="${on ? 'var(--vscode-charts-blue, #3794ff)' : 'transparent'}" stroke="currentColor" stroke-opacity="${on ? '0' : '0.45'}" opacity="${on ? '0.95' : '1'}"/>` +
                     `<text x="${gx + 7.5}" y="${ty + 11.5}" font-size="10.5" text-anchor="middle" fill="${on ? 'var(--vscode-editor-background, #fff)' : 'currentColor'}" opacity="${on ? '1' : '0.55'}" style="pointer-events:none">${a.glyph}</text>` +
-                    `<title>${C.esc(a.label)} — agent default for every ${C.esc(lane.agent)} session hitting YOUR TURN (override one session on its card below)</title></g>`;
-            }); }
+                    `<title>${C.esc(a.label)} — agent default for every ${C.esc(lane.who || lane.agent)} session hitting YOUR TURN.${C.esc(shared)} To alert on ONE session only, use the chips on its card below.</title></g>`;
+            });
             out += `<line x1="${labelW}" y1="${y + rowH / 2}" x2="${W - 8}" y2="${y + rowH / 2}" stroke="currentColor" opacity="0.1"/>`;
             // Right-click targets, laid down BEFORE the bars and dots so those
             // keep their own left-click. The whole row answers (with the row's
@@ -632,7 +645,7 @@
             })}
             ${emptyHint}
             <h2>${density ? 'Activity density' : 'Swim lanes'}</h2>
-            ${density ? '' : `<div class="muted small" style="margin:-4px 0 6px">Left toggles — when an agent hits <b>YOUR TURN</b>: ${TURN_ACTIONS.map(a => a.glyph + ' ' + a.label.split(' ')[0].toLowerCase()).join(' · ')}. Agent default for all of its sessions (fires even while this panel is closed); override a single session on its card below. Concurrent sessions of one agent get their own #1/#2 rows. <b>Hover a row's name</b> for that session's figures; click it to open the session, <b>right-click the row</b> for its actions (rename · terminal · interrupt · end · clear).</div>`}
+            ${density ? '' : `<div class="muted small" style="margin:-4px 0 6px">Left toggles — when an agent hits <b>YOUR TURN</b>: ${TURN_ACTIONS.map(a => a.glyph + ' ' + a.label.split(' ')[0].toLowerCase()).join(' · ')}. Agent default for all of its sessions (fires even while this panel is closed); override a single session on its card below. Concurrent sessions of one agent get their own #1/#2 rows — every row carries the toggles, and since the setting is one per agent they move together. <b>Hover a row's name</b> for that session's figures; click it to open the session, <b>right-click the row</b> for its actions (rename · terminal · interrupt · end · clear).</div>`}
             <div class="card chartbox">${lanesHtml}<div class="legend">${legend}</div></div>
             ${workflowRunsSvg(runsData, now, winMs)}
             <h2>Live sessions (${DATA.sessions.length})</h2>

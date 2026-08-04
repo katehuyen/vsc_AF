@@ -171,11 +171,16 @@ ok('…and its figures in the tooltip', /dev #1 · #S1 · TOOL · Read/.test(las
     ok('a tool the session is still on keeps growing', !!live && Number(live[1]) + Number(live[2]) > 880);
 }
 
-// ---- gutter toggles: agent default, drawn ONCE per agent ----
+// ---- gutter toggles: one agent setting, drawn on EVERY row of that agent ----
+// Drawing them once left "dev #2" with an empty gutter, which reads as a broken
+// row rather than as "the control is upstairs". Same key on every copy, so they
+// stay in lockstep; the tooltip on a repeated row says the setting is shared.
 const gutterDev = (lastHtml.match(/<g class="af-toggle" data-agent="dev"/g) || []).length;
 const gutterOps = (lastHtml.match(/<g class="af-toggle" data-agent="ops"/g) || []).length;
-ok('dev gutter toggles only on its first row (4 not 8)', gutterDev === 4);
-ok('ops gutter toggles present once (4)', gutterOps === 4);
+ok('dev has two rows, so both gutters carry the four toggles (8)', gutterDev === 8);
+ok('ops has one row, so four', gutterOps === 4);
+ok('dev tooltip says the two rows share one setting', /dev[\s\S]{0,400}has 2 rows here/.test(lastHtml));
+ok('ops tooltip claims no shared rows', !/data-agent="ops"[\s\S]{0,600}has \d+ rows here/.test(lastHtml));
 
 // ---- session cards: disambiguated titles + per-session chips ----
 ok('card titled dev #1', lastHtml.indexOf('>dev #1</span> <span class="sid"') !== -1);
