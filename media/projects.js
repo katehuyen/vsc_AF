@@ -27,9 +27,6 @@
         { id: 'overview', label: 'Overview', tip: 'What this project is doing right now' },
         { id: 'timeline', label: 'Timeline', tip: 'Everything that happened, newest first' },
         { id: 'sessions', label: 'Sessions', tip: 'The same sessions table as everywhere else, scoped to this project' },
-        { id: 'plan', label: 'Plan', tip: 'The plan document\'s own checkboxes — ticking one here changes that one character in the file' },
-        { id: 'docs', label: 'Docs', tip: 'The project folder, and any document in it' },
-        { id: 'people', label: 'People', tip: 'Who decides, who pays, who does the work, who you ask' },
         { id: 'cost', label: 'Cost', tip: 'Where the money went, and where it is going' },
         { id: 'settings', label: '⚙ Settings', tip: 'Edit the project' }
     ];
@@ -341,9 +338,10 @@
                 <div class="pj-chks">${agentBoxes || '<span class="muted small">no agents discovered</span>'}</div>
             </div>
 
-            <div class="pj-wide muted small">
-                People live on their own <b>People</b> tab — they are a question about the
-                project, not a setting on it.
+            <div class="pj-wide">
+                <div class="pj-sub">People <span class="muted small">who decides, who pays, who does the work, who you ask</span></div>
+                <table class="pj-people"><tbody>${peopleRows(p)}</tbody></table>
+                <button class="secondary" data-act="addPerson">＋ Add person</button>
             </div>
         </div>
 
@@ -512,14 +510,11 @@
      */
     function unfiledNote() {
         const missing = (DATA.unfiledKinds || []).map(k => kindMeta(k).label);
-        return `<p class="muted small pj-unfiled">${missing.length
-            ? `Not here: ${C.esc(missing.join(' · '))} — they carry no project of their own, and an
-               agent may work on several projects, so guessing one from who posted it would file them
-               wrong. `
-            : ''}Decisions, deliverables and plan items come from the project's own documents and
-            appear at the date those documents state — a decision's <code>af-date</code>, a
-            deliverable's Date column, the ✅ Obsidian writes when you tick a plan item there. Anything
-            undated is left out rather than stamped with the moment the file happened to be saved.</p>`;
+        if (!missing.length) { return ''; }
+        return `<p class="muted small pj-unfiled">Not here yet: ${C.esc(missing.join(' · '))}.
+            Notices and queue items carry no project of their own, and an agent may work on several
+            projects — so guessing one from who posted it would file them wrong. Plan items, decisions
+            and deliverables are documents nothing writes to yet.</p>`;
     }
 
     function costHtml(p) {
@@ -680,35 +675,6 @@
                 .pj-ev-c, .pj-ev-w { text-align:right; }
                 .pj-unfiled { margin-top:14px; max-width:70ch; }
                 .grow { flex:1; }
-                /* documents · plan · people */
-                .pj-docbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
-                    padding:6px 0 10px; border-bottom:1px solid var(--vscode-panel-border); margin-bottom:10px; }
-                .pj-open { display:flex; gap:4px; }
-                .pj-open button { padding:2px 9px; font-size:11px; }
-                .pj-plan-sec { margin-bottom:14px; }
-                .pj-plan-item { display:flex; align-items:baseline; gap:7px; padding:3px 6px;
-                    border-radius:4px; cursor:pointer; font-size:13px; }
-                .pj-plan-item:hover { background:var(--vscode-list-hoverBackground); }
-                .pj-plan-item.done .pj-plan-t { opacity:.55; text-decoration:line-through; }
-                .pj-plan-t { flex:1; min-width:0; }
-                .pj-plan-m { opacity:.6; font-size:11px; white-space:nowrap; }
-                .pj-docs { display:flex; gap:14px; align-items:flex-start; }
-                .pj-doc-tree { flex:0 0 260px; max-height:60vh; overflow:auto;
-                    border:1px solid var(--vscode-widget-border,#4443); border-radius:7px; padding:6px 4px; }
-                .pj-doc-row { display:flex; align-items:baseline; gap:6px; padding:2px 6px;
-                    border-radius:4px; font-size:12px; cursor:pointer; }
-                .pj-doc-row.dir { cursor:default; opacity:.75; }
-                .pj-doc-row:not(.dir):hover { background:var(--vscode-list-hoverBackground); }
-                .pj-doc-row.on { background:var(--vscode-list-activeSelectionBackground);
-                    color:var(--vscode-list-activeSelectionForeground); }
-                .pj-doc-g { opacity:.7; }
-                .pj-doc-n { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-                .pj-doc-r { font-size:10px; padding:0 5px; border-radius:8px; opacity:.85;
-                    background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); }
-                .pj-doc-pane { flex:1; min-width:0; }
-                .pj-doc-text { max-height:58vh; overflow:auto; white-space:pre-wrap; word-break:break-word;
-                    font-size:12px; padding:10px 12px; border-radius:7px;
-                    background:var(--vscode-textCodeBlock-background,#8881); }
             </style>
             ${window.AFHeader.html({
                 page: 'projects',
@@ -744,209 +710,10 @@
         switch (tab) {
             case 'timeline': return timelineHtml();
             case 'sessions': return sessionsHtml();
-            case 'plan': return planHtml();
-            case 'docs': return docsHtml();
-            case 'people': return peopleHtml(p);
             case 'cost': return costHtml(p);
             case 'settings': return settingsHtml(p);
             default: return overviewHtml(p);
         }
-    }
-
-    // -----------------------------------------------------------------------
-    // the tabs that write into the user's own documents
-    // -----------------------------------------------------------------------
-
-    /**
-     * Why a document tab has nothing to show, in the words that say what to do
-     * about it.
-     *
-     * "No plan" is four different situations — the project has no folder, the
-     * folder has moved, the folder is there but holds no plan document, or the
-     * file could not be read — and they need four different sentences. One
-     * blank panel for all four reads as a bug in every one of them.
-     */
-    function docStateHtml(d, what) {
-        if (!d || !d.state) { return '<p class="muted">Reading the project…</p>'; }
-        switch (d.state) {
-            case 'no-folder':
-                return `<p class="muted">This project has no documents folder yet. Choose one in
-                    <b>⚙ Settings</b> and Agent Farm will build the skeleton — ${C.esc(what)} included.</p>`;
-            case 'folder-missing':
-                return `<p class="muted">Its folder is not where it was: <code>${C.esc(d.folder || '')}</code>.
-                    Use <b>Relink…</b> above to point at where it went.</p>`;
-            case 'no-doc':
-                return `<p class="muted">No ${C.esc(what)} in this project's folder yet.
-                    Agent Farm finds documents by an <code>af-role: ${C.esc(d.role || '')}</code> line in
-                    their frontmatter and never by their name, so any file you put that line in becomes
-                    this one — or press <b>Recreate</b> on the project to get the shipped skeleton back.</p>`;
-            case 'unreadable':
-                return `<p class="muted">${C.esc(d.path || '')} could not be read: ${C.esc(d.error || '')}</p>`;
-            default:
-                return '<p class="muted">Reading the project…</p>';
-        }
-    }
-
-    /** The buttons that open a file the way the user opens report links
-     *  everywhere else — the doc-open modes, not a viewer of our own. */
-    function openWithHtml(relPath) {
-        const cfg = DATA.docOpen || { mode: 'vscode', modes: ['vscode'], labels: {} };
-        const label = m => (cfg.labels && cfg.labels[m]) || m;
-        const rest = (cfg.modes || []).filter(m => m !== cfg.mode);
-        return `<span class="pj-open">
-            <button data-open="${C.esc(cfg.mode)}" data-path="${C.esc(relPath)}"
-                title="${C.esc(label(cfg.mode))}">Open</button>
-            ${rest.map(m => `<button class="secondary" data-open="${C.esc(m)}" data-path="${C.esc(relPath)}"
-                title="${C.esc(label(m))}">${C.esc(shortMode(m))}</button>`).join('')}
-        </span>`;
-    }
-    const MODE_SHORT = { vscode: 'Editor', preview: 'Preview', obsidian: 'Obsidian', custom: 'App' };
-    const shortMode = m => MODE_SHORT[m] || m;
-
-    /**
-     * The plan — the user's own checkboxes, drawn as checkboxes.
-     *
-     * ‼️ The label under each box says what ticking it does NOT do, because the
-     * surprising part is the restraint: Obsidian's Tasks plugin writes a ✅ date
-     * when you tick a box in Obsidian, and this page deliberately does not. A
-     * user who expects one and does not get it would think the tick failed.
-     */
-    function planHtml() {
-        const d = td().plan;
-        if (!d || d.state !== 'ok') { return docStateHtml(d, 'plan document'); }
-        const sections = d.sections || [];
-        const rows = sections.map(s => `
-            <div class="pj-plan-sec">
-                <div class="pj-card-h">${C.esc(s.title || '(no section)')}</div>
-                ${s.items.map(i => `
-                    <label class="pj-plan-item${i.done ? ' done' : ''}" style="padding-left:${8 + i.depth * 12}px"
-                        title="line ${i.line}${i.id ? ' · 🆔 ' + C.esc(i.id) : ''}">
-                        <input type="checkbox" data-plan="${i.line}" data-planid="${C.esc(i.id || '')}"
-                            ${i.done ? 'checked' : ''}>
-                        <span class="pj-plan-t">${C.esc(i.text || '(empty)')}</span>
-                        ${i.due ? `<span class="pj-plan-m" title="due">📅 ${C.esc(i.due)}</span>` : ''}
-                        ${i.completed ? `<span class="pj-plan-m" title="completed">✅ ${C.esc(i.completed)}</span>` : ''}
-                    </label>`).join('')}
-            </div>`).join('');
-        const sectionOpts = ['<option value="">end of the file</option>']
-            .concat(sections.filter(s => s.title)
-                .map(s => `<option value="${C.esc(s.title)}">${C.esc(s.title)}</option>`)).join('');
-        return `
-        <div class="pj-docbar">
-            <span><b>${d.open}</b> open · <b>${d.done}</b> done</span>
-            <span class="muted small">${C.esc(d.path)}</span>
-            <span class="grow"></span>
-            ${openWithHtml(d.path)}
-        </div>
-        ${rows || '<p class="muted small">The plan document has no checkbox lines yet.</p>'}
-        <div class="pj-card">
-            <div class="pj-card-h">Add an item</div>
-            <div class="pj-row">
-                <input id="plan-new" placeholder="what needs doing">
-                <select id="plan-sec">${sectionOpts}</select>
-                <button data-act="planAdd">Add</button>
-            </div>
-        </div>
-        <p class="muted small pj-unfiled">Ticking a box here changes exactly one character of your file —
-            the space inside <code>[ ]</code>. Your bullet, spacing, icons and Obsidian Tasks metadata are
-            untouched, and no ✅ completion date is added: Agent Farm does not write metadata it does not own.
-            Tick the box in Obsidian instead if you want its Tasks plugin to date it.</p>`;
-    }
-
-    /**
-     * The folder, and one document out of it.
-     *
-     * The pane shows the file as it is on disk rather than a rendering of it.
-     * That is deliberate: the rendered views the user already has (VS Code's
-     * markdown preview, Obsidian itself) are one button away and are the real
-     * thing, and a third half-renderer here would be a third markdown dialect
-     * to keep in step with the other two.
-     */
-    function docsHtml() {
-        const d = td().docs;
-        if (!d || d.state !== 'ok') { return docStateHtml(d, 'documents folder'); }
-        const entries = d.entries || [];
-        const tree = entries.map(e => {
-            const depth = e.path.split('/').length - 1;
-            const on = !e.dir && d.selected && d.selected.path === e.path;
-            const glyph = e.dir ? '📁' : (e.role ? '◆' : '·');
-            return `<div class="pj-doc-row${on ? ' on' : ''}${e.dir ? ' dir' : ''}"
-                    style="padding-left:${6 + depth * 14}px"
-                    ${e.dir ? '' : `data-doc="${C.esc(e.path)}"`}
-                    title="${C.esc(e.path)}${e.managed ? ' — generated by Agent Farm' : ''}">
-                <span class="pj-doc-g">${glyph}</span>
-                <span class="pj-doc-n">${C.esc(e.name)}</span>
-                ${e.role ? `<span class="pj-doc-r">${C.esc(e.role)}</span>` : ''}
-                ${e.managed ? '<span class="pj-doc-r" title="regenerated by Agent Farm — edits here are lost">auto</span>' : ''}
-            </div>`;
-        }).join('');
-
-        const sel = d.selected;
-        const folders = ['']
-            .concat(entries.filter(e => e.dir).map(e => e.path))
-            .map(f => `<option value="${C.esc(f)}">${C.esc(f || '(project root)')}</option>`).join('');
-
-        const pane = !sel
-            ? '<p class="muted small">Pick a document on the left.</p>'
-            : (sel.error
-                ? `<p class="muted">${C.esc(sel.error)}</p>`
-                : `<div class="pj-docbar">
-                        <span><b>${C.esc(sel.path)}</b></span>
-                        ${sel.role ? `<span class="pj-doc-r">${C.esc(sel.role)}</span>` : ''}
-                        <span class="muted small">${Math.round((sel.size || 0) / 102.4) / 10} KB</span>
-                        <span class="grow"></span>
-                        ${openWithHtml(sel.path)}
-                   </div>
-                   ${sel.truncated ? '<p class="muted small">Only the first part is shown — open it to read the rest.</p>' : ''}
-                   <pre class="pj-doc-text">${C.esc(sel.text || '')}</pre>`);
-
-        return `
-        <div class="pj-docs">
-            <div class="pj-doc-tree">
-                ${tree || '<p class="muted small">The folder is empty.</p>'}
-                ${entries.length >= 500 ? '<p class="muted small">Only the first 500 entries are listed.</p>' : ''}
-            </div>
-            <div class="pj-doc-pane">${pane}</div>
-        </div>
-        <div class="pj-card">
-            <div class="pj-card-h">New note</div>
-            <div class="pj-row">
-                <select id="doc-folder">${folders}</select>
-                <input id="doc-name" placeholder="name (.md is added)">
-                <button data-act="newDoc">Create</button>
-            </div>
-        </div>`;
-    }
-
-    /**
-     * People — the registry list, which is what the brief carries into every
-     * session, next to a pointer at the project's own People document.
-     *
-     * ‼️ These are two different things and the page must not pretend to sync
-     * them. The list here is structured data Agent Farm owns and injects; the
-     * document is the user's prose about the same people, and rewriting it from
-     * this table would be a program editing an essay.
-     */
-    function peopleHtml(p) {
-        const doc = td().peopleDoc;
-        const link = doc && doc.state === 'ok'
-            ? `<div class="pj-docbar">
-                    <span class="muted small">The project's own people document:</span>
-                    <span><b>${C.esc(doc.path)}</b></span>
-                    <span class="grow"></span>
-                    ${openWithHtml(doc.path)}
-               </div>`
-            : '';
-        return `
-        ${link}
-        <div class="pj-sub">Who decides (owner) · who pays (client, sponsor) · who does the work
-            (contributor) · who you ask (contact) · who supplies (vendor).
-            <span class="muted small">This list is what every session started under the project is told.</span></div>
-        <table class="pj-people"><tbody>${peopleRows(p)}</tbody></table>
-        <div class="btnrow pj-actions">
-            <button class="secondary" data-act="addPerson">＋ Add person</button>
-            <button data-act="savePeople">Save people</button>
-        </div>`;
     }
 
     /** The Sessions tab is the SHARED table (media/sessionsTable.js), whole:
@@ -1008,12 +775,8 @@
             match: {
                 agents: [...document.querySelectorAll('[data-agent]')]
                     .filter(el => el.checked).map(el => el.dataset.agent)
-            }
-            // ‼️ People are NOT in this patch. They moved to their own tab, and
-            // `people` is null until that tab renders the editor — so sending
-            // `people: (people || [])` from the Settings tab would post an empty
-            // list and delete every person on the project, on a Save the user
-            // pressed to change a budget.
+            },
+            people: (people || []).filter(x => (x.name || '').trim())
         };
     }
 
@@ -1088,35 +851,6 @@
             }
         }
 
-        // ---- documents ----
-        document.querySelectorAll('[data-doc]').forEach(el =>
-            el.addEventListener('click', () => {
-                vscode.postMessage({ type: 'selectDoc', path: el.dataset.doc });
-            }));
-
-        document.querySelectorAll('[data-open]').forEach(el =>
-            el.addEventListener('click', () => {
-                const p = sel();
-                vscode.postMessage({
-                    type: 'openDoc', id: p ? p.id : '',
-                    path: el.dataset.path, mode: el.dataset.open
-                });
-            }));
-
-        // A checkbox flips in the DOM the moment it is clicked, so the message
-        // carries the state it WANTS rather than a toggle — the host and the
-        // page can never end up disagreeing about which way it went.
-        document.querySelectorAll('[data-plan]').forEach(el =>
-            el.addEventListener('click', () => {
-                const p = sel();
-                vscode.postMessage({
-                    type: 'planCheck', id: p ? p.id : '',
-                    line: Number(el.dataset.plan),
-                    itemId: el.dataset.planid || '',
-                    done: el.checked === true
-                });
-            }));
-
         document.querySelectorAll('[data-rmperson]').forEach(el =>
             el.addEventListener('click', () => { people.splice(Number(el.dataset.rmperson), 1); render(); }));
 
@@ -1148,31 +882,6 @@
                     break;
                 case 'rescan': vscode.postMessage({ type: 'rescan' }); break;
                 case 'addPerson': people.push({ name: '', role: 'contact', kind: 'person' }); render(); break;
-                case 'savePeople':
-                    vscode.postMessage({
-                        type: 'savePeople', id,
-                        people: (people || []).filter(x => (x.name || '').trim())
-                    });
-                    break;
-                case 'planAdd': {
-                    const box = document.getElementById('plan-new');
-                    const item = ((box && box.value) || '').trim();
-                    if (!item) { break; }
-                    vscode.postMessage({
-                        type: 'planAdd', id, item,
-                        section: (document.getElementById('plan-sec') || {}).value || ''
-                    });
-                    break;
-                }
-                case 'newDoc': {
-                    const name = ((document.getElementById('doc-name') || {}).value || '').trim();
-                    if (!name) { break; }
-                    vscode.postMessage({
-                        type: 'newDoc', id, name,
-                        folder: (document.getElementById('doc-folder') || {}).value || ''
-                    });
-                    break;
-                }
                 case 'pickFolder': vscode.postMessage({ type: 'pickFolder', id }); break;
                 case 'clearFolder': vscode.postMessage({ type: 'save', id, patch: { folder: '' } }); break;
                 case 'recreateFolder': vscode.postMessage({ type: 'recreateFolder', id }); break;

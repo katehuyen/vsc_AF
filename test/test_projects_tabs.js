@@ -42,25 +42,13 @@ function run(data) {
 
     // Elements are minted from the rendered HTML by attribute, the same way
     // the real querySelectorAll would find them.
-    //
-    // ‼️ The whole TAG is read, not just the attribute that matched. A row that
-    // carries two of them — `data-plan` next to `data-planid`, `data-open` next
-    // to `data-path` — is one element in a browser, and a stub that hands back
-    // only the queried attribute makes a handler reading the second one look
-    // broken when it is the stub that is.
     const found = {};
     const byAttr = (attr) => {
         const re = new RegExp(`data-${attr}="([^"]*)"`, 'g');
         const out = [];
         let m;
         while ((m = re.exec(html))) {
-            const open = html.lastIndexOf('<', m.index);
-            const close = html.indexOf('>', m.index);
-            const tag = open >= 0 && close > open ? html.slice(open, close) : m[0];
             const el = makeEl();
-            let a;
-            const attrs = /data-([a-zA-Z0-9]+)="([^"]*)"/g;
-            while ((a = attrs.exec(tag))) { el.dataset[a[1]] = a[2]; }
             el.dataset[attr] = m[1];
             out.push(el);
         }
@@ -126,12 +114,7 @@ const project = {
 const baseData = () => ({
     generatedAt: T, projects: [project], agents: ['developer'], activeId: 'p1',
     activeName: 'Agent Farm', projectsRoot: 'D:\\v', unassigned: { sessions: 0, cost: 0 },
-    // Faz 4 filed decisions, deliverables and plan items out of this list —
-    // they come from the project's own documents now. Notices and queue items
-    // still carry no project link.
-    unfiledKinds: ['notice', 'queue'],
-    docOpen: { mode: 'vscode', modes: ['vscode', 'preview', 'obsidian'], labels: {} },
-    docPath: '',
+    unfiledKinds: ['notice', 'queue', 'decision', 'deliverable', 'plan'],
     focusId: null, newForm: null, tab: 'overview', tabProject: 'p1', tabData: {}
 });
 
@@ -245,22 +228,16 @@ const feedData = () => ({
     const r = run(feedData());
     const h = r.html();
     ok('‼️ the timeline names the sources it cannot file yet',
-        /Not here:/.test(h) && /Notices/.test(h) && /Queue/.test(h));
+        /Not here yet:/.test(h) && /Notices/.test(h) && /Queue/.test(h)
+        && /Decisions/.test(h) && /Deliverables/.test(h));
     ok('…and says WHY, so it reads as a limit rather than a missing feature',
         /carry no project of their own/.test(h));
-    ok('…and it no longer claims decisions and deliverables are unfilable',
-        !/Decisions · Deliverables/.test(h) && !/nothing writes to yet/.test(h));
-    // ‼️ Faz 4 files document events — but only the ones the DOCUMENT dates.
-    // The page has to say that, or a plan item the user ticked in Agent Farm
-    // (which writes no ✅) looks like a row the timeline lost.
-    ok('‼️ …and it says a document event needs a date the document states',
-        /af-date/.test(h) && /undated is left out/.test(h));
 
     const empty = { ...feedData() };
     empty.tabData = { feed: { counts: {}, events: [], truncated: false, kinds: [] } };
     const r2 = run(empty);
     ok('an empty project says nothing has happened, and still names the gap',
-        /Nothing has happened on this project yet/.test(r2.html()) && /Not here:/.test(r2.html()));
+        /Nothing has happened on this project yet/.test(r2.html()) && /Not here yet:/.test(r2.html()));
 }
 
 // ---------- cost ----------
@@ -340,172 +317,6 @@ const feedData = () => ({
     ok('‼️ the sessions tab waits too — an empty shared table would claim "No sessions yet."',
         /Reading the project…/.test(s.html())
         && !s.html().includes('id="pj-sessions"'));
-}
-
-// ===========================================================================
-// Faz 4 — the tabs that write into the user's own documents.
-// ===========================================================================
-
-const planData = (over) => ({
-    ...baseData(), tab: 'plan',
-    tabData: {
-        plan: {
-            state: 'ok', role: 'plan', folder: 'D:\\v\\p', path: 'Plan.md',
-            open: 2, done: 1,
-            sections: [
-                {
-                    title: 'Milestones', items: [
-                        { line: 4, text: 'Faz 4 — belgeler', done: false, depth: 0, id: 'afprj-04', due: '2026-08-16', completed: null },
-                        { line: 5, text: 'Faz 3 — sayfa', done: true, depth: 0, id: null, due: null, completed: '2026-08-02' }
-                    ]
-                },
-                {
-                    title: 'Next up', items: [
-                        { line: 8, text: 'Faz 1.7', done: false, depth: 2, id: null, due: null, completed: null }
-                    ]
-                }
-            ],
-            ...(over || {})
-        }
-    }
-});
-
-// ---------- the plan tab ----------
-{
-    const r = run(planData());
-    const h = r.html();
-    ok('the plan tab is on the bar', h.includes('data-tab="plan"'));
-    ok('items are drawn as the checkboxes they are in the file',
-        (h.match(/data-plan="/g) || []).length === 3);
-    ok('what is done is shown as done', /class="pj-plan-item done"/.test(h));
-    ok('the counts say what is left', /<b>2<\/b> open/.test(h) && /<b>1<\/b> done/.test(h));
-    ok('the document\'s own metadata is shown, not hidden',
-        h.includes('📅 2026-08-16') && h.includes('✅ 2026-08-02'));
-    ok('nesting survives into the page', /padding-left:32px/.test(h));
-
-    // ‼️ the promise the page has to keep saying out loud
-    ok('‼️ the tab states that ticking changes ONE character and adds no ✅',
-        /exactly one character/i.test(h) && /does not write metadata it does not own/.test(h));
-
-    const box = r.els('plan').find(e => e.dataset.plan === '4');
-    box.checked = true;
-    box.click();
-    const msg = r.posted.filter(m => m.type === 'planCheck').pop();
-    ok('ticking a box asks the host to tick that item', msg && msg.line === 4 && msg.done === true);
-    ok('‼️ …and it carries the Obsidian Tasks id, which survives the line moving',
-        msg.itemId === 'afprj-04');
-    ok('…and the message says the state it WANTS, not "toggle" — the box already flipped',
-        Object.prototype.hasOwnProperty.call(msg, 'done'));
-
-    const off = r.els('plan').find(e => e.dataset.plan === '5');
-    off.checked = false;
-    off.click();
-    ok('unticking asks for exactly that', r.posted.filter(m => m.type === 'planCheck').pop().done === false);
-}
-
-// ---------- the plan tab when there is nothing to show, and WHY ----------
-{
-    const noDoc = run({ ...baseData(), tab: 'plan', tabData: { plan: { state: 'no-doc', role: 'plan', folder: 'D:\\v\\p' } } });
-    ok('‼️ "no plan document" says what MAKES a file the plan, rather than looking broken',
-        /af-role: plan/.test(noDoc.html()));
-    const noFolder = run({ ...baseData(), tab: 'plan', tabData: { plan: { state: 'no-folder', role: 'plan' } } });
-    ok('…and "no folder yet" points at where to choose one', /Settings/.test(noFolder.html()));
-    const missing = run({ ...baseData(), tab: 'plan', tabData: { plan: { state: 'folder-missing', role: 'plan', folder: 'D:\\gone' } } });
-    ok('…and a folder that moved names the path and points at Relink',
-        /D:\\gone/.test(missing.html()) && /Relink/.test(missing.html()));
-    const waiting = run({ ...baseData(), tab: 'plan', tabData: {} });
-    ok('…and a payload that has not landed says "reading", not "empty"',
-        /Reading the project…/.test(waiting.html()));
-}
-
-// ---------- the docs tab ----------
-const docsData = (selected) => ({
-    ...baseData(), tab: 'docs',
-    tabData: {
-        docs: {
-            state: 'ok', folder: 'D:\\v\\p',
-            entries: [
-                { path: '10_Notes', name: '10_Notes', dir: true, size: 0, mtimeMs: T, role: null, managed: false },
-                { path: '10_Notes/note.md', name: 'note.md', dir: false, size: 120, mtimeMs: T, role: null, managed: false },
-                { path: '_AF/BRIEF.md', name: 'BRIEF.md', dir: false, size: 900, mtimeMs: T, role: 'brief', managed: true },
-                { path: 'Plan.md', name: 'Plan.md', dir: false, size: 400, mtimeMs: T, role: 'plan', managed: false }
-            ],
-            selected: selected === undefined
-                ? { path: 'Plan.md', text: '# Plan\n\n- [ ] a', size: 400, mtimeMs: T, truncated: false, role: 'plan' }
-                : selected
-        }
-    }
-});
-{
-    const r = run(docsData());
-    const h = r.html();
-    ok('the folder is drawn as a tree, folders and files alike',
-        h.includes('data-doc="Plan.md"') && h.includes('data-doc="10_Notes/note.md"'));
-    ok('a folder is not a clickable document', !/data-doc="10_Notes"/.test(h));
-    ok('a document says which role it carries', /pj-doc-r">plan</.test(h));
-    ok('‼️ a machine-generated file is marked, so nobody edits what will be overwritten',
-        /auto</.test(h) && /_AF\/BRIEF\.md/.test(h));
-    ok('the selected document\'s text is shown as it is on disk',
-        /pj-doc-text/.test(h) && h.includes('# Plan'));
-
-    r.els('doc').find(e => e.dataset.doc === '10_Notes/note.md').click();
-    const pick = r.posted.filter(m => m.type === 'selectDoc').pop();
-    ok('‼️ picking a document sends its path RELATIVE to the project — the host resolves it',
-        pick && pick.path === '10_Notes/note.md');
-
-    const open = r.els('open')[0];
-    open.click();
-    const opened = r.posted.filter(m => m.type === 'openDoc').pop();
-    ok('opening a document goes through the shared doc-open modes, not a viewer of our own',
-        opened && opened.mode === 'vscode' && opened.path === 'Plan.md');
-    ok('…and the other modes are offered too', /data-open="obsidian"/.test(h));
-
-    const none = run(docsData(null));
-    ok('with nothing selected the pane asks rather than showing a blank',
-        /Pick a document on the left/.test(none.html()));
-    const big = run(docsData({ path: 'x.md', text: 'head', size: 999999, mtimeMs: T, truncated: true, role: null }));
-    ok('a truncated document SAYS it is truncated', /Only the first part is shown/.test(big.html()));
-    const unread = run(docsData({ path: 'x.md', error: 'EACCES' }));
-    ok('a document that could not be read says why', /EACCES/.test(unread.html()));
-}
-
-// ---------- the people tab ----------
-{
-    const withPeople = {
-        ...project,
-        people: [{ name: 'Murat Vural', role: 'owner', kind: 'self', contact: '', link: '' }]
-    };
-    const r = run({
-        ...baseData(), projects: [withPeople], tab: 'people',
-        tabData: { peopleDoc: { state: 'ok', role: 'people', folder: 'D:\\v\\p', path: 'People.md' } }
-    });
-    const h = r.html();
-    ok('the people tab edits the registry rows', /data-p="name"/.test(h) && h.includes('Murat Vural'));
-    ok('the roles are spelled out as the questions they answer',
-        /who decides/i.test(h) && /who pays/i.test(h));
-    ok('‼️ it points at the project\'s OWN people document instead of pretending to sync it',
-        h.includes('People.md') && /data-open=/.test(h));
-    ok('…and says this list is what a session is told', /what every session started under the project is told/.test(h));
-
-    r.els('act').find(e => e.dataset.act === 'savePeople').click();
-    const saved = r.posted.filter(m => m.type === 'savePeople').pop();
-    ok('saving people is its own message, not part of the settings patch',
-        saved && saved.people.length === 1 && saved.people[0].name === 'Murat Vural');
-}
-
-// ---------- ‼️ Settings must not silently delete the people ----------
-{
-    const withPeople = {
-        ...project,
-        people: [{ name: 'Murat Vural', role: 'owner', kind: 'self' }]
-    };
-    const r = run({ ...baseData(), projects: [withPeople], tab: 'settings', tabData: {} });
-    ok('the settings tab no longer holds the people editor', !/data-p="name"/.test(r.html()));
-    ok('…and it says where they went', /People<\/b> tab/.test(r.html()));
-    r.els('act').find(e => e.dataset.act === 'save').click();
-    const patch = r.posted.filter(m => m.type === 'save').pop();
-    ok('‼️ …so a Save pressed to change a budget CANNOT post an empty people list and wipe them',
-        patch && !Object.prototype.hasOwnProperty.call(patch.patch, 'people'));
 }
 
 console.log(`${pass} passed, ${fail} failed`);
