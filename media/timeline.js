@@ -178,7 +178,7 @@
     function statLines(s) {
         const money = [
             s.cost ? C.fmtUSD(s.cost) : '',
-            s.tokens ? C.fmtTokW(s.tokens, s.wTokens) + ' tok' : '',
+            s.tokens ? C.fmtTok(s.tokens) + ' tok' : '',
             s.ctxTokens ? 'ctx ' + C.fmtTok(s.ctxTokens) : '',
             s.turns ? s.turns + ' turns' : '',
             s.model ? String(s.model).replace(/^claude-/, '') : ''

@@ -58,12 +58,7 @@ const deps = {
         { agentId: 'psikolog', severity: 'info' }
     ],
     live: { agentStatus: id => (id === 'dev' ? { status: 'tool', sessions: 1 } : undefined) },
-    // a real project out of the registry — the page resolves an agent's project
-    // the same way the cost figures beside it do
-    projects: () => [{
-        id: 'prj_acme00001', name: 'Acme', status: 'active',
-        createdAt: 1, updatedAt: 1, match: { agents: ['dev'] }
-    }],
+    projects: () => [{ name: 'Acme', agents: ['dev'] }],
     budgets: () => ({ dev: 4 })
 };
 

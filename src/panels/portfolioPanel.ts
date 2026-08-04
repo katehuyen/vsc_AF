@@ -4,7 +4,7 @@ import { watchStatus } from '../core/duties';
 import { Insight } from '../core/health';
 import { LiveMonitor, LiveStatus } from '../core/live';
 import { totalTokens } from '../core/pricing';
-import { agentProject, Project, UNASSIGNED } from '../core/projects';
+import { ProjectDef, projectOfAgent, UNASSIGNED } from '../core/projects';
 import { SessionIndex } from '../core/sessions';
 import { dayKey } from '../core/util';
 import { handleAfNav, htmlShell } from './base';
@@ -28,7 +28,7 @@ export interface PortfolioDeps {
     index: SessionIndex;
     getInsights(): Insight[];
     live?: LiveMonitor;
-    projects(): Project[];
+    projects(): ProjectDef[];
     budgets(): Record<string, number>;
 }
 
@@ -52,8 +52,6 @@ export interface PortfolioRow {
     cost30: number;
     costToday: number;
     tokens30: number;
-    /** the same 30 days measured against the plan limit — see QUOTA_WEIGHTS */
-    wTokens30: number;
     budget: number;
     duties: number;
     dutiesWaiting: number;
@@ -73,7 +71,7 @@ export function buildPortfolioRows(deps: PortfolioDeps, now = Date.now()): Portf
     const D = 24 * 3600 * 1000;
     return deps.getAgents().map(a => {
         const sessions = deps.index.forAgent(a.id);
-        let lastActivity = 0, sessions7 = 0, sessions30 = 0, cost7 = 0, cost30 = 0, tokens30 = 0, wTokens30 = 0, costToday = 0;
+        let lastActivity = 0, sessions7 = 0, sessions30 = 0, cost7 = 0, cost30 = 0, tokens30 = 0, costToday = 0;
         const files = new Set<string>();
         for (const s of sessions) {
             const ts = s.lastTs || s.mtime || 0;
@@ -83,7 +81,6 @@ export function buildPortfolioRows(deps: PortfolioDeps, now = Date.now()): Portf
                 sessions30++;
                 cost30 += s.cost;
                 tokens30 += totalTokens(s.usage);
-                wTokens30 += s.wTokens;
                 for (const f of Object.keys(s.filesEdited ?? {})) { files.add(f); }
                 if (age <= 7 * D) { sessions7++; cost7 += s.cost; }
             }
@@ -97,10 +94,7 @@ export function buildPortfolioRows(deps: PortfolioDeps, now = Date.now()): Portf
             id: a.id,
             name: a.name,
             dir: a.dir,
-            // The SAME resolution the cost table uses — this page sits next to
-            // figures grouped the same way, and two answers to "whose job is
-            // this agent on" would leave a reader no way to tell which is lying.
-            project: agentProject({ id: a.id, name: a.name, dir: a.dir }, projects)?.name ?? UNASSIGNED,
+            project: projectOfAgent({ id: a.id, name: a.name, dir: a.dir }, projects) ?? UNASSIGNED,
             status: live?.status ?? 'idle',
             active: live ? (live.status === 'working' || live.status === 'tool')
                 : deps.index.isAgentActive(a.id, now),
@@ -112,7 +106,6 @@ export function buildPortfolioRows(deps: PortfolioDeps, now = Date.now()): Portf
             cost30: Math.round(cost30 * 10000) / 10000,
             costToday: Math.round(costToday * 10000) / 10000,
             tokens30,
-            wTokens30: Math.round(wTokens30),
             budget: budgets[a.name] ?? 0,
             duties: a.duties.length,
             dutiesWaiting: watches.filter(w => w?.pending).length,

@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import { expandDeep, PortableRoot, tokenizeDeep } from './portablePaths';
 import {
     coerceLinks, coerceProject, coerceProjects, coerceStatus, emptyLinks, findProject,
-    folderNameFor, newProjectId, Project, ProjectLinks,
+    folderNameFor, migrateLegacyProjects, newProjectId, Project, ProjectLinks,
     ProjectSessionRef, ProjectStatus, pruneLinks, renameProject, Resolution,
     resolveSessionProject, sameName, setSessionProject
 } from './projects';
@@ -37,6 +37,8 @@ interface StoreFile {
     version?: number;
     projects?: unknown;
     links?: unknown;
+    /** the one-time import from the old agentFarm.projects setting has run */
+    migrated?: boolean;
 }
 
 /** Everything a new project may be given; `name` is the only requirement. */
@@ -54,6 +56,7 @@ export interface ProjectResult {
 export class ProjectStore {
     private projects: Project[] = [];
     private linkTable: ProjectLinks = emptyLinks();
+    private migrated = false;
     /** mtime of the file as of our last read or write — see syncFromDisk. */
     private lastMtimeMs = 0;
 
@@ -96,6 +99,7 @@ export class ProjectStore {
                 this.portableRoots());
             this.projects = coerceProjects(raw.projects);
             this.linkTable = coerceLinks(raw.links);
+            this.migrated = raw.migrated === true;
             // a link to a project the file no longer holds is dead weight
             this.linkTable = pruneLinks(this.linkTable, this.projects);
         } catch {
@@ -103,6 +107,7 @@ export class ProjectStore {
             // half-loaded; a partial registry would resolve sessions wrongly
             this.projects = [];
             this.linkTable = emptyLinks();
+            this.migrated = false;
         }
         this.lastMtimeMs = this.statMtime();
     }
@@ -116,7 +121,8 @@ export class ProjectStore {
         const payload: StoreFile = {
             version: STORE_VERSION,
             projects: this.projects,
-            links: this.linkTable
+            links: this.linkTable,
+            migrated: this.migrated
         };
         const body = JSON.stringify(tokenizeDeep(payload, this.portableRoots()), null, 2);
         const tmp = `${this.file}.tmp`;
@@ -377,7 +383,42 @@ export class ProjectStore {
         return changed;
     }
 
-    // ---- rebuild ----
+    // ---- migration · rebuild ----
+
+    /**
+     * Import the old `agentFarm.projects` setting, once.
+     *
+     * The marker is set as soon as the setting is seen to HOLD something — not
+     * when rows are actually added. Two failure modes meet here and only this
+     * rule avoids both:
+     *
+     *  - Mark it whenever the import runs, and an empty read marks us done. But
+     *    an empty read is not proof of an empty setting: VS Code Settings Sync
+     *    can land AFTER activation, so the first window of a fresh machine may
+     *    genuinely see nothing and would then bury the user's projects forever.
+     *  - Mark it only when rows were added, and deleting a migrated project
+     *    brings it back on the next window — an import that keeps re-importing
+     *    is not a migration, it is a haunting.
+     *
+     * Seeing content is the honest signal for "there was something here and we
+     * have now dealt with it", so that is what the marker records.
+     */
+    migrateLegacy(legacyRaw: unknown, now = Date.now()): number {
+        this.syncFromDisk();
+        if (this.migrated) { return 0; }
+        const candidates = migrateLegacyProjects(legacyRaw, now);
+        if (!candidates.length) { return 0; }   // nothing there yet — look again next window
+        this.migrated = true;
+        const imported = candidates.filter(p => !this.projects.some(x => sameName(x.name, p.name)));
+        this.projects.push(...imported);
+        this.save();
+        return imported.length;
+    }
+
+    /** Has the one-time import already happened? */
+    get hasMigrated(): boolean {
+        return this.migrated;
+    }
 
     /**
      * Replace the registry wholesale — what a folder rescan produces. The link

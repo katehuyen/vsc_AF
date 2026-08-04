@@ -3,9 +3,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { addUsage, contextAfter, emptyUsage, PricingEngine, RawUsage, toUsage, totalTokens, Usage, weightedTokens } from '../core/pricing';
+import { contextAfter, PricingEngine, totalTokens, Usage } from '../core/pricing';
 import { sessionOrigin } from '../core/sessions';
-import { StepKind, stepKindForTool } from '../core/stepkind';
 import { collectEdits, fileStats, groupByFile } from '../core/codeedits';
 import { askExportOptions, handleAfNav, htmlShell } from './base';
 
@@ -42,13 +41,7 @@ interface ViewMessage {
     sidechain?: boolean;
     model?: string;
     tokens?: number;
-    /** the same step against the plan limit — see QUOTA_WEIGHTS */
-    wTokens?: number;
     cost?: number;
-    /** WHAT KIND of step this is, and therefore where its cost comes from —
-     *  see stepkind.ts. The transcript said what happened and never what it
-     *  was: a local Read and a nine-second think looked like the same event. */
-    kind?: StepKind;
     /** 1-based turn number (a turn starts at each top-level user prompt). */
     turn?: number;
     /** True on the message that opens a turn — the viewer draws the turn divider here. */
@@ -277,10 +270,10 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
     try { raw = fs.readFileSync(file, 'utf8'); } catch { /* gone */ }
 
     const messages: ViewMessage[] = [];
-    const usage: Usage = emptyUsage();
+    const usage: Usage = { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 };
     const models = new Set<string>();
     const seen = new Set<string>();
-    let cost = 0, wTokens = 0, errors = 0, toolCalls = 0, firstTs = 0, lastTs = 0;
+    let cost = 0, errors = 0, toolCalls = 0, firstTs = 0, lastTs = 0;
     let ctxTokens = 0, ctxTs = 0;
     let ctxModel = '';
     // Latest `/context` snapshot seen in the transcript (last one wins — most recent run).
@@ -292,27 +285,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
     // Turn accounting runs inside the parse loop: usage on assistant lines whose content
     // never renders (e.g. thinking-only stream lines) must still bill to the open turn.
     let inTurn = 0;
-    /**
-     * Per-turn accounting.
-     *
-     * `apiCalls` and `steps` are two different questions and the surfaces used
-     * to answer only the second: a STEP is one reply fragment or one tool call,
-     * an API CALL is one round trip, and one call routinely carries several
-     * steps. The tokens follow the calls, so a turn whose call count halved
-     * while its steps held looked unchanged while its total moved.
-     *
-     * `endTs` and `endCtx` close the other gap: the turn row said what it spent
-     * but never how long it took or where it left the window.
-     */
-    const turnTotals: Record<number, {
-        tokens: number; wTokens: number; cost: number; apiCalls: number; steps: number;
-        endTs: number; endCtx: number;
-    }> = {};
-    const turnAcc = (n: number): {
-        tokens: number; wTokens: number; cost: number; apiCalls: number; steps: number;
-        endTs: number; endCtx: number;
-    } => (turnTotals[n] ?? (turnTotals[n] =
-        { tokens: 0, wTokens: 0, cost: 0, apiCalls: 0, steps: 0, endTs: 0, endCtx: 0 }));
+    const turnTotals: Record<number, { tokens: number; cost: number }> = {};
     // Which model(s) served each turn — the model can change mid-session (it does
     // in ~1 of 4 real sessions), so this is per turn, not per session.
     const turnModels: Record<number, Set<string>> = {};
@@ -328,7 +301,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
             costUSD?: number; toolUseResult?: unknown;
             message?: {
                 id?: string; model?: string; content?: unknown;
-                usage?: RawUsage;
+                usage?: { input_tokens?: number; output_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number };
             };
         };
         try { line = JSON.parse(lineText); } catch { continue; }
@@ -365,16 +338,10 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
                         messages.push({
                             role: 'toolResult', ts,
                             text: clipTool(contentToText(b.content) || String(b.text ?? '')),
-                            isError: !!b.is_error, kind: 'result',
+                            isError: !!b.is_error,
                             sidechain: line.isSidechain
                         });
-                    } else if (b?.type === 'text' && b.text && !line.isMeta) {
-                        // isMeta is the harness talking, not the user. A string-content
-                        // meta line was already skipped above; the array form was not,
-                        // so it opened a turn nobody asked for — and every turn after it
-                        // carried the number, and the tokens, of the one before. The
-                        // session index never counted it, so the same transcript showed
-                        // one turn count on the page and another in the tables.
+                    } else if (b?.type === 'text' && b.text) {
                         messages.push({ role: 'user', ts, text: b.text, sidechain: line.isSidechain });
                         if (!line.isSidechain) { inTurn++; }
                         if (!title) { title = titleCandidate(b.text); }
@@ -406,40 +373,30 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
                 ctxTokens = ctxNow;
                 ctxTs = ts || ctxTs;
                 if (msg.model && msg.model !== '<synthetic>') { ctxModel = msg.model; }
-                // Where the turn left the window. A sub-agent's messages are
-                // not this conversation's window (see contextAfter's callers in
-                // consoleproto) but a sidechain line here belongs to the same
-                // conversation, so it counts.
-                if (inTurn > 0) { turnAcc(inTurn).endCtx = ctxNow; }
             }
-            if (inTurn > 0 && ts) { turnAcc(inTurn).endTs = Math.max(turnAcc(inTurn).endTs, ts); }
-            let msgTokens = 0, msgCost = 0, msgWTokens = 0;
+            let msgTokens = 0, msgCost = 0;
             const key = `${msg.id ?? ''}:${line.requestId ?? ''}`;
             if (msg.usage && (key === ':' || !seen.has(key))) {
                 if (key !== ':') { seen.add(key); }
-                // ‼️ toUsage, never field by field — the flat cache-creation
-                // number hides the TTL split and a 1-hour write costs 1.6x a
-                // 5-minute one (see Usage.cacheWrite1h).
-                const u: Usage = toUsage(msg.usage);
-                addUsage(usage, u);
+                const u: Usage = {
+                    input: msg.usage.input_tokens ?? 0,
+                    output: msg.usage.output_tokens ?? 0,
+                    cacheWrite: msg.usage.cache_creation_input_tokens ?? 0,
+                    cacheRead: msg.usage.cache_read_input_tokens ?? 0
+                };
+                usage.input += u.input;
+                usage.output += u.output;
+                usage.cacheWrite += u.cacheWrite;
+                usage.cacheRead += u.cacheRead;
                 msgTokens = totalTokens(u);
-                // …and what the same line charged the plan limit, off the model
-                // that served it. Same line, same dedup guard as the raw figure.
-                msgWTokens = weightedTokens(msg.model ?? '', u);
-                wTokens += msgWTokens;
                 msgCost = typeof line.costUSD === 'number'
                     ? line.costUSD
                     : deps.getPricing().costFor(msg.model ?? '', u, ts);
                 cost += msgCost;
                 if (inTurn > 0 && (msgTokens || msgCost)) {
-                    const t = turnAcc(inTurn);
+                    const t = turnTotals[inTurn] ?? (turnTotals[inTurn] = { tokens: 0, cost: 0 });
                     t.tokens += msgTokens;
-                    t.wTokens += msgWTokens;
                     t.cost += msgCost;
-                    // One round trip. Counted HERE, inside the dedup guard, so
-                    // it is the same set of lines the tokens came from — the
-                    // two figures can never tell different stories.
-                    t.apiCalls++;
                 }
             }
             if (Array.isArray(msg.content)) {
@@ -447,25 +404,21 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
                     if (b?.type === 'text' && b.text?.trim()) {
                         messages.push({
                             role: 'assistant', ts, text: b.text,
-                            model: msg.model, tokens: msgTokens, wTokens: Math.round(msgWTokens) || undefined,
-                            cost: msgCost, kind: 'say',
+                            model: msg.model, tokens: msgTokens, cost: msgCost,
                             sidechain: line.isSidechain
                         });
-                        if (inTurn > 0) { turnAcc(inTurn).steps++; }
-                        msgTokens = 0; msgCost = 0; msgWTokens = 0; // attribute once
+                        msgTokens = 0; msgCost = 0; // attribute once
                     } else if (b?.type === 'tool_use' && b.name) {
                         toolCalls++;
-                        if (inTurn > 0) { turnAcc(inTurn).steps++; }
                         // Tool-only assistant turns still cost tokens — attribute them to the first tool block.
                         messages.push({
                             role: 'tool', ts, tool: b.name,
                             input: clipTool(JSON.stringify(b.input ?? {}, null, 2)),
                             model: msgTokens ? msg.model : undefined,
-                            tokens: msgTokens || undefined, wTokens: Math.round(msgWTokens) || undefined,
-                            cost: msgCost || undefined, kind: stepKindForTool(b.name),
+                            tokens: msgTokens || undefined, cost: msgCost || undefined,
                             sidechain: line.isSidechain
                         });
-                        msgTokens = 0; msgCost = 0; msgWTokens = 0;
+                        msgTokens = 0; msgCost = 0;
                     }
                 }
             }
@@ -490,26 +443,15 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
     // time) lets other surfaces deep-link into a turn via openSession(file, focusTs).
     // `models`/`attrs` are verbatim transcript values — see ATTR_KEYS.
     const turns: {
-        n: number; label: string; ts: number; tokens: number; wTokens: number; cost: number;
-        apiCalls: number; steps: number; ms: number; endCtx: number;
+        n: number; label: string; ts: number; tokens: number; cost: number;
         models: string[]; attrs: Record<string, string>;
     }[] = [];
     for (let n = 1; n <= turnNo; n++) {
-        const acc = turnTotals[n];
-        const startTs = turnTs[n] ?? 0;
         turns.push({
             n, label: turnLabels[n] ?? '',
-            ts: startTs,
-            tokens: acc?.tokens ?? 0,
-            wTokens: Math.round(acc?.wTokens ?? 0),
-            cost: acc?.cost ?? 0,
-            apiCalls: acc?.apiCalls ?? 0,
-            steps: acc?.steps ?? 0,
-            // How long the turn ran: from the prompt to its last recorded line.
-            // A turn still running has no end yet — 0, and the surfaces then
-            // count from `ts` themselves rather than showing a frozen figure.
-            ms: startTs && acc?.endTs && acc.endTs > startTs ? acc.endTs - startTs : 0,
-            endCtx: acc?.endCtx ?? 0,
+            ts: turnTs[n] ?? 0,
+            tokens: turnTotals[n]?.tokens ?? 0,
+            cost: turnTotals[n]?.cost ?? 0,
             models: [...(turnModels[n] ?? [])],
             attrs: turnAttrs[n] ?? {}
         });
@@ -533,7 +475,6 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
         models: [...models],
         usage,
         totalTokens: totalTokens(usage),
-        totalWTokens: Math.round(wTokens),
         cost,
         errors,
         toolCalls,

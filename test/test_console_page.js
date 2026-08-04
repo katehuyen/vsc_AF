@@ -16,16 +16,14 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 const code = require(path.join(__dirname, 'lib_shared_media.js')).sharedMedia()
     + fs.readFileSync(path.resolve(__dirname, '../media/console.js'), 'utf8');
 
-// ‼️ These are stubbed with the REAL ones, not lookalikes. The strip shortens
-// model ids, writes durations and writes the api/steps pair the way every other
-// surface does, and a hand-written stub here would let the two drift while the
-// test kept passing.
-const realCharts = (() => {
+// ‼️ parseModel is stubbed with the REAL one, not a lookalike. The strip shortens
+// model ids the way every other surface does, and a hand-written stub here would
+// let the two drift while the test kept passing.
+const realParseModel = (() => {
     const box = vm.createContext({ window: {} });
     vm.runInContext(fs.readFileSync(path.resolve(__dirname, '../media/charts.js'), 'utf8'), box);
-    return box.window.AFCharts;
+    return box.window.AFCharts.parseModel;
 })();
-const realParseModel = realCharts.parseModel;
 
 // ---------- fake DOM ----------
 const els = {};
@@ -79,20 +77,6 @@ const sandbox = {
             esc: s => String(s === undefined || s === null ? '' : s).replace(/</g, '&lt;'),
             fmtUSD: v => '$' + (v || 0),
             fmtTok: v => v + 't',
-            STEP_KIND: {},
-
-            stepChip: () => '',
-
-            stepKindLegend: () => '',
-
-            stepKindLegendText: () => 'legend',
-
-            fmtTokW(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' [w' + this.fmtTok(Math.round(w)) + ']' : ''); },
-            fmtTokWText(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' (w' + this.fmtTok(Math.round(w)) + ')' : ''); },
-            WEIGHTED_TIP: 'weighted',
-            fmtDur: realCharts.fmtDur,
-            fmtSteps: realCharts.fmtSteps,
-            STEPS_TIP: realCharts.STEPS_TIP,
             parseModel: realParseModel
         },
         AFHeader: { html: () => '<header>', wire: () => { } },
@@ -245,10 +229,7 @@ const html = allHtml;
     // whether that was haiku thinking briefly or opus barely starting.
     ok('…the tokens it spent, not the dollars', html().includes('48200t tok')
         && !html().includes('$0.12 (48200t)'));
-    // The hover spells out BOTH figures: the raw total and what it charged the
-    // 5h limit. The card itself has room only for the pair; the sentence that
-    // says which is which lives here (see charts.js WEIGHTED_TIP).
-    ok('…with the money one hover away', /title="48200t raw tokens · \$0\.12 spent"/.test(html()));
+    ok('…with the money one hover away', /title="48200t tokens · \$0\.12 spent"/.test(html()));
     ok('…and the context the window is holding now', html().includes('ctx 24100t'));
     ok('…with the session\'s own name under the agent', html().includes('Kalan eksikler'));
 }
@@ -625,16 +606,7 @@ const html = allHtml;
     ok('…marked as the estimate it is until the turn closes', /estimate/.test(working()));
     // everything since your own last message: agent, three tool lines, the
     // turn's own result line, and the one that just streamed in
-    // ‼️ …AND HOW MANY ROUND TRIPS CARRIED THEM. The steps are what you watch
-    // scroll past; the tokens are charged per API CALL, and one call carries
-    // several steps. Showing only the steps let a turn whose call count halved
-    // read as unchanged while its token figure moved — see charts.js fmtSteps.
-    ok('…with the steps it has produced, and the calls that carried them',
-        />6</.test(working()) && !/· \d+ lines?/.test(working()));
-    // The strip counts in the shared format the moment a turn passes a minute —
-    // it used to say "3847s" for a turn that ran an hour.
-    ok('…and its age in the shared duration format, not raw seconds',
-        working().includes('41s'));
+    ok('…with the lines it has produced so far', / · 6 lines/.test(working()));
     ok('…and the seconds it has been at it', /41s/.test(working()));
     ok('the session-wide context figure is NOT repeated up here', !/ctx/.test(working()));
 
@@ -910,7 +882,7 @@ const html = allHtml;
     ok('a resumable row leads with what it spent, in tokens',
         />812000t tok</.test(rlist()));
     ok('…with the dollars moved into the tooltip, where the space is free',
-        /title="812000t raw tokens · \$0\.31 spent"/.test(rlist()));
+        /title="812000t tokens · \$0\.31 spent"/.test(rlist()));
     ok('…says how long ago in days, not in hours',
         /5d ago/.test(rlist()) && !/120h ago/.test(rlist()));
     ok('…and keeps a figure and its label on one line',

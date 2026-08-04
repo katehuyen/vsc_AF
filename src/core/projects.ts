@@ -341,17 +341,6 @@ export interface Resolution {
     matchedRoot?: string;
 }
 
-/** Lower-cased, slash-normalised, trailing slash removed — path comparison
- *  has to survive `D:\a\B` vs `d:/a/b/`. Mirrors util.normPath deliberately
- *  (this module stays dependency-free so the service side can use it too). */
-export function normalizePath(p: string): string {
-    return String(p ?? '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
-}
-
-/** The bucket for everything no project claims. A NAME, not an id — it is what
- *  the surfaces print; `UNASSIGNED_ID` is what the rollup keys on. */
-export const UNASSIGNED = 'Unassigned';
-
 /** Every path a project claims: its docs folder and its code roots. */
 export function matchRoots(p: Project): string[] {
     const roots: string[] = [];
@@ -409,39 +398,6 @@ export function resolveSessionProject(
     }
 
     return { via: 'none' };
-}
-
-export interface AgentRef {
-    id?: string;
-    name?: string;
-    dir?: string;
-}
-
-/**
- * Which project claims this AGENT.
- *
- * An agent is not a session, but the question is the same one and it must not
- * get a second answer: the surfaces that group by agent (the portfolio, the
- * dashboard's per-agent map) would otherwise disagree with the cost table
- * sitting next to them, and there is no way for a reader to tell which of the
- * two is lying. So it goes through `resolveSessionProject` with the agent's own
- * folder as the working directory — the same order, the same longest-root rule,
- * one implementation.
- */
-export function agentProject(agent: AgentRef, projects: Project[]): Project | undefined {
-    const r = resolveSessionProject(
-        { agentId: agent.id, agentName: agent.name, cwd: agent.dir }, projects);
-    return r.projectId ? projectById(projects, r.projectId) : undefined;
-}
-
-/** agent name → project name, for shipping one small map to a webview. */
-export function agentProjectNames(agents: AgentRef[], projects: Project[]): Record<string, string> {
-    const map: Record<string, string> = {};
-    for (const a of agents) {
-        const p = agentProject(a, projects);
-        if (p && a.name) { map[a.name] = p.name; }
-    }
-    return map;
 }
 
 /**
@@ -598,16 +554,171 @@ export function renameProject(
 }
 
 /**
- * One project's figures, keyed by NAME rather than by id.
+ * The old `agentFarm.projects` setting → real projects.
  *
- * The shape the cost surfaces read — the dashboard's project card, the sessions
- * tables' Project column, the web snapshot. It is not a second rollup: it is
- * `rollupProjectSessions` output flattened to what a display needs, and the one
- * place that builds it (`projectRollup` in extension.ts) is the only place
- * allowed to. Kept by name because that is what those surfaces group and filter
- * on, and the leftover bucket has a name (`UNASSIGNED`) and no id.
+ * `agents` becomes a rule (it was never really membership, only a guess that
+ * happened to be written as one), `paths` becomes code roots, `note` becomes
+ * the one-line summary. `folder` is deliberately left unset: the setting never
+ * held one, and inventing a folder here would create a directory the user
+ * never asked for. It shows up as "folder not chosen" and asks.
  */
-export interface ProjectCostRow {
+export function migrateLegacyProjects(
+    raw: unknown, now = Date.now(), rand: () => number = Math.random
+): Project[] {
+    const legacy = normalizeProjects(raw);
+    const out: Project[] = [];
+    const ids = new Set<string>();
+    for (const def of legacy) {
+        const id = newProjectId(ids, rand);
+        ids.add(id);
+        const p: Project = { id, name: def.name, status: 'active', createdAt: now, updatedAt: now };
+        if (def.agents?.length) { p.match = { agents: def.agents }; }
+        if (def.paths?.length) { p.repos = def.paths; }
+        if (def.budgetUSD) { p.budgetUSD = def.budgetUSD; }
+        if (def.note) { p.summary = def.note; }
+        out.push(p);
+    }
+    return out;
+}
+
+// ===========================================================================
+// LEGACY — the settings-based model. Every surface still reads it; it is
+// removed once the store is wired in (see migrateLegacyProjects above).
+// ===========================================================================
+
+export interface ProjectDef {
+    name: string;
+    /** agent names (or ids) that belong to this project */
+    agents?: string[];
+    /** folder prefixes; a session whose cwd sits under one belongs here */
+    paths?: string[];
+    /** optional daily budget in USD for the whole project */
+    budgetUSD?: number;
+    /** free note — customer, contract, whatever the name does not say */
+    note?: string;
+}
+
+/** Lower-cased, slash-normalised, trailing slash removed — path comparison
+ *  has to survive `D:\a\B` vs `d:/a/b/`. Mirrors util.normPath deliberately
+ *  (this module stays dependency-free so the service side can use it too). */
+export function normalizePath(p: string): string {
+    return String(p ?? '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+}
+
+/** Accept whatever settings.json holds and return a clean, usable list. */
+export function normalizeProjects(raw: unknown): ProjectDef[] {
+    if (!Array.isArray(raw)) { return []; }
+    const out: ProjectDef[] = [];
+    const seen = new Set<string>();
+    for (const item of raw) {
+        if (!item || typeof item !== 'object') { continue; }
+        const o = item as Record<string, unknown>;
+        const name = typeof o.name === 'string' ? o.name.trim() : '';
+        if (!name || seen.has(name.toLowerCase())) { continue; }
+        seen.add(name.toLowerCase());
+        const def: ProjectDef = { name };
+        const list = (v: unknown) => Array.isArray(v)
+            ? v.filter((x): x is string => typeof x === 'string' && !!x.trim()).map(x => x.trim())
+            : [];
+        const agents = list(o.agents);
+        const paths = list(o.paths);
+        if (agents.length) { def.agents = agents; }
+        if (paths.length) { def.paths = paths; }
+        if (typeof o.budgetUSD === 'number' && o.budgetUSD > 0) { def.budgetUSD = o.budgetUSD; }
+        if (typeof o.note === 'string' && o.note.trim()) { def.note = o.note.trim(); }
+        out.push(def);
+    }
+    return out;
+}
+
+export interface AgentRef {
+    id?: string;
+    name?: string;
+    dir?: string;
+}
+
+/** Which project owns this agent? First match wins — see the one rule above. */
+export function projectOfAgent(agent: AgentRef, projects: ProjectDef[]): string | undefined {
+    const id = (agent.id ?? '').toLowerCase();
+    const name = (agent.name ?? '').toLowerCase();
+    const dir = normalizePath(agent.dir ?? '');
+    for (const p of projects) {
+        for (const a of p.agents ?? []) {
+            const key = a.toLowerCase();
+            if (key && (key === id || key === name)) { return p.name; }
+        }
+        if (dir) {
+            for (const root of p.paths ?? []) {
+                const r = normalizePath(root);
+                if (r && (dir === r || dir.startsWith(r + '/'))) { return p.name; }
+            }
+        }
+    }
+    return undefined;
+}
+
+export interface SessionRef {
+    agentId?: string;
+    agentName?: string;
+    cwd?: string;
+}
+
+/**
+ * Which project does this session belong to? Its agent decides first (that is
+ * the declared membership); a session outside every known agent still lands in
+ * a project when its working directory sits under one of the project's paths.
+ */
+export function projectOfSession(s: SessionRef, projects: ProjectDef[]): string | undefined {
+    const viaAgent = projectOfAgent({ id: s.agentId, name: s.agentName }, projects);
+    if (viaAgent) { return viaAgent; }
+    const dir = normalizePath(s.cwd ?? '');
+    if (!dir) { return undefined; }
+    for (const p of projects) {
+        for (const root of p.paths ?? []) {
+            const r = normalizePath(root);
+            if (r && (dir === r || dir.startsWith(r + '/'))) { return p.name; }
+        }
+    }
+    return undefined;
+}
+
+/** agent name → project name, for shipping one small map to a webview. */
+export function agentProjectMap(agents: AgentRef[], projects: ProjectDef[]): Record<string, string> {
+    const map: Record<string, string> = {};
+    for (const a of agents) {
+        const p = projectOfAgent(a, projects);
+        if (p && a.name) { map[a.name] = p; }
+    }
+    return map;
+}
+
+export const UNASSIGNED = 'Unassigned';
+
+/** Project names in declaration order, plus the honest bucket for the rest. */
+export function projectNames(projects: ProjectDef[], includeUnassigned = true): string[] {
+    const names = projects.map(p => p.name);
+    return includeUnassigned ? [...names, UNASSIGNED] : names;
+}
+
+/** Add or remove one agent from one project, keeping the single-owner rule:
+ *  assigning an agent removes it from every other project. Returns a new list. */
+export function assignAgent(
+    projects: ProjectDef[], projectName: string, agentName: string, on: boolean
+): ProjectDef[] {
+    const key = agentName.trim().toLowerCase();
+    if (!key) { return projects; }
+    return projects.map(p => {
+        const isTarget = p.name.toLowerCase() === projectName.trim().toLowerCase();
+        const others = (p.agents ?? []).filter(a => a.toLowerCase() !== key);
+        // removed from everywhere; added back only to the target
+        const agents = isTarget && on ? [...others, agentName.trim()] : others;
+        const next: ProjectDef = { ...p };
+        if (agents.length) { next.agents = agents; } else { delete next.agents; }
+        return next;
+    });
+}
+
+export interface LegacyProjectRollup {
     name: string;
     agents: string[];
     sessions: number;
@@ -618,4 +729,63 @@ export interface ProjectCostRow {
     budgetUSD?: number;
     note?: string;
     lastTs: number;
+}
+
+export interface RollupSession {
+    agentId?: string;
+    agentName?: string;
+    cwd?: string;
+    cost: number;
+    tokens: number;
+    todayCost: number;
+    lastTs: number;
+}
+
+/**
+ * Fold sessions into per-project totals. Every session lands in exactly one
+ * bucket — a named project or `Unassigned` — so the buckets sum to the fleet
+ * total and the dashboard's figures stay addable.
+ */
+export function rollupProjects(
+    projects: ProjectDef[],
+    sessions: RollupSession[],
+    agents: AgentRef[] = []
+): LegacyProjectRollup[] {
+    const buckets = new Map<string, LegacyProjectRollup>();
+    const bucket = (name: string): LegacyProjectRollup => {
+        const found = buckets.get(name);
+        if (found) { return found; }
+        const def = projects.find(p => p.name === name);
+        const fresh: LegacyProjectRollup = {
+            name, agents: [], sessions: 0, cost: 0, tokens: 0, todayCost: 0, lastTs: 0,
+            ...(def?.budgetUSD ? { budgetUSD: def.budgetUSD } : {}),
+            ...(def?.note ? { note: def.note } : {})
+        };
+        buckets.set(name, fresh);
+        return fresh;
+    };
+    for (const p of projects) { bucket(p.name); }
+    for (const a of agents) {
+        const name = projectOfAgent(a, projects) ?? UNASSIGNED;
+        const b = bucket(name);
+        if (a.name && !b.agents.includes(a.name)) { b.agents.push(a.name); }
+    }
+    for (const s of sessions) {
+        const b = bucket(projectOfSession(s, projects) ?? UNASSIGNED);
+        b.sessions++;
+        b.cost += s.cost;
+        b.tokens += s.tokens;
+        b.todayCost += s.todayCost;
+        b.lastTs = Math.max(b.lastTs, s.lastTs);
+        if (s.agentName && !b.agents.includes(s.agentName)) { b.agents.push(s.agentName); }
+    }
+    const out = [...buckets.values()];
+    out.forEach(b => { b.cost = Math.round(b.cost * 10000) / 10000; b.todayCost = Math.round(b.todayCost * 10000) / 10000; });
+    // named projects in declaration order, Unassigned last — it is a leftover,
+    // not a project, and should never head the list
+    return out.sort((a, b) => {
+        if (a.name === UNASSIGNED) { return 1; }
+        if (b.name === UNASSIGNED) { return -1; }
+        return projects.findIndex(p => p.name === a.name) - projects.findIndex(p => p.name === b.name);
+    });
 }

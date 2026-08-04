@@ -59,10 +59,7 @@ const sandbox = {
         AFCharts: {
             esc: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'),
             fmtUSD: (v) => '$' + Number(v).toFixed(2),
-            fmtTok: (n) => n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n),
-            fmtTokW(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' [w' + this.fmtTok(Math.round(w)) + ']' : ''); },
-            fmtTokWText(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' (w' + this.fmtTok(Math.round(w)) + ')' : ''); },
-            WEIGHTED_TIP: 'weighted',
+            fmtTok: (n) => n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n)
         },
         __DATA__: {
             listener: { state: 'listening', port: 1 },

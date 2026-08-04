@@ -32,7 +32,7 @@ const tick = () => { const t = Date.now(); while (Date.now() - t < 3) { /* spin 
 
 // ---------- vocabulary ----------
 {
-    ok('roles complete', PROJECT_DOC_ROLES.join() === 'charter,plan,people,log,deliverables,backlog,brief');
+    ok('roles complete', PROJECT_DOC_ROLES.join() === 'charter,plan,people,log,deliverables,brief');
     ok('the default skeleton carries a charter', DEFAULT_SKELETON.some(e => e.role === 'charter'));
     ok('…a plan, people, a log and deliverables',
         ['plan', 'people', 'log', 'deliverables'].every(r => DEFAULT_SKELETON.some(e => e.role === r)));
@@ -264,21 +264,6 @@ const tick = () => { const t = Date.now(); while (Date.now() - t < 3) { /* spin 
     const na = fs.readFileSync(noAnchor, 'utf8');
     ok('with no anchor it appends instead of refusing', na.includes('- added'));
     ok('…and the user\'s content is untouched', na.includes('- mine') && na.startsWith('# My log'));
-
-    // ‼️ A LOG THAT CANNOT BE READ IS NOT AN EMPTY LOG.
-    // The read used to be wrapped in `catch { existing = '' }`, so ANY failure
-    // to read — a file a syncing client is holding, a permission that changed —
-    // became "there is nothing there" and the whole worklog was replaced by the
-    // one line being added. A directory standing where the file should be is
-    // the same class of failure (EISDIR) and is the one a test can produce on
-    // every platform.
-    const asFolder = path.join(dir, 'Unreadable.md');
-    fs.mkdirSync(asFolder);
-    const refused = insertLogEntry(asFolder, '- must not land');
-    ok('‼️ a log that is there but unreadable is refused, not overwritten', !refused.ok);
-    ok('…and it says so rather than reporting success', /could not be read/.test(refused.error || ''));
-    ok('…and what was there is still there',
-        fs.existsSync(asFolder) && fs.statSync(asFolder).isDirectory());
 }
 
 // ---------- rescan ----------
@@ -422,19 +407,6 @@ const {
         readProjectDoc(dir, '../../x').ok === false);
     ok('reading a folder is not reading a document', readProjectDoc(dir, '10_Notes').ok === false);
     ok('writing outside the folder is refused', writeProjectDoc(dir, '../x.md', 'no').ok === false);
-
-    // ‼️ "NOT THERE" AND "THERE BUT UNREADABLE" ARE DIFFERENT ANSWERS.
-    // Everything that decides whether a write can destroy something reads the
-    // failed read as "nothing to lose". If a file that EXISTS but could not be
-    // read came back looking the same as one that is absent, the create path
-    // would replace it — which is precisely the blind overwrite the write side
-    // exists to make impossible.
-    const gone = readProjectDoc(dir, '10_Notes/never-written.md');
-    ok('a file that is not there says so', !gone.ok && gone.missing === true);
-    ok('‼️ a folder standing where a file was asked for does NOT claim to be missing',
-        readProjectDoc(dir, '10_Notes').missing !== true);
-    ok('a path outside the folder does not claim to be missing either',
-        readProjectDoc(dir, '../x.md').missing !== true);
 }
 
 // ---------- the tree ----------
@@ -453,11 +425,6 @@ const {
         entries.findIndex(e => e.dir) < entries.findIndex(e => !e.dir));
     ok('the machine folder\'s own dotfile is not offered as a document',
         !entries.some(e => e.name.startsWith('.')));
-    // ‼️ The machine FOLDER is marked too, not just the brief inside it — that
-    // is what lets a caller keep it out of "where shall I put this note?". A
-    // note filed under `_AF/` is gone at the next session start.
-    ok('‼️ the machine folder itself is marked as generated', by['_AF'].managed === true);
-    ok('…and a folder the user owns is not', by['10_Notes'].managed !== true);
 }
 
 // ---------- ‼️ the write refuses rather than overwriting Obsidian ----------
@@ -548,27 +515,6 @@ const {
         full.includes('Person Number 7') && full.length > tight.length);
     ok('a budget nothing can satisfy still returns a whole document rather than a sliced one',
         /## Writing back/.test(buildBrief({ ...seed, maxChars: 50 })));
-
-    // ‼️ HOW LONG ONE ENTRY IS, WHICH IS NOT THE SAME QUESTION AS HOW MANY.
-    // Found by generating this installation's OWN brief rather than a fixture:
-    // a single worklog entry here is over 2000 characters, so dropping to one
-    // log line still overshot the 2500-character system-prompt budget and the
-    // tail was sliced off anyway. Shortening the count without shortening the
-    // entry only looks like a fix.
-    const fatDir = freshDir();
-    const fat = P({ folder: fatDir, summary: 'a project whose worklog entries are paragraphs' });
-    createSkeleton(fatDir, fat);
-    const fatRoles = scanProjectFolder(fatDir).roles;
-    insertLogEntry(fatRoles.log, '- 2026-08-03 — ' + 'kelime '.repeat(400).trim() + '.');
-    const fatSeed = { project: fat, roles: scanProjectFolder(fatDir).roles, repos: [] };
-    const fatFull = buildBrief(fatSeed);
-    const fatTight = buildBrief({ ...fatSeed, maxChars: 2500 });
-    ok('‼️ ONE enormous worklog entry still fits the budget', fatTight.length <= 2500);
-    ok('‼️ …and the instructions survive it, which is the whole point of the budget',
-        /## Writing back/.test(fatTight) && /worklog/.test(fatTight));
-    ok('…the entry was shortened visibly, not silently', /…/.test(fatTight));
-    ok('…and the FULL brief on disk keeps the whole entry — it is what the pointer points at',
-        fatFull.length > 2500 && !/…/.test(fatFull));
 }
 
 try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch { /* best effort */ }

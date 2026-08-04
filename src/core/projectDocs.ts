@@ -1,6 +1,5 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { BacklogItem, nextBacklog } from './projectBacklog';
 import { openPlanItems } from './projectPlan';
 import { folderNameFor, Project } from './projects';
 
@@ -36,10 +35,9 @@ import { folderNameFor, Project } from './projects';
 // ---------------------------------------------------------------------------
 
 /** What a document IS, independent of what it is called. */
-export type ProjectDocRole =
-    'charter' | 'plan' | 'people' | 'log' | 'deliverables' | 'backlog' | 'brief';
+export type ProjectDocRole = 'charter' | 'plan' | 'people' | 'log' | 'deliverables' | 'brief';
 export const PROJECT_DOC_ROLES: ProjectDocRole[] =
-    ['charter', 'plan', 'people', 'log', 'deliverables', 'backlog', 'brief'];
+    ['charter', 'plan', 'people', 'log', 'deliverables', 'brief'];
 
 /** Where new log entries go. The user can move this line to change that — the
  *  mechanism is a marker, not a hard-coded position. */
@@ -133,43 +131,6 @@ af-role: deliverables
 `;
 
 /**
- * The backlog's starting file.
- *
- * The legend is the documentation: somebody opening this in Obsidian six months
- * from now needs to know what `[efor:: S]` means, and the one place they will
- * certainly look is the file itself. It is an HTML comment, so it is invisible
- * in reading view and costs nothing to keep.
- *
- * One area (`X — General`) is seeded rather than a full dictionary — a project
- * invents its own areas as it grows, and shipping ten headings nobody asked for
- * is the kind of guessing that makes people delete the file.
- */
-const BACKLOG_TEMPLATE = `---
-af-role: backlog
----
-
-# {project} — Backlog
-
-<!-- Every field is OPTIONAL: a line of plain text is a valid item.
-
-     - [ ] P-5.3 What to do  #bug 🔺 [efor:: S] ⛔ P-5.1 [plan:: afprj-05]
-
-     code  <AREA>-<n>[.<n>]  permanent, never reissued, says where in the tree
-     #tag  the kind          bug · feat · ux · chore · debt · idea · doc
-     🔺⏫🔼🔽⏬               priority (no icon = normal)
-     [efor:: XS|S|M|L|XL]    XS≈5min · S≈½h · M≈½day · L≈a day · XL=split it
-     ⛔ CODE                 waits on that item
-     [plan:: 🆔]             which plan item it belongs to
-     [ ] open · [/] doing · [x] done · [-] cancelled
-
-     ORDER IS THE ORDER OF THESE LINES. Move one and its code does not change. -->
-
-## 📥 Inbox
-
-## X — General
-`;
-
-/**
  * The shipped default. English, because anything hard-coded is (the user writes
  * the CONTENT in whatever language they like). Folders carry a numeric prefix
  * purely so the file explorer orders them the same way everywhere; that is a
@@ -178,7 +139,6 @@ af-role: backlog
 export const DEFAULT_SKELETON: SkeletonEntry[] = [
     { path: 'Charter.md', role: 'charter', template: CHARTER_TEMPLATE },
     { path: 'Plan.md', role: 'plan', template: PLAN_TEMPLATE },
-    { path: 'Backlog.md', role: 'backlog', template: BACKLOG_TEMPLATE },
     { path: 'People.md', role: 'people', template: PEOPLE_TEMPLATE },
     { path: 'Worklog.md', role: 'log', template: LOG_TEMPLATE },
     { path: '10_Notes/' },
@@ -332,39 +292,6 @@ export function createSkeleton(
         }
     }
     return result;
-}
-
-export interface EnsureRoleResult {
-    /** Absolute path of the document that now holds the role. */
-    file?: string;
-    /** True when this call is what brought it into being. */
-    created?: boolean;
-    error?: string;
-}
-
-/**
- * Make sure a role has a document, creating it from the skeleton if it does not.
- *
- * Written for the backlog, which arrived after projects that already exist had
- * their folders built: those folders have no `Backlog.md`, and telling somebody
- * "add a file with `af-role: backlog` in its frontmatter" the first time they
- * try to jot a note down is a wall where there should be a door. A role that is
- * already held — under ANY file name, since discovery is by frontmatter — is
- * returned untouched.
- */
-export function ensureRoleDoc(
-    dir: string, project: Project, role: ProjectDocRole,
-    skeleton: SkeletonEntry[] = DEFAULT_SKELETON, now = new Date()
-): EnsureRoleResult {
-    const held = scanRoles(dir)[role];
-    if (held) { return { file: held }; }
-    const entry = skeleton.find(e => e.role === role)
-        ?? DEFAULT_SKELETON.find(e => e.role === role);
-    if (!entry) { return { error: `no skeleton entry declares af-role: ${role}` }; }
-    const res = createSkeleton(dir, project, [entry], now);
-    if (res.failed.length) { return { error: res.failed[0].error }; }
-    const made = scanRoles(dir)[role];
-    return made ? { file: made, created: res.created.length > 0 } : { error: `could not create the ${role} document` };
 }
 
 // ---------------------------------------------------------------------------
@@ -672,42 +599,22 @@ export function insertLogEntry(file: string, entry: string): WriteResult {
     const text = String(entry ?? '').trim();
     if (!text) { return { ok: false, error: 'nothing to write' }; }
     let existing = '';
-    let mtimeMs: number | undefined;
-    try {
-        mtimeMs = docMtime(file) || undefined;
-        existing = fs.readFileSync(file, 'utf8');
-    } catch (e) {
-        // ‼️ A LOG THAT CANNOT BE READ IS NOT AN EMPTY LOG.
-        // Swallowing the error and carrying on with '' turns one unreadable
-        // read — a file a syncing client is holding, a permission that changed
-        // — into a whole worklog replaced by the single line we were adding.
-        // Only a file that is genuinely NOT THERE is written from scratch.
-        if (!isMissing(e)) {
-            return {
-                ok: false,
-                error: `the worklog is there but could not be read (${String(e)}) — nothing was written`
-            };
-        }
-        existing = '';
-        mtimeMs = undefined;
-    }
+    try { existing = fs.readFileSync(file, 'utf8'); } catch { existing = ''; }
 
-    // The guard is the mtime taken before the read: the write refuses if the
-    // file moved under us, rather than deciding it knows better.
     if (!existing.trim()) {
-        return safeWriteDoc(file, `${LOG_ANCHOR}\n\n${text}\n`, mtimeMs);
+        return safeWriteDoc(file, `${LOG_ANCHOR}\n\n${text}\n`);
     }
     const at = existing.indexOf(LOG_ANCHOR);
     if (at < 0) {
         const sep = existing.endsWith('\n') ? '' : '\n';
-        return safeWriteDoc(file, `${existing}${sep}\n${text}\n`, mtimeMs);
+        return safeWriteDoc(file, `${existing}${sep}\n${text}\n`);
     }
     const after = at + LOG_ANCHOR.length;
     const head = existing.slice(0, after);
     // drop the blank line that sat between the anchor and whatever follows, so
     // repeated inserts do not grow a gap
     const tail = existing.slice(after).replace(/^\s*\n/, '');
-    return safeWriteDoc(file, `${head}\n\n${text}\n\n${tail}`, mtimeMs);
+    return safeWriteDoc(file, `${head}\n\n${text}\n\n${tail}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -749,11 +656,6 @@ export interface ProjectDocEntry {
     managed?: boolean;
 }
 
-/** Agent Farm's own folder inside a project, with forward slashes — the tree
- *  marks it and its contents `managed` so nothing offers it as a place to put
- *  something that must survive. */
-const AF_DIR = '_AF';
-
 /** Depth the document tree walks, and the ceiling on entries. A folder somebody
  *  pointed at their whole disk degrades into a short list, never a hung window. */
 const DOC_TREE_DEPTH = 3;
@@ -792,13 +694,6 @@ export function listProjectDocs(dir: string): ProjectDocEntry[] {
                 rel, name: e.name, dir: e.isDirectory(),
                 size: e.isDirectory() ? 0 : stat.size, mtimeMs: stat.mtimeMs
             };
-            // The machine folder and everything under it is ours and is
-            // rewritten on every spawn. Marking the FOLDER too is what lets a
-            // caller keep it out of "where shall I put this note?" — the
-            // answer would be lost on the next session start. This is not the
-            // name dependency K5 forbids: `_AF` is Agent Farm's own output,
-            // named by Agent Farm, not something the user chose.
-            if (rel === AF_DIR || rel.startsWith(AF_DIR + '/')) { entry.managed = true; }
             if (!e.isDirectory() && e.name.toLowerCase().endsWith('.md')) {
                 const head = probe(full);
                 const role = String(readAfFrontmatter(head)['af-role'] ?? '').trim().toLowerCase();
@@ -824,20 +719,6 @@ export interface ReadDocResult {
     size?: number;
     /** True when only the head of a large file was returned. */
     truncated?: boolean;
-    /**
-     * ‼️ THE FILE IS NOT THERE — as opposed to being there and unreadable.
-     *
-     * These are two different answers and only one of them means a write can
-     * destroy nothing. A caller that reads "could not read it" as "there is
-     * nothing there" writes its content over a document that exists: a worklog
-     * held open by a syncing client, a note whose permissions changed, a file
-     * on a drive that blinked. The read fails, the write succeeds, and the
-     * document is gone with no error anywhere.
-     *
-     * Absent on every other failure ON PURPOSE, so a caller that does not know
-     * about this flag gets the safe reading rather than the destructive one.
-     */
-    missing?: boolean;
 }
 
 export function readProjectDoc(dir: string, rel: string): ReadDocResult {
@@ -860,18 +741,8 @@ export function readProjectDoc(dir: string, rel: string): ReadDocResult {
         }
         return { ok: true, text, mtimeMs: stat.mtimeMs, size: stat.size, truncated };
     } catch (e) {
-        return {
-            ok: false, error: String(e),
-            ...(isMissing(e) ? { missing: true } : {})
-        };
+        return { ok: false, error: String(e) };
     }
-}
-
-/** Node's "no such file", told apart from every other reason a read fails.
- *  ENOTDIR belongs here too: a path whose parent is a FILE cannot exist. */
-function isMissing(e: unknown): boolean {
-    const code = (e as NodeJS.ErrnoException | undefined)?.code;
-    return code === 'ENOENT' || code === 'ENOTDIR';
 }
 
 /** Write a document inside the project folder, through the guarded atomic path. */
@@ -1141,10 +1012,8 @@ export function addDeliverableRow(text: string, input: DeliverableInput): { ok: 
 // brief
 // ---------------------------------------------------------------------------
 
-/** Where the generated brief lives inside a project folder. Built from
- *  `AF_DIR` so the tree's "this is ours" rule and the brief's own home can
- *  never drift apart. */
-export const BRIEF_REL = path.join(AF_DIR, 'BRIEF.md');
+/** Where the generated brief lives inside a project folder. */
+export const BRIEF_REL = path.join('_AF', 'BRIEF.md');
 
 /** How many worklog lines the brief carries — enough to say what just happened,
  *  not so many that the system prompt turns into a diary. */
@@ -1207,55 +1076,19 @@ export interface BriefInput {
     maxChars?: number;
 }
 
-interface BriefLevel {
-    plan: number; backlog: number; decisions: number; log: number; people: number;
-    /**
-     * ‼️ HOW LONG ONE ENTRY MAY BE, WHICH IS NOT THE SAME QUESTION AS HOW MANY.
-     *
-     * Measured on this installation's own project: a single worklog entry is
-     * over 2000 characters, because that is how the user writes them. Dropping
-     * to ONE log line therefore still overshot a 2500-character budget, and the
-     * tail — the "writing back" instructions — was sliced off anyway. Shortening
-     * the count without shortening the entry only looks like a fix.
-     *
-     * Undefined at the top level, on purpose: the unbudgeted brief is the FULL
-     * text that `_AF/BRIEF.md` holds and the "[cut to fit]" pointer points at,
-     * so it must not clip anything either.
-     */
-    chars?: number;
-}
-
-/** How much each list carries, most generous first. When a budget is set the
- *  brief is built at the first level that fits. Decisions give way before
- *  worklog lines, and plan items last: "what is left to do" is the question a
- *  session opens with, and the decision records are one folder listing away for
- *  an agent that wants them. */
-const BRIEF_LEVELS: BriefLevel[] = [
-    { plan: 6, backlog: 5, decisions: 5, log: 6, people: 8 },
-    { plan: 6, backlog: 5, decisions: 3, log: 5, people: 6, chars: 400 },
-    { plan: 5, backlog: 4, decisions: 2, log: 4, people: 4, chars: 300 },
-    { plan: 4, backlog: 4, decisions: 1, log: 3, people: 3, chars: 220 },
-    { plan: 3, backlog: 3, decisions: 0, log: 2, people: 2, chars: 160 },
-    { plan: 2, backlog: 3, decisions: 0, log: 1, people: 1, chars: 110 },
-    // ‼️ The floor. The plan drops to a single line while the backlog keeps
-    // three, and that asymmetry is the point: at this width the brief has to
-    // choose what it IS, and what it is is the answer to "what do I do next and
-    // where do I write down that I did it". The roadmap is one document away;
-    // the backlog is the list about to be acted on.
-    { plan: 1, backlog: 3, decisions: 0, log: 1, people: 1, chars: 70 }
+/** How many entries each list carries, most generous first. When a budget is
+ *  set the brief is built at the first level that fits. Decisions give way
+ *  before worklog lines, and plan items last: "what is left to do" is the
+ *  question a session opens with, and the decision records are one folder
+ *  listing away for an agent that wants them. */
+const BRIEF_LEVELS = [
+    { plan: 6, decisions: 5, log: 6, people: 8 },
+    { plan: 6, decisions: 3, log: 5, people: 6 },
+    { plan: 5, decisions: 2, log: 4, people: 4 },
+    { plan: 4, decisions: 1, log: 3, people: 3 },
+    { plan: 3, decisions: 0, log: 2, people: 2 },
+    { plan: 2, decisions: 0, log: 1, people: 1 }
 ];
-
-/** One entry, shortened on a word boundary and visibly so. The `…` matters: a
- *  sentence that simply stops reads as corrupted input, one that ends in an
- *  ellipsis reads as a summary — and the document it came from is named three
- *  lines further down. */
-function clipEntry(text: string, max?: number): string {
-    const t = String(text ?? '').trim();
-    if (!max || t.length <= max) { return t; }
-    const head = t.slice(0, max);
-    const space = head.lastIndexOf(' ');
-    return (space > max * 0.6 ? head.slice(0, space) : head).trimEnd() + '…';
-}
 
 /**
  * The project's current state, in the form an agent can act on.
@@ -1287,11 +1120,10 @@ export function buildBrief(o: BriefInput): string {
 
 interface BriefSource {
     plan: { text: string; section: string }[];
-    backlog: BacklogItem[];
     log: string[];
 }
 
-/** The three lists that come off disk, read once per brief. */
+/** The two lists that come off disk, read once per brief. */
 function briefSource(o: BriefInput): BriefSource {
     const roles = o.roles ?? {};
     const widest = BRIEF_LEVELS[0];
@@ -1300,32 +1132,11 @@ function briefSource(o: BriefInput): BriefSource {
             ? openPlanItems(readTextOrEmpty(roles.plan), widest.plan)
                 .map(i => ({ text: i.text, section: i.section }))
             : [],
-        // ‼️ No effort ceiling here, unlike an agent asking what to work on: the
-        // brief is telling the reader what is at the TOP OF THE PILE, and hiding
-        // the big one at position two would misrepresent the pile.
-        backlog: roles.backlog
-            ? nextBacklog(readTextOrEmpty(roles.backlog), { limit: widest.backlog, maxEffort: 'XL' }).items
-            : [],
         log: recentLog(roles.log, widest.log)
     };
 }
 
-/** One backlog line as the brief prints it: code first (that is what gets quoted
- *  back at an agent), then the words, then only the badges that are set. */
-function briefBacklogLine(item: BacklogItem, chars?: number): string {
-    const badges = [
-        ...item.kinds.map(k => `#${k}`),
-        item.priority !== 'normal' ? BRIEF_PRIORITY[item.priority] : '',
-        item.effort ?? '',
-        item.state === 'doing' ? '(in progress)' : ''
-    ].filter(Boolean).join(' ');
-    const head = item.code ? `${item.code} ` : '';
-    return `- ${head}${clipEntry(item.text, chars)}${badges ? `  ${badges}` : ''}`;
-}
-
-const BRIEF_PRIORITY: Record<string, string> = {
-    highest: '🔺', high: '⏫', medium: '🔼', normal: '', low: '🔽', lowest: '⏬'
-};
+type BriefLevel = typeof BRIEF_LEVELS[number];
 
 function renderBrief(o: BriefInput, level: BriefLevel, source?: BriefSource): string {
     const p = o.project;
@@ -1342,10 +1153,7 @@ function renderBrief(o: BriefInput, level: BriefLevel, source?: BriefSource): st
 
     const facts: string[] = [`- Status: ${p.status}`];
     if (p.kind) { facts.push(`- Kind: ${p.kind}`); }
-    // ‼️ Clipped like every other entry. A summary is the one FACT a user can
-    // make arbitrarily long, and an unclipped one spent the whole budget on
-    // itself while the lists below it were being cut row by row to make room.
-    if (p.summary?.trim()) { facts.push(`- Summary: ${clipEntry(p.summary.trim(), level.chars)}`); }
+    if (p.summary?.trim()) { facts.push(`- Summary: ${p.summary.trim()}`); }
     if (p.startedAt) { facts.push(`- Started: ${day(p.startedAt)}`); }
     if (p.dueAt) { facts.push(`- Due: ${day(p.dueAt)}`); }
     if (p.tags?.length) { facts.push(`- Tags: ${p.tags.join(', ')}`); }
@@ -1389,36 +1197,20 @@ function renderBrief(o: BriefInput, level: BriefLevel, source?: BriefSource): st
         out.push('', '## Open plan items');
         for (const item of open) {
             const where = item.section ? ` _(${item.section})_` : '';
-            out.push(`- ${clipEntry(item.text, level.chars)}${where}`);
+            out.push(`- ${item.text}${where}`);
         }
-    }
-
-    // ‼️ THE LINE THAT MAKES "do the top five" WORK WITHOUT A CONVERSATION.
-    // The user's whole complaint was having to paste the work in every time; the
-    // answer is that the top of the backlog is ALREADY in front of the agent
-    // when the session opens. Everything else in this feature — the codes, the
-    // ordering, the next-engine — is only useful if this section is here.
-    const backlog = src.backlog.slice(0, level.backlog);
-    if (backlog.length) {
-        out.push('', '## Next in backlog');
-        for (const item of backlog) { out.push(briefBacklogLine(item, level.chars)); }
     }
 
     const decisions = (o.decisions ?? []).slice(0, level.decisions);
     if (decisions.length) {
         out.push('', '## Recent decisions');
-        for (const d of decisions) {
-            out.push(`- ${day(d.ts)} — ${clipEntry(d.title, level.chars)}`);
-        }
+        for (const d of decisions) { out.push(`- ${day(d.ts)} — ${d.title}`); }
     }
 
     const log = src.log.slice(0, level.log);
     if (log.length) {
         out.push('', '## Recently');
-        for (const line of log) {
-            const body = clipEntry(line.replace(/^-\s*/, ''), level.chars);
-            out.push(`- ${body}`);
-        }
+        for (const line of log) { out.push(line.startsWith('-') ? line : `- ${line}`); }
     }
 
     out.push('', '## Writing back');
@@ -1426,12 +1218,6 @@ function renderBrief(o: BriefInput, level: BriefLevel, source?: BriefSource): st
         ? `- Record what you did in the worklog (${rel(roles.log)}) before you finish.`
         : '- This project has no worklog file yet; create one with `af-role: log` if you need it.');
     if (roles.plan) { out.push(`- Plan items live in ${rel(roles.plan)} — tick them there, do not rewrite the file.`); }
-    // Kept to one line: this section is the FIXED tail of every brief ever
-    // generated, so a sentence here is paid for on every session start.
-    if (roles.backlog) {
-        out.push(`- Backlog: ${rel(roles.backlog)} — quote an item by its code;`
-            + ' `projects.backlog.next` picks, `.check` closes.');
-    }
     out.push('- A decision worth asking "why is it like this?" about in three months gets its own record.');
     if (roles.charter) { out.push(`- The charter (${rel(roles.charter)}) is the long answer to "what is this".`); }
     out.push('- Do not reformat the user\'s documents, their icons or their task metadata.');

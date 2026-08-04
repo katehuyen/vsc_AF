@@ -30,6 +30,7 @@ const readFile = f => JSON.parse(fs.readFileSync(f, 'utf8'));
     ok('a missing file loads as empty, not as a crash', store.all().length === 0);
     ok('…and nothing is written just by looking', !fs.existsSync(file));
     ok('links start empty', Object.keys(store.links().sessions).length === 0);
+    ok('nothing has been migrated yet', store.hasMigrated === false);
 }
 
 // ---------- unreadable file ----------
@@ -284,24 +285,42 @@ const readFile = f => JSON.parse(fs.readFileSync(f, 'utf8'));
         readFile(fixed.file).projects[0].folder === 'D:\\zone\\know\\note\\obsidian\\10_PROJECTS\\Fixed');
 }
 
-// ---------- the store is the whole registry ----------
-// ‼️ There is no import path and no second source. A file left over from an
-// older shape carries keys this version does not know, and reading it must not
-// resurrect anything — the store keeps what it understands and drops the rest.
+// ---------- the one-time legacy import ----------
 {
-    const { file } = newStore();
-    fs.writeFileSync(file, JSON.stringify({
-        version: 1, projects: [], links: { sessions: {} },
-        migrated: true, unknownKey: { anything: 1 }
-    }, null, 2), 'utf8');
-    const reopened = new ProjectStore(file);
-    reopened.load();
-    ok('a store file with keys from another shape still loads', reopened.all().length === 0);
-    reopened.create({ name: 'After' });
-    const written = readFile(file);
-    ok('…and what it writes back holds only what it owns',
-        Object.keys(written).sort().join() === 'links,projects,version');
-    ok('the project it just created is there', written.projects[0].name === 'After');
+    const { store, file } = newStore();
+    const legacy = [
+        { name: 'Me.DEV.AgentFarm', agents: ['basit', 'developer', 'manager'] },
+        { name: 'Customer X', paths: ['D:\\work\\x'], note: 'retainer' }
+    ];
+    ok('the import brings both in', store.migrateLegacy(legacy) === 2);
+    ok('agents became a rule', store.get('Me.DEV.AgentFarm').match.agents.length === 3);
+    ok('paths became code roots', store.get('Customer X').repos.join() === 'D:\\work\\x');
+    ok('‼️ no folder was invented', store.get('Customer X').folder === undefined);
+    ok('the marker is set', store.hasMigrated === true);
+
+    ok('‼️ a second run imports nothing — a migration is not a haunting',
+        store.migrateLegacy(legacy) === 0);
+    store.remove(store.get('Customer X').id);
+    ok('…so a deleted project stays deleted', store.migrateLegacy(legacy) === 0 && !store.get('Customer X'));
+
+    const reopened = new ProjectStore(file); reopened.load();
+    ok('the marker survives a reload', reopened.hasMigrated === true);
+    ok('…so a new window does not re-import', reopened.migrateLegacy(legacy) === 0);
+
+    // ‼️ An empty read is NOT proof of an empty setting — VS Code Settings Sync
+    // can land after activation. Seeing nothing must therefore not close the
+    // door, or the first window on a fresh machine buries the user's projects.
+    const fresh = newStore();
+    ok('an import of nothing imports nothing', fresh.store.migrateLegacy(null) === 0);
+    ok('‼️ …and does NOT mark us done — the setting may still be syncing',
+        fresh.store.hasMigrated === false);
+    ok('so a later window still imports', fresh.store.migrateLegacy(legacy) === 2);
+    ok('…and now it is marked', fresh.store.hasMigrated === true);
+
+    const partial = newStore();
+    partial.store.create({ name: 'Customer X' });
+    ok('a name already present is not imported twice', partial.store.migrateLegacy(legacy) === 1);
+    ok('…but seeing content still closes the door', partial.store.hasMigrated === true);
 }
 
 // ---------- rescan ----------

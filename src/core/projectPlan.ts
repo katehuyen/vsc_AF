@@ -63,14 +63,10 @@ export interface PlanItem {
  * out of the plan: `- [a](http://x)` has a single character between brackets
  * too, and without this it would be read as a completed task called "(http://x)"
  * — which a caller could then "untick", editing a link in the user's prose. */
-/* Exported because the backlog is the SAME kind of line — a project's backlog
- * file is checkbox lines too, and a line that counts as a task in the plan must
- * count as one there. Two copies of this regex would drift apart on the first
- * edge case somebody fixes in one of them. */
-export const TASK_LINE = /^(\s*)(?:[-*+]|\d+[.)])\s+\[(.)\](?:\s(.*))?$/;
+const TASK_LINE = /^(\s*)(?:[-*+]|\d+[.)])\s+\[(.)\](?:\s(.*))?$/;
 
 /** Obsidian Tasks metadata, stripped for display and never for writing. */
-export const TASK_META = /\s*(?:🆔|⛔|⏫|🔼|🔽|⏬|🔺|📅|⏳|🛫|➕|✅|❌|🔁|🏁)\s*[^\s🆔⛔⏫🔼🔽⏬🔺📅⏳🛫➕✅❌🔁🏁]*/gu;
+const TASK_META = /\s*(?:🆔|⛔|⏫|🔼|🔽|⏬|🔺|📅|⏳|🛫|➕|✅|❌|🔁|🏁)\s*[^\s🆔⛔⏫🔼🔽⏬🔺📅⏳🛫➕✅❌🔁🏁]*/gu;
 
 const idOf = (line: string): string | undefined =>
     /🆔\s*([A-Za-z0-9_-]+)/u.exec(line)?.[1];
@@ -177,17 +173,8 @@ export interface PlanEditResult {
 export interface PlanTarget {
     id?: string;
     line?: number;
-    /**
-     * Matched case-insensitively against the item's display text; a unique
-     * substring is enough, an ambiguous one is an error rather than a guess.
-     *
-     * ‼️ WITH `line` IT IS A CHECK, NOT A SEARCH — and that is the point.
-     * A line number goes stale the moment somebody inserts a paragraph in
-     * Obsidian, and a page holds one for as long as it stays open. Passing what
-     * you believe is ON that line turns "the document moved under you" from a
-     * tick on the wrong item into a refusal. Ticking the wrong box in
-     * somebody's plan is silent; they find out weeks later.
-     */
+    /** Matched case-insensitively against the item's display text; a unique
+     *  substring is enough, an ambiguous one is an error rather than a guess. */
     text?: string;
 }
 
@@ -199,15 +186,7 @@ function locate(items: PlanItem[], target: PlanTarget): { item?: PlanItem; error
     }
     if (typeof target.line === 'number' && target.line >= 0) {
         const hit = items.find(i => i.line === target.line);
-        if (!hit) { return { error: `line ${target.line + 1} is not a plan item` }; }
-        const claimed = String(target.text ?? '').trim();
-        if (claimed && hit.text.trim() !== claimed) {
-            return {
-                error: `line ${target.line + 1} now reads "${hit.text}", not "${claimed}"`
-                    + ' — the document changed since you read it; reload and try again'
-            };
-        }
-        return { item: hit };
+        return hit ? { item: hit } : { error: `line ${target.line} is not a plan item` };
     }
     const needle = String(target.text ?? '').trim().toLowerCase();
     if (!needle) { return { error: 'say which item: id, line or text' }; }
@@ -233,7 +212,7 @@ function locate(items: PlanItem[], target: PlanTarget): { item?: PlanItem; error
  * file with mixed endings, so a request to tick one box would come back as a
  * whole-file diff in the user's vault — and in git.
  */
-export function lineStartOffset(src: string, line: number): number {
+function lineStartOffset(src: string, line: number): number {
     let at = 0;
     for (let n = 0; n < line; n++) {
         const nl = src.indexOf('\n', at);
@@ -244,7 +223,7 @@ export function lineStartOffset(src: string, line: number): number {
 }
 
 /** The ending the document itself uses, for a line we are ADDING. */
-export const eolOf = (src: string): string => (/\r\n/.test(src) ? '\r\n' : '\n');
+const eolOf = (src: string): string => (/\r\n/.test(src) ? '\r\n' : '\n');
 
 /**
  * Tick (or untick) one item.

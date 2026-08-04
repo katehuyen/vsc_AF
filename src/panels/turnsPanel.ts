@@ -6,7 +6,6 @@ import { PricingEngine } from '../core/pricing';
 import { SessionIndex } from '../core/sessions';
 import { buildTurnRows, TurnRow } from '../core/turns';
 import { normalizeSpeakerConfig, renderSpeaker } from '../core/speaker';
-import { fmtDuration, fmtStepPair } from '../core/util';
 import { askExportOptions, handleAfNav, htmlShell } from './base';
 import { buildData as buildViewerData } from './sessionViewer';
 
@@ -133,15 +132,9 @@ export function buildTurnsMarkdown(
         if (opts.view && !isOpen && !opts.foldedTitles) { continue; }
         emitted++;
 
-        // The same figures the table shows, in the same words — an export that
-        // describes a turn differently from the row it came from is a second,
-        // quieter answer to the same question.
         const meta = [
             r.models.map(m => m.replace(/^claude-/, '')).join(', '),
-            r.steps || r.apiCalls ? `${fmtStepPair(r.apiCalls, r.steps)} steps` : '',
-            r.ms ? `took ${fmtDuration(r.ms)}` : '',
             r.tokens ? `${r.tokens} tok` : '',
-            r.endCtx ? `ctx ${r.endCtx}` : '',
             r.cost ? `$${r.cost.toFixed(r.cost >= 1 ? 2 : 4)}` : '',
             r.tools ? `${r.tools} tools` : '',
             r.errors ? `${r.errors} err` : '',

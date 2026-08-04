@@ -94,18 +94,8 @@ ok('newest turn first', rows[0].n === 2 && rows[1].n === 1);
 ok('row carries session identity', rows[0].session === info.title && rows[0].file === file && rows[0].sessionId === 'sess1');
 eq('agent display keeps the machine suffix', rows[0].agent, 'dev ⇄ laptop');
 eq('n/of context', rows[1].n + '/' + rows[1].of, '1/2');
-// ‼️ Milliseconds, not minutes. Every surface formats a duration with the one
-// shared helper now, and rounding to minutes here threw away everything it
-// shows below one — a 40-second turn read as "0m".
-eq('turn 1 duration runs to the next turn', rows[1].durationMs, 5 * 60000);
-ok('last turn duration runs to the session end',
-    rows[0].durationMs >= 60000 && rows[0].durationMs <= 2 * 60000);
-// The turn's OWN running time is a different number from the gap to the next
-// turn: the gap includes however long the ball sat with the user.
-ok('the turn carries its own running time too', typeof rows[0].ms === 'number');
-ok('round trips and steps both ride on the row',
-    typeof rows[0].apiCalls === 'number' && typeof rows[0].steps === 'number');
-ok('and where the turn left the window', typeof rows[0].endCtx === 'number');
+eq('turn 1 duration runs to the next turn (min)', rows[1].durationMin, 5);
+ok('last turn duration runs to the session end', rows[0].durationMin >= 1 && rows[0].durationMin <= 2);
 ok('active flag from the callback', rows[0].active === true);
 ok('origin rides on every turn of the session', rows.every(r => r.origin === 'user'));
 {
@@ -128,13 +118,9 @@ ok('origin rides on every turn of the session', rows.every(r => r.origin === 'us
         /origin: 'user'/.test(js) && /af-oswitch/.test(js) && /af-forig-/.test(js));
     ok('the AI side of the Show chips is "Agent", never "Assistant"',
         /🤖 Agent/.test(js) && !/'Assistant'/.test(js));
-    // Steps → Tokens → Ctx: what the turn did, what it cost, where it left the
-    // window — the figures that explain each other, side by side.
-    ok('Steps, Tokens and Ctx sit together after Model',
-        order.indexOf('steps') === order.indexOf('models') + 1 &&
-        order.indexOf('tokens') === order.indexOf('steps') + 1 &&
-        order.indexOf('ctx') === order.indexOf('tokens') + 1 &&
-        order.indexOf('when') === order.indexOf('ctx') + 1);
+    ok('Tokens sits between Model and When',
+        order.indexOf('tokens') === order.indexOf('models') + 1 &&
+        order.indexOf('when') === order.indexOf('tokens') + 1);
     ok('default row count is 200', /DATA\.tableN \|\| 200/.test(js));
     ok('Show chips exist with Dialog default',
         /ROLE_DEFAULT = \['user', 'assistant'\]/.test(js) &&

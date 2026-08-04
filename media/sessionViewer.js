@@ -37,15 +37,13 @@
     // turn list that is the real map of the session. Anything that jumps to a turn
     // (deep link, ↑↓, breakdown row) unfolds its target, so nothing is out of reach.
     const collapsed = new Set();
-    /** Is the step-kind key pinned open? Folded by default — a legend you have
-     *  already learned is clutter — and it survives a re-render once opened. */
-    let legendOpen = false;
     // Turn numbers already folded once — a live session's NEW turns arrive folded
     // too, but a turn the user opened by hand is never re-folded behind their back.
     const foldedOnce = new Set();
     const savedState = (typeof vscode.getState === 'function' && vscode.getState()) || {};
     let singleOpen = savedState.singleOpen !== undefined ? !!savedState.singleOpen : true;
     filesOpen = savedState.filesOpen === true;
+    let turnCounts = null; // per-turn message counts, rebuilt when DATA changes
 
     /** Remember a display choice across re-renders, reloads and restores. */
     function keepState(patch) {
@@ -85,6 +83,7 @@
         }
         if (ev.data.type !== 'data') { return; }
         DATA = ev.data.data;
+        turnCounts = null;
         foldNewTurns();
         if (ev.data.auto && replay.active) {
             // live update while replaying: keep position/controls, just refresh the counter.
@@ -175,6 +174,14 @@
             .concat(Object.values(info.attrs || {}));
     }
 
+    function turnMsgCount(n) {
+        if (!turnCounts) {
+            turnCounts = {};
+            (DATA.messages || []).forEach(m => { if (m.turn) { turnCounts[m.turn] = (turnCounts[m.turn] || 0) + 1; } });
+        }
+        return turnCounts[n] || 0;
+    }
+
     /** Expand a turn, honoring single-open mode (which folds every other turn). */
     function expandTurn(n) {
         if (singleOpen) { (DATA.turns || []).forEach(t => { if (t.n !== n) { collapsed.add(t.n); } }); }
@@ -195,25 +202,9 @@
         if (!m.turnStart || !m.turn) { return ''; }
         const t = (DATA.turnTotals || {})[m.turn];
         const total = t && (t.tokens || t.cost)
-            ? `${C.fmtTokW(t.tokens, t.wTokens)} tok · ${C.fmtUSD(t.cost)}`
+            ? `${C.fmtTok(t.tokens)} tok · ${C.fmtUSD(t.cost)}`
             : '';
         const info = turnInfo(m.turn);
-        // ‼️ WHAT THE BAND SAID AND WHAT THE READER ASKS WERE TWO LISTS.
-        // It priced the turn and named the model, and left out the two things
-        // you ask about a turn you are looking at: how long it took, and where
-        // it left the context window. Both were already measured. The step
-        // count also became honest here — `14api/26` rather than a single
-        // number that reads as calls but counts steps (see charts.js).
-        const bits = [];
-        if (info && info.ms) { bits.push(`<span title="How long this turn ran, prompt to last line">${C.esc(C.fmtDur(info.ms))}</span>`); }
-        if (info && (info.apiCalls || info.steps)) {
-            bits.push(`<span title="${C.esc(C.STEPS_TIP)}">${C.esc(C.fmtSteps(info.apiCalls, info.steps))}</span>`);
-        }
-        if (total) { bits.push(total); }
-        if (info && info.endCtx) {
-            bits.push(`<span title="What the model's window held when this turn ended — the session's own figure is the Context card above">ctx ${C.fmtTok(info.endCtx)}</span>`);
-        }
-        const stats = bits.join(' · ');
         const closed = collapsed.has(m.turn);
         // The hover carries the turn's date, not "click to expand": the caret,
         // the fold state and the controls row already say the band is clickable,
@@ -225,7 +216,7 @@
             <span class="turnnum">Turn ${m.turn}/${DATA.turnCount || '?'}</span>
             <span class="turnlabel">${C.esc((info && info.label) || '')}</span>
             <span class="turntags">${turnTags(info).map(t => `<span class="tag">${C.esc(t)}</span>`).join('')}</span>
-            <span class="turnstats">${stats}</span>
+            <span class="turnstats">${closed ? `${turnMsgCount(m.turn)} msgs${total ? ' · ' : ''}` : ''}${total}</span>
             <span class="turnnav">
                 <button class="tnav" data-tnav="prev" data-from="${m.turn}" title="Jump to previous turn">↑</button>
                 <button class="tnav" data-tnav="next" data-from="${m.turn}" title="Jump to next turn">↓</button>
@@ -309,17 +300,11 @@
             : { user: 'USER', tool: 'TOOL CALL', toolResult: 'TOOL RESULT', system: 'SYSTEM' }[m.role]);
         const hide = m.turn && collapsed.has(m.turn) ? ' tclosed' : '';
         const cls = m.role + (m.isError ? ' error' : '') + hide;
-        // ‼️ THE KIND LEADS THE META LINE. The transcript could always say what
-        // a step DID; it could never say what sort of thing it was, so a free
-        // local Read and a billed model reply read identically. The chip is
-        // first because it is the question you ask before any other — see
-        // charts.js STEP_KIND. A row with no token figure did not cost nothing:
-        // one API call carries several steps and the figure is written once.
         const meta = [
-            C.stepChip(m.kind, m.tokens, m.wTokens) + roleLabel + (m.tool ? ` · ${C.esc(m.tool)}` : ''),
+            roleLabel + (m.tool ? ` · ${C.esc(m.tool)}` : ''),
             m.ts ? new Date(m.ts).toLocaleTimeString() : '',
             m.model ? C.esc(m.model.replace(/^claude-/, '')) : '',
-            m.tokens ? C.fmtTokW(m.tokens, m.wTokens) + ' tok' : '',
+            m.tokens ? C.fmtTok(m.tokens) + ' tok' : '',
             m.cost ? C.fmtUSD(m.cost) : '',
             m.sidechain ? 'subagent' : '',
             m.isError ? 'ERROR' : ''
@@ -439,7 +424,7 @@
         lines.push(`- Session: \`${DATA.sessionId}\``);
         if (DATA.cwd) { lines.push(`- Folder: \`${DATA.cwd}\``); }
         lines.push(`- Span: ${fmtTime(DATA.firstTs)} → ${fmtTime(DATA.lastTs)}`);
-        lines.push(`- Total: ${C.fmtTokWText(DATA.totalTokens, DATA.totalWTokens)} tok · ${C.fmtUSD(DATA.cost)} · ${DATA.turnCount || 0} turns · ${DATA.toolCalls} tool calls`);
+        lines.push(`- Total: ${C.fmtTok(DATA.totalTokens)} tok · ${C.fmtUSD(DATA.cost)} · ${DATA.turnCount || 0} turns · ${DATA.toolCalls} tool calls`);
         if (!view) {
             lines.push(`- Export: everything — the full transcript (${DATA.messages.length} messages), ignoring the on-screen filters and folding`);
         } else {
@@ -461,20 +446,14 @@
                 const info = turnInfo(m.turn);
                 const tags = turnTags(info);
                 const stats = (tags.length ? ` · ${tags.join(' · ')}` : '') +
-                    (t && (t.tokens || t.cost) ? ` · ${C.fmtTokWText(t.tokens, t.wTokens)} tok · ${C.fmtUSD(t.cost)}` : '');
+                    (t && (t.tokens || t.cost) ? ` · ${C.fmtTok(t.tokens)} tok · ${C.fmtUSD(t.cost)}` : '');
                 lines.push('', `## Turn ${m.turn}/${DATA.turnCount || '?'}${info && info.label ? ' — ' + info.label : ''}${stats}`);
             }
             if (row.headerOnly) { continue; } // folded turn: title only, skip body
-            // The export carries the kind too — a Markdown file handed to
-            // someone else must not lose the one column that says where the
-            // cost came from (see charts.js STEP_KIND).
-            const kindBit = C.STEP_KIND[m.kind]
-                ? `${C.STEP_KIND[m.kind].glyph} ${C.STEP_KIND[m.kind].label}` : '';
             const bits = [
-                kindBit,
                 m.ts ? new Date(m.ts).toLocaleTimeString() : '',
                 m.model ? m.model.replace(/^claude-/, '') : '',
-                m.tokens ? C.fmtTokWText(m.tokens, m.wTokens) + ' tok' : '',
+                m.tokens ? C.fmtTok(m.tokens) + ' tok' : '',
                 m.cost ? C.fmtUSD(m.cost) : '',
                 m.sidechain ? 'subagent' : '',
                 m.isError ? '⚠ ERROR' : ''
@@ -546,7 +525,7 @@
                     <td class="selcell"><input type="checkbox" data-turnsel="${t.n}"${exportOff.has(t.n) ? '' : ' checked'} title="Include in Export MD"><button class="only" data-only="${t.n}" title="Export only this turn">only</button></td>
                     <td>${t.n}</td><td>${C.esc(t.label || '—')}</td>
                     <td>${turnTags(t).map(x => `<span class="tag">${C.esc(x)}</span>`).join('') || '—'}</td>
-                    <td class="num">${t.tokens ? C.fmtTokW(t.tokens, t.wTokens) : '—'}</td>
+                    <td class="num">${t.tokens ? C.fmtTok(t.tokens) : '—'}</td>
                     <td class="num">${t.cost ? C.fmtUSD(t.cost) : '—'}</td>
                 </tr>`).join('')}</tbody>
             </table></div>
@@ -686,17 +665,6 @@
     // close it. Clicks inside the OPEN popover must not toggle (it's a child of the
     // card). The document-level closers are attached once (a re-render rebuilds the
     // card, so a per-render document listener would leak) and look elements up live.
-    function wireStepLegend() {
-        const card = document.getElementById('actcard');
-        if (!card) { return; }
-        card.addEventListener('click', () => {
-            const strip = document.getElementById('steplegend');
-            if (!strip) { return; }
-            legendOpen = strip.hasAttribute('hidden');
-            if (legendOpen) { strip.removeAttribute('hidden'); } else { strip.setAttribute('hidden', ''); }
-        });
-    }
-
     function wireContextPop() {
         const card = document.getElementById('ctxcard');
         if (card) {
@@ -819,11 +787,6 @@
                    reflowing the KPI row (card is position:relative, popover absolute).
                    The WHOLE card is the click target (small corner buttons were too
                    easy to miss); the ⛁ glyph is the always-visible affordance. */
-                .actcard { cursor:help; }
-                .actkey { display:inline-block; width:13px; height:13px; line-height:13px; text-align:center;
-                    border-radius:50%; font-size:9px; opacity:.55; vertical-align:middle;
-                    border:1px solid var(--vscode-descriptionForeground,#888); }
-                .actcard:hover .actkey { opacity:1; }
                 .ctxcard { position:relative; cursor:pointer; }
                 .ctxglyph { position:absolute; top:9px; right:11px; z-index:2;
                     font-size:13px; line-height:1; opacity:.45; pointer-events:none;
@@ -893,7 +856,7 @@
             })}
             <div class="row">
                 <div class="card"><div class="label">Cost</div><div class="kpi">${C.fmtUSD(DATA.cost)}</div><div class="sub">API-equivalent</div></div>
-                <div class="card"><div class="label">Tokens</div><div class="kpi">${C.fmtTokW(DATA.totalTokens, DATA.totalWTokens)}</div>
+                <div class="card"><div class="label">Tokens</div><div class="kpi">${C.fmtTok(DATA.totalTokens)}</div>
                     <div class="sub">in ${C.fmtTok(DATA.usage.input)} · out ${C.fmtTok(DATA.usage.output)} · cacheR ${C.fmtTok(DATA.usage.cacheRead)} · cacheW ${C.fmtTok(DATA.usage.cacheWrite)}</div></div>
                 <div class="card ctxcard" id="ctxcard" title="Click for the /context breakdown by category"><div class="label">Context now</div>
                     <div class="kpi"${ctxColor ? ` style="color:${ctxColor}"` : ''}>${ctx.tokens > 0 ? C.fmtTok(ctx.tokens) : '—'}</div>
@@ -901,16 +864,8 @@
                     <span class="ctxglyph" id="ctxglyph">⛁</span>
                     ${contextPopHtml(DATA.contextReport)}</div>
                 <div class="card"><div class="label">Span</div><div class="kpi">${durMin}m</div><div class="sub">${fmtTime(DATA.firstTs)} → ${fmtTime(DATA.lastTs)}</div></div>
-                <div class="card actcard" id="actcard" title="${C.esc(C.stepKindLegendText())}"><div class="label">Activity <span class="actkey">?</span></div><div class="kpi">${DATA.toolCalls}</div><div class="sub">tool calls · ${DATA.errors} errors · ${C.esc((DATA.models || []).map(m => m.replace(/^claude-/, '')).join(', '))}</div></div>
+                <div class="card"><div class="label">Activity</div><div class="kpi">${DATA.toolCalls}</div><div class="sub">tool calls · ${DATA.errors} errors · ${C.esc((DATA.models || []).map(m => m.replace(/^claude-/, '')).join(', '))}</div></div>
             </div>
-            <!-- ‼️ THE KEY TO THE STEP GLYPHS, TWICE OVER. Every row in the
-                 conversation below carries a one-character chip saying what KIND
-                 of step it is, and a glyph is only as good as the place you can
-                 re-learn it. So the Activity card — the one that counts those
-                 very steps — is the key: hover it for the whole scheme in words,
-                 click it to pin the strip open under the cards. Folded by
-                 default, because a legend you have already learned is clutter. -->
-            <div class="steplegend" id="steplegend"${legendOpen ? '' : ' hidden'}>${C.stepKindLegend()}</div>
             ${fileBoxHtml()}
             ${turnBoxHtml()}
             ${replay.active ? `
@@ -945,7 +900,6 @@
         });
         document.getElementById('raw').addEventListener('click', () => vscode.postMessage({ type: 'openRaw' }));
         wireContextPop();
-        wireStepLegend();
         // ---- Files changed: fold a file open (hunks fetched once), open it,
         // or ask for the git comparison (a different question — see the box).
         document.querySelectorAll('[data-fileopen]').forEach(row =>

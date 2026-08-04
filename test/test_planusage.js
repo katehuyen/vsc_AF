@@ -447,10 +447,7 @@ const LIVE_PAYLOAD = {
             window: {
                 AFCharts: {
                     esc: (s) => String(s === undefined || s === null ? '' : s),
-                    fmtTok: (n) => String(n || 0),
-            fmtTokW(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' [w' + this.fmtTok(Math.round(w)) + ']' : ''); },
-            fmtTokWText(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' (w' + this.fmtTok(Math.round(w)) + ')' : ''); },
-            WEIGHTED_TIP: 'weighted', fmtUSD: (n) => '$' + (n || 0),
+                    fmtTok: (n) => String(n || 0), fmtUSD: (n) => '$' + (n || 0),
                     stackedBars: () => '', donut: () => '', hbars: () => '', heatmap: () => '', sparkline: () => ''
                 },
                 __DATA__: DATA,

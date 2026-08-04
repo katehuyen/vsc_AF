@@ -6,7 +6,7 @@ import { SessionIndex, SessionInfo, sessionOrigin } from '../core/sessions';
 import { PricingEngine, totalTokens } from '../core/pricing';
 import { SubsystemStatus } from '../core/farmstatus';
 import { PlanUsageSnapshot } from '../core/planusage';
-import { ProjectCostRow as ProjectRollup } from '../core/projects';
+import { LegacyProjectRollup as ProjectRollup } from '../core/projects';
 import { dayKey } from '../core/util';
 import { handleAfNav, htmlShell } from './base';
 import { buildData as buildViewerData } from './sessionViewer';
@@ -18,8 +18,6 @@ export interface DashboardDeps {
     getInsights(): Insight[];
     getPricing(): PricingEngine;
     windowTokenLimit(): number;
-    /** Ceiling for the WEIGHTED 5h figure (0 = not set) — see QUOTA_WEIGHTS. */
-    windowWeightedTokenLimit?(): number;
     budgets(): Record<string, number>;
     mediaCost(): { today: number; month: number };
     /** D1: rolling 14-day quality average by agent id. */
@@ -50,11 +48,9 @@ interface AgentSummary {
     contextLoad: number;
     memoryFiles: number;
     sessions: number;
-    daily: Record<string, { cost: number; tokens: number; wTokens: number; msgs: number }>;
+    daily: Record<string, { cost: number; tokens: number; msgs: number }>;
     totalCost: number;
     totalTokens: number;
-    /** The same spend against the plan limit — see QUOTA_WEIGHTS. */
-    totalWTokens: number;
     errors: number;
     toolCalls: number;
     usage: { input: number; output: number; cacheWrite: number; cacheRead: number };
@@ -117,11 +113,6 @@ export function sessionRowPool(
         toolCalls: s.toolCalls,
         errors: s.errors,
         tokens: totalTokens(s.usage),
-        // …and the same session measured against the plan limit. Both columns,
-        // never one: the raw figure answers "how much text moved", this one
-        // answers "how much of the window did it burn", and the two are not
-        // proportional — measured ratio 0.80x-3.86x (see QUOTA_WEIGHTS).
-        wTokens: Math.round(s.wTokens),
         // "Ctx now" — approximate context after the session's last reply
         ctx: s.lastCtxTokens ?? 0,
         cost: s.cost,
@@ -145,7 +136,7 @@ export function sessionRowPool(
         return rows.sort((a, b) => b.ts - a.ts);
     }
     const keys: ((r: Row) => number)[] = [
-        r => r.ts, r => r.cost, r => r.tokens, r => r.wTokens, r => r.ctx, r => r.durationMin, r => r.turns
+        r => r.ts, r => r.cost, r => r.tokens, r => r.ctx, r => r.durationMin, r => r.turns
     ];
     const pool = new Set<Row>();
     // The shelf is not a top-N: a pinned session is on the table because the
@@ -172,8 +163,8 @@ export function sessionRowPool(
 export function agentWindowTotals(
     sessions: Pick<SessionInfo, 'firstTs' | 'lastTs' | 'daily' | 'recentMsgs'>[],
     from: number, to: number, now = Date.now()
-): { sessions: number; cost: number; tokens: number; wTokens: number; msgs: number; exact: boolean } {
-    const out = { sessions: 0, cost: 0, tokens: 0, wTokens: 0, msgs: 0, exact: from >= now - 24 * 3600 * 1000 };
+): { sessions: number; cost: number; tokens: number; msgs: number; exact: boolean } {
+    const out = { sessions: 0, cost: 0, tokens: 0, msgs: 0, exact: from >= now - 24 * 3600 * 1000 };
     for (const s of sessions) {
         if (s.firstTs > 0 && s.lastTs >= from && s.firstTs <= to) { out.sessions++; }
         if (out.exact) {
@@ -181,7 +172,6 @@ export function agentWindowTotals(
                 if (m.ts >= from && m.ts <= to) {
                     out.cost += m.cost;
                     out.tokens += m.tokens;
-                    out.wTokens += m.wTokens;
                     out.msgs++;
                 }
             }
@@ -191,13 +181,11 @@ export function agentWindowTotals(
                 if (isNaN(dayStart) || dayStart + 24 * 3600 * 1000 <= from || dayStart > to) { continue; }
                 out.cost += b.cost;
                 out.tokens += totalTokens(b.usage);
-                out.wTokens += b.wTokens;
                 out.msgs += b.assistantMsgs;
             }
         }
     }
     out.cost = Math.round(out.cost * 10000) / 10000;
-    out.wTokens = Math.round(out.wTokens);
     return out;
 }
 
@@ -211,11 +199,10 @@ function buildData(deps: DashboardDeps, tableN = DASHBOARD_SESSION_TABLE_N): Rec
         const list = deps.index.forAgent(a.id);
         const daily: AgentSummary['daily'] = {};
         const usage = { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 };
-        let totalCost = 0, agentTokens = 0, agentWTokens = 0, errors = 0, toolCalls = 0, lastActivity = 0;
+        let totalCost = 0, agentTokens = 0, errors = 0, toolCalls = 0, lastActivity = 0;
         for (const s of list) {
             totalCost += s.cost;
             agentTokens += totalTokens(s.usage);
-            agentWTokens += s.wTokens;
             errors += s.errors;
             toolCalls += s.toolCalls;
             lastActivity = Math.max(lastActivity, s.mtime);
@@ -224,10 +211,9 @@ function buildData(deps: DashboardDeps, tableN = DASHBOARD_SESSION_TABLE_N): Rec
             usage.cacheWrite += s.usage.cacheWrite;
             usage.cacheRead += s.usage.cacheRead;
             for (const [day, b] of Object.entries(s.daily)) {
-                const d = daily[day] ?? (daily[day] = { cost: 0, tokens: 0, wTokens: 0, msgs: 0 });
+                const d = daily[day] ?? (daily[day] = { cost: 0, tokens: 0, msgs: 0 });
                 d.cost += b.cost;
                 d.tokens += totalTokens(b.usage);
-                d.wTokens += b.wTokens;
                 d.msgs += b.assistantMsgs;
             }
         }
@@ -246,7 +232,6 @@ function buildData(deps: DashboardDeps, tableN = DASHBOARD_SESSION_TABLE_N): Rec
             daily,
             totalCost,
             totalTokens: agentTokens,
-            totalWTokens: Math.round(agentWTokens),
             errors,
             toolCalls,
             usage,
@@ -260,16 +245,15 @@ function buildData(deps: DashboardDeps, tableN = DASHBOARD_SESSION_TABLE_N): Rec
     });
 
     // Per-model totals + token-type totals + combined heatmap
-    const modelTotals: Record<string, { cost: number; tokens: number; wTokens: number }> = {};
+    const modelTotals: Record<string, { cost: number; tokens: number }> = {};
     const tokenTypes = { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 };
     const heat = new Array(168).fill(0);
     for (const s of sessions) {
         for (const m of s.models) {
-            const mt = modelTotals[m] ?? (modelTotals[m] = { cost: 0, tokens: 0, wTokens: 0 });
+            const mt = modelTotals[m] ?? (modelTotals[m] = { cost: 0, tokens: 0 });
             // attribute the whole session to each model it used (rare to mix)
             mt.cost += s.cost / s.models.length;
             mt.tokens += totalTokens(s.usage) / s.models.length;
-            mt.wTokens += s.wTokens / s.models.length;
         }
         tokenTypes.input += s.usage.input;
         tokenTypes.output += s.usage.output;
@@ -298,7 +282,7 @@ function buildData(deps: DashboardDeps, tableN = DASHBOARD_SESSION_TABLE_N): Rec
         // every figure below can be read per customer / product / contract.
         projects: deps.projects?.() ?? [],
         agentProjects: deps.agentProjects?.() ?? {},
-        window: { ...win, limit: deps.windowTokenLimit(), wLimit: deps.windowWeightedTokenLimit?.() ?? 0 },
+        window: { ...win, limit: deps.windowTokenLimit() },
         fleetBudget: deps.budgets()['*'] ?? 0,
         mediaCost: deps.mediaCost(),
         insightTotals: {

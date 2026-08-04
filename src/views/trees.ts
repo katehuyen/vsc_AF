@@ -452,7 +452,7 @@ function sessionTreeItem(s: SessionInfo, index: SessionIndex, showAgent: boolean
             (s.models.length ? `\n${s.models.join(', ')}` : '') +
             `\n${s.userTurns} prompts • ${s.toolCalls} tool calls` +
             (s.file
-                ? `\n${totalTokens(s.usage) ? `~${fmtTokens(totalTokens(s.usage))} tokens • ⚖ ${fmtTokens(Math.round(s.wTokens))} • ` : ''}` +
+                ? `\n${totalTokens(s.usage) ? `~${fmtTokens(totalTokens(s.usage))} tokens • ` : ''}` +
                   `cost ${s.cost > 0 ? fmtUSD(s.cost) : '$0 (add an agentFarm.pricing rule for this model)'}`
                 : '\nfrom live events — no transcript, cost not tracked');
         item.command = s.file

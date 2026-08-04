@@ -82,9 +82,6 @@ function run(data) {
                 esc: s => String(s === undefined || s === null ? '' : s).replace(/</g, '&lt;').replace(/"/g, '&quot;'),
                 fmtUSD: v => '$' + Number(v || 0).toFixed(2),
                 fmtTok: v => String(v),
-            fmtTokW(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' [w' + this.fmtTok(Math.round(w)) + ']' : ''); },
-            fmtTokWText(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' (w' + this.fmtTok(Math.round(w)) + ')' : ''); },
-            WEIGHTED_TIP: 'weighted',
                 stackedBars: () => '<svg id="bars"></svg>',
                 hbars: () => '<svg id="hbars"></svg>',
                 donut: () => '', sparkline: () => '', PALETTE: ['#000']
@@ -103,13 +100,6 @@ function run(data) {
             querySelectorAll: sel => {
                 const m = /^\[data-([a-zA-Z]+)\]$/.exec(sel);
                 return m ? byAttr(m[1]) : [];
-            },
-            // The people editor updates its own Save button as you type, rather
-            // than repainting the caret out from under you.
-            querySelector: sel => {
-                const m = /^\[data-([a-zA-Z]+)="([^"]+)"\]$/.exec(sel);
-                if (!m) { return null; }
-                return byAttr(m[1]).find(e => e.dataset[m[1]] === m[2]) || null;
             }
         },
         console
@@ -404,12 +394,6 @@ const planData = (over) => ({
     ok('ticking a box asks the host to tick that item', msg && msg.line === 4 && msg.done === true);
     ok('‼️ …and it carries the Obsidian Tasks id, which survives the line moving',
         msg.itemId === 'afprj-04');
-    // ‼️ The page holds a line number for as long as it stays open, and the
-    // same file is open in Obsidian. One paragraph inserted there and the
-    // number points one item down. Sending the text lets the host refuse
-    // instead of quietly ticking the wrong box — which nobody notices.
-    ok('‼️ …and the text it BELIEVES is on that line, so a stale page is refused',
-        msg.text === 'Faz 4 — belgeler');
     ok('…and the message says the state it WANTS, not "toggle" — the box already flipped',
         Object.prototype.hasOwnProperty.call(msg, 'done'));
 
@@ -443,7 +427,6 @@ const docsData = (selected) => ({
             entries: [
                 { path: '10_Notes', name: '10_Notes', dir: true, size: 0, mtimeMs: T, role: null, managed: false },
                 { path: '10_Notes/note.md', name: 'note.md', dir: false, size: 120, mtimeMs: T, role: null, managed: false },
-                { path: '_AF', name: '_AF', dir: true, size: 0, mtimeMs: T, role: null, managed: true },
                 { path: '_AF/BRIEF.md', name: 'BRIEF.md', dir: false, size: 900, mtimeMs: T, role: 'brief', managed: true },
                 { path: 'Plan.md', name: 'Plan.md', dir: false, size: 400, mtimeMs: T, role: 'plan', managed: false }
             ],
@@ -484,14 +467,6 @@ const docsData = (selected) => ({
     ok('a truncated document SAYS it is truncated', /Only the first part is shown/.test(big.html()));
     const unread = run(docsData({ path: 'x.md', error: 'EACCES' }));
     ok('a document that could not be read says why', /EACCES/.test(unread.html()));
-
-    // ‼️ `_AF/` is rewritten on every session start, so a note filed there is
-    // gone by the next spawn. Offering it as a destination is offering to lose
-    // the user's writing.
-    ok('a folder the user owns is offered as somewhere to put a new note',
-        /<option value="10_Notes">/.test(h));
-    ok('‼️ …and the machine folder is NOT, because a note in it does not survive',
-        !/<option value="_AF">/.test(h));
 }
 
 // ---------- the people tab ----------
@@ -516,44 +491,6 @@ const docsData = (selected) => ({
     const saved = r.posted.filter(m => m.type === 'savePeople').pop();
     ok('saving people is its own message, not part of the settings patch',
         saved && saved.people.length === 1 && saved.people[0].name === 'Murat Vural');
-    ok('with nothing changed there is nothing to save, and the button says so',
-        /data-act="savePeople" disabled/.test(h) && />saved</.test(h));
-}
-
-// ---------- ‼️ the people table is UNSAVED WORK and a repaint must not eat it ----------
-{
-    const withPeople = {
-        ...project,
-        people: [{ name: 'Murat Vural', role: 'owner', kind: 'self', contact: '', link: '' }]
-    };
-    const data = {
-        ...baseData(), projects: [withPeople], tab: 'people',
-        tabData: { peopleDoc: { state: 'ok', role: 'people', folder: 'D:\\v\\p', path: 'People.md' } }
-    };
-    const r = run(data);
-
-    // somebody types a second person's name — no repaint happens while typing
-    r.els('act').find(e => e.dataset.act === 'addPerson').click();
-    const nameBox = r.els('p').filter(e => e.dataset.p === 'name').pop();
-    nameBox.value = 'Yeni Kişi';
-    nameBox._handlers.input();
-    ok('typing marks the table unsaved without repainting the caret away',
-        r.els('act').find(e => e.dataset.act === 'savePeople').disabled === false);
-
-    // a refresh arrives — a commit picked up in the background is enough
-    r.send({ type: 'data', data: { ...data } });
-    ok('‼️ a refresh does NOT put the old rows back and take the typing with them',
-        r.html().includes('Yeni Kişi'));
-    ok('…and the row that was already saved is still there too',
-        r.html().includes('Murat Vural'));
-
-    // switching to another project DOES invalidate them — they are not its people
-    r.send({
-        type: 'data',
-        data: { ...data, projects: [{ ...withPeople, id: 'p2', name: 'Other' }] }
-    });
-    ok('changing project clears the editor — those rows belong to somebody else',
-        !r.html().includes('Yeni Kişi'));
 }
 
 // ---------- ‼️ Settings must not silently delete the people ----------

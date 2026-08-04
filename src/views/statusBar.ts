@@ -35,7 +35,7 @@ export interface StatusBarExtras {
     /** extra refresh trigger (needs-queue changes). */
     onExtra?: vscode.Event<void>;
     /** Lap counter (trip meter): usage since the user-set mark; undefined = no lap running. */
-    lap?: () => { sinceTs: number; tokens: number; wTokens: number; cost: number; msgs: number } | undefined;
+    lap?: () => { sinceTs: number; tokens: number; cost: number; msgs: number } | undefined;
 }
 
 export class FarmStatusBar implements vscode.Disposable {
@@ -67,10 +67,7 @@ export class FarmStatusBar implements vscode.Disposable {
 
         const lap = this.extras?.lap?.();
         let text = `$(hubot) ${active} active • ${fmtUSD(cost)} today`;
-        // The lap chip carries BOTH: raw first (what moved), weighted after the
-        // scale glyph (what it charged the limit). One number alone is the very
-        // thing that made a counter look wrong — see QUOTA_WEIGHTS.
-        if (lap) { text += ` • $(watch) ${fmtTokens(lap.tokens)} ⚖${fmtTokens(lap.wTokens)}`; }
+        if (lap) { text += ` • $(watch) ${fmtTokens(lap.tokens)}`; }
         if (waiting > 0) {
             text += ` • $(bell) ${waiting} need you`;
             this.item.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
@@ -88,8 +85,7 @@ export class FarmStatusBar implements vscode.Disposable {
             : 'Live listener: off';
         const lapAge = lap ? Date.now() - lap.sinceTs : 0;
         const lapLine = lap
-            ? `⏱ Lap since ${new Date(lap.sinceTs).toLocaleTimeString()}: ${fmtTokens(lap.tokens)} tokens ` +
-              `(⚖ ${fmtTokens(lap.wTokens)} against the limit) • ` +
+            ? `⏱ Lap since ${new Date(lap.sinceTs).toLocaleTimeString()}: ${fmtTokens(lap.tokens)} tokens • ` +
               `${fmtUSD(lap.cost)} • ${lap.msgs} msgs` +
               (lapAge > 48 * 3600 * 1000 ? ' _(lap older than 48h — only the last 48h are counted)_' : '') +
               `\n\n[Reset lap](command:agentfarm.lapReset) · [Clear lap](command:agentfarm.lapClear)\n\n`
@@ -98,11 +94,7 @@ export class FarmStatusBar implements vscode.Disposable {
             `**Agent Farm**\n\n` +
             `Active agents: ${active}${waiting ? ` • ⚠ ${waiting} waiting/stalled` : ''}\n\n` +
             `Today's cost (API-equivalent): ${fmtUSD(cost)}\n\n` +
-            // ‼️ The 5h window is the plan's own reset span, so this is the one
-            // line where the weighted figure matters most: the raw total of a
-            // full window spans 111M-175M across days whose WEIGHTED totals sit
-            // within ±13% of each other — i.e. days that hit the SAME wall.
-            `Trailing 5h window: ${fmtTokens(win.tokens)} tokens • ⚖ ${fmtTokens(win.wTokens)} against the limit • ${win.msgs} msgs\n\n` +
+            `Trailing 5h window: ${fmtTokens(win.tokens)} tokens • ${win.msgs} msgs\n\n` +
             lapLine +
             `${liveLine}\n\n` +
             (waiting > 0 ? `_Click to open Needs You_` : `_Click to open Live Timeline_`)

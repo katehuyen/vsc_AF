@@ -137,34 +137,6 @@ export function extractJson(s: string): unknown {
     return undefined;
 }
 
-/**
- * A duration read at a glance: `34s` · `3m-29s` · `1h-4m-23s` · `1d-7h-54m-41s`.
- *
- * ‼️ THE WEBVIEWS HAVE THEIR OWN COPY OF THIS (`fmtDur` in media/charts.js) AND
- * THAT IS DELIBERATE — a webview cannot import from src/. The two are kept
- * identical by test_turn_figures.js, which runs both over the same list of
- * durations: a Markdown export and the table it was exported from must not
- * describe the same turn with two different strings.
- */
-export function fmtDuration(ms: number): string {
-    const s = Math.max(0, Math.round(Number(ms) / 1000) || 0);
-    const d = Math.floor(s / 86400);
-    const h = Math.floor((s % 86400) / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    const sec = s % 60;
-    if (d) { return `${d}d-${h}h-${m}m-${sec}s`; }
-    if (h) { return `${h}h-${m}m-${sec}s`; }
-    if (m) { return `${m}m-${sec}s`; }
-    return `${sec}s`;
-}
-
-/** Round trips / visible steps — see media/charts.js fmtSteps for the why. */
-export function fmtStepPair(apiCalls: number, steps: number): string {
-    const a = Number(apiCalls) || 0;
-    const s = Number(steps) || 0;
-    return a ? `${a}api/${s}` : String(s);
-}
-
 export function debounce<T extends (...args: never[]) => void>(fn: T, ms: number): T {
     let timer: NodeJS.Timeout | undefined;
     return ((...args: never[]) => {

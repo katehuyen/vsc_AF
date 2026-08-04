@@ -230,11 +230,7 @@ export class ConsolePanel {
                 // the texts themselves, not a count: a message that is waiting
                 // is not in the conversation yet, so the composer has to show it
                 queued: s.queued,
-                tokens: s.tokens,
-                // …and the same session against the plan limit. The raw count
-                // is what moved; this is what it cost the window (QUOTA_WEIGHTS).
-                wTokens: Math.round(s.wTokens ?? 0),
-                model: s.model ?? '', effort: s.effort ?? '',
+                tokens: s.tokens, model: s.model ?? '', effort: s.effort ?? '',
                 permissionMode: s.permissionMode,
                 contextTokens: s.contextTokens ?? 0, lastTs: s.lastTs,
                 // the working strip counts from here
@@ -244,13 +240,6 @@ export class ConsolePanel {
                 // unit you are watching. The money is an estimate — see
                 // ConsoleDeps.estimateCost.
                 turnTokens: s.turnTokensAt !== undefined ? Math.max(0, s.tokens - s.turnTokensAt) : 0,
-                // …the same turn in limit terms, live. This is the figure that
-                // tracks the 5-hour window; the raw one beside it does not.
-                turnWTokens: Math.round(s.turnWTokens ?? 0),
-                // …how many ROUND TRIPS those tokens took, beside how many steps
-                // the strip can see — the two are different numbers and the
-                // tokens follow this one (see turnApiCalls).
-                turnApiCalls: s.turnApiCalls ?? 0,
                 // …priced at the RUNNING turn's own model: a switch applies from
                 // the next turn, so `model` can already be the next one's.
                 turnCost: s.turnUsage
@@ -364,7 +353,6 @@ export class ConsolePanel {
             // what the session spent — the figure the card leads with, because
             // "$0.03" alone does not say whether that was haiku or opus
             tokens: totalTokens(s.usage),
-            wTokens: Math.round(s.wTokens),
             // "Ctx now" — the same figure the sessions tables show, so a row
             // says what resuming it would cost you in window before you do
             contextTokens: s.lastCtxTokens ?? 0
