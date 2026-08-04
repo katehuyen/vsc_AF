@@ -95,6 +95,7 @@ export function liveEventsSource(
                         mtime: e.ts,
                         models: [],
                         usage: emptyUsage(),
+                        wTokens: 0,
                         cost: 0,
                         userTurns: 0,
                         assistantMsgs: 0,

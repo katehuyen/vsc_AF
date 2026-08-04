@@ -79,6 +79,9 @@ const sandbox = {
             esc: s => String(s === undefined || s === null ? '' : s).replace(/</g, '&lt;'),
             fmtUSD: v => '$' + (v || 0),
             fmtTok: v => v + 't',
+            fmtTokW(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' [w' + this.fmtTok(Math.round(w)) + ']' : ''); },
+            fmtTokWText(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' (w' + this.fmtTok(Math.round(w)) + ')' : ''); },
+            WEIGHTED_TIP: 'weighted',
             fmtDur: realCharts.fmtDur,
             fmtSteps: realCharts.fmtSteps,
             STEPS_TIP: realCharts.STEPS_TIP,
@@ -234,7 +237,10 @@ const html = allHtml;
     // whether that was haiku thinking briefly or opus barely starting.
     ok('…the tokens it spent, not the dollars', html().includes('48200t tok')
         && !html().includes('$0.12 (48200t)'));
-    ok('…with the money one hover away', /title="48200t tokens · \$0\.12 spent"/.test(html()));
+    // The hover spells out BOTH figures: the raw total and what it charged the
+    // 5h limit. The card itself has room only for the pair; the sentence that
+    // says which is which lives here (see charts.js WEIGHTED_TIP).
+    ok('…with the money one hover away', /title="48200t raw tokens · \$0\.12 spent"/.test(html()));
     ok('…and the context the window is holding now', html().includes('ctx 24100t'));
     ok('…with the session\'s own name under the agent', html().includes('Kalan eksikler'));
 }
@@ -896,7 +902,7 @@ const html = allHtml;
     ok('a resumable row leads with what it spent, in tokens',
         />812000t tok</.test(rlist()));
     ok('…with the dollars moved into the tooltip, where the space is free',
-        /title="812000t tokens · \$0\.31 spent"/.test(rlist()));
+        /title="812000t raw tokens · \$0\.31 spent"/.test(rlist()));
     ok('…says how long ago in days, not in hours',
         /5d ago/.test(rlist()) && !/120h ago/.test(rlist()));
     ok('…and keeps a figure and its label on one line',

@@ -391,7 +391,10 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
         }),
         window: {
             AFCharts: {
-                esc: (s) => String(s === undefined || s === null ? '' : s), fmtTok: (n) => String(n || 0), fmtUSD: (n) => '$' + (n || 0),
+                esc: (s) => String(s === undefined || s === null ? '' : s), fmtTok: (n) => String(n || 0),
+            fmtTokW(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' [w' + this.fmtTok(Math.round(w)) + ']' : ''); },
+            fmtTokWText(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' (w' + this.fmtTok(Math.round(w)) + ')' : ''); },
+            WEIGHTED_TIP: 'weighted', fmtUSD: (n) => '$' + (n || 0),
                 stackedBars: () => '', donut: () => '', hbars: () => '', heatmap: () => '', sparkline: () => ''
             },
             __DATA__: {

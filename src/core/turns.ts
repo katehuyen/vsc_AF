@@ -39,6 +39,8 @@ export interface TurnRow {
     /** What the window held when the turn ended. */
     endCtx: number;
     tokens: number;
+    /** The same turn against the plan limit — see SessionTurn.wTokens. */
+    wTokens: number;
     cost: number;
     tools: number;
     errors: number;
@@ -72,6 +74,7 @@ export function turnRowsFor(s: SessionInfo, active: boolean): TurnRow[] {
             steps: t.steps,
             endCtx: t.endCtx,
             tokens: t.tokens,
+            wTokens: t.wTokens,
             cost: t.cost,
             tools: t.tools,
             errors: t.errors,
@@ -114,6 +117,7 @@ export function registerTurnsOps(
                 .map(r => ({
                     agent: r.agentName, session: r.session, turn: `${r.n}/${r.of}`,
                     label: r.label, ts: r.ts, origin: r.origin, tokens: r.tokens,
+                    wTokens: Math.round(r.wTokens),
                     cost: Math.round(r.cost * 10000) / 10000,
                     tools: r.tools, errors: r.errors, models: r.models
                 }));

@@ -576,6 +576,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
     context.subscriptions.push(index);
 
+    /**
+     * How full the rolling 5-hour window is, in percent — the one number the
+     * quota guard and the model-downgrade rule both brake on.
+     *
+     * ‼️ THE RAW TOKEN TOTAL IS THE WRONG BASIS AND ALWAYS WAS, but switching
+     * it under a threshold the user tuned by hand would silently move where
+     * work gets blocked. So both bases exist and the WEIGHTED one is opt-in:
+     * set `windowWeightedTokenLimit` and the brake reads the figure that
+     * actually tracks the plan limit (see QUOTA_WEIGHTS — the raw total of a
+     * full window spans 111M-175M between days whose weighted totals sit in a
+     * ±13% band, i.e. days that hit the same wall);
+     * leave it at 0 and everything behaves exactly as before against
+     * `windowTokenLimit`. Configuring both takes whichever is further along,
+     * because a brake that only watches one of two ceilings is not a brake.
+     */
+    const windowPct = (): number | undefined => {
+        const rawLimit = cfg().get<number>('windowTokenLimit', 0);
+        const wLimit = cfg().get<number>('windowWeightedTokenLimit', 0);
+        if (rawLimit <= 0 && wLimit <= 0) { return undefined; }
+        const win = index.windowUsage();
+        const pcts: number[] = [];
+        if (rawLimit > 0) { pcts.push(100 * win.tokens / rawLimit); }
+        if (wLimit > 0) { pcts.push(100 * win.wTokens / wLimit); }
+        return Math.max(...pcts);
+    };
+
     // User-set session names survive restarts via globalState.
     const TITLES_KEY = 'agentfarm.sessionTitles';
     const sessionTitles = () => context.globalState.get<Record<string, string>>(TITLES_KEY, {});
@@ -1209,9 +1235,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             outputsMaxMB: () => cfg().get<number>('outputsMaxMB', 200),
             quotaCheck: () => {
                 const guard = cfg().get<number>('quotaGuardPercent', 0);
-                const limit = cfg().get<number>('windowTokenLimit', 0);
-                if (guard <= 0 || limit <= 0) { return undefined; }
-                const pct = 100 * index.windowUsage().tokens / limit;
+                const pct = windowPct();
+                if (guard <= 0 || pct === undefined) { return undefined; }
                 return pct >= guard ? `quota guard (${Math.round(pct)}% of 5h window)` : undefined;
             },
             // The daily budget as a BRAKE. `agentFarm.budgets` used to raise an
@@ -1254,8 +1279,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             projectContextFile: (task) => projectContextFileFor(task.projectId),
             // I5: rule-based model routing + quota-pressure downgrade.
             modelArgsFor: (task) => {
-                const limit = cfg().get<number>('windowTokenLimit', 0);
-                const quotaPct = limit > 0 ? 100 * index.windowUsage().tokens / limit : undefined;
+                const quotaPct = windowPct();
                 return policyModelArgs(
                     {
                         fromTrigger: task.fromTrigger, fromSchedule: task.fromSchedule,
@@ -2995,6 +3019,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            op: 'usage.window',
+            describe: 'The rolling 5-hour window as the TRANSCRIPTS record it, in both units: `tokens` (raw — everything that moved, cache reads and all) and `wTokens` (⚖ weighted the way the plan limit charges: output x5, cache-write x1.25, cache-read x0.1, Opus x5 over Sonnet). ‼️ THE TWO ARE NOT INTERCHANGEABLE and are not even proportional: measured over 32 days of real transcripts their ratio ranges 0.80x to 3.86x, and the eight heaviest windows sit in a ±13% band by weighted total (75.5M-96.7M) while spanning 111M-175M raw. Only `wTokens` tracks how full the window is. Also returns `pct` against whichever ceilings are configured (windowTokenLimit / windowWeightedTokenLimit; null when neither is set) and the lap counter when one is running. For the REAL subscription figure from Anthropic, use usage.plan. args: none',
+            handler: () => {
+                const win = index.windowUsage();
+                const rawLimit = cfg().get<number>('windowTokenLimit', 0);
+                const wLimit = cfg().get<number>('windowWeightedTokenLimit', 0);
+                const lapTs = context.globalState.get<number>('agentfarm.lapStartTs', 0);
+                return {
+                    windowStart: new Date(win.windowStart).toISOString(),
+                    tokens: win.tokens, wTokens: win.wTokens,
+                    cost: Math.round(win.cost * 10000) / 10000, msgs: win.msgs,
+                    ratio: win.wTokens > 0 ? Math.round(100 * win.tokens / win.wTokens) / 100 : null,
+                    limit: rawLimit || null, weightedLimit: wLimit || null,
+                    pct: windowPct() ?? null,
+                    lap: lapTs > 0
+                        ? { sinceTs: new Date(lapTs).toISOString(), ...index.lapUsage(lapTs) }
+                        : null
+                };
+            }
+        },
+        {
             op: 'sessions.recent',
             describe: 'Most recent sessions farm-wide. args: origin? ("user" = sessions a person started interactively — what the Sessions tables show by default; "auto" = automation runs (schedule/trigger/task/mission, any `claude -p`); omit or "all" = both), limit? (default 10)',
             handler: (args) => {
@@ -3007,7 +3052,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     .map(s => ({
                         agent: s.agentName, title: s.title, lastTs: s.lastTs,
                         origin: sessionOrigin(s),
-                        turns: s.userTurns, cost: Math.round(s.cost * 100) / 100
+                        turns: s.userTurns, cost: Math.round(s.cost * 100) / 100,
+                        tokens: totalTokens(s.usage), wTokens: Math.round(s.wTokens)
                     }));
             }
         },
@@ -5692,6 +5738,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         getInsights: () => insights,
         getPricing: () => pricing,
         windowTokenLimit: () => cfg().get<number>('windowTokenLimit', 0),
+        windowWeightedTokenLimit: () => cfg().get<number>('windowWeightedTokenLimit', 0),
         budgets: () => cfg().get<Record<string, number>>('budgets', {}),
         mediaCost: () => ({
             today: mediaCostSince(taskManager.outputsDir, 24 * 3600 * 1000),

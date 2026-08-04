@@ -142,6 +142,63 @@ export function totalTokens(u: Usage): number {
     return u.input + u.output + u.cacheWrite + u.cacheRead;
 }
 
+/**
+ * What a token is WORTH against the plan's rolling limit, by model family.
+ *
+ * ‼️ THE RAW TOKEN TOTAL IS NOT WHAT FILLS THE LIMIT, AND IT IS NOT EVEN
+ * PROPORTIONAL TO IT. A cache-read token is a tenth of a fresh input token; an
+ * output token is five; and 94-99% of any raw total is cache reads, so the raw
+ * figure is dominated by the cheapest thing in it. Measured across 32 days of
+ * this machine's transcripts, the ratio raw/weighted of a peak 5-hour window
+ * ranges 0.80x to 3.86x — the raw number lands on either side of the weighted
+ * one depending purely on how big the contexts were and which model ran. So a
+ * day that shows 75M raw and a day that shows 25M raw can hit the very same
+ * wall, and a surface printing only the raw number makes that look like a
+ * counting fault. It is not a fault: it is the wrong unit.
+ *
+ * (Same corpus, top eight windows by weighted total: 75.5M-96.7M, a ±13% band
+ * around a ceiling, against 111M-175M raw for those same windows.)
+ *
+ * The numbers are normalized so that **one Sonnet input token = 1**, which
+ * keeps the figure in the same order of magnitude as the raw count and keeps
+ * a Haiku test from looking as expensive as Opus work. They follow the
+ * published price RATIOS, deliberately as their own table rather than off
+ * `PriceRule`: the user edits pricing to correct billing, and correcting a
+ * dollar rate must not silently move what the limit gauge says.
+ *
+ * ‼️ AN APPROXIMATION, AND SAID SO ON THE SURFACES. The plan's exact formula
+ * is not published; this tracks it in shape and magnitude, not to the digit.
+ * The honest ground truth for "how full am I" stays the plan usage endpoint
+ * (planusage.ts) — this is what makes a per-turn / per-session number
+ * comparable to it.
+ */
+export interface QuotaWeight {
+    match: string;
+    input: number;
+    output: number;
+    cacheWrite: number;
+    cacheRead: number;
+}
+
+export const QUOTA_WEIGHTS: QuotaWeight[] = [
+    { match: 'opus', input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
+    { match: 'fable|mythos', input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
+    { match: 'sonnet', input: 1, output: 5, cacheWrite: 1.25, cacheRead: 0.1 },
+    { match: 'haiku', input: 1 / 3, output: 5 / 3, cacheWrite: 5 / 12, cacheRead: 1 / 30 }
+];
+
+const COMPILED_QUOTA = QUOTA_WEIGHTS.map(w => ({ re: new RegExp(w.match, 'i'), w }));
+
+/** Sonnet-input-equivalent tokens — see QUOTA_WEIGHTS. An unknown model falls
+ *  back to the Sonnet row rather than 0: a new model id must not make a real
+ *  turn read as free. */
+export function weightedTokens(model: string, u: Usage): number {
+    const hit = COMPILED_QUOTA.find(c => c.re.test(model || ''))?.w
+        ?? COMPILED_QUOTA[2].w;
+    return u.input * hit.input + u.output * hit.output
+        + u.cacheWrite * hit.cacheWrite + u.cacheRead * hit.cacheRead;
+}
+
 /** Known context-window sizes by model id. First match wins, so 1M-window
  *  generations are listed before the 200K catch-alls of the same family.
  *  Unknown models (including future ones) return 0 — the viewer then shows

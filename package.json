@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.60.1",
+  "version": "3.61.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -2627,6 +2627,11 @@
           "type": "number",
           "default": 0,
           "description": "Optional token limit for the rolling 5-hour usage window (subscription plans). 0 hides the progress bar and shows raw totals."
+        },
+        "agentFarm.windowWeightedTokenLimit": {
+          "type": "number",
+          "default": 0,
+          "description": "Optional limit for the rolling 5-hour window measured in WEIGHTED tokens (⚖) instead of raw ones. A cache-read token is a tenth of a fresh input token and an output token is five, while 94-99% of a raw total is cache reads — so the raw total of a full window ranges 111M-175M across days that hit the very same wall, and the weighted total of those same windows sits at 18-21M. Set this to what your plan actually allows (watch the ⚖ figure in the status bar for a window where you hit the limit) and the quota guard and the model-downgrade rule brake on it. 0 = off; the raw windowTokenLimit keeps working exactly as before, and setting both brakes on whichever is further along."
         },
         "agentFarm.planUsageRefreshMinutes": {
           "type": "number",

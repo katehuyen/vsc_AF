@@ -76,6 +76,7 @@ function buildData(deps: TimelineDeps): Record<string, unknown> {
                 title: row?.title ?? '',
                 cost: row?.cost ?? 0,
                 tokens: row ? totalTokens(row.usage) : 0,
+                wTokens: row ? Math.round(row.wTokens) : 0,
                 ctxTokens: row?.lastCtxTokens ?? 0,
                 turns: row?.userTurns ?? 0,
                 model: row?.models?.length ? row.models[row.models.length - 1] : '',

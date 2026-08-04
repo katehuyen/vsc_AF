@@ -2,13 +2,16 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo } from './agents';
-import { addUsage, contextAfter, emptyUsage, PricingEngine, totalTokens, Usage } from './pricing';
+import { addUsage, contextAfter, emptyUsage, PricingEngine, totalTokens, Usage, weightedTokens } from './pricing';
 import { normalizeMarks, SessionMarks } from './sessionmarks';
 import { dayKey, normPath, truncate } from './util';
 
 export interface DailyBucket {
     cost: number;
     usage: Usage;
+    /** Sonnet-input-equivalent tokens — what the day cost the plan limit, as
+     *  opposed to `usage`'s raw sum. See QUOTA_WEIGHTS. */
+    wTokens: number;
     assistantMsgs: number;
 }
 
@@ -25,6 +28,8 @@ export interface FeedEvent {
 export interface RecentMsg {
     ts: number;
     tokens: number;
+    /** Sonnet-input-equivalent tokens — see QUOTA_WEIGHTS. */
+    wTokens: number;
     cost: number;
 }
 
@@ -39,6 +44,15 @@ export interface SessionTurn {
     /** Opening prompt time — other surfaces deep-link via openSession(file, ts). */
     ts: number;
     tokens: number;
+    /**
+     * The same turn measured in what the plan limit actually charges —
+     * Sonnet-input-equivalent tokens, see QUOTA_WEIGHTS. Carried next to
+     * `tokens` everywhere rather than instead of it: the raw figure says how
+     * much text moved, this one says how much of the window it burned, and
+     * showing only the first is what made a turn with fewer calls but a bigger
+     * context look like a miscount.
+     */
+    wTokens: number;
     cost: number;
     /**
      * Round trips to the model inside this turn.
@@ -93,6 +107,8 @@ export interface SessionInfo {
     mtime: number;
     models: string[];
     usage: Usage;
+    /** Sonnet-input-equivalent tokens for the whole session — see QUOTA_WEIGHTS. */
+    wTokens: number;
     cost: number;
     userTurns: number;
     assistantMsgs: number;
@@ -254,6 +270,7 @@ export function parseSessionFile(
         mtime: st.mtimeMs,
         models: [],
         usage: emptyUsage(),
+        wTokens: 0,
         cost: 0,
         userTurns: 0,
         assistantMsgs: 0,
@@ -278,7 +295,7 @@ export function parseSessionFile(
     const openTurn = (text: string, tsIn: number) => {
         info.turns.push({
             n: info.turns.length + 1, label: turnLabel(text), ts: tsIn,
-            tokens: 0, cost: 0, apiCalls: 0, steps: 0, ms: 0, endCtx: 0,
+            tokens: 0, wTokens: 0, cost: 0, apiCalls: 0, steps: 0, ms: 0, endCtx: 0,
             tools: 0, errors: 0, models: []
         });
         turnModelSets.push(new Set());
@@ -378,6 +395,7 @@ export function parseSessionFile(
 
             let msgCost = 0;
             let msgTokens = 0;
+            let msgWTokens = 0;
             const usageKey = `${msg.id ?? ''}:${line.requestId ?? ''}`;
             const alreadyCounted = usageKey !== ':' && seenUsageKeys.has(usageKey);
             if (!alreadyCounted && msg.usage) {
@@ -390,15 +408,23 @@ export function parseSessionFile(
                 };
                 addUsage(info.usage, u);
                 msgTokens = totalTokens(u);
+                // Weighted off the SAME line, inside the SAME dedup guard, from
+                // the model that actually served it — so the raw figure and the
+                // limit figure can never tell two different stories about one
+                // reply. Never taken from `costUSD`: that is billing, and the
+                // user may re-rate it (see QUOTA_WEIGHTS).
+                msgWTokens = weightedTokens(msg.model ?? '', u);
                 msgCost = typeof line.costUSD === 'number'
                     ? line.costUSD
                     : pricing.costFor(msg.model ?? '', u, ts);
                 info.cost += msgCost;
+                info.wTokens += msgWTokens;
                 const t = curTurn();
                 if (t && (msgTokens || msgCost)) {
                     // Usage bills to the open turn — including sidechain work,
                     // matching the viewer's turn-total accounting.
                     t.tokens += msgTokens;
+                    t.wTokens += msgWTokens;
                     t.cost += msgCost;
                     // One round trip, counted off the same line the tokens came
                     // from (inside the dedup guard) so the two can never
@@ -409,16 +435,17 @@ export function parseSessionFile(
                 if (ts) {
                     const day = dayKey(ts);
                     const bucket = info.daily[day] ??
-                        (info.daily[day] = { cost: 0, usage: emptyUsage(), assistantMsgs: 0 });
+                        (info.daily[day] = { cost: 0, usage: emptyUsage(), wTokens: 0, assistantMsgs: 0 });
                     bucket.cost += msgCost;
                     addUsage(bucket.usage, u);
+                    bucket.wTokens += msgWTokens;
                     bucket.assistantMsgs++;
 
                     const d = new Date(ts);
                     info.heat[d.getDay() * 24 + d.getHours()]++;
 
                     if (now - ts < RECENT_MSG_WINDOW_MS) {
-                        info.recentMsgs.push({ ts, tokens: msgTokens, cost: msgCost });
+                        info.recentMsgs.push({ ts, tokens: msgTokens, wTokens: msgWTokens, cost: msgCost });
                     }
                 }
             }
@@ -802,34 +829,46 @@ export class SessionIndex implements vscode.Disposable {
     }
 
     /** Usage within the trailing 5-hour window (subscription pacing approximation). */
-    windowUsage(now = Date.now()): { tokens: number; cost: number; msgs: number; windowStart: number } {
+    /**
+     * The rolling 5-hour window — the same span the plan's limit resets on.
+     *
+     * ‼️ `wTokens` IS THE ONE THAT BELONGS NEXT TO THE LIMIT, NOT `tokens`.
+     * Measured over 32 days: the eight heaviest windows sit inside a ±13% band
+     * by weighted total (75.5M-96.7M — a ceiling being hit) while the RAW
+     * totals of those same windows span 111M-175M. Reading the limit off the
+     * raw figure therefore says the wall moved when only the shape of the work
+     * did — see QUOTA_WEIGHTS.
+     */
+    windowUsage(now = Date.now()): { tokens: number; wTokens: number; cost: number; msgs: number; windowStart: number } {
         const windowStart = now - 5 * 3600 * 1000;
-        let tokens = 0, cost = 0, msgs = 0;
+        let tokens = 0, wTokens = 0, cost = 0, msgs = 0;
         for (const s of this.sessions.values()) {
             for (const m of s.recentMsgs) {
                 if (m.ts >= windowStart) {
                     tokens += m.tokens;
+                    wTokens += m.wTokens;
                     cost += m.cost;
                     msgs++;
                 }
             }
         }
-        return { tokens, cost, msgs, windowStart };
+        return { tokens, wTokens: Math.round(wTokens), cost, msgs, windowStart };
     }
 
     /** Usage since a user-set lap mark (trip meter). Sources recentMsgs, so it only sees the last 48h. */
-    lapUsage(sinceTs: number): { tokens: number; cost: number; msgs: number } {
-        let tokens = 0, cost = 0, msgs = 0;
+    lapUsage(sinceTs: number): { tokens: number; wTokens: number; cost: number; msgs: number } {
+        let tokens = 0, wTokens = 0, cost = 0, msgs = 0;
         for (const s of this.sessions.values()) {
             for (const m of s.recentMsgs) {
                 if (m.ts >= sinceTs) {
                     tokens += m.tokens;
+                    wTokens += m.wTokens;
                     cost += m.cost;
                     msgs++;
                 }
             }
         }
-        return { tokens, cost, msgs };
+        return { tokens, wTokens: Math.round(wTokens), cost, msgs };
     }
 
     updatePricing(pricing: PricingEngine): void {

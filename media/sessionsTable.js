@@ -368,7 +368,7 @@
             turns: r => `<td class="num">${r.turns || 0}</td>`,
             tools: r => `<td class="num">${r.toolCalls || 0}</td>`,
             errors: r => `<td class="num">${r.errors || ''}</td>`,
-            tokens: r => `<td class="num">${C.fmtTok(r.tokens)}</td>`,
+            tokens: r => `<td class="num">${C.fmtTokW(r.tokens, r.wTokens)}</td>`,
             ctx: r => `<td class="num">${r.ctx ? '~' + C.fmtTok(r.ctx) : '—'}</td>`,
             cost: r => `<td class="num"><strong>${C.fmtUSD(r.cost)}</strong></td>`
         };
@@ -392,7 +392,7 @@
                     <td>${tags(t).map(x => `<span class="tag">${C.esc(x)}</span>`).join('') || '—'}</td>
                     <td class="num">${t.steps || t.apiCalls ? C.esc(C.fmtSteps(t.apiCalls, t.steps)) : '—'}</td>
                     <td class="num">${t.ms ? C.esc(C.fmtDur(t.ms)) : '—'}</td>
-                    <td class="num">${t.tokens ? C.fmtTok(t.tokens) : '—'}</td>
+                    <td class="num">${t.tokens ? C.fmtTokW(t.tokens, t.wTokens) : '—'}</td>
                     <td class="num">${t.cost ? C.fmtUSD(t.cost) : '—'}</td>
                     <td class="num">${t.endCtx ? C.fmtTok(t.endCtx) : '—'}</td>
                 </tr>`).join('')}

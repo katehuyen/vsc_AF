@@ -511,7 +511,8 @@
      * shape, so the live estimate and the CLI's own final figure can be read
      * against each other without translating between two layouts.
      */
-    const spend = (cost, tokens) => `${C.fmtUSD(cost || 0)}${tokens ? ` (${C.fmtTok(tokens)} tokens)` : ''}`;
+    const spend = (cost, tokens, wTokens) =>
+        `${C.fmtUSD(cost || 0)}${tokens ? ` (${C.fmtTokW(tokens, wTokens)} tokens)` : ''}`;
     /**
      * On a CARD there is room for one figure, and it is the tokens.
      *
@@ -522,8 +523,11 @@
      * The money is one hover away, and both strips under the conversation carry
      * it in full.
      */
-    const tokBadge = tokens => (tokens ? `${C.fmtTok(tokens)} tok` : '');
-    const tokTip = (tokens, cost) => (tokens ? `${C.fmtTok(tokens)} tokens` : 'nothing spent yet')
+    const tokBadge = (tokens, wTokens) => (tokens ? `${C.fmtTokW(tokens, wTokens)} tok` : '');
+    // The card has room for one line of hover, so the weighted figure is spelled
+    // out there rather than left as a glyph — see charts.js WEIGHTED_TIP.
+    const tokTip = (tokens, cost, wTokens) => (tokens ? `${C.fmtTok(tokens)} raw tokens` : 'nothing spent yet')
+        + (wTokens ? ` · ⚖ ${C.fmtTok(Math.round(wTokens))} against the 5h limit` : '')
         + (cost ? ` · ${C.fmtUSD(cost)} spent` : '');
 
     /**
@@ -549,7 +553,10 @@
      */
     function sessionSpend(s) {
         const live = s && s.status === 'working' ? (s.turnCost || 0) : 0;
-        return { cost: (s && s.cost || 0) + live, tokens: (s && s.tokens) || 0, est: live > 0 };
+        return {
+            cost: (s && s.cost || 0) + live, tokens: (s && s.tokens) || 0,
+            wTokens: (s && s.wTokens) || 0, est: live > 0
+        };
     }
 
     /**
@@ -997,7 +1004,7 @@
                  title="${C.esc(s.title || 'not named yet')} — ${C.esc(p.label)} — right-click for session actions">
                 <div class="h">
                     <span class="n"><span class="dot"></span>${who(s.agentName, s.sessionId)}</span>
-                    <span class="m" title="${C.esc(tokTip(s.tokens, sessionSpend(s).cost))}">${tokBadge(s.tokens)}</span>
+                    <span class="m" title="${C.esc(tokTip(s.tokens, sessionSpend(s).cost, s.wTokens))}">${tokBadge(s.tokens, s.wTokens)}</span>
                 </div>
                 <div class="t2">${C.esc(s.title || '(no name yet)')}</div>
                 <div class="m"><span class="phase">${C.esc(p.label)}${waited ? ` · ${waited}` : ''}</span>${(s.queued || []).length ? ` · ${s.queued.length} held` : ''}${s.turns ? ` · ${s.turns} turns` : ''}${s.contextTokens ? ` · <span class="pair" title="Approximate context in the model window right now">ctx ${C.fmtTok(s.contextTokens)}</span>` : ''}${s.projectName ? ` · <span class="pbadge" title="Started under this project — it was told about it, and the session is filed under it">${s.projectIcon ? C.esc(s.projectIcon) : '◧'} ${C.esc(s.projectName)}</span>` : ''}</div>
@@ -1174,7 +1181,7 @@
                  })}
                  title="${owned.has(r.sessionId) ? 'Open right now in a terminal or another process — Agent Farm cannot join a running session' : C.esc(r.cwd) + ' — right-click for session actions'}">
                 <div class="n">${r.pinned ? '📌 ' : ''}${C.esc(r.title)}</div>
-                <div class="m wrap">${who(r.agentName, r.sessionId)} · ${relTime(r.ts)} ago${r.tokens ? ` · <span class="pair" title="${C.esc(tokTip(r.tokens, r.cost))}">${tokBadge(r.tokens)}</span>` : ''}${r.contextTokens ? ` · <span class="pair" title="Approximate context after this session's last reply — what resuming it starts from">ctx ${C.fmtTok(r.contextTokens)}</span>` : ''}</div>
+                <div class="m wrap">${who(r.agentName, r.sessionId)} · ${relTime(r.ts)} ago${r.tokens ? ` · <span class="pair" title="${C.esc(tokTip(r.tokens, r.cost, r.wTokens))}">${tokBadge(r.tokens, r.wTokens)}</span>` : ''}${r.contextTokens ? ` · <span class="pair" title="Approximate context after this session's last reply — what resuming it starts from">ctx ${C.fmtTok(r.contextTokens)}</span>` : ''}</div>
             </div>`).join('');
         // How many of how many — a list that silently ends at fifteen is why
         // the filter had to exist in the first place.
@@ -1308,7 +1315,7 @@
         const word = t.outcome === 'interrupted' ? 'last turn interrupted'
             : t.outcome === 'failed' ? 'last turn failed' : 'last turn';
         const money = t.cost || t.tokens
-            ? ` · <span title="What that turn cost, as the CLI reported it — not an estimate. The line under the box is the whole session.">${spend(t.cost, t.tokens)}</span>`
+            ? ` · <span title="What that turn cost, as the CLI reported it — not an estimate. The line under the box is the whole session.">${spend(t.cost, t.tokens, t.wTokens)}</span>`
             : '';
         return `<span class="dspin">${glyph}</span> <b>${word}</b>
             <span class="wmeta">${t.ms ? C.fmtDur(t.ms) : ''}${money}${stepsHtml(t.apiCalls, turnSteps(s))}${turnBrainHtml(t.model, t.effort, false)} · your turn now</span>`;
@@ -1337,7 +1344,7 @@
         // session" and the two are three centimetres apart; unlabelled, the
         // smaller number reads as a second opinion about the same thing.
         const cost = s.turnTokens || s.turnCost
-            ? ` · <span title="What THIS TURN has spent so far — the line under the box is the whole session. The money is an estimate at the usual rates; the turn's closing line carries the CLI's own figure.">~${spend(s.turnCost, s.turnTokens)} this turn</span>`
+            ? ` · <span title="What THIS TURN has spent so far — the line under the box is the whole session. The money is an estimate at the usual rates; the turn's closing line carries the CLI's own figure.">~${spend(s.turnCost, s.turnTokens, s.turnWTokens)} this turn</span>`
             : '';
         // ‼️ "⎋ Interrupt stops it" used to close this line and is gone on
         // purpose: it is a permanent instruction about a button that is on
@@ -1477,7 +1484,7 @@
         const spTip = sp.est
             ? 'Everything this session has spent — the finished turns as the CLI reported them, plus what the running turn has spent so far, priced off the tokens seen (that is what the ~ is). A conversation you resumed brings its earlier turns with it.'
             : 'Everything this session has spent, as the CLI reported it — and the tokens it bought. A conversation you resumed brings its earlier turns with it.';
-        return `${s.sessionId ? 'session ' + C.esc(s.sessionId.slice(0, 8)) + ' · ' : ''}${s.contextTokens ? `<span title="Approximate context in the model window right now">~${C.fmtTok(s.contextTokens)} ctx</span> · ` : ''}<span title="${spTip}">${sp.est ? '~' : ''}${spend(sp.cost, sp.tokens)}</span> this session · ${s.turns} turn${s.turns === 1 ? '' : 's'}
+        return `${s.sessionId ? 'session ' + C.esc(s.sessionId.slice(0, 8)) + ' · ' : ''}${s.contextTokens ? `<span title="Approximate context in the model window right now">~${C.fmtTok(s.contextTokens)} ctx</span> · ` : ''}<span title="${spTip}">${sp.est ? '~' : ''}${spend(sp.cost, sp.tokens, sp.wTokens)}</span> this session · ${s.turns} turn${s.turns === 1 ? '' : 's'}
             <span class="grow"></span>
             ${attachBtnHtml()}
             ${s.sessionId ? '<button class="secondary" id="c-transcript">Open transcript</button>' : ''}

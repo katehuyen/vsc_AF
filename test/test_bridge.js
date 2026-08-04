@@ -1050,6 +1050,46 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             && !/planUsage\.get\(true\)/.test(block));
     }
 
+    // ---------- usage.window — the 5h window in BOTH units ----------
+    // ‼️ The op exists because one unit was never enough. `tokens` is what the
+    // transcripts add up to; `wTokens` is what the plan limit charges for it,
+    // and the two are not proportional (measured 0.80x-3.86x over 32 days). An
+    // agent asked "have I got room for this?" off the raw figure alone was
+    // reading a number that moves with context size, not with the wall.
+    {
+        const reg = new BridgeRegistry();
+        const win = { tokens: 121_400_000, wTokens: 72_100_000, cost: 180.5, msgs: 412, windowStart: Date.parse('2026-08-03T01:54:35Z') };
+        reg.register({
+            op: 'usage.window',
+            describe: 'The rolling 5-hour window in both units: tokens (raw) and wTokens (weighted). args: none',
+            handler: () => ({
+                windowStart: new Date(win.windowStart).toISOString(),
+                tokens: win.tokens, wTokens: win.wTokens,
+                cost: win.cost, msgs: win.msgs,
+                ratio: win.wTokens > 0 ? Math.round(100 * win.tokens / win.wTokens) / 100 : null,
+                limit: null, weightedLimit: null, pct: null, lap: null
+            })
+        });
+        ok('usage.window appears in the catalog', reg.catalog().some(c => c.op === 'usage.window'));
+        const r = await reg.dispatch('usage.window', {});
+        ok('dispatch returns BOTH figures, never one',
+            r.ok && r.result.tokens === 121_400_000 && r.result.wTokens === 72_100_000);
+        ok('…and the ratio between them, so the gap is readable without arithmetic',
+            r.result.ratio === 1.68);
+        ok('…with no ceiling configured it says so rather than inventing a percent',
+            r.result.pct === null && r.result.limit === null && r.result.weightedLimit === null);
+
+        // the real registration must carry the same contract (this mirror can drift)
+        const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        const block = src.slice(src.indexOf("op: 'usage.window'"), src.indexOf("op: 'usage.window'") + 2600);
+        ok('extension.ts registers usage.window off the index\'s own window',
+            /index\.windowUsage\(\)/.test(block) && /wTokens: win\.wTokens/.test(block));
+        ok('…and reads the percent through the shared brake, not its own arithmetic',
+            /windowPct\(\)/.test(block));
+        ok('…and its describe warns the two units are not interchangeable',
+            /NOT INTERCHANGEABLE/.test(block));
+    }
+
     // ---------- session ops (§19.C): start · pin · tag · shelf · interrupt ----------
     // Interaction and control reach the bridge with the feature, not after it:
     // an agent asked "start me a planning session on the dev agent" or "what am

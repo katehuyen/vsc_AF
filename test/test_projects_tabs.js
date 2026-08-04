@@ -82,6 +82,9 @@ function run(data) {
                 esc: s => String(s === undefined || s === null ? '' : s).replace(/</g, '&lt;').replace(/"/g, '&quot;'),
                 fmtUSD: v => '$' + Number(v || 0).toFixed(2),
                 fmtTok: v => String(v),
+            fmtTokW(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' [w' + this.fmtTok(Math.round(w)) + ']' : ''); },
+            fmtTokWText(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' (w' + this.fmtTok(Math.round(w)) + ')' : ''); },
+            WEIGHTED_TIP: 'weighted',
                 stackedBars: () => '<svg id="bars"></svg>',
                 hbars: () => '<svg id="hbars"></svg>',
                 donut: () => '', sparkline: () => '', PALETTE: ['#000']

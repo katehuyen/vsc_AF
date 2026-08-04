@@ -346,7 +346,7 @@
         n: r => `<td class="num" title="turn ${r.n} of ${r.of} in this session">${r.n}/${r.of}</td>`,
         models: r => `<td>${(r.models || []).map(m =>
             `<span class="tag">${C.esc(m.replace(/^claude-/, ''))}</span>`).join('') || '—'}</td>`,
-        tokens: r => `<td class="num">${r.tokens ? C.fmtTok(r.tokens) : '—'}</td>`,
+        tokens: r => `<td class="num">${r.tokens ? C.fmtTokW(r.tokens, r.wTokens) : '—'}</td>`,
         when: r => `<td class="num">${relTime(r.ts)}</td>`,
         duration: r => `<td class="num">${r.durationMs ? C.esc(C.fmtDur(r.durationMs)) : '—'}</td>`,
         steps: r => `<td class="num">${r.steps || r.apiCalls ? C.esc(C.fmtSteps(r.apiCalls, r.steps)) : '—'}</td>`,

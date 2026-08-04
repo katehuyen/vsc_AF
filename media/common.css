@@ -20,6 +20,10 @@ hr { border: none; border-top: 1px solid var(--vscode-widget-border, #4443); mar
 blockquote { border-left: 3px solid var(--vscode-textLink-foreground); margin: 8px 0; padding: 4px 12px; opacity: .9; }
 
 .muted { opacity: .65; }
+/* The weighted-token twin that rides beside every raw token figure (⚖).
+   Dimmed and a size down so it reads as an annotation on the number it
+   follows, never as a competing headline — see charts.js fmtTokW. */
+.wtok { opacity: .62; font-size: .88em; white-space: nowrap; margin-left: .35em; cursor: help; }
 .small { font-size: 11px; }
 .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: stretch; }
 .spread { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }

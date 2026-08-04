@@ -89,14 +89,14 @@
         const totals = rows.reduce((t, r) => {
             t.cost30 += r.cost30; t.cost7 += r.cost7; t.today += r.costToday;
             t.sessions7 += r.sessions7; t.sessions30 += r.sessions30;
-            t.tokens30 += r.tokens30; t.files += r.filesEdited30;
+            t.tokens30 += r.tokens30; t.wTokens30 += (r.wTokens30 || 0); t.files += r.filesEdited30;
             t.duties += r.duties; t.dutiesWaiting += r.dutiesWaiting;
             t.errors += r.errors; t.warnings += r.warnings;
             t.memoryFiles += r.memoryFiles; t.contextLoad += r.contextLoad;
             t.active += r.active ? 1 : 0; t.dormant += r.dormant ? 1 : 0;
             return t;
         }, {
-            cost30: 0, cost7: 0, today: 0, sessions7: 0, sessions30: 0, tokens30: 0,
+            cost30: 0, cost7: 0, today: 0, sessions7: 0, sessions30: 0, tokens30: 0, wTokens30: 0,
             files: 0, duties: 0, dutiesWaiting: 0, errors: 0, warnings: 0,
             memoryFiles: 0, contextLoad: 0, active: 0, dormant: 0
         });
@@ -109,7 +109,7 @@
             <td class="num">${totals.cost7 ? C.fmtUSD(totals.cost7) : ''}</td>
             <td class="num">${totals.sessions30 || ''}</td>
             <td class="num"><strong>${totals.cost30 ? C.fmtUSD(totals.cost30) : ''}</strong></td>
-            <td class="num">${totals.tokens30 ? C.fmtTok(totals.tokens30) : ''}</td>
+            <td class="num">${totals.tokens30 ? C.fmtTokW(totals.tokens30, totals.wTokens30) : ''}</td>
             <td class="num">${totals.files || ''}</td>
             <td class="num">${totals.duties || ''}${totals.dutiesWaiting ? ` <span class="badge warn">⏳${totals.dutiesWaiting}</span>` : ''}</td>
             <td class="num">${totals.errors ? `<span class="badge err">${totals.errors}</span> ` : ''}${totals.warnings ? `<span class="badge warn">${totals.warnings}</span>` : ''}${!totals.errors && !totals.warnings ? '—' : ''}</td>
@@ -132,7 +132,7 @@
                 <td class="num">${r.cost7 ? C.fmtUSD(r.cost7) : ''}</td>
                 <td class="num">${r.sessions30 || ''}</td>
                 <td class="num"><strong>${r.cost30 ? C.fmtUSD(r.cost30) : ''}</strong>${r.budget ? ` <span class="badge${r.costToday > r.budget ? ' err' : ''}" title="daily budget ${C.fmtUSD(r.budget)} · today ${C.fmtUSD(r.costToday)}">${Math.round((r.costToday / r.budget) * 100)}%</span>` : ''}</td>
-                <td class="num">${r.tokens30 ? C.fmtTok(r.tokens30) : ''}</td>
+                <td class="num">${r.tokens30 ? C.fmtTokW(r.tokens30, r.wTokens30) : ''}</td>
                 <td class="num">${r.filesEdited30 || ''}</td>
                 <td class="num">${r.duties || ''}${r.dutiesWaiting ? ` <span class="badge warn" title="${r.dutiesWaiting} duty(ies) have work waiting">⏳${r.dutiesWaiting}</span>` : ''}${r.dutiesPaused ? ` <span class="badge" title="${r.dutiesPaused} paused">⏸${r.dutiesPaused}</span>` : ''}</td>
                 <td class="num">${r.errors ? `<span class="badge err">${r.errors}</span> ` : ''}${r.warnings ? `<span class="badge warn">${r.warnings}</span>` : ''}${!r.errors && !r.warnings ? '<span class="muted">—</span>' : ''}</td>

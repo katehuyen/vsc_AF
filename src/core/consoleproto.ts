@@ -64,7 +64,7 @@
  * Pure: builders, a parser and a reducer. No io, no vscode.
  */
 
-import { addUsage, contextAfter, emptyUsage, totalTokens, Usage } from './pricing';
+import { addUsage, contextAfter, emptyUsage, totalTokens, Usage, weightedTokens } from './pricing';
 import { isQuotableContextPath, quoteContextPath } from './projectContext';
 
 export type ConsoleStatus = 'starting' | 'idle' | 'working' | 'ended' | 'error';
@@ -234,6 +234,18 @@ export interface ConsoleSessionState {
      *  messages' own usage — the same total the sessions tables show */
     tokens: number;
     /**
+     * The same spend measured in what the plan limit charges —
+     * Sonnet-input-equivalent tokens, see `weightedTokens` / QUOTA_WEIGHTS.
+     *
+     * ‼️ THIS IS THE NUMBER THAT MOVES WITH THE LIMIT; `tokens` is not. A turn
+     * deep in a long conversation re-reads a 300k window on every call, so its
+     * RAW count runs away while the window it burns barely moves — which is
+     * exactly what makes a live counter look like it "stopped counting". Summed
+     * off the same assistant lines, inside the same repeat guard, from the model
+     * that served each one.
+     */
+    wTokens: number;
+    /**
      * What the model window held for the latest request — `contextAfter` on
      * each assistant message's own usage, which is the SAME function the
      * sessions tables and the session viewer call, so the three surfaces cannot
@@ -312,6 +324,9 @@ export interface ConsoleSessionState {
      * it with the CLI's own number, which is why this is cleared there.
      */
     turnUsage?: Usage;
+    /** Weighted total for the RUNNING turn — the limit-side twin of the raw
+     *  figure the strip shows beside it. Cleared with turnUsage. */
+    turnWTokens?: number;
     /**
      * Round trips to the model in the RUNNING turn.
      *
@@ -345,6 +360,8 @@ export interface ConsoleSessionState {
         ms?: number;
         /** tokens the turn spent */
         tokens?: number;
+        /** the same turn against the plan limit — see ConsoleState.wTokens */
+        wTokens?: number;
         /** the CLI's own cost for the turn, USD */
         cost: number;
         /** round trips the turn took — see turnApiCalls */
@@ -641,7 +658,7 @@ export function reduceEvent(
 
     if (type === 'assistant') {
         const msg = o.message as {
-            id?: unknown; content?: unknown; usage?: Record<string, unknown>;
+            id?: unknown; model?: unknown; content?: unknown; usage?: Record<string, unknown>;
         } | undefined;
         const blocks = Array.isArray(msg?.content) ? msg!.content as Record<string, unknown>[] : [];
         let next = state;
@@ -682,8 +699,15 @@ export function reduceEvent(
                 // `thinking_tokens` used to produce.
                 const ofSubAgent = typeof o.parent_tool_use_id === 'string' && !!o.parent_tool_use_id;
                 const ctxNow = ofSubAgent ? 0 : contextAfter(u);
+                // The limit-side twin of `spent`, off the model that served this
+                // very line — a sub-agent on a cheaper model must not be charged
+                // at the parent's rate. See ConsoleState.wTokens.
+                const wSpent = weightedTokens(
+                    (typeof msg?.model === 'string' && msg.model) || state.turnModel || state.model || '', one);
                 next = {
                     ...next, tokens: next.tokens + spent, turnUsage: turn,
+                    wTokens: next.wTokens + wSpent,
+                    turnWTokens: (next.turnWTokens ?? 0) + wSpent,
                     // One round trip — see turnApiCalls. A sub-agent's calls are
                     // spent by this turn and are counted here for the same
                     // reason their tokens are: they are what the turn cost.
@@ -781,13 +805,15 @@ export function reduceEvent(
                 turnEffort: undefined,
                 // the estimate is over: the number above is the CLI's own
                 turnUsage: undefined,
+                turnWTokens: undefined,
                 turnApiCalls: undefined,
                 // …and it is kept, so the strip above the composer still says
                 // what the turn that just ended cost — and what it thought with,
                 // which a switch made in the meantime must not rewrite
                 // (see lastTurn)
                 lastTurn: {
-                    endedAt: now, ms, tokens: spent || undefined, cost,
+                    endedAt: now, ms, tokens: spent || undefined,
+                    wTokens: Math.round(state.turnWTokens ?? 0) || undefined, cost,
                     apiCalls: state.turnApiCalls || undefined,
                     outcome: !isError ? 'done'
                         : sub === 'error_during_execution' ? 'interrupted' : 'failed',
@@ -966,6 +992,7 @@ export function newSessionState(o: {
         permissionMode: o.permissionMode?.trim() || 'default',
         status: 'starting', messages: [], queued: [],
         costUSD: c?.costUSD ?? 0, turns: c?.turns ?? 0, tokens: c?.tokens ?? 0,
+        wTokens: c?.wTokens ?? 0,
         contextTokens: c?.contextTokens || undefined,
         startedAt: o.now, lastTs: o.now
     };
@@ -986,18 +1013,21 @@ export function newSessionState(o: {
 export interface CarriedTotals {
     costUSD?: number;
     tokens?: number;
+    /** what the resumed conversation already burned of the plan limit */
+    wTokens?: number;
     turns?: number;
     contextTokens?: number;
 }
 
 /** The carried totals of a transcript, off the index row the resume list uses. */
 export function carriedTotals(s: {
-    cost?: number; usage?: Usage; userTurns?: number; lastCtxTokens?: number;
+    cost?: number; usage?: Usage; wTokens?: number; userTurns?: number; lastCtxTokens?: number;
 }): CarriedTotals {
     const u = s.usage;
     return {
         costUSD: s.cost ?? 0,
         tokens: u ? u.input + u.output + u.cacheWrite + u.cacheRead : 0,
+        wTokens: s.wTokens ?? 0,
         turns: s.userTurns ?? 0,
         contextTokens: s.lastCtxTokens ?? 0
     };

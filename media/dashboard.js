@@ -265,7 +265,7 @@
                     <td><strong>${C.esc(r.name)}</strong></td>
                     <td class="num">${r.sessions}</td>
                     <td class="num">${C.fmtUSD(r.cost)}</td>
-                    <td class="num">${C.fmtTok(r.tokens)}</td>
+                    <td class="num">${C.fmtTokW(r.tokens, r.wTokens)}</td>
                     <td class="num">${r.msgs}</td>
                 </tr>`).join('')}
             </table></div>
@@ -288,7 +288,7 @@
                     <td><strong>${C.esc(a.name)}</strong></td>
                     <td class="num">${a.sessions}</td>
                     <td class="num">${C.fmtUSD(a.totalCost)}</td>
-                    <td class="num">${C.fmtTok(a.totalTokens)}</td>
+                    <td class="num">${C.fmtTokW(a.totalTokens, a.totalWTokens)}</td>
                     <td class="num">${a.toolCalls}</td>
                     <td class="num">${errPct}</td>
                     <td class="num">${quality}</td>
@@ -371,21 +371,37 @@
 
         const rangeCost = agents.reduce((a, ag) => a + sum(ag, days, 'cost'), 0);
         const rangeTokens = agents.reduce((a, ag) => a + sum(ag, days, 'tokens'), 0);
+        const rangeWTokens = agents.reduce((a, ag) => a + sum(ag, days, 'wTokens'), 0);
         const rangeMsgs = agents.reduce((a, ag) => a + sum(ag, days, 'msgs'), 0);
         const todayCost = agents.reduce((a, ag) => a + (ag.daily[today] ? ag.daily[today].cost : 0), 0);
         const activeCount = agents.filter(a => a.active).length;
         const sessionsTotal = agents.reduce((a, ag) => a + ag.sessions, 0);
 
+        // ‼️ THE 5h CARD IS WHERE THE WRONG UNIT HURT MOST. This window is the
+        // plan's own reset span, and a bar drawn off the RAW total says the
+        // wall moved whenever the shape of the work did — measured, the raw
+        // totals of the eight heaviest windows span 111M-175M while their
+        // WEIGHTED totals sit within ±13%. So the weighted ceiling,
+        // when the user has set one, is what the bar is drawn from; the raw
+        // figure stays on the line below, because it is still the honest answer
+        // to "how much text moved". See charts.js WEIGHTED_TIP.
         const win = DATA.window;
+        const wLimit = win.wLimit || 0;
         let windowHtml;
-        if (win.limit > 0) {
+        if (wLimit > 0) {
+            const pct = Math.min(100, Math.round(100 * win.wTokens / wLimit));
+            windowHtml = `<div class="kpi" title="${C.esc(C.WEIGHTED_TIP)}">${pct}%<span class="wtok">⚖</span></div>
+                <div class="progress"><div class="${pct > 85 ? 'hot' : ''}" style="width:${pct}%"></div></div>
+                <div class="sub">${C.fmtTok(win.wTokens)} / ${C.fmtTok(wLimit)} weighted · ${C.fmtTok(win.tokens)} raw · ${win.msgs} msgs</div>`;
+        } else if (win.limit > 0) {
             const pct = Math.min(100, Math.round(100 * win.tokens / win.limit));
             windowHtml = `<div class="kpi">${pct}%</div>
                 <div class="progress"><div class="${pct > 85 ? 'hot' : ''}" style="width:${pct}%"></div></div>
-                <div class="sub">${C.fmtTok(win.tokens)} / ${C.fmtTok(win.limit)} tokens · ${win.msgs} msgs</div>`;
+                <div class="sub">${C.fmtTokW(win.tokens, win.wTokens)} / ${C.fmtTok(win.limit)} tokens · ${win.msgs} msgs
+                <br><span class="muted">the bar is on the RAW total — set <code>windowWeightedTokenLimit</code> to brake on ⚖ instead</span></div>`;
         } else {
-            windowHtml = `<div class="kpi">${C.fmtTok(win.tokens)}</div>
-                <div class="sub">${win.msgs} msgs · ${C.fmtUSD(win.cost)} — set <code>windowTokenLimit</code> for a quota bar</div>`;
+            windowHtml = `<div class="kpi">${C.fmtTokW(win.tokens, win.wTokens)}</div>
+                <div class="sub">${win.msgs} msgs · ${C.fmtUSD(win.cost)} — set <code>windowTokenLimit</code> or <code>windowWeightedTokenLimit</code> for a quota bar</div>`;
         }
 
         const ins = DATA.insightTotals;
@@ -397,7 +413,7 @@
                 ${DATA.fleetBudget > 0
                     ? `<div class="progress"><div class="${todayCost >= DATA.fleetBudget ? 'hot' : ''}" style="width:${Math.min(100, Math.round(100 * todayCost / DATA.fleetBudget))}%"></div></div><div class="sub">${Math.round(100 * todayCost / DATA.fleetBudget)}% of ${C.fmtUSD(DATA.fleetBudget)} fleet budget</div>`
                     : '<div class="sub">API-equivalent value</div>'}</div>
-            <div class="card"><div class="label">Cost · ${rangeLabel()}</div><div class="kpi">${C.fmtUSD(rangeCost)}</div><div class="sub">${C.fmtTok(rangeTokens)} tokens · ${rangeMsgs} msgs</div></div>
+            <div class="card"><div class="label">Cost · ${rangeLabel()}</div><div class="kpi">${C.fmtUSD(rangeCost)}</div><div class="sub">${C.fmtTokW(rangeTokens, rangeWTokens)} tokens · ${rangeMsgs} msgs</div></div>
             <div class="card"><div class="label">Sessions</div><div class="kpi">${sessionsTotal}</div><div class="sub">all time, farm scope</div></div>
             <div class="card"><div class="label">5h window</div>${windowHtml}</div>
             <div class="card"><div class="label">Insights</div><div class="kpi">${ins.error + ins.warning + ins.info}</div>

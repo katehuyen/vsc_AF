@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { contextAfter, PricingEngine, totalTokens, Usage } from '../core/pricing';
+import { contextAfter, PricingEngine, totalTokens, Usage, weightedTokens } from '../core/pricing';
 import { sessionOrigin } from '../core/sessions';
 import { collectEdits, fileStats, groupByFile } from '../core/codeedits';
 import { askExportOptions, handleAfNav, htmlShell } from './base';
@@ -273,7 +273,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
     const usage: Usage = { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 };
     const models = new Set<string>();
     const seen = new Set<string>();
-    let cost = 0, errors = 0, toolCalls = 0, firstTs = 0, lastTs = 0;
+    let cost = 0, wTokens = 0, errors = 0, toolCalls = 0, firstTs = 0, lastTs = 0;
     let ctxTokens = 0, ctxTs = 0;
     let ctxModel = '';
     // Latest `/context` snapshot seen in the transcript (last one wins — most recent run).
@@ -298,14 +298,14 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
      * but never how long it took or where it left the window.
      */
     const turnTotals: Record<number, {
-        tokens: number; cost: number; apiCalls: number; steps: number;
+        tokens: number; wTokens: number; cost: number; apiCalls: number; steps: number;
         endTs: number; endCtx: number;
     }> = {};
     const turnAcc = (n: number): {
-        tokens: number; cost: number; apiCalls: number; steps: number;
+        tokens: number; wTokens: number; cost: number; apiCalls: number; steps: number;
         endTs: number; endCtx: number;
     } => (turnTotals[n] ?? (turnTotals[n] =
-        { tokens: 0, cost: 0, apiCalls: 0, steps: 0, endTs: 0, endCtx: 0 }));
+        { tokens: 0, wTokens: 0, cost: 0, apiCalls: 0, steps: 0, endTs: 0, endCtx: 0 }));
     // Which model(s) served each turn — the model can change mid-session (it does
     // in ~1 of 4 real sessions), so this is per turn, not per session.
     const turnModels: Record<number, Set<string>> = {};
@@ -406,7 +406,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
                 if (inTurn > 0) { turnAcc(inTurn).endCtx = ctxNow; }
             }
             if (inTurn > 0 && ts) { turnAcc(inTurn).endTs = Math.max(turnAcc(inTurn).endTs, ts); }
-            let msgTokens = 0, msgCost = 0;
+            let msgTokens = 0, msgCost = 0, msgWTokens = 0;
             const key = `${msg.id ?? ''}:${line.requestId ?? ''}`;
             if (msg.usage && (key === ':' || !seen.has(key))) {
                 if (key !== ':') { seen.add(key); }
@@ -421,6 +421,10 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
                 usage.cacheWrite += u.cacheWrite;
                 usage.cacheRead += u.cacheRead;
                 msgTokens = totalTokens(u);
+                // …and what the same line charged the plan limit, off the model
+                // that served it. Same line, same dedup guard as the raw figure.
+                msgWTokens = weightedTokens(msg.model ?? '', u);
+                wTokens += msgWTokens;
                 msgCost = typeof line.costUSD === 'number'
                     ? line.costUSD
                     : deps.getPricing().costFor(msg.model ?? '', u, ts);
@@ -428,6 +432,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
                 if (inTurn > 0 && (msgTokens || msgCost)) {
                     const t = turnAcc(inTurn);
                     t.tokens += msgTokens;
+                    t.wTokens += msgWTokens;
                     t.cost += msgCost;
                     // One round trip. Counted HERE, inside the dedup guard, so
                     // it is the same set of lines the tokens came from — the
@@ -481,7 +486,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
     // time) lets other surfaces deep-link into a turn via openSession(file, focusTs).
     // `models`/`attrs` are verbatim transcript values — see ATTR_KEYS.
     const turns: {
-        n: number; label: string; ts: number; tokens: number; cost: number;
+        n: number; label: string; ts: number; tokens: number; wTokens: number; cost: number;
         apiCalls: number; steps: number; ms: number; endCtx: number;
         models: string[]; attrs: Record<string, string>;
     }[] = [];
@@ -492,6 +497,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
             n, label: turnLabels[n] ?? '',
             ts: startTs,
             tokens: acc?.tokens ?? 0,
+            wTokens: Math.round(acc?.wTokens ?? 0),
             cost: acc?.cost ?? 0,
             apiCalls: acc?.apiCalls ?? 0,
             steps: acc?.steps ?? 0,
@@ -523,6 +529,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
         models: [...models],
         usage,
         totalTokens: totalTokens(usage),
+        totalWTokens: Math.round(wTokens),
         cost,
         errors,
         toolCalls,

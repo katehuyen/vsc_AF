@@ -30,6 +30,45 @@
     }
 
     /**
+     * ‼️ THE TWO TOKEN FIGURES ALWAYS TRAVEL TOGETHER — this is that pair.
+     *
+     * `fmtTok` alone answers "how much text moved". It does NOT answer "how
+     * much of the 5-hour window did that burn", and the two are not even
+     * proportional: a cache-read token is a tenth of a fresh input token and
+     * makes up 94-99% of any raw total, so a long conversation's raw count runs
+     * away from what it actually costs the limit. Measured over 32 days of real
+     * transcripts the ratio between them ranges 0.80x to 3.86x, and the eight
+     * heaviest windows sit inside a ±13% band by weighted total while spanning
+     * 111M-175M raw. A surface printing only the first number therefore makes a
+     * change in the shape of the work look like a change in the counter — which
+     * is exactly the reading that sent four investigations after a counting bug
+     * that was never there.
+     *
+     * So: raw first, `⚖` and the weighted figure after it. `WEIGHTED_TIP` is
+     * the one explanation, shared by every surface's title attribute.
+     */
+    const WEIGHTED_TIP =
+        'Left: raw tokens — everything that moved, cache reads included.\n' +
+        'Right (⚖): the same work weighted the way the plan limit charges it ' +
+        '(output x5, cache-write x1.25, cache-read x0.1, and Opus x5 over Sonnet).\n' +
+        'The two are not proportional (measured ratio 0.8x-3.9x across 32 days), ' +
+        'so the raw figure alone cannot tell you how full your 5-hour window is — this one can. ' +
+        'It approximates the plan formula, which is not published; the exact ' +
+        'answer stays the Plan usage card.';
+
+    /** `4.6M ⚖ 0.6M` — both figures, one string. `w` of 0/undefined shows raw only. */
+    function fmtTokW(n, w) {
+        const raw = fmtTok(n || 0);
+        return w > 0 ? raw + ' <span class="wtok" title="' + esc(WEIGHTED_TIP) + '">⚖ ' + fmtTok(Math.round(w)) + '</span>' : raw;
+    }
+
+    /** Plain-text twin of fmtTokW, for tooltips and title attributes. */
+    function fmtTokWText(n, w) {
+        const raw = fmtTok(n || 0);
+        return w > 0 ? raw + ' (⚖ ' + fmtTok(Math.round(w)) + ')' : raw;
+    }
+
+    /**
      * A duration read at a glance: `34s` · `3m-29s` · `1h-4m-23s` · `1d-7h-54m-41s`.
      *
      * ‼️ SECONDS ALONE STOP BEING AN ANSWER AT ABOUT TWO MINUTES. The strips
@@ -264,5 +303,5 @@
         return renderSpeaker(rawModel, pageUpper, (window.__AFUI__ || {}).speaker);
     }
 
-    window.AFCharts = { stackedBars, donut, hbars, heatmap, sparkline, esc, fmtUSD, fmtTok, fmtDur, fmtSteps, STEPS_TIP, aiName, parseModel, renderSpeaker, aiLabel, PALETTE };
+    window.AFCharts = { stackedBars, donut, hbars, heatmap, sparkline, esc, fmtUSD, fmtTok, fmtTokW, fmtTokWText, WEIGHTED_TIP, fmtDur, fmtSteps, STEPS_TIP, aiName, parseModel, renderSpeaker, aiLabel, PALETTE };
 })();
