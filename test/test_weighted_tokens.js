@@ -170,5 +170,59 @@ const U = (input, output, cacheWrite, cacheRead) => ({ input, output, cacheWrite
     ok('…and the running-turn accumulator is cleared', st.turnWTokens === undefined);
 }
 
+// ---------- the table is the USER'S, not the build's ----------
+// ‼️ These numbers are the provider's rate card, not ours. A rate moves and
+// nobody should need a release — so the table and the mode are settings, and
+// this section is what keeps them honest. Every case restores the default
+// afterwards; a leaked override would silently re-price every later suite.
+{
+    const P = require(path.join(__dirname, '..', 'out', 'core', 'pricing.js'));
+    const opusCall = U(10, 100, 1000, 100000);
+    const base = weightedTokens('claude-opus-5', opusCall);
+
+    // mode: raw — the feature off without ripping it out
+    P.setQuotaConfig({ mode: 'raw' });
+    ok('mode "raw" makes the weighted figure the raw total',
+        weightedTokens('claude-opus-5', opusCall) === totalTokens(opusCall));
+    ok('…for every model alike',
+        weightedTokens('claude-haiku-4-5-20251001', opusCall) === totalTokens(opusCall));
+
+    // mode: model-flat — weigh the KINDS of token, ignore which model ran
+    P.setQuotaConfig({ mode: 'model-flat' });
+    const flatOpus = weightedTokens('claude-opus-5', opusCall);
+    const flatHaiku = weightedTokens('claude-haiku-4-5-20251001', opusCall);
+    ok('mode "model-flat" charges every model the same', flatOpus === flatHaiku);
+    ok('…and that is five times cheaper than opus was', near(flatOpus * 5, base, 1));
+    ok('…while still discounting cache reads', flatOpus < totalTokens(opusCall));
+
+    // back to the default, and prove it really came back
+    P.setQuotaConfig({ mode: 'model-aware' });
+    ok('the default mode is restorable', near(weightedTokens('claude-opus-5', opusCall), base, 0.001));
+
+    // a user table replaces the built-in one
+    P.setQuotaConfig({
+        weights: [{ match: 'opus', input: 1, output: 1, cacheWrite: 1, cacheWrite1h: 1, cacheRead: 1 }]
+    });
+    ok('a user table is what gets used',
+        weightedTokens('claude-opus-5', opusCall) === totalTokens(opusCall));
+    ok('…and a model it does not name still costs something, never zero',
+        weightedTokens('claude-sonnet-5', opusCall) > 0);
+
+    // ‼️ AN UNUSABLE TABLE MUST NOT MAKE EVERY TURN READ AS FREE. A typo in a
+    // regex, or an emptied array, falls back to the shipped table rather than
+    // quietly zeroing the one gauge the user is watching.
+    P.setQuotaConfig({ weights: [{ match: '[[[bad regex', input: 9, output: 9, cacheWrite: 9, cacheWrite1h: 9, cacheRead: 9 }] });
+    ok('a table of only-invalid regexes falls back to the shipped one',
+        near(weightedTokens('claude-opus-5', opusCall), base, 1));
+    P.setQuotaConfig({ weights: [] });
+    ok('an empty table falls back too', near(weightedTokens('claude-opus-5', opusCall), base, 0.001));
+
+    ok('quotaConfig() reports what is in force', P.quotaConfig().mode === 'model-aware');
+
+    // leave the module exactly as it was found
+    P.setQuotaConfig({ weights: undefined, mode: 'model-aware' });
+    ok('the suite leaves no override behind', near(weightedTokens('claude-opus-5', opusCall), base, 0.001));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

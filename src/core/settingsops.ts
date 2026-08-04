@@ -47,7 +47,8 @@ const CATEGORY_OF: Record<string, string> = {
     maxTranscriptMessages: 'live', contextWindowTokens: 'live',
     // cost & budgets
     pricing: 'cost', budgets: 'cost', windowTokenLimit: 'cost',
-    windowWeightedTokenLimit: 'cost',
+    windowWeightedTokenLimit: 'cost', quotaWeightMode: 'cost', quotaWeights: 'cost',
+    quotaBrakeBasis: 'cost',
     planUsageRefreshMinutes: 'cost', planUsageActiveRefreshSeconds: 'cost',
     planUsageStatusBar: 'cost', planUsageWarnPercent: 'cost', planUsageDangerPercent: 'cost',
     mediaBudgetMonthUSD: 'cost', mediaPricing: 'cost', trendAlertFactor: 'cost',

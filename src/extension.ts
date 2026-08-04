@@ -92,7 +92,7 @@ import {
     applyMergedContent, buildMergeDraft, findDuplicateGroups, syncGroup
 } from './core/memorySync';
 import { SecretsVault } from './core/secrets';
-import { contextWindowFor, DEFAULT_PRICING, PriceRule, PricingEngine, PricingVersion, totalTokens, Usage } from './core/pricing';
+import { contextWindowFor, DEFAULT_PRICING, PriceRule, PricingEngine, PricingVersion, QuotaWeight, QuotaWeightMode, setQuotaConfig, totalTokens, Usage } from './core/pricing';
 import { QualityStore, sampleQuality } from './core/quality';
 import { buildDailyDigest, buildFleetReport, buildOutputsDigest } from './core/report';
 import { buildForecast, renderForecastMarkdown } from './core/forecast';
@@ -592,8 +592,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * because a brake that only watches one of two ceilings is not a brake.
      */
     const windowPct = (): number | undefined => {
-        const rawLimit = cfg().get<number>('windowTokenLimit', 0);
-        const wLimit = cfg().get<number>('windowWeightedTokenLimit', 0);
+        const basis = cfg().get<string>('quotaBrakeBasis', 'whichever');
+        const rawLimit = basis === 'weighted' ? 0 : cfg().get<number>('windowTokenLimit', 0);
+        const wLimit = basis === 'raw' ? 0 : cfg().get<number>('windowWeightedTokenLimit', 0);
         if (rawLimit <= 0 && wLimit <= 0) { return undefined; }
         const win = index.windowUsage();
         const pcts: number[] = [];
@@ -601,6 +602,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (wLimit > 0) { pcts.push(100 * win.wTokens / wLimit); }
         return Math.max(...pcts);
     };
+
+    /**
+     * Install the user's ⚖ weight table and mode, and keep it installed.
+     *
+     * ‼️ Called before the index scans anything: the weighted figure is summed
+     * DURING the parse, so a table applied afterwards would leave every session
+     * already read counted at the old rates until the next rescan. Re-applied
+     * on every configuration change, followed by a rescan for the same reason.
+     */
+    const applyQuotaConfig = (): void => {
+        const weights = cfg().get<QuotaWeight[]>('quotaWeights', []);
+        setQuotaConfig({
+            weights: Array.isArray(weights) && weights.length ? weights : undefined,
+            mode: cfg().get<QuotaWeightMode>('quotaWeightMode', 'model-aware')
+        });
+    };
+    applyQuotaConfig();
 
     // User-set session names survive restarts via globalState.
     const TITLES_KEY = 'agentfarm.sessionTitles';
@@ -7206,6 +7224,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     });
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
         if (e.affectsConfiguration('agentFarm.web')) { applyWebServer(); }
+        // ‼️ A NEW WEIGHT TABLE MEANS EVERY FIGURE ON SCREEN IS STALE. The ⚖
+        // total is summed while a transcript is parsed, so changing the rates
+        // without re-reading the transcripts would leave the old arithmetic
+        // standing until something else happened to trigger a rescan.
+        if (e.affectsConfiguration('agentFarm.quotaWeights')
+            || e.affectsConfiguration('agentFarm.quotaWeightMode')) {
+            applyQuotaConfig();
+            void index.scanAll().then(() => refreshAll());
+        }
     }));
 
     // ---------- C3: the inbound messaging channel ----------
