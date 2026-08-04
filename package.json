@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.63.0",
+  "version": "3.63.1",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -86,26 +86,26 @@
       },
       {
         "view": "agentfarm.tasks",
-        "contents": "Queue work for your agents and schedule recurring runs.\n[Set Up a Working Example](command:agentfarm.setupExample)\nOne click creates a real inbox trigger, morning schedule or two-agent chain — edit or remove it anytime.\n[Add Task](command:agentfarm.addTask)\n[Add Scheduled Task](command:agentfarm.addSchedule)\nTasks open a terminal in the agent's folder and run claude with your prompt.\n[Open Guide](command:agentfarm.openGuide)"
+        "contents": "Queue work for your agents and schedule recurring runs.\n[Set Up a Working Example](command:agentfarm.setupExample)\nOne click creates a real inbox trigger, morning schedule or two-agent chain â€” edit or remove it anytime.\n[Add Task](command:agentfarm.addTask)\n[Add Scheduled Task](command:agentfarm.addSchedule)\nTasks open a terminal in the agent's folder and run claude with your prompt.\n[Open Guide](command:agentfarm.openGuide)"
       },
       {
         "view": "agentfarm.missions",
-        "contents": "Give a goal to a lead agent and a team — the lead plans round by round, delegates, and finishes with an honest verdict.\n[New Mission](command:agentfarm.newMission)\nRuns, rounds and delegations are tracked here; approvals and questions appear as actionable rows.\n[Open Missions Page](command:agentfarm.openMissions)"
+        "contents": "Give a goal to a lead agent and a team â€” the lead plans round by round, delegates, and finishes with an honest verdict.\n[New Mission](command:agentfarm.newMission)\nRuns, rounds and delegations are tracked here; approvals and questions appear as actionable rows.\n[Open Missions Page](command:agentfarm.openMissions)"
       },
       {
         "view": "agentfarm.insights",
-        "contents": "No health findings right now ✓\nWhen findings appear, each row offers inline actions: 🛠 Fix (mechanical categories), 🚀 Delegate to an agent, ✕ Dismiss for a day/week/forever.\n[Restore Dismissed Insights…](command:agentfarm.restoreInsights)"
+        "contents": "No health findings right now âœ“\nWhen findings appear, each row offers inline actions: ðŸ›  Fix (mechanical categories), ðŸš€ Delegate to an agent, âœ• Dismiss for a day/week/forever.\n[Restore Dismissed Insightsâ€¦](command:agentfarm.restoreInsights)"
       }
     ],
     "walkthroughs": [
       {
         "id": "agentfarm.gettingStarted",
         "title": "Agent Farm: Setup in Five Steps",
-        "description": "From live monitoring to your first autonomous job — mission control for your agent fleet.",
+        "description": "From live monitoring to your first autonomous job â€” mission control for your agent fleet.",
         "steps": [
           {
             "id": "agents",
-            "title": "1 · Introduce your agents",
+            "title": "1 Â· Introduce your agents",
             "description": "Agent Farm treats every folder with a CLAUDE.md under your root folders as an agent.\n[Add Agent Root](command:agentfarm.addAgentRoot)",
             "media": {
               "markdown": "docs/walkthrough/01-agents.en.md"
@@ -116,8 +116,8 @@
           },
           {
             "id": "hooks",
-            "title": "2 · Install the live hooks",
-            "description": "Hooks forward every agent event (prompt, tool, permission wait) to the local listener — the timeline and notifications run on them.\n[Install Live Hooks](command:agentfarm.installHooks)",
+            "title": "2 Â· Install the live hooks",
+            "description": "Hooks forward every agent event (prompt, tool, permission wait) to the local listener â€” the timeline and notifications run on them.\n[Install Live Hooks](command:agentfarm.installHooks)",
             "media": {
               "markdown": "docs/walkthrough/02-hooks.en.md"
             },
@@ -127,8 +127,8 @@
           },
           {
             "id": "dashboard",
-            "title": "3 · Open the Dashboard",
-            "description": "Costs, health and the Farm Status card — which subsystem is dormant, at a glance.\n[Open Dashboard](command:agentfarm.openDashboard)",
+            "title": "3 Â· Open the Dashboard",
+            "description": "Costs, health and the Farm Status card â€” which subsystem is dormant, at a glance.\n[Open Dashboard](command:agentfarm.openDashboard)",
             "media": {
               "markdown": "docs/walkthrough/03-dashboard.en.md"
             },
@@ -138,7 +138,7 @@
           },
           {
             "id": "example",
-            "title": "4 · Set up your first automation",
+            "title": "4 Â· Set up your first automation",
             "description": "A working example in one click: an inbox duty, a morning briefing or a two-agent chain.\n[Set Up Example Automation](command:agentfarm.setupExample)",
             "media": {
               "markdown": "docs/walkthrough/04-example.en.md"
@@ -149,8 +149,8 @@
           },
           {
             "id": "guide",
-            "title": "5 · Explore the guide",
-            "description": "The built-in guide (English by default, Türkçe selectable; 25 scenarios): media pipeline, webhook bridge, multi-agent chains…\n[Open Guide](command:agentfarm.openGuide)",
+            "title": "5 Â· Explore the guide",
+            "description": "The built-in guide (English by default, TÃ¼rkÃ§e selectable; 25 scenarios): media pipeline, webhook bridge, multi-agent chainsâ€¦\n[Open Guide](command:agentfarm.openGuide)",
             "media": {
               "markdown": "docs/walkthrough/05-guide.en.md"
             },
@@ -228,7 +228,7 @@
       },
       {
         "command": "agentfarm.configureLivingChecks",
-        "title": "Configure Living Checks…",
+        "title": "Configure Living Checksâ€¦",
         "category": "Agent Farm"
       },
       {
@@ -239,7 +239,7 @@
       },
       {
         "command": "agentfarm.newMission",
-        "title": "New Mission…",
+        "title": "New Missionâ€¦",
         "category": "Agent Farm",
         "icon": "$(add)"
       },
@@ -257,7 +257,7 @@
       },
       {
         "command": "agentfarm.missionAnswer",
-        "title": "Answer Mission Question…",
+        "title": "Answer Mission Questionâ€¦",
         "category": "Agent Farm",
         "icon": "$(comment-discussion)"
       },
@@ -299,13 +299,13 @@
       },
       {
         "command": "agentfarm.setupExample",
-        "title": "Set Up Example Automation…",
+        "title": "Set Up Example Automationâ€¦",
         "category": "Agent Farm",
         "icon": "$(rocket)"
       },
       {
         "command": "agentfarm.delegateInsight",
-        "title": "Delegate Insight(s) to Agent…",
+        "title": "Delegate Insight(s) to Agentâ€¦",
         "category": "Agent Farm",
         "icon": "$(rocket)"
       },
@@ -317,19 +317,19 @@
       },
       {
         "command": "agentfarm.dismissInsight",
-        "title": "Dismiss Insight…",
+        "title": "Dismiss Insightâ€¦",
         "category": "Agent Farm",
         "icon": "$(close)"
       },
       {
         "command": "agentfarm.restoreInsights",
-        "title": "Restore Dismissed Insights…",
+        "title": "Restore Dismissed Insightsâ€¦",
         "category": "Agent Farm",
         "icon": "$(eye)"
       },
       {
         "command": "agentfarm.editSchedule",
-        "title": "Edit Schedule…",
+        "title": "Edit Scheduleâ€¦",
         "category": "Agent Farm",
         "icon": "$(edit)"
       },
@@ -409,7 +409,7 @@
       },
       {
         "command": "agentfarm.consoleForAgent",
-        "title": "Talk in Console…",
+        "title": "Talk in Consoleâ€¦",
         "category": "Agent Farm",
         "icon": "$(comment-discussion)"
       },
@@ -421,13 +421,13 @@
       },
       {
         "command": "agentfarm.launchSession",
-        "title": "Start Session… (model · effort · permissions · first prompt)",
+        "title": "Start Sessionâ€¦ (model Â· effort Â· permissions Â· first prompt)",
         "category": "Agent Farm",
         "icon": "$(rocket)"
       },
       {
         "command": "agentfarm.startSessionWith",
-        "title": "Start Session With… (choose CLI)",
+        "title": "Start Session Withâ€¦ (choose CLI)",
         "category": "Agent Farm",
         "icon": "$(run-all)"
       },
@@ -445,7 +445,7 @@
       },
       {
         "command": "agentfarm.assignProject",
-        "title": "Assign Agent to Project…",
+        "title": "Assign Agent to Projectâ€¦",
         "category": "Agent Farm",
         "icon": "$(project)"
       },
@@ -505,19 +505,19 @@
       },
       {
         "command": "agentfarm.insightHistory",
-        "title": "Insight History… (what keeps coming back, and did the fix hold)",
+        "title": "Insight Historyâ€¦ (what keeps coming back, and did the fix hold)",
         "category": "Agent Farm",
         "icon": "$(history)"
       },
       {
         "command": "agentfarm.openWebView",
-        "title": "Open Web View… (read-only, phone-friendly)",
+        "title": "Open Web Viewâ€¦ (read-only, phone-friendly)",
         "category": "Agent Farm",
         "icon": "$(radio-tower)"
       },
       {
         "command": "agentfarm.connectTelegram",
-        "title": "Connect Telegram… (message an agent from your phone)",
+        "title": "Connect Telegramâ€¦ (message an agent from your phone)",
         "category": "Agent Farm",
         "icon": "$(comment-discussion)"
       },
@@ -551,7 +551,7 @@
       },
       {
         "command": "agentfarm.renameSession",
-        "title": "Rename Session…",
+        "title": "Rename Sessionâ€¦",
         "category": "Agent Farm",
         "icon": "$(edit)"
       },
@@ -563,7 +563,7 @@
       },
       {
         "command": "agentfarm.tagSession",
-        "title": "Label Session…",
+        "title": "Label Sessionâ€¦",
         "category": "Agent Farm",
         "icon": "$(tag)"
       },
@@ -575,7 +575,7 @@
       },
       {
         "command": "agentfarm.sessionShelf",
-        "title": "Session Shelf… (pinned + recent)",
+        "title": "Session Shelfâ€¦ (pinned + recent)",
         "category": "Agent Farm",
         "icon": "$(pinned)"
       },
@@ -666,7 +666,7 @@
       },
       {
         "command": "agentfarm.retryTaskEdit",
-        "title": "Retry with edited prompt…",
+        "title": "Retry with edited promptâ€¦",
         "category": "Agent Farm"
       },
       {
@@ -754,7 +754,7 @@
       },
       {
         "command": "agentfarm.newWorkflow",
-        "title": "New Multi-Agent Workflow…",
+        "title": "New Multi-Agent Workflowâ€¦",
         "category": "Agent Farm",
         "icon": "$(type-hierarchy-sub)"
       },
@@ -778,12 +778,12 @@
       },
       {
         "command": "agentfarm.exportSchtask",
-        "title": "Export as Windows Scheduled Task…",
+        "title": "Export as Windows Scheduled Taskâ€¦",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.syncMemory",
-        "title": "Sync Shared Memory…",
+        "title": "Sync Shared Memoryâ€¦",
         "category": "Agent Farm"
       },
       {
@@ -833,13 +833,13 @@
       },
       {
         "command": "agentfarm.editDuty",
-        "title": "Edit Duty…",
+        "title": "Edit Dutyâ€¦",
         "category": "Agent Farm",
         "icon": "$(edit)"
       },
       {
         "command": "agentfarm.addMemory",
-        "title": "New Memory File…",
+        "title": "New Memory Fileâ€¦",
         "category": "Agent Farm",
         "icon": "$(add)"
       },
@@ -857,33 +857,33 @@
       },
       {
         "command": "agentfarm.fixMemoryIndex",
-        "title": "Fix Memory Index…",
+        "title": "Fix Memory Indexâ€¦",
         "category": "Agent Farm",
         "icon": "$(wrench)"
       },
       {
         "command": "agentfarm.copyMemory",
-        "title": "Copy Memory File to Agent…",
+        "title": "Copy Memory File to Agentâ€¦",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.scanMemoryContradictions",
-        "title": "Scan Memory Contradictions… (cheap model)",
+        "title": "Scan Memory Contradictionsâ€¦ (cheap model)",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.addDutyFromTemplate",
-        "title": "Add Duty from Template…",
+        "title": "Add Duty from Templateâ€¦",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.automateDuty",
-        "title": "Automate Duty (create trigger)…",
+        "title": "Automate Duty (create trigger)â€¦",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.copyDuty",
-        "title": "Copy Duty to Agent…",
+        "title": "Copy Duty to Agentâ€¦",
         "category": "Agent Farm"
       },
       {
@@ -920,7 +920,7 @@
       },
       {
         "command": "agentfarm.editWorkflowStep",
-        "title": "Edit Step…",
+        "title": "Edit Stepâ€¦",
         "category": "Agent Farm",
         "icon": "$(edit)"
       },
@@ -973,7 +973,7 @@
       },
       {
         "command": "agentfarm.terminalRenderFix",
-        "title": "Terminal Rendering Fix (ghost spaces / lost lines)…",
+        "title": "Terminal Rendering Fix (ghost spaces / lost lines)â€¦",
         "category": "Agent Farm",
         "icon": "$(terminal)"
       },
@@ -990,12 +990,12 @@
       },
       {
         "command": "agentfarm.setSecret",
-        "title": "Set Secret…",
+        "title": "Set Secretâ€¦",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.deleteSecret",
-        "title": "Delete Secret…",
+        "title": "Delete Secretâ€¦",
         "category": "Agent Farm"
       },
       {
@@ -1005,7 +1005,7 @@
       },
       {
         "command": "agentfarm.addMcpServer",
-        "title": "Add MCP Server…",
+        "title": "Add MCP Serverâ€¦",
         "category": "Agent Farm",
         "icon": "$(add)"
       },
@@ -1017,7 +1017,7 @@
       },
       {
         "command": "agentfarm.addSkill",
-        "title": "Add Skill…",
+        "title": "Add Skillâ€¦",
         "category": "Agent Farm",
         "icon": "$(add)"
       },
@@ -1029,12 +1029,12 @@
       },
       {
         "command": "agentfarm.duplicateSkill",
-        "title": "Copy Skill to Agent…",
+        "title": "Copy Skill to Agentâ€¦",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.shareSkill",
-        "title": "Move Skill Between Agent/User Scope…",
+        "title": "Move Skill Between Agent/User Scopeâ€¦",
         "category": "Agent Farm"
       },
       {
@@ -1044,7 +1044,7 @@
       },
       {
         "command": "agentfarm.editMcpServer",
-        "title": "Edit MCP Server…",
+        "title": "Edit MCP Serverâ€¦",
         "category": "Agent Farm"
       },
       {
@@ -1059,24 +1059,24 @@
       },
       {
         "command": "agentfarm.copyMcpServer",
-        "title": "Copy MCP Server to Agent…",
+        "title": "Copy MCP Server to Agentâ€¦",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.openCapabilities",
-        "title": "Open Capability Matrix (Skills × MCP × Agents)",
+        "title": "Open Capability Matrix (Skills Ã— MCP Ã— Agents)",
         "category": "Agent Farm",
         "icon": "$(table)"
       },
       {
         "command": "agentfarm.openToolbox",
-        "title": "Open Toolbox (Skills · Subagents · Commands · MCP · Hooks · Plugins)",
+        "title": "Open Toolbox (Skills Â· Subagents Â· Commands Â· MCP Â· Hooks Â· Plugins)",
         "category": "Agent Farm",
         "icon": "$(tools)"
       },
       {
         "command": "agentfarm.openAirtable",
-        "title": "Open Airtable Engine (instances · folders · agent tools)",
+        "title": "Open Airtable Engine (instances Â· folders Â· agent tools)",
         "category": "Agent Farm",
         "icon": "$(database)"
       },
@@ -1099,7 +1099,7 @@
       },
       {
         "command": "agentfarm.openStudio",
-        "title": "Open Studio (content production: pipeline · assets · triage · assemble)",
+        "title": "Open Studio (content production: pipeline Â· assets Â· triage Â· assemble)",
         "category": "Agent Farm",
         "icon": "$(device-camera-video)"
       },
@@ -1116,12 +1116,12 @@
       },
       {
         "command": "agentfarm.registerAsset",
-        "title": "Register Media Asset(s)…",
+        "title": "Register Media Asset(s)â€¦",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.exportSequence",
-        "title": "Export Premiere Sequence (XML + EDL)…",
+        "title": "Export Premiere Sequence (XML + EDL)â€¦",
         "category": "Agent Farm"
       },
       {
@@ -1131,13 +1131,13 @@
       },
       {
         "command": "agentfarm.addRecipe",
-        "title": "New Recipe Workflow…",
+        "title": "New Recipe Workflowâ€¦",
         "category": "Agent Farm",
         "icon": "$(sparkle)"
       },
       {
         "command": "agentfarm.searchTranscripts",
-        "title": "Search Transcripts…",
+        "title": "Search Transcriptsâ€¦",
         "category": "Agent Farm",
         "icon": "$(search)"
       },
@@ -1161,13 +1161,13 @@
       },
       {
         "command": "agentfarm.scanSuggestionsNow",
-        "title": "Scan for Instruction Suggestions…",
+        "title": "Scan for Instruction Suggestionsâ€¦",
         "category": "Agent Farm",
         "icon": "$(lightbulb)"
       },
       {
         "command": "agentfarm.reviewSuggestions",
-        "title": "Review Instruction Suggestions…",
+        "title": "Review Instruction Suggestionsâ€¦",
         "category": "Agent Farm",
         "icon": "$(lightbulb)"
       },
@@ -1183,37 +1183,37 @@
       },
       {
         "command": "agentfarm.exportAgentPack",
-        "title": "Export Agent Pack…",
+        "title": "Export Agent Packâ€¦",
         "category": "Agent Farm",
         "icon": "$(package)"
       },
       {
         "command": "agentfarm.importAgentPack",
-        "title": "Import Agent Pack…",
+        "title": "Import Agent Packâ€¦",
         "category": "Agent Farm",
         "icon": "$(package)"
       },
       {
         "command": "agentfarm.syncAntigravity",
-        "title": "Sync Agent with Antigravity + Codex…",
+        "title": "Sync Agent with Antigravity + Codexâ€¦",
         "category": "Agent Farm",
         "icon": "$(sync)"
       },
       {
         "command": "agentfarm.syncConstitution",
-        "title": "Sync Shared Constitution with Antigravity + Codex…",
+        "title": "Sync Shared Constitution with Antigravity + Codexâ€¦",
         "category": "Agent Farm",
         "icon": "$(law)"
       },
       {
         "command": "agentfarm.commandBar",
-        "title": "Natural Language Command…",
+        "title": "Natural Language Commandâ€¦",
         "category": "Agent Farm",
         "icon": "$(rocket)"
       },
       {
         "command": "agentfarm.testDispatch",
-        "title": "Test Dispatcher…",
+        "title": "Test Dispatcherâ€¦",
         "category": "Agent Farm",
         "icon": "$(arrow-swap)"
       },
@@ -1237,13 +1237,13 @@
       },
       {
         "command": "agentfarm.openNotices",
-        "title": "Open Notices (Agent → You message board)",
+        "title": "Open Notices (Agent â†’ You message board)",
         "category": "Agent Farm",
         "icon": "$(bell)"
       },
       {
         "command": "agentfarm.openQueue",
-        "title": "Open Work Queue (You → Agent async work channel)",
+        "title": "Open Work Queue (You â†’ Agent async work channel)",
         "category": "Agent Farm",
         "icon": "$(inbox)"
       },
@@ -1267,7 +1267,7 @@
       },
       {
         "command": "agentfarm.openTasks",
-        "title": "Open Tasks (Board · Automations · Reusables · Analytics)",
+        "title": "Open Tasks (Board Â· Automations Â· Reusables Â· Analytics)",
         "category": "Agent Farm",
         "icon": "$(layout)"
       },
@@ -1291,19 +1291,19 @@
       },
       {
         "command": "agentfarm.addEvalCase",
-        "title": "Add Eval Case…",
+        "title": "Add Eval Caseâ€¦",
         "category": "Agent Farm",
         "icon": "$(beaker)"
       },
       {
         "command": "agentfarm.runEvals",
-        "title": "Run Eval Set…",
+        "title": "Run Eval Setâ€¦",
         "category": "Agent Farm",
         "icon": "$(beaker)"
       },
       {
         "command": "agentfarm.reviewEvalCases",
-        "title": "Review Eval Cases…",
+        "title": "Review Eval Casesâ€¦",
         "category": "Agent Farm"
       },
       {
@@ -1319,7 +1319,7 @@
       },
       {
         "command": "agentfarm.installFarmService",
-        "title": "Install Headless Service (Windows)…",
+        "title": "Install Headless Service (Windows)â€¦",
         "category": "Agent Farm"
       },
       {
@@ -1334,48 +1334,48 @@
       },
       {
         "command": "agentfarm.instructionHistory",
-        "title": "Instruction History & Impact…",
+        "title": "Instruction History & Impactâ€¦",
         "category": "Agent Farm",
         "icon": "$(history)"
       },
       {
         "command": "agentfarm.abTest",
-        "title": "A/B Instruction Experiment…",
+        "title": "A/B Instruction Experimentâ€¦",
         "category": "Agent Farm",
         "icon": "$(law)"
       },
       {
         "command": "agentfarm.distillMemory",
-        "title": "Distill Memory File…",
+        "title": "Distill Memory Fileâ€¦",
         "category": "Agent Farm",
         "icon": "$(fold-down)"
       },
       {
         "command": "agentfarm.askMemory",
-        "title": "Ask Fleet Memory… (Semantic)",
+        "title": "Ask Fleet Memoryâ€¦ (Semantic)",
         "category": "Agent Farm",
         "icon": "$(comment-discussion)"
       },
       {
         "command": "agentfarm.runParallel",
-        "title": "Run Parallel Worktrees…",
+        "title": "Run Parallel Worktreesâ€¦",
         "category": "Agent Farm",
         "icon": "$(git-branch)"
       },
       {
         "command": "agentfarm.worktreeRuns",
-        "title": "Worktree Runs… (Merge / Discard)",
+        "title": "Worktree Runsâ€¦ (Merge / Discard)",
         "category": "Agent Farm",
         "icon": "$(git-merge)"
       },
       {
         "command": "agentfarm.exportOtel",
-        "title": "Export Traces (OpenTelemetry JSON)…",
+        "title": "Export Traces (OpenTelemetry JSON)â€¦",
         "category": "Agent Farm"
       },
       {
         "command": "agentfarm.browsePackGallery",
-        "title": "Browse Agent Pack Gallery…",
+        "title": "Browse Agent Pack Galleryâ€¦",
         "category": "Agent Farm",
         "icon": "$(package)"
       },
@@ -1387,7 +1387,7 @@
       },
       {
         "command": "agentfarm.exportRelayScript",
-        "title": "Save Relay Script for Another Machine…",
+        "title": "Save Relay Script for Another Machineâ€¦",
         "category": "Agent Farm"
       },
       {
@@ -2390,10 +2390,10 @@
           ],
           "enumDescriptions": [
             "English",
-            "Türkçe"
+            "TÃ¼rkÃ§e"
           ],
           "default": "en",
-          "description": "Language for the in-app help surfaces (Guide, Quick Start, Examples). English by default; choose Türkçe for Turkish. You can also switch from the language toggle inside the guide panel. More languages can be added over time."
+          "description": "Language for the in-app help surfaces (Guide, Quick Start, Examples). English by default; choose TÃ¼rkÃ§e for Turkish. You can also switch from the language toggle inside the guide panel. More languages can be added over time."
         },
         "agentFarm.agentRoots": {
           "type": "array",
@@ -2403,7 +2403,7 @@
           "default": [
             "D:/zone/agent/ajanlar"
           ],
-          "description": "Root folders scanned for agent directories. Subfolders containing CLAUDE.md, .claude or memory/ become agents. A root whose subfolders are agents is a nest — its own CLAUDE.md counts as shared instructions, not an agent; a root with no agent-like subfolders is one agent itself. Manage this comfortably in the Agent folders section of Farm Settings."
+          "description": "Root folders scanned for agent directories. Subfolders containing CLAUDE.md, .claude or memory/ become agents. A root whose subfolders are agents is a nest â€” its own CLAUDE.md counts as shared instructions, not an agent; a root with no agent-like subfolders is one agent itself. Manage this comfortably in the Agent folders section of Farm Settings."
         },
         "agentFarm.excludeAgentDirs": {
           "type": "array",
@@ -2416,7 +2416,7 @@
         "agentFarm.newAgentModel": {
           "type": "string",
           "default": "sonnet",
-          "description": "Default model written into a new agent's .claude/settings.local.json when the agent is created via Agent Farm — an alias (haiku, sonnet, opus, fable) or a full model id. Empty = write no model, the Claude CLI default applies. Existing agents' models are managed per agent in the Agent folders section of Farm Settings."
+          "description": "Default model written into a new agent's .claude/settings.local.json when the agent is created via Agent Farm â€” an alias (haiku, sonnet, opus, fable) or a full model id. Empty = write no model, the Claude CLI default applies. Existing agents' models are managed per agent in the Agent folders section of Farm Settings."
         },
         "agentFarm.modelAliases": {
           "type": "array",
@@ -2429,12 +2429,12 @@
             "opus",
             "fable"
           ],
-          "description": "Your model name knowledge base: the names/ids offered in every model picker (the per-agent model dropdown in Agent folders, the mission model suggestions, the Start Session… launcher). Add a new model name here ONCE and it appears in every picker permanently — model names change over time, this list is yours to keep current. Every picker also accepts a custom free-text entry for anything not listed."
+          "description": "Your model name knowledge base: the names/ids offered in every model picker (the per-agent model dropdown in Agent folders, the mission model suggestions, the Start Sessionâ€¦ launcher). Add a new model name here ONCE and it appears in every picker permanently â€” model names change over time, this list is yours to keep current. Every picker also accepts a custom free-text entry for anything not listed."
         },
         "agentFarm.web.enabled": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Serve a **read-only web view** of the farm — the same figures the panel shows, sized for a phone: what needs you, what is running, per-agent and per-project cost, recent sessions. Off by default. While VS Code is open the extension serves it; when VS Code is closed the **headless service** takes the port over and keeps serving the last snapshot (and says so on the page). Bound to `127.0.0.1` unless `agentFarm.web.bind` says otherwise, and **a token is always required** — there is no route that starts, stops or changes anything. Use **Open Web View…** to get the URL."
+          "markdownDescription": "Serve a **read-only web view** of the farm â€” the same figures the panel shows, sized for a phone: what needs you, what is running, per-agent and per-project cost, recent sessions. Off by default. While VS Code is open the extension serves it; when VS Code is closed the **headless service** takes the port over and keeps serving the last snapshot (and says so on the page). Bound to `127.0.0.1` unless `agentFarm.web.bind` says otherwise, and **a token is always required** â€” there is no route that starts, stops or changes anything. Use **Open Web Viewâ€¦** to get the URL."
         },
         "agentFarm.web.port": {
           "type": "number",
@@ -2448,7 +2448,7 @@
             "lan"
           ],
           "default": "local",
-          "markdownDescription": "`local` — only this machine (127.0.0.1). `lan` — reachable from your phone or a second machine on the same network. LAN exposure is opt-in on purpose; the token stays mandatory either way, and the view stays read-only."
+          "markdownDescription": "`local` â€” only this machine (127.0.0.1). `lan` â€” reachable from your phone or a second machine on the same network. LAN exposure is opt-in on purpose; the token stays mandatory either way, and the view stays read-only."
         },
         "agentFarm.web.token": {
           "type": "string",
@@ -2458,7 +2458,7 @@
         "agentFarm.telegram.enabled": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Let a **Telegram chat talk to your agents**: send a message, the agent the chat is bound to runs it headlessly, and the answer comes back in the same thread. Off by default; the bot token lives in the Agent Farm **secret vault** (never in settings) — set it up with **Connect Telegram…**. Two rails are always on: a message from a chat that is not in `agentFarm.telegram.allowedChats` is refused (it is told its own chat id, so allowing it is one copy), and chat-started runs stop at `agentFarm.telegram.maxDailyUSD` per day. Commands in chat: `/agent <name>` · `/agents` · `/status` · `/cancel` · `/help`."
+          "markdownDescription": "Let a **Telegram chat talk to your agents**: send a message, the agent the chat is bound to runs it headlessly, and the answer comes back in the same thread. Off by default; the bot token lives in the Agent Farm **secret vault** (never in settings) â€” set it up with **Connect Telegramâ€¦**. Two rails are always on: a message from a chat that is not in `agentFarm.telegram.allowedChats` is refused (it is told its own chat id, so allowing it is one copy), and chat-started runs stop at `agentFarm.telegram.maxDailyUSD` per day. Commands in chat: `/agent <name>` Â· `/agents` Â· `/status` Â· `/cancel` Â· `/help`."
         },
         "agentFarm.telegram.allowedChats": {
           "type": "array",
@@ -2466,7 +2466,7 @@
             "type": "number"
           },
           "default": [],
-          "description": "Telegram chat ids allowed to drive the farm. EMPTY = nobody can (the bridge answers every message with a refusal and its own chat id). This is the access list for something that spends money — keep it to your own chats."
+          "description": "Telegram chat ids allowed to drive the farm. EMPTY = nobody can (the bridge answers every message with a refusal and its own chat id). This is the access list for something that spends money â€” keep it to your own chats."
         },
         "agentFarm.telegram.maxDailyUSD": {
           "type": "number",
@@ -2513,7 +2513,7 @@
           },
           "additionalProperties": false,
           "default": {},
-          "markdownDescription": "How **every** interactive session starts — Start, Continue and Resume alike, from the tree, the palette or a keybinding. Set once instead of typing `--model` into a terminal all day. Every field is optional and an empty one emits no flag at all, so the default `{}` starts exactly the bare `claude` it always did. The **Start Session…** launcher (`ctrl+alt+s`) shows these as inherited values and can override them for one launch, or write itself back here."
+          "markdownDescription": "How **every** interactive session starts â€” Start, Continue and Resume alike, from the tree, the palette or a keybinding. Set once instead of typing `--model` into a terminal all day. Every field is optional and an empty one emits no flag at all, so the default `{}` starts exactly the bare `claude` it always did. The **Start Sessionâ€¦** launcher (`ctrl+alt+s`) shows these as inherited values and can override them for one launch, or write itself back here."
         },
         "agentFarm.launchProfiles": {
           "type": "array",
@@ -2546,17 +2546,17 @@
             ]
           },
           "default": [],
-          "markdownDescription": "Saved launch setups offered by the **Start Session…** launcher — \"deep review\" (opus + xhigh + plan), \"quick fix\" (sonnet + acceptEdits), and so on. The launcher's *Save this as a profile…* row writes here; nothing is applied until you pick one."
+          "markdownDescription": "Saved launch setups offered by the **Start Sessionâ€¦** launcher â€” \"deep review\" (opus + xhigh + plan), \"quick fix\" (sonnet + acceptEdits), and so on. The launcher's *Save this as a profileâ€¦* row writes here; nothing is applied until you pick one."
         },
         "agentFarm.notifyConsoleTurnEnd": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Tell you when a **Console** turn finishes and you are not watching that conversation — a notice carrying what the turn took, with a button that opens it. Never fires for the session on your screen, and never for a turn you interrupted. The Console's own signals (the card's *your turn* state and the count on its tab) do not depend on this."
+          "markdownDescription": "Tell you when a **Console** turn finishes and you are not watching that conversation â€” a notice carrying what the turn took, with a button that opens it. Never fires for the session on your screen, and never for a turn you interrupted. The Console's own signals (the card's *your turn* state and the count on its tab) do not depend on this."
         },
         "agentFarm.speakerLabelTemplate": {
           "type": "string",
           "default": "{ai}",
-          "markdownDescription": "How the AI participant is labelled in conversations (Turns page, Session Viewer, and their Markdown exports) — where it used to say `ASSISTANT`/`claude`. The label is **derived from each message's model id**, so a Gemini or Codex turn labels itself correctly. Compose it from these tokens; anything else is literal text, so a template with no tokens is a fixed label of your own:\n\n- `{ai}` — engine: `claude` · `gemini` · `codex`\n- `{model}` — model family: `opus` · `sonnet` · `haiku` · `gpt` · …\n- `{version}` — version: `4.8` · `3.5` · …\n- `{raw}` — raw model id (`opus-4-8`, vendor prefix stripped)\n\nExamples: `{ai}` → CLAUDE · `{model} {version}` → OPUS 4.8 · `{ai} {model} ({version})` → Claude Opus (4.8) · `MyBot` → a fixed label. Empty = `{ai}`. Case is set by `speakerLabelCase`; `speakerLabelFallback` covers unknown models."
+          "markdownDescription": "How the AI participant is labelled in conversations (Turns page, Session Viewer, and their Markdown exports) â€” where it used to say `ASSISTANT`/`claude`. The label is **derived from each message's model id**, so a Gemini or Codex turn labels itself correctly. Compose it from these tokens; anything else is literal text, so a template with no tokens is a fixed label of your own:\n\n- `{ai}` â€” engine: `claude` Â· `gemini` Â· `codex`\n- `{model}` â€” model family: `opus` Â· `sonnet` Â· `haiku` Â· `gpt` Â· â€¦\n- `{version}` â€” version: `4.8` Â· `3.5` Â· â€¦\n- `{raw}` â€” raw model id (`opus-4-8`, vendor prefix stripped)\n\nExamples: `{ai}` â†’ CLAUDE Â· `{model} {version}` â†’ OPUS 4.8 Â· `{ai} {model} ({version})` â†’ Claude Opus (4.8) Â· `MyBot` â†’ a fixed label. Empty = `{ai}`. Case is set by `speakerLabelCase`; `speakerLabelFallback` covers unknown models."
         },
         "agentFarm.speakerLabelCase": {
           "type": "string",
@@ -2567,10 +2567,10 @@
             "asis"
           ],
           "enumDescriptions": [
-            "Match the page — Session Viewer upper (like USER), Turns lower (like user/tool). The current default.",
+            "Match the page â€” Session Viewer upper (like USER), Turns lower (like user/tool). The current default.",
             "Force UPPER CASE everywhere",
             "Force lower case everywhere",
-            "As-is — leave the template's own case untouched (use for a fixed brand label)"
+            "As-is â€” leave the template's own case untouched (use for a fixed brand label)"
           ],
           "default": "page",
           "description": "Case applied to the AI speaker label (see agentFarm.speakerLabelTemplate)."
@@ -2578,7 +2578,7 @@
         "agentFarm.speakerLabelFallback": {
           "type": "string",
           "default": "agent",
-          "description": "AI speaker label shown when the model id yields nothing to fill the template (unknown engine, <synthetic>, or missing). Never 'assistant' — this is an agent."
+          "description": "AI speaker label shown when the model id yields nothing to fill the template (unknown engine, <synthetic>, or missing). Never 'assistant' â€” this is an agent."
         },
         "agentFarm.claudeDir": {
           "type": "string",
@@ -2601,7 +2601,7 @@
             }
           },
           "default": [],
-          "description": "Additional (read-only, synced) Claude data folders from other machines — e.g. a Syncthing/OneDrive copy of the laptop's ~/.claude. Their sessions appear with a ⇄ machine badge."
+          "description": "Additional (read-only, synced) Claude data folders from other machines â€” e.g. a Syncthing/OneDrive copy of the laptop's ~/.claude. Their sessions appear with a â‡„ machine badge."
         },
         "agentFarm.activeThresholdSeconds": {
           "type": "number",
@@ -2636,17 +2636,17 @@
             "raw"
           ],
           "enumDescriptions": [
-            "Weigh the kinds of token AND the model: one Sonnet input token = 1, Opus = 5, Haiku = 1/3. The default — a haiku test must not read as expensive as opus work.",
+            "Weigh the kinds of token AND the model: one Sonnet input token = 1, Opus = 5, Haiku = 1/3. The default â€” a haiku test must not read as expensive as opus work.",
             "Weigh only the KINDS of token (output x5, 1h cache-write x2, 5m cache-write x1.25, cache-read x0.1) and ignore which model ran.",
-            "Turn the weighting off: the ⚖ figure becomes the raw total."
+            "Turn the weighting off: the âš– figure becomes the raw total."
           ],
           "default": "model-aware",
-          "description": "How the ⚖ figure (what work costs the plan's rolling limit, as opposed to how many tokens moved) is derived. Calibrated against the real endpoint on 2026-08-04 by sampling utilization twice inside one window: 29% → 82% over 28 minutes and 96 API calls cost 38.13M raw / 24.86M weighted-model-aware / 4.97M weighted-model-flat, i.e. a full 5-hour limit of about 72M raw, 47M model-aware or 9.4M model-flat FOR THAT WORKLOAD. Almost all of it ran on Opus, so that sample cannot tell model-aware and model-flat apart — sample a day with real haiku or sonnet work to separate them."
+          "description": "How the âš– figure (what work costs the plan's rolling limit, as opposed to how many tokens moved) is derived. Calibrated against the real endpoint on 2026-08-04 by sampling utilization twice inside one window: 29% â†’ 82% over 28 minutes and 96 API calls cost 38.13M raw / 24.86M weighted-model-aware / 4.97M weighted-model-flat, i.e. a full 5-hour limit of about 72M raw, 47M model-aware or 9.4M model-flat FOR THAT WORKLOAD. Almost all of it ran on Opus, so that sample cannot tell model-aware and model-flat apart â€” sample a day with real haiku or sonnet work to separate them."
         },
         "agentFarm.quotaWeights": {
           "type": "array",
           "default": [],
-          "description": "Override the ⚖ weight table. Empty = use the built-in one. Each entry: { match (regex on the model id), input, output, cacheWrite (5-minute TTL), cacheWrite1h (1-hour TTL), cacheRead } — all relative to ONE SONNET INPUT TOKEN = 1. Built in: opus and fable { input 5, output 25, cacheWrite 6.25, cacheWrite1h 10, cacheRead 0.5 }, sonnet { 1, 5, 1.25, 2, 0.1 }, haiku { 0.333, 1.667, 0.417, 0.667, 0.033 }. ‼️ CACHE WRITES ARE PRICED BY TTL AND THE 1-HOUR RATE IS THE ONE THAT APPLIES HERE: measured on this machine, 17 923 938 of 17 923 938 cache-creation tokens were 1-hour and none were 5-minute. A usage block that reports no split is charged at the 1-hour rate. Deliberately separate from agentFarm.pricing: correcting a billing rate must not silently move the limit gauge. First matching rule wins; an unmatched model falls back to the sonnet row, never to zero.",
+          "description": "Override the âš– weight table. Empty = use the built-in one. Each entry: { match (regex on the model id), input, output, cacheWrite (5-minute TTL), cacheWrite1h (1-hour TTL), cacheRead } â€” all relative to ONE SONNET INPUT TOKEN = 1. Built in: opus and fable { input 5, output 25, cacheWrite 6.25, cacheWrite1h 10, cacheRead 0.5 }, sonnet { 1, 5, 1.25, 2, 0.1 }, haiku { 0.333, 1.667, 0.417, 0.667, 0.033 }. â€¼ï¸ CACHE WRITES ARE PRICED BY TTL AND THE 1-HOUR RATE IS THE ONE THAT APPLIES HERE: measured on this machine, 17 923 938 of 17 923 938 cache-creation tokens were 1-hour and none were 5-minute. A usage block that reports no split is charged at the 1-hour rate. Deliberately separate from agentFarm.pricing: correcting a billing rate must not silently move the limit gauge. First matching rule wins; an unmatched model falls back to the sonnet row, never to zero.",
           "items": {
             "type": "object",
             "properties": {
@@ -2660,7 +2660,7 @@
               },
               "output": {
                 "type": "number",
-                "description": "Weight of one output token — thinking is billed here too, and it is the biggest spender in a turn."
+                "description": "Weight of one output token â€” thinking is billed here too, and it is the biggest spender in a turn."
               },
               "cacheWrite": {
                 "type": "number",
@@ -2668,7 +2668,7 @@
               },
               "cacheWrite1h": {
                 "type": "number",
-                "description": "Weight of one 1-hour-TTL cache-creation token — the rate that actually applies on this machine."
+                "description": "Weight of one 1-hour-TTL cache-creation token â€” the rate that actually applies on this machine."
               },
               "cacheRead": {
                 "type": "number",
@@ -2685,34 +2685,34 @@
             "raw"
           ],
           "enumDescriptions": [
-            "Brake on whichever ceiling is further along — the safe default when both are configured.",
-            "Brake only on the ⚖ weighted figure against windowWeightedTokenLimit.",
-            "Brake only on the raw total against windowTokenLimit — how it behaved before the weighted figure existed."
+            "Brake on whichever ceiling is further along â€” the safe default when both are configured.",
+            "Brake only on the âš– weighted figure against windowWeightedTokenLimit.",
+            "Brake only on the raw total against windowTokenLimit â€” how it behaved before the weighted figure existed."
           ],
           "default": "whichever",
-          "description": "Which figure the quota guard (quotaGuardPercent) and the model-downgrade rule (quotaDowngradePercent) read when deciding how full the 5-hour window is. A ceiling that is not configured is simply not consulted, whatever this says — set windowTokenLimit and/or windowWeightedTokenLimit first."
+          "description": "Which figure the quota guard (quotaGuardPercent) and the model-downgrade rule (quotaDowngradePercent) read when deciding how full the 5-hour window is. A ceiling that is not configured is simply not consulted, whatever this says â€” set windowTokenLimit and/or windowWeightedTokenLimit first."
         },
         "agentFarm.windowWeightedTokenLimit": {
           "type": "number",
           "default": 0,
-          "description": "Optional limit for the rolling 5-hour window measured in WEIGHTED tokens (⚖) instead of raw ones. A cache-read token is a tenth of a fresh input token and an output token is five, while 94-99% of a raw total is cache reads — so the raw total of a full window ranges 111M-175M across days that hit the very same wall, and the weighted total of those same windows sits at 18-21M. Set this to what your plan actually allows (watch the ⚖ figure in the status bar for a window where you hit the limit) and the quota guard and the model-downgrade rule brake on it. 0 = off; the raw windowTokenLimit keeps working exactly as before, and setting both brakes on whichever is further along."
+          "description": "Optional limit for the rolling 5-hour window measured in WEIGHTED tokens (âš–) instead of raw ones. A cache-read token is a tenth of a fresh input token and an output token is five, while 94-99% of a raw total is cache reads â€” so the raw total of a full window ranges 111M-175M across days that hit the very same wall, and the weighted total of those same windows sits at 18-21M. Set this to what your plan actually allows (watch the âš– figure in the status bar for a window where you hit the limit) and the quota guard and the model-downgrade rule brake on it. 0 = off; the raw windowTokenLimit keeps working exactly as before, and setting both brakes on whichever is further along."
         },
         "agentFarm.planUsageRefreshMinutes": {
           "type": "number",
           "default": 5,
           "minimum": 0,
-          "description": "How often your Claude subscription limits are re-read from Anthropic while the fleet is IDLE, in minutes — nothing is running, so they can only change by the clock. While an agent is actually mid-turn the faster planUsageActiveRefreshSeconds beat takes over. One beat is shared by the status-bar indicator, the Dashboard's \"Plan usage\" card and the usage.plan bridge op — they never make separate requests. 0 turns the automatic refresh off in BOTH windows; the card's ⟳ and the indicator's \"Check now\" still work. Only the OAuth session Claude Code stores locally is read; it is never written to."
+          "description": "How often your Claude subscription limits are re-read from Anthropic while the fleet is IDLE, in minutes â€” nothing is running, so they can only change by the clock. While an agent is actually mid-turn the faster planUsageActiveRefreshSeconds beat takes over. One beat is shared by the status-bar indicator, the Dashboard's \"Plan usage\" card and the usage.plan bridge op â€” they never make separate requests. 0 turns the automatic refresh off in BOTH windows; the card's âŸ³ and the indicator's \"Check now\" still work. Only the OAuth session Claude Code stores locally is read; it is never written to."
         },
         "agentFarm.planUsageActiveRefreshSeconds": {
           "type": "number",
           "default": 60,
           "minimum": 30,
-          "description": "How often the same figures are re-read while at least one agent is mid-turn, in seconds — that is when they are actually moving, and when you are watching them. A session that is open but waiting for your next prompt is idle and uses the minutes setting above. The switch is instant in both directions: a turn starting and a turn ending each trigger one immediate read. Minimum 30 seconds, and that floor is enforced in code: the endpoint is undocumented and answers a too-frequent poller with a persistent HTTP 429, so a fast setting is not a preference it will honour. A 429 is met with an automatic backoff (3 → 6 → 12 → 15 min) that one success clears; the ⟳ button asks anyway. Ignored when planUsageRefreshMinutes is 0 (automatic refresh off)."
+          "description": "How often the same figures are re-read while at least one agent is mid-turn, in seconds â€” that is when they are actually moving, and when you are watching them. A session that is open but waiting for your next prompt is idle and uses the minutes setting above. The switch is instant in both directions: a turn starting and a turn ending each trigger one immediate read. Minimum 30 seconds, and that floor is enforced in code: the endpoint is undocumented and answers a too-frequent poller with a persistent HTTP 429, so a fast setting is not a preference it will honour. A 429 is met with an automatic backoff (3 â†’ 6 â†’ 12 â†’ 15 min) that one success clears; the âŸ³ button asks anyway. Ignored when planUsageRefreshMinutes is 0 (automatic refresh off)."
         },
         "agentFarm.planUsageStatusBar": {
           "type": "boolean",
           "default": true,
-          "description": "Keep your plan's session countdown and usage percentages in the VS Code status bar — \"3h 49m - 86% / wk 41%\": time left in the current session window, how much of it is gone, and how much of the week. Visible while you work without opening anything. Hover for every limit with its reset time and the beat it is running on, click for the Dashboard card. Hidden automatically on a machine with no Claude subscription login (API key / Bedrock / Vertex)."
+          "description": "Keep your plan's session countdown and usage percentages in the VS Code status bar â€” \"3h 49m - 86% / wk 41%\": time left in the current session window, how much of it is gone, and how much of the week. Visible while you work without opening anything. Hover for every limit with its reset time and the beat it is running on, click for the Dashboard card. Hidden automatically on a machine with no Claude subscription login (API key / Bedrock / Vertex)."
         },
         "agentFarm.planUsageWarnPercent": {
           "type": "number",
@@ -2726,7 +2726,7 @@
           "default": 95,
           "minimum": 0,
           "maximum": 100,
-          "description": "…and red at this one. Set it to 101 to never go red."
+          "description": "â€¦and red at this one. Set it to 101 to never go red."
         },
         "agentFarm.maxTranscriptMessages": {
           "type": "number",
@@ -2776,12 +2776,12 @@
         "agentFarm.externalTerminal": {
           "type": "boolean",
           "default": false,
-          "description": "Open claude session terminals (Start/Continue/Resume) in the OS terminal — Windows Terminal when available — instead of the integrated terminal. Avoids xterm.js rendering glitches (ghost spaces, lost lines) in long TUI sessions. Farm tasks stay in the integrated terminal so their status can be tracked. Toggle via 'Terminal Rendering Fix…'."
+          "description": "Open claude session terminals (Start/Continue/Resume) in the OS terminal â€” Windows Terminal when available â€” instead of the integrated terminal. Avoids xterm.js rendering glitches (ghost spaces, lost lines) in long TUI sessions. Farm tasks stay in the integrated terminal so their status can be tracked. Toggle via 'Terminal Rendering Fixâ€¦'."
         },
         "agentFarm.judgeArgs": {
           "type": "string",
           "default": "--model claude-haiku-4-5-20251001",
-          "description": "CLI arguments for internal verification (judge) calls — keep this on a cheap model."
+          "description": "CLI arguments for internal verification (judge) calls â€” keep this on a cheap model."
         },
         "agentFarm.maxConcurrentTasks": {
           "type": "number",
@@ -2806,12 +2806,12 @@
         "agentFarm.mediaAuthSecret": {
           "type": "string",
           "default": "FAL_KEY",
-          "description": "Name of the vault secret holding your fal.ai key (store it via 'Agent Farm: Set Secret…')."
+          "description": "Name of the vault secret holding your fal.ai key (store it via 'Agent Farm: Set Secretâ€¦')."
         },
         "agentFarm.replicateAuthSecret": {
           "type": "string",
           "default": "REPLICATE_API_TOKEN",
-          "description": "Name of the vault secret holding your Replicate API token (store it via 'Agent Farm: Set Secret…'). Used for media models with a 'replicate:' prefix."
+          "description": "Name of the vault secret holding your Replicate API token (store it via 'Agent Farm: Set Secretâ€¦'). Used for media models with a 'replicate:' prefix."
         },
         "agentFarm.replicateBaseUrl": {
           "type": "string",
@@ -2849,7 +2849,7 @@
             "type": "string"
           },
           "default": [],
-          "description": "Optional routing-target suggestions (repos/areas) offered in the work queue's add form and filter, in addition to the discovered agent names. Empty by default — free text, nothing hardcoded."
+          "description": "Optional routing-target suggestions (repos/areas) offered in the work queue's add form and filter, in addition to the discovered agent names. Empty by default â€” free text, nothing hardcoded."
         },
         "agentFarm.queue.groupSize": {
           "type": "number",
@@ -2885,7 +2885,7 @@
             }
           },
           "default": [],
-          "description": "Media ingest folders (downloads, render exports…): scanned every 30s; new image/video/audio files are registered into the Media Gallery in place (no copy). Files older than 48h at scan time are ignored."
+          "description": "Media ingest folders (downloads, render exportsâ€¦): scanned every 30s; new image/video/audio files are registered into the Media Gallery in place (no copy). Files older than 48h at scan time are ignored."
         },
         "agentFarm.mediaBudgetMonthUSD": {
           "type": "number",
@@ -2960,7 +2960,7 @@
         "agentFarm.notifyWebhookUrl": {
           "type": "string",
           "default": "",
-          "description": "Forward farm notifications (permission, stalled, budget, workflow done/failed) to this webhook URL as JSON — e.g. an n8n webhook that relays to Telegram. Supports {secret:NAME}."
+          "description": "Forward farm notifications (permission, stalled, budget, workflow done/failed) to this webhook URL as JSON â€” e.g. an n8n webhook that relays to Telegram. Supports {secret:NAME}."
         },
         "agentFarm.notifyWebhookEvents": {
           "type": "array",
@@ -2990,7 +2990,7 @@
         "agentFarm.dailyDigest": {
           "type": "string",
           "default": "off",
-          "description": "Send a compact daily fleet scorecard to notifyWebhookUrl after this local time (HH:MM, e.g. \"21:30\"); \"off\" disables. No model call — plain data. Manual: 'Send Daily Digest Now'."
+          "description": "Send a compact daily fleet scorecard to notifyWebhookUrl after this local time (HH:MM, e.g. \"21:30\"); \"off\" disables. No model call â€” plain data. Manual: 'Send Daily Digest Now'."
         },
         "agentFarm.dispatchRules": {
           "type": "array",
@@ -3008,7 +3008,7 @@
             }
           },
           "default": [],
-          "description": "Dispatcher routing rules for 'dispatch' triggers — first matching regex wins. Example: [{\"match\": \"uyku|kaygı\", \"agent\": \"psikolog\"}]."
+          "description": "Dispatcher routing rules for 'dispatch' triggers â€” first matching regex wins. Example: [{\"match\": \"uyku|kaygÄ±\", \"agent\": \"psikolog\"}]."
         },
         "agentFarm.dispatchClassifier": {
           "type": "boolean",
@@ -3023,7 +3023,7 @@
             "openai"
           ],
           "default": "off",
-          "description": "Semantic search embeddings: 'gemini' (Google API, GEMINI_API_KEY secret) or 'openai' (any OpenAI-compatible /embeddings endpoint — incl. fully local Ollama/LM Studio via embeddingsBaseUrl, no key needed)."
+          "description": "Semantic search embeddings: 'gemini' (Google API, GEMINI_API_KEY secret) or 'openai' (any OpenAI-compatible /embeddings endpoint â€” incl. fully local Ollama/LM Studio via embeddingsBaseUrl, no key needed)."
         },
         "agentFarm.embeddingsModel": {
           "type": "string",
@@ -3082,7 +3082,7 @@
             }
           },
           "default": [],
-          "description": "Alternative CLI executors for tasks (gemini / codex / …). Non-claude tasks get output archiving and exit-code status; deep monitoring (transcripts, live hooks, cost) stays Claude-specific."
+          "description": "Alternative CLI executors for tasks (gemini / codex / â€¦). Non-claude tasks get output archiving and exit-code status; deep monitoring (transcripts, live hooks, cost) stays Claude-specific."
         },
         "agentFarm.relayFeeds": {
           "type": "array",
@@ -3100,7 +3100,7 @@
             }
           },
           "default": [],
-          "description": "Live relay feeds from other machines (J2): run farmRelay.js there ('Save Relay Script for Another Machine…'), sync its output file here, list it in this setting."
+          "description": "Live relay feeds from other machines (J2): run farmRelay.js there ('Save Relay Script for Another Machineâ€¦'), sync its output file here, list it in this setting."
         },
         "agentFarm.packGalleryRepos": {
           "type": "array",
@@ -3113,7 +3113,7 @@
         "agentFarm.digestTtsModel": {
           "type": "string",
           "default": "",
-          "description": "fal.ai TTS model id for the spoken daily briefing (e.g. an ElevenLabs TTS endpoint on fal — verify the exact id on fal.ai). Empty disables 'Speak Daily Briefing'."
+          "description": "fal.ai TTS model id for the spoken daily briefing (e.g. an ElevenLabs TTS endpoint on fal â€” verify the exact id on fal.ai). Empty disables 'Speak Daily Briefing'."
         },
         "agentFarm.digestTtsFolder": {
           "type": "string",
@@ -3184,7 +3184,7 @@
             "type": "string"
           },
           "default": [],
-          "markdownDescription": "Insight categories that are **automatically delegated** to the insight's own agent as a headless task when they appear (warnings/errors only; 24h cooldown per problem; only the task-runner window queues them). Empty = off. Example: `[\"memory-index\", \"duties\", \"guardrail\"]`. Categories are shown next to each row in the Insights view. This spends agent time — enable deliberately."
+          "markdownDescription": "Insight categories that are **automatically delegated** to the insight's own agent as a headless task when they appear (warnings/errors only; 24h cooldown per problem; only the task-runner window queues them). Empty = off. Example: `[\"memory-index\", \"duties\", \"guardrail\"]`. Categories are shown next to each row in the Insights view. This spends agent time â€” enable deliberately."
         },
         "agentFarm.qualitySample": {
           "type": "string",
@@ -3208,12 +3208,12 @@
             "weekly"
           ],
           "default": "off",
-          "description": "Weekly cheap-model scan of your follow-up messages for repeated corrections, proposing CLAUDE.md rules (Insights view). Manual: 'Scan for Instruction Suggestions…'."
+          "description": "Weekly cheap-model scan of your follow-up messages for repeated corrections, proposing CLAUDE.md rules (Insights view). Manual: 'Scan for Instruction Suggestionsâ€¦'."
         },
         "agentFarm.weeklySummary": {
           "type": "boolean",
           "default": false,
-          "description": "Once per ISO week, write a three-sentence human-language fleet summary (cheap model) as a notification — and into autoReportFolder if set."
+          "description": "Once per ISO week, write a three-sentence human-language fleet summary (cheap model) as a notification â€” and into autoReportFolder if set."
         },
         "agentFarm.queueAutoAdvance": {
           "type": "boolean",
@@ -3394,7 +3394,7 @@
         "agentFarm.projectContextExtra": {
           "type": "string",
           "default": "",
-          "description": "One line of your own added to the project context every session gets (see the ◧ chip above the Console composer). This is where an installation points its agents at its own rules — e.g. \"Your constitution's _REF/project-session.md applies to this session.\" Empty by default: Agent Farm ships general, and what an agent should DO with a project is yours to say."
+          "description": "One line of your own added to the project context every session gets (see the â—§ chip above the Console composer). This is where an installation points its agents at its own rules â€” e.g. \"Your constitution's _REF/project-session.md applies to this session.\" Empty by default: Agent Farm ships general, and what an agent should DO with a project is yours to say."
         },
         "agentFarm.noticeStaleHours": {
           "type": "number",
@@ -3404,12 +3404,12 @@
         "agentFarm.idleSessionNoticeMinutes": {
           "type": "number",
           "default": 30,
-          "description": "Minutes a session may sit waiting for your input before ONE notice is posted about it (0 disables). An idle session never blocks the farm, so it is not a Needs You row — but one left waiting all afternoon is a loop that quietly never closed."
+          "description": "Minutes a session may sit waiting for your input before ONE notice is posted about it (0 disables). An idle session never blocks the farm, so it is not a Needs You row â€” but one left waiting all afternoon is a loop that quietly never closed."
         },
         "agentFarm.consoleDropZone": {
           "type": "boolean",
           "default": true,
-          "description": "Whether the Console page listens for a file dropped anywhere on it. Turn this off if drag-and-drop misbehaves on your machine; 📎 (Attach) and pasting a screenshot are unaffected either way."
+          "description": "Whether the Console page listens for a file dropped anywhere on it. Turn this off if drag-and-drop misbehaves on your machine; ðŸ“Ž (Attach) and pasting a screenshot are unaffected either way."
         }
       }
     }

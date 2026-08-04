@@ -37,6 +37,9 @@
     // turn list that is the real map of the session. Anything that jumps to a turn
     // (deep link, ↑↓, breakdown row) unfolds its target, so nothing is out of reach.
     const collapsed = new Set();
+    /** Is the step-kind key pinned open? Folded by default — a legend you have
+     *  already learned is clutter — and it survives a re-render once opened. */
+    let legendOpen = false;
     // Turn numbers already folded once — a live session's NEW turns arrive folded
     // too, but a turn the user opened by hand is never re-folded behind their back.
     const foldedOnce = new Set();
@@ -683,6 +686,17 @@
     // close it. Clicks inside the OPEN popover must not toggle (it's a child of the
     // card). The document-level closers are attached once (a re-render rebuilds the
     // card, so a per-render document listener would leak) and look elements up live.
+    function wireStepLegend() {
+        const card = document.getElementById('actcard');
+        if (!card) { return; }
+        card.addEventListener('click', () => {
+            const strip = document.getElementById('steplegend');
+            if (!strip) { return; }
+            legendOpen = strip.hasAttribute('hidden');
+            if (legendOpen) { strip.removeAttribute('hidden'); } else { strip.setAttribute('hidden', ''); }
+        });
+    }
+
     function wireContextPop() {
         const card = document.getElementById('ctxcard');
         if (card) {
@@ -805,6 +819,11 @@
                    reflowing the KPI row (card is position:relative, popover absolute).
                    The WHOLE card is the click target (small corner buttons were too
                    easy to miss); the ⛁ glyph is the always-visible affordance. */
+                .actcard { cursor:help; }
+                .actkey { display:inline-block; width:13px; height:13px; line-height:13px; text-align:center;
+                    border-radius:50%; font-size:9px; opacity:.55; vertical-align:middle;
+                    border:1px solid var(--vscode-descriptionForeground,#888); }
+                .actcard:hover .actkey { opacity:1; }
                 .ctxcard { position:relative; cursor:pointer; }
                 .ctxglyph { position:absolute; top:9px; right:11px; z-index:2;
                     font-size:13px; line-height:1; opacity:.45; pointer-events:none;
@@ -882,9 +901,16 @@
                     <span class="ctxglyph" id="ctxglyph">⛁</span>
                     ${contextPopHtml(DATA.contextReport)}</div>
                 <div class="card"><div class="label">Span</div><div class="kpi">${durMin}m</div><div class="sub">${fmtTime(DATA.firstTs)} → ${fmtTime(DATA.lastTs)}</div></div>
-                <div class="card"><div class="label">Activity</div><div class="kpi">${DATA.toolCalls}</div><div class="sub">tool calls · ${DATA.errors} errors · ${C.esc((DATA.models || []).map(m => m.replace(/^claude-/, '')).join(', '))}</div></div>
+                <div class="card actcard" id="actcard" title="${C.esc(C.stepKindLegendText())}"><div class="label">Activity <span class="actkey">?</span></div><div class="kpi">${DATA.toolCalls}</div><div class="sub">tool calls · ${DATA.errors} errors · ${C.esc((DATA.models || []).map(m => m.replace(/^claude-/, '')).join(', '))}</div></div>
             </div>
-            <div class="steplegend">${C.stepKindLegend()}</div>
+            <!-- ‼️ THE KEY TO THE STEP GLYPHS, TWICE OVER. Every row in the
+                 conversation below carries a one-character chip saying what KIND
+                 of step it is, and a glyph is only as good as the place you can
+                 re-learn it. So the Activity card — the one that counts those
+                 very steps — is the key: hover it for the whole scheme in words,
+                 click it to pin the strip open under the cards. Folded by
+                 default, because a legend you have already learned is clutter. -->
+            <div class="steplegend" id="steplegend"${legendOpen ? '' : ' hidden'}>${C.stepKindLegend()}</div>
             ${fileBoxHtml()}
             ${turnBoxHtml()}
             ${replay.active ? `
@@ -919,6 +945,7 @@
         });
         document.getElementById('raw').addEventListener('click', () => vscode.postMessage({ type: 'openRaw' }));
         wireContextPop();
+        wireStepLegend();
         // ---- Files changed: fold a file open (hunks fetched once), open it,
         // or ask for the git comparison (a different question — see the box).
         document.querySelectorAll('[data-fileopen]').forEach(row =>

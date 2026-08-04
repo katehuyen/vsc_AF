@@ -2,6 +2,12 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.63.1 — The step-glyph key, where you will actually look for it (2026-08-04)
+
+The chips are one character each, and a glyph is only as good as the place you can re-learn it. Two keys, both hung on labels that are always on screen and never move: the Console puts it on the **session id** at the far left of the line under the composer (hover), and the session page puts it on the **Activity card** — the card that counts those very steps. Hover it for the whole scheme in words; **click it** to pin the strip open under the cards. Folded by default, because a legend you have already learned is clutter, and it stays open across re-renders once you open it.
+
+The blueprint (EN + TR) gained the section this whole line of work was missing — *What Work Costs: two figures and nine kinds of step*: the frozen-data experiment, why the raw figure is the wrong unit, the cache-write TTL correction, the endpoint calibration, the nine step kinds with what each one costs, and the four settings that now control all of it.
+
 ## 3.63.0 — The weight table is a setting now, and the limit was measured against the real endpoint (2026-08-04)
 
 **The ⚖ scheme is fully controllable from Settings.** These numbers are the provider's rate card, not ours; one of them moving should never need a release. Four settings, all under **Cost & budgets**: `quotaWeightMode` (`model-aware` · `model-flat` · `raw`), `quotaWeights` (the whole table — per model regex: input, output, 5-minute cache-write, 1-hour cache-write, cache-read, all relative to one Sonnet input token = 1), `quotaBrakeBasis` (which figure the quota guard and the model-downgrade rule read: whichever is further along · weighted only · raw only) and `windowWeightedTokenLimit`. Changing the table re-reads every transcript on the spot, because the ⚖ total is summed during the parse and a new rate with old arithmetic behind it would be worse than none. An unusable table — an empty array, a typo in a regex — falls back to the shipped one rather than quietly zeroing the gauge being watched.

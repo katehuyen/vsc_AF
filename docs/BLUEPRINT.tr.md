@@ -464,6 +464,63 @@ Bunların hepsi Console'u o ajan **kompozitörde seçili** olarak açar; **sen b
 
 > **Doğrulama:** `test/smoke_console_live.js` **gerçek** claude süreçleriyle uçtan uca koşar (cevap · tur içine yönlendirme · bekletme + düzenleme + teslim · uçuşta kesme · reddedilen yazma · canlı izin verme · tekrar deneyip dosyayı gerçekten yazma · temiz kapanış): **27/27, $0,112**. Para harcadığı için `npm test`'in dışında tutulur. Ölçüm bir tasarım hatasını da yakaladı: **CLI ilk stdin satırını alana kadar hiçbir şey yayınlamıyor**, dolayısıyla ilk mesajı "oturum hazır görünene kadar" kuyrukta tutmak sonsuza kadar kilitleniyordu — ilk mesaj artık daima gönderilir.
 
+## İş Ne Kadar Tutuyor — iki rakam ve dokuz adım türü {#ne-kadar-tutuyor}
+
+*(3.61.0 – 3.63.0)* Beş soruşturma bir token sayma hatası aradı, çünkü iki paket aynı iş için farklı toplam veriyor gibiydi. Sayma hatası yok — ve bunu kanıtlamak, kimsenin yapmadığı bir deney gerektirdi.
+
+### Deney: veriyi dondur, sadece kodu değiştir
+
+Önceki denetimlerin hepsi ya iki paketin **kaynağını okuyup** "aynı" dedi, ya da **iki canlı oturumu** karşılaştırdı — ki bu kodu *ve* veriyi aynı anda değiştirir, dolayısıyla hiçbir şeye karar veremez. Bunun yerine 3.56.0 ve 3.60.1 ayrı worktree'lerde derlendi ve kendi `parseSessionFile` + `PricingEngine`'leri **aynı 355 transcript** üzerinde koşturuldu: **iki tarafta da 4.329.012.662 token ve 8975,1433 USD**, farklı çıkan oturum 0, tur dizileri birebir. Rakamlar mutlak olarak da doğru — eklentiyle hiç kod paylaşmayan bağımsız bir parser, tartışmalı üç tur için 6,866M / 6,856M / 10,759M verdi; sayfadakiyle aynı.
+
+### ‼️ Hata BİRİMDEYDİ
+
+Ham token toplamının **%94–99'u cache-read**'dir ve planın döner limiti bir cache-read'i taze girdi token'ının onda biri sayar (çıktıyı beş katı, 1 saatlik cache yazımını iki katı, Opus'u beş Sonnet). Yani ham rakama içindeki en ucuz kalem hâkimdir ve **tarif ettiği duvarla orantılı değildir**. 32 günlük gerçek transcript üzerinde ölçüldü: tepe 5 saatlik pencerede ham ÷ ağırlıklı oranı **0,80× ile 3,86×** arasında geziyor.
+
+**Bu yüzden artık her token rakamı ikisini birden taşıyor.** Önce ham, sonra `⚖` ve ağırlıklı ikizi — Console kartları, canlı tur şeridi, biten tur satırı, kompozitörün altındaki oturum satırı, devam ettirme listesi, Sessions tabloları ve tur açılımları, Turns sayfası, viewer'ın Tokens kartı / tur bandı / tur tablosu / Markdown dışa aktarımı, Dashboard'un ajan tabloları, aralık kartı ve 5 saat kartı, Portfolio'nun 30 günlük sütunları ve filo satırı, Live Timeline kartları, kenar çubuğu ipuçları, durum çubuğu lap çipi ve ipucu, filo raporu. Tek tanım (`pricing.ts` içindeki `QUOTA_WEIGHTS`), **aynı satırdan, aynı dedup muhafızının içinde, o satırı işleyen modelden** toplanıyor — ikisi asla farklı hikâye anlatamaz. Haiku'da koşan bir alt-ajan haiku olarak tartılır.
+
+### ‼️ Cache yazımları TTL'e göre fiyatlanır ve geçerli olan 1 saatlik oran
+
+3.61.0 cache-write ağırlığını yayınlanmış **5 dakikalık** orandan (1,25×) aldı — *transcript'te ne yazdığına bakmadan*. Oysa cevap orada, kimsenin okumadığı bir alanda: `usage.cache_creation` yazımı TTL'e göre bölüyor ve 40 en yeni transcript'teki 3.813 asistan satırında **17.923.938 cache-creation token'ının 17.923.938'i `ephemeral_1h`, 5 dakikalık sıfır**. 1 saatlik yazım girdinin **2 katı**, yani her ⚖ rakamı turun en pahalı kaleminde 1,6 kat eksikti. `toUsage()` artık bölümü okuyup her yarısını kendi oranından fiyatlıyor; bölüm bildirmeyen bir blok **1 saatlik** orandan ücretlendiriliyor, çünkü eksik saymak bu işin baştaki hatasıydı.
+
+### Limit, gerçek uçtan ölçüldü
+
+Planın kendi ucundan aynı pencere içinde iki kez örnek alındı (iki okumada da aynı sıfırlanma zamanı, yani aynı pencere): **%29 → %82, 28,1 dakika, 96 API çağrısı, 38,13M ham** — puan başına 0,72M ham, yani **tam 5 saatlik limit ~72M ham**; bu da bu işi başlatan "eskiden 75M'de doluyordu" ifadesinin neredeyse tam karşılığı. Sonra hesap değişti ve taze bir pencere **3,15M ham ile %42'ye** ulaştı — ima edilen limit **7,5M ham**, on kat küçük. *Ağırlıklı* ölçekte aynı iki pencere 46,9M ve 23,8M ima ediyor: fark **9,6×'ten 2,0×'e** iniyor. Birim işin çoğunu yapıyor — ilk pencere %98,7 cache-read, ikincisi %27,6 cache-**write** — ama 2 katlık bir artık kalıyor ve iki farklı hesapla bunun ağırlıktan mı yoksa iki farklı kotadan mı geldiği ayırt edilemez. Kesin ayrım için **tek bir hesap** içinde farklı şekilli iki örnek gerekir.
+
+### Dokuz adım türü
+
+Bir tur, birbirine benzeyen şeylerin listesiydi: `Read D:/x.ts` ile modelin dokuz saniye düşünmesi aynı satırı çiziyordu — oysa biri burada bedava çalışır, diğeri çıktı oranından faturalanır. Dolayısıyla *"limitim nereye gitti?"* sorusunun hiçbir sayfada karşılığı yoktu. Kategoriler **yazılmadan önce sayıldı** (60 transcript, 21.705 satır): Bash 1349 · Edit 1086 · Read 636 · PowerShell 425 · Grep 230 · Write 168 · `mcp__obsidian__*` 45 · `mcp__playwright__*` 13 · WebFetch 5 · WebSearch 5, artı harness araçları.
+
+| | tür | neye mal olur |
+|---|---|---|
+| **◈** | thinking | model düşünüyor — **output** olarak faturalanır, en pahalı token |
+| **▸** | reply | model yazıyor — output |
+| **⌘** | local tool | bu makinede çalışır — **çalışması bedava**; sonucu *sonraki* çağrıda ödenir |
+| **⇄** | MCP tool | MCP sunucusuna istek — model token'ı yok |
+| **⌗** | web | internete çıkış — model token'ı yok; sayfa context'e girer |
+| **⑂** | sub-agent | kendi context'i olan ayrı konuşma, bu oturumun bütçesinden |
+| **⚙** | harness | CLI'ın içinde — ne model ne ağ |
+| **↩** | tool result | üretimi bedava; **sonraki çağrıyı büyüten şey budur** |
+| **·** | local only | modele hiç gitmedi |
+
+**‼️ Görünmez olan thinking'di.** 878 text bloğuna karşı 1.737 thinking bloğu — model konuştuğundan yaklaşık iki kat fazla düşünüyor, bu token'ların hepsi çıktı oranından faturalanıyor ve hiçbir yerde sayılmıyordu. Satırlar hâlâ çizilmiyor (modelin özel çalışması) ama tur kaç tane olduğunu söylüyor.
+
+**Her adım kendi API çağrısının harcamasını da taşıyor**, ham ve ⚖, **çağrı başına bir kez, ilk blokta**. Rakamı olmayan satır bedava değildir — üstündeki çağrıya binmiştir, ipucu bunu söyler. Console konuşmasında, çalışma şeridinde (spinner artık ne yapıldığının *kategorisiyle* başlar), transkript sayfasının meta satırında ve Markdown dışa aktarımda canlı.
+
+**Anahtar nerede duruyor:** çipler tek glif ve şeritte legend bloğuna yer yok, bu yüzden **kompozitörün altındaki satırın en solundaki oturum kimliğinde** duruyor — her zaman ekranda olan ve hiç kımıldamayan tek etiket. `session cb489864` üzerine gel, şema orada: her glif ve neye mal olduğu. Transkript sayfası aynı legend'i konuşmanın üstünde görünür bir şerit olarak taşır. MCP üzerinden sürülen tarayıcı (`mcp__playwright__*`, `mcp__chrome-devtools__*`) MCP değil **web** sayılır; listelenmemiş bir araç **local** sayılır — yanılırsa bedeli olmayan varsayım. Webview'daki tablo kopyası `test_step_kinds.js` ile `src/core/stepkind.ts`'e birebir bağlıdır.
+
+### Hepsi bir ayar
+
+Bu sayılar sağlayıcının fiyat kartı, bizim değil; birinin değişmesi asla yeni sürüm gerektirmemeli. **Settings → Cost & budgets** altında:
+
+- **`agentFarm.quotaWeightMode`** — `model-aware` (varsayılan: Opus 5, Sonnet 1, Haiku ⅓) · `model-flat` (token *türlerini* tart, hangi model koştuğunu yok say) · `raw` (⚖ ham toplam olur — sökmeden kapatmak).
+- **`agentFarm.quotaWeights`** — tablonun kendisi. Model regex'i başına: `input`, `output`, `cacheWrite` (5 dakika), `cacheWrite1h` (1 saat), `cacheRead`; hepsi **bir Sonnet girdi token'ı = 1**'e göre. `agentFarm.pricing`'den bilerek ayrı: faturayı düzeltmek limit göstergesini sessizce kaydırmamalı.
+- **`agentFarm.quotaBrakeBasis`** — kota freni ve model düşürme kuralı hangi rakamı okusun: `whichever` hangisi ilerideyse (varsayılan) · `weighted` · `raw`.
+- **`agentFarm.windowWeightedTokenLimit`** — 5 saatlik tavan, ağırlıklı token cinsinden. Varsayılanı 0 ve **ayarlanana kadar hiçbir şeyi değiştirmez**; `windowTokenLimit` aynen çalışmaya devam eder.
+
+Tablo değiştiği an bütün transcript'ler yerinde yeniden okunur — ⚖ toplamı parse *sırasında* toplanır, yeni oranın arkasında eski aritmetiğin durması hiç yoktan kötü olurdu. Kullanılamaz bir tablo (boş dizi, bozuk regex) izlenen göstergeyi sessizce sıfırlamak yerine paketle gelen tabloya düşer.
+
+**Köprü:** `usage.window` döner 5 saatlik pencereyi **iki birimde**, aralarındaki oranla ve yapılandırılmış tavanlara göre yüzdeyle verir. Anthropic'in gerçek abonelik rakamı için `usage.plan`.
+
 ## Oturum Başlatma ve Denetim {#oturum-denetim}
 
 *(3.24.0)* Agent Farm oturumları **görüyordu**; artık onlara **dokunuyor**. Dört parça: bir oturum neyle başlar, hangi oturumlar elinin altında durur, çalışan bir oturum nasıl durdurulur, ve tüm bunlara klavyeden nasıl ulaşılır.

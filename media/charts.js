@@ -103,6 +103,25 @@
             + s.glyph + '</span>';
     }
 
+    /**
+     * The legend as PLAIN TEXT, for a `title` attribute.
+     *
+     * ‼️ A GLYPH IS ONLY AS GOOD AS THE PLACE YOU CAN RE-LEARN IT. The chips are
+     * deliberately terse — one character on a row that already has words on it —
+     * which works while you remember what `⑂` means and fails the moment you do
+     * not. The Console has no room for a legend block, so it hangs here instead:
+     * on the session id at the far left of the strip under the composer, the one
+     * label that is always on screen and never moves.
+     */
+    function stepKindLegendText() {
+        return 'Step kinds — what each glyph on a row means, and what it costs:\n\n'
+            + Object.keys(STEP_KIND).map(k =>
+                '  ' + STEP_KIND[k].glyph + '  ' + STEP_KIND[k].label + ' — ' + STEP_KIND[k].cost).join('\n')
+            + '\n\nA figure beside a row is what THAT API call spent (raw ⚖ weighted).'
+            + '\nA row with no figure did not cost nothing: one call carries several'
+            + '\nsteps, and its cost is written once, on the first of them.';
+    }
+
     /** The legend, for the one place that explains the whole scheme. */
     function stepKindLegend() {
         return Object.keys(STEP_KIND).map(k =>
@@ -345,5 +364,5 @@
         return renderSpeaker(rawModel, pageUpper, (window.__AFUI__ || {}).speaker);
     }
 
-    window.AFCharts = { stackedBars, donut, hbars, heatmap, sparkline, esc, fmtUSD, fmtTok, fmtTokW, fmtTokWText, WEIGHTED_TIP, STEP_KIND, stepChip, stepKindLegend, fmtDur, fmtSteps, STEPS_TIP, aiName, parseModel, renderSpeaker, aiLabel, PALETTE };
+    window.AFCharts = { stackedBars, donut, hbars, heatmap, sparkline, esc, fmtUSD, fmtTok, fmtTokW, fmtTokWText, WEIGHTED_TIP, STEP_KIND, stepChip, stepKindLegend, stepKindLegendText, fmtDur, fmtSteps, STEPS_TIP, aiName, parseModel, renderSpeaker, aiLabel, PALETTE };
 })();

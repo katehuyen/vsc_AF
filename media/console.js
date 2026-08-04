@@ -339,6 +339,9 @@
         /* what THIS call spent, hung on the step that spent it — an annotation,
            never a headline competing with the row's own words */
         .steptok { float:right; font-size:10px; opacity:.5; margin-left:8px; cursor:help; }
+        /* the session id doubles as the step-kind key — dotted underline is the
+           web's own promise that hovering will explain something */
+        .sidlegend { cursor:help; border-bottom:1px dotted var(--vscode-descriptionForeground,#888); }
         .permbox { margin:10px; padding:9px 11px; border-radius:8px;
             border:1px solid var(--vscode-editorWarning-foreground,#cca700);
             background:color-mix(in srgb, var(--vscode-editorWarning-foreground,#cca700) 12%, transparent); }
@@ -1506,7 +1509,13 @@
         const spTip = sp.est
             ? 'Everything this session has spent — the finished turns as the CLI reported them, plus what the running turn has spent so far, priced off the tokens seen (that is what the ~ is). A conversation you resumed brings its earlier turns with it.'
             : 'Everything this session has spent, as the CLI reported it — and the tokens it bought. A conversation you resumed brings its earlier turns with it.';
-        return `${s.sessionId ? 'session ' + C.esc(s.sessionId.slice(0, 8)) + ' · ' : ''}${s.contextTokens ? `<span title="Approximate context in the model window right now">~${C.fmtTok(s.contextTokens)} ctx</span> · ` : ''}<span title="${spTip}">${sp.est ? '~' : ''}${spend(sp.cost, sp.tokens, sp.wTokens)}</span> this session · ${s.turns} turn${s.turns === 1 ? '' : 's'}
+        // ‼️ THE LEGEND HANGS ON THE SESSION ID. The step chips are one glyph
+        // each and there is no room on this strip for a key, so the one label
+        // that is always on screen and never moves carries it: hover the id and
+        // the whole scheme is there — every glyph, and what each one costs.
+        return `${s.sessionId
+            ? `<span class="sidlegend" title="${C.esc(C.stepKindLegendText())}">session ${C.esc(s.sessionId.slice(0, 8))}</span> · `
+            : ''}${s.contextTokens ? `<span title="Approximate context in the model window right now">~${C.fmtTok(s.contextTokens)} ctx</span> · ` : ''}<span title="${spTip}">${sp.est ? '~' : ''}${spend(sp.cost, sp.tokens, sp.wTokens)}</span> this session · ${s.turns} turn${s.turns === 1 ? '' : 's'}
             <span class="grow"></span>
             ${attachBtnHtml()}
             ${s.sessionId ? '<button class="secondary" id="c-transcript">Open transcript</button>' : ''}

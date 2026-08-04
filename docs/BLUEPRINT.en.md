@@ -417,6 +417,63 @@ All of them open the Console with that agent **preselected in the composer**; **
 
 > **Verification:** `test/smoke_console_live.js` drives **real** claude processes end to end (answer · mid-turn steering delivered inside the turn · hold + edit + hand-over · interrupt in flight · a refused write · the live grant · the retry that really writes the file · a clean close): **27/27 for $0.112**. It stays out of `npm test` because it spends money. The measurement also caught the one design error worth naming: the CLI emits **nothing at all** until its first stdin line, so holding the first message until the session "looks ready" deadlocks forever — the first message is now always sent.
 
+## What Work Costs — two figures and nine kinds of step {#ne-kadar-tutuyor}
+
+*(3.61.0 – 3.63.0)* Five investigations went looking for a token-counting bug because two builds seemed to report different totals for the same work. There is no counting bug — and proving that took an experiment nobody had run.
+
+### The experiment: freeze the data, swap only the code
+
+Every earlier check either **read** the two builds' source and pronounced them the same, or compared **two live sessions** — which changes the code *and* the data at once and can therefore decide nothing. So 3.56.0 and 3.60.1 were built into separate worktrees and their own `parseSessionFile` + `PricingEngine` were run over **the same 355 transcripts**: **4 329 012 662 tokens and $8975.1433 from both**, zero sessions differing, per-turn arrays identical. The figures are right in absolute terms too — an independent parser sharing no code with the extension returned 6.866M / 6.856M / 10.759M for the three turns under dispute, matching the page.
+
+### ‼️ The fault was the UNIT
+
+A raw token total is **94–99 % cache reads**, and the plan's rolling limit charges a cache read at about a tenth of a fresh input token (output at five, a 1-hour cache write at two, Opus at five Sonnets). So the raw figure is dominated by the cheapest thing in it and **is not proportional to the wall it appears to describe**. Measured across 32 days of real transcripts, raw ÷ weighted for a peak 5-hour window ranges **0.80× to 3.86×**.
+
+**So every token figure now carries both.** Raw first, then `⚖` and the weighted twin — Console cards, the live turn strip, the finished-turn line, the session line under the composer, the resume list, the Sessions tables and their per-turn fold-outs, the Turns page, the session viewer's Tokens card / turn band / turn table / Markdown export, the Dashboard's agent tables and range card and 5h card, the Portfolio's 30-day columns and fleet row, the Live Timeline cards, the sidebar hovers, the status-bar lap chip and tooltip, and the fleet report. One definition (`QUOTA_WEIGHTS` in `pricing.ts`), summed off the **same lines, inside the same dedup guard, from the model that served each one** — so the two can never tell different stories. A sub-agent on haiku is weighed as haiku.
+
+### ‼️ Cache writes are priced by TTL, and the 1-hour rate is the one that applies
+
+3.61.0 set the cache-write weight from the published **5-minute** ratio (1.25×) *without first checking what the transcripts contain*. They contain the answer, in a field nobody had read: `usage.cache_creation` splits the write by TTL, and across 3 813 assistant lines in the 40 newest transcripts **17 923 938 of 17 923 938 cache-creation tokens were `ephemeral_1h` and zero were 5-minute**. A 1-hour write costs **2×** input, so every ⚖ figure was 1.6× light on the most expensive thing in a turn. `toUsage()` now reads the split and prices each half at its own rate; a block reporting no split is charged at the **1-hour** rate, because under-stating what a turn cost the limit is the failure being fixed.
+
+### The limit, measured against the real endpoint
+
+Utilization was sampled from the plan's own endpoint twice inside one window (both readings carried the same reset time, so they are the same window): **29 % → 82 % in 28.1 minutes over 96 API calls cost 38.13M raw** — 0.72M raw per percentage point, i.e. **a full 5-hour limit of ~72M raw**, almost exactly the "it used to fill at 75M" that started this. Then the account changed, and a fresh window reached **42 % on 3.15M raw** — an implied limit of **7.5M raw**, ten times smaller. In *weighted* terms those two windows imply 46.9M and 23.8M: the gap closes from **9.6× to 2.0×**. The unit does most of the work — the first window was 98.7 % cache reads, the second 27.6 % cache **writes** — but a 2× residual remains, and with two different accounts there is no way to tell whether that is the weighting or two different allowances. Settling it needs two differently-shaped samples inside **one** account.
+
+### Nine kinds of step
+
+A turn was a list of things that looked alike: `Read D:/x.ts` and the model reasoning for nine seconds drew the same row, though one runs here for free and the other is billed at the output rate — so *"where did my limit go?"* had no answer on any page. The categories were **counted before they were written** (60 transcripts, 21 705 lines): Bash 1349 · Edit 1086 · Read 636 · PowerShell 425 · Grep 230 · Write 168 · `mcp__obsidian__*` 45 · `mcp__playwright__*` 13 · WebFetch 5 · WebSearch 5, plus the harness tools.
+
+| | kind | what it costs |
+|---|---|---|
+| **◈** | thinking | model reasoning — billed as **output**, the dearest token there is |
+| **▸** | reply | model writing — output |
+| **⌘** | local tool | runs on this machine — **free to run**; its result is paid on the *next* call |
+| **⇄** | MCP tool | a request to an MCP server — no model tokens |
+| **⌗** | web | out to the internet — no model tokens; the page comes back into context |
+| **⑂** | sub-agent | its own conversation with its own context, spending this session's budget |
+| **⚙** | harness | inside the CLI — no model, no network |
+| **↩** | tool result | free to produce; **this is what makes the next call bigger** |
+| **·** | local only | never reached a model |
+
+**‼️ Thinking was the invisible one.** 1 737 thinking blocks against 878 text blocks — the model reasons about twice as often as it speaks, every one of those tokens is billed at the output rate, and nothing counted them. The rows are still not rendered (they are the model's private working) but the turn says how many there were.
+
+**Each step also carries what its API call spent**, raw and ⚖, written **once per call, on its first block**. A row with no figure did not cost nothing — it rode on the call above it, and the tooltip says so. Live in the Console conversation, in the working strip (the spinner leads with the *category* of what is happening), in the transcript page's meta line, and in the Markdown export.
+
+**Where the key lives:** the chips are one glyph each and the strip has no room for a legend block, so it hangs on the **session id at the far left of the line under the composer** — the one label always on screen and never moving. Hover `session cb489864` and the whole scheme is there. The transcript page carries the same legend as a visible strip above the conversation. A browser driven over MCP (`mcp__playwright__*`, `mcp__chrome-devtools__*`) is filed as **web**, not MCP; a tool nobody has listed reads as **local**, the assumption that costs nothing when it is wrong. The webview's copy of the table is held identical to `src/core/stepkind.ts` by `test_step_kinds.js`.
+
+### It is all a setting
+
+These numbers are the provider's rate card, not ours; one of them moving must never need a release. Under **Settings → Cost & budgets**:
+
+- **`agentFarm.quotaWeightMode`** — `model-aware` (default: Opus 5, Sonnet 1, Haiku ⅓) · `model-flat` (weigh the *kinds* of token, ignore which model ran) · `raw` (⚖ becomes the raw total — off without ripping it out).
+- **`agentFarm.quotaWeights`** — the whole table. Per model regex: `input`, `output`, `cacheWrite` (5-minute), `cacheWrite1h` (1-hour), `cacheRead`, all relative to **one Sonnet input token = 1**. Deliberately separate from `agentFarm.pricing`: correcting a billing rate must not silently move the limit gauge.
+- **`agentFarm.quotaBrakeBasis`** — which figure the quota guard and the model-downgrade rule read: `whichever` is further along (default) · `weighted` · `raw`.
+- **`agentFarm.windowWeightedTokenLimit`** — the 5-hour ceiling in weighted tokens. Defaults to 0 and **changes nothing until set**; `windowTokenLimit` keeps working exactly as before.
+
+Changing the table re-reads every transcript on the spot — the ⚖ total is summed *during* the parse, so a new rate with old arithmetic behind it would be worse than none. An unusable table (empty array, a typo in a regex) falls back to the shipped one rather than quietly zeroing the gauge being watched.
+
+**Bridge:** `usage.window` returns the rolling 5-hour window in **both** units plus the ratio between them and the percent against whichever ceilings are configured. For the real subscription figure from Anthropic, `usage.plan`.
+
 ## Starting and Steering Sessions {#oturum-denetim}
 
 *(3.24.0)* Agent Farm could **see** sessions; now it can **touch** them. Four parts: what a session starts with, which sessions stay within reach, how a running one is stopped, and how all of it is reached from the keyboard.

@@ -105,6 +105,18 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     ok('a row from an older transcript (no kind) draws nothing', C.stepChip(undefined) === '');
     const legend = C.stepKindLegend();
     ok('the legend names every kind', SK.STEP_KINDS.every(s => legend.indexOf(s.label) >= 0));
+
+    // ‼️ A GLYPH IS ONLY AS GOOD AS THE PLACE YOU CAN RE-LEARN IT. The plain
+    // text twin is what hangs on the Console's session id — the one label that
+    // is always on screen and never moves.
+    const txt = C.stepKindLegendText();
+    ok('the text legend carries every glyph', SK.STEP_KINDS.every(s => txt.indexOf(s.glyph) >= 0));
+    ok('…and every label and cost sentence',
+        SK.STEP_KINDS.every(s => txt.indexOf(s.label) >= 0 && txt.indexOf(s.cost) >= 0));
+    ok('…and explains a row that carries no figure',
+        txt.indexOf('written once') >= 0);
+    ok('…as plain text, because a title attribute cannot render markup',
+        txt.indexOf('<') < 0);
 }
 
 // ---------- the console reducer tags what it emits ----------

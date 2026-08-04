@@ -56,6 +56,8 @@ function makeSandbox(opts) {
 
             stepKindLegend: () => '',
 
+            stepKindLegendText: () => 'legend',
+
             fmtTokW(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' [w' + this.fmtTok(Math.round(w)) + ']' : ''); },
             fmtTokWText(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' (w' + this.fmtTok(Math.round(w)) + ')' : ''); },
             WEIGHTED_TIP: 'weighted',
