@@ -122,9 +122,10 @@ const UNKNOWN_EFFORT_WEIGHT = EFFORT_WEIGHT.M;
  * Two rules that never bend:
  *   1. A code is permanent. Cancel an item and its number is still spent — a
  *      note written three months ago that says `K-8` means this item, forever.
- *   2. A code is not an order. Ordering is the ORDER OF LINES IN THE FILE, which
- *      the user changes by dragging in Obsidian or nudging in the panel. That is
- *      what makes "do the top five" work without renumbering anything.
+ *   2. A code is not an order. The order is the PINNED HEAD (`## 🎯 Queue`)
+ *      followed by the ORDER OF LINES IN THE FILE, both of which the user
+ *      changes by hand in Obsidian or from the panel. That is what makes "do
+ *      the top five" work without renumbering anything.
  */
 export const BACKLOG_CODE = /^([A-Z]{1,2})-(\d+(?:\.\d+)*)$/;
 
@@ -248,6 +249,37 @@ const AREA_HEADING = /^#{1,6}\s+(?:[^\p{L}\d\s]\s*)?([A-Z]{1,2})\s*[—–:-]\s*
  *  works, new items just go to the end. */
 const INBOX_HEADING = /(?:📥|\b(?:inbox|gelen)\b)/iu;
 
+/**
+ * `## 🎯 Queue` — THE HEAD OF THE QUEUE, AND THE ONLY ORDER THAT CROSSES AREAS.
+ *
+ * ‼️ WHY THIS EXISTS AT ALL. Line order is the user's prioritisation and stays
+ * that way — but a real backlog file is grouped under area headings, and a
+ * grouped file makes line order a SEGMENTED order: everything in `K` comes
+ * before everything in `S`, for ever, because moving a line across a heading
+ * would re-file the item. So "do X-5 next" was unsayable. It was not a missing
+ * button; it was the one order the file could not express.
+ *
+ * The answer is not a second, hidden order — it is one order with an explicit
+ * head. The queue is **this list, then the file's own order for everything not
+ * in it.** Both halves live in the same document, so a person reading
+ * `Backlog.md` in Obsidian with no extension running sees the same queue an
+ * agent gets from `projects.backlog.next`.
+ *
+ * It holds CODES, and only codes. An uncoded capture has no handle that
+ * survives the file being edited (a line number does not), so filing it is the
+ * price of pinning it — one click, and the code it gets is permanent anyway.
+ */
+const QUEUE_HEADING = /(?:🎯|\bqueue\b|\bnext\s*up\b)/iu;
+
+/** The heading written when the file has no queue block yet. */
+export const QUEUE_TITLE = '## 🎯 Queue';
+
+/** One line of the block: an ordered- or bulleted-list item opening with a
+ *  code. Everything after the code is a label for the reader and is ignored —
+ *  which is what lets the block carry the item's words without them ever
+ *  becoming a second copy that has to be kept true. */
+const QUEUE_ENTRY = /^\s*(?:\d+[.)]\s+|[-*+]\s+)([A-Z]{1,2}-\d+(?:\.\d+)*)(?:\s|$)/u;
+
 export interface BacklogArea {
     /** The letter code — `P`. */
     code: string;
@@ -349,6 +381,13 @@ export interface BacklogSummary {
     inboxLine?: number;
     /** Line of the archive heading, when the file has one. */
     archiveLine?: number;
+    /** The pinned head of the queue, in order — the codes listed under the 🎯
+     *  heading, exactly as the file has them. Empty when there is no block, and
+     *  a code in here is NOT verified to exist: the file is the truth and a
+     *  stale entry is reported (see `nextBacklog`), never silently dropped. */
+    queue: string[];
+    /** Line of the 🎯 heading, when the file has one. */
+    queueLine?: number;
 }
 
 /** A heading that holds finished work. Same idea as the inbox one. */
@@ -370,10 +409,13 @@ export function parseBacklog(text: string): BacklogSummary {
     let area: string | undefined;
     let inInbox = false;
     let inArchive = false;
+    let inQueue = false;
     let fenced = false;
     let commented = false;
     let inboxLine: number | undefined;
     let archiveLine: number | undefined;
+    let queueLine: number | undefined;
+    const queue: string[] = [];
 
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
@@ -407,9 +449,27 @@ export function parseBacklog(text: string): BacklogSummary {
             }
             inInbox = INBOX_HEADING.test(section);
             inArchive = ARCHIVE_HEADING.test(section);
+            // ‼️ An AREA heading is never the queue block, whatever it is
+            // called. `## S — Sıradaki işler` is somebody's area and the items
+            // under it are items; reading it as the queue would turn a section
+            // of the backlog into an ordering list nobody wrote.
+            //
+            // Only the FIRST 🎯 block counts, so a second heading left in the
+            // file cannot quietly append to the queue.
+            const isQueue = !a && QUEUE_HEADING.test(section);
+            if (isQueue && queueLine === undefined) { queueLine = i; }
+            inQueue = isQueue && queueLine === i;
             if (inInbox && inboxLine === undefined) { inboxLine = i; }
             if (inArchive && archiveLine === undefined) { archiveLine = i; }
             continue;
+        }
+
+        // A code listed twice counts once, at its first position: a queue cannot
+        // hold the same item in two places, and refusing the file over it would
+        // be worse than reading it.
+        if (inQueue) {
+            const q = QUEUE_ENTRY.exec(line);
+            if (q && !queue.includes(q[1])) { queue.push(q[1]); }
         }
 
         const m = TASK_LINE.exec(line);
@@ -498,7 +558,9 @@ export function parseBacklog(text: string): BacklogSummary {
         cancelled: items.filter(i => i.state === 'cancelled').length,
         unclassified: items.filter(i => !i.code).length,
         ...(inboxLine !== undefined ? { inboxLine } : {}),
-        ...(archiveLine !== undefined ? { archiveLine } : {})
+        ...(archiveLine !== undefined ? { archiveLine } : {}),
+        queue,
+        ...(queueLine !== undefined ? { queueLine } : {})
     };
 }
 
@@ -530,6 +592,13 @@ export interface NextResult {
     blocked: { item: BacklogItem; waitingOn: string[] }[];
     /** How many live leaves there were before the filters. */
     considered: number;
+    /** The pinned head, as the file has it. */
+    queue: string[];
+    /** Pinned codes that lead nowhere any more — the item is closed, gone, or
+     *  is a container. ‼️ Reported, never quietly removed: the queue is the
+     *  user's own list and a program that prunes it silently is a program that
+     *  loses their ordering while telling them nothing. */
+    staleQueue: string[];
 }
 
 /**
@@ -537,12 +606,16 @@ export interface NextResult {
  *
  * Order of operations matters and each step earns its place: containers out
  * (work lives at the leaves), blocked out (doing it now would be doing it in the
- * wrong order), filters, then the user's own line order — because the user
- * arranging the file IS the prioritisation, and a clever sort that overrules it
- * would make dragging a line pointless.
+ * wrong order), filters, then the user's own order — because the user arranging
+ * their queue IS the prioritisation, and a clever sort that overrules it would
+ * make dragging pointless.
+ *
+ * That order has two halves: the PINNED HEAD (`## 🎯 Queue`) first, then the
+ * file's line order for everything not in it. The head is what makes a queue
+ * possible at all in a file grouped by area — see `QUEUE_HEADING`.
  */
 export function nextBacklog(text: string, opts: NextOptions = {}): NextResult {
-    const { items } = parseBacklog(text);
+    const { items, queue } = parseBacklog(text);
     const byCode = new Map(items.filter(i => i.code).map(i => [i.code as string, i]));
     const live = items.filter(i => isLive(i.state) && !i.container);
     const blocked: NextResult['blocked'] = [];
@@ -568,15 +641,48 @@ export function nextBacklog(text: string, opts: NextOptions = {}): NextResult {
         return true;
     });
 
+    /**
+     * ‼️ THE PINNED HEAD GOES FIRST, AND ONLY IN FILE ORDER.
+     *
+     * `score` and `priority` are a different QUESTION — "what is cheapest",
+     * "what is most urgent" — and a caller who asked one of them did not ask
+     * for the user's hand-made order. Overruling their sort with the pins would
+     * make those two options mean nothing. File order is the one the queue is
+     * an expression of, so that is the one it leads.
+     *
+     * Rank comes off the file's list, and everything unpinned keeps its line
+     * order behind it: the queue is a HEAD, not a replacement.
+     */
+    const rank = new Map<string, number>();
+    queue.forEach((c, n) => rank.set(c, n));
+    const pinnedFirst = (a: BacklogItem, b: BacklogItem): number => {
+        const ra = a.code !== undefined ? rank.get(a.code) : undefined;
+        const rb = b.code !== undefined ? rank.get(b.code) : undefined;
+        if (ra === undefined && rb === undefined) { return a.line - b.line; }
+        if (ra === undefined) { return 1; }
+        if (rb === undefined) { return -1; }
+        return ra - rb;
+    };
+
     const sorted = opts.sort === 'score'
         ? [...passed].sort((a, b) => b.score - a.score || a.line - b.line)
         : opts.sort === 'priority'
             ? [...passed].sort((a, b) =>
                 PRIORITY_WEIGHT[b.priority] - PRIORITY_WEIGHT[a.priority] || a.line - b.line)
-            : passed;
+            : (queue.length ? [...passed].sort(pinnedFirst) : passed);
+
+    // A pin whose item is closed, gone or has become a container leads nowhere,
+    // and the caller is told which — so "why is X-5 not first any more" never
+    // needs the file to be read by hand. ‼️ Measured against the ITEM, not
+    // against this call's filters: an `area: 'K'` query must not report every
+    // other area's pins as rubbish.
+    const staleQueue = queue.filter(c => {
+        const it = byCode.get(c);
+        return !it || !isLive(it.state) || it.container;
+    });
 
     const limit = Math.max(1, Math.min(50, opts.limit ?? 5));
-    return { items: sorted.slice(0, limit), blocked, considered: live.length };
+    return { items: sorted.slice(0, limit), blocked, considered: live.length, queue, staleQueue };
 }
 
 // ---------------------------------------------------------------------------
@@ -1167,6 +1273,145 @@ export function reorderBacklogItem(
         return { ok: false, error: 'those two sit at different depths — dropping across them would re-parent the item' };
     }
     return spliceBlock(src, items, item, anchor, place);
+}
+
+// ---------------------------------------------------------------------------
+// writing — the queue
+// ---------------------------------------------------------------------------
+
+/** How much of an item's words rides along beside its code in the block. Enough
+ *  to recognise it, short enough that the block stays a LIST — a queue you have
+ *  to read paragraphs of is not one you can see the shape of. */
+const QUEUE_LABEL = 64;
+
+export interface QueueEditResult extends BacklogEditResult {
+    /** The queue as it stands afterwards. */
+    queue: string[];
+}
+
+/** Where the block's lines run, heading included. `to` is exclusive and stops
+ *  at the next heading of any level, so prose somebody wrote under the queue is
+ *  carried out with it rather than being orphaned above the next section. */
+function queueBlock(lines: string[], at: number): { from: number; to: number } {
+    let to = at + 1;
+    while (to < lines.length && !/^#{1,6}\s/.test(lines[to])) { to++; }
+    return { from: at, to };
+}
+
+/**
+ * Replace the pinned head with exactly these codes.
+ *
+ * ‼️ THE WHOLE BLOCK IS REWRITTEN AND NOTHING ELSE IS TOUCHED. That split is
+ * what makes the queue safe to own: Agent Farm writes this one block, every
+ * item line in the file stays byte-identical, and a person who rearranges the
+ * block by hand in Obsidian is doing the same edit this function does.
+ *
+ * An empty list REMOVES the block rather than leaving an empty heading — a
+ * queue you cleared should leave no furniture behind.
+ *
+ * ‼️ A code that leads nowhere is DROPPED HERE, WITH A NOTE, rather than
+ * refused — and that is not laxness, it is the only way the list stays
+ * editable. A queue holding one item that was deleted in Obsidian would
+ * otherwise refuse every later edit of itself, including the one that would
+ * have removed the dead entry. Validating a code somebody NAMED is the caller's
+ * job (see `pinBacklogItem`), because there a typo must not look like success.
+ */
+export function setBacklogQueue(text: string, codes: string[]): QueueEditResult {
+    const src = String(text ?? '');
+    const parsed = parseBacklog(src);
+    const byCode = new Map(parsed.items.filter(i => i.code).map(i => [i.code as string, i]));
+
+    const wanted: string[] = [];
+    for (const raw of codes) {
+        const code = String(raw ?? '').trim().toUpperCase();
+        if (!code || wanted.includes(code)) { continue; }
+        wanted.push(code);
+    }
+    // Gone, or closed: not in anybody's queue. Keeping either would leave a
+    // dead entry at the head for ever.
+    const dropped = wanted.filter(c => {
+        const it = byCode.get(c);
+        return !it || !isLive(it.state);
+    });
+    const queue = wanted.filter(c => !dropped.includes(c));
+
+    const lines = src.split(/\r?\n/);
+    const eol = eolOf(src);
+    const body = queue.map((code, n) => {
+        const words = (byCode.get(code) as BacklogItem).text.replace(/\s+/g, ' ').trim();
+        const label = words.length > QUEUE_LABEL ? `${words.slice(0, QUEUE_LABEL).replace(/\s+\S*$/, '')}…` : words;
+        return `${n + 1}. ${code}${label ? ` — ${label}` : ''}`;
+    });
+
+    let out: string[];
+    if (parsed.queueLine !== undefined) {
+        const block = queueBlock(lines, parsed.queueLine);
+        const rest = [...lines.slice(0, block.from), ...lines.slice(block.to)];
+        out = queue.length
+            ? [...lines.slice(0, block.from), QUEUE_TITLE, '', ...body, '', ...lines.slice(block.to)]
+            : rest;
+    } else if (!queue.length) {
+        return { ok: true, text: src, queue, note: 'the queue was already empty' };
+    } else {
+        // A new block goes ABOVE the first section — the head of the queue is
+        // the first thing a reader of this file should meet. The document's own
+        // title (a single #) is not a section, so it keeps its place.
+        let at = lines.findIndex(l => /^#{2,6}\s/.test(l));
+        if (at < 0) { at = lines.length; }
+        out = [...lines.slice(0, at), QUEUE_TITLE, '', ...body, '', ...lines.slice(at)];
+    }
+
+    return {
+        ok: true, text: out.join(eol), queue,
+        ...(dropped.length
+            ? { note: `${dropped.join(', ')} ${dropped.length === 1 ? 'is' : 'are'} closed or gone — left out of the queue` }
+            : {})
+    };
+}
+
+/**
+ * Put one code at a position in the queue — `at` counted the way a person says
+ * it, 1 being the head and the default.
+ *
+ * This is the "do this one next" button, and it is the whole reason the block
+ * exists: it works ACROSS AREAS, which no move of a line ever can.
+ */
+export function pinBacklogItem(text: string, code: string, at?: number): QueueEditResult {
+    const src = String(text ?? '');
+    const want = String(code ?? '').trim().toUpperCase();
+    const parsed = parseBacklog(src);
+    if (!BACKLOG_CODE.test(want)) {
+        return {
+            ok: false, queue: parsed.queue,
+            error: `"${code}" is not a backlog code — an uncoded capture has to be filed before it can be queued`
+        };
+    }
+    const item = parsed.items.find(i => i.code === want);
+    if (!item) { return { ok: false, error: `no backlog item with code ${want}`, queue: parsed.queue }; }
+    if (!isLive(item.state)) {
+        return { ok: false, error: `${want} is ${item.state} — a closed item is not queued`, queue: parsed.queue };
+    }
+    if (item.container) {
+        return {
+            ok: false, queue: parsed.queue,
+            error: `${want} has children — work lives at the leaves, so queue one of them instead`
+        };
+    }
+    const rest = parsed.queue.filter(c => c !== want);
+    const where = Math.max(0, Math.min(rest.length, (at === undefined ? 1 : Math.floor(at)) - 1));
+    return setBacklogQueue(src, [...rest.slice(0, where), want, ...rest.slice(where)]);
+}
+
+/** Take one code out of the queue — it falls back to its place in the file's
+ *  own order, which is where it was before anybody pinned it. */
+export function unpinBacklogItem(text: string, code: string): QueueEditResult {
+    const src = String(text ?? '');
+    const want = String(code ?? '').trim().toUpperCase();
+    const parsed = parseBacklog(src);
+    if (!parsed.queue.includes(want)) {
+        return { ok: true, text: src, queue: parsed.queue, note: `${want} was not in the queue` };
+    }
+    return setBacklogQueue(src, parsed.queue.filter(c => c !== want));
 }
 
 // ---------------------------------------------------------------------------

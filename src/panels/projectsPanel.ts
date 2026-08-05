@@ -103,6 +103,14 @@ export interface ProjectsPanelDeps {
     /** Drop it directly above or below another row — the drag. */
     backlogReorder(id: string, target: { code?: string; line?: number },
         dest: { code?: string; line?: number }, place: string): { error?: string; note?: string };
+    /** Replace the pinned head of the queue — the strip's drag, in one call.
+     *  ‼️ Codes only: a pin has to mean the same item after the file is edited,
+     *  and a line number does not survive that. */
+    backlogQueue(id: string, codes: string[]): { error?: string; note?: string };
+    /** Put one code at a position in the queue (1-based; 1 = the head). */
+    backlogPin(id: string, code: string, at?: number): { error?: string; note?: string };
+    /** Take one code off the queue; it falls back to its place in the file. */
+    backlogUnpin(id: string, code: string): { error?: string; note?: string };
     /** Give an inbox capture a code and file it under an area. */
     backlogCode(id: string, target: { line?: number }, area: string, parent?: string):
         { error?: string; code?: string };
@@ -539,6 +547,36 @@ export class ProjectsPanel {
                 const res = this.deps.backlogReorder(id, backlogRowTarget(msg), dest,
                     msg.place === 'before' ? 'before' : 'after');
                 this.done(res.error, res.error ? undefined : (res.note ?? 'Moved.'));
+                break;
+            }
+            // ---- the queue. ‼️ These are the ONE family here that does not go
+            // through backlogRowTarget: a pinned entry is addressed by CODE and
+            // never by line, because the block has to keep meaning the same item
+            // after somebody inserts a paragraph in Obsidian.
+            case 'backlogQueue': {
+                if (!id || !Array.isArray(msg.codes)) { break; }
+                const codes = msg.codes.map(c => String(c ?? '').trim().toUpperCase()).filter(Boolean);
+                const res = this.deps.backlogQueue(id, codes);
+                this.done(res.error, res.error ? undefined
+                    : (res.note ?? (codes.length ? 'Queue rearranged.' : 'Queue cleared.')));
+                break;
+            }
+            case 'backlogPin': {
+                if (!id) { break; }
+                const code = String(msg.code ?? '').trim().toUpperCase();
+                if (!code) { break; }
+                const res = this.deps.backlogPin(id, code,
+                    typeof msg.at === 'number' ? msg.at : undefined);
+                this.done(res.error, res.error ? undefined : (res.note ?? `${code} is next.`));
+                break;
+            }
+            case 'backlogUnpin': {
+                if (!id) { break; }
+                const code = String(msg.code ?? '').trim().toUpperCase();
+                if (!code) { break; }
+                const res = this.deps.backlogUnpin(id, code);
+                this.done(res.error, res.error ? undefined
+                    : (res.note ?? `${code} is off the queue — it keeps its place in the file.`));
                 break;
             }
             case 'backlogCode': {

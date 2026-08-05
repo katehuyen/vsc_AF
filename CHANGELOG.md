@@ -2,6 +2,28 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.69.0 — The backlog finally has a queue you can put anything at the head of (2026-08-05)
+
+**‼️ The order was segmented, and nobody could say "do X-5 next".** A backlog file is grouped under area headings — `## K — Console`, `## S — Sessions` — and the order handed to an agent was the order of the LINES. Which meant every K item came before every S item, for ever: a line cannot cross a heading without re-filing the item, so the panel refused it, and dragging a chip from the bottom of the strip to the front snapped back with nothing happening. That is not a missing button. It is a missing order, and no amount of drag-and-drop was going to produce one.
+
+**So the order now has a head: `## 🎯 Queue`, at the top of your file.** It lists codes, in order, and the queue is **that list first, then the file's own order for everything not in it**. Press 📌 on a row (or drag a chip in **Next up**, or call `projects.backlog.pin`) and the item is at the front whatever area it lives in. **Only that block is ever written** — every item line stays byte-identical, and the item keeps its code, its line, its area and its section. Take a pin off and it falls back to exactly where the file has it; clear the queue and the block disappears without a trace.
+
+**Both halves live in the same document, which is the point.** Somebody reading `Backlog.md` in Obsidian with no extension running sees the same queue an agent is handed, and rearranging the block by hand there is the same edit the panel makes. A queue kept anywhere else would be a second, invisible order — the one thing this page must not have.
+
+**Only coded items can be queued, and that is stated rather than silently true.** A pin has to mean the same item after somebody inserts a paragraph in Obsidian, and only a code survives that; an uncoded capture is one 🗂 away from having one. A pin whose item was closed or deleted is **reported on the strip, never quietly swept up** — the list is yours, and a program that prunes it silently loses your ordering while telling you nothing. `projects.backlog.next` reports the same under `staleQueue`.
+
+**⤒ ▲ ▼ ⤓ are unchanged and now say what they are: FILING order** — where an item sits inside its own area. Two different questions, two different controls, and the tab says which is which.
+
+**And the drag itself was broken in three separate ways, all of which read as "it works sometimes".** The side you dropped on was read from a CSS class that `dragleave` cleared as the pointer crossed the row's own spans, so a drop landed the wrong way round about half the time; the side is read from the drop's own coordinates now. Chromium delivers no drop at all unless `dragover` declares what the drop would do, which it did not. And the gaps between and below wrapped chips — half the strip's area — were a drop on nothing; the row catches those and hands them to the nearest chip. **Next up shows fourteen** by default, still with the mark where `.next`'s default five stops.
+
+**‼️ The capture box no longer loses what you wrote.** The page rebuilds its whole HTML on every repaint — a filter chip, a background refresh, stepping into the next tab to remind yourself what you meant — and the box went with it every time. On a box built for a paragraph that was the most expensive thing this page could lose. What you type now survives every repaint, including which area and size you picked (filing a run of items into one area should cost one choice, not one per item), and it empties **only once the host confirms the add** — a refusal keeps your words.
+
+**The box also grew the console composer's four text tools** — paste · copy · cut · clear, from the same shared component, so paste lands with the same "put a space in first if it would weld onto the word before it" rule. **Add** is a button beside them now instead of a banner across the whole row.
+
+**Row controls sit in two lines.** Every axis this page can set is a control, and on one line the cluster had grown wider than the item it belonged to — the words, the whole reason the row exists, were squeezed into what was left. The badges and ↗ ✎ read across the top, the state, queue and ordering acts sit under them, and the split is at the same place on every row.
+
+**New bridge ops:** `projects.backlog.queue` (read or replace the head), `projects.backlog.pin` (`code`, `at?` — 1 is the head and the default), `projects.backlog.unpin` (`code`, or `all`). `projects.backlog.next` reads the new order without being asked, and `projects.backlog.move`/`.reorder` now say in their own contract that ordering across areas is not their job.
+
 ## 3.68.1 — A Backloglog row that had no session grew a copy of itself on every redraw (2026-08-05)
 
 **Caught on this installation's own file, on the second rebuild.** The contract of `Backloglog.md` is that Agent Farm owns the data rows and everything else in an item's block is yours and is written back untouched — so the reader has to be able to tell one from the other. A row for an event with **no session to point at** (a click in the panel, a box ticked in Obsidian) opens with `_no session_` instead of a back-ticked id, and the reader did not count that as one of ours: it was preserved as your prose *and* regenerated, so every outside-closed item gained one more identical line each time the file was drawn. Both shapes the writer can emit are now the same rule the reader applies, and the tests redraw the file three times and require it not to move.

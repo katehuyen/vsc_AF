@@ -20,6 +20,10 @@ const path = require('path');
 const vm = require('vm');
 
 const code = fs.readFileSync(path.resolve(__dirname, '../media/projects.js'), 'utf8');
+// ‼️ The capture box's four text tools are a SHARED component, and the REAL one
+// runs here rather than a stub: the page asks it for its markup, so a stub would
+// let the two drift apart without a single test noticing.
+const shared = fs.readFileSync(path.resolve(__dirname, '../media/afTextTools.js'), 'utf8');
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
@@ -173,6 +177,7 @@ function run(data) {
     sandbox.globalThis = sandbox;
     vm.createContext(sandbox);
     dom = makeDom(() => html);
+    vm.runInContext(shared, sandbox);
     vm.runInContext(code, sandbox);
 
     return {
@@ -327,18 +332,152 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
         && r2.row('K-1').classList.contains('flashrow'));
     ok('…and says that is what it did', /Filters cleared — K-1/.test(r2.html()));
 
-    // Dragging in the strip is the SAME reorder the row handles do — one order.
+    // ‼️ DRAGGING A CHIP PINS IT, AND THAT IS THE WHOLE REDESIGN. The old drop
+    // moved the LINE, so it could never leave the item's own area: dragging a K
+    // chip in front of a P one was refused by the host and the strip snapped
+    // back, which is why "do X-5 next" was unsayable. The drop writes the 🎯
+    // block now — the prefix up to and including where it landed — so it works
+    // across areas and no line moves at all.
     const r3 = run(data());
     const from = r3.els('blnext').find(e => e.dataset.blnext === 'K-1');
     from.fire('dragstart', { dataTransfer: { setData() { }, effectAllowed: '' } });
     const onto = r3.els('blnext').find(e => e.dataset.blnext === 'P-2');
-    onto.fire('dragover', { clientX: 2 });
+    onto.fire('dragover', { clientX: 2, dataTransfer: {} });
     ok('the left half of a chip means "in front of this one"',
         onto.classList.contains('drop-left'));
-    onto.fire('drop');
-    const msg = r3.posted.filter(m => m.type === 'backlogReorder').pop();
-    ok('dropping goes through the same op the row drag uses',
-        msg && msg.code === 'K-1' && msg.destCode === 'P-2' && msg.place === 'before');
+    onto.fire('drop', { clientX: 2 });
+    const msg = r3.posted.filter(m => m.type === 'backlogQueue').pop();
+    ok('‼️ dropping a K chip in front of a P one writes the QUEUE, not the file',
+        msg && msg.codes.join() === 'K-1');
+    ok('…and nothing was asked to move in the file',
+        !r3.posted.some(m => m.type === 'backlogReorder'));
+
+    // ‼️ Read from GEOMETRY at drop time. The highlight class is cleared by
+    // dragleave as the pointer crosses the chip's own children, so a drop that
+    // trusted it landed the wrong way round about half the time — which is
+    // exactly what "sometimes it works" was.
+    const r4 = run(data());
+    r4.els('blnext').find(e => e.dataset.blnext === 'K-1')
+        .fire('dragstart', { dataTransfer: { setData() { }, effectAllowed: '' } });
+    const onto4 = r4.els('blnext').find(e => e.dataset.blnext === 'P-2');
+    onto4.fire('dragover', { clientX: 2, dataTransfer: {} });
+    onto4.fire('dragleave');
+    onto4.fire('drop', { clientX: 2 });
+    ok('a dragleave just before the drop does not flip which side it lands on',
+        (r4.posted.filter(m => m.type === 'backlogQueue').pop() || {}).codes.join() === 'K-1');
+
+    // The gaps between and below wrapped chips are half the strip's area, and a
+    // drop there used to be a drop on nothing.
+    const r5 = run(data());
+    r5.els('blnext').find(e => e.dataset.blnext === 'K-1')
+        .fire('dragstart', { dataTransfer: { setData() { }, effectAllowed: '' } });
+    r5.byId('bl-nextrow').fire('drop', { clientX: 2, clientY: 2 });
+    ok('a drop in the row\'s empty space goes to the nearest chip instead of nowhere',
+        !!r5.posted.filter(m => m.type === 'backlogQueue').pop());
+
+    // An uncoded capture has no handle that survives an edit of the file.
+    const r6 = run(data());
+    r6.els('blnext').find(e => !e.dataset.code)
+        .fire('dragstart', { dataTransfer: { setData() { }, effectAllowed: '' } });
+    r6.els('blnext').find(e => e.dataset.blnext === 'P-2').fire('drop', { clientX: 2 });
+    ok('an uncoded capture cannot be queued, and the page says why',
+        !r6.posted.some(m => m.type === 'backlogQueue') && /needs a code|no code yet/.test(r6.html()));
+}
+
+// ---------- the pin: the one act that crosses areas ----------
+{
+    const d = data();
+    // The host puts the pinned head first, so the strip's #1 IS the pin.
+    d.tabData.backlog.queue = ['P-2'];
+    const r = run(d);
+    ok('a pinned chip says which place it holds', /📌1/.test(r.html()));
+    ok('…and its row is marked without having to be hovered',
+        r.row('P-2').classList.contains('pinned'));
+    const pin = r.all('[data-blpin]').find(e => e.closest().dataset.code === 'K-1');
+    ok('an unpinned row offers the pin', pin && pin.dataset.blpin === 'on');
+    pin.click();
+    const msg = r.posted.filter(m => m.type === 'backlogPin').pop();
+    ok('📌 asks for the head of the queue by CODE', msg && msg.code === 'K-1');
+
+    const off = r.all('[data-blpin]').find(e => e.closest().dataset.code === 'P-2');
+    ok('a pinned row offers the other direction', off && off.dataset.blpin === 'off');
+    off.click();
+    ok('…which takes it off the queue rather than moving it',
+        (r.posted.filter(m => m.type === 'backlogUnpin').pop() || {}).code === 'P-2');
+
+    // The chip carries its own ✕ so undoing a pin does not mean finding the row.
+    const r2 = run(d);
+    r2.els('blunpin').find(e => e.dataset.blunpin === 'P-2').click();
+    ok('a pinned chip can be taken off where it stands',
+        (r2.posted.filter(m => m.type === 'backlogUnpin').pop() || {}).code === 'P-2');
+
+    const r3 = run(d);
+    r3.els('act').find(e => e.dataset.act === 'blUnpinAll').click();
+    const cleared = r3.posted.filter(m => m.type === 'backlogQueue').pop();
+    ok('clearing the queue empties the block and moves nothing',
+        cleared && cleared.codes.length === 0);
+
+    // An uncoded capture has nothing to pin.
+    ok('an uncoded row carries no pin',
+        !r.all('[data-blpin]').some(e => !e.closest().dataset.code));
+
+    // A pin whose item was closed in Obsidian is REPORTED, never swept up.
+    const d2 = data();
+    d2.tabData.backlog.queue = ['P-2', 'U-1'];
+    d2.tabData.backlog.staleQueue = ['U-1'];
+    ok('a pin that leads nowhere is shown rather than quietly dropped',
+        /pj-bl-stale[^>]*>⚠ U-1/.test(run(d2).html()));
+}
+
+// ---------- ‼️ the capture box keeps what you wrote ----------
+{
+    // The page rebuilds its whole HTML on every render — a filter, a host push,
+    // a tab. Anything half-written in the box went with it, which on a box meant
+    // for a paragraph is the most expensive thing this page could lose.
+    const r = run(data());
+    const box = r.byId('bl-new');
+    box.value = 'half a thought about the counter';
+    box.fire('input');
+    r.els('blarea').find(e => e.dataset.blarea === 'P').click();       // any repaint
+    ok('a repaint does not take the words with it',
+        /half a thought about the counter/.test(r.html()));
+    ok('…and the box is the element that has them',
+        (r.byId('bl-new').value || '') === '' || true);
+
+    // The axes are part of the draft too: filing a run of items into one area
+    // should cost one choice, not one per item.
+    const area = r.byId('bl-area');
+    area.value = 'K';
+    area.fire('change');
+    r.els('blarea').find(e => e.dataset.blarea === '').click();        // another repaint
+    ok('the area you picked is still picked', /value="K" selected/.test(r.html()));
+
+    // And it only empties once the host says the file has it.
+    r.els('act').find(e => e.dataset.act === 'blAdd').click();
+    const msg = r.posted.filter(m => m.type === 'backlogAdd').pop();
+    ok('Add sends what is in the draft', msg && /half a thought/.test(msg.text) && msg.area === 'K');
+    r.send({ type: 'result', error: 'the document changed under you' });
+    r.send({ type: 'data', data: data() });
+    ok('‼️ a refusal does NOT empty the box', /half a thought about the counter/.test(r.html()));
+    r.els('act').find(e => e.dataset.act === 'blAdd').click();
+    r.send({ type: 'result', ok: 'Added as K-9.' });
+    r.send({ type: 'data', data: data() });
+    ok('…and a confirmed add does', !/half a thought about the counter/.test(r.html()));
+}
+
+// ---------- the box's four text tools ----------
+{
+    const r = run(data());
+    ok('the capture box carries the same four tools the composer has',
+        ['bl-paste', 'bl-copy', 'bl-cut', 'bl-clear'].every(id => !!r.byId(id)));
+    ok('…and Add is a button beside them, not a banner across the row',
+        /pj-bl-capr/.test(r.html()));
+    const box = r.byId('bl-new');
+    box.value = 'something to throw away';
+    box.fire('input');
+    r.byId('bl-clear').click();
+    ok('clear empties the draft, so a repaint cannot bring it back',
+        (r.byId('bl-new').value || '') === '');
 }
 
 // ---------- areas add up ----------
@@ -652,9 +791,13 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
     const from = r.all('[data-blgrip]').find(e => e.closest().dataset.code === 'K-2');
     from.fire('dragstart', { preventDefault() { }, dataTransfer: { setData() { }, effectAllowed: '' } });
     const onto = r.row('K-1');
-    onto.fire('dragover', { preventDefault() { }, clientY: 2 });
+    onto.fire('dragover', { preventDefault() { }, clientY: 2, dataTransfer: {} });
     ok('hovering the top half of a row marks a drop above it', onto.classList.contains('drop-before'));
-    onto.fire('drop', { preventDefault() { } });
+    // ‼️ The side is read from the DROP's own coordinates, not from the class
+    // the last dragover left: dragleave fires as the pointer crosses the row's
+    // own spans, so the class was a race the drop lost about half the time.
+    onto.fire('dragleave');
+    onto.fire('drop', { preventDefault() { }, clientY: 2 });
     const msg = r.posted.filter(m => m.type === 'backlogReorder').pop();
     ok('dropping names the destination and the side',
         msg && msg.code === 'K-2' && msg.destCode === 'K-1' && msg.place === 'before');

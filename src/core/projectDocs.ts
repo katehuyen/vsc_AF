@@ -172,7 +172,11 @@ af-role: backlog
      are English because they are part of the mechanism, not part of what you
      are saying.
 
-     ORDER IS THE ORDER OF THESE LINES. Move one and its code does not change. -->
+     THE ORDER IS: what is listed under `## 🎯 Queue`, then the order of these
+     lines. Areas are headings, so a line can never leave its own section — the
+     🎯 block is how an item from any area is put first. Agent Farm writes that
+     block (📌 on a row, or projects.backlog.pin); rearranging it by hand here
+     is the same edit. Moving anything changes no code, ever. -->
 
 ## 📥 Inbox
 

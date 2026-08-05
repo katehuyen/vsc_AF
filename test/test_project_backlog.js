@@ -429,6 +429,95 @@ const VAULT = [
         !!B.findBacklogItem(VAULT, { line: B.parseBacklog(VAULT).items[0].line }).item);
 }
 
+// ---------- ‼️ the queue: the one order that crosses areas ----------
+//
+// The file is grouped under area headings, so LINE order is a segmented order —
+// every P item comes before every K item, for ever, because a line cannot cross
+// a heading without re-filing the item. That made "do K-8 next" impossible to
+// SAY, which is not a missing button but a missing order. The `## 🎯 Queue`
+// block is that order's head; everything not in it still follows the file.
+{
+    ok('a file with no block has an empty queue', B.parseBacklog(VAULT).queue.length === 0);
+    ok('…and the queue is then exactly the file order',
+        B.nextBacklog(VAULT, { limit: 3, maxEffort: 'XL' }).items.map(i => i.code ?? '📥').join()
+        === '📥,P-5.1,P-5.2');
+
+    // The move that was unsayable: a K item ahead of every P item.
+    const pinned = B.pinBacklogItem(VAULT, 'K-8');
+    ok('pinning writes the block and reports the queue',
+        pinned.ok && pinned.queue.join() === 'K-8');
+    ok('‼️ …and K-8 is now first, across the areas', B.nextBacklog(pinned.text,
+        { limit: 3, maxEffort: 'XL' }).items[0].code === 'K-8');
+    ok('…while everything else keeps the file\'s own order', B.nextBacklog(pinned.text,
+        { limit: 3, maxEffort: 'XL' }).items.map(i => i.code ?? '📥').join() === 'K-8,📥,P-5.1');
+    ok('the item itself is untouched — same line, same words, same code',
+        B.parseBacklog(pinned.text).items.find(i => i.code === 'K-8').raw
+        === B.parseBacklog(VAULT).items.find(i => i.code === 'K-8').raw);
+    ok('the block carries the item\'s words so the file reads as a queue',
+        /1\. K-8 — history search is case sensitive/.test(pinned.text));
+    ok('it goes ABOVE the first section, which is where a queue belongs',
+        pinned.text.indexOf('## 🎯 Queue') < pinned.text.indexOf('## 📥 Inbox'));
+    ok('a CRLF file stays CRLF', !/[^\r]\n/.test(pinned.text));
+
+    // Reading it back is the same list — the file is the truth, not a cache.
+    ok('the block round-trips', B.parseBacklog(pinned.text).queue.join() === 'K-8');
+
+    const two = B.pinBacklogItem(pinned.text, 'P-12');
+    ok('a second pin goes to the HEAD by default — "do this one next"',
+        two.queue.join() === 'P-12,K-8');
+    const third = B.pinBacklogItem(two.text, 'P-5.2', 2);
+    ok('…and `at` puts one anywhere in the list, counted the way people say it',
+        third.queue.join() === 'P-12,P-5.2,K-8');
+    ok('pinning something already in the queue MOVES it rather than doubling it',
+        B.pinBacklogItem(third.text, 'K-8').queue.join() === 'K-8,P-12,P-5.2');
+
+    // What it refuses, and why each refusal is silent otherwise.
+    ok('a container is refused: work lives at the leaves',
+        !B.pinBacklogItem(VAULT, 'P-5').ok);
+    ok('a closed item is refused', !B.pinBacklogItem(VAULT, 'K-3').ok);
+    ok('a code that is not in the file is an error, not a quiet no-op',
+        !B.pinBacklogItem(VAULT, 'Z-9').ok && /no backlog item with code Z-9/.test(B.pinBacklogItem(VAULT, 'Z-9').error));
+    ok('an uncoded capture cannot be queued, and says why',
+        !B.pinBacklogItem(VAULT, '').ok);
+
+    // Taking one off is not a demotion: it falls back to where the file has it.
+    const off = B.unpinBacklogItem(third.text, 'P-5.2');
+    ok('unpinning leaves the other pins alone', off.queue.join() === 'P-12,K-8');
+    const empty = B.setBacklogQueue(off.text, []);
+    ok('emptying the queue removes the block rather than leaving a heading',
+        empty.queue.length === 0 && !/🎯/.test(empty.text));
+    ok('‼️ …and every item is exactly where it was before any of this',
+        empty.text === VAULT);
+
+    // A blocked pin is not stale — it is blocked, and that is already reported.
+    const blocked = B.pinBacklogItem(VAULT, 'P-5.3');
+    ok('a pinned item waiting on a ⛔ is still held back',
+        !B.nextBacklog(blocked.text, { maxEffort: 'XL' }).items.some(i => i.code === 'P-5.3'));
+    ok('…and is NOT called stale, because nothing about it is wrong',
+        B.nextBacklog(blocked.text, { maxEffort: 'XL' }).staleQueue.length === 0);
+
+    // A pin whose item was closed in Obsidian: reported, never swept up.
+    const closedOff = B.setBacklogState(pinned.text, { code: 'K-8' }, 'done');
+    ok('a pin that leads nowhere is reported rather than quietly removed',
+        B.nextBacklog(closedOff.text, { maxEffort: 'XL' }).staleQueue.join() === 'K-8');
+    ok('…and the block can still be edited, dead entry and all',
+        B.unpinBacklogItem(closedOff.text, 'K-8').ok);
+
+    // `sort` is a different QUESTION, and the pins must not answer it.
+    ok('asking for the cheapest is not asking for your queue',
+        B.nextBacklog(pinned.text, { sort: 'score', maxEffort: 'XL' }).items[0].code !== 'K-8');
+
+    // A block somebody rearranges by hand in Obsidian is the same edit.
+    const byHand = VAULT.replace('## 📥 Inbox',
+        '## 🎯 Queue\r\n\r\n2. K-8\r\n1. P-12 — anything after the code is a label\r\n\r\n## 📥 Inbox');
+    ok('a hand-written block is read in ITS order, not in its numbering',
+        B.parseBacklog(byHand).queue.join() === 'K-8,P-12');
+    ok('an area heading is never mistaken for the queue, whatever it is called',
+        B.parseBacklog('## Q — Queue\n- [ ] Q-1 a real item\n').queue.length === 0);
+    ok('a second 🎯 block cannot quietly append to the queue',
+        B.parseBacklog(byHand + '\r\n## 🎯 Queue\r\n\r\n1. P-5.1\r\n').queue.join() === 'K-8,P-12');
+}
+
 // ---------- duplicate codes are reported, never resolved ----------
 {
     const dupe = '## P — P\n- [ ] P-1 one\n- [ ] P-1 two\n';

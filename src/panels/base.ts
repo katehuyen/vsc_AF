@@ -175,11 +175,13 @@ export function htmlShell(
     const css = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'common.css'));
     const charts = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'charts.js'));
     // shared components (page header/toolbar + filter controls + the session
-    // right-click contract + sessions table); tiny, so they ship to every page
-    // rather than growing htmlShell a per-page script list
+    // right-click contract + a text box's four tools + sessions table); tiny,
+    // so they ship to every page rather than growing htmlShell a per-page
+    // script list
     const header = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'pageHeader.js'));
     const filters = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afFilters.js'));
     const sessCtx = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSessionCtx.js'));
+    const textTools = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afTextTools.js'));
     const sessTable = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'sessionsTable.js'));
     const script = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', scriptFile));
     // Global UI config shared by every page (not page data): the user's AI
@@ -215,6 +217,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${header}"></script>
 <script nonce="${nonce}" src="${filters}"></script>
 <script nonce="${nonce}" src="${sessCtx}"></script>
+<script nonce="${nonce}" src="${textTools}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>
 <script nonce="${nonce}" src="${script}"></script>
 </body>

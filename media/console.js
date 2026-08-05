@@ -415,31 +415,10 @@
             font-size:13px; border-radius:6px; padding:7px 9px;
             border:1px solid var(--vscode-widget-border,#4443);
             background:var(--vscode-input-background); color:var(--vscode-input-foreground); }
-        /* The box's own four text tools — paste · copy · cut · clear.
-           Miniature and half-lit on purpose: they act on TEXT, never on the
-           agent, so they must not read as a second row of controls competing
-           with Send. They sit in the bottom-right of the box but LEFT of the
-           resize grip, which owns the very corner and would otherwise fight
-           them for the same 14 pixels.
-           Paste is leftmost and permanent; the other three come and go with the
-           draft (see paintTools), and the hidden rule has to be spelled out
-           here because the class sets display:flex, which outranks it. */
-        .tawrap { position:relative; }
-        .tatools { position:absolute; right:19px; bottom:8px; display:flex; gap:2px;
-            opacity:.4; transition:opacity .12s; }
-        .tatool[hidden] { display:none; }
-        .tawrap:hover .tatools, .tatools:hover { opacity:1; }
-        .tatool { width:17px; height:17px; padding:0; line-height:1; font-size:10px;
-            display:flex; align-items:center; justify-content:center; cursor:pointer;
-            border:1px solid var(--vscode-widget-border,#4443); border-radius:4px;
-            background:var(--vscode-input-background); color:var(--vscode-foreground); }
-        .tatool:hover { background:var(--vscode-list-hoverBackground); }
-        /* ‼️ COPY LEAVES THE SCREEN IDENTICAL. Cut and clear empty the box in
-           front of you — the box itself is the receipt — but copy changes
-           nothing you can see, and a button that answers a click with nothing
-           has taught you it does not work. Hence the green ✓ for a moment. */
-        .tatool.done { color:var(--vscode-charts-green,#4caf50);
-            border-color:var(--vscode-charts-green,#4caf50); }
+        /* The box's own four text tools — paste · copy · cut · clear — are a
+           shared component now (media/afTextTools.js, styled in common.css):
+           the Backlog tab's capture box wants exactly the same four, and the
+           paste rule is not something to have two copies of. */
         /* Attached files sit ABOVE the box, between the talk and what you are
            writing — the same place the eye already goes for "what am I about
            to send". Each chip says which carrier it will use, because an
@@ -1669,12 +1648,7 @@
                         <div class="chips" id="c-chips"></div>
                         <div class="tawrap">
                             <textarea id="c-text" placeholder="${placeholder}"${dead ? ' disabled' : ''}></textarea>
-                            <div class="tatools" id="c-tools">
-                                <button class="tatool" id="c-paste" title="Paste the clipboard at the cursor — and put a space in first if it would otherwise weld onto the character before it">⎘</button>
-                                <button class="tatool" id="c-copy" title="Copy this message to the clipboard — nothing is sent, the box keeps it">⧉</button>
-                                <button class="tatool" id="c-cut" title="Cut: copy it to the clipboard and empty the box">✂</button>
-                                <button class="tatool" id="c-clear" title="Clear the box — the text goes, nothing is sent">✕</button>
-                            </div>
+                            ${window.AFTextTools.html('c')}
                         </div>
                         <div class="crow" id="c-controls">${controls}</div>
                         <div class="crow" id="c-status" style="font-size:10px;opacity:.6"></div>
@@ -1740,44 +1714,14 @@
         paintChips();
 
         // ---- the box's four text tools -------------------------------------
-        // ‼️ NONE OF THESE TALKS TO THE AGENT. They paste into, copy, cut and
-        // clear the DRAFT — the same things the keyboard does to any text box —
-        // so that starting a message over, or lifting it out to paste somewhere
-        // else, costs one click instead of select-all-plus-a-chord. That is
-        // exactly why they live ON the box and not in the control row below it,
-        // where every button sends, starts or stops something.
-        //
-        // `tool` is for the three that act on the DRAFT, so an empty box makes
-        // them no-ops. Paste is wired separately for the opposite reason: its
-        // input is the clipboard, and an empty box is its normal case.
-        const withBox = fn => ev => {
-            if (ev && ev.preventDefault) { ev.preventDefault(); }
-            const box = document.getElementById('c-text');
-            if (!box) { return; }
-            fn(box);
-            // A mouse click on a tool must not cost you the keyboard — and for
-            // paste it must not cost you the CARET either, which is why the
-            // insert puts it back before this runs.
-            try { box.focus({ preventScroll: true }); } catch (e) { box.focus(); }
-        };
-        const tool = (id, fn) => byId(id, 'click', withBox(box => {
-            if (!box.value) { return; }   // nothing to act on: say nothing, do nothing
-            fn(box, box.value);
-        }));
-        // ‼️ Don't let the press take the caret. mousedown blurs the textarea
-        // before the click is even delivered, and for paste the caret IS the
-        // argument — a browser keeps the selection across a blur, but a press
-        // that never blurs is one fewer thing depending on that.
-        for (const id of ['c-paste', 'c-copy', 'c-cut', 'c-clear']) {
-            byId(id, 'mousedown', ev => { if (ev && ev.preventDefault) { ev.preventDefault(); } });
-        }
-        byId('c-paste', 'click', withBox(box => pasteText(box)));
-        tool('c-copy', (box, value) => copyText(box, value, () => flashTool('c-copy')));
-        tool('c-cut', (box, value) => copyText(box, value, () => {
-            clearBox(box);
-            flashTool('c-cut');
-        }));
-        tool('c-clear', box => { clearBox(box); flashTool('c-clear'); });
+        // Shared with the Backlog tab's capture box (media/afTextTools.js). The
+        // component owns the four buttons and the paste rule; this page owns
+        // what a change MEANS — the draft is state, and the row above the box
+        // follows the same keystroke (see renderLive).
+        window.AFTextTools.wire({
+            prefix: 'c', boxId: 'c-text',
+            onChange: value => { st.draft = value; save(); renderLive(); }
+        });
         // The line filter is the same multi-select the Search and Notices pages
         // use: null = everything, [] = nothing, any subset in between.
         if (s) {
@@ -2048,144 +1992,6 @@
     const WAIT_TICK_MS = 10000;
     setInterval(renderList, WAIT_TICK_MS);
 
-    // ---- the box's text tools: paste · copy · cut · clear ---------------------
-
-    /**
-     * Paste at the cursor — and NOT the dumb way.
-     *
-     * ‼️ THE ONE THING A PASTE BUTTON GETS WRONG IS THE SPACE. What you paste
-     * into a prompt is almost always a name lifted from somewhere else — a path,
-     * an error string, a session id — and it lands mid-sentence, right after a
-     * word you were still typing. A paste that just splices at the caret welds
-     * the two together (`look atsrc/core/live.ts`), and the fix costs you a
-     * click into the middle of the text you just pasted. So the caret's
-     * NEIGHBOURS decide: a word character immediately to the left and the paste
-     * puts one space in first; whitespace, a newline, an open bracket, or the
-     * very start of the box, and it goes in untouched — a box that adds a space
-     * where there is already one is the same bug in the other direction.
-     *
-     * Only the LEFT side earns a space. The right side is where the caret is
-     * left standing, so what follows is still yours to type — inserting there
-     * would push a space you did not ask for between the caret and your next
-     * keystroke.
-     *
-     * A SELECTION is replaced, exactly as Ctrl+V would: the two ends are
-     * `selectionStart`/`selectionEnd` and they are only equal when nothing is
-     * selected. And it never fights a real Ctrl+V — `document.execCommand
-     * ('insertText')` is not used; the value is rebuilt and the caret is put
-     * back by hand, because the box's own `input` event is what keeps `st.draft`
-     * and the Send buttons honest.
-     */
-    const WELDS_ON_LEFT = /[^\s([{<"'`‘“–—/\\=:,;]$/;
-
-    function pasteAtCursor(box, clip) {
-        const text = String(clip == null ? '' : clip);
-        if (!text) { return false; }               // empty clipboard: say nothing, do nothing
-        const value = box.value || '';
-        // a box that was never focused reports 0/0, which is the start — the
-        // honest reading, since that is where typing would go
-        const start = typeof box.selectionStart === 'number' ? box.selectionStart : value.length;
-        const end = typeof box.selectionEnd === 'number' ? box.selectionEnd : start;
-        const before = value.slice(0, start);
-        const after = value.slice(end);
-        const glue = WELDS_ON_LEFT.test(before) && !/^\s/.test(text) ? ' ' : '';
-        const inserted = glue + text;
-        box.value = before + inserted + after;
-        const caret = start + inserted.length;
-        try { box.setSelectionRange(caret, caret); } catch (e) { /* older host: the text still landed */ }
-        // the draft is state, and the row above it follows the same keystroke
-        st.draft = box.value;
-        save();
-        renderLive();
-        return true;
-    }
-
-    /** Read the clipboard, then paste. The async API is the real path in a
-     *  webview (a secure context); `execCommand('paste')` is blocked by design in
-     *  Chromium, so there is no fallback to reach for — a host that denies the
-     *  read gets no receipt, which is the honest answer (see flashTool). */
-    function pasteText(box) {
-        const nav = typeof navigator !== 'undefined' ? navigator : null;
-        if (!(nav && nav.clipboard && nav.clipboard.readText)) { return; }
-        nav.clipboard.readText().then(clip => {
-            if (pasteAtCursor(box, clip)) { flashTool('c-paste'); }
-        }, () => { /* denied or empty — the box is unchanged, which says so */ });
-    }
-
-    /**
-     * Put the draft on the clipboard, then report.
-     *
-     * The webview is a secure context, so the async API is the real path;
-     * `execCommand` is the fallback for a host that denies it. The receipt is
-     * only shown from `onDone`, i.e. once the write actually happened — a green
-     * ✓ for a copy that silently failed would be worse than no button at all.
-     */
-    function copyText(box, value, onDone) {
-        const nav = typeof navigator !== 'undefined' ? navigator : null;
-        if (nav && nav.clipboard && nav.clipboard.writeText) {
-            nav.clipboard.writeText(value).then(onDone, () => { if (legacyCopy(box)) { onDone(); } });
-            return;
-        }
-        if (legacyCopy(box)) { onDone(); }
-    }
-
-    /** Older path: select the box and let the host copy the selection. */
-    function legacyCopy(box) {
-        try {
-            box.select();
-            return document.execCommand('copy') !== false;
-        } catch (e) { return false; }   // nothing else to try — the box still holds the text
-    }
-
-    /** Empty the box for real: the draft is state, not just characters. */
-    function clearBox(box) {
-        box.value = '';
-        st.draft = '';
-        save();
-        renderLive();
-    }
-
-    /**
-     * The click's receipt — the glyph turns into a green ✓ for a moment.
-     *
-     * Written with `className` rather than `classList` because these buttons
-     * are rebuilt with the shell and the map below is the only place their
-     * original glyph is remembered.
-     */
-    const TOOL_GLYPH = { 'c-paste': '⎘', 'c-copy': '⧉', 'c-cut': '✂', 'c-clear': '✕' };
-    function flashTool(id) {
-        const b = document.getElementById(id);
-        if (!b) { return; }
-        b.textContent = '✓';
-        b.className = 'tatool done';
-        setTimeout(() => {
-            const el = document.getElementById(id);
-            if (!el) { return; }
-            el.textContent = TOOL_GLYPH[id];
-            el.className = 'tatool';
-        }, 900);
-    }
-
-    /**
-     * The tools exist only while there is something to act on: copy, cut and
-     * clear on an empty box are three buttons lying about having work to do.
-     *
-     * ‼️ PASTE IS THE EXCEPTION, AND IT IS THE WHOLE POINT OF IT. Its work is in
-     * the CLIPBOARD, not in the box, so the moment it is most wanted is the
-     * moment the box is empty — the old rule (hide the row unless the draft has
-     * text) would have hidden it exactly then. So the row is now always there
-     * and the three that DO need a draft hide themselves, which also keeps the
-     * paste button in one fixed place instead of sliding as its neighbours
-     * appear.
-     */
-    function paintTools() {
-        const hide = !(st.draft || '');
-        for (const id of ['c-copy', 'c-cut', 'c-clear']) {
-            const el = document.getElementById(id);
-            if (el && el.hidden !== hide) { el.hidden = hide; }
-        }
-    }
-
     // ---- one pass over the changing parts -------------------------------------
 
     /**
@@ -2202,7 +2008,7 @@
     function renderLive() {
         const s = sel();
         // the box's own tools follow the same keystroke as the Send buttons
-        paintTools();
+        window.AFTextTools.paint('c', !!(st.draft || ''));
         // …and so does the chip list: what is hanging on the message is part of
         // the message, so it is drawn wherever the message is (see paintChips).
         paintChips();

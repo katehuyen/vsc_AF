@@ -1375,8 +1375,10 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         } = require(path.join(__dirname, '..', 'out', 'core', 'projectDocs.js'));
         const { addPlanItem, checkPlanItem, planSummary } =
             require(path.join(__dirname, '..', 'out', 'core', 'projectPlan.js'));
-        const { addBacklogItem, BACKLOG_CODE, nextBacklog, parseBacklog, setBacklogState } =
-            require(path.join(__dirname, '..', 'out', 'core', 'projectBacklog.js'));
+        const {
+            addBacklogItem, BACKLOG_CODE, nextBacklog, parseBacklog, pinBacklogItem,
+            setBacklogQueue, setBacklogState, unpinBacklogItem
+        } = require(path.join(__dirname, '..', 'out', 'core', 'projectBacklog.js'));
         const { appendTrack, closingStamp, readTrackFile, summarizeCode, trackedCodes, TRACK_EVENTS } =
             require(path.join(__dirname, '..', 'out', 'core', 'backlogTrack.js'));
 
@@ -1634,6 +1636,26 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
                     }
                 },
                 {
+                    op: 'projects.backlog.pin',
+                    describe: 'put an item at the head of the queue. args: project, code, at?',
+                    handler: a => {
+                        const code = argStr(a, 'code').toUpperCase();
+                        const r = editBacklog(t => pinBacklogItem(t, code,
+                            typeof a.at === 'number' ? a.at : undefined));
+                        return { code, queue: r.queue };
+                    }
+                },
+                {
+                    op: 'projects.backlog.unpin',
+                    describe: 'take an item off the queue. args: project, code?, all?',
+                    handler: a => {
+                        const r = editBacklog(t => (a.all === true
+                            ? setBacklogQueue(t, [])
+                            : unpinBacklogItem(t, argStr(a, 'code').toUpperCase())));
+                        return { queue: r.queue };
+                    }
+                },
+                {
                     op: 'projects.backlog.check', describe: 'change state. args: project, code?, state?',
                     handler: a => {
                         const target = {
@@ -1670,6 +1692,23 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             const filed = await reg.dispatch('projects.backlog.add',
                 { project: 'Agent Farm', text: 'a real item', area: 'P' });
             ok('…and with an area it is given the next free code', filed.ok && filed.result.code === 'P-3');
+
+            // ‼️ The queue is the ONE order that crosses areas. The file is
+            // grouped by heading, so line order can never put a K item ahead of
+            // a P one; the 🎯 block can, and it does it without moving a line.
+            const pinned = await reg.dispatch('projects.backlog.pin',
+                { project: 'Agent Farm', code: 'P-2' });
+            ok('projects.backlog.pin writes the queue block, not the item',
+                pinned.ok && pinned.result.queue.join() === 'P-2'
+                && /## 🎯 Queue/.test(readBacklog())
+                && /- \[ \] P-2 second thing \[efor:: XL\]/.test(readBacklog()));
+            const afterPin = await reg.dispatch('projects.backlog.next',
+                { project: 'Agent Farm', limit: 5, maxEffort: 'XL' });
+            ok('…and next reads exactly that order', afterPin.ok && afterPin.result.items[0] === 'P-2');
+            const unpinned = await reg.dispatch('projects.backlog.unpin',
+                { project: 'Agent Farm', all: true });
+            ok('unpinning everything leaves no heading behind',
+                unpinned.ok && !unpinned.result.queue.length && !/🎯/.test(readBacklog()));
 
             const closed = await reg.dispatch('projects.backlog.check',
                 { project: 'Agent Farm', code: 'P-1' });
@@ -1750,6 +1789,7 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             'projects.backlog.check', 'projects.backlog.set', 'projects.backlog.code',
             'projects.backlog.move', 'projects.backlog.reorder', 'projects.backlog.archive',
             'projects.backlog.promote', 'projects.backlog.open',
+            'projects.backlog.queue', 'projects.backlog.pin', 'projects.backlog.unpin',
             'projects.track', 'projects.tracks', 'projects.tracks.backfill']) {
             ok(`extension.ts registers ${op}`, src.includes(`op: '${op}'`));
         }

@@ -192,6 +192,35 @@ mark {
 .afms-menu .afms-item { display: block; padding: 2px 0; cursor: pointer; white-space: nowrap; font-size: 12px; }
 .afms-menu .afms-item input { cursor: pointer; margin-right: 6px; vertical-align: middle; }
 
+/* A text box's own four tools — paste · copy · cut · clear (media/afTextTools.js).
+   Miniature and half-lit on purpose: they act on TEXT, never on an agent, so
+   they must not read as a second row of controls competing with Send or Add.
+   .tawrap floats them inside the bottom-right of a box but LEFT of the resize
+   grip, which owns the very corner and would otherwise fight them for the same
+   14 pixels; .tatools.inline is for a row that already has a place for them.
+   The hidden rule has to be spelled out because the class sets display:flex,
+   which outranks it (see paint()). */
+.tawrap { position: relative; }
+.tatools {
+    position: absolute; right: 19px; bottom: 8px; display: flex; gap: 2px;
+    opacity: .4; transition: opacity .12s;
+}
+.tatools.inline { position: static; opacity: .6; align-items: center; }
+.tatools.inline:hover { opacity: 1; }
+.tatool[hidden] { display: none; }
+.tawrap:hover .tatools, .tatools:hover { opacity: 1; }
+.tatool {
+    width: 17px; height: 17px; padding: 0; line-height: 1; font-size: 10px;
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+    border: 1px solid var(--vscode-widget-border, #4443); border-radius: 4px;
+    background: var(--vscode-input-background); color: var(--vscode-foreground);
+}
+.tatool:hover { background: var(--vscode-list-hoverBackground); }
+.tatool.done {
+    color: var(--vscode-charts-green, #4caf50);
+    border-color: var(--vscode-charts-green, #4caf50);
+}
+
 .footnote { margin-top: 30px; font-size: 11px; opacity: .55; }
 
 /* Guide layout */

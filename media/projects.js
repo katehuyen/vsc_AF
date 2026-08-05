@@ -71,6 +71,13 @@
             if (blEdit && blEdit.saving) {
                 if (ev.data.error) { blEdit.saving = false; } else { blEdit = null; }
             }
+            // Same bargain for the capture box: the words go only once the file
+            // has them. The axes STAY — filing three bugs into the same area is
+            // the normal case, and re-picking it each time is a tax on it.
+            if (blCap && blCap.sending) {
+                blCap.sending = false;
+                if (!ev.data.error) { blCap.text = ''; }
+            }
             return;                                   // the data message repaints
         }
         if (ev.data.type === 'suggestedFolder') {
@@ -782,22 +789,39 @@
                 .pj-bl-m { opacity:.6; font-size:11px; white-space:nowrap; }
                 .pj-bl-m.blocked { color:var(--vscode-editorWarning-foreground); opacity:.9; }
                 .pj-bl-m.warn { color:var(--vscode-editorWarning-foreground); opacity:1; cursor:help; }
-                /* The row actions stay out of the way until the row is under the
-                   pointer: five buttons on every one of two hundred lines is a
-                   wall, and the list has to stay readable to be usable. */
-                .pj-bl-acts { display:flex; gap:2px; visibility:hidden; }
-                .pj-bl-row:hover .pj-bl-acts { visibility:visible; }
-                /* …and they are drawn as tools, not as primary buttons. Seven
-                   filled blue rectangles on a row is the wall the line above is
-                   about; the same seven as quiet glyphs are a toolbar. */
-                .pj-bl-acts button { padding:0 6px; font-size:11px; background:none;
+                /* ‼️ THE BADGES AND THE ACTIONS ARE TWO LINES, ON PURPOSE.
+                   Every axis this page can set is a control, and by the time
+                   they were all on one line the cluster was wider than the item
+                   it belonged to — the words, the whole reason the row exists,
+                   were squeezed into what was left. So the cluster wraps at a
+                   fixed width, with a hard break after ✎: the badges and the
+                   two "open/edit" acts read across the top, the state and
+                   ordering acts sit under them, and the text gets its width
+                   back. The break is EXPLICIT rather than left to flex, so the
+                   split is the same on every row instead of following whatever
+                   tags that item happens to carry. */
+                .pj-bl-side { flex:0 0 auto; max-width:264px; display:flex; flex-wrap:wrap;
+                    justify-content:flex-end; align-items:baseline; gap:2px 4px; align-self:flex-start; }
+                .pj-bl-nl { flex-basis:100%; height:0; }
+                /* The actions stay out of the way until the row is under the
+                   pointer: nine buttons on every one of two hundred lines is a
+                   wall, and the list has to stay readable to be usable. They
+                   keep their SPACE while hidden (visibility, not display), so
+                   nothing moves as the pointer crosses the list. */
+                .pj-bl-act { visibility:hidden; padding:0 6px; font-size:11px; background:none;
                     border:1px solid transparent; color:inherit; opacity:.8; }
-                .pj-bl-acts button:hover { opacity:1;
+                .pj-bl-row:hover .pj-bl-act { visibility:visible; }
+                .pj-bl-act:hover { opacity:1;
                     background:var(--vscode-toolbar-hoverBackground,#8882);
                     border-color:var(--vscode-widget-border,#4443); }
-                /* The ordering four are a different kind of act from the state
-                   three, and a row of seven identical buttons reads as one. */
-                .pj-bl-acts button[data-blmove="top"] { margin-left:7px; }
+                /* Filing order is a different kind of act from the queue and
+                   the state, and a row of identical buttons reads as one. */
+                .pj-bl-act.move { margin-left:7px; }
+                /* ‼️ THE PIN IS THE ONE ACT THAT IS ALSO A STATE, so unlike the
+                   rest it stays visible while it is on: a queue you can only
+                   see by hovering every row is not one you can see. */
+                .pj-bl-act.pin.on { visibility:visible; opacity:1; }
+                .pj-bl-row.pinned { border-left-color:var(--vscode-charts-blue,#3794ff); }
                 /* A tag the user invented is marked as theirs — it filters like
                    any other, but it is not part of the shipped vocabulary. */
                 .pj-chip.own { border-style:dashed; }
@@ -823,11 +847,18 @@
                 .pj-bl-capf { flex:1 1 240px; max-width:340px; display:flex; flex-wrap:wrap;
                     gap:6px; align-content:flex-start; }
                 .pj-bl-capf select { flex:1 1 128px; min-width:112px; }
-                .pj-bl-capf .pj-bl-addb { flex:1 1 100%; }
+                /* The last row of the footer: the box's own four text tools on
+                   the left, Add on the right. Add is a BUTTON, not a banner —
+                   it used to span the whole width, which said "this is the big
+                   thing here" about the one control you press last. */
+                .pj-bl-capr { flex:1 1 100%; display:flex; gap:6px; align-items:center; }
+                .pj-bl-capr .pj-bl-addb { flex:0 0 auto; margin-left:auto; padding:2px 20px; }
                 /* THE QUEUE STRIP. Entries are buttons because they do two things
                    — jump, and move — and a thing that only looked like a label
                    was a strip nobody tried to touch. */
-                .pj-bl-next .pj-bl-nextrow { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+                .pj-bl-next .pj-bl-nextrow { display:flex; gap:6px; flex-wrap:wrap; align-items:center;
+                    min-height:24px; }
+                .pj-bl-nextw { display:inline-flex; align-items:center; }
                 .pj-bl-nextb { display:inline-flex; align-items:center; gap:5px; cursor:grab;
                     background:none; color:inherit; border:1px solid var(--vscode-widget-border,#4443);
                     border-radius:12px; padding:2px 8px; font-size:11px; }
@@ -835,6 +866,20 @@
                     border-color:var(--vscode-focusBorder); }
                 .pj-bl-nextn { opacity:.5; min-width:12px; text-align:right; }
                 .pj-bl-nexte { opacity:.7; font-size:10px; }
+                /* A pinned entry is there because you PUT it there — it has to
+                   look different from one that is merely next in the file, or
+                   the strip cannot show you what you decided. */
+                .pj-bl-nextb.pinned { border-color:var(--vscode-charts-blue,#3794ff);
+                    background:var(--vscode-list-inactiveSelectionBackground,#8882); }
+                .pj-bl-nextb.pinned .pj-bl-nextn { opacity:.85; }
+                /* …and it can be taken off where it is, rather than by finding
+                   its row again. Only drawn on pinned entries: nothing else has
+                   anything to undo. */
+                .pj-bl-unpin { background:none; border:none; color:inherit; cursor:pointer;
+                    opacity:.35; font-size:10px; padding:0 3px; margin-left:-3px; }
+                .pj-bl-unpin:hover { opacity:1; color:var(--vscode-charts-red,#f14c4c); }
+                .pj-bl-stale { font-size:10px; margin-left:8px; cursor:help;
+                    color:var(--vscode-editorWarning-foreground); }
                 /* Past the op's default: still the user's queue, just not what an
                    agent takes unasked — so it is dimmed, not hidden. */
                 .pj-bl-nextb.past { opacity:.62; }
@@ -1135,6 +1180,33 @@
     const blOpen = new Set();
     /** The row being edited, and the words as they stand in the box. */
     let blEdit = null;
+
+    /**
+     * ‼️ THE CAPTURE BOX'S CONTENTS SURVIVE EVERY REPAINT, AND THAT IS THE
+     * WHOLE POINT OF THIS VARIABLE.
+     *
+     * This page rebuilds its entire HTML on every render — a host push, a
+     * filter chip, a tab switch, a file that changed on disk. The box is part
+     * of that HTML, so anything half-written in it went with the rebuild:
+     * clicking a filter, or stepping into the next tab to remind yourself what
+     * you meant, threw away a paragraph. A backlog item is exactly the place a
+     * long thought gets written, so that was the most expensive thing the page
+     * could lose.
+     *
+     * It is keyed by PROJECT because two projects' captures are two different
+     * thoughts, and it is only emptied by an add the host confirmed — never by
+     * a repaint, and never optimistically: a refusal that had already wiped the
+     * box would lose the item for good.
+     */
+    let blCap = null;
+    function blCapture() {
+        const p = sel();
+        const id = p ? p.id : '';
+        if (!blCap || blCap.id !== id) {
+            blCap = { id: id, text: '', area: '', type: '', prio: 'normal', effort: '', sending: false };
+        }
+        return blCap;
+    }
     /** A row to scroll to and flash after the next paint — set by a click in the
      *  queue strip, consumed once. Cannot be done in the handler: the paint that
      *  draws the row it points at has not happened yet. */
@@ -1256,6 +1328,10 @@
         // Both sides count lines the same way — 1-based, as the host sent them
         // (backlogOut adds the one, the `next` rows go through the same rule).
         const nextKeys = new Set(nextList.map(x => x.code || ('L' + x.line)));
+        // The pinned head, by code and by the position it holds — a row says
+        // WHICH place it has in the queue, not merely that it is in it.
+        const pinnedAt = {};
+        (d.queue || []).forEach((code, n) => { pinnedAt[code] = n + 1; });
         const blockedBy = {};
         for (const b of (d.blocked || [])) { if (b.code) { blockedBy[b.code] = b.waitingOn; } }
 
@@ -1270,11 +1346,16 @@
                 if (BL_TYPE_IDS.indexOf(k) < 0 && extra.indexOf(k) < 0) { extra.push(k); }
             }
         }
-        const areaOpts = ['<option value="">— area —</option>']
-            .concat(areas.map(a => `<option value="${C.esc(a.code)}">${C.esc(a.code)} · ${C.esc(a.label)}</option>`))
+        // The capture box's own contents, kept across the repaint this page does
+        // constantly — including which axes were picked, so filing a run of
+        // items into one area costs one choice rather than one per item.
+        const cap = blCapture();
+        const areaOpts = [`<option value=""${cap.area ? '' : ' selected'}>— area —</option>`]
+            .concat(areas.map(a => `<option value="${C.esc(a.code)}"${a.code === cap.area ? ' selected' : ''}>${C.esc(a.code)} · ${C.esc(a.label)}</option>`))
             .join('');
 
-        const rows = ordered.map(i => backlogRowHtml(i, nextKeys.has(blKey(i)), blockedBy[i.code], areas)).join('');
+        const rows = ordered.map(i =>
+            backlogRowHtml(i, nextKeys.has(blKey(i)), blockedBy[i.code], areas, pinnedAt[i.code] || 0)).join('');
         const active = blActiveFilters();
 
         return `
@@ -1293,21 +1374,24 @@
             <div class="pj-bl-cap">
                 <textarea id="bl-new" rows="4"
                     placeholder="what needs doing — no code needed, file it later&#10;&#10;Write as much as the thought needs; Ctrl+Enter adds it."
-                    title="‼️ A backlog item is where a thought is written down WHOLE — the real ones here run to a paragraph, and a one-line box is an invitation to write less than you mean. Line breaks become spaces (the item is one markdown line). Ctrl+Enter adds it, Enter is just a newline."></textarea>
+                    title="‼️ A backlog item is where a thought is written down WHOLE — the real ones here run to a paragraph, and a one-line box is an invitation to write less than you mean. What you write STAYS in the box: filters, tabs and a file that changed under you all repaint this page, and none of them take your words. Line breaks become spaces (the item is one markdown line). Ctrl+Enter adds it, Enter is just a newline.">${C.esc(cap.text)}</textarea>
                 <div class="pj-bl-capf">
                     <select id="bl-area" title="Leave empty and it lands in the inbox, uncoded">${areaOpts}</select>
                     <select id="bl-type" title="Work type">
-                        <option value="">— type —</option>
-                        ${BL_TYPES.map(t => `<option value="${t.id}">${C.esc(t.label)}</option>`).join('')}
+                        <option value=""${cap.type ? '' : ' selected'}>— type —</option>
+                        ${BL_TYPES.map(t => `<option value="${t.id}"${t.id === cap.type ? ' selected' : ''}>${C.esc(t.label)}</option>`).join('')}
                     </select>
                     <select id="bl-prio" title="Priority">
                         ${PRIO_ORDER.slice().reverse().map(p =>
-            `<option value="${p}"${p === 'normal' ? ' selected' : ''}>${PRIO_ICON[p]} ${p}</option>`).join('')}
+            `<option value="${p}"${p === (cap.prio || 'normal') ? ' selected' : ''}>${PRIO_ICON[p]} ${p}</option>`).join('')}
                     </select>
                     <select id="bl-effort" title="Effort">
-                        ${EFFORT_ORDER.map(e => `<option value="${e}">${e || '— size —'}</option>`).join('')}
+                        ${EFFORT_ORDER.map(e => `<option value="${e}"${e === cap.effort ? ' selected' : ''}>${e || '— size —'}</option>`).join('')}
                     </select>
-                    <button data-act="blAdd" class="pj-bl-addb" title="Ctrl+Enter in the box does the same">Add</button>
+                    <span class="pj-bl-capr">
+                        ${window.AFTextTools.html('bl', { wrap: 'span', className: 'tatools inline' })}
+                        <button data-act="blAdd" class="pj-bl-addb" title="Ctrl+Enter in the box does the same">Add</button>
+                    </span>
                 </div>
             </div>
         </div>
@@ -1410,74 +1494,111 @@
             <span class="muted small pj-bl-count${ordered.length < all.length ? ' narrowed' : ''}">${ordered.length} of ${all.length}</span>
         </div>
 
-        ${nextQueueHtml(nextList, all, d.nextDefault || 5)}
+        ${nextQueueHtml(nextList, all, d.nextDefault || 5, d.queue || [], d.staleQueue || [])}
 
         ${rows || '<p class="muted small">Nothing matches. The file is <code>' + C.esc(d.path) + '</code> — edit it in Obsidian any time; this page reads whatever is there.</p>'}
 
-        <p class="muted small pj-unfiled">A code is permanent and is not the order: dragging a row by its
-            handle (or a chip in <b>Next up</b>, or pressing ⤒ ▲ ▼ ⤓) changes what comes first and leaves
-            <code>P-5.3</code> meaning the same item for ever — which is why dragging only works in file
-            order, the only order that is yours to change. <b>Clicking a code opens the file at that
-            item's line</b> (↗ does the same) in whatever you chose under Settings → Open with; the button
-            at the top of this tab opens the whole document. A badge opens a menu; 🗂 files an uncoded
-            item under an area; ✎ edits the words in place. Closing a box changes exactly one character
-            of your file and adds no ✅ date — Agent Farm does not write metadata it does not own.</p>`;
+        <p class="muted small pj-unfiled"><b>Two orders, and knowing which is which is the whole of this
+            tab.</b> ⤒ ▲ ▼ ⤓ and dragging a row by its handle are <b>filing</b> order — where an item sits
+            inside its own area, and they cannot cross a heading, because that would re-file it.
+            <b>📌 is the queue</b>: it puts an item at the head whatever area it is in, which is the one
+            thing moving a line can never do. The queue is what you pinned, then the file's order for
+            everything else; it lives in the <code>## 🎯 Queue</code> block at the top of the file, so it
+            is still there with no extension running, and <code>projects.backlog.next</code> reads exactly
+            it. A code is permanent through all of it — <code>P-5.3</code> means the same item for ever.
+            <b>Clicking a code opens the file at that item's line</b> (↗ does the same) in whatever you
+            chose under Settings → Open with; the button at the top of this tab opens the whole document.
+            A badge opens a menu; 🗂 files an uncoded item under an area (and only a coded item can be
+            queued); ✎ edits the words in place. Closing a box changes exactly one character of your file
+            and adds no ✅ date — Agent Farm does not write metadata it does not own.</p>`;
     }
 
     /**
-     * THE QUEUE STRIP — the startable items, in the user's own order, and the one
-     * place that order can be changed without reading the file.
+     * THE QUEUE STRIP — the startable items in the order they will be worked,
+     * and the one place that order can be changed without reading the file.
      *
-     * Three things it does that a list of codes did not:
+     * ‼️ WHAT THE ORDER ACTUALLY IS, because this is the thing the page exists
+     * to make sayable. A backlog file is grouped under area headings, so LINE
+     * order is a segmented order: every K item comes before every S item, for
+     * ever, because a line cannot cross a heading without re-filing the item.
+     * That made "do X-5 next" impossible to say — not a missing button, a
+     * missing order. So the queue has two halves: the PINNED HEAD (the file's
+     * own `## 🎯 Queue` block, drawn here as 📌 chips) and then the file's line
+     * order for everything else. Dragging a chip forwards pins it; ✕ on a
+     * pinned chip takes it off and it falls back to where the file has it.
+     *
+     * Three other things it does that a list of codes did not:
      *
      *   * it is LONG ENOUGH TO BE AN ORDER. Four codes answer "what is next";
-     *     twelve answer "what is the order", which is the question you have when
-     *     you want to change it. Where the op's default five would have stopped is
-     *     marked, because the strip must not quietly promise an agent takes twelve.
-     *   * every entry OPENS. Click jumps to that row in the list below and flashes
-     *     it; hover gives the first 600 characters, which is the whole point of a
-     *     code — you cannot recognise K-6 from three letters.
-     *   * every entry MOVES. Drag one onto another and it lands before or after
-     *     it IN THE FILE, through the same op the row handles use. There is one
-     *     order, not a strip order and a file order.
+     *     fourteen answer "what is the order", which is the question you have
+     *     when you want to change it. Where the op's default five would have
+     *     stopped is marked, because the strip must not quietly promise an agent
+     *     takes fourteen.
+     *   * every entry OPENS. Click jumps to that row in the list below and
+     *     flashes it; hover gives the first 600 characters, which is the whole
+     *     point of a code — you cannot recognise K-6 from three letters.
+     *   * an entry with no code cannot be pinned, and says so rather than
+     *     failing: a pin has to mean the same item after the file is edited, and
+     *     only a code does.
      */
     const BL_NEXT_TIP = 620;
 
-    function nextQueueHtml(list, all, cut) {
-        if (!list.length) { return ''; }
+    function nextQueueHtml(list, all, cut, queue, stale) {
+        if (!list.length && !queue.length) { return ''; }
         const byKey = new Map(all.map(i => [blKey(i), i]));
+        const pinAt = {};
+        queue.forEach((code, n) => { pinAt[code] = n + 1; });
         const chips = list.map((x, n) => {
             const key = x.code || ('L' + x.line);
             const i = byKey.get(key) || {};
             const words = String(i.text || '');
+            const pin = x.code ? (pinAt[x.code] || 0) : 0;
             const tip = [
                 `#${n + 1} in your queue${n + 1 > cut ? ' — beyond the default ' + cut : ''}`,
+                pin ? `📌 pinned — you put it here, ahead of the file's own order` : '',
                 i.section ? `under ${i.section}` : '',
                 i.effort ? `size ${i.effort}` : 'not sized',
                 i.priority && i.priority !== 'normal' ? `priority ${i.priority}` : '',
                 '',
                 words.length > BL_NEXT_TIP ? words.slice(0, BL_NEXT_TIP) + '…' : (words || '(empty)'),
                 '',
-                'Click to jump to it below · drag onto another to put it there'
-            ].filter(s => s !== undefined).join('\n');
+                x.code
+                    ? 'Click to jump to it below · drag it where you want it in the queue'
+                    : 'Click to jump to it below · it needs a code before it can be queued (🗂 on its row)'
+            ].filter(s => s).join('\n');
             // The cut mark goes BEFORE the entry that falls past it, so it reads
             // as a line drawn across the queue rather than a badge on an item.
             const mark = (n === cut && list.length > cut)
                 ? `<span class="pj-bl-nextcut" title="An agent that just says &quot;do the top five&quot; stops here — projects.backlog.next defaults to ${cut}. Everything to the right is still your queue.">┊</span>`
                 : '';
-            return mark + `<button class="pj-bl-nextb${n >= cut ? ' past' : ''}" draggable="true"
+            return mark + `<span class="pj-bl-nextw"><button class="pj-bl-nextb${n >= cut ? ' past' : ''}${pin ? ' pinned' : ''}"
+                draggable="true"
                 data-blnext="${C.esc(key)}" data-code="${C.esc(x.code || '')}" data-line="${x.line}"
-                title="${C.esc(tip)}">
-                <span class="pj-bl-nextn">${n + 1}</span>
+                data-at="${n}" title="${C.esc(tip)}">
+                <span class="pj-bl-nextn">${pin ? '📌' : ''}${n + 1}</span>
                 <span class="pj-bl-code">${C.esc(x.code || '📥')}</span>
                 ${i.effort ? `<span class="pj-bl-nexte">${C.esc(i.effort)}</span>` : ''}
-            </button>`;
+            </button>${pin
+                ? `<button class="pj-bl-unpin" data-blunpin="${C.esc(x.code)}"
+                    title="Take ${C.esc(x.code)} off the head of the queue — it keeps its code and its line and falls back to the file's own order">✕</button>`
+                : ''}</span>`;
         }).join('');
+        // A pin whose item was closed or deleted in Obsidian is reported rather
+        // than swept up: the block is the user's own list, and a program that
+        // prunes it quietly is one that loses their ordering without saying so.
+        const staleNote = stale.length
+            ? `<span class="pj-bl-stale" title="These are in the 🎯 Queue block but are closed, gone, or have grown children. They are not handed to anybody; clearing them is one click.">⚠ ${C.esc(stale.join(' '))}</span>`
+            : '';
         return `<div class="pj-card pj-bl-next">
-            <div class="pj-card-h">Next up <span class="muted" style="text-transform:none">— what is startable, in your own file order.
-                Click one to find it · drag one onto another to reorder ·
-                <code>projects.backlog.next</code> reads the same order and takes ${cut} by default</span></div>
-            <div class="pj-bl-nextrow">${chips}</div>
+            <div class="pj-card-h">Next up <span class="muted" style="text-transform:none">— what is startable, in the order it will be worked:
+                what you pinned (📌) first, then your file's own order.
+                Click one to find it · drag one where you want it · <code>projects.backlog.next</code>
+                reads exactly this and takes ${cut} by default</span>
+                ${queue.length ? `<button class="pj-chip" data-act="blUnpinAll"
+                    title="Empty the 🎯 Queue block. Nothing is lost: every item falls back to its place in the file.">✕ clear queue (${queue.length})</button>` : ''}
+                ${staleNote}
+            </div>
+            <div class="pj-bl-nextrow" id="bl-nextrow">${chips}</div>
         </div>`;
     }
 
@@ -1602,13 +1723,14 @@
      *
      *  ‼️ `data-line` is 1-BASED, exactly as the host sent it. It is handed back
      *  unchanged and the panel converts once, at its own boundary. */
-    function backlogRowHtml(i, isNext, waitingOn, areas) {
+    function backlogRowHtml(i, isNext, waitingOn, areas, pinAt) {
         const key = blKey(i);
         const closed = i.state === 'done' || i.state === 'cancelled';
         const cls = ['pj-bl-row'];
         if (closed) { cls.push('closed'); }
         if (i.state === 'doing') { cls.push('doing'); }
         if (isNext) { cls.push('next'); }
+        if (pinAt) { cls.push('pinned'); }
         if (i.container) { cls.push('container'); }
         const type = blTypeOf(i);
         // The canonical type is one settable badge; anything else the user tagged
@@ -1658,6 +1780,7 @@
             <span class="pj-bl-t" title="${cut ? C.esc(full) : ''}">${C.esc(body)}${cut
                 ? ' <button class="pj-bl-more" data-blmore>more</button>'
                 : (open && blChars > 0 && full.length > blChars ? ' <button class="pj-bl-more" data-blmore>less</button>' : '')}</span>
+            <span class="pj-bl-side">
             ${!i.code ? `<span class="pj-bl-mw"><button class="pj-bl-badge filed" data-blfile
                 title="Not filed — no code, no area. Pick one and it gets the next free number in it, permanently.">🗂</button>
                 ${blMenuHtml('area', key, blAreaRows(areas), '')}</span>` : ''}
@@ -1676,15 +1799,19 @@
             ${waitingOn && waitingOn.length
                 ? `<span class="pj-bl-m blocked" title="Waiting on ${C.esc(waitingOn.join(', '))}">⛔ ${C.esc(waitingOn.join(' '))}</span>` : ''}
             ${i.warn ? `<span class="pj-bl-m warn" title="${C.esc(i.warn)}">⚠</span>` : ''}
-            <span class="pj-bl-acts">
-                <button data-blgo title="${C.esc(openTip)}">↗</button>
-                <button data-bledit title="Edit the words — the code and every axis stay put">✎</button>
-                <button data-blstate="doing" title="Mark in progress">▶</button>
-                <button data-blstate="cancelled" title="Cancel — it stays in the file, with its code spent">✕</button>
-                <button data-blmove="top" title="Send to the top of its section — this one next">⤒</button>
-                <button data-blmove="up" title="Move up among its siblings">▲</button>
-                <button data-blmove="down" title="Move down among its siblings">▼</button>
-                <button data-blmove="bottom" title="Send to the bottom of its section">⤓</button>
+                <button class="pj-bl-act" data-blgo title="${C.esc(openTip)}">↗</button>
+                <button class="pj-bl-act" data-bledit title="Edit the words — the code and every axis stay put">✎</button>
+                <span class="pj-bl-nl"></span>
+                ${i.code ? `<button class="pj-bl-act pin${pinAt ? ' on' : ''}" data-blpin="${pinAt ? 'off' : 'on'}"
+                    title="${pinAt
+                    ? C.esc(`#${pinAt} in the queue. Click to take it off — it keeps its code and its line, and falls back to the file's own order.`)
+                    : 'Do this one NEXT. Puts it at the head of the queue, across areas — which moving the line cannot do, because a line cannot leave its own section.'}">📌</button>` : ''}
+                <button class="pj-bl-act" data-blstate="doing" title="Mark in progress">▶</button>
+                <button class="pj-bl-act" data-blstate="cancelled" title="Cancel — it stays in the file, with its code spent">✕</button>
+                <button class="pj-bl-act move" data-blmove="top" title="Send to the top of its SECTION — this is filing order, not the queue (📌 is the queue)">⤒</button>
+                <button class="pj-bl-act" data-blmove="up" title="Move up among its siblings">▲</button>
+                <button class="pj-bl-act" data-blmove="down" title="Move down among its siblings">▼</button>
+                <button class="pj-bl-act" data-blmove="bottom" title="Send to the bottom of its section">⤓</button>
             </span>
         </div>`;
     }
@@ -2078,6 +2205,28 @@
                 const btn = document.querySelector('[data-act="blAdd"]');
                 if (btn) { btn.click(); }
             });
+            // ‼️ Every keystroke is kept, and WITHOUT a repaint: the page redraws
+            // itself whole, so repainting here would move the caret out from
+            // under the person typing. The state is updated; the DOM is not.
+            blNew.addEventListener('input', () => {
+                blCapture().text = blNew.value;
+                window.AFTextTools.paint('bl', !!blNew.value);
+            });
+        }
+        // The box's four text tools — the same component the console composer
+        // uses (media/afTextTools.js), so paste lands with the same space rule.
+        window.AFTextTools.wire({
+            prefix: 'bl', boxId: 'bl-new',
+            onChange: value => {
+                blCapture().text = value;
+                window.AFTextTools.paint('bl', !!value);
+            }
+        });
+        window.AFTextTools.paint('bl', !!blCapture().text);
+        // The four axes are part of the draft too — see blCapture.
+        for (const pair of [['bl-area', 'area'], ['bl-type', 'type'], ['bl-prio', 'prio'], ['bl-effort', 'effort']]) {
+            const el = document.getElementById(pair[0]);
+            if (el) { el.addEventListener('change', () => { blCapture()[pair[1]] = el.value; }); }
         }
 
         /** Add or drop one value on a multi-select axis. Clicking a chip that is
@@ -2179,10 +2328,76 @@
                 render();
             }));
 
-        // Dropping one queue entry on another writes the FILE's order through the
-        // same op the row handles use. Two orders — one for the strip, one for the
-        // file — would be the one thing this page must not have.
+        // Taking one off the head: the chip's own ✕, so undoing a pin does not
+        // mean finding the row again.
+        document.querySelectorAll('[data-blunpin]').forEach(el =>
+            el.addEventListener('click', ev => {
+                ev.stopPropagation();
+                const p = sel();
+                vscode.postMessage({ type: 'backlogUnpin', id: p ? p.id : '', code: el.dataset.blunpin });
+            }));
+
+        /**
+         * ‼️ DRAGGING A CHIP PINS IT, AND THE RULE IS ONE SENTENCE: the queue
+         * becomes "everything up to where you dropped it, in the order you now
+         * see, pinned" — and everything after that keeps following the file.
+         *
+         * That is what makes the strip an order at all. Before this, a drop
+         * moved the LINE, so it could only ever land inside the item's own area:
+         * dragging an X chip to the front was refused by the host and the strip
+         * simply snapped back, which read as a broken control rather than as a
+         * rule. Now the drop writes the 🎯 block instead of moving a line, so it
+         * works across areas, and the item's code, line and section are all
+         * untouched.
+         *
+         * The prefix only grows as far as you drag: pinning one item does not
+         * silently pin the twelve behind it, but the ones in FRONT of it must be
+         * pinned or "after them" would not be expressible.
+         *
+         * An uncoded capture cannot be pinned (only a code survives an edit of
+         * the file), so a drag involving one says so instead of doing nothing.
+         */
         let blNextDrag = '';
+        const blNextChips = () => [...document.querySelectorAll('[data-blnext]')];
+        const blNextClear = () => blNextChips().forEach(b =>
+            b.classList.remove('dragging', 'drop-left', 'drop-right'));
+
+        /** Which side of the chip the pointer is on. Read from GEOMETRY at drop
+         *  time, never from the class the last dragover left behind: `dragleave`
+         *  fires as the pointer crosses the chip's own children, so that class
+         *  was a race the drop lost about half the time. */
+        const blBefore = (el, ev) => {
+            const box = el.getBoundingClientRect();
+            return ev.clientX < box.left + box.width / 2;
+        };
+
+        const blNextDrop = (el, ev) => {
+            const fromKey = blNextDrag;
+            blNextDrag = '';
+            blNextClear();
+            if (!fromKey || !el || el.dataset.blnext === fromKey) { return; }
+            const chips = blNextChips();
+            const order = chips.map(c => ({ key: c.dataset.blnext, code: c.dataset.code || '' }));
+            const from = order.findIndex(o => o.key === fromKey);
+            const onto = order.findIndex(o => o.key === el.dataset.blnext);
+            if (from < 0 || onto < 0) { return; }
+            if (!order[from].code) {
+                flash = { error: 'That one has no code yet — file it with 🗂 and it can be queued.' };
+                render();
+                return;
+            }
+            const moved = order.slice();
+            const [taken] = moved.splice(from, 1);
+            // The insertion point is worked out AFTER the removal, or dropping
+            // something onto a chip to its right lands it one place short.
+            let at = moved.findIndex(o => o.key === el.dataset.blnext);
+            if (!blBefore(el, ev)) { at++; }
+            moved.splice(at, 0, taken);
+            const codes = moved.slice(0, at + 1).map(o => o.code).filter(Boolean);
+            const p = sel();
+            vscode.postMessage({ type: 'backlogQueue', id: p ? p.id : '', codes: codes });
+        };
+
         document.querySelectorAll('[data-blnext][draggable]').forEach(el => {
             el.addEventListener('dragstart', ev => {
                 blNextDrag = el.dataset.blnext;
@@ -2192,34 +2407,48 @@
             el.addEventListener('dragover', ev => {
                 if (!blNextDrag || el.dataset.blnext === blNextDrag) { return; }
                 ev.preventDefault();
-                // Horizontal, because the strip is horizontal: the left half of an
-                // entry means "in front of this one".
-                const box = el.getBoundingClientRect();
-                const before = ev.clientX < box.left + box.width / 2;
+                // ‼️ Chromium will not deliver a drop unless the dragover says
+                // what the drop would DO. Without this line the whole gesture
+                // was a coin toss — which is exactly what "it works sometimes"
+                // looked like.
+                if (ev.dataTransfer) { ev.dataTransfer.dropEffect = 'move'; }
+                const before = blBefore(el, ev);
                 el.classList.toggle('drop-left', before);
                 el.classList.toggle('drop-right', !before);
             });
             el.addEventListener('dragleave', () => el.classList.remove('drop-left', 'drop-right'));
-            el.addEventListener('drop', ev => {
-                ev.preventDefault();
-                const place = el.classList.contains('drop-left') ? 'before' : 'after';
-                el.classList.remove('drop-left', 'drop-right');
-                if (!blNextDrag || el.dataset.blnext === blNextDrag) { return; }
-                const from = document.querySelector('[data-blnext="' + CSS.escape(blNextDrag) + '"]');
-                blNextDrag = '';
-                if (!from) { return; }
-                blPost('backlogReorder', from, {
-                    destCode: el.dataset.code || '',
-                    destLine: Number(el.dataset.line),
-                    place: place
-                });
-            });
-            el.addEventListener('dragend', () => {
-                blNextDrag = '';
-                document.querySelectorAll('[data-blnext]').forEach(b =>
-                    b.classList.remove('dragging', 'drop-left', 'drop-right'));
-            });
+            el.addEventListener('drop', ev => { ev.preventDefault(); blNextDrop(el, ev); });
+            el.addEventListener('dragend', () => { blNextDrag = ''; blNextClear(); });
         });
+
+        // ‼️ THE GAPS ARE PART OF THE STRIP. The chips wrap onto two or three
+        // lines, so half of what looks like the queue is the space between and
+        // below them — and a drop there used to be a drop on nothing, which is
+        // most of why dragging one chip to the front "did not work". The row
+        // itself catches those and hands the drop to the nearest chip.
+        const blNextRow = document.getElementById('bl-nextrow');
+        if (blNextRow) {
+            blNextRow.addEventListener('dragover', ev => {
+                if (!blNextDrag) { return; }
+                ev.preventDefault();
+                if (ev.dataTransfer) { ev.dataTransfer.dropEffect = 'move'; }
+            });
+            blNextRow.addEventListener('drop', ev => {
+                if (!blNextDrag) { return; }
+                ev.preventDefault();
+                // Nearest by centre distance, which is what "I dropped it about
+                // there" means on a wrapped row.
+                let best = null; let bestD = Infinity;
+                for (const c of blNextChips()) {
+                    const b = c.getBoundingClientRect();
+                    const dx = ev.clientX - (b.left + b.width / 2);
+                    const dy = ev.clientY - (b.top + b.height / 2);
+                    const d = dx * dx + dy * dy;
+                    if (d < bestD) { bestD = d; best = c; }
+                }
+                blNextDrop(best, ev);
+            });
+        }
 
         // ---- editing the words. The row IS the editor here too, but a long item
         // needs a box it can breathe in, so this one opens rather than cycles.
@@ -2281,19 +2510,30 @@
                 row.classList.add('dragging');
                 if (ev.dataTransfer) { ev.dataTransfer.effectAllowed = 'move'; ev.dataTransfer.setData('text/plain', blDragKey); }
             }));
+        /** Which half of the row the pointer is in — read from geometry AT DROP
+         *  TIME for the same reason the strip does it (see blBefore): the
+         *  highlight class is cleared by `dragleave` as the pointer crosses the
+         *  row's own spans, so a drop that trusted it landed the wrong way round
+         *  whenever the last event happened to be the leave. */
+        const blRowBefore = (row, ev) => {
+            const box = row.getBoundingClientRect();
+            return ev.clientY < box.top + box.height / 2;
+        };
         document.querySelectorAll('[data-blrow]').forEach(row => {
             row.addEventListener('dragover', ev => {
                 if (!blDragKey || row.dataset.key === blDragKey) { return; }
                 ev.preventDefault();
-                const box = row.getBoundingClientRect();
-                const before = ev.clientY < box.top + box.height / 2;
+                // Chromium delivers no drop without this — see the strip's own
+                // dragover for what that looked like from the outside.
+                if (ev.dataTransfer) { ev.dataTransfer.dropEffect = 'move'; }
+                const before = blRowBefore(row, ev);
                 row.classList.toggle('drop-before', before);
                 row.classList.toggle('drop-after', !before);
             });
             row.addEventListener('dragleave', () => row.classList.remove('drop-before', 'drop-after'));
             row.addEventListener('drop', ev => {
                 ev.preventDefault();
-                const place = row.classList.contains('drop-before') ? 'before' : 'after';
+                const place = blRowBefore(row, ev) ? 'before' : 'after';
                 row.classList.remove('drop-before', 'drop-after');
                 if (!blDragKey || row.dataset.key === blDragKey) { return; }
                 const from = document.querySelector('[data-blrow][data-key="' + CSS.escape(blDragKey) + '"]');
@@ -2311,6 +2551,19 @@
                     r.classList.remove('dragging', 'drop-before', 'drop-after'));
             });
         });
+
+        // ---- the pin. The row's one QUEUE act, next to seven that are about
+        // the file: 📌 puts this item at the head of the queue whatever area it
+        // is in, and pressing it again takes it off.
+        document.querySelectorAll('[data-blpin]').forEach(el =>
+            el.addEventListener('click', () => {
+                const row = blRow(el);
+                const p = sel();
+                vscode.postMessage({
+                    type: el.dataset.blpin === 'off' ? 'backlogUnpin' : 'backlogPin',
+                    id: p ? p.id : '', code: row.dataset.code || ''
+                });
+            }));
 
         // ---- the four pickers. A badge OPENS a menu; the menu WRITES once.
         //
@@ -2433,23 +2686,29 @@
                     break;
                 }
                 case 'blAdd': {
-                    const box = document.getElementById('bl-new');
-                    // The box is a textarea now and an item is ONE markdown line,
-                    // so the paragraph is folded here — the same normalisation the
-                    // in-place editor does, rather than two different answers to
-                    // "what happened to my line breaks".
-                    const text = ((box && box.value) || '').replace(/\s+/g, ' ').trim();
+                    // ‼️ Read from the DRAFT, not from the DOM. They agree while
+                    // the tab is on screen, but the draft is what survives a
+                    // repaint — and reading the box would mean Ctrl+Enter behaved
+                    // differently from the button after one.
+                    const cap = blCapture();
+                    // An item is ONE markdown line, so the paragraph is folded
+                    // here — the same normalisation the in-place editor does,
+                    // rather than two different answers to "what happened to my
+                    // line breaks".
+                    const text = (cap.text || '').replace(/\s+/g, ' ').trim();
                     if (!text) { break; }
-                    const val = elId => (document.getElementById(elId) || {}).value || '';
-                    const type = val('bl-type');
+                    cap.sending = true;
                     vscode.postMessage({
                         type: 'backlogAdd', id, text,
-                        area: val('bl-area'), priority: val('bl-prio'), effort: val('bl-effort'),
-                        ...(type ? { kinds: [type] } : {})
+                        area: cap.area, priority: cap.prio || 'normal', effort: cap.effort,
+                        ...(cap.type ? { kinds: [cap.type] } : {})
                     });
                     break;
                 }
                 case 'blArchive': vscode.postMessage({ type: 'backlogArchive', id }); break;
+                // Empties the 🎯 block. Nothing is lost: every item falls back
+                // to the place the file already has for it.
+                case 'blUnpinAll': vscode.postMessage({ type: 'backlogQueue', id, codes: [] }); break;
                 case 'blFilters': blFiltersOpen = !blFiltersOpen; render(); break;
                 case 'blDir': blDesc = !blDesc; render(); break;
                 case 'blClear':
