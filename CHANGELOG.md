@@ -2,6 +2,22 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.66.0 — The backlog page can finally be asked a question (2026-08-05)
+
+**Filtering was the page's whole job and it could not do it.** Two hundred items, and the only questions it answered were "which area" and "open or closed" — one at a time. Every axis is a list now, so the real question goes in whole: *bugs and regressions, in P and K, not blocked, unsized*. Areas add up instead of replacing each other; so do work types; priority and size have their own chips; and four selects cover **blocked / startable**, **containers / leaves**, **linked to a plan item or not**, and **has a date or not**. The chip counts how many axes are narrowing the list, because a filter you have forgotten you set is indistinguishable from a backlog that has lost your items — and one **clear** puts every one of them back, the search box included.
+
+**The work type became an axis instead of a tag somebody may have typed.** A backlog is sorted in your head by four questions — is this a defect, is it something to find out, is it new capability, is it how it looks — and until each had exactly one name the filter could not offer them. `#research` is the one that had no name: work whose deliverable is an ANSWER rather than a change, which used to be filed as a chore and disappear next to the fixes. Every row now shows its type as a coloured badge, sets it by clicking (which cycles the canonical set and **leaves the tags you invented alone**), and says `type?` when it has none — and `untyped` is a filter of its own, so the pile to classify is one click away. Capture takes a type too.
+
+**Nine ways to sort, and a direction.** Score, priority, size, code, state, work type, due date, alphabetical — and file order, still the default and still the point: the order of lines in your file IS the prioritisation, it is what `backlog.next` reads and what "do the top five" means. The others are ways of LOOKING at the pile, never of changing it, which is why dragging is switched off in all of them.
+
+**Long items are cut, and open with one click.** A backlog item is where a thought gets written down whole; some of the real ones run to a thousand words, and three rows filling the screen is not a list. `cut at N chars` is a field on the toolbar, `0` never cuts, the whole item is on hover, and any single row opens on its own.
+
+**The words can be edited here.** ✎ opens a box with the whole item in it. Only the words change — code, tags, priority, size and every icon stay where they are. Ctrl+Enter saves, Esc cancels, and ‼️ **a save the host refuses keeps your text on screen**: the commonest refusal is "the document changed under you", and closing the box on that would bin a paragraph you just wrote.
+
+**The queue can be rearranged like one.** ⤒ and ⤓ send an item to either end of its section in one press, and rows can be **dragged** by their handle onto any other row in the same section. Codes never change and children ride along. Two things it refuses, both because getting them wrong is silent: a drop into another section (that is a re-file) and a drop at another depth (that is a re-parent). `projects.backlog.move` gained `top`/`bottom` and `projects.backlog.reorder` is a new bridge op, so an agent can rebuild an order in one pass.
+
+**And a bug that only ever bit the inbox:** the page was adding one to a line number that was already 1-based, so every action on an **uncoded capture** — closing it, filing it, moving it — addressed the line below it. Coded items never showed it, because a code wins over a line number; that is exactly why the capture pile, the one place with no codes, was the one place it could land.
+
 ## 3.65.1 — The second row of an agent had an empty gutter (2026-08-05)
 
 **A swim-lane row with no toggles under it looks broken, and one row in three was drawn that way.** The YOUR-TURN toggles (♪ ◎ ▣ ▭) were drawn on an agent's *first* row only — the reasoning being that they are one setting per agent and one setting should not appear twice. What that produced instead was `developer #2` sitting there with an empty gutter while `developer #1` and every single-session agent had four controls, and the row you happen to be watching is as often as not the second one.

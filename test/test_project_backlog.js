@@ -295,6 +295,55 @@ const VAULT = [
     const top = B.moveBacklogItem(VAULT, { code: 'P-5' }, 'up');
     ok('already at the top is a no-op that says so, not an error',
         top.ok && top.text === VAULT && /already at the top/.test(top.note || ''));
+
+    // The backlog is a queue, and "this one next" is what a queue is for. Eleven
+    // presses of ▲ is the same as not being able to do it.
+    const toTop = B.moveBacklogItem(VAULT, { code: 'K-8' }, 'top');
+    ok('an item can be sent to the top of its section in one move',
+        toTop.ok && toTop.text.indexOf('K-8') < toTop.text.indexOf('K-3'));
+    const toBottom = B.moveBacklogItem(VAULT, { code: 'P-5' }, 'bottom');
+    ok('…and to the bottom, children in tow',
+        toBottom.ok && toBottom.text.indexOf('P-12') < toBottom.text.indexOf('P-5 Faz 5')
+        && toBottom.text.indexOf('P-5 Faz 5') < toBottom.text.indexOf('P-5.1'));
+    ok('a block sent to the bottom keeps every one of its children',
+        (toBottom.text.match(/P-5\.\d/g) || []).length === (VAULT.match(/P-5\.\d/g) || []).length);
+    ok('already at the bottom says so rather than shuffling anything',
+        /already at the bottom/.test(B.moveBacklogItem(VAULT, { code: 'P-12' }, 'bottom').note || ''));
+    ok('top and bottom leave the line endings alone too',
+        (toBottom.text.match(/\r\n/g) || []).length === (VAULT.match(/\r\n/g) || []).length);
+
+    // ---- the drag: a named destination rather than a count of steps ----
+    const dropped = B.reorderBacklogItem(VAULT, { code: 'P-12' }, { code: 'P-5' }, 'before');
+    ok('an item can be dropped directly above another',
+        dropped.ok && dropped.text.indexOf('P-12') < dropped.text.indexOf('P-5 Faz 5'));
+    ok('…and its code still means what it meant', /P-12 orphaned projectId/.test(dropped.text));
+    const after = B.reorderBacklogItem(VAULT, { code: 'P-5' }, { code: 'P-12' }, 'after');
+    ok('…or below one, carrying its children',
+        after.ok && after.text.indexOf('P-12') < after.text.indexOf('P-5 Faz 5')
+        && (after.text.match(/P-5\.\d/g) || []).length === (VAULT.match(/P-5\.\d/g) || []).length);
+    // The two refusals, both because getting them wrong would be SILENT.
+    const crossSection = B.reorderBacklogItem(VAULT, { code: 'K-8' }, { code: 'P-12' }, 'after');
+    ok('‼️ a drop into another section is refused — that is a re-file, not a reorder',
+        !crossSection.ok && /different sections/.test(crossSection.error || ''));
+    const crossDepth = B.reorderBacklogItem(VAULT, { code: 'P-12' }, { code: 'P-5.1' }, 'after');
+    ok('‼️ a drop at another depth is refused — that would re-parent it',
+        !crossDepth.ok && /different depths/.test(crossDepth.error || ''));
+    const intoSelf = B.reorderBacklogItem(VAULT, { code: 'P-5' }, { code: 'P-5.2' }, 'after');
+    ok('an item cannot be dropped inside its own block', !intoSelf.ok);
+    ok('dropping something on itself is a no-op, not an error',
+        B.reorderBacklogItem(VAULT, { code: 'K-8' }, { code: 'K-8' }, 'after').text === VAULT);
+}
+
+// ---------- the work-type axis ----------
+{
+    ok('research is a canonical kind — work whose deliverable is an answer',
+        B.BACKLOG_KINDS.indexOf('research') >= 0);
+    ok('and the four a backlog is really sorted by are all there',
+        ['bug', 'research', 'feat', 'ux'].every(k => B.BACKLOG_KINDS.indexOf(k) >= 0));
+    const tagged = B.parseBacklog('## X — X\n- [ ] X-1 measure the counter #research\n');
+    ok('a #research line reads back as that kind', tagged.items[0].kinds[0] === 'research');
+    ok('every move direction is declared for the callers that validate one',
+        ['up', 'down', 'top', 'bottom'].every(d => B.BACKLOG_MOVES.indexOf(d) >= 0));
 }
 
 // ---------- archive ----------

@@ -177,8 +177,21 @@ const F_ANY = /[[(]\s*[\p{L}\w -]+\s*::\s*[^\])]*[\])]/giu;
  *  suggestion, and a project that wants `#regression` should just get it. */
 const TAG = /(?:^|\s)#([\p{L}\d/_-]+)/giu;
 
-/** The kinds the panel knows how to colour. Everything else still works. */
-export const BACKLOG_KINDS = ['bug', 'feat', 'ux', 'chore', 'debt', 'idea', 'doc'];
+/**
+ * The kinds the panel knows how to colour — the WORK TYPE axis.
+ *
+ * ‼️ These are a canonical set, not a closed one: any `#tag` on the line is still
+ * read as a kind and still filters, because a project that wants `#regression`
+ * should just get it. What being canonical buys is the four questions a backlog
+ * is actually sorted by in someone's head — *is this a defect, is it something to
+ * find out, is it new capability, is it how it looks* — each having exactly one
+ * name, so the filter can offer them and a row can say which one it is.
+ *
+ * `research` is the one that had no name before: measuring, reproducing,
+ * investigating — work whose deliverable is an ANSWER, not a change. Filing it
+ * as `#chore` (its only previous home) made it invisible next to the fixes.
+ */
+export const BACKLOG_KINDS = ['bug', 'research', 'feat', 'ux', 'chore', 'debt', 'idea', 'doc'];
 
 /** ⛔ P-5.1 — blocked until that one closes. Several may sit on one line. */
 const BLOCKED = /⛔\s*((?:[A-Z]{1,2}-\d+(?:\.\d+)*)(?:\s*,\s*[A-Z]{1,2}-\d+(?:\.\d+)*)*)/gu;
@@ -939,16 +952,69 @@ function removeLine(src: string, line: number, expect: string): string | undefin
 // writing — order
 // ---------------------------------------------------------------------------
 
+/** Where a move puts an item, in the order a person says it: one step either
+ *  way, or all the way to one end of its section. */
+export type BacklogMoveDir = 'up' | 'down' | 'top' | 'bottom';
+export const BACKLOG_MOVES: BacklogMoveDir[] = ['up', 'down', 'top', 'bottom'];
+
+/** An item plus every line indented under it — what a move carries. */
+function blockOf(items: BacklogItem[], start: BacklogItem): { from: number; to: number } {
+    let to = start.line;
+    for (const it of items) {
+        if (it.line > start.line && it.depth > start.depth) { to = it.line; } else if (it.line > start.line) { break; }
+    }
+    return { from: start.line, to };
+}
+
 /**
- * Nudge an item up or down among its siblings, carrying its children with it.
+ * Lift one item's block out and put it back down against another's.
+ *
+ * Cut-and-reinsert rather than swap, because the two blocks are rarely the same
+ * height and "move to the top" is not a swap with anything. The anchor is worked
+ * out in the ORIGINAL line numbering and then corrected for the lines that were
+ * removed above it — doing it the other way round is how an item lands one row
+ * off, which on a two-hundred-line backlog nobody notices until the order is
+ * wrong everywhere.
+ */
+function spliceBlock(
+    src: string, items: BacklogItem[], item: BacklogItem, dest: BacklogItem, place: 'before' | 'after'
+): BacklogEditResult {
+    const mine = blockOf(items, item);
+    const theirs = blockOf(items, dest);
+    if (theirs.from >= mine.from && theirs.to <= mine.to) {
+        return { ok: false, error: 'an item cannot be moved inside itself' };
+    }
+    if (mine.from >= theirs.from && mine.to <= theirs.to) {
+        return { ok: false, error: 'that would move an item inside its own parent block' };
+    }
+    const lines = src.split(/\r?\n/);
+    const eol = eolOf(src);
+    const moving = lines.slice(mine.from, mine.to + 1);
+    const rest = lines.filter((_, n) => n < mine.from || n > mine.to);
+    const anchor = place === 'before' ? theirs.from : theirs.to + 1;
+    const at = anchor > mine.to ? anchor - moving.length : anchor;
+    const out = [...rest.slice(0, at), ...moving, ...rest.slice(at)];
+
+    // ‼️ A move is the one edit that genuinely reorders lines, so rejoining is
+    // unavoidable — but the document's OWN ending is used, so a file that was
+    // CRLF stays CRLF and does not come back as a whole-file diff.
+    return { ok: true, text: out.join(eol), item };
+}
+
+/**
+ * Move an item among its siblings, carrying its children with it.
  *
  * ‼️ THE CODE DOES NOT CHANGE. Order and identity are different things here, and
  * this function is where that promise is kept: dragging `K-8` above `K-3` leaves
  * both codes exactly as they were, so every note, commit message and chat line
  * that ever quoted one still points at the same item.
+ *
+ * `top` and `bottom` exist because a backlog is a QUEUE and the thing a person
+ * wants from a queue is "this one next" — reached by pressing ▲ eleven times
+ * otherwise, which is the same as not being able to do it.
  */
 export function moveBacklogItem(
-    text: string, target: BacklogTarget, dir: 'up' | 'down'
+    text: string, target: BacklogTarget, dir: BacklogMoveDir
 ): BacklogEditResult {
     const src = String(text ?? '');
     const { items } = parseBacklog(src);
@@ -956,33 +1022,52 @@ export function moveBacklogItem(
     if (!found.item) { return { ok: false, error: found.error as string }; }
     const item = found.item;
 
-    const block = (start: BacklogItem): { from: number; to: number } => {
-        let to = start.line;
-        for (const it of items) {
-            if (it.line > start.line && it.depth > start.depth) { to = it.line; } else if (it.line > start.line) { break; }
-        }
-        return { from: start.line, to };
-    };
     const siblings = items.filter(i => i.depth === item.depth && i.section === item.section);
     const at = siblings.findIndex(i => i.line === item.line);
-    const other = dir === 'up' ? siblings[at - 1] : siblings[at + 1];
-    if (!other) { return { ok: true, text: src, item, note: `already at the ${dir === 'up' ? 'top' : 'bottom'} of its section` }; }
+    const dest = dir === 'up' ? siblings[at - 1]
+        : dir === 'down' ? siblings[at + 1]
+            : dir === 'top' ? siblings[0]
+                : siblings[siblings.length - 1];
+    const end = dir === 'up' || dir === 'top' ? 'top' : 'bottom';
+    if (!dest || dest.line === item.line) {
+        return { ok: true, text: src, item, note: `already at the ${end} of its section` };
+    }
+    return spliceBlock(src, items, item, dest, end === 'top' ? 'before' : 'after');
+}
 
-    const mine = block(item);
-    const theirs = block(other);
-    const lines = src.split(/\r?\n/);
-    const eol = eolOf(src);
-    const cut = (b: { from: number; to: number }) => lines.slice(b.from, b.to + 1);
-    const first = dir === 'up' ? theirs : mine;
-    const second = dir === 'up' ? mine : theirs;
-    const head = lines.slice(0, first.from);
-    const tail = lines.slice(second.to + 1);
-    const swapped = [...head, ...cut(second), ...cut(first), ...tail];
-
-    // ‼️ A move is the one edit that genuinely reorders lines, so rejoining is
-    // unavoidable — but the document's OWN ending is used, so a file that was
-    // CRLF stays CRLF and does not come back as a whole-file diff.
-    return { ok: true, text: swapped.join(eol), item };
+/**
+ * Drop an item directly above or below another one — the drag, in one call.
+ *
+ * Kept apart from `moveBacklogItem` because it answers a different question:
+ * one nudges within a known order, this one names the destination. Two rules it
+ * will not bend, both because breaking them is SILENT: the destination must be
+ * in the same section (crossing a heading changes which area an item belongs to,
+ * which is a re-file and has its own operation) and at the same depth (landing
+ * under a different parent is a re-parent, likewise).
+ */
+export function reorderBacklogItem(
+    text: string, target: BacklogTarget, dest: BacklogTarget, place: 'before' | 'after'
+): BacklogEditResult {
+    const src = String(text ?? '');
+    const { items } = parseBacklog(src);
+    const found = locate(items, target);
+    if (!found.item) { return { ok: false, error: found.error as string }; }
+    const to = locate(items, dest);
+    if (!to.item) { return { ok: false, error: to.error as string }; }
+    const item = found.item;
+    const anchor = to.item;
+    if (item.line === anchor.line) { return { ok: true, text: src, item }; }
+    if (item.section !== anchor.section) {
+        return {
+            ok: false,
+            error: `"${item.section}" and "${anchor.section}" are different sections`
+                + ' — moving between them re-files the item; use backlog.code for that'
+        };
+    }
+    if (item.depth !== anchor.depth) {
+        return { ok: false, error: 'those two sit at different depths — dropping across them would re-parent the item' };
+    }
+    return spliceBlock(src, items, item, anchor, place);
 }
 
 // ---------------------------------------------------------------------------

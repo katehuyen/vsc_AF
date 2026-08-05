@@ -98,8 +98,11 @@ export interface ProjectsPanelDeps {
     /** Set an item's axes from the row's own controls. */
     backlogSet(id: string, target: { code?: string; line?: number }, fields: Record<string, unknown>):
         { error?: string };
-    /** Nudge it among its siblings. The code does not change. */
+    /** Nudge it among its siblings, or send it to one end. The code does not change. */
     backlogMove(id: string, target: { code?: string; line?: number }, dir: string): { error?: string; note?: string };
+    /** Drop it directly above or below another row — the drag. */
+    backlogReorder(id: string, target: { code?: string; line?: number },
+        dest: { code?: string; line?: number }, place: string): { error?: string; note?: string };
     /** Give an inbox capture a code and file it under an area. */
     backlogCode(id: string, target: { line?: number }, area: string, parent?: string):
         { error?: string; code?: string };
@@ -493,6 +496,19 @@ export class ProjectsPanel {
             case 'backlogMove': {
                 if (!id) { break; }
                 const res = this.deps.backlogMove(id, backlogRowTarget(msg), String(msg.dir ?? 'down'));
+                this.done(res.error, res.error ? undefined : (res.note ?? 'Moved.'));
+                break;
+            }
+            case 'backlogReorder': {
+                if (!id) { break; }
+                // The drop target is addressed exactly like the dragged row —
+                // code first, line only for an uncoded capture.
+                const dest = backlogRowTarget({
+                    code: msg.destCode, line: msg.destLine
+                } as Record<string, unknown>);
+                if (!dest.code && dest.line === undefined) { break; }
+                const res = this.deps.backlogReorder(id, backlogRowTarget(msg), dest,
+                    msg.place === 'before' ? 'before' : 'after');
                 this.done(res.error, res.error ? undefined : (res.note ?? 'Moved.'));
                 break;
             }

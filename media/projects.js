@@ -63,6 +63,13 @@
             flash = ev.data.error ? { error: ev.data.error } : (ev.data.ok ? { ok: ev.data.ok } : null);
             // a create that came back clean has nothing left to show
             if (creating && !ev.data.error) { creating = null; }
+            // ‼️ A backlog edit in flight is only let go once the host says it
+            // landed. The commonest refusal is "the document changed under you",
+            // and closing the box on that would throw away a paragraph somebody
+            // just wrote — the one thing this page must never do.
+            if (blEdit && blEdit.saving) {
+                if (ev.data.error) { blEdit.saving = false; } else { blEdit = null; }
+            }
             return;                                   // the data message repaints
         }
         if (ev.data.type === 'suggestedFolder') {
@@ -760,9 +767,52 @@
                    wall, and the list has to stay readable to be usable. */
                 .pj-bl-acts { display:flex; gap:2px; visibility:hidden; }
                 .pj-bl-row:hover .pj-bl-acts { visibility:visible; }
-                .pj-bl-acts button { padding:0 6px; font-size:11px; }
+                /* …and they are drawn as tools, not as primary buttons. Seven
+                   filled blue rectangles on a row is the wall the line above is
+                   about; the same seven as quiet glyphs are a toolbar. */
+                .pj-bl-acts button { padding:0 6px; font-size:11px; background:none;
+                    border:1px solid transparent; color:inherit; opacity:.8; }
+                .pj-bl-acts button:hover { opacity:1;
+                    background:var(--vscode-toolbar-hoverBackground,#8882);
+                    border-color:var(--vscode-widget-border,#4443); }
+                /* The ordering four are a different kind of act from the state
+                   three, and a row of seven identical buttons reads as one. */
+                .pj-bl-acts button[data-blmove="top"] { margin-left:7px; }
+                /* A tag the user invented is marked as theirs — it filters like
+                   any other, but it is not part of the shipped vocabulary. */
+                .pj-chip.own { border-style:dashed; }
                 .pj-bl-q { flex:0 0 180px; }
                 .pj-bl-next .pj-bl-nextrow { display:flex; gap:6px; flex-wrap:wrap; }
+                /* The work type is an axis, not decoration: it gets a colour so a
+                   list of two hundred rows can be read by shape, and the same
+                   colour on the filter chip so the two are obviously one thing. */
+                .pj-bl-kind.t-bug { background:var(--vscode-charts-red,#f14c4c); color:#fff; }
+                .pj-bl-kind.t-research { background:var(--vscode-charts-purple,#b180d7); color:#fff; }
+                .pj-bl-kind.t-feat { background:var(--vscode-charts-blue,#3794ff); color:#fff; }
+                .pj-bl-kind.t-ux { background:var(--vscode-charts-green,#3fb950); color:#fff; }
+                .pj-bl-kind.t-chore, .pj-bl-kind.t-debt, .pj-bl-kind.t-doc, .pj-bl-kind.t-idea {
+                    background:var(--vscode-charts-yellow,#d7ba7d); color:#000; }
+                .pj-bl-kind.settable { cursor:pointer; border:none; font-family:inherit; }
+                .pj-bl-kind.settable:hover { outline:1px solid var(--vscode-focusBorder); }
+                .pj-bl-kind.none { background:none; border:1px dashed var(--vscode-widget-border,#4446);
+                    color:inherit; opacity:.45; }
+                .pj-bl-row.dragging { opacity:.4; }
+                .pj-bl-row.drop-before { box-shadow:inset 0 2px 0 var(--vscode-focusBorder); }
+                .pj-bl-row.drop-after { box-shadow:inset 0 -2px 0 var(--vscode-focusBorder); }
+                .pj-bl-grip { cursor:grab; opacity:0; font-size:11px; user-select:none; letter-spacing:-1px; }
+                .pj-bl-row:hover .pj-bl-grip { opacity:.5; }
+                .pj-bl-grip.off { cursor:not-allowed; }
+                .pj-bl-more { background:none; border:none; color:var(--vscode-textLink-foreground);
+                    cursor:pointer; font-size:11px; padding:0 4px; }
+                .pj-bl-edit { display:flex; flex:1; gap:6px; align-items:flex-start; }
+                .pj-bl-edit textarea { flex:1; min-width:0; font-family:inherit; font-size:13px;
+                    resize:vertical; min-height:44px; }
+                .pj-bl-filters { border:1px solid var(--vscode-widget-border,#4443); border-radius:7px;
+                    padding:8px 10px; margin-bottom:10px; }
+                .pj-bl-fline { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:6px; }
+                .pj-bl-fline:last-child { margin-bottom:0; }
+                .pj-bl-flab { font-size:11px; opacity:.6; flex:0 0 74px; }
+                .pj-bl-count.narrowed { color:var(--vscode-charts-yellow,#d7ba7d); }
                 .pj-docs { display:flex; gap:14px; align-items:flex-start; }
                 .pj-doc-tree { flex:0 0 260px; max-height:60vh; overflow:auto;
                     border:1px solid var(--vscode-widget-border,#4443); border-radius:7px; padding:6px 4px; }
@@ -929,17 +979,87 @@
     // the backlog
     // -----------------------------------------------------------------------
 
-    /** What the reader has narrowed the list to. Page-side on purpose: the host
-     *  ships the whole file, so a chip is a repaint rather than a round trip. */
-    let blFilter = { area: '', kind: '', state: 'live', q: '' };
+    /**
+     * What the reader has narrowed the list to. Page-side on purpose: the host
+     * ships the whole file, so a chip is a repaint rather than a round trip.
+     *
+     * ‼️ EVERY AXIS IS A LIST, not a value. Filtering a backlog is almost never
+     * "show me bugs" — it is "show me bugs and regressions, in these two areas,
+     * that are not blocked". A single-select filter answers the first question
+     * and none of the real ones, which is why this page had a filter and still
+     * had no way to ask anything.
+     */
+    let blFilter = {
+        areas: [], kinds: [], prios: [], efforts: [],
+        state: 'live', q: '',
+        /** '' any · 'yes' waiting on something · 'no' startable now */
+        blocked: '',
+        /** '' any · 'only' just the parents · 'hide' just the leaves */
+        epics: '',
+        /** '' any · 'yes' linked to a plan item · 'no' not linked */
+        plan: '',
+        /** '' any · 'yes' has a 📅 · 'no' none */
+        due: ''
+    };
     let blSort = 'file';
+    let blDesc = false;
     /** Closed items are folded away by default — a backlog you have to scroll
      *  past three months of finished work to read is one nobody opens. */
     let blShowClosed = false;
+    let blFiltersOpen = false;
+    /**
+     * How many characters of an item are drawn before it is cut off.
+     *
+     * ‼️ There IS a default cut, and it is not timidity. Backlog items are where
+     * a thought gets written down whole — some of the real ones in this very
+     * project run to a thousand words — and a list where three rows fill the
+     * screen is not a list. 0 means "never cut"; the control is one field away
+     * and any single row opens with one click.
+     */
+    let blChars = 220;
+    /** Rows opened past the cut, by key. Kept across repaints: closing an item
+     *  you had opened to read, because the host pushed new data, is a small
+     *  betrayal that happens constantly. */
+    const blOpen = new Set();
+    /** The row being edited, and the words as they stand in the box. */
+    let blEdit = null;
 
     const PRIO_ORDER = ['lowest', 'low', 'normal', 'medium', 'high', 'highest'];
     const PRIO_ICON = { highest: '🔺', high: '⏫', medium: '🔼', normal: '·', low: '🔽', lowest: '⏬' };
     const EFFORT_ORDER = ['', 'XS', 'S', 'M', 'L', 'XL'];
+
+    /**
+     * The canonical WORK TYPES.
+     *
+     * A backlog is sorted in somebody's head by four questions — is this a defect,
+     * is it something to find out, is it new capability, is it how it looks — and
+     * until each of those had exactly one name the filter could not offer them.
+     * `research` is the one that had no name: work whose deliverable is an ANSWER
+     * rather than a change, which used to be filed as a chore and disappear.
+     *
+     * ‼️ Canonical, not closed. Any other `#tag` on a line is still read, still
+     * shown and still filterable — these are the ones the ROW CAN SET and the
+     * filter offers by default, which is the whole difference between a tag
+     * somebody may have typed and an axis you can rely on.
+     */
+    const BL_TYPES = [
+        { id: 'bug', label: 'bug fix' },
+        { id: 'research', label: 'research / measure' },
+        { id: 'feat', label: 'development' },
+        { id: 'ux', label: 'UI / UX' },
+        { id: 'chore', label: 'chore' },
+        { id: 'debt', label: 'tech debt' },
+        { id: 'doc', label: 'docs' },
+        { id: 'idea', label: 'idea' }
+    ];
+    const BL_TYPE_IDS = BL_TYPES.map(t => t.id);
+    const blTypeLabel = id => (BL_TYPES.find(t => t.id === id) || {}).label || id;
+    /** The item's work type: the first canonical tag it carries, or '' for none.
+     *  Non-canonical tags are kept and shown; they just are not the axis. */
+    const blTypeOf = i => (i.kinds || []).find(k => BL_TYPE_IDS.indexOf(k) >= 0) || '';
+    /** The stable handle for a row across repaints. A code when there is one,
+     *  else its line — the same rule the host's target resolution follows. */
+    const blKey = i => i.code || ('L' + i.line);
 
     /**
      * The backlog tab.
@@ -961,30 +1081,23 @@
         const blockedBy = {};
         for (const b of (d.blocked || [])) { if (b.code) { blockedBy[b.code] = b.waitingOn; } }
 
-        const q = blFilter.q.trim().toLowerCase();
-        const shown = all.filter(i => {
-            const live = i.state === 'open' || i.state === 'doing';
-            if (blFilter.state === 'live' && !live) { return blShowClosed; }
-            if (blFilter.state === 'inbox' && i.code) { return false; }
-            if (blFilter.state !== 'live' && blFilter.state !== 'inbox'
-                && blFilter.state && i.state !== blFilter.state) { return false; }
-            if (blFilter.area && i.area !== blFilter.area) { return false; }
-            if (blFilter.kind && (i.kinds || []).indexOf(blFilter.kind) < 0) { return false; }
-            if (q && (i.text || '').toLowerCase().indexOf(q) < 0
-                && (i.code || '').toLowerCase().indexOf(q) < 0) { return false; }
-            return true;
-        });
-        const ordered = blSort === 'file' ? shown : shown.slice().sort((a, b) =>
-            blSort === 'score' ? (b.score - a.score) || (a.line - b.line)
-                : (PRIO_ORDER.indexOf(b.priority) - PRIO_ORDER.indexOf(a.priority)) || (a.line - b.line));
+        const shown = all.filter(i => blPasses(i));
+        const ordered = blOrder(shown);
 
-        const kinds = [];
-        for (const i of all) { for (const k of (i.kinds || [])) { if (kinds.indexOf(k) < 0) { kinds.push(k); } } }
+        // Every tag in the file, canonical ones first and in their own order, so
+        // the filter row does not reshuffle itself as the backlog grows.
+        const extra = [];
+        for (const i of all) {
+            for (const k of (i.kinds || [])) {
+                if (BL_TYPE_IDS.indexOf(k) < 0 && extra.indexOf(k) < 0) { extra.push(k); }
+            }
+        }
         const areaOpts = ['<option value="">— area —</option>']
             .concat(areas.map(a => `<option value="${C.esc(a.code)}">${C.esc(a.code)} · ${C.esc(a.label)}</option>`))
             .join('');
 
         const rows = ordered.map(i => backlogRowHtml(i, nextCodes.indexOf(i.code) >= 0, blockedBy[i.code])).join('');
+        const active = blActiveFilters();
 
         return `
         <div class="pj-docbar">
@@ -1002,6 +1115,10 @@
             <div class="pj-row">
                 <input id="bl-new" placeholder="what needs doing — no code needed, file it later">
                 <select id="bl-area" title="Leave empty and it lands in the inbox, uncoded">${areaOpts}</select>
+                <select id="bl-type" title="Work type">
+                    <option value="">— type —</option>
+                    ${BL_TYPES.map(t => `<option value="${t.id}">${C.esc(t.label)}</option>`).join('')}
+                </select>
                 <select id="bl-prio" title="Priority">
                     ${PRIO_ORDER.slice().reverse().map(p =>
             `<option value="${p}"${p === 'normal' ? ' selected' : ''}>${PRIO_ICON[p]} ${p}</option>`).join('')}
@@ -1014,31 +1131,93 @@
         </div>
 
         <div class="pj-chips-row">
-            <button class="pj-chip${!blFilter.area ? ' on' : ''}" data-blarea="">all areas</button>
-            ${areas.map(a => `<button class="pj-chip${blFilter.area === a.code ? ' on' : ''}"
+            <button class="pj-chip${!blFilter.areas.length ? ' on' : ''}" data-blarea=""
+                title="Every area. Areas add up rather than replace each other — click two and you see both">all areas</button>
+            ${areas.map(a => `<button class="pj-chip${blFilter.areas.indexOf(a.code) >= 0 ? ' on' : ''}"
                 data-blarea="${C.esc(a.code)}" title="${C.esc(a.label)} — ${a.open} open of ${a.total}">
                 ${C.esc(a.code)} <span class="muted">${a.open}</span></button>`).join('')}
             <span class="grow"></span>
-            ${kinds.map(k => `<button class="pj-chip${blFilter.kind === k ? ' on' : ''}"
-                data-blkind="${C.esc(k)}">#${C.esc(k)}</button>`).join('')}
+            <button class="pj-chip${blFiltersOpen ? ' on' : ''}" data-act="blFilters"
+                title="Type, priority, size, blocked, epics, plan link, due date">⚙ filters${active ? ` (${active})` : ''}</button>
+            ${active ? '<button class="pj-chip" data-act="blClear" title="Drop every filter and show the pile again">clear</button>' : ''}
         </div>
+
+        ${blFiltersOpen ? `<div class="pj-bl-filters">
+            <div class="pj-bl-fline">
+                <span class="pj-bl-flab">type</span>
+                ${BL_TYPES.map(t => `<button class="pj-chip${blFilter.kinds.indexOf(t.id) >= 0 ? ' on' : ''}"
+                    data-blkind="${t.id}" title="${C.esc(t.label)}">#${t.id}</button>`).join('')}
+                ${extra.map(k => `<button class="pj-chip own${blFilter.kinds.indexOf(k) >= 0 ? ' on' : ''}"
+                    data-blkind="${C.esc(k)}" title="A tag of your own — it filters exactly like the canonical ones">#${C.esc(k)}</button>`).join('')}
+                <button class="pj-chip${blFilter.kinds.indexOf('(none)') >= 0 ? ' on' : ''}" data-blkind="(none)"
+                    title="Items carrying no type at all — the pile to classify">untyped</button>
+            </div>
+            <div class="pj-bl-fline">
+                <span class="pj-bl-flab">priority</span>
+                ${PRIO_ORDER.slice().reverse().map(p => `<button class="pj-chip${blFilter.prios.indexOf(p) >= 0 ? ' on' : ''}"
+                    data-blprio-f="${p}">${PRIO_ICON[p]} ${p}</button>`).join('')}
+            </div>
+            <div class="pj-bl-fline">
+                <span class="pj-bl-flab">size</span>
+                ${EFFORT_ORDER.slice(1).map(e => `<button class="pj-chip${blFilter.efforts.indexOf(e) >= 0 ? ' on' : ''}"
+                    data-bleffort-f="${e}">${e}</button>`).join('')}
+                <button class="pj-chip${blFilter.efforts.indexOf('(none)') >= 0 ? ' on' : ''}" data-bleffort-f="(none)"
+                    title="Never sized. These are scored as M, not as XS — an unestimated item floating to the top of a cheap-wins list is how a turn ends half done">unsized</button>
+            </div>
+            <div class="pj-bl-fline">
+                <span class="pj-bl-flab">and</span>
+                <select data-blf="blocked" title="⛔ — is something it waits on still open">
+                    <option value="">blocked: any</option>
+                    <option value="no"${blFilter.blocked === 'no' ? ' selected' : ''}>startable now</option>
+                    <option value="yes"${blFilter.blocked === 'yes' ? ' selected' : ''}>waiting on something</option>
+                </select>
+                <select data-blf="epics" title="An item with children is a container — work lives at the leaves">
+                    <option value="">epics: any</option>
+                    <option value="hide"${blFilter.epics === 'hide' ? ' selected' : ''}>leaves only</option>
+                    <option value="only"${blFilter.epics === 'only' ? ' selected' : ''}>containers only</option>
+                </select>
+                <select data-blf="plan" title="[plan:: 🆔] — which roadmap item it belongs to">
+                    <option value="">plan: any</option>
+                    <option value="yes"${blFilter.plan === 'yes' ? ' selected' : ''}>linked to a plan item</option>
+                    <option value="no"${blFilter.plan === 'no' ? ' selected' : ''}>not linked</option>
+                </select>
+                <select data-blf="due" title="📅">
+                    <option value="">due: any</option>
+                    <option value="yes"${blFilter.due === 'yes' ? ' selected' : ''}>has a date</option>
+                    <option value="no"${blFilter.due === 'no' ? ' selected' : ''}>no date</option>
+                </select>
+            </div>
+        </div>` : ''}
+
         <div class="pj-chips-row">
-            <input id="bl-q" class="pj-bl-q" placeholder="search" value="${C.esc(blFilter.q)}">
+            <input id="bl-q" class="pj-bl-q" placeholder="search text or code" value="${C.esc(blFilter.q)}">
             <select id="bl-state" title="Which states to show">
                 <option value="live"${blFilter.state === 'live' ? ' selected' : ''}>open + doing</option>
                 <option value="inbox"${blFilter.state === 'inbox' ? ' selected' : ''}>📥 unfiled only</option>
+                <option value="open"${blFilter.state === 'open' ? ' selected' : ''}>open</option>
                 <option value="doing"${blFilter.state === 'doing' ? ' selected' : ''}>doing</option>
                 <option value="done"${blFilter.state === 'done' ? ' selected' : ''}>done</option>
                 <option value="cancelled"${blFilter.state === 'cancelled' ? ' selected' : ''}>cancelled</option>
+                <option value="all"${blFilter.state === 'all' ? ' selected' : ''}>every state</option>
             </select>
-            <select id="bl-sort" title="Ordering. File order is your own — it is what 'do the top five' follows">
+            <select id="bl-sort" title="Ordering. File order is your own — it is what 'do the top five' follows, and the only order you can drag rows in">
                 <option value="file"${blSort === 'file' ? ' selected' : ''}>file order (yours)</option>
                 <option value="score"${blSort === 'score' ? ' selected' : ''}>score (priority ÷ effort)</option>
                 <option value="priority"${blSort === 'priority' ? ' selected' : ''}>priority</option>
+                <option value="effort"${blSort === 'effort' ? ' selected' : ''}>size</option>
+                <option value="code"${blSort === 'code' ? ' selected' : ''}>code</option>
+                <option value="state"${blSort === 'state' ? ' selected' : ''}>state</option>
+                <option value="type"${blSort === 'type' ? ' selected' : ''}>work type</option>
+                <option value="due"${blSort === 'due' ? ' selected' : ''}>due date</option>
+                <option value="text"${blSort === 'text' ? ' selected' : ''}>alphabetical</option>
             </select>
+            <button class="pj-bl-badge" data-act="blDir"
+                title="${blDesc ? 'Descending — click for ascending' : 'Ascending — click for descending'}">${blDesc ? '↓' : '↑'}</button>
             <label class="pj-chk"><input type="checkbox" id="bl-closed" ${blShowClosed ? 'checked' : ''}> show closed</label>
+            <label class="pj-chk" style="margin-left:10px" title="How much of a long item is drawn before it is cut. 0 draws all of it. Any single row still opens with one click.">
+                cut at <input id="bl-chars" type="number" min="0" max="4000" step="20" value="${blChars}" style="width:66px"> chars</label>
             <span class="grow"></span>
-            <span class="muted small">${ordered.length} of ${all.length}</span>
+            <span class="muted small pj-bl-count${ordered.length < all.length ? ' narrowed' : ''}">${ordered.length} of ${all.length}</span>
         </div>
 
         ${nextCodes.length ? `<div class="pj-card pj-bl-next">
@@ -1049,34 +1228,169 @@
 
         ${rows || '<p class="muted small">Nothing matches. The file is <code>' + C.esc(d.path) + '</code> — edit it in Obsidian any time; this page reads whatever is there.</p>'}
 
-        <p class="muted small pj-unfiled">A code is permanent and is not the order: dragging a line in
-            Obsidian (or pressing ▲▼ here) changes what comes first and leaves <code>P-5.3</code> meaning
-            the same item for ever. Clicking a badge cycles it. Closing a box changes exactly one
-            character of your file and adds no ✅ date — Agent Farm does not write metadata it does not own.</p>`;
+        <p class="muted small pj-unfiled">A code is permanent and is not the order: dragging a row by its
+            handle (or pressing ⤒ ▲ ▼ ⤓) changes what comes first and leaves <code>P-5.3</code> meaning
+            the same item for ever — which is why dragging only works in file order, the only order that
+            is yours to change. Clicking a badge cycles it; ✎ edits the words in place. Closing a box
+            changes exactly one character of your file and adds no ✅ date — Agent Farm does not write
+            metadata it does not own.</p>`;
+    }
+
+    /** How many axes are narrowing the list right now — the number on the chip,
+     *  because a filter you have forgotten you set is indistinguishable from a
+     *  backlog that has lost your items. */
+    function blActiveFilters() {
+        return blFilter.areas.length + blFilter.kinds.length + blFilter.prios.length
+            + blFilter.efforts.length
+            + (blFilter.blocked ? 1 : 0) + (blFilter.epics ? 1 : 0)
+            + (blFilter.plan ? 1 : 0) + (blFilter.due ? 1 : 0)
+            + (blFilter.q.trim() ? 1 : 0)
+            + (blFilter.state !== 'live' ? 1 : 0);
+    }
+
+    /** Does this item survive every axis? Each list is an OR within itself and an
+     *  AND against the others, which is what people mean by "bugs and regressions
+     *  in P and K that are not blocked". */
+    function blPasses(i) {
+        const q = blFilter.q.trim().toLowerCase();
+        const live = i.state === 'open' || i.state === 'doing';
+        const st = blFilter.state;
+        if (st === 'live' && !live && !blShowClosed) { return false; }
+        if (st === 'inbox' && i.code) { return false; }
+        if (st !== 'live' && st !== 'inbox' && st !== 'all' && st && i.state !== st) { return false; }
+        if (blFilter.areas.length && blFilter.areas.indexOf(i.area) < 0) { return false; }
+        if (blFilter.kinds.length) {
+            const kinds = i.kinds || [];
+            const hit = blFilter.kinds.some(k => k === '(none)' ? !kinds.length : kinds.indexOf(k) >= 0);
+            if (!hit) { return false; }
+        }
+        if (blFilter.prios.length && blFilter.prios.indexOf(i.priority || 'normal') < 0) { return false; }
+        if (blFilter.efforts.length) {
+            const e = i.effort || '(none)';
+            if (blFilter.efforts.indexOf(e) < 0) { return false; }
+        }
+        const waiting = (i.blockedBy || []).length > 0;
+        if (blFilter.blocked === 'yes' && !waiting) { return false; }
+        if (blFilter.blocked === 'no' && waiting) { return false; }
+        if (blFilter.epics === 'hide' && i.container) { return false; }
+        if (blFilter.epics === 'only' && !i.container) { return false; }
+        if (blFilter.plan === 'yes' && !i.plan) { return false; }
+        if (blFilter.plan === 'no' && i.plan) { return false; }
+        if (blFilter.due === 'yes' && !i.due) { return false; }
+        if (blFilter.due === 'no' && i.due) { return false; }
+        if (q && (i.text || '').toLowerCase().indexOf(q) < 0
+            && (i.code || '').toLowerCase().indexOf(q) < 0) { return false; }
+        return true;
+    }
+
+    /** `P-2` before `P-10`, `P-5` before `P-5.1` — the way a person reads them,
+     *  which string comparison does not. */
+    function blCompareCodes(a, b) {
+        const pa = /^([A-Z]{1,2})-(\d+(?:\.\d+)*)$/.exec(a || '');
+        const pb = /^([A-Z]{1,2})-(\d+(?:\.\d+)*)$/.exec(b || '');
+        if (!pa || !pb) { return String(a || '').localeCompare(String(b || '')); }
+        if (pa[1] !== pb[1]) { return pa[1].localeCompare(pb[1]); }
+        const na = pa[2].split('.').map(Number), nb = pb[2].split('.').map(Number);
+        for (let n = 0; n < Math.max(na.length, nb.length); n++) {
+            const d = (na[n] === undefined ? -1 : na[n]) - (nb[n] === undefined ? -1 : nb[n]);
+            if (d) { return d; }
+        }
+        return 0;
+    }
+
+    const BL_STATE_ORDER = ['doing', 'open', 'done', 'cancelled'];
+
+    /**
+     * Order the visible rows.
+     *
+     * ‼️ File order is the DEFAULT and stays that way. The line order of the file
+     * IS the user's prioritisation — it is what `backlog.next` reads and what
+     * "do the top five" means — so a clever sort that quietly overruled it would
+     * make dragging a line pointless. Every other ordering here is a way of
+     * LOOKING at the pile, never of changing it.
+     */
+    function blOrder(list) {
+        const dir = blDesc ? -1 : 1;
+        if (blSort === 'file') { return blDesc ? list.slice().reverse() : list; }
+        const by = {
+            score: (a, b) => (b.score - a.score),
+            priority: (a, b) => PRIO_ORDER.indexOf(b.priority) - PRIO_ORDER.indexOf(a.priority),
+            // Smallest first: "what can I finish now" is the question size is asked
+            // for. Unsized sorts last rather than first, for the same reason it is
+            // scored as M — an unknown is not a cheap win.
+            effort: (a, b) => (EFFORT_ORDER.indexOf(a.effort || '') || 99) - (EFFORT_ORDER.indexOf(b.effort || '') || 99),
+            code: (a, b) => blCompareCodes(a.code, b.code),
+            state: (a, b) => BL_STATE_ORDER.indexOf(a.state) - BL_STATE_ORDER.indexOf(b.state),
+            type: (a, b) => {
+                const ia = BL_TYPE_IDS.indexOf(blTypeOf(a)), ib = BL_TYPE_IDS.indexOf(blTypeOf(b));
+                return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+            },
+            // No date sorts last in either direction: an item with no deadline is
+            // not "due first", and flipping the arrow should not make it look so.
+            due: (a, b) => (a.due || '9999').localeCompare(b.due || '9999'),
+            text: (a, b) => String(a.text || '').localeCompare(String(b.text || ''))
+        }[blSort];
+        if (!by) { return list; }
+        // Line order breaks every tie, so a sort never scrambles equals.
+        return list.slice().sort((a, b) => (by(a, b) * dir) || (a.line - b.line));
     }
 
     /** One row. `data-code` is the handle whenever the item has one; the line
      *  number only rides along for an uncoded capture, because a line goes stale
-     *  the moment the file is edited in Obsidian under an open panel. */
+     *  the moment the file is edited in Obsidian under an open panel.
+     *
+     *  ‼️ `data-line` is 1-BASED, exactly as the host sent it. It is handed back
+     *  unchanged and the panel converts once, at its own boundary. */
     function backlogRowHtml(i, isNext, waitingOn) {
+        const key = blKey(i);
         const closed = i.state === 'done' || i.state === 'cancelled';
         const cls = ['pj-bl-row'];
         if (closed) { cls.push('closed'); }
         if (i.state === 'doing') { cls.push('doing'); }
         if (isNext) { cls.push('next'); }
         if (i.container) { cls.push('container'); }
-        const badges = [];
-        for (const k of (i.kinds || [])) { badges.push(`<span class="pj-bl-kind">#${C.esc(k)}</span>`); }
+        const type = blTypeOf(i);
+        // The canonical type is one settable badge; anything else the user tagged
+        // rides along beside it, read-only, because it is theirs.
+        const others = (i.kinds || []).filter(k => k !== type)
+            .map(k => `<span class="pj-bl-kind" title="Your own tag — it filters, but the type badge only cycles the canonical set">#${C.esc(k)}</span>`);
+        const full = i.text || '(empty)';
+        const open = blOpen.has(key);
+        const cut = blChars > 0 && full.length > blChars && !open;
+        const body = cut ? full.slice(0, blChars).replace(/\s+\S*$/, '') + '…' : full;
+        const dragging = blSort === 'file';
+
+        if (blEdit && blEdit.key === key) {
+            return `<div class="${cls.join(' ')}" style="padding-left:${6 + (i.depth || 0) * 10}px"
+                data-blrow data-code="${C.esc(i.code || '')}" data-line="${i.line}"
+                data-prio="${C.esc(i.priority || 'normal')}" data-effort="${C.esc(i.effort || '')}">
+                <span class="pj-bl-code">${C.esc(i.code || '📥')}</span>
+                <span class="pj-bl-edit">
+                    <textarea id="bl-edit" rows="${Math.min(8, Math.ceil(blEdit.text.length / 90) + 1)}"
+                        title="Only the WORDS are edited here — the code, tags, priority, size and every icon on the line stay exactly where they are. Ctrl+Enter saves, Esc cancels.">${C.esc(blEdit.text)}</textarea>
+                    <button data-blsave>${blEdit.saving ? 'Saving…' : 'Save'}</button>
+                    <button class="secondary" data-blcancel>Cancel</button>
+                </span>
+            </div>`;
+        }
+
         return `<div class="${cls.join(' ')}" style="padding-left:${6 + (i.depth || 0) * 10}px"
-            data-blrow data-code="${C.esc(i.code || '')}" data-line="${i.line}"
-            data-prio="${C.esc(i.priority || 'normal')}" data-effort="${C.esc(i.effort || '')}">
+            data-blrow data-key="${C.esc(key)}" data-code="${C.esc(i.code || '')}" data-line="${i.line}"
+            data-prio="${C.esc(i.priority || 'normal')}" data-effort="${C.esc(i.effort || '')}"
+            data-type="${C.esc(type)}" data-section="${C.esc(i.section || '')}" data-depth="${i.depth || 0}">
+            <span class="pj-bl-grip${dragging ? '' : ' off'}" ${dragging ? 'draggable="true"' : ''} data-blgrip
+                title="${dragging ? 'Drag to put this row somewhere else in its section — the queue, rearranged. The code does not change.' : 'Dragging only works in file order: that order is yours, the others are just ways of looking.'}">⠿</span>
             <input type="checkbox" data-blcheck ${i.state === 'done' ? 'checked' : ''}
                 title="${i.state === 'done' ? 'Reopen' : 'Close as done'}">
             ${i.code
                 ? `<code class="pj-bl-code" title="Permanent code — quote this at an agent">${C.esc(i.code)}</code>`
                 : '<span class="pj-bl-code unfiled" title="No code yet — pick an area to file it">📥</span>'}
-            <span class="pj-bl-t">${C.esc(i.text || '(empty)')}</span>
-            ${badges.join('')}
+            <span class="pj-bl-t" title="${cut ? C.esc(full) : ''}">${C.esc(body)}${cut
+                ? ' <button class="pj-bl-more" data-blmore>more</button>'
+                : (open && blChars > 0 && full.length > blChars ? ' <button class="pj-bl-more" data-blmore>less</button>' : '')}</span>
+            <button class="pj-bl-kind settable${type ? ' t-' + C.esc(type) : ' none'}" data-bltype
+                title="Work type — ${type ? C.esc(blTypeLabel(type)) : 'not set'}. Click to cycle; your own tags are left alone.">${type ? '#' + C.esc(type) : 'type?'}</button>
+            ${others.join('')}
             <button class="pj-bl-badge" data-blprio title="Priority — click to cycle">${PRIO_ICON[i.priority] || '·'}</button>
             <button class="pj-bl-badge" data-bleffort title="Effort — click to cycle">${C.esc(i.effort || '–')}</button>
             ${i.due ? `<span class="pj-bl-m" title="due">📅 ${C.esc(i.due)}</span>` : ''}
@@ -1085,11 +1399,14 @@
                 ? `<span class="pj-bl-m blocked" title="Waiting on ${C.esc(waitingOn.join(', '))}">⛔ ${C.esc(waitingOn.join(' '))}</span>` : ''}
             ${i.warn ? `<span class="pj-bl-m warn" title="${C.esc(i.warn)}">⚠</span>` : ''}
             <span class="pj-bl-acts">
+                <button data-bledit title="Edit the words — the code and every axis stay put">✎</button>
                 ${!i.code ? '<button data-blfile title="File it under an area and give it a code">file…</button>' : ''}
                 <button data-blstate="doing" title="Mark in progress">▶</button>
                 <button data-blstate="cancelled" title="Cancel — it stays in the file, with its code spent">✕</button>
+                <button data-blmove="top" title="Send to the top of its section — this one next">⤒</button>
                 <button data-blmove="up" title="Move up among its siblings">▲</button>
                 <button data-blmove="down" title="Move down among its siblings">▼</button>
+                <button data-blmove="bottom" title="Send to the bottom of its section">⤓</button>
             </span>
         </div>`;
     }
@@ -1378,7 +1695,7 @@
          *  entirely — a code cannot go stale, a line number can. */
         const blWho = row => ({
             code: row.dataset.code || '',
-            line: Number(row.dataset.line) + 1
+            line: Number(row.dataset.line)
         });
         /** The row's CURRENT value, read off the DOM the host last painted —
          *  never off the badge's glyph, which would make the cycle depend on a
@@ -1403,16 +1720,37 @@
             });
         }
 
+        /** Add or drop one value on a multi-select axis. Clicking a chip that is
+         *  already on takes it off — the only behaviour nobody has to be told. */
+        const blToggle = (list, value) => {
+            const at = list.indexOf(value);
+            if (at >= 0) { list.splice(at, 1); } else { list.push(value); }
+        };
         document.querySelectorAll('[data-blarea]').forEach(el =>
             el.addEventListener('click', () => {
-                blFilter.area = el.dataset.blarea === blFilter.area ? '' : el.dataset.blarea;
+                // The "all areas" chip is a reset, not a value of its own.
+                if (!el.dataset.blarea) { blFilter.areas = []; } else { blToggle(blFilter.areas, el.dataset.blarea); }
                 render();
             }));
         document.querySelectorAll('[data-blkind]').forEach(el =>
-            el.addEventListener('click', () => {
-                blFilter.kind = el.dataset.blkind === blFilter.kind ? '' : el.dataset.blkind;
+            el.addEventListener('click', () => { blToggle(blFilter.kinds, el.dataset.blkind); render(); }));
+        document.querySelectorAll('[data-blprio-f]').forEach(el =>
+            el.addEventListener('click', () => { blToggle(blFilter.prios, el.dataset.blprioF); render(); }));
+        document.querySelectorAll('[data-bleffort-f]').forEach(el =>
+            el.addEventListener('click', () => { blToggle(blFilter.efforts, el.dataset.bleffortF); render(); }));
+        document.querySelectorAll('[data-blf]').forEach(el =>
+            el.addEventListener('change', () => { blFilter[el.dataset.blf] = el.value; render(); }));
+        const blChf = document.getElementById('bl-chars');
+        if (blChf) {
+            blChf.addEventListener('change', () => {
+                const n = Math.max(0, Math.min(4000, Number(blChf.value) || 0));
+                blChars = n;
+                // A new cut length is a new question about every row, so the rows
+                // somebody had opened by hand under the old one are closed.
+                blOpen.clear();
                 render();
-            }));
+            });
+        }
         const blq = document.getElementById('bl-q');
         if (blq) {
             // ‼️ Repainting on every keystroke would move the caret out from
@@ -1441,6 +1779,103 @@
         document.querySelectorAll('[data-blmove]').forEach(el =>
             el.addEventListener('click', () =>
                 blPost('backlogMove', blRow(el), { dir: el.dataset.blmove })));
+        document.querySelectorAll('[data-blmore]').forEach(el =>
+            el.addEventListener('click', () => {
+                const key = blRow(el).dataset.key;
+                if (blOpen.has(key)) { blOpen.delete(key); } else { blOpen.add(key); }
+                render();
+            }));
+
+        // ---- editing the words. The row IS the editor here too, but a long item
+        // needs a box it can breathe in, so this one opens rather than cycles.
+        document.querySelectorAll('[data-bledit]').forEach(el =>
+            el.addEventListener('click', () => {
+                const row = blRow(el);
+                const item = (((td().backlog || {}).items) || []).find(i => blKey(i) === row.dataset.key);
+                blEdit = { key: row.dataset.key, text: item ? (item.text || '') : '' };
+                render();
+                const box = document.getElementById('bl-edit');
+                if (box) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
+            }));
+        const blSaveEdit = () => {
+            const box = document.getElementById('bl-edit');
+            const row = box && blRow(box);
+            if (!box || !row) { blEdit = null; render(); return; }
+            const words = box.value.replace(/\s+/g, ' ').trim();
+            if (!words) { flash = { error: 'An item needs some words. Cancel instead of emptying it.' }; render(); return; }
+            blEdit = { key: blEdit.key, text: words, saving: true };
+            blPost('backlogSet', row, { fields: { text: words } });
+            render();
+        };
+        const blEditBox = document.getElementById('bl-edit');
+        if (blEditBox) {
+            // Enter is NOT save: these items run to paragraphs and losing one to a
+            // stray keystroke is not recoverable from this page.
+            blEditBox.addEventListener('keydown', ev => {
+                if (ev.key === 'Escape') { ev.preventDefault(); blEdit = null; render(); }
+                if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); blSaveEdit(); }
+            });
+            blEditBox.addEventListener('input', () => { if (blEdit) { blEdit.text = blEditBox.value; } });
+        }
+        document.querySelectorAll('[data-blsave]').forEach(el => el.addEventListener('click', blSaveEdit));
+        document.querySelectorAll('[data-blcancel]').forEach(el =>
+            el.addEventListener('click', () => { blEdit = null; render(); }));
+
+        // ---- the work type. Cycles the CANONICAL set only and writes the rest of
+        // the item's tags back untouched — a cycle that quietly ate somebody's
+        // `#regression` would be a worse bargain than no cycle at all.
+        document.querySelectorAll('[data-bltype]').forEach(el =>
+            el.addEventListener('click', () => {
+                const row = blRow(el);
+                const now = row.dataset.type || '';
+                const ring = ['', ...BL_TYPE_IDS];
+                const next = ring[(ring.indexOf(now) + 1) % ring.length];
+                const item = (((td().backlog || {}).items) || []).find(i => blKey(i) === row.dataset.key);
+                const mine = ((item && item.kinds) || []).filter(k => BL_TYPE_IDS.indexOf(k) < 0);
+                blPost('backlogSet', row, { fields: { kinds: next ? [next, ...mine] : mine } });
+            }));
+
+        // ---- drag to reorder. Only in file order, and only within a section:
+        // the drop tells the host WHICH row it landed against, and the host
+        // refuses anything that would re-file or re-parent the item.
+        let blDragKey = '';
+        document.querySelectorAll('[data-blgrip][draggable]').forEach(el =>
+            el.addEventListener('dragstart', ev => {
+                const row = blRow(el);
+                blDragKey = row.dataset.key;
+                row.classList.add('dragging');
+                if (ev.dataTransfer) { ev.dataTransfer.effectAllowed = 'move'; ev.dataTransfer.setData('text/plain', blDragKey); }
+            }));
+        document.querySelectorAll('[data-blrow]').forEach(row => {
+            row.addEventListener('dragover', ev => {
+                if (!blDragKey || row.dataset.key === blDragKey) { return; }
+                ev.preventDefault();
+                const box = row.getBoundingClientRect();
+                const before = ev.clientY < box.top + box.height / 2;
+                row.classList.toggle('drop-before', before);
+                row.classList.toggle('drop-after', !before);
+            });
+            row.addEventListener('dragleave', () => row.classList.remove('drop-before', 'drop-after'));
+            row.addEventListener('drop', ev => {
+                ev.preventDefault();
+                const place = row.classList.contains('drop-before') ? 'before' : 'after';
+                row.classList.remove('drop-before', 'drop-after');
+                if (!blDragKey || row.dataset.key === blDragKey) { return; }
+                const from = document.querySelector('[data-blrow][data-key="' + CSS.escape(blDragKey) + '"]');
+                blDragKey = '';
+                if (!from) { return; }
+                blPost('backlogReorder', from, {
+                    destCode: row.dataset.code || '',
+                    destLine: Number(row.dataset.line),
+                    place: place
+                });
+            });
+            row.addEventListener('dragend', () => {
+                blDragKey = '';
+                document.querySelectorAll('[data-blrow]').forEach(r =>
+                    r.classList.remove('dragging', 'drop-before', 'drop-after'));
+            });
+        });
 
         // A badge CYCLES rather than opening a menu: the whole value of these
         // fields is that they are cheap enough to keep true.
@@ -1540,13 +1975,27 @@
                     const text = ((box && box.value) || '').trim();
                     if (!text) { break; }
                     const val = elId => (document.getElementById(elId) || {}).value || '';
+                    const type = val('bl-type');
                     vscode.postMessage({
                         type: 'backlogAdd', id, text,
-                        area: val('bl-area'), priority: val('bl-prio'), effort: val('bl-effort')
+                        area: val('bl-area'), priority: val('bl-prio'), effort: val('bl-effort'),
+                        ...(type ? { kinds: [type] } : {})
                     });
                     break;
                 }
                 case 'blArchive': vscode.postMessage({ type: 'backlogArchive', id }); break;
+                case 'blFilters': blFiltersOpen = !blFiltersOpen; render(); break;
+                case 'blDir': blDesc = !blDesc; render(); break;
+                case 'blClear':
+                    // Everything the reader could have narrowed with, including the
+                    // two that live outside the panel — a "clear" that left the
+                    // search box full would be the most annoying button on the page.
+                    blFilter = {
+                        areas: [], kinds: [], prios: [], efforts: [],
+                        state: 'live', q: '', blocked: '', epics: '', plan: '', due: ''
+                    };
+                    render();
+                    break;
                 case 'newDoc': {
                     const name = ((document.getElementById('doc-name') || {}).value || '').trim();
                     if (!name) { break; }

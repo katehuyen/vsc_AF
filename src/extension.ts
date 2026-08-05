@@ -127,9 +127,10 @@ import {
     addPlanItem, checkPlanItem, planSummary, PlanTarget
 } from './core/projectPlan';
 import {
-    addBacklogItem, archiveBacklogDone, BACKLOG_EFFORTS, BACKLOG_PRIORITIES, BACKLOG_STATES,
-    BacklogEffort, BacklogItem, BacklogPriority, BacklogState, BacklogTarget, codeBacklogItem,
-    moveBacklogItem, nextBacklog, parseBacklog, setBacklogFields, setBacklogState
+    addBacklogItem, archiveBacklogDone, BACKLOG_EFFORTS, BACKLOG_MOVES, BACKLOG_PRIORITIES,
+    BACKLOG_STATES, BacklogEffort, BacklogItem, BacklogMoveDir, BacklogPriority, BacklogState,
+    BacklogTarget, codeBacklogItem, moveBacklogItem, nextBacklog, parseBacklog,
+    reorderBacklogItem, setBacklogFields, setBacklogState
 } from './core/projectBacklog';
 import {
     buildProjectContext, contextFileName, isQuotableContextPath, PROJECT_BRIEF_MAX
@@ -4162,14 +4163,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.backlog.move',
-            describe: 'Nudge an item up or down among its siblings, carrying its children with it. ‼️ THE CODE DOES NOT CHANGE — order and identity are separate here, which is what lets "do the top five" work without renumbering anything and keeps every note that ever quoted a code pointing at the same item. This is the one edit that genuinely reorders lines, so it rejoins the document; it uses the file\'s OWN line ending, so a CRLF file stays CRLF. args: project (id or name), code?/line?/item? (which one), dir (up|down)',
+            describe: 'Move an item among its siblings, carrying its children with it: one step (`up`/`down`) or all the way to one end of its section (`top`/`bottom`). The backlog IS the queue — "do this one next" is the commonest thing anybody wants from it, and reaching it by pressing up eleven times is the same as not being able to do it. ‼️ THE CODE DOES NOT CHANGE — order and identity are separate here, which is what lets "do the top five" work without renumbering anything and keeps every note that ever quoted a code pointing at the same item. This is the one edit that genuinely reorders lines, so it rejoins the document; it uses the file\'s OWN line ending, so a CRLF file stays CRLF. args: project (id or name), code?/line?/item? (which one), dir (up|down|top|bottom)',
             handler: (args) => {
                 const { project, folder, file } = backlogDoc(argStr(args, 'project'));
                 const target = backlogTarget(args);
-                const dir = optStr(args, 'dir') === 'up' ? 'up' : 'down';
+                const asked = optStr(args, 'dir') as BacklogMoveDir;
+                const dir: BacklogMoveDir = BACKLOG_MOVES.includes(asked) ? asked : 'down';
                 const out = editProjectDoc(folder, file, src => moveBacklogItem(src, target, dir));
                 projectDocWritten(project.id);
                 return { project: project.name, file: relDoc(folder, out.file), dir, note: out.note ?? null };
+            }
+        },
+        {
+            op: 'projects.backlog.reorder',
+            describe: 'Put one item directly above or below another — the named-destination move, where backlog.move is the nudge. Use it to rebuild an order in one pass ("K-7 goes right after K-2") instead of counting steps. Two rules it will not bend, because breaking either is silent: the destination must be in the SAME SECTION (crossing a heading changes which area an item belongs to — that is a re-file, see projects.backlog.code) and at the same depth (landing under a different parent is a re-parent). Codes are untouched, children ride along. args: project (id or name), code?/line?/item? (which one moves), dest (the code it lands against) or destLine?, place? (before|after, default after)',
+            handler: (args) => {
+                const { project, folder, file } = backlogDoc(argStr(args, 'project'));
+                const target = backlogTarget(args);
+                const destCode = optStr(args, 'dest') ?? optStr(args, 'destCode');
+                const destLine = typeof args.destLine === 'number' ? args.destLine - 1 : undefined;
+                need(destCode || destLine !== undefined, 'say where it lands: dest (a code) or destLine');
+                const dest: BacklogTarget = destCode ? { code: destCode } : { line: destLine as number };
+                const place = optStr(args, 'place') === 'before' ? 'before' : 'after';
+                const out = editProjectDoc(folder, file, src =>
+                    reorderBacklogItem(src, target, dest, place));
+                projectDocWritten(project.id);
+                return { project: project.name, file: relDoc(folder, out.file), place, note: out.note ?? null };
             }
         },
         {
@@ -8378,7 +8397,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         ...(typeof fields.text === 'string' && fields.text ? { text: fields.text } : {})
                     })),
                 backlogMove: (id: string, target: BacklogTarget, dir: string) =>
-                    edit(id, text => moveBacklogItem(text, target, dir === 'up' ? 'up' : 'down')),
+                    edit(id, text => moveBacklogItem(text, target,
+                        BACKLOG_MOVES.includes(dir as BacklogMoveDir) ? dir as BacklogMoveDir : 'down')),
+                backlogReorder: (id: string, target: BacklogTarget, dest: BacklogTarget, place: string) =>
+                    edit(id, text => reorderBacklogItem(text, target, dest,
+                        place === 'before' ? 'before' : 'after')),
                 backlogCode: (id: string, target: BacklogTarget, area: string, parent?: string) => {
                     let code: string | undefined;
                     const res = edit(id, text => {

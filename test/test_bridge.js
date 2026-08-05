@@ -1687,7 +1687,8 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             'projects.decision.add', 'projects.deliver', 'projects.people.set',
             'projects.backlog', 'projects.backlog.next', 'projects.backlog.add',
             'projects.backlog.check', 'projects.backlog.set', 'projects.backlog.code',
-            'projects.backlog.move', 'projects.backlog.archive', 'projects.backlog.promote']) {
+            'projects.backlog.move', 'projects.backlog.reorder', 'projects.backlog.archive',
+            'projects.backlog.promote']) {
             ok(`extension.ts registers ${op}`, src.includes(`op: '${op}'`));
         }
         const nextBlock = src.slice(src.indexOf("op: 'projects.backlog.next'"),
@@ -1702,6 +1703,12 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             src.indexOf("op: 'projects.backlog.move'") + 2600);
         ok('‼️ backlog.move\'s contract promises the code does not change',
             /THE CODE DOES NOT CHANGE/.test(moveBlock));
+        ok('…and offers both ends, not just the two steps',
+            /up\|down\|top\|bottom/.test(moveBlock));
+        const reorderBlock = src.slice(src.indexOf("op: 'projects.backlog.reorder'"),
+            src.indexOf("op: 'projects.backlog.reorder'") + 2600);
+        ok('‼️ backlog.reorder states the two refusals, because both would be silent',
+            /SAME SECTION/.test(reorderBlock) && /re-parent/.test(reorderBlock));
         const checkBlock = src.slice(src.indexOf("op: 'projects.plan.check'"),
             src.indexOf("op: 'projects.plan.check'") + 2600);
         ok('‼️ plan.check\'s contract states the one-character promise and the ✅ it will not write',
