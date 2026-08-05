@@ -249,24 +249,48 @@
         </div>`;
     }
 
-    // Report/answer .md "open with" default + custom external app (e.g. Notepad).
+    /**
+     * Which editor a markdown file opens in — the setting behind every "Open"
+     * and "App" button in the extension.
+     *
+     * ‼️ IT IS NOT AN agentFarm.* SETTING AND THAT IS DELIBERATE (core/docopen.ts):
+     * the custom-app command is machine-specific and has no business in a
+     * git-synced settings surface, so it lives in the extension's own
+     * globalStorage. What it DID need was to be findable: it used to be titled
+     * "Report / Answer open mode", was missing from the category nav, and did not
+     * answer the filter box — so somebody looking at the "App" button on the
+     * Projects page had no way to discover which app that was. The words below
+     * name every surface it governs, for exactly that reason.
+     */
+    const DOCOPEN_TERMS = 'open with editor app obsidian markdown preview external '
+        + 'document report answer notices queue project plan backlog docs vs code notepad';
+
     function docOpenSection() {
         const d = DATA.docOpen;
         if (!d) { return ''; }
+        if (filter && !DOCOPEN_TERMS.includes(filter)) { return ''; }
         const LBL = { vscode: 'VS Code (raw markdown)', preview: 'Markdown preview (rendered)', obsidian: 'Obsidian (rendered in your vault)', custom: 'Custom external app (e.g. Notepad)' };
         const modes = d.modes && d.modes.length ? d.modes : ['vscode', 'preview', 'obsidian', 'custom'];
         const opts = modes.map(m => `<option value="${C.esc(m)}"${m === d.defaultMode ? ' selected' : ''}>${C.esc(LBL[m] || m)}</option>`).join('');
         const showCustom = d.defaultMode === 'custom';
         return `
-            <h2 class="cat" id="cat-docopen">Report / Answer open mode</h2>
+            <h2 class="cat" id="cat-docopen">Open documents with <span class="muted small">${C.esc(LBL[d.defaultMode] || d.defaultMode)}</span></h2>
+            <p class="muted small" style="max-width:760px">Which editor a <code>.md</code> file opens in when you press
+            <b>Open</b> anywhere in Agent Farm: report and answer links on <b>Notices</b> and the <b>Work Queue</b>, and the
+            project documents on the <b>Projects</b> page (Plan · Backlog · Docs). The buttons beside <b>Open</b> —
+            <i>Editor · Preview · Obsidian · App</i> — are per-click overrides of this default, and <b>App</b> is the
+            custom one configured here. Kept out of <code>agentFarm.*</code> on purpose: a path to an executable on
+            <i>this</i> machine does not belong in settings that travel between machines.</p>
             <div class="setitem">
-                <div class="setdesc">How report &amp; answer <code>.md</code> links (Notices + Work Queue) open when clicked. The split button's caret still lets you pick per click.</div>
                 <div class="sethead"><span class="setname">Default</span></div>
                 <select id="docopenmode" style="margin-top:4px; min-width:280px">${opts}</select>
+                <div class="setdesc" style="margin-top:6px">Obsidian opens the file <b>at the line</b> when you click a
+                single backlog item's code, if the Advanced URI plugin is installed; otherwise it opens the file.</div>
                 <div id="docopencustom" style="margin-top:10px; ${showCustom ? '' : 'display:none'}">
                     <div class="setdesc">Custom app — executable or command, e.g. <code>notepad.exe</code> or a full path.</div>
                     <input id="docopencmd" type="text" value="${C.esc(d.customCommand || '')}" placeholder="notepad.exe" style="width:100%; max-width:440px; padding:6px 8px">
-                    <div class="setdesc" style="margin-top:6px">Arguments — <code>{file}</code> becomes the file path.</div>
+                    <div class="setdesc" style="margin-top:6px">Arguments — <code>{file}</code> becomes the file path,
+                    <code>{line}</code> the line number when one is known (dropped when it is not).</div>
                     <input id="docopenargs" type="text" value="${C.esc(d.customArgs || '{file}')}" placeholder="{file}" style="width:100%; max-width:440px; padding:6px 8px">
                 </div>
             </div>`;
@@ -278,6 +302,12 @@
             .filter(c => c.items.length);
         const total = DATA.categories.reduce((a, c) => a + c.items.length, 0);
         const modified = DATA.categories.reduce((a, c) => a + c.items.filter(i => i.modified).length, 0);
+        // Built once: the section decides for itself whether the filter leaves it
+        // on screen, and the nav link must not offer to scroll to a heading that
+        // is not there.
+        const docOpenHtml = docOpenSection();
+        const foldersHtml = foldersSection();
+        const claudeHtml = claudeSection();
 
         document.getElementById('app').innerHTML = `
             <style>
@@ -330,14 +360,14 @@
             <div class="searchbar" style="margin:10px 0; position:relative">
                 <input id="filter" type="text" placeholder="Filter settings… (name or description)" value="${C.esc(filter)}" style="width:100%; max-width:420px; padding:6px 8px">
             </div>
-            <div class="catnav">${DATA.folders ? '<a data-cat="folders">Agent folders</a>' : ''}${cats.map(c => `<a data-cat="${c.id}">${C.esc(c.label)}</a>`).join('')}${DATA.claude ? '<a data-cat="claude">Claude Code</a>' : ''}</div>
-            ${foldersSection()}
-            ${docOpenSection()}
+            <div class="catnav">${foldersHtml ? '<a data-cat="folders">Agent folders</a>' : ''}${docOpenHtml ? '<a data-cat="docopen">Open with</a>' : ''}${cats.map(c => `<a data-cat="${c.id}">${C.esc(c.label)}</a>`).join('')}${claudeHtml ? '<a data-cat="claude">Claude Code</a>' : ''}</div>
+            ${foldersHtml}
+            ${docOpenHtml}
             ${cats.map(c => `
                 <h2 class="cat" id="cat-${c.id}">${C.esc(c.label)} <span class="muted small">${c.items.length}</span></h2>
                 ${c.items.map(itemHtml).join('')}`).join('')
-            || (claudeSection() || foldersSection() ? '' : '<p class="muted">No settings match the filter.</p>')}
-            ${claudeSection()}
+            || (claudeHtml || foldersHtml || docOpenHtml ? '' : '<p class="muted">No settings match the filter.</p>')}
+            ${claudeHtml}
         `;
 
         // -- wiring --

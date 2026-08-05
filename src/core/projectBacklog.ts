@@ -620,6 +620,19 @@ function locate(items: BacklogItem[], target: BacklogTarget): { item?: BacklogIt
     return { item: hits[0] };
 }
 
+/**
+ * Find one item WITHOUT changing anything — the read-only half of `locate`.
+ *
+ * Exported because "which item did you mean" is a rule, not a detail: opening a
+ * row at its line has to resolve a code exactly the way ticking its box does, or
+ * the two disagree about which line `K-8` is on and only one of them is right.
+ */
+export function findBacklogItem(
+    text: string, target: BacklogTarget
+): { item?: BacklogItem; error?: string } {
+    return locate(parseBacklog(String(text ?? '')).items, target);
+}
+
 /** Replace one line in the source, working on OFFSETS INTO THE ORIGINAL STRING.
  *  Splitting and rejoining would rewrite every line ending in a mixed-ending
  *  file, so a one-word edit would land in the user's vault — and in git — as a

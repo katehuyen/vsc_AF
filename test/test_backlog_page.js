@@ -85,12 +85,17 @@ function makeDom(getHtml) {
             toggle: (c, on) => { if (on) { el.classes.add(c); } else { el.classes.delete(c); } }
         };
         el.addEventListener = (ev, fn) => { el._h[ev] = fn; };
-        el.click = () => el._h.click && el._h.click({ preventDefault() { } });
-        el.fire = (ev, arg) => el._h[ev] && el._h[ev](arg || { preventDefault() { } });
+        // The row pickers stop the click from reaching the document listener that
+        // dismisses them, so the event object has to carry that method.
+        const evObj = () => ({ preventDefault() { }, stopPropagation() { } });
+        el.click = () => el._h.click && el._h.click(evObj());
+        el.fire = (ev, arg) => el._h[ev] && el._h[ev](Object.assign(evObj(), arg || {}));
         el.focus = () => { };
         el.setSelectionRange = () => { };
-        el.getBoundingClientRect = () => ({ top: 0, height: 20 });
+        // Both axes: rows are dropped on above/below, queue chips left/right.
+        el.getBoundingClientRect = () => ({ top: 0, height: 20, left: 0, width: 40 });
         el.querySelectorAll = () => [];
+        el.scrollIntoView = () => { };
         return el;
     }
 
@@ -126,6 +131,7 @@ function run(data) {
     const live = new Map();
     const remember = (sel, els) => { live.set(sel, els); return els; };
     const onMessage = [];
+    const docHandlers = {};
 
     const sandbox = {
         acquireVsCodeApi: () => ({ postMessage: m => posted.push(m), getState: () => ({}), setState() { } }),
@@ -146,11 +152,22 @@ function run(data) {
             AFHeader: { html: () => '<header></header>', wire() { } },
             AFSessionsTable: { create: () => ({ setRows() { }, onMessage: () => false, setProjectFilter() { } }) }
         },
+        // ‼️ The page attaches ONE document-level listener (menu dismissal) at
+        // module scope, deliberately not inside wire() — so the stub has to carry
+        // it, and the test has to be able to fire it: "clicking elsewhere closes
+        // the menu" is only true if that listener exists and does not also eat the
+        // click that opened it.
         document: {
             getElementById: id => (id === 'app' ? app : (dom ? dom.byId(id) : null)),
             querySelectorAll: sel => remember(sel, dom ? dom.all(sel) : []),
-            querySelector: sel => (dom ? dom.one(sel) : null)
+            querySelector: sel => (dom ? dom.one(sel) : null),
+            addEventListener: (ev, fn) => { (docHandlers[ev] = docHandlers[ev] || []).push(fn); }
         },
+        // The jump's flash removes itself on a timer. Never run here: what is
+        // asserted is that the class LANDED, and a test that had to wait 1.8s to
+        // find out would be a test nobody runs.
+        setTimeout: () => 0,
+        clearTimeout: () => { },
         console
     };
     sandbox.globalThis = sandbox;
@@ -166,6 +183,8 @@ function run(data) {
         byId: id => dom.byId(id),
         /** Every element carrying an attribute, in paint order. */
         send: msg => { for (const h of onMessage) { h({ data: msg }); } },
+        /** A click (or key) that landed on the page rather than on a control. */
+        doc: (ev, arg) => (docHandlers[ev] || []).forEach(h => h(arg || {})),
         els: attr => dom.all('[data-' + attr + ']'),
         /** The one row whose code (or key) matches. */
         row: key => dom.all('[data-blrow]').find(e => e.dataset.key === key || e.dataset.code === key)
@@ -175,10 +194,18 @@ function run(data) {
 // ---------------------------------------------------------------------------
 // a backlog with every shape in it
 // ---------------------------------------------------------------------------
+// ‼️ Longer than the queue strip's own tooltip budget (620), on purpose: the real
+// items in this project run to a thousand words, and both cuts — the row's and the
+// tooltip's — have to be exercised by the same item.
 const LONG = 'This one is written out at length because that is what a backlog item is for: '
     + 'the whole thought goes down while it is still in your head, and a page that cannot '
     + 'cope with a paragraph quietly teaches you to write less than you mean, which is the '
-    + 'opposite of what the pile is there to do. It runs well past any sensible cut.';
+    + 'opposite of what the pile is there to do. It runs well past any sensible cut. '
+    + 'And then it keeps going, because the thought was not finished: the second half is '
+    + 'where the reasoning usually lives, the part somebody reading this in three months '
+    + 'will actually need, and the part a page that truncates at a hundred characters '
+    + 'throws away first. So the words continue well beyond six hundred characters, which '
+    + 'is exactly the length the hover text has to answer for.';
 
 const items = () => [
     // an uncoded capture in the inbox — the line-number path
@@ -238,14 +265,21 @@ const data = () => ({
                 { code: 'U', label: 'Arayüz', line: 22, open: 0, total: 1 }
             ],
             items: items(),
-            next: ['P-2', 'K-1'],
+            // The host addresses a queue entry exactly as it addresses a row:
+            // code when there is one, 1-based line for an uncoded capture.
+            next: [{ code: 'P-2', line: 14 }, { code: 'K-1', line: 18 }, { code: null, line: 9 }],
+            nextDefault: 2,
             blocked: [{ code: 'K-2', waitingOn: ['K-1'] }]
         }
     }
 });
 
-const codesIn = html => (html.match(/data-code="([A-Z]-\d+)"/g) || [])
-    .map(s => s.replace(/.*"([^"]+)"/, '$1'));
+// ‼️ Anchored on `data-key`, which only a ROW carries. The queue strip's chips
+// carry `data-code` too — deliberately, so one `blWho` addresses either — and a
+// bare data-code match counted them as rows, which made "every live item is a row"
+// pass or fail on what the strip happened to hold.
+const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g) || [])
+    .map(s => s.replace(/.*data-code="([^"]+)"/, '$1'));
 
 // ---------- it draws the pile ----------
 {
@@ -256,6 +290,55 @@ const codesIn = html => (html.match(/data-code="([A-Z]-\d+)"/g) || [])
     ok('the Next-up card names what an agent would be handed',
         /projects\.backlog\.next/.test(r.html()) && /pj-bl-code">P-2</.test(r.html()));
     ok('a blocked row wears what it waits on', /⛔ K-1/.test(r.html()));
+}
+
+// ---------- the queue strip ----------
+//
+// It used to be a row of bare codes: three letters that told you nothing about
+// which item they were, did nothing when clicked, and stopped at the op's default
+// so it could not show an ORDER — which is the one thing you want to change.
+{
+    const r = run(data());
+    const chips = r.els('blnext');
+    ok('every startable item is a chip, not just the default few', chips.length === 3);
+    ok('an uncoded capture reaches the strip too, keyed by its line',
+        chips[2].dataset.blnext === 'L9' && chips[2].dataset.line === '9');
+    ok('where the op\'s default stops is MARKED rather than being the end',
+        /pj-bl-nextcut/.test(r.html()) && /class="pj-bl-nextb past"/.test(r.html()));
+    ok('a chip carries the words in its hover, so a code is recognisable',
+        chips[0].attrs.title.includes(LONG.slice(0, 120)));
+    ok('…cut, so one thousand-word item cannot become the tooltip',
+        chips[0].attrs.title.includes('…') && !chips[0].attrs.title.includes(LONG.slice(-40)));
+    ok('…and says where in the queue it is, and what it would cost',
+        /#1 in your queue/.test(chips[0].attrs.title) && /size S/.test(chips[0].attrs.title));
+
+    // Clicking one takes you to its row and marks it. Nothing is written.
+    chips[1].click();
+    ok('clicking a chip writes nothing', !r.posted.some(m => /^backlog/.test(m.type)));
+    ok('…and flashes the row it points at', r.row('K-1').classList.contains('flashrow'));
+
+    // ‼️ The case that would otherwise fail silently: a filter is hiding the row
+    // the strip points at.
+    const r2 = run(data());
+    r2.els('blarea').find(e => e.dataset.blarea === 'P').click();
+    ok('the K row is filtered out to begin with', !r2.row('K-1'));
+    r2.els('blnext').find(e => e.dataset.blnext === 'K-1').click();
+    ok('‼️ the jump drops the filters rather than landing nowhere', !!r2.row('K-1')
+        && r2.row('K-1').classList.contains('flashrow'));
+    ok('…and says that is what it did', /Filters cleared — K-1/.test(r2.html()));
+
+    // Dragging in the strip is the SAME reorder the row handles do — one order.
+    const r3 = run(data());
+    const from = r3.els('blnext').find(e => e.dataset.blnext === 'K-1');
+    from.fire('dragstart', { dataTransfer: { setData() { }, effectAllowed: '' } });
+    const onto = r3.els('blnext').find(e => e.dataset.blnext === 'P-2');
+    onto.fire('dragover', { clientX: 2 });
+    ok('the left half of a chip means "in front of this one"',
+        onto.classList.contains('drop-left'));
+    onto.fire('drop');
+    const msg = r3.posted.filter(m => m.type === 'backlogReorder').pop();
+    ok('dropping goes through the same op the row drag uses',
+        msg && msg.code === 'K-1' && msg.destCode === 'P-2' && msg.place === 'before');
 }
 
 // ---------- areas add up ----------
@@ -367,10 +450,12 @@ const codesIn = html => (html.match(/data-code="([A-Z]-\d+)"/g) || [])
 
 // ---------- long items are cut, and open ----------
 {
-    // What the row actually DRAWS, as opposed to what its tooltip carries.
+    // What the ROW actually DRAWS, as opposed to what its tooltip carries.
+    // Anchored on data-key, or the queue strip's own P-2 chip — which comes
+    // first in the paint — sends the search past the row entirely.
     const drawn = html => {
         const m = /<span class="pj-bl-t" title="[^"]*">([\s\S]*?)<\/span>/.exec(
-            html.slice(html.indexOf('data-code="P-2"')));
+            html.slice(html.indexOf('data-key="P-2"')));
         return m ? m[1] : '';
     };
     const r = run(data());
@@ -386,7 +471,7 @@ const codesIn = html => (html.match(/data-code="([A-Z]-\d+)"/g) || [])
     // A short item is drawn whole, carries no hover copy of itself and offers
     // nothing to open — the cut must be invisible on everything it does not hit.
     const shortRow = /<span class="pj-bl-t" title="([^"]*)">([\s\S]*?)<\/span>/.exec(
-        r.html().slice(r.html().indexOf('data-code="P-1"')));
+        r.html().slice(r.html().indexOf('data-key="P-1"')));
     ok('a short item keeps all of its words, with nothing to expand',
         !!shortRow && shortRow[1] === '' && shortRow[2] === 'the work layer');
 
@@ -447,21 +532,93 @@ const codesIn = html => (html.match(/data-code="([A-Z]-\d+)"/g) || [])
     ok('…and a save that landed closes it', !/id="bl-edit"/.test(r4.html()));
 }
 
-// ---------- the type badge ----------
+// ---------- the row's pickers: a menu, not a cycle ----------
+//
+// A cycle wrote the file once per press and could take eight presses to reach a
+// value that was on screen the whole time. What is asserted here is the whole
+// bargain of replacing it: nothing is written until a value is chosen, the value
+// chosen is the value sent, and the axes that are NOT being set are left alone.
 {
     const r = run(data());
     ok('an untyped row asks to be typed', /data-bltype[^>]*>type\?</.test(r.html()));
     const badge = r.els('bltype').find(e => e.closest().dataset.code === 'P-2');
     badge.click();
+    ok('‼️ opening the menu writes nothing at all',
+        !r.posted.some(m => m.type === 'backlogSet'));
+    ok('the menu offers every canonical type, and "no type"',
+        r.els('blpick').length === 9 && r.els('blpick')[0].dataset.blpick === '');
+    ok('…and marks the one the item already carries',
+        r.els('blpick').some(e => e.classes.has('on')));
+    r.els('blpick').find(e => e.dataset.blpick === 'ux').click();
     const msg = r.posted.filter(m => m.type === 'backlogSet').pop();
-    ok('cycling the type moves to the next canonical one',
-        msg && msg.fields.kinds[0] === 'research');
+    ok('picking a type sends exactly that one', msg && msg.fields.kinds[0] === 'ux');
     ok('‼️ …and keeps the tag the user invented',
         msg && msg.fields.kinds.indexOf('regression') >= 0);
+
+    // Only one menu is open at a time, and clicking off closes it — otherwise a
+    // menu opened by mistake sits over the row it belongs to for ever.
     const r2 = run(data());
-    r2.els('bltype').find(e => e.closest().dataset.code === 'K-2').click();
-    ok('an untyped row starts the ring at the first type',
-        r2.posted.filter(m => m.type === 'backlogSet').pop().fields.kinds.join() === 'bug');
+    r2.els('blprio').find(e => e.closest().dataset.code === 'K-1').click();
+    ok('the priority menu lists all six', r2.els('blpick').length === 6);
+    r2.els('blprio').find(e => e.closest().dataset.code === 'K-2').click();
+    ok('opening another row\'s menu closes the first',
+        r2.all('[data-blpick]').length === 6
+        && r2.els('blpick')[0].closest().dataset.code === 'K-2');
+    r2.doc('click');
+    ok('a click anywhere else closes it', !r2.els('blpick').length);
+
+    const r3 = run(data());
+    r3.els('blprio').find(e => e.closest().dataset.code === 'K-1').click();
+    r3.els('blpick').find(e => e.dataset.blpick === 'highest').click();
+    const p = r3.posted.filter(m => m.type === 'backlogSet').pop();
+    ok('the priority picked is the priority sent, in one write',
+        p && p.fields.priority === 'highest' && Object.keys(p.fields).join() === 'priority');
+
+    const r4 = run(data());
+    r4.els('bleffort').find(e => e.closest().dataset.code === 'P-2').click();
+    r4.els('blpick').find(e => e.dataset.blpick === '').click();
+    const e4 = r4.posted.filter(m => m.type === 'backlogSet').pop();
+    ok('"not sized" is reachable, and clears the field',
+        e4 && Object.prototype.hasOwnProperty.call(e4.fields, 'effort') && e4.fields.effort === '');
+}
+
+// ---------- ‼️ filing an uncoded capture ----------
+//
+// This is the one that was BROKEN: the row's "file…" link silently required an
+// area to have been chosen in the capture box at the other end of the page, so in
+// the normal case pressing it did nothing whatsoever.
+{
+    const r = run(data());
+    const file = r.els('blfile');
+    ok('only the uncoded row offers filing', file.length === 1 && !file[0].closest().dataset.code);
+    ok('…as a glyph, with the words in the hover',
+        /data-blfile[^>]*>🗂</.test(r.html()) && /title="Not filed[^"]*"/.test(r.html()));
+    file[0].click();
+    ok('‼️ it asks WHICH AREA on the row itself — no capture box involved',
+        r.els('blpick').length === 3 && r.els('blpick').map(e => e.dataset.blpick).join() === 'P,K,U');
+    r.els('blpick').find(e => e.dataset.blpick === 'K').click();
+    const msg = r.posted.filter(m => m.type === 'backlogCode').pop();
+    ok('and files it there, by line because it has no code',
+        msg && msg.area === 'K' && msg.line === 9 && !msg.code);
+}
+
+// ---------- one item, opened at its own line ----------
+{
+    const r = run(data());
+    const code = r.all('[data-blgo]').find(e => e.closest().dataset.code === 'K-2');
+    ok('the code itself is the handle', !!code);
+    code.click();
+    const msg = r.posted.filter(m => m.type === 'backlogOpenItem').pop();
+    ok('‼️ it is addressed by CODE, so the host can re-resolve the line',
+        msg && msg.code === 'K-2');
+    ok('the hover says it opens the line, not the file',
+        /Open the file AT THIS LINE \(line 18\)/.test(r.html()));
+    // The uncoded capture has no code to re-resolve from, so it is the one case
+    // that has to risk the line — unshifted, like every other action on it.
+    const r2 = run(data());
+    r2.all('[data-blgo]').find(e => !e.closest().dataset.code).click();
+    const m2 = r2.posted.filter(m => m.type === 'backlogOpenItem').pop();
+    ok('an uncoded capture goes by its unshifted line', m2 && m2.line === 9 && !m2.code);
 }
 
 // ---------- the queue: ends, not just steps ----------

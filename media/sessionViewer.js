@@ -69,6 +69,18 @@
     window.addEventListener('message', ev => {
         if (ev.data.type === 'focus') { focusAt(ev.data.ts); return; }
         if (ev.data.type === 'ctxCapture') { onCtxCaptureResult(ev.data); return; }
+        // The receipt for one step's copy button — drawn on the button itself, and
+        // only after the host says the clipboard actually took it. No repaint: the
+        // reader is looking at that row and moving it under them would be rude.
+        if (ev.data.type === 'copied') {
+            const b = document.querySelector(`#msgs [data-copy="${ev.data.idx}"]`);
+            if (b) {
+                b.textContent = ev.data.ok === false ? '⚠' : '✓';
+                b.classList.add('done');
+                setTimeout(() => { b.textContent = '⧉'; b.classList.remove('done'); }, 1400);
+            }
+            return;
+        }
         if (ev.data.type === 'sessionFileEdits') {
             fileHunks[ev.data.file] = ev.data.records || [];
             render({ keepScroll: true });
@@ -303,6 +315,31 @@
     // is scanned by these marks long before the words are read.
     const ROLE_GLYPH = { user: '🧑', assistant: '🤖', tool: '🔧', toolResult: '📄' };
 
+    /**
+     * The WORDS of one step — what a copy button has to put on the clipboard.
+     *
+     * A tool call's payload is its `input`; everything else says what it has to
+     * say in `text`. Nothing else goes along: the meta line (role, model, price)
+     * is the page's commentary on the step, and pasting it into a message to
+     * somebody is not what the button is for.
+     */
+    function stepText(m) {
+        if (!m) { return ''; }
+        return String((m.role === 'tool' ? m.input : m.text) || '');
+    }
+
+    /** The list `data-idx` counts against. Replay renders its own snapshot, so a
+     *  lookup that always went to `visibleMsgs()` would copy the wrong step the
+     *  moment a filter changed mid-replay. */
+    function renderedMsgs() {
+        return replay.active ? replay.msgs : visibleMsgs();
+    }
+
+    /** A step's own copy button. Quiet until the row is under the pointer — one
+     *  per step over a thousand-step transcript is either invisible or a rash. */
+    const copyBtnHtml = idx =>
+        `<button class="copyb" data-copy="${idx}" title="Copy this step's text to the clipboard">⧉</button>`;
+
     function messageHtml(m, idx) {
         const roleLabel = (ROLE_GLYPH[m.role] ? ROLE_GLYPH[m.role] + ' ' : '') + (m.role === 'assistant'
             ? C.aiLabel(m.model, true)
@@ -324,17 +361,21 @@
             m.sidechain ? 'subagent' : '',
             m.isError ? 'ERROR' : ''
         ].filter(Boolean).join(' · ');
+        // The button rides on the meta line rather than in the body: the body is
+        // the step's own words and a control inside them would be copied along
+        // by anyone selecting by hand — which is the thing this replaces.
+        const bar = `<div class="meta">${meta}${copyBtnHtml(idx)}</div>`;
 
         if (m.role === 'tool') {
-            return `<div class="msg tool${hide}" data-idx="${idx}"><div class="meta">${meta}</div>
+            return `<div class="msg tool${hide}" data-idx="${idx}">${bar}
                 <details><summary>input</summary><pre>${C.esc(m.input || '')}</pre></details></div>`;
         }
         if (m.role === 'toolResult') {
             const body = C.esc(m.text || '(empty result)');
-            return `<div class="msg ${cls}" data-idx="${idx}"><div class="meta">${meta}</div>
+            return `<div class="msg ${cls}" data-idx="${idx}">${bar}
                 <details${m.isError ? ' open' : ''}><summary>result</summary><pre>${body}</pre></details></div>`;
         }
-        return `<div class="msg ${cls}" data-idx="${idx}"><div class="meta">${meta}</div><div class="body">${C.esc(m.text || '')}</div></div>`;
+        return `<div class="msg ${cls}" data-idx="${idx}">${bar}<div class="body">${C.esc(m.text || '')}</div></div>`;
     }
 
     // ---------- replay engine ----------
@@ -991,6 +1032,21 @@
         document.getElementById('msgs').addEventListener('click', ev => {
             const t = ev.target && ev.target.closest ? ev.target : null;
             if (!t) { return; }
+            // ‼️ Delegated, like everything else on this element: a listener per
+            // step would be thousands of them on a real transcript, re-attached
+            // on every keystroke in the filter box.
+            const cp = t.closest('button[data-copy]');
+            if (cp) {
+                ev.stopPropagation();          // not a band click
+                const text = stepText(renderedMsgs()[Number(cp.dataset.copy)]);
+                if (!text) { cp.textContent = '—'; setTimeout(() => { cp.textContent = '⧉'; }, 900); return; }
+                // ‼️ The HOST holds the clipboard. `navigator.clipboard` works in
+                // a webview but is permission-gated, and a copy button that
+                // silently did nothing is worse than none — this way the ✓ is
+                // only drawn once the write actually happened.
+                vscode.postMessage({ type: 'copyStep', idx: Number(cp.dataset.copy), text });
+                return;
+            }
             const btn = t.closest('button[data-tnav]');
             if (btn) { jumpTurn(Number(btn.dataset.from), btn.dataset.tnav); return; }
             // band click = fold/unfold; the band's own controls (export checkbox,

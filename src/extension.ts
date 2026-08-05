@@ -129,7 +129,7 @@ import {
 import {
     addBacklogItem, archiveBacklogDone, BACKLOG_EFFORTS, BACKLOG_MOVES, BACKLOG_PRIORITIES,
     BACKLOG_STATES, BacklogEffort, BacklogItem, BacklogMoveDir, BacklogPriority, BacklogState,
-    BacklogTarget, codeBacklogItem, moveBacklogItem, nextBacklog, parseBacklog,
+    BacklogTarget, codeBacklogItem, findBacklogItem, moveBacklogItem, nextBacklog, parseBacklog,
     reorderBacklogItem, setBacklogFields, setBacklogState
 } from './core/projectBacklog';
 import {
@@ -4192,6 +4192,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            op: 'projects.backlog.open',
+            describe: 'Open the backlog document AT ONE ITEM\'S LINE, in whatever the user has chosen documents to open in (docopen.get). Reading an item is not the same as reading the file it is in: a real backlog runs to two hundred lines and "look at K-6" should not mean "find K-6". The line is resolved from the CODE at call time, so it is right even if the file was edited since you last read it. What each mode can honour differs: VS Code and the markdown-preview mode put the cursor on the line, Obsidian needs its Advanced URI plugin (without it the file opens at the top), a custom app gets {line} in its argument template if the template asks for one. args: project (id or name), code? / line? / item? (text) — one of them, mode? (vscode|preview|obsidian|custom; default = the user\'s)',
+            handler: (args) => {
+                const { project, folder, file, text } = backlogDoc(argStr(args, 'project'));
+                const found = findBacklogItem(text, backlogTarget(args));
+                need(found.item, found.error ?? 'no such backlog item');
+                const item = found.item as BacklogItem;
+                const mode = optStr(args, 'mode');
+                openDoc(file, mode, item.line + 1);
+                return {
+                    project: project.name, file: relDoc(folder, file),
+                    code: item.code ?? null, line: item.line + 1, text: item.text,
+                    mode: mode ?? docOpenStore.get().defaultMode
+                };
+            }
+        },
+        {
             op: 'projects.backlog.archive',
             describe: 'Move closed items (done, and cancelled unless you say otherwise) under an archive heading AT THE END OF THE SAME FILE. Deliberately not a separate file: a code must never be handed out twice, and the cheapest guarantee of that is that every code the project has ever used is still in the file the generator reads. Containers are left where they are — a parent whose children are archived would otherwise lose the context that explains it. args: project (id or name), cancelled? (default true — also archive cancelled items)',
             handler: (args) => {
@@ -5093,10 +5110,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // ONE helper opens a report/answer .md with the chosen mode (mode omitted =
     // the user's stored default). The path is always host-resolved (from the
     // notice/item), never the webview — so nothing arbitrary can be opened.
-    const openDoc = (filePath: string, mode?: string): void => {
+    // `line` (1-based) opens AT a line rather than at the top — one backlog item
+    // instead of the document it lives in.
+    const openDoc = (filePath: string, mode?: string, line?: number): void => {
         const cfg = docOpenStore.get();
         const m = (mode && (DOC_OPEN_MODES as string[]).includes(mode) ? mode : cfg.defaultMode) as DocOpenMode;
-        void openReportDoc(filePath, m, cfg);
+        void openReportDoc(filePath, m, cfg, line);
     };
     const docOpenConfig = (): { mode: string; hasCustom: boolean } => {
         const c = docOpenStore.get();
@@ -5113,7 +5132,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 description: m === cur.defaultMode ? 'current default' : '',
                 mode: m
             })),
-            { placeHolder: 'Default way to open report/answer .md links', ignoreFocusOut: true });
+            { placeHolder: 'Default editor for .md documents — reports, answers and project documents', ignoreFocusOut: true });
         if (!picked) { return; }
         const patch: { defaultMode: string; customCommand?: string; customArgs?: string } = { defaultMode: picked.mode };
         if (picked.mode === 'custom') {
@@ -5131,11 +5150,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         docOpenStore.set(patch);
         QueuePanel.refreshIfOpen(); NoticesPanel.refreshIfOpen();
-        void vscode.window.showInformationMessage(`Agent Farm: report/answer links now open in "${DOC_OPEN_LABELS[picked.mode]}".`);
+        ProjectsPanel.refreshIfOpen();
+        void vscode.window.showInformationMessage(`Agent Farm: documents now open in "${DOC_OPEN_LABELS[picked.mode]}".`);
     };
     registerDocOpenOps(bridge, {
         store: docOpenStore,
-        onChange: () => { QueuePanel.refreshIfOpen(); NoticesPanel.refreshIfOpen(); }
+        // The Projects page's Open buttons read the same store, so it refreshes
+        // with the other two — a page still offering the old default is a page
+        // that opens the wrong app.
+        onChange: () => { QueuePanel.refreshIfOpen(); NoticesPanel.refreshIfOpen(); ProjectsPanel.refreshIfOpen(); }
     });
 
     // --- Notice ↔ Kuyruk shared plumbing (used by both panels + commands) ---
@@ -8026,7 +8049,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (!read.ok) { return { state: 'unreadable' as const, path: doc.path, error: read.error }; }
         const text = read.text ?? '';
         const sum = parseBacklog(text);
-        const up = nextBacklog(text, { limit: 5, maxEffort: 'XL' });
+        // ‼️ TWELVE, not five, and the page marks where five would have stopped.
+        // Five is the DEFAULT of the op, not the length of the queue: a strip
+        // showing four items answers "what is next" and not "what is the order",
+        // and reordering is the thing the strip is for. `maxEffort: XL` is
+        // deliberate too — the size ceiling belongs to an agent picking work in
+        // one turn, not to a person looking at their own queue.
+        const up = nextBacklog(text, { limit: 12, maxEffort: 'XL' });
         return {
             ...doc,
             counts: {
@@ -8035,7 +8064,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             },
             areas: sum.areas,
             items: sum.items.map(backlogOut),
-            next: up.items.map(i => i.code ?? `line ${i.line + 1}`),
+            // Addressed exactly as a row is: the code when there is one, the
+            // 1-based line only for an uncoded capture. The page looks the words
+            // up in `items` itself rather than being sent them twice.
+            next: up.items.map(i => ({ code: i.code ?? null, line: i.line + 1 })),
+            /** How many of `next` an agent gets when it does not ask for more. */
+            nextDefault: 5,
             blocked: up.blocked.map(b => ({ code: b.item.code ?? null, waitingOn: b.waitingOn }))
         };
     };
@@ -8419,6 +8453,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         return r;
                     });
                     return { ...res, moved };
+                },
+                /**
+                 * Open the document AT one item's line.
+                 *
+                 * ‼️ THE LINE IS RE-RESOLVED HERE, from the code, against the file
+                 * as it is on disk right now — the page's line number is not used
+                 * for anything but an uncoded capture. The panel can have been open
+                 * for an hour with the file edited in Obsidian underneath it, and
+                 * "take me to K-6" landing on whatever slid into that line number
+                 * is exactly the silent wrongness the code exists to prevent.
+                 */
+                backlogOpenItem: (id: string, target: BacklogTarget, mode?: string) => {
+                    try {
+                        const doc = backlogDoc(id);
+                        const found = findBacklogItem(doc.text, target);
+                        if (!found.item) { return { error: found.error ?? 'no such backlog item' }; }
+                        openDoc(doc.file, mode, found.item.line + 1);
+                        return { code: found.item.code, line: found.item.line + 1 };
+                    } catch (e) {
+                        return { error: String((e as Error)?.message ?? e) };
+                    }
                 }
             };
         })(),
@@ -12501,11 +12556,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     getProfiles: () => context.globalState.get('agentfarm.settingsProfiles', []),
                     setProfiles: (list) => context.globalState.update('agentfarm.settingsProfiles', list),
                     claudeSettingsFile: () => userSettingsPath(claudeDir()),
-                    // Report/answer .md "open with" default + custom external app.
+                    // Which editor a .md document opens in — reports and answers
+                    // (Notices, Work Queue) AND the project documents.
                     docOpen: () => ({ ...docOpenStore.get(), modes: [...DOC_OPEN_MODES] }),
                     setDocOpen: (patch) => {
                         docOpenStore.set(patch);
                         QueuePanel.refreshIfOpen(); NoticesPanel.refreshIfOpen();
+                        ProjectsPanel.refreshIfOpen();
                     },
                     // Agent folders section: a fresh scan per render, so badges and
                     // the per-root agent lists always match what discovery would do.

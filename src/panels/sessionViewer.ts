@@ -671,6 +671,19 @@ export class SessionViewerPanel {
             case 'openRaw':
                 vscode.commands.executeCommand('vscode.open', vscode.Uri.file(this.file));
                 break;
+            // One step's words onto the clipboard. The webview could do this
+            // itself, but `navigator.clipboard` is permission-gated there and a
+            // copy that silently failed is worse than no button — so the host
+            // writes it and answers, and the button only draws its ✓ then.
+            case 'copyStep': {
+                const text = typeof msg.text === 'string' ? msg.text : '';
+                const idx = typeof msg.idx === 'number' ? msg.idx : -1;
+                if (!text) { break; }
+                void vscode.env.clipboard.writeText(text).then(
+                    () => this.panel.webview.postMessage({ type: 'copied', idx, ok: true }),
+                    () => this.panel.webview.postMessage({ type: 'copied', idx, ok: false }));
+                break;
+            }
             // ---- what the agent did to the code (B3) ----
             case 'sessionFileEdits': {
                 // One file's hunks, read on demand. Long hunks are cut here (not

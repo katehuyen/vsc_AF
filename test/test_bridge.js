@@ -1688,7 +1688,7 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             'projects.backlog', 'projects.backlog.next', 'projects.backlog.add',
             'projects.backlog.check', 'projects.backlog.set', 'projects.backlog.code',
             'projects.backlog.move', 'projects.backlog.reorder', 'projects.backlog.archive',
-            'projects.backlog.promote']) {
+            'projects.backlog.promote', 'projects.backlog.open']) {
             ok(`extension.ts registers ${op}`, src.includes(`op: '${op}'`));
         }
         const nextBlock = src.slice(src.indexOf("op: 'projects.backlog.next'"),
@@ -1699,6 +1699,12 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             src.indexOf("op: 'projects.backlog.check'") + 2600);
         ok('‼️ backlog.check\'s contract states the one-character promise',
             /EXACTLY ONE CHARACTER/.test(blCheckBlock));
+        const blOpenBlock = src.slice(src.indexOf("op: 'projects.backlog.open'"),
+            src.indexOf("op: 'projects.backlog.open'") + 2600);
+        ok('‼️ backlog.open promises the line is resolved from the CODE at call time',
+            /resolved from the CODE at call time/.test(blOpenBlock));
+        ok('…and says which modes can honour a line and which cannot',
+            /Advanced URI/.test(blOpenBlock) && /\{line\}/.test(blOpenBlock));
         const moveBlock = src.slice(src.indexOf("op: 'projects.backlog.move'"),
             src.indexOf("op: 'projects.backlog.move'") + 2600);
         ok('‼️ backlog.move\'s contract promises the code does not change',

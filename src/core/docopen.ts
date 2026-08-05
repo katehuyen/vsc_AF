@@ -1,4 +1,6 @@
 import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 
 /**
  * Doc-open modes — the shared "open with" capability behind the report/answer
@@ -75,14 +77,141 @@ export function obsidianUri(absPath: string): string {
     return 'obsidian://open?path=' + encodeURIComponent(p);
 }
 
-/** Turn a custom-app argument TEMPLATE into an argv array for a no-shell spawn.
- *  Tokens split on whitespace; every {file} occurrence in a token is replaced
- *  by the absolute path, so `{file}` yields the path as a SINGLE argv entry
- *  (spaces safe) and `--foo={file}` stays one entry too. An empty template
- *  falls back to just the file. */
-export function buildCustomArgv(template: string, file: string): string[] {
+// ---------------------------------------------------------------------------
+// opening Obsidian AT A LINE
+// ---------------------------------------------------------------------------
+
+/**
+ * Where Obsidian keeps the list of vaults it knows, per platform. Read-only, and
+ * a missing file is not an error — it just means we cannot name a vault and the
+ * caller falls back to the plain `obsidian://open?path=`.
+ */
+function obsidianRegistryPath(): string {
+    const home = os.homedir();
+    if (process.platform === 'win32') {
+        const appdata = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
+        return path.join(appdata, 'obsidian', 'obsidian.json');
+    }
+    if (process.platform === 'darwin') {
+        return path.join(home, 'Library', 'Application Support', 'obsidian', 'obsidian.json');
+    }
+    return path.join(home, '.config', 'obsidian', 'obsidian.json');
+}
+
+const samePath = (a: string, b: string): boolean =>
+    path.resolve(a).replace(/[\\/]+$/, '').toLowerCase()
+    === path.resolve(b).replace(/[\\/]+$/, '').toLowerCase();
+
+export interface ObsidianVault {
+    /** The folder that holds `.obsidian`. */
+    root: string;
+    /** The vault's folder name — what Obsidian shows, and accepted as `vault=`. */
+    name: string;
+    /** Obsidian's own id for it, from obsidian.json. Preferred over the name:
+     *  it survives the folder being renamed, and it is unambiguous. */
+    id?: string;
+}
+
+/**
+ * Which vault a file belongs to — found by walking UP to the folder that holds
+ * `.obsidian`, then matched against Obsidian's own registry for its id.
+ *
+ * ‼️ The vault has to be NAMED and it cannot be guessed from "whichever is
+ * open": measured on this machine, TWO vaults are open at once, and an
+ * `obsidian://adv-uri` with no vault lands in whichever one Obsidian last
+ * touched — i.e. it silently opens the wrong file about half the time.
+ */
+export function obsidianVaultOf(absPath: string): ObsidianVault | undefined {
+    let dir = path.dirname(path.resolve(String(absPath || '')));
+    for (let up = 0; up < 40; up++) {
+        try {
+            if (fs.existsSync(path.join(dir, '.obsidian'))) { break; }
+        } catch { /* unreadable — treat as not it */ }
+        const parent = path.dirname(dir);
+        if (parent === dir) { return undefined; }
+        dir = parent;
+    }
+    if (!fs.existsSync(path.join(dir, '.obsidian'))) { return undefined; }
+    const out: ObsidianVault = { root: dir, name: path.basename(dir) };
+    try {
+        const reg = JSON.parse(fs.readFileSync(obsidianRegistryPath(), 'utf8').replace(/^\uFEFF/, ''));
+        const vaults = (reg && reg.vaults) as Record<string, { path?: string }> | undefined;
+        for (const [id, v] of Object.entries(vaults ?? {})) {
+            if (v && typeof v.path === 'string' && samePath(v.path, dir)) { out.id = id; break; }
+        }
+    } catch { /* no registry, or unreadable — the folder name still works */ }
+    return out;
+}
+
+/** Is the Advanced URI plugin installed AND enabled in this vault? Without it
+ *  `obsidian://adv-uri` is answered by nobody, so the caller must know rather
+ *  than fire a URI into the void. */
+export function hasAdvancedUri(vaultRoot: string): boolean {
+    try {
+        if (!fs.existsSync(path.join(vaultRoot, '.obsidian', 'plugins', 'obsidian-advanced-uri', 'main.js'))) {
+            return false;
+        }
+        const list = JSON.parse(fs.readFileSync(
+            path.join(vaultRoot, '.obsidian', 'community-plugins.json'), 'utf8').replace(/^\uFEFF/, ''));
+        return Array.isArray(list) && list.includes('obsidian-advanced-uri');
+    } catch { return false; }
+}
+
+/**
+ * The URI that opens a vault file in Obsidian WITH THE CURSOR ON A LINE.
+ *
+ * Obsidian's own `open` action has no line parameter; the Advanced URI community
+ * plugin does, and it takes `filepath` relative to the vault root plus a 1-BASED
+ * `line` (it does `setCursor({ line: line - 1 })`). `column=1` goes along
+ * deliberately: with no column the plugin computes `Math.min(NaN, …)` and the
+ * cursor lands nowhere.
+ *
+ * Returns undefined when the file is not in a vault, or the plugin is not there
+ * — the caller then opens the file the ordinary way, which is the honest failure.
+ */
+export function obsidianLineUri(absPath: string, line1: number): string | undefined {
+    if (!Number.isFinite(line1) || line1 < 1) { return undefined; }
+    const vault = obsidianVaultOf(absPath);
+    if (!vault || !hasAdvancedUri(vault.root)) { return undefined; }
+    const rel = path.relative(vault.root, path.resolve(absPath)).replace(/\\/g, '/');
+    if (!rel || rel.startsWith('..')) { return undefined; }
+    const q = [
+        'vault=' + encodeURIComponent(vault.id ?? vault.name),
+        'filepath=' + encodeURIComponent(rel),
+        'line=' + Math.floor(line1),
+        'column=1'
+    ].join('&');
+    return 'obsidian://adv-uri?' + q;
+}
+
+/**
+ * Turn a custom-app argument TEMPLATE into an argv array for a no-shell spawn.
+ *
+ * Tokens split on whitespace; every `{file}` occurrence in a token is replaced by
+ * the absolute path, so `{file}` yields the path as a SINGLE argv entry (spaces
+ * safe) and `--foo={file}` stays one entry too. An empty template falls back to
+ * just the file.
+ *
+ * `{line}` is the same idea for a line number — `+{line} {file}` (vim),
+ * `-n{line} {file}` (Notepad++), `--goto {file}:{line}` (VS Code). When there is
+ * no line to give, a token that asked only for the line is DROPPED rather than
+ * passed empty (`+` alone is an argument some editors take badly), and a
+ * separator left dangling on a token that also carries the file is trimmed —
+ * `{file}:{line}` must not become `C:\x.md:`.
+ */
+export function buildCustomArgv(template: string, file: string, line?: number): string[] {
     const t = (template && template.trim()) ? template.trim() : '{file}';
-    const tokens = t.split(/\s+/).filter(Boolean).map(tok => tok.split('{file}').join(file));
+    const has = Number.isFinite(line) && (line as number) >= 1;
+    const tokens: string[] = [];
+    for (const raw of t.split(/\s+/).filter(Boolean)) {
+        const wantsLine = raw.indexOf('{line}') >= 0;
+        const wantsFile = raw.indexOf('{file}') >= 0;
+        if (wantsLine && !has && !wantsFile) { continue; }
+        let tok = raw.split('{file}').join(file);
+        tok = tok.split('{line}').join(has ? String(Math.floor(line as number)) : '');
+        if (wantsLine && !has) { tok = tok.replace(/[:+,=|#]+$/, ''); }
+        if (tok) { tokens.push(tok); }
+    }
     // Guarantee the file reaches the app even if the template forgot {file}.
     return tokens.some(tok => tok.indexOf(file) >= 0) ? tokens : [...tokens, file];
 }

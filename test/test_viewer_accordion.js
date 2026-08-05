@@ -3,6 +3,9 @@
 // mode (+ its webview-state persistence), newly arrived turns folding
 // themselves, focus auto-unfolding the target turn, and the role-chip binder
 // not swallowing unrelated .chip buttons (turnbox All/None/Invert, accordion).
+//
+// …plus the per-step COPY button, which shares this harness because it shares the
+// one delegated #msgs click handler the accordion uses.
 const fs = require('fs');
 const vm = require('vm');
 
@@ -24,6 +27,7 @@ function makeSandbox(opts) {
     const state = { saved: null, initial: (opts && opts.initialState) || undefined };
     const els = {};
     const seenSelectors = [];
+    const copyBtns = {};
     let focused = null;
     let msgHandler = null;
 
@@ -40,9 +44,10 @@ function makeSandbox(opts) {
         return els[id];
     }
 
+    const posted = [];
     const sandbox = {
         acquireVsCodeApi: () => ({
-            postMessage() { },
+            postMessage: (m) => posted.push(m),
             getState: () => state.saved || state.initial,
             setState: (s) => { state.saved = s; }
         }),
@@ -103,6 +108,18 @@ function makeSandbox(opts) {
             getElementById: getEl,
             querySelectorAll: (sel) => { seenSelectors.push(sel); return []; },
             querySelector: (sel) => {
+                // The copy receipt goes back to the button that was pressed.
+                const c = /data-copy="(\d+)"/.exec(sel);
+                if (c) {
+                    copyBtns[c[1]] = copyBtns[c[1]] || {
+                        textContent: '⧉', classes: [],
+                        classList: {
+                            add: (x) => copyBtns[c[1]].classes.push(x),
+                            remove: (x) => { copyBtns[c[1]].classes = copyBtns[c[1]].classes.filter(y => y !== x); }
+                        }
+                    };
+                    return copyBtns[c[1]];
+                }
                 const m = /data-idx="(\d+)"/.exec(sel);
                 if (!m) { return null; }
                 focused = {
@@ -132,6 +149,31 @@ function makeSandbox(opts) {
         },
         focusMsg: (ts) => msgHandler({ data: { type: 'focus', ts } }),
         pushData: (d) => msgHandler({ data: { type: 'data', data: d } }),
+        send: (m) => msgHandler({ data: m }),
+        /** Press one step's copy button, through the delegated #msgs handler the
+         *  band clicks also go through — which is the point: the two must not
+         *  trigger each other. */
+        copyClick: (idx) => {
+            const btn = { dataset: { copy: String(idx) }, textContent: '⧉', classes: [] };
+            btn.classList = {
+                add: (c) => btn.classes.push(c),
+                remove: (c) => { btn.classes = btn.classes.filter(x => x !== c); }
+            };
+            let bandToggled = false;
+            getEl('msgs').listeners.click({
+                stopPropagation() { },
+                target: {
+                    closest: (sel) => {
+                        if (sel === 'button[data-copy]') { return btn; }
+                        if (sel === '.turnhdr[data-turn]') { bandToggled = true; return null; }
+                        return null;
+                    }
+                }
+            });
+            return { btn, bandToggled };
+        },
+        copyBtn: (idx) => copyBtns[String(idx)],
+        posted: () => posted,
         data: () => sandbox.window.__DATA__,
         lastFocused: () => focused,
         savedState: () => state.saved,
@@ -278,6 +320,62 @@ function makeSandbox(opts) {
     // an explicit "off" must beat the new default-on, or the choice never sticks
     const off = makeSandbox({ initialState: { singleOpen: false } });
     ok('persisted single-open OFF beats the default', !off.appHtml().includes('class="chip on" id="t-singleopen"'));
+}
+
+// ---------- one step's copy button ----------
+//
+// The thing it replaces is selecting a long reply by hand with the mouse. So what
+// matters is that it reaches EVERY step, sends that step's own words and nothing
+// else, and reports only when the clipboard actually took them.
+{
+    const t = makeSandbox();
+    t.click('t-expandall');
+    const html = t.appHtml();
+    ok('every step carries a copy button', count(html, 'class="copyb" data-copy=') === 7);
+    ok('…and it says what it copies', html.includes('Copy this step\'s text to the clipboard'));
+    ok('…on the meta line, not inside the words — anything in the body would be'
+        + ' selected along by the hand-copying this replaces',
+        count(html, '⧉</button></div>') === 7);
+
+    const first = t.copyClick(1);
+    ok('pressing it does not also fold the turn it sits in', !first.bandToggled);
+    const msg = t.posted().filter(m => m.type === 'copyStep').pop();
+    ok('‼️ the HOST is asked to write the clipboard, so a denied permission cannot fail silently',
+        !!msg && msg.idx === 1);
+    ok('and it sends that step\'s words, with none of the meta line',
+        msg.text === 'ask one' && !/USER|claude/.test(msg.text));
+
+    // The receipt is drawn only when the host answers, and it says which way.
+    t.pushData(t.data());   // repaint in between: the receipt must still find its button
+    t.send({ type: 'copied', idx: 1, ok: true });
+    ok('a confirmed copy marks the button', t.copyBtn(1) && t.copyBtn(1).textContent === '✓'
+        && t.copyBtn(1).classes.indexOf('done') >= 0);
+    t.send({ type: 'copied', idx: 1, ok: false });
+    ok('‼️ a refused copy says so rather than pretending', t.copyBtn(1).textContent === '⚠');
+
+    // A tool call's payload is its input, not its (empty) text. Reached through a
+    // deep link, which is what clears the default Dialog filter that hides them.
+    const withTool = makeSandbox();
+    const d = JSON.parse(JSON.stringify(withTool.data()));
+    d.messages.push({ role: 'tool', ts: 9000, tool: 'Read', input: '{"file":"x.ts"}', turn: 3 });
+    withTool.pushData(d);
+    withTool.focusMsg(9000);
+    withTool.copyClick(7);
+    const tmsg = withTool.posted().filter(m => m.type === 'copyStep').pop();
+    ok('a tool call copies its INPUT, which is the only text it has',
+        !!tmsg && tmsg.text === '{"file":"x.ts"}');
+
+    // An empty step must not post at all — an empty clipboard write is a lie.
+    const empty = makeSandbox();
+    const e = JSON.parse(JSON.stringify(empty.data()));
+    e.messages.push({ role: 'assistant', ts: 9500, text: '', turn: 3 });
+    empty.pushData(e);
+    empty.click('t-expandall');
+    const before = empty.posted().filter(m => m.type === 'copyStep').length;
+    const res = empty.copyClick(7);
+    ok('an empty step copies nothing and says nothing happened',
+        empty.posted().filter(m => m.type === 'copyStep').length === before
+        && res.btn.textContent === '—');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

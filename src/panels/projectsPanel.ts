@@ -108,6 +108,10 @@ export interface ProjectsPanelDeps {
         { error?: string; code?: string };
     /** Sweep closed items under the archive heading. */
     backlogArchive(id: string): { error?: string; moved?: number };
+    /** Open the backlog document AT one item's line, in the user's chosen mode.
+     *  The host re-resolves the line from the code — see its implementation. */
+    backlogOpenItem(id: string, target: { code?: string; line?: number }, mode?: string):
+        { error?: string; code?: string; line?: number };
     /** Open a document the way the user opens report links elsewhere — VS Code,
      *  the rendered preview, Obsidian, or their own app. */
     openProjectDoc(id: string, rel: string, mode?: string): void;
@@ -205,7 +209,32 @@ export class ProjectsPanel {
         this.render();
         panel.onDidDispose(() => this.dispose(), null, this.disposables);
         panel.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
+        /**
+         * ‼️ COMING BACK TO THIS TAB RE-READS THE DOCUMENTS.
+         *
+         * Every reading tab here is a view of a file the user also edits in
+         * Obsidian — that is the whole design — and this page's own buttons now
+         * send them there, at a line, to do exactly that. Returning to a page
+         * still showing what the file said before they left makes the round trip
+         * pointless, and "press something else and come back" is not a refresh
+         * mechanism a person should have to know.
+         *
+         * Safe because a repaint costs the OPEN TAB's data only, and because the
+         * page treats a `data` push as new facts rather than as a reset: the
+         * filters, the rows opened past the cut, an edit box with words in it and
+         * the new-project form all survive one (see the message handler in
+         * media/projects.js). Debounced because VS Code fires this event more
+         * than once for a single tab change.
+         */
+        panel.onDidChangeViewState(() => {
+            if (!panel.active) { return; }
+            if (this.focusTimer) { clearTimeout(this.focusTimer); }
+            this.focusTimer = setTimeout(() => { this.focusTimer = undefined; this.refresh(); }, 250);
+        }, null, this.disposables);
     }
+
+    /** Debounce for the focus refresh above. */
+    private focusTimer?: ReturnType<typeof setTimeout>;
 
     /** Both are one-shot: they say what to OPEN with, and re-sending them on
      *  every refresh would drag the reader back to a form they had left. */
@@ -522,6 +551,16 @@ export class ProjectsPanel {
                 this.done(res.error, res.error ? undefined : `Filed as ${res.code ?? 'coded'}.`);
                 break;
             }
+            // Opening one item is a READ, so it does not go through `done()`: a
+            // repaint here would move the list under a reader who is on their way
+            // out to the editor, and there is nothing to report when it works.
+            case 'backlogOpenItem': {
+                if (!id) { break; }
+                const res = this.deps.backlogOpenItem(id, backlogRowTarget(msg),
+                    typeof msg.mode === 'string' ? msg.mode : undefined);
+                if (res.error) { this.done(res.error); }
+                break;
+            }
             case 'backlogArchive': {
                 if (!id) { break; }
                 const res = this.deps.backlogArchive(id);
@@ -540,6 +579,7 @@ export class ProjectsPanel {
 
     private dispose(): void {
         ProjectsPanel.current = undefined;
+        if (this.focusTimer) { clearTimeout(this.focusTimer); this.focusTimer = undefined; }
         for (const d of this.disposables) { try { d.dispose(); } catch { /* ignore */ } }
         this.panel.dispose();
     }

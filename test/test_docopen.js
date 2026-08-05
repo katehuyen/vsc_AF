@@ -13,7 +13,8 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 
 const {
     DocOpenStore, DOC_OPEN_MODES, DEFAULT_DOC_OPEN_CONFIG, coerceMode,
-    parseDocOpenConfig, obsidianUri, buildCustomArgv, registerDocOpenOps
+    parseDocOpenConfig, obsidianUri, buildCustomArgv, registerDocOpenOps,
+    obsidianVaultOf, hasAdvancedUri, obsidianLineUri
 } = require(path.join(__dirname, '..', 'out', 'core', 'docopen.js'));
 const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'bridge.js'));
 
@@ -53,6 +54,72 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
     ok('a template without {file} still appends the file', argv4.length === 2 && argv4[1] === withSpaces);
     const argv5 = buildCustomArgv('', withSpaces);
     ok('empty template falls back to just the file', argv5.length === 1 && argv5[0] === withSpaces);
+}
+
+// ---------- a line number in the custom-app template ----------
+//
+// `{line}` exists so "open K-6" can mean the LINE, not the file, in whatever the
+// user's own editor is. The hard case is what happens when there is no line: an
+// argument left as a bare `+` or a path ending in `:` is worse than not passing it.
+{
+    const f = 'D:\\p\\Backlog.md';
+    ok('+{line} becomes the line', buildCustomArgv('+{line} {file}', f, 74).join('|') === '+74|' + f);
+    ok('a token that is only the line is DROPPED when there is none',
+        buildCustomArgv('+{line} {file}', f).join('|') === f);
+    ok('…and a separator left dangling beside the file is trimmed',
+        buildCustomArgv('--goto {file}:{line}', f).join('|') === '--goto|' + f);
+    ok('with a line, that same template keeps it',
+        buildCustomArgv('--goto {file}:{line}', f, 12).join('|') === '--goto|' + f + ':12');
+    ok('a line of 0 or nonsense counts as no line',
+        buildCustomArgv('+{line} {file}', f, 0).join('|') === f
+        && buildCustomArgv('+{line} {file}', f, NaN).join('|') === f);
+    ok('the old two-argument form is untouched',
+        buildCustomArgv('{file}', f).join('|') === f);
+}
+
+// ---------- Obsidian, at a line ----------
+//
+// ‼️ The vault has to be NAMED. Measured on the author's machine: two vaults open
+// at once, and an adv-uri with no vault lands in whichever Obsidian last touched
+// — i.e. it silently opens a different file about half the time.
+{
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-vault-'));
+    const vault = path.join(dir, 'MyVault');
+    const note = path.join(vault, '10_PROJECTS', 'Backlog.md');
+    fs.mkdirSync(path.join(vault, '.obsidian'), { recursive: true });
+    fs.mkdirSync(path.dirname(note), { recursive: true });
+    fs.writeFileSync(note, '- [ ] P-1 x\n', 'utf8');
+
+    const v = obsidianVaultOf(note);
+    ok('the vault is found by walking up to .obsidian', !!v && v.root === vault && v.name === 'MyVault');
+    ok('a file outside any vault has none', obsidianVaultOf(path.join(os.tmpdir(), 'loose.md')) === undefined
+        || obsidianVaultOf(path.join(os.tmpdir(), 'loose.md')).root !== vault);
+
+    ok('‼️ without the Advanced URI plugin there is no line URI at all — the caller opens the file instead',
+        !hasAdvancedUri(vault) && obsidianLineUri(note, 74) === undefined);
+
+    // Install it the way Obsidian does: the folder AND the enabled list.
+    fs.mkdirSync(path.join(vault, '.obsidian', 'plugins', 'obsidian-advanced-uri'), { recursive: true });
+    fs.writeFileSync(path.join(vault, '.obsidian', 'plugins', 'obsidian-advanced-uri', 'main.js'), '', 'utf8');
+    fs.writeFileSync(path.join(vault, '.obsidian', 'community-plugins.json'),
+        JSON.stringify(['obsidian-advanced-uri']), 'utf8');
+    ok('installed AND enabled is what counts', hasAdvancedUri(vault));
+
+    const u = obsidianLineUri(note, 74);
+    ok('the line URI is the adv-uri action', !!u && u.indexOf('obsidian://adv-uri?') === 0);
+    ok('…it names a vault', /[?&]vault=MyVault(&|$)/.test(u));
+    ok('…the path is vault-RELATIVE with forward slashes',
+        u.indexOf('filepath=' + encodeURIComponent('10_PROJECTS/Backlog.md')) >= 0);
+    ok('…the line is 1-based, as the plugin reads it', /[?&]line=74(&|$)/.test(u));
+    ok('‼️ …and a column goes along: with none the plugin computes Math.min(NaN) and lands nowhere',
+        /[?&]column=1(&|$)/.test(u));
+    ok('a line below one is not a line', obsidianLineUri(note, 0) === undefined);
+
+    // A folder that is merely inside a vault-looking path but not under it.
+    fs.writeFileSync(path.join(vault, '.obsidian', 'community-plugins.json'), '[]', 'utf8');
+    ok('disabling the plugin takes the line URI away again', obsidianLineUri(note, 74) === undefined);
+
+    fs.rmSync(dir, { recursive: true, force: true });
 }
 
 // ---------- module store round-trip ----------

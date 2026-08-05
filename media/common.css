@@ -124,7 +124,26 @@ td.num, th.num { text-align: right; }
 .msg.tool { border-left: 3px solid var(--vscode-charts-yellow, #cca700); }
 .msg.toolResult { border-left: 3px solid var(--vscode-charts-purple, #b180d7); opacity: .9; }
 .msg.error { border-left-color: var(--vscode-errorForeground); }
-.msg .meta { font-size: 11px; opacity: .6; margin-bottom: 4px; display: flex; gap: 10px; flex-wrap: wrap; }
+/* ‼️ Dimmed by COLOUR, not by opacity. Opacity applies to the whole subtree, so
+   the copy button that now lives on this line could never be brighter than the
+   line itself — a control that cannot reach full contrast reads as disabled. */
+.msg .meta { font-size: 11px; color: var(--vscode-descriptionForeground); margin-bottom: 4px;
+    display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+/* One step's copy button. `margin-left:auto` parks it at the right edge of the
+   meta line, and it stays faint until the row is under the pointer: a thousand
+   steps each shouting a button is the wall a transcript must not become. */
+.msg .meta .copyb {
+    margin-left: auto; background: none; border: 1px solid transparent; color: inherit;
+    cursor: pointer; font-size: 12px; line-height: 1; padding: 1px 6px; border-radius: 4px;
+    opacity: 0; transition: opacity .12s;
+}
+.msg:hover .meta .copyb, .msg .meta .copyb:focus { opacity: 1; }
+.msg .meta .copyb:hover { color: var(--vscode-foreground);
+    background: var(--vscode-toolbar-hoverBackground, #8882);
+    border-color: var(--vscode-widget-border, #4443); }
+/* The receipt outlives the pointer leaving the row — otherwise the one frame
+   that says "it worked" is the frame you have already moved away from. */
+.msg .meta .copyb.done { opacity: 1; color: var(--vscode-charts-green, #3fb950); }
 .msg pre { margin: 4px 0 0; max-height: 300px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
 .msg .body { white-space: pre-wrap; word-break: break-word; }
 details summary { cursor: pointer; opacity: .8; font-size: 12px; }

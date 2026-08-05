@@ -110,8 +110,14 @@ function run(data) {
                 const m = /^\[data-([a-zA-Z]+)="([^"]+)"\]$/.exec(sel);
                 if (!m) { return null; }
                 return byAttr(m[1]).find(e => e.dataset[m[1]] === m[2]) || null;
-            }
+            },
+            // The page attaches ONE document listener at module scope — the row
+            // menus' dismissal. Nothing in this file exercises it; it just has to
+            // exist, or loading the script throws.
+            addEventListener: () => { }
         },
+        setTimeout: () => 0,
+        clearTimeout: () => { },
         console
     };
     sandbox.globalThis = sandbox;

@@ -362,6 +362,29 @@ const VAULT = [
     ok('cancelled items can be kept out of the sweep', noCancel.moved === 0);
 }
 
+// ---------- finding an item without touching it ----------
+//
+// The read-only half of the same resolution every write uses — because "open K-8
+// at its line" has to agree with "tick K-8's box" about which line that is.
+{
+    const found = B.findBacklogItem(VAULT, { code: 'K-8' });
+    ok('a code resolves to the item', !!found.item && found.item.code === 'K-8');
+    ok('‼️ …with the line it is on RIGHT NOW, which is the whole point',
+        found.item.line === B.parseBacklog(VAULT).items.find(i => i.code === 'K-8').line);
+    ok('nothing is changed by looking', B.findBacklogItem(VAULT, { code: 'K-8' }).item.raw
+        === found.item.raw);
+    ok('a code that is not there is an error, not a guess',
+        !B.findBacklogItem(VAULT, { code: 'Z-9' }).item
+        && /no backlog item with code Z-9/.test(B.findBacklogItem(VAULT, { code: 'Z-9' }).error));
+    // Two partial hits and no exact one — the case where guessing would silently
+    // open (or edit) the wrong item.
+    ok('an ambiguous text match is refused rather than resolved',
+        !B.findBacklogItem('## P — P\n- [ ] P-1 the thing here\n- [ ] P-2 the thing there\n',
+            { text: 'the thing' }).item);
+    ok('an uncoded capture is reachable by its 0-based line',
+        !!B.findBacklogItem(VAULT, { line: B.parseBacklog(VAULT).items[0].line }).item);
+}
+
 // ---------- duplicate codes are reported, never resolved ----------
 {
     const dupe = '## P — P\n- [ ] P-1 one\n- [ ] P-1 two\n';
