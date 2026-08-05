@@ -274,6 +274,12 @@ const data = () => ({
             // code when there is one, 1-based line for an uncoded capture.
             next: [{ code: 'P-2', line: 14 }, { code: 'K-1', line: 18 }, { code: null, line: 9 }],
             nextDefault: 2,
+            // ‼️ THE WHOLE ORDER, always — the host resolves it and the page
+            // never works one out for itself. `next` is a window on this; a row
+            // reads its own place out of it. K-2 is here even though it is
+            // blocked: being held back is not being out of the queue.
+            queue: ['P-2', 'K-1', 'K-2'],
+            staleQueue: [],
             blocked: [{ code: 'K-2', waitingOn: ['K-1'] }]
         }
     }
@@ -289,7 +295,7 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
 // ---------- it draws the pile ----------
 {
     const r = run(data());
-    ok('every live item is a row', codesIn(r.html()).join() === 'P-1,P-2,K-1,K-2');
+    ok('every live item is a row', codesIn(r.html()).join() === 'P-2,K-1,K-2,P-1');
     ok('the closed one is folded away until asked for', !/data-code="U-1"/.test(r.html()));
     ok('the count says how much of the pile is on screen', /5 of 6<\/span>/.test(r.html()));
     ok('the Next-up card names what an agent would be handed',
@@ -332,12 +338,12 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
         && r2.row('K-1').classList.contains('flashrow'));
     ok('…and says that is what it did', /Filters cleared — K-1/.test(r2.html()));
 
-    // ‼️ DRAGGING A CHIP PINS IT, AND THAT IS THE WHOLE REDESIGN. The old drop
-    // moved the LINE, so it could never leave the item's own area: dragging a K
-    // chip in front of a P one was refused by the host and the strip snapped
-    // back, which is why "do X-5 next" was unsayable. The drop writes the 🎯
-    // block now — the prefix up to and including where it landed — so it works
-    // across areas and no line moves at all.
+    // ‼️ A DROP IS A DROP, AND THAT IS THE WHOLE REDESIGN. Two earlier versions
+    // each layered a rule on top of it. The first moved the LINE, so it could
+    // never leave the item's own area and the strip just snapped back. The
+    // second pinned "everything up to where you dropped it", so moving one entry
+    // back quietly pinned the ones above it. Now the drop names two codes and
+    // the host moves one against the full order.
     const r3 = run(data());
     const from = r3.els('blnext').find(e => e.dataset.blnext === 'K-1');
     from.fire('dragstart', { dataTransfer: { setData() { }, effectAllowed: '' } });
@@ -346,11 +352,12 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
     ok('the left half of a chip means "in front of this one"',
         onto.classList.contains('drop-left'));
     onto.fire('drop', { clientX: 2 });
-    const msg = r3.posted.filter(m => m.type === 'backlogQueue').pop();
-    ok('‼️ dropping a K chip in front of a P one writes the QUEUE, not the file',
-        msg && msg.codes.join() === 'K-1');
-    ok('…and nothing was asked to move in the file',
-        !r3.posted.some(m => m.type === 'backlogReorder'));
+    const msg = r3.posted.filter(m => m.type === 'backlogReorder').pop();
+    ok('‼️ dropping a K chip in front of a P one names both codes and a side',
+        msg && msg.code === 'K-1' && msg.destCode === 'P-2' && msg.place === 'before');
+    ok('‼️ …and it does NOT send the order it can see — the strip is fourteen '
+        + 'entries and the queue is longer, so that would truncate the rest',
+        !r3.posted.some(m => m.type === 'backlogQueue'));
 
     // ‼️ Read from GEOMETRY at drop time. The highlight class is cleared by
     // dragleave as the pointer crosses the chip's own children, so a drop that
@@ -364,7 +371,7 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
     onto4.fire('dragleave');
     onto4.fire('drop', { clientX: 2 });
     ok('a dragleave just before the drop does not flip which side it lands on',
-        (r4.posted.filter(m => m.type === 'backlogQueue').pop() || {}).codes.join() === 'K-1');
+        (r4.posted.filter(m => m.type === 'backlogReorder').pop() || {}).place === 'before');
 
     // The gaps between and below wrapped chips are half the strip's area, and a
     // drop there used to be a drop on nothing.
@@ -373,7 +380,7 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
         .fire('dragstart', { dataTransfer: { setData() { }, effectAllowed: '' } });
     r5.byId('bl-nextrow').fire('drop', { clientX: 2, clientY: 2 });
     ok('a drop in the row\'s empty space goes to the nearest chip instead of nowhere',
-        !!r5.posted.filter(m => m.type === 'backlogQueue').pop());
+        !!r5.posted.filter(m => m.type === 'backlogReorder').pop());
 
     // An uncoded capture has no handle that survives an edit of the file.
     const r6 = run(data());
@@ -381,52 +388,71 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
         .fire('dragstart', { dataTransfer: { setData() { }, effectAllowed: '' } });
     r6.els('blnext').find(e => e.dataset.blnext === 'P-2').fire('drop', { clientX: 2 });
     ok('an uncoded capture cannot be queued, and the page says why',
-        !r6.posted.some(m => m.type === 'backlogQueue') && /needs a code|no code yet/.test(r6.html()));
+        !r6.posted.some(m => m.type === 'backlogReorder')
+        && /needs a code|no code yet/.test(r6.html()));
 }
 
-// ---------- the pin: the one act that crosses areas ----------
+// ---------- ‼️ the row's place in the queue, and the two buttons that change it
 {
     const d = data();
-    // The host puts the pinned head first, so the strip's #1 IS the pin.
-    d.tabData.backlog.queue = ['P-2'];
+    d.tabData.backlog.queue = ['P-2', 'K-1', 'P-1'];
     const r = run(d);
-    ok('a pinned chip says which place it holds', /📌1/.test(r.html()));
-    ok('…and its row is marked without having to be hovered',
-        r.row('P-2').classList.contains('pinned'));
-    const pin = r.all('[data-blpin]').find(e => e.closest().dataset.code === 'K-1');
-    ok('an unpinned row offers the pin', pin && pin.dataset.blpin === 'on');
-    pin.click();
-    const msg = r.posted.filter(m => m.type === 'backlogPin').pop();
-    ok('📌 asks for the head of the queue by CODE', msg && msg.code === 'K-1');
+    const mine = code => r.all('[data-blmove]')
+        .filter(e => e.closest() && e.closest().dataset.code === code);
+    const gripOf = code => new RegExp('data-code="' + code
+        + '"[^>]*>\\s*<span class="pj-bl-grip[\\s\\S]{0,400}?>(\\d+|⠿)</span>').exec(r.html());
 
-    const off = r.all('[data-blpin]').find(e => e.closest().dataset.code === 'P-2');
-    ok('a pinned row offers the other direction', off && off.dataset.blpin === 'off');
-    off.click();
-    ok('…which takes it off the queue rather than moving it',
-        (r.posted.filter(m => m.type === 'backlogUnpin').pop() || {}).code === 'P-2');
+    ok('‼️ a row wears its place in the queue where the drag handle is',
+        (gripOf('P-2') || [])[1] === '1' && (gripOf('K-1') || [])[1] === '2');
+    ok('…and the queue, not the file, is what the list is sorted by',
+        r.html().indexOf('data-code="P-2"') < r.html().indexOf('data-code="K-1"'));
+    ok('a row that cannot be in the queue carries no number to mislead with',
+        /⠿/.test(r.html()));
 
-    // The chip carries its own ✕ so undoing a pin does not mean finding the row.
-    const r2 = run(d);
-    r2.els('blunpin').find(e => e.dataset.blunpin === 'P-2').click();
-    ok('a pinned chip can be taken off where it stands',
-        (r2.posted.filter(m => m.type === 'backlogUnpin').pop() || {}).code === 'P-2');
+    // One click is one place. The menu is the same act, further.
+    mine('K-1').find(e => e.dataset.blmove === 'up' && e.dataset.blby === '1').click();
+    const one = r.posted.filter(m => m.type === 'backlogMove').pop();
+    ok('▲ moves one place, by CODE — the queue holds codes, never lines',
+        one && one.code === 'K-1' && one.dir === 'up' && one.by === 1);
 
-    const r3 = run(d);
-    r3.els('act').find(e => e.dataset.act === 'blUnpinAll').click();
-    const cleared = r3.posted.filter(m => m.type === 'backlogQueue').pop();
-    ok('clearing the queue empties the block and moves nothing',
-        cleared && cleared.codes.length === 0);
+    mine('K-1').find(e => e.dataset.blmove === 'up' && e.dataset.blby === '10').click();
+    ok('‼️ …and resting on it offers the jumps that would be ten clicks',
+        (r.posted.filter(m => m.type === 'backlogMove').pop() || {}).by === 10);
+    ok('every step the design named is on the menu, both ways',
+        [2, 3, 4, 5, 10, 15, 20].every(n => ['up', 'down'].every(d2 => mine('K-1')
+            .some(e => e.dataset.blby === String(n) && e.dataset.blmove === d2))));
 
-    // An uncoded capture has nothing to pin.
-    ok('an uncoded row carries no pin',
-        !r.all('[data-blpin]').some(e => !e.closest().dataset.code));
+    mine('K-1').find(e => e.dataset.blmove === 'top').click();
+    const last = r.posted.filter(m => m.type === 'backlogMove').pop();
+    ok('…and the end of the WHOLE queue is the last row of the menu, not a button',
+        last && last.dir === 'top' && last.by === undefined);
+    ok('both ends are reachable', mine('K-1').some(e => e.dataset.blmove === 'bottom'));
 
-    // A pin whose item was closed in Obsidian is REPORTED, never swept up.
+    // ‼️ What the redesign REMOVED, and the test says so, because leaving either
+    // of them beside the new ones is what made the last version a salad.
+    ok('‼️ there is no pin any more — the queue is not a head with a tail',
+        !/data-blpin/.test(r.html()) && !/📌/.test(r.html()));
+    ok('‼️ …and ⤒/⤓ are no longer buttons of their own, because a per-area end '
+        + 'was never the queue\'s end',
+        !/class="pj-bl-act[^"]*" data-blmove="top"/.test(r.html())
+        && !/>⤒<\/button>/.test(r.html()));
+
+    // An uncoded capture cannot be ordered, so it is not offered the buttons.
+    ok('an uncoded row carries no move buttons at all',
+        !r.all('[data-blmove]').some(e => e.closest() && !e.closest().dataset.code));
+
+    // An entry whose item was closed in Obsidian is REPORTED, never swept up.
     const d2 = data();
     d2.tabData.backlog.queue = ['P-2', 'U-1'];
     d2.tabData.backlog.staleQueue = ['U-1'];
-    ok('a pin that leads nowhere is shown rather than quietly dropped',
+    ok('an entry that leads nowhere is shown rather than quietly dropped',
         /pj-bl-stale[^>]*>⚠ U-1/.test(run(d2).html()));
+
+    // The file's own order is a separate job with a separate button.
+    const r3 = run(d);
+    r3.els('act').find(e => e.dataset.act === 'blTidy').click();
+    ok('🧹 asks the host to put the FILE back in code order',
+        r3.posted.some(m => m.type === 'backlogTidy'));
 }
 
 // ---------- ‼️ the capture box keeps what you wrote ----------
@@ -484,15 +510,15 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
 {
     const r = run(data());
     r.els('blarea').find(e => e.dataset.blarea === 'P').click();
-    ok('one area narrows to that area', codesIn(r.html()).join() === 'P-1,P-2');
+    ok('one area narrows to that area', codesIn(r.html()).join() === 'P-2,P-1');
     r.els('blarea').find(e => e.dataset.blarea === 'K').click();
     ok('‼️ a second area ADDS to the first rather than replacing it',
-        codesIn(r.html()).join() === 'P-1,P-2,K-1,K-2');
+        codesIn(r.html()).join() === 'P-2,K-1,K-2,P-1');
     r.els('blarea').find(e => e.dataset.blarea === 'P').click();
     ok('clicking an area that is on takes it off again', codesIn(r.html()).join() === 'K-1,K-2');
     r.els('blarea').find(e => e.dataset.blarea === '').click();
     ok('"all areas" is a reset, not an area of its own',
-        codesIn(r.html()).join() === 'P-1,P-2,K-1,K-2');
+        codesIn(r.html()).join() === 'P-2,K-1,K-2,P-1');
 }
 
 // ---------- the work type is an axis now ----------
@@ -533,7 +559,7 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
         el.fire('change');
     };
     set('blocked', 'no');
-    ok('"startable now" drops what is waiting on something', codesIn(r.html()).join() === 'P-1,P-2,K-1');
+    ok('"startable now" drops what is waiting on something', codesIn(r.html()).join() === 'P-2,K-1,P-1');
     set('blocked', '');
     set('epics', 'hide');
     ok('"leaves only" drops the containers', codesIn(r.html()).join() === 'P-2,K-1,K-2');
@@ -548,7 +574,7 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
     ok('the chip counts the axes that are narrowing the list', /⚙ filters \(1\)/.test(r.html()));
     r.els('act').find(e => e.dataset.act === 'blClear').click();
     ok('clear puts every axis back, including the ones outside the panel',
-        codesIn(r.html()).join() === 'P-1,P-2,K-1,K-2' && !/⚙ filters \(/.test(r.html()));
+        codesIn(r.html()).join() === 'P-2,K-1,K-2,P-1' && !/⚙ filters \(/.test(r.html()));
 }
 
 // ---------- search ----------
@@ -569,7 +595,7 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
     const r = run(data());
     const sort = v => { const s = r.byId('bl-sort'); s.value = v; s.fire('change'); };
     ok('file order is what it opens with — that order is the user\'s prioritisation',
-        codesIn(r.html()).join() === 'P-1,P-2,K-1,K-2');
+        codesIn(r.html()).join() === 'P-2,K-1,K-2,P-1');
     sort('code');
     ok('by code, K before P and 1 before 2', codesIn(r.html()).join() === 'K-1,K-2,P-1,P-2');
     r.els('act').find(e => e.dataset.act === 'blDir').click();
@@ -584,7 +610,7 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
     sort('due');
     ok('by date, and the undated do not pretend to be due', codesIn(r.html())[0] === 'P-2');
     sort('file');
-    ok('and back', codesIn(r.html()).join() === 'P-1,P-2,K-1,K-2');
+    ok('and back', codesIn(r.html()).join() === 'P-2,K-1,K-2,P-1');
 }
 
 // ---------- long items are cut, and open ----------
@@ -760,16 +786,19 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
     ok('an uncoded capture goes by its unshifted line', m2 && m2.line === 9 && !m2.code);
 }
 
-// ---------- the queue: ends, not just steps ----------
+// ---------- the queue: two buttons, and the distances behind them ----------
 {
     const r = run(data());
-    const moves = r.els('blmove').filter(e => e.closest().dataset.code === 'K-2')
-        .map(e => e.dataset.blmove);
-    ok('a row offers both ends as well as both steps',
-        moves.join() === 'top,up,down,bottom');
-    r.els('blmove').find(e => e.dataset.blmove === 'top' && e.closest().dataset.code === 'K-2').click();
+    const mine = r.els('blmove').filter(e => e.closest() && e.closest().dataset.code === 'K-2');
+    ok('the row itself carries exactly two buttons — one per direction',
+        mine.filter(e => e.dataset.blby === '1').map(e => e.dataset.blmove).join() === 'up,down');
+    ok('‼️ …and everything else is behind them: nine more rows per direction, '
+        + 'which is why ⤒ and ⤓ stopped being buttons of their own',
+        mine.filter(e => e.dataset.blmove === 'up').length === 8);
+    mine.find(e => e.dataset.blmove === 'top').click();
     const msg = r.posted.filter(m => m.type === 'backlogMove').pop();
-    ok('⤒ asks the host for the top of the section', msg && msg.dir === 'top' && msg.code === 'K-2');
+    ok('the end of the queue is one menu row away',
+        msg && msg.dir === 'top' && msg.code === 'K-2');
 }
 
 // ---------- ‼️ the line number a row hands back ----------
@@ -801,7 +830,9 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
     const msg = r.posted.filter(m => m.type === 'backlogReorder').pop();
     ok('dropping names the destination and the side',
         msg && msg.code === 'K-2' && msg.destCode === 'K-1' && msg.place === 'before');
-    ok('…and the destination line rides along unshifted too', msg && msg.destLine === 18);
+    ok('‼️ …and NOT a line: the queue holds codes, because a line number does not '
+        + 'survive somebody inserting a paragraph in Obsidian',
+        msg && msg.destLine === undefined && msg.line === undefined);
 
     const s = r.byId('bl-sort');
     s.value = 'priority';

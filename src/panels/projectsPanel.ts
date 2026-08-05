@@ -98,19 +98,17 @@ export interface ProjectsPanelDeps {
     /** Set an item's axes from the row's own controls. */
     backlogSet(id: string, target: { code?: string; line?: number }, fields: Record<string, unknown>):
         { error?: string };
-    /** Nudge it among its siblings, or send it to one end. The code does not change. */
-    backlogMove(id: string, target: { code?: string; line?: number }, dir: string): { error?: string; note?: string };
-    /** Drop it directly above or below another row — the drag. */
-    backlogReorder(id: string, target: { code?: string; line?: number },
-        dest: { code?: string; line?: number }, place: string): { error?: string; note?: string };
-    /** Replace the pinned head of the queue — the strip's drag, in one call.
-     *  ‼️ Codes only: a pin has to mean the same item after the file is edited,
-     *  and a line number does not survive that. */
+    /** Nudge it `by` places through the QUEUE, or send it to one end of the whole
+     *  queue. No line moves, so it crosses areas; the code does not change. */
+    backlogMove(id: string, code: string, dir: string, by?: number): { error?: string; note?: string };
+    /** Drop it directly before or after another code in the queue — the drag. */
+    backlogReorder(id: string, code: string, dest: string, place: string): { error?: string; note?: string };
+    /** Replace the whole queue in one call — the strip's drag.
+     *  ‼️ Codes only: an entry has to mean the same item after the file is
+     *  edited, and a line number does not survive that. */
     backlogQueue(id: string, codes: string[]): { error?: string; note?: string };
-    /** Put one code at a position in the queue (1-based; 1 = the head). */
-    backlogPin(id: string, code: string, at?: number): { error?: string; note?: string };
-    /** Take one code off the queue; it falls back to its place in the file. */
-    backlogUnpin(id: string, code: string): { error?: string; note?: string };
+    /** Put each area's items back in code order. The queue is unaffected. */
+    backlogTidy(id: string): { error?: string; note?: string; moved?: number };
     /** Give an inbox capture a code and file it under an area. */
     backlogCode(id: string, target: { line?: number }, area: string, parent?: string):
         { error?: string; code?: string };
@@ -530,29 +528,29 @@ export class ProjectsPanel {
                 this.done(res.error, res.error ? undefined : 'Backlog updated.');
                 break;
             }
+            // ---- the order. ‼️ THIS WHOLE FAMILY IS ADDRESSED BY CODE and never
+            // by line, unlike every other row message here: they write the 🎯
+            // block, which has to keep meaning the same item after somebody
+            // inserts a paragraph in Obsidian. An uncoded row has no ▲▼ to press.
             case 'backlogMove': {
                 if (!id) { break; }
-                const res = this.deps.backlogMove(id, backlogRowTarget(msg), String(msg.dir ?? 'down'));
+                const code = String(msg.code ?? '').trim().toUpperCase();
+                if (!code) { break; }
+                const res = this.deps.backlogMove(id, code, String(msg.dir ?? 'up'),
+                    typeof msg.by === 'number' ? msg.by : undefined);
                 this.done(res.error, res.error ? undefined : (res.note ?? 'Moved.'));
                 break;
             }
             case 'backlogReorder': {
                 if (!id) { break; }
-                // The drop target is addressed exactly like the dragged row —
-                // code first, line only for an uncoded capture.
-                const dest = backlogRowTarget({
-                    code: msg.destCode, line: msg.destLine
-                } as Record<string, unknown>);
-                if (!dest.code && dest.line === undefined) { break; }
-                const res = this.deps.backlogReorder(id, backlogRowTarget(msg), dest,
+                const code = String(msg.code ?? '').trim().toUpperCase();
+                const dest = String(msg.destCode ?? '').trim().toUpperCase();
+                if (!code || !dest) { break; }
+                const res = this.deps.backlogReorder(id, code, dest,
                     msg.place === 'before' ? 'before' : 'after');
                 this.done(res.error, res.error ? undefined : (res.note ?? 'Moved.'));
                 break;
             }
-            // ---- the queue. ‼️ These are the ONE family here that does not go
-            // through backlogRowTarget: a pinned entry is addressed by CODE and
-            // never by line, because the block has to keep meaning the same item
-            // after somebody inserts a paragraph in Obsidian.
             case 'backlogQueue': {
                 if (!id || !Array.isArray(msg.codes)) { break; }
                 const codes = msg.codes.map(c => String(c ?? '').trim().toUpperCase()).filter(Boolean);
@@ -561,22 +559,14 @@ export class ProjectsPanel {
                     : (res.note ?? (codes.length ? 'Queue rearranged.' : 'Queue cleared.')));
                 break;
             }
-            case 'backlogPin': {
+            case 'backlogTidy': {
                 if (!id) { break; }
-                const code = String(msg.code ?? '').trim().toUpperCase();
-                if (!code) { break; }
-                const res = this.deps.backlogPin(id, code,
-                    typeof msg.at === 'number' ? msg.at : undefined);
-                this.done(res.error, res.error ? undefined : (res.note ?? `${code} is next.`));
-                break;
-            }
-            case 'backlogUnpin': {
-                if (!id) { break; }
-                const code = String(msg.code ?? '').trim().toUpperCase();
-                if (!code) { break; }
-                const res = this.deps.backlogUnpin(id, code);
+                const res = this.deps.backlogTidy(id);
                 this.done(res.error, res.error ? undefined
-                    : (res.note ?? `${code} is off the queue — it keeps its place in the file.`));
+                    : (res.moved
+                        ? `${res.moved} item${res.moved === 1 ? '' : 's'} back in code order.`
+                        + (res.note ? ` ${res.note}` : '')
+                        : (res.note ?? 'Already in code order.')));
                 break;
             }
             case 'backlogCode': {

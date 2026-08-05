@@ -1376,8 +1376,8 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         const { addPlanItem, checkPlanItem, planSummary } =
             require(path.join(__dirname, '..', 'out', 'core', 'projectPlan.js'));
         const {
-            addBacklogItem, BACKLOG_CODE, nextBacklog, parseBacklog, pinBacklogItem,
-            setBacklogQueue, setBacklogState, unpinBacklogItem
+            addBacklogItem, BACKLOG_CODE, moveInQueue, nextBacklog, parseBacklog,
+            placeInQueue, setBacklogQueue, setBacklogState, tidyBacklogFile
         } = require(path.join(__dirname, '..', 'out', 'core', 'projectBacklog.js'));
         const { appendTrack, closingStamp, readTrackFile, summarizeCode, trackedCodes, TRACK_EVENTS } =
             require(path.join(__dirname, '..', 'out', 'core', 'backlogTrack.js'));
@@ -1636,23 +1636,36 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
                     }
                 },
                 {
-                    op: 'projects.backlog.pin',
-                    describe: 'put an item at the head of the queue. args: project, code, at?',
+                    op: 'projects.backlog.move',
+                    describe: 'move an item through the queue. args: project, code, dir?, by?, to?',
                     handler: a => {
                         const code = argStr(a, 'code').toUpperCase();
-                        const r = editBacklog(t => pinBacklogItem(t, code,
-                            typeof a.at === 'number' ? a.at : undefined));
+                        const r = editBacklog(t => (typeof a.to === 'number'
+                            ? placeInQueue(t, code, a.to)
+                            : moveInQueue(t, code, optStr(a, 'dir') || 'up',
+                                typeof a.by === 'number' ? a.by : undefined)));
                         return { code, queue: r.queue };
                     }
                 },
                 {
-                    op: 'projects.backlog.unpin',
-                    describe: 'take an item off the queue. args: project, code?, all?',
+                    op: 'projects.backlog.queue',
+                    describe: 'read or replace the whole order. args: project, codes?',
                     handler: a => {
-                        const r = editBacklog(t => (a.all === true
-                            ? setBacklogQueue(t, [])
-                            : unpinBacklogItem(t, argStr(a, 'code').toUpperCase())));
+                        if (!Object.prototype.hasOwnProperty.call(a, 'codes')) {
+                            return { queue: nextBacklog(readBacklog(), { limit: 50, maxEffort: 'XL' }).queue };
+                        }
+                        const codes = (Array.isArray(a.codes) ? a.codes : String(a.codes).split(','))
+                            .map(c => String(c).trim().toUpperCase()).filter(Boolean);
+                        const r = editBacklog(t => setBacklogQueue(t, codes));
                         return { queue: r.queue };
+                    }
+                },
+                {
+                    op: 'projects.backlog.tidy',
+                    describe: 'put each area back in code order. args: project',
+                    handler: () => {
+                        const r = editBacklog(t => tidyBacklogFile(t));
+                        return { moved: r.moved };
                     }
                 },
                 {
@@ -1693,22 +1706,24 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
                 { project: 'Agent Farm', text: 'a real item', area: 'P' });
             ok('…and with an area it is given the next free code', filed.ok && filed.result.code === 'P-3');
 
-            // ‼️ The queue is the ONE order that crosses areas. The file is
+            // ‼️ The queue is the ONE order, and it crosses areas. The file is
             // grouped by heading, so line order can never put a K item ahead of
             // a P one; the 🎯 block can, and it does it without moving a line.
-            const pinned = await reg.dispatch('projects.backlog.pin',
-                { project: 'Agent Farm', code: 'P-2' });
-            ok('projects.backlog.pin writes the queue block, not the item',
-                pinned.ok && pinned.result.queue.join() === 'P-2'
+            const moved = await reg.dispatch('projects.backlog.move',
+                { project: 'Agent Farm', code: 'P-2', dir: 'top' });
+            ok('projects.backlog.move writes the queue block, not the item',
+                moved.ok && moved.result.queue[0] === 'P-2'
                 && /## 🎯 Queue/.test(readBacklog())
                 && /- \[ \] P-2 second thing \[efor:: XL\]/.test(readBacklog()));
-            const afterPin = await reg.dispatch('projects.backlog.next',
+            ok('‼️ …and it writes the WHOLE order, not a head with a tail',
+                moved.result.queue.length > 1);
+            const afterMove = await reg.dispatch('projects.backlog.next',
                 { project: 'Agent Farm', limit: 5, maxEffort: 'XL' });
-            ok('…and next reads exactly that order', afterPin.ok && afterPin.result.items[0] === 'P-2');
-            const unpinned = await reg.dispatch('projects.backlog.unpin',
-                { project: 'Agent Farm', all: true });
-            ok('unpinning everything leaves no heading behind',
-                unpinned.ok && !unpinned.result.queue.length && !/🎯/.test(readBacklog()));
+            ok('…and next reads exactly that order', afterMove.ok && afterMove.result.items[0] === 'P-2');
+            const emptied = await reg.dispatch('projects.backlog.queue',
+                { project: 'Agent Farm', codes: [] });
+            ok('emptying the queue leaves no heading behind',
+                emptied.ok && !emptied.result.queue.length && !/🎯/.test(readBacklog()));
 
             const closed = await reg.dispatch('projects.backlog.check',
                 { project: 'Agent Farm', code: 'P-1' });
@@ -1789,7 +1804,7 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             'projects.backlog.check', 'projects.backlog.set', 'projects.backlog.code',
             'projects.backlog.move', 'projects.backlog.reorder', 'projects.backlog.archive',
             'projects.backlog.promote', 'projects.backlog.open',
-            'projects.backlog.queue', 'projects.backlog.pin', 'projects.backlog.unpin',
+            'projects.backlog.queue', 'projects.backlog.tidy',
             'projects.track', 'projects.tracks', 'projects.tracks.backfill']) {
             ok(`extension.ts registers ${op}`, src.includes(`op: '${op}'`));
         }
@@ -1820,12 +1835,20 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             src.indexOf("op: 'projects.backlog.move'") + 2600);
         ok('‼️ backlog.move\'s contract promises the code does not change',
             /THE CODE DOES NOT CHANGE/.test(moveBlock));
-        ok('…and offers both ends, not just the two steps',
-            /up\|down\|top\|bottom/.test(moveBlock));
+        ok('…and says it moves the QUEUE and not the file, which is the whole design',
+            /NOT IN THE FILE/.test(moveBlock));
+        ok('…and offers both ends and a distance, not just the two steps',
+            /up\|down\|top\|bottom/.test(moveBlock) && /by\?/.test(moveBlock));
         const reorderBlock = src.slice(src.indexOf("op: 'projects.backlog.reorder'"),
             src.indexOf("op: 'projects.backlog.reorder'") + 2600);
-        ok('‼️ backlog.reorder states the two refusals, because both would be silent',
-            /SAME SECTION/.test(reorderBlock) && /re-parent/.test(reorderBlock));
+        ok('‼️ backlog.reorder says it has NO area rule, since that was the old surprise',
+            /no area rule/.test(reorderBlock) && /never a line/.test(reorderBlock));
+        const tidyBlock = src.slice(src.indexOf("op: 'projects.backlog.tidy'"),
+            src.indexOf("op: 'projects.backlog.tidy'") + 2600);
+        ok('‼️ backlog.tidy promises the queue survives it, which is why it is safe',
+            /a code does not care which line it is on/.test(tidyBlock));
+        ok('…and admits the one thing it refuses to touch',
+            /PROSE between its items/.test(tidyBlock));
         const checkBlock = src.slice(src.indexOf("op: 'projects.plan.check'"),
             src.indexOf("op: 'projects.plan.check'") + 2600);
         ok('‼️ plan.check\'s contract states the one-character promise and the ✅ it will not write',

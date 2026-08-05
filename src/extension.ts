@@ -135,9 +135,9 @@ import {
     addBacklogItem, archiveBacklogDone, BACKLOG_CODE, BACKLOG_EFFORTS, BACKLOG_MOVES,
     BACKLOG_PRIORITIES,
     BACKLOG_STATES, BacklogEffort, BacklogItem, BacklogMoveDir, BacklogPriority, BacklogState,
-    BacklogTarget, codeBacklogItem, findBacklogItem, moveBacklogItem, nextBacklog, parseBacklog,
-    pinBacklogItem, reorderBacklogItem, setBacklogFields, setBacklogQueue, setBacklogState,
-    stampBacklogClosed, unpinBacklogItem
+    BacklogTarget, codeBacklogItem, dropInQueue, findBacklogItem, moveInQueue, nextBacklog,
+    parseBacklog, placeInQueue, queueOrder, setBacklogFields, setBacklogQueue, setBacklogState,
+    stampBacklogClosed, tidyBacklogFile
 } from './core/projectBacklog';
 import {
     buildProjectContext, contextFileName, isQuotableContextPath, PROJECT_BRIEF_MAX
@@ -4181,37 +4181,56 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.backlog.move',
-            describe: 'Move an item among its siblings, carrying its children with it: one step (`up`/`down`) or all the way to one end of its section (`top`/`bottom`). This is FILING order — where the item sits inside its own area. ‼️ For "do this one next", which has to work across areas and cannot be said by moving a line, use projects.backlog.pin. ‼️ THE CODE DOES NOT CHANGE — order and identity are separate here, which is what lets "do the top five" work without renumbering anything and keeps every note that ever quoted a code pointing at the same item. This is the one edit that genuinely reorders lines, so it rejoins the document; it uses the file\'s OWN line ending, so a CRLF file stays CRLF. args: project (id or name), code?/line?/item? (which one), dir (up|down|top|bottom)',
+            describe: '‼️ MOVES AN ITEM IN THE QUEUE, NOT IN THE FILE — no line is touched, so the move crosses areas freely, which is the whole point (a line cannot leave its own heading; an entry in a list can go anywhere). `dir` up|down moves `by` places (default 1); top|bottom go to the ends of the WHOLE queue. `to` instead names an absolute position, 1-based, the way a person says it — `{code:"X-5", to:1}` is "do this one next". Anything that would run off an end lands on that end rather than failing. ‼️ THE CODE DOES NOT CHANGE and neither does the item\'s area or line: order and identity are separate here, which is what keeps every note that ever quoted a code pointing at the same item. Only the `## 🎯 Queue` block is rewritten (projects.backlog.queue says what that block is). args: project (id or name), code, dir? (up|down|top|bottom), by? (number of places, default 1), to? (1-based position; wins over dir)',
             handler: (args) => {
                 const { project, folder, file } = backlogDoc(argStr(args, 'project'));
-                const target = backlogTarget(args);
+                const code = argStr(args, 'code').trim().toUpperCase();
+                need(code, 'say which item: code');
+                const to = typeof args.to === 'number' ? args.to : undefined;
                 const asked = optStr(args, 'dir') as BacklogMoveDir;
-                const dir: BacklogMoveDir = BACKLOG_MOVES.includes(asked) ? asked : 'down';
-                const out = editProjectDoc(folder, file, src => moveBacklogItem(src, target, dir));
+                const dir: BacklogMoveDir = BACKLOG_MOVES.includes(asked) ? asked : 'up';
+                const by = typeof args.by === 'number' ? args.by : undefined;
+                let queue: string[] = [];
+                const out = editProjectDoc(folder, file, src => {
+                    const res = to === undefined
+                        ? moveInQueue(src, code, dir, by)
+                        : placeInQueue(src, code, to);
+                    queue = res.queue;
+                    return res;
+                });
                 projectDocWritten(project.id);
-                return { project: project.name, file: relDoc(folder, out.file), dir, note: out.note ?? null };
+                return {
+                    project: project.name, file: relDoc(folder, out.file), code,
+                    at: queue.indexOf(code) + 1, queue, note: out.note ?? null
+                };
             }
         },
         {
             op: 'projects.backlog.reorder',
-            describe: 'Put one item directly above or below another — the named-destination move, where backlog.move is the nudge. Use it to rebuild an order in one pass ("K-7 goes right after K-2") instead of counting steps. Two rules it will not bend, because breaking either is silent: the destination must be in the SAME SECTION (crossing a heading changes which area an item belongs to — that is a re-file, see projects.backlog.code) and at the same depth (landing under a different parent is a re-parent). ‼️ Which is exactly why ordering ACROSS areas is not this op\'s job: it is projects.backlog.pin. Codes are untouched, children ride along. args: project (id or name), code?/line?/item? (which one moves), dest (the code it lands against) or destLine?, place? (before|after, default after)',
+            describe: 'Put one item directly before or after another IN THE QUEUE — the named-destination move, where backlog.move is the nudge. Use it to rebuild an order in one pass ("K-7 goes right after S-2") instead of counting steps. It has no area rule and no depth rule to enforce, because like every ordering op here it writes the 🎯 block and never a line: any code can land against any other. Re-FILING an item under a different area is a different job (projects.backlog.code). args: project (id or name), code (which one moves), dest (the code it lands against), place? (before|after, default after)',
             handler: (args) => {
                 const { project, folder, file } = backlogDoc(argStr(args, 'project'));
-                const target = backlogTarget(args);
-                const destCode = optStr(args, 'dest') ?? optStr(args, 'destCode');
-                const destLine = typeof args.destLine === 'number' ? args.destLine - 1 : undefined;
-                need(destCode || destLine !== undefined, 'say where it lands: dest (a code) or destLine');
-                const dest: BacklogTarget = destCode ? { code: destCode } : { line: destLine as number };
+                const code = argStr(args, 'code').trim().toUpperCase();
+                need(code, 'say which item moves: code');
+                const dest = (optStr(args, 'dest') ?? optStr(args, 'destCode') ?? '').trim().toUpperCase();
+                need(dest, 'say where it lands: dest (a code)');
                 const place = optStr(args, 'place') === 'before' ? 'before' : 'after';
-                const out = editProjectDoc(folder, file, src =>
-                    reorderBacklogItem(src, target, dest, place));
+                let queue: string[] = [];
+                const out = editProjectDoc(folder, file, src => {
+                    const res = dropInQueue(src, code, dest, place);
+                    queue = res.queue;
+                    return res;
+                });
                 projectDocWritten(project.id);
-                return { project: project.name, file: relDoc(folder, out.file), place, note: out.note ?? null };
+                return {
+                    project: project.name, file: relDoc(folder, out.file), code, dest, place,
+                    at: queue.indexOf(code) + 1, queue, note: out.note ?? null
+                };
             }
         },
         {
             op: 'projects.backlog.queue',
-            describe: '‼️ THE HEAD OF THE QUEUE — the one order that crosses areas. A backlog file is grouped under area headings (`## K — Console`), so line order is a SEGMENTED order: everything in K comes before everything in S for ever, because moving a line across a heading would re-file the item. The `## 🎯 Queue` block at the top of the file fixes that: it lists codes, in order, and the queue an agent gets is THAT LIST FIRST, then the file\'s own order for everything not in it. Both halves live in the same document, so somebody reading Backlog.md in Obsidian with no extension running sees the same queue projects.backlog.next answers with. With no `codes` this READS the block (and reports pins that lead nowhere); with `codes` it replaces the block wholesale — every item line in the file stays byte-identical, only the block is rewritten. Closed or missing codes are left out and reported. An empty list removes the block. Only CODES: an uncoded capture has no handle that survives an edit, so file it first (projects.backlog.code). args: project (id or name), codes? (array, or comma-separated — the new order)',
+            describe: '‼️ THE ORDER — one list, holding every open item, in whatever order the user shuffled them into; areas interleave freely. It lives in the `## 🎯 Queue` block at the top of Backlog.md, so somebody reading the file in Obsidian with no extension running sees exactly the order projects.backlog.next answers with. The file\'s AREA SECTIONS are a different thing entirely: they are the dictionary — what exists, grouped, each area in its own code order — and nothing about where a line sits expresses a priority any more. With no `codes` this READS the order (and reports entries that lead nowhere); with `codes` it replaces the block wholesale, leaving every item line in the file byte-identical. A code not listed in the block has simply not been placed yet and queues behind everything that has, in file order — so the block stops being partial the first time anything is moved. Closed or missing codes are left out and reported; an empty list removes the block. Only CODES: an uncoded capture has no handle that survives an edit, so file it first (projects.backlog.code). args: project (id or name), codes? (array, or comma-separated — the new order)',
             handler: (args) => {
                 const { project, folder, file, text } = backlogDoc(argStr(args, 'project'));
                 const has = Object.prototype.hasOwnProperty.call(args, 'codes');
@@ -4226,7 +4245,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const codes = listArg(args, 'codes').map(c => c.toUpperCase());
                 const sum = parseBacklog(text);
                 // A code the caller NAMED is checked here: a typo that silently
-                // vanished would look exactly like a pin that worked.
+                // vanished would look exactly like an order that was taken.
                 for (const c of codes) {
                     need(sum.items.some(i => i.code === c), `no backlog item with code ${c}`);
                 }
@@ -4244,45 +4263,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
-            op: 'projects.backlog.pin',
-            describe: 'Put one item at the head of the queue — "do this one next", and the only way to say it across areas. `at` is counted the way a person says it: 1 is the head and the default, 3 puts it third. The item keeps its code, its line and its area; nothing but the `## 🎯 Queue` block is written (see projects.backlog.queue for what that block is). Refuses a container (work lives at the leaves), a closed item, and anything without a code. args: project (id or name), code, at? (1-based, default 1)',
+            op: 'projects.backlog.tidy',
+            describe: 'Put each area\'s items back in code order — K-1, K-2, K-3 — so the file can be read as the dictionary it is. Safe by construction: the queue names CODES and a code does not care which line it is on, so the order a person sees is untouched by this. Children ride with their parent (P-5.1 stays under P-5). ‼️ A section with PROSE between its items is left alone and reported: somebody wrote that paragraph where it is for a reason and no sort knows what it was. Blank lines between items are furniture and are closed up. The inbox (nothing to sort by) and the archive (a record, not a list) are skipped. args: project (id or name)',
             handler: (args) => {
                 const { project, folder, file } = backlogDoc(argStr(args, 'project'));
-                const code = argStr(args, 'code').trim().toUpperCase();
-                need(code, 'say which item: code');
-                let queue: string[] = [];
+                let moved = 0;
+                let skipped: string[] = [];
                 const out = editProjectDoc(folder, file, src => {
-                    const res = pinBacklogItem(src, code,
-                        typeof args.at === 'number' ? args.at : undefined);
-                    queue = res.queue;
+                    const res = tidyBacklogFile(src);
+                    moved = res.moved;
+                    skipped = res.skipped;
                     return res;
                 });
                 projectDocWritten(project.id);
                 return {
                     project: project.name, file: relDoc(folder, out.file),
-                    code, queue, note: out.note ?? null
-                };
-            }
-        },
-        {
-            op: 'projects.backlog.unpin',
-            describe: 'Take an item off the head of the queue. It is not demoted and not touched — it falls back to its place in the file\'s own order, which is where it was before anybody pinned it. Pass `all` to empty the queue, which removes the block rather than leaving an empty heading. args: project (id or name), code? (which one), all? (true empties the queue)',
-            handler: (args) => {
-                const { project, folder, file } = backlogDoc(argStr(args, 'project'));
-                const code = optStr(args, 'code')?.trim().toUpperCase();
-                need(code || args.all === true, 'say which item: code — or all: true to empty the queue');
-                let queue: string[] = [];
-                const out = editProjectDoc(folder, file, src => {
-                    const res = args.all === true
-                        ? setBacklogQueue(src, [])
-                        : unpinBacklogItem(src, code as string);
-                    queue = res.queue;
-                    return res;
-                });
-                projectDocWritten(project.id);
-                return {
-                    project: project.name, file: relDoc(folder, out.file),
-                    code: code ?? null, queue, note: out.note ?? null
+                    moved, skipped, note: out.note ?? null
                 };
             }
         },
@@ -8433,6 +8429,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // is deliberate too — the size ceiling belongs to an agent picking work
         // in one turn, not to a person looking at their own queue.
         const up = nextBacklog(text, { limit: 14, maxEffort: 'XL' });
+        // The strip is a window on the queue; the ROWS need all of it, because
+        // every row shows its own place in it.
+        const order = queueOrder(sum.items, sum.queue);
         return {
             ...doc,
             counts: {
@@ -8447,10 +8446,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             next: up.items.map(i => ({ code: i.code ?? null, line: i.line + 1 })),
             /** How many of `next` an agent gets when it does not ask for more. */
             nextDefault: 5,
-            /** The pinned head, in its own order — what lets the strip say which
-             *  entries are there because the user put them there and which are
-             *  simply next in the file. */
-            queue: up.queue,
+            /** THE ORDER, complete — every queueable code, in the order the user
+             *  put them in. A row reads its own position out of this, which is
+             *  why it is the whole list and not the strip's fourteen. */
+            queue: order,
             staleQueue: up.staleQueue,
             blocked: up.blocked.map(b => ({ code: b.item.code ?? null, waitingOn: b.waitingOn }))
         };
@@ -8903,28 +8902,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             ? { due: (fields.due ? String(fields.due) : null) } : {}),
                         ...(typeof fields.text === 'string' && fields.text ? { text: fields.text } : {})
                     })),
-                backlogMove: (id: string, target: BacklogTarget, dir: string) =>
-                    edit(id, text => moveBacklogItem(text, target,
-                        BACKLOG_MOVES.includes(dir as BacklogMoveDir) ? dir as BacklogMoveDir : 'down')),
-                backlogReorder: (id: string, target: BacklogTarget, dest: BacklogTarget, place: string) =>
-                    edit(id, text => reorderBacklogItem(text, target, dest,
-                        place === 'before' ? 'before' : 'after')),
                 /**
-                 * The queue's own three writes.
+                 * Every ordering write, and all four of them touch ONE block.
                  *
-                 * ‼️ These do NOT go through the row-target machinery, and that
-                 * is the point: the queue holds CODES, because a line number
-                 * cannot survive the file being edited and a pinned entry has to
-                 * mean the same item tomorrow. An uncoded capture is refused
-                 * here rather than pinned by line — the row offers 🗂 for that,
-                 * and the code it hands out is permanent anyway.
+                 * ‼️ None of these goes through the row-target machinery, and
+                 * that is the point: the queue holds CODES, because a line
+                 * number cannot survive the file being edited and an entry has
+                 * to mean the same item tomorrow. An uncoded capture is refused
+                 * rather than queued by line — the row offers 🗂 for that, and
+                 * the code it hands out is permanent anyway.
                  */
+                backlogMove: (id: string, code: string, dir: string, by?: number) =>
+                    edit(id, text => moveInQueue(text, code,
+                        BACKLOG_MOVES.includes(dir as BacklogMoveDir) ? dir as BacklogMoveDir : 'up', by)),
+                backlogReorder: (id: string, code: string, dest: string, place: string) =>
+                    edit(id, text => dropInQueue(text, code, dest,
+                        place === 'before' ? 'before' : 'after')),
                 backlogQueue: (id: string, codes: string[]) =>
                     edit(id, text => setBacklogQueue(text, codes)),
-                backlogPin: (id: string, code: string, at?: number) =>
-                    edit(id, text => pinBacklogItem(text, code, at)),
-                backlogUnpin: (id: string, code: string) =>
-                    edit(id, text => unpinBacklogItem(text, code)),
+                backlogTidy: (id: string) => {
+                    let moved = 0;
+                    const res = edit(id, text => {
+                        const r = tidyBacklogFile(text);
+                        moved = r.moved;
+                        return r;
+                    });
+                    return { ...res, moved };
+                },
                 backlogCode: (id: string, target: BacklogTarget, area: string, parent?: string) => {
                     let code: string | undefined;
                     const res = edit(id, text => {

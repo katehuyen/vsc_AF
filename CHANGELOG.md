@@ -2,6 +2,26 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.70.0 — The queue is one list now, and you can shuffle it like cards (2026-08-06)
+
+**‼️ 3.69.0 answered the right diagnosis with half a design, and the half was the problem.** It kept the old order — the order of the LINES in your file — and bolted a "pinned head" on top of it: a short list that ordered the first few and let the file decide the rest. That is two orders pretending to be one, and it behaves exactly as badly as that sounds. Send something to the front and then push it back to eighth place, and the seven above it get dragged into the list as a side effect: **items you never touched acquire a 📌**. Meanwhile the file kept being reshuffled by ⤒ ▲ ▼ ⤓, so the sections stopped being readable as `K-1, K-2, K-3` and became a record of every "move this up" ever pressed. Two mechanisms, neither of them complete, and a page that had to explain which was which.
+
+**There is one order now and it holds everything.** The `## 🎯 Queue` block at the top of `Backlog.md` is the whole queue: every open item, in whatever order you shuffled them into, areas interleaved freely. Moving one entry moves exactly one entry. There is no pin, no head, no tail, and nothing to explain.
+
+**▲ and ▼ are buttons that are also menus, which is where the distances went.** Click either and the item moves one place — the cheap act keeps its single click. **Rest the pointer on it and a menu opens underneath: 2, 3, 4, 5, 10, 15, 20, and the very top or bottom of the whole list.** So "up eleven" stopped being eleven clicks without becoming a second button, which is what ⤒ and ⤓ were — and those could only ever reach the end of an *area*, which is not a thing the queue has. They are a row in the menu now.
+
+**A row wears its place in the queue where the drag handle used to be.** The number IS the handle: it tells you what dragging it changes, and it costs no width. Drag it anywhere; drag a chip in **Next up**; the list itself is drawn in queue order by default. Nothing here can be refused for crossing an area, because nothing here moves a line.
+
+**Your file goes back to being the dictionary.** The area sections are what exists, grouped, each area in its own code order — and **🧹 Tidy file order** puts them back that way in one press when they have drifted. It cannot disturb your order: the queue names codes, and a code does not care which line it is on. A section with **prose between its items is left alone and says so** — somebody wrote that paragraph where it is for a reason, and no sort knows what it was.
+
+**Everything else the block already promised still holds.** Only that block is ever written: every item line stays byte-identical, and an item keeps its code, its line, its indent and its area. Empty the queue and the file is byte-for-byte what it was before the block existed. Rearranging the block by hand in Obsidian is the same edit the panel makes, so somebody reading `Backlog.md` with no extension running sees exactly the queue an agent is handed. Only coded items can be queued — 🗂 is one press away, and filing is also what puts something in the queue — and an entry whose item was closed or deleted is **reported, never quietly swept up**.
+
+**The row's badge cluster stops reserving space it does not use.** Splitting it into two lines in 3.69.0 bought the words nothing, because the cluster was a wrapping box with a fixed maximum width: it took the whole maximum whatever was in it, leaving a hole between the badges and the actions. It is a column of two measured rows now, as wide as the wider of them and no wider, and the upper row is deliberately the longer one so the type badge sits next to the text it describes instead of being pushed right.
+
+**And the repo did not compile.** 3.69.0 shipped a template string with un-escaped backticks inside a template literal (`src/core/projectDocs.ts`), which closed the literal and made `tsc -p ./` fail — the packaged VSIX had been built from a stale `out/`. Fixed, and the whole suite (99 files, 5438 assertions) passes against a fresh compile.
+
+**Bridge:** `projects.backlog.move` now takes `dir` (up|down|top|bottom) with `by` (how many places), or `to` for an absolute 1-based position, and moves in the QUEUE rather than in the file. `.reorder` drops one code before or after another with no area or depth rule left to enforce. `.queue` reads or replaces the whole order. **New:** `.tidy`. **Removed:** `.pin` and `.unpin` — there is no head to pin to any more.
+
 ## 3.69.0 — The backlog finally has a queue you can put anything at the head of (2026-08-05)
 
 **‼️ The order was segmented, and nobody could say "do X-5 next".** A backlog file is grouped under area headings — `## K — Console`, `## S — Sessions` — and the order handed to an agent was the order of the LINES. Which meant every K item came before every S item, for ever: a line cannot cross a heading without re-filing the item, so the panel refused it, and dragging a chip from the bottom of the strip to the front snapped back with nothing happening. That is not a missing button. It is a missing order, and no amount of drag-and-drop was going to produce one.

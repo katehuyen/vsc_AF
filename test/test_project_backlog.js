@@ -186,8 +186,10 @@ const VAULT = [
         codes.indexOf('P-5.3') < 0 && r.blocked.some(b => b.item.code === 'P-5.3'));
     ok('a closed item is not next', codes.indexOf('K-3') < 0);
     ok('an uncoded capture is still work', codes.indexOf('inbox') >= 0);
-    ok('file order is the default — the user\'s own arrangement wins',
-        codes.join() === 'inbox,P-5.1,P-5.2,P-12,K-8');
+    ok('the queue is the default — the user\'s own arrangement wins',
+        codes.join() === 'P-5.1,P-5.2,P-12,K-8,inbox');
+    ok('‼️ …and an item that cannot be IN the queue comes after it, not among it',
+        codes[codes.length - 1] === 'inbox');
 
     ok('the effort ceiling defaults to M and keeps L/XL out of a turn',
         B.nextBacklog(VAULT, { limit: 10 }).items.every(i => !i.effort || 'XS,S,M'.includes(i.effort)));
@@ -324,58 +326,103 @@ const VAULT = [
 }
 
 // ---------- order ----------
+//
+// ‼️ EVERY ORDERING WRITE TOUCHES ONE BLOCK AND NO LINE. That is the promise the
+// whole redesign rests on: an area heading can no longer hold an item back,
+// because the order stopped being where the item's line sits.
 {
-    const r = B.moveBacklogItem(VAULT, { code: 'K-8' }, 'up');
-    ok('an item moves among its siblings', r.ok);
-    ok('‼️ and its CODE does not change — order and identity are separate',
-        /K-8/.test(r.text) && /K-3/.test(r.text)
-        && r.text.indexOf('K-8') < r.text.indexOf('K-3'));
-    ok('the line ending is preserved through the reorder',
-        (r.text.match(/\r\n/g) || []).length === (VAULT.match(/\r\n/g) || []).length);
-    const withKids = B.moveBacklogItem(VAULT, { code: 'P-5' }, 'down');
-    ok('a parent carries its children with it',
-        withKids.text.indexOf('P-5.3') < withKids.text.indexOf('P-5 Faz 5') + 400
-        && withKids.text.indexOf('P-12') < withKids.text.indexOf('P-5.1'));
-    const top = B.moveBacklogItem(VAULT, { code: 'P-5' }, 'up');
-    ok('already at the top is a no-op that says so, not an error',
-        top.ok && top.text === VAULT && /already at the top/.test(top.note || ''));
+    const order = () => B.queueOrder(B.parseBacklog(VAULT).items, B.parseBacklog(VAULT).queue);
+    ok('with no block, the order is the file — live leaves only, in line order',
+        order().join() === 'P-5.1,P-5.2,P-5.3,P-12,K-8');
+    ok('…a container is not in it: work lives at the leaves',
+        order().indexOf('P-5') < 0);
+    ok('…and neither is a closed item', order().indexOf('K-3') < 0);
 
-    // The backlog is a queue, and "this one next" is what a queue is for. Eleven
-    // presses of ▲ is the same as not being able to do it.
-    const toTop = B.moveBacklogItem(VAULT, { code: 'K-8' }, 'top');
-    ok('an item can be sent to the top of its section in one move',
-        toTop.ok && toTop.text.indexOf('K-8') < toTop.text.indexOf('K-3'));
-    const toBottom = B.moveBacklogItem(VAULT, { code: 'P-5' }, 'bottom');
-    ok('…and to the bottom, children in tow',
-        toBottom.ok && toBottom.text.indexOf('P-12') < toBottom.text.indexOf('P-5 Faz 5')
-        && toBottom.text.indexOf('P-5 Faz 5') < toBottom.text.indexOf('P-5.1'));
-    ok('a block sent to the bottom keeps every one of its children',
-        (toBottom.text.match(/P-5\.\d/g) || []).length === (VAULT.match(/P-5\.\d/g) || []).length);
-    ok('already at the bottom says so rather than shuffling anything',
-        /already at the bottom/.test(B.moveBacklogItem(VAULT, { code: 'P-12' }, 'bottom').note || ''));
-    ok('top and bottom leave the line endings alone too',
-        (toBottom.text.match(/\r\n/g) || []).length === (VAULT.match(/\r\n/g) || []).length);
+    // The move nobody could make before: last area to the front.
+    const toTop = B.moveInQueue(VAULT, 'K-8', 'top');
+    ok('‼️ an item can go to the front of the WHOLE queue, area or no area',
+        toTop.ok && toTop.queue[0] === 'K-8');
+    ok('…and not one item line moved — the file is the same but for the block',
+        toTop.text.indexOf('- [ ] K-8 history search') > toTop.text.indexOf('- [ ] P-12 orphaned'));
+    ok('…so its code, its area and its section are all untouched',
+        /## K — Console\r\n\r\n- \[x\] K-3[\s\S]*- \[ \] K-8 history search/.test(toTop.text));
+
+    const up1 = B.moveInQueue(VAULT, 'K-8', 'up');
+    ok('a plain click moves one place', up1.queue.join() === 'P-5.1,P-5.2,P-5.3,K-8,P-12');
+    const up3 = B.moveInQueue(VAULT, 'K-8', 'up', 3);
+    ok('‼️ and the step menu moves several — the whole point of resting on ▲',
+        up3.queue.join() === 'P-5.1,K-8,P-5.2,P-5.3,P-12');
+    const up99 = B.moveInQueue(VAULT, 'K-8', 'up', 99);
+    ok('a jump bigger than the queue lands on the end, it does not fail',
+        up99.ok && up99.queue[0] === 'K-8');
+    const down = B.moveInQueue(VAULT, 'P-5.1', 'down', 2);
+    ok('…the same downwards', down.queue.join() === 'P-5.2,P-5.3,P-5.1,P-12,K-8');
+    const bottom = B.moveInQueue(VAULT, 'P-5.1', 'bottom');
+    ok('…and to the very back', bottom.queue.join() === 'P-5.2,P-5.3,P-12,K-8,P-5.1');
+
+    const already = B.moveInQueue(VAULT, 'P-5.1', 'up');
+    ok('already at the front is a no-op that says so, not an error',
+        already.ok && already.text === VAULT && /already at the top/.test(already.note || ''));
+    ok('the line ending is preserved when the block is written',
+        (toTop.text.match(/\r\n/g) || []).length > (VAULT.match(/\r\n/g) || []).length
+        && (toTop.text.match(/[^\r]\n/g) || []).length === 0);
+
+    // ---- absolute position: "do this one third" ----
+    const at3 = B.placeInQueue(VAULT, 'K-8', 3);
+    ok('a code can be put at a position counted the way a person says it',
+        at3.queue.join() === 'P-5.1,P-5.2,K-8,P-5.3,P-12');
+    ok('…and position 1 is the front', B.placeInQueue(VAULT, 'K-8', 1).queue[0] === 'K-8');
 
     // ---- the drag: a named destination rather than a count of steps ----
-    const dropped = B.reorderBacklogItem(VAULT, { code: 'P-12' }, { code: 'P-5' }, 'before');
-    ok('an item can be dropped directly above another',
-        dropped.ok && dropped.text.indexOf('P-12') < dropped.text.indexOf('P-5 Faz 5'));
-    ok('…and its code still means what it meant', /P-12 orphaned projectId/.test(dropped.text));
-    const after = B.reorderBacklogItem(VAULT, { code: 'P-5' }, { code: 'P-12' }, 'after');
-    ok('…or below one, carrying its children',
-        after.ok && after.text.indexOf('P-12') < after.text.indexOf('P-5 Faz 5')
-        && (after.text.match(/P-5\.\d/g) || []).length === (VAULT.match(/P-5\.\d/g) || []).length);
-    // The two refusals, both because getting them wrong would be SILENT.
-    const crossSection = B.reorderBacklogItem(VAULT, { code: 'K-8' }, { code: 'P-12' }, 'after');
-    ok('‼️ a drop into another section is refused — that is a re-file, not a reorder',
-        !crossSection.ok && /different sections/.test(crossSection.error || ''));
-    const crossDepth = B.reorderBacklogItem(VAULT, { code: 'P-12' }, { code: 'P-5.1' }, 'after');
-    ok('‼️ a drop at another depth is refused — that would re-parent it',
-        !crossDepth.ok && /different depths/.test(crossDepth.error || ''));
-    const intoSelf = B.reorderBacklogItem(VAULT, { code: 'P-5' }, { code: 'P-5.2' }, 'after');
-    ok('an item cannot be dropped inside its own block', !intoSelf.ok);
+    const dropped = B.dropInQueue(VAULT, 'K-8', 'P-5.1', 'before');
+    ok('an entry can be dropped directly in front of another',
+        dropped.ok && dropped.queue.join() === 'K-8,P-5.1,P-5.2,P-5.3,P-12');
+    const after = B.dropInQueue(VAULT, 'P-5.1', 'K-8', 'after');
+    ok('…or behind one, across areas, with no refusal anywhere',
+        after.ok && after.queue.join() === 'P-5.2,P-5.3,P-12,K-8,P-5.1');
     ok('dropping something on itself is a no-op, not an error',
-        B.reorderBacklogItem(VAULT, { code: 'K-8' }, { code: 'K-8' }, 'after').text === VAULT);
+        B.dropInQueue(VAULT, 'K-8', 'K-8', 'after').text === VAULT);
+
+    // ---- the four refusals, each said precisely: one message for all of them
+    // would send somebody to read the file.
+    ok('a container is refused — work lives at the leaves',
+        /has children/.test(B.moveInQueue(VAULT, 'P-5', 'up').error || ''));
+    ok('a closed item is refused', /is done/.test(B.moveInQueue(VAULT, 'K-3', 'up').error || ''));
+    ok('an unknown code is refused by name',
+        /no backlog item with code Z-9/.test(B.moveInQueue(VAULT, 'Z-9', 'up').error || ''));
+    ok('‼️ and a non-code says what to do about it, not merely no',
+        /has to be filed/.test(B.moveInQueue(VAULT, 'not a code', 'up').error || ''));
+}
+
+// ---------- tidying the file back into its own order ----------
+{
+    const shuffled = VAULT.replace(
+        '- [x] K-3 project box missing on ▶ #bug ✅ 2026-08-03\r\n'
+        + '- [ ] K-8 history search is case sensitive #bug 🔽 [efor:: XS]',
+        '- [ ] K-8 history search is case sensitive #bug 🔽 [efor:: XS]\r\n'
+        + '\r\n'
+        + '- [x] K-3 project box missing on ▶ #bug ✅ 2026-08-03');
+    const t = B.tidyBacklogFile(shuffled);
+    ok('a shuffled area comes back to code order', t.ok && t.moved === 2
+        && t.text.indexOf('K-3 project box') < t.text.indexOf('K-8 history search'));
+    ok('…and the blank line the old shuffling left behind is closed up',
+        !/K-8 history search[^\r\n]*\r\n\r\n/.test(t.text));
+    ok('a file already in order says so and is returned byte-identical',
+        B.tidyBacklogFile(t.text).text === t.text && B.tidyBacklogFile(t.text).moved === 0);
+    ok('‼️ children ride with their parent — P-5.1 stays under P-5',
+        /P-5 Faz 5[\s\S]*P-5\.1[\s\S]*P-5\.2[\s\S]*P-5\.3[\s\S]*P-12/.test(t.text));
+    ok('the queue is untouched by it: it names codes, and a code has no line',
+        B.queueOrder(B.parseBacklog(t.text).items, ['K-8']).join()
+        === B.queueOrder(B.parseBacklog(shuffled).items, ['K-8']).join());
+
+    const prose = VAULT.replace('- [ ] P-12 orphaned',
+        'Everything below waits on the API work.\r\n\r\n- [ ] P-12 orphaned');
+    const left = B.tidyBacklogFile(prose);
+    ok('‼️ a section with prose between its items is LEFT ALONE and reported',
+        left.text === prose && left.skipped.length === 1 && /prose/.test(left.note || ''));
+
+    ok('tidying keeps the file\'s own line ending — no lone \\n creeps in',
+        !/[^\r]\n/.test(t.text));
 }
 
 // ---------- the work-type axis ----------
@@ -429,83 +476,73 @@ const VAULT = [
         !!B.findBacklogItem(VAULT, { line: B.parseBacklog(VAULT).items[0].line }).item);
 }
 
-// ---------- ‼️ the queue: the one order that crosses areas ----------
+// ---------- ‼️ the queue: ONE order, holding everything ----------
 //
 // The file is grouped under area headings, so LINE order is a segmented order —
 // every P item comes before every K item, for ever, because a line cannot cross
 // a heading without re-filing the item. That made "do K-8 next" impossible to
 // SAY, which is not a missing button but a missing order. The `## 🎯 Queue`
-// block is that order's head; everything not in it still follows the file.
+// block IS the order now: one list, every open item, areas interleaved freely.
 {
     ok('a file with no block has an empty queue', B.parseBacklog(VAULT).queue.length === 0);
-    ok('…and the queue is then exactly the file order',
+    ok('…and the order is then exactly the file order',
         B.nextBacklog(VAULT, { limit: 3, maxEffort: 'XL' }).items.map(i => i.code ?? '📥').join()
-        === '📥,P-5.1,P-5.2');
+        === 'P-5.1,P-5.2,P-12');
 
     // The move that was unsayable: a K item ahead of every P item.
-    const pinned = B.pinBacklogItem(VAULT, 'K-8');
-    ok('pinning writes the block and reports the queue',
-        pinned.ok && pinned.queue.join() === 'K-8');
-    ok('‼️ …and K-8 is now first, across the areas', B.nextBacklog(pinned.text,
+    const first = B.moveInQueue(VAULT, 'K-8', 'top');
+    ok('‼️ THE FIRST WRITE MATERIALISES THE WHOLE ORDER — no half-list, no prefix',
+        first.ok && first.queue.join() === 'K-8,P-5.1,P-5.2,P-5.3,P-12');
+    ok('…and K-8 is now first, across the areas', B.nextBacklog(first.text,
         { limit: 3, maxEffort: 'XL' }).items[0].code === 'K-8');
-    ok('…while everything else keeps the file\'s own order', B.nextBacklog(pinned.text,
-        { limit: 3, maxEffort: 'XL' }).items.map(i => i.code ?? '📥').join() === 'K-8,📥,P-5.1');
     ok('the item itself is untouched — same line, same words, same code',
-        B.parseBacklog(pinned.text).items.find(i => i.code === 'K-8').raw
+        B.parseBacklog(first.text).items.find(i => i.code === 'K-8').raw
         === B.parseBacklog(VAULT).items.find(i => i.code === 'K-8').raw);
     ok('the block carries the item\'s words so the file reads as a queue',
-        /1\. K-8 — history search is case sensitive/.test(pinned.text));
+        /1\. K-8 — history search is case sensitive/.test(first.text));
     ok('it goes ABOVE the first section, which is where a queue belongs',
-        pinned.text.indexOf('## 🎯 Queue') < pinned.text.indexOf('## 📥 Inbox'));
-    ok('a CRLF file stays CRLF', !/[^\r]\n/.test(pinned.text));
+        first.text.indexOf('## 🎯 Queue') < first.text.indexOf('## 📥 Inbox'));
+    ok('a CRLF file stays CRLF', !/[^\r]\n/.test(first.text));
 
     // Reading it back is the same list — the file is the truth, not a cache.
-    ok('the block round-trips', B.parseBacklog(pinned.text).queue.join() === 'K-8');
+    ok('the block round-trips',
+        B.parseBacklog(first.text).queue.join() === 'K-8,P-5.1,P-5.2,P-5.3,P-12');
 
-    const two = B.pinBacklogItem(pinned.text, 'P-12');
-    ok('a second pin goes to the HEAD by default — "do this one next"',
-        two.queue.join() === 'P-12,K-8');
-    const third = B.pinBacklogItem(two.text, 'P-5.2', 2);
-    ok('…and `at` puts one anywhere in the list, counted the way people say it',
-        third.queue.join() === 'P-12,P-5.2,K-8');
-    ok('pinning something already in the queue MOVES it rather than doubling it',
-        B.pinBacklogItem(third.text, 'K-8').queue.join() === 'K-8,P-12,P-5.2');
+    // ‼️ THE BUG THE PIN DESIGN HAD: moving one thing must move nothing else.
+    // Sending the front item back to third used to drag the two above it into
+    // the block as pins nobody had asked for.
+    const third = B.placeInQueue(first.text, 'K-8', 3);
+    ok('‼️ moving one entry back leaves every other entry exactly where it was',
+        third.queue.join() === 'P-5.1,P-5.2,K-8,P-5.3,P-12');
 
-    // What it refuses, and why each refusal is silent otherwise.
-    ok('a container is refused: work lives at the leaves',
-        !B.pinBacklogItem(VAULT, 'P-5').ok);
-    ok('a closed item is refused', !B.pinBacklogItem(VAULT, 'K-3').ok);
-    ok('a code that is not in the file is an error, not a quiet no-op',
-        !B.pinBacklogItem(VAULT, 'Z-9').ok && /no backlog item with code Z-9/.test(B.pinBacklogItem(VAULT, 'Z-9').error));
-    ok('an uncoded capture cannot be queued, and says why',
-        !B.pinBacklogItem(VAULT, '').ok);
-
-    // Taking one off is not a demotion: it falls back to where the file has it.
-    const off = B.unpinBacklogItem(third.text, 'P-5.2');
-    ok('unpinning leaves the other pins alone', off.queue.join() === 'P-12,K-8');
-    const empty = B.setBacklogQueue(off.text, []);
+    const empty = B.setBacklogQueue(first.text, []);
     ok('emptying the queue removes the block rather than leaving a heading',
         empty.queue.length === 0 && !/🎯/.test(empty.text));
     ok('‼️ …and every item is exactly where it was before any of this',
         empty.text === VAULT);
 
-    // A blocked pin is not stale — it is blocked, and that is already reported.
-    const blocked = B.pinBacklogItem(VAULT, 'P-5.3');
-    ok('a pinned item waiting on a ⛔ is still held back',
+    // A blocked entry is not stale — it is blocked, and that is already reported.
+    const blocked = B.moveInQueue(VAULT, 'P-5.3', 'top');
+    ok('an item waiting on a ⛔ is still held back wherever it sits in the queue',
         !B.nextBacklog(blocked.text, { maxEffort: 'XL' }).items.some(i => i.code === 'P-5.3'));
     ok('…and is NOT called stale, because nothing about it is wrong',
         B.nextBacklog(blocked.text, { maxEffort: 'XL' }).staleQueue.length === 0);
 
-    // A pin whose item was closed in Obsidian: reported, never swept up.
-    const closedOff = B.setBacklogState(pinned.text, { code: 'K-8' }, 'done');
-    ok('a pin that leads nowhere is reported rather than quietly removed',
+    // An entry whose item was closed in Obsidian: reported, never swept up.
+    const closedOff = B.setBacklogState(first.text, { code: 'K-8' }, 'done');
+    ok('an entry that leads nowhere is reported rather than quietly removed',
         B.nextBacklog(closedOff.text, { maxEffort: 'XL' }).staleQueue.join() === 'K-8');
     ok('…and the block can still be edited, dead entry and all',
-        B.unpinBacklogItem(closedOff.text, 'K-8').ok);
+        B.moveInQueue(closedOff.text, 'P-12', 'top').ok);
 
-    // `sort` is a different QUESTION, and the pins must not answer it.
+    // An uncoded capture has no handle that survives an edit, so it queues last.
+    ok('an uncoded capture comes after everything that can be ordered',
+        B.nextBacklog(first.text, { limit: 9, maxEffort: 'XL' })
+            .items.map(i => i.code ?? '📥').join() === 'K-8,P-5.1,P-5.2,P-12,📥');
+
+    // `sort` is a different QUESTION, and the queue must not answer it.
     ok('asking for the cheapest is not asking for your queue',
-        B.nextBacklog(pinned.text, { sort: 'score', maxEffort: 'XL' }).items[0].code !== 'K-8');
+        B.nextBacklog(first.text, { sort: 'score', maxEffort: 'XL' }).items[0].code !== 'K-8');
 
     // A block somebody rearranges by hand in Obsidian is the same edit.
     const byHand = VAULT.replace('## 📥 Inbox',

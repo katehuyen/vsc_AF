@@ -250,24 +250,37 @@ const AREA_HEADING = /^#{1,6}\s+(?:[^\p{L}\d\s]\s*)?([A-Z]{1,2})\s*[—–:-]\s*
 const INBOX_HEADING = /(?:📥|\b(?:inbox|gelen)\b)/iu;
 
 /**
- * `## 🎯 Queue` — THE HEAD OF THE QUEUE, AND THE ONLY ORDER THAT CROSSES AREAS.
+ * `## 🎯 Queue` — THE ORDER. Not part of it, not a head of it: the whole thing.
  *
- * ‼️ WHY THIS EXISTS AT ALL. Line order is the user's prioritisation and stays
- * that way — but a real backlog file is grouped under area headings, and a
- * grouped file makes line order a SEGMENTED order: everything in `K` comes
- * before everything in `S`, for ever, because moving a line across a heading
- * would re-file the item. So "do X-5 next" was unsayable. It was not a missing
- * button; it was the one order the file could not express.
+ * ‼️ WHY THE FILE'S LINE ORDER IS NOT THE QUEUE. A backlog file is grouped under
+ * area headings, so line order is a SEGMENTED order: every `K` item comes before
+ * every `S` item, for ever, because moving a line across a heading re-files the
+ * item. "Do X-5 next" was not a missing button — it was an order the file could
+ * not express.
  *
- * The answer is not a second, hidden order — it is one order with an explicit
- * head. The queue is **this list, then the file's own order for everything not
- * in it.** Both halves live in the same document, so a person reading
- * `Backlog.md` in Obsidian with no extension running sees the same queue an
- * agent gets from `projects.backlog.next`.
+ * ‼️ AND WHY A "PINNED HEAD" IS NOT THE ANSWER EITHER. A list that ordered only
+ * its first few and let the file decide the rest is two orders pretending to be
+ * one: moving something to position 8 has to drag the seven above it into the
+ * list as a side effect, which is a rule nobody asked for and nobody can predict.
+ * The queue is ONE list and it holds EVERYTHING — shuffled like cards, in
+ * whatever order the user put them, areas interleaved freely.
  *
- * It holds CODES, and only codes. An uncoded capture has no handle that
- * survives the file being edited (a line number does not), so filing it is the
- * price of pinning it — one click, and the code it gets is permanent anyway.
+ * So the two halves of this file have two different jobs, and neither does the
+ * other's:
+ *
+ *   * `Backlog.md`'s AREA SECTIONS are the dictionary — what exists, grouped,
+ *     each area in its own natural code order (`tidyBacklogFile` restores that).
+ *     Nothing reorders these lines to express a priority any more.
+ *   * this BLOCK is the order, and the only one.
+ *
+ * A code that is not listed here has simply not been placed yet (it was added
+ * in Obsidian since the last edit); it queues after everything that was, in file
+ * order. The first write of any kind materialises the complete order, so the
+ * block stops being partial the moment it is touched.
+ *
+ * It holds CODES, and only codes. An uncoded capture has no handle that survives
+ * the file being edited (a line number does not), so filing it is the price of
+ * queueing it — one click, and the code it gets is permanent anyway.
  */
 const QUEUE_HEADING = /(?:🎯|\bqueue\b|\bnext\s*up\b)/iu;
 
@@ -381,10 +394,11 @@ export interface BacklogSummary {
     inboxLine?: number;
     /** Line of the archive heading, when the file has one. */
     archiveLine?: number;
-    /** The pinned head of the queue, in order — the codes listed under the 🎯
-     *  heading, exactly as the file has them. Empty when there is no block, and
-     *  a code in here is NOT verified to exist: the file is the truth and a
-     *  stale entry is reported (see `nextBacklog`), never silently dropped. */
+    /** The queue block, exactly as the file has it — the codes under the 🎯
+     *  heading, in their order. Empty when there is no block, and a code in
+     *  here is NOT verified to exist: the file is the truth and a stale entry
+     *  is reported (see `nextBacklog`), never silently dropped. For the order
+     *  a reader actually sees, pass this through `queueOrder`. */
     queue: string[];
     /** Line of the 🎯 heading, when the file has one. */
     queueLine?: number;
@@ -592,13 +606,44 @@ export interface NextResult {
     blocked: { item: BacklogItem; waitingOn: string[] }[];
     /** How many live leaves there were before the filters. */
     considered: number;
-    /** The pinned head, as the file has it. */
+    /** THE ORDER, complete — every queueable item, the block's codes first and
+     *  anything the block has not placed yet behind them in file order. This is
+     *  what a row's position number means and what a reorder is computed
+     *  against; the raw block is `parseBacklog(...).queue`. */
     queue: string[];
-    /** Pinned codes that lead nowhere any more — the item is closed, gone, or
-     *  is a container. ‼️ Reported, never quietly removed: the queue is the
-     *  user's own list and a program that prunes it silently is a program that
-     *  loses their ordering while telling them nothing. */
+    /** Codes in the block that lead nowhere any more — the item is closed, gone,
+     *  or has grown children. ‼️ Reported, never quietly removed: the queue is
+     *  the user's own list and a program that prunes it silently is a program
+     *  that loses their ordering while telling them nothing. */
     staleQueue: string[];
+}
+
+/**
+ * THE ORDER, resolved: the block's codes, then everything it has not placed.
+ *
+ * ‼️ THE TAIL IS NOT A SECOND ORDERING SYSTEM — it is the answer to one
+ * question: where does an item go that was written into the file five minutes
+ * ago and has never been placed? At the back, which is what a queue does with
+ * something that just arrived. Every write materialises the whole list, so the
+ * tail is empty from the first edit onwards.
+ *
+ * Only live leaves with a code are in it: a container is not work, a closed item
+ * is not waiting, and an uncoded capture has no handle that survives an edit of
+ * the file.
+ */
+export function queueOrder(items: BacklogItem[], queue: string[]): string[] {
+    const placeable = items.filter(i => i.code && isLive(i.state) && !i.container);
+    const byCode = new Map(placeable.map(i => [i.code as string, i]));
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const code of queue) {
+        if (byCode.has(code) && !seen.has(code)) { out.push(code); seen.add(code); }
+    }
+    for (const i of placeable) {
+        const code = i.code as string;
+        if (!seen.has(code)) { out.push(code); seen.add(code); }
+    }
+    return out;
 }
 
 /**
@@ -610,9 +655,9 @@ export interface NextResult {
  * their queue IS the prioritisation, and a clever sort that overrules it would
  * make dragging pointless.
  *
- * That order has two halves: the PINNED HEAD (`## 🎯 Queue`) first, then the
- * file's line order for everything not in it. The head is what makes a queue
- * possible at all in a file grouped by area — see `QUEUE_HEADING`.
+ * That order is the `## 🎯 Queue` block, resolved by `queueOrder` — one list
+ * holding every queueable item, areas interleaved however the user shuffled
+ * them. See `QUEUE_HEADING` for why the file's own line order cannot be it.
  */
 export function nextBacklog(text: string, opts: NextOptions = {}): NextResult {
     const { items, queue } = parseBacklog(text);
@@ -642,20 +687,21 @@ export function nextBacklog(text: string, opts: NextOptions = {}): NextResult {
     });
 
     /**
-     * ‼️ THE PINNED HEAD GOES FIRST, AND ONLY IN FILE ORDER.
+     * ‼️ THE QUEUE IS THE ORDER, AND IT IS THE DEFAULT ONE.
      *
      * `score` and `priority` are a different QUESTION — "what is cheapest",
-     * "what is most urgent" — and a caller who asked one of them did not ask
-     * for the user's hand-made order. Overruling their sort with the pins would
-     * make those two options mean nothing. File order is the one the queue is
-     * an expression of, so that is the one it leads.
+     * "what is most urgent" — and a caller who asked one of them did not ask for
+     * the user's hand-made order, so those two are left alone. Everything else
+     * follows the queue, because the user arranging it IS the prioritisation.
      *
-     * Rank comes off the file's list, and everything unpinned keeps its line
-     * order behind it: the queue is a HEAD, not a replacement.
+     * An uncoded capture cannot be in the queue (see `queueOrder`) and comes
+     * after everything that can, in file order: it has not been filed yet, and
+     * filing is what puts something in a queue.
      */
+    const order = queueOrder(items, queue);
     const rank = new Map<string, number>();
-    queue.forEach((c, n) => rank.set(c, n));
-    const pinnedFirst = (a: BacklogItem, b: BacklogItem): number => {
+    order.forEach((c, n) => rank.set(c, n));
+    const queued = (a: BacklogItem, b: BacklogItem): number => {
         const ra = a.code !== undefined ? rank.get(a.code) : undefined;
         const rb = b.code !== undefined ? rank.get(b.code) : undefined;
         if (ra === undefined && rb === undefined) { return a.line - b.line; }
@@ -669,20 +715,20 @@ export function nextBacklog(text: string, opts: NextOptions = {}): NextResult {
         : opts.sort === 'priority'
             ? [...passed].sort((a, b) =>
                 PRIORITY_WEIGHT[b.priority] - PRIORITY_WEIGHT[a.priority] || a.line - b.line)
-            : (queue.length ? [...passed].sort(pinnedFirst) : passed);
+            : [...passed].sort(queued);
 
-    // A pin whose item is closed, gone or has become a container leads nowhere,
-    // and the caller is told which — so "why is X-5 not first any more" never
-    // needs the file to be read by hand. ‼️ Measured against the ITEM, not
-    // against this call's filters: an `area: 'K'` query must not report every
-    // other area's pins as rubbish.
+    // An entry whose item is closed, gone or has become a container leads
+    // nowhere, and the caller is told which — so "why is X-5 not in the list any
+    // more" never needs the file to be read by hand. ‼️ Measured against the
+    // ITEM, not against this call's filters: an `area: 'K'` query must not
+    // report every other area's entries as rubbish.
     const staleQueue = queue.filter(c => {
         const it = byCode.get(c);
         return !it || !isLive(it.state) || it.container;
     });
 
     const limit = Math.max(1, Math.min(50, opts.limit ?? 5));
-    return { items: sorted.slice(0, limit), blocked, considered: live.length, queue, staleQueue };
+    return { items: sorted.slice(0, limit), blocked, considered: live.length, queue: order, staleQueue };
 }
 
 // ---------------------------------------------------------------------------
@@ -1154,15 +1200,15 @@ function removeLine(src: string, line: number, expect: string): string | undefin
 }
 
 // ---------------------------------------------------------------------------
-// writing — order
+// writing — the order (all of which is the queue)
 // ---------------------------------------------------------------------------
 
-/** Where a move puts an item, in the order a person says it: one step either
- *  way, or all the way to one end of its section. */
+/** Where a move puts an item, in the order a person says it: some number of
+ *  steps either way, or all the way to one end of the whole queue. */
 export type BacklogMoveDir = 'up' | 'down' | 'top' | 'bottom';
 export const BACKLOG_MOVES: BacklogMoveDir[] = ['up', 'down', 'top', 'bottom'];
 
-/** An item plus every line indented under it — what a move carries. */
+/** An item plus every line indented under it — what a tidy carries. */
 function blockOf(items: BacklogItem[], start: BacklogItem): { from: number; to: number } {
     let to = start.line;
     for (const it of items) {
@@ -1172,107 +1218,103 @@ function blockOf(items: BacklogItem[], start: BacklogItem): { from: number; to: 
 }
 
 /**
- * Lift one item's block out and put it back down against another's.
+ * Move one code some number of steps through the queue.
  *
- * Cut-and-reinsert rather than swap, because the two blocks are rarely the same
- * height and "move to the top" is not a swap with anything. The anchor is worked
- * out in the ORIGINAL line numbering and then corrected for the lines that were
- * removed above it — doing it the other way round is how an item lands one row
- * off, which on a two-hundred-line backlog nobody notices until the order is
- * wrong everywhere.
+ * ‼️ THIS MOVES IT IN THE QUEUE, NOT IN THE FILE. Not one line is touched, so the
+ * item keeps its code, its area, its section and its indent — and the move can
+ * cross areas, which is the whole point: a line cannot leave its own heading, an
+ * entry in a list can go anywhere.
+ *
+ * `by` is what the step menu under ▲/▼ sends. One step is a plain click; the
+ * menu offers the jumps a hand actually wants (2, 3, 4, 5, 10, 15, 20), and
+ * `top`/`bottom` go to the ends of the WHOLE queue, not of an area. Anything
+ * that would run off an end lands ON that end rather than failing: "up 20" from
+ * position 3 means the top, which is what the hand that pressed it meant.
  */
-function spliceBlock(
-    src: string, items: BacklogItem[], item: BacklogItem, dest: BacklogItem, place: 'before' | 'after'
-): BacklogEditResult {
-    const mine = blockOf(items, item);
-    const theirs = blockOf(items, dest);
-    if (theirs.from >= mine.from && theirs.to <= mine.to) {
-        return { ok: false, error: 'an item cannot be moved inside itself' };
-    }
-    if (mine.from >= theirs.from && mine.to <= theirs.to) {
-        return { ok: false, error: 'that would move an item inside its own parent block' };
-    }
-    const lines = src.split(/\r?\n/);
-    const eol = eolOf(src);
-    const moving = lines.slice(mine.from, mine.to + 1);
-    const rest = lines.filter((_, n) => n < mine.from || n > mine.to);
-    const anchor = place === 'before' ? theirs.from : theirs.to + 1;
-    const at = anchor > mine.to ? anchor - moving.length : anchor;
-    const out = [...rest.slice(0, at), ...moving, ...rest.slice(at)];
+export function moveInQueue(
+    text: string, code: string, dir: BacklogMoveDir, by?: number
+): QueueEditResult {
+    const src = String(text ?? '');
+    const parsed = parseBacklog(src);
+    const want = String(code ?? '').trim().toUpperCase();
+    const order = queueOrder(parsed.items, parsed.queue);
+    const at = order.indexOf(want);
+    if (at < 0) { return { ok: false, queue: order, error: queueRefusal(parsed, want) }; }
 
-    // ‼️ A move is the one edit that genuinely reorders lines, so rejoining is
-    // unavoidable — but the document's OWN ending is used, so a file that was
-    // CRLF stays CRLF and does not come back as a whole-file diff.
-    return { ok: true, text: out.join(eol), item };
+    const steps = Math.max(1, Math.floor(Number(by) || 1));
+    const to = dir === 'top' ? 0
+        : dir === 'bottom' ? order.length - 1
+            : dir === 'up' ? Math.max(0, at - steps)
+                : Math.min(order.length - 1, at + steps);
+    if (to === at) {
+        const end = dir === 'up' || dir === 'top' ? 'top' : 'bottom';
+        return { ok: true, text: src, queue: order, note: `${want} is already at the ${end} of the queue` };
+    }
+    const moved = order.slice();
+    moved.splice(at, 1);
+    moved.splice(to, 0, want);
+    return setBacklogQueue(src, moved);
+}
+
+/** Put one code at an absolute position, counted the way a person says it — 1 is
+ *  the front. Out of range clamps to an end rather than failing. */
+export function placeInQueue(text: string, code: string, at: number): QueueEditResult {
+    const src = String(text ?? '');
+    const parsed = parseBacklog(src);
+    const want = String(code ?? '').trim().toUpperCase();
+    const order = queueOrder(parsed.items, parsed.queue);
+    const from = order.indexOf(want);
+    if (from < 0) { return { ok: false, queue: order, error: queueRefusal(parsed, want) }; }
+    const moved = order.slice();
+    moved.splice(from, 1);
+    const to = Math.max(0, Math.min(moved.length, Math.floor(at) - 1));
+    moved.splice(to, 0, want);
+    return setBacklogQueue(src, moved);
 }
 
 /**
- * Move an item among its siblings, carrying its children with it.
+ * Drop one code directly before or after another — the drag, in one call.
  *
- * ‼️ THE CODE DOES NOT CHANGE. Order and identity are different things here, and
- * this function is where that promise is kept: dragging `K-8` above `K-3` leaves
- * both codes exactly as they were, so every note, commit message and chat line
- * that ever quoted one still points at the same item.
- *
- * `top` and `bottom` exist because a backlog is a QUEUE and the thing a person
- * wants from a queue is "this one next" — reached by pressing ▲ eleven times
- * otherwise, which is the same as not being able to do it.
+ * Kept apart from `moveInQueue` because it answers a different question: one
+ * nudges through a known order, this one names where it lands. Neither has an
+ * area rule or a depth rule to enforce any more, because neither moves a line.
  */
-export function moveBacklogItem(
-    text: string, target: BacklogTarget, dir: BacklogMoveDir
-): BacklogEditResult {
+export function dropInQueue(
+    text: string, code: string, dest: string, place: 'before' | 'after'
+): QueueEditResult {
     const src = String(text ?? '');
-    const { items } = parseBacklog(src);
-    const found = locate(items, target);
-    if (!found.item) { return { ok: false, error: found.error as string }; }
-    const item = found.item;
-
-    const siblings = items.filter(i => i.depth === item.depth && i.section === item.section);
-    const at = siblings.findIndex(i => i.line === item.line);
-    const dest = dir === 'up' ? siblings[at - 1]
-        : dir === 'down' ? siblings[at + 1]
-            : dir === 'top' ? siblings[0]
-                : siblings[siblings.length - 1];
-    const end = dir === 'up' || dir === 'top' ? 'top' : 'bottom';
-    if (!dest || dest.line === item.line) {
-        return { ok: true, text: src, item, note: `already at the ${end} of its section` };
-    }
-    return spliceBlock(src, items, item, dest, end === 'top' ? 'before' : 'after');
+    const parsed = parseBacklog(src);
+    const want = String(code ?? '').trim().toUpperCase();
+    const onto = String(dest ?? '').trim().toUpperCase();
+    const order = queueOrder(parsed.items, parsed.queue);
+    const from = order.indexOf(want);
+    if (from < 0) { return { ok: false, queue: order, error: queueRefusal(parsed, want) }; }
+    if (want === onto) { return { ok: true, text: src, queue: order }; }
+    const moved = order.slice();
+    moved.splice(from, 1);
+    // The anchor is found AFTER the removal, or dropping something onto an entry
+    // below it lands one place short.
+    const anchor = moved.indexOf(onto);
+    if (anchor < 0) { return { ok: false, queue: order, error: queueRefusal(parsed, onto) }; }
+    moved.splice(place === 'before' ? anchor : anchor + 1, 0, want);
+    return setBacklogQueue(src, moved);
 }
 
-/**
- * Drop an item directly above or below another one — the drag, in one call.
- *
- * Kept apart from `moveBacklogItem` because it answers a different question:
- * one nudges within a known order, this one names the destination. Two rules it
- * will not bend, both because breaking them is SILENT: the destination must be
- * in the same section (crossing a heading changes which area an item belongs to,
- * which is a re-file and has its own operation) and at the same depth (landing
- * under a different parent is a re-parent, likewise).
- */
-export function reorderBacklogItem(
-    text: string, target: BacklogTarget, dest: BacklogTarget, place: 'before' | 'after'
-): BacklogEditResult {
-    const src = String(text ?? '');
-    const { items } = parseBacklog(src);
-    const found = locate(items, target);
-    if (!found.item) { return { ok: false, error: found.error as string }; }
-    const to = locate(items, dest);
-    if (!to.item) { return { ok: false, error: to.error as string }; }
-    const item = found.item;
-    const anchor = to.item;
-    if (item.line === anchor.line) { return { ok: true, text: src, item }; }
-    if (item.section !== anchor.section) {
-        return {
-            ok: false,
-            error: `"${item.section}" and "${anchor.section}" are different sections`
-                + ' — moving between them re-files the item; use backlog.code for that'
-        };
+/** Why a code is not in the queue, said precisely. ‼️ Four different causes, and
+ *  one message covering all of them would send somebody to read the file: not a
+ *  code at all, no such item, closed, or a container. */
+function queueRefusal(parsed: BacklogSummary, code: string): string {
+    if (!BACKLOG_CODE.test(code)) {
+        return `"${code}" is not a backlog code`
+            + ' — an uncoded capture has to be filed (🗂) before it can be queued';
     }
-    if (item.depth !== anchor.depth) {
-        return { ok: false, error: 'those two sit at different depths — dropping across them would re-parent the item' };
+    const item = parsed.items.find(i => i.code === code);
+    if (!item) { return `no backlog item with code ${code}`; }
+    if (!isLive(item.state)) { return `${code} is ${item.state} — a closed item is not in the queue`; }
+    if (item.container) {
+        return `${code} has children — work lives at the leaves, so queue one of them instead`;
     }
-    return spliceBlock(src, items, item, anchor, place);
+    return `${code} is not in the queue`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1280,9 +1322,9 @@ export function reorderBacklogItem(
 // ---------------------------------------------------------------------------
 
 /** How much of an item's words rides along beside its code in the block. Enough
- *  to recognise it, short enough that the block stays a LIST — a queue you have
- *  to read paragraphs of is not one you can see the shape of. */
-const QUEUE_LABEL = 64;
+ *  to recognise it, short enough that the block stays a LIST — a queue holding
+ *  every open item is only readable if one entry is one short line. */
+const QUEUE_LABEL = 52;
 
 export interface QueueEditResult extends BacklogEditResult {
     /** The queue as it stands afterwards. */
@@ -1299,7 +1341,7 @@ function queueBlock(lines: string[], at: number): { from: number; to: number } {
 }
 
 /**
- * Replace the pinned head with exactly these codes.
+ * Replace the queue with exactly these codes, in this order.
  *
  * ‼️ THE WHOLE BLOCK IS REWRITTEN AND NOTHING ELSE IS TOUCHED. That split is
  * what makes the queue safe to own: Agent Farm writes this one block, every
@@ -1314,7 +1356,7 @@ function queueBlock(lines: string[], at: number): { from: number; to: number } {
  * editable. A queue holding one item that was deleted in Obsidian would
  * otherwise refuse every later edit of itself, including the one that would
  * have removed the dead entry. Validating a code somebody NAMED is the caller's
- * job (see `pinBacklogItem`), because there a typo must not look like success.
+ * job (`queueRefusal`), because there a typo must not look like success.
  */
 export function setBacklogQueue(text: string, codes: string[]): QueueEditResult {
     const src = String(text ?? '');
@@ -1369,50 +1411,112 @@ export function setBacklogQueue(text: string, codes: string[]): QueueEditResult 
     };
 }
 
-/**
- * Put one code at a position in the queue — `at` counted the way a person says
- * it, 1 being the head and the default.
- *
- * This is the "do this one next" button, and it is the whole reason the block
- * exists: it works ACROSS AREAS, which no move of a line ever can.
- */
-export function pinBacklogItem(text: string, code: string, at?: number): QueueEditResult {
-    const src = String(text ?? '');
-    const want = String(code ?? '').trim().toUpperCase();
-    const parsed = parseBacklog(src);
-    if (!BACKLOG_CODE.test(want)) {
-        return {
-            ok: false, queue: parsed.queue,
-            error: `"${code}" is not a backlog code — an uncoded capture has to be filed before it can be queued`
-        };
-    }
-    const item = parsed.items.find(i => i.code === want);
-    if (!item) { return { ok: false, error: `no backlog item with code ${want}`, queue: parsed.queue }; }
-    if (!isLive(item.state)) {
-        return { ok: false, error: `${want} is ${item.state} — a closed item is not queued`, queue: parsed.queue };
-    }
-    if (item.container) {
-        return {
-            ok: false, queue: parsed.queue,
-            error: `${want} has children — work lives at the leaves, so queue one of them instead`
-        };
-    }
-    const rest = parsed.queue.filter(c => c !== want);
-    const where = Math.max(0, Math.min(rest.length, (at === undefined ? 1 : Math.floor(at)) - 1));
-    return setBacklogQueue(src, [...rest.slice(0, where), want, ...rest.slice(where)]);
+// ---------------------------------------------------------------------------
+// writing — tidying the file back into its own order
+// ---------------------------------------------------------------------------
+
+export interface TidyResult extends BacklogEditResult {
+    /** How many item blocks changed place. 0 means the file was already tidy. */
+    moved: number;
+    /** Sections left alone, and why — see the prose rule below. */
+    skipped: string[];
 }
 
-/** Take one code out of the queue — it falls back to its place in the file's
- *  own order, which is where it was before anybody pinned it. */
-export function unpinBacklogItem(text: string, code: string): QueueEditResult {
+/**
+ * Put each area's items back in code order: K-1, K-2, K-3…
+ *
+ * ‼️ WHY THIS EXISTS. Line order used to BE the priority, so years of "move this
+ * one up" left every area shuffled — K-6, K-1, K-8, K-7 — and a file you read in
+ * Obsidian could not be scanned for a number. Now that the order lives in the
+ * 🎯 block, the file's job is to be the DICTIONARY, and a dictionary is sorted.
+ * Nothing about the queue changes when this runs: it names codes, and a code
+ * does not care which line it is on.
+ *
+ * Children ride with their parent (`P-5.1` stays under `P-5`) because a block is
+ * moved, never a line.
+ *
+ * ‼️ A SECTION WITH PROSE BETWEEN ITS ITEMS IS LEFT ALONE AND REPORTED. Somebody
+ * wrote that paragraph where it is for a reason and no sort knows what it was;
+ * refusing the section is honest, silently relocating the paragraph is not.
+ * Blank lines between items are furniture, not prose, and are closed up.
+ */
+export function tidyBacklogFile(text: string): TidyResult {
     const src = String(text ?? '');
-    const want = String(code ?? '').trim().toUpperCase();
     const parsed = parseBacklog(src);
-    if (!parsed.queue.includes(want)) {
-        return { ok: true, text: src, queue: parsed.queue, note: `${want} was not in the queue` };
+    const lines = src.split(/\r?\n/);
+    const eol = eolOf(src);
+    const isItemLine = new Set(parsed.items.map(i => i.line));
+
+    // ‼️ SECTIONS ARE TAKEN AS RUNS OF CONSECUTIVE ITEMS, not by looking the
+    // heading up: an item's `area` comes from its CODE, so a K-coded line that
+    // somebody parked under `## S` would otherwise drag a span across a heading.
+    // A run cannot cross one, because the heading line itself would then sit
+    // between two blocks and be caught by the prose rule below.
+    const byLine = [...parsed.items].sort((a, b) => a.line - b.line);
+    const runs: BacklogItem[][] = [];
+    for (const item of byLine) {
+        const last = runs[runs.length - 1];
+        if (last && last[0].section === item.section) { last.push(item); } else { runs.push([item]); }
     }
-    return setBacklogQueue(src, parsed.queue.filter(c => c !== want));
+    const skipped: string[] = [];
+    let moved = 0;
+    // Highest line first, so an earlier run's rewrite cannot shift the line
+    // numbers of one not yet done.
+    for (const mine of runs.reverse()) {
+        const section = mine[0].section;
+        // The inbox holds uncoded captures with nothing to sort by, and the
+        // archive is a record rather than a list.
+        if (INBOX_HEADING.test(section) || ARCHIVE_HEADING.test(section)) { continue; }
+        if (mine.length < 2) { continue; }
+
+        // Roots and their children, in file order — each is one block of lines.
+        const blocks: { code?: string; from: number; to: number }[] = [];
+        for (let n = 0; n < mine.length;) {
+            const b = blockOf(mine, mine[n]);
+            blocks.push({ ...(mine[n].code ? { code: mine[n].code } : {}), from: b.from, to: b.to });
+            while (n < mine.length && mine[n].line <= b.to) { n++; }
+        }
+        if (blocks.length < 2) { continue; }
+
+        const span = { from: blocks[0].from, to: blocks[blocks.length - 1].to };
+        const prose = [];
+        for (let n = span.from; n <= span.to; n++) {
+            if (!isItemLine.has(n) && lines[n].trim() && !insideBlock(blocks, n)) { prose.push(n + 1); }
+        }
+        if (prose.length) {
+            skipped.push(`${section || 'the top of the file'} (line ${prose[0]})`);
+            continue;
+        }
+
+        // Uncoded lines keep their relative place at the back: there is nothing
+        // to sort them by, and putting them first would bury the sorted list.
+        const sorted = blocks.map((b, n) => ({ b, n })).sort((x, y) => {
+            if (x.b.code && y.b.code) { return compareCodes(x.b.code, y.b.code) || x.n - y.n; }
+            if (!x.b.code && !y.b.code) { return x.n - y.n; }
+            return x.b.code ? -1 : 1;
+        }).map(x => x.b);
+        if (sorted.every((b, n) => b === blocks[n])) { continue; }
+
+        moved += sorted.filter((b, n) => b !== blocks[n]).length;
+        const body: string[] = [];
+        for (const b of sorted) { for (let n = b.from; n <= b.to; n++) { body.push(lines[n]); } }
+        lines.splice(span.from, span.to - span.from + 1, ...body);
+    }
+
+    const left = skipped.length
+        ? `left ${skipped.join(', ')} alone — prose sits between those items`
+        : '';
+    if (!moved) {
+        return {
+            ok: true, text: src, moved: 0, skipped,
+            note: left ? `everything else was already in order; ${left}` : 'already in code order'
+        };
+    }
+    return { ok: true, text: lines.join(eol), moved, skipped, ...(left ? { note: left } : {}) };
 }
+
+const insideBlock = (blocks: { from: number; to: number }[], line: number): boolean =>
+    blocks.some(b => line >= b.from && line <= b.to);
 
 // ---------------------------------------------------------------------------
 // writing — archiving
