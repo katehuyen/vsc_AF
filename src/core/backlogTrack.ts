@@ -453,10 +453,22 @@ function dayToMs(value: string): number {
 /** The item line: `- **K-8** [status:: done] …`. Bold so the code is the thing
  *  the eye lands on, which is what this file is indexed by. */
 const LOG_ITEM = /^-\s+\*\*([A-Z]{1,2}-\d+(?:\.\d+)*)\*\*/;
-/** A row Agent Farm wrote: indented, and opening with a back-ticked session id.
- *  Everything inside an item's block that does NOT look like this is the human's
- *  and is carried through untouched. */
-const LOG_ROW = /^\s+-\s+`/;
+/**
+ * A row Agent Farm wrote: indented, and opening either with a back-ticked
+ * session id or with the marker that stands in for one.
+ *
+ * ‼️ EVERY SHAPE `itemBlock` CAN EMIT HAS TO MATCH THIS, and the failure when one
+ * does not is silent and compounding: an unmatched row is read as the human's
+ * prose, gets preserved, and is then written out AGAIN next to the freshly
+ * generated one — so the file grows a duplicate of that row on every single
+ * render. Measured on this installation: the loose-record row was changed to
+ * open with `_no session_` and every outside-closed item had two identical rows
+ * within two rebuilds. Change a row's opening here and change it there.
+ */
+const LOG_ROW = /^\s+-\s+(?:`|_no session_)/;
+/** What a row with no session to point at opens with. Shared by the writer and
+ *  the pattern above so the two cannot drift apart again. */
+const LOG_NO_SESSION = '_no session_';
 const LOG_HEADING = /^#{1,6}\s+/;
 
 /** Where blocks whose code is not in the backlog are parked, so that a
@@ -661,7 +673,7 @@ function itemBlock(item: BacklogItem, sum: TrackSummary, kept: string[]): string
         // (a box ticked in Obsidian, whose real moment nobody recorded).
         const when = r.uncertain === 'none' ? `${localStamp(r.ts)} noticed` : localStamp(r.ts);
         const closes = CLOSING.includes(r.event);
-        lines.push(`    - _no session_ · ${when} · ${r.agent ?? r.by}`
+        lines.push(`    - ${LOG_NO_SESSION} · ${when} · ${r.agent ?? r.by}`
             + ` · ${closes ? `**${r.event}**` : r.event} · _${r.by}_`
             + (r.note ? ` — ${r.note}` : ''));
     }

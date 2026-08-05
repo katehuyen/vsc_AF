@@ -2,6 +2,10 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.68.1 — A Backloglog row that had no session grew a copy of itself on every redraw (2026-08-05)
+
+**Caught on this installation's own file, on the second rebuild.** The contract of `Backloglog.md` is that Agent Farm owns the data rows and everything else in an item's block is yours and is written back untouched — so the reader has to be able to tell one from the other. A row for an event with **no session to point at** (a click in the panel, a box ticked in Obsidian) opens with `_no session_` instead of a back-ticked id, and the reader did not count that as one of ours: it was preserved as your prose *and* regenerated, so every outside-closed item gained one more identical line each time the file was drawn. Both shapes the writer can emit are now the same rule the reader applies, and the tests redraw the file three times and require it not to move.
+
 ## 3.68.0 — A backlog code now leads back to the turn it was solved in (2026-08-05)
 
 **The join that was missing.** A code was permanent, the transcripts were on disk, and there was no way to get from one to the other: `K-8` could not be asked "show me the turns you were fought in", so hundreds of sessions sat there as an unsearchable pile. From now on, closing an item records **which session and which turn** it happened in — and the pile becomes an archive of how things were actually solved.

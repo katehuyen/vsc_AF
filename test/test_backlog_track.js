@@ -198,6 +198,21 @@ const RECORDS = [
     ok('a second rebuild is stable',
         T.renderBacklogLog({ project: 'Demo', items, records: RECORDS, existing: again }) === again);
 
+    // ‼️ The regression this pair exists for, and it compounds: a row shape the
+    // reader does not recognise is kept as the human's prose AND regenerated, so
+    // the file grows one more copy of it on every single render.
+    const loose = RECORDS.concat([
+        { code: 'K-11', event: 'done', ts: T0, by: 'outside', uncertain: 'none', note: 'ticked in Obsidian' },
+        { code: 'K-10', event: 'doing', ts: T0, by: 'panel', agent: 'you' }
+    ]);
+    const one = T.renderBacklogLog({ project: 'Demo', items, records: loose });
+    const twice = T.renderBacklogLog({ project: 'Demo', items, records: loose, existing: one });
+    ok('a row with no session to point at is not duplicated by a rebuild', one === twice);
+    ok('…and a third rebuild does not either',
+        T.renderBacklogLog({ project: 'Demo', items, records: loose, existing: twice }) === twice);
+    ok('every row the writer can emit is one the reader calls a machine row',
+        (twice.match(/ticked in Obsidian/g) || []).length === 1);
+
     // A block for a code the backlog no longer has: carried through, never lost.
     const orphaned = again.replace('## K — Console',
         '## K — Console\n\n- **Z-99** [status:: done]\n    > we deleted this item but the note matters\n');
