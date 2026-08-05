@@ -29,6 +29,7 @@
         { id: 'sessions', label: 'Sessions', tip: 'The same sessions table as everywhere else, scoped to this project' },
         { id: 'plan', label: 'Plan', tip: 'The plan document\'s own checkboxes — ticking one here changes that one character in the file' },
         { id: 'backlog', label: 'Backlog', tip: 'The standing pile of work: coded, ranked, filtered. Not the roadmap (that is Plan) and not the global queue' },
+        { id: 'track', label: 'Track', tip: 'Which sessions — and which turns of them — each backlog item was worked in. Press a turn to open that transcript at that moment' },
         { id: 'docs', label: 'Docs', tip: 'The project folder, and any document in it' },
         { id: 'people', label: 'People', tip: 'Who decides, who pays, who does the work, who you ask' },
         { id: 'cost', label: 'Cost', tip: 'Where the money went, and where it is going' },
@@ -697,6 +698,25 @@
                     padding:6px 12px; font-size:12px; opacity:.7; cursor:pointer; color:inherit; }
                 .pj-tab:hover { opacity:1; background:var(--vscode-list-hoverBackground); }
                 .pj-tab.on { opacity:1; border-bottom-color:var(--vscode-focusBorder,#3794ff); font-weight:600; }
+                /* track — the sketch; see trackHtml() for what is deliberately absent */
+                .pj-trk-bar { margin-bottom:10px; }
+                .pj-trk-item { border:1px solid var(--vscode-widget-border,#4443); border-radius:6px;
+                    padding:7px 10px; margin-bottom:7px; }
+                .pj-trk-head { display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; }
+                .pj-trk-state { font-size:11px; opacity:.6; }
+                .pj-trk-words { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
+                    white-space:nowrap; opacity:.85; }
+                .pj-trk-stamp { font-size:11px; opacity:.7; }
+                .pj-trk-run { display:flex; gap:7px; align-items:center; flex-wrap:wrap; margin-top:4px;
+                    padding-left:6px; border-left:2px solid var(--vscode-widget-border,#4443); }
+                .pj-trk-sid { font-size:11px; opacity:.8; }
+                .pj-trk-turn { font-size:11px; padding:1px 7px; border-radius:9px; cursor:pointer;
+                    border:1px solid var(--vscode-widget-border,#4443); background:none; color:inherit; }
+                .pj-trk-turn:hover { background:var(--vscode-list-hoverBackground); }
+                .pj-trk-doubt { font-size:10px; padding:1px 6px; border-radius:8px; opacity:.85;
+                    background:var(--vscode-inputValidation-warningBackground,#663); }
+                .pj-trk-note { margin-top:5px; padding-left:8px; font-size:12px; opacity:.9;
+                    border-left:2px solid var(--vscode-focusBorder,#3794ff); }
                 /* cards */
                 .pj-cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px,1fr)); gap:12px; margin-bottom:12px; }
                 .pj-card { border:1px solid var(--vscode-widget-border,#4443); border-radius:7px; padding:10px 12px; margin-bottom:12px; }
@@ -958,6 +978,7 @@
             case 'sessions': return sessionsHtml();
             case 'plan': return planHtml();
             case 'backlog': return backlogHtml();
+            case 'track': return trackHtml();
             case 'docs': return docsHtml();
             case 'people': return peopleHtml(p);
             case 'cost': return costHtml(p);
@@ -1200,7 +1221,7 @@
         value: p, label: p, glyph: PRIO_ICON[p] === '·' ? '' : PRIO_ICON[p],
         title: p === 'normal' ? 'No priority icon on the line at all — which is what most lines should carry' : ''
     }));
-    const blEffortRows = () => [{ value: '', label: 'not sized', glyph: '–', title: 'Clears the [efor:: …] field. Unsized is scored as M, never as XS.' }]
+    const blEffortRows = () => [{ value: '', label: 'not sized', glyph: '–', title: 'Clears the [effort:: …] field. Unsized is scored as M, never as XS.' }]
         .concat(EFFORT_ORDER.slice(1).map(e => ({
             value: e, label: e, glyph: '',
             title: { XS: '≈ five minutes', S: '≈ half an hour', M: '≈ half a day', L: '≈ a day', XL: 'should be split before anybody starts it' }[e] || ''
@@ -1677,6 +1698,66 @@
         return (cfg.labels && cfg.labels[cfg.mode]) || cfg.mode || 'your editor';
     }
 
+    // -----------------------------------------------------------------------
+    // the track — a code, and the turns it was worked in
+    // -----------------------------------------------------------------------
+
+    /**
+     * ‼️ A SKETCH, ON PURPOSE, AND THE COMMENT IS PART OF THE DELIVERY.
+     *
+     * The record this reads lives in two files that work with no extension
+     * running — `Backloglog.md` and the ledger beside it — so nothing here is
+     * load-bearing. What it is for is to show what the surface can BE: a project's
+     * whole history of work, filterable, with every turn a door into the
+     * transcript where it happened. Only that last part is built, because only
+     * that part had no substitute. Filters, ordering, a search across projects and
+     * a table view are a later job, and pretending at them with dead controls
+     * would be worse than leaving them out.
+     */
+    function trackHtml() {
+        const d = td().track;
+        if (!d || d.state !== 'ok') { return docStateHtml(d, 'backlog log'); }
+        const rows = d.rows || [];
+        if (!rows.length) {
+            return `<p class="muted">Nothing tracked yet. From the moment an item is closed —
+                from this page, or by an agent through <code>projects.backlog.check</code> —
+                the session and the turn it happened in are recorded here and written into
+                <code>${C.esc(d.path || 'Backloglog.md')}</code>.</p>`;
+        }
+        const body = rows.map(r => {
+            const sessions = (r.sessions || []).map(s => {
+                const turns = (s.turns || []).map(t =>
+                    `<button class="pj-trk-turn" data-trackturn="${C.esc(s.file)}" data-trackts="${t.ts}"
+                        title="Open this session's transcript at turn ${t.n}">#${t.n}</button>`).join('');
+                return `<div class="pj-trk-run">
+                    <code class="pj-trk-sid" title="${C.esc(s.session)}">${C.esc(s.short)}</code>
+                    ${turns || '<span class="muted small">no turn recorded</span>'}
+                    <span class="muted small">${C.esc(s.agent || '?')}</span>
+                    ${s.uncertain ? `<span class="pj-trk-doubt" title="The attribution is a best effort: ${C.esc(s.uncertain)}">${C.esc(s.uncertain)}</span>` : ''}
+                    <span class="muted small">${C.esc((s.events || []).join(' · '))}</span>
+                </div>`;
+            }).join('');
+            return `<div class="pj-trk-item">
+                <div class="pj-trk-head">
+                    <b>${C.esc(r.code)}</b>
+                    <span class="pj-trk-state">${C.esc(r.state || '—')}</span>
+                    <span class="pj-trk-words">${C.esc(r.text || '')}</span>
+                    ${r.stamp ? `<code class="pj-trk-stamp" title="Where it was closed — the same stamp is on the backlog line">${C.esc(r.stamp)}</code>` : ''}
+                </div>
+                ${sessions}
+                ${r.note ? `<div class="pj-trk-note">${C.esc(r.note)}</div>` : ''}
+            </div>`;
+        }).join('');
+        return `<div class="pj-trk">
+            <div class="pj-trk-bar muted small">
+                ${rows.length} tracked · ${d.events} events ·
+                <code>${C.esc(d.path || '—')}</code> ·
+                ledger <code>${C.esc(d.ledger)}</code>
+            </div>
+            ${body}
+        </div>`;
+    }
+
     /**
      * The folder, and one document out of it.
      *
@@ -1853,6 +1934,19 @@
 
         document.querySelectorAll('[data-tab]').forEach(el =>
             el.addEventListener('click', () => { tab = el.dataset.tab; render(); }));
+
+        // ‼️ The one thing the Track tab actually does: a turn number is a door.
+        // `ts` is what the session viewer scrolls to — the turn NUMBER is for the
+        // reader, the timestamp is the address, and sending the number would land
+        // every click at the top of the transcript.
+        document.querySelectorAll('[data-trackturn]').forEach(el =>
+            el.addEventListener('click', () => {
+                if (!el.dataset.trackturn) { return; }
+                vscode.postMessage({
+                    type: 'openSession', file: el.dataset.trackturn,
+                    ts: Number(el.dataset.trackts) || 0
+                });
+            }));
 
         // Timeline chips. An exclusion set, so a kind appearing for the first
         // time shows up instead of being hidden by a filter nobody set.

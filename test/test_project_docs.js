@@ -32,7 +32,13 @@ const tick = () => { const t = Date.now(); while (Date.now() - t < 3) { /* spin 
 
 // ---------- vocabulary ----------
 {
-    ok('roles complete', PROJECT_DOC_ROLES.join() === 'charter,plan,people,log,deliverables,backlog,brief');
+    ok('roles complete',
+        PROJECT_DOC_ROLES.join() === 'charter,plan,people,log,deliverables,backlog,backloglog,brief');
+    ok('the backlog and its log are both in the skeleton, side by side',
+        DEFAULT_SKELETON.some(e => e.role === 'backlog')
+        && DEFAULT_SKELETON.some(e => e.role === 'backloglog'));
+    ok('the track ledger\'s folder is DECLARED, never matched by name',
+        DEFAULT_SKELETON.some(e => e.holds === 'tracks'));
     ok('the default skeleton carries a charter', DEFAULT_SKELETON.some(e => e.role === 'charter'));
     ok('…a plan, people, a log and deliverables',
         ['plan', 'people', 'log', 'deliverables'].every(r => DEFAULT_SKELETON.some(e => e.role === r)));

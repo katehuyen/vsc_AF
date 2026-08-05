@@ -192,7 +192,10 @@ const feedData = () => ({
             truncated: false,
             kinds: ['session', 'turn', 'commit'],
             events: [
-                { ts: T, kind: 'turn', title: 'a turn', link: { to: 'session', sessionId: 'sid-A', file: 'A' } },
+                // A title nothing else on the page could contain — a plain word
+                // matched the copy in a tab tooltip and this test failed for a
+                // reason that had nothing to do with the timeline.
+                { ts: T, kind: 'turn', title: 'ZZTURNROWZZ', link: { to: 'session', sessionId: 'sid-A', file: 'A' } },
                 { ts: T - 10, kind: 'session', title: 'THE SESSION', cost: 3, agent: 'developer', tone: 'ok', link: { to: 'session', sessionId: 'sid-B', file: 'B' } },
                 { ts: T - 20, kind: 'commit', title: 'a commit', link: { to: 'commit', repo: 'r', hash: 'deadbeef' } },
                 { ts: T - 30, kind: 'session', title: 'older', link: { to: 'session', sessionId: 'sid-C', file: 'C' } }
@@ -207,7 +210,7 @@ const feedData = () => ({
         /data-kind="turn"/.test(r.html()) && !/class="pj-chip on" data-kind="turn"/.test(r.html()));
     ok('…but its count is still shown, so you know what turning it on adds',
         /data-kind="turn"[^>]*>[\s\S]{0,80}>3</.test(r.html()));
-    ok('the rows that ARE shown exclude it', !r.html().includes('a turn'));
+    ok('the rows that ARE shown exclude it', !r.html().includes('ZZTURNROWZZ'));
     ok('…and include the rest', r.html().includes('THE SESSION') && r.html().includes('a commit'));
 
     // ‼️ the bug this test exists for

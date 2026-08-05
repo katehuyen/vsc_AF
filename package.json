@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.67.0",
+  "version": "3.68.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -3356,7 +3356,7 @@
         "agentFarm.projectSkeleton": {
           "type": "array",
           "default": [],
-          "description": "What a new project folder is built out of. Empty = the shipped default (Charter / Plan / People / Worklog, plus 10_Notes, 20_Decisions, 30_Deliverables, 40_Resources, 90_Archive, _AF). Set your own to follow a vault naming convention: a path ending in / is a folder; {project} {id} {status} {date} {yymmdd} expand; and \"role\" is what Agent Farm looks a document up by \u2014 never its file name, so you can rename anything afterwards.",
+          "description": "What a new project folder is built out of. Empty = the shipped default (Charter / Plan / Backlog / Backloglog / People / Worklog, plus 10_Notes, 20_Decisions, 30_Deliverables, 40_Resources, 90_Archive, 90_Archive/_tracks, _AF). Set your own to follow a vault naming convention: a path ending in / is a folder; {project} {id} {status} {date} {yymmdd} expand; \"role\" is what Agent Farm looks a document up by \u2014 never its file name, so you can rename anything afterwards; and \"holds\" is how a FOLDER is found for the same reason (decisions are one file each, and the backlog track ledger is not a note).",
           "items": {
             "type": "object",
             "required": [
@@ -3375,9 +3375,19 @@
                   "people",
                   "log",
                   "deliverables",
+                  "backlog",
+                  "backloglog",
                   "brief"
                 ],
                 "description": "what this document IS \u2014 how Agent Farm finds it, whatever it is called"
+              },
+              "holds": {
+                "type": "string",
+                "enum": [
+                  "decisions",
+                  "tracks"
+                ],
+                "description": "what this FOLDER is for, when it cannot be found by a role: decisions (one file each) or tracks (the backlog track ledger)"
               },
               "template": {
                 "type": "string",

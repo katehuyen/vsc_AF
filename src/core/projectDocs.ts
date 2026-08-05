@@ -37,9 +37,9 @@ import { folderNameFor, Project } from './projects';
 
 /** What a document IS, independent of what it is called. */
 export type ProjectDocRole =
-    'charter' | 'plan' | 'people' | 'log' | 'deliverables' | 'backlog' | 'brief';
+    'charter' | 'plan' | 'people' | 'log' | 'deliverables' | 'backlog' | 'backloglog' | 'brief';
 export const PROJECT_DOC_ROLES: ProjectDocRole[] =
-    ['charter', 'plan', 'people', 'log', 'deliverables', 'backlog', 'brief'];
+    ['charter', 'plan', 'people', 'log', 'deliverables', 'backlog', 'backloglog', 'brief'];
 
 /** Where new log entries go. The user can move this line to change that — the
  *  mechanism is a marker, not a hard-coded position. */
@@ -69,8 +69,12 @@ export interface SkeletonEntry {
      * something else and the feature would silently stop working). So the
      * skeleton says which folder holds them, and a vault with its own layout
      * says so in `agentFarm.projectSkeleton`.
+     *
+     * `tracks` is the same idea for the backlog track ledger: a `.jsonl` is not
+     * a note, so it sits inside the archive folder rather than in the project
+     * root where it would clutter the graph and invite somebody to open it.
      */
-    holds?: 'decisions';
+    holds?: 'decisions' | 'tracks';
 }
 
 const CHARTER_TEMPLATE = `---
@@ -136,7 +140,7 @@ af-role: deliverables
  * The backlog's starting file.
  *
  * The legend is the documentation: somebody opening this in Obsidian six months
- * from now needs to know what `[efor:: S]` means, and the one place they will
+ * from now needs to know what `[effort:: S]` means, and the one place they will
  * certainly look is the file itself. It is an HTML comment, so it is invisible
  * in reading view and costs nothing to keep.
  *
@@ -152,21 +156,46 @@ af-role: backlog
 
 <!-- Every field is OPTIONAL: a line of plain text is a valid item.
 
-     - [ ] P-5.3 What to do  #bug 🔺 [efor:: S] ⛔ P-5.1 [plan:: afprj-05]
+     - [ ] P-5.3 What to do  #bug 🔺 [effort:: S] ⛔ P-5.1 [plan:: afprj-05]
 
      code  <AREA>-<n>[.<n>]  permanent, never reissued, says where in the tree
      #tag  the kind          bug · feat · ux · chore · debt · idea · doc
      🔺⏫🔼🔽⏬               priority (no icon = normal)
-     [efor:: XS|S|M|L|XL]    XS≈5min · S≈½h · M≈½day · L≈a day · XL=split it
+     [effort:: XS|S|M|L|XL]  XS≈5min · S≈½h · M≈½day · L≈a day · XL=split it
      ⛔ CODE                 waits on that item
      [plan:: 🆔]             which plan item it belongs to
+     [closed:: 9c4d1f#3]     Agent Farm writes this: the session and turn it was
+                             closed in. Its full history is in the Backloglog.
      [ ] open · [/] doing · [x] done · [-] cancelled
+
+     Write the items in ANY language — only the field names are fixed, and they
+     are English because they are part of the mechanism, not part of what you
+     are saying.
 
      ORDER IS THE ORDER OF THESE LINES. Move one and its code does not change. -->
 
 ## 📥 Inbox
 
 ## X — General
+`;
+
+/**
+ * The backlog's LOG — what happened to each item, and in whose turn.
+ *
+ * Next to `Backlog.md` because the two are read together: one says what is to be
+ * done, the other says what was done about it and where the conversation is. The
+ * file is rebuilt by `backlogTrack.ts` on every change, so this seed only has to
+ * carry the role — the first track event replaces the whole body.
+ */
+const BACKLOGLOG_TEMPLATE = `---
+af-role: backloglog
+---
+
+# {project} — Backloglog
+
+<!-- Agent Farm fills this in: one line per backlog item that has been worked
+     on, with the sessions and turns it was worked in, and room for your own
+     closing note under each. It stays empty until something happens. -->
 `;
 
 /**
@@ -179,6 +208,7 @@ export const DEFAULT_SKELETON: SkeletonEntry[] = [
     { path: 'Charter.md', role: 'charter', template: CHARTER_TEMPLATE },
     { path: 'Plan.md', role: 'plan', template: PLAN_TEMPLATE },
     { path: 'Backlog.md', role: 'backlog', template: BACKLOG_TEMPLATE },
+    { path: 'Backloglog.md', role: 'backloglog', template: BACKLOGLOG_TEMPLATE },
     { path: 'People.md', role: 'people', template: PEOPLE_TEMPLATE },
     { path: 'Worklog.md', role: 'log', template: LOG_TEMPLATE },
     { path: '10_Notes/' },
@@ -186,6 +216,7 @@ export const DEFAULT_SKELETON: SkeletonEntry[] = [
     { path: '30_Deliverables/Deliverables.md', role: 'deliverables', template: DELIVERABLES_TEMPLATE },
     { path: '40_Resources/' },
     { path: '90_Archive/' },
+    { path: '90_Archive/_tracks/', holds: 'tracks' },
     { path: '_AF/' }
 ];
 
@@ -906,6 +937,22 @@ export function decisionsFolder(
         if (target) { return target; }
     }
     return dir;
+}
+
+/**
+ * Where the backlog track ledger lives.
+ *
+ * Declared by the skeleton (`holds: 'tracks'`), never matched by name, for the
+ * same reason decisions are not: a vault that calls its archive folder something
+ * else must keep working. Falling back to the shipped default path rather than
+ * to the project root is deliberate — a `.jsonl` in the root of somebody's
+ * project folder is exactly the clutter this arrangement exists to avoid.
+ */
+export function tracksFolder(dir: string, skeleton: SkeletonEntry[] = DEFAULT_SKELETON): string {
+    const declared = skeleton.find(e => e.holds === 'tracks')
+        ?? DEFAULT_SKELETON.find(e => e.holds === 'tracks');
+    const rel = declared?.path.replace(/\/$/, '') ?? '90_Archive/_tracks';
+    return resolveInFolder(dir, rel) ?? path.join(dir, '90_Archive', '_tracks');
 }
 
 /** A file name a person can read in a folder listing. The extension never looks

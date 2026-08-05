@@ -31,25 +31,35 @@ interface DutyBlock extends Duty {
 const HEADING_RE = /^##\s+(.*?)\s*\[([^\]]+)\]\s*$/;
 const FIELD_RE = /^-\s*\*\*(Watch|Do|Note):\*\*\s*(.*)$/i;
 
-const FILE_TEMPLATE = `# Nöbet Görevleri (Standing Duties)
+/**
+ * The scaffold written when an agent gets its first DUTIES.md.
+ *
+ * ‼️ ENGLISH, like everything else Agent Farm generates. This file is part of the
+ * mechanism — the extension parses it and the agent obeys it — not part of what
+ * the user is saying, and the parser keys (`Watch` / `Do` / `Note`, the cadence
+ * in brackets) are English in every installation. The user is free to write the
+ * duties themselves in any language: only the scaffold is fixed.
+ */
+const FILE_TEMPLATE = `# Standing Duties
 
-<!-- agentfarm:duties — Bu dosyayı Agent Farm yönetir; elle de düzenleyebilirsin.
-     Görev biçimi: "## Başlık [cadence]" + "- **Watch:**" + "- **Do:**" satırları. -->
+<!-- agentfarm:duties — Agent Farm manages this file; you can edit it by hand too.
+     Duty shape: "## Title [cadence]" + "- **Watch:**" + "- **Do:**" lines. -->
 
-Bu dosya, ajanın sürekli tetikte olması gereken görevlerini tanımlar. Kurallar (ajan için):
+This file states what the agent must stay alert to. The rules (for the agent):
 
-- **[every-turn]** görevler: her turda kontrol et.
-- **[session-start]** görevler: oturumun başında bir kez kontrol et.
-- **[daily] / [weekly]** görevler: o gün/hafta içindeki ilk fırsatta kontrol et.
-- **[... , paused]** işaretli görevleri atla.
-- Watch hedefinde yeni içerik veya değişiklik varsa Do adımını uygula; iş bittiyse hedefi temizlemek de görevin parçasıdır.
+- **[every-turn]** duties: check on every turn.
+- **[session-start]** duties: check once, at the start of the session.
+- **[daily] / [weekly]** duties: check at the first opportunity that day/week.
+- Skip any duty marked **[... , paused]**.
+- If the Watch target has new or changed content, carry out the Do step; once the
+  work is done, clearing the target is part of the duty.
 `;
 
 /** The line we offer to append to CLAUDE.md so the agent actually obeys DUTIES.md. */
 export const CLAUDE_MD_SNIPPET = `
 
-## Nöbet Görevleri
-Her oturumun başında \`DUTIES.md\` dosyasını oku ve kurallarına uy; [every-turn] görevlerini her turda yeniden kontrol et.
+## Standing Duties
+Read \`DUTIES.md\` at the start of every session and follow it; re-check the [every-turn] duties on every turn.
 `;
 
 function stripValue(raw: string): string {
@@ -182,15 +192,16 @@ export const DUTY_TEMPLATES: {
     watchKind: 'file' | 'folder' | 'none';
     duty: Omit<Duty, 'watch'>;
 }[] = [
-    // Picker labels are UI (English); duty title/action are written into the
-    // agent's DUTIES.md and stay Turkish — the user's agents work in Turkish.
+    // ‼️ Title and action are WRITTEN INTO the agent's DUTIES.md, so they are
+    // English like everything else the extension generates. What the user then
+    // edits them into is theirs.
     {
         label: 'Question-answer loop',
         detail: 'act on answered questions in the watched file, add new ones',
         watchKind: 'file',
         duty: {
-            title: 'Netleştirme istekleri', cadence: 'every-turn', paused: false,
-            action: 'Cevaplanmış soru varsa gereğini yap ve soruyu dosyadan sil; aydınlatılması gereken yeni soruların varsa dosyaya ekle.'
+            title: 'Clarification requests', cadence: 'every-turn', paused: false,
+            action: 'If a question has been answered, act on it and remove it from the file; add any new question you need answered.'
         }
     },
     {
@@ -198,8 +209,8 @@ export const DUTY_TEMPLATES: {
         detail: 'name and file every document that lands in the watched folder',
         watchKind: 'folder',
         duty: {
-            title: 'Inbox tasnifi', cadence: 'every-turn', paused: false,
-            action: 'İçerideki her dosyayı inbox girişi say: uygun isim ver, uygun klasöre taşı.'
+            title: 'Inbox triage', cadence: 'every-turn', paused: false,
+            action: 'Treat every file in there as an inbox entry: give it a proper name and move it to the folder it belongs in.'
         }
     },
     {
@@ -207,8 +218,8 @@ export const DUTY_TEMPLATES: {
         detail: 'review memory/ files, refresh or archive the stale ones',
         watchKind: 'none',
         duty: {
-            title: 'Haftalık hafıza bakımı', cadence: 'weekly', paused: false,
-            action: 'memory/ altındaki dosyaları gözden geçir; bayatlamış olanları güncelle veya arşivle; MEMORY.md indeksini tutarlı tut.'
+            title: 'Weekly memory upkeep', cadence: 'weekly', paused: false,
+            action: 'Review the files under memory/; update or archive whatever has gone stale; keep the MEMORY.md index consistent.'
         }
     },
     {
@@ -216,8 +227,8 @@ export const DUTY_TEMPLATES: {
         detail: 'check results landing in the watched folder, act and clean up',
         watchKind: 'folder',
         duty: {
-            title: 'Çıktı kontrolü', cadence: 'session-start', paused: false,
-            action: 'Klasördeki yeni çıktıları gözden geçir; hatalıysa düzelt, tamamsa ilgili yere işle ve dosyayı arşivle.'
+            title: 'Output check', cadence: 'session-start', paused: false,
+            action: 'Review new output in the folder; fix what is wrong, process what is finished into its proper place, and archive the file.'
         }
     }
 ];

@@ -40,7 +40,7 @@ import { syncCodexExtras } from './core/codex';
 import { describePlan, FarmPlan, interpretCommand } from './core/commandbar';
 import { DispatchRule, dispatchText } from './core/dispatch';
 import { EmbeddingsConfig, EmbeddingsProvider, embedTexts } from './core/embeddings';
-import { SearchResult } from './core/search';
+import { searchTranscripts, SearchResult } from './core/search';
 import { WebhookPollConfig } from './core/mediaProviders';
 import { chunkTranscript, SemanticIndex } from './core/semantic';
 import {
@@ -121,16 +121,22 @@ import {
     dirExists, DEFAULT_SKELETON, ensureRoleDoc, insertLogEntry, listProjectDocs, localDay,
     localStamp, normalizeSkeleton, parseDeliverables, ProjectDocRole, readProjectDoc,
     renameProjectFolder, resolveInFolder, scanProjectFolder, scanProjectsRoot, scanRoles,
-    writeBrief, writeProjectDoc
+    tracksFolder, writeBrief, writeProjectDoc
 } from './core/projectDocs';
+import {
+    appendTrack, backfillFromHits, closingStamp, parseBacklogLog, reconcileOutside,
+    readTrackFile, renderBacklogLog, summarizeCode, shortSession, trackedCodes, trackFileIn,
+    TRACK_EVENTS, TRACK_LIVE_WINDOW_MS, TrackDoubt, TrackEvent, TrackRecord, TrackSource, turnSpan
+} from './core/backlogTrack';
 import {
     addPlanItem, checkPlanItem, planSummary, PlanTarget
 } from './core/projectPlan';
 import {
-    addBacklogItem, archiveBacklogDone, BACKLOG_EFFORTS, BACKLOG_MOVES, BACKLOG_PRIORITIES,
+    addBacklogItem, archiveBacklogDone, BACKLOG_CODE, BACKLOG_EFFORTS, BACKLOG_MOVES,
+    BACKLOG_PRIORITIES,
     BACKLOG_STATES, BacklogEffort, BacklogItem, BacklogMoveDir, BacklogPriority, BacklogState,
     BacklogTarget, codeBacklogItem, findBacklogItem, moveBacklogItem, nextBacklog, parseBacklog,
-    reorderBacklogItem, setBacklogFields, setBacklogState
+    reorderBacklogItem, setBacklogFields, setBacklogState, stampBacklogClosed
 } from './core/projectBacklog';
 import {
     buildProjectContext, contextFileName, isQuotableContextPath, PROJECT_BRIEF_MAX
@@ -4091,7 +4097,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.backlog.check',
-            describe: '‼️ Move one backlog item between states — EXACTLY ONE CHARACTER of the document changes, the one inside `[ ]`. `[ ]` open · `[/]` doing · `[x]` done · `[-]` cancelled. Nothing else on the line is touched: not the bullet, not the icons, not the Tasks metadata, not the line endings, and no ✅ done-date is invented (Obsidian\'s Tasks plugin writes that when the box is ticked THERE). Say which item by `code` (the stable handle), by `line`, or by a unique piece of its text; text matching more than one item is an error rather than a guess. args: project (id or name), code?, line? (1-based, as projects.backlog reports it), item? (text), state? (open|doing|done|cancelled, default done)',
+            describe: '‼️ Move one backlog item between states — EXACTLY ONE CHARACTER of the document changes, the one inside `[ ]`. `[ ]` open · `[/]` doing · `[x]` done · `[-]` cancelled. Nothing else on the line is touched: not the bullet, not the icons, not the Tasks metadata, not the line endings, and no ✅ done-date is invented (Obsidian\'s Tasks plugin writes that when the box is ticked THERE). Say which item by `code` (the stable handle), by `line`, or by a unique piece of its text; text matching more than one item is an error rather than a guess. ‼️ An item WITH A CODE is also tracked: the session and turn you are in are worked out and written to the project\'s track ledger, the line gets a `[closed:: <session>#<turn>]` stamp when it closes, and Backloglog.md is rebuilt — so three months from now the code leads back to this conversation. Pass `note` to say in one sentence what was done; that is the closing note a person will read. args: project (id or name), code?, line? (1-based, as projects.backlog reports it), item? (text), state? (open|doing|done|cancelled, default done), note?, session? (only if you know your own session id — it is inferred otherwise)',
             handler: (args) => {
                 const { project, folder, file } = backlogDoc(argStr(args, 'project'));
                 const target = backlogTarget(args);
@@ -4104,10 +4110,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     if (res.item) { touched = res.item.text; code = res.item.code ?? null; }
                     return res;
                 });
+                // An uncoded capture cannot be tracked: the code is the only
+                // handle that survives the item being reworded or moved.
+                const tracked = code ? recordTrack({
+                    projectId: project.id, folder, code, by: 'agent',
+                    event: state === 'open' ? 'reopen' : state as TrackEvent,
+                    ...(optStr(args, 'note') ? { note: optStr(args, 'note') as string } : {}),
+                    ...(optStr(args, 'session') ? { session: optStr(args, 'session') as string } : {})
+                }) : null;
                 projectDocWritten(project.id);
                 return {
                     project: project.name, file: relDoc(folder, out.file),
-                    code, item: touched, state, note: out.note ?? null
+                    code, item: touched, state, note: out.note ?? null,
+                    track: tracked ? trackOut(tracked) : null
                 };
             }
         },
@@ -4260,6 +4275,113 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     project: project.name, file: relDoc(folder, out.file),
                     code: code ?? null, from: id
                 };
+            }
+        },
+        {
+            op: 'projects.track',
+            describe: '‼️ SAY THAT YOU WORKED ON A BACKLOG ITEM IN THIS TURN. Records one event against a code in the project\'s track ledger — which session, which turn, when, by whom — and rebuilds Backloglog.md. This is what turns a pile of transcripts into a searchable record: three months from now `K-8` leads back to the exact turns it was fought in, not just to a ticked box. Use `touch` for "I looked at this and it is not finished" — the attempts are the history that a log of endings throws away; state changes (doing/done/cancelled/reopen) are usually better made with projects.backlog.check, which records the same thing AND moves the checkbox. Which session you are in is INFERRED (you are mid-turn, so your session is live); when that is ambiguous the record is stamped `uncertain` with the reason — multi (two of your sessions were live) · none (nothing was) · stale (the candidate had gone quiet) · turn (session sure, turn not). Nothing is ever guessed silently. args: project (id or name), code (an item WITH a code — an uncoded capture cannot be tracked), event? (touch|doing|done|cancelled|reopen, default touch), note? (one line: what you did, or why it is not finished), session? (only if you know your own id)',
+            handler: (args) => {
+                const { project, folder } = projectDocsFor(argStr(args, 'project'));
+                const code = argStr(args, 'code').toUpperCase();
+                need(BACKLOG_CODE.test(code), `"${code}" is not a backlog code — it looks like K-8 or P-5.3`);
+                const event = (optStr(args, 'event') || 'touch') as TrackEvent;
+                need(TRACK_EVENTS.includes(event), `event must be one of ${TRACK_EVENTS.join(', ')}`);
+                const rec = recordTrack({
+                    projectId: project.id, folder, code, event, by: 'agent',
+                    ...(optStr(args, 'note') ? { note: optStr(args, 'note') as string } : {}),
+                    ...(optStr(args, 'session') ? { session: optStr(args, 'session') as string } : {})
+                });
+                return { project: project.name, ...trackOut(rec) };
+            }
+        },
+        {
+            op: 'projects.tracks',
+            describe: 'THE ANSWER TO "HOW WAS THIS SOLVED LAST TIME" — every recorded event for a backlog code, or the whole project\'s track at once: which sessions worked on it, which turns of them, when, and where it was closed. Each session comes back with its full id and its turn numbers, which is exactly what sessions.open / the session viewer\'s deep link take, so a code leads to the transcript AT THE MOMENT. `uncertain` on a row is not noise — it says the attribution is a best effort and names why. args: project (id or name), code? (one item; omitted = every tracked code), limit?',
+            handler: (args) => {
+                const { project, folder } = projectDocsFor(argStr(args, 'project'));
+                const records = readTracks(folder);
+                const one = optStr(args, 'code')?.toUpperCase();
+                const codes = one ? [one] : trackedCodes(records);
+                const limit = typeof args.limit === 'number' ? Math.max(1, args.limit) : 200;
+                return {
+                    project: project.name,
+                    ledger: relDoc(folder, trackLedgerOf(folder)),
+                    events: records.length,
+                    items: codes.slice(0, limit).map(code => {
+                        const sum = summarizeCode(code, records);
+                        return {
+                            code,
+                            sessions: sum.runs.map(r => ({
+                                session: r.session, short: shortSession(r.session),
+                                turns: r.turns, span: turnSpan(r.turns),
+                                agent: r.agent ?? null, from: localStamp(r.firstTs),
+                                ts: r.firstTs, uncertain: r.uncertain ?? null
+                            })),
+                            turns: sum.turns,
+                            closed: sum.closed ? trackOut(sum.closed) : null,
+                            stamp: closingStamp(sum) ?? null,
+                            doubtful: sum.doubtful,
+                            events: sum.runs.flatMap(r => r.events).concat(sum.loose)
+                                .sort((a, b) => a.ts - b.ts).map(trackOut)
+                        };
+                    })
+                };
+            }
+        },
+        {
+            op: 'projects.tracks.backfill',
+            describe: 'Reconstruct the track of items that were closed before any of this was recorded — by SEARCHING THE TRANSCRIPTS for the code itself. ‼️ A clue or nothing: a row is only proposed where the code was literally written in that turn, never inferred from one date being near another, so an item nobody ever quoted stays visibly blank (which is the honest answer and also shows what is missing). Every row is stamped `by: backfill` + `uncertain: guess` and can always be told apart from something that was watched happening. For a closed item the mention nearest its ✅ date becomes the closing row; with no date, the last mention does. Only the DIALOG is searched, not tool output — a turn that merely read the backlog file mentions every code in it and proves nothing. Runs as a PREVIEW unless you pass apply. args: project (id or name), apply? (false = show what would be written), code? (just this one)',
+            handler: (args) => {
+                const { project, folder } = projectDocsFor(argStr(args, 'project'));
+                const roles = scanRoles(folder);
+                need(roles.backlog, `"${project.name}" has no backlog document`);
+                const read = readProjectDoc(folder, relDoc(folder, roles.backlog as string));
+                need(read.ok, read.error ?? 'the backlog could not be read');
+                const only = optStr(args, 'code')?.toUpperCase();
+                const items = parseBacklog(read.text ?? '').items
+                    .filter(i => i.code && (!only || i.code === only));
+                need(items.length, only ? `no backlog item with code ${only}` : 'no coded items to backfill');
+
+                const sessions = sessionsOfProject(project.id);
+                const idOf = new Map(sessions.map(s => [s.file, s.sessionId]));
+                const agentOf = new Map(sessions.map(s => [s.file, s.agentName ?? '']));
+                const codes = new Set(items.map(i => i.code as string));
+                // ONE scan for every code, not one per code: the corpus is ~100 MB
+                // and a scan is a second, so a hundred codes would be a hundred
+                // seconds. The generic code shape is matched and the hits are
+                // filtered afterwards against the codes this project actually has.
+                const found = searchTranscripts(
+                    sessions.map(s => ({
+                        file: s.file, agentName: s.agentName ?? '', title: s.title, mtime: s.mtime
+                    })),
+                    '[A-Z]{1,2}-\\d+(?:\\.\\d+)*',
+                    { regex: true, caseSensitive: true, maxHits: 4000, maxPerFile: 80, timeBudgetMs: 20000 }
+                );
+                const hits = found.hits
+                    .filter(h => codes.has(h.match) && h.turn && idOf.get(h.file))
+                    .map(h => ({
+                        code: h.match, session: idOf.get(h.file) as string,
+                        turn: h.turn as number, ts: h.ts,
+                        ...(agentOf.get(h.file) ? { agent: agentOf.get(h.file) as string } : {})
+                    }));
+                const proposed = backfillFromHits(items, readTracks(folder), hits);
+
+                const summary = {
+                    project: project.name,
+                    scanned: found.filesScanned,
+                    partial: found.truncated || found.timedOut === true,
+                    mentions: hits.length,
+                    codes: [...new Set(proposed.map(r => r.code))],
+                    rows: proposed.length,
+                    proposed: proposed.slice(0, 100).map(trackOut)
+                };
+                if (args.apply !== true) {
+                    return { ...summary, applied: false, note: 'preview only — call again with apply: true to write these' };
+                }
+                appendTrack(trackLedgerOf(folder), proposed);
+                refreshBacklogLog(project.id);
+                projectDocWritten(project.id);
+                return { ...summary, applied: true };
             }
         },
         {
@@ -7989,6 +8111,181 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         projectsChanged();
     };
 
+    // ---------- the backlog track: which session, which turn ----------
+    /** Where a project's track ledger is. Declared by the skeleton, never found
+     *  by folder name — see `tracksFolder`. */
+    const trackLedgerOf = (folder: string): string =>
+        trackFileIn(tracksFolder(folder, projectSkeleton()));
+
+    const readTracks = (folder: string): TrackRecord[] => readTrackFile(trackLedgerOf(folder));
+
+    /**
+     * ‼️ WHICH SESSION IS CALLING — the inference this whole feature stands on,
+     * and the one place it can be wrong.
+     *
+     * A bridge request is a file on disk; it does not say who wrote it. But the
+     * agent that wrote it is, by definition, IN THE MIDDLE OF A TURN — so its
+     * session is live, and its last hook event is seconds old. That is enough to
+     * name it, in every ordinary case: one live session, in the window, belonging
+     * to this project.
+     *
+     * When it is not enough, the answer is a doubt CODE, never a guess. Two live
+     * sessions of the same agent are genuinely ambiguous, and writing the wrong
+     * session id would be indistinguishable from writing the right one — the
+     * record would look perfect and point at a transcript where nothing happened.
+     * `uncertain: 'multi'` says exactly what we do and do not know.
+     *
+     * A caller that KNOWS its session id passes it and skips all of this.
+     */
+    const attributeTrack = (o: {
+        projectId: string; session?: string; agent?: string; by: TrackSource; now: number;
+    }): { session?: string; turn?: number; agent?: string; uncertain?: TrackDoubt } => {
+        const turnOf = (sid: string): number | undefined => {
+            const row = index.all().find(r => r.sessionId === sid);
+            const n = row?.userTurns ?? 0;
+            return n > 0 ? n : undefined;
+        };
+        if (o.session) {
+            const turn = turnOf(o.session);
+            return {
+                session: o.session, ...(turn ? { turn } : {}),
+                ...(o.agent ? { agent: o.agent } : {}),
+                ...(turn ? {} : { uncertain: 'turn' as TrackDoubt })
+            };
+        }
+        // A panel click has no session and is not pretending to have one.
+        if (o.by !== 'agent') { return { ...(o.agent ? { agent: o.agent } : {}) }; }
+
+        const mine = new Set(sessionsOfProject(o.projectId).map(s => s.sessionId));
+        const alive = live.sessions().filter(s => s.status !== 'ended'
+            && (!o.agent || s.agentName === o.agent));
+        // In order of how much they narrow it: this project's, then in-window.
+        const scoped = alive.filter(s => mine.has(s.sessionId));
+        const pool = scoped.length ? scoped : alive;
+        const fresh = pool.filter(s => o.now - s.lastEventTs <= TRACK_LIVE_WINDOW_MS);
+        const ranked = (fresh.length ? fresh : pool)
+            .slice().sort((a, b) => b.lastEventTs - a.lastEventTs);
+
+        if (!ranked.length) { return { uncertain: 'none', ...(o.agent ? { agent: o.agent } : {}) }; }
+        const pick = ranked[0];
+        const doubt: TrackDoubt | undefined =
+            ranked.length > 1 ? 'multi' : (fresh.length ? undefined : 'stale');
+        const turn = turnOf(pick.sessionId);
+        return {
+            session: pick.sessionId,
+            ...(turn ? { turn } : {}),
+            agent: pick.agentName ?? o.agent ?? '',
+            ...(doubt ?? !turn ? { uncertain: (doubt ?? 'turn') as TrackDoubt } : {})
+        };
+    };
+
+    /**
+     * Rebuild `Backloglog.md` from the ledger and the backlog as it stands.
+     *
+     * Two things happen here that are easy to miss. First, the state on each
+     * line comes from the BACKLOG, not from the ledger: the checkbox is the
+     * truth about what is done, and the ledger is the truth about how it got
+     * there. Second, a disagreement between them is itself recorded — that is
+     * how a box ticked in Obsidian, which produces no event anywhere, still
+     * reaches the log instead of leaving a silent hole.
+     */
+    const refreshBacklogLog = (projectId: string): { file?: string; error?: string } => {
+        const project = projectStore.get(projectId);
+        const folder = (project?.folder ?? '').trim();
+        if (!project || !folder || !dirExists(folder)) { return { error: 'the project has no folder on disk' }; }
+        const backlogFile = scanRoles(folder).backlog;
+        if (!backlogFile) { return { error: 'the project has no backlog document' }; }
+        const backlog = readProjectDoc(folder, relDoc(folder, backlogFile));
+        if (!backlog.ok) { return { error: backlog.error ?? 'the backlog could not be read' }; }
+
+        const items = parseBacklog(backlog.text ?? '').items;
+        let records = readTracks(folder);
+        const missed = reconcileOutside(items, records, Date.now());
+        if (missed.length) {
+            appendTrack(trackLedgerOf(folder), missed);
+            records = records.concat(missed);
+        }
+
+        const made = ensureRoleDoc(folder, project, 'backloglog', projectSkeleton());
+        if (made.error || !made.file) { return { error: made.error ?? 'the backloglog could not be created' }; }
+        const rel = relDoc(folder, made.file);
+        const current = readProjectDoc(folder, rel);
+        const text = renderBacklogLog({
+            project: project.name, items, records,
+            existing: current.text ?? '',
+            ledgerRel: relDoc(folder, trackLedgerOf(folder))
+        });
+        // Nothing to say is not a reason to touch the file: an identical write
+        // would still bump its mtime and wake every watcher in the vault.
+        if ((current.text ?? '') === text) { return { file: made.file }; }
+        const written = writeProjectDoc(folder, rel, text, current.ok ? current.mtimeMs : undefined);
+        return written.ok ? { file: made.file } : { error: written.error };
+    };
+
+    /**
+     * Record work on a backlog item, and let the record show everywhere it should.
+     *
+     * Three writes, in this order and for this reason: the ledger first (it is
+     * the truth, and appending cannot fail halfway), then the one-field stamp on
+     * the backlog line (so somebody reading the file in Obsidian with no
+     * extension running still sees where the item ended), then the document
+     * rebuild (which reads both of the above).
+     */
+    const recordTrack = (o: {
+        projectId: string; folder: string; code: string; event: TrackEvent;
+        by: TrackSource; agent?: string; session?: string; note?: string; now?: number;
+    }): TrackRecord => {
+        const now = o.now ?? Date.now();
+        const who = attributeTrack({
+            projectId: o.projectId, by: o.by, now,
+            ...(o.session ? { session: o.session } : {}),
+            ...(o.agent ? { agent: o.agent } : {})
+        });
+        const rec: TrackRecord = {
+            code: o.code.toUpperCase(), event: o.event, ts: now, by: o.by,
+            ...(who.session ? { session: who.session } : {}),
+            ...(who.turn ? { turn: who.turn } : {}),
+            ...(who.agent ? { agent: who.agent } : {}),
+            ...(who.uncertain ? { uncertain: who.uncertain } : {}),
+            ...(o.note ? { note: o.note.replace(/\s+/g, ' ').trim().slice(0, 300) } : {})
+        };
+        appendTrack(trackLedgerOf(o.folder), rec);
+
+        // The one point of the history that also lives in the backlog file.
+        if (rec.event === 'done' || rec.event === 'cancelled') {
+            const stamp = closingStamp(summarizeCode(rec.code, readTracks(o.folder)));
+            const file = scanRoles(o.folder).backlog;
+            if (stamp && file) {
+                try {
+                    editProjectDoc(o.folder, file, src =>
+                        stampBacklogClosed(src, { code: rec.code }, stamp));
+                } catch { /* the stamp is a convenience; the ledger is the record */ }
+            }
+        }
+        refreshBacklogLog(o.projectId);
+        projectDocWritten(o.projectId);
+        return rec;
+    };
+
+    /** The CODE on the line a message points at. A page addresses a row by line
+     *  as well as by code, and an untracked close is a hole in the log — so the
+     *  code is looked up rather than left out. */
+    const codeAtTarget = (folder: string, target: BacklogTarget): string | undefined => {
+        const file = scanRoles(folder).backlog;
+        if (!file) { return undefined; }
+        const read = readProjectDoc(folder, relDoc(folder, file));
+        if (!read.ok) { return undefined; }
+        return findBacklogItem(read.text ?? '', target).item?.code;
+    };
+
+    /** One record as the bridge and the page both report it. */
+    const trackOut = (r: TrackRecord) => ({
+        code: r.code, event: r.event, ts: r.ts, at: localStamp(r.ts),
+        session: r.session ?? null, short: r.session ? shortSession(r.session) : null,
+        turn: r.turn ?? null, agent: r.agent ?? null, by: r.by,
+        uncertain: r.uncertain ?? null, note: r.note ?? null
+    });
+
     // ---------- what the page's document tabs are drawn from ----------
     /**
      * The state of one af-role document, said honestly.
@@ -8071,6 +8368,78 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             /** How many of `next` an agent gets when it does not ask for more. */
             nextDefault: 5,
             blocked: up.blocked.map(b => ({ code: b.item.code ?? null, waitingOn: b.waitingOn }))
+        };
+    };
+
+    /**
+     * The Track tab — a backlog code joined to the turns it was worked in.
+     *
+     * ‼️ DELIBERATELY THIN, AND THIS COMMENT IS THE PLACE THAT SAYS SO. The
+     * record itself lives in two files that work with no extension running
+     * (`Backloglog.md` and the ledger beside it); this tab is the first sketch of
+     * the surface that will eventually let a person filter a project's whole
+     * history and jump into it. What it already does is the part that had no
+     * substitute: a turn number here is a LINK, and pressing it opens that
+     * transcript at that moment. Everything else — filters, ordering, a search
+     * across projects — is a later job and is not pretended at here.
+     */
+    const projectTrackView = (id: string) => {
+        const project = projectStore.get(id);
+        const folder = (project?.folder ?? '').trim();
+        if (!project) { return { state: 'no-project' as const }; }
+        if (!folder) { return { state: 'no-folder' as const, role: 'backloglog' as const }; }
+        if (!dirExists(folder)) { return { state: 'folder-missing' as const, role: 'backloglog' as const, folder }; }
+        const roles = scanRoles(folder);
+        const backlogText = roles.backlog
+            ? (readProjectDoc(folder, relDoc(folder, roles.backlog)).text ?? '') : '';
+        const items = parseBacklog(backlogText).items;
+        const byCode = new Map(items.filter(i => i.code).map(i => [i.code as string, i]));
+        const records = readTracks(folder);
+        // The transcript a session id belongs to — the whole index, not just this
+        // project's, because a session can be refiled after the fact and the row
+        // must still lead somewhere.
+        const fileOf = new Map(index.all().map(s => [s.sessionId, s.file]));
+        // The human's own closing notes, read straight back out of the document
+        // they were written in. This tab shows them; it never writes them.
+        const notes = new Map((roles.backloglog
+            ? parseBacklogLog(readProjectDoc(folder, relDoc(folder, roles.backloglog)).text ?? '').blocks
+            : []).map(b => [b.code, b.kept.map(l => l.replace(/^\s*[>-]\s?/, '').trim()).join(' ')]));
+
+        const rows = trackedCodes(records).map(code => {
+            const sum = summarizeCode(code, records);
+            const item = byCode.get(code);
+            return {
+                code,
+                text: item?.text ?? '',
+                state: item?.state ?? null,
+                turns: sum.turns,
+                doubtful: sum.doubtful,
+                stamp: closingStamp(sum) ?? null,
+                note: notes.get(code) ?? '',
+                lastTs: sum.lastTs,
+                sessions: sum.runs.map(r => ({
+                    session: r.session, short: shortSession(r.session),
+                    file: fileOf.get(r.session) ?? '',
+                    agent: r.agent ?? '', span: turnSpan(r.turns),
+                    uncertain: r.uncertain ?? null,
+                    // Each turn carries its OWN timestamp: that is the address the
+                    // session viewer scrolls to, and one per row would land every
+                    // click of a five-turn run in the same place.
+                    turns: r.turns.map(n => ({
+                        n, ts: (r.events.find(e => e.turn === n) ?? r.events[0]).ts
+                    })),
+                    events: r.events.map(e => `${e.event}${e.note ? ' — ' + e.note : ''}`)
+                })),
+                loose: sum.loose.map(trackOut)
+            };
+        }).sort((a, b) => b.lastTs - a.lastTs);
+
+        return {
+            state: 'ok' as const, folder,
+            path: roles.backloglog ? relDoc(folder, roles.backloglog) : null,
+            ledger: relDoc(folder, trackLedgerOf(folder)),
+            events: records.length,
+            rows
         };
     };
 
@@ -8178,6 +8547,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     return { plan: projectPlanView(id) };
                 case 'backlog':
                     return { backlog: projectBacklogView(id) };
+                case 'track':
+                    return { track: projectTrackView(id) };
                 case 'docs':
                     return { docs: projectDocsView(id, doc) };
                 case 'people':
@@ -8414,8 +8785,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     }, true);
                     return { ...res, ...(code ? { code } : {}) };
                 },
-                backlogState: (id: string, target: BacklogTarget, state: string) =>
-                    edit(id, text => setBacklogState(text, target, state as BacklogState)),
+                /**
+                 * ‼️ A tick from the page is tracked too, and it is honest about
+                 * having no session. The user clicking a checkbox in Agent Farm
+                 * is a real event with a real time and a real actor — leaving it
+                 * out would make the Backloglog claim nothing happened, which is
+                 * worse than a row that says "panel, no session".
+                 */
+                backlogState: (id: string, target: BacklogTarget, state: string) => {
+                    const res = edit(id, text => setBacklogState(text, target, state as BacklogState));
+                    const folder = (projectStore.get(id)?.folder ?? '').trim();
+                    const code = target.code ?? (folder ? codeAtTarget(folder, target) : undefined);
+                    if (!res.error && code && folder) {
+                        recordTrack({
+                            projectId: id, folder, code, by: 'panel',
+                            event: state === 'open' ? 'reopen' : state as TrackEvent
+                        });
+                    }
+                    return res;
+                },
                 backlogSet: (id: string, target: BacklogTarget, fields: Record<string, unknown>) =>
                     edit(id, text => setBacklogFields(text, target, {
                         ...(BACKLOG_PRIORITIES.includes(fields.priority as BacklogPriority)

@@ -150,7 +150,7 @@ export interface NewProjectSeed {
 
 /** The project page's tabs. `settings` is the editor Faz 1 shipped — it was
  *  always meant to become a tab here rather than stay the whole page. */
-const TABS = ['overview', 'timeline', 'sessions', 'plan', 'backlog', 'docs', 'people', 'cost', 'settings'] as const;
+const TABS = ['overview', 'timeline', 'sessions', 'plan', 'backlog', 'track', 'docs', 'people', 'cost', 'settings'] as const;
 const DEFAULT_TAB = 'overview';
 /** Sessions-table Show box default for this page. */
 const PROJECT_TABLE_N = 25;

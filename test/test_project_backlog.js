@@ -80,7 +80,12 @@ const VAULT = [
     ok('Obsidian Tasks priority icons are the priority',
         by('P-5.1').priority === 'high' && by('P-12').priority === 'highest'
         && by('K-8').priority === 'low' && by('P-5').priority === 'normal');
-    ok('[efor:: S] is the effort', by('P-5.2').effort === 'S' && by('K-8').effort === 'XS');
+    // The fixture is written with the legacy alias on purpose: what a file on
+    // disk already says must keep parsing even though nothing writes it now.
+    ok('the legacy [efor:: …] alias is still read as the effort',
+        by('P-5.2').effort === 'S' && by('K-8').effort === 'XS');
+    ok('[effort:: …], the name that is written, is read too',
+        B.parseBacklog('- [ ] K-1 x [effort:: L]').items[0].effort === 'L');
     ok('⛔ is what it waits on', by('P-5.3').blockedBy.join() === 'P-5.1');
     ok('[plan:: …] links the plan item', by('P-5').plan === 'afprj-05');
     ok('📅 and ✅ are read but never invented',
@@ -234,7 +239,7 @@ const VAULT = [
         effort: 'S', due: '2026-09-01', blockedBy: ['K-8']
     });
     ok('every axis is written in the vault\'s own notation',
-        /- \[ \] K-9 everything #bug 🔺 \[efor:: S\] ⛔ K-8 📅 2026-09-01/.test(full.text));
+        /- \[ \] K-9 everything #bug 🔺 \[effort:: S\] ⛔ K-8 📅 2026-09-01/.test(full.text));
     ok('an unknown parent is refused rather than guessed at',
         !B.addBacklogItem(VAULT, { text: 'x', parent: 'Q-1' }).ok);
     ok('a lower-case area is accepted and normalised',
@@ -247,13 +252,18 @@ const VAULT = [
 // ---------- fields ----------
 {
     const r = B.setBacklogFields(VAULT, { code: 'K-8' }, { priority: 'highest', effort: 'M' });
-    ok('the axes change', r.ok && /K-8.*🔺/.test(r.text) && /K-8.*\[efor:: M\]/.test(r.text));
+    ok('the axes change', r.ok && /K-8.*🔺/.test(r.text) && /K-8.*\[effort:: M\]/.test(r.text));
+    // ‼️ The extension's working language is English and a field NAME is part of
+    // the mechanism. The fixture's line says `[efor:: XS]`; the rebuild must not
+    // copy that spelling forward, or the alias never dies out.
+    ok('a rebuilt line is written with the English field name, not the alias it was read from',
+        !/K-8.*\[efor::/.test(r.text));
     ok('the code, the state and the words survive a rebuild',
         /- \[ \] K-8 history search is case sensitive/.test(r.text));
     ok('every OTHER line is untouched',
         r.text.split('\r\n').filter((l, i) => l !== VAULT.split('\r\n')[i]).length === 1);
-    ok('null clears a field',
-        !/\[efor::/.test(B.setBacklogFields(VAULT, { code: 'K-8' }, { effort: null }).text
+    ok('null clears a field, in either spelling',
+        !/\[(?:efor|effort)::/.test(B.setBacklogFields(VAULT, { code: 'K-8' }, { effort: null }).text
             .split('\r\n').find(l => l.includes('K-8'))));
     ok('kinds REPLACE rather than accumulate',
         /K-8 history search is case sensitive #regression/.test(
@@ -264,6 +274,40 @@ const VAULT = [
     ok('new words can be set without touching the code',
         /- \[ \] K-8 something else/.test(
             B.setBacklogFields(VAULT, { code: 'K-8' }, { text: 'something else' }).text));
+}
+
+// ---------- the closing stamp ----------
+{
+    const stamped = B.stampBacklogClosed(VAULT, { code: 'K-8' }, '9c4d1f2a#3');
+    const lineOf = (text, code) => text.split('\r\n').find(l => l.includes(code));
+    ok('a stamp is written onto the line', stamped.ok && /\[closed:: 9c4d1f2a#3\]/.test(stamped.text));
+    ok('and nothing else on the line moved — this runs on a tick, not on a rebuild',
+        /- \[ \] K-8 history search is case sensitive #bug 🔽 \[efor:: XS\] \[closed:: 9c4d1f2a#3\]/
+            .test(lineOf(stamped.text, 'K-8')));
+    ok('exactly one line changed',
+        stamped.text.split('\r\n').filter((l, i) => l !== VAULT.split('\r\n')[i]).length === 1);
+    ok('the stamp is read back off the item', B.parseBacklog(stamped.text).items
+        .find(i => i.code === 'K-8').closed === '9c4d1f2a#3');
+    ok('it is not mistaken for part of the words', B.parseBacklog(stamped.text).items
+        .find(i => i.code === 'K-8').text === 'history search is case sensitive');
+
+    // ‼️ The regression this pair exists for: a field the rebuild does not know
+    // about is stripped from the text AND not re-emitted, so it vanishes the
+    // first time somebody clicks a priority badge — silently.
+    const after = B.setBacklogFields(stamped.text, { code: 'K-8' }, { priority: 'high' });
+    ok('a rebuild keeps the stamp instead of dropping it',
+        /\[closed:: 9c4d1f2a#3\]/.test(lineOf(after.text, 'K-8')));
+
+    const restamped = B.stampBacklogClosed(stamped.text, { code: 'K-8' }, '11112222#7');
+    ok('re-stamping replaces in place rather than accumulating',
+        (lineOf(restamped.text, 'K-8').match(/\[closed::/g) || []).length === 1
+        && /\[closed:: 11112222#7\]/.test(restamped.text));
+    ok('null clears it',
+        !/\[closed::/.test(lineOf(B.stampBacklogClosed(stamped.text, { code: 'K-8' }, null).text, 'K-8')));
+    ok('something that is not <session>#<turn> is refused rather than written',
+        !B.stampBacklogClosed(VAULT, { code: 'K-8' }, 'yesterday, I think').ok);
+    ok('stamping the same value twice is a no-op',
+        B.stampBacklogClosed(stamped.text, { code: 'K-8' }, '9c4d1f2a#3').text === stamped.text);
 }
 
 // ---------- classifying an inbox capture ----------

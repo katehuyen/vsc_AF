@@ -1375,8 +1375,10 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         } = require(path.join(__dirname, '..', 'out', 'core', 'projectDocs.js'));
         const { addPlanItem, checkPlanItem, planSummary } =
             require(path.join(__dirname, '..', 'out', 'core', 'projectPlan.js'));
-        const { addBacklogItem, nextBacklog, parseBacklog, setBacklogState } =
+        const { addBacklogItem, BACKLOG_CODE, nextBacklog, parseBacklog, setBacklogState } =
             require(path.join(__dirname, '..', 'out', 'core', 'projectBacklog.js'));
+        const { appendTrack, closingStamp, readTrackFile, summarizeCode, trackedCodes, TRACK_EVENTS } =
+            require(path.join(__dirname, '..', 'out', 'core', 'backlogTrack.js'));
 
         const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-bridge-docs-'));
         const project = {
@@ -1678,6 +1680,65 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             const noAim = await reg.dispatch('projects.backlog.check', { project: 'Agent Farm' });
             ok('…and a check with nothing to aim at is refused',
                 !noAim.ok && /which item/.test(noAim.error));
+
+            // ---- the track: a code joined to the turns it was worked in ----
+            // Same reasoning as above — the real ops need the project store and
+            // the live monitor. What is exercised here is the contract shape an
+            // agent codes against, on the pure module underneath it.
+            const ledger = path.join(dir, '90_Archive', '_tracks', 'backlog-track.jsonl');
+            reg.register([
+                {
+                    op: 'projects.track',
+                    describe: 'record work on a code. args: project, code, event?, note?',
+                    handler: a => {
+                        const code = argStr(a, 'code').toUpperCase();
+                        need(BACKLOG_CODE.test(code), `"${code}" is not a backlog code`);
+                        const event = optStr(a, 'event') || 'touch';
+                        need(TRACK_EVENTS.includes(event), 'unknown event');
+                        const rec = {
+                            code, event, ts: Date.now(), by: 'agent',
+                            session: '9c4d1f2a-bbbb-cccc', turn: 3, agent: 'developer',
+                            ...(optStr(a, 'note') ? { note: optStr(a, 'note') } : {})
+                        };
+                        appendTrack(ledger, rec);
+                        return { code, event, turn: rec.turn, uncertain: null };
+                    }
+                },
+                {
+                    op: 'projects.tracks',
+                    describe: 'a code\'s whole track. args: project, code?',
+                    handler: a => {
+                        const records = readTrackFile(ledger);
+                        const codes = optStr(a, 'code')
+                            ? [optStr(a, 'code').toUpperCase()] : trackedCodes(records);
+                        return {
+                            events: records.length,
+                            items: codes.map(c => {
+                                const s = summarizeCode(c, records);
+                                return {
+                                    code: c, turns: s.turns, stamp: closingStamp(s) || null,
+                                    sessions: s.runs.map(r => ({ session: r.session, turns: r.turns }))
+                                };
+                            })
+                        };
+                    }
+                }
+            ]);
+
+            const touched = await reg.dispatch('projects.track',
+                { project: 'Agent Farm', code: 'P-2', event: 'touch', note: 'root cause not found' });
+            ok('projects.track records a turn that did NOT finish the item',
+                touched.ok && touched.result.event === 'touch');
+            await reg.dispatch('projects.track', { project: 'Agent Farm', code: 'P-2', event: 'done' });
+            const track = await reg.dispatch('projects.tracks', { project: 'Agent Farm', code: 'P-2' });
+            ok('projects.tracks gives the session and the turns back, not a summary',
+                track.ok && track.result.items[0].sessions[0].turns.join() === '3');
+            ok('…and the closing stamp, which is what goes on the backlog line',
+                track.result.items[0].stamp === '9c4d1f2a#3');
+            const notACode = await reg.dispatch('projects.track',
+                { project: 'Agent Farm', code: 'something I noticed' });
+            ok('‼️ an uncoded capture is refused rather than tracked under a made-up handle',
+                !notACode.ok && /not a backlog code/.test(notACode.error));
         }
 
         // ---- and extension.ts really registers every one of them ----
@@ -1688,7 +1749,8 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             'projects.backlog', 'projects.backlog.next', 'projects.backlog.add',
             'projects.backlog.check', 'projects.backlog.set', 'projects.backlog.code',
             'projects.backlog.move', 'projects.backlog.reorder', 'projects.backlog.archive',
-            'projects.backlog.promote', 'projects.backlog.open']) {
+            'projects.backlog.promote', 'projects.backlog.open',
+            'projects.track', 'projects.tracks', 'projects.tracks.backfill']) {
             ok(`extension.ts registers ${op}`, src.includes(`op: '${op}'`));
         }
         const nextBlock = src.slice(src.indexOf("op: 'projects.backlog.next'"),
@@ -1696,9 +1758,18 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         ok('‼️ backlog.next\'s contract explains the effort ceiling rather than hiding it',
             /maxEffort/.test(nextBlock) && /half done/.test(nextBlock));
         const blCheckBlock = src.slice(src.indexOf("op: 'projects.backlog.check'"),
-            src.indexOf("op: 'projects.backlog.check'") + 2600);
+            src.indexOf("op: 'projects.backlog.check'") + 2900);
         ok('‼️ backlog.check\'s contract states the one-character promise',
             /EXACTLY ONE CHARACTER/.test(blCheckBlock));
+        ok('…and tells the caller that closing an item is also RECORDED, with a note it can write',
+            /track ledger/.test(blCheckBlock) && /note\?/.test(blCheckBlock));
+        const trackBlock = src.slice(src.indexOf("op: 'projects.track'"),
+            src.indexOf("op: 'projects.track'") + 2600);
+        ok('‼️ track\'s contract admits the session is INFERRED and names every doubt code',
+            /INFERRED/.test(trackBlock)
+            && ['multi', 'stale', 'turn'].every(d => trackBlock.includes(d)));
+        ok('…and says why `touch` exists, since a log of endings is the obvious wrong design',
+            /not finished/.test(trackBlock));
         const blOpenBlock = src.slice(src.indexOf("op: 'projects.backlog.open'"),
             src.indexOf("op: 'projects.backlog.open'") + 2600);
         ok('‼️ backlog.open promises the line is resolved from the CODE at call time',

@@ -24,9 +24,9 @@ import { eolOf, lineStartOffset, TASK_LINE } from './projectPlan';
  * Nothing here is invented. A backlog line is an ordinary Obsidian task line
  * carrying things the user's vault already understands:
  *
- *   - [ ] P-5.3 Work tab #feat 🔼 [efor:: L] ⛔ P-5.1 [plan:: afprj-05]
- *     └─┬─┘ └─┬┘ └──┬───┘ └─┬─┘ └┬┘ └────┬───┘ └───┬──┘ └──────┬──────┘
- *    state code   text   kind  pri   effort    blockedBy    plan link
+ *   - [ ] P-5.3 Work tab #feat 🔼 [effort:: L] ⛔ P-5.1 [plan:: afprj-05]
+ *     └─┬─┘ └─┬┘ └──┬───┘ └─┬─┘ └┬┘ └─────┬────┘ └───┬──┘ └──────┬──────┘
+ *    state code   text   kind  pri    effort     blockedBy    plan link
  *
  * state = the checkbox itself (Obsidian's own alternate states), kind = a real
  * `#tag` (clickable in the vault), priority = Obsidian Tasks' own icons,
@@ -158,18 +158,32 @@ export function compareCodes(a: string, b: string): number {
 /**
  * Dataview inline fields, in both bracket styles it accepts.
  *
- * Field NAMES are matched in Turkish and English alike (`efor::` = `effort::`)
- * — the file belongs to the user and they write in their own language, while
- * the panel shows English. Accepting both costs one alternation and removes a
- * whole category of "why did my line stop working".
+ * ‼️ WHAT IS WRITTEN AND WHAT IS ACCEPTED ARE TWO DIFFERENT LISTS, and keeping
+ * them apart is the rule this block exists to state.
+ *
+ * WRITTEN: English, always — `effort`, `plan`, `from`, `was`, `closed`. Agent
+ * Farm's working language is English and a field name is part of the mechanism,
+ * not part of the content. The CONTENT of a backlog (the items, the headings,
+ * the areas) is in whatever language the project is written in — Turkish here,
+ * Japanese somewhere else — and nothing in this file may assume otherwise.
+ *
+ * ACCEPTED: the English name plus the aliases files already on disk contain.
+ * That is INPUT TOLERANCE, not a second working language: a line somebody wrote
+ * years ago must keep parsing, and the next field edit rewrites it in English
+ * anyway, so the aliases fade out on their own instead of by breaking a file.
  */
 const field = (names: string): RegExp =>
     new RegExp(`[\\[(]\\s*(?:${names})\\s*::\\s*([^\\])]*?)\\s*[\\])]`, 'iu');
 
-const F_EFFORT = field('efor|effort|boyut|size');
+const F_EFFORT = field('effort|efor|boyut|size');
 const F_PLAN = field('plan');
 const F_FROM = field('from|kaynak|source');
 const F_WAS = field('was|eski');
+/** `[closed:: 9c4d1f#3]` — the session and turn a closed item was closed in.
+ *  The whole history lives in the track ledger (`backlogTrack.ts`); this is the
+ *  one point of it that also survives in the file, for somebody reading it in
+ *  Obsidian with no extension running. */
+const F_CLOSED = field('closed');
 /** Every inline field, for stripping. Global, so `replace` clears them all. */
 const F_ANY = /[[(]\s*[\p{L}\w -]+\s*::\s*[^\])]*[\])]/giu;
 
@@ -206,7 +220,7 @@ const dateAfter = (line: string, icon: string): string | undefined =>
  * which is right for a plan line where the metadata sits in a run at the end.
  * A backlog line is denser: a priority icon carries no value, so eating the next
  * token eats part of the item. Measured on a real line —
- * `K-8 history search #bug 🔽 [efor:: XS]` — the single-group version returned
+ * `K-8 history search #bug 🔽 [effort:: XS]` — the single-group version returned
  * "history search S]", swallowing the effort field's opening bracket and
  * leaving its tail in the text. An item whose displayed words are wrong is also
  * an item that cannot be found by text, which is how the wrong row gets edited.
@@ -284,6 +298,11 @@ export interface BacklogItem {
     from?: string;
     /** `[was:: K-8]` — the code it carried before a re-parent. */
     was?: string;
+    /** `[closed:: 9c4d1f#3]` — the session and turn this was closed in. Written
+     *  by `stampBacklogClosed`, carried through every rebuild, and never
+     *  invented: an item with no stamp was closed before tracking existed, or
+     *  outside Agent Farm. */
+    closed?: string;
     /** 📅 due · ✅ completed — the user's own tooling wrote these. */
     due?: string;
     doneOn?: string;
@@ -303,7 +322,7 @@ export interface BacklogItem {
 /** Strip everything structural, leave the words.
  *
  *  ‼️ The ORDER is load-bearing: inline fields come off before the icons, or
- *  `🔽 [efor:: XS]` loses its bracket to the icon pass and leaves `S]` behind. */
+ *  `🔽 [effort:: XS]` loses its bracket to the icon pass and leaves `S]` behind. */
 function displayText(body: string): string {
     return body
         .replace(LEADING_CODE, '')
@@ -436,6 +455,7 @@ export function parseBacklog(text: string): BacklogSummary {
             ...(F_PLAN.exec(body)?.[1] ? { plan: F_PLAN.exec(body)?.[1]?.trim() as string } : {}),
             ...(F_FROM.exec(body)?.[1] ? { from: F_FROM.exec(body)?.[1]?.trim() as string } : {}),
             ...(F_WAS.exec(body)?.[1] ? { was: F_WAS.exec(body)?.[1]?.trim() as string } : {}),
+            ...(F_CLOSED.exec(body)?.[1] ? { closed: F_CLOSED.exec(body)?.[1]?.trim() as string } : {}),
             ...(dateAfter(line, '📅') ? { due: dateAfter(line, '📅') as string } : {}),
             ...(dateAfter(line, '✅') ? { doneOn: dateAfter(line, '✅') as string } : {}),
             score: PRIORITY_WEIGHT[priority] /
@@ -685,6 +705,59 @@ export function setBacklogState(
 }
 
 // ---------------------------------------------------------------------------
+// writing — the closing stamp
+// ---------------------------------------------------------------------------
+
+/** `<session>#<turn>` — eight characters of the session id is enough to find it
+ *  and short enough to sit on a line somebody reads. The full id is in the track
+ *  ledger; this is the pointer, not the record. */
+export const CLOSED_STAMP = /^[0-9a-zA-Z-]{4,40}#\d+$/;
+
+/**
+ * Write (or clear) `[closed:: 9c4d1f#3]` on one line, WITHOUT rebuilding it.
+ *
+ * Kept apart from `setBacklogFields` on purpose. Closing an item is the moment
+ * the stamp is written, and closing goes through `setBacklogState`, whose whole
+ * promise is that exactly one character of the document changes. Routing the
+ * stamp through the rebuild would mean every tick also reordered the line's
+ * pieces — a whole-line diff in the user's vault for a box they ticked. So this
+ * function does the smallest edit that can carry the information: it replaces an
+ * existing stamp where it stands, or appends one at the end of the line.
+ *
+ * The appended position is not the canonical one (`setBacklogFields` puts inline
+ * fields before ⛔ 🆔 📅) and that is accepted rather than fixed: it parses
+ * identically wherever it sits, and the next field edit moves it into place.
+ */
+export function stampBacklogClosed(
+    text: string, target: BacklogTarget, stamp: string | null
+): BacklogEditResult {
+    const src = String(text ?? '');
+    const { items } = parseBacklog(src);
+    const found = locate(items, target);
+    if (!found.item) { return { ok: false, error: found.error as string }; }
+    const item = found.item;
+    const want = stamp === null ? '' : String(stamp).trim();
+    if (want && !CLOSED_STAMP.test(want)) {
+        return { ok: false, error: `"${want}" is not a closing stamp — it looks like <session>#<turn>` };
+    }
+    if ((item.closed ?? '') === want) { return { ok: true, text: src, item }; }
+
+    const existing = new RegExp(F_CLOSED.source, 'giu');
+    let line = item.raw;
+    if (item.closed) {
+        line = want
+            ? line.replace(existing, `[closed:: ${want}]`)
+            : line.replace(existing, '').replace(/\s{2,}/g, ' ').trimEnd();
+    } else if (want) {
+        line = `${line.trimEnd()} [closed:: ${want}]`;
+    }
+    const nextText = replaceLine(src, item.line, line);
+    if (nextText === undefined) { return { ok: false, error: 'that line is no longer there' }; }
+    const rebuilt = parseBacklog(nextText).items.find(i => i.line === item.line);
+    return { ok: true, text: nextText, ...(rebuilt ? { item: rebuilt } : {}) };
+}
+
+// ---------------------------------------------------------------------------
 // writing — fields
 // ---------------------------------------------------------------------------
 
@@ -710,9 +783,21 @@ export interface BacklogFields {
  * The line is rebuilt in a FIXED order — `code text #kinds PRIO [fields] ⛔ 🆔 📅`
  * — and that is a real trade-off, stated rather than hidden: unlike
  * `setBacklogState` this one CAN move a line's pieces around. It is the price of
- * being able to set a priority without the caller hand-writing markdown. What it
- * never does is touch a line it was not asked about, invent metadata, or drop a
- * piece it did not understand: anything unrecognised rides along in the text.
+ * being able to set a priority without the caller hand-writing markdown.
+ *
+ * ‼️ EVERY INLINE FIELD THIS FUNCTION IS TO KEEP MUST BE LISTED BELOW, and the
+ * failure when one is not is silent, which is why it is spelled out here. The
+ * rebuild does not edit the old line; it composes a NEW one out of the pieces
+ * the parser handed back. `displayText` strips every `[key:: value]` out of the
+ * words, so a field the parser does not read is in neither half — it is simply
+ * not in the new line, and it disappears the first time somebody clicks a
+ * priority badge. Nobody sees it go. So: a new inline field means a new property
+ * on `BacklogItem`, a new `F_*` pattern, AND a new `parts.push` here. Three
+ * places, one commit.
+ *
+ * What it never does is touch a line it was not asked about, invent metadata, or
+ * drop a piece it did not understand: anything that is not a field — prose,
+ * unknown icons, a stray word — rides along inside the text.
  */
 export function setBacklogFields(
     text: string, target: BacklogTarget, fields: BacklogFields
@@ -739,10 +824,11 @@ export function setBacklogFields(
     parts.push(words);
     for (const k of kinds) { parts.push(`#${k}`); }
     if (PRIORITY_ICON[priority]) { parts.push(PRIORITY_ICON[priority]); }
-    if (effort) { parts.push(`[efor:: ${effort}]`); }
+    if (effort) { parts.push(`[effort:: ${effort}]`); }
     if (plan) { parts.push(`[plan:: ${plan}]`); }
     if (item.from) { parts.push(`[from:: ${item.from}]`); }
     if (item.was) { parts.push(`[was:: ${item.was}]`); }
+    if (item.closed) { parts.push(`[closed:: ${item.closed}]`); }
     for (const b of blockedBy) { parts.push(`⛔ ${b}`); }
     if (item.taskId) { parts.push(`🆔 ${item.taskId}`); }
     if (due) { parts.push(`📅 ${due}`); }
@@ -868,7 +954,7 @@ export function addBacklogItem(text: string, input: AddBacklogInput): AddBacklog
     parts.push(words);
     for (const k of input.kinds ?? []) { parts.push(`#${k.replace(/^#/, '')}`); }
     if (input.priority && PRIORITY_ICON[input.priority]) { parts.push(PRIORITY_ICON[input.priority]); }
-    if (input.effort) { parts.push(`[efor:: ${input.effort}]`); }
+    if (input.effort) { parts.push(`[effort:: ${input.effort}]`); }
     if (input.plan) { parts.push(`[plan:: ${input.plan}]`); }
     if (input.from) { parts.push(`[from:: ${input.from}]`); }
     for (const b of input.blockedBy ?? []) { parts.push(`⛔ ${b}`); }
