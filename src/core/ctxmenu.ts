@@ -69,7 +69,49 @@ const CONSOLE_RESUMABLE = "webviewSection == 'afConsoleResumable'";
 const CONSOLE_LIVE = "webviewSection == 'afConsoleSession'";
 const TIMELINE_SESSION = "webviewSection == 'afTimelineSession'";
 
-export const CTX_SUBMENUS: CtxSubmenu[] = [];
+/** The Projects page's own objects. */
+const BACKLOG_ROW = "webviewSection == 'afBacklogRow'";
+const PLAN_ITEM = "webviewSection == 'afPlanItem'";
+const DOC_ROW = "webviewSection == 'afDocRow'";
+const PROJECT_ROW = "webviewSection == 'afProjectRow'";
+const FEED_EVENT = "webviewSection == 'afFeedEvent'";
+
+/** The four ways a document can be opened — src/core/docopen.ts owns the list. */
+const OPEN_MODES: [string, string][] = [
+    ['vscode', 'Editor'], ['preview', 'Preview'], ['obsidian', 'Obsidian'], ['custom', 'Your app']
+];
+
+export const CTX_SUBMENUS: CtxSubmenu[] = [
+    { id: CTX_PREFIX + 'blOpenWith', label: 'Open at this line with', group: '1_open@2', when: BACKLOG_ROW },
+    { id: CTX_PREFIX + 'blState', label: 'State', group: '2_edit@1', when: BACKLOG_ROW },
+    { id: CTX_PREFIX + 'blPrio', label: 'Priority', group: '2_edit@2', when: BACKLOG_ROW },
+    { id: CTX_PREFIX + 'blEffort', label: 'Size', group: '2_edit@3', when: BACKLOG_ROW },
+    { id: CTX_PREFIX + 'blType', label: 'Type', group: '2_edit@4', when: BACKLOG_ROW },
+    // Only a coded, open item has a place in the queue to move.
+    { id: CTX_PREFIX + 'blMove', label: 'Move in the queue', group: '3_move@1', when: `${BACKLOG_ROW} && afQueued` },
+    { id: CTX_PREFIX + 'blCopy', label: 'Copy', group: '5_copy@1', when: BACKLOG_ROW },
+    { id: CTX_PREFIX + 'planOpenWith', label: 'Open the plan with', group: '1_open@2', when: PLAN_ITEM },
+    { id: CTX_PREFIX + 'docOpenWith', label: 'Open with', group: '1_open@2', when: DOC_ROW },
+    { id: CTX_PREFIX + 'projCopy', label: 'Copy', group: '5_copy@1', when: PROJECT_ROW }
+];
+
+/**
+ * One submenu's rows, from a list — the picker vocabularies (priority, size,
+ * type, the open modes) are already lists in the page, and writing them out
+ * twice by hand is how the two stop agreeing.
+ *
+ * The value rides ON the act (`blPrio:high`), so one handler in the page answers
+ * a whole picker instead of one per row.
+ */
+function picker(
+    menu: string, when: string, verb: string, rows: [string, string][]
+): CtxItem[] {
+    return rows.map(([value, title], n) => ({
+        menu, when, group: `1_pick@${n + 1}`,
+        id: verb + value.charAt(0).toUpperCase() + value.slice(1),
+        title, act: `${verb}:${value}`
+    }));
+}
 
 export const CTX_ITEMS: CtxItem[] = [
     // ---------------------------------------------------------------------
@@ -120,7 +162,175 @@ export const CTX_ITEMS: CtxItem[] = [
     { command: 'agentfarm.resumeSession', when: TIMELINE_SESSION, group: '1_session@8' },
     { command: 'agentfarm.interruptSession', when: TIMELINE_SESSION, group: '2_stop@1' },
     { command: 'agentfarm.endSession', when: TIMELINE_SESSION, group: '2_stop@2' },
-    { command: 'agentfarm.dismissSession', when: TIMELINE_SESSION, group: '2_stop@3' }
+    { command: 'agentfarm.dismissSession', when: TIMELINE_SESSION, group: '2_stop@3' },
+
+    // =====================================================================
+    // PROJECTS — the page where the user actually works. Everything below is
+    // a page action: the row's own button and the menu item run one function.
+    // =====================================================================
+
+    // ---- a backlog item ------------------------------------------------
+    {
+        id: 'backlogGo', title: 'Open at this line', act: 'blGo',
+        when: BACKLOG_ROW, group: '1_open@1'
+    },
+    {
+        id: 'backlogTrack', title: 'Where has this been worked?', act: 'blTrack',
+        when: BACKLOG_ROW, group: '1_open@3'
+    },
+    {
+        id: 'backlogEdit', title: 'Edit the words…', act: 'blEdit',
+        when: BACKLOG_ROW, group: '2_edit@5'
+    },
+    // Filing is the one thing only an UNCODED capture needs, and the areas are
+    // this project's own, so the item opens the row's picker rather than
+    // pretending a static menu could list them.
+    {
+        id: 'backlogFile', title: 'File it under an area…', act: 'blFile',
+        when: `${BACKLOG_ROW} && !afCoded`, group: '2_edit@6'
+    },
+    ...picker(CTX_PREFIX + 'blOpenWith', BACKLOG_ROW, 'blGo', OPEN_MODES),
+    ...picker(CTX_PREFIX + 'blState', BACKLOG_ROW, 'blState', [
+        ['open', 'Open — not started'],
+        ['doing', 'Started ▶'],
+        ['done', 'Done'],
+        ['cancelled', 'Cancelled']
+    ]),
+    ...picker(CTX_PREFIX + 'blPrio', BACKLOG_ROW, 'blPrio', [
+        ['highest', '🔺 highest'],
+        ['high', '⏫ high'],
+        ['medium', '🔼 medium'],
+        ['normal', 'normal — no icon on the line'],
+        ['low', '🔽 low'],
+        ['lowest', '⏬ lowest']
+    ]),
+    ...picker(CTX_PREFIX + 'blEffort', BACKLOG_ROW, 'blEffort', [
+        ['none', 'not sized'],
+        ['XS', 'XS — five minutes'],
+        ['S', 'S — half an hour'],
+        ['M', 'M — half a day'],
+        ['L', 'L — a day'],
+        ['XL', 'XL — split it before anybody starts']
+    ]),
+    ...picker(CTX_PREFIX + 'blType', BACKLOG_ROW, 'blType', [
+        ['none', 'no type — your own tags stay'],
+        ['bug', '#bug — bug fix'],
+        ['research', '#research — research / measure'],
+        ['feat', '#feat — development'],
+        ['ux', '#ux — UI / UX'],
+        ['chore', '#chore — chore'],
+        ['debt', '#debt — tech debt'],
+        ['doc', '#doc — docs'],
+        ['idea', '#idea — idea']
+    ]),
+    ...picker(CTX_PREFIX + 'blMove', `${BACKLOG_ROW} && afQueued`, 'blMove', [
+        ['top', 'To the front of the queue'],
+        ['up5', 'Up 5'],
+        ['up1', 'Up 1'],
+        ['down1', 'Down 1'],
+        ['down5', 'Down 5'],
+        ['bottom', 'To the back of the queue']
+    ]),
+    ...picker(CTX_PREFIX + 'blCopy', BACKLOG_ROW, 'blCopy', [
+        ['code', 'The code — quote it at an agent'],
+        ['text', 'The words'],
+        ['both', 'Code and words']
+    ]),
+
+    // ---- a plan item ----------------------------------------------------
+    {
+        id: 'planTick', title: 'Tick it — mark it done', act: 'planCheck:1',
+        when: `${PLAN_ITEM} && !afDone`, group: '2_edit@1'
+    },
+    {
+        id: 'planUntick', title: 'Untick it — put it back to open', act: 'planCheck:0',
+        when: `${PLAN_ITEM} && afDone`, group: '2_edit@1'
+    },
+    {
+        id: 'planOpen', title: 'Open the plan document', act: 'planOpen',
+        when: PLAN_ITEM, group: '1_open@1'
+    },
+    ...picker(CTX_PREFIX + 'planOpenWith', PLAN_ITEM, 'planOpen', OPEN_MODES),
+    {
+        id: 'planCopyText', title: 'Copy the words', act: 'planCopy:text',
+        when: PLAN_ITEM, group: '5_copy@1'
+    },
+    {
+        id: 'planCopyId', title: 'Copy its 🆔 id', act: 'planCopy:id',
+        when: `${PLAN_ITEM} && afPlanId`, group: '5_copy@2'
+    },
+
+    // ---- a document in the project folder --------------------------------
+    {
+        id: 'docOpen', title: 'Open', act: 'docOpen',
+        when: DOC_ROW, group: '1_open@1'
+    },
+    ...picker(CTX_PREFIX + 'docOpenWith', DOC_ROW, 'docOpen', OPEN_MODES),
+    {
+        id: 'docShow', title: 'Show it in the pane', act: 'docShow',
+        when: DOC_ROW, group: '1_open@3'
+    },
+    {
+        id: 'docCopyPath', title: 'Copy its path', act: 'docCopy:path',
+        when: DOC_ROW, group: '5_copy@1'
+    },
+    {
+        id: 'docCopyFull', title: 'Copy its full path', act: 'docCopy:full',
+        when: DOC_ROW, group: '5_copy@2'
+    },
+
+    // ---- a project in the list -------------------------------------------
+    {
+        id: 'projOpen', title: 'Open this project', act: 'projOpen',
+        when: PROJECT_ROW, group: '1_open@1'
+    },
+    {
+        id: 'projSessions', title: 'Show its sessions', act: 'projSessions',
+        when: PROJECT_ROW, group: '1_open@2'
+    },
+    {
+        id: 'projBacklog', title: 'Open its backlog', act: 'projTab:backlog',
+        when: PROJECT_ROW, group: '1_open@3'
+    },
+    {
+        id: 'projActive', title: 'Make it the active project', act: 'projActive',
+        when: `${PROJECT_ROW} && !afActive`, group: '2_edit@1'
+    },
+    {
+        id: 'projInactive', title: 'It is the active project — clear that', act: 'projInactive',
+        when: `${PROJECT_ROW} && afActive`, group: '2_edit@1'
+    },
+    {
+        id: 'projSettings', title: 'Edit it…', act: 'projTab:settings',
+        when: PROJECT_ROW, group: '2_edit@2'
+    },
+    {
+        id: 'projReveal', title: 'Reveal its folder', act: 'projReveal',
+        when: PROJECT_ROW, group: '2_edit@3'
+    },
+    ...picker(CTX_PREFIX + 'projCopy', PROJECT_ROW, 'projCopy', [
+        ['name', 'Its name'],
+        ['id', 'Its id — what an agent quotes'],
+        ['folder', 'Its folder path']
+    ]),
+
+    // ---- a line in the project's timeline ---------------------------------
+    {
+        id: 'feedOpen', title: 'Open what this points at', act: 'evOpen',
+        when: `${FEED_EVENT} && afLinked`, group: '1_open@1'
+    },
+    {
+        id: 'feedOnly', title: 'Show only this kind of line', act: 'evOnly',
+        when: FEED_EVENT, group: '2_edit@1'
+    },
+    {
+        id: 'feedHide', title: 'Hide this kind of line', act: 'evHide',
+        when: FEED_EVENT, group: '2_edit@2'
+    },
+    {
+        id: 'feedCopy', title: 'Copy the line', act: 'evCopy',
+        when: FEED_EVENT, group: '5_copy@1'
+    }
 ];
 
 /** The command a catalogue item invokes. */

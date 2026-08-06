@@ -25,7 +25,11 @@ const code = fs.readFileSync(path.resolve(__dirname, '../media/projects.js'), 'u
 // them for their markup, so a stub would let the two drift apart without a
 // single test noticing.
 const shared = fs.readFileSync(path.resolve(__dirname, '../media/afTextTools.js'), 'utf8')
-    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afFilters.js'), 'utf8');
+    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afFilters.js'), 'utf8')
+    // …and the right-click contract, because every row publishes itself through
+    // it. A stub here would let the rows and their menus drift apart in silence.
+    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afCtx.js'), 'utf8')
+    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afSessionCtx.js'), 'utf8');
 const createAfmsDom = require(path.resolve(__dirname, 'lib_afms_dom.js'));
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
@@ -945,7 +949,9 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
 {
     const r = run(data());
     const grip = key => {
-        const m = new RegExp('data-key="' + key + '"[\\s\\S]{0,400}?<span class="(pj-bl-grip[^"]*)"')
+        // The window has to clear the row's own opening tag, and that tag now
+        // carries the right-click context object as well as its data-* handles.
+        const m = new RegExp('data-key="' + key + '"[\\s\\S]{0,900}?<span class="(pj-bl-grip[^"]*)"')
             .exec(r.html());
         return m ? m[1] : '';
     };
@@ -997,7 +1003,7 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
     d2.tabData.backlog.counts.doing = 1;
     const r2 = run(d2);
     ok('‼️ a started row SAYS SO, in the badges that are always on screen',
-        /data-key="K-1"[\s\S]{0,1600}?class="pj-bl-m started"[^>]*>▶ started</.test(r2.html()));
+        /data-key="K-1"[\s\S]{0,2200}?class="pj-bl-m started"[^>]*>▶ started</.test(r2.html()));
     ok('…and the row itself is marked', r2.row('K-1').classList.contains('doing'));
     ok('…with a rule that comes after the queue\'s, so being queued cannot paint over it',
         r2.html().indexOf('.pj-bl-row.next {') < r2.html().indexOf('.pj-bl-row.doing {'));
@@ -1061,6 +1067,78 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
     r2.els('blprio')[0].click();
     r2.doc('click', { target: { tagName: 'DIV' } });
     ok('a click on the page itself still closes an open menu', !r2.els('blpick').length);
+}
+
+// ---------- the right-click menu, and the button it must agree with ----------
+//
+// ‼️ THE WHOLE POINT OF THE MENU IS THAT IT IS NOT A SECOND IMPLEMENTATION. So
+// every assertion here is the same shape: do it with the row's control, do it
+// with the menu, and require the two messages to be identical. A menu that sent
+// `priority` where the badge sends `fields.priority` would look like it worked
+// and would write nothing.
+{
+    const r = run(data());
+    const rowCtx = key => {
+        const m = new RegExp('data-key="' + key + '"[\\s\\S]{0,900}?data-vscode-context="([^"]*)"')
+            .exec(r.html());
+        return m ? JSON.parse(m[1].replace(/&quot;/g, '"').replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>').replace(/&amp;/g, '&')) : null;
+    };
+    const ctx = rowCtx('K-1');
+    ok('a backlog row publishes itself to the menu', !!ctx && ctx.webviewSection === 'afBacklogRow');
+    ok('…addressed the way its own buttons address it — the code, not the line',
+        !!ctx && ctx.code === 'K-1' && ctx.afCoded === true);
+    ok('…and it says what the menu is allowed to offer', !!ctx && typeof ctx.afQueued === 'boolean'
+        && typeof ctx.afState === 'string');
+    ok('‼️ the words are NOT in the attribute — it is written on every row',
+        !!ctx && ctx.text === undefined);
+    ok('the page keeps the normal Copy/Paste items', !!ctx && ctx.preventDefaultContextMenuItems === false);
+    ok('…and it carries the address the pick has to come back to', !!ctx && 'afPanel' in ctx);
+
+    const last = () => r.posted[r.posted.length - 1];
+    // priority: badge then menu, and the two must produce one message
+    r.els('blprio').find(e => e.closest().dataset.code === 'K-1').click();
+    r.all('[data-blpick]').find(e => e.dataset.blpick === 'high').click();
+    const byBadge = last();
+    r.send({ type: 'afctx', act: 'blPrio:high', ctx: ctx });
+    ok('‼️ priority from the menu is the message the badge sends, to the character',
+        JSON.stringify(last()) === JSON.stringify(byBadge));
+
+    r.els('blstate').find(e => e.closest().dataset.code === 'K-1' && e.dataset.blstate === 'doing').click();
+    const startedByButton = last();
+    r.send({ type: 'afctx', act: 'blState:doing', ctx: ctx });
+    ok('…and so is starting it', JSON.stringify(last()) === JSON.stringify(startedByButton));
+
+    r.send({ type: 'afctx', act: 'blEffort:none', ctx: ctx });
+    ok('"not sized" clears the field rather than writing the word',
+        last().type === 'backlogSet' && last().fields.effort === '');
+    // P-2 is the one carrying a tag of the user's own beside its canonical type.
+    const tagged = rowCtx('P-2');
+    r.send({ type: 'afctx', act: 'blType:feat', ctx: tagged });
+    ok('setting a type keeps the tags that are the user\'s own',
+        last().fields.kinds.indexOf('feat') === 0 && last().fields.kinds.indexOf('regression') > 0);
+    r.send({ type: 'afctx', act: 'blType:none', ctx: tagged });
+    ok('…and taking it off keeps them too',
+        last().fields.kinds.indexOf('feat') < 0 && last().fields.kinds.indexOf('regression') >= 0);
+
+    r.send({ type: 'afctx', act: 'blMove:up5', ctx: ctx });
+    ok('a distance in the menu is the same message the ▲ menu sends',
+        last().type === 'backlogMove' && last().dir === 'up' && last().by === 5);
+    r.send({ type: 'afctx', act: 'blMove:top', ctx: ctx });
+    ok('…and an end of the queue carries no distance at all',
+        last().dir === 'top' && last().by === undefined);
+
+    r.send({ type: 'afctx', act: 'blGo:obsidian', ctx: ctx });
+    ok('opening at the line names the mode the menu was asked for',
+        last().type === 'backlogOpenItem' && last().mode === 'obsidian' && last().code === 'K-1');
+
+    // The uncoded capture — the only row "File it under an area…" is drawn on.
+    const unfiled = rowCtx('L9');
+    ok('an uncoded capture says it has no code, so the menu can offer to file it',
+        !!unfiled && unfiled.afCoded === false && unfiled.line === 9);
+    r.send({ type: 'afctx', act: 'blFile', ctx: unfiled });
+    ok('‼️ filing opens the row\'s OWN area picker — a static menu cannot know the areas',
+        r.all('[data-blpick]').length > 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

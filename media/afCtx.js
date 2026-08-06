@@ -38,10 +38,14 @@
         return ui.ctxPanel || '';
     }
 
-    /** JSON, escaped for an HTML attribute. */
+    /** JSON, escaped for an HTML attribute. `>` is escaped along with the rest:
+     *  it is legal inside a quoted value and every browser copes, but a bare `>`
+     *  in an item's words ends the tag for anything that reads the markup with a
+     *  regex — which the page's own tests do, and which is a fair warning. */
     function attr(o) {
         return `data-vscode-context="${JSON.stringify(o)
-            .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}"`;
+            .replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+            .replace(/</g, '&lt;').replace(/>/g, '&gt;')}"`;
     }
 
     /**

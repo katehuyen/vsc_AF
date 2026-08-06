@@ -86,7 +86,10 @@ if (!FIX) {
     const dir = path.join(__dirname, '..', 'media');
     const sources = fs.readdirSync(dir).filter(f => f.endsWith('.js'))
         .map(f => fs.readFileSync(path.join(dir, f), 'utf8')).join('\n');
-    const missing = CAT.ctxRelays().map(r => r.act).filter(act => !sources.includes(`'${act}'`));
+    // An act may carry its value (`blPrio:high`); the page switches on the verb,
+    // so that is what has to appear in a page's source.
+    const verbs = [...new Set(CAT.ctxRelays().map(r => r.act.split(':')[0]))];
+    const missing = verbs.filter(verb => !sources.includes(`'${verb}'`));
     ok('every relayed act is named by a page', missing.length === 0);
     for (const m of missing) { console.log('    · no page handles act: ' + m); }
 }
@@ -246,6 +249,13 @@ if (FIX) {
     // ‼️ Nothing is written until the result is proved. A splice that landed in
     // the wrong place, or an element the scanner mis-measured, is caught here
     // instead of in the user's package.json.
+    // Key ORDER is not part of what is being proved — a key the splice inserted
+    // next to its siblings and one this comparison appends at the end are the
+    // same package.json. Arrays keep their order, because there it is meaning.
+    const stable = v => (Array.isArray(v) ? v.map(stable)
+        : v && typeof v === 'object'
+            ? Object.keys(v).sort().reduce((o, k) => { o[k] = stable(v[k]); return o; }, {})
+            : v);
     let proved = false;
     try {
         const after = JSON.parse(text);
@@ -253,7 +263,7 @@ if (FIX) {
         for (const key of Object.keys(want.menus)) { before.contributes.menus[key] = want.menus[key]; }
         before.contributes.commands = want.commands;
         if (want.submenus.length) { before.contributes.submenus = want.submenus; }
-        proved = JSON.stringify(after) === JSON.stringify(before);
+        proved = JSON.stringify(stable(after)) === JSON.stringify(stable(before));
         if (!proved) { console.log('  the rewrite did not match what was intended — nothing written'); }
     } catch (e) {
         console.log('  the rewrite did not parse — nothing written: ' + e.message);

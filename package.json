@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.70.2",
+  "version": "3.71.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -1394,8 +1394,415 @@
         "command": "agentfarm.copyCliHookCommand",
         "title": "Copy CLI Hook Bridge Command (external CLI events)",
         "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.backlogGo",
+        "title": "Open at this line",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.backlogTrack",
+        "title": "Where has this been worked?",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.backlogEdit",
+        "title": "Edit the words\u2026",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.backlogFile",
+        "title": "File it under an area\u2026",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blGoVscode",
+        "title": "Editor",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blGoPreview",
+        "title": "Preview",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blGoObsidian",
+        "title": "Obsidian",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blGoCustom",
+        "title": "Your app",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blStateOpen",
+        "title": "Open \u2014 not started",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blStateDoing",
+        "title": "Started \u25b6",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blStateDone",
+        "title": "Done",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blStateCancelled",
+        "title": "Cancelled",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blPrioHighest",
+        "title": "\ud83d\udd3a highest",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blPrioHigh",
+        "title": "\u23eb high",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blPrioMedium",
+        "title": "\ud83d\udd3c medium",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blPrioNormal",
+        "title": "normal \u2014 no icon on the line",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blPrioLow",
+        "title": "\ud83d\udd3d low",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blPrioLowest",
+        "title": "\u23ec lowest",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blEffortNone",
+        "title": "not sized",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blEffortXS",
+        "title": "XS \u2014 five minutes",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blEffortS",
+        "title": "S \u2014 half an hour",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blEffortM",
+        "title": "M \u2014 half a day",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blEffortL",
+        "title": "L \u2014 a day",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blEffortXL",
+        "title": "XL \u2014 split it before anybody starts",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blTypeNone",
+        "title": "no type \u2014 your own tags stay",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blTypeBug",
+        "title": "#bug \u2014 bug fix",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blTypeResearch",
+        "title": "#research \u2014 research / measure",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blTypeFeat",
+        "title": "#feat \u2014 development",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blTypeUx",
+        "title": "#ux \u2014 UI / UX",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blTypeChore",
+        "title": "#chore \u2014 chore",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blTypeDebt",
+        "title": "#debt \u2014 tech debt",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blTypeDoc",
+        "title": "#doc \u2014 docs",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blTypeIdea",
+        "title": "#idea \u2014 idea",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blMoveTop",
+        "title": "To the front of the queue",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blMoveUp5",
+        "title": "Up 5",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blMoveUp1",
+        "title": "Up 1",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blMoveDown1",
+        "title": "Down 1",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blMoveDown5",
+        "title": "Down 5",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blMoveBottom",
+        "title": "To the back of the queue",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blCopyCode",
+        "title": "The code \u2014 quote it at an agent",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blCopyText",
+        "title": "The words",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.blCopyBoth",
+        "title": "Code and words",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.planTick",
+        "title": "Tick it \u2014 mark it done",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.planUntick",
+        "title": "Untick it \u2014 put it back to open",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.planOpen",
+        "title": "Open the plan document",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.planOpenVscode",
+        "title": "Editor",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.planOpenPreview",
+        "title": "Preview",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.planOpenObsidian",
+        "title": "Obsidian",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.planOpenCustom",
+        "title": "Your app",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.planCopyText",
+        "title": "Copy the words",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.planCopyId",
+        "title": "Copy its \ud83c\udd94 id",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.docOpen",
+        "title": "Open",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.docOpenVscode",
+        "title": "Editor",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.docOpenPreview",
+        "title": "Preview",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.docOpenObsidian",
+        "title": "Obsidian",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.docOpenCustom",
+        "title": "Your app",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.docShow",
+        "title": "Show it in the pane",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.docCopyPath",
+        "title": "Copy its path",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.docCopyFull",
+        "title": "Copy its full path",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.projOpen",
+        "title": "Open this project",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.projSessions",
+        "title": "Show its sessions",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.projBacklog",
+        "title": "Open its backlog",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.projActive",
+        "title": "Make it the active project",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.projInactive",
+        "title": "It is the active project \u2014 clear that",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.projSettings",
+        "title": "Edit it\u2026",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.projReveal",
+        "title": "Reveal its folder",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.projCopyName",
+        "title": "Its name",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.projCopyId",
+        "title": "Its id \u2014 what an agent quotes",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.projCopyFolder",
+        "title": "Its folder path",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.feedOpen",
+        "title": "Open what this points at",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.feedOnly",
+        "title": "Show only this kind of line",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.feedHide",
+        "title": "Hide this kind of line",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.feedCopy",
+        "title": "Copy the line",
+        "category": "Agent Farm"
       }
     ],
+    "submenus": [
+  {
+    "id": "agentfarm.ctx.blOpenWith",
+    "label": "Open at this line with"
+  },
+  {
+    "id": "agentfarm.ctx.blState",
+    "label": "State"
+  },
+  {
+    "id": "agentfarm.ctx.blPrio",
+    "label": "Priority"
+  },
+  {
+    "id": "agentfarm.ctx.blEffort",
+    "label": "Size"
+  },
+  {
+    "id": "agentfarm.ctx.blType",
+    "label": "Type"
+  },
+  {
+    "id": "agentfarm.ctx.blMove",
+    "label": "Move in the queue"
+  },
+  {
+    "id": "agentfarm.ctx.blCopy",
+    "label": "Copy"
+  },
+  {
+    "id": "agentfarm.ctx.planOpenWith",
+    "label": "Open the plan with"
+  },
+  {
+    "id": "agentfarm.ctx.docOpenWith",
+    "label": "Open with"
+  },
+  {
+    "id": "agentfarm.ctx.projCopy",
+    "label": "Copy"
+  }
+],
     "menus": {
       "view/title": [
         {
@@ -2198,6 +2605,56 @@
       ],
       "webview/context": [
         {
+          "submenu": "agentfarm.ctx.blOpenWith",
+          "when": "webviewSection == 'afBacklogRow'",
+          "group": "1_open@2"
+        },
+        {
+          "submenu": "agentfarm.ctx.blState",
+          "when": "webviewSection == 'afBacklogRow'",
+          "group": "2_edit@1"
+        },
+        {
+          "submenu": "agentfarm.ctx.blPrio",
+          "when": "webviewSection == 'afBacklogRow'",
+          "group": "2_edit@2"
+        },
+        {
+          "submenu": "agentfarm.ctx.blEffort",
+          "when": "webviewSection == 'afBacklogRow'",
+          "group": "2_edit@3"
+        },
+        {
+          "submenu": "agentfarm.ctx.blType",
+          "when": "webviewSection == 'afBacklogRow'",
+          "group": "2_edit@4"
+        },
+        {
+          "submenu": "agentfarm.ctx.blMove",
+          "when": "webviewSection == 'afBacklogRow' && afQueued",
+          "group": "3_move@1"
+        },
+        {
+          "submenu": "agentfarm.ctx.blCopy",
+          "when": "webviewSection == 'afBacklogRow'",
+          "group": "5_copy@1"
+        },
+        {
+          "submenu": "agentfarm.ctx.planOpenWith",
+          "when": "webviewSection == 'afPlanItem'",
+          "group": "1_open@2"
+        },
+        {
+          "submenu": "agentfarm.ctx.docOpenWith",
+          "when": "webviewSection == 'afDocRow'",
+          "group": "1_open@2"
+        },
+        {
+          "submenu": "agentfarm.ctx.projCopy",
+          "when": "webviewSection == 'afProjectRow'",
+          "group": "5_copy@1"
+        },
+        {
           "command": "agentfarm.openSession",
           "when": "webviewSection == 'afSessionRow'",
           "group": "1_open@1"
@@ -2376,8 +2833,760 @@
           "command": "agentfarm.dismissSession",
           "when": "webviewSection == 'afTimelineSession'",
           "group": "2_stop@3"
+        },
+        {
+          "command": "agentfarm.ctx.backlogGo",
+          "when": "webviewSection == 'afBacklogRow'",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.ctx.backlogTrack",
+          "when": "webviewSection == 'afBacklogRow'",
+          "group": "1_open@3"
+        },
+        {
+          "command": "agentfarm.ctx.backlogEdit",
+          "when": "webviewSection == 'afBacklogRow'",
+          "group": "2_edit@5"
+        },
+        {
+          "command": "agentfarm.ctx.backlogFile",
+          "when": "webviewSection == 'afBacklogRow' && !afCoded",
+          "group": "2_edit@6"
+        },
+        {
+          "command": "agentfarm.ctx.planTick",
+          "when": "webviewSection == 'afPlanItem' && !afDone",
+          "group": "2_edit@1"
+        },
+        {
+          "command": "agentfarm.ctx.planUntick",
+          "when": "webviewSection == 'afPlanItem' && afDone",
+          "group": "2_edit@1"
+        },
+        {
+          "command": "agentfarm.ctx.planOpen",
+          "when": "webviewSection == 'afPlanItem'",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.ctx.planCopyText",
+          "when": "webviewSection == 'afPlanItem'",
+          "group": "5_copy@1"
+        },
+        {
+          "command": "agentfarm.ctx.planCopyId",
+          "when": "webviewSection == 'afPlanItem' && afPlanId",
+          "group": "5_copy@2"
+        },
+        {
+          "command": "agentfarm.ctx.docOpen",
+          "when": "webviewSection == 'afDocRow'",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.ctx.docShow",
+          "when": "webviewSection == 'afDocRow'",
+          "group": "1_open@3"
+        },
+        {
+          "command": "agentfarm.ctx.docCopyPath",
+          "when": "webviewSection == 'afDocRow'",
+          "group": "5_copy@1"
+        },
+        {
+          "command": "agentfarm.ctx.docCopyFull",
+          "when": "webviewSection == 'afDocRow'",
+          "group": "5_copy@2"
+        },
+        {
+          "command": "agentfarm.ctx.projOpen",
+          "when": "webviewSection == 'afProjectRow'",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.ctx.projSessions",
+          "when": "webviewSection == 'afProjectRow'",
+          "group": "1_open@2"
+        },
+        {
+          "command": "agentfarm.ctx.projBacklog",
+          "when": "webviewSection == 'afProjectRow'",
+          "group": "1_open@3"
+        },
+        {
+          "command": "agentfarm.ctx.projActive",
+          "when": "webviewSection == 'afProjectRow' && !afActive",
+          "group": "2_edit@1"
+        },
+        {
+          "command": "agentfarm.ctx.projInactive",
+          "when": "webviewSection == 'afProjectRow' && afActive",
+          "group": "2_edit@1"
+        },
+        {
+          "command": "agentfarm.ctx.projSettings",
+          "when": "webviewSection == 'afProjectRow'",
+          "group": "2_edit@2"
+        },
+        {
+          "command": "agentfarm.ctx.projReveal",
+          "when": "webviewSection == 'afProjectRow'",
+          "group": "2_edit@3"
+        },
+        {
+          "command": "agentfarm.ctx.feedOpen",
+          "when": "webviewSection == 'afFeedEvent' && afLinked",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.ctx.feedOnly",
+          "when": "webviewSection == 'afFeedEvent'",
+          "group": "2_edit@1"
+        },
+        {
+          "command": "agentfarm.ctx.feedHide",
+          "when": "webviewSection == 'afFeedEvent'",
+          "group": "2_edit@2"
+        },
+        {
+          "command": "agentfarm.ctx.feedCopy",
+          "when": "webviewSection == 'afFeedEvent'",
+          "group": "5_copy@1"
         }
-      ]
+      ],
+      "commandPalette": [
+  {
+    "command": "agentfarm.ctx.backlogGo",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.backlogTrack",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.backlogEdit",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.backlogFile",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blGoVscode",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blGoPreview",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blGoObsidian",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blGoCustom",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blStateOpen",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blStateDoing",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blStateDone",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blStateCancelled",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blPrioHighest",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blPrioHigh",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blPrioMedium",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blPrioNormal",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blPrioLow",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blPrioLowest",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blEffortNone",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blEffortXS",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blEffortS",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blEffortM",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blEffortL",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blEffortXL",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blTypeNone",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blTypeBug",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blTypeResearch",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blTypeFeat",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blTypeUx",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blTypeChore",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blTypeDebt",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blTypeDoc",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blTypeIdea",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blMoveTop",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blMoveUp5",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blMoveUp1",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blMoveDown1",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blMoveDown5",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blMoveBottom",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blCopyCode",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blCopyText",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.blCopyBoth",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.planTick",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.planUntick",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.planOpen",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.planOpenVscode",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.planOpenPreview",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.planOpenObsidian",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.planOpenCustom",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.planCopyText",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.planCopyId",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.docOpen",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.docOpenVscode",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.docOpenPreview",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.docOpenObsidian",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.docOpenCustom",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.docShow",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.docCopyPath",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.docCopyFull",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.projOpen",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.projSessions",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.projBacklog",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.projActive",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.projInactive",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.projSettings",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.projReveal",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.projCopyName",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.projCopyId",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.projCopyFolder",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.feedOpen",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.feedOnly",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.feedHide",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.feedCopy",
+    "when": "false",
+    "group": "ctx"
+  }
+],
+      "agentfarm.ctx.projCopy": [
+  {
+    "command": "agentfarm.ctx.projCopyName",
+    "when": "webviewSection == 'afProjectRow'",
+    "group": "1_pick@1"
+  },
+  {
+    "command": "agentfarm.ctx.projCopyId",
+    "when": "webviewSection == 'afProjectRow'",
+    "group": "1_pick@2"
+  },
+  {
+    "command": "agentfarm.ctx.projCopyFolder",
+    "when": "webviewSection == 'afProjectRow'",
+    "group": "1_pick@3"
+  }
+],
+      "agentfarm.ctx.docOpenWith": [
+  {
+    "command": "agentfarm.ctx.docOpenVscode",
+    "when": "webviewSection == 'afDocRow'",
+    "group": "1_pick@1"
+  },
+  {
+    "command": "agentfarm.ctx.docOpenPreview",
+    "when": "webviewSection == 'afDocRow'",
+    "group": "1_pick@2"
+  },
+  {
+    "command": "agentfarm.ctx.docOpenObsidian",
+    "when": "webviewSection == 'afDocRow'",
+    "group": "1_pick@3"
+  },
+  {
+    "command": "agentfarm.ctx.docOpenCustom",
+    "when": "webviewSection == 'afDocRow'",
+    "group": "1_pick@4"
+  }
+],
+      "agentfarm.ctx.planOpenWith": [
+  {
+    "command": "agentfarm.ctx.planOpenVscode",
+    "when": "webviewSection == 'afPlanItem'",
+    "group": "1_pick@1"
+  },
+  {
+    "command": "agentfarm.ctx.planOpenPreview",
+    "when": "webviewSection == 'afPlanItem'",
+    "group": "1_pick@2"
+  },
+  {
+    "command": "agentfarm.ctx.planOpenObsidian",
+    "when": "webviewSection == 'afPlanItem'",
+    "group": "1_pick@3"
+  },
+  {
+    "command": "agentfarm.ctx.planOpenCustom",
+    "when": "webviewSection == 'afPlanItem'",
+    "group": "1_pick@4"
+  }
+],
+      "agentfarm.ctx.blCopy": [
+  {
+    "command": "agentfarm.ctx.blCopyCode",
+    "when": "webviewSection == 'afBacklogRow'",
+    "group": "1_pick@1"
+  },
+  {
+    "command": "agentfarm.ctx.blCopyText",
+    "when": "webviewSection == 'afBacklogRow'",
+    "group": "1_pick@2"
+  },
+  {
+    "command": "agentfarm.ctx.blCopyBoth",
+    "when": "webviewSection == 'afBacklogRow'",
+    "group": "1_pick@3"
+  }
+],
+      "agentfarm.ctx.blMove": [
+  {
+    "command": "agentfarm.ctx.blMoveTop",
+    "when": "webviewSection == 'afBacklogRow' && afQueued",
+    "group": "1_pick@1"
+  },
+  {
+    "command": "agentfarm.ctx.blMoveUp5",
+    "when": "webviewSection == 'afBacklogRow' && afQueued",
+    "group": "1_pick@2"
+  },
+  {
+    "command": "agentfarm.ctx.blMoveUp1",
+    "when": "webviewSection == 'afBacklogRow' && afQueued",
+    "group": "1_pick@3"
+  },
+  {
+    "command": "agentfarm.ctx.blMoveDown1",
+    "when": "webviewSection == 'afBacklogRow' && afQueued",
+    "group": "1_pick@4"
+  },
+  {
+    "command": "agentfarm.ctx.blMoveDown5",
+    "when": "webviewSection == 'afBacklogRow' && afQueued",
+    "group": "1_pick@5"
+  },
+  {
+    "command": "agentfarm.ctx.blMoveBottom",
+    "when": "webviewSection == 'afBacklogRow' && afQueued",
+    "group": "1_pick@6"
+  }
+],
+      "agentfarm.ctx.blType": [
+  {
+    "command": "agentfarm.ctx.blTypeNone",
+    "when": "webviewSection == 'afBacklogRow'",
+    "group": "1_pick@1"
+  },
+  {
+    "command": "agentfarm.ctx.blTypeBug",
+    "when": "webviewSection == 'afBacklogRow'",
+    "group": "1_pick@2"
+  },
+  {
+    "command": "agentfarm.ctx.blTypeResearch",
+    "when": "webviewSection == 'afBacklogRow'",
+    "group": "1_pick@3"
+  },
+  {
+    "command": "agentfarm.ctx.blTypeFeat",
+    "when": "webviewSection == 'afBacklogRow'",
+    "group": "1_pick@4"
+  },
+  {
+    "command": "agentfarm.ctx.blTypeUx",
+    "when": "webviewSection == 'afBacklogRow'",
+    "group": "1_pick@5"
+  },
+  {
+    "command": "agentfarm.ctx.blTypeChore",
+    "when": "webviewSection == 'afBacklogRow'",
+    "group": "1_pick@6"
+  },
+  {
+    "command": "agentfarm.ctx.blTypeDebt",
+    "when": "webviewSection == 'afBacklogRow'",
+    "group": "1_pick@7"
+  },
+  {
+    "command": "agentfarm.ctx.blTypeDoc",
+    "when": "webviewSection == 'afBacklogRow'",
+    "group": "1_pick@8"
+  },
+  {
+    "command": "agentfarm.ctx.blTypeIdea",
+    "when": "webviewSection == 'afBacklogRow'",
+    "group": "1_pick@9"
+  }
+],
+      "agentfarm.ctx.blEffort": [
+  {
+    "command": "agentfarm.ctx.blEffortNone",
+    "when": "webviewSection == 'afBacklogRow'",
+    "group": "1_pick@1"
+  },
+  {
+    "command": "agentfarm.ctx.blEffortXS",
+    "when": "webviewSection == 'afBacklogRow'",
+    "group": "1_pick@2"
+  },
+  {
+    "command": "agentfarm.ctx.blEffortS",
+    "when": "webviewSection == 'afBacklogRow'",
+    "group": "1_pick@3"
+  },
+  {
+    "command": "agentfarm.ctx.blEffortM",
+    "when": "webviewSection == 'afBacklogRow'",
+    "group": "1_pick@4"
+  },
+  {
+    "command": "agentfarm.ctx.blEffortL",
+    "when": "webviewSection == 'afBacklogRow'",
+    "group": "1_pick@5"
+  },
+  {
+    "command": "agentfarm.ctx.blEffortXL",
+    "when": "webviewSection == 'afBacklogRow'",
+    "group": "1_pick@6"
+  }
+],
+      "agentfarm.ctx.blPrio": [
+  {
+    "command": "agentfarm.ctx.blPrioHighest",
+    "when": "webviewSection == 'afBacklogRow'",
+    "group": "1_pick@1"
+  },
+  {
+    "command": "agentfarm.ctx.blPrioHigh",
+    "when": "webviewSection == 'afBacklogRow'",
+    "group": "1_pick@2"
+  },
+  {
+    "command": "agentfarm.ctx.blPrioMedium",
+    "when": "webviewSection == 'afBacklogRow'",
+    "group": "1_pick@3"
+  },
+  {
+    "command": "agentfarm.ctx.blPrioNormal",
+    "when": "webviewSection == 'afBacklogRow'",
+    "group": "1_pick@4"
+  },
+  {
+    "command": "agentfarm.ctx.blPrioLow",
+    "when": "webviewSection == 'afBacklogRow'",
+    "group": "1_pick@5"
+  },
+  {
+    "command": "agentfarm.ctx.blPrioLowest",
+    "when": "webviewSection == 'afBacklogRow'",
+    "group": "1_pick@6"
+  }
+],
+      "agentfarm.ctx.blState": [
+  {
+    "command": "agentfarm.ctx.blStateOpen",
+    "when": "webviewSection == 'afBacklogRow'",
+    "group": "1_pick@1"
+  },
+  {
+    "command": "agentfarm.ctx.blStateDoing",
+    "when": "webviewSection == 'afBacklogRow'",
+    "group": "1_pick@2"
+  },
+  {
+    "command": "agentfarm.ctx.blStateDone",
+    "when": "webviewSection == 'afBacklogRow'",
+    "group": "1_pick@3"
+  },
+  {
+    "command": "agentfarm.ctx.blStateCancelled",
+    "when": "webviewSection == 'afBacklogRow'",
+    "group": "1_pick@4"
+  }
+],
+      "agentfarm.ctx.blOpenWith": [
+  {
+    "command": "agentfarm.ctx.blGoVscode",
+    "when": "webviewSection == 'afBacklogRow'",
+    "group": "1_pick@1"
+  },
+  {
+    "command": "agentfarm.ctx.blGoPreview",
+    "when": "webviewSection == 'afBacklogRow'",
+    "group": "1_pick@2"
+  },
+  {
+    "command": "agentfarm.ctx.blGoObsidian",
+    "when": "webviewSection == 'afBacklogRow'",
+    "group": "1_pick@3"
+  },
+  {
+    "command": "agentfarm.ctx.blGoCustom",
+    "when": "webviewSection == 'afBacklogRow'",
+    "group": "1_pick@4"
+  }
+]
     },
     "configuration": {
       "title": "Agent Farm",

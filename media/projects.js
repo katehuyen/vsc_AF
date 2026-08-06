@@ -194,7 +194,12 @@
             if (!items.length) { return ''; }
             return `<div class="pj-group">${C.esc(g.label)} <span class="muted">${items.length}</span></div>` +
                 items.map(p => `
-                    <div class="pj-item ${p.id === selectedId ? 'on' : ''}" data-pick="${C.esc(p.id)}">
+                    <div class="pj-item ${p.id === selectedId ? 'on' : ''}" data-pick="${C.esc(p.id)}"
+                        ${window.AFCtx.row('afProjectRow', {
+                            project: p.id, name: p.name || '', folder: p.folder || '',
+                            afActive: p.id === DATA.activeId
+                        })}
+                        title="${C.esc(p.name)} — ${window.AFCtx.HINT}">
                         <span class="pj-dot" style="${p.color ? `background:${C.esc(p.color)}` : ''}"></span>
                         <span class="pj-name">${p.icon ? C.esc(p.icon) + ' ' : ''}${C.esc(p.name)}</span>
                         ${p.id === DATA.activeId ? '<span class="pj-badge" title="Active project — sessions started in this window are filed under it">◧</span>' : ''}
@@ -451,7 +456,11 @@
         const meta = kindMeta(e.kind);
         const when = new Date(e.ts);
         return `<div class="pj-ev ${e.tone ? 'tone-' + e.tone : ''} ${e.link ? 'clickable' : ''}" ${e.link ? `data-ev="${i}"` : ''}
-                title="${C.esc(when.toLocaleString())}${e.link ? ' — click to open' : ''}">
+                ${window.AFCtx.row('afFeedEvent', {
+            ev: i, evKind: e.kind || '', afLinked: !!e.link,
+            text: [e.title, e.detail, e.agent].filter(Boolean).join(' · ')
+        })}
+                title="${C.esc(when.toLocaleString())}${e.link ? ' — click to open' : ''} — ${window.AFCtx.HINT}">
             <span class="pj-ev-g" title="${C.esc(meta.label)}">${meta.glyph}</span>
             <span class="pj-ev-t">${C.esc(e.title)}</span>
             <span class="pj-ev-d">${C.esc(e.detail || '')}</span>
@@ -1227,7 +1236,11 @@
                 <div class="pj-card-h">${C.esc(s.title || '(no section)')}</div>
                 ${s.items.map(i => `
                     <label class="pj-plan-item${i.done ? ' done' : ''}" style="padding-left:${8 + i.depth * 12}px"
-                        title="line ${i.line}${i.id ? ' · 🆔 ' + C.esc(i.id) : ''}">
+                        ${window.AFCtx.row('afPlanItem', {
+                            line: i.line, planId: i.id || '', text: i.text || '',
+                            afDone: !!i.done, afPlanId: !!i.id
+                        })}
+                        title="line ${i.line}${i.id ? ' · 🆔 ' + C.esc(i.id) : ''} — ${window.AFCtx.HINT}">
                         <input type="checkbox" data-plan="${i.line}" data-planid="${C.esc(i.id || '')}"
                             data-plantext="${C.esc(i.text || '')}" ${i.done ? 'checked' : ''}>
                         <span class="pj-plan-t">${C.esc(i.text || '(empty)')}</span>
@@ -1975,6 +1988,27 @@
      *
      *  ‼️ `data-line` is 1-BASED, exactly as the host sent it. It is handed back
      *  unchanged and the panel converts once, at its own boundary. */
+    /**
+     * What a backlog row publishes to its right-click menu.
+     *
+     * ‼️ The keys are what the MENU can ask about, so they are the row's state
+     * and not its looks: `afQueued` decides whether "Move in the queue" is drawn
+     * at all, `afCoded` whether "File it under an area…" is. The identity is the
+     * same pair the buttons send (code first, line only for an uncoded capture)
+     * — a menu that addressed a row differently from the button beside it would
+     * eventually act on a different item.
+     */
+    function blCtx(i, key, queueAt) {
+        // ‼️ THE WORDS ARE NOT IN HERE. These items run to paragraphs and this
+        // attribute is written into every row on the page — carrying the text
+        // would put the whole backlog into the markup a second time. The key is
+        // enough: the handler looks the item up in the data it already holds.
+        return window.AFCtx.row('afBacklogRow', {
+            key: key, code: i.code || '', line: i.line,
+            afCoded: !!i.code, afQueued: !!queueAt, afState: i.state || 'open'
+        });
+    }
+
     function backlogRowHtml(i, isNext, waitingOn, areas, queueAt, band) {
         const key = blKey(i);
         const closed = i.state === 'done' || i.state === 'cancelled';
@@ -2017,7 +2051,8 @@
         // Built unescaped and escaped once at each use site — escaping twice is
         // how &amp; ends up in a tooltip.
         const openTip = `Open the file AT THIS LINE (line ${i.line}) in ${blOpenModeName()}`
-            + ' — the whole document is the Open button at the top';
+            + ' — the whole document is the Open button at the top'
+            + ` · ${window.AFCtx.HINT}: state, priority, size, type, queue position`;
         // The handle carries the row's place in the queue. Off means there is no
         // place to carry: an uncoded capture cannot be in the queue, and a
         // closed item or a container is not work waiting to be done.
@@ -2032,7 +2067,8 @@
         return `<div class="${cls.join(' ')}" style="padding-left:${6 + (i.depth || 0) * 10}px"
             data-blrow data-key="${C.esc(key)}" data-code="${C.esc(i.code || '')}" data-line="${i.line}"
             data-prio="${C.esc(i.priority || 'normal')}" data-effort="${C.esc(i.effort || '')}"
-            data-type="${C.esc(type)}" data-section="${C.esc(i.section || '')}" data-depth="${i.depth || 0}">
+            data-type="${C.esc(type)}" data-section="${C.esc(i.section || '')}" data-depth="${i.depth || 0}"
+            ${blCtx(i, key, queueAt)}>
             <span class="pj-bl-grip${queueAt && dragging ? '' : ' off'}${band || ''}"
                 ${queueAt && dragging ? 'draggable="true"' : ''} data-blgrip
                 title="${C.esc(gripTip)}">${queueAt || '⠿'}</span>
@@ -2188,8 +2224,11 @@
                 const turns = (s.turns || []).map(t =>
                     `<button class="pj-trk-turn" data-trackturn="${C.esc(s.file)}" data-trackts="${t.ts}"
                         title="Open this session's transcript at turn ${t.n}">#${t.n}</button>`).join('');
-                return `<div class="pj-trk-run">
-                    <code class="pj-trk-sid" title="${C.esc(s.session)}">${C.esc(s.short)}</code>
+                // The run IS a session, so it gets the session menu every other
+                // surface gives one — the point of the shared contract.
+                return `<div class="pj-trk-run"
+                    ${window.AFSessionCtx.row({ sessionId: s.session, file: s.file, agentName: s.agent })}>
+                    <code class="pj-trk-sid" title="${C.esc(s.session)} — ${window.AFSessionCtx.HINT}">${C.esc(s.short)}</code>
                     ${turns || '<span class="muted small">no turn recorded</span>'}
                     <span class="muted small">${C.esc(s.agent || '?')}</span>
                     ${s.uncertain ? `<span class="pj-trk-doubt" title="The attribution is a best effort: ${C.esc(s.uncertain)}">${C.esc(s.uncertain)}</span>` : ''}
@@ -2237,7 +2276,8 @@
             return `<div class="pj-doc-row${on ? ' on' : ''}${e.dir ? ' dir' : ''}"
                     style="padding-left:${6 + depth * 14}px"
                     ${e.dir ? '' : `data-doc="${C.esc(e.path)}"`}
-                    title="${C.esc(e.path)}${e.managed ? ' — generated by Agent Farm' : ''}">
+                    ${e.dir ? '' : window.AFCtx.row('afDocRow', { path: e.path })}
+                    title="${C.esc(e.path)}${e.managed ? ' — generated by Agent Farm' : ''}${e.dir ? '' : ' — ' + window.AFCtx.HINT}">
                 <span class="pj-doc-g">${glyph}</span>
                 <span class="pj-doc-n">${C.esc(e.name)}</span>
                 ${e.role ? `<span class="pj-doc-r">${C.esc(e.role)}</span>` : ''}
@@ -3138,6 +3178,230 @@
         blHelpOpen = false;
         render();
     });
+
+    // -----------------------------------------------------------------------
+    // the right-click menus
+    // -----------------------------------------------------------------------
+
+    /**
+     * ‼️ THE MENU DOES WHAT THE BUTTON DOES — it does not do it a second way.
+     *
+     * Every branch below ends in the same message, or the same page state, that
+     * the row's own control produces. Nothing here talks to the host in a shape
+     * the buttons do not already use, so a change to how an item is written
+     * cannot leave the menu writing the old shape. What the menu adds is REACH:
+     * priority, size, type, state, queue position and the copies are one gesture
+     * from anywhere on the row, including on the rows whose badges are off
+     * screen, and including the ones the row never offered at all.
+     *
+     * The row's identity travels in the context object rather than through a
+     * "last clicked" variable: by the time the pick arrives the list may have
+     * been repainted, filtered or scrolled, and a menu that acted on whatever is
+     * under the pointer NOW would act on the wrong item exactly when it matters.
+     */
+    function ctxDo(act, ctx) {
+        const verb = act.split(':')[0];
+        const arg = act.slice(verb.length + 1);
+        const id = () => { const p = sel(); return p ? p.id : ''; };
+        // The same pair every backlog button sends: the code when there is one,
+        // the line only for an uncoded capture.
+        const who = () => ({ code: ctx.code || '', line: Number(ctx.line) });
+        const post = (type, extra) =>
+            vscode.postMessage(Object.assign({ type: type, id: id() }, who(), extra || {}));
+
+        switch (verb) {
+            // ---- a backlog item ----
+            case 'blGo':
+                post('backlogOpenItem', arg ? { mode: arg } : {});
+                return;
+            case 'blState':
+                post('backlogState', { state: arg });
+                return;
+            case 'blPrio':
+                post('backlogSet', { fields: { priority: arg } });
+                return;
+            case 'blEffort':
+                post('backlogSet', { fields: { effort: arg === 'none' ? '' : arg } });
+                return;
+            case 'blType': {
+                // The user's own tags ride along untouched — the same rule the
+                // row's picker follows, and for the same reason.
+                const item = blItem(ctx.key);
+                const mine = ((item && item.kinds) || []).filter(k => BL_TYPE_IDS.indexOf(k) < 0);
+                const value = arg === 'none' ? '' : arg;
+                post('backlogSet', { fields: { kinds: value ? [value, ...mine] : mine } });
+                return;
+            }
+            case 'blMove': {
+                const dir = arg.replace(/\d+$/, '');
+                const by = Number((arg.match(/\d+$/) || [])[0]);
+                vscode.postMessage(Object.assign(
+                    { type: 'backlogMove', id: id(), code: ctx.code || '', dir: dir },
+                    by ? { by: by } : {}));
+                return;
+            }
+            case 'blEdit': {
+                const item = blItem(ctx.key);
+                blEdit = { key: ctx.key, text: item ? (item.text || '') : String(ctx.text || '') };
+                render();
+                // Not blJump: the row in edit mode is a different element and
+                // carries no key to find it by. The box itself is the anchor.
+                const box = document.getElementById('bl-edit');
+                if (box) {
+                    box.scrollIntoView({ block: 'center' });
+                    box.focus();
+                    box.setSelectionRange(box.value.length, box.value.length);
+                }
+                return;
+            }
+            // The areas are this project's own, so the menu opens the row's own
+            // picker instead of a static list that could not know them.
+            case 'blFile':
+                blMenu = { kind: 'area', key: ctx.key };
+                blJump = ctx.key;
+                render();
+                return;
+            case 'blTrack':
+                tab = 'track';
+                syncView();
+                render();
+                return;
+            case 'blCopy': {
+                const item = blItem(ctx.key);
+                const code = ctx.code || '';
+                const text = (item && item.text) || String(ctx.text || '');
+                copyOut(arg === 'code' ? code : arg === 'text' ? text
+                    : [code, text].filter(Boolean).join(' — '));
+                return;
+            }
+
+            // ---- a plan item ----
+            case 'planCheck':
+                vscode.postMessage({
+                    type: 'planCheck', id: id(),
+                    ...(ctx.planId ? { itemId: ctx.planId } : {}),
+                    line: Number(ctx.line), text: String(ctx.text || ''),
+                    done: arg === '1'
+                });
+                return;
+            case 'planOpen': {
+                const d = td().plan;
+                if (d && d.path) { openDocPath(d.path, arg); }
+                return;
+            }
+            case 'planCopy':
+                copyOut(arg === 'id' ? String(ctx.planId || '') : String(ctx.text || ''));
+                return;
+
+            // ---- a document ----
+            case 'docOpen':
+                openDocPath(String(ctx.path || ''), arg);
+                return;
+            case 'docShow':
+                vscode.postMessage({ type: 'selectDoc', path: String(ctx.path || '') });
+                return;
+            case 'docCopy': {
+                const rel = String(ctx.path || '');
+                const p = sel();
+                copyOut(arg === 'full' && p && p.folder
+                    ? p.folder.replace(/[\\/]+$/, '') + '/' + rel : rel);
+                return;
+            }
+
+            // ---- a project in the list ----
+            case 'projOpen':
+                selectedId = String(ctx.project || '');
+                people = null; creating = null;
+                render();
+                return;
+            case 'projTab':
+                selectedId = String(ctx.project || '');
+                people = null; creating = null;
+                tab = arg;
+                syncView();
+                render();
+                return;
+            case 'projSessions':
+                vscode.postMessage({ type: 'openSessions', id: String(ctx.project || '') });
+                return;
+            case 'projActive':
+                vscode.postMessage({ type: 'setActive', id: String(ctx.project || '') });
+                return;
+            case 'projInactive':
+                vscode.postMessage({ type: 'setActive', id: '' });
+                return;
+            case 'projReveal':
+                vscode.postMessage({ type: 'revealFolder', id: String(ctx.project || '') });
+                return;
+            case 'projCopy':
+                copyOut(arg === 'id' ? String(ctx.project || '')
+                    : arg === 'folder' ? String(ctx.folder || '') : String(ctx.name || ''));
+                return;
+
+            // ---- a line in the timeline ----
+            case 'evOpen': {
+                const list = (td().feed || {}).events || [];
+                const e = list[Number(ctx.ev)];
+                if (e && e.link) { vscode.postMessage({ type: 'openLink', link: e.link }); }
+                return;
+            }
+            case 'evOnly': {
+                const kind = String(ctx.evKind || '');
+                if (!kind) { return; }
+                // "Only this" is the exclusion set turned inside out: everything
+                // the feed knows about, minus the one line you pointed at.
+                const counts = ((td().feed || {}).counts) || {};
+                feedOff = new Set(Object.keys(counts).filter(k => k !== kind));
+                syncView();
+                render();
+                return;
+            }
+            case 'evHide':
+                if (ctx.evKind) { feedOff.add(String(ctx.evKind)); syncView(); render(); }
+                return;
+            case 'evCopy':
+                copyOut(String(ctx.text || ''));
+                return;
+        }
+    }
+
+    /** One item out of the open backlog, by the key its row carries. */
+    function blItem(key) {
+        return (((td().backlog || {}).items) || []).find(i => blKey(i) === key);
+    }
+
+    /** Open a document the way every other open on this page does it. */
+    function openDocPath(path, mode) {
+        if (!path) { return; }
+        const cfg = DATA.docOpen || { mode: 'vscode' };
+        vscode.postMessage({ type: 'openDoc', path: path, mode: mode || cfg.mode });
+    }
+
+    /**
+     * Put something on the clipboard and SAY SO. A copy changes nothing you can
+     * see, so a copy that reported nothing would be indistinguishable from a
+     * menu item that does not work — the same reason afTextTools flashes a ✓.
+     */
+    function copyOut(value) {
+        const text = String(value === undefined || value === null ? '' : value);
+        if (!text) { flash = { error: 'Nothing to copy — that row does not carry it.' }; render(); return; }
+        const done = () => { flash = { ok: 'Copied: ' + (text.length > 60 ? text.slice(0, 57) + '…' : text) }; render(); };
+        const nav = typeof navigator !== 'undefined' ? navigator : null;
+        if (nav && nav.clipboard && nav.clipboard.writeText) {
+            nav.clipboard.writeText(text).then(done, () => {
+                flash = { error: 'The clipboard refused that.' };
+                render();
+            });
+            return;
+        }
+        flash = { error: 'This window has no clipboard access.' };
+        render();
+    }
+
+    // ‼️ Listened for ONCE, at module scope. wire() runs on every repaint, and a
+    // listener added there would accumulate a copy per paint — one right-click
+    // would eventually run the same action a hundred times.
+    window.AFCtx.listen(ctxDo);
 
     // A fresh panel gets its seed in the initial payload — its script was not
     // listening when the message would have been sent.

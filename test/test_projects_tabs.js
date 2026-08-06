@@ -22,7 +22,11 @@ const code = fs.readFileSync(path.resolve(__dirname, '../media/projects.js'), 'u
 // backlog tab asks another for its filter dropdowns; the real ones run here
 // rather than stubs, so the page and the components cannot drift.
 const shared = fs.readFileSync(path.resolve(__dirname, '../media/afTextTools.js'), 'utf8')
-    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afFilters.js'), 'utf8');
+    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afFilters.js'), 'utf8')
+    // …and the right-click contract, because every row publishes itself through
+    // it. A stub here would let the rows and their menus drift apart in silence.
+    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afCtx.js'), 'utf8')
+    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afSessionCtx.js'), 'utf8');
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
@@ -584,6 +588,53 @@ const docsData = (selected) => ({
     const patch = r.posted.filter(m => m.type === 'save').pop();
     ok('‼️ …so a Save pressed to change a budget CANNOT post an empty people list and wipe them',
         patch && !Object.prototype.hasOwnProperty.call(patch.patch, 'people'));
+}
+
+// ---------- every object on the page can be right-clicked ----------
+//
+// ‼️ A menu item is only half a feature until the row publishes itself. These
+// check the other half: the section name the catalogue in src/core/ctxmenu.ts
+// gates on, and the one or two keys its `when` clauses read. Get either wrong
+// and the menu is simply absent — which is exactly the failure this whole piece
+// of work exists to stop happening quietly.
+const ctxOf = (html, section) => {
+    const m = new RegExp('data-vscode-context="([^"]*' + section + '[^"]*)"').exec(html);
+    return m ? JSON.parse(m[1].replace(/&quot;/g, '"').replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>').replace(/&amp;/g, '&')) : null;
+};
+
+{
+    const r = run(planData());
+    const c = ctxOf(r.html(), 'afPlanItem');
+    ok('a plan item publishes itself, with the line its tick will change',
+        !!c && typeof c.line === 'number');
+    ok('…and whether it is done, which is what picks Tick from Untick',
+        !!c && typeof c.afDone === 'boolean');
+    r.send({ type: 'afctx', act: 'planCheck:1', ctx: { line: c.line, text: c.text, planId: c.planId } });
+    const tick = r.posted.filter(m => m.type === 'planCheck').pop();
+    ok('ticking from the menu is the message the checkbox sends',
+        tick && tick.line === c.line && tick.done === true);
+}
+
+{
+    const r = run(docsData());
+    const c = ctxOf(r.html(), 'afDocRow');
+    ok('a document row publishes its path', !!c && !!c.path);
+    r.send({ type: 'afctx', act: 'docOpen:obsidian', ctx: c });
+    const open = r.posted.filter(m => m.type === 'openDoc').pop();
+    ok('…and the menu opens it through the shared doc-open modes',
+        open && open.path === c.path && open.mode === 'obsidian');
+}
+
+{
+    const r = run({ ...baseData(), tab: 'plan', tabData: {} });
+    const c = ctxOf(r.html(), 'afProjectRow');
+    ok('a project in the list publishes itself', !!c && c.project === 'p1');
+    ok('…and says whether it is already the active one', !!c && 'afActive' in c);
+    r.send({ type: 'afctx', act: 'projReveal', ctx: c });
+    const reveal = r.posted.filter(m => m.type === 'revealFolder').pop();
+    ok('revealing from the menu names the project that was clicked, not the open one',
+        reveal && reveal.id === 'p1');
 }
 
 console.log(`${pass} passed, ${fail} failed`);
