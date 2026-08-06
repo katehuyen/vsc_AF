@@ -59,7 +59,10 @@ const CATEGORY_OF: Record<string, string> = {
     projectContextExtra: 'core',
     // display & labels
     speakerLabelTemplate: 'display', speakerLabelCase: 'display', speakerLabelFallback: 'display',
-    consoleDropZone: 'display', promptSnippetsFile: 'display',
+    consoleDropZone: 'display',
+    // saved prompts — a section of its own, because the setting is one path and
+    // the thing the user needs to see is what came OUT of that path
+    promptSnippetsFile: 'prompts',
     // live monitoring & alerts
     liveMonitor: 'live', livePort: 'live', activeThresholdSeconds: 'live',
     stuckThresholdSeconds: 'live', notifyPermission: 'live', notifyStuck: 'live',
@@ -110,6 +113,7 @@ const CATEGORY_OF: Record<string, string> = {
 export const CATEGORY_LABELS: [string, string][] = [
     ['core', 'Core & Agents'],
     ['display', 'Display & Labels'],
+    ['prompts', 'Saved prompts'],
     ['live', 'Live Monitoring & Alerts'],
     ['cost', 'Cost & Budgets'],
     ['tasks', 'Tasks & Automation'],

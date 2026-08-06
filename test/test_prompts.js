@@ -4,7 +4,8 @@
 // because a picker listing eight paragraphs of prose is a picker nobody reads.
 'use strict';
 const path = require('path');
-const { parsePromptSnippets } = require(path.join(__dirname, '..', 'out/core/prompts.js'));
+const P = require(path.join(__dirname, '..', 'out/core/prompts.js'));
+const { parsePromptSnippets } = P;
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
@@ -111,6 +112,44 @@ const nl = lines => lines.join('\n');
 {
     const r = parsePromptSnippets(nl(['```', '   indented body only', '```']));
     ok('a label is always something', !!r.items[0].label);
+}
+
+// ------------------------------------------------- which file, and why that one
+//
+// ‼️ THE REGRESSION THIS GUARDS. The path used to be the manifest `default` of
+// agentFarm.promptSnippetsFile, and the feature rested on VS Code handing that
+// default back through getConfiguration().get(). It does not — measured on the
+// running extension: prompts.list answered `file: null` with nothing written in
+// settings.json, and answered with every block the moment the same path was put
+// there by hand. So the default lives in code, and these are its rules.
+{
+    const BUILT = P.BUILT_IN_PROMPT_FILE;
+    const only = (...there) => p => there.includes(p);
+
+    const chosen = P.resolvePromptFile('D:\\mine.md', only('D:\\mine.md', BUILT));
+    ok('a file the user chose wins over the built-in one',
+        chosen.file === 'D:\\mine.md' && chosen.source === 'setting' && chosen.missing === '');
+
+    const fallback = P.resolvePromptFile('', only(BUILT));
+    ok('nothing chosen falls back to the built-in path while it exists',
+        fallback.file === BUILT && fallback.source === 'built-in');
+
+    const bare = P.resolvePromptFile('', () => false);
+    ok('…and on a machine without it, the feature simply waits empty',
+        bare.file === '' && bare.source === 'none' && bare.missing === '');
+
+    // ‼️ The user's own choice is REPORTED, never replaced or erased. A path
+    // that is gone this minute (a disconnected drive, a file being renamed) is
+    // a temporary state; the old reader wrote '' into settings.json over it,
+    // which is permanent — '' is a value, and a value outranks every default.
+    const gone = P.resolvePromptFile('D:\\gone.md', only(BUILT));
+    ok('‼️ a chosen path that is missing is reported, and does NOT fall back',
+        gone.file === '' && gone.source === 'none' && gone.missing === 'D:\\gone.md');
+
+    ok('whitespace-only settings count as nothing chosen',
+        P.resolvePromptFile('   ', only(BUILT)).source === 'built-in');
+    ok('the built-in path is overridable, so the rule is testable without a disk',
+        P.resolvePromptFile('', only('X:\\other.md'), 'X:\\other.md').file === 'X:\\other.md');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

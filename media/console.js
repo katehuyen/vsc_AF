@@ -1626,7 +1626,7 @@
     let snip = null;
 
     const snipOpen = () => {
-        snip = { loading: true, q: '', file: '', items: [], error: '' };
+        snip = { loading: true, q: '', file: '', source: 'none', items: [], error: '' };
         renderSnip();
         vscode.postMessage({ type: 'promptSnippets' });
     };
@@ -1657,10 +1657,12 @@
         if (snip.loading) {
             body = '<div class="snipnone">Reading the file…</div>';
         } else if (snip.error || !snip.file) {
-            body = `<div class="snipnone">${C.esc(snip.error || 'No file is set yet.')}<br><br>
+            body = `<div class="snipnone">${C.esc(snip.error || 'No prompts file yet.')}<br><br>
                 Press <b>📁 Choose a file…</b> above and pick a markdown file — your machine's own
                 file picker opens. Put each prompt inside a <code>\`\`\`</code> block; everything
-                around the blocks is yours to write notes in and is never offered.</div>`;
+                around the blocks is yours to write notes in and is never offered.<br><br>
+                The same thing lives on the <b>Farm Settings</b> page under <b>Saved prompts</b>, where
+                you can also see everything that was read out of the file.</div>`;
         } else if (!all.length) {
             body = `<div class="snipnone">No blocks in that file yet. Anything you put inside a
                 <code>\`\`\`</code> fence shows up here; the text around the fences is yours to
@@ -1700,8 +1702,9 @@
                     <button class="secondary" id="snip-x" title="Close (Esc)">✕</button>
                 </div>
                 <div class="sniplist">${body}</div>
-                <div class="snipfoot">${snip.file ? C.esc(snip.file) : 'agentFarm.promptSnippetsFile'}
-                    · clicking one PASTES it into the box — nothing is sent</div>
+                <div class="snipfoot">${snip.file
+        ? `${C.esc(snip.file)} · ${all.length} prompt${all.length === 1 ? '' : 's'}${snip.source === 'built-in' ? ' · built-in path' : ''}`
+        : 'Farm Settings → Saved prompts'} · clicking one PASTES it into the box — nothing is sent</div>
             </div>
         </div>`;
     }
@@ -2763,7 +2766,8 @@
             if (!snip) { return; }
             snip = {
                 loading: false, q: snip.q || '',
-                file: ev.data.file || '', items: ev.data.items || [], error: ev.data.error || ''
+                file: ev.data.file || '', source: ev.data.source || 'none',
+                items: ev.data.items || [], error: ev.data.error || ''
             };
             renderSnip();
             return;

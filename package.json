@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.78.1",
+  "version": "3.79.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8516,8 +8516,8 @@
         "agentFarm.promptSnippetsFile": {
           "type": "string",
           "x-af-browse": "file",
-          "default": "D:\\zone\\know\\note\\obsidian\\00_AGENT_AREA\\00_INPUT\\10_DATA\\50_Prompts\\Agent Farm Prompts.md",
-          "description": "A markdown file holding the phrases you say to an agent over and over. Press Browse… to pick it. Right-click any button that SENDS text in the Console — Send · Send into turn · Send after turn · Start session — and the blocks in this file are offered to paste into the message box. Only text inside ``` fences is offered; everything around it is your own notes. The label comes from the fence's info string, the line above it, or the block's own first line. Checked once at startup: if the file is not there, this setting is cleared and stays empty until you pick a new one."
+          "default": "",
+          "description": "The markdown file holding the phrases you say to an agent over and over. Farm Settings → Saved prompts is where you pick it, see what was read out of it, and open it. Right-click any button that SENDS text in the Console — Send · Send into turn · Send after turn · Start session — and those blocks are offered to paste into the message box. Only text inside ``` fences is offered; everything around them is your own notes. Left empty, Agent Farm falls back to a built-in path in the vault while that file exists — so this stays empty on a machine where it does not, and nothing has to be cleared."
         }
       }
     }

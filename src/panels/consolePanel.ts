@@ -10,7 +10,7 @@ import {
 } from '../core/consoleresume';
 import { EFFORT_CHOICES, modelChoices, PERMISSION_CHOICES } from '../core/launch';
 import { totalTokens, Usage } from '../core/pricing';
-import { PromptSnippet } from '../core/prompts';
+import { PromptSnippetsSnapshot } from '../core/prompts';
 import { SessionInfo, SessionIndex, sessionOrigin } from '../core/sessions';
 import { handleAfNav, htmlShell } from './base';
 
@@ -148,7 +148,7 @@ export interface ConsoleDeps {
      * also means the block you added in Obsidian thirty seconds ago is there
      * without reloading anything.
      */
-    promptSnippets(): { file: string; items: PromptSnippet[]; error?: string };
+    promptSnippets(): PromptSnippetsSnapshot;
 }
 
 export class ConsolePanel {

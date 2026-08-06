@@ -25,7 +25,11 @@
 
     function matches(it) {
         if (!filter) { return true; }
-        return (it.key + ' ' + (it.description || '')).toLowerCase().includes(filter);
+        // The saved-prompts row answers to the words a person would actually
+        // type looking for it — its own key and description say "snippets file"
+        // and nothing about right-clicking Send (see PROMPT_TERMS).
+        const extra = it.key === 'agentFarm.promptSnippetsFile' ? ' ' + PROMPT_TERMS : '';
+        return (it.key + ' ' + (it.description || '') + extra).toLowerCase().includes(filter);
     }
 
     function controlHtml(it) {
@@ -307,6 +311,94 @@
             </div>`;
     }
 
+    /**
+     * ‼️ SAVED PROMPTS GETS A SECTION, NOT A TEXT BOX — and the reason is the
+     * bug that made it necessary.
+     *
+     * The setting shipped as one more row under "Display & Labels": a path in a
+     * box, indistinguishable from a path nobody has filled in. It was blank for
+     * a week because VS Code never handed back the manifest default, and NOTHING
+     * on this page could have told you that — a box shows you a string, and the
+     * question a person actually has is "does it work?".
+     *
+     * So this section answers that question with the file's own contents: which
+     * file, where that path came from, and every block that was read out of it.
+     * If the list is there, the Console picker has the same list. If it is not,
+     * the reason is written here in words, next to the button that fixes it.
+     */
+    const PROMPT_TERMS = 'saved prompts snippet snippets template templates kalıp kalip prompt file '
+        + 'console send right-click paste markdown fence block phrases reuse boilerplate';
+
+    function promptsSection(cat) {
+        const p = DATA.prompts;
+        const item = cat && cat.items && cat.items[0];
+        const box = item ? `
+            <div class="setctl" style="margin-top:8px">
+                <span class="setpath"><input type="text" data-set="${C.esc(item.key)}"
+                    placeholder="(nothing chosen — the built-in path below is used)"
+                    value="${C.esc(String(item.value ?? ''))}" style="width:100%; max-width:520px"></span>
+            </div>` : '';
+        if (!p) { return box; }
+
+        const n = (p.items || []).length;
+        const src = p.source === 'setting' ? 'the file you chose'
+            : p.source === 'built-in' ? 'the built-in path (you have not chosen one)'
+                : 'nothing';
+        const state = p.error
+            ? `<div class="seterr">⚠ ${C.esc(p.error)}</div>`
+            : p.file
+                ? `<div class="setdesc"><b>${n}</b> prompt${n === 1 ? '' : 's'} read from ${C.esc(src)}${p.empty
+                    ? ` · ${p.empty} empty block${p.empty === 1 ? '' : 's'} skipped` : ''}</div>`
+                : `<div class="setdesc">No file yet. Press <b>📁 Choose a file…</b> — your machine's own
+                    file picker opens. There is a built-in path (<code>${C.esc(p.builtIn || '')}</code>)
+                    that is used automatically whenever it exists, which is why nothing had to be cleared
+                    on a machine where it does not.</div>`;
+
+        let list = '';
+        if (n) {
+            let group = null;
+            const rows = [];
+            for (const it of p.items) {
+                if (it.group !== group) {
+                    group = it.group;
+                    if (group) { rows.push(`<div class="promptgrp">${C.esc(group)}</div>`); }
+                }
+                rows.push(`<div class="promptrow" title="${C.esc(it.text)}">
+                    <span class="promptlbl">${C.esc(it.label)}</span>
+                    <span class="promptprev">${C.esc(String(it.text).replace(/\s+/g, ' ').slice(0, 140))}</span>
+                    <span class="promptline">line ${it.line}</span>
+                </div>`);
+            }
+            list = `<div class="promptlist">${rows.join('')}</div>`;
+        }
+
+        return `
+            <p class="muted small" style="max-width:760px">The phrases you say to an agent over and over,
+            kept in <b>your own markdown file</b> and offered where you need them: in the <b>Console</b>,
+            <b>right-click</b> any button that sends text — <i>Send · Send into turn · Send after turn ·
+            Start session</i> — and pick one. It is <b>pasted at the caret</b>, never sent: the press that
+            sends is still yours. Only text inside <code>\`\`\`</code> fences is offered, so the prose around
+            the blocks stays yours to write notes in. A block's name is its fence info string, the line above
+            it, or its own first line; the nearest heading becomes the group.</p>
+            <div class="setitem" data-item="agentFarm.promptSnippetsFile">
+                <div class="sethead"><span class="setname">Prompts file</span>
+                    ${p.file ? `<span class="rootbadge">${C.esc(p.source === 'setting' ? 'chosen' : 'built-in')}</span>` : ''}
+                </div>
+                <div class="setdesc" style="font-family:var(--vscode-editor-font-family)">${p.file ? C.esc(p.file) : '—'}</div>
+                ${state}
+                <div class="btnrow">
+                    <button id="promptspick">📁 ${p.file ? 'Change file…' : 'Choose a file…'}</button>
+                    <button class="secondary" id="promptsopen" ${p.file ? '' : 'disabled'}
+                        title="Open it in the editor — add a \`\`\` block and it is in the list the moment you press Re-read">✎ Open the file</button>
+                    <button class="secondary" id="promptsreload" title="Read the file again — it is a document you edit elsewhere">⟳ Re-read</button>
+                    ${item && String(item.value ?? '').trim() ? `<button class="secondary" id="promptsdefault"
+                        title="Forget the file you chose and go back to the built-in path">↺ Use the built-in path</button>` : ''}
+                </div>
+                ${box}
+                ${list}
+            </div>`;
+    }
+
     function render() {
         const cats = DATA.categories
             .map(c => ({ ...c, items: c.items.filter(matches) }))
@@ -360,6 +452,18 @@
                 .agchip.agexcl a { text-decoration:none; }
                 .agchip .agmodel { font-size:10px; margin-left:6px; padding:0 2px; max-width:150px; }
                 .agchip .agcustom { width:200px; max-width:200px; padding:1px 4px; }
+                .promptlist { margin-top:10px; border:1px solid var(--vscode-widget-border, #3333);
+                    border-radius:5px; max-height:340px; overflow:auto; }
+                .promptgrp { font-size:10px; text-transform:uppercase; letter-spacing:.5px; opacity:.55;
+                    padding:7px 10px 2px; }
+                .promptrow { display:flex; gap:10px; align-items:baseline; padding:4px 10px;
+                    border-top:1px solid var(--vscode-widget-border, #2222); }
+                .promptrow:first-child { border-top:none; }
+                .promptlbl { font-size:12px; flex:0 0 200px; max-width:200px; overflow:hidden;
+                    text-overflow:ellipsis; white-space:nowrap; }
+                .promptprev { font-size:10px; opacity:.6; flex:1 1 auto; overflow:hidden;
+                    text-overflow:ellipsis; white-space:nowrap; }
+                .promptline { font-size:10px; opacity:.45; flex:none; }
             </style>
             ${window.AFHeader.html({
                 page: 'settings',
@@ -376,7 +480,7 @@
             ${docOpenHtml}
             ${cats.map(c => `
                 <h2 class="cat" id="cat-${c.id}">${C.esc(c.label)} <span class="muted small">${c.items.length}</span></h2>
-                ${c.items.map(itemHtml).join('')}`).join('')
+                ${c.id === 'prompts' ? promptsSection(c) : c.items.map(itemHtml).join('')}`).join('')
             || (claudeHtml || foldersHtml || docOpenHtml ? '' : '<p class="muted">No settings match the filter.</p>')}
             ${claudeHtml}
         `;
@@ -389,6 +493,16 @@
         if (dcCmd) { dcCmd.addEventListener('change', () => vscode.postMessage({ type: 'docOpenSet', field: 'customCommand', value: dcCmd.value })); }
         const dcArgs = document.getElementById('docopenargs');
         if (dcArgs) { dcArgs.addEventListener('change', () => vscode.postMessage({ type: 'docOpenSet', field: 'customArgs', value: dcArgs.value })); }
+        // Saved prompts — the same three gestures the Console picker offers, so
+        // whichever door you came in by, the buttons mean the same thing.
+        const onClick = (id, type) => {
+            const el = document.getElementById(id);
+            if (el) { el.addEventListener('click', () => vscode.postMessage({ type })); }
+        };
+        onClick('promptspick', 'promptsPick');
+        onClick('promptsopen', 'promptsOpen');
+        onClick('promptsreload', 'promptsReload');
+        onClick('promptsdefault', 'promptsUseDefault');
         const filterEl = document.getElementById('filter');
         filterEl.addEventListener('input', () => {
             filter = filterEl.value.toLowerCase();

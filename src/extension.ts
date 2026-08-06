@@ -93,7 +93,9 @@ import {
 } from './core/memorySync';
 import { SecretsVault } from './core/secrets';
 import { contextWindowFor, DEFAULT_PRICING, PriceRule, PricingEngine, PricingVersion, QuotaWeight, QuotaWeightMode, setQuotaConfig, totalTokens, Usage } from './core/pricing';
-import { parsePromptSnippets, PromptSnippet } from './core/prompts';
+import {
+    BUILT_IN_PROMPT_FILE, parsePromptSnippets, PromptSnippetsSnapshot, resolvePromptFile
+} from './core/prompts';
 import { QualityStore, sampleQuality } from './core/quality';
 import { buildDailyDigest, buildFleetReport, buildOutputsDigest } from './core/report';
 import { buildForecast, renderForecastMarkdown } from './core/forecast';
@@ -7122,32 +7124,43 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     /**
      * The prompt snippets file, read and parsed — or an honest reason why not.
      *
-     * ‼️ THE SETTING IS CLEARED WHEN THE FILE IS NOT THERE, and that rule is the
-     * user's: the default points at a path in THEIR vault, and on any other
-     * machine that path does not exist. A default that cannot be right
-     * elsewhere must not sit there looking configured — it clears itself once,
-     * on the first read, and the feature waits empty until somebody picks a
-     * file. (A path that is merely unreadable — a locked file, a disconnected
-     * drive — is reported, NOT cleared: a temporary failure must not throw away
-     * a setting the user chose.)
+     * Which file is settled by `resolvePromptFile` (core/prompts.ts), and the
+     * comment there is the one to read: the path is NOT taken from the
+     * manifest's default, and a chosen path that has gone is reported rather
+     * than erased. This function only turns that choice into text, and it never
+     * writes a setting.
+     *
+     * ‼️ NOTHING IS CACHED. The file is read on every call — the menu is opened
+     * by hand, a few times an hour at most, and a block added in Obsidian
+     * thirty seconds ago has to be in the list without reloading anything.
      */
-    let snippetsChecked = false;
-    const readPromptSnippets = (): { file: string; items: PromptSnippet[]; error?: string } => {
-        const file = (cfg().get<string>('promptSnippetsFile', '') ?? '').trim();
-        if (!file) { return { file: '', items: [] }; }
-        if (!fs.existsSync(file)) {
-            if (!snippetsChecked) {
-                snippetsChecked = true;
-                void cfg().update('promptSnippetsFile', '', vscode.ConfigurationTarget.Global);
-            }
-            return { file: '', items: [], error: `there is no file at ${file} — the setting has been cleared` };
+    const readPromptSnippets = (): PromptSnippetsSnapshot => {
+        const choice = resolvePromptFile(
+            (cfg().get<string>('promptSnippetsFile', '') ?? '').trim(),
+            p => fs.existsSync(p));
+        const builtIn = BUILT_IN_PROMPT_FILE;
+        if (!choice.file) {
+            return {
+                file: '', source: choice.source, items: [], builtIn,
+                ...(choice.missing
+                    ? { error: `there is no file at ${choice.missing} — your setting still points there, so nothing has been thrown away; pick another file or put that one back` }
+                    : {})
+            };
         }
-        snippetsChecked = true;
         try {
-            return { file, items: parsePromptSnippets(fs.readFileSync(file, 'utf8')).items };
+            const parsed = parsePromptSnippets(fs.readFileSync(choice.file, 'utf8'));
+            return { file: choice.file, source: choice.source, items: parsed.items, empty: parsed.empty, builtIn };
         } catch (e) {
-            return { file, items: [], error: String((e as Error)?.message ?? e) };
+            return {
+                file: choice.file, source: choice.source, items: [], builtIn,
+                error: String((e as Error)?.message ?? e)
+            };
         }
+    };
+    /** Point the feature at a file — '' hands it back to the built-in default. */
+    const setPromptSnippetsFile = async (file: string): Promise<void> => {
+        const clean = String(file ?? '').trim();
+        await cfg().update('promptSnippetsFile', clean || undefined, vscode.ConfigurationTarget.Global);
     };
 
     const consoleDeps = {
@@ -13282,6 +13295,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     getProfiles: () => context.globalState.get('agentfarm.settingsProfiles', []),
                     setProfiles: (list) => context.globalState.update('agentfarm.settingsProfiles', list),
                     claudeSettingsFile: () => userSettingsPath(claudeDir()),
+                    // Saved prompts: the section reads the file itself, so the
+                    // page answers "is this working?" with the blocks, not with
+                    // a path in a box that says nothing either way.
+                    promptSnippets: () => readPromptSnippets(),
+                    setPromptSnippetsFile: (file) => setPromptSnippetsFile(file),
                     // Which editor a .md document opens in — reports and answers
                     // (Notices, Work Queue) AND the project documents.
                     docOpen: () => ({ ...docOpenStore.get(), modes: [...DOC_OPEN_MODES] }),
@@ -14698,10 +14716,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         {
             op: 'prompts.list',
             describe: 'The saved prompt snippets — the phrases the user keeps to hand for the Console, '
-                + 'read out of the markdown file agentFarm.promptSnippetsFile. Only text inside ``` fences '
-                + 'is a snippet; the prose around the fences is the user\'s own notes and is never returned. '
+                + 'read out of their markdown file. Only text inside ``` fences is a snippet; the prose '
+                + 'around the fences is the user\'s own notes and is never returned. '
                 + 'Each item carries the label the picker shows (the fence info string, the line above it, or '
                 + 'the nearest heading), the heading it sits under, its line, and the text verbatim. '
+                + '`source` says where the path came from: "setting" (the user picked it), "built-in" '
+                + '(nothing picked, the default path exists) or "none" — with "none" read `error`. '
                 + 'Reads the file on every call, so a block added a moment ago is here. '
                 + 'args: q? (only snippets whose label, group or text contains this)',
             handler: (args) => {
@@ -14713,9 +14733,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     : snap.items;
                 return {
                     file: snap.file || null,
+                    source: snap.source,
+                    builtIn: snap.builtIn ?? null,
+                    // ‼️ Whether VS Code accepted the property at all. This
+                    // feature lost two releases to that question being
+                    // unanswerable from outside — one release blamed the wrong
+                    // schema keyword and shipped a fix for nothing. It is one
+                    // call now: false means the manifest entry was refused and
+                    // the setting cannot be edited in VS Code's own settings UI
+                    // (Farm Settings still works — it reads the manifest).
+                    registered: cfg().inspect('promptSnippetsFile')?.defaultValue !== undefined,
                     ...(snap.error ? { error: snap.error } : {}),
                     count: items.length, items
                 };
+            }
+        },
+        {
+            op: 'prompts.setFile',
+            describe: 'Point the saved prompts at a markdown file — the same thing the Browse… button in '
+                + 'Farm Settings → Saved prompts and "Choose a file…" in the Console picker do. '
+                + 'The file must exist; an empty file argument REMOVES the setting, which hands the '
+                + 'feature back to the built-in default path. args: file (absolute path, or "" to clear)',
+            handler: async (args) => {
+                const file = (optStr(args, 'file') ?? '').trim();
+                need(!file || fs.existsSync(file), `there is no file at ${file}`);
+                await setPromptSnippetsFile(file);
+                const snap = readPromptSnippets();
+                return { file: snap.file || null, source: snap.source, count: snap.items.length };
             }
         }
     ]);

@@ -1913,9 +1913,25 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             /``` fences/.test(promptsBlock) && /never returned/.test(promptsBlock));
         ok('…and it CALLS the shared reader rather than parsing the file again',
             /readPromptSnippets\(\)/.test(promptsBlock));
-        ok('‼️ the reader clears a setting that points at nothing, and says so',
-            /the setting has been cleared/.test(src)
-            && /promptSnippetsFile', ''/.test(src));
+        // ‼️ THE READER MUST NEVER WRITE THE SETTING. It used to put '' into
+        // settings.json the first time the file was missing, and an explicit ''
+        // outranks every default for good — one disconnected drive killed the
+        // feature permanently. Which file it is now comes from resolvePromptFile.
+        const readerAt = src.indexOf('const readPromptSnippets =');
+        const readerBlock = src.slice(readerAt, src.indexOf('const setPromptSnippetsFile', readerAt));
+        ok('‼️ the reader settles the file through resolvePromptFile, not the manifest default',
+            /resolvePromptFile\(/.test(readerBlock));
+        ok('‼️ …and never writes the setting behind the user\'s back',
+            !/cfg\(\)\.update\('promptSnippetsFile'/.test(readerBlock));
+        ok('a path that has gone is reported as still-yours, not thrown away',
+            /nothing has been thrown away/.test(readerBlock));
+        ok('prompts.setFile is on the bridge, so choosing the file is not mouse-only',
+            /op: 'prompts\.setFile'/.test(src));
+        const setAt = src.indexOf("op: 'prompts.setFile'");
+        const setBlock = src.slice(setAt, setAt + 1400);
+        ok('…it refuses a path that is not there', /need\(!file \|\| fs\.existsSync\(file\)/.test(setBlock));
+        ok('…and an empty argument REMOVES the setting (undefined, never \'\')',
+            /clean \|\| undefined/.test(src));
         // ‼️ Both doors to "which file?" open the SAME thing: the machine's own
         // picker. Sending somebody to VS Code's settings editor is the
         // extension talking about itself instead of doing the job.

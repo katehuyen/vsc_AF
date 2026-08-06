@@ -51,6 +51,22 @@ const SO = require(path.join(__dirname, '..', 'out', 'core', 'settingsops.js'));
         props['agentFarm.promptSnippetsFile']
         && props['agentFarm.promptSnippetsFile']['x-af-browse'] === 'file');
 
+    // ‼️ SAVED PROMPTS HAS ITS OWN SECTION. It shipped as one more row under
+    // "Display & Labels" and was indistinguishable from a setting nobody had
+    // filled in — which is exactly what it looked like for a week while VS Code
+    // quietly refused to hand back its default.
+    const promptCat = model.find(c => c.id === 'prompts');
+    ok('‼️ the prompts file has a section of its own, not a row under Display',
+        promptCat && promptCat.items.length === 1
+        && promptCat.items[0].key === 'agentFarm.promptSnippetsFile');
+
+    // ‼️ AND ITS DEFAULT IS NOT A PATH. The manifest default was the user's own
+    // vault path and the feature depended on the settings registry serving it
+    // back; it never did. The path now lives in core/prompts.ts, where it is
+    // ours and testable, and the manifest says the honest thing: nothing chosen.
+    ok('‼️ the manifest promises no path it cannot deliver',
+        props['agentFarm.promptSnippetsFile'].default === '');
+
     // ‼️ AND NOT WITH `format`, WHICH VS CODE REFUSES THE WHOLE PROPERTY OVER —
     // the setting then has no registered default and its box draws empty, which
     // is exactly what it looked like. Checked across the manifest, so the next
@@ -336,6 +352,123 @@ const SO = require(path.join(__dirname, '..', 'out', 'core', 'settingsops.js'));
     const fhtml = getEl('app')._html;
     ok('filter keeps the root containing the match, drops others',
         fhtml.includes('D:/zone/agent/ajanlar') && !fhtml.includes('D:/solo'));
+}
+
+// ---------- settings page: Saved prompts section ----------
+//
+// The section exists to answer "does it work?" with the file's own contents.
+// A path in a box could not: it looked identical whether the feature was
+// reading two prompts or nothing at all.
+{
+    const code = require(path.join(__dirname, 'lib_shared_media.js')).sharedMedia()
+        + fs.readFileSync(path.resolve(__dirname, '../media/settings.js'), 'utf8');
+    let posted = [];
+    const els = {};
+    function getEl(id) {
+        if (!els[id]) {
+            els[id] = {
+                id, listeners: {}, style: {}, value: '', checked: false, _html: '',
+                addEventListener(ev, fn) { this.listeners[ev] = fn; },
+                focus() { }, setSelectionRange() { },
+                set innerHTML(v) { this._html = v; }, get innerHTML() { return this._html; }
+            };
+        }
+        return els[id];
+    }
+    const promptCat = {
+        id: 'prompts', label: 'Saved prompts', items: [{
+            key: 'agentFarm.promptSnippetsFile', type: 'string', browse: 'file',
+            default: '', description: 'the file', value: '', modified: false
+        }]
+    };
+    const mkSandbox = (prompts, chosen) => {
+        const cat = JSON.parse(JSON.stringify(promptCat));
+        cat.items[0].value = chosen || '';
+        cat.items[0].modified = !!chosen;
+        return {
+            acquireVsCodeApi: () => ({ postMessage: (m) => posted.push(m), getState() { }, setState() { } }),
+            window: {
+                AFCharts: { esc: (s) => String(s) },
+                __DATA__: { focus: '', profiles: [], categories: [cat], prompts },
+                addEventListener() { }
+            },
+            document: { getElementById: getEl, querySelector: () => null, querySelectorAll: () => [] },
+            setTimeout: () => 0, clearTimeout: () => { }, console, Date
+        };
+    };
+
+    const run = (prompts, chosen) => {
+        for (const k of Object.keys(els)) { delete els[k]; }
+        posted = [];
+        const sandbox = mkSandbox(prompts, chosen);
+        sandbox.globalThis = sandbox;
+        vm.createContext(sandbox);
+        vm.runInContext(code, sandbox);
+        return getEl('app')._html;
+    };
+
+    // -- the working case: the blocks themselves are on the page --
+    let html = run({
+        file: 'D:\\vault\\Prompts.md', source: 'built-in', builtIn: 'D:\\vault\\Prompts.md', empty: 1,
+        items: [
+            { label: 'Kod incelemesi', group: 'Review', text: 'Read the flow before you change it.', line: 4 },
+            { label: 'Türkçe cevap', group: 'Review', text: 'Answer in Turkish, code in English.', line: 12 }
+        ]
+    });
+    ok('the section has its own heading and nav link',
+        html.includes('id="cat-prompts"') && html.includes('data-cat="prompts"'));
+    ok('‼️ the section shows what was READ, not just the path',
+        html.includes('Kod incelemesi') && html.includes('Read the flow before you change it.')
+        && html.includes('<b>2</b> prompt'));
+    ok('the heading a block sits under is drawn once, above it', html.includes('promptgrp">Review'));
+    ok('empty fenced blocks are accounted for, not silently dropped',
+        html.includes('1 empty block'));
+    ok('the file it is actually reading is named', html.includes('D:\\vault\\Prompts.md'));
+    ok('a built-in path says so rather than looking chosen', html.includes('>built-in<'));
+    ok('the path is still hand-editable through the ordinary route',
+        html.includes('data-set="agentFarm.promptSnippetsFile"'));
+    ok('an unchosen file offers no "back to the built-in path" button',
+        !html.includes('id="promptsdefault"'));
+
+    // -- the buttons: the same three gestures the Console picker has --
+    posted = [];
+    getEl('promptspick').listeners.click();
+    getEl('promptsopen').listeners.click();
+    getEl('promptsreload').listeners.click();
+    ok('Choose · Open · Re-read each post their own message',
+        posted.map(m => m.type).join(',') === 'promptsPick,promptsOpen,promptsReload');
+
+    // -- nothing set anywhere: the page says what to do, and where --
+    html = run({ file: '', source: 'none', builtIn: 'D:\\vault\\Prompts.md', items: [] });
+    ok('with no file the section explains the fix instead of drawing an empty box',
+        html.includes('Choose a file…') && html.includes('D:\\vault\\Prompts.md'));
+    ok('Open is dead while there is nothing to open', /id="promptsopen"[^>]*disabled/.test(html));
+
+    // -- a chosen file that has gone: the error, and the way back --
+    html = run({
+        file: '', source: 'none', builtIn: 'D:\\vault\\Prompts.md', items: [],
+        error: 'there is no file at D:\\gone.md — your setting still points there'
+    });
+    ok('a missing chosen file is reported in words, on the page',
+        html.includes('⚠ there is no file at D:\\gone.md'));
+
+    // -- the filter finds it by the words a person would actually type --
+    html = run({ file: 'D:\\vault\\Prompts.md', source: 'setting', builtIn: 'D:\\b.md', items: [] },
+        'D:\\vault\\Prompts.md');
+    ok('a chosen file can be handed back to the built-in one', html.includes('id="promptsdefault"'));
+    posted = [];
+    getEl('promptsdefault').listeners.click();
+    ok('…and that posts promptsUseDefault, which REMOVES the key rather than blanking it',
+        posted[0] && posted[0].type === 'promptsUseDefault');
+    const filterEl = getEl('filter');
+    filterEl.value = 'kalıp';
+    filterEl.listeners.input();
+    ok('filtering by what the feature IS (not its key) keeps the section',
+        getEl('app')._html.includes('id="cat-prompts"'));
+    filterEl.value = 'right-click';
+    filterEl.listeners.input();
+    ok('…and so does the gesture it hangs off',
+        getEl('app')._html.includes('id="cat-prompts"'));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

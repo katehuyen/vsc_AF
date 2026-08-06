@@ -9,6 +9,7 @@ import {
     CC_CATALOG, buildClaudeModel, coerceClaudeValue, patchClaudeSettings,
     validateRawClaudeSettings
 } from '../core/claudesettings';
+import { PromptSnippetsSnapshot } from '../core/prompts';
 import { normPath } from '../core/util';
 import { revealPath } from '../core/reveal';
 import { handleAfNav, htmlShell } from './base';
@@ -41,6 +42,20 @@ export interface FarmSettingsDeps {
     /** Report/answer .md "open with" default + custom external app (Notepad etc.). */
     docOpen?(): { defaultMode: string; customCommand: string; customArgs: string; modes: string[] };
     setDocOpen?(patch: { defaultMode?: string; customCommand?: string; customArgs?: string }): void;
+    /**
+     * Saved prompts: which file the feature resolves to right now, and what was
+     * read out of it.
+     *
+     * ‼️ THE SECTION SHOWS THE PARSED RESULT, NOT JUST THE PATH, and that is the
+     * whole reason it exists rather than a text box under "Display & Labels".
+     * A path in a box tells you nothing about whether the feature works — the
+     * previous shape of this setting was blank for a week and looked merely
+     * unconfigured. Reading the file here means the page answers "is it
+     * working?" with the blocks themselves.
+     */
+    promptSnippets?(): PromptSnippetsSnapshot;
+    /** Write the chosen path — '' hands the feature back to the built-in one. */
+    setPromptSnippetsFile?(file: string): Thenable<void>;
 }
 
 const CONFIG_SECTION = 'agentFarm';
@@ -132,7 +147,8 @@ export class FarmSettingsPanel {
                 raw: cc.raw,
                 parseError: cc.parseError
             },
-            docOpen: this.deps.docOpen?.() ?? null
+            docOpen: this.deps.docOpen?.() ?? null,
+            prompts: this.deps.promptSnippets?.() ?? null
         };
     }
 
@@ -191,6 +207,43 @@ export class FarmSettingsPanel {
                 if (error) { void this.panel.webview.postMessage({ type: 'error', key, error }); }
                 break;
             }
+            /**
+             * Saved prompts — the same three gestures the Console picker has,
+             * so the two doors behave alike (that promise is in consolePanel's
+             * `pickPromptSnippets` comment, and this is the other half of it).
+             *
+             * `promptsUseDefault` REMOVES the key rather than writing '': an
+             * explicit empty string is a value, and a value outranks the
+             * built-in path for good. Removing it is the only thing that
+             * actually means "I have chosen nothing".
+             */
+            case 'promptsPick': {
+                const current = this.deps.promptSnippets?.().file ?? '';
+                const picked = await vscode.window.showOpenDialog({
+                    canSelectFiles: true, canSelectFolders: false, canSelectMany: false,
+                    openLabel: 'Use this file',
+                    filters: { 'Markdown / text': ['md', 'markdown', 'txt'], 'All files': ['*'] },
+                    ...(current ? { defaultUri: vscode.Uri.file(current) } : {})
+                });
+                const file = picked?.[0]?.fsPath;
+                if (file) { await this.deps.setPromptSnippetsFile?.(file); }
+                this.refresh();
+                break;
+            }
+            case 'promptsUseDefault':
+                await this.deps.setPromptSnippetsFile?.('');
+                this.refresh();
+                break;
+            case 'promptsOpen': {
+                const file = this.deps.promptSnippets?.().file ?? '';
+                if (file) { void vscode.window.showTextDocument(vscode.Uri.file(file)); }
+                break;
+            }
+            // Re-read the file without changing anything — the list is a view of
+            // a document somebody edits in Obsidian while this page is open.
+            case 'promptsReload':
+                this.refresh();
+                break;
             // From a setting's right-click menu: the same key, in VS Code's own
             // settings editor — where its raw JSON, its scope and its history
             // live. This page is a curated view, not a replacement for that.
