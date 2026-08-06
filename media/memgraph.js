@@ -67,7 +67,10 @@
             const anchor = p.x > cx + 5 ? 'start' : p.x < cx - 5 ? 'end' : 'middle';
             const lx = p.x + (anchor === 'start' ? r + 4 : anchor === 'end' ? -r - 4 : 0);
             const ly = anchor === 'middle' ? (p.y < cy ? p.y - r - 5 : p.y + r + 12) : p.y + 3;
-            dots += `<g class="node" data-open="${C.esc(n.path)}" style="cursor:pointer">` +
+            // A node IS a memory file, so it carries the memory row's menu —
+            // the same one the agent page's memory table draws.
+            dots += `<g class="node" data-open="${C.esc(n.path)}" style="cursor:pointer" ` +
+                window.AFCtx.row('afMemoryRow', { memPath: n.path, memName: n.name, agentId: agentId }) + '>' +
                 `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${r.toFixed(1)}" fill="${fill}"${ring} opacity="0.9"><title>${C.esc(tip)}</title></circle>` +
                 `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" font-size="10" text-anchor="${anchor}" fill="currentColor" opacity="0.85">${C.esc(short(n.name))}<title>${C.esc(tip)}</title></text></g>`;
         }
@@ -77,7 +80,8 @@
     function render() {
         const entry = DATA.agents.find(a => a.id === agentId);
         const seg = DATA.agents.map(a =>
-            `<button data-agent="${C.esc(a.id)}" class="${a.id === agentId ? 'sel' : ''}">${C.esc(a.name)}</button>`).join('');
+            `<button data-agent="${C.esc(a.id)}" class="${a.id === agentId ? 'sel' : ''}"
+                ${window.AFCtx.agent(a)} title="${C.esc(window.AFCtx.AGENT_HINT)}">${C.esc(a.name)}</button>`).join('');
 
         let body;
         if (!entry) {
@@ -151,6 +155,26 @@
                 if (el.dataset.open) { vscode.postMessage({ type: 'open', path: el.dataset.open }); }
             }));
     }
+
+    // ------------------------------------------------------- right-click menu
+
+    /** A node is a memory file. The agent picker's buttons are agent rows and
+     *  answer to host commands — nothing about them is here. */
+    function ctxDo(act, ctx) {
+        if (act === 'memOpen') {
+            if (ctx.memPath) { vscode.postMessage({ type: 'open', path: String(ctx.memPath) }); }
+            return;
+        }
+        // Already the memory graph — the item scopes it to the row's agent.
+        if (act === 'memGraph') {
+            if (ctx.agentId) { agentId = String(ctx.agentId); render(); }
+            return;
+        }
+        if (act === 'memCopy') { window.AFCtx.copy(ctx.memPath); }
+    }
+
+    // ‼️ ONCE, at module scope — render() redraws the whole graph.
+    window.AFCtx.listen(ctxDo);
 
     render();
 })();

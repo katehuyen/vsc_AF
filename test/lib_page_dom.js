@@ -29,9 +29,13 @@ const CTX_ATTR_LEN = 'data-vscode-context="'.length;
  * message that says nothing about the real cause.
  */
 function runPage(scriptFile, DATA, extraWindow) {
-    const code = fs.readFileSync(path.resolve(__dirname, '..', 'media', 'charts.js'), 'utf8')
-        + '\n' + shared.sharedMedia()
-        + fs.readFileSync(path.resolve(__dirname, '..', 'media', scriptFile), 'utf8');
+    // charts.js and sessionsTable.js are shipped to every page by htmlShell but
+    // are not in lib_shared_media's list (older tests load them themselves, and
+    // adding them there would double-load). Here they belong: a page that
+    // embeds the sessions table dies at load without it.
+    const media = (f) => fs.readFileSync(path.resolve(__dirname, '..', 'media', f), 'utf8');
+    const code = media('charts.js') + '\n' + shared.sharedMedia()
+        + media('sessionsTable.js') + '\n' + media(scriptFile);
 
     const posted = [];
     const onMessage = [];

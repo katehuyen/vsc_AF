@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.75.0",
+  "version": "3.76.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -570,6 +570,18 @@
       {
         "command": "agentfarm.copySessionId",
         "title": "Copy Session ID",
+        "category": "Agent Farm",
+        "icon": "$(clippy)"
+      },
+      {
+        "command": "agentfarm.copyAgentName",
+        "title": "Copy Agent Name",
+        "category": "Agent Farm",
+        "icon": "$(clippy)"
+      },
+      {
+        "command": "agentfarm.copyAgentFolder",
+        "title": "Copy Agent Folder",
         "category": "Agent Farm",
         "icon": "$(clippy)"
       },
@@ -2769,6 +2781,71 @@
         "command": "agentfarm.ctx.caCopy",
         "title": "Copy what it is asking",
         "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.stOpen",
+        "title": "Open the page behind this number",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.stCopyVal",
+        "title": "Copy the figure",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.puCopy",
+        "title": "Copy the figures",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.insOpen",
+        "title": "Open the file it is about",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.insGuide",
+        "title": "What is this? \u2014 the guide entry",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.insCopy",
+        "title": "Copy what it says",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.lvGo",
+        "title": "Go to what it is about",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.lvCopy",
+        "title": "Copy the signal line",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.memOpen",
+        "title": "Open it",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.memGraph",
+        "title": "Show it in the memory graph",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.memCopyPath",
+        "title": "Copy its path",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.dutyOpen",
+        "title": "Open DUTIES.md",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.dutyCopy",
+        "title": "Copy the duty \u2014 watch, and what to do",
+        "category": "Agent Farm"
       }
     ],
     "submenus": [
@@ -3792,97 +3869,97 @@
         },
         {
           "command": "agentfarm.openSession",
-          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit|afTimelineAgent)$/",
           "group": "1_open@1"
         },
         {
           "command": "agentfarm.resumeSession",
-          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit|afTimelineAgent)$/",
           "group": "1_open@2"
         },
         {
           "command": "agentfarm.resumeInConsole",
-          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit|afTimelineAgent)$/",
           "group": "1_open@3"
         },
         {
           "command": "agentfarm.focusSessionTerminal",
-          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit|afTimelineAgent)$/",
           "group": "1_open@4"
         },
         {
           "command": "agentfarm.renameSession",
-          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit|afTimelineAgent)$/",
           "group": "2_mark@1"
         },
         {
           "command": "agentfarm.pinSession",
-          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit|afTimelineAgent)$/",
           "group": "2_mark@2"
         },
         {
           "command": "agentfarm.tagSession",
-          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit|afTimelineAgent)$/",
           "group": "2_mark@3"
         },
         {
           "command": "agentfarm.copySessionId",
-          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit|afTimelineAgent)$/",
           "group": "2_mark@4"
         },
         {
           "command": "agentfarm.interruptSession",
-          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit|afTimelineAgent)$/",
           "group": "3_stop@1"
         },
         {
           "command": "agentfarm.endSession",
-          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit|afTimelineAgent)$/",
           "group": "3_stop@2"
         },
         {
           "command": "agentfarm.dismissSession",
-          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit|afTimelineAgent)$/",
           "group": "3_stop@3"
         },
         {
           "command": "agentfarm.assignSessionProject",
-          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit|afTimelineAgent)$/",
           "group": "4_project@1"
         },
         {
           "command": "agentfarm.projectFromSession",
-          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit|afTimelineAgent)$/",
           "group": "4_project@2"
         },
         {
           "command": "agentfarm.addSessionFolderToProject",
-          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit|afTimelineAgent)$/",
           "group": "4_project@3"
         },
         {
           "command": "agentfarm.openSessionAgent",
-          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit|afTimelineAgent)$/",
           "group": "1_open@5"
         },
         {
           "command": "agentfarm.revealSessionFolder",
-          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/ && cwd",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit|afTimelineAgent)$/ && cwd",
           "group": "1_open@6"
         },
         {
           "command": "agentfarm.sessionToQueue",
-          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit|afTimelineAgent)$/",
           "group": "4_project@4"
         },
         {
           "command": "agentfarm.copySessionPath",
-          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit|afTimelineAgent)$/",
           "group": "5_copy@1"
         },
         {
           "command": "agentfarm.copySessionCwd",
-          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/ && cwd",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit|afTimelineAgent)$/ && cwd",
           "group": "5_copy@2"
         },
         {
@@ -4868,6 +4945,181 @@
         {
           "command": "agentfarm.ctx.caCopy",
           "when": "webviewSection == 'afConsoleAsk'",
+          "group": "5_copy@1"
+        },
+        {
+          "command": "agentfarm.openAgentDetail",
+          "when": "webviewSection =~ /^(afAgentRow|afTimelineAgent)$/",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.openAgentInNewWindow",
+          "when": "webviewSection =~ /^(afAgentRow|afTimelineAgent)$/",
+          "group": "1_open@2"
+        },
+        {
+          "command": "agentfarm.launchSession",
+          "when": "webviewSection =~ /^(afAgentRow|afTimelineAgent)$/",
+          "group": "1_open@3"
+        },
+        {
+          "command": "agentfarm.consoleForAgent",
+          "when": "webviewSection =~ /^(afAgentRow|afTimelineAgent)$/",
+          "group": "1_open@4"
+        },
+        {
+          "command": "agentfarm.continueSession",
+          "when": "webviewSection =~ /^(afAgentRow|afTimelineAgent)$/",
+          "group": "1_open@5"
+        },
+        {
+          "command": "agentfarm.revealAgent",
+          "when": "webviewSection =~ /^(afAgentRow|afTimelineAgent)$/",
+          "group": "1_open@6"
+        },
+        {
+          "command": "agentfarm.openDuties",
+          "when": "webviewSection =~ /^(afAgentRow|afTimelineAgent)$/",
+          "group": "2_edit@1"
+        },
+        {
+          "command": "agentfarm.addDuty",
+          "when": "webviewSection =~ /^(afAgentRow|afTimelineAgent)$/",
+          "group": "2_edit@2"
+        },
+        {
+          "command": "agentfarm.addMemory",
+          "when": "webviewSection =~ /^(afAgentRow|afTimelineAgent)$/",
+          "group": "2_edit@3"
+        },
+        {
+          "command": "agentfarm.openMemoryGraph",
+          "when": "webviewSection =~ /^(afAgentRow|afTimelineAgent)$/",
+          "group": "2_edit@4"
+        },
+        {
+          "command": "agentfarm.assignProject",
+          "when": "webviewSection =~ /^(afAgentRow|afTimelineAgent)$/",
+          "group": "4_link@1"
+        },
+        {
+          "command": "agentfarm.distillMemory",
+          "when": "webviewSection =~ /^(afAgentRow|afTimelineAgent)$/",
+          "group": "4_link@2"
+        },
+        {
+          "command": "agentfarm.exportAgentPack",
+          "when": "webviewSection =~ /^(afAgentRow|afTimelineAgent)$/",
+          "group": "4_link@3"
+        },
+        {
+          "command": "agentfarm.syncAntigravity",
+          "when": "webviewSection =~ /^(afAgentRow|afTimelineAgent)$/",
+          "group": "4_link@4"
+        },
+        {
+          "command": "agentfarm.copyAgentName",
+          "when": "webviewSection =~ /^(afAgentRow|afTimelineAgent)$/",
+          "group": "5_copy@1"
+        },
+        {
+          "command": "agentfarm.copyAgentFolder",
+          "when": "webviewSection =~ /^(afAgentRow|afTimelineAgent)$/",
+          "group": "5_copy@2"
+        },
+        {
+          "command": "agentfarm.ctx.stOpen",
+          "when": "webviewSection == 'afStatTile' && tileNav",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.ctx.stCopyVal",
+          "when": "webviewSection == 'afStatTile'",
+          "group": "5_copy@1"
+        },
+        {
+          "command": "agentfarm.planUsageRefresh",
+          "when": "webviewSection == 'afPlanUsage'",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.lapReset",
+          "when": "webviewSection == 'afPlanUsage'",
+          "group": "2_edit@1"
+        },
+        {
+          "command": "agentfarm.lapClear",
+          "when": "webviewSection == 'afPlanUsage'",
+          "group": "2_edit@2"
+        },
+        {
+          "command": "agentfarm.ctx.puCopy",
+          "when": "webviewSection == 'afPlanUsage'",
+          "group": "5_copy@1"
+        },
+        {
+          "command": "agentfarm.ctx.insOpen",
+          "when": "webviewSection == 'afInsightRow' && insFile",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.ctx.insGuide",
+          "when": "webviewSection == 'afInsightRow' && insAnchor",
+          "group": "1_open@2"
+        },
+        {
+          "command": "agentfarm.insightHistory",
+          "when": "webviewSection == 'afInsightRow'",
+          "group": "4_link@1"
+        },
+        {
+          "command": "agentfarm.restoreInsights",
+          "when": "webviewSection == 'afInsightRow'",
+          "group": "4_link@2"
+        },
+        {
+          "command": "agentfarm.ctx.insCopy",
+          "when": "webviewSection == 'afInsightRow'",
+          "group": "5_copy@1"
+        },
+        {
+          "command": "agentfarm.ctx.lvGo",
+          "when": "webviewSection == 'afLivingSignal' && sigGoto",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.configureLivingChecks",
+          "when": "webviewSection == 'afLivingSignal'",
+          "group": "2_edit@1"
+        },
+        {
+          "command": "agentfarm.ctx.lvCopy",
+          "when": "webviewSection == 'afLivingSignal'",
+          "group": "5_copy@1"
+        },
+        {
+          "command": "agentfarm.ctx.memOpen",
+          "when": "webviewSection == 'afMemoryRow'",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.ctx.memGraph",
+          "when": "webviewSection == 'afMemoryRow'",
+          "group": "1_open@2"
+        },
+        {
+          "command": "agentfarm.ctx.memCopyPath",
+          "when": "webviewSection == 'afMemoryRow'",
+          "group": "5_copy@1"
+        },
+        {
+          "command": "agentfarm.ctx.dutyOpen",
+          "when": "webviewSection == 'afDutyRow'",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.ctx.dutyCopy",
+          "when": "webviewSection == 'afDutyRow'",
           "group": "5_copy@1"
         }
       ],
@@ -6467,6 +6719,71 @@
   },
   {
     "command": "agentfarm.ctx.caCopy",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.stOpen",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.stCopyVal",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.puCopy",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.insOpen",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.insGuide",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.insCopy",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.lvGo",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.lvCopy",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.memOpen",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.memGraph",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.memCopyPath",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.dutyOpen",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.dutyCopy",
     "when": "false",
     "group": "ctx"
   }

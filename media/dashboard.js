@@ -261,7 +261,8 @@
             return style + `<h2 class="cmph">Agent comparison ${cmpControls(CMP_SORTS_WIN)}</h2>
             <div class="tablewrap"><table>
                 <tr><th>Agent</th><th class="num">Sessions</th><th class="num">Cost</th><th class="num">Tokens</th><th class="num">Msgs</th></tr>
-                ${rows.map(r => `<tr class="click" data-agent-row="${C.esc(r.id)}">
+                ${rows.map(r => `<tr class="click" data-agent-row="${C.esc(r.id)}"
+                    ${window.AFCtx.agent(r)} title="${C.esc(window.AFCtx.AGENT_HINT)}">
                     <td><strong>${C.esc(r.name)}</strong></td>
                     <td class="num">${r.sessions}</td>
                     <td class="num">${C.fmtUSD(r.cost)}</td>
@@ -284,7 +285,8 @@
                 const errPct = a.toolCalls ? Math.round(100 * a.errors / a.toolCalls) + '%' : '—';
                 const quality = a.quality !== undefined && a.quality !== null
                     ? `<span title="${a.qualityCount} sampled session(s), last 14 days">${a.quality.toFixed(1)}/5</span>` : '—';
-                return `<tr class="click" data-agent-row="${C.esc(a.id)}">
+                return `<tr class="click" data-agent-row="${C.esc(a.id)}"
+                    ${window.AFCtx.agent(a)} title="${C.esc(window.AFCtx.AGENT_HINT)}">
                     <td><strong>${C.esc(a.name)}</strong></td>
                     <td class="num">${a.sessions}</td>
                     <td class="num">${C.fmtUSD(a.totalCost)}</td>
@@ -358,7 +360,14 @@
             }).join('');
             foot = `<div class="sub muted" style="margin-top:10px">${pu.plan ? C.esc(pu.plan) + ' plan · ' : ''}updated ${new Date(pu.fetchedAt).toLocaleTimeString()} · ${beatText}</div>`;
         }
-        return `<div class="card pucard">
+        // The card's own controls are one ⟳; everything else about the plan
+        // window (check it now, reset the token lap, clear it) lived only in the
+        // command palette.
+        const bars = ((DATA.planUsage || {}).bars || [])
+            .map(b => `${b.title}: ${b.percent}%`).join(' · ');
+        return `<div class="card pucard"
+            ${window.AFCtx.row('afPlanUsage', { puText: bars })}
+            title="${C.esc(window.AFCtx.hint('What the subscription window has left'))}">
             <div class="pu-head"><div class="label">Plan usage</div>${btn}</div>
             ${body}${foot}
         </div>`;
@@ -406,20 +415,27 @@
 
         const ins = DATA.insightTotals;
 
+        // ‼️ A NUMBER YOU CANNOT ACT ON IS A POSTER. Each tile says what it is,
+        // what it currently reads, and — where there is one — which page answers
+        // the question it raises, so the menu can offer to go there.
+        const tile = (label, nav, value) =>
+            window.AFCtx.row('afStatTile', { tileLabel: label, tileNav: nav || '', tileValue: String(value) })
+            + ` title="${C.esc(window.AFCtx.hint(label))}"`;
+
         const kpis = `
         <div class="row">
-            <div class="card"><div class="label">Active now</div><div class="kpi">${activeCount}<span class="muted" style="font-size:13px">/${agents.length} agents</span></div><div class="sub">threshold-based on transcript activity</div></div>
-            <div class="card"><div class="label">Cost today</div><div class="kpi">${C.fmtUSD(todayCost)}</div>
+            <div class="card" ${tile('Active now', 'timeline', activeCount + '/' + agents.length + ' agents')}><div class="label">Active now</div><div class="kpi">${activeCount}<span class="muted" style="font-size:13px">/${agents.length} agents</span></div><div class="sub">threshold-based on transcript activity</div></div>
+            <div class="card" ${tile('Cost today', '', C.fmtUSD(todayCost))}><div class="label">Cost today</div><div class="kpi">${C.fmtUSD(todayCost)}</div>
                 ${DATA.fleetBudget > 0
                     ? `<div class="progress"><div class="${todayCost >= DATA.fleetBudget ? 'hot' : ''}" style="width:${Math.min(100, Math.round(100 * todayCost / DATA.fleetBudget))}%"></div></div><div class="sub">${Math.round(100 * todayCost / DATA.fleetBudget)}% of ${C.fmtUSD(DATA.fleetBudget)} fleet budget</div>`
                     : '<div class="sub">API-equivalent value</div>'}</div>
-            <div class="card"><div class="label">Cost · ${rangeLabel()}</div><div class="kpi">${C.fmtUSD(rangeCost)}</div><div class="sub">${C.fmtTokW(rangeTokens, rangeWTokens)} tokens · ${rangeMsgs} msgs</div></div>
-            <div class="card"><div class="label">Sessions</div><div class="kpi">${sessionsTotal}</div><div class="sub">all time, farm scope</div></div>
-            <div class="card"><div class="label">5h window</div>${windowHtml}</div>
-            <div class="card"><div class="label">Insights</div><div class="kpi">${ins.error + ins.warning + ins.info}</div>
+            <div class="card" ${tile('Cost · ' + rangeLabel(), 'portfolio', C.fmtUSD(rangeCost))}><div class="label">Cost · ${rangeLabel()}</div><div class="kpi">${C.fmtUSD(rangeCost)}</div><div class="sub">${C.fmtTokW(rangeTokens, rangeWTokens)} tokens · ${rangeMsgs} msgs</div></div>
+            <div class="card" ${tile('Sessions', 'turns', sessionsTotal)}><div class="label">Sessions</div><div class="kpi">${sessionsTotal}</div><div class="sub">all time, farm scope</div></div>
+            <div class="card" ${tile('5h window', '', '')}><div class="label">5h window</div>${windowHtml}</div>
+            <div class="card" ${tile('Insights', 'portfolio', ins.error + ' errors · ' + ins.warning + ' warnings · ' + ins.info + ' info')}><div class="label">Insights</div><div class="kpi">${ins.error + ins.warning + ins.info}</div>
                 <div class="sub">${ins.error} errors · ${ins.warning} warnings · ${ins.info} info <a data-guide="saglik-ve-optimizasyon">?</a></div></div>
             ${DATA.mediaCost && DATA.mediaCost.month > 0 ? `
-            <div class="card"><div class="label">Media cost</div><div class="kpi">${C.fmtUSD(DATA.mediaCost.today)}</div>
+            <div class="card" ${tile('Media cost', 'studio', C.fmtUSD(DATA.mediaCost.today) + ' today · ' + C.fmtUSD(DATA.mediaCost.month) + ' last 30d')}><div class="label">Media cost</div><div class="kpi">${C.fmtUSD(DATA.mediaCost.today)}</div>
                 <div class="sub">today · ${C.fmtUSD(DATA.mediaCost.month)} last 30d (est.) <a data-guide="medya-uretim-hatti">?</a></div></div>` : ''}
         </div>`;
 
@@ -475,7 +491,8 @@
             const budgetBar = a.budget > 0
                 ? `<div class="progress" title="${C.fmtUSD(todayAgentCost)} / ${C.fmtUSD(a.budget)} daily budget"><div class="${todayAgentCost >= a.budget ? 'hot' : ''}" style="width:${Math.min(100, Math.round(100 * todayAgentCost / a.budget))}%"></div></div>`
                 : '';
-            return `<div class="card agent-card" data-agent="${C.esc(a.id)}">
+            return `<div class="card agent-card" data-agent="${C.esc(a.id)}"
+                ${window.AFCtx.agent(a)} title="${C.esc(window.AFCtx.AGENT_HINT)}">
                 <h3><span class="dot ${a.active ? 'on' : 'off'}"></span>${C.esc(a.name)}${badges}</h3>
                 <div class="sub">${a.active ? 'ACTIVE' : relTime(a.lastActivity)} · ${a.sessions} sessions · ctx ~${C.fmtTok(a.contextLoad)} tok${a.duties ? ` · 👁 ${a.duties}${a.pendingDuties ? ` <span class="badge warn">${a.pendingDuties} pending</span>` : ''}` : ''}</div>
                 ${budgetBar}
@@ -695,6 +712,26 @@
         // full render. sessionTableN echoes the Show box (0 = all).
         sessTable.setRows(DATA.sessionRows || [], DATA.sessionTableN);
     }
+
+    // ------------------------------------------------------- right-click menu
+
+    /** The two page-side acts. Everything an AGENT row offers is host commands
+     *  (src/core/ctxmenu.ts), so nothing about them appears here. */
+    function ctxDo(act, ctx) {
+        if (act === 'tileOpen') {
+            if (ctx.tileNav) { vscode.postMessage({ type: 'afnav', to: String(ctx.tileNav) }); }
+            return;
+        }
+        if (act === 'tileCopy') {
+            window.AFCtx.copy([ctx.tileLabel, ctx.tileValue].filter(Boolean).join(': '));
+            return;
+        }
+        if (act === 'puCopy') { window.AFCtx.copy(ctx.puText); }
+    }
+
+    // ‼️ ONCE, at module scope — this page re-renders on every range change and
+    // every plan-usage beat.
+    window.AFCtx.listen(ctxDo);
 
     render();
     // Somebody sent us here to look at one project (the Projects page's

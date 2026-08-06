@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.76.0 — An agent carries the same menu on all six pages that list one (2026-08-06)
+
+**‼️ An agent is listed on six surfaces and every one of them had a different two or three buttons.** The Dashboard's cards, its comparison table, Portfolio, the Timeline's lane labels, the agent's own detail header, the memory graph's picker — right-click any of them now and you get **the same sixteen things**: open its detail, open it in a new window, start a session, start one after choosing model/effort/permissions, talk to it in the Console, continue its latest session, reveal its folder, open DUTIES.md, add a standing duty, add a memory file, open the memory graph, assign it to a project, distil a memory file, export an agent pack, sync it with Antigravity + Codex, and copy its name or its folder. **Every one of those is a host command** — a page publishes the row and gets the whole set without writing a line of handling, which is why the seventh surface will be free.
+
+**A Timeline lane label is a session AND an agent.** Its name is literally what is written there, so one right-click now offers that session's actions (unchanged) *and* everything the agent can be asked to do. An agent row that only knows a NAME — which is all a lane knows — resolves correctly now, instead of falling through to a picker.
+
+**The Dashboard's numbers stopped being posters.** Each stat tile says what it reads and, where there is one, which page answers the question it raises: **open the page behind this number**, or copy the figure. The plan-usage card gained **Check plan usage now · Reset token lap · Clear token lap · Copy the figures** — all of which existed only in the command palette.
+
+**Also:** a memory file (on the agent page and as a node in the memory graph) opens, shows itself in the graph, and copies its path. A standing duty opens DUTIES.md and copies itself — watch and action together. A health finding opens the file it is about, opens the guide entry that explains it, and copies itself. A Living signal goes to what it is about, opens the check configuration, and copies its line.
+
+**Deliberately not done, and why:** an insight row does **not** offer Fix / Delegate / Dismiss — those commands take the whole finding object, and a row carries a rendered line; a menu item that handed them a lookalike would act on the wrong finding and say nothing about it. And a Timeline lane gets no "show only this lane": the page has no lane filter, and a filter invented behind a menu item is a feature nobody can find.
+
 ## 3.75.0 — Reading surfaces: a turn, a step, a hunk, a held message (2026-08-06)
 
 **Every session menu everywhere gained five items.** Copy the transcript path · copy the working folder · reveal the working folder · **open the agent behind it** · **add it to the work queue** (the box opens with the agent and the session already named). They are on the row wherever a session is listed — the tables, Turns, search hits, the Console, the Timeline, the Needs queue — and the two folder items are drawn only where there actually is a folder.

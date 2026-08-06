@@ -51,12 +51,15 @@
      * live session when it is still tracked; a row that outlived its card still
      * knows its id and the agent it belongs to, which is what Clear needs.
      */
-    function laneCtx(sid, agentName) {
+    function laneCtx(sid, agentName, section) {
         const s = LIVE_BY_ID.get(sid);
         return ctxAttr({
-            webviewSection: 'afTimelineSession', preventDefaultContextMenuItems: false,
+            webviewSection: section || 'afTimelineSession', preventDefaultContextMenuItems: false,
             sessionId: sid,
             title: (s && s.title) || '',
+            // The agent's NAME is all a lane knows — the host resolves the rest
+            // (see resolveAgent), which is what lets the label carry the agent
+            // menu without the page having to know an id.
             agentName: (s && s.agentName) || agentName || '',
             cwd: (s && s.cwd) || ''
         });
@@ -383,7 +386,15 @@
             // The row's "current" session: the live one, else the last it drew.
             const primary = lane.sessions.filter(s => LIVE_BY_ID.has(s.id)).pop() ||
                 lane.sessions[lane.sessions.length - 1];
-            out += `<g class="mark lanelabel" data-file="${C.esc(lane.file || '')}" data-ts="0" ${laneCtx(primary.id, lane.agent)} style="cursor:${lane.file ? 'pointer' : 'default'}">` +
+            // ‼️ THE LABEL IS BOTH. It is the row's session (the card below is
+            // about it) and it is the AGENT — its name is literally what is
+            // written there. `afTimelineAgent` is in both families in
+            // src/core/ctxmenu.ts, so one right-click on the name offers the
+            // session's actions AND everything the agent can be asked to do.
+            // Nothing was taken away: the session half is exactly what it was.
+            out += `<g class="mark lanelabel" data-file="${C.esc(lane.file || '')}" data-ts="0" ` +
+                laneCtx(primary.id, lane.agent, 'afTimelineAgent') +
+                ` style="cursor:${lane.file ? 'pointer' : 'default'}">` +
                 `<text x="4" y="${y + 14}" font-size="11" font-weight="600" text-anchor="start" fill="currentColor" opacity="0.85">${C.esc(name.length > 14 ? name.slice(0, 13) + '…' : name)}</text>` +
                 `<title>${C.esc(tip)}</title></g>`;
             const ty = y + 23;

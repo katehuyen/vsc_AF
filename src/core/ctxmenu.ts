@@ -72,7 +72,8 @@ export const CTX_PREFIX = 'agentfarm.ctx.';
  * families, and one that does not stays `afNeedRow` and is offered nothing it
  * cannot do.
  */
-const SESSION_ROW = 'webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/';
+const SESSION_ROW =
+    'webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit|afTimelineAgent)$/';
 const CONSOLE_ANY = 'webviewSection =~ /^afConsole(Session|Resumable)$/';
 const CONSOLE_RESUMABLE = "webviewSection == 'afConsoleResumable'";
 const CONSOLE_LIVE = "webviewSection == 'afConsoleSession'";
@@ -89,6 +90,28 @@ const FEED_EVENT = "webviewSection == 'afFeedEvent'";
 const PLAN_ROW = "webviewSection == 'afPlanRow'";
 const WF_STEP = "webviewSection == 'afWorkflowStep'";
 const TASK_RUN = "webviewSection == 'afTaskRun'";
+
+/**
+ * AN AGENT, wherever an agent is listed.
+ *
+ * ‼️ Six surfaces list one — the Dashboard's cards and its comparison table,
+ * Portfolio, the Timeline's lanes, the agent's own detail header, the memory
+ * graph's picker — and each had a different two or three buttons. The whole
+ * menu below is HOST COMMANDS, because `resolveAgent` needs exactly one key
+ * (`agentId`): a page publishes the row and gets the full set without writing
+ * a handler. A Timeline lane is an agent AND a lane, so it is in the family.
+ */
+const AGENT_ROW = 'webviewSection =~ /^(afAgentRow|afTimelineAgent)$/';
+
+/** The Dashboard's own furniture, and the Living page's signals. */
+const STAT_TILE = "webviewSection == 'afStatTile'";
+const PLAN_USAGE = "webviewSection == 'afPlanUsage'";
+const INSIGHT_ROW = "webviewSection == 'afInsightRow'";
+const LIVING_SIGNAL = "webviewSection == 'afLivingSignal'";
+
+/** A memory file and a standing duty, on the pages that list them. */
+const MEMORY_ROW = "webviewSection == 'afMemoryRow'";
+const DUTY_ROW = "webviewSection == 'afDutyRow'";
 
 /** The reading surfaces: a turn, a step, a changed file, a search hit. */
 const TURN_ROW = "webviewSection == 'afTurnRow'";
@@ -1194,6 +1217,108 @@ export const CTX_ITEMS: CtxItem[] = [
     {
         id: 'caCopy', title: 'Copy what it is asking', act: 'caCopy',
         when: CONSOLE_ASK, group: '5_copy@1'
+    },
+
+    // =====================================================================
+    // AN AGENT — all host commands, so every surface that publishes an agent
+    // row gets the whole set for free. See AGENT_ROW above.
+    // =====================================================================
+    { command: 'agentfarm.openAgentDetail', when: AGENT_ROW, group: '1_open@1' },
+    { command: 'agentfarm.openAgentInNewWindow', when: AGENT_ROW, group: '1_open@2' },
+    { command: 'agentfarm.launchSession', when: AGENT_ROW, group: '1_open@3' },
+    { command: 'agentfarm.consoleForAgent', when: AGENT_ROW, group: '1_open@4' },
+    { command: 'agentfarm.continueSession', when: AGENT_ROW, group: '1_open@5' },
+    { command: 'agentfarm.revealAgent', when: AGENT_ROW, group: '1_open@6' },
+    { command: 'agentfarm.openDuties', when: AGENT_ROW, group: '2_edit@1' },
+    { command: 'agentfarm.addDuty', when: AGENT_ROW, group: '2_edit@2' },
+    { command: 'agentfarm.addMemory', when: AGENT_ROW, group: '2_edit@3' },
+    { command: 'agentfarm.openMemoryGraph', when: AGENT_ROW, group: '2_edit@4' },
+    { command: 'agentfarm.assignProject', when: AGENT_ROW, group: '4_link@1' },
+    { command: 'agentfarm.distillMemory', when: AGENT_ROW, group: '4_link@2' },
+    { command: 'agentfarm.exportAgentPack', when: AGENT_ROW, group: '4_link@3' },
+    { command: 'agentfarm.syncAntigravity', when: AGENT_ROW, group: '4_link@4' },
+    { command: 'agentfarm.copyAgentName', when: AGENT_ROW, group: '5_copy@1' },
+    { command: 'agentfarm.copyAgentFolder', when: AGENT_ROW, group: '5_copy@2' },
+
+    // ‼️ A Timeline lane gets the agent menu and NOTHING ELSE, on purpose. The
+    // plan called for "show only this lane" and a menu on the event dots; the
+    // page has no lane filter to drive, and the dots already sit inside the
+    // row's session context and open at their own moment on a left-click.
+    // Inventing a filter behind a menu item would be a feature nobody could
+    // find, and a second menu on the dots would take the session's away.
+
+    // =====================================================================
+    // THE DASHBOARD'S OWN FURNITURE. A number you cannot act on is a poster;
+    // these three were exactly that.
+    // =====================================================================
+    {
+        id: 'stOpen', title: 'Open the page behind this number', act: 'tileOpen',
+        when: `${STAT_TILE} && tileNav`, group: '1_open@1'
+    },
+    {
+        id: 'stCopyVal', title: 'Copy the figure', act: 'tileCopy',
+        when: STAT_TILE, group: '5_copy@1'
+    },
+    { command: 'agentfarm.planUsageRefresh', when: PLAN_USAGE, group: '1_open@1' },
+    { command: 'agentfarm.lapReset', when: PLAN_USAGE, group: '2_edit@1' },
+    { command: 'agentfarm.lapClear', when: PLAN_USAGE, group: '2_edit@2' },
+    {
+        id: 'puCopy', title: 'Copy the figures', act: 'puCopy',
+        when: PLAN_USAGE, group: '5_copy@1'
+    },
+    // ‼️ NO Fix / Delegate / Dismiss here, and that is deliberate. Those three
+    // commands take a whole `Insight` object — the finding, its rule, its
+    // evidence — and a webview row carries a rendered line, not that object. A
+    // menu item that handed them a lookalike would act on the wrong finding, or
+    // on none, and say nothing either way. They stay on the palette and the
+    // tree, where the real object is in hand. What the row CAN honestly do is
+    // below.
+    {
+        id: 'insOpen', title: 'Open the file it is about', act: 'insOpen',
+        when: `${INSIGHT_ROW} && insFile`, group: '1_open@1'
+    },
+    {
+        id: 'insGuide', title: 'What is this? — the guide entry', act: 'insGuide',
+        when: `${INSIGHT_ROW} && insAnchor`, group: '1_open@2'
+    },
+    { command: 'agentfarm.insightHistory', when: INSIGHT_ROW, group: '4_link@1' },
+    { command: 'agentfarm.restoreInsights', when: INSIGHT_ROW, group: '4_link@2' },
+    {
+        id: 'insCopy', title: 'Copy what it says', act: 'insCopy',
+        when: INSIGHT_ROW, group: '5_copy@1'
+    },
+
+    // ---- a signal on the Living page --------------------------------------
+    {
+        id: 'lvGo', title: 'Go to what it is about', act: 'lvGo',
+        when: `${LIVING_SIGNAL} && sigGoto`, group: '1_open@1'
+    },
+    { command: 'agentfarm.configureLivingChecks', when: LIVING_SIGNAL, group: '2_edit@1' },
+    {
+        id: 'lvCopy', title: 'Copy the signal line', act: 'lvCopy',
+        when: LIVING_SIGNAL, group: '5_copy@1'
+    },
+
+    // ---- a memory file, and a standing duty --------------------------------
+    {
+        id: 'memOpen', title: 'Open it', act: 'memOpen',
+        when: MEMORY_ROW, group: '1_open@1'
+    },
+    {
+        id: 'memGraph', title: 'Show it in the memory graph', act: 'memGraph',
+        when: MEMORY_ROW, group: '1_open@2'
+    },
+    {
+        id: 'memCopyPath', title: 'Copy its path', act: 'memCopy',
+        when: MEMORY_ROW, group: '5_copy@1'
+    },
+    {
+        id: 'dutyOpen', title: 'Open DUTIES.md', act: 'dutyOpen',
+        when: DUTY_ROW, group: '1_open@1'
+    },
+    {
+        id: 'dutyCopy', title: 'Copy the duty — watch, and what to do', act: 'dutyCopy',
+        when: DUTY_ROW, group: '5_copy@1'
     }
 ];
 

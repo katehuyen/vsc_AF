@@ -402,12 +402,16 @@ const LIVE_PAYLOAD = {
 
     // ---------- the webview card ----------
     {
-        const headerCode = fs.readFileSync(path.resolve(__dirname, '../media/pageHeader.js'), 'utf8')
-            + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afFilters.js'), 'utf8');
+        // The shared scripts htmlShell ships to every page, from ONE list.
+        const headerCode = require(path.join(__dirname, 'lib_shared_media.js')).sharedMedia();
         const sessCode = fs.readFileSync(path.resolve(__dirname, '../media/sessionsTable.js'), 'utf8');
         const code = fs.readFileSync(path.resolve(__dirname, '../media/dashboard.js'), 'utf8');
 
-        let posted = [], lastHtml = '', msgHandler = null, intervals = [];
+        // ‼️ A LIST: the page listens twice — its own host messages, and the
+        // right-click relay wired at module scope. Last-one-wins drops one.
+        let posted = [], lastHtml = '', intervals = [];
+        const msgHandlers = [];
+        const msgHandler = (ev) => msgHandlers.forEach(fn => fn(ev));
         const els = {};
         const getEl = (id) => (els[id] || (els[id] = {
             id, listeners: {}, style: {}, value: '', _html: '',
@@ -454,7 +458,7 @@ const LIVE_PAYLOAD = {
                     stackedBars: () => '', donut: () => '', hbars: () => '', heatmap: () => '', sparkline: () => ''
                 },
                 __DATA__: DATA,
-                addEventListener: (ev, fn) => { if (ev === 'message') { msgHandler = fn; } }
+                addEventListener: (ev, fn) => { if (ev === 'message') { msgHandlers.push(fn); } }
             },
             document: { getElementById: getEl, querySelectorAll: () => [] },
             setInterval: (fn, ms) => { intervals.push({ fn, ms }); return intervals.length; },

@@ -313,6 +313,11 @@ export class AgentDetailPanel {
             case 'addDuty':
                 vscode.commands.executeCommand('agentfarm.addDuty', { agentId: this.agentId });
                 break;
+            // From a memory row's right-click menu — the graph, scoped to the
+            // agent whose page this is.
+            case 'openMemoryGraph':
+                vscode.commands.executeCommand('agentfarm.openMemoryGraph', { agentId: this.agentId });
+                break;
             // Quick cross-navigation between the three main surfaces.
             case 'openDashboard':
                 vscode.commands.executeCommand('agentfarm.openDashboard');

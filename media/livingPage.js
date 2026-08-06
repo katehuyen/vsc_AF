@@ -35,7 +35,11 @@
 
     function signalRow(s) {
         const age = s.ageMs ? `<span class="age" title="how long this loop has been open">${relTime(s.ageMs)}</span>` : '';
-        return `<div class="sig ${s.state}"${s.goto ? ` data-goto="${C.esc(s.goto)}" role="button" tabindex="0"` : ''}>
+        return `<div class="sig ${s.state}"${s.goto ? ` data-goto="${C.esc(s.goto)}" role="button" tabindex="0"` : ''}
+            ${window.AFCtx.row('afLivingSignal', {
+            sigGoto: s.goto || '',
+            sigText: [s.label, s.detail, s.hint].filter(Boolean).join(' — ')
+        })} title="${C.esc(window.AFCtx.hint(s.label))}">
             <div class="sigicon">${ICON[s.state] || '·'}</div>
             <div class="sigbody">
                 <div class="sighead"><b>${C.esc(s.label)}</b>${age}</div>
@@ -130,6 +134,19 @@
         const cfg = document.getElementById('cfg');
         if (cfg) { cfg.addEventListener('click', () => post({ type: 'configure' })); }
     }
+
+    /** A signal's own two acts — "Configure checks…" beside them is a host
+     *  command and needs nothing here. */
+    function ctxDo(act, ctx) {
+        if (act === 'lvGo') {
+            if (ctx.sigGoto) { post({ type: 'goto', to: String(ctx.sigGoto) }); }
+            return;
+        }
+        if (act === 'lvCopy') { window.AFCtx.copy(ctx.sigText); }
+    }
+
+    // ‼️ ONCE, at module scope — this page repaints itself every minute.
+    window.AFCtx.listen(ctxDo);
 
     window.addEventListener('message', (e) => {
         if (e.data && e.data.type === 'data') { DATA = e.data.data; render(); }

@@ -124,7 +124,8 @@
 
         const rowHtml = r => {
             const s = STATUS[r.status] || STATUS.idle;
-            return `<tr class="click${r.dormant ? ' dormant' : ''}" data-agent="${C.esc(r.id)}" title="${C.esc(r.dir)}">
+            return `<tr class="click${r.dormant ? ' dormant' : ''}" data-agent="${C.esc(r.id)}"
+                ${window.AFCtx.agent(r)} title="${C.esc(r.dir)} — ${C.esc(window.AFCtx.AGENT_HINT)}">
                 <td class="agentcell"><i class="dot2" style="background:${r.active ? 'var(--vscode-charts-green,#4caf50)' : s.color}"></i><strong>${C.esc(r.name)}</strong></td>
                 <td>${s.label ? `<span class="badge" style="color:${s.color};border-color:${s.color}">${s.label}</span>` : '<span class="muted">—</span>'}</td>
                 <td class="num">${quietCell(r)}</td>

@@ -6366,7 +6366,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     let pendingMerge: { name: string; files: string[] } | undefined;
 
-    type AgentArg = { agentId?: string; agent?: AgentInfo } | undefined;
+    // `agentName` is here for the same reason SessionRef has five keys: a
+    // surface publishes what it KNOWS. A Timeline lane knows the agent's name
+    // and not its id; without this it would fall through to a picker, which is
+    // the one thing a right-click menu must never do.
+    type AgentArg = { agentId?: string; agentName?: string; agent?: AgentInfo } | undefined;
 
     /** One record per session launch — lets Focus Session Terminal land on the
      *  exact window instead of guessing by agent name (two concurrent sessions
@@ -6504,6 +6508,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (arg?.agent) { return arg.agent; }
         const id = arg?.agentId;
         if (id) { return agents.find(a => a.id === id); }
+        const name = arg?.agentName;
+        if (name) {
+            const byName = agents.find(a => a.name === name);
+            if (byName) { return byName; }
+        }
         const pick = await vscode.window.showQuickPick(
             agents.map(a => ({ label: a.name, description: a.dir, agent: a })),
             { placeHolder: 'Select an agent', ignoreFocusOut: true }
@@ -10761,6 +10770,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(agent.dir), { forceNewWindow: true });
         }),
 
+        // An agent row is on six pages and none of them could name the agent
+        // without opening it. Both take the row's context object, so they work
+        // from every one of them (media/afCtx.js `agent`).
+        vscode.commands.registerCommand('agentfarm.copyAgentName',
+            async (arg?: AgentArg & { agentName?: string }) => {
+                const agent = await resolveAgent(arg);
+                if (!agent) { return; }
+                await vscode.env.clipboard.writeText(agent.name);
+                void vscode.window.setStatusBarMessage(`$(clippy) Agent Farm: ${agent.name} copied`, 4000);
+            }),
+
+        vscode.commands.registerCommand('agentfarm.copyAgentFolder', async (arg?: AgentArg) => {
+            const agent = await resolveAgent(arg);
+            if (!agent) { return; }
+            await vscode.env.clipboard.writeText(agent.dir);
+            void vscode.window.setStatusBarMessage('$(clippy) Agent Farm: agent folder copied', 4000);
+        }),
+
         vscode.commands.registerCommand('agentfarm.revealAgent', async (arg: AgentArg) => {
             const agent = await resolveAgent(arg);
             if (!agent) { return; }
@@ -11285,10 +11312,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         }),
 
-        vscode.commands.registerCommand('agentfarm.openDuties', (node?: AgentNode) => {
-            const agent = node && 'agent' in node ? node.agent : undefined;
+        // Widened to take a bare { agentId } as well as a tree node: the same
+        // command is now reached from every page that lists an agent.
+        vscode.commands.registerCommand('agentfarm.openDuties', async (arg?: AgentNode | { agentId?: string }) => {
+            const agent = arg && 'agent' in arg ? arg.agent : await resolveAgent(arg as { agentId?: string } | undefined);
             if (agent?.dutiesPath) {
                 void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(agent.dutiesPath));
+            } else if (agent) {
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: ${agent.name} has no DUTIES.md yet — "Add Standing Duty" creates it.`);
             }
         }),
 
@@ -11625,8 +11657,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         }),
 
-        vscode.commands.registerCommand('agentfarm.addMemory', async (node?: AgentNode) => {
-            const agent = node && 'agent' in node ? node.agent : await resolveAgent(undefined);
+        vscode.commands.registerCommand('agentfarm.addMemory', async (arg?: AgentNode | { agentId?: string }) => {
+            const agent = arg && 'agent' in arg ? arg.agent : await resolveAgent(arg as { agentId?: string } | undefined);
             if (!agent) { return; }
             const name = await vscode.window.showInputBox({
                 prompt: `Memory file name for ${agent.name} (kebab-case, e.g. project-notescribe)`,
@@ -11671,8 +11703,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         }),
 
-        vscode.commands.registerCommand('agentfarm.openMemoryGraph', (node?: AgentNode) => {
-            const agentId = node && 'agent' in node ? node.agent.id : undefined;
+        vscode.commands.registerCommand('agentfarm.openMemoryGraph', (arg?: AgentNode | { agentId?: string }) => {
+            const agentId = arg && 'agent' in arg ? arg.agent.id : (arg as { agentId?: string } | undefined)?.agentId;
             MemoryGraphPanel.show({
                 extensionUri: context.extensionUri,
                 getAgents: () => agents,

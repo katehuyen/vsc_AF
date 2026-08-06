@@ -107,6 +107,28 @@
     }
 
     /**
+     * The attribute for one AGENT row — the second named shape, after sessions.
+     *
+     * ‼️ WHY IT IS A NAMED SHAPE. An agent is listed on six pages (Dashboard
+     * cards, the comparison table, Portfolio, the Timeline's lanes, its own
+     * detail header, the memory graph's picker) and every one of them had a
+     * different two or three buttons. `resolveAgent` on the host side needs
+     * exactly one key — `agentId` — so the whole menu is HOST COMMANDS: a page
+     * publishes this and gets the full set with no handler of its own. That is
+     * why it is worth a named door rather than six hand-written calls.
+     *
+     * It is a method here rather than its own file (afSessionCtx's shape earns
+     * one — it carries five keys, a HINT and a history); this is one key.
+     */
+    function agent(a, extra) {
+        return row('afAgentRow', {
+            agentId: (a && (a.agentId || a.id)) || '',
+            agentName: (a && (a.agentName || a.name)) || '',
+            agentDir: (a && (a.agentDir || a.dir)) || ''
+        }, extra);
+    }
+
+    /**
      * Put something on the clipboard and SAY SO.
      *
      * ‼️ WHY IT LIVES HERE. A copy changes nothing you can see, so a copy that
@@ -161,5 +183,10 @@
         el.style.transition = 'opacity .3s';
     }
 
-    window.AFCtx = { attr, obj, row, hint, listen, copy, toast, HINT, panel };
+    /** The tooltip tail an agent row carries — it says what the menu is FOR. */
+    const AGENT_HINT = 'right-click for everything this agent can be asked to do';
+
+    window.AFCtx = {
+        attr, obj, row, agent, hint, listen, copy, toast, HINT, AGENT_HINT, panel
+    };
 })();

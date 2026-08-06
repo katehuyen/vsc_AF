@@ -92,7 +92,12 @@
         const sevIcon = { error: '⛔', warning: '⚠', info: 'ℹ' };
         const insightsHtml = DATA.insights.length
             ? DATA.insights.map(i => `
-                <tr class="${i.filePath ? 'click' : ''}" ${i.filePath ? `data-file="${C.esc(i.filePath)}"` : ''}>
+                <tr class="${i.filePath ? 'click' : ''}" ${i.filePath ? `data-file="${C.esc(i.filePath)}"` : ''}
+                    ${window.AFCtx.row('afInsightRow', {
+                    insFile: i.filePath || '', insAnchor: i.anchor || '',
+                    insText: [i.severity, i.category, i.message].filter(Boolean).join(' · ')
+                })}
+                    title="${C.esc(window.AFCtx.hint(i.category))}">
                     <td>${sevIcon[i.severity]}</td>
                     <td>${C.esc(i.category)}</td>
                     <td>${C.esc(i.message)} <a data-guide="${C.esc(i.anchor)}">?</a></td>
@@ -100,7 +105,9 @@
             : '<tr><td colspan="3" class="muted">No findings — healthy agent. 🌿</td></tr>';
 
         const memHtml = a.memoryFiles.map(f => `
-            <tr class="click" data-file="${C.esc(f.path)}">
+            <tr class="click" data-file="${C.esc(f.path)}"
+                ${window.AFCtx.row('afMemoryRow', { memPath: f.path, memName: f.name, agentId: a.id })}
+                title="${C.esc(window.AFCtx.hint(f.path))}">
                 <td>${C.esc(f.name)}${f.orphan ? ' <span title="not referenced in MEMORY.md">⚠</span>' : ''}</td>
                 <td class="num">${(f.size / 1024).toFixed(1)} KB</td>
                 <td class="num">~${C.fmtTok(f.tokens)}</td>
@@ -241,7 +248,8 @@
                 searchTitle: "Search all of this agent's sessions",
                 guide: 'ajan-detay-sayfasi'
             })}
-            <div class="row">
+            <div class="row" ${window.AFCtx.agent(a)}
+                title="${C.esc(window.AFCtx.AGENT_HINT)}">
                 <div class="card"><div class="label">Total cost</div><div class="kpi">${C.fmtUSD(t.cost)}</div><div class="sub">avg ${C.fmtUSD(t.avgCostPerSession)} / session</div></div>
                 <div class="card"><div class="label">Sessions</div><div class="kpi">${t.sessions}</div></div>
                 <div class="card"><div class="label">Tool calls</div><div class="kpi">${t.toolCalls}</div><div class="sub">${t.errors} errors</div></div>
@@ -269,7 +277,13 @@
             <div class="tablewrap"><table>
                 <tr><th></th><th>Duty</th><th>Cadence</th><th>Watch</th><th>Do</th><th class="num">Status</th></tr>
                 ${a.duties.length ? a.duties.map(d => `
-                    <tr class="${a.dutiesPath ? 'click' : ''}" ${a.dutiesPath ? `data-file="${C.esc(a.dutiesPath)}"` : ''} style="${d.paused ? 'opacity:.5' : ''}">
+                    <tr class="${a.dutiesPath ? 'click' : ''}" ${a.dutiesPath ? `data-file="${C.esc(a.dutiesPath)}"` : ''} style="${d.paused ? 'opacity:.5' : ''}"
+                        ${window.AFCtx.row('afDutyRow', {
+                        dutyPath: a.dutiesPath || '', agentId: a.id,
+                        dutyText: [d.title, d.cadence, d.watch && ('watch: ' + d.watch), d.action && ('do: ' + d.action)]
+                            .filter(Boolean).join(' · ')
+                    })}
+                        title="${C.esc(window.AFCtx.hint(d.title))}">
                         <td>${d.missing ? '⛔' : d.pending ? '👁⚠' : '👁'}</td>
                         <td><strong>${C.esc(d.title)}</strong></td>
                         <td>${C.esc(d.cadence)}${d.paused ? ' · paused' : ''}</td>
@@ -351,6 +365,31 @@
         // sessionTableN echoes the Show box (0 = all) — pass it through as-is
         sessTable.setRows(DATA.sessions || [], DATA.sessionTableN);
     }
+
+    // ------------------------------------------------------- right-click menu
+
+    /** The page-side acts. The agent's own menu is host commands and needs
+     *  nothing here (src/core/ctxmenu.ts). */
+    function ctxDo(act, ctx) {
+        const open = (p) => { if (p) { vscode.postMessage({ type: 'openFile', path: String(p) }); } };
+        switch (act) {
+            case 'memOpen': open(ctx.memPath); return;
+            case 'memGraph':
+                vscode.postMessage({ type: 'openMemoryGraph', agentId: String(ctx.agentId || '') });
+                return;
+            case 'memCopy': window.AFCtx.copy(ctx.memPath); return;
+            case 'dutyOpen': open(ctx.dutyPath); return;
+            case 'dutyCopy': window.AFCtx.copy(ctx.dutyText); return;
+            case 'insOpen': open(ctx.insFile); return;
+            case 'insGuide':
+                vscode.postMessage({ type: 'openGuide', anchor: String(ctx.insAnchor || '') });
+                return;
+            case 'insCopy': window.AFCtx.copy(ctx.insText); return;
+        }
+    }
+
+    // ‼️ ONCE, at module scope — render() runs on every data push.
+    window.AFCtx.listen(ctxDo);
 
     render();
 })();

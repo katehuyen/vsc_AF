@@ -133,8 +133,27 @@ ok('…and its figures in the tooltip', /dev #1 · #S1 · TOOL · Read/.test(las
     };
     const label = /<g class="mark lanelabel" data-file="D:\/t\/S1.jsonl" data-ts="0" data-vscode-context="([^"]*)"/.exec(lastHtml);
     ok('the row label carries the right-click contract', !!label);
-    ok('…the same one the cards use', !!label && label[1].indexOf('afTimelineSession') !== -1);
+    // ‼️ The label is BOTH a session and an agent — its name is what is written
+    // there. The section it publishes is in both families in
+    // src/core/ctxmenu.ts, so one right-click gives the session's actions and
+    // everything the agent can be asked to do.
+    ok('…the same one the cards use, plus the agent\'s',
+        !!label && label[1].indexOf('afTimelineAgent') !== -1);
     ok('…for that row\'s own session', !!label && ctxOf(label[1]) === 'S1');
+    ok('…and it names the agent, which is all a lane knows',
+        !!label && /agentName&quot;:&quot;dev&quot;/.test(label[1]));
+    {
+        const pkg = JSON.parse(fs.readFileSync(
+            require('path').resolve(__dirname, '../package.json'), 'utf8'));
+        const web = pkg.contributes.menus['webview/context'];
+        const draws = (when, section) => {
+            const m = /^webviewSection =~ \/(.+)\/$/.exec(String(when || ''));
+            return m ? new RegExp(m[1]).test(section) : when === `webviewSection == '${section}'`;
+        };
+        ok('‼️ the catalogue really draws BOTH menus on a lane label',
+            web.some(e => e.command === 'agentfarm.endSession' && draws(e.when, 'afTimelineAgent'))
+            && web.some(e => e.command === 'agentfarm.openAgentDetail' && draws(e.when, 'afTimelineAgent')));
+    }
     ok('…and the tooltip says so', lastHtml.indexOf("Right-click for this session's actions") !== -1);
 
     // Transparent hit areas: the whole row answers for its live session, and a

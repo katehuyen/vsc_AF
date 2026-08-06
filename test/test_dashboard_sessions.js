@@ -339,7 +339,10 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     const code = fs.readFileSync(path.resolve(__dirname, '../media/dashboard.js'), 'utf8');
     let posted = [];
     let lastHtml = '';
-    let msgHandler = null;
+    // ‼️ A LIST: the page listens twice — its own host messages, and the
+    // right-click relay wired at module scope. Last-one-wins drops one.
+    const msgHandlers = [];
+    const msgHandler = (ev) => msgHandlers.forEach(fn => fn(ev));
     let savedState = null;
     let stopped = 0;
     const evStub = { stopPropagation() { stopped++; } };
@@ -407,7 +410,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
                 insightTotals: { error: 0, warning: 0, info: 0 },
                 unknownModels: [], farmStatus: [], externalSessions: {}
             },
-            addEventListener: (ev, fn) => { if (ev === 'message') { msgHandler = fn; } }
+            addEventListener: (ev, fn) => { if (ev === 'message') { msgHandlers.push(fn); } }
         },
         document: {
             getElementById: getEl,
