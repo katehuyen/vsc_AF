@@ -76,7 +76,11 @@
             // the normal case, and re-picking it each time is a tax on it.
             if (blCap && blCap.sending) {
                 blCap.sending = false;
-                if (!ev.data.error) { blCap.text = ''; }
+                // …and the queue position goes with the words. Unlike an area,
+                // "put this one third" is about the item just written, not a
+                // standing preference — leaving it set would silently make the
+                // next capture jump the queue too.
+                if (!ev.data.error) { blCap.text = ''; blCap.at = ''; }
             }
             return;                                   // the data message repaints
         }
@@ -936,7 +940,12 @@
                    it used to span the whole width, which said "this is the big
                    thing here" about the one control you press last. */
                 .pj-bl-capr { flex:1 1 100%; display:flex; gap:6px; align-items:center; }
-                .pj-bl-capr .pj-bl-addb { flex:0 0 auto; margin-left:auto; padding:2px 20px; }
+                .pj-bl-capr .pj-bl-addb { flex:0 0 auto; padding:2px 20px; }
+                /* WHERE IN THE QUEUE. A narrow box immediately left of Add, so
+                   the position is chosen in the same glance as the press that
+                   uses it. It does not stretch: it holds a number. */
+                .pj-bl-capr .pj-bl-atsel { flex:0 0 auto; width:74px; min-width:74px; margin-left:auto; }
+                .pj-bl-capr .pj-bl-atsel:disabled { opacity:.45; }
                 /* THE QUEUE STRIP. Entries are buttons because they do two things
                    — jump, and move — and a thing that only looked like a label
                    was a strip nobody tried to touch. */
@@ -1424,7 +1433,9 @@
         const p = sel();
         const id = p ? p.id : '';
         if (!blCap || blCap.id !== id) {
-            blCap = { id: id, text: '', area: '', type: '', prio: 'normal', effort: '', sending: false };
+            // `at` = the 1-based queue position picked beside Add ('' = none,
+            // which is the default and means "wherever it would have gone").
+            blCap = { id: id, text: '', area: '', type: '', prio: 'normal', effort: '', at: '', sending: false };
         }
         return blCap;
     }
@@ -1527,6 +1538,38 @@
     }));
 
     /**
+     * WHERE THE NEW ITEM LANDS IN THE QUEUE — the little box left of Add.
+     *
+     * ‼️ THE PLACE IS PART OF THE THOUGHT. Writing something down and knowing
+     * it is the next thing to do are one gesture; without this box they were
+     * two, and the second one — find the row you just added, then nudge it up
+     * past everything else — is expensive enough that it does not get done, so
+     * the queue quietly stops meaning anything.
+     *
+     * The list is as long as the queue plus one, rebuilt on every paint: the
+     * positions on offer are exactly the positions that exist. Touch nothing
+     * and the item goes wherever it would have gone anyway — the box is an
+     * option, never a field to fill in.
+     *
+     * ‼️ IT NEEDS AN AREA, and says so rather than failing quietly. The queue
+     * holds CODES (see queueOrder in projectBacklog.ts) and a capture with no
+     * area gets no code, so there is nothing to place — the box is disabled
+     * until the area select next to it has a value.
+     */
+    function blAtHtml(cap, queueLen) {
+        const n = Math.max(0, Number(queueLen) || 0);
+        const off = !cap.area;
+        const opts = ['<option value=""' + (cap.at ? '' : ' selected') + '>— # —</option>'];
+        for (let i = 1; i <= n + 1; i++) {
+            opts.push(`<option value="${i}"${String(i) === String(cap.at) ? ' selected' : ''}>${i}${i === 1 ? ' · top' : i === n + 1 ? ' · last' : ''}</option>`);
+        }
+        return `<select id="bl-at" class="pj-bl-atsel"${off ? ' disabled' : ''}
+            title="${off
+        ? 'Where in the queue it lands. Pick an area first — the queue holds codes, and a capture with no area has none yet (file it later with 🗂 and it queues then).'
+        : `Where in the queue it lands: 1 puts it at the very top, ${n + 1} at the end. Leave it on — # — and it goes wherever a new item normally goes.`}">${opts.join('')}</select>`;
+    }
+
+    /**
      * The backlog tab.
      *
      * ‼️ THE ROW IS THE EDITOR. There is no dialog and no "edit" mode: the
@@ -1622,6 +1665,7 @@
                     </select>
                     <span class="pj-bl-capr">
                         ${window.AFTextTools.html('bl', { wrap: 'span', className: 'tatools inline' })}
+                        ${blAtHtml(cap, (d.queue || []).length)}
                         <button data-act="blAdd" class="pj-bl-addb" title="Ctrl+Enter in the box does the same">Add</button>
                     </span>
                 </div>
@@ -2595,10 +2639,24 @@
             }
         });
         window.AFTextTools.paint('bl', !!blCapture().text);
-        // The four axes are part of the draft too — see blCapture.
-        for (const pair of [['bl-area', 'area'], ['bl-type', 'type'], ['bl-prio', 'prio'], ['bl-effort', 'effort']]) {
+        // The five axes are part of the draft too — see blCapture.
+        for (const pair of [['bl-type', 'type'], ['bl-prio', 'prio'], ['bl-effort', 'effort'], ['bl-at', 'at']]) {
             const el = document.getElementById(pair[0]);
             if (el) { el.addEventListener('change', () => { blCapture()[pair[1]] = el.value; }); }
+        }
+        // Area is the one that repaints: the position box next to Add is only
+        // live once an area is chosen (an uncoded capture has no code to queue),
+        // so leaving it grey after the choice that unlocks it would read as a
+        // dead control. The repaint is safe here — a `change` fires after the
+        // popup has closed, so nothing is torn out mid-gesture (see blOwnsGesture).
+        const blAreaSel = document.getElementById('bl-area');
+        if (blAreaSel) {
+            blAreaSel.addEventListener('change', () => {
+                const cap = blCapture();
+                cap.area = blAreaSel.value;
+                if (!cap.area) { cap.at = ''; }
+                render();
+            });
         }
 
         /** Add or drop one value on a multi-select axis. Clicking a chip that is
@@ -3080,7 +3138,12 @@
                     vscode.postMessage({
                         type: 'backlogAdd', id, text,
                         area: cap.area, priority: cap.prio || 'normal', effort: cap.effort,
-                        ...(cap.type ? { kinds: [cap.type] } : {})
+                        ...(cap.type ? { kinds: [cap.type] } : {}),
+                        // Only when a position was actually picked. Sending a 0
+                        // or a 1 by default would make every capture jump the
+                        // queue, which is the opposite of "touch nothing and
+                        // nothing changes".
+                        ...(cap.area && Number(cap.at) > 0 ? { at: Number(cap.at) } : {})
                     });
                     break;
                 }

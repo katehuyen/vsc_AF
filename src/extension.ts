@@ -93,6 +93,7 @@ import {
 } from './core/memorySync';
 import { SecretsVault } from './core/secrets';
 import { contextWindowFor, DEFAULT_PRICING, PriceRule, PricingEngine, PricingVersion, QuotaWeight, QuotaWeightMode, setQuotaConfig, totalTokens, Usage } from './core/pricing';
+import { parsePromptSnippets, PromptSnippet } from './core/prompts';
 import { QualityStore, sampleQuality } from './core/quality';
 import { buildDailyDigest, buildFleetReport, buildOutputsDigest } from './core/report';
 import { buildForecast, renderForecastMarkdown } from './core/forecast';
@@ -4067,12 +4068,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.backlog.add',
-            describe: 'Put an item in the backlog. EVERYTHING EXCEPT THE TEXT IS OPTIONAL, deliberately: a system that demands a code before it will take a thought does not get the thought. With `area` (or `parent`) the item is filed there and given the next free code — codes only ever count UP, so a cancelled item\'s number stays spent and a note from three months ago quoting K-8 still means this item. With neither, it lands in the 📥 inbox with no code, to be classified later by whoever has the context (see projects.backlog.code). Creates the backlog document from the skeleton if the project has none. args: project (id or name), text, area? (1-2 capital letters), parent? (a code — the area comes from it), kind?/kinds?, priority? (highest|high|medium|normal|low|lowest), effort? (XS|S|M|L|XL), due? (YYYY-MM-DD), plan? (a plan item\'s 🆔), from?, blockedBy? (code or array)',
+            describe: 'Put an item in the backlog. EVERYTHING EXCEPT THE TEXT IS OPTIONAL, deliberately: a system that demands a code before it will take a thought does not get the thought. With `area` (or `parent`) the item is filed there and given the next free code — codes only ever count UP, so a cancelled item\'s number stays spent and a note from three months ago quoting K-8 still means this item. With neither, it lands in the 📥 inbox with no code, to be classified later by whoever has the context (see projects.backlog.code). Creates the backlog document from the skeleton if the project has none. args: project (id or name), text, area? (1-2 capital letters), parent? (a code — the area comes from it), kind?/kinds?, priority? (highest|high|medium|normal|low|lowest), effort? (XS|S|M|L|XL), due? (YYYY-MM-DD), plan? (a plan item\'s 🆔), from?, blockedBy? (code or array), at? (1-based queue position for the new item — 1 puts it at the very top; needs an area, because the queue holds codes and an uncoded capture has none; omit it and the item queues wherever a new one normally would)',
             handler: (args) => {
                 const { project, folder, file, text } = backlogDoc(argStr(args, 'project'), true);
                 const body = argStr(args, 'text').trim();
                 need(body, 'an item needs some text');
                 let code: string | undefined;
+                // The add and the placement are ONE guarded write — see the
+                // panel's backlogAdd for why they must not be two.
+                const at = Math.floor(Number(optStr(args, 'at') ?? 0)) || 0;
+                let placed: string | undefined;
                 const out = editProjectDoc(folder, file, src => {
                     const res = addBacklogItem(src, {
                         text: body,
@@ -4089,13 +4094,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         blockedBy: listArg(args, 'blockedBy', 'blocks')
                     });
                     if (res.code) { code = res.code; }
-                    return res;
+                    if (!res.ok || !at) { return res; }
+                    if (!res.code) {
+                        return { ...res, note: 'it went to the inbox without a code, so it could not be queued' };
+                    }
+                    const q = placeInQueue(res.text as string, res.code, at);
+                    if (!q.ok) { return { ...res, note: q.error }; }
+                    placed = `queued at ${Math.max(1, Math.min(q.queue.length, at))}`;
+                    return { ok: true, text: q.text as string };
                 });
                 void text;
                 projectDocWritten(project.id);
                 return {
                     project: project.name, file: relDoc(folder, out.file),
-                    code: code ?? null, added: body, note: out.note ?? null
+                    code: code ?? null, added: body,
+                    note: [out.note, placed].filter(Boolean).join(' · ') || null
                 };
             }
         },
@@ -7106,6 +7119,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             return transcriptHistory(fs.readFileSync(file, 'utf8').split('\n'));
         } catch { return []; }
     };
+    /**
+     * The prompt snippets file, read and parsed — or an honest reason why not.
+     *
+     * ‼️ THE SETTING IS CLEARED WHEN THE FILE IS NOT THERE, and that rule is the
+     * user's: the default points at a path in THEIR vault, and on any other
+     * machine that path does not exist. A default that cannot be right
+     * elsewhere must not sit there looking configured — it clears itself once,
+     * on the first read, and the feature waits empty until somebody picks a
+     * file. (A path that is merely unreadable — a locked file, a disconnected
+     * drive — is reported, NOT cleared: a temporary failure must not throw away
+     * a setting the user chose.)
+     */
+    let snippetsChecked = false;
+    const readPromptSnippets = (): { file: string; items: PromptSnippet[]; error?: string } => {
+        const file = (cfg().get<string>('promptSnippetsFile', '') ?? '').trim();
+        if (!file) { return { file: '', items: [] }; }
+        if (!fs.existsSync(file)) {
+            if (!snippetsChecked) {
+                snippetsChecked = true;
+                void cfg().update('promptSnippetsFile', '', vscode.ConfigurationTarget.Global);
+            }
+            return { file: '', items: [], error: `there is no file at ${file} — the setting has been cleared` };
+        }
+        snippetsChecked = true;
+        try {
+            return { file, items: parsePromptSnippets(fs.readFileSync(file, 'utf8')).items };
+        } catch (e) {
+            return { file, items: [], error: String((e as Error)?.message ?? e) };
+        }
+    };
+
     const consoleDeps = {
         extensionUri: context.extensionUri,
         host: consoleHost,
@@ -7132,7 +7176,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // The chip's text — the same composition the spawn writes, so what the
         // chip shows is what the next session will actually be given. Cached,
         // because this is asked for on every repaint (see the preview above).
-        projectContextText: (projectId: string) => projectContextPreviewFor(projectId)
+        projectContextText: (projectId: string) => projectContextPreviewFor(projectId),
+        promptSnippets: () => readPromptSnippets()
     };
 
     /**
@@ -8066,17 +8111,71 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(
         vscode.window.registerTreeDataProvider('agentfarm.projects', projectsTree));
 
-    /** The active project, always on screen — a stamp being applied invisibly
-     *  is exactly the automation nobody should have to trust blindly. */
-    const projectBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 91);
+    /**
+     * The active project, always on screen — a stamp being applied invisibly
+     * is exactly the automation nobody should have to trust blindly.
+     *
+     * ‼️ THE ITEM IS A FIXED WIDTH AND THE NAME IS NOT ON IT. A project name is
+     * as long as the user made it (`PRS.MuratVural_DEV_VSC.AgentFarm` is 30
+     * characters), and the status bar is shared with everything else VS Code
+     * wants to say: the one indicator whose text grew with the data was pushing
+     * the others off the edge. The word stays "Project", the NAME and
+     * everything about it moved into the tooltip — which can be as long as it
+     * likes, costs nothing until it is hovered, and can carry links a one-line
+     * label never could.
+     *
+     * Priority 87 puts it at the RIGHT-HAND END of the Agent Farm cluster,
+     * after the plan-usage percentages (88): a lower number sits further right
+     * in the Left group. The percentages are the figure read at a glance and
+     * they keep the edge nearest the middle of the bar.
+     */
+    const projectBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 87);
     projectBar.command = 'agentfarm.setActiveProject';
     context.subscriptions.push(projectBar);
+    /** A command link for the tooltip. Arguments ride as JSON, which is what
+     *  makes "clear it" one click instead of a quick-pick to get back to. */
+    const barCmd = (command: string, args?: unknown[]): string =>
+        `command:${command}` + (args ? `?${encodeURIComponent(JSON.stringify(args))}` : '');
     const paintProjectBar = (): void => {
         const p = activeProject();
-        projectBar.text = p ? `◧ ${p.name}` : '◧ No project';
-        projectBar.tooltip = p
-            ? `Active project: ${p.name}\nSessions you start here — Console or terminal — are filed under it.\nAnything you already filed by hand keeps what you chose.\nClick to change or clear.`
-            : 'No active project. Click to pick one — sessions you start here will then be filed under it.';
+        projectBar.text = p ? '◧ Project' : '◧ No project';
+        const md = new vscode.MarkdownString();
+        if (p) {
+            const roll = projectRollup().find(r => r.name === p.name);
+            const warn = projectWarnings(p);
+            md.appendMarkdown(`**◧ ${p.name}**\n\n`);
+            if (p.summary) { md.appendMarkdown(`${p.summary}\n\n`); }
+            md.appendMarkdown(`${p.status}${p.kind ? ` · ${p.kind}` : ''}`
+                + (roll ? ` · ${roll.sessions} session${roll.sessions === 1 ? '' : 's'}` : '')
+                + (roll ? ` · ${fmtUSD(roll.todayCost)} today`
+                    + (p.budgetUSD ? ` of ${fmtUSD(p.budgetUSD)}` : '') : '')
+                + '\n\n');
+            if (p.folder) { md.appendMarkdown(`\`${p.folder}\`\n\n`); }
+            for (const w of warn) { md.appendMarkdown(`⚠ ${w}\n\n`); }
+            md.appendMarkdown(
+                'Sessions you start here — Console or terminal — are filed under it. '
+                + 'Anything you already filed by hand keeps what you chose.\n\n');
+            md.appendMarkdown(
+                `[Open the project](${barCmd('agentfarm.openProject', [{ id: p.id }])})`
+                + ` · [Add to backlog](${barCmd('agentfarm.backlogAdd', [p.id])})`
+                + ` · [Change](${barCmd('agentfarm.setActiveProject')})`
+                + ` · [Clear](${barCmd('agentfarm.setActiveProject', [{ id: '' }])})`);
+        } else {
+            md.appendMarkdown('**No active project**\n\n');
+            md.appendMarkdown(
+                'Nothing is being stamped. Pick one and the sessions you start here — '
+                + 'Console or terminal — are filed under it.\n\n');
+            md.appendMarkdown(
+                `[Pick a project](${barCmd('agentfarm.setActiveProject')})`
+                + ` · [Projects page](${barCmd('agentfarm.openProjects')})`);
+        }
+        md.isTrusted = {
+            enabledCommands: [
+                'agentfarm.setActiveProject', 'agentfarm.openProject',
+                'agentfarm.openProjects', 'agentfarm.backlogAdd'
+            ]
+        };
+        projectBar.tooltip = md;
         projectBar.show();
     };
     paintProjectBar();
@@ -8869,11 +8968,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
             };
             return {
+                /**
+                 * ‼️ `at` MAKES THIS TWO EDITS IN ONE WRITE, and that is the
+                 * point. Adding the line and then placing it would be two
+                 * guarded writes, so a failure between them leaves an item the
+                 * user asked to put third sitting at the bottom — and the
+                 * second write would have to re-read a file the first one just
+                 * changed. Chaining the two pure functions over the same text
+                 * means the file is written once, with both edits or neither.
+                 *
+                 * A place asked for on a capture with no area is REPORTED, not
+                 * swallowed: the queue holds codes, an uncoded item has none,
+                 * and a position that quietly did nothing is the worst of the
+                 * three possible answers.
+                 */
                 backlogAdd: (id: string, input: {
                     text: string; area?: string; parent?: string;
-                    priority?: string; effort?: string; kinds?: string[];
+                    priority?: string; effort?: string; kinds?: string[]; at?: number;
                 }) => {
                     let code: string | undefined;
+                    let placed: string | undefined;
+                    const at = Number(input.at) > 0 ? Math.floor(Number(input.at)) : 0;
                     const res = edit(id, text => {
                         const r = addBacklogItem(text, {
                             text: input.text,
@@ -8886,9 +9001,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             ...(input.kinds?.length ? { kinds: input.kinds } : {})
                         });
                         if (r.code) { code = r.code; }
-                        return r;
+                        if (!r.ok || !at) { return r; }
+                        if (!r.code) {
+                            return { ...r, note: 'it went to the inbox without a code, so it could not be queued' };
+                        }
+                        const q = placeInQueue(r.text as string, r.code, at);
+                        if (!q.ok) { return { ...r, note: q.error }; }
+                        placed = `queued at ${Math.max(1, Math.min(q.queue.length, at))}`;
+                        return { ok: true, text: q.text as string };
                     }, true);
-                    return { ...res, ...(code ? { code } : {}) };
+                    return {
+                        ...res, ...(code ? { code } : {}),
+                        ...(placed ? { note: [res.note, placed].filter(Boolean).join(' · ') } : {})
+                    };
                 },
                 /**
                  * ‼️ A tick from the page is tracked too, and it is honest about
@@ -14568,6 +14693,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(items.length > 0,
                     `No menu is drawn on "${section}" — ui.ctxmenu with no section lists the kinds there are.`);
                 return { section, items };
+            }
+        },
+        {
+            op: 'prompts.list',
+            describe: 'The saved prompt snippets — the phrases the user keeps to hand for the Console, '
+                + 'read out of the markdown file agentFarm.promptSnippetsFile. Only text inside ``` fences '
+                + 'is a snippet; the prose around the fences is the user\'s own notes and is never returned. '
+                + 'Each item carries the label the picker shows (the fence info string, the line above it, or '
+                + 'the nearest heading), the heading it sits under, its line, and the text verbatim. '
+                + 'Reads the file on every call, so a block added a moment ago is here. '
+                + 'args: q? (only snippets whose label, group or text contains this)',
+            handler: (args) => {
+                const snap = readPromptSnippets();
+                const q = (optStr(args, 'q') ?? '').toLowerCase();
+                const items = q
+                    ? snap.items.filter(i =>
+                        `${i.label} ${i.group} ${i.text}`.toLowerCase().includes(q))
+                    : snap.items;
+                return {
+                    file: snap.file || null,
+                    ...(snap.error ? { error: snap.error } : {}),
+                    count: items.length, items
+                };
             }
         }
     ]);

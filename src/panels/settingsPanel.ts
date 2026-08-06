@@ -25,8 +25,13 @@ export interface AgentFolderReport {
 
 export interface FarmSettingsDeps {
     extensionUri: vscode.Uri;
-    /** the agentFarm.* schema straight from package.json — the page renders it. */
-    schema(): Record<string, { type?: unknown; enum?: unknown; default?: unknown; description?: string; markdownDescription?: string }>;
+    /** the agentFarm.* schema straight from package.json — the page renders it.
+     *  `format` is how a setting declares itself a path and earns a Browse…
+     *  button (see SettingSpec.browse). */
+    schema(): Record<string, {
+        type?: unknown; enum?: unknown; default?: unknown;
+        description?: string; markdownDescription?: string; format?: unknown;
+    }>;
     getProfiles(): SettingsProfile[];
     setProfiles(list: SettingsProfile[]): Thenable<void>;
     /** Claude Code's own ~/.claude/settings.json (honors agentFarm.claudeDir). */
@@ -164,6 +169,28 @@ export class FarmSettingsPanel {
             case 'reset':
                 await this.setValue(String(msg.key ?? ''), undefined);
                 break;
+            /**
+             * Browse… on a path setting (schema `format: file-path` /
+             * `folder-path`). The dialog opens where the setting already points
+             * — picking a new prompts file means going back to the folder the
+             * old one was in, and starting at the last-used directory instead
+             * would cost that walk every time.
+             */
+            case 'browse': {
+                const key = String(msg.key ?? '');
+                const folders = String(msg.kind ?? 'file') === 'folder';
+                const current = String(vscode.workspace.getConfiguration().get(key) ?? '').trim();
+                const picked = await vscode.window.showOpenDialog({
+                    canSelectFolders: folders, canSelectFiles: !folders, canSelectMany: false,
+                    openLabel: folders ? 'Use this folder' : 'Use this file',
+                    ...(current ? { defaultUri: vscode.Uri.file(current) } : {})
+                });
+                const file = picked?.[0]?.fsPath;
+                if (!file) { break; }
+                const error = await this.setValue(key, file);
+                if (error) { void this.panel.webview.postMessage({ type: 'error', key, error }); }
+                break;
+            }
             // From a setting's right-click menu: the same key, in VS Code's own
             // settings editor — where its raw JSON, its scope and its history
             // live. This page is a curated view, not a replacement for that.

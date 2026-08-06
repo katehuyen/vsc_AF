@@ -107,7 +107,7 @@ const mkRow = (i, extra) => Object.assign({
     t.setRows(rows, 3);
     const html = () => containers.dash.innerHTML;
 
-    ok('agent column rendered', html().includes('<th>Agent</th>'));
+    ok('agent column rendered', html().includes('>Agent</th>'));
     ok('Ctx now header + sort option present',
         html().includes('>Ctx now</th>') && html().includes('<option value="ctx"'));
     ok('ctx cell formatted (~) when known, — when not',
@@ -138,6 +138,48 @@ const mkRow = (i, extra) => Object.assign({
     ok('row click posts openSession', posted.some(p => p.type === 'openSession' && p.file === 'f2'));
 }
 
+// ---------- S-6: every column answers its own question on hover ----------
+// The row's tooltip used to be the only one, so all eleven cells said
+// "right-click for session actions" and the figures they covered — when the
+// session ran, what a turn cost — were reachable only by opening it.
+{
+    posted = []; state = {};
+    const t = sandbox.window.AFSessionsTable.create({
+        vscode: vscodeStub, C, containerId: 'tips',
+        columns: ['agent', 'title', 'when', 'duration', 'turns', 'tools', 'errors', 'tokens', 'ctx', 'cost'],
+        stateKey: 'tips'
+    });
+    // a session with both ends known: 4 turns over 20 minutes, $8, 400 tokens
+    t.setRows([mkRow(1, {
+        firstTs: NOW - 20 * 60000, ts: NOW, durationMin: 20, turns: 4,
+        toolCalls: 12, errors: 3, tokens: 400, wTokens: 900, ctx: 90000, cost: 8
+    })], 10);
+    const html = () => containers.tips.innerHTML;
+
+    ok('the row still says a right-click has more',
+        html().includes('title="right-click for session actions"'));
+    ok('…and every cell carries it as a TAIL, not instead of its own words',
+        (html().match(/right-click for session actions/g) || []).length > 5);
+    ok('When says the whole date and both ends',
+        /title="[^"]*Last activity:[^"]*Started:[^"]*Ran for 20 min/.test(html()));
+    ok('Duration derives the per-turn average', html().includes('5 min per turn'));
+    ok('Turns names what a turn is, and what one costs',
+        html().includes('prompts you sent, not API calls')
+        && html().includes('100t tokens per turn') && html().includes('$2 per turn'));
+    ok('Tokens separates the raw total from the weighted one',
+        /title="Raw total: 400t[^"]*Against the plan limit: 900t/.test(html()));
+    ok('Errors says what share of the tool calls they are', html().includes('25% of the tool calls'));
+    ok('Ctx explains what the number is', html().includes('after the last reply'));
+    ok('Cost is honest about being API-equivalent', html().includes('a plan session is not billed this way'));
+
+    // …and with a selection the tail follows what a right-click would DO
+    const box = containers.tips.querySelectorAll('[data-sel]')[0];
+    box.checked = true;
+    box._fn({ stopPropagation() { }, shiftKey: false });
+    ok('a selected row says the menu acts on the selection, in every cell',
+        (containers.tips.innerHTML.match(/1 session selected/g) || []).length > 5);
+}
+
 // ---------- part 2: turn accordion — fold, host round-trip, turn jump ----------
 {
     posted = []; state = {};
@@ -148,7 +190,7 @@ const mkRow = (i, extra) => Object.assign({
     t.setRows([mkRow(1), mkRow(2)], 10);
     const html = () => containers.acc.innerHTML;
 
-    ok('no Agent column on the agent page variant', !html().includes('<th>Agent</th>'));
+    ok('no Agent column on the agent page variant', !html().includes('>Agent</th>'));
     click(containers.acc.querySelectorAll('[data-fold]')[0]); // f1
     ok('fold requests turns from the host',
         posted.some(p => p.type === 'sessionTurns' && p.file === 'f1'));

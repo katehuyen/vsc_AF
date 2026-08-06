@@ -60,8 +60,16 @@ export class FarmStatusBar implements vscode.Disposable {
         for (const s of this.index.all()) {
             cost += s.daily[today]?.cost ?? 0;
         }
-        const liveWorking = this.live?.workingAgentIds().size ?? 0;
-        const active = Math.max(liveWorking, this.index.activeAgentIds().size);
+        // ‼️ SESSIONS, NOT AGENTS. Two Console tabs on the same agent are two
+        // turns and two costs; counting agents folded them into "1 active" and
+        // the indicator was blind to everything but the first. `activeTurns()`
+        // is the live monitor's own session count (its `workingAgentIds()` is
+        // the agent-shaped one) and `activeSessions()` is the index's.
+        const liveWorking = this.live?.activeTurns() ?? 0;
+        const active = Math.max(liveWorking, this.index.activeSessions().length);
+        // Kept for the tooltip only: "3 sessions across 2 agents" is the line
+        // that makes the number above it unambiguous.
+        const activeAgents = this.index.activeAgentIds().size;
         const waiting = this.extras?.blocking?.() ?? this.live?.waitingCount() ?? 0;
         const win = this.index.windowUsage();
 
@@ -96,7 +104,9 @@ export class FarmStatusBar implements vscode.Disposable {
             : `[Start token lap](command:agentfarm.lapReset) — trip meter that counts tokens from now\n\n`;
         const tooltip = new vscode.MarkdownString(
             `**Agent Farm**\n\n` +
-            `Active agents: ${active}${waiting ? ` • ⚠ ${waiting} waiting/stalled` : ''}\n\n` +
+            `Active sessions: ${active}` +
+            (activeAgents ? ` across ${activeAgents} agent${activeAgents === 1 ? '' : 's'}` : '') +
+            `${waiting ? ` • ⚠ ${waiting} waiting/stalled` : ''}\n\n` +
             `Today's cost (API-equivalent): ${fmtUSD(cost)}\n\n` +
             // ‼️ The 5h window is the plan's own reset span, so this is the one
             // line where the weighted figure matters most: the raw total of a

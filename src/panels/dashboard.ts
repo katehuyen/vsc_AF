@@ -112,6 +112,10 @@ export function sessionRowPool(
         // launch name or a rename is what you see in the column
         autoTitle: s.autoTitle,
         ts: s.lastTs || s.mtime || 0,
+        // The other end of the session. The table showed "3m" and "2h ago" and
+        // there was no way to ask WHEN it ran without opening it — a duration
+        // with only one endpoint on the row cannot answer that.
+        firstTs: s.firstTs || 0,
         durationMin: s.firstTs && s.lastTs ? Math.round((s.lastTs - s.firstTs) / 60000) : 0,
         turns: s.userTurns,
         toolCalls: s.toolCalls,

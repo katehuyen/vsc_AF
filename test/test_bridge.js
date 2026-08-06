@@ -1624,15 +1624,32 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
                     }
                 },
                 {
-                    op: 'projects.backlog.add', describe: 'add an item. args: project, text, area?',
+                    op: 'projects.backlog.add', describe: 'add an item. args: project, text, area?, at?',
                     handler: a => {
                         const body = argStr(a, 'text').trim();
                         need(body, 'an item needs some text');
-                        const r = editBacklog(t => addBacklogItem(t, {
-                            text: body,
-                            ...(optStr(a, 'area') ? { area: optStr(a, 'area') } : {})
-                        }));
-                        return { code: r.code || null };
+                        // S-12: the add and the placement are ONE write — the
+                        // same chaining the real handler does, for the same
+                        // reason (a failure between two writes would leave an
+                        // item the user asked to put first sitting last).
+                        const at = Math.floor(Number(a.at ?? 0)) || 0;
+                        let note = null;
+                        const r = editBacklog(t => {
+                            const res = addBacklogItem(t, {
+                                text: body,
+                                ...(optStr(a, 'area') ? { area: optStr(a, 'area') } : {})
+                            });
+                            if (!res.ok || !at) { return res; }
+                            if (!res.code) {
+                                note = 'it went to the inbox without a code, so it could not be queued';
+                                return res;
+                            }
+                            const q = placeInQueue(res.text, res.code, at);
+                            if (!q.ok) { note = q.error; return res; }
+                            note = `queued at ${at}`;
+                            return { ok: true, text: q.text, code: res.code };
+                        });
+                        return { code: r.code || null, note };
                     }
                 },
                 {
@@ -1705,6 +1722,22 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             const filed = await reg.dispatch('projects.backlog.add',
                 { project: 'Agent Farm', text: 'a real item', area: 'P' });
             ok('…and with an area it is given the next free code', filed.ok && filed.result.code === 'P-3');
+
+            // ---- S-12: `at` — write it down AND say where it goes, in one move ----
+            const jumped = await reg.dispatch('projects.backlog.add',
+                { project: 'Agent Farm', text: 'do this one first', area: 'P', at: 1 });
+            ok('projects.backlog.add can put the new item at a queue position',
+                jumped.ok && jumped.result.code === 'P-4' && /queued at 1/.test(jumped.result.note));
+            const head = await reg.dispatch('projects.backlog.next',
+                { project: 'Agent Farm', limit: 5, maxEffort: 'XL' });
+            ok('…and it really is the next thing up', head.ok && head.result.items[0] === 'P-4');
+            ok('‼️ …written in ONE pass — the item line and the 🎯 block, one file',
+                /- \[ \] P-4 do this one first/.test(readBacklog()) && /1\. P-4/.test(readBacklog()));
+            const unplaceable = await reg.dispatch('projects.backlog.add',
+                { project: 'Agent Farm', text: 'a thought with nowhere to sit', at: 1 });
+            ok('‼️ a position asked for on an uncoded capture is REPORTED, not swallowed',
+                unplaceable.ok && unplaceable.result.code === null
+                && /could not be queued/.test(unplaceable.result.note));
 
             // ‼️ The queue is the ONE order, and it crosses areas. The file is
             // grouped by heading, so line order can never put a K item ahead of
@@ -1863,6 +1896,26 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             /goes stale/.test(checkBlock));
         ok('the ops call the shared guarded path rather than writing files themselves',
             /editProjectDoc\(folder,/.test(src) && !/fs\.writeFileSync\(.*roles\.plan/.test(src));
+
+        // ---- S-12: the capture box's position picker reaches the bridge too ----
+        const addBlock = src.slice(src.indexOf("op: 'projects.backlog.add'"),
+            src.indexOf("op: 'projects.backlog.add'") + 3400);
+        ok('‼️ backlog.add takes a queue position, and its contract says an area is needed',
+            /at\? \(1-based queue position/.test(addBlock) && /uncoded capture has none/.test(addBlock));
+        ok('…and it places inside the SAME guarded write, not a second one',
+            /placeInQueue\(res\.text as string, res\.code, at\)/.test(addBlock));
+
+        // ---- S-11: the saved prompts are readable by an agent, not only by hand ----
+        const promptsAt = src.indexOf("op: 'prompts.list'");
+        ok('prompts.list is registered on the bridge', promptsAt > 0);
+        const promptsBlock = src.slice(promptsAt, promptsAt + 1800);
+        ok('…and its describe states the one rule of the file',
+            /``` fences/.test(promptsBlock) && /never returned/.test(promptsBlock));
+        ok('…and it CALLS the shared reader rather than parsing the file again',
+            /readPromptSnippets\(\)/.test(promptsBlock));
+        ok('‼️ the reader clears a setting that points at nothing, and says so',
+            /the setting has been cleared/.test(src)
+            && /promptSnippetsFile', ''/.test(src));
 
         try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ }
     }

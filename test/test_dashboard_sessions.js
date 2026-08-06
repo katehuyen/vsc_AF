@@ -431,7 +431,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     ok('page hosts the sessions container', lastHtml.includes('<h2>Sessions</h2>') && lastHtml.includes('id="sessblock"'));
     ok('component rendered with sort select', sessHtml().includes('af-sort'));
     ok('full column set incl. Agent / Tools / Err / Ctx now',
-        ['<th>Agent</th>', '>Tools</th>', '>Err</th>', '>Ctx now</th>'].every(h => sessHtml().includes(h)));
+        ['>Agent</th>', '>Tools</th>', '>Err</th>', '>Ctx now</th>'].every(h => sessHtml().includes(h)));
     ok('default sort is Recent (newest row first)', order().join(',') === 'new.jsonl,mid.jsonl,old.jsonl');
     ok('active session carries the green dot + ⌨', /dot on[^>]*><\/span> dev/.test(sessHtml()) && sessHtml().includes('data-sid="s-new"'));
     ok('ctx cell rendered (~ known, — unknown)', sessHtml().includes('~155000') && sessHtml().includes('>—</td>'));

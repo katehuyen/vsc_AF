@@ -10,6 +10,7 @@ import {
 } from '../core/consoleresume';
 import { EFFORT_CHOICES, modelChoices, PERMISSION_CHOICES } from '../core/launch';
 import { totalTokens, Usage } from '../core/pricing';
+import { PromptSnippet } from '../core/prompts';
 import { SessionInfo, SessionIndex, sessionOrigin } from '../core/sessions';
 import { handleAfNav, htmlShell } from './base';
 
@@ -135,6 +136,19 @@ export interface ConsoleDeps {
      * channel. Describing the text would be no better; it has to be the text.
      */
     projectContextText(projectId: string): string;
+
+    /**
+     * The phrases you say over and over, read off the user's own markdown file
+     * (`agentFarm.promptSnippetsFile`).
+     *
+     * ‼️ READ ON DEMAND, NEVER ON THE PAYLOAD. This page rebuilds its data on
+     * every event of every hosted session — several times a second while a turn
+     * runs — and a file read on that path would be one disk hit per event for
+     * something nobody is looking at. It is read when the menu is opened, which
+     * also means the block you added in Obsidian thirty seconds ago is there
+     * without reloading anything.
+     */
+    promptSnippets(): { file: string; items: PromptSnippet[]; error?: string };
 }
 
 export class ConsolePanel {
@@ -750,6 +764,25 @@ export class ConsolePanel {
             case 'clearQueue':
                 host.clearQueue(str('id'));
                 break;
+            // A right-click on one of the SEND buttons. The answer carries the
+            // file it came from and the error when there is one, because "the
+            // menu was empty" and "the file you pointed at is gone" are two
+            // different things and only one of them is your fault.
+            case 'promptSnippets':
+                void this.panel.webview.postMessage({
+                    type: 'promptSnippets', ...this.deps.promptSnippets()
+                });
+                break;
+            case 'openPromptSnippets': {
+                const file = this.deps.promptSnippets().file;
+                if (!file) {
+                    void vscode.commands.executeCommand(
+                        'workbench.action.openSettings', 'agentFarm.promptSnippetsFile');
+                    break;
+                }
+                void vscode.window.showTextDocument(vscode.Uri.file(file));
+                break;
+            }
             case 'close':
                 host.close(str('id'));
                 break;

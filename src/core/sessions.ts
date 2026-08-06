@@ -785,6 +785,25 @@ export class SessionIndex implements vscode.Disposable {
         return ids;
     }
 
+    /**
+     * How many SESSIONS are running, not how many agents are.
+     *
+     * ‼️ THESE TWO ARE NOT THE SAME NUMBER, AND THE STATUS BAR USED THE WRONG
+     * ONE. Two Console tabs on the same agent are two turns, two costs and two
+     * things that can be waiting for you — `activeAgentIds()` folds them into
+     * one, so a fleet with three sessions on one agent read "1 active" and the
+     * indicator was blind to two thirds of what was running.
+     *
+     * A session with no registered agent is counted too: it burns the same
+     * quota, which is exactly what "active" is being asked about here. Where
+     * the question really is about agents (the daily digest's `activeAgents`,
+     * the chat `/status` line that says "N agents"), `activeAgentIds()` is
+     * still the right call and is left alone.
+     */
+    activeSessions(now = Date.now()): SessionInfo[] {
+        return [...this.sessions.values()].filter(s => this.isSessionActive(s, now));
+    }
+
     latestSessionForAgent(agentId: string): SessionInfo | undefined {
         return this.forAgent(agentId).sort((a, b) => b.mtime - a.mtime)[0];
     }

@@ -408,6 +408,24 @@ const P = (id, extra) => Object.assign(
         /workspaceState\.get<string>\('af\.activeProject'/.test(ext));
     ok('the status bar always shows the active project, even when there is none',
         /No project/.test(ext));
+
+    // ---- U-5: the item is a fixed width; the name and everything about it
+    // moved into the tooltip, which costs nothing until it is hovered ----
+    ok('‼️ the project NAME is not on the status bar item any more',
+        /projectBar\.text = p \? '◧ Project' : '◧ No project'/.test(ext));
+    ok('…and it sits to the RIGHT of the plan-usage percentages',
+        /createStatusBarItem\(vscode\.StatusBarAlignment\.Left, 87\)/.test(ext)
+        && /a lower number sits further right/.test(ext));
+    const barBlock = ext.slice(ext.indexOf('const paintProjectBar'),
+        ext.indexOf('const paintProjectBar') + 2600);
+    ok('the tooltip carries the name, the state and the spend',
+        /appendMarkdown\(`\*\*◧ \$\{p\.name\}\*\*/.test(barBlock)
+        && /p\.status/.test(barBlock) && /todayCost/.test(barBlock));
+    ok('‼️ …and is a MarkdownString with live commands, not a dead string',
+        /isTrusted = \{/.test(barBlock) && /agentfarm\.openProject/.test(barBlock)
+        && /agentfarm\.backlogAdd/.test(barBlock));
+    ok('…including the one-click clear a quick-pick used to cost',
+        /barCmd\('agentfarm\.setActiveProject', \[\{ id: '' \}\]\)/.test(barBlock));
 }
 
 console.log(`${pass} passed, ${fail} failed`);

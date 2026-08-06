@@ -87,10 +87,11 @@ export interface ProjectsPanelDeps {
 
     // ---- Faz 4.5: the backlog, edited from the row it is on ----
     /** Quick capture. With no area it lands in the inbox without a code, which
-     *  is the point: writing a note down must cost nothing. */
+     *  is the point: writing a note down must cost nothing. `at` is the 1-based
+     *  queue position it should take — only meaningful once it has a code. */
     backlogAdd(id: string, input: {
         text: string; area?: string; parent?: string;
-        priority?: string; effort?: string; kinds?: string[];
+        priority?: string; effort?: string; kinds?: string[]; at?: number;
     }): { error?: string; code?: string; note?: string };
     /** Move one item between open/doing/done/cancelled — one character. */
     backlogState(id: string, target: { code?: string; line?: number }, state: string):
@@ -509,10 +510,15 @@ export class ProjectsPanel {
                     ...(typeof msg.parent === 'string' && msg.parent ? { parent: msg.parent } : {}),
                     ...(typeof msg.priority === 'string' && msg.priority ? { priority: msg.priority } : {}),
                     ...(typeof msg.effort === 'string' && msg.effort ? { effort: msg.effort } : {}),
-                    ...(Array.isArray(msg.kinds) ? { kinds: msg.kinds.map(String) } : {})
+                    ...(Array.isArray(msg.kinds) ? { kinds: msg.kinds.map(String) } : {}),
+                    // The position box beside Add. Absent = the item goes where
+                    // a new item normally goes; the host says so when a place
+                    // was asked for and there was no code to place.
+                    ...(Number(msg.at) > 0 ? { at: Math.floor(Number(msg.at)) } : {})
                 });
                 this.done(res.error, res.error ? undefined
-                    : (res.code ? `Added as ${res.code}.` : 'Added to the inbox.'));
+                    : ((res.code ? `Added as ${res.code}.` : 'Added to the inbox.')
+                        + (res.note ? ` ${res.note}` : '')));
                 break;
             }
             case 'backlogState': {

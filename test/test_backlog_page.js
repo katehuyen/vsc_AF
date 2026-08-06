@@ -512,6 +512,63 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
     ok('…and a confirmed add does', !/half a thought about the counter/.test(r.html()));
 }
 
+// ---------- S-12: say WHERE it goes in the same gesture as writing it ----------
+// Writing something down and knowing it is the next thing to do are one
+// thought; without this box they were two, and the second — find the row you
+// just added, then nudge it up past everything else — does not get done.
+{
+    const r = run(data());
+    const at = () => r.byId('bl-at');
+    ok('the position box sits beside Add', !!at() && /pj-bl-atsel/.test(r.html()));
+    ok('‼️ …and is dead until an area is chosen: the queue holds CODES, and a '
+        + 'capture with no area has none',
+        /id="bl-at"[^>]*disabled/.test(r.html()) && /Pick an area first/.test(r.html()));
+
+    const area = r.byId('bl-area');
+    area.value = 'K';
+    area.fire('change');
+    ok('choosing an area brings it to life in the same gesture',
+        !/id="bl-at"[^>]*disabled/.test(r.html()));
+    // The queue holds three items, so the offer is 1..4 — the positions that
+    // exist, plus the end. It is rebuilt on every paint, so it cannot go stale.
+    ok('the numbers on offer are as many as the queue, plus the end',
+        /<option value="1">1 · top<\/option>/.test(r.html())
+        && /<option value="4">4 · last<\/option>/.test(r.html())
+        && !/<option value="5"/.test(r.html()));
+
+    const box = r.byId('bl-new');
+    box.value = 'this one goes second';
+    box.fire('input');
+    at().value = '2';
+    at().fire('change');
+    r.els('act').find(e => e.dataset.act === 'blAdd').click();
+    const msg = r.posted.filter(m => m.type === 'backlogAdd').pop();
+    ok('Add carries the position with the words', msg && msg.at === 2 && msg.area === 'K');
+
+    // …and the position does NOT stick, unlike the area. "Put this one second"
+    // is about the item just written; leaving it set would silently make the
+    // next capture jump the queue too.
+    r.send({ type: 'result', ok: 'Added as K-9.' });
+    r.send({ type: 'data', data: data() });
+    ok('‼️ a confirmed add forgets the position (the area is remembered)',
+        /value="K" selected/.test(r.html()) && /— # —<\/option>/.test(r.html())
+        && !/<option value="2" selected/.test(r.html()));
+}
+
+{
+    // Touch nothing and nothing changes: no position picked, no `at` sent.
+    const r = run(data());
+    const area = r.byId('bl-area');
+    area.value = 'K';
+    area.fire('change');
+    const box = r.byId('bl-new');
+    box.value = 'wherever it normally goes';
+    box.fire('input');
+    r.els('act').find(e => e.dataset.act === 'blAdd').click();
+    const msg = r.posted.filter(m => m.type === 'backlogAdd').pop();
+    ok('‼️ an untouched box sends no position at all', msg && msg.at === undefined);
+}
+
 // ---------- the box's four text tools ----------
 {
     const r = run(data());

@@ -48,7 +48,15 @@
                 style="width:100%; font-family:var(--vscode-editor-font-family); font-size:11px">${C.esc(text)}</textarea>
                 <button class="secondary small" data-apply="${C.esc(it.key)}">Apply JSON</button>`;
         }
-        return `<input type="text" id="${id}" data-set="${C.esc(it.key)}" value="${C.esc(String(it.value ?? ''))}" style="width:100%; max-width:420px">`;
+        // A path setting gets a picker beside the box — typing a Windows path
+        // by hand is where the typo that makes a feature look broken comes
+        // from. Which settings are paths is declared in the SCHEMA (`format`),
+        // never listed here: see SettingSpec.browse.
+        const browse = it.browse
+            ? ` <button class="secondary small" data-browse="${C.esc(it.key)}" data-browsekind="${C.esc(it.browse)}"
+                    title="Pick ${it.browse === 'folder' ? 'a folder' : 'a file'} — the path is written into the box and saved">Browse…</button>`
+            : '';
+        return `<span class="setpath"><input type="text" id="${id}" data-set="${C.esc(it.key)}" value="${C.esc(String(it.value ?? ''))}" style="width:100%; max-width:420px">${browse}</span>`;
     }
 
     function itemHtml(it) {
@@ -414,6 +422,14 @@
             btn.addEventListener('click', () => {
                 delete errors[btn.dataset.reset];
                 vscode.postMessage({ type: 'reset', key: btn.dataset.reset });
+            }));
+        // The host opens the native dialog and saves what comes back — the page
+        // never has to know the path, and the refresh that follows redraws the
+        // box with it.
+        document.querySelectorAll('[data-browse]').forEach(btn =>
+            btn.addEventListener('click', () => {
+                delete errors[btn.dataset.browse];
+                vscode.postMessage({ type: 'browse', key: btn.dataset.browse, kind: btn.dataset.browsekind });
             }));
 
         // Agent folders section

@@ -740,11 +740,38 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     // Right-click must reach VS Code's OWN menu (Copy/Paste and the session's
     // actions together) — a `contextmenu` listener that opened a rename box
     // straight away is exactly what this forbids.
+    //
+    // ‼️ ONE listener is allowed, and only in `wireSnipMenu`: the SEND buttons
+    // (Send · Send into turn · Send after turn · Start session) hang the saved
+    // prompts off a right-click. Those are buttons, not rows — they publish no
+    // `data-vscode-context`, so nothing is taken away from VS Code's menu. The
+    // count is checked rather than the mere absence, because "no contextmenu
+    // anywhere" was the crude form of a rule that is really about ROWS.
+    const ctxHooks = (js.match(/addEventListener\('contextmenu'/g) || []).length;
     ok('…and right-click hands the row to VS Code\'s context menu, not to a rename box',
-        /data-vscode-context/.test(js)
-        && !/addEventListener\('contextmenu'/.test(js) && !/type: 'rename'/.test(js));
+        /data-vscode-context/.test(js) && !/type: 'rename'/.test(js)
+        && ctxHooks === 1
+        && /function wireSnipMenu\(id\) \{[\s\S]{0,400}addEventListener\('contextmenu'/.test(js));
     ok('…keeping the default Copy/Paste items in it',
         /preventDefaultContextMenuItems: false/.test(js));
+
+    // ---- S-11: the saved prompts, hung off the buttons that send ----
+    ok('the picker is on EVERY sending button, not just one of them',
+        /wireSnipMenu\('c-send'\)/.test(js) && /wireSnipMenu\('c-hold'\)/.test(js));
+    ok('‼️ …and both of them say so, or the menu is a feature nobody finds',
+        /const SNIP_HINT = 'right-click for your saved prompts'/.test(js)
+        && (js.match(/SNIP_HINT/g) || []).length >= 3);
+    ok('‼️ choosing a snippet PASTES it — nothing is sent behind your back',
+        /function snipUse\(text\)/.test(js)
+        && /window\.AFTextTools\.insert\(box, text\)/.test(js)
+        && !/snipUse[\s\S]{0,400}postMessage\(\{ type: 'send'/.test(js));
+    ok('the list is read when the menu opens, never carried on the payload',
+        /snipOpen = \(\) => \{[\s\S]{0,300}postMessage\(\{ type: 'promptSnippets' \}\)/.test(js)
+        && !/DATA\.snippets/.test(js));
+    ok('an empty list and a missing file are two different sentences',
+        /No blocks in that file yet/.test(js) && /snip\.error/.test(js));
+    ok('…and either way the file itself is one click away',
+        /type: 'openPromptSnippets'/.test(js));
     ok('…on the hosted rows and the resumable ones alike',
         /webviewSection: 'afConsoleSession'/.test(js) && /webviewSection: 'afConsoleResumable'/.test(js));
 }

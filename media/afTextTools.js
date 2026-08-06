@@ -225,5 +225,9 @@
         }
     }
 
-    window.AFTextTools = { html, wire, paint, TOOLS };
+    // `insert` is `pasteAtCursor` under its public name: anything that puts
+    // text into one of these boxes from outside (the Console's saved-prompt
+    // picker) must land it the way a paste lands, or the box would have two
+    // different ideas about where a space belongs.
+    window.AFTextTools = { html, wire, paint, insert: pasteAtCursor, TOOLS };
 })();

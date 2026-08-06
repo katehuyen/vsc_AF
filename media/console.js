@@ -456,6 +456,34 @@
             color:var(--vscode-textLink-foreground); text-decoration:underline; }
         .qbadge { font-size:10px; padding:1px 7px; border-radius:8px;
             background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); }
+        /* SAVED PROMPTS. A window inside the window: the composer is at the
+           bottom of the page, so a list that dropped out of the button would
+           have nowhere to go. Centred, capped at two thirds of the height, and
+           the backdrop closes it — the same shape VS Code's own quick pick has,
+           because that is the gesture a hand already knows. */
+        .snipwrap { position:fixed; inset:0; z-index:60; display:flex; align-items:center;
+            justify-content:center; background:#0006; }
+        .snipbox { width:min(680px, 88vw); max-height:66vh; display:flex; flex-direction:column;
+            border-radius:8px; overflow:hidden; box-shadow:0 8px 30px #0007;
+            border:1px solid var(--vscode-widget-border,#4444);
+            background:var(--vscode-editorWidget-background, var(--vscode-editor-background)); }
+        .sniphead { display:flex; gap:8px; align-items:center; padding:8px 10px;
+            border-bottom:1px solid var(--vscode-widget-border,#4443); }
+        .sniphead input { flex:0 1 240px; padding:3px 7px; }
+        .sniplist { overflow:auto; padding:4px 0; }
+        .snipgrp { font-size:10px; text-transform:uppercase; letter-spacing:.5px; opacity:.55;
+            padding:8px 12px 3px; }
+        .snipitem { display:flex; flex-direction:column; gap:2px; width:100%; text-align:left;
+            background:none; border:none; cursor:pointer; padding:6px 12px;
+            color:var(--vscode-foreground); }
+        .snipitem:hover { background:var(--vscode-list-hoverBackground); }
+        .sniplbl { font-size:12px; }
+        .snipprev { font-size:10px; opacity:.6; white-space:nowrap; overflow:hidden;
+            text-overflow:ellipsis; font-family:var(--vscode-editor-font-family); }
+        .snipnone { padding:22px 14px; font-size:12px; color:var(--vscode-descriptionForeground); }
+        .snipfoot { padding:6px 10px; font-size:10px; opacity:.55;
+            border-top:1px solid var(--vscode-widget-border,#4443);
+            white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .fixed { font-size:11px; opacity:.75; }
         .permlbl { font-size:10px; opacity:.75; display:flex; align-items:center; gap:4px; }
         .owned { opacity:.5; }
@@ -1439,7 +1467,7 @@
             ? 'A message with attached files cannot be parked — send it now, or remove the files first.'
             : empty
                 ? 'Nothing to send yet — type the message first. Send after turn parks it above the box, still editable, and hands it over once this turn ends completely.'
-                : 'Park it instead of sending it into this turn: it waits above the box — editable — and goes once the turn ends'}">Send after turn</button>`;
+                : 'Park it instead of sending it into this turn: it waits above the box — editable — and goes once the turn ends'}&#10;${SNIP_HINT}">Send after turn</button>`;
         return `${q ? `<span class="qbadge" title="Waiting to be sent — they go once this turn ends">${q} held</span> <button class="secondary" id="c-clearq">drop all</button>` : ''}
             ${s.status === 'working' ? hold : ''}
             ${s.status === 'working' ? '<button class="secondary" id="c-int" title="Stop the running turn — the session and its context stay. Esc in the message box does the same.">⎋ Interrupt</button>' : ''}`;
@@ -1570,6 +1598,155 @@
         return true;
     }
 
+    // ---- the saved prompts: a right-click on any button that SENDS ----------
+    /**
+     * ‼️ THE PHRASES YOU TYPE EVERY DAY, ONE CLICK FROM THE BOX.
+     *
+     * The same handful of instructions get retyped into this composer several
+     * times a day — "read the file before you change it", "answer in Turkish,
+     * code in English", the review checklist. Retyping them is not just slow:
+     * a phrase retyped from memory comes out slightly different each time, so
+     * the instruction that was carefully worded once is worse every time after.
+     *
+     * They live in a markdown file the user owns (agentFarm.promptSnippetsFile,
+     * parsed by core/prompts.ts) — not in extension settings, because that file
+     * is edited in Obsidian with the rest of their notes and can carry as much
+     * commentary around the blocks as they like.
+     *
+     * ‼️ IT HANGS OFF THE SEND BUTTONS, AND THAT IS THE WHOLE DESIGN. The
+     * question "what do I say" is asked at the moment of sending, so the
+     * gesture belongs on the control that sends: LEFT-click still sends, and
+     * only right-click opens this. That is also why it is on ALL of them —
+     * Send · Send into turn · Send after turn · Start session are one button in
+     * four states, and a feature that appeared in only some of them would read
+     * as broken in the others. Nothing here sends anything: a snippet is PASTED
+     * at the caret, still yours to edit, and the press that sends is still your
+     * own.
+     */
+    let snip = null;
+
+    const snipOpen = () => {
+        snip = { loading: true, q: '', file: '', items: [], error: '' };
+        renderSnip();
+        vscode.postMessage({ type: 'promptSnippets' });
+    };
+    const snipClose = () => { snip = null; renderSnip(); };
+
+    /** Insert one snippet at the caret and give the box back. Uses the shared
+     *  paste rule (afTextTools) so a block landing beside half a sentence
+     *  behaves exactly like Ctrl+V does. */
+    function snipUse(text) {
+        const box = document.getElementById('c-text');
+        if (!box) { return; }
+        window.AFTextTools.insert(box, text);
+        st.draft = box.value;
+        save();
+        snipClose();
+        renderLive();
+        try { box.focus({ preventScroll: true }); } catch (e) { box.focus(); }
+    }
+
+    function snipHtml() {
+        if (!snip) { return ''; }
+        const q = (snip.q || '').toLowerCase();
+        const all = snip.items || [];
+        const shown = q
+            ? all.filter(x => (x.label + ' ' + x.group + ' ' + x.text).toLowerCase().includes(q))
+            : all;
+        let body;
+        if (snip.loading) {
+            body = '<div class="snipnone">Reading the file…</div>';
+        } else if (snip.error) {
+            body = `<div class="snipnone">${C.esc(snip.error)}<br><br>
+                Point <code>agentFarm.promptSnippetsFile</code> at a markdown file and put each
+                prompt inside a <code>\`\`\`</code> block.</div>`;
+        } else if (!all.length) {
+            body = `<div class="snipnone">No blocks in that file yet. Anything you put inside a
+                <code>\`\`\`</code> fence shows up here; the text around the fences is yours to
+                write notes in and is never offered.</div>`;
+        } else if (!shown.length) {
+            body = '<div class="snipnone">Nothing matches that.</div>';
+        } else {
+            let group = null;
+            const rows = [];
+            for (let i = 0; i < shown.length; i++) {
+                const it = shown[i];
+                if (it.group !== group) {
+                    group = it.group;
+                    if (group) { rows.push(`<div class="snipgrp">${C.esc(group)}</div>`); }
+                }
+                // The whole block rides in the row as a tooltip: choosing
+                // between two prompts means reading them, and a picker that
+                // only shows names makes you guess.
+                rows.push(`<button class="snipitem" data-snip="${i}" title="${C.esc(it.text)}">
+                    <span class="sniplbl">${C.esc(it.label)}</span>
+                    <span class="snipprev">${C.esc(it.text.replace(/\s+/g, ' ').slice(0, 120))}</span>
+                </button>`);
+            }
+            body = rows.join('');
+        }
+        return `<div class="snipwrap" id="c-snipwrap">
+            <div class="snipbox">
+                <div class="sniphead">
+                    <b>Saved prompts</b>
+                    <input id="snip-q" type="text" placeholder="filter…" value="${C.esc(snip.q || '')}">
+                    <span class="grow"></span>
+                    <button class="secondary" id="snip-file" title="${snip.file
+        ? 'Open the file this list is read from — add a ``` block and it is here the next time you right-click'
+        : 'No file is set. This opens the setting so you can point at one.'}">${snip.file ? '✎ Edit the file' : '⚙ Set the file'}</button>
+                    <button class="secondary" id="snip-x" title="Close (Esc)">✕</button>
+                </div>
+                <div class="sniplist">${body}</div>
+                <div class="snipfoot">${snip.file ? C.esc(snip.file) : 'agentFarm.promptSnippetsFile'}
+                    · clicking one PASTES it into the box — nothing is sent</div>
+            </div>
+        </div>`;
+    }
+
+    function renderSnip() {
+        if (!slot('c-snip', snipHtml())) { return; }
+        if (!snip) { return; }
+        byId('snip-x', 'click', snipClose);
+        byId('snip-file', 'click', () => vscode.postMessage({ type: 'openPromptSnippets' }));
+        // Clicking the backdrop closes it; clicking the panel must not.
+        byId('c-snipwrap', 'click', ev => { if (ev.target && ev.target.id === 'c-snipwrap') { snipClose(); } });
+        const q = document.getElementById('snip-q');
+        if (q) {
+            q.addEventListener('input', () => {
+                snip.q = q.value;
+                renderSnip();
+                const again = document.getElementById('snip-q');
+                if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
+            });
+            q.addEventListener('keydown', ev => { if (ev.key === 'Escape') { snipClose(); } });
+            try { q.focus({ preventScroll: true }); } catch (e) { q.focus(); }
+        }
+        const list = (snip.items || []);
+        const shownQ = (snip.q || '').toLowerCase();
+        const shown = shownQ
+            ? list.filter(x => (x.label + ' ' + x.group + ' ' + x.text).toLowerCase().includes(shownQ))
+            : list;
+        document.querySelectorAll('[data-snip]').forEach(el =>
+            el.addEventListener('click', () => {
+                const it = shown[Number(el.dataset.snip)];
+                if (it) { snipUse(it.text); }
+            }));
+    }
+
+    /** Hang the picker off a button that sends. Left-click is untouched. */
+    function wireSnipMenu(id) {
+        const el = document.getElementById(id);
+        if (!el) { return; }
+        el.addEventListener('contextmenu', ev => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            snipOpen();
+        });
+    }
+    /** The tail every sending button's tooltip carries — a menu nobody knows
+     *  about is not a feature. */
+    const SNIP_HINT = 'right-click for your saved prompts';
+
     function buildShell(s) {
         const opts = (list, cur) => (list || []).map(o =>
             `<option value="${C.esc(o.id)}"${o.id === cur ? ' selected' : ''}>${C.esc(o.label || o.id)}</option>`).join('');
@@ -1663,7 +1840,8 @@
                         <div class="crow" id="c-status" style="font-size:10px;opacity:.6"></div>
                     </div>
                 </div>
-            </div>`;
+            </div>
+            <div id="c-snip"></div>`;
         // A rebuild starts every slot over.
         for (const k of Object.keys(written)) { delete written[k]; }
 
@@ -1712,6 +1890,9 @@
         const byId = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
         byId('c-jump', 'click', jumpToEnd);
         byId('c-send', 'click', () => send(false));
+        // …and a right-click on the same button opens the saved prompts. Send
+        // after turn gets it in renderLive, where that button is drawn.
+        wireSnipMenu('c-send');
         // ‼️ 📎 IS NOT WIRED HERE, AND THAT IS THE WHOLE POINT. It is drawn by
         // statusHtml into the `c-status` SLOT, which is empty at this moment and
         // rewritten on every data update — so a listener attached here binds to
@@ -2024,6 +2205,7 @@
         if (slot('c-live', liveBitsHtml(s))) {
             byId('c-int', 'click', () => vscode.postMessage({ type: 'interrupt', id: DATA.selected }));
             byId('c-hold', 'click', () => send(true));
+            wireSnipMenu('c-hold');
             byId('c-clearq', 'click', () => vscode.postMessage({ type: 'clearQueue', id: DATA.selected }));
         }
         const sendBtn = document.getElementById('c-send');
@@ -2038,11 +2220,11 @@
         const working = !!s && s.status === 'working';
         const label = s ? (working ? 'Send into turn' : 'Send') : 'Start session';
         if (sendBtn.textContent !== label) { sendBtn.textContent = label; }
-        const tip = empty
+        const tip = (empty
             ? 'Nothing to send yet — type a message (Ctrl+Enter sends it too)'
             : working
                 ? 'Delivered at the next step boundary — the agent picks it up mid-turn, the way a terminal does. Send after turn, next to it, waits for the turn to end completely instead.'
-                : '';
+                : '') + `\n${SNIP_HINT}`;
         if (sendBtn.title !== tip) { sendBtn.title = tip; }
         sendBtn.disabled = !!dead || empty;
     }
@@ -2562,6 +2744,17 @@
         // paths. The composer never learns where they came from.
         if (ev.data && ev.data.type === 'attached') {
             addAttachments(ev.data.files || []);
+            return;
+        }
+        // The saved prompts, read off the file at the moment they were asked
+        // for. A late answer to a picker the user already closed is dropped.
+        if (ev.data && ev.data.type === 'promptSnippets') {
+            if (!snip) { return; }
+            snip = {
+                loading: false, q: snip.q || '',
+                file: ev.data.file || '', items: ev.data.items || [], error: ev.data.error || ''
+            };
+            renderSnip();
             return;
         }
         // A refused send gives the message back whole — text and files — so

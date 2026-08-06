@@ -32,6 +32,24 @@ const SO = require(path.join(__dirname, '..', 'out', 'core', 'settingsops.js'));
     const m2 = SO.buildSettingsModel({ ...props, 'agentFarm.futureThing': { type: 'string', default: 'x', description: 'd' } }, () => undefined);
     const other2 = m2.find(c => c.id === 'other');
     ok('an unknown new setting lands in Other automatically', other2 && other2.items.some(i => i.key === 'agentFarm.futureThing'));
+
+    // ‼️ S-11: "this one is a path" travels in the SCHEMA, like everything else
+    // this page renders — a hand-written list of path keys on the page would go
+    // stale the first time somebody forgot to add to it.
+    const paths = SO.buildSettingsModel({
+        'agentFarm.aFile': { type: 'string', format: 'file-path', default: '', description: 'f' },
+        'agentFarm.aFolder': { type: 'string', format: 'folder-path', default: '', description: 'd' },
+        'agentFarm.plainText': { type: 'string', default: '', description: 't' }
+    }, () => '').flatMap(c => c.items);
+    ok('a file-path setting earns a file picker',
+        paths.find(i => i.key === 'agentFarm.aFile').browse === 'file');
+    ok('…a folder-path setting a folder one',
+        paths.find(i => i.key === 'agentFarm.aFolder').browse === 'folder');
+    ok('…and an ordinary string stays an ordinary box',
+        paths.find(i => i.key === 'agentFarm.plainText').browse === undefined);
+    ok('the prompt snippets file declares itself a path in the real manifest',
+        props['agentFarm.promptSnippetsFile']
+        && props['agentFarm.promptSnippetsFile'].format === 'file-path');
 }
 
 // ---------- model values + modified flags ----------

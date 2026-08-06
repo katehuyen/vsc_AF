@@ -312,11 +312,6 @@
         const dot = r => r.active ? '<span class="dot on" title="Active now"></span> ' : '';
         const subBadge = r => r.sidechain ? ' <span class="badge">sub</span>' : '';
         const tagChips = r => (r.tags || []).map(t => `<span class="stag">${C.esc(t)}</span>`).join('');
-        // The column shows the session's NAME when it has one (given at launch
-        // with -n, or a rename); the title the conversation itself suggests is
-        // kept in the tooltip so nothing is lost behind the name.
-        const titleTip = r => C.esc(r.title) +
-            (r.autoTitle && r.autoTitle !== r.title ? ' &#10;from the conversation: ' + C.esc(r.autoTitle) : '');
         // ⎋ interrupt: only on rows that are actually running — Esc is typed
         // into that session's terminal, which stops the turn, not the session
         const stopBtn = r => r.active
@@ -327,50 +322,156 @@
         const termBtn = r =>
             ` <button class="fold" data-term="${C.esc(r.agentName || '')}" data-sid="${C.esc(r.sessionId || '')}" data-cwd="${C.esc(r.cwd || '')}" title="Jump to this session's terminal window (if one is open)">⌨</button>`;
 
+        /**
+         * ‼️ EVERY COLUMN ANSWERS ITS OWN QUESTION ON HOVER.
+         *
+         * The row carried one tooltip — "right-click for session actions" — and
+         * a `<td>` with no title of its own inherits it, so all eleven columns
+         * said the same eight words. That is the most valuable surface on the
+         * page (the pointer is already there) spent on a sentence you only need
+         * to read once, while the figures it was covering — when the session
+         * ran, how long for, what a turn cost on average — were reachable only
+         * by opening the session.
+         *
+         * So each cell says something true about ITS OWN column, and the hint
+         * rides along as the tail. The tail is not decoration: the cell title
+         * REPLACES the row's, so dropping it would take the only sign the menu
+         * exists away with it. It follows the selection too, because with rows
+         * picked the menu acts on all of them and saying otherwise would be a
+         * lie about what a right-click is about to do.
+         */
+        const line = (label, value) => (value === '' || value === undefined || value === null
+            ? '' : `${label}: ${value}`);
+        /** A whole timestamp, in the user's own locale — the column shows "2h
+         *  ago" and the question a hover asks is "yes, but when". */
+        const stamp = ts => ts ? new Date(ts).toLocaleString() : '';
+        /** A per-turn average, only where it means something. Turns are the
+         *  denominator everywhere here: a session is a stack of turns, and
+         *  "expensive" nearly always means "expensive per turn". */
+        const per = (n, turns, fmt) => (n && turns > 0 ? fmt(n / turns) : '');
+        const round1 = n => Math.round(n * 10) / 10;
+        /** Join the lines and hang the right-click tail off the end. */
+        const tipOf = (parts, tail) => C.esc(parts.filter(Boolean).join('\n') + '\n\n' + tail);
+
+        const TIP = {
+            origin: r => [originOf(r) === 'auto'
+                ? 'Automation started this session (schedule / trigger / task / mission)'
+                : 'You started this session — an interactive dialog',
+            line('Scope chip above', 'switches between your own sessions and all of them')],
+            agent: r => [
+                `Agent: ${r.agent}${r.active ? ' — running now' : ''}`,
+                r.sidechain ? 'A sub-agent session, spawned by another one' : '',
+                line('Working folder', r.cwd),
+                line('Session id', r.sessionId)
+            ],
+            title: r => [
+                r.title || '(no title yet)',
+                r.autoTitle && r.autoTitle !== r.title ? `From the conversation: ${r.autoTitle}` : '',
+                (r.tags || []).length ? `Labels: ${(r.tags || []).join(', ')}` : '',
+                r.pinned ? 'Pinned to your shelf — always listed first' : '',
+                line('Session id', r.sessionId)
+            ],
+            project: r => [
+                r.project ? `Project: ${r.project}` : 'No project — this session is not filed under one',
+                'Resolved in a fixed order: filed by hand · explicitly off every project · '
+                + 'the longest matching code root · the agent rule'
+            ],
+            files: r => [
+                `${r.files || 0} distinct file${r.files === 1 ? '' : 's'} written to`,
+                'Edit / Write / MultiEdit / NotebookEdit — open the session to see the changes'
+            ],
+            when: r => [
+                line('Last activity', `${stamp(r.ts)} (${relTime(r.ts)})`),
+                line('Started', stamp(r.firstTs)),
+                r.durationMin ? `Ran for ${r.durationMin} min` : '',
+                r.active ? 'Active now' : ''
+            ],
+            duration: r => [
+                `${r.durationMin || 0} min from the first turn to the last`,
+                line('Started', stamp(r.firstTs)),
+                line('Last activity', stamp(r.ts)),
+                per(r.durationMin, r.turns, n => `≈ ${round1(n)} min per turn`)
+            ],
+            turns: r => [
+                `${r.turns || 0} turn${r.turns === 1 ? '' : 's'} — prompts you sent, not API calls`,
+                per(r.tokens, r.turns, n => `≈ ${C.fmtTok(Math.round(n))} tokens per turn`),
+                per(r.cost, r.turns, n => `≈ ${C.fmtUSD(n)} per turn`),
+                per(r.toolCalls, r.turns, n => `≈ ${round1(n)} tool calls per turn`)
+            ],
+            tools: r => [
+                `${r.toolCalls || 0} tool call${r.toolCalls === 1 ? '' : 's'}`,
+                per(r.toolCalls, r.turns, n => `≈ ${round1(n)} per turn`),
+                r.errors ? `${r.errors} of the results came back as errors` : ''
+            ],
+            errors: r => [
+                r.errors ? `${r.errors} tool result${r.errors === 1 ? '' : 's'} came back as an error`
+                    : 'No tool errors in this session',
+                per(r.errors, r.toolCalls, n => `${Math.round(n * 100)}% of the tool calls`)
+            ],
+            tokens: r => [
+                line('Raw total', `${C.fmtTok(r.tokens || 0)} tokens (input + cache + output)`),
+                line('Against the plan limit', `${C.fmtTok(r.wTokens || 0)} weighted`),
+                per(r.tokens, r.turns, n => `≈ ${C.fmtTok(Math.round(n))} per turn`),
+                'The two are not proportional — the weighted figure is what burns the window'
+            ],
+            ctx: r => [
+                r.ctx
+                    ? `≈ ${C.fmtTok(r.ctx)} tokens in the model window after the last reply`
+                    : 'Not known for this session',
+                'Input + cache + output of that one request — what the next turn starts from'
+            ],
+            cost: r => [
+                line('API-equivalent cost', C.fmtUSD(r.cost || 0)),
+                per(r.cost, r.turns, n => `≈ ${C.fmtUSD(n)} per turn`),
+                'What these tokens would have cost on the API — a plan session is not billed this way'
+            ]
+        };
+
         const HEAD = {
             origin: '<th class="origcell" title="Who started the session — 🧑 you, in an interactive session · 🤖 automation (schedule / trigger / task / mission). Switch the scope with the 🧑 chip above.">By</th>',
-            agent: '<th>Agent</th>',
+            agent: '<th title="The agent whose folder this session ran in. ● = running now · sub = a sub-agent session · ⌨ jumps to its terminal · ⎋ interrupts the turn.">Agent</th>',
             project: '<th title="Which project this session\'s work belongs to. Resolved in a fixed order: filed by hand · explicitly taken off every project · the longest matching code root · the agent rule. Edit any of it on the ◧ Projects page.">Project</th>',
             files: '<th class="num" title="Distinct files this session wrote to (Edit / Write / MultiEdit / NotebookEdit) — open the session to see the changes themselves">Files</th>',
-            title: '<th>Title</th>',
-            when: '<th class="num">When</th>',
-            duration: '<th class="num">Duration</th>',
-            turns: '<th class="num">Turns</th>',
-            tools: '<th class="num">Tools</th>',
-            errors: '<th class="num">Err</th>',
-            tokens: '<th class="num">Tokens</th>',
+            title: '<th title="The session\'s name when it has one (given at launch with -n, or a rename); otherwise the title the conversation itself suggests. Hover a row to see both.">Title</th>',
+            when: '<th class="num" title="How long ago the session was last active. Hover a cell for the whole date, when it started, and how long it ran.">When</th>',
+            duration: '<th class="num" title="Minutes from the session\'s first turn to its last — wall clock, not time spent working. Hover for both endpoints and the per-turn average.">Duration</th>',
+            turns: '<th class="num" title="Prompts you sent, not API calls — one turn is one thing you asked for. Hover for tokens, cost and tool calls per turn.">Turns</th>',
+            tools: '<th class="num" title="Tool calls made across the whole session (Read, Edit, Bash, MCP…). Hover for the per-turn average.">Tools</th>',
+            errors: '<th class="num" title="Tool results that came back as errors. Hover for what share of the session\'s tool calls that is.">Err</th>',
+            tokens: '<th class="num" title="Raw tokens (input + cache + output), and after ⚖ the same session weighted against the plan limit. The two are not proportional — the weighted one is what burns the window.">Tokens</th>',
             ctx: '<th class="num" title="Approximate context in the model window after this session’s last reply (input + cache + output of that request)">Ctx now</th>',
-            cost: '<th class="num">Cost</th>'
+            cost: '<th class="num" title="What this session\'s tokens would have cost on the API. A plan session is not billed this way — it is the comparable figure, not an invoice. Hover a cell for the per-turn average.">Cost</th>'
         };
         // the active dot / sub badge / ⌨ button live in the leftmost identity
         // cell — Agent when present (dashboard), otherwise Title (agent page)
+        //
+        // `t` is the tail the row hands down (the plain hint, or what a bulk
+        // right-click would do); every cell's own words come from TIP above.
         const CELL = {
-            origin: r => {
+            origin: (r, t) => {
                 const o = originMeta(originOf(r));
-                return `<td class="origcell ${o.id}" title="${o.id === 'auto'
-                    ? 'Automation started this session (schedule / trigger / task / mission)'
-                    : 'You started this session — an interactive dialog'}">${o.glyph}</td>`;
+                return `<td class="origcell ${o.id}" title="${tipOf(TIP.origin(r), t)}">${o.glyph}</td>`;
             },
-            agent: r => `<td>${dot(r)}${C.esc(r.agent)}${subBadge(r)}${termBtn(r)}${stopBtn(r)}</td>`,
-            title: r => hasAgentCol
-                ? `<td title="${titleTip(r)}">${C.esc(r.title)}${tagChips(r)}</td>`
-                : `<td title="${titleTip(r)}">${dot(r)}${C.esc(r.title)}${tagChips(r)}${subBadge(r)}${termBtn(r)}${stopBtn(r)}</td>`,
+            agent: (r, t) => `<td title="${tipOf(TIP.agent(r), t)}">${dot(r)}${C.esc(r.agent)}${subBadge(r)}${termBtn(r)}${stopBtn(r)}</td>`,
+            title: (r, t) => hasAgentCol
+                ? `<td title="${tipOf(TIP.title(r), t)}">${C.esc(r.title)}${tagChips(r)}</td>`
+                : `<td title="${tipOf(TIP.title(r), t)}">${dot(r)}${C.esc(r.title)}${tagChips(r)}${subBadge(r)}${termBtn(r)}${stopBtn(r)}</td>`,
             // A project is recognisable by its colour and icon everywhere else
             // it appears (sidebar, status bar, its own page); the table that
             // lists sessions BY project was the one place showing a bare name.
-            project: r => `<td class="${r.project ? '' : 'muted'}">${r.project
+            project: (r, t) => `<td class="${r.project ? '' : 'muted'}" title="${tipOf(TIP.project(r), t)}">${r.project
                 ? `<span class="af-pdot" style="${r.projectColor ? `background:${C.esc(r.projectColor)}` : ''}"></span>` +
                 (r.projectIcon ? C.esc(r.projectIcon) + ' ' : '') + C.esc(r.project)
                 : '—'}</td>`,
-            files: r => `<td class="num">${r.files || ''}</td>`,
-            when: r => `<td class="num">${relTime(r.ts)}</td>`,
-            duration: r => `<td class="num">${r.durationMin || 0}m</td>`,
-            turns: r => `<td class="num">${r.turns || 0}</td>`,
-            tools: r => `<td class="num">${r.toolCalls || 0}</td>`,
-            errors: r => `<td class="num">${r.errors || ''}</td>`,
-            tokens: r => `<td class="num">${C.fmtTokW(r.tokens, r.wTokens)}</td>`,
-            ctx: r => `<td class="num">${r.ctx ? '~' + C.fmtTok(r.ctx) : '—'}</td>`,
-            cost: r => `<td class="num"><strong>${C.fmtUSD(r.cost)}</strong></td>`
+            files: (r, t) => `<td class="num" title="${tipOf(TIP.files(r), t)}">${r.files || ''}</td>`,
+            when: (r, t) => `<td class="num" title="${tipOf(TIP.when(r), t)}">${relTime(r.ts)}</td>`,
+            duration: (r, t) => `<td class="num" title="${tipOf(TIP.duration(r), t)}">${r.durationMin || 0}m</td>`,
+            turns: (r, t) => `<td class="num" title="${tipOf(TIP.turns(r), t)}">${r.turns || 0}</td>`,
+            tools: (r, t) => `<td class="num" title="${tipOf(TIP.tools(r), t)}">${r.toolCalls || 0}</td>`,
+            errors: (r, t) => `<td class="num" title="${tipOf(TIP.errors(r), t)}">${r.errors || ''}</td>`,
+            tokens: (r, t) => `<td class="num" title="${tipOf(TIP.tokens(r), t)}">${C.fmtTokW(r.tokens, r.wTokens)}</td>`,
+            ctx: (r, t) => `<td class="num" title="${tipOf(TIP.ctx(r), t)}">${r.ctx ? '~' + C.fmtTok(r.ctx) : '—'}</td>`,
+            cost: (r, t) => `<td class="num" title="${tipOf(TIP.cost(r), t)}"><strong>${C.fmtUSD(r.cost)}</strong></td>`
         };
 
         function turnPanelHtml(r) {
@@ -422,14 +523,17 @@
             const rowsHtml = shown.map(r => {
                 const o = open.has(r.file);
                 const on = picked.has(r.file);
+                // What every cell's tooltip ends with. One decision per row, so
+                // eleven columns cannot disagree about what a right-click does.
+                const tail = on ? bulkHint(chosen.length) : window.AFSessionCtx.HINT;
                 return `<tr class="click sessrow${o ? ' open' : ''}${on ? ' picked' : ''}" data-session="${C.esc(r.file)}"
                     ${window.AFSessionCtx.row(r, on ? bulkContext(chosen) : undefined)}
-                    title="${on ? bulkHint(chosen.length) : window.AFSessionCtx.HINT}">
+                    title="${tail}">
                     <td class="selcell"><input type="checkbox" data-sel="${C.esc(r.file)}"${on ? ' checked' : ''}
                         title="Select this session — shift-click for a range, then right-click any selected row"></td>
                     <td class="foldcell"><button class="fold" data-fold="${C.esc(r.file)}" title="${o ? 'Hide' : 'List'} this session's turns">${o ? '▾' : '▸'}</button></td>
                     <td class="pincell"><button class="pinbtn${r.pinned ? ' on' : ''}" data-pin="${C.esc(r.sessionId || '')}" data-pinned="${r.pinned ? '1' : '0'}" title="${r.pinned ? 'Pinned — click to take it off your shelf' : 'Pin this session to your shelf (always listed first)'}">${r.pinned ? '★' : '☆'}</button></td>
-                    ${cols.map(c => CELL[c](r)).join('')}
+                    ${cols.map(c => CELL[c](r, tail)).join('')}
                 </tr>` + (o ? `<tr class="sessturns"><td colspan="3"></td><td colspan="${cols.length}">${turnPanelHtml(r)}</td></tr>` : '');
             }).join('');
             const allOn = shown.length > 0 && chosen.length === shown.length;

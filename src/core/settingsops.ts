@@ -15,6 +15,16 @@ export interface SettingSpec {
     default: unknown;
     description: string;
     markdownDescription?: string;
+    /**
+     * ‼️ A PATH SETTING GETS A BROWSE BUTTON, AND THE SCHEMA IS WHERE IT SAYS
+     * SO. The settings page is schema-driven on purpose — a setting added
+     * tomorrow appears without anybody editing the page — so "this one is a
+     * path" has to travel the same way, or the page grows a hand-written list
+     * of keys that goes stale the first time somebody forgets it. Declare
+     * `"format": "file-path"` (or `"folder-path"`) in package.json and the
+     * text box gets a picker beside it. Anything else is just a text box.
+     */
+    browse?: 'file' | 'folder';
 }
 
 export interface SettingItem extends SettingSpec {
@@ -39,7 +49,7 @@ const CATEGORY_OF: Record<string, string> = {
     projectContextExtra: 'core',
     // display & labels
     speakerLabelTemplate: 'display', speakerLabelCase: 'display', speakerLabelFallback: 'display',
-    consoleDropZone: 'display',
+    consoleDropZone: 'display', promptSnippetsFile: 'display',
     // live monitoring & alerts
     liveMonitor: 'live', livePort: 'live', activeThresholdSeconds: 'live',
     stuckThresholdSeconds: 'live', notifyPermission: 'live', notifyStuck: 'live',
@@ -111,7 +121,10 @@ export function sameValue(a: unknown, b: unknown): boolean {
 
 /** Build the category → items model from the live schema + current values. */
 export function buildSettingsModel(
-    properties: Record<string, { type?: unknown; enum?: unknown; default?: unknown; description?: string; markdownDescription?: string }>,
+    properties: Record<string, {
+        type?: unknown; enum?: unknown; default?: unknown;
+        description?: string; markdownDescription?: string; format?: unknown;
+    }>,
     valueOf: (key: string) => unknown
 ): SettingsCategory[] {
     const byCat = new Map<string, SettingItem[]>();
@@ -126,6 +139,8 @@ export function buildSettingsModel(
             default: p.default,
             description: p.description ?? p.markdownDescription ?? '',
             markdownDescription: p.markdownDescription,
+            ...(p.format === 'file-path' ? { browse: 'file' as const } : {}),
+            ...(p.format === 'folder-path' ? { browse: 'folder' as const } : {}),
             value,
             modified: !sameValue(value, p.default)
         };

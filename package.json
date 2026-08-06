@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.77.0",
+  "version": "3.78.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8512,6 +8512,12 @@
           "type": "boolean",
           "default": true,
           "description": "Whether the Console page listens for a file dropped anywhere on it. Turn this off if drag-and-drop misbehaves on your machine; 📎 (Attach) and pasting a screenshot are unaffected either way."
+        },
+        "agentFarm.promptSnippetsFile": {
+          "type": "string",
+          "format": "file-path",
+          "default": "D:\\zone\\know\\note\\obsidian\\00_AGENT_AREA\\00_INPUT\\10_DATA\\50_Prompts\\Agent Farm Prompts.md",
+          "description": "A markdown file holding the phrases you say to an agent over and over. Right-click any button that SENDS text in the Console — Send · Send into turn · Send after turn · Start session — and the blocks in this file are offered to paste into the message box. Only text inside ``` fences is offered; everything around it is your own notes. The label comes from the fence's info string, the line above it, or the nearest heading. Checked once at startup: if the file is not there, this setting is cleared and stays empty until you pick a new one."
         }
       }
     }
