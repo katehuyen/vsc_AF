@@ -18,9 +18,11 @@ const path = require('path');
 const vm = require('vm');
 
 const code = fs.readFileSync(path.resolve(__dirname, '../media/projects.js'), 'utf8');
-// The capture box asks a SHARED component for its four text tools; the real one
-// runs here rather than a stub, so the page and the component cannot drift.
-const shared = fs.readFileSync(path.resolve(__dirname, '../media/afTextTools.js'), 'utf8');
+// The capture box asks a SHARED component for its four text tools, and the
+// backlog tab asks another for its filter dropdowns; the real ones run here
+// rather than stubs, so the page and the components cannot drift.
+const shared = fs.readFileSync(path.resolve(__dirname, '../media/afTextTools.js'), 'utf8')
+    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afFilters.js'), 'utf8');
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 

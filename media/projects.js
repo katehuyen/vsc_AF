@@ -760,6 +760,31 @@
                 /* documents · plan · people */
                 .pj-docbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
                     padding:6px 0 10px; border-bottom:1px solid var(--vscode-panel-border); margin-bottom:10px; }
+                /* ‼️ THE TAB'S OWN ? — see blHelpHtml. Half-lit and the size of a
+                   full stop, because it must be findable without being a second
+                   thing to read; and it opens OVER the page, right under itself,
+                   so a question asked here is answered here. */
+                /* ‼️ The panel is measured against the DOC BAR, not against the ?
+                   itself. The ? sits wherever the counts and the file name end,
+                   so a box hung off it ran straight off the right edge on a
+                   narrow panel and gave the page a horizontal scrollbar. Hung
+                   from the bar it opens directly under the counts it explains
+                   and cannot overflow, whatever the panel is doing. */
+                .pj-docbar { position:relative; }
+                .pj-helpw { position:static; display:inline-flex; align-items:center; }
+                .pj-help { width:16px; height:16px; padding:0; line-height:1; font-size:10px;
+                    border-radius:50%; cursor:pointer; opacity:.45; background:none; color:inherit;
+                    border:1px solid var(--vscode-widget-border,#4443); }
+                .pj-help:hover, .pj-help.on { opacity:1; border-color:var(--vscode-focusBorder); }
+                .pj-helppop { position:absolute; top:100%; left:0; z-index:45;
+                    display:block; width:100%; max-width:660px; max-height:56vh; overflow:auto;
+                    padding:12px 14px; border-radius:8px; font-size:12px; line-height:1.55;
+                    text-align:left; white-space:normal; cursor:default;
+                    border:1px solid var(--vscode-widget-border,#4446);
+                    background:var(--vscode-editorWidget-background,#252526);
+                    box-shadow:0 6px 20px #0007; }
+                .pj-helpp { display:block; margin:0 0 9px; }
+                .pj-helpp:last-child { margin-bottom:0; }
                 .pj-open { display:flex; gap:4px; }
                 .pj-open button { padding:2px 9px; font-size:11px; }
                 .pj-plan-sec { margin-bottom:14px; }
@@ -770,10 +795,21 @@
                 .pj-plan-t { flex:1; min-width:0; }
                 .pj-plan-m { opacity:.6; font-size:11px; white-space:nowrap; }
                 /* backlog */
+                /* position:relative so the whole-item hover box (.pj-bl-tip)
+                   measures itself against the ROW: it opens the width of the
+                   line it belongs to, which is the widest it can be without
+                   running off the panel. */
                 .pj-bl-row { display:flex; align-items:baseline; gap:6px; padding:3px 6px;
-                    border-radius:4px; font-size:13px; border-left:2px solid transparent; }
+                    border-radius:4px; font-size:13px; border-left:2px solid transparent;
+                    position:relative; }
                 .pj-bl-row:hover { background:var(--vscode-list-hoverBackground); }
-                .pj-bl-row.closed .pj-bl-t { opacity:.5; text-decoration:line-through; }
+                /* ‼️ Faded by COLOUR, not by opacity: the hover box that hangs off
+                   "more" is a child of this span, and opacity on an ancestor
+                   dims its whole subtree — including an absolutely positioned
+                   one — which would have made the tooltip on a closed item look
+                   broken. Colour fades the words and leaves the box alone. */
+                .pj-bl-row.closed .pj-bl-t { color:var(--vscode-descriptionForeground);
+                    text-decoration:line-through; }
                 .pj-bl-row.doing { border-left-color:var(--vscode-charts-yellow,#d7ba7d); }
                 .pj-bl-row.next { border-left-color:var(--vscode-charts-green,#3fb950); }
                 .pj-bl-row.container .pj-bl-t { font-weight:600; }
@@ -887,14 +923,39 @@
                     border-radius:12px; padding:2px 8px; font-size:11px; }
                 .pj-bl-nextb:hover { background:var(--vscode-list-hoverBackground);
                     border-color:var(--vscode-focusBorder); }
-                .pj-bl-nextn { opacity:.5; min-width:12px; text-align:right; }
+                /* ‼️ THE NUMBER IS THE RANK, AND THE RANK IS WHAT GETS THE
+                   COLOUR — here and on the row's handle below, the same green,
+                   because it is the same number. Everything else on a chip is a
+                   fact about the item; only this one says where it stands. The
+                   strip was drawn entirely in grey, which made the one card on
+                   the page that is about ORDER look like a legend.
+                   Inside the op's default the number is full strength and the
+                   chip's own outline turns green with it; past the default the
+                   same hue at half, so the line ┊ draws is visible without a
+                   second explanation. Two steps, one hue — a rainbow here would
+                   be decoration competing with the type badges, which are the
+                   page's real colour vocabulary. */
+                .pj-bl-nextn { min-width:15px; padding:1px 4px; border-radius:9px;
+                    font-size:10px; font-weight:600; text-align:center;
+                    font-variant-numeric:tabular-nums;
+                    background:var(--vscode-charts-green,#3fb950);
+                    color:var(--vscode-editor-background,#1f1f1f); }
                 .pj-bl-nexte { opacity:.7; font-size:10px; }
+                .pj-bl-nextb .pj-bl-code { opacity:1; }
                 .pj-bl-stale { font-size:10px; margin-left:8px; cursor:help;
                     color:var(--vscode-editorWarning-foreground); }
                 /* Past the op's default: still the user's queue, just not what an
                    agent takes unasked — so it is dimmed, not hidden. */
-                .pj-bl-nextb.past { opacity:.62; }
+                .pj-bl-nextb.past { opacity:.9; }
+                .pj-bl-nextb.past .pj-bl-nextn { background:none; font-weight:400; opacity:.6;
+                    color:var(--vscode-charts-green,#3fb950); }
+                .pj-bl-nextb.past .pj-bl-code { opacity:.7; }
                 .pj-bl-nextb.past:hover { opacity:1; }
+                /* The heading says the two things that CHANGE; the standing
+                   explanation is in its hover. See nextQueueHtml. */
+                .pj-bl-nexthint { margin-left:7px; font-size:11px; font-weight:400; opacity:.55;
+                    text-transform:none; letter-spacing:0; cursor:help; }
+                .pj-bl-nexthint:hover { opacity:.95; }
                 .pj-bl-nextb.dragging { opacity:.4; }
                 .pj-bl-nextb.drop-left { box-shadow:inset 2px 0 0 var(--vscode-focusBorder); }
                 .pj-bl-nextb.drop-right { box-shadow:inset -2px 0 0 var(--vscode-focusBorder); }
@@ -954,8 +1015,42 @@
                 .pj-bl-row:hover .pj-bl-grip { opacity:.8; }
                 .pj-bl-grip.off { cursor:default; opacity:.2; letter-spacing:-1px; }
                 .pj-bl-row:hover .pj-bl-grip.off { opacity:.3; }
+                /* The same two bands as the strip — see blBand. A position that
+                   was green up there and grey down here would read as two
+                   different numbers. */
+                .pj-bl-grip.q-top { color:var(--vscode-charts-green,#3fb950);
+                    font-weight:600; opacity:.9; }
+                .pj-bl-grip.q-rest { color:var(--vscode-charts-green,#3fb950); opacity:.5; }
+                .pj-bl-row:hover .pj-bl-grip.q-top { opacity:1; }
+                .pj-bl-row:hover .pj-bl-grip.q-rest { opacity:.8; }
                 .pj-bl-more { background:none; border:none; color:var(--vscode-textLink-foreground);
                     cursor:pointer; font-size:11px; padding:0 4px; }
+                /* ‼️ THE WHOLE ITEM, ON HOVER, SCROLLABLE — see blMoreHtml. The
+                   wrapper is position:static on purpose: the box is measured
+                   against the ROW, so it opens the width of the line rather than
+                   the width of the word "more".
+                   The opening delay is the same beat the step menus use, so
+                   sweeping the pointer down a list of two hundred rows does not
+                   flash a paragraph at every one; closing is instant. No gap
+                   above the box, or the pointer leaves the wrapper on its way
+                   into it and the thing it was travelling to disappears. */
+                .pj-bl-tw { position:static; display:inline; }
+                .pj-bl-tip { position:absolute; left:0; top:100%; z-index:33;
+                    display:block; width:100%; max-width:min(820px,100%);
+                    max-height:46vh; overflow:auto; overscroll-behavior:contain;
+                    visibility:hidden; opacity:0;
+                    transition:opacity .08s linear 0s, visibility 0s linear .08s;
+                    padding:8px 11px 10px; border-radius:7px; font-size:12px; line-height:1.55;
+                    white-space:pre-wrap; word-break:break-word; text-decoration:none;
+                    border:1px solid var(--vscode-widget-border,#4446);
+                    background:var(--vscode-editorWidget-background,#252526);
+                    box-shadow:0 5px 16px #0007; }
+                .pj-bl-tw:hover .pj-bl-tip, .pj-bl-tip:hover { visibility:visible; opacity:1;
+                    transition-delay:.25s; }
+                .pj-bl-tiph { display:block; margin-bottom:6px; padding-bottom:5px; font-size:10px;
+                    opacity:.6; white-space:normal;
+                    border-bottom:1px solid var(--vscode-widget-border,#4443); }
+                .pj-bl-tipb { display:block; }
                 .pj-bl-edit { display:flex; flex:1; gap:6px; align-items:flex-start; }
                 .pj-bl-edit textarea { flex:1; min-width:0; font-family:inherit; font-size:13px;
                     resize:vertical; min-height:44px; }
@@ -1162,25 +1257,105 @@
      * that are not blocked". A single-select filter answers the first question
      * and none of the real ones, which is why this page had a filter and still
      * had no way to ask anything.
+     *
+     * ‼️ AND THE DROPDOWN AXES FOLLOW THE EXTENSION'S ONE FILTER SEMANTIC
+     * (media/afFilters.js): `null` = the axis asks nothing and a value that
+     * appears later is included without touching the picker · `[]` = an honest
+     * empty result · a list = exactly that subset. So `states` can say "done AND
+     * cancelled", which a <select> cannot: it can only ever say all, or exactly
+     * one. Closed work is off by default because a backlog you have to scroll
+     * past three months of finished items to read is one nobody opens — ticking
+     * done brings it back, which is all the separate "show closed" box ever was.
      */
-    let blFilter = {
-        areas: [], kinds: [], prios: [], efforts: [],
-        state: 'live', q: '',
-        /** '' any · 'yes' waiting on something · 'no' startable now */
-        blocked: '',
-        /** '' any · 'only' just the parents · 'hide' just the leaves */
-        epics: '',
-        /** '' any · 'yes' linked to a plan item · 'no' not linked */
-        plan: '',
-        /** '' any · 'yes' has a 📅 · 'no' none */
-        due: ''
-    };
+    const blFilterDefaults = () => ({
+        areas: [], kinds: [], prios: [], efforts: [], q: '',
+        /** null every state · any subset of open · doing · done · cancelled */
+        states: ['open', 'doing'],
+        /** null any · ['coded'] filed under an area · ['unfiled'] 📥 no code yet */
+        filed: null,
+        /** null any · ['yes'] waiting on something · ['no'] startable now */
+        blocked: null,
+        /** null any · ['container'] just the parents · ['leaf'] just the leaves */
+        epics: null,
+        /** null any · ['yes'] linked to a plan item · ['no'] not linked */
+        plan: null,
+        /** null any · ['yes'] has a 📅 · ['no'] none */
+        due: null
+    });
+    let blFilter = blFilterDefaults();
     let blSort = 'file';
     let blDesc = false;
-    /** Closed items are folded away by default — a backlog you have to scroll
-     *  past three months of finished work to read is one nobody opens. */
-    let blShowClosed = false;
     let blFiltersOpen = false;
+    /** The "how does this work" panel, opened from the ? in the doc bar. */
+    let blHelpOpen = false;
+
+    /**
+     * THE TAB'S DROPDOWN AXES, in the shape every other page in this extension
+     * already uses.
+     *
+     * ‼️ ONE CONTROL, EVERYWHERE. Search, Dashboard, Queue, Notices, Tasks and
+     * the sessions table all filter with the checkbox dropdown from
+     * media/afFilters.js — Select all / Clear over a list of ticks, any subset —
+     * and this tab was the one exception, with plain <select>s that could say
+     * "all" or "exactly one" and nothing in between. That is a different bargain
+     * from the rest of the extension for no reason, and it left ordinary
+     * questions unaskable: "done and cancelled", "everything that is not a
+     * container". Declared once and read twice — the html draws them and wire()
+     * wires them from this same list — so a new axis cannot reach one and be
+     * forgotten in the other.
+     *
+     * `where` is which row it is drawn in: 'bar' is always on screen, 'panel'
+     * lives behind ⚙ filters. Sorting is NOT here and should not be: an ordering
+     * is genuinely one choice, and a picker offering three at once would be
+     * promising something the list cannot do.
+     */
+    const BL_PICKS = [
+        {
+            id: 'bl-states', key: 'states', label: 'state', allLabel: 'every state',
+            where: 'bar', width: 190,
+            title: 'Which states are listed. Tick done and cancelled to bring closed work back.',
+            options: [
+                { v: 'open', t: 'open' }, { v: 'doing', t: 'doing' },
+                { v: 'done', t: 'done' }, { v: 'cancelled', t: 'cancelled' }
+            ]
+        },
+        {
+            id: 'bl-filed', key: 'filed', label: 'filing', allLabel: 'any',
+            where: 'bar', width: 190,
+            title: '📥 — an item with no code has not been filed under an area yet, so it cannot be queued',
+            options: [{ v: 'coded', t: 'filed — has a code' }, { v: 'unfiled', t: '📥 unfiled' }]
+        },
+        {
+            id: 'bl-blocked', key: 'blocked', label: 'blocked', allLabel: 'any',
+            where: 'panel', width: 200,
+            title: '⛔ — is something it waits on still open',
+            options: [{ v: 'no', t: 'startable now' }, { v: 'yes', t: 'waiting on something' }]
+        },
+        {
+            id: 'bl-epics', key: 'epics', label: 'epics', allLabel: 'any',
+            where: 'panel', width: 200,
+            title: 'An item with children is a container — work lives at the leaves',
+            options: [{ v: 'leaf', t: 'leaves only' }, { v: 'container', t: 'containers only' }]
+        },
+        {
+            id: 'bl-plan', key: 'plan', label: 'plan', allLabel: 'any',
+            where: 'panel', width: 200,
+            title: '[plan:: 🆔] — which roadmap item it belongs to',
+            options: [{ v: 'yes', t: 'linked to a plan item' }, { v: 'no', t: 'not linked' }]
+        },
+        {
+            id: 'bl-due', key: 'due', label: 'due', allLabel: 'any',
+            where: 'panel', width: 200,
+            title: '📅 — a date on the line',
+            options: [{ v: 'yes', t: 'has a date' }, { v: 'no', t: 'no date' }]
+        }
+    ];
+
+    const blPicksIn = where => BL_PICKS.filter(p => p.where === where);
+    const blPickHtml = where => blPicksIn(where).map(p => window.AFFilter.multi({
+        id: p.id, label: p.label, allLabel: p.allLabel, options: p.options,
+        selected: blFilter[p.key], title: p.title, width: p.width
+    })).join('');
     /**
      * How many characters of an item are drawn before it is cut off.
      *
@@ -1373,8 +1548,14 @@
             .concat(areas.map(a => `<option value="${C.esc(a.code)}"${a.code === cap.area ? ' selected' : ''}>${C.esc(a.code)} · ${C.esc(a.label)}</option>`))
             .join('');
 
+        // The queue's two colour bands, worked out once here: the front, where an
+        // agent asked for "the top five" stops, and the rest of what Next up
+        // shows. A row must not have to know how long the strip is.
+        const qTop = d.nextDefault || 5;
+        const qRest = Math.max(qTop, nextList.length);
         const rows = ordered.map(i =>
-            backlogRowHtml(i, nextKeys.has(blKey(i)), blockedBy[i.code], areas, queueAt[i.code] || 0)).join('');
+            backlogRowHtml(i, nextKeys.has(blKey(i)), blockedBy[i.code], areas, queueAt[i.code] || 0,
+                blBand(queueAt[i.code] || 0, qTop, qRest))).join('');
         const active = blActiveFilters();
 
         return `
@@ -1382,6 +1563,7 @@
             <span><b>${c.open || 0}</b> open${c.doing ? ` · <b>${c.doing}</b> doing` : ''}
                 · ${c.done || 0} done${c.unclassified ? ` · <b>${c.unclassified}</b> unfiled` : ''}</span>
             <span class="muted small">${C.esc(d.path)}</span>
+            ${blHelpHtml(d)}
             <span class="grow"></span>
             <button class="secondary" data-act="blTidy"
                 title="Put each area's items back in code order — K-1, K-2, K-3 — so the file reads as the dictionary it is. Your order is untouched: the queue names codes, and a code does not care which line it is on. A section with prose between its items is left alone and said so.">🧹 Tidy file order</button>
@@ -1456,28 +1638,8 @@
             </div>
             <div class="pj-bl-fline">
                 <span class="pj-bl-flab">and</span>
-                <select data-blf="blocked" title="⛔ — is something it waits on still open">
-                    <option value="">blocked: any</option>
-                    <option value="no"${blFilter.blocked === 'no' ? ' selected' : ''}>startable now</option>
-                    <option value="yes"${blFilter.blocked === 'yes' ? ' selected' : ''}>waiting on something</option>
-                </select>
-                <select data-blf="epics" title="An item with children is a container — work lives at the leaves">
-                    <option value="">epics: any</option>
-                    <option value="hide"${blFilter.epics === 'hide' ? ' selected' : ''}>leaves only</option>
-                    <option value="only"${blFilter.epics === 'only' ? ' selected' : ''}>containers only</option>
-                </select>
-                <select data-blf="plan" title="[plan:: 🆔] — which roadmap item it belongs to">
-                    <option value="">plan: any</option>
-                    <option value="yes"${blFilter.plan === 'yes' ? ' selected' : ''}>linked to a plan item</option>
-                    <option value="no"${blFilter.plan === 'no' ? ' selected' : ''}>not linked</option>
-                </select>
-                <select data-blf="due" title="📅">
-                    <option value="">due: any</option>
-                    <option value="yes"${blFilter.due === 'yes' ? ' selected' : ''}>has a date</option>
-                    <option value="no"${blFilter.due === 'no' ? ' selected' : ''}>no date</option>
-                </select>
-                ${blRowClear('and', (blFilter.blocked ? 1 : 0) + (blFilter.epics ? 1 : 0)
-            + (blFilter.plan ? 1 : 0) + (blFilter.due ? 1 : 0), 'these four')}
+                ${blPickHtml('panel')}
+                ${blRowClear('and', blPicksIn('panel').filter(p => blFilter[p.key]).length, 'these four')}
             </div>
         </div>` : ''}
 
@@ -1486,15 +1648,7 @@
                 <input id="bl-q" class="pj-bl-q" placeholder="search text or code" value="${C.esc(blFilter.q)}">
                 ${blFilter.q.trim() ? '<button class="pj-bl-qx" data-blclearf="q" title="Clear the search box only">✕</button>' : ''}
             </span>
-            <select id="bl-state" title="Which states to show">
-                <option value="live"${blFilter.state === 'live' ? ' selected' : ''}>open + doing</option>
-                <option value="inbox"${blFilter.state === 'inbox' ? ' selected' : ''}>📥 unfiled only</option>
-                <option value="open"${blFilter.state === 'open' ? ' selected' : ''}>open</option>
-                <option value="doing"${blFilter.state === 'doing' ? ' selected' : ''}>doing</option>
-                <option value="done"${blFilter.state === 'done' ? ' selected' : ''}>done</option>
-                <option value="cancelled"${blFilter.state === 'cancelled' ? ' selected' : ''}>cancelled</option>
-                <option value="all"${blFilter.state === 'all' ? ' selected' : ''}>every state</option>
-            </select>
+            ${blPickHtml('bar')}
             <select id="bl-sort" title="Ordering. Queue order is your own — it is what 'do the top five' follows, and the only one you can drag rows in">
                 <option value="file"${blSort === 'file' ? ' selected' : ''}>queue order (yours)</option>
                 <option value="score"${blSort === 'score' ? ' selected' : ''}>score (priority ÷ effort)</option>
@@ -1508,8 +1662,7 @@
             </select>
             <button class="pj-bl-badge" data-act="blDir"
                 title="${blDesc ? 'Descending — click for ascending' : 'Ascending — click for descending'}">${blDesc ? '↓' : '↑'}</button>
-            <label class="pj-chk"><input type="checkbox" id="bl-closed" ${blShowClosed ? 'checked' : ''}> show closed</label>
-            <label class="pj-chk" style="margin-left:10px" title="How much of a long item is drawn before it is cut. 0 draws all of it. Any single row still opens with one click.">
+            <label class="pj-chk" title="How much of a long item is drawn before it is cut. 0 draws all of it. Resting on 'more' shows the whole item without opening the row.">
                 cut at <input id="bl-chars" type="number" min="0" max="4000" step="20" value="${blChars}" style="width:66px"> chars</label>
             <span class="grow"></span>
             <span class="muted small pj-bl-count${ordered.length < all.length ? ' narrowed' : ''}">${ordered.length} of ${all.length}</span>
@@ -1517,23 +1670,55 @@
 
         ${nextQueueHtml(nextList, all, d.nextDefault || 5, d.queue || [], d.staleQueue || [])}
 
-        ${rows || '<p class="muted small">Nothing matches. The file is <code>' + C.esc(d.path) + '</code> — edit it in Obsidian any time; this page reads whatever is there.</p>'}
+        ${rows || '<p class="muted small">Nothing matches. The file is <code>' + C.esc(d.path) + '</code> — edit it in Obsidian any time; this page reads whatever is there.</p>'}`;
+    }
 
-        <p class="muted small pj-unfiled"><b>There is one order, and it is the queue.</b> The number on the
-            left of a row is its place in it. ▲ and ▼ move it one place; <b>rest the pointer on either and
-            a menu offers 2, 3, 4, 5, 10, 15, 20 — or the very top and bottom of the whole list</b>. Dragging
-            a row by that number, or a chip in the strip above, does the same thing. Areas never hold an
-            item back: any code can sit anywhere. The order lives in the <code>## 🎯 Queue</code> block at
-            the top of the file, so it is still there with no extension running, and
-            <code>projects.backlog.next</code> reads exactly it. <b>The area sections below it are the
-            dictionary, not the order</b> — what exists, grouped, each area in its own code order, which is
-            what 🧹 restores. Moving something in the queue does not touch one byte of those lines, and a
-            code is permanent through all of it: <code>P-5.3</code> means the same item for ever.
-            <b>Clicking a code opens the file at that item's line</b> (↗ does the same) in whatever you
-            chose under Settings → Open with; the button at the top of this tab opens the whole document.
-            A badge opens a menu; 🗂 files an uncoded item under an area, which is also what puts it in the
-            queue; ✎ edits the words in place. Closing a box changes exactly one character of your file
-            and adds no ✅ date — Agent Farm does not write metadata it does not own.</p>`;
+    /**
+     * ‼️ THE TAB EXPLAINS ITSELF FROM A ? , NOT FROM A WALL AT THE BOTTOM.
+     *
+     * All of this was one long grey paragraph under the last row: the biggest
+     * single thing on the tab, in the one place nobody looks, on screen for ever
+     * whether or not anybody had a question — and the list it belonged to ended
+     * in it, which is an ugly way for a list to end. The words earn their place
+     * (the queue is genuinely not obvious, and what gets written to somebody's
+     * file is worth stating), so they are kept whole and moved behind a mark the
+     * size of a full stop, next to the counts they are about.
+     *
+     * It opens IN the page, under the ? itself: no navigation, no second panel,
+     * nothing to come back from. A question asked here is answered here.
+     */
+    function blHelpHtml(d) {
+        if (!blHelpOpen) {
+            return `<span class="pj-helpw"><button class="pj-help" data-blhelp
+                title="How this tab works — the queue, the codes, and exactly what gets written to your file">?</button></span>`;
+        }
+        return `<span class="pj-helpw">
+            <button class="pj-help on" data-blhelp title="Close">?</button>
+            <span class="pj-helppop" data-blhelppop>
+                <span class="pj-helpp"><b>There is one order, and it is the queue.</b> The number on the
+                    left of a row is its place in it. ▲ and ▼ move it one place; <b>rest the pointer on
+                    either and a menu offers 2, 3, 4, 5, 10, 15, 20 — or the very top and bottom of the
+                    whole list</b>. Dragging a row by that number, or a chip in <b>Next up</b>, does the
+                    same thing. Areas never hold an item back: any code can sit anywhere.</span>
+                <span class="pj-helpp"><b>The order lives in your file, not in here.</b> It is the
+                    <code>## 🎯 Queue</code> block at the top of the document, so it is still there with no
+                    extension running, and <code>projects.backlog.next</code> reads exactly it.
+                    <b>The area sections below it are the dictionary, not the order</b> — what exists,
+                    grouped, each area in its own code order, which is what 🧹 restores. Moving something
+                    in the queue does not touch one byte of those lines.</span>
+                <span class="pj-helpp"><b>A code is permanent through all of it:</b> <code>P-5.3</code>
+                    means the same item for ever. <b>Clicking a code opens the file at that item's line</b>
+                    (↗ does the same) in whatever you chose under Settings → Open with; the button at the
+                    top of this tab opens the whole document.</span>
+                <span class="pj-helpp"><b>The row is the editor.</b> A badge opens a menu; 🗂 files an
+                    uncoded item under an area, which is also what puts it in the queue; ✎ edits the words
+                    in place. Resting on <b>more</b> shows the whole item without opening the row. Closing a
+                    box changes exactly one character of your file and adds no ✅ date — Agent Farm does not
+                    write metadata it does not own.</span>
+                <span class="pj-helpp muted">Everything above happens in
+                    <code>${C.esc(d.path)}</code>.</span>
+            </span>
+        </span>`;
     }
 
     /**
@@ -1606,15 +1791,40 @@
         const staleNote = stale.length
             ? `<span class="pj-bl-stale" title="These are in the 🎯 Queue block but are closed, gone, or have grown children. They are not handed to anybody, and the next reorder drops them.">⚠ ${C.esc(stale.join(' '))}</span>`
             : '';
+        // ‼️ A HEADING IS A LABEL, NOT A MANUAL. Three lines of prose beside the
+        // word "Next up" said what the strip is, how to click it, how to drag it
+        // and which op reads it — every time, to somebody who had already read it
+        // a hundred times. The line states the two facts that CHANGE (how many
+        // are queued, how many an agent takes) and the standing explanation moves
+        // into the hover, which is exactly what a hover is for.
+        const hint = 'The front of your queue, in the order it will be worked.\n\n'
+            + 'Click an entry to find its row in the list below · drag one anywhere to reorder.\n'
+            + `projects.backlog.next reads exactly this list and takes the first ${cut} unless it is `
+            + 'asked for more; the ┊ marks where that stops. Everything past it is still your queue.';
         return `<div class="pj-card pj-bl-next">
-            <div class="pj-card-h">Next up <span class="muted" style="text-transform:none">— the front of the queue,
-                in the order it will be worked. Click one to find it · drag one anywhere ·
-                <code>projects.backlog.next</code> reads exactly this and takes ${cut} by default</span>
+            <div class="pj-card-h">Next up
+                <span class="pj-bl-nexthint" title="${C.esc(hint)}">${list.length} queued
+                    · agents take ${cut} ⓘ</span>
                 ${staleNote}
             </div>
             <div class="pj-bl-nextrow" id="bl-nextrow">${chips}</div>
         </div>`;
     }
+
+    /**
+     * Which colour band a queue position falls in.
+     *
+     * ‼️ THE POSITION IS THE ONE THING ON THIS PAGE THAT IS A RANK rather than a
+     * fact about the item, so it is the one thing that gets a colour — and it
+     * gets the SAME colour in the strip and on the row's handle, because it is
+     * the same number. Green is already the queue's colour here (a queued row
+     * wears it on its left edge, which is the bracket down the list). Inside the
+     * op's default it is at full strength; across the rest of the strip the same
+     * hue, half lit. Past the strip there is no colour at all: those items are
+     * not waiting their turn, they are simply also in the file.
+     */
+    const blBand = (at, top, rest) =>
+        (!at ? '' : (at <= top ? ' q-top' : (at <= rest ? ' q-rest' : '')));
 
     /**
      * One axis's own clear.
@@ -1636,24 +1846,33 @@
      *  because a filter you have forgotten you set is indistinguishable from a
      *  backlog that has lost your items. */
     function blActiveFilters() {
+        const dflt = blFilterDefaults();
+        // A picker is narrowing the list when it is not where it started — which
+        // for `states` is "open + doing", not null. Comparing against the
+        // defaults rather than against null is what keeps the count honest for
+        // an axis whose resting position is already a subset.
+        const same = (a, b) => (a === null || b === null)
+            ? a === b
+            : a.length === b.length && a.every(v => b.indexOf(v) >= 0);
         return blFilter.areas.length + blFilter.kinds.length + blFilter.prios.length
             + blFilter.efforts.length
-            + (blFilter.blocked ? 1 : 0) + (blFilter.epics ? 1 : 0)
-            + (blFilter.plan ? 1 : 0) + (blFilter.due ? 1 : 0)
-            + (blFilter.q.trim() ? 1 : 0)
-            + (blFilter.state !== 'live' ? 1 : 0);
+            + BL_PICKS.filter(p => !same(blFilter[p.key], dflt[p.key])).length
+            + (blFilter.q.trim() ? 1 : 0);
     }
 
     /** Does this item survive every axis? Each list is an OR within itself and an
      *  AND against the others, which is what people mean by "bugs and regressions
-     *  in P and K that are not blocked". */
+     *  in P and K that are not blocked".
+     *
+     *  ‼️ A dropdown axis that is `null` asks nothing at all — see
+     *  blFilterDefaults. An EMPTY list is not the same thing: it means "none of
+     *  them", it is what Clear leaves behind, and it must honestly return
+     *  nothing rather than quietly behaving like "all". */
     function blPasses(i) {
         const q = blFilter.q.trim().toLowerCase();
-        const live = i.state === 'open' || i.state === 'doing';
-        const st = blFilter.state;
-        if (st === 'live' && !live && !blShowClosed) { return false; }
-        if (st === 'inbox' && i.code) { return false; }
-        if (st !== 'live' && st !== 'inbox' && st !== 'all' && st && i.state !== st) { return false; }
+        const on = (axis, value) => !axis || axis.indexOf(value) >= 0;
+        if (!on(blFilter.states, i.state)) { return false; }
+        if (!on(blFilter.filed, i.code ? 'coded' : 'unfiled')) { return false; }
         if (blFilter.areas.length && blFilter.areas.indexOf(i.area) < 0) { return false; }
         if (blFilter.kinds.length) {
             const kinds = i.kinds || [];
@@ -1665,15 +1884,10 @@
             const e = i.effort || '(none)';
             if (blFilter.efforts.indexOf(e) < 0) { return false; }
         }
-        const waiting = (i.blockedBy || []).length > 0;
-        if (blFilter.blocked === 'yes' && !waiting) { return false; }
-        if (blFilter.blocked === 'no' && waiting) { return false; }
-        if (blFilter.epics === 'hide' && i.container) { return false; }
-        if (blFilter.epics === 'only' && !i.container) { return false; }
-        if (blFilter.plan === 'yes' && !i.plan) { return false; }
-        if (blFilter.plan === 'no' && i.plan) { return false; }
-        if (blFilter.due === 'yes' && !i.due) { return false; }
-        if (blFilter.due === 'no' && i.due) { return false; }
+        if (!on(blFilter.blocked, (i.blockedBy || []).length ? 'yes' : 'no')) { return false; }
+        if (!on(blFilter.epics, i.container ? 'container' : 'leaf')) { return false; }
+        if (!on(blFilter.plan, i.plan ? 'yes' : 'no')) { return false; }
+        if (!on(blFilter.due, i.due ? 'yes' : 'no')) { return false; }
         if (q && (i.text || '').toLowerCase().indexOf(q) < 0
             && (i.code || '').toLowerCase().indexOf(q) < 0) { return false; }
         return true;
@@ -1745,7 +1959,7 @@
      *
      *  ‼️ `data-line` is 1-BASED, exactly as the host sent it. It is handed back
      *  unchanged and the panel converts once, at its own boundary. */
-    function backlogRowHtml(i, isNext, waitingOn, areas, queueAt) {
+    function backlogRowHtml(i, isNext, waitingOn, areas, queueAt, band) {
         const key = blKey(i);
         const closed = i.state === 'done' || i.state === 'cancelled';
         const cls = ['pj-bl-row'];
@@ -1802,7 +2016,7 @@
             data-blrow data-key="${C.esc(key)}" data-code="${C.esc(i.code || '')}" data-line="${i.line}"
             data-prio="${C.esc(i.priority || 'normal')}" data-effort="${C.esc(i.effort || '')}"
             data-type="${C.esc(type)}" data-section="${C.esc(i.section || '')}" data-depth="${i.depth || 0}">
-            <span class="pj-bl-grip${queueAt && dragging ? '' : ' off'}"
+            <span class="pj-bl-grip${queueAt && dragging ? '' : ' off'}${band || ''}"
                 ${queueAt && dragging ? 'draggable="true"' : ''} data-blgrip
                 title="${C.esc(gripTip)}">${queueAt || '⠿'}</span>
             <input type="checkbox" data-blcheck ${i.state === 'done' ? 'checked' : ''}
@@ -1810,8 +2024,8 @@
             ${i.code
                 ? `<code class="pj-bl-code open" data-blgo title="${C.esc(i.code + ' — permanent, quote it at an agent. ' + openTip)}">${C.esc(i.code)}</code>`
                 : `<span class="pj-bl-code unfiled open" data-blgo title="${C.esc('No code yet. ' + openTip)}">📥</span>`}
-            <span class="pj-bl-t" title="${cut ? C.esc(full) : ''}">${C.esc(body)}${cut
-                ? ' <button class="pj-bl-more" data-blmore>more</button>'
+            <span class="pj-bl-t">${C.esc(body)}${cut
+                ? blMoreHtml(i, full)
                 : (open && blChars > 0 && full.length > blChars ? ' <button class="pj-bl-more" data-blmore>less</button>' : '')}</span>
             <span class="pj-bl-side">
                 <span class="pj-bl-srow">
@@ -1843,6 +2057,33 @@
                 </span>
             </span>
         </div>`;
+    }
+
+    /**
+     * "more", and the whole item hanging under it.
+     *
+     * ‼️ A HOVER HAS TO BE WORTH HOVERING. This used to be the native `title` on
+     * the text span, which produced a grey box that repeated the two hundred
+     * characters already drawn on the row and then stopped wherever the platform
+     * felt like stopping — a feature that cost a tooltip and told you nothing.
+     * This is the item WHOLE, in a box as wide as the text column and as tall as
+     * it needs up to a limit, and it SCROLLS past that: for all but the enormous
+     * ones, resting on `more` is now the same as opening the row, without
+     * disturbing the list you are reading.
+     *
+     * ‼️ The :hover lives on the WRAPPER, not on the button. The pointer has to
+     * be able to travel into the box — a tooltip that closes when you reach for
+     * it cannot be scrolled, and scrolling is the whole point.
+     *
+     * Spans only, no div: a backlog row is one flat div, which is what lets the
+     * row be found by scanning to its first `</div>` — in the DOM-stub test and
+     * in the reader's head alike.
+     */
+    function blMoreHtml(i, full) {
+        return ` <span class="pj-bl-tw"><button class="pj-bl-more" data-blmore>more</button>`
+            + `<span class="pj-bl-tip"><span class="pj-bl-tiph">${C.esc(i.code || '📥')}`
+            + ` · ${full.length} characters — scroll here, or press <b>more</b> to keep it open`
+            + `</span><span class="pj-bl-tipb">${C.esc(full)}</span></span></span>`;
     }
 
     /** How far the step menu offers to jump. Small numbers because most moves
@@ -2308,19 +2549,39 @@
             el.addEventListener('click', () => { blToggle(blFilter.prios, el.dataset.blprioF); render(); }));
         document.querySelectorAll('[data-bleffort-f]').forEach(el =>
             el.addEventListener('click', () => { blToggle(blFilter.efforts, el.dataset.bleffortF); render(); }));
-        document.querySelectorAll('[data-blf]').forEach(el =>
-            el.addEventListener('change', () => { blFilter[el.dataset.blf] = el.value; render(); }));
-        // Per-row clears. `and` is one control for four selects because they are
-        // one question on screen — four ✕ on that row would be more furniture
-        // than filter.
+        // The dropdown axes, all six of them, from the one list that declares
+        // them (BL_PICKS). `sel` arrives as null for "all ticked" — the shared
+        // control normalises that itself, so an axis that is not narrowing
+        // anything is null here rather than a list that happens to hold
+        // everything, and a state added to the file later is included without
+        // anybody reopening the picker.
+        BL_PICKS.forEach(p => window.AFFilter.wireMulti({
+            id: p.id,
+            onChange: sel => { blFilter[p.key] = sel; render(); }
+        }));
+        // Per-row clears. `and` is one control for the four pickers in the panel
+        // because they are one question on screen — four ✕ on that row would be
+        // more furniture than filter.
         document.querySelectorAll('[data-blclearf]').forEach(el =>
             el.addEventListener('click', () => {
                 const axis = el.dataset.blclearf;
                 if (axis === 'and') {
-                    blFilter.blocked = ''; blFilter.epics = ''; blFilter.plan = ''; blFilter.due = '';
+                    blPicksIn('panel').forEach(p => { blFilter[p.key] = null; });
                 } else if (axis === 'q') { blFilter.q = ''; } else { blFilter[axis] = []; }
                 render();
             }));
+        // The tab's own ? (blHelpHtml). It stops the click reaching the document
+        // listener that dismisses it, or it would close in the same gesture that
+        // opened it — and so does the panel, so selecting a line of text inside
+        // it does not shut it.
+        document.querySelectorAll('[data-blhelp]').forEach(el =>
+            el.addEventListener('click', ev => {
+                ev.stopPropagation();
+                blHelpOpen = !blHelpOpen;
+                render();
+            }));
+        document.querySelectorAll('[data-blhelppop]').forEach(el =>
+            el.addEventListener('click', ev => ev.stopPropagation()));
         const blChf = document.getElementById('bl-chars');
         if (blChf) {
             blChf.addEventListener('change', () => {
@@ -2344,12 +2605,8 @@
                 if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
             });
         }
-        const blState = document.getElementById('bl-state');
-        if (blState) { blState.addEventListener('change', () => { blFilter.state = blState.value; render(); }); }
         const blSortSel = document.getElementById('bl-sort');
         if (blSortSel) { blSortSel.addEventListener('change', () => { blSort = blSortSel.value; render(); }); }
-        const blClosed = document.getElementById('bl-closed');
-        if (blClosed) { blClosed.addEventListener('change', () => { blShowClosed = blClosed.checked; render(); }); }
 
         document.querySelectorAll('[data-blcheck]').forEach(el =>
             el.addEventListener('click', () =>
@@ -2388,10 +2645,7 @@
                 const key = el.dataset.blnext;
                 const item = (((td().backlog || {}).items) || []).find(i => blKey(i) === key);
                 if (item && !blPasses(item)) {
-                    blFilter = {
-                        areas: [], kinds: [], prios: [], efforts: [],
-                        state: 'live', q: '', blocked: '', epics: '', plan: '', due: ''
-                    };
+                    blFilter = blFilterDefaults();
                     flash = { ok: `Filters cleared — ${item.code || 'that item'} was hidden by one.` };
                 }
                 blJump = key;
@@ -2765,12 +3019,9 @@
                 case 'blDir': blDesc = !blDesc; render(); break;
                 case 'blClear':
                     // Everything the reader could have narrowed with, including the
-                    // two that live outside the panel — a "clear" that left the
+                    // ones that live outside the panel — a "clear" that left the
                     // search box full would be the most annoying button on the page.
-                    blFilter = {
-                        areas: [], kinds: [], prios: [], efforts: [],
-                        state: 'live', q: '', blocked: '', epics: '', plan: '', due: ''
-                    };
+                    blFilter = blFilterDefaults();
                     render();
                     break;
                 case 'newDoc': {
@@ -2818,15 +3069,17 @@
      * replaced on a repaint, `document` is not, so once is enough.
      */
     document.addEventListener('click', () => {
-        if (!blMenu) { return; }
+        if (!blMenu && !blHelpOpen) { return; }
         blMenu = null;
+        blHelpOpen = false;
         render();
     });
     // Esc closes it too — the menu covers the row it belongs to, and reaching for
     // the mouse to dismiss something you opened by mistake is a small tax.
     document.addEventListener('keydown', ev => {
-        if (ev.key !== 'Escape' || !blMenu) { return; }
+        if (ev.key !== 'Escape' || (!blMenu && !blHelpOpen)) { return; }
         blMenu = null;
+        blHelpOpen = false;
         render();
     });
 

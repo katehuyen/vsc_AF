@@ -20,10 +20,13 @@ const path = require('path');
 const vm = require('vm');
 
 const code = fs.readFileSync(path.resolve(__dirname, '../media/projects.js'), 'utf8');
-// ‼️ The capture box's four text tools are a SHARED component, and the REAL one
-// runs here rather than a stub: the page asks it for its markup, so a stub would
-// let the two drift apart without a single test noticing.
-const shared = fs.readFileSync(path.resolve(__dirname, '../media/afTextTools.js'), 'utf8');
+// ‼️ The capture box's four text tools and the multi-pick filter dropdown are
+// SHARED components, and the REAL ones run here rather than stubs: the page asks
+// them for their markup, so a stub would let the two drift apart without a
+// single test noticing.
+const shared = fs.readFileSync(path.resolve(__dirname, '../media/afTextTools.js'), 'utf8')
+    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afFilters.js'), 'utf8');
+const createAfmsDom = require(path.resolve(__dirname, 'lib_afms_dom.js'));
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
@@ -136,6 +139,9 @@ function run(data) {
     const remember = (sel, els) => { live.set(sel, els); return els; };
     const onMessage = [];
     const docHandlers = {};
+    // The six filter dropdowns are the shared control, so they get the shared
+    // shim (lib_afms_dom.js) rather than a second, private idea of one.
+    const ms = createAfmsDom(() => html);
 
     const sandbox = {
         acquireVsCodeApi: () => ({ postMessage: m => posted.push(m), getState: () => ({}), setState() { } }),
@@ -164,7 +170,9 @@ function run(data) {
         document: {
             getElementById: id => (id === 'app' ? app : (dom ? dom.byId(id) : null)),
             querySelectorAll: sel => remember(sel, dom ? dom.all(sel) : []),
-            querySelector: sel => (dom ? dom.one(sel) : null),
+            querySelector: sel => (sel.indexOf('[data-afms') === 0
+                ? ms.querySelector(sel)
+                : (dom ? dom.one(sel) : null)),
             addEventListener: (ev, fn) => { (docHandlers[ev] = docHandlers[ev] || []).push(fn); }
         },
         // The jump's flash removes itself on a timer. Never run here: what is
@@ -182,6 +190,7 @@ function run(data) {
 
     return {
         posted,
+        ms,
         html: () => html,
         all: sel => dom.all(sel),
         one: sel => dom.one(sel),
@@ -553,28 +562,92 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
     ok('"unsized" finds the ones nobody has estimated', codesIn(r.html()).join() === 'K-2');
     r.all('[data-bleffort-f]').find(e => e.dataset.bleffortF === '(none)').click();
 
-    const set = (name, v) => {
-        const el = r.els('blf').find(e => e.dataset.blf === name);
-        el.value = v;
-        el.fire('change');
-    };
-    set('blocked', 'no');
+    // ‼️ These four are the SHARED multi-pick dropdown now (media/afFilters.js),
+    // like every other filter in the extension — not a <select> that could only
+    // ever say "all" or "exactly one". Ticking exactly one option is the same
+    // question the old select asked; ticking both is "any", which is what the
+    // control normalises back to null for.
+    const only = (id, v) => r.ms.only(id, [v]);
+    const any = id => r.ms.selectAll(id);
+    only('bl-blocked', 'no');
     ok('"startable now" drops what is waiting on something', codesIn(r.html()).join() === 'P-2,K-1,P-1');
-    set('blocked', '');
-    set('epics', 'hide');
+    any('bl-blocked');
+    only('bl-epics', 'leaf');
     ok('"leaves only" drops the containers', codesIn(r.html()).join() === 'P-2,K-1,K-2');
-    set('epics', 'only');
+    only('bl-epics', 'container');
     ok('…and "containers only" is the other half', codesIn(r.html()).join() === 'P-1');
-    set('epics', '');
-    set('plan', 'yes');
+    any('bl-epics');
+    only('bl-plan', 'yes');
     ok('the plan link filters', codesIn(r.html()).join() === 'P-1');
-    set('plan', '');
-    set('due', 'yes');
+    any('bl-plan');
+    only('bl-due', 'yes');
     ok('so does having a date', codesIn(r.html()).join() === 'P-2');
     ok('the chip counts the axes that are narrowing the list', /⚙ filters \(1\)/.test(r.html()));
+    ok('the button says which one option is on', r.ms.label('bl-due') === 'due: has a date');
+    any('bl-due');
+    ok('‼️ ticking every option normalises back to "this axis asks nothing" rather '
+        + 'than to a list that happens to hold everything',
+        r.ms.label('bl-due') === 'due: any' && !/⚙ filters \(/.test(r.html()));
+
+    only('bl-due', 'yes');
     r.els('act').find(e => e.dataset.act === 'blClear').click();
     ok('clear puts every axis back, including the ones outside the panel',
         codesIn(r.html()).join() === 'P-2,K-1,K-2,P-1' && !/⚙ filters \(/.test(r.html()));
+    // ‼️ An empty pick is NOT "all" — it is an honest empty result, and it is
+    // where "Clear, then tick the two I care about" starts.
+    r.ms.clear('bl-blocked');
+    ok('clearing a picker to nothing shows nothing, rather than quietly showing all',
+        codesIn(r.html()).length === 0);
+}
+
+// ---------- states are a list, not one choice ----------
+//
+// ‼️ THE THING THE OLD <select> COULD NOT SAY. "Which states to show" was one
+// choice out of seven pretend-options, so "done AND cancelled" was unaskable and
+// "open + doing" had to be shipped as its own fake state — with a separate
+// "show closed" checkbox bolted beside it to undo it.
+{
+    const r = run(data());
+    ok('the state axis is the shared multi-pick, with the four real states',
+        r.ms.has('bl-states') && r.ms.options('bl-states').join() === 'open,doing,done,cancelled');
+    ok('…resting on the live two, because a pile you scroll past three months of '
+        + 'finished work to read is one nobody opens',
+        r.ms.ticked('bl-states').join() === 'open,doing');
+    r.ms.toggle('bl-states', 'done', true);
+    ok('ticking done brings the finished one back — no second checkbox for it',
+        codesIn(r.html()).indexOf('U-1') >= 0);
+    r.ms.only('bl-states', ['done', 'cancelled']);
+    ok('‼️ and two closed states at once is now sayable', codesIn(r.html()).join() === 'U-1');
+    r.ms.selectAll('bl-states');
+    ok('every state ticked is the same as no state filter at all',
+        codesIn(r.html()).join() === 'P-2,K-1,K-2,P-1,U-1' && r.ms.label('bl-states') === 'state: every state');
+
+    // Being unfiled is not a STATE — it is whether the item has a code — so it
+    // is its own axis rather than a seventh option pretending to be one.
+    const r2 = run(data());
+    r2.ms.only('bl-filed', ['unfiled']);
+    ok('📥 unfiled is its own axis', codesIn(r2.html()).length === 0
+        && /data-key="L9"/.test(r2.html()));
+    r2.ms.only('bl-filed', ['coded']);
+    ok('…and its other half drops the uncoded capture', !/data-key="L9"/.test(r2.html()));
+}
+
+// ---------- the ? , and the wall of text it replaced ----------
+{
+    const r = run(data());
+    ok('‼️ the page no longer ends in a grey paragraph nobody asked for',
+        !/There is one order, and it is the queue/.test(r.html()));
+    ok('…it is a ? in the doc bar instead, closed', /data-blhelp\b/.test(r.html())
+        && !/data-blhelppop/.test(r.html()));
+    r.one('[data-blhelp]').click();
+    ok('pressing it opens the answer in the page itself', /data-blhelppop/.test(r.html())
+        && /There is one order, and it is the queue/.test(r.html())
+        && /projects\.backlog\.next/.test(r.html()));
+    r.doc('click');
+    ok('clicking anywhere else closes it again', !/data-blhelppop/.test(r.html()));
+    r.one('[data-blhelp]').click();
+    r.doc('keydown', { key: 'Escape' });
+    ok('…and so does Esc', !/data-blhelppop/.test(r.html()));
 }
 
 // ---------- search ----------
@@ -618,27 +691,40 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
     // What the ROW actually DRAWS, as opposed to what its tooltip carries.
     // Anchored on data-key, or the queue strip's own P-2 chip — which comes
     // first in the paint — sends the search past the row entirely.
+    // The hover box hangs INSIDE the text span (it has to measure itself against
+    // the text column), so the drawn body ends where that wrapper begins.
     const drawn = html => {
-        const m = /<span class="pj-bl-t" title="[^"]*">([\s\S]*?)<\/span>/.exec(
+        const m = /<span class="pj-bl-t">([\s\S]*?)(?:<span class="pj-bl-tw"|<\/span>)/.exec(
             html.slice(html.indexOf('data-key="P-2"')));
         return m ? m[1] : '';
     };
     const r = run(data());
     const body = drawn(r.html());
-    ok('a long item is cut', body.length < LONG.length && body.endsWith('…')
-        || /…\s*<button class="pj-bl-more"/.test(body));
-    const visible = body.replace(/\s*<button[\s\S]*$/, '').replace(/…$/, '');
+    ok('a long item is cut', body.length < LONG.length && body.trim().endsWith('…'));
+    const visible = body.replace(/\s*<button[\s\S]*$/, '').replace(/\s*…\s*$/, '');
     ok('…the cut is a real prefix of the item, at a word boundary',
         LONG.startsWith(visible) && (LONG[visible.length] === ' ' || LONG[visible.length] === undefined));
     ok('…and no longer than the cut asked for', visible.length <= 220);
     ok('…with the whole of it on hover, exactly once',
         (r.html().split(LONG).length - 1) === 1);
+    // ‼️ AND THE HOVER IS WORTH HOVERING NOW. It used to be the native `title` on
+    // the text span: a grey box repeating the two hundred characters already on
+    // the row and then stopping wherever the platform felt like. It is the whole
+    // item, in a box that scrolls, with a header saying how long the item is —
+    // so for all but the enormous ones, resting on `more` IS opening it.
+    const tip = /<span class="pj-bl-tip"><span class="pj-bl-tiph">([\s\S]*?)<\/span>/.exec(
+        r.html().slice(r.html().indexOf('data-key="P-2"')));
+    ok('the hover box names the item and how long it is, rather than repeating the row',
+        !!tip && tip[1].indexOf('P-2') === 0 && tip[1].indexOf(String(LONG.length)) > 0);
+    ok('…and the pointer can travel into it, which is what makes it scrollable',
+        /\.pj-bl-tw:hover \.pj-bl-tip, \.pj-bl-tip:hover/.test(r.html())
+        && /\.pj-bl-tip \{[\s\S]*?overflow:auto/.test(r.html()));
     // A short item is drawn whole, carries no hover copy of itself and offers
     // nothing to open — the cut must be invisible on everything it does not hit.
-    const shortRow = /<span class="pj-bl-t" title="([^"]*)">([\s\S]*?)<\/span>/.exec(
+    const shortRow = /<span class="pj-bl-t">([\s\S]*?)<\/span>/.exec(
         r.html().slice(r.html().indexOf('data-key="P-1"')));
     ok('a short item keeps all of its words, with nothing to expand',
-        !!shortRow && shortRow[1] === '' && shortRow[2] === 'the work layer');
+        !!shortRow && shortRow[1] === 'the work layer');
 
     r.all('[data-blmore]')[0].click();
     ok('"more" opens that one row', drawn(r.html()).includes(LONG.slice(0, 260))
@@ -816,7 +902,7 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
 // ---------- dragging, and only where dragging means something ----------
 {
     const r = run(data());
-    ok('rows are draggable in file order', /pj-bl-grip"[^>]*draggable="true"/.test(r.html()));
+    ok('rows are draggable in file order', /pj-bl-grip[^"]*"[^>]*draggable="true"/.test(r.html()));
     const from = r.all('[data-blgrip]').find(e => e.closest().dataset.code === 'K-2');
     from.fire('dragstart', { preventDefault() { }, dataTransfer: { setData() { }, effectAllowed: '' } });
     const onto = r.row('K-1');
@@ -838,22 +924,43 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
     s.value = 'priority';
     s.fire('change');
     ok('‼️ under any other ordering the handle is dead — dragging in a view you did not arrange would move the wrong line',
-        !/pj-bl-grip"[^>]*draggable="true"/.test(r.html()) && /pj-bl-grip off/.test(r.html()));
+        !/pj-bl-grip[^"]*"[^>]*draggable="true"/.test(r.html()) && /pj-bl-grip off/.test(r.html()));
+}
+
+// ---------- the queue's number is coloured, and the same colour twice ----------
+//
+// ‼️ The strip was drawn entirely in grey, which made the one card on the page
+// that is about ORDER look like a legend. The position is the only thing here
+// that is a rank rather than a fact about the item, so it is the thing that gets
+// the colour — and it has to be the SAME colour on the row's handle, or the same
+// number reads as two different things in two places.
+{
+    const r = run(data());
+    const grip = key => {
+        const m = new RegExp('data-key="' + key + '"[\\s\\S]{0,400}?<span class="(pj-bl-grip[^"]*)"')
+            .exec(r.html());
+        return m ? m[1] : '';
+    };
+    ok('the front of the queue wears the band at full strength', / q-top/.test(grip('P-2'))
+        && / q-top/.test(grip('K-1')));
+    ok('…and what is past the default wears the faint half of the same band',
+        / q-rest/.test(grip('K-2')));
+    ok('an item that is not in the queue is not coloured at all — it is not waiting its turn',
+        !/q-top|q-rest/.test(grip('P-1')));
+    ok('both bands are one hue, the queue\'s own green — here and in the strip',
+        /\.pj-bl-grip\.q-top \{ color:var\(--vscode-charts-green/.test(r.html())
+        && /\.pj-bl-nextn \{[\s\S]{0,220}?background:var\(--vscode-charts-green/.test(r.html()));
+    ok('…and the strip\'s number is legible on any theme, because its text takes the '
+        + 'editor background rather than a fixed colour',
+        /\.pj-bl-nextn \{[\s\S]{0,400}?color:var\(--vscode-editor-background/.test(r.html()));
+    ok('past the default the number drops the fill and keeps the hue, half lit',
+        /\.pj-bl-nextb\.past \.pj-bl-nextn \{[\s\S]{0,140}?color:var\(--vscode-charts-green/.test(r.html()));
 }
 
 // ---------- capture takes a type ----------
 {
     const r = run(data());
     ok('the capture box offers the work type', /id="bl-type"/.test(r.html()));
-}
-
-// ---------- closed work ----------
-{
-    const r = run(data());
-    const c = r.byId('bl-closed');
-    c.checked = true;
-    c.fire('change');
-    ok('show closed brings the finished one back', codesIn(r.html()).indexOf('U-1') >= 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
