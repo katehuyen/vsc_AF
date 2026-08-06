@@ -9633,6 +9633,70 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     `$(clippy) Agent Farm: ${ids.length === 1 ? ids[0].slice(0, 8) : `${ids.length} ids`} copied`, 4000);
             }),
 
+        // The four below are the same idea one step out: the things you reach
+        // FOR from a session row and had to leave the row to get. They take the
+        // row's own context object, so they work from every surface a session
+        // is listed on — the tables, Turns, search hits, the Console, the
+        // Timeline, the Needs queue.
+        vscode.commands.registerCommand('agentfarm.copySessionPath',
+            async (arg?: SessionRef | SessionInfo) => {
+                const files = sessionsFromArg(arg).map(s => s.file).filter((x): x is string => !!x);
+                if (!files.length) {
+                    void vscode.window.showInformationMessage(
+                        'Agent Farm: no transcript on disk for that session yet.');
+                    return;
+                }
+                await vscode.env.clipboard.writeText(files.join('\n'));
+                void vscode.window.setStatusBarMessage('$(clippy) Agent Farm: transcript path copied', 4000);
+            }),
+
+        vscode.commands.registerCommand('agentfarm.copySessionCwd',
+            async (arg?: SessionRef | SessionInfo) => {
+                const dirs = [...new Set(sessionsFromArg(arg).map(s => s.cwd).filter((x): x is string => !!x))];
+                if (!dirs.length) {
+                    void vscode.window.showInformationMessage(
+                        'Agent Farm: that session never reported a working folder.');
+                    return;
+                }
+                await vscode.env.clipboard.writeText(dirs.join('\n'));
+                void vscode.window.setStatusBarMessage('$(clippy) Agent Farm: working folder copied', 4000);
+            }),
+
+        // The folder it WORKED in, not the folder its transcript sits in — the
+        // second is a cache path nobody wants to look at.
+        vscode.commands.registerCommand('agentfarm.revealSessionFolder',
+            (arg?: SessionRef | SessionInfo) => {
+                const dir = sessionsFromArg(arg).map(s => s.cwd).find(Boolean);
+                if (!dir) {
+                    void vscode.window.showInformationMessage(
+                        'Agent Farm: that session never reported a working folder.');
+                    return;
+                }
+                void revealPath(dir);
+            }),
+
+        // "I will deal with this later" — the queue box opens with the session
+        // already named, so the note is about something findable.
+        vscode.commands.registerCommand('agentfarm.sessionToQueue',
+            (arg?: SessionRef | SessionInfo) => {
+                const s = sessionsFromArg(arg)[0];
+                if (!s) { return; }
+                const what = [s.agentName, s.title].filter(Boolean).join(' — ');
+                void vscode.commands.executeCommand('agentfarm.queueAdd', what ? what + ': ' : '');
+            }),
+
+        vscode.commands.registerCommand('agentfarm.openSessionAgent',
+            async (arg?: SessionRef | SessionInfo) => {
+                const s = sessionsFromArg(arg)[0];
+                const agent = s ? agents.find(a => a.id === s.agentId || a.name === s.agentName) : undefined;
+                if (!agent) {
+                    void vscode.window.showInformationMessage(
+                        'Agent Farm: that session is not filed under an agent this farm knows.');
+                    return;
+                }
+                await vscode.commands.executeCommand('agentfarm.openAgentDetail', { agent, kind: 'agent' });
+            }),
+
         vscode.commands.registerCommand('agentfarm.tagSession',
             async (arg?: SessionRef | SessionInfo) => {
                 const list = sessionsFromArg(arg).filter(s => !!s.sessionId);

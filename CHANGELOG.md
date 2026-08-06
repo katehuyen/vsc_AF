@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.75.0 — Reading surfaces: a turn, a step, a hunk, a held message (2026-08-06)
+
+**Every session menu everywhere gained five items.** Copy the transcript path · copy the working folder · reveal the working folder · **open the agent behind it** · **add it to the work queue** (the box opens with the agent and the session already named). They are on the row wherever a session is listed — the tables, Turns, search hits, the Console, the Timeline, the Needs queue — and the two folder items are drawn only where there actually is a folder.
+
+**‼️ A turn row and a search hit are each TWO objects at once.** A turn row was already a session row; now it is a *turn* as well: open the transcript at this turn, show its content inline, and copy what was asked, what came back, the whole turn, or where it is (session id + turn number) — and a copy asked for before the turn has been read **fetches it and says so** instead of putting an empty string on the clipboard. A search hit gets the same treatment: open at that moment, copy the matching line with or without its surroundings, and — the two questions a hit always raises — **search only this session** or **only this agent**, without hunting for the scope controls and retyping.
+
+**The session viewer's four objects all became clickable.** A **turn** folds, unfolds, goes single-open, jumps, and — new here — sets its own **Export MD** state, including *export only this one*, which existed as a button in the breakdown table and nowhere else. The band and the table row publish the same thing, so it is one menu in two places. A **step** copies its text, its tool input or its result, narrows the view to its own kind, and **opens the file it touched** (recovered from the tool's own input — a step that touched no file is not offered it). A **changed file** opens, diffs against HEAD, reveals itself, unfolds its hunks and copies its path; a **hunk** copies what it became or what it replaced.
+
+**The Console's two waiting states.** A held message: say it now, bring it back into the box, copy it, drop it. A live request: allow once, deny (or skip the question), and **copy what is being asked** — which neither row offered at all, and which is exactly what you want when the question needs looking something up.
+
 ## 3.74.0 — The Toolbox, the matrix, the settings and the vault (2026-08-06)
 
 **The Toolbox is the page where you SEE what extends claude — and it could barely change any of it.** Its rows carried three buttons (open · folder · remove) and everything else lived on the sidebar tree, where the inventory is not in front of you. Now, from any row: open its file, reveal it, copy its name, its path or **how you invoke it** (`/name`, for the two kinds you actually type), and remove it. Per kind: **probe an MCP server**, show the tools it answered with, **enable or disable it for this agent**, **edit its definition**, **copy a skill or a server to another agent**, **move a skill between user and agent scope**, enable or disable a **plugin**, open its homepage. A plugin and a config file are correctly never offered "remove" — a plugin is switched, a config file is not deleted from here.

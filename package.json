@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.74.0",
+  "version": "3.75.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -572,6 +572,36 @@
         "title": "Copy Session ID",
         "category": "Agent Farm",
         "icon": "$(clippy)"
+      },
+      {
+        "command": "agentfarm.copySessionPath",
+        "title": "Copy Transcript Path",
+        "category": "Agent Farm",
+        "icon": "$(clippy)"
+      },
+      {
+        "command": "agentfarm.copySessionCwd",
+        "title": "Copy Working Folder",
+        "category": "Agent Farm",
+        "icon": "$(clippy)"
+      },
+      {
+        "command": "agentfarm.revealSessionFolder",
+        "title": "Reveal Working Folder",
+        "category": "Agent Farm",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "agentfarm.sessionToQueue",
+        "title": "Add to Work Queue…",
+        "category": "Agent Farm",
+        "icon": "$(inbox)"
+      },
+      {
+        "command": "agentfarm.openSessionAgent",
+        "title": "Open Its Agent",
+        "category": "Agent Farm",
+        "icon": "$(person)"
       },
       {
         "command": "agentfarm.sessionShelf",
@@ -2529,6 +2559,216 @@
         "command": "agentfarm.ctx.scDelete",
         "title": "Delete it from the keychain\u2026",
         "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.tnOpen",
+        "title": "Open the transcript at this turn",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.tnFold",
+        "title": "Show this turn's content here",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.tnCopyPrompt",
+        "title": "What was asked",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.tnCopyAnswer",
+        "title": "What came back",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.tnCopyAll",
+        "title": "The whole turn",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.tnCopyWhere",
+        "title": "Where it is \u2014 session id and turn number",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.shOpen",
+        "title": "Open the transcript at this moment",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.shOnlySession",
+        "title": "Search only this session",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.shOnlyAgent",
+        "title": "Search only this agent",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.shCopyLine",
+        "title": "The matching line",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.shCopyContext",
+        "title": "The line with what is around it",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.vtFold",
+        "title": "Fold this turn",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.vtUnfold",
+        "title": "Unfold this turn",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.vtOnly",
+        "title": "Only this turn open",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.vtJump",
+        "title": "Jump to it",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.vtExportOn",
+        "title": "Include it in Export MD",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.vtExportOff",
+        "title": "Leave it out of Export MD",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.vtExportOnly",
+        "title": "Export only this turn",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.vtCopyPrompt",
+        "title": "What was asked",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.vtCopyAnswer",
+        "title": "What came back",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.vtCopyAll",
+        "title": "The whole turn",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.vsFile",
+        "title": "Open the file it touched",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.vsOnlyKind",
+        "title": "Show only this kind of step",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.vsCopyText",
+        "title": "What it says",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.vsCopyTool",
+        "title": "What was sent to the tool",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.vsCopyResult",
+        "title": "What came back",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.vfOpen",
+        "title": "Open the file",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.vfDiff",
+        "title": "Diff it against git HEAD",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.vfHunks",
+        "title": "Show what this session changed in it",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.vfReveal",
+        "title": "Reveal it in the file explorer",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.vfCopy",
+        "title": "Copy its path",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.dhCopyNew",
+        "title": "Copy what it became",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.dhCopyOld",
+        "title": "Copy what it replaced",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.dhOpen",
+        "title": "Open the file at this change",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.cqNow",
+        "title": "Say it now, into the running turn",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.cqEdit",
+        "title": "Bring it back into the box to change it",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.cqCopy",
+        "title": "Copy what it says",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.cqDrop",
+        "title": "Drop it \u2014 it is never said",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.caAllow",
+        "title": "Allow it, once",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.caDeny",
+        "title": "Deny it",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.caSkip",
+        "title": "Skip the question \u2014 the turn carries on",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.caCopy",
+        "title": "Copy what it is asking",
+        "category": "Agent Farm"
       }
     ],
     "submenus": [
@@ -2611,6 +2851,22 @@
   {
     "id": "agentfarm.ctx.tbCopy",
     "label": "Copy"
+  },
+  {
+    "id": "agentfarm.ctx.tnCopy",
+    "label": "Copy this turn"
+  },
+  {
+    "id": "agentfarm.ctx.vtCopy",
+    "label": "Copy"
+  },
+  {
+    "id": "agentfarm.ctx.vsCopy",
+    "label": "Copy"
+  },
+  {
+    "id": "agentfarm.ctx.shCopy",
+    "label": "Copy the match"
   }
 ],
     "menus": {
@@ -3515,74 +3771,119 @@
           "group": "5_copy@1"
         },
         {
+          "submenu": "agentfarm.ctx.tnCopy",
+          "when": "webviewSection == 'afTurnRow'",
+          "group": "5_copy@3"
+        },
+        {
+          "submenu": "agentfarm.ctx.vtCopy",
+          "when": "webviewSection == 'afViewerTurn'",
+          "group": "5_copy@1"
+        },
+        {
+          "submenu": "agentfarm.ctx.vsCopy",
+          "when": "webviewSection == 'afViewerStep'",
+          "group": "5_copy@1"
+        },
+        {
+          "submenu": "agentfarm.ctx.shCopy",
+          "when": "webviewSection == 'afSearchHit'",
+          "group": "5_copy@3"
+        },
+        {
           "command": "agentfarm.openSession",
-          "when": "webviewSection =~ /^(afSessionRow|afNeedSession)$/",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
           "group": "1_open@1"
         },
         {
           "command": "agentfarm.resumeSession",
-          "when": "webviewSection =~ /^(afSessionRow|afNeedSession)$/",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
           "group": "1_open@2"
         },
         {
           "command": "agentfarm.resumeInConsole",
-          "when": "webviewSection =~ /^(afSessionRow|afNeedSession)$/",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
           "group": "1_open@3"
         },
         {
           "command": "agentfarm.focusSessionTerminal",
-          "when": "webviewSection =~ /^(afSessionRow|afNeedSession)$/",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
           "group": "1_open@4"
         },
         {
           "command": "agentfarm.renameSession",
-          "when": "webviewSection =~ /^(afSessionRow|afNeedSession)$/",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
           "group": "2_mark@1"
         },
         {
           "command": "agentfarm.pinSession",
-          "when": "webviewSection =~ /^(afSessionRow|afNeedSession)$/",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
           "group": "2_mark@2"
         },
         {
           "command": "agentfarm.tagSession",
-          "when": "webviewSection =~ /^(afSessionRow|afNeedSession)$/",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
           "group": "2_mark@3"
         },
         {
           "command": "agentfarm.copySessionId",
-          "when": "webviewSection =~ /^(afSessionRow|afNeedSession)$/",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
           "group": "2_mark@4"
         },
         {
           "command": "agentfarm.interruptSession",
-          "when": "webviewSection =~ /^(afSessionRow|afNeedSession)$/",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
           "group": "3_stop@1"
         },
         {
           "command": "agentfarm.endSession",
-          "when": "webviewSection =~ /^(afSessionRow|afNeedSession)$/",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
           "group": "3_stop@2"
         },
         {
           "command": "agentfarm.dismissSession",
-          "when": "webviewSection =~ /^(afSessionRow|afNeedSession)$/",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
           "group": "3_stop@3"
         },
         {
           "command": "agentfarm.assignSessionProject",
-          "when": "webviewSection =~ /^(afSessionRow|afNeedSession)$/",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
           "group": "4_project@1"
         },
         {
           "command": "agentfarm.projectFromSession",
-          "when": "webviewSection =~ /^(afSessionRow|afNeedSession)$/",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
           "group": "4_project@2"
         },
         {
           "command": "agentfarm.addSessionFolderToProject",
-          "when": "webviewSection =~ /^(afSessionRow|afNeedSession)$/",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
           "group": "4_project@3"
+        },
+        {
+          "command": "agentfarm.openSessionAgent",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
+          "group": "1_open@5"
+        },
+        {
+          "command": "agentfarm.revealSessionFolder",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/ && cwd",
+          "group": "1_open@6"
+        },
+        {
+          "command": "agentfarm.sessionToQueue",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
+          "group": "4_project@4"
+        },
+        {
+          "command": "agentfarm.copySessionPath",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/",
+          "group": "5_copy@1"
+        },
+        {
+          "command": "agentfarm.copySessionCwd",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/ && cwd",
+          "group": "5_copy@2"
         },
         {
           "command": "agentfarm.resumeInConsole",
@@ -4418,8 +4719,226 @@
           "command": "agentfarm.ctx.scDelete",
           "when": "webviewSection == 'afSecretRow'",
           "group": "9_danger@1"
+        },
+        {
+          "command": "agentfarm.ctx.tnOpen",
+          "when": "webviewSection == 'afTurnRow'",
+          "group": "1_open@0"
+        },
+        {
+          "command": "agentfarm.ctx.tnFold",
+          "when": "webviewSection == 'afTurnRow'",
+          "group": "2_turn@1"
+        },
+        {
+          "command": "agentfarm.ctx.shOpen",
+          "when": "webviewSection == 'afSearchHit'",
+          "group": "1_open@0"
+        },
+        {
+          "command": "agentfarm.ctx.shOnlySession",
+          "when": "webviewSection == 'afSearchHit'",
+          "group": "2_search@1"
+        },
+        {
+          "command": "agentfarm.ctx.shOnlyAgent",
+          "when": "webviewSection == 'afSearchHit' && agentName",
+          "group": "2_search@2"
+        },
+        {
+          "command": "agentfarm.ctx.vtFold",
+          "when": "webviewSection == 'afViewerTurn' && !afClosed",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.ctx.vtUnfold",
+          "when": "webviewSection == 'afViewerTurn' && afClosed",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.ctx.vtOnly",
+          "when": "webviewSection == 'afViewerTurn'",
+          "group": "1_open@2"
+        },
+        {
+          "command": "agentfarm.ctx.vtJump",
+          "when": "webviewSection == 'afViewerTurn'",
+          "group": "1_open@3"
+        },
+        {
+          "command": "agentfarm.ctx.vtExportOn",
+          "when": "webviewSection == 'afViewerTurn' && !afExport",
+          "group": "2_edit@1"
+        },
+        {
+          "command": "agentfarm.ctx.vtExportOff",
+          "when": "webviewSection == 'afViewerTurn' && afExport",
+          "group": "2_edit@1"
+        },
+        {
+          "command": "agentfarm.ctx.vtExportOnly",
+          "when": "webviewSection == 'afViewerTurn'",
+          "group": "2_edit@2"
+        },
+        {
+          "command": "agentfarm.ctx.vsFile",
+          "when": "webviewSection == 'afViewerStep' && stepFile",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.ctx.vsOnlyKind",
+          "when": "webviewSection == 'afViewerStep'",
+          "group": "2_mark@1"
+        },
+        {
+          "command": "agentfarm.ctx.vfOpen",
+          "when": "webviewSection == 'afViewerFile'",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.ctx.vfDiff",
+          "when": "webviewSection == 'afViewerFile'",
+          "group": "1_open@2"
+        },
+        {
+          "command": "agentfarm.ctx.vfHunks",
+          "when": "webviewSection == 'afViewerFile'",
+          "group": "1_open@3"
+        },
+        {
+          "command": "agentfarm.ctx.vfReveal",
+          "when": "webviewSection == 'afViewerFile'",
+          "group": "1_open@4"
+        },
+        {
+          "command": "agentfarm.ctx.vfCopy",
+          "when": "webviewSection == 'afViewerFile'",
+          "group": "5_copy@1"
+        },
+        {
+          "command": "agentfarm.ctx.dhCopyNew",
+          "when": "webviewSection == 'afDiffHunk'",
+          "group": "5_copy@1"
+        },
+        {
+          "command": "agentfarm.ctx.dhCopyOld",
+          "when": "webviewSection == 'afDiffHunk'",
+          "group": "5_copy@2"
+        },
+        {
+          "command": "agentfarm.ctx.dhOpen",
+          "when": "webviewSection == 'afDiffHunk'",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.ctx.cqNow",
+          "when": "webviewSection == 'afConsoleQueued'",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.ctx.cqEdit",
+          "when": "webviewSection == 'afConsoleQueued'",
+          "group": "2_edit@1"
+        },
+        {
+          "command": "agentfarm.ctx.cqCopy",
+          "when": "webviewSection == 'afConsoleQueued'",
+          "group": "5_copy@1"
+        },
+        {
+          "command": "agentfarm.ctx.cqDrop",
+          "when": "webviewSection == 'afConsoleQueued'",
+          "group": "9_danger@1"
+        },
+        {
+          "command": "agentfarm.ctx.caAllow",
+          "when": "webviewSection == 'afConsoleAsk' && !afQuestion",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.ctx.caDeny",
+          "when": "webviewSection == 'afConsoleAsk' && !afQuestion",
+          "group": "1_open@2"
+        },
+        {
+          "command": "agentfarm.ctx.caSkip",
+          "when": "webviewSection == 'afConsoleAsk' && afQuestion",
+          "group": "1_open@2"
+        },
+        {
+          "command": "agentfarm.ctx.caCopy",
+          "when": "webviewSection == 'afConsoleAsk'",
+          "group": "5_copy@1"
         }
       ],
+      "agentfarm.ctx.shCopy": [
+  {
+    "command": "agentfarm.ctx.shCopyLine",
+    "when": "webviewSection == 'afSearchHit'",
+    "group": "1_pick@1"
+  },
+  {
+    "command": "agentfarm.ctx.shCopyContext",
+    "when": "webviewSection == 'afSearchHit'",
+    "group": "1_pick@2"
+  }
+],
+      "agentfarm.ctx.vsCopy": [
+  {
+    "command": "agentfarm.ctx.vsCopyText",
+    "when": "webviewSection == 'afViewerStep'",
+    "group": "1_pick@1"
+  },
+  {
+    "command": "agentfarm.ctx.vsCopyTool",
+    "when": "webviewSection == 'afViewerStep'",
+    "group": "1_pick@2"
+  },
+  {
+    "command": "agentfarm.ctx.vsCopyResult",
+    "when": "webviewSection == 'afViewerStep'",
+    "group": "1_pick@3"
+  }
+],
+      "agentfarm.ctx.vtCopy": [
+  {
+    "command": "agentfarm.ctx.vtCopyPrompt",
+    "when": "webviewSection == 'afViewerTurn'",
+    "group": "1_pick@1"
+  },
+  {
+    "command": "agentfarm.ctx.vtCopyAnswer",
+    "when": "webviewSection == 'afViewerTurn'",
+    "group": "1_pick@2"
+  },
+  {
+    "command": "agentfarm.ctx.vtCopyAll",
+    "when": "webviewSection == 'afViewerTurn'",
+    "group": "1_pick@3"
+  }
+],
+      "agentfarm.ctx.tnCopy": [
+  {
+    "command": "agentfarm.ctx.tnCopyPrompt",
+    "when": "webviewSection == 'afTurnRow'",
+    "group": "1_pick@1"
+  },
+  {
+    "command": "agentfarm.ctx.tnCopyAnswer",
+    "when": "webviewSection == 'afTurnRow'",
+    "group": "1_pick@2"
+  },
+  {
+    "command": "agentfarm.ctx.tnCopyAll",
+    "when": "webviewSection == 'afTurnRow'",
+    "group": "1_pick@3"
+  },
+  {
+    "command": "agentfarm.ctx.tnCopyWhere",
+    "when": "webviewSection == 'afTurnRow'",
+    "group": "1_pick@4"
+  }
+],
       "agentfarm.ctx.tbCopy": [
   {
     "command": "agentfarm.ctx.tbCopyName",
@@ -5738,6 +6257,216 @@
   },
   {
     "command": "agentfarm.ctx.scDelete",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.tnOpen",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.tnFold",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.tnCopyPrompt",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.tnCopyAnswer",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.tnCopyAll",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.tnCopyWhere",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.shOpen",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.shOnlySession",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.shOnlyAgent",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.shCopyLine",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.shCopyContext",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.vtFold",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.vtUnfold",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.vtOnly",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.vtJump",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.vtExportOn",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.vtExportOff",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.vtExportOnly",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.vtCopyPrompt",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.vtCopyAnswer",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.vtCopyAll",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.vsFile",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.vsOnlyKind",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.vsCopyText",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.vsCopyTool",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.vsCopyResult",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.vfOpen",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.vfDiff",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.vfHunks",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.vfReveal",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.vfCopy",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.dhCopyNew",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.dhCopyOld",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.dhOpen",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.cqNow",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.cqEdit",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.cqCopy",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.cqDrop",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.caAllow",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.caDeny",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.caSkip",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.caCopy",
     "when": "false",
     "group": "ctx"
   }

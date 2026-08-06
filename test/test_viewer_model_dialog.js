@@ -80,8 +80,12 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 
 // ---------- part 2: page — Dialog default, model tags, deep-link beats the filter ----------
 {
-    const code = fs.readFileSync(path.resolve(__dirname, '../media/pageHeader.js'), 'utf8') + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afFilters.js'), 'utf8') + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/sessionViewer.js'), 'utf8');
-    let focused = null, msgHandler = null;
+    const code = require(path.join(__dirname, 'lib_shared_media.js')).sharedMedia()
+        + fs.readFileSync(path.resolve(__dirname, '../media/sessionViewer.js'), 'utf8');
+    let focused = null;
+    // ‼️ A LIST: the viewer listens twice (host messages + the right-click relay).
+    const msgHandlers = [];
+    const msgHandler = (ev) => msgHandlers.forEach(fn => fn(ev));
     const els = {};
     function getEl(id) {
         if (id === 'turnbox') { return els.turnbox || null; }
@@ -133,7 +137,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
                     { role: 'toolResult', ts: 4000, text: 'file listing', turn: 1 }
                 ]
             },
-            addEventListener: (ev, fn) => { if (ev === 'message') { msgHandler = fn; } },
+            addEventListener: (ev, fn) => { if (ev === 'message') { msgHandlers.push(fn); } },
             scrollTo() { }, scrollX: 0, scrollY: 0
         },
         document: {

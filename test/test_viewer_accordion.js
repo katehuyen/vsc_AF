@@ -12,7 +12,10 @@ const vm = require('vm');
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
-const code = fs.readFileSync(require('path').resolve(__dirname, '../media/pageHeader.js'), 'utf8') + '\n' + fs.readFileSync(require('path').resolve(__dirname, '../media/afFilters.js'), 'utf8') + '\n' + fs.readFileSync(require('path').resolve(__dirname, '../media/sessionViewer.js'), 'utf8');
+// The shared scripts htmlShell ships to every page, from ONE list
+// (lib_shared_media.js) — a copy per test file goes stale one file at a time.
+const code = require(require('path').join(__dirname, 'lib_shared_media.js')).sharedMedia()
+    + fs.readFileSync(require('path').resolve(__dirname, '../media/sessionViewer.js'), 'utf8');
 
 const count = (html, needle) => html.split(needle).length - 1;
 
@@ -29,7 +32,10 @@ function makeSandbox(opts) {
     const seenSelectors = [];
     const copyBtns = {};
     let focused = null;
-    let msgHandler = null;
+    // ‼️ A LIST: the viewer listens twice — its own host messages, and the
+    // right-click relay wired at module scope. Last-one-wins drops one of them.
+    const msgHandlers = [];
+    const msgHandler = (ev) => msgHandlers.forEach(fn => fn(ev));
 
     function getEl(id) {
         if (!els[id]) {
@@ -101,7 +107,7 @@ function makeSandbox(opts) {
                     { role: 'assistant', ts: 6000, text: 'ans three', turn: 3 }
                 ]
             },
-            addEventListener: (ev, fn) => { if (ev === 'message') { msgHandler = fn; } },
+            addEventListener: (ev, fn) => { if (ev === 'message') { msgHandlers.push(fn); } },
             scrollTo() { }, scrollX: 0, scrollY: 0
         },
         document: {
@@ -211,11 +217,16 @@ function makeSandbox(opts) {
     // the caret and the controls row already say. Labelled, dated, and carrying
     // how long ago it was; turn 2 has no ts of its own and falls back to the
     // timestamp of the message that opens it.
+    // The tail "— right-click for more" is the ONE thing allowed after it: a
+    // menu nobody knows about is not a feature (docs/SAG-TIK-MENULERI.tr.md).
     ok('band tooltip is the turn start stamp, not a click hint',
         !html.includes('Click to expand')
         && html.includes('title="Turn started · ')
-        && /title="Turn started · [^"]*2026[^"]*\(\d+ (day|month|year)s? ago\)"/.test(html)
+        && /title="Turn started · [^"]*2026[^"]*\(\d+ (day|month|year)s? ago\)( — right-click for more)?"/.test(html)
         && count(html, 'title="Turn started · ') === 4);  // 3 bands + 1 breakdown row
+    ok('…and every band says a right-click has more',
+        count(html, 'title="Turn started · ') ===
+        (html.match(/title="Turn started · [^"]*right-click for more"/g) || []).length);
 
     t.click('t-expandall');
     html = t.appHtml();

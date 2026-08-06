@@ -72,7 +72,7 @@ export const CTX_PREFIX = 'agentfarm.ctx.';
  * families, and one that does not stays `afNeedRow` and is offered nothing it
  * cannot do.
  */
-const SESSION_ROW = 'webviewSection =~ /^(afSessionRow|afNeedSession)$/';
+const SESSION_ROW = 'webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit)$/';
 const CONSOLE_ANY = 'webviewSection =~ /^afConsole(Session|Resumable)$/';
 const CONSOLE_RESUMABLE = "webviewSection == 'afConsoleResumable'";
 const CONSOLE_LIVE = "webviewSection == 'afConsoleSession'";
@@ -89,6 +89,18 @@ const FEED_EVENT = "webviewSection == 'afFeedEvent'";
 const PLAN_ROW = "webviewSection == 'afPlanRow'";
 const WF_STEP = "webviewSection == 'afWorkflowStep'";
 const TASK_RUN = "webviewSection == 'afTaskRun'";
+
+/** The reading surfaces: a turn, a step, a changed file, a search hit. */
+const TURN_ROW = "webviewSection == 'afTurnRow'";
+const VIEWER_TURN = "webviewSection == 'afViewerTurn'";
+const VIEWER_STEP = "webviewSection == 'afViewerStep'";
+const VIEWER_FILE = "webviewSection == 'afViewerFile'";
+const DIFF_HUNK = "webviewSection == 'afDiffHunk'";
+const SEARCH_HIT = "webviewSection == 'afSearchHit'";
+
+/** The Console's two waiting states — a held message, and a live request. */
+const CONSOLE_QUEUED = "webviewSection == 'afConsoleQueued'";
+const CONSOLE_ASK = "webviewSection == 'afConsoleAsk'";
 
 /** The two message boards and the blocker queue between them. */
 const NOTICE_ROW = "webviewSection == 'afNoticeRow'";
@@ -150,7 +162,14 @@ export const CTX_SUBMENUS: CtxSubmenu[] = [
     // Urgency is a live item's field; a dropped or finished one has no more of it.
     { id: CTX_PREFIX + 'qUrg', label: 'Urgency', group: '2_edit@3', when: `${QUEUE_ROW} && !afTerminal` },
     { id: CTX_PREFIX + 'qCopy', label: 'Copy', group: '5_copy@1', when: QUEUE_ROW },
-    { id: CTX_PREFIX + 'tbCopy', label: 'Copy', group: '5_copy@1', when: TOOL_ROW }
+    { id: CTX_PREFIX + 'tbCopy', label: 'Copy', group: '5_copy@1', when: TOOL_ROW },
+    // ‼️ On a turn and a search hit the session's own Copy items sit at
+    // 5_copy@1–2, so these arrows take @3 — two menu entries in one seat are
+    // drawn in an undefined order, which is how an item goes missing.
+    { id: CTX_PREFIX + 'tnCopy', label: 'Copy this turn', group: '5_copy@3', when: TURN_ROW },
+    { id: CTX_PREFIX + 'vtCopy', label: 'Copy', group: '5_copy@1', when: VIEWER_TURN },
+    { id: CTX_PREFIX + 'vsCopy', label: 'Copy', group: '5_copy@1', when: VIEWER_STEP },
+    { id: CTX_PREFIX + 'shCopy', label: 'Copy the match', group: '5_copy@3', when: SEARCH_HIT }
 ];
 
 /**
@@ -190,6 +209,14 @@ export const CTX_ITEMS: CtxItem[] = [
     { command: 'agentfarm.assignSessionProject', when: SESSION_ROW, group: '4_project@1' },
     { command: 'agentfarm.projectFromSession', when: SESSION_ROW, group: '4_project@2' },
     { command: 'agentfarm.addSessionFolderToProject', when: SESSION_ROW, group: '4_project@3' },
+    // The things you reach FOR from a session row and had to leave the row to
+    // get. `cwd` is only known once the session reports it, so the two folder
+    // items are drawn only where there is a folder to act on.
+    { command: 'agentfarm.openSessionAgent', when: SESSION_ROW, group: '1_open@5' },
+    { command: 'agentfarm.revealSessionFolder', when: `${SESSION_ROW} && cwd`, group: '1_open@6' },
+    { command: 'agentfarm.sessionToQueue', when: SESSION_ROW, group: '4_project@4' },
+    { command: 'agentfarm.copySessionPath', when: SESSION_ROW, group: '5_copy@1' },
+    { command: 'agentfarm.copySessionCwd', when: `${SESSION_ROW} && cwd`, group: '5_copy@2' },
 
     // ---------------------------------------------------------------------
     // The Console's cards. A resumable row can be joined; a live card can be
@@ -1005,6 +1032,168 @@ export const CTX_ITEMS: CtxItem[] = [
     {
         id: 'scDelete', title: 'Delete it from the keychain…', act: 'scAct:delete',
         when: SECRET_ROW, group: '9_danger@1'
+    },
+
+    // =====================================================================
+    // READING SURFACES. A turn row and a search hit are SESSIONS (they are in
+    // the SESSION_ROW family above) — what follows is what they are as well
+    // as that: a turn, a match, a step, a changed file, a hunk.
+    // =====================================================================
+    {
+        id: 'tnOpen', title: 'Open the transcript at this turn', act: 'tnOpen',
+        when: TURN_ROW, group: '1_open@0'
+    },
+    {
+        id: 'tnFold', title: "Show this turn's content here", act: 'tnFold',
+        when: TURN_ROW, group: '2_turn@1'
+    },
+    ...picker(CTX_PREFIX + 'tnCopy', TURN_ROW, 'tnCopy', [
+        ['prompt', 'What was asked'],
+        ['answer', 'What came back'],
+        ['all', 'The whole turn'],
+        ['where', 'Where it is — session id and turn number']
+    ]),
+
+    // ---- a hit in the search results -------------------------------------
+    {
+        id: 'shOpen', title: 'Open the transcript at this moment', act: 'shOpen',
+        when: SEARCH_HIT, group: '1_open@0'
+    },
+    {
+        id: 'shOnlySession', title: 'Search only this session', act: 'shOnly:session',
+        when: SEARCH_HIT, group: '2_search@1'
+    },
+    {
+        id: 'shOnlyAgent', title: 'Search only this agent', act: 'shOnly:agent',
+        when: `${SEARCH_HIT} && agentName`, group: '2_search@2'
+    },
+    ...picker(CTX_PREFIX + 'shCopy', SEARCH_HIT, 'shCopy', [
+        ['line', 'The matching line'],
+        ['context', 'The line with what is around it']
+    ]),
+
+    // ---- a turn band in the session viewer --------------------------------
+    {
+        id: 'vtFold', title: 'Fold this turn', act: 'vtFold:1',
+        when: `${VIEWER_TURN} && !afClosed`, group: '1_open@1'
+    },
+    {
+        id: 'vtUnfold', title: 'Unfold this turn', act: 'vtFold:0',
+        when: `${VIEWER_TURN} && afClosed`, group: '1_open@1'
+    },
+    {
+        id: 'vtOnly', title: 'Only this turn open', act: 'vtOnly',
+        when: VIEWER_TURN, group: '1_open@2'
+    },
+    {
+        id: 'vtJump', title: 'Jump to it', act: 'vtJump',
+        when: VIEWER_TURN, group: '1_open@3'
+    },
+    // Export-MD selection: the checkboxes are on the bands and in the
+    // breakdown table, and "only this one" was a button in one of the two.
+    {
+        id: 'vtExportOn', title: 'Include it in Export MD', act: 'vtExport:1',
+        when: `${VIEWER_TURN} && !afExport`, group: '2_edit@1'
+    },
+    {
+        id: 'vtExportOff', title: 'Leave it out of Export MD', act: 'vtExport:0',
+        when: `${VIEWER_TURN} && afExport`, group: '2_edit@1'
+    },
+    {
+        id: 'vtExportOnly', title: 'Export only this turn', act: 'vtExport:only',
+        when: VIEWER_TURN, group: '2_edit@2'
+    },
+    ...picker(CTX_PREFIX + 'vtCopy', VIEWER_TURN, 'vtCopy', [
+        ['prompt', 'What was asked'],
+        ['answer', 'What came back'],
+        ['all', 'The whole turn']
+    ]),
+
+    // ---- one step inside a turn -------------------------------------------
+    {
+        id: 'vsFile', title: 'Open the file it touched', act: 'vsFile',
+        when: `${VIEWER_STEP} && stepFile`, group: '1_open@1'
+    },
+    {
+        id: 'vsOnlyKind', title: 'Show only this kind of step', act: 'vsOnly',
+        when: VIEWER_STEP, group: '2_mark@1'
+    },
+    ...picker(CTX_PREFIX + 'vsCopy', VIEWER_STEP, 'vsCopy', [
+        ['text', 'What it says'],
+        ['tool', 'What was sent to the tool'],
+        ['result', 'What came back']
+    ]),
+
+    // ---- a file this session changed, and one hunk of it -------------------
+    {
+        id: 'vfOpen', title: 'Open the file', act: 'vfOpen',
+        when: VIEWER_FILE, group: '1_open@1'
+    },
+    {
+        id: 'vfDiff', title: 'Diff it against git HEAD', act: 'vfDiff',
+        when: VIEWER_FILE, group: '1_open@2'
+    },
+    {
+        id: 'vfHunks', title: 'Show what this session changed in it', act: 'vfHunks',
+        when: VIEWER_FILE, group: '1_open@3'
+    },
+    {
+        id: 'vfReveal', title: 'Reveal it in the file explorer', act: 'vfReveal',
+        when: VIEWER_FILE, group: '1_open@4'
+    },
+    {
+        id: 'vfCopy', title: 'Copy its path', act: 'vfCopy',
+        when: VIEWER_FILE, group: '5_copy@1'
+    },
+    {
+        id: 'dhCopyNew', title: 'Copy what it became', act: 'dhCopy:new',
+        when: DIFF_HUNK, group: '5_copy@1'
+    },
+    {
+        id: 'dhCopyOld', title: 'Copy what it replaced', act: 'dhCopy:old',
+        when: DIFF_HUNK, group: '5_copy@2'
+    },
+    {
+        id: 'dhOpen', title: 'Open the file at this change', act: 'dhOpen',
+        when: DIFF_HUNK, group: '1_open@1'
+    },
+
+    // =====================================================================
+    // THE CONSOLE'S TWO WAITING STATES.
+    // =====================================================================
+    {
+        id: 'cqNow', title: 'Say it now, into the running turn', act: 'cqNow',
+        when: CONSOLE_QUEUED, group: '1_open@1'
+    },
+    {
+        id: 'cqEdit', title: 'Bring it back into the box to change it', act: 'cqEdit',
+        when: CONSOLE_QUEUED, group: '2_edit@1'
+    },
+    {
+        id: 'cqCopy', title: 'Copy what it says', act: 'cqCopy',
+        when: CONSOLE_QUEUED, group: '5_copy@1'
+    },
+    {
+        id: 'cqDrop', title: 'Drop it — it is never said', act: 'cqDrop',
+        when: CONSOLE_QUEUED, group: '9_danger@1'
+    },
+    // A permission request: the two answers, plus the standing one. "Always"
+    // is the permission MODE, which is what the box's own retry control sets.
+    {
+        id: 'caAllow', title: 'Allow it, once', act: 'caAllow',
+        when: `${CONSOLE_ASK} && !afQuestion`, group: '1_open@1'
+    },
+    {
+        id: 'caDeny', title: 'Deny it', act: 'caDeny',
+        when: `${CONSOLE_ASK} && !afQuestion`, group: '1_open@2'
+    },
+    {
+        id: 'caSkip', title: 'Skip the question — the turn carries on', act: 'caDeny',
+        when: `${CONSOLE_ASK} && afQuestion`, group: '1_open@2'
+    },
+    {
+        id: 'caCopy', title: 'Copy what it is asking', act: 'caCopy',
+        when: CONSOLE_ASK, group: '5_copy@1'
     }
 ];
 

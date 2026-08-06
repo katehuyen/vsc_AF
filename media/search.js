@@ -220,7 +220,18 @@
             `<span class="badge">${C.esc(h.role)}${h.tool ? ' · ' + C.esc(h.tool) : ''}</span>`,
             typeof h.score === 'number' ? `<span class="badge">${Math.round(h.score * 100)}%</span>` : ''
         ].filter(Boolean).join(' ');
-        return `<div class="hit" data-hit="${i}">
+        // ‼️ A transcript hit is a SESSION as well as a match, so it publishes
+        // itself as `afSearchHit` — a member of the session family in
+        // src/core/ctxmenu.ts. One right-click therefore offers what you can do
+        // to that session AND what is true only of this match: open the
+        // transcript at this moment, narrow the search, copy the line. A memory
+        // or event hit is not a session and is given nothing it cannot do.
+        const isSession = h.kind !== 'memory' && h.kind !== 'event' && !!h.file;
+        const ctx = isSession
+            ? ' ' + window.AFSessionCtx.row(h, { webviewSection: 'afSearchHit', hitIndex: i, hitTs: h.ts || 0 })
+            : '';
+        return `<div class="hit" data-hit="${i}"${ctx}${isSession
+            ? ` title="Open this moment — ${window.AFSessionCtx.HINT}, and this match's own"` : ''}>
             <span class="muted small" style="float:right">${relTime(h.ts)}</span>
             ${badges} ${C.esc(h.before)}${h.match ? `<mark>${C.esc(h.match)}</mark>` : ''}${C.esc(h.after)}
         </div>`;
@@ -312,6 +323,51 @@
                 type: 'openSession', file: el.dataset.openSession, ts: Number(el.dataset.ts) || 0
             })));
     }
+
+    // ------------------------------------------------------- right-click menu
+
+    /**
+     * A match's own half of the menu. Narrowing the scope is the act this page
+     * needed most: the two questions a hit raises are "what else did this
+     * session say" and "what else has this agent said", and both meant finding
+     * the scope controls and retyping the query. Both run the page's own scope
+     * preset — the same one the viewer and the agent page push in.
+     */
+    function ctxDo(act, ctx) {
+        const verb = act.split(':')[0];
+        const arg = act.slice(verb.length + 1);
+        const hit = lastResult && lastResult.hits ? lastResult.hits[Number(ctx.hitIndex)] : null;
+
+        if (verb === 'shOpen') {
+            vscode.postMessage({
+                type: 'openSession', file: String(ctx.file || ''), ts: Number(ctx.hitTs) || 0
+            });
+            return;
+        }
+        if (verb === 'shOnly') {
+            if (arg === 'agent' && ctx.agentName) {
+                preset = { agentName: String(ctx.agentName) };
+                agentSel = new Set([String(ctx.agentName)]);
+            } else {
+                preset = { file: String(ctx.file || ''), title: String(ctx.title || '') };
+            }
+            // shell() repaints the controls and re-runs whatever is typed.
+            shell();
+            const go = document.getElementById('go');
+            const q = document.getElementById('q');
+            if (go && q && q.value.trim()) { go.click(); }
+            return;
+        }
+        if (verb === 'shCopy') {
+            if (!hit) { window.AFCtx.copy(''); return; }
+            window.AFCtx.copy(arg === 'context'
+                ? String(hit.before || '') + String(hit.match || '') + String(hit.after || '')
+                : String(hit.match || hit.before || ''));
+        }
+    }
+
+    // ‼️ ONCE, at module scope — renderResults() rebuilds every hit each search.
+    window.AFCtx.listen(ctxDo);
 
     window.addEventListener('message', ev => {
         if (ev.data.type === 'preset') {

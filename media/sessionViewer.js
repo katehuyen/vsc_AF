@@ -203,6 +203,22 @@
         if (opening && singleOpen) { scrollToTurn(n); }
     }
 
+    /**
+     * What a turn IS, for the right-click menu. Published by BOTH surfaces that
+     * draw a turn — the band in the transcript and the row in the breakdown
+     * table — so the same menu appears on whichever one you happen to be
+     * pointing at, which is the rule the whole design is built on.
+     *
+     * `afExport` is the checkbox state: the menu offers "include" or "leave
+     * out", never both, and "only this one" was a button that existed in the
+     * table and nowhere else.
+     */
+    function turnCtx(n, closed) {
+        return window.AFCtx.row('afViewerTurn', {
+            turnN: n, afClosed: !!closed, afExport: !exportOff.has(n)
+        });
+    }
+
     function turnHdrHtml(m) {
         if (!m.turnStart || !m.turn) { return ''; }
         const t = (DATA.turnTotals || {})[m.turn];
@@ -230,7 +246,9 @@
         // The hover carries the turn's date, not "click to expand": the caret,
         // the fold state and the controls row already say the band is clickable,
         // so the one tooltip a turn gets is spent on what nothing else shows.
-        return `<div class="turnhdr${closed ? ' closed' : ''}" data-turn="${m.turn}" title="${C.esc(turnStartedTip((info && info.ts) || m.ts))}">
+        return `<div class="turnhdr${closed ? ' closed' : ''}" data-turn="${m.turn}"
+            ${turnCtx(m.turn, closed)}
+            title="${C.esc(turnStartedTip((info && info.ts) || m.ts))} — ${window.AFCtx.HINT}">
             <span class="tcaret">${closed ? '▸' : '▾'}</span>
             <label class="turnsel" title="Include this turn in Export MD">
                 <input type="checkbox" data-turnsel="${m.turn}"${exportOff.has(m.turn) ? '' : ' checked'}></label>
@@ -328,6 +346,24 @@
         return String((m.role === 'tool' ? m.input : m.text) || '');
     }
 
+    /**
+     * The file a tool step touched, read off its input.
+     *
+     * Nothing upstream records it — the transcript keeps the tool's raw input —
+     * so it is recovered here, and only for the tools whose first job IS a path.
+     * A wrong guess would put "Open the file it touched" on a step that touches
+     * no file, so the test is deliberately narrow: a `file_path`/`path`/`notebook_path`
+     * key, or a bare absolute path on the first line.
+     */
+    function toolPath(m) {
+        if (!m || m.role !== 'tool') { return ''; }
+        const raw = String(m.input || '');
+        const keyed = /"(?:file_path|notebook_path|path)"\s*:\s*"([^"]+)"/.exec(raw);
+        if (keyed) { return keyed[1].replace(/\\\\/g, '\\'); }
+        const bare = /^\s*((?:[A-Za-z]:[\\/]|\/)[^\s"']{3,})/.exec(raw);
+        return bare ? bare[1] : '';
+    }
+
     /** The list `data-idx` counts against. Replay renders its own snapshot, so a
      *  lookup that always went to `visibleMsgs()` would copy the wrong step the
      *  moment a filter changed mid-replay. */
@@ -365,17 +401,25 @@
         // the step's own words and a control inside them would be copied along
         // by anyone selecting by hand — which is the thing this replaces.
         const bar = `<div class="meta">${meta}${copyBtnHtml(idx)}</div>`;
+        // A step publishes what it is and what it touched. The path is read off
+        // the tool input rather than stored on the message: nothing upstream
+        // records it, and "open the file it touched" is the question a tool step
+        // most often raises.
+        const ctx = window.AFCtx.row('afViewerStep', {
+            stepIdx: idx, stepRole: m.role, stepKind: m.kind || '',
+            stepTool: m.tool || '', stepFile: toolPath(m)
+        });
 
         if (m.role === 'tool') {
-            return `<div class="msg tool${hide}" data-idx="${idx}">${bar}
+            return `<div class="msg tool${hide}" data-idx="${idx}" ${ctx}>${bar}
                 <details><summary>input</summary><pre>${C.esc(m.input || '')}</pre></details></div>`;
         }
         if (m.role === 'toolResult') {
             const body = C.esc(m.text || '(empty result)');
-            return `<div class="msg ${cls}" data-idx="${idx}">${bar}
+            return `<div class="msg ${cls}" data-idx="${idx}" ${ctx}>${bar}
                 <details${m.isError ? ' open' : ''}><summary>result</summary><pre>${body}</pre></details></div>`;
         }
-        return `<div class="msg ${cls}" data-idx="${idx}">${bar}<div class="body">${C.esc(m.text || '')}</div></div>`;
+        return `<div class="msg ${cls}" data-idx="${idx}" ${ctx}>${bar}<div class="body">${C.esc(m.text || '')}</div></div>`;
     }
 
     // ---------- replay engine ----------
@@ -583,7 +627,8 @@
             </div>
             <div class="tablewrap"><table>
                 <thead><tr><th>md</th><th>#</th><th>prompt</th><th>model</th><th class="num">tokens</th><th class="num">cost</th></tr></thead>
-                <tbody>${turns.map(t => `<tr class="click" data-turn="${t.n}" title="${C.esc(turnStartedTip(t.ts))}">
+                <tbody>${turns.map(t => `<tr class="click" data-turn="${t.n}" ${turnCtx(t.n, collapsed.has(t.n))}
+                    title="${C.esc(turnStartedTip(t.ts))} — ${window.AFCtx.HINT}">
                     <td class="selcell"><input type="checkbox" data-turnsel="${t.n}"${exportOff.has(t.n) ? '' : ' checked'} title="Include in Export MD"><button class="only" data-only="${t.n}" title="Export only this turn">only</button></td>
                     <td>${t.n}</td><td>${C.esc(t.label || '—')}</td>
                     <td>${turnTags(t).map(x => `<span class="tag">${C.esc(x)}</span>`).join('') || '—'}</td>
@@ -614,7 +659,9 @@
                 <tbody>${files.map(f => {
                     const open = openFiles.has(f.file);
                     const short = f.file.split(/[\\/]/).slice(-2).join('/');
-                    return `<tr class="click" data-fileopen="${C.esc(f.file)}" title="${C.esc(f.file)}">
+                    return `<tr class="click" data-fileopen="${C.esc(f.file)}"
+                        ${window.AFCtx.row('afViewerFile', { filePath: f.file, afOpen: open })}
+                        title="${C.esc(window.AFCtx.hint(f.file))}">
                         <td><button class="only">${open ? '▾' : '▸'}</button></td>
                         <td>${C.esc(short)}${f.written ? ' <span class="tag">written</span>' : ''}${f.failed ? ` <span class="badge err" title="${f.failed} call(s) came back with an error — those changes did not happen">${f.failed} failed</span>` : ''}</td>
                         <td class="num">${f.edits}</td>
@@ -638,7 +685,10 @@
             const side = (text, cls, sign) => text === undefined || text === ''
                 ? ''
                 : `<pre class="hunk ${cls}">${text.split('\n').map(l => sign + C.esc(l)).join('\n')}</pre>`;
-            return `<div class="hunkbox" data-hunk="${i}">${head}${side(r.oldText, 'old', '−')}${side(r.newText, 'new', '+')}</div>`;
+            return `<div class="hunkbox" data-hunk="${i}"
+                ${window.AFCtx.row('afDiffHunk', { filePath: file, hunkIndex: i, turnN: r.turn })}
+                title="${C.esc(window.AFCtx.hint('Turn ' + r.turn + ' · ' + r.tool))}"
+                >${head}${side(r.oldText, 'old', '−')}${side(r.newText, 'new', '+')}</div>`;
         }).join('');
     }
 
@@ -1186,6 +1236,128 @@
             clear.addEventListener('click', () => { input.value = ''; applyFilter(); input.focus(); });
         }
     }
+
+    // ------------------------------------------------------- right-click menu
+
+    /**
+     * Everything a right-click can ask for on the four objects this page draws:
+     * a turn, a step, a changed file, one hunk of a change.
+     *
+     * Each branch runs the page's own path — the export checkbox, the fold, the
+     * "only" button, the file open, the git diff — so the menu and the control
+     * beside it cannot mean different things. What it adds is reach: the export
+     * selection from the transcript itself (the "only" button lived in the
+     * breakdown table alone), a step's file, and the hunks as text.
+     *
+     * ‼️ The HOST holds the clipboard for step and hunk text, exactly as the ⧉
+     * button does: `navigator.clipboard` is permission-gated in a webview and a
+     * copy that silently did nothing is worse than none.
+     */
+    function ctxDo(act, ctx) {
+        const verb = act.split(':')[0];
+        const arg = act.slice(verb.length + 1);
+        const n = Number(ctx.turnN);
+        const copyHost = (text) => {
+            if (!text) { window.AFCtx.toast('There is nothing there to copy.', true); return; }
+            vscode.postMessage({ type: 'copyStep', idx: -1, text: text });
+        };
+        const turnMsgs = () => (DATA.messages || []).filter(m => m.turn === n);
+
+        switch (verb) {
+            // ---- a turn ----
+            case 'vtFold':
+                if (arg === '1') { collapsed.add(n); } else { expandTurn(n); }
+                render({ keepScroll: true });
+                return;
+            case 'vtOnly':
+                (DATA.turns || []).forEach(t => collapsed.add(t.n));
+                expandTurn(n);
+                render({ keepScroll: true });
+                return;
+            case 'vtJump': scrollToTurn(n); return;
+            case 'vtExport':
+                if (arg === 'only') {
+                    (DATA.turns || []).forEach(t => exportOff.add(t.n));
+                    exportOff.delete(n);
+                    render({ keepScroll: true });
+                } else {
+                    setTurnExport(n, arg === '1');
+                }
+                return;
+            case 'vtCopy': {
+                const msgs = turnMsgs();
+                const pick = arg === 'prompt' ? msgs.filter(m => m.role === 'user')
+                    : arg === 'answer' ? msgs.filter(m => m.role === 'assistant')
+                        : msgs;
+                copyHost(pick.map(stepText).filter(Boolean).join('\n\n'));
+                return;
+            }
+
+            // ---- one step ----
+            case 'vsFile':
+                if (ctx.stepFile) {
+                    vscode.postMessage({ type: 'openEditedFile', file: String(ctx.stepFile), diff: false });
+                }
+                return;
+            // "Only this kind" speaks the role chips' own vocabulary, so the
+            // chip row above lights up to match — the filter is one state, not
+            // two that agree by accident.
+            case 'vsOnly':
+                roleSel = new Set([String(ctx.stepRole || 'user')]);
+                if (replay.active) {
+                    stopTimer();
+                    replay.msgs = visibleMsgs();
+                    replay.pos = Math.min(replay.pos, Math.max(0, replay.msgs.length - 1));
+                }
+                render({ keepScroll: true });
+                return;
+            case 'vsCopy': {
+                const m = renderedMsgs()[Number(ctx.stepIdx)];
+                if (!m) { copyHost(''); return; }
+                copyHost(arg === 'tool' ? String(m.input || '')
+                    : arg === 'result' ? String(m.role === 'toolResult' ? (m.text || '') : '')
+                        : stepText(m));
+                return;
+            }
+
+            // ---- a changed file, and one hunk of it ----
+            case 'vfOpen':
+                vscode.postMessage({ type: 'openEditedFile', file: String(ctx.filePath || ''), diff: false });
+                return;
+            case 'vfDiff':
+                vscode.postMessage({ type: 'openEditedFile', file: String(ctx.filePath || ''), diff: true });
+                return;
+            case 'vfReveal':
+                vscode.postMessage({ type: 'revealFile', file: String(ctx.filePath || '') });
+                return;
+            case 'vfHunks': {
+                const f = String(ctx.filePath || '');
+                if (openFiles.has(f)) { openFiles.delete(f); }
+                else {
+                    openFiles.add(f);
+                    if (!fileHunks[f]) { vscode.postMessage({ type: 'sessionFileEdits', file: f }); }
+                }
+                filesOpen = true;
+                keepState({ filesOpen });
+                render({ keepScroll: true });
+                return;
+            }
+            case 'vfCopy': window.AFCtx.copy(ctx.filePath); return;
+            case 'dhOpen':
+                vscode.postMessage({ type: 'openEditedFile', file: String(ctx.filePath || ''), diff: false });
+                return;
+            case 'dhCopy': {
+                const recs = fileHunks[String(ctx.filePath || '')] || [];
+                const r = recs[Number(ctx.hunkIndex)];
+                copyHost(r ? String((arg === 'old' ? r.oldText : r.newText) || '') : '');
+                return;
+            }
+        }
+    }
+
+    // ‼️ ONCE, at module scope — render() runs on every fold, filter and replay
+    // step, and a listener added there would multiply with them.
+    window.AFCtx.listen(ctxDo);
 
     foldNewTurns();
     render();

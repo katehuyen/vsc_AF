@@ -7,6 +7,7 @@ import { addUsage, contextAfter, emptyUsage, PricingEngine, RawUsage, toUsage, t
 import { sessionOrigin } from '../core/sessions';
 import { StepKind, stepKindForTool } from '../core/stepkind';
 import { collectEdits, fileStats, groupByFile } from '../core/codeedits';
+import { revealPath } from '../core/reveal';
 import { askExportOptions, handleAfNav, htmlShell } from './base';
 
 export interface ViewerDeps {
@@ -738,6 +739,13 @@ export class SessionViewerPanel {
                 if (typeof msg.file === 'string' && msg.file) {
                     void vscode.commands.executeCommand('agentfarm.openEditedFile',
                         { file: msg.file, diff: msg.diff === true });
+                }
+                break;
+            // From a changed file's right-click menu. The path comes from the
+            // transcript's own edit records, never from arbitrary webview input.
+            case 'revealFile':
+                if (typeof msg.file === 'string' && msg.file) {
+                    void revealPath(msg.file);
                 }
                 break;
             case 'ctxCapture': {

@@ -79,7 +79,11 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
         + fs.readFileSync(require('path').resolve(__dirname, '../media/sessionViewer.js'), 'utf8');
     let posted = [];
     let focused = null;
-    let msgHandler = null;
+    // ‼️ A LIST, not one handler. The viewer listens twice now: once for its own
+    // host messages and once, at module scope, for the right-click relay.
+    // Keeping only the last registration silently drops the other.
+    const msgHandlers = [];
+    const msgHandler = (ev) => msgHandlers.forEach(fn => fn(ev));
     const els = {};
     function getEl(id) {
         if (id === 'turnbox') { return null; }
@@ -129,7 +133,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
                 ],
                 focusTs: 5200
             },
-            addEventListener: (ev, fn) => { if (ev === 'message') { msgHandler = fn; } },
+            addEventListener: (ev, fn) => { if (ev === 'message') { msgHandlers.push(fn); } },
             scrollTo() { }, scrollX: 0, scrollY: 0
         },
         document: {

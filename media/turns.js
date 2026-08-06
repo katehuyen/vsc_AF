@@ -385,11 +385,14 @@
         const rowsHtml = shown.map(r => {
             const k = key(r);
             const o = open.has(k);
-            // A turn row IS a session row too — the session this turn belongs
-            // to — so right-clicking it offers that session's whole action set
-            // instead of Copy/Paste (afSessionCtx.js).
+            // ‼️ A turn row is TWO objects at once: the turn, and the session it
+            // belongs to. It publishes itself as `afTurnRow`, which is in the
+            // session family (src/core/ctxmenu.ts), so one right-click offers
+            // that session's whole action set AND the four things that are true
+            // only of this turn.
             return `<tr class="click turnrow${o ? ' open' : ''}" data-turn="${C.esc(r.file)}" data-ts="${r.ts || 0}"
-                ${window.AFSessionCtx.row(r)} title="${window.AFSessionCtx.HINT}">
+                ${window.AFSessionCtx.row(r, { webviewSection: 'afTurnRow', turnKey: k, turnN: r.n, turnTs: r.ts || 0 })}
+                title="${window.AFSessionCtx.HINT} — and this turn's own">
                 <td class="foldcell"><button class="fold" data-fold="${C.esc(k)}" title="${o ? 'Hide' : 'Show'} this turn's content">${o ? '▾' : '▸'}</button></td>
                 ${COLUMNS.map(c => CELL[c](r)).join('')}
             </tr>` + (o ? `<tr class="turnbody"><td></td><td colspan="${COLUMNS.length}">${turnBodyHtml(r)}</td></tr>` : '');
@@ -580,6 +583,62 @@
                 render();
             }));
     }
+
+    // ------------------------------------------------------- right-click menu
+
+    /**
+     * The turn's own half of the menu. The session half is host commands and
+     * needs nothing here.
+     *
+     * The content of a turn is fetched on demand (`ensureDetail`), so a copy
+     * asked for before the turn has ever been unfolded requests it and says so
+     * rather than silently copying an empty string — the alternative is a
+     * clipboard that looks like it worked.
+     */
+    function ctxDo(act, ctx) {
+        const verb = act.split(':')[0];
+        const arg = act.slice(verb.length + 1);
+        const k = String(ctx.turnKey || '');
+        const row = shown.find(x => key(x) === k);
+
+        if (verb === 'tnOpen') {
+            vscode.postMessage({ type: 'openSession', file: String(ctx.file || ''), ts: Number(ctx.turnTs) || 0 });
+            return;
+        }
+        if (verb === 'tnFold') {
+            if (open.has(k)) { open.delete(k); }
+            else {
+                if (single) { open.clear(); }
+                open.add(k);
+                if (row) { ensureDetail(row); }
+            }
+            render();
+            return;
+        }
+        if (verb !== 'tnCopy') { return; }
+
+        if (arg === 'where') {
+            window.AFCtx.copy(row
+                ? `${row.sessionId || row.file} · turn ${row.n}/${row.of}`
+                : String(ctx.sessionId || ctx.file || ''));
+            return;
+        }
+        const cache = row ? detailCache[k] : null;
+        if (!cache || cache.msgs === null) {
+            if (row) { ensureDetail(row); }
+            window.AFCtx.toast('That turn has not been read yet — fetching it; ask again in a moment.', true);
+            return;
+        }
+        const msgs = cache.msgs || [];
+        const text = (m) => String(m.role === 'tool' ? (m.tool + ' ' + (m.input || '')) : (m.text || ''));
+        const pick = arg === 'prompt' ? msgs.filter(m => m.role === 'user')
+            : arg === 'answer' ? msgs.filter(m => m.role === 'assistant')
+                : msgs;
+        window.AFCtx.copy(pick.map(text).filter(Boolean).join('\n\n'));
+    }
+
+    // ‼️ ONCE, at module scope — render() rebuilds every row on every change.
+    window.AFCtx.listen(ctxDo);
 
     render();
 })();

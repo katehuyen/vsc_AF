@@ -840,7 +840,14 @@
         const count = qs.length > 1
             ? `<span class="cnt${done === qs.length ? ' done' : ''}">${done}/${qs.length} answered</span>`
             : '';
-        return `<div class="t">
+        return `<div class="t"
+                ${window.AFCtx.row('afConsoleAsk', {
+            askReq: a.requestId || '', afQuestion: qs.length > 0,
+            askText: qs.length
+                ? qs.map(q => (q.header ? q.header + ' — ' : '') + q.question).join('\n')
+                : String(a.detail || a.tool || '')
+        })}
+                title="${C.esc(window.AFCtx.hint('The turn is still open — it picks your answer up and carries on'))}">
                 <span class="tag">${qs.length ? '❓ waiting on you' : '🔐 permission'}</span>
                 ${C.esc(qs.length ? (a.displayName || a.tool) + ' is asking' : (a.displayName || a.tool) + ' wants to run')}
                 ${count}
@@ -1453,7 +1460,9 @@
     function queueHtml(s) {
         const q = queuedOf(s);
         if (!q.length) { return ''; }
-        const one = (t, i) => `<div class="qline">
+        const one = (t, i) => `<div class="qline"
+            ${window.AFCtx.row('afConsoleQueued', { qIndex: i, qText: t })}
+            title="${C.esc(window.AFCtx.hint('Held until this turn ends'))}">
             <span class="qtext" title="${C.esc(t)}">${C.esc(t.length > 160 ? t.slice(0, 160) + '…' : t)}</span>
             <button class="qbtn" data-qedit="${i}" title="Bring it back into the box to change it (↑ in an empty box does the same)">✎</button>
             <button class="qbtn" data-qnow="${i}" title="Say it now, into the running turn">⏩</button>
@@ -2171,6 +2180,44 @@
             }));
         }
     }
+
+    // ------------------------------------------------------- right-click menu
+
+    /**
+     * The two things on this page that are WAITING: a message you chose to send
+     * after the turn, and a request the session is holding the turn open for.
+     *
+     * Every branch posts what the line's own buttons post. What the menu adds
+     * is that both of these are small, dense rows whose three glyph buttons are
+     * easy to miss and easy to hit by accident — and the ability to copy what
+     * is being asked, which neither row offered at all.
+     */
+    function ctxDo(act, ctx) {
+        const id = DATA.selected;
+        switch (act) {
+            case 'cqNow':
+                vscode.postMessage({ type: 'queueSend', id: id, index: Number(ctx.qIndex) });
+                return;
+            case 'cqDrop':
+                vscode.postMessage({ type: 'queueTake', id: id, index: Number(ctx.qIndex) });
+                return;
+            case 'cqEdit':
+                recallQueued(id, Number(ctx.qIndex), String(ctx.qText || ''));
+                return;
+            case 'cqCopy': window.AFCtx.copy(ctx.qText); return;
+            case 'caAllow':
+                vscode.postMessage({ type: 'askAnswer', id: id, kind: 'allow' });
+                return;
+            case 'caDeny':
+                vscode.postMessage({ type: 'askAnswer', id: id, kind: 'deny', message: '' });
+                return;
+            case 'caCopy': window.AFCtx.copy(ctx.askText); return;
+        }
+    }
+
+    // ‼️ ONCE, at module scope — this page repaints in slots, several times a
+    // second while a turn runs.
+    window.AFCtx.listen(ctxDo);
 
     /** Take a held message back into the box — it leaves the queue, so it can
      *  only be said again on purpose. */

@@ -21,8 +21,16 @@ const createAfmsDom = require(path.join(__dirname, 'lib_afms_dom.js'));
 /** `data-vscode-context="…"` is 21 characters before the value starts. */
 const CTX_ATTR_LEN = 'data-vscode-context="'.length;
 
+/**
+ * ‼️ THE REAL charts.js, NOT A STUB. Every page calls `window.AFCharts` for
+ * escaping, token/duration/step formatting and the AI label — a hand-written
+ * stub of it means each test file guesses a different subset, and the first
+ * page to use a formatter nobody stubbed dies with "not a function" in a
+ * message that says nothing about the real cause.
+ */
 function runPage(scriptFile, DATA, extraWindow) {
-    const code = shared.sharedMedia()
+    const code = fs.readFileSync(path.resolve(__dirname, '..', 'media', 'charts.js'), 'utf8')
+        + '\n' + shared.sharedMedia()
         + fs.readFileSync(path.resolve(__dirname, '..', 'media', scriptFile), 'utf8');
 
     const posted = [];
@@ -34,6 +42,14 @@ function runPage(scriptFile, DATA, extraWindow) {
     function mkEl(tag, dataset, attrs, raw) {
         return {
             tagName: tag.toUpperCase(), dataset, raw,
+            // ‼️ Every element can hold html, not just #app. Pages render in
+            // pieces — the search page fills `#out`, the Console repaints in
+            // slots — and a shim where only #app had innerHTML made those
+            // renders invisible: the test saw an empty page and said so in an
+            // assertion about something else.
+            _html: '',
+            get innerHTML() { return this._html; },
+            set innerHTML(v) { this._html = v; elCache.clear(); },
             value: attrs.value || '', type: attrs.type || '',
             checked: 'checked' in attrs, indeterminate: false,
             textContent: '', className: attrs.class || '', style: {},
@@ -42,6 +58,11 @@ function runPage(scriptFile, DATA, extraWindow) {
             addEventListener(ev, fn) { (this._listeners[ev] = this._listeners[ev] || []).push(fn); },
             focus() { }, scrollIntoView() { }, setSelectionRange() { },
             closest() { return null; },
+            // Pages that hand their own root to wire() query through it. The
+            // shim has one document, so an element's query is the page's query
+            // — every element these tests build is inside #app anyway.
+            querySelectorAll(sel) { return query(sel); },
+            querySelector(sel) { return query(sel)[0] || null; },
             click() { this.fire('click'); },
             fire(ev, extra) {
                 (this._listeners[ev] || []).forEach(fn => fn(Object.assign({
@@ -56,19 +77,15 @@ function runPage(scriptFile, DATA, extraWindow) {
         if (!els[id]) {
             const el = mkEl('div', {}, {}, '');
             el.id = id;
-            el._html = '';
-            // defineProperty, not Object.assign — assign would copy the value a
-            // getter returns and leave innerHTML a dead plain property, which
-            // renders the page silently blank.
-            Object.defineProperty(el, 'innerHTML', {
-                get() { return this._html; },
-                set(v) { this._html = v; elCache.clear(); }
-            });
             els[id] = el;
         }
         return els[id];
     }
-    const html = () => getEl('app')._html;
+    /** Everything currently on the page: #app plus whatever any other element
+     *  has been given. The pieces never overlap — a slot's own markup is empty
+     *  in its parent's html. */
+    const html = () => getEl('app')._html
+        + Object.keys(els).map(k => (k === 'app' ? '' : (els[k]._html || ''))).join('');
 
     /**
      * A CSS-ish selector over the rendered markup.
@@ -137,13 +154,8 @@ function runPage(scriptFile, DATA, extraWindow) {
             setState: (s) => { state = s; }
         }),
         window: Object.assign({
-            AFCharts: {
-                esc: (s) => String(s == null ? '' : s),
-                fmtTok: (n) => String(n),
-                fmtTokW(n) { return String(n || 0); },
-                fmtUSD: (v) => '$' + Number(v).toFixed(2)
-            },
             __DATA__: DATA,
+            scrollX: 0, scrollY: 0, scrollTo: () => { },
             addEventListener: (ev, fn) => { if (ev === 'message') { onMessage.push(fn); } }
         }, extraWindow || {}),
         document: {
