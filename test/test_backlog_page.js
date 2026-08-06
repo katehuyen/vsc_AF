@@ -1128,6 +1128,12 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
     ok('…and an end of the queue carries no distance at all',
         last().dir === 'top' && last().by === undefined);
 
+    // Quoting a backlog line into the work queue: the box opens with the words
+    // already in it, so the item and its code travel together.
+    r.send({ type: 'afctx', act: 'blQueue', ctx: ctx });
+    ok('a backlog item can be quoted into the work queue, code and all',
+        last().type === 'queueAdd' && last().text.indexOf('K-1') === 0 && last().text.length > 5);
+
     r.send({ type: 'afctx', act: 'blGo:obsidian', ctx: ctx });
     ok('opening at the line names the mode the menu was asked for',
         last().type === 'backlogOpenItem' && last().mode === 'obsidian' && last().code === 'K-1');

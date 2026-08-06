@@ -491,7 +491,17 @@ const mkRow = (i, extra) => Object.assign({
 {
     const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../package.json'), 'utf8'));
     const web = pkg.contributes.menus['webview/context'];
-    const onRow = id => web.some(m => m.command === id && m.when === "webviewSection == 'afSessionRow'");
+    // ‼️ The question is "is this drawn on a session row", not "is it spelled
+    // this way". The session menu is a FAMILY of sections — a Needs row that
+    // names a transcript is a session too — so its clause is a regex, and a
+    // test that pinned one spelling would break every time the family grows
+    // while proving nothing about what the user actually gets.
+    const drawsOnSessionRow = (when) => {
+        if (when === "webviewSection == 'afSessionRow'") { return true; }
+        const m = /^webviewSection =~ \/(.+)\/$/.exec(String(when || ''));
+        return !!m && new RegExp(m[1]).test('afSessionRow');
+    };
+    const onRow = id => web.some(m => m.command === id && drawsOnSessionRow(m.when));
     const FULL = [
         'agentfarm.openSession', 'agentfarm.resumeSession', 'agentfarm.resumeInConsole',
         'agentfarm.focusSessionTerminal', 'agentfarm.renameSession', 'agentfarm.pinSession',

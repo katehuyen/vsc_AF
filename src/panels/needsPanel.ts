@@ -74,12 +74,19 @@ export class NeedsPanel {
     }
 
     private async onMessage(
-        msg: { type: string; actionId?: string; item?: NeedItem; keys?: string[]; all?: boolean }
+        msg: { type: string; actionId?: string; item?: NeedItem; keys?: string[]; all?: boolean; agentId?: string }
     ): Promise<void> {
         if (msg.type === 'refresh') { this.refresh(); return; }
         if (msg.type === 'afnav') { handleAfNav((msg as { to?: unknown }).to); return; }
         if (msg.type === 'openGuide') {
             void vscode.commands.executeCommand('agentfarm.openGuide', 'onay-kuyrugu');
+            return;
+        }
+        // From a row's right-click menu: the agent behind the blocker. The
+        // session half of that menu is host commands and never comes through
+        // here — this is the one thing the page has to ask for.
+        if (msg.type === 'openAgent' && typeof msg.agentId === 'string' && msg.agentId) {
+            void vscode.commands.executeCommand('agentfarm.openAgentDetail', { agentId: msg.agentId });
             return;
         }
         if (msg.type === 'action' && msg.actionId && msg.item) {

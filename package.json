@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.72.0",
+  "version": "3.73.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -1416,6 +1416,11 @@
         "category": "Agent Farm"
       },
       {
+        "command": "agentfarm.ctx.backlogQueue",
+        "title": "Put it in the work queue\u2026",
+        "category": "Agent Farm"
+      },
+      {
         "command": "agentfarm.ctx.blGoVscode",
         "title": "Editor",
         "category": "Agent Farm"
@@ -2104,6 +2109,241 @@
         "command": "agentfarm.ctx.msTeamCopy",
         "title": "Copy its name, role and model",
         "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.ntOpen",
+        "title": "Open it here",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.ntFold",
+        "title": "Fold it back to a line",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.ntReport",
+        "title": "Open the full report",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.ntOrig",
+        "title": "Show what it said before it was edited",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.ntRead",
+        "title": "Mark it read",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.ntUnread",
+        "title": "Mark it unread",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.ntPin",
+        "title": "Pin it to the top",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.ntUnpin",
+        "title": "Unpin it",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.ntStars0",
+        "title": "none",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.ntStars1",
+        "title": "\u2605",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.ntStars2",
+        "title": "\u2605\u2605",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.ntStars3",
+        "title": "\u2605\u2605\u2605",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.ntEdit",
+        "title": "Edit it\u2026",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.ntAnswer",
+        "title": "Answer it\u2026",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.ntDecline",
+        "title": "Pass it over without answering",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.ntHand",
+        "title": "Hand it to its agent",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.ntQueue",
+        "title": "Add it to the work queue\u2026",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.ntExport",
+        "title": "Export it as Markdown",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.ntOnlyAgent",
+        "title": "What this agent has said",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.ntOnlyType",
+        "title": "This kind of message",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.ntOnlyLevel",
+        "title": "This level and nothing else",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.ntCopyTitle",
+        "title": "Its title",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.ntCopyBody",
+        "title": "Its whole text",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.ntCopyId",
+        "title": "Its id \u2014 what an agent quotes",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.ntDismiss",
+        "title": "Dismiss it",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.ntDelete",
+        "title": "Delete this question",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.qOpen",
+        "title": "Open it here",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.qFold",
+        "title": "Fold it back to a line",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.qNotice",
+        "title": "Open the notice it came from",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.qReport",
+        "title": "Open the report it produced",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.qAnswerFile",
+        "title": "Open the answer that was written",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.qAnswer",
+        "title": "Answer it \u2014 it is waiting on you\u2026",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.qEdit",
+        "title": "Edit it\u2026",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.qUrgNormal",
+        "title": "normal",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.qUrgSoon",
+        "title": "\ud83d\udd3c soon",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.qUrgUrgent",
+        "title": "\u23eb urgent",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.qHand",
+        "title": "Hand it to an agent",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.qCopyText",
+        "title": "What it says",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.qCopyId",
+        "title": "Its id",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.qDrop",
+        "title": "Drop it \u2014 void this capture",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.qRemove",
+        "title": "Delete it permanently",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.qlDropShow",
+        "title": "Show the dropped lane",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.qlDropHide",
+        "title": "Hide the dropped lane",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.qlCopy",
+        "title": "Copy this lane as Markdown",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.ndAgent",
+        "title": "Open the agent that is stuck",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.ndClear",
+        "title": "Clear this row \u2014 it comes back if it happens again",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.ndCopy",
+        "title": "Copy the row",
+        "category": "Agent Farm"
       }
     ],
     "submenus": [
@@ -2161,6 +2401,26 @@
   },
   {
     "id": "agentfarm.ctx.mstCopy",
+    "label": "Copy"
+  },
+  {
+    "id": "agentfarm.ctx.ntStars",
+    "label": "Stars"
+  },
+  {
+    "id": "agentfarm.ctx.ntOnly",
+    "label": "Show only"
+  },
+  {
+    "id": "agentfarm.ctx.ntCopy",
+    "label": "Copy"
+  },
+  {
+    "id": "agentfarm.ctx.qUrg",
+    "label": "Urgency"
+  },
+  {
+    "id": "agentfarm.ctx.qCopy",
     "label": "Copy"
   }
 ],
@@ -3036,73 +3296,98 @@
           "group": "5_copy@1"
         },
         {
+          "submenu": "agentfarm.ctx.ntStars",
+          "when": "webviewSection == 'afNoticeRow'",
+          "group": "2_edit@3"
+        },
+        {
+          "submenu": "agentfarm.ctx.ntOnly",
+          "when": "webviewSection == 'afNoticeRow'",
+          "group": "4_link@4"
+        },
+        {
+          "submenu": "agentfarm.ctx.ntCopy",
+          "when": "webviewSection == 'afNoticeRow'",
+          "group": "5_copy@1"
+        },
+        {
+          "submenu": "agentfarm.ctx.qUrg",
+          "when": "webviewSection == 'afQueueRow' && !afTerminal",
+          "group": "2_edit@3"
+        },
+        {
+          "submenu": "agentfarm.ctx.qCopy",
+          "when": "webviewSection == 'afQueueRow'",
+          "group": "5_copy@1"
+        },
+        {
           "command": "agentfarm.openSession",
-          "when": "webviewSection == 'afSessionRow'",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession)$/",
           "group": "1_open@1"
         },
         {
           "command": "agentfarm.resumeSession",
-          "when": "webviewSection == 'afSessionRow'",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession)$/",
           "group": "1_open@2"
         },
         {
           "command": "agentfarm.resumeInConsole",
-          "when": "webviewSection == 'afSessionRow'",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession)$/",
           "group": "1_open@3"
         },
         {
           "command": "agentfarm.focusSessionTerminal",
-          "when": "webviewSection == 'afSessionRow'",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession)$/",
           "group": "1_open@4"
         },
         {
           "command": "agentfarm.renameSession",
-          "when": "webviewSection == 'afSessionRow'",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession)$/",
           "group": "2_mark@1"
         },
         {
           "command": "agentfarm.pinSession",
-          "when": "webviewSection == 'afSessionRow'",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession)$/",
           "group": "2_mark@2"
         },
         {
           "command": "agentfarm.tagSession",
-          "when": "webviewSection == 'afSessionRow'",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession)$/",
           "group": "2_mark@3"
         },
         {
           "command": "agentfarm.copySessionId",
-          "when": "webviewSection == 'afSessionRow'",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession)$/",
           "group": "2_mark@4"
         },
         {
           "command": "agentfarm.interruptSession",
-          "when": "webviewSection == 'afSessionRow'",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession)$/",
           "group": "3_stop@1"
         },
         {
           "command": "agentfarm.endSession",
-          "when": "webviewSection == 'afSessionRow'",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession)$/",
           "group": "3_stop@2"
         },
         {
           "command": "agentfarm.dismissSession",
-          "when": "webviewSection == 'afSessionRow'",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession)$/",
           "group": "3_stop@3"
         },
         {
           "command": "agentfarm.assignSessionProject",
-          "when": "webviewSection == 'afSessionRow'",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession)$/",
           "group": "4_project@1"
         },
         {
           "command": "agentfarm.projectFromSession",
-          "when": "webviewSection == 'afSessionRow'",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession)$/",
           "group": "4_project@2"
         },
         {
           "command": "agentfarm.addSessionFolderToProject",
-          "when": "webviewSection == 'afSessionRow'",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession)$/",
           "group": "4_project@3"
         },
         {
@@ -3234,6 +3519,11 @@
           "command": "agentfarm.ctx.backlogFile",
           "when": "webviewSection == 'afBacklogRow' && !afCoded",
           "group": "2_edit@6"
+        },
+        {
+          "command": "agentfarm.ctx.backlogQueue",
+          "when": "webviewSection == 'afBacklogRow'",
+          "group": "4_link@1"
         },
         {
           "command": "agentfarm.ctx.planTick",
@@ -3604,8 +3894,253 @@
           "command": "agentfarm.ctx.msTeamCopy",
           "when": "webviewSection == 'afMissionTeam'",
           "group": "5_copy@1"
+        },
+        {
+          "command": "agentfarm.ctx.ntOpen",
+          "when": "webviewSection == 'afNoticeRow' && !afOpen",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.ctx.ntFold",
+          "when": "webviewSection == 'afNoticeRow' && afOpen",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.ctx.ntReport",
+          "when": "webviewSection == 'afNoticeRow' && afReport",
+          "group": "1_open@2"
+        },
+        {
+          "command": "agentfarm.ctx.ntOrig",
+          "when": "webviewSection == 'afNoticeRow' && afEdited",
+          "group": "1_open@3"
+        },
+        {
+          "command": "agentfarm.ctx.ntRead",
+          "when": "webviewSection == 'afNoticeRow' && !afRead",
+          "group": "2_edit@1"
+        },
+        {
+          "command": "agentfarm.ctx.ntUnread",
+          "when": "webviewSection == 'afNoticeRow' && afRead",
+          "group": "2_edit@1"
+        },
+        {
+          "command": "agentfarm.ctx.ntPin",
+          "when": "webviewSection == 'afNoticeRow' && !afPinned",
+          "group": "2_edit@2"
+        },
+        {
+          "command": "agentfarm.ctx.ntUnpin",
+          "when": "webviewSection == 'afNoticeRow' && afPinned",
+          "group": "2_edit@2"
+        },
+        {
+          "command": "agentfarm.ctx.ntEdit",
+          "when": "webviewSection == 'afNoticeRow'",
+          "group": "2_edit@5"
+        },
+        {
+          "command": "agentfarm.ctx.ntAnswer",
+          "when": "webviewSection == 'afNoticeRow' && afQuestion && afStatus == 'open'",
+          "group": "2_edit@6"
+        },
+        {
+          "command": "agentfarm.ctx.ntDecline",
+          "when": "webviewSection == 'afNoticeRow' && afQuestion && afStatus == 'open'",
+          "group": "2_edit@7"
+        },
+        {
+          "command": "agentfarm.ctx.ntHand",
+          "when": "webviewSection == 'afNoticeRow'",
+          "group": "4_link@1"
+        },
+        {
+          "command": "agentfarm.ctx.ntQueue",
+          "when": "webviewSection == 'afNoticeRow' && !afQuestion",
+          "group": "4_link@2"
+        },
+        {
+          "command": "agentfarm.ctx.ntExport",
+          "when": "webviewSection == 'afNoticeRow'",
+          "group": "4_link@3"
+        },
+        {
+          "command": "agentfarm.ctx.ntDismiss",
+          "when": "webviewSection == 'afNoticeRow' && !afQuestion",
+          "group": "9_danger@1"
+        },
+        {
+          "command": "agentfarm.ctx.ntDelete",
+          "when": "webviewSection == 'afNoticeRow' && afQuestion",
+          "group": "9_danger@1"
+        },
+        {
+          "command": "agentfarm.ctx.qOpen",
+          "when": "webviewSection == 'afQueueRow' && !afOpen",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.ctx.qFold",
+          "when": "webviewSection == 'afQueueRow' && afOpen",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.ctx.qNotice",
+          "when": "webviewSection == 'afQueueRow' && afSource",
+          "group": "1_open@2"
+        },
+        {
+          "command": "agentfarm.ctx.qReport",
+          "when": "webviewSection == 'afQueueRow' && afReport",
+          "group": "1_open@3"
+        },
+        {
+          "command": "agentfarm.ctx.qAnswerFile",
+          "when": "webviewSection == 'afQueueRow' && afAnswer",
+          "group": "1_open@4"
+        },
+        {
+          "command": "agentfarm.ctx.qAnswer",
+          "when": "webviewSection == 'afQueueRow' && afBlocked",
+          "group": "2_edit@1"
+        },
+        {
+          "command": "agentfarm.ctx.qEdit",
+          "when": "webviewSection == 'afQueueRow' && !afTerminal",
+          "group": "2_edit@2"
+        },
+        {
+          "command": "agentfarm.ctx.qHand",
+          "when": "webviewSection == 'afQueueRow'",
+          "group": "4_link@1"
+        },
+        {
+          "command": "agentfarm.ctx.qDrop",
+          "when": "webviewSection == 'afQueueRow' && !afTerminal",
+          "group": "9_danger@1"
+        },
+        {
+          "command": "agentfarm.ctx.qRemove",
+          "when": "webviewSection == 'afQueueRow' && afTerminal",
+          "group": "9_danger@2"
+        },
+        {
+          "command": "agentfarm.ctx.qlDropShow",
+          "when": "webviewSection == 'afQueueLane' && !afDropShown",
+          "group": "2_edit@1"
+        },
+        {
+          "command": "agentfarm.ctx.qlDropHide",
+          "when": "webviewSection == 'afQueueLane' && afDropShown",
+          "group": "2_edit@1"
+        },
+        {
+          "command": "agentfarm.ctx.qlCopy",
+          "when": "webviewSection == 'afQueueLane'",
+          "group": "5_copy@1"
+        },
+        {
+          "command": "agentfarm.ctx.ndAgent",
+          "when": "webviewSection =~ /^afNeed(Row|Session)$/ && afAgentId",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.ctx.ndClear",
+          "when": "webviewSection =~ /^afNeed(Row|Session)$/ && afClearable",
+          "group": "2_edit@1"
+        },
+        {
+          "command": "agentfarm.ctx.ndCopy",
+          "when": "webviewSection =~ /^afNeed(Row|Session)$/",
+          "group": "5_copy@1"
         }
       ],
+      "agentfarm.ctx.qCopy": [
+  {
+    "command": "agentfarm.ctx.qCopyText",
+    "when": "webviewSection == 'afQueueRow'",
+    "group": "1_pick@1"
+  },
+  {
+    "command": "agentfarm.ctx.qCopyId",
+    "when": "webviewSection == 'afQueueRow'",
+    "group": "1_pick@2"
+  }
+],
+      "agentfarm.ctx.qUrg": [
+  {
+    "command": "agentfarm.ctx.qUrgNormal",
+    "when": "webviewSection == 'afQueueRow' && !afTerminal",
+    "group": "1_pick@1"
+  },
+  {
+    "command": "agentfarm.ctx.qUrgSoon",
+    "when": "webviewSection == 'afQueueRow' && !afTerminal",
+    "group": "1_pick@2"
+  },
+  {
+    "command": "agentfarm.ctx.qUrgUrgent",
+    "when": "webviewSection == 'afQueueRow' && !afTerminal",
+    "group": "1_pick@3"
+  }
+],
+      "agentfarm.ctx.ntCopy": [
+  {
+    "command": "agentfarm.ctx.ntCopyTitle",
+    "when": "webviewSection == 'afNoticeRow'",
+    "group": "1_pick@1"
+  },
+  {
+    "command": "agentfarm.ctx.ntCopyBody",
+    "when": "webviewSection == 'afNoticeRow'",
+    "group": "1_pick@2"
+  },
+  {
+    "command": "agentfarm.ctx.ntCopyId",
+    "when": "webviewSection == 'afNoticeRow'",
+    "group": "1_pick@3"
+  }
+],
+      "agentfarm.ctx.ntOnly": [
+  {
+    "command": "agentfarm.ctx.ntOnlyAgent",
+    "when": "webviewSection == 'afNoticeRow'",
+    "group": "1_pick@1"
+  },
+  {
+    "command": "agentfarm.ctx.ntOnlyType",
+    "when": "webviewSection == 'afNoticeRow'",
+    "group": "1_pick@2"
+  },
+  {
+    "command": "agentfarm.ctx.ntOnlyLevel",
+    "when": "webviewSection == 'afNoticeRow'",
+    "group": "1_pick@3"
+  }
+],
+      "agentfarm.ctx.ntStars": [
+  {
+    "command": "agentfarm.ctx.ntStars0",
+    "when": "webviewSection == 'afNoticeRow'",
+    "group": "1_pick@1"
+  },
+  {
+    "command": "agentfarm.ctx.ntStars1",
+    "when": "webviewSection == 'afNoticeRow'",
+    "group": "1_pick@2"
+  },
+  {
+    "command": "agentfarm.ctx.ntStars2",
+    "when": "webviewSection == 'afNoticeRow'",
+    "group": "1_pick@3"
+  },
+  {
+    "command": "agentfarm.ctx.ntStars3",
+    "when": "webviewSection == 'afNoticeRow'",
+    "group": "1_pick@4"
+  }
+],
       "agentfarm.ctx.mstCopy": [
   {
     "command": "agentfarm.ctx.mstCopyPrompt",
@@ -3707,6 +4242,11 @@
   },
   {
     "command": "agentfarm.ctx.backlogFile",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.backlogQueue",
     "when": "false",
     "group": "ctx"
   },
@@ -4397,6 +4937,241 @@
   },
   {
     "command": "agentfarm.ctx.msTeamCopy",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.ntOpen",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.ntFold",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.ntReport",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.ntOrig",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.ntRead",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.ntUnread",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.ntPin",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.ntUnpin",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.ntStars0",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.ntStars1",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.ntStars2",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.ntStars3",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.ntEdit",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.ntAnswer",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.ntDecline",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.ntHand",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.ntQueue",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.ntExport",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.ntOnlyAgent",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.ntOnlyType",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.ntOnlyLevel",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.ntCopyTitle",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.ntCopyBody",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.ntCopyId",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.ntDismiss",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.ntDelete",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.qOpen",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.qFold",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.qNotice",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.qReport",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.qAnswerFile",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.qAnswer",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.qEdit",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.qUrgNormal",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.qUrgSoon",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.qUrgUrgent",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.qHand",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.qCopyText",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.qCopyId",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.qDrop",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.qRemove",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.qlDropShow",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.qlDropHide",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.qlCopy",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.ndAgent",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.ndClear",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.ndCopy",
     "when": "false",
     "group": "ctx"
   }

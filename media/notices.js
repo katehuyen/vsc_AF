@@ -242,6 +242,27 @@
         </div>`;
     }
 
+    /**
+     * What a notice IS, for the right-click menu.
+     *
+     * ‼️ THE POINT OF THE MENU HERE. Every action a notice had lived inside its
+     * expanded body — and opening a notice MARKS IT READ. So triaging the list
+     * (pin this, star that, hand this one over, dismiss the rest) could not be
+     * done without changing the unread state of everything you touched. From
+     * the menu none of it opens anything.
+     *
+     * The body is not carried: a notice runs to paragraphs and this attribute is
+     * written on every row. The handler looks it up in the data it already holds.
+     */
+    function noticeCtx(n, open) {
+        return window.AFCtx.row('afNoticeRow', {
+            notice: n.id, afOpen: !!open, afRead: !!n.read, afPinned: !!n.pinned,
+            afQuestion: n.type === 'question', afStatus: n.status || 'open',
+            afReport: !!n.reportPath, afEdited: !!n.edited,
+            ntType: n.type || 'update', ntAgent: n.agentName || '', ntLevel: lvl(n)
+        });
+    }
+
     function noticeCard(n) {
         const t = tmeta(n.type), open = expanded.has(n.id), L = lvl(n), isQ = n.type === 'question';
         const inEdit = editing.has(n.id);
@@ -269,7 +290,8 @@
                 </div>`;
         }
         return `<div class="nt-card lvl-${L} ${n.read ? 'read' : 'unread'} ${n.pinned ? 'pinned' : ''} ${selected.has(n.id) ? 'sel' : ''}" data-id="${esc(n.id)}">
-            <div class="nt-row" data-toggle="${esc(n.id)}">
+            <div class="nt-row" data-toggle="${esc(n.id)}" ${noticeCtx(n, open)}
+                title="${esc(window.AFCtx.hint('Click to open it — opening marks it read'))}">
                 <input type="checkbox" class="nt-cb" data-cb="${esc(n.id)}" ${selected.has(n.id) ? 'checked' : ''} title="Select for bulk actions">
                 <span class="nt-caret">${open ? '▾' : '▸'}</span>
                 <span class="nt-ico" title="${esc(t.label)}">${t.icon}</span>
@@ -480,6 +502,38 @@
         });
     }
 
+    /** Open or fold a notice — the row's click and the menu's item are one path,
+     *  including the part that is easy to forget: opening one marks it read. */
+    function toggleNotice(id) {
+        if (expanded.has(id)) { expanded.delete(id); }
+        else {
+            if (singleMode) { expanded.clear(); }
+            expanded.add(id);
+            // opening a notice marks it read automatically (a question's real
+            // state is answered/not — its read flag just clears the bell)
+            const n = (DATA.notices || []).find(x => x.id === id);
+            if (n && !n.read) {
+                // In the unread view, pin this row so it doesn't vanish the
+                // instant it flips to read — the user opened it TO read it.
+                if (fMode === 'unread') { stickyRead.add(id); }
+                vscode.postMessage({ type: 'markRead', id, read: true });
+            }
+        }
+        render();
+    }
+
+    /** Put a notice into edit mode, seeded from what it currently says. */
+    function startEdit(id) {
+        const n = (DATA.notices || []).find(x => x.id === id);
+        if (!n) { return; }
+        editDrafts[id] = {
+            title: n.title || '', type: n.type || 'update', level: lvl(n),
+            tags: (n.tags || []).join(', '), body: n.body || '',
+            sections: (n.sections || []).map(s => ({ title: s.title, body: s.body }))
+        };
+        editing.add(id); expanded.add(id); render();
+    }
+
     function wire(items) {
         const bind = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
         // Switching (or re-clicking) a filter chip is a deliberate view refresh:
@@ -535,24 +589,8 @@
             });
         });
 
-        document.querySelectorAll('[data-toggle]').forEach(row => row.addEventListener('click', () => {
-            const id = row.dataset.toggle;
-            if (expanded.has(id)) { expanded.delete(id); }
-            else {
-                if (singleMode) { expanded.clear(); }
-                expanded.add(id);
-                // opening a notice marks it read automatically (a question's real
-                // state is answered/not — its read flag just clears the bell)
-                const n = (DATA.notices || []).find(x => x.id === id);
-                if (n && !n.read) {
-                    // In the unread view, pin this row so it doesn't vanish the
-                    // instant it flips to read — the user opened it TO read it.
-                    if (fMode === 'unread') { stickyRead.add(id); }
-                    vscode.postMessage({ type: 'markRead', id, read: true });
-                }
-            }
-            render();
-        }));
+        document.querySelectorAll('[data-toggle]').forEach(row =>
+            row.addEventListener('click', () => toggleNotice(row.dataset.toggle)));
         document.querySelectorAll('[data-sec]').forEach(h => h.addEventListener('click', ev => {
             ev.stopPropagation(); const k = h.dataset.sec; if (openSec.has(k)) { openSec.delete(k); } else { openSec.add(k); } render();
         }));
@@ -596,11 +634,7 @@
             }
             else if (act === 'exportone') { vscode.postMessage({ type: 'exportOne', id }); }
             else if (act === 'orig') { if (showOrig.has(id)) { showOrig.delete(id); } else { showOrig.add(id); } render(); }
-            else if (act === 'edit') {
-                const n = DATA.notices.find(x => x.id === id);
-                editDrafts[id] = { title: n.title || '', type: n.type || 'update', level: lvl(n), tags: (n.tags || []).join(', '), body: n.body || '', sections: (n.sections || []).map(s => ({ title: s.title, body: s.body })) };
-                editing.add(id); expanded.add(id); render();
-            }
+            else if (act === 'edit') { startEdit(id); }
             else if (act === 'editcancel') { currentEditValues(id); editing.delete(id); delete editDrafts[id]; render(); }
             else if (act === 'editsave') {
                 currentEditValues(id); const d = editDrafts[id];
@@ -625,6 +659,80 @@
             else if (doc === 'cfg') { docMenu = null; vscode.postMessage({ type: 'configureDocOpen' }); render(); }
         }));
     }
+
+    // ------------------------------------------------------- right-click menu
+
+    /**
+     * Everything a right-click on a notice can ask for. Each branch runs the
+     * SAME function the body's own button runs — marking read, pinning, editing,
+     * handing over, dismissing — so the two can never mean different things.
+     * What the menu adds is doing any of it WITHOUT opening the notice.
+     */
+    function ctxDo(act, ctx) {
+        const verb = act.split(':')[0];
+        const arg = act.slice(verb.length + 1);
+        const id = String(ctx.notice || '');
+        // ‼️ Written out rather than assembled from a helper: these have to be
+        // the messages the body's buttons send, key for key, and a helper that
+        // put `id` first would produce a different object for the same act.
+        const post = (m) => vscode.postMessage(m);
+        const notice = () => (DATA.notices || []).find(n => n.id === id);
+
+        switch (verb) {
+            case 'ntOpen': toggleNotice(id); return;
+            case 'ntFold': expanded.delete(id); render(); return;
+            case 'ntRead': post({ type: 'markRead', id: id, read: arg === '1' }); return;
+            case 'ntPin': post({ type: 'pin', id: id, pinned: arg === '1' }); return;
+            case 'ntStars': post({ type: 'setStars', id: id, stars: Number(arg) }); return;
+            case 'ntEdit': startEdit(id); return;
+            case 'ntDecline': post({ type: 'decline', id: id }); return;
+            case 'ntHand': post({ type: 'handoffNotice', id: id }); return;
+            case 'ntExport': post({ type: 'exportOne', id: id }); return;
+            case 'ntReport': post({ type: 'openReport', id: id }); return;
+            case 'ntDismiss': expanded.delete(id); post({ type: 'dismiss', id: id }); return;
+            case 'ntOrig':
+                if (showOrig.has(id)) { showOrig.delete(id); } else { showOrig.add(id); }
+                expanded.add(id);
+                render();
+                return;
+            // The answer box and the queue box both live in the body, so the menu
+            // opens the row and puts the caret in the right one rather than
+            // inventing a second way to ask the same thing.
+            case 'ntAnswer': {
+                expanded.add(id);
+                render();
+                const box = document.querySelector(`.nt-atext[data-id="${id}"]`);
+                if (box && box.focus) { box.focus(); }
+                return;
+            }
+            case 'ntQueue':
+                converting.add(id);
+                expanded.add(id);
+                render();
+                return;
+            // Narrowing the board from a row you are already looking at: the
+            // filters are the page's own multi-picks, set to exactly one value.
+            case 'ntOnly':
+                if (arg === 'agent') { fAgent = [String(ctx.ntAgent || '')]; }
+                else if (arg === 'type') { fType = [String(ctx.ntType || '')]; }
+                else { fLevel = [String(ctx.ntLevel || 1)]; }
+                saveState();
+                render();
+                return;
+            case 'ntCopy': {
+                const n = notice();
+                if (!n) { window.AFCtx.copy(''); return; }
+                window.AFCtx.copy(arg === 'id' ? n.id
+                    : arg === 'title' ? n.title
+                        : [n.title, n.body, ...(n.sections || []).map(s => s.title + '\n' + s.body)]
+                            .filter(Boolean).join('\n\n'));
+                return;
+            }
+        }
+    }
+
+    // ‼️ ONCE, at module scope — render() rewires everything else on every paint.
+    window.AFCtx.listen(ctxDo);
 
     window.addEventListener('message', ev => {
         if (ev.data.type === 'data') {

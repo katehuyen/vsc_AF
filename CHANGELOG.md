@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.73.0 — The two boards and the blocker queue: triage without opening anything (2026-08-06)
+
+**‼️ On Notices, acting on a message meant opening it — and opening one marks it read.** Every action a notice had (pin, star, hand to an agent, add to the queue, edit, export, dismiss) lived inside its expanded body, so going down the board deciding what matters silently cleared the unread state of everything you touched. From the right button none of it opens anything: **pin · unpin · mark read or unread · stars as a list (none · ★ · ★★ · ★★★) rather than a click-through · edit · answer a question · pass a question over · hand it to its agent · add it to the work queue · export it as Markdown · open the attached report · show what it said before it was edited · dismiss it** — and **Show only ▸** narrows the board to that agent, that kind of message or that level from the row you are already looking at.
+
+**The work queue's safety rule is now in the menu, not just in which buttons happen to be drawn.** A live item can be edited, re-prioritised and dropped but never deleted; a handled one can be deleted but no longer changed — the row says which it is and the menu offers exactly one of the two sets. **Urgency is a list** (normal · 🔼 soon · ⏫ urgent) instead of the ⏫ button's three-press cycle, which needed three presses to get back to where it started. Plus: answer a blocked item, open the notice it came from, open the report it produced or the answer that was written, hand it to an agent, copy what it says. A **lane heading** shows or hides the dropped lane and copies the whole lane as Markdown.
+
+**A backlog item can be quoted into the work queue.** Right-click a backlog line → **Put it in the work queue…** and the queue's box opens with the code and the words already written into it. (This was held back from 3.71.0 because the command took no text; it does now.)
+
+**‼️ Needs You: a row that is stuck on a session now IS a session.** A permission wait or a stalled run carries not only its own blocker buttons but **the whole session menu** — interrupt it, end it, open its transcript, rename it, pin it, resume it in a terminal or in the Console, file it under a project. A row with no session behind it does not get those items at all, so nothing is ever offered that cannot happen. On top of that: open the agent that is stuck, clear a row you have judged, copy the row.
+
 ## 3.72.0 — Right-click reaches the Tasks page and Missions (2026-08-06)
 
 **Everything you can do to an automation is now on the right button, including the things that were only ever in the sidebar tree.** A plan row — a schedule, a trigger, a workflow or a template — runs now, switches on or off (the menu offers whichever way the switch is actually thrown, never both), edits, renames, opens the task history, shows what it has run, and copies its name, its prompt, when it runs or its id. Two acts that had no way in from this page at all: **Export as a Windows Scheduled Task…**, and **Add a step…** on a workflow, which is what "edit" honestly does to one.

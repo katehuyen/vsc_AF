@@ -185,6 +185,24 @@
         </div>`;
     }
 
+    /**
+     * What a queue item IS, for the right-click menu.
+     *
+     * `afTerminal` is the whole safety rule of this page in one flag: a live
+     * item can be edited, re-prioritised and dropped but never deleted; a
+     * handled one can be deleted but no longer changed. The menu reads it, so
+     * the two sets are never both on offer — which is what the row's buttons
+     * already do, and now cannot disagree with.
+     */
+    function itemCtx(n, open, terminal) {
+        return window.AFCtx.row('afQueueRow', {
+            item: n.id, afOpen: !!open, afTerminal: !!terminal,
+            afBlocked: n.status === 'blocked', afSource: !!n.sourceNoticeId,
+            afReport: !!n.reportPath, afAnswer: !!n.answerPath,
+            qStatus: n.status || 'new'
+        });
+    }
+
     function itemCard(n) {
         const open = expanded.has(n.id), inEdit = editing.has(n.id);
         const terminal = n.status === 'done' || n.status === 'dropped';
@@ -207,7 +225,8 @@
                 ${answering.has(n.id) ? answerForm(n) : ''}`;
         }
         return `<div class="q-card s-${n.status} ${n.pinned ? 'pinned' : ''} ${focusItem === n.id ? 'focus' : ''}" data-id="${esc(n.id)}">
-            <div class="q-row" data-toggle="${esc(n.id)}">
+            <div class="q-row" data-toggle="${esc(n.id)}" ${itemCtx(n, open, terminal)}
+                title="${esc(window.AFCtx.hint('Click to open it'))}">
                 <span class="q-caret">${open ? '▾' : '▸'}</span>
                 <span class="q-author" title="${n.author === 'user' ? 'your entry' : 'agent entry'}">${authorChip(n.author)}</span>
                 <span class="q-text" title="${esc(n.text)}">${esc(n.text)}</span>
@@ -225,7 +244,9 @@
     function laneHtml(lane, items) {
         if (!items.length) { return ''; }
         return `<div class="q-lane s-${lane.id}">
-            <div class="q-lane-head"><span class="q-lane-ico">${lane.icon}</span> ${esc(lane.label)} <span class="q-lane-n">${items.length}</span></div>
+            <div class="q-lane-head"
+                ${window.AFCtx.row('afQueueLane', { lane: lane.id, laneLabel: lane.label, afDropShown: !!showDropped })}
+                title="${esc(window.AFCtx.hint(lane.label))}"><span class="q-lane-ico">${lane.icon}</span> ${esc(lane.label)} <span class="q-lane-n">${items.length}</span></div>
             ${items.map(itemCard).join('')}</div>`;
     }
 
@@ -450,6 +471,21 @@
         if (el) { answerDrafts[id] = el.value; }
     }
 
+    /** Put an item into edit mode, seeded from what it currently says. One path
+     *  for the row's Edit button and the menu's Edit item. */
+    function startEdit(id) {
+        const n = (DATA.items || []).find(x => x.id === id);
+        if (!n) { return; }
+        editDrafts[id] = { text: n.text || '', target: n.target || '', urgency: n.urgency || 'normal' };
+        editing.add(id); expanded.add(id); render();
+    }
+
+    /** Open the reply box on a blocked item. */
+    function startAnswer(id) {
+        answerDrafts[id] = answerDrafts[id] || '';
+        answering.add(id); expanded.add(id); render();
+    }
+
     function wire() {
         const bind = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
         bind('q-search', 'input', e => { query = e.target.value; refocusSearch = true; saveState(); render(); });
@@ -501,7 +537,7 @@
             const id = b.dataset.id, act = b.dataset.act;
             if (act === 'handoff') { vscode.postMessage({ type: 'handoff', id }); }
             else if (act === 'drop') { vscode.postMessage({ type: 'drop', id }); }
-            else if (act === 'answer') { answerDrafts[id] = answerDrafts[id] || ''; answering.add(id); expanded.add(id); render(); }
+            else if (act === 'answer') { startAnswer(id); }
             else if (act === 'answercancel') { captureAnswer(id); answering.delete(id); delete answerDrafts[id]; render(); }
             else if (act === 'answersend') {
                 captureAnswer(id); const t = (answerDrafts[id] || '').trim();
@@ -513,11 +549,7 @@
                 const next = n.urgency === 'normal' ? 'soon' : n.urgency === 'soon' ? 'urgent' : 'normal';
                 vscode.postMessage({ type: 'setUrgency', id, urgency: next });
             }
-            else if (act === 'edit') {
-                const n = (DATA.items || []).find(x => x.id === id);
-                editDrafts[id] = { text: n.text || '', target: n.target || '', urgency: n.urgency || 'normal' };
-                editing.add(id); expanded.add(id); render();
-            }
+            else if (act === 'edit') { startEdit(id); }
             else if (act === 'editcancel') { captureEdit(id); editing.delete(id); delete editDrafts[id]; render(); }
             else if (act === 'editsave') {
                 captureEdit(id); const d = editDrafts[id];
@@ -552,6 +584,64 @@
             ev.preventDefault(); ev.stopPropagation(); vscode.postMessage({ type: 'openExternal', url: a.dataset.href });
         }));
     }
+
+    // ------------------------------------------------------- right-click menu
+
+    /**
+     * Everything a right-click on this page can ask for. Each branch runs what
+     * the row's own button runs; what the menu adds is reaching all of it
+     * without opening the item, and the urgency as a LIST rather than the
+     * three-state cycle the ⏫ button walks (which needs three presses to get
+     * back to where it was).
+     */
+    function ctxDo(act, ctx) {
+        const verb = act.split(':')[0];
+        const arg = act.slice(verb.length + 1);
+        const id = String(ctx.item || '');
+        // ‼️ Written out, not assembled: these are the row buttons' messages,
+        // key for key, and a helper that put `id` first would not be.
+        const post = (m) => vscode.postMessage(m);
+
+        switch (verb) {
+            case 'qOpen': expanded.add(id); render(); return;
+            case 'qFold': expanded.delete(id); render(); return;
+            case 'qNotice': {
+                const n = (DATA.items || []).find(x => x.id === id);
+                if (n && n.sourceNoticeId) { vscode.postMessage({ type: 'openNotice', id: n.sourceNoticeId }); }
+                return;
+            }
+            case 'qFile': vscode.postMessage({ type: 'openFile', kind: arg, id: id }); return;
+            case 'qAnswer': startAnswer(id); return;
+            case 'qEdit': startEdit(id); return;
+            case 'qUrg': post({ type: 'setUrgency', id: id, urgency: arg }); return;
+            case 'qHand': post({ type: 'handoff', id: id }); return;
+            case 'qDrop': post({ type: 'drop', id: id }); return;
+            case 'qRemove': expanded.delete(id); post({ type: 'remove', id: id }); return;
+            case 'qCopy': {
+                const n = (DATA.items || []).find(x => x.id === id);
+                window.AFCtx.copy(!n ? '' : arg === 'id' ? n.id : n.text);
+                return;
+            }
+
+            // ---- a lane heading ----
+            case 'qlDropped': showDropped = arg === '1'; saveState(); render(); return;
+            // "This lane" is every item CURRENTLY SHOWN in it — the categories
+            // split the same lane in two, and a copy that silently took only
+            // half would be worse than one that says which half it took.
+            case 'qlCopy': {
+                const lane = String(ctx.lane || '');
+                const rows = visible().filter(n => n.status === lane);
+                window.AFCtx.copy(rows.length
+                    ? `## ${ctx.laneLabel || lane} (${rows.length})\n\n`
+                        + rows.map(n => `- ${n.text}${n.target ? ` — ${n.target}` : ''}`).join('\n')
+                    : '');
+                return;
+            }
+        }
+    }
+
+    // ‼️ ONCE, at module scope — wire() runs again on every paint.
+    window.AFCtx.listen(ctxDo);
 
     window.addEventListener('message', ev => {
         if (ev.data.type === 'data') {

@@ -62,8 +62,17 @@ export interface CtxSubmenu {
 /** Every generated command and submenu starts with this. */
 export const CTX_PREFIX = 'agentfarm.ctx.';
 
-/** Where a session's own menu is shown — one section per surface family. */
-const SESSION_ROW = "webviewSection == 'afSessionRow'";
+/**
+ * Where a session's own menu is shown — one section per surface family.
+ *
+ * ‼️ A ROW CAN BE TWO THINGS AT ONCE. A Needs row is a blocker with its own
+ * actions AND, when it names a transcript, a session. One element carries one
+ * `data-vscode-context`, so the section name is what says which: a needs row
+ * that knows a transcript calls itself `afNeedSession` and appears in BOTH
+ * families, and one that does not stays `afNeedRow` and is offered nothing it
+ * cannot do.
+ */
+const SESSION_ROW = 'webviewSection =~ /^(afSessionRow|afNeedSession)$/';
 const CONSOLE_ANY = 'webviewSection =~ /^afConsole(Session|Resumable)$/';
 const CONSOLE_RESUMABLE = "webviewSection == 'afConsoleResumable'";
 const CONSOLE_LIVE = "webviewSection == 'afConsoleSession'";
@@ -80,6 +89,12 @@ const FEED_EVENT = "webviewSection == 'afFeedEvent'";
 const PLAN_ROW = "webviewSection == 'afPlanRow'";
 const WF_STEP = "webviewSection == 'afWorkflowStep'";
 const TASK_RUN = "webviewSection == 'afTaskRun'";
+
+/** The two message boards and the blocker queue between them. */
+const NOTICE_ROW = "webviewSection == 'afNoticeRow'";
+const QUEUE_ROW = "webviewSection == 'afQueueRow'";
+const QUEUE_LANE = "webviewSection == 'afQueueLane'";
+const NEED_ROW = 'webviewSection =~ /^afNeed(Row|Session)$/';
 
 /** Missions: the run, one delegation, one planner round, one team member. */
 const MISSION_ROW = "webviewSection == 'afMissionRow'";
@@ -107,7 +122,13 @@ export const CTX_SUBMENUS: CtxSubmenu[] = [
     { id: CTX_PREFIX + 'plCopy', label: 'Copy', group: '5_copy@1', when: PLAN_ROW },
     { id: CTX_PREFIX + 'tkCopy', label: 'Copy', group: '5_copy@1', when: TASK_RUN },
     { id: CTX_PREFIX + 'msCopy', label: 'Copy', group: '5_copy@1', when: MISSION_ROW },
-    { id: CTX_PREFIX + 'mstCopy', label: 'Copy', group: '5_copy@1', when: MISSION_STEP }
+    { id: CTX_PREFIX + 'mstCopy', label: 'Copy', group: '5_copy@1', when: MISSION_STEP },
+    { id: CTX_PREFIX + 'ntStars', label: 'Stars', group: '2_edit@3', when: NOTICE_ROW },
+    { id: CTX_PREFIX + 'ntOnly', label: 'Show only', group: '4_link@4', when: NOTICE_ROW },
+    { id: CTX_PREFIX + 'ntCopy', label: 'Copy', group: '5_copy@1', when: NOTICE_ROW },
+    // Urgency is a live item's field; a dropped or finished one has no more of it.
+    { id: CTX_PREFIX + 'qUrg', label: 'Urgency', group: '2_edit@3', when: `${QUEUE_ROW} && !afTerminal` },
+    { id: CTX_PREFIX + 'qCopy', label: 'Copy', group: '5_copy@1', when: QUEUE_ROW }
 ];
 
 /**
@@ -203,6 +224,10 @@ export const CTX_ITEMS: CtxItem[] = [
     {
         id: 'backlogFile', title: 'File it under an area…', act: 'blFile',
         when: `${BACKLOG_ROW} && !afCoded`, group: '2_edit@6'
+    },
+    {
+        id: 'backlogQueue', title: 'Put it in the work queue…', act: 'blQueue',
+        when: BACKLOG_ROW, group: '4_link@1'
     },
     ...picker(CTX_PREFIX + 'blOpenWith', BACKLOG_ROW, 'blGo', OPEN_MODES),
     ...picker(CTX_PREFIX + 'blState', BACKLOG_ROW, 'blState', [
@@ -613,6 +638,179 @@ export const CTX_ITEMS: CtxItem[] = [
     {
         id: 'msTeamCopy', title: 'Copy its name, role and model', act: 'mtCopy',
         when: MISSION_TEAM, group: '5_copy@1'
+    },
+
+    // =====================================================================
+    // NOTICES — the agent→you board. Everything a notice can do was behind
+    // its expanded body, so acting on one meant opening it first, which
+    // marks it read: reading the list and triaging it were the same gesture.
+    // =====================================================================
+    {
+        id: 'ntOpen', title: 'Open it here', act: 'ntOpen',
+        when: `${NOTICE_ROW} && !afOpen`, group: '1_open@1'
+    },
+    {
+        id: 'ntFold', title: 'Fold it back to a line', act: 'ntFold',
+        when: `${NOTICE_ROW} && afOpen`, group: '1_open@1'
+    },
+    {
+        id: 'ntReport', title: 'Open the full report', act: 'ntReport',
+        when: `${NOTICE_ROW} && afReport`, group: '1_open@2'
+    },
+    {
+        id: 'ntOrig', title: 'Show what it said before it was edited', act: 'ntOrig',
+        when: `${NOTICE_ROW} && afEdited`, group: '1_open@3'
+    },
+    {
+        id: 'ntRead', title: 'Mark it read', act: 'ntRead:1',
+        when: `${NOTICE_ROW} && !afRead`, group: '2_edit@1'
+    },
+    {
+        id: 'ntUnread', title: 'Mark it unread', act: 'ntRead:0',
+        when: `${NOTICE_ROW} && afRead`, group: '2_edit@1'
+    },
+    {
+        id: 'ntPin', title: 'Pin it to the top', act: 'ntPin:1',
+        when: `${NOTICE_ROW} && !afPinned`, group: '2_edit@2'
+    },
+    {
+        id: 'ntUnpin', title: 'Unpin it', act: 'ntPin:0',
+        when: `${NOTICE_ROW} && afPinned`, group: '2_edit@2'
+    },
+    ...picker(CTX_PREFIX + 'ntStars', NOTICE_ROW, 'ntStars', [
+        ['0', 'none'], ['1', '★'], ['2', '★★'], ['3', '★★★']
+    ]),
+    {
+        id: 'ntEdit', title: 'Edit it…', act: 'ntEdit',
+        when: NOTICE_ROW, group: '2_edit@5'
+    },
+    // Only an open question can still be answered or passed over.
+    {
+        id: 'ntAnswer', title: 'Answer it…', act: 'ntAnswer',
+        when: `${NOTICE_ROW} && afQuestion && afStatus == 'open'`, group: '2_edit@6'
+    },
+    {
+        id: 'ntDecline', title: 'Pass it over without answering', act: 'ntDecline',
+        when: `${NOTICE_ROW} && afQuestion && afStatus == 'open'`, group: '2_edit@7'
+    },
+    {
+        id: 'ntHand', title: 'Hand it to its agent', act: 'ntHand',
+        when: NOTICE_ROW, group: '4_link@1'
+    },
+    {
+        id: 'ntQueue', title: 'Add it to the work queue…', act: 'ntQueue',
+        when: `${NOTICE_ROW} && !afQuestion`, group: '4_link@2'
+    },
+    {
+        id: 'ntExport', title: 'Export it as Markdown', act: 'ntExport',
+        when: NOTICE_ROW, group: '4_link@3'
+    },
+    ...picker(CTX_PREFIX + 'ntOnly', NOTICE_ROW, 'ntOnly', [
+        ['agent', 'What this agent has said'],
+        ['type', 'This kind of message'],
+        ['level', 'This level and nothing else']
+    ]),
+    ...picker(CTX_PREFIX + 'ntCopy', NOTICE_ROW, 'ntCopy', [
+        ['title', 'Its title'],
+        ['body', 'Its whole text'],
+        ['id', 'Its id — what an agent quotes']
+    ]),
+    {
+        id: 'ntDismiss', title: 'Dismiss it', act: 'ntDismiss',
+        when: `${NOTICE_ROW} && !afQuestion`, group: '9_danger@1'
+    },
+    {
+        id: 'ntDelete', title: 'Delete this question', act: 'ntDismiss',
+        when: `${NOTICE_ROW} && afQuestion`, group: '9_danger@1'
+    },
+
+    // =====================================================================
+    // THE WORK QUEUE — the mirror of the board above, you→agent.
+    // =====================================================================
+    {
+        id: 'qOpen', title: 'Open it here', act: 'qOpen',
+        when: `${QUEUE_ROW} && !afOpen`, group: '1_open@1'
+    },
+    {
+        id: 'qFold', title: 'Fold it back to a line', act: 'qFold',
+        when: `${QUEUE_ROW} && afOpen`, group: '1_open@1'
+    },
+    {
+        id: 'qNotice', title: 'Open the notice it came from', act: 'qNotice',
+        when: `${QUEUE_ROW} && afSource`, group: '1_open@2'
+    },
+    {
+        id: 'qReport', title: 'Open the report it produced', act: 'qFile:report',
+        when: `${QUEUE_ROW} && afReport`, group: '1_open@3'
+    },
+    {
+        id: 'qAnswerFile', title: 'Open the answer that was written', act: 'qFile:answer',
+        when: `${QUEUE_ROW} && afAnswer`, group: '1_open@4'
+    },
+    {
+        id: 'qAnswer', title: 'Answer it — it is waiting on you…', act: 'qAnswer',
+        when: `${QUEUE_ROW} && afBlocked`, group: '2_edit@1'
+    },
+    {
+        id: 'qEdit', title: 'Edit it…', act: 'qEdit',
+        when: `${QUEUE_ROW} && !afTerminal`, group: '2_edit@2'
+    },
+    ...picker(CTX_PREFIX + 'qUrg', `${QUEUE_ROW} && !afTerminal`, 'qUrg', [
+        ['normal', 'normal'],
+        ['soon', '🔼 soon'],
+        ['urgent', '⏫ urgent']
+    ]),
+    {
+        id: 'qHand', title: 'Hand it to an agent', act: 'qHand',
+        when: QUEUE_ROW, group: '4_link@1'
+    },
+    ...picker(CTX_PREFIX + 'qCopy', QUEUE_ROW, 'qCopy', [
+        ['text', 'What it says'],
+        ['id', 'Its id']
+    ]),
+    // Dropping is how an unwanted capture is HANDLED; only a handled item can
+    // then be deleted, and the two are never offered together.
+    {
+        id: 'qDrop', title: 'Drop it — void this capture', act: 'qDrop',
+        when: `${QUEUE_ROW} && !afTerminal`, group: '9_danger@1'
+    },
+    {
+        id: 'qRemove', title: 'Delete it permanently', act: 'qRemove',
+        when: `${QUEUE_ROW} && afTerminal`, group: '9_danger@2'
+    },
+
+    // ---- a lane heading ---------------------------------------------------
+    {
+        id: 'qlDropShow', title: 'Show the dropped lane', act: 'qlDropped:1',
+        when: `${QUEUE_LANE} && !afDropShown`, group: '2_edit@1'
+    },
+    {
+        id: 'qlDropHide', title: 'Hide the dropped lane', act: 'qlDropped:0',
+        when: `${QUEUE_LANE} && afDropShown`, group: '2_edit@1'
+    },
+    {
+        id: 'qlCopy', title: 'Copy this lane as Markdown', act: 'qlCopy',
+        when: QUEUE_LANE, group: '5_copy@1'
+    },
+
+    // =====================================================================
+    // NEEDS YOU — what the farm is stuck on. The row's own buttons are built
+    // from the blocker (Approve, Reject, Resume…) and cannot be a static
+    // menu; what the menu adds is everything AROUND the blocker — the agent,
+    // the session behind it (see SESSION_ROW above), and getting it out of
+    // the way once judged.
+    // =====================================================================
+    {
+        id: 'ndAgent', title: 'Open the agent that is stuck', act: 'ndAgent',
+        when: `${NEED_ROW} && afAgentId`, group: '1_open@1'
+    },
+    {
+        id: 'ndClear', title: 'Clear this row — it comes back if it happens again', act: 'ndClear',
+        when: `${NEED_ROW} && afClearable`, group: '2_edit@1'
+    },
+    {
+        id: 'ndCopy', title: 'Copy the row', act: 'ndCopy',
+        when: NEED_ROW, group: '5_copy@1'
     }
 ];
 

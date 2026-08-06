@@ -589,6 +589,11 @@ export class ProjectsPanel {
                 if (res.error) { this.done(res.error); }
                 break;
             }
+            // A backlog item quoting itself into the work queue. The command
+            // owns the box and the store write; this only hands it the words.
+            case 'queueAdd':
+                void vscode.commands.executeCommand('agentfarm.queueAdd', String(msg.text ?? ''));
+                break;
             case 'backlogArchive': {
                 if (!id) { break; }
                 const res = this.deps.backlogArchive(id);

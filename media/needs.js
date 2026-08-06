@@ -19,6 +19,47 @@
         'conflict':         { icon: '⇄',  label: 'CONFLICT',     cls: 'warn' }
     };
 
+    /**
+     * What a blocked row IS, for the right-click menu.
+     *
+     * ‼️ A ROW HERE IS OFTEN TWO THINGS. A permission wait or a stalled run is a
+     * blocker with its own buttons AND a session — and a session's eleven
+     * actions (interrupt it, end it, open its transcript, pin it, resume it in
+     * the Console) are exactly what you want on a row that says an agent is
+     * stuck. One element carries one context, so the SECTION NAME decides:
+     * a row that knows a transcript publishes itself as `afNeedSession` and
+     * draws both menus; one that does not stays `afNeedRow` and is offered
+     * nothing it cannot do. See src/core/ctxmenu.ts.
+     *
+     * The row's own buttons are built from the blocker (Approve · Reject ·
+     * Resume · Reconcile…) and are deliberately NOT in the catalogue: they are
+     * per-row data, and a static menu that guessed at them would be wrong.
+     */
+    function needCtx(item) {
+        const ref = item.ref || {};
+        const mine = {
+            needKey: item.key, afClearable: !!item.clearable,
+            afKind: item.kind, afAgentId: ref.agentId || '',
+            needTitle: item.title || '', needDetail: item.detail || '',
+            needAgent: item.agentName || ''
+        };
+        if (ref.transcriptPath || ref.sessionId) {
+            return window.AFSessionCtx.row(
+                { sessionId: ref.sessionId, file: ref.transcriptPath, title: item.title, agentName: item.agentName },
+                Object.assign({ webviewSection: 'afNeedSession' }, mine));
+        }
+        return window.AFCtx.row('afNeedRow', mine);
+    }
+
+    /** The tooltip tail — and it has to say WHICH menu, because the two are
+     *  genuinely different sets and the difference is visible on screen. */
+    function rowHint(item) {
+        const ref = item.ref || {};
+        return ref.transcriptPath || ref.sessionId
+            ? 'right-click: this blocker, and everything you can do to the session behind it'
+            : window.AFCtx.HINT;
+    }
+
     function rowHtml(item, i) {
         const meta = KIND_META[item.kind] || { icon: '•', label: item.kind, cls: '' };
         const when = item.ts ? new Date(item.ts).toLocaleTimeString() : '';
@@ -33,7 +74,8 @@
         const clear = item.clearable
             ? `<button class="secondary nd-x" data-clear="${C.esc(item.key)}" title="Clear this row — it comes back if the same thing happens again">✕</button>`
             : '';
-        return `<div class="need-row ${meta.cls} ${selected.has(item.key) ? 'sel' : ''}">
+        return `<div class="need-row ${meta.cls} ${selected.has(item.key) ? 'sel' : ''}"
+            ${needCtx(item)} title="${C.esc(rowHint(item))}">
             <div class="need-pick">${box}</div>
             <div class="need-icon">${meta.icon}</div>
             <div class="need-main">
@@ -133,6 +175,30 @@
                 render();
             }));
     }
+
+    /**
+     * The three things the menu adds around a blocker: the agent that is stuck,
+     * getting a judged row out of the way, and taking the row with you.
+     * (The session half of the menu is host commands — it needs nothing here.)
+     */
+    function ctxDo(act, ctx) {
+        if (act === 'ndAgent') {
+            if (ctx.afAgentId) { vscode.postMessage({ type: 'openAgent', agentId: String(ctx.afAgentId) }); }
+            return;
+        }
+        if (act === 'ndClear') {
+            selected.delete(ctx.needKey);
+            vscode.postMessage({ type: 'clear', keys: [String(ctx.needKey || '')] });
+            return;
+        }
+        if (act === 'ndCopy') {
+            window.AFCtx.copy([ctx.needTitle, ctx.needDetail, ctx.needAgent]
+                .filter(Boolean).join('\n'));
+        }
+    }
+
+    // ‼️ ONCE, at module scope — render() rewires the rows on every change.
+    window.AFCtx.listen(ctxDo);
 
     render();
 })();

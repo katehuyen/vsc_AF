@@ -3266,6 +3266,19 @@
                 syncView();
                 render();
                 return;
+            // The queue's box opens with the item already written into it —
+            // quoting a backlog line at yourself is the whole gesture, and the
+            // sentence that lands in the queue is still one you approved.
+            case 'blQueue': {
+                const item = blItem(ctx.key);
+                const code = ctx.code || '';
+                const text = (item && item.text) || String(ctx.text || '');
+                vscode.postMessage({
+                    type: 'queueAdd',
+                    text: [code, text].filter(Boolean).join(' — ')
+                });
+                return;
+            }
             case 'blCopy': {
                 const item = blItem(ctx.key);
                 const code = ctx.code || '';

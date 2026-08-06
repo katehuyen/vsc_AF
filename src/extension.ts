@@ -13211,10 +13211,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             showQueuePanel(typeof arg === 'string' ? arg : undefined);
         }),
 
-        vscode.commands.registerCommand('agentfarm.queueAdd', async () => {
+        // The seed is what a caller already knows — a backlog item quoting
+        // itself into the queue, say. The box still opens: what goes into the
+        // queue is the user's sentence, and a "one gesture" that skipped the
+        // chance to edit would be filing somebody else's words under your name.
+        vscode.commands.registerCommand('agentfarm.queueAdd', async (seed?: string | { text?: string }) => {
+            const from = typeof seed === 'string' ? seed : seed?.text;
             const text = await vscode.window.showInputBox({
                 prompt: "Add to the work queue — one line is enough (it won't be lost until handled)",
                 placeHolder: 'e.g. fix the alignment glitch on the settings page',
+                value: typeof from === 'string' ? from : undefined,
                 ignoreFocusOut: true
             });
             if (!text || !text.trim()) { return; }
