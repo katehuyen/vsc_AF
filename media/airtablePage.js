@@ -98,7 +98,12 @@
             return p.join(' · ');
         };
         return `<div class="grid air-grid">${rows.map(row => `
-            <div class="card air-inst${row.alive ? '' : ' air-down'}">
+            <div class="card air-inst${row.alive ? '' : ' air-down'}"
+                ${window.AFCtx.row('afAirtableInstance', {
+                    instName: row.name, instDir: row.dir, instUrl: row.url || '',
+                    afDefault: !!row.isDefault, afAlive: !!row.alive
+                })}
+                title="${esc(window.AFCtx.hint(row.name))}">
                 <div class="spread">
                     <h3 style="margin:0"><span class="dot ${row.alive ? 'on' : 'off'}"></span> ${esc(row.name)}
                         ${row.isDefault ? '<span class="tag on" title="used when a tool call names no instance">default</span>' : ''}</h3>
@@ -288,6 +293,22 @@
         onchg('def-lang', 'defaultLang', el => el.value.trim());
         onchg('def-timeout', 'requestTimeoutMs', el => Number(el.value));
     }
+
+    /** An instance card's own acts — each is the message one of its three small
+     *  buttons sends, reachable from anywhere on the card. */
+    function ctxDo(act, ctx) {
+        const verb = act.split(':')[0];
+        const arg = act.slice(verb.length + 1);
+        if (verb === 'atDefault') {
+            post({ type: 'set', key: 'defaultInstance', value: String(ctx.instName || '') });
+            return;
+        }
+        if (verb === 'atReveal') { post({ type: 'reveal', path: String(ctx.instDir || '') }); return; }
+        if (verb === 'atCopy') { window.AFCtx.copy(arg === 'dir' ? ctx.instDir : ctx.instName); }
+    }
+
+    // ‼️ ONCE, at module scope — render() rebuilds every card on every poll.
+    window.AFCtx.listen(ctxDo);
 
     render();
 })();

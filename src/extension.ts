@@ -206,7 +206,7 @@ import { QueuePanel } from './panels/queuePanel';
 import { openReportDoc } from './panels/openDoc';
 import { DocOpenStore, DOC_OPEN_LABELS, DOC_OPEN_MODES, DocOpenMode, registerDocOpenOps } from './core/docopen';
 import { postCtx, pushHeaderCounts, setNoticesUnreadProvider, setQueueBlockedProvider } from './panels/base';
-import { ctxRelays } from './core/ctxmenu';
+import { ctxForSection, ctxRelays, ctxSections } from './core/ctxmenu';
 import { SearchPanel } from './panels/searchPanel';
 import { FarmSettingsPanel } from './panels/settingsPanel';
 import { SelectionPanel } from './panels/selectionPanel';
@@ -14541,6 +14541,36 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         }));
     }
+
+    /**
+     * The catalogue, readable. An agent asked to work a page has the same
+     * question a person right-clicking a row does — "what can be done to this
+     * thing?" — and until now the answer existed only as menu XML.
+     */
+    bridge.register([
+        {
+            op: 'ui.ctxmenu',
+            describe: 'What a right-click offers on a kind of row in the extension. '
+                + 'args: section? (afBacklogRow · afAgentRow · afTaskRun … — omit for the list of kinds)',
+            handler: (args) => {
+                const section = optStr(args, 'section');
+                if (!section) { return { sections: ctxSections() }; }
+                // A host command's words live in contributes.commands, which is
+                // the manifest — not the catalogue. Read them from there rather
+                // than keeping a second copy that could disagree.
+                const manifest = vscode.extensions.getExtension('muvusoft.agent-farm')?.packageJSON as
+                    { contributes?: { commands?: { command?: string; title?: string }[] } } | undefined;
+                const titles = new Map<string, string>();
+                for (const c of manifest?.contributes?.commands ?? []) {
+                    if (c.command) { titles.set(c.command, c.title ?? ''); }
+                }
+                const items = ctxForSection(section, cmd => titles.get(cmd) ?? '');
+                need(items.length > 0,
+                    `No menu is drawn on "${section}" — ui.ctxmenu with no section lists the kinds there are.`);
+                return { section, items };
+            }
+        }
+    ]);
 
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration(e => {

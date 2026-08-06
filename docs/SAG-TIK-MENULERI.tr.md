@@ -2,6 +2,15 @@
 
 *Başlangıç: 2026-08-06 · Bu belge hem tasarımın kendisi hem de ilerleme defteri. Bir madde bitince kutusu işaretlenir ve karşısına sürüm yazılır. Yarım bırakılan iş "neyi denedim" notuyla birlikte kalır — sonraki ajan buradan devam eder.*
 
+> **✅ SEKİZ FAZ DA BİTTİ — 3.71.0 → 3.77.0 (2026-08-06).** Eklentideki her sayfa,
+> her satır türü sağ tık menüsü taşıyor. Sözleşmeyi ayakta tutan üç şey:
+> `src/core/ctxmenu.ts` (tek katalog) · `test/test_ctxmenu.js` (katalog ile
+> `package.json` ayrışamaz) · `test/test_ctxmenu_reach.js` (menüsü olup da
+> söylemeyen satır, katalogda karşılığı olmayan bölüm, sayfası olmayan katalog
+> maddesi — üçü de derlemeyi düşürür). Kalanlar için: her fazın altındaki
+> **"Bilerek yapılmadı"** notları neden yapılmadığını yazıyor; yeni bir yüzey
+> eklerken önce oraya bakılsın.
+
 ---
 
 ## 1. İlke
@@ -251,8 +260,14 @@ Her faz: katalog + sayfanın `ctxDo` bağlantısı + `data-vscode-context` işar
   - **Bilerek yapılmadı — `afChartCard`:** grafik kartlarının verisi `charts.js` içinde çizim anında üretiliyor; menüden "CSV kopyala" demek o veriyi ikinci kez üretmek olurdu. Kartın altındaki tablo zaten kopyalanabilir.
   - **Bilerek yapılmadı — `afTimelineEvent`:** noktalar zaten kulvarın oturum bağlamının içinde ve sol tık onları kendi anına açıyor; ikinci bir bölüm oturum menüsünü elinden alırdı. **`afTimelineAgent`'ın kulvar süzgeci maddeleri de yok:** sayfada süzgeç yok, menü ardına süzgeç icat etmek kimsenin bulamayacağı bir özellik olurdu.
   - **Bilerek yapılmadı — bulgu satırında Fix / Delegate / Dismiss:** bu üç komut `Insight` nesnesinin tamamını alıyor; satır çizilmiş bir metin taşıyor. Benzerini uydurmak yanlış bulgu üzerinde çalışmak olurdu ve bunu kimseye söylemezdi. Testte de yazılı.
-- [ ] **Faz 7 — Üretim yüzeyleri.** `afSceneRow` · `afAssetCard` · `afProviderRow` · `afAirtableInstance` · `afAnalyticsRow`.
-- [ ] **Faz 8 — Cila.** Tooltip kuyruğu denetimi (menüsü olup da söylemeyen satır kalmasın) · `ui.ctxmenu` köprü op'u · BLUEPRINT'in iki dilde güncellenmesi · kılavuzda "sağ tık her yerde" bölümü.
+- [x] **Faz 7 — Üretim yüzeyleri.** ✅ 3.77.0 — `afSceneRow` (`Status ▸`) · `afAssetCard` (`Copy ▸`) · `afProviderRow` · `afAirtableInstance` · `afAnalyticsTable`. Yeni test: `test_production_ctxmenu.js`.
+  - **Sahne durumu artık menüden doğrudan seçiliyor:** rozet hâlâ seçiciyi açıyor, menü ise adı söylüyor. `studioPanel` tek yerde karşılıyor — `status` verilmişse onu, verilmemişse seçiciyi kullanıyor.
+  - **‼️ İzlenen klasörden kaydedilmiş varlık "burada üretilmedim" diyor** (`asExternal`); yeniden üret · varyasyon · geri bildirim maddeleri ona hiç çizilmiyor. Triyaj kararı (tut/at) ilk kez Triyaj sekmesi dışından erişilebiliyor.
+  - **`afAnalyticsRow` yerine `afAnalyticsTable` — tasarım hatası düzeltildi:** o satırlar toplulaştırılmış (bir görev ailesi, bir ajan karnesi); üzerinde işlem yapılacak kimlikleri yok, olsa uydurmak gerekirdi. Tablonun kendisinin yapabilecekleri gerçek. Testte de yazılı.
+- [x] **Faz 8 — Cila.** ✅ 3.77.0
+  - **Tooltip kuyruğu denetimi + tersi:** `test/test_ctxmenu_reach.js` iki yönü birden tutuyor — sayfanın yayımladığı her bölümün katalogda maddesi var mı, katalogdaki her bölümü bir sayfa yayımlıyor mu, **ve menüsü olup da söylemeyen sayfa var mı**. Üçü de sessizce çürüyen türden.
+  - **`ui.ctxmenu` köprü op'u:** bölümsüz çağrı satır türlerini, `section` ile o türe ne yapılabileceğini veriyor. Host komutunun sözcükleri manifesto'dan okunuyor — ikinci kopya yok.
+  - **BLUEPRINT iki dilde:** "Sağ Tık Her Yerde" / "Right-Click Everywhere" bölümü (üç kural · nasıl bulunur · iki nesne olan satırlar · kasa istisnası). Kılavuz BLUEPRINT'in kendisi olduğu için kılavuz da güncellendi.
 
 ---
 

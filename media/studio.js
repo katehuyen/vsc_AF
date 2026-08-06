@@ -91,7 +91,9 @@
         }
         const rows = p.scenes.map(s => {
             const act = ACTION[s.next];
-            return `<div class="scenerow">
+            return `<div class="scenerow"
+                ${window.AFCtx.row('afSceneRow', { sceneId: s.id, sceneNext: s.next, sceneStatus: s.status })}
+                title="${C.esc(window.AFCtx.hint(s.title + ' — ' + s.status))}">
                 <span class="nm">${C.esc(s.title)} <span class="muted small">${C.esc(s.id)}</span></span>
                 <span class="badge click" style="color:${STATUS_COLORS[s.status]};border-color:${STATUS_COLORS[s.status]}"
                       data-status="${C.esc(s.id)}" title="click to change this scene's status">${s.status}</span>
@@ -144,7 +146,11 @@
             : item.rejectedCount
                 ? '<span class="badge muted" title="dropped in triage">✗ dropped</span>'
                 : '<span class="badge warn" title="nobody has judged this yet">unjudged</span>';
-        return `<div class="card">
+        return `<div class="card"
+            ${window.AFCtx.row('afAssetCard', {
+            asTask: item.taskId || '', asPath: item.assetPath || '',
+            asExternal: !!external, asModel: item.model || '', asInput: item.input || ''
+        })} title="${C.esc(window.AFCtx.hint(item.title))}">
             ${preview}
             <h3 style="margin:8px 0 2px">${C.esc(item.title)}</h3>
             <div class="sub">${C.esc(item.model)} · ${fmtTime(item.ts)}${item.estCost ? ' · ~' + C.fmtUSD(item.estCost) : ''} ${sceneTag}${srcTag}${pickTag}</div>
@@ -238,11 +244,14 @@
         const pct = cost.budgetMonth ? Math.round((cost.month / cost.budgetMonth) * 100) : 0;
         const dot = on => `<span class="dot" style="background:${on ? 'var(--vscode-charts-green,#4caf50)' : 'var(--vscode-descriptionForeground,#999)'}"></span>`;
         const folders = (DATA.ingestFolders || []);
+        const provider = (name, setting) =>
+            window.AFCtx.row('afProviderRow', { pvName: name, pvSetting: setting })
+            + ` title="${C.esc(window.AFCtx.hint(name))}"`;
         return `<h2>Who generates</h2>
-            <div class="srcrow">${dot(pr.fal)}<span class="lbl">fal.ai</span>
+            <div class="srcrow" ${provider('fal.ai', 'agentFarm.mediaAuthSecret')}>${dot(pr.fal)}<span class="lbl">fal.ai</span>
                 <span class="muted small" style="flex:1">${pr.fal ? 'key present in the vault — media steps can run' : 'no key: add one to the secret vault (agentFarm.mediaAuthSecret names it)'}</span>
                 <button class="secondary" data-settings="agentFarm.mediaAuthSecret">Setting</button></div>
-            <div class="srcrow">${dot(pr.replicate)}<span class="lbl">Replicate</span>
+            <div class="srcrow" ${provider('Replicate', 'agentFarm.replicateAuthSecret')}>${dot(pr.replicate)}<span class="lbl">Replicate</span>
                 <span class="muted small" style="flex:1">${pr.replicate ? 'key present in the vault' : 'no key: models prefixed replicate: cannot run'}</span>
                 <button class="secondary" data-settings="agentFarm.replicateAuthSecret">Setting</button></div>
 
@@ -325,6 +334,66 @@
         byId('register', () => post('registerAsset'));
         byId('editmanifest', () => { const x = cur(); if (x) { post('openFile', { path: x.file }); } });
     }
+
+    // ------------------------------------------------------- right-click menu
+
+    /**
+     * Everything a right-click on a scene, an asset or a provider can ask for.
+     * Each branch posts what the row's own button posts; what the menu adds is
+     * the acts that only ever appeared on ANOTHER tab (keep/drop live in
+     * Triage, "show its assets" was a filter you had to set by hand) and the
+     * scene status as a list rather than a dialog.
+     */
+    function ctxDo(act, ctx) {
+        const verb = act.split(':')[0];
+        const arg = act.slice(verb.length + 1);
+        switch (verb) {
+            // ---- a scene ----
+            case 'scAssets':
+                fScene = String(ctx.sceneId || '');
+                post('tab', { tab: 'assets' });
+                return;
+            case 'scNext': {
+                const a = ACTION[ctx.sceneNext];
+                if (!a) { return; }
+                if (a.msg === 'tab') { post('tab', { tab: a.arg }); return; }
+                if (a.msg === 'setSceneStatus') {
+                    post('setSceneStatus', { projectId: DATA.project, sceneId: String(ctx.sceneId || '') });
+                    return;
+                }
+                post(a.msg, { sceneId: String(ctx.sceneId || '') });
+                return;
+            }
+            case 'scStatus':
+                post('setSceneStatus', {
+                    projectId: DATA.project, sceneId: String(ctx.sceneId || ''), status: arg
+                });
+                return;
+            case 'scCopy': window.AFCtx.copy(ctx.sceneId); return;
+
+            // ---- an asset ----
+            case 'asOpen': post('openAsset', { path: String(ctx.asPath || '') }); return;
+            case 'asRerun': post('rerun', { taskId: String(ctx.asTask || '') }); return;
+            case 'asVary': post('vary', { taskId: String(ctx.asTask || '') }); return;
+            case 'asFeedback': post('feedback', { taskId: String(ctx.asTask || '') }); return;
+            case 'asAssign': post('assign', { taskId: String(ctx.asTask || '') }); return;
+            case 'asTriage':
+                post('triageDecision', { taskId: String(ctx.asTask || ''), keep: arg === '1' });
+                return;
+            case 'asCopy':
+                window.AFCtx.copy(arg === 'input' ? ctx.asInput
+                    : arg === 'model' ? ctx.asModel : ctx.asPath);
+                return;
+
+            // ---- who generates ----
+            case 'pvSetting': post('openSettings', { focus: String(ctx.pvSetting || '') }); return;
+            case 'pvVault': post('afnav', { to: 'secrets' }); return;
+            case 'pvCopy': window.AFCtx.copy(ctx.pvName); return;
+        }
+    }
+
+    // ‼️ ONCE, at module scope — render() rebuilds every card on every change.
+    window.AFCtx.listen(ctxDo);
 
     window.addEventListener('message', ev => {
         if (ev.data && ev.data.type === 'data') { DATA = ev.data.data; render(); }

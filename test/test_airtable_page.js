@@ -9,11 +9,14 @@ const vm = require('vm');
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
-const code = fs.readFileSync(path.resolve(__dirname, '../media/pageHeader.js'), 'utf8') + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afFilters.js'), 'utf8')
-    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/airtablePage.js'), 'utf8');
+// The shared scripts htmlShell ships to every page, from ONE list.
+const code = require(path.join(__dirname, 'lib_shared_media.js')).sharedMedia()
+    + fs.readFileSync(path.resolve(__dirname, '../media/airtablePage.js'), 'utf8');
 
 let posted = [];
-let msgHandler = null;
+// ‼️ A LIST: the page listens twice — host messages, and the right-click relay.
+const msgHandlers = [];
+const msgHandler = (ev) => msgHandlers.forEach(fn => fn(ev));
 const wired = {};
 const els = {};
 function getEl(id) {
@@ -65,7 +68,7 @@ const sandbox = {
     window: {
         AFCharts: { esc: (s) => String(s) },
         __DATA__: DATA,
-        addEventListener: (ev, fn) => { if (ev === 'message') { msgHandler = fn; } }
+        addEventListener: (ev, fn) => { if (ev === 'message') { msgHandlers.push(fn); } }
     },
     document: {
         getElementById: getEl,

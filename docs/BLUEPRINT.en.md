@@ -89,6 +89,39 @@ Every filter in the extension follows one contract, so what you learn on one pag
 
 Filters that scope a whole page (the Sessions tables' 🧑/🤖 origin, a production in the Media Gallery) stay one-of, because they are a drill-down and not a subset.
 
+## Right-Click Everywhere {#sag-tik}
+
+Every row in this extension is an **object**: a backlog item, a session, a task
+run, a notice, a skill, an asset, a setting, an agent. Everything you can do to
+one is in **that object's right-click menu**. A row's buttons do not replace it:
+a button is "the thing done most often", the menu is "the thing that can be
+done".
+
+Three rules:
+
+1. **The same object carries the same menu wherever it appears.** An agent gives
+   the same sixteen items on the Dashboard, in Portfolio, on a Timeline lane, on
+   its own page and in the memory graph.
+2. **The menu does what the button does** — the same message, to the character.
+   There are tests that prove it; they cannot drift apart.
+3. **A row can be two things at once.** A Turns row is a *turn* and a *session*;
+   a search hit is a *match* and a *session*; a Timeline lane label is a
+   *session* and an *agent*; a Needs row is a *blocker* and — when it knows a
+   transcript — a *session*. One right-click gives both.
+
+**How you find it:** every row that has a menu carries the `— right-click for
+more` tail in its tooltip. There is no row with a menu that stays silent about
+it (`test/test_ctxmenu_reach.js` fails if one appears).
+
+**For agents:** the `ui.ctxmenu` op reads the catalogue itself —
+`{"op":"ui.ctxmenu"}` lists the kinds of row,
+`{"op":"ui.ctxmenu","section":"afBacklogRow"}` says what can be done to one.
+
+**The vault exception:** a secret's menu has **no item that copies its value,
+and never will**. What it copies is the name and the `{secret:NAME}` reference.
+
+The whole design and which phase brought what: `docs/SAG-TIK-MENULERI.tr.md`.
+
 ## Modules
 
 ### Agents Tree

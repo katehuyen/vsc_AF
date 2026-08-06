@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.77.0 — The Studio, the Airtable cards, and the audit that keeps all of it honest (2026-08-06)
+
+**The Studio's scenes and assets.** A scene shows its assets, does the next thing it is waiting for (whatever that is — the row's button is labelled with it because it changes), sets its **status from a list** instead of a dialog, and copies its id. An asset opens its file, is **made again**, **varied**, given **feedback and made again**, **kept or dropped** — the verdict that lived on the Triage tab and nowhere else — assigned to a scene, and copied (path, what it was asked for, the model that made it). An asset registered from a watched folder **says it was not generated here**, so it is never offered the three things that would have nothing to act on. A provider row opens its setting or the vault the key actually lives in.
+
+**An Airtable instance card** makes itself the default, reveals its folder and copies its name or path. An **analytics table** exports the rows you can see as Markdown, clears its search/filters/sort, and opens the task history. (The table, not its rows: those rows are aggregates and carry no id anything could act on.)
+
+**‼️ And an audit that fails the build if the design rots.** `test/test_ctxmenu_reach.js` checks both directions at once: every section a page publishes has items in the catalogue, every section in the catalogue is published by some page, and **no page draws a menu without telling anyone it is there** — the `— right-click for more` tail is the only thing that makes a menu discoverable, and a row that grows one silently would be a feature nobody finds.
+
+**The catalogue is readable by an agent.** `{"op":"ui.ctxmenu"}` lists every kind of row the extension draws a menu on; `{"op":"ui.ctxmenu","section":"afBacklogRow"}` answers "what can be done to this thing" — the same question a person asks by right-clicking. The words for a host command come from the manifest, so there is no second copy to disagree.
+
+**The guide has a "Right-click everywhere" section** in both languages: the three rules, how to find the menus, the rows that are two objects at once, and the vault exception.
+
 ## 3.76.0 — An agent carries the same menu on all six pages that list one (2026-08-06)
 
 **‼️ An agent is listed on six surfaces and every one of them had a different two or three buttons.** The Dashboard's cards, its comparison table, Portfolio, the Timeline's lane labels, the agent's own detail header, the memory graph's picker — right-click any of them now and you get **the same sixteen things**: open its detail, open it in a new window, start a session, start one after choosing model/effort/permissions, talk to it in the Console, continue its latest session, reveal its folder, open DUTIES.md, add a standing duty, add a memory file, open the memory graph, assign it to a project, distil a memory file, export an agent pack, sync it with Antigravity + Codex, and copy its name or its folder. **Every one of those is a host command** — a page publishes the row and gets the whole set without writing a line of handling, which is why the seventh surface will be free.

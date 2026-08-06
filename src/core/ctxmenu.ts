@@ -109,6 +109,13 @@ const PLAN_USAGE = "webviewSection == 'afPlanUsage'";
 const INSIGHT_ROW = "webviewSection == 'afInsightRow'";
 const LIVING_SIGNAL = "webviewSection == 'afLivingSignal'";
 
+/** The production surfaces: a scene, an asset, a provider, an instance. */
+const SCENE_ROW = "webviewSection == 'afSceneRow'";
+const ASSET_CARD = "webviewSection == 'afAssetCard'";
+const PROVIDER_ROW = "webviewSection == 'afProviderRow'";
+const AIRTABLE_INSTANCE = "webviewSection == 'afAirtableInstance'";
+const ANALYTICS_TABLE = "webviewSection == 'afAnalyticsTable'";
+
 /** A memory file and a standing duty, on the pages that list them. */
 const MEMORY_ROW = "webviewSection == 'afMemoryRow'";
 const DUTY_ROW = "webviewSection == 'afDutyRow'";
@@ -192,7 +199,9 @@ export const CTX_SUBMENUS: CtxSubmenu[] = [
     { id: CTX_PREFIX + 'tnCopy', label: 'Copy this turn', group: '5_copy@3', when: TURN_ROW },
     { id: CTX_PREFIX + 'vtCopy', label: 'Copy', group: '5_copy@1', when: VIEWER_TURN },
     { id: CTX_PREFIX + 'vsCopy', label: 'Copy', group: '5_copy@1', when: VIEWER_STEP },
-    { id: CTX_PREFIX + 'shCopy', label: 'Copy the match', group: '5_copy@3', when: SEARCH_HIT }
+    { id: CTX_PREFIX + 'shCopy', label: 'Copy the match', group: '5_copy@3', when: SEARCH_HIT },
+    { id: CTX_PREFIX + 'scStatus', label: 'Status', group: '2_edit@1', when: SCENE_ROW },
+    { id: CTX_PREFIX + 'asCopy', label: 'Copy', group: '5_copy@1', when: ASSET_CARD }
 ];
 
 /**
@@ -1319,12 +1328,189 @@ export const CTX_ITEMS: CtxItem[] = [
     {
         id: 'dutyCopy', title: 'Copy the duty — watch, and what to do', act: 'dutyCopy',
         when: DUTY_ROW, group: '5_copy@1'
-    }
+    },
+
+    // =====================================================================
+    // THE STUDIO — a scene and an asset. Both rows carried their actions as
+    // small buttons that come and go with the state; the menu says which of
+    // them apply and offers the rest.
+    // =====================================================================
+    {
+        id: 'scAssets', title: 'Show its assets', act: 'scAssets',
+        when: SCENE_ROW, group: '1_open@1'
+    },
+    // ‼️ The row's button is LABELLED with the next step (Generate · Triage ·
+    // Set status · In sequence) because it changes with the scene. A menu title
+    // cannot change, so it names the idea rather than pretending to know which
+    // one it is — and runs exactly what the button runs.
+    {
+        id: 'scNext', title: 'Do the next thing this scene is waiting for', act: 'scNext',
+        when: SCENE_ROW, group: '1_open@2'
+    },
+    ...picker(CTX_PREFIX + 'scStatus', SCENE_ROW, 'scStatus', [
+        ['draft', 'draft'],
+        ['generating', 'generating'],
+        ['review', 'review'],
+        ['approved', 'approved — goes into the export']
+    ]),
+    {
+        id: 'scCopyId', title: 'Copy its scene id', act: 'scCopy',
+        when: SCENE_ROW, group: '5_copy@1'
+    },
+    {
+        id: 'asOpen', title: 'Open the file', act: 'asOpen',
+        when: `${ASSET_CARD} && asPath`, group: '1_open@1'
+    },
+    // An asset registered from a watched folder was never generated here, so
+    // there is nothing to re-run, vary or give feedback on.
+    {
+        id: 'asRerun', title: 'Make it again', act: 'asRerun',
+        when: `${ASSET_CARD} && !asExternal`, group: '2_edit@1'
+    },
+    {
+        id: 'asVary', title: 'Make a variation…', act: 'asVary',
+        when: `${ASSET_CARD} && !asExternal`, group: '2_edit@2'
+    },
+    {
+        id: 'asFeedback', title: 'Say what was wrong, and make it again…', act: 'asFeedback',
+        when: `${ASSET_CARD} && !asExternal`, group: '2_edit@3'
+    },
+    {
+        id: 'asKeep', title: 'Keep it', act: 'asTriage:1',
+        when: ASSET_CARD, group: '3_move@1'
+    },
+    {
+        id: 'asDrop', title: 'Drop it', act: 'asTriage:0',
+        when: ASSET_CARD, group: '3_move@2'
+    },
+    {
+        id: 'asAssign', title: 'Assign it to a scene…', act: 'asAssign',
+        when: ASSET_CARD, group: '4_link@1'
+    },
+    ...picker(CTX_PREFIX + 'asCopy', ASSET_CARD, 'asCopy', [
+        ['path', 'Its file path'],
+        ['input', 'What it was asked for'],
+        ['model', 'The model that made it']
+    ]),
+
+    // ---- who generates, and what it costs ---------------------------------
+    {
+        id: 'pvSetting', title: 'Open its setting', act: 'pvSetting',
+        when: `${PROVIDER_ROW} && pvSetting`, group: '1_open@1'
+    },
+    {
+        id: 'pvVault', title: 'Open the key vault', act: 'pvVault',
+        when: PROVIDER_ROW, group: '1_open@2'
+    },
+    {
+        id: 'pvCopy', title: 'Copy its name', act: 'pvCopy',
+        when: PROVIDER_ROW, group: '5_copy@1'
+    },
+
+    // ---- an Airtable instance ---------------------------------------------
+    {
+        id: 'atDefault', title: 'Use this one when a tool call names none', act: 'atDefault',
+        when: `${AIRTABLE_INSTANCE} && !afDefault`, group: '2_edit@1'
+    },
+    {
+        id: 'atReveal', title: 'Reveal its folder', act: 'atReveal',
+        when: AIRTABLE_INSTANCE, group: '1_open@1'
+    },
+    {
+        id: 'atCopyName', title: 'Copy its name', act: 'atCopy:name',
+        when: AIRTABLE_INSTANCE, group: '5_copy@1'
+    },
+    {
+        id: 'atCopyDir', title: 'Copy its folder path', act: 'atCopy:dir',
+        when: AIRTABLE_INSTANCE, group: '5_copy@2'
+    },
+
+    // ---- an analytics table ------------------------------------------------
+    // ‼️ The TABLE, not the row. These rows are aggregates — a task family, an
+    // agent scorecard — and carry no id anything else could act on; a row menu
+    // would have to invent one. What the table itself can do is real.
+    {
+        id: 'anExport', title: 'Export the rows you can see as Markdown', act: 'anExport',
+        when: ANALYTICS_TABLE, group: '4_link@1'
+    },
+    {
+        id: 'anReset', title: 'Clear its search, filters and sort', act: 'anReset',
+        when: ANALYTICS_TABLE, group: '2_edit@1'
+    },
+    { command: 'agentfarm.openTaskHistory', when: ANALYTICS_TABLE, group: '1_open@1' }
 ];
 
 /** The command a catalogue item invokes. */
 export function ctxCommandId(item: CtxItem): string {
     return item.command || (item.id ? CTX_PREFIX + item.id : '');
+}
+
+/** Does this `when` clause draw on that section? Handles both spellings the
+ *  catalogue uses — an equality, and a regex over a family of sections. */
+export function ctxDrawsOn(when: string, section: string): boolean {
+    const s = String(when || '');
+    if (s.includes(`webviewSection == '${section}'`)) { return true; }
+    const m = /webviewSection =~ \/([^/]+)\//.exec(s);
+    if (!m) { return false; }
+    try { return new RegExp(m[1]).test(section); } catch { return false; }
+}
+
+/**
+ * Every kind of row the catalogue draws a menu on.
+ *
+ * The regex spellings are expanded rather than split on `|`: a family is
+ * written either as `^(a|b)$` or as `^afConsole(Session|Resumable)$`, and
+ * splitting the second one yields "Session", which is not a section at all.
+ */
+export function ctxSections(): string[] {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    const add = (name: string) => { if (!seen.has(name)) { seen.add(name); out.push(name); } };
+    for (const item of CTX_ITEMS) {
+        const eq = /webviewSection == '([^']+)'/.exec(item.when);
+        if (eq) { add(eq[1]); continue; }
+        const re = /webviewSection =~ \/([^/]+)\//.exec(item.when);
+        if (re) { expandPattern(re[1]).forEach(add); }
+    }
+    return out.sort();
+}
+
+/** `^afConsole(Session|Resumable)$` → the two names it really matches. */
+function expandPattern(pattern: string): string[] {
+    let out = [''];
+    const part = /\(([^)]*)\)|([^(]+)/g;
+    let m;
+    while ((m = part.exec(pattern))) {
+        const alts = m[1] !== undefined ? m[1].split('|') : [m[2]];
+        const grown: string[] = [];
+        for (const head of out) { for (const alt of alts) { grown.push(head + alt); } }
+        out = grown;
+    }
+    return out.map(s => s.replace(/[\^$]/g, '')).filter(s => /^af\w+$/.test(s));
+}
+
+/**
+ * What a right-click offers on one kind of row.
+ *
+ * ‼️ THIS IS THE ANSWER TO "WHAT CAN BE DONE TO THIS THING". The catalogue is
+ * the only place that knows, and an agent asked to work a page has exactly the
+ * same question a person right-clicking does. `titleOf` supplies the words for
+ * a host command — those live in `contributes.commands`, not here.
+ */
+export function ctxForSection(
+    section: string, titleOf: (command: string) => string
+): { title: string; command: string; when: string; group: string; menu?: string }[] {
+    const subLabel = new Map(CTX_SUBMENUS.map(s => [s.id, s.label]));
+    return CTX_ITEMS
+        .filter(i => ctxDrawsOn(i.when, section))
+        .map(i => ({
+            title: i.title || titleOf(i.command || '') || i.command || '',
+            command: ctxCommandId(i),
+            when: i.when,
+            group: i.group,
+            ...(i.menu ? { menu: subLabel.get(i.menu) || i.menu } : {})
+        }))
+        .sort((a, b) => a.group.localeCompare(b.group));
 }
 
 /** Every page action, as the host needs to register it. */

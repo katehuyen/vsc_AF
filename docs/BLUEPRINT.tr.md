@@ -89,6 +89,38 @@ Eklentideki her filtre tek bir sözleşmeyi izler; bir sayfada öğrendiğin, di
 
 Sayfanın tamamını kapsayan filtreler (Sessions tablolarındaki 🧑/🤖 kaynağı, Media Gallery'deki prodüksiyon) tek seçimli kalır: onlar bir alt küme değil, bir derinleşmedir.
 
+## Sağ Tık Her Yerde {#sag-tik}
+
+Eklentideki her satır bir **nesne**: bir backlog maddesi, bir oturum, bir görev
+koşusu, bir bildirim, bir beceri, bir varlık, bir ayar, bir ajan. O nesneyle
+yapılabilecek her şey, **o nesnenin sağ tık menüsündedir**. Satır düğmeleri
+menünün yerini tutmaz: düğme "en sık yapılan"dır, menü "yapılabilecek olan".
+
+Üç kural:
+
+1. **Aynı nesne nerede görünürse görünsün aynı menüyü taşır.** Bir ajan
+   Dashboard'da, Portfolio'da, Timeline kulvarında, kendi sayfasında ve bellek
+   grafiğinde aynı on altı maddeyi verir.
+2. **Menü, düğmenin yaptığının aynısını yapar** — aynı mesajı, karakterine
+   kadar. Testler bunu doğruluyor; ayrışamazlar.
+3. **Bir satır aynı anda iki nesne olabilir.** Turns satırı hem *tur* hem
+   *oturum*; arama sonucu hem *eşleşme* hem *oturum*; Timeline kulvar etiketi
+   hem *oturum* hem *ajan*; İhtiyaçlar satırı hem *engel* hem — transkript
+   biliyorsa — *oturum*. Tek sağ tık ikisini birden verir.
+
+**Nasıl bulunur:** menüsü olan her satırın ipucunda `— right-click for more`
+kuyruğu vardır. Menüsü olduğunu söylemeyen satır yoktur (denetleyen bir test
+var: `test/test_ctxmenu_reach.js`).
+
+**Ajan tarafı:** `ui.ctxmenu` op'u kataloğun kendisini okur —
+`{"op":"ui.ctxmenu"}` satır türlerini, `{"op":"ui.ctxmenu","section":"afBacklogRow"}`
+o türe ne yapılabileceğini söyler.
+
+**Kasa istisnası:** bir sırrın menüsünde **değerini kopyalayan madde yoktur ve
+olmayacak**. Kopyalanabilen ad ve `{secret:NAME}` referansıdır.
+
+Tasarımın tamamı ve hangi fazın neyi getirdiği: `docs/SAG-TIK-MENULERI.tr.md`.
+
 ## Modüller
 
 ### Agents Ağacı

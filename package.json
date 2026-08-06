@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.76.0",
+  "version": "3.77.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -2846,6 +2846,136 @@
         "command": "agentfarm.ctx.dutyCopy",
         "title": "Copy the duty \u2014 watch, and what to do",
         "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.scAssets",
+        "title": "Show its assets",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.scNext",
+        "title": "Do the next thing this scene is waiting for",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.scStatusDraft",
+        "title": "draft",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.scStatusGenerating",
+        "title": "generating",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.scStatusReview",
+        "title": "review",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.scStatusApproved",
+        "title": "approved \u2014 goes into the export",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.scCopyId",
+        "title": "Copy its scene id",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.asOpen",
+        "title": "Open the file",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.asRerun",
+        "title": "Make it again",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.asVary",
+        "title": "Make a variation\u2026",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.asFeedback",
+        "title": "Say what was wrong, and make it again\u2026",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.asKeep",
+        "title": "Keep it",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.asDrop",
+        "title": "Drop it",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.asAssign",
+        "title": "Assign it to a scene\u2026",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.asCopyPath",
+        "title": "Its file path",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.asCopyInput",
+        "title": "What it was asked for",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.asCopyModel",
+        "title": "The model that made it",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.pvSetting",
+        "title": "Open its setting",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.pvVault",
+        "title": "Open the key vault",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.pvCopy",
+        "title": "Copy its name",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.atDefault",
+        "title": "Use this one when a tool call names none",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.atReveal",
+        "title": "Reveal its folder",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.atCopyName",
+        "title": "Copy its name",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.atCopyDir",
+        "title": "Copy its folder path",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.anExport",
+        "title": "Export the rows you can see as Markdown",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.anReset",
+        "title": "Clear its search, filters and sort",
+        "category": "Agent Farm"
       }
     ],
     "submenus": [
@@ -2944,6 +3074,14 @@
   {
     "id": "agentfarm.ctx.shCopy",
     "label": "Copy the match"
+  },
+  {
+    "id": "agentfarm.ctx.scStatus",
+    "label": "Status"
+  },
+  {
+    "id": "agentfarm.ctx.asCopy",
+    "label": "Copy"
   }
 ],
     "menus": {
@@ -3866,6 +4004,16 @@
           "submenu": "agentfarm.ctx.shCopy",
           "when": "webviewSection == 'afSearchHit'",
           "group": "5_copy@3"
+        },
+        {
+          "submenu": "agentfarm.ctx.scStatus",
+          "when": "webviewSection == 'afSceneRow'",
+          "group": "2_edit@1"
+        },
+        {
+          "submenu": "agentfarm.ctx.asCopy",
+          "when": "webviewSection == 'afAssetCard'",
+          "group": "5_copy@1"
         },
         {
           "command": "agentfarm.openSession",
@@ -5121,8 +5269,147 @@
           "command": "agentfarm.ctx.dutyCopy",
           "when": "webviewSection == 'afDutyRow'",
           "group": "5_copy@1"
+        },
+        {
+          "command": "agentfarm.ctx.scAssets",
+          "when": "webviewSection == 'afSceneRow'",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.ctx.scNext",
+          "when": "webviewSection == 'afSceneRow'",
+          "group": "1_open@2"
+        },
+        {
+          "command": "agentfarm.ctx.scCopyId",
+          "when": "webviewSection == 'afSceneRow'",
+          "group": "5_copy@1"
+        },
+        {
+          "command": "agentfarm.ctx.asOpen",
+          "when": "webviewSection == 'afAssetCard' && asPath",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.ctx.asRerun",
+          "when": "webviewSection == 'afAssetCard' && !asExternal",
+          "group": "2_edit@1"
+        },
+        {
+          "command": "agentfarm.ctx.asVary",
+          "when": "webviewSection == 'afAssetCard' && !asExternal",
+          "group": "2_edit@2"
+        },
+        {
+          "command": "agentfarm.ctx.asFeedback",
+          "when": "webviewSection == 'afAssetCard' && !asExternal",
+          "group": "2_edit@3"
+        },
+        {
+          "command": "agentfarm.ctx.asKeep",
+          "when": "webviewSection == 'afAssetCard'",
+          "group": "3_move@1"
+        },
+        {
+          "command": "agentfarm.ctx.asDrop",
+          "when": "webviewSection == 'afAssetCard'",
+          "group": "3_move@2"
+        },
+        {
+          "command": "agentfarm.ctx.asAssign",
+          "when": "webviewSection == 'afAssetCard'",
+          "group": "4_link@1"
+        },
+        {
+          "command": "agentfarm.ctx.pvSetting",
+          "when": "webviewSection == 'afProviderRow' && pvSetting",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.ctx.pvVault",
+          "when": "webviewSection == 'afProviderRow'",
+          "group": "1_open@2"
+        },
+        {
+          "command": "agentfarm.ctx.pvCopy",
+          "when": "webviewSection == 'afProviderRow'",
+          "group": "5_copy@1"
+        },
+        {
+          "command": "agentfarm.ctx.atDefault",
+          "when": "webviewSection == 'afAirtableInstance' && !afDefault",
+          "group": "2_edit@1"
+        },
+        {
+          "command": "agentfarm.ctx.atReveal",
+          "when": "webviewSection == 'afAirtableInstance'",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.ctx.atCopyName",
+          "when": "webviewSection == 'afAirtableInstance'",
+          "group": "5_copy@1"
+        },
+        {
+          "command": "agentfarm.ctx.atCopyDir",
+          "when": "webviewSection == 'afAirtableInstance'",
+          "group": "5_copy@2"
+        },
+        {
+          "command": "agentfarm.ctx.anExport",
+          "when": "webviewSection == 'afAnalyticsTable'",
+          "group": "4_link@1"
+        },
+        {
+          "command": "agentfarm.ctx.anReset",
+          "when": "webviewSection == 'afAnalyticsTable'",
+          "group": "2_edit@1"
+        },
+        {
+          "command": "agentfarm.openTaskHistory",
+          "when": "webviewSection == 'afAnalyticsTable'",
+          "group": "1_open@1"
         }
       ],
+      "agentfarm.ctx.asCopy": [
+  {
+    "command": "agentfarm.ctx.asCopyPath",
+    "when": "webviewSection == 'afAssetCard'",
+    "group": "1_pick@1"
+  },
+  {
+    "command": "agentfarm.ctx.asCopyInput",
+    "when": "webviewSection == 'afAssetCard'",
+    "group": "1_pick@2"
+  },
+  {
+    "command": "agentfarm.ctx.asCopyModel",
+    "when": "webviewSection == 'afAssetCard'",
+    "group": "1_pick@3"
+  }
+],
+      "agentfarm.ctx.scStatus": [
+  {
+    "command": "agentfarm.ctx.scStatusDraft",
+    "when": "webviewSection == 'afSceneRow'",
+    "group": "1_pick@1"
+  },
+  {
+    "command": "agentfarm.ctx.scStatusGenerating",
+    "when": "webviewSection == 'afSceneRow'",
+    "group": "1_pick@2"
+  },
+  {
+    "command": "agentfarm.ctx.scStatusReview",
+    "when": "webviewSection == 'afSceneRow'",
+    "group": "1_pick@3"
+  },
+  {
+    "command": "agentfarm.ctx.scStatusApproved",
+    "when": "webviewSection == 'afSceneRow'",
+    "group": "1_pick@4"
+  }
+],
       "agentfarm.ctx.shCopy": [
   {
     "command": "agentfarm.ctx.shCopyLine",
@@ -6784,6 +7071,136 @@
   },
   {
     "command": "agentfarm.ctx.dutyCopy",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.scAssets",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.scNext",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.scStatusDraft",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.scStatusGenerating",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.scStatusReview",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.scStatusApproved",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.scCopyId",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.asOpen",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.asRerun",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.asVary",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.asFeedback",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.asKeep",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.asDrop",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.asAssign",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.asCopyPath",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.asCopyInput",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.asCopyModel",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.pvSetting",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.pvVault",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.pvCopy",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.atDefault",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.atReveal",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.atCopyName",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.atCopyDir",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.anExport",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.anReset",
     "when": "false",
     "group": "ctx"
   }

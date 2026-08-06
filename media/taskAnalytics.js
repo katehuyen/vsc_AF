@@ -71,7 +71,13 @@
             title: 'Filter by ' + p.label + ' — tick any combination'
         })).join('');
         const active = q || s.sort || Object.values(s.filters).some(Boolean);
-        const bar = `<div class="tbl-tools">
+        // ‼️ THE TABLE, NOT ITS ROWS. These rows are aggregates — a task family,
+        // an agent scorecard — and carry no id anything else could act on; a row
+        // menu would have to invent one. What the table itself can do is real,
+        // and its three controls are small and easy to miss.
+        const bar = `<div class="tbl-tools"
+            ${window.AFCtx.row('afAnalyticsTable', { tableId: id, tableTitle: title })}
+            title="${C.esc(window.AFCtx.hint(title))}">
             <input type="search" data-tq="${id}" value="${C.esc(s.q)}" placeholder="⌕ search">
             ${selects}
             <button class="mini secondary" data-treset="${id}" ${active ? '' : 'disabled'} title="Clear search, filters and sort">↺ reset</button>
@@ -221,6 +227,15 @@
             if (el) { el.focus(); const v = el.value.length; if (el.setSelectionRange) { el.setSelectionRange(v, v); } }
         }
     }
+
+    /** A table's own two acts — each runs what its small button runs. */
+    function ctxDo(act, ctx) {
+        if (act === 'anExport') { exportTable(String(ctx.tableId || '')); return; }
+        if (act === 'anReset') { delete tstate[String(ctx.tableId || '')]; render(); }
+    }
+
+    // ‼️ ONCE, at module scope — render() runs on every keystroke in a search box.
+    window.AFCtx.listen(ctxDo);
 
     window.addEventListener('message', ev => {
         if (ev.data.type === 'data') { DATA = ev.data.data; render(); }

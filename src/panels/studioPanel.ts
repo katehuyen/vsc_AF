@@ -241,9 +241,15 @@ export class StudioPanel {
                 const found = discoverProductions(this.deps.getAgents())
                     .find(p => p.production.id === projectId);
                 if (!found) { break; }
-                const status = await vscode.window.showQuickPick(
-                    SCENE_STATUSES as readonly string[] as string[],
-                    { placeHolder: `New status for "${found.production.scenes.find(s => s.id === sceneId)?.title ?? sceneId}"`, ignoreFocusOut: true });
+                // The row's badge opens the picker; the right-click menu names
+                // the status outright (it drew the list itself). One handler
+                // either way, so the write and the refresh cannot differ.
+                const asked = str('status');
+                const status = (SCENE_STATUSES as readonly string[]).includes(asked)
+                    ? asked
+                    : await vscode.window.showQuickPick(
+                        SCENE_STATUSES as readonly string[] as string[],
+                        { placeHolder: `New status for "${found.production.scenes.find(s => s.id === sceneId)?.title ?? sceneId}"`, ignoreFocusOut: true });
                 if (!status) { break; }
                 if (setSceneStatus(found.production, sceneId, status as SceneStatus)) {
                     writeProduction(found.file, found.production);
