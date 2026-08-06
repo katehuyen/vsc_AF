@@ -158,11 +158,13 @@ export function fmtDuration(ms: number): string {
     return `${sec}s`;
 }
 
-/** Round trips / visible steps — see media/charts.js fmtSteps for the why. */
+/** Round trips · visible steps — see media/charts.js fmtSteps for the why,
+ *  including why the separator is a dot and not a slash. */
 export function fmtStepPair(apiCalls: number, steps: number): string {
     const a = Number(apiCalls) || 0;
     const s = Number(steps) || 0;
-    return a ? `${a}api/${s}` : String(s);
+    const st = `${s}${s === 1 ? 'step' : 'steps'}`;
+    return a ? `${a}api·${st}` : st;
 }
 
 export function debounce<T extends (...args: never[]) => void>(fn: T, ms: number): T {

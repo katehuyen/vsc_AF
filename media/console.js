@@ -469,7 +469,16 @@
             background:var(--vscode-editorWidget-background, var(--vscode-editor-background)); }
         .sniphead { display:flex; gap:8px; align-items:center; padding:8px 10px;
             border-bottom:1px solid var(--vscode-widget-border,#4443); }
-        .sniphead input { flex:0 1 240px; padding:3px 7px; }
+        .sniphead input { flex:1 1 auto; padding:3px 24px 3px 7px; width:100%; }
+        /* The filter box and its ✕ are one control: the button sits INSIDE the
+           box's right edge, so clearing is where the text is rather than a
+           second widget somewhere along the row. Hidden while the box is
+           empty — a clear button on nothing is furniture. */
+        .snipq { position:relative; flex:0 1 240px; display:flex; }
+        .snipqx { position:absolute; right:2px; top:50%; transform:translateY(-50%);
+            background:transparent; border:none; padding:2px 5px; cursor:pointer;
+            font-size:11px; line-height:1; color:var(--vscode-descriptionForeground); }
+        .snipqx:hover { color:var(--vscode-foreground); }
         .sniplist { overflow:auto; padding:4px 0; }
         .snipgrp { font-size:10px; text-transform:uppercase; letter-spacing:.5px; opacity:.55;
             padding:8px 12px 3px; }
@@ -1252,18 +1261,38 @@
      *  move once per paint, whatever the timer's drift does */
     let spinAt = 0;
 
-    /** How many STEPS this turn has taken: everything since your own last
-     *  message. The count you can see growing IS the turn. */
+    /**
+     * How many STEPS this turn has taken, counted the way EVERY OTHER SURFACE
+     * counts them: one reply fragment or one tool call.
+     *
+     * ‼️ IT USED TO COUNT ROWS, AND A ROW IS NOT A STEP. Everything since your
+     * last message was counted — which sweeps in every tool RESULT (one per
+     * tool call, so the figure was roughly doubled), plus the permission asks
+     * and the "model changed" notices the panel writes for itself. The session
+     * tables and the Turns page count the transcript's own blocks (text +
+     * tool_use, see sessions.ts), so the very same turn read here and read
+     * there gave two different numbers under one label — with the strip's the
+     * larger, which is exactly the direction that makes a correct counter look
+     * broken. The `kind` on every row already says which is which: a step
+     * either says something ('agent') or calls a tool (a 'tool' row carrying
+     * the call itself; the answer that comes back carries none).
+     */
     function turnSteps(s) {
         const list = (s && s.messages) || [];
+        let start = 0;
         for (let i = list.length - 1; i >= 0; i--) {
-            if (list[i].role === 'user') { return list.length - 1 - i; }
+            if (list[i].role === 'user') { start = i + 1; break; }
         }
-        return list.length;
+        let n = 0;
+        for (let i = start; i < list.length; i++) {
+            const m = list[i];
+            if (m.role === 'agent' || (m.role === 'tool' && m.tool)) { n++; }
+        }
+        return n;
     }
 
     /**
-     * The turn's size, in the shape every surface uses: `14api/26`.
+     * The turn's size, in the shape every surface uses: `14api·26steps`.
      *
      * ‼️ THE STRIP USED TO SAY ONLY THE SECOND NUMBER, AND IT IS THE ONE THAT
      * EXPLAINS THE LEAST. Steps are what you watch scroll past; round trips are
@@ -1692,7 +1721,10 @@
             <div class="snipbox">
                 <div class="sniphead">
                     <b>Saved prompts</b>
-                    <input id="snip-q" type="text" placeholder="filter…" value="${C.esc(snip.q || '')}">
+                    <span class="snipq">
+                        <input id="snip-q" type="text" placeholder="filter…" value="${C.esc(snip.q || '')}">
+                        ${snip.q ? '<button class="snipqx" id="snip-qx" title="Clear the filter (Esc closes the window)">✕</button>' : ''}
+                    </span>
                     <span class="grow"></span>
                     ${snip.file ? `<button class="secondary" id="snip-file"
                         title="Open the file this list is read from — add a \`\`\` block and it is here the next time you right-click">✎ Edit the file</button>` : ''}
@@ -1735,6 +1767,17 @@
             q.addEventListener('keydown', ev => { if (ev.key === 'Escape') { snipClose(); } });
             try { q.focus({ preventScroll: true }); } catch (e) { q.focus(); }
         }
+        // ‼️ CLEARS, NEVER CLOSES. Esc already closes the whole window, so the
+        // one gesture the filter box was missing is "show me everything again"
+        // without losing the window — and without backspacing a typed phrase
+        // one character at a time. The caret goes back into the box, because
+        // clearing a filter is nearly always the start of typing another one.
+        byId('snip-qx', 'click', () => {
+            snip.q = '';
+            renderSnip();
+            const again = document.getElementById('snip-q');
+            if (again) { try { again.focus({ preventScroll: true }); } catch (e) { again.focus(); } }
+        });
         const list = (snip.items || []);
         const shownQ = (snip.q || '').toLowerCase();
         const shown = shownQ

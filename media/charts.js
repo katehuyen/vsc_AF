@@ -153,7 +153,7 @@
     }
 
     /**
-     * The turn's size, in the one shape every surface uses: `14api/26`.
+     * The turn's size, in the one shape every surface uses: `14api·26steps`.
      *
      * ‼️ ONE NUMBER HERE WAS TWO QUESTIONS. "26" is how many STEPS the agent
      * took — each reply fragment and each tool call is one — while what it
@@ -162,18 +162,29 @@
      * halved while its step count held looked unchanged, and the token total
      * moving underneath it looked like a counting bug. Both numbers, always, in
      * the same order, everywhere.
+     *
+     * ‼️ AND THE SEPARATOR IS A DOT, NOT A SLASH — this was read as a fraction.
+     * `14api/26` says "14 out of 26" to every reader who has not been told
+     * otherwise, and the honest reading is neither that nor "14 + 26 = 40":
+     * the 26 steps were CARRIED BY the 14 calls, so the same turn is being
+     * measured twice, on two different scales. Nothing about the counting
+     * changed here (it was right); the string that reported it was not, and
+     * both numbers now say what they are.
      */
     function fmtSteps(apiCalls, steps) {
         const a = Number(apiCalls) || 0;
         const s = Number(steps) || 0;
-        if (!a) { return String(s); }
-        return a + 'api/' + s;
+        const st = s + (s === 1 ? 'step' : 'steps');
+        if (!a) { return st; }
+        return a + 'api·' + st;
     }
 
-    /** The one sentence that explains `14api/26` wherever it is shown. */
-    const STEPS_TIP = 'API calls / steps — a step is one reply fragment or one '
-        + 'tool call; a single API call usually carries several of them. The '
-        + 'tokens follow the CALLS, not the steps.';
+    /** The one sentence that explains `14api·26steps` wherever it is shown. */
+    const STEPS_TIP = 'Two measurements of the SAME turn, not two parts of a total: '
+        + '14api·26steps means 14 round trips to the model, which between them carried '
+        + '26 visible steps (a step is one reply fragment or one tool call). One call '
+        + 'usually carries several steps, so the numbers are never added together — '
+        + 'and the tokens follow the CALLS, not the steps.';
 
     /**
      * Stacked bar chart.

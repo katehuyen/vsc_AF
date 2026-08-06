@@ -576,8 +576,18 @@ export const CTX_ITEMS: CtxItem[] = [
         when: `${TASK_RUN} && !afLive`, group: '2_edit@4'
     },
     {
+        // ‼️ Not the same as the line above it. That one asks for a new prompt
+        // in a box and changes nothing else; this opens the page's own New-task
+        // form with the whole run in it — agent, model, effort, permissions,
+        // project, priority, folder — which is what "run that again on opus"
+        // actually means. Available on a live run too: "another one like this,
+        // but…" is a normal thing to want while the first is still going.
+        id: 'runClone', title: 'New task like this one…', act: 'tkClone',
+        when: TASK_RUN, group: '2_edit@5'
+    },
+    {
         id: 'runResumeWf', title: 'Resume the workflow from this step', act: 'tkResume',
-        when: `${TASK_RUN} && afFrom == 'workflow' && !afLive`, group: '2_edit@5'
+        when: `${TASK_RUN} && afFrom == 'workflow' && !afLive`, group: '2_edit@6'
     },
     {
         id: 'runNext', title: 'To the front of the queue', act: 'tkNext',

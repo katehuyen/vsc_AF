@@ -138,46 +138,78 @@ const mkRow = (i, extra) => Object.assign({
     ok('row click posts openSession', posted.some(p => p.type === 'openSession' && p.file === 'f2'));
 }
 
-// ---------- S-6: every column answers its own question on hover ----------
+// ---------- S-6 / S-17: every column answers its own question on hover ----------
 // The row's tooltip used to be the only one, so all eleven cells said
 // "right-click for session actions" and the figures they covered — when the
-// session ran, what a turn cost — were reachable only by opening it.
+// session ran, what a turn cost — were reachable only by opening it. S-17 then
+// took the hint back OUT of the cells: appending one sentence to eleven
+// tooltips on every row is the same waste in a smaller font. It is said once,
+// above the table (and by the selection bar, with the count), and the cells got
+// longer rather than shorter.
 {
     posted = []; state = {};
     const t = sandbox.window.AFSessionsTable.create({
         vscode: vscodeStub, C, containerId: 'tips',
-        columns: ['agent', 'title', 'when', 'duration', 'turns', 'tools', 'errors', 'tokens', 'ctx', 'cost'],
+        columns: ['origin', 'agent', 'title', 'when', 'duration', 'turns', 'tools', 'errors', 'tokens', 'ctx', 'cost'],
         stateKey: 'tips'
     });
-    // a session with both ends known: 4 turns over 20 minutes, $8, 400 tokens
+    // a session with both ends known: 4 turns over 20 minutes, $8, 400 tokens,
+    // 8 round trips, a token split and the two tools it mostly reached for
     t.setRows([mkRow(1, {
         firstTs: NOW - 20 * 60000, ts: NOW, durationMin: 20, turns: 4,
-        toolCalls: 12, errors: 3, tokens: 400, wTokens: 900, ctx: 90000, cost: 8
+        toolCalls: 12, errors: 3, tokens: 400, wTokens: 900, ctx: 90000, cost: 8,
+        apiCalls: 8, files: 2, branch: 'master', permissionMode: 'acceptEdits',
+        version: '2.0.31', entrypoint: 'cli', models: ['claude-opus-5'],
+        usage: { input: 100, output: 100, cacheRead: 160, cacheWrite: 40 },
+        topTools: [{ name: 'Read', n: 7 }, { name: 'Edit', n: 5 }]
     })], 10);
     const html = () => containers.tips.innerHTML;
 
     ok('the row still says a right-click has more',
         html().includes('title="right-click for session actions"'));
-    ok('…and every cell carries it as a TAIL, not instead of its own words',
-        (html().match(/right-click for session actions/g) || []).length > 5);
+    // ‼️ ONCE. The row keeps it (a cell with its own title overrides it anyway)
+    // and the strip above the table says it in words — but no cell repeats it.
+    ok('…and it is not repeated under every figure on the row',
+        (html().match(/right-click for session actions/g) || []).length <= 2);
+    ok('…while the strip above the table says it in words for the whole table',
+        /class="muted small">[^<]*right-click for session actions/.test(html()));
     ok('When says the whole date and both ends',
         /title="[^"]*Last activity:[^"]*Started:[^"]*Ran for 20 min/.test(html()));
     ok('Duration derives the per-turn average', html().includes('5 min per turn'));
+    ok('Duration is honest that it is wall clock', html().includes('not time spent working'));
     ok('Turns names what a turn is, and what one costs',
-        html().includes('prompts you sent, not API calls')
+        html().includes('prompts you sent')
         && html().includes('100t tokens per turn') && html().includes('$2 per turn'));
+    ok('Turns separates the prompts you sent from the round trips they took',
+        html().includes('8 API calls carried them') && html().includes('2 calls per turn'));
     ok('Tokens separates the raw total from the weighted one',
         /title="Raw total: 400t[^"]*Against the plan limit: 900t/.test(html()));
+    // ‼️ Two sessions with the same total differ by an order of magnitude in
+    // money when one is cache reads and the other is output.
+    ok('Tokens splits the total the way it is billed',
+        html().includes('in 100t · out 100t · cache read 160t · cache write 40t')
+        && html().includes('Cache reads are 40% of the total'));
+    ok('Tools says WHAT it did, not only how much',
+        html().includes('Mostly: Read 7 · Edit 5'));
     ok('Errors says what share of the tool calls they are', html().includes('25% of the tool calls'));
     ok('Ctx explains what the number is', html().includes('after the last reply'));
     ok('Cost is honest about being API-equivalent', html().includes('a plan session is not billed this way'));
+    ok('Cost names the model the price came from', html().includes('Priced at: opus-5'));
+    ok('Agent carries the circumstances of the run',
+        html().includes('Git branch: master') && html().includes('Permission mode: acceptEdits')
+        && html().includes('CLI version: 2.0.31'));
+    ok('By shows its own evidence rather than asking to be trusted',
+        html().includes('Entrypoint: cli'));
 
-    // …and with a selection the tail follows what a right-click would DO
+    // …and the selection bar is where "what would a right-click do to all of
+    // them" is answered — with the count, once, not in every cell.
     const box = containers.tips.querySelectorAll('[data-sel]')[0];
     box.checked = true;
     box._fn({ stopPropagation() { }, shiftKey: false });
-    ok('a selected row says the menu acts on the selection, in every cell',
-        (containers.tips.innerHTML.match(/1 session selected/g) || []).length > 5);
+    const sel = containers.tips.innerHTML;
+    ok('a selection says the menu acts on all of them — once, on its own bar',
+        sel.includes('1 session selected — right-click to act on all of them')
+        && (sel.match(/1 session selected/g) || []).length <= 2);
 }
 
 // ---------- part 2: turn accordion — fold, host round-trip, turn jump ----------

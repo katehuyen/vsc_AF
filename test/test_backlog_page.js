@@ -520,15 +520,19 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
     const r = run(data());
     const at = () => r.byId('bl-at');
     ok('the position box sits beside Add', !!at() && /pj-bl-atsel/.test(r.html()));
-    ok('‼️ …and is dead until an area is chosen: the queue holds CODES, and a '
-        + 'capture with no area has none',
-        /id="bl-at"[^>]*disabled/.test(r.html()) && /Pick an area first/.test(r.html()));
+    // ‼️ S-12 second pass: it is NEVER dead. The queue holds CODES and a capture
+    // with no area has none — but that is the FILE's rule, stated by the file on
+    // Add. The panel pre-empting it greyed out the control the user reaches for
+    // first, explained itself only to a pointer that hovered, and threw the
+    // choice away the moment the area went blank.
+    ok('‼️ the position can be picked before anything else — it is never disabled',
+        !/id="bl-at"[^>]*disabled/.test(r.html()));
 
     const area = r.byId('bl-area');
     area.value = 'K';
     area.fire('change');
-    ok('choosing an area brings it to life in the same gesture',
-        !/id="bl-at"[^>]*disabled/.test(r.html()));
+    ok('and it stays live once an area is chosen', !/id="bl-at"[^>]*disabled/.test(r.html()));
+    ok('with an area there is nothing to warn about', !/<span class="pj-bl-atwarn"/.test(r.html()));
     // The queue holds three items, so the offer is 1..4 — the positions that
     // exist, plus the end. It is rebuilt on every paint, so it cannot go stale.
     ok('the numbers on offer are as many as the queue, plus the end',
@@ -567,6 +571,43 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
     r.els('act').find(e => e.dataset.act === 'blAdd').click();
     const msg = r.posted.filter(m => m.type === 'backlogAdd').pop();
     ok('‼️ an untouched box sends no position at all', msg && msg.at === undefined);
+}
+
+// ---------- S-12 second pass: a place asked for with no area ----------
+// The panel used to drop this on the way out — so the host's own answer for the
+// case ("it went to the inbox without a code, so it could not be queued") was
+// written, tested and unreachable, and the user's choice vanished with nothing
+// said. The rule belongs to the file; the panel warns before, and the file
+// speaks after.
+{
+    const r = run(data());
+    const at = r.byId('bl-at');
+    at.value = '1';
+    at.fire('change');
+    ok('picking a place with no area says so, in words, beside the box',
+        /<span class="pj-bl-atwarn"/.test(r.html()) && /pick an area to keep place 1/.test(r.html()));
+    ok('…and the box itself is marked rather than emptied',
+        /class="pj-bl-atsel wants"/.test(r.html())
+        && /<option value="1" selected/.test(r.html()));
+
+    // ‼️ …and clearing the area does not silently throw the place away.
+    const area = r.byId('bl-area');
+    area.value = 'K';
+    area.fire('change');
+    ok('choosing an area keeps the place that was already picked',
+        /<option value="1" selected/.test(r.html()) && !/<span class="pj-bl-atwarn"/.test(r.html()));
+    area.value = '';
+    area.fire('change');
+    ok('‼️ and taking the area back off keeps it too — it is the user\'s choice',
+        /<option value="1" selected/.test(r.html()) && /<span class="pj-bl-atwarn"/.test(r.html()));
+
+    const box = r.byId('bl-new');
+    box.value = 'a thought with a place but no area';
+    box.fire('input');
+    r.els('act').find(e => e.dataset.act === 'blAdd').click();
+    const msg = r.posted.filter(m => m.type === 'backlogAdd').pop();
+    ok('‼️ Add carries the place anyway, so the file can answer for itself',
+        msg && msg.at === 1 && !msg.area);
 }
 
 // ---------- the box's four text tools ----------

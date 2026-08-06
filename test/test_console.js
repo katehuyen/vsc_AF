@@ -1171,9 +1171,14 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         .filter(m => m.when === 'view == agentfarm.agents')
         .map(m => ({ cmd: m.command, at: Number(m.group.replace('navigation@', '')) }))
         .sort((a, b) => a.at - b.at).map(x => x.cmd);
-    ok('in the side panel Console sits between Start Session and Turns',
-        title.indexOf('agentfarm.openConsole') === title.indexOf('agentfarm.launchSession') + 1
-        && title.indexOf('agentfarm.openTurns') === title.indexOf('agentfarm.openConsole') + 1);
+    // Start a session · talk in one · read the sessions · read the turns inside
+    // them. S-7 put Sessions between Console and Turns because that is where it
+    // falls in that sentence: the whole conversation before its parts.
+    ok('in the side panel Console follows Start Session',
+        title.indexOf('agentfarm.openConsole') === title.indexOf('agentfarm.launchSession') + 1);
+    ok('…then Sessions, then the Turns inside them',
+        title.indexOf('agentfarm.openSessions') === title.indexOf('agentfarm.openConsole') + 1
+        && title.indexOf('agentfarm.openTurns') === title.indexOf('agentfarm.openSessions') + 1);
 }
 
 // ---------- the fleet line on the portfolio ----------

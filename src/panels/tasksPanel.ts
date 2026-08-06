@@ -6,7 +6,8 @@ import { AgentInfo } from '../core/agents';
 import { describePrecondition, rollupAutomationLog } from '../core/automation';
 import { nextOccurrences } from '../core/forecast';
 import { NeedItem } from '../core/needs';
-import { FarmSchedule, FarmTask, FarmTemplate, FarmTrigger, FarmWorkflow, TaskManager } from '../core/tasks';
+import { EFFORT_CHOICES, modelChoices, PERMISSION_CHOICES } from '../core/launch';
+import { FarmSchedule, FarmTask, FarmTemplate, FarmTrigger, FarmWorkflow, TaskManager, TaskMode } from '../core/tasks';
 import { TaskRecord } from '../core/taskstats';
 import { TriggerManager } from '../core/triggers';
 import { buildTriggerStats, describeTriggerStat } from '../core/triggerstats';
@@ -42,6 +43,23 @@ export interface TasksDeps {
     extensionUri: vscode.Uri;
     manager: TaskManager;
     getAgents(): AgentInfo[];
+    /**
+     * ‼️ EVERYTHING A SESSION IS STARTED WITH, SO A TASK CAN BE TOO.
+     *
+     * The page's own New-task form offers the same dimensions the Start
+     * Session… picker does — model, effort, permission mode — plus the ones
+     * only a task has (which project, which CLI, queue priority, workdir).
+     * They are DEPS rather than constants because the model list is the user's
+     * own `agentFarm.modelAliases` knowledge base and the CLI list is their
+     * `cliProfiles`: a picker that hard-coded either would go out of date the
+     * first time they edited it.
+     */
+    modelAliases(): string[];
+    launchDefaults(): { model?: string; effort?: string; permissionMode?: string };
+    cliProfiles(): { name: string; headless?: string }[];
+    /** Projects a task can be filed under, and the window's current one. */
+    projects(): { id: string; name: string; icon?: string }[];
+    activeProjectId(): string | undefined;
     /** live tasks merged with the finished-task archive */
     allRecords(): TaskRecord[];
     /** urgent Needs-You rows (permission waits + browser approvals). */
@@ -353,7 +371,25 @@ function buildData(deps: TasksDeps, tab?: TasksTab): Record<string, unknown> {
         plan,
         runs,
         agents: deps.getAgents().map(a => a.name),
-        perAgentLimit: limits.perAgent
+        perAgentLimit: limits.perAgent,
+        // ---- what the New-task form offers. One vocabulary with the session
+        // launcher (core/launch.ts), so "run it on opus at low effort" means the
+        // same thing whether you start a session or queue a task.
+        launch: {
+            models: modelChoices(deps.modelAliases()),
+            efforts: EFFORT_CHOICES,
+            permissions: PERMISSION_CHOICES,
+            defaults: deps.launchDefaults(),
+            // Only offered when the user actually has profiles: a picker whose
+            // only entry is "claude" is a question with one answer.
+            clis: deps.cliProfiles().filter(p => p?.name && p.headless).map(p => ({
+                name: p.name, detail: p.headless ?? ''
+            })),
+            projects: deps.projects().map(p => ({ id: p.id, name: p.name, icon: p.icon ?? '' })),
+            // The window's own project — the form OPENS on it, because that is
+            // what a task made here would have been stamped with anyway.
+            activeProjectId: deps.activeProjectId() ?? ''
+        }
     };
 }
 
@@ -390,6 +426,16 @@ export class TasksPanel {
         TasksPanel.current?.refresh();
     }
 
+    /** Open the page on the Run tab with the New-task form up. This is what the
+     *  sidebar's + does now — the one route in, so a task made from the tree and
+     *  a task made from the page are the same task with the same fields. */
+    static compose(deps: TasksDeps, seed?: Record<string, unknown>): void {
+        TasksPanel.show(deps, 'run');
+        void TasksPanel.current?.panel.webview.postMessage({
+            type: 'task-compose', ...(seed ? { seed } : {})
+        });
+    }
+
     private constructor(readonly panel: vscode.WebviewPanel, private deps: TasksDeps, tab?: TasksTab) {
         panel.webview.html = htmlShell(
             panel.webview, deps.extensionUri, 'Agent Farm Tasks',
@@ -412,6 +458,12 @@ export class TasksPanel {
 
     private async confirm(text: string, button: string): Promise<boolean> {
         return await vscode.window.showWarningMessage(text, { modal: true }, button) === button;
+    }
+
+    /** A refusal the FORM shows, in the form. A modal would take the focus off
+     *  the half-filled fields it is complaining about. */
+    private say(text: string): void {
+        void this.panel.webview.postMessage({ type: 'task-error', text });
     }
 
     /** Resolve a PLAN row id back to its concrete definition. */
@@ -438,7 +490,7 @@ export class TasksPanel {
         type: string; taskId?: string; to?: string; text?: string; act?: string; id?: string;
         kind?: string; approvalId?: string; ok?: boolean; file?: string; transcriptPath?: string;
         sessionId?: string; content?: string; name?: string; rows?: { kind: string; id: string }[];
-        index?: number;
+        index?: number; task?: unknown;
     }): Promise<void> {
         const m = this.deps.manager;
         const run = (cmd: string, ...args: unknown[]) => { void vscode.commands.executeCommand(cmd, ...args); };
@@ -578,11 +630,85 @@ export class TasksPanel {
                 }
                 else if (msg.act === 'resumeWorkflow') { run('agentfarm.resumeWorkflow', { kind: 'task', task: t }); }
                 else if (msg.act === 'saveTemplate') { run('agentfarm.saveTaskTemplate', { kind: 'task', task: t }); }
+                // ‼️ "Like this one, but…" — the gesture the page could not make.
+                // Editing a run meant a single input box asking for a new prompt
+                // (agentfarm.retryTaskEdit) and no way to change the agent, the
+                // model or anything else — while ADDING one asked a different
+                // set of questions again. Same form, prefilled from the row.
+                else if (msg.act === 'clone') {
+                    void this.panel.webview.postMessage({
+                        type: 'task-compose',
+                        seed: {
+                            agent: t.agentName, title: t.title, prompt: t.prompt, mode: t.mode,
+                            model: t.model ?? '', effort: t.effort ?? '',
+                            permissionMode: t.permissionMode ?? '', cli: t.cli ?? '',
+                            project: t.projectId ?? '', workDir: t.workDir ?? '',
+                            priority: t.priority ?? 0
+                        }
+                    });
+                }
                 this.refresh();
                 break;
             }
+            // ‼️ THE PAGE MAKES THE TASK — it does not open a dialog that does.
+            //
+            // This used to call agentfarm.addTask, which asked five questions in
+            // five modal boxes and could not ask the other five at all (model,
+            // effort, permission mode, project, priority). So the page that is
+            // supposed to be the control panel for task activity was the one
+            // place you could NOT state what a task should be, and the sidebar's
+            // + and the page's own button produced two different kinds of task.
+            // Now the form on the page is the one implementation and the + opens
+            // it (see agentfarm.addTask), so there is exactly one way in.
+            case 'task-new': {
+                const t = (msg.task ?? {}) as Record<string, unknown>;
+                const str = (k: string) => String(t[k] ?? '').trim();
+                const agent = this.deps.getAgents().find(a => a.name === str('agent'));
+                const prompt = str('prompt');
+                const title = str('title') || prompt.split('\n')[0].slice(0, 80);
+                if (!agent || !prompt) {
+                    this.say('A task needs an agent and a prompt.');
+                    break;
+                }
+                // The dedup guard the dialog had — kept, and asked in the page's
+                // own words rather than a modal that steals focus from the form.
+                if (t.force !== true && m.queuedDuplicate(agent.id, prompt)) {
+                    void this.panel.webview.postMessage({
+                        type: 'task-dup',
+                        text: `${agent.name} already has an identical task queued.`
+                    });
+                    break;
+                }
+                const mode: TaskMode = str('mode') === 'interactive' ? 'interactive' : 'headless';
+                // ‼️ `projectId` is passed EXPLICITLY, including as undefined.
+                // The manager reads the window's active project only when the
+                // key is absent (see addTask); the form always has an answer —
+                // a project, or "no project" — so it always states one, and
+                // "none" here really means none rather than "whatever the
+                // window happens to be showing".
+                const projectId = str('project');
+                const task = m.addTask(agent, title, prompt, mode, {
+                    projectId: projectId || undefined,
+                    ...(str('model') ? { model: str('model') } : {}),
+                    ...(str('effort') ? { effort: str('effort') } : {}),
+                    ...(str('permissionMode') ? { permissionMode: str('permissionMode') } : {}),
+                    ...(str('cli') ? { cli: str('cli') } : {}),
+                    ...(str('workDir') ? { workDir: str('workDir') } : {}),
+                    ...(Number(t.priority) ? { priority: Math.trunc(Number(t.priority)) } : {})
+                });
+                if (t.start === true) { m.startTask(task); }
+                void this.panel.webview.postMessage({
+                    type: 'task-made', id: task.id, title: task.title,
+                    started: t.start === true
+                });
+                this.refresh();
+                break;
+            }
+            // The sidebar's + and the row menu's "edit and re-run" both land
+            // here: the page opens its own form, prefilled. One form, one set of
+            // fields, whatever you came in through.
             case 'task-add':
-                run('agentfarm.addTask');
+                void this.panel.webview.postMessage({ type: 'task-compose' });
                 break;
             case 'clear-finished': {
                 const n = m.tasks.filter(t => t.status !== 'queued' && t.status !== 'running').length;

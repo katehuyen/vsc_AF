@@ -2,7 +2,7 @@
  * What KIND of thing a step is — and therefore where its cost comes from.
  *
  * ‼️ A TURN IS NOT A LIST OF EQUIVALENT ACTIONS, AND THE SURFACES SHOWED IT AS
- * ONE. "14api/26" said how many steps there were; nothing said whether a step
+ * ONE. "14api·26steps" said how many steps there were; nothing said whether a step
  * was the model thinking (billed output, the most expensive token there is), a
  * file being read off this disk (costs nothing to run, and its result is paid
  * on the NEXT call), an MCP server being asked something over the network, or

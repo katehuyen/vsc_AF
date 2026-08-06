@@ -69,7 +69,9 @@ function query(sel) {
     const roleM = /\[role=([\w]+)\]/.exec(sel);
     const wantChecked = sel.includes(':checked');
     const out = [];
-    const tags = html().match(/<(?:input|button|select|div|span|th|td|tr|label|a)\b[^>]*>/g) || [];
+    // textarea is in the list because the New-task form's prompt box is one and
+    // a shim that cannot see it makes the form untestable (U-9).
+    const tags = html().match(/<(?:input|button|select|textarea|div|span|th|td|tr|label|a)\b[^>]*>/g) || [];
     for (const raw of tags) {
         const tag = /^<([a-z]+)/.exec(raw)[1];
         if (idM && !raw.includes(`id="${idM[1]}"`)) { continue; }
@@ -143,6 +145,29 @@ const DATA = {
     },
     agents: ['manager', 'genel', 'basit'],
     perAgentLimit: 1,
+    // U-9: everything the page's own New-task form offers. Same vocabulary as
+    // the session launcher (core/launch.ts) — the point of the item is that a
+    // task can be stated as precisely as a session can.
+    launch: {
+        models: [
+            { id: '', label: 'Default', detail: 'the agent\'s own model setting' },
+            { id: 'haiku', label: 'haiku', detail: 'passed as --model' },
+            { id: 'opus', label: 'opus', detail: 'passed as --model' }
+        ],
+        efforts: [
+            { id: '', label: 'Default', detail: 'no --effort flag' },
+            { id: 'low', label: 'low', detail: 'shortest reasoning' },
+            { id: 'xhigh', label: 'xhigh', detail: 'deep reasoning' }
+        ],
+        permissions: [
+            { id: '', label: 'Default', detail: 'asks before acting' },
+            { id: 'acceptEdits', label: 'acceptEdits', detail: 'file edits auto-approved' }
+        ],
+        defaults: { model: '', effort: '', permissionMode: '' },
+        clis: [{ name: 'codex', detail: 'codex exec' }],
+        projects: [{ id: 'prj_1', name: 'AgentFarm', icon: '◧' }, { id: 'prj_2', name: 'TalkScribe', icon: '' }],
+        activeProjectId: 'prj_1'
+    },
     plan: [
         {
             id: 's1', kind: 'schedule', title: 'AGENT_AREA batch',
@@ -549,6 +574,129 @@ ok('the plan tab does NOT inherit the run tab filters', !html().includes('status
     posted = [];
     clickData('gate', 'resume');
     ok('Resume all is offered instead of Pause', posted[0] && posted[0].act === 'resume');
+}
+
+// ------------------------------------------- U-9: the page MAKES a task
+// The control panel for task activity had no control for making one: the
+// button opened a chain of VS Code input boxes that asked five questions and
+// could not ask the five that decide what an unattended run does. The form is
+// on the page now, it is the only implementation, and every route in opens it.
+{
+    const send = (data) => onMessage.forEach(fn => fn({ data }));
+    // ‼️ The SAME accessor the page wires through. `query('#x')[0]` mints a fresh
+    // shim element whenever the markup was repainted, so a click on it would go
+    // to a copy the page never attached a listener to — the test would pass or
+    // fail on the shim's bookkeeping rather than on the page.
+    const fld = (id) => sandbox.document.getElementById(id);
+    DATA.runs.push({
+        id: 'r9', title: 'a run to copy', agentName: 'genel', mode: 'interactive',
+        status: 'done', source: 'you', sourceKind: 'manual', when: NOW - 1000,
+        detail: '', hasOutput: false, prompt: 'the original prompt'
+    });
+    clickData('tab', 'run');
+    posted = [];
+
+    ok('the Run tab offers a New task button, not a dialog', /id="nt-open"/.test(html()));
+    fld('nt-open').click();
+    ok('…and pressing it opens the form ON the page', /id="ntbox"/.test(html()));
+    ok('the form asks nothing of the host to open', posted.length === 0);
+
+    // ‼️ The five dimensions the dialog chain could not ask at all.
+    ok('it offers the model list — the user\'s own aliases',
+        /id="nt-model"/.test(html()) && html().includes('>opus<'));
+    ok('it offers effort, with the launcher\'s own values',
+        /id="nt-effort"/.test(html()) && html().includes('>xhigh<'));
+    ok('it offers the permission mode',
+        /id="nt-permissionMode"/.test(html()) && html().includes('>acceptEdits<'));
+    ok('it offers the project, and opens on the window\'s own',
+        /id="nt-project"/.test(html()) && /value="prj_1" selected/.test(html()));
+    ok('…and "no project" is a real choice rather than an empty row',
+        html().includes('— no project —'));
+    ok('it offers a queue priority', /id="nt-priority"/.test(html()));
+    ok('it offers a working folder', /id="nt-workdir"/.test(html()));
+    ok('the CLI picker appears because a profile exists',
+        /id="nt-cli"/.test(html()) && html().includes('>codex<'));
+    ok('the agent is a field, not a first question', /id="nt-agent"/.test(html()));
+
+    // Fill it in and queue it.
+    fld('nt-prompt').value = 'read the report and summarise it';
+    fld('nt-prompt').fire('input');
+    fld('nt-agent').value = 'genel';
+    fld('nt-agent').fire('change');
+    fld('nt-model').value = 'haiku';
+    fld('nt-model').fire('change');
+    fld('nt-effort').value = 'low';
+    fld('nt-effort').fire('change');
+    fld('nt-permissionMode').value = 'acceptEdits';
+    fld('nt-permissionMode').fire('change');
+    fld('nt-priority').value = '3';
+    fld('nt-priority').fire('input');
+    posted = [];
+    fld('nt-add').click();
+    const made = posted.find(p => p.type === 'task-new');
+    ok('Add sends ONE message carrying the whole task',
+        made && made.task.prompt === 'read the report and summarise it'
+        && made.task.agent === 'genel' && made.task.model === 'haiku'
+        && made.task.effort === 'low' && made.task.permissionMode === 'acceptEdits'
+        && made.task.project === 'prj_1' && made.task.priority === 3
+        && made.task.start === true);
+    ok('…and a title it was not given is left for the host to derive',
+        made && made.task.title === '');
+
+    // The host answers, and the form closes with the news on the page.
+    send({ type: 'task-made', id: 'new1', title: 'read the report and summarise it', started: true });
+    ok('a confirmed add closes the form', !/id="ntbox"/.test(html()));
+    ok('…and says what happened, where the form was', html().includes('and started it'));
+
+    // ‼️ The duplicate guard is asked IN the form now — a modal used to take the
+    // focus off the fields it was complaining about.
+    fld('nt-open').click();
+    fld('nt-prompt').value = 'read the report and summarise it';
+    fld('nt-prompt').fire('input');
+    fld('nt-add').click();
+    send({ type: 'task-dup', text: 'genel already has an identical task queued.' });
+    ok('a duplicate is reported inside the form', /class="ntmsg warn"/.test(html())
+        && html().includes('already has an identical task queued'));
+    ok('…with the answer button next to the one just pressed', /id="nt-force"/.test(html()));
+    posted = [];
+    fld('nt-force').click();
+    const forced = posted.find(p => p.type === 'task-new');
+    ok('"add it anyway" re-sends the same task with force set',
+        forced && forced.task.force === true && forced.task.prompt === 'read the report and summarise it');
+
+    // A prompt is the one thing it cannot do without, and it says so itself.
+    send({ type: 'task-made', id: 'n2', title: 'x', started: false });
+    fld('nt-open').click();
+    // The shim reuses one element per id across repaints, so the box has to be
+    // emptied by hand — a real textarea is rebuilt with the draft's own value.
+    fld('nt-prompt').value = '   ';
+    fld('nt-prompt').fire('input');
+    posted = [];
+    fld('nt-add').click();
+    ok('an empty prompt is refused by the form, not by the host',
+        !posted.some(p => p.type === 'task-new') && html().includes('A task needs a prompt'));
+    fld('nt-cancel').click();
+    ok('Cancel closes it', !/id="ntbox"/.test(html()));
+
+    // ---- one form, whatever route you came in through ----
+    send({ type: 'task-compose' });
+    ok('‼️ the host can open the same form — this is what the sidebar + does now',
+        /id="ntbox"/.test(html()));
+    fld('nt-cancel').click();
+    send({
+        type: 'task-compose',
+        seed: { agent: 'basit', prompt: 'the original prompt', mode: 'interactive', model: 'opus' }
+    });
+    ok('…and it can arrive prefilled, which is "new task like this one"',
+        html().includes('the original prompt')
+        && /value="basit" selected/.test(html())
+        && /value="opus" selected/.test(html())
+        && /value="interactive" selected/.test(html()));
+    posted = [];
+    // The row menu's own entry posts the act the panel turns into that seed.
+    send({ type: 'afctx', act: 'tkClone', ctx: { taskId: 'r9' } });
+    ok('the row menu asks for it by task id',
+        posted.some(p => p.type === 'task' && p.act === 'clone' && p.id === 'r9'));
 }
 
 // --------------------------------------------------------- empty states

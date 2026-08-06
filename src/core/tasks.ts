@@ -62,6 +62,21 @@ export interface FarmTask {
     /** Explicit model for THIS task (e.g. a mission's per-member override).
      *  Beats the model-policy engine; empty = policy/agent default. */
     model?: string;
+    /**
+     * ‼️ THE SAME DIMENSIONS A SESSION IS STARTED WITH — see core/launch.ts.
+     *
+     * A task IS a claude run, and the launcher has offered model · effort ·
+     * permission mode since 3.5x; a task could only ever state the first. So
+     * "run this on low effort because it is mechanical" and "this one may edit
+     * files without asking" were sayable when a person started a session by
+     * hand and not when they queued the identical work as a task — which is the
+     * case where it matters more, because nobody is sitting there.
+     *
+     * Empty means the same thing here as there: no flag, and whatever the CLI
+     * and the agent already decide stays in charge.
+     */
+    effort?: string;
+    permissionMode?: string;
     /** J5: named CLI profile (agentFarm.cliProfiles); empty = claude. */
     cli?: string;
     /** Launch priority; higher runs sooner. Unset = 0. Ages up while queued so nothing starves. */
@@ -879,8 +894,14 @@ export class TaskManager implements vscode.Disposable {
 
     addTask(
         agent: AgentInfo, title: string, prompt: string, mode: TaskMode,
+        // The launch dimensions are part of MAKING a task, not something set on
+        // it afterwards: every one of them changes the command line, so a task
+        // that is queued before they are applied is a task that could start
+        // wrong. (The three callers that used to patch `model`/`cli` onto the
+        // returned object still work — the field is the same field.)
         extra?: Partial<Pick<FarmTask,
-            'fromSchedule' | 'fromTrigger' | 'workflowId' | 'workflowRunId' | 'stepIndex' | 'projectId'>>
+            'fromSchedule' | 'fromTrigger' | 'workflowId' | 'workflowRunId' | 'stepIndex' | 'projectId'
+            | 'model' | 'effort' | 'permissionMode' | 'cli' | 'priority' | 'workDir' | 'missionId'>>
     ): FarmTask {
         // The window's active project is stamped on the task HERE, at creation —
         // a dozen call sites make tasks, and a project that depended on all of
@@ -989,6 +1010,8 @@ export class TaskManager implements vscode.Disposable {
             } else {
                 const policy = this.modelArgs(task);
                 if (policy) { extra = (extra ? extra + ' ' : '') + policy.args; }
+                const launch = this.launchArgs(task);
+                if (launch) { extra = (extra ? extra + ' ' : '') + launch; }
                 command = `claude ${extra ? extra + ' ' : ''}"${p}"`;
             }
             const terminal = vscode.window.createTerminal({
@@ -1013,6 +1036,26 @@ export class TaskManager implements vscode.Disposable {
         return this.opts.modelArgsFor?.(task);
     }
 
+    /**
+     * The launch dimensions beyond the model — effort and permission mode.
+     *
+     * ‼️ SAME CHARSET GUARD AS THE MODEL, AND FOR THE SAME REASON. These strings
+     * are stored on disk (farm-tasks.json), can be written by the bridge, and end
+     * up inside a command line handed to a shell. The picker only ever offers
+     * values from launch.ts, but a hand-edited store must not be able to smuggle
+     * shell syntax through — anything that is not a bare word is simply dropped,
+     * which degrades to "the CLI's own default" rather than to a broken run.
+     */
+    private launchArgs(task: FarmTask): string {
+        const parts: string[] = [];
+        const bare = (v?: string) => (v && /^[\w-]+$/.test(v) ? v : '');
+        const effort = bare(task.effort);
+        const perm = bare(task.permissionMode);
+        if (effort) { parts.push(`--effort ${effort}`); }
+        if (perm) { parts.push(`--permission-mode ${perm}`); }
+        return parts.join(' ');
+    }
+
     /** J5: resolve the task's CLI profile (undefined = the default claude executor). */
     private cliProfileFor(task: FarmTask): CliProfile | undefined {
         if (!task.cli) { return undefined; }
@@ -1031,6 +1074,11 @@ export class TaskManager implements vscode.Disposable {
             `- Started: ${new Date().toLocaleString()}\n` +
             (profile ? `- CLI: ${profile.name}\n` : '') +
             (policy ? `- Model policy: ${policy.reason}\n` : '') +
+            // The rest of the launch, written down where the run itself is: an
+            // archived output that does not say what the run was told to be is
+            // half a record.
+            (task.effort ? `- Effort: ${task.effort}\n` : '') +
+            (task.permissionMode ? `- Permission mode: ${task.permissionMode}\n` : '') +
             (task.workDir ? `- Workdir: ${task.workDir}\n` : '') +
             `- Prompt: ${task.prompt}\n\n---\n\n`;
         fs.writeFileSync(outFile, header, 'utf8');
@@ -1039,6 +1087,13 @@ export class TaskManager implements vscode.Disposable {
         const p = sanitizePrompt(task.prompt);
         let extra = this.extraArgs().trim();
         if (policy) { extra = (extra ? extra + ' ' : '') + policy.args; }
+        // Effort and permission mode ride on the same path the model does, and
+        // only on claude's: a named CLI profile is a different binary that knows
+        // nothing about these flags (same rule as the project context below).
+        if (!profile) {
+            const launch = this.launchArgs(task);
+            if (launch) { extra = (extra ? extra + ' ' : '') + launch; }
+        }
         if (task.outputContract === 'json') {
             extra = (extra ? extra + ' ' : '') + '--output-format json';
         }

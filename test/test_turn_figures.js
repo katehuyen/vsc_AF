@@ -40,12 +40,20 @@ ok('nothing below the largest unit is ever dropped',
 // and routinely carries several steps. The tokens follow the CALLS. A surface
 // showing only the steps let a turn whose call count halved read as unchanged
 // while its token total moved — which is how a correct counter looks broken.
-eq('both numbers, calls first', C.fmtSteps(14, 26), '14api/26');
-eq('a turn whose calls are not known yet shows the steps alone', C.fmtSteps(0, 6), '6');
-eq('…and undefined counts as not known', C.fmtSteps(undefined, 6), '6');
-eq('one call carrying one step still says both', C.fmtSteps(1, 1), '1api/1');
-ok('the shared tooltip explains the pair wherever it is shown',
-    /API calls \/ steps/.test(C.STEPS_TIP) && /tokens follow the CALLS/.test(C.STEPS_TIP));
+eq('both numbers, calls first', C.fmtSteps(14, 26), '14api·26steps');
+eq('a turn whose calls are not known yet shows the steps alone', C.fmtSteps(0, 6), '6steps');
+eq('…and undefined counts as not known', C.fmtSteps(undefined, 6), '6steps');
+eq('one call carrying one step still says both, in the singular', C.fmtSteps(1, 1), '1api·1step');
+// ‼️ The separator is the whole point of this one: `14api/26` was read as a
+// fraction ("14 out of 26"), which is neither what it means nor a sum. Nothing
+// in the counting was wrong; the string was.
+ok('the pair is never written as a fraction',
+    C.fmtSteps(14, 26).indexOf('/') < 0 && C.fmtSteps(14, 26).indexOf('+') < 0);
+ok('every number in the pair says what it is',
+    /^\d+api·\d+steps?$/.test(C.fmtSteps(14, 26)));
+ok('the shared tooltip says they are two measurements, not two parts of a total',
+    /SAME turn/.test(C.STEPS_TIP) && /never added together/.test(C.STEPS_TIP)
+    && /tokens follow the CALLS/.test(C.STEPS_TIP));
 
 // ---------- 3) the accounting behind them ----------
 // sessions.ts imports 'vscode' at load; the compiled module needs it stubbed to

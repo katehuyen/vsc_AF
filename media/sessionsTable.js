@@ -323,7 +323,7 @@
             ` <button class="fold" data-term="${C.esc(r.agentName || '')}" data-sid="${C.esc(r.sessionId || '')}" data-cwd="${C.esc(r.cwd || '')}" title="Jump to this session's terminal window (if one is open)">⌨</button>`;
 
         /**
-         * ‼️ EVERY COLUMN ANSWERS ITS OWN QUESTION ON HOVER.
+         * ‼️ EVERY COLUMN ANSWERS ITS OWN QUESTION ON HOVER — AND ONLY THAT.
          *
          * The row carried one tooltip — "right-click for session actions" — and
          * a `<td>` with no title of its own inherits it, so all eleven columns
@@ -333,12 +333,13 @@
          * ran, how long for, what a turn cost on average — were reachable only
          * by opening the session.
          *
-         * So each cell says something true about ITS OWN column, and the hint
-         * rides along as the tail. The tail is not decoration: the cell title
-         * REPLACES the row's, so dropping it would take the only sign the menu
-         * exists away with it. It follows the selection too, because with rows
-         * picked the menu acts on all of them and saying otherwise would be a
-         * lie about what a right-click is about to do.
+         * ‼️ AND THE HINT NO LONGER RIDES ALONG. It was hung on the end of all
+         * eleven, which is the same mistake in a smaller font: one sentence,
+         * read once, repeated under every figure on every row for ever. It is
+         * said ONCE now, in the strip above the table (and by the selection bar
+         * when rows are picked, where it also says how many rows a menu would
+         * act on) — the place a thing that is true of the whole table belongs.
+         * Nothing was taken away from the tooltips themselves; they got longer.
          */
         const line = (label, value) => (value === '' || value === undefined || value === null
             ? '' : `${label}: ${value}`);
@@ -350,22 +351,37 @@
          *  "expensive" nearly always means "expensive per turn". */
         const per = (n, turns, fmt) => (n && turns > 0 ? fmt(n / turns) : '');
         const round1 = n => Math.round(n * 10) / 10;
-        /** Join the lines and hang the right-click tail off the end. */
-        const tipOf = (parts, tail) => C.esc(parts.filter(Boolean).join('\n') + '\n\n' + tail);
+        /** A share, only when the denominator is real. */
+        const pct = (n, of) => (of > 0 ? Math.round(n / of * 100) : 0);
+        /** Model ids without the vendor prefix every one of them carries. */
+        const modelNames = r => (r.models || []).map(m => String(m).replace(/^claude-/, ''));
+        /** Join the tooltip's lines. Nothing is appended: see the block above. */
+        const tipOf = parts => C.esc(parts.filter(Boolean).join('\n'));
 
         const TIP = {
             origin: r => [originOf(r) === 'auto'
                 ? 'Automation started this session (schedule / trigger / task / mission)'
                 : 'You started this session — an interactive dialog',
+            // The evidence, not just the verdict: this is read off the
+            // transcript's own entrypoint field and never guessed from timing.
+            line('Entrypoint', r.entrypoint || 'not recorded'),
+            r.consoleHosted
+                ? 'Hosted by the Console — it reaches the CLI the way a headless run does, '
+                    + 'so the entrypoint says sdk-cli while a person was typing'
+                : '',
             line('Scope chip above', 'switches between your own sessions and all of them')],
             agent: r => [
                 `Agent: ${r.agent}${r.active ? ' — running now' : ''}`,
                 r.sidechain ? 'A sub-agent session, spawned by another one' : '',
                 line('Working folder', r.cwd),
+                line('Git branch', r.branch),
+                line('Permission mode', r.permissionMode),
+                line('CLI version', r.version),
                 line('Session id', r.sessionId)
             ],
             title: r => [
                 r.title || '(no title yet)',
+                r.cliName && r.cliName !== r.title ? `Started as: ${r.cliName} (claude -n)` : '',
                 r.autoTitle && r.autoTitle !== r.title ? `From the conversation: ${r.autoTitle}` : '',
                 (r.tags || []).length ? `Labels: ${(r.tags || []).join(', ')}` : '',
                 r.pinned ? 'Pinned to your shelf — always listed first' : '',
@@ -378,6 +394,7 @@
             ],
             files: r => [
                 `${r.files || 0} distinct file${r.files === 1 ? '' : 's'} written to`,
+                per(r.files, r.turns, n => `≈ ${round1(n)} per turn`),
                 'Edit / Write / MultiEdit / NotebookEdit — open the session to see the changes'
             ],
             when: r => [
@@ -388,41 +405,70 @@
             ],
             duration: r => [
                 `${r.durationMin || 0} min from the first turn to the last`,
+                'Wall clock, not time spent working — a session you left open all afternoon '
+                + 'is a long one even if it worked for five minutes',
                 line('Started', stamp(r.firstTs)),
                 line('Last activity', stamp(r.ts)),
                 per(r.durationMin, r.turns, n => `≈ ${round1(n)} min per turn`)
             ],
             turns: r => [
-                `${r.turns || 0} turn${r.turns === 1 ? '' : 's'} — prompts you sent, not API calls`,
+                `${r.turns || 0} turn${r.turns === 1 ? '' : 's'} — prompts you sent`,
+                // ‼️ The distinction the whole extension is built on, said where
+                // the number is: a turn is one thing you ASKED for; a call is one
+                // round trip to the model, and one turn takes many. The tokens
+                // follow the calls, which is why both are here.
+                r.apiCalls ? `${r.apiCalls} API call${r.apiCalls === 1 ? '' : 's'} carried them` : '',
+                per(r.apiCalls, r.turns, n => `≈ ${round1(n)} calls per turn`),
                 per(r.tokens, r.turns, n => `≈ ${C.fmtTok(Math.round(n))} tokens per turn`),
                 per(r.cost, r.turns, n => `≈ ${C.fmtUSD(n)} per turn`),
-                per(r.toolCalls, r.turns, n => `≈ ${round1(n)} tool calls per turn`)
+                per(r.toolCalls, r.turns, n => `≈ ${round1(n)} tool calls per turn`),
+                per(r.durationMin, r.turns, n => `≈ ${round1(n)} min per turn`)
             ],
             tools: r => [
                 `${r.toolCalls || 0} tool call${r.toolCalls === 1 ? '' : 's'}`,
                 per(r.toolCalls, r.turns, n => `≈ ${round1(n)} per turn`),
+                // WHAT it did, not just how much: "312 tool calls" and "312 tool
+                // calls, 210 of them Read" are different facts about a session.
+                (r.topTools || []).length
+                    ? 'Mostly: ' + r.topTools.map(t => `${t.name} ${t.n}`).join(' · ') : '',
                 r.errors ? `${r.errors} of the results came back as errors` : ''
             ],
             errors: r => [
                 r.errors ? `${r.errors} tool result${r.errors === 1 ? '' : 's'} came back as an error`
                     : 'No tool errors in this session',
-                per(r.errors, r.toolCalls, n => `${Math.round(n * 100)}% of the tool calls`)
+                r.errors ? `${pct(r.errors, r.toolCalls)}% of the tool calls` : '',
+                per(r.errors, r.turns, n => `≈ ${round1(n)} per turn`),
+                'A refused permission counts here too — an error is not always a fault'
             ],
             tokens: r => [
                 line('Raw total', `${C.fmtTok(r.tokens || 0)} tokens (input + cache + output)`),
                 line('Against the plan limit', `${C.fmtTok(r.wTokens || 0)} weighted`),
+                // ‼️ THE SPLIT IS THE ANSWER TO "WHY DID THIS ONE COST THAT".
+                // Two sessions with the same total differ by an order of
+                // magnitude in money when one is cache reads and the other is
+                // output — and the column could not show the difference.
+                r.usage ? `in ${C.fmtTok(r.usage.input)} · out ${C.fmtTok(r.usage.output)} `
+                    + `· cache read ${C.fmtTok(r.usage.cacheRead)} · cache write ${C.fmtTok(r.usage.cacheWrite)}` : '',
+                r.usage && r.tokens ? `Cache reads are ${pct(r.usage.cacheRead, r.tokens)}% of the total — the cheap part` : '',
                 per(r.tokens, r.turns, n => `≈ ${C.fmtTok(Math.round(n))} per turn`),
-                'The two are not proportional — the weighted figure is what burns the window'
+                per(r.tokens, r.apiCalls, n => `≈ ${C.fmtTok(Math.round(n))} per API call`),
+                'The two totals are not proportional — the weighted figure is what burns the window'
             ],
             ctx: r => [
                 r.ctx
                     ? `≈ ${C.fmtTok(r.ctx)} tokens in the model window after the last reply`
                     : 'Not known for this session',
-                'Input + cache + output of that one request — what the next turn starts from'
+                'Input + cache + output of that one request — what the next turn starts from',
+                // A live session's window is a thing you act on; a finished
+                // one's is a fact about how it ended.
+                r.active ? 'This session is still running — this is where its next turn starts' : ''
             ],
             cost: r => [
                 line('API-equivalent cost', C.fmtUSD(r.cost || 0)),
                 per(r.cost, r.turns, n => `≈ ${C.fmtUSD(n)} per turn`),
+                per(r.cost, r.apiCalls, n => `≈ ${C.fmtUSD(n)} per API call`),
+                r.durationMin ? `≈ ${C.fmtUSD((r.cost || 0) / Math.max(1, r.durationMin / 60))} per hour of wall clock` : '',
+                modelNames(r).length ? line('Priced at', modelNames(r).join(', ')) : '',
                 'What these tokens would have cost on the API — a plan session is not billed this way'
             ]
         };
@@ -445,33 +491,33 @@
         // the active dot / sub badge / ⌨ button live in the leftmost identity
         // cell — Agent when present (dashboard), otherwise Title (agent page)
         //
-        // `t` is the tail the row hands down (the plain hint, or what a bulk
-        // right-click would do); every cell's own words come from TIP above.
+        // Every cell's words come from TIP above and end there: the right-click
+        // hint is said once, above the table, not eleven times per row.
         const CELL = {
-            origin: (r, t) => {
+            origin: r => {
                 const o = originMeta(originOf(r));
-                return `<td class="origcell ${o.id}" title="${tipOf(TIP.origin(r), t)}">${o.glyph}</td>`;
+                return `<td class="origcell ${o.id}" title="${tipOf(TIP.origin(r))}">${o.glyph}</td>`;
             },
-            agent: (r, t) => `<td title="${tipOf(TIP.agent(r), t)}">${dot(r)}${C.esc(r.agent)}${subBadge(r)}${termBtn(r)}${stopBtn(r)}</td>`,
-            title: (r, t) => hasAgentCol
-                ? `<td title="${tipOf(TIP.title(r), t)}">${C.esc(r.title)}${tagChips(r)}</td>`
-                : `<td title="${tipOf(TIP.title(r), t)}">${dot(r)}${C.esc(r.title)}${tagChips(r)}${subBadge(r)}${termBtn(r)}${stopBtn(r)}</td>`,
+            agent: r => `<td title="${tipOf(TIP.agent(r))}">${dot(r)}${C.esc(r.agent)}${subBadge(r)}${termBtn(r)}${stopBtn(r)}</td>`,
+            title: r => hasAgentCol
+                ? `<td title="${tipOf(TIP.title(r))}">${C.esc(r.title)}${tagChips(r)}</td>`
+                : `<td title="${tipOf(TIP.title(r))}">${dot(r)}${C.esc(r.title)}${tagChips(r)}${subBadge(r)}${termBtn(r)}${stopBtn(r)}</td>`,
             // A project is recognisable by its colour and icon everywhere else
             // it appears (sidebar, status bar, its own page); the table that
             // lists sessions BY project was the one place showing a bare name.
-            project: (r, t) => `<td class="${r.project ? '' : 'muted'}" title="${tipOf(TIP.project(r), t)}">${r.project
+            project: r => `<td class="${r.project ? '' : 'muted'}" title="${tipOf(TIP.project(r))}">${r.project
                 ? `<span class="af-pdot" style="${r.projectColor ? `background:${C.esc(r.projectColor)}` : ''}"></span>` +
                 (r.projectIcon ? C.esc(r.projectIcon) + ' ' : '') + C.esc(r.project)
                 : '—'}</td>`,
-            files: (r, t) => `<td class="num" title="${tipOf(TIP.files(r), t)}">${r.files || ''}</td>`,
-            when: (r, t) => `<td class="num" title="${tipOf(TIP.when(r), t)}">${relTime(r.ts)}</td>`,
-            duration: (r, t) => `<td class="num" title="${tipOf(TIP.duration(r), t)}">${r.durationMin || 0}m</td>`,
-            turns: (r, t) => `<td class="num" title="${tipOf(TIP.turns(r), t)}">${r.turns || 0}</td>`,
-            tools: (r, t) => `<td class="num" title="${tipOf(TIP.tools(r), t)}">${r.toolCalls || 0}</td>`,
-            errors: (r, t) => `<td class="num" title="${tipOf(TIP.errors(r), t)}">${r.errors || ''}</td>`,
-            tokens: (r, t) => `<td class="num" title="${tipOf(TIP.tokens(r), t)}">${C.fmtTokW(r.tokens, r.wTokens)}</td>`,
-            ctx: (r, t) => `<td class="num" title="${tipOf(TIP.ctx(r), t)}">${r.ctx ? '~' + C.fmtTok(r.ctx) : '—'}</td>`,
-            cost: (r, t) => `<td class="num" title="${tipOf(TIP.cost(r), t)}"><strong>${C.fmtUSD(r.cost)}</strong></td>`
+            files: r => `<td class="num" title="${tipOf(TIP.files(r))}">${r.files || ''}</td>`,
+            when: r => `<td class="num" title="${tipOf(TIP.when(r))}">${relTime(r.ts)}</td>`,
+            duration: r => `<td class="num" title="${tipOf(TIP.duration(r))}">${r.durationMin || 0}m</td>`,
+            turns: r => `<td class="num" title="${tipOf(TIP.turns(r))}">${r.turns || 0}</td>`,
+            tools: r => `<td class="num" title="${tipOf(TIP.tools(r))}">${r.toolCalls || 0}</td>`,
+            errors: r => `<td class="num" title="${tipOf(TIP.errors(r))}">${r.errors || ''}</td>`,
+            tokens: r => `<td class="num" title="${tipOf(TIP.tokens(r))}">${C.fmtTokW(r.tokens, r.wTokens)}</td>`,
+            ctx: r => `<td class="num" title="${tipOf(TIP.ctx(r))}">${r.ctx ? '~' + C.fmtTok(r.ctx) : '—'}</td>`,
+            cost: r => `<td class="num" title="${tipOf(TIP.cost(r))}"><strong>${C.fmtUSD(r.cost)}</strong></td>`
         };
 
         function turnPanelHtml(r) {
@@ -523,8 +569,9 @@
             const rowsHtml = shown.map(r => {
                 const o = open.has(r.file);
                 const on = picked.has(r.file);
-                // What every cell's tooltip ends with. One decision per row, so
-                // eleven columns cannot disagree about what a right-click does.
+                // The ROW still carries the hint, and only the row: a `<td>` with
+                // its own title overrides it, so this shows exactly where no cell
+                // has anything better to say — never eleven times over.
                 const tail = on ? bulkHint(chosen.length) : window.AFSessionCtx.HINT;
                 return `<tr class="click sessrow${o ? ' open' : ''}${on ? ' picked' : ''}" data-session="${C.esc(r.file)}"
                     ${window.AFSessionCtx.row(r, on ? bulkContext(chosen) : undefined)}
@@ -533,7 +580,7 @@
                         title="Select this session — shift-click for a range, then right-click any selected row"></td>
                     <td class="foldcell"><button class="fold" data-fold="${C.esc(r.file)}" title="${o ? 'Hide' : 'List'} this session's turns">${o ? '▾' : '▸'}</button></td>
                     <td class="pincell"><button class="pinbtn${r.pinned ? ' on' : ''}" data-pin="${C.esc(r.sessionId || '')}" data-pinned="${r.pinned ? '1' : '0'}" title="${r.pinned ? 'Pinned — click to take it off your shelf' : 'Pin this session to your shelf (always listed first)'}">${r.pinned ? '★' : '☆'}</button></td>
-                    ${cols.map(c => CELL[c](r, tail)).join('')}
+                    ${cols.map(c => CELL[c](r)).join('')}
                 </tr>` + (o ? `<tr class="sessturns"><td colspan="3"></td><td colspan="${cols.length}">${turnPanelHtml(r)}</td></tr>` : '');
             }).join('');
             const allOn = shown.length > 0 && chosen.length === shown.length;
@@ -550,7 +597,12 @@
                 <button class="chip af-single${single ? ' on' : ''}" title="Only one session's turns open at a time: unfolding a session folds the previous one">Single-open</button>
                 <button class="chip af-oswitch${filters.origin ? ' on' : ''}" title="Scope: ${scope.tip} · click to ${filters.origin ? 'show everything' : 'go back to your own sessions'}">${scope.glyph}</button>
                 <button class="chip af-filter${nf ? ' on' : ''}" title="Filter the sessions by origin, text, agent, flags, ranges and dates">Filters${nf ? ` (${nf})` : ''}</button>
-                <span class="muted small">${hidden > 0 ? `${pool.length}/${rows.length} sessions` : '— ▸ lists a session\'s turns with per-turn tokens/cost · ● = active now · ctx = context after the last reply'}</span>
+                <!-- ‼️ THE ONE PLACE THE HINT IS SAID. It used to be appended to
+                     every cell's tooltip on every row, which is a sentence you
+                     read once printed several hundred times. Everything true of
+                     the WHOLE table lives on this line; everything true of one
+                     figure lives on that figure. -->
+                <span class="muted small">${hidden > 0 ? `${pool.length}/${rows.length} sessions · ` : ''}${window.AFSessionCtx.HINT} · hover any figure for what it means · ▸ lists a session's turns · ● = active now</span>
             </div>
             ${filterPanelHtml()}
             ${selBarHtml(chosen)}

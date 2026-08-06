@@ -617,7 +617,25 @@
             <div class="grid">${cards}</div>
             ${cmpSection()}
             ${projectsCard}
-            <h2>Sessions</h2>
+            <!-- ‼️ THE WAY OUT OF THE CORNER. This table is the last block of a
+                 board about the whole farm, capped at twenty rows because
+                 everything above it also wants the screen. "Show me my sessions"
+                 is a different question, and the only way to ask it here was to
+                 press All and make the board ship every session it has. The
+                 button is beside the heading rather than in the table's chip row
+                 because it does not change this table — it leaves it. -->
+            <style>
+                /* A section heading with one action beside it — the heading keeps
+                   its own size and the button sits on its baseline rather than
+                   above or below it. */
+                .secthead { display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; }
+                .secthead h2 { margin-right:2px; }
+            </style>
+            <div class="secthead">
+                <h2>Sessions</h2>
+                <button class="secondary" id="opensessions"
+                    title="Open Sessions — the same table on a page of its own: 200 rows by default instead of this corner's ${DATA.sessionTableN || 20}, every column, and the same filters, sorting and right-click menu.">⤢ Open Sessions page</button>
+            </div>
             <div id="sessblock"></div>
             ${unknown}
             ${externalNote}
@@ -625,6 +643,10 @@
         `;
 
         window.AFHeader.wire(vscode);
+        {
+            const os = document.getElementById('opensessions');
+            if (os) { os.addEventListener('click', () => vscode.postMessage({ type: 'afnav', to: 'sessions' })); }
+        }
         document.querySelectorAll('[data-range]').forEach(b =>
             b.addEventListener('click', () => {
                 const r = b.dataset.range;

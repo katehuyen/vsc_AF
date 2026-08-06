@@ -20,6 +20,13 @@ export interface ViewerDeps {
     contextLimitFor(model: string): number;
     /** User-set session name (rename feature); wins over the transcript-derived title. */
     titleFor?(sessionId: string): string | undefined;
+    /** On the user's shelf (sessionmarks.ts). A session is pinnable from six
+     *  surfaces and its OWN page was the one that neither showed the mark nor
+     *  let you set it — see the ★ in the header. */
+    pinnedFor?(sessionId: string): boolean;
+    /** Labels the user put on this session — read-only here; the same marks
+     *  store the star comes from, so the header can say what the row says. */
+    tagsFor?(sessionId: string): string[];
     /** Export MD remembers the last folder saved to; falls back to session cwd / home. */
     lastExportDir?(): string | undefined;
     setLastExportDir?(dir: string): void;
@@ -524,6 +531,10 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
         file,
         sessionId,
         title: deps.titleFor?.(sessionId) || title || '(untitled session)',
+        // The shelf mark, so the page can show it and change it — the same fact
+        // the Dashboard row's ★ shows, read from the same store.
+        pinned: deps.pinnedFor?.(sessionId) === true,
+        tags: deps.tagsFor?.(sessionId) ?? [],
         cwd,
         permissionMode,
         // Who started this session — the same 🧑/🤖 distinction the Sessions
@@ -732,6 +743,20 @@ export class SessionViewerPanel {
                 const data = this.viewData();
                 void vscode.commands.executeCommand('agentfarm.renameSession', {
                     sessionId: String(data.sessionId ?? ''), title: String(data.title ?? '')
+                });
+                break;
+            }
+            // The shelf. `wantPinned` is stated rather than left to the command's
+            // own toggle: the page knows what it is showing, and a toggle decided
+            // twice (here and there) is a race that ends with the star saying one
+            // thing and the store holding another. The command re-pushes every
+            // open page, so this panel repaints on the answer.
+            case 'pinSession': {
+                const data = this.viewData();
+                void vscode.commands.executeCommand('agentfarm.pinSession', {
+                    sessionId: String(data.sessionId ?? ''),
+                    title: String(data.title ?? ''),
+                    wantPinned: msg.pinned === true
                 });
                 break;
             }

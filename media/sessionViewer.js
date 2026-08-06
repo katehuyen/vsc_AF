@@ -230,7 +230,7 @@
         // It priced the turn and named the model, and left out the two things
         // you ask about a turn you are looking at: how long it took, and where
         // it left the context window. Both were already measured. The step
-        // count also became honest here — `14api/26` rather than a single
+        // count also became honest here — `14api·26steps` rather than a single
         // number that reads as calls but counts steps (see charts.js).
         const bits = [];
         if (info && info.ms) { bits.push(`<span title="How long this turn ran, prompt to last line">${C.esc(C.fmtDur(info.ms))}</span>`); }
@@ -826,6 +826,35 @@
         document.addEventListener('keydown', ev => { if (ev.key === 'Escape') { closeContextPop(); } });
     }
 
+    /**
+     * ‼️ THE STAR IS THE PAGE'S, NOT A ROW'S — and it is the SAME shelf.
+     *
+     * Pinning was reachable by right-clicking a session almost anywhere it is
+     * listed, and on the one page that is about nothing but this session it was
+     * neither visible nor settable: you could not even tell whether the session
+     * you were reading was on your shelf. It reads its state from the marks
+     * store (host: pinnedFor) and writes through the ONE pin command every
+     * other surface uses, so the two can never disagree — and because that
+     * command re-pushes every open page, the glyph here flips on the answer
+     * rather than on the click.
+     */
+    function pinStarHtml() {
+        const on = DATA.pinned === true;
+        return `<button class="pinstar${on ? ' on' : ''}" id="pinstar" aria-pressed="${on}"
+            title="${on
+        ? 'On your shelf — pinned sessions are listed first everywhere and are never cut by a row limit. Click to take it off.'
+        : 'Pin this session to your shelf: it is then listed first everywhere and never cut by a row limit.'}">${on ? '★' : '☆'}</button>`;
+    }
+
+    /** The labels this session carries, beside its name. Read-only here — they
+     *  are set from a row's right-click menu, and one owner is the point. */
+    function tagChipsHtml() {
+        const tags = DATA.tags || [];
+        if (!tags.length) { return ''; }
+        return tags.map(t =>
+            `<span class="htag" title="A label you put on this session — the tables' text filter searches these">${C.esc(t)}</span>`).join('');
+    }
+
     function render(opts) {
         const keepScroll = opts && opts.keepScroll;
         const prevScroll = keepScroll ? { x: window.scrollX, y: window.scrollY } : null;
@@ -904,6 +933,22 @@
                     background:transparent; border:none; padding:2px 6px; cursor:pointer;
                     font-size:12px; line-height:1; color:var(--vscode-descriptionForeground); }
                 .searchbar .clearbtn:hover { color:var(--vscode-foreground); }
+                /* THE SHELF, on the session's own page. A session is pinnable from
+                   six surfaces and this — the one page that is only ever about
+                   this one session — was the one that neither showed the mark nor
+                   let you set it. Bigger than the table's ★ on purpose: on a row
+                   the star is one of eleven columns, here it is the page's own
+                   subject and sits against the h1 at its size. */
+                .pinstar { background:transparent; border:none; cursor:pointer; padding:0 8px 0 0;
+                    font-size:.85em; line-height:1; vertical-align:baseline;
+                    color:var(--vscode-foreground); opacity:.3; }
+                .pinstar:hover { opacity:.75; }
+                .pinstar.on { opacity:1; color:var(--vscode-charts-yellow, #d7ba7d); }
+                /* The labels the same marks store carries — shown, not editable
+                   here: one place owns setting them (the row's right-click). */
+                .htag { font-size:10px; padding:1px 7px; margin-left:6px; border-radius:8px;
+                    white-space:nowrap; vertical-align:middle; opacity:.8;
+                    border:1px solid var(--vscode-widget-border, #4444); }
                 /* Timeline click-through: briefly spotlight the message we jumped to. */
                 .msg.flash { outline:2px solid var(--vscode-textLink-foreground); outline-offset:2px; }
                 /* Context-breakdown popover: overlays the "Context now" card without
@@ -961,7 +1006,7 @@
             </style>
             ${window.AFHeader.html({
                 page: 'viewer',
-                title: C.esc(DATA.title),
+                title: pinStarHtml() + C.esc(DATA.title) + tagChipsHtml(),
                 sub: `${DATA.origin === 'auto' ? '🤖 automation run' : '🧑 your session'} · ${C.esc(DATA.cwd || '')} · ${C.esc(DATA.sessionId)} · ${DATA.permissionMode ? 'mode: ' + C.esc(DATA.permissionMode) : ''}`,
                 // On a session's own page the Console nav button means "continue
                 // THIS session there" — first item of its menu; the page itself
@@ -1069,6 +1114,17 @@
             vscode.postMessage({ type: 'resume', cwd: DATA.cwd }));
         document.getElementById('renamesess').addEventListener('click', () =>
             vscode.postMessage({ type: 'renameSession' }));
+        {
+            // One click, and the glyph waits for the host: the pin command saves
+            // the marks and re-pushes every open page, so drawing the new state
+            // optimistically here would only be a second, earlier answer that
+            // can be wrong.
+            const star = document.getElementById('pinstar');
+            if (star) {
+                star.addEventListener('click', () =>
+                    vscode.postMessage({ type: 'pinSession', pinned: !(DATA.pinned === true) }));
+            }
+        }
         // Export MD asks first (current view vs everything, + folded-title choice
         // when turns are collapsed); the host replies with 'exportBuild' carrying
         // the picked options, and we build the markdown then.

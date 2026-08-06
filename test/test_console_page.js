@@ -623,14 +623,22 @@ const html = allHtml;
         /4200t tokens\) this turn/.test(working())
         && / this session/.test(status()));
     ok('…marked as the estimate it is until the turn closes', /estimate/.test(working()));
-    // everything since your own last message: agent, three tool lines, the
-    // turn's own result line, and the one that just streamed in
+    // ‼️ A STEP IS A STEP EVERYWHERE, AND THE STRIP USED TO DISAGREE. It counted
+    // ROWS since your last message — which sweeps in every tool RESULT (one per
+    // call, so the figure was roughly doubled) and the turn's own result line,
+    // while the session tables and the Turns page count the transcript's blocks:
+    // reply fragments and tool calls. Of the six rows after the prompt here,
+    // three are steps: "on it", the Read call, and the fragment that just
+    // streamed in. The result body, the error result and the turn's result line
+    // are not things the agent did — they are what came back.
+    ok('…with the steps it has produced, counted the way every other surface counts them',
+        />3steps</.test(working()) && !/>6</.test(working()) && !/· \d+ lines?/.test(working()));
     // ‼️ …AND HOW MANY ROUND TRIPS CARRIED THEM. The steps are what you watch
     // scroll past; the tokens are charged per API CALL, and one call carries
     // several steps. Showing only the steps let a turn whose call count halved
     // read as unchanged while its token figure moved — see charts.js fmtSteps.
-    ok('…with the steps it has produced, and the calls that carried them',
-        />6</.test(working()) && !/· \d+ lines?/.test(working()));
+    ok('…and neither number is written as a fraction of the other',
+        !/\d+api\/\d+/.test(working()));
     // The strip counts in the shared format the moment a turn passes a minute —
     // it used to say "3847s" for a turn that ran an hour.
     ok('…and its age in the shared duration format, not raw seconds',

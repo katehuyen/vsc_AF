@@ -366,6 +366,162 @@
             <div class="tablewrap"><table class="grid">${head}${body}</table></div>`;
     }
 
+    // ------------------------------------------------- NEW TASK: the composer
+    /**
+     * ‼️ THE PAGE MAKES A TASK. IT DOES NOT OPEN A DIALOG THAT DOES.
+     *
+     * This page was a control panel with no controls for the one thing it is
+     * about. "+ Run a task" opened a chain of VS Code input boxes — title,
+     * prompt, mode, CLI, "start now?" — and the questions it could NOT ask are
+     * the ones that decide what an unattended run actually does: which model,
+     * what effort, what permission mode, which project, how urgent, in which
+     * folder. Meanwhile the sidebar's + ran the same chain, so a task made from
+     * the tree and one made from the page were different objects, and editing a
+     * run asked a third, different set of questions again.
+     *
+     * So there is ONE form, it lives on the page, and every route in opens it:
+     * this button, the sidebar's +, the walkthrough, and a row's "like this
+     * one" (prefilled). Its fields are the launcher's own vocabulary — the same
+     * model list, the same efforts, the same permission modes a session is
+     * started with (core/launch.ts) — plus the four dimensions only a task has.
+     *
+     * Every field is optional except the agent and the prompt: an empty field
+     * means the same thing it means in the launcher — no flag, and whatever the
+     * agent and the CLI already decide stays in charge.
+     */
+    let composer = null;      // null = closed; an object = the draft
+    let composerMsg = '';     // a refusal or a confirmation, shown in the card
+    let composerDup = false;  // the host says an identical task is already queued
+
+    function newDraft(seed) {
+        const L = DATA.launch || {};
+        const d = L.defaults || {};
+        return Object.assign({
+            agent: (DATA.agents || [])[0] || '',
+            title: '', prompt: '', mode: 'headless',
+            // The launcher's own defaults are the starting point, exactly as
+            // they would be for a session started by hand.
+            model: d.model || '', effort: d.effort || '', permissionMode: d.permissionMode || '',
+            cli: '', project: L.activeProjectId || '', workDir: '', priority: 0,
+            start: true
+        }, seed || {});
+    }
+
+    function openComposer(seed) {
+        composer = newDraft(seed);
+        composerMsg = '';
+        composerDup = false;
+        tab = 'run';
+        persist();
+        render();
+        const box = document.getElementById('nt-prompt');
+        if (box) { box.focus(); }
+    }
+
+    function closeComposer(msg) {
+        composer = null;
+        composerDup = false;
+        composerMsg = msg || '';
+        render();
+    }
+
+    /** One <select>, from a launch.ts choice list. `id:''` is always "leave it
+     *  alone", and it is spelled out rather than shown as an empty row. */
+    function choiceSel(id, label, list, value, title) {
+        const opts = (list || []).map(c =>
+            `<option value="${C.esc(c.id)}"${c.id === value ? ' selected' : ''}>${C.esc(c.label)}${c.id ? '' : ''}</option>`).join('');
+        return `<label class="ntf" title="${C.esc(title || '')}"><span>${C.esc(label)}</span>
+            <select id="nt-${id}">${opts}</select></label>`;
+    }
+
+    function composerHtml() {
+        if (!composer) { return ''; }
+        const L = DATA.launch || {};
+        const c = composer;
+        const agentOpts = (DATA.agents || []).map(a =>
+            `<option value="${C.esc(a)}"${a === c.agent ? ' selected' : ''}>${C.esc(a)}</option>`).join('');
+        const projOpts = ['<option value=""' + (c.project ? '' : ' selected') + '>— no project —</option>']
+            .concat((L.projects || []).map(p =>
+                `<option value="${C.esc(p.id)}"${p.id === c.project ? ' selected' : ''}>${p.icon ? C.esc(p.icon) + ' ' : ''}${C.esc(p.name)}</option>`))
+            .join('');
+        const cliOpts = ['<option value=""' + (c.cli ? '' : ' selected') + '>claude — the default executor</option>']
+            .concat((L.clis || []).map(p =>
+                `<option value="${C.esc(p.name)}"${p.name === c.cli ? ' selected' : ''}>${C.esc(p.name)}</option>`))
+            .join('');
+        return `<div class="ntbox" id="ntbox">
+            <div class="ctl-row">
+                <span class="ctl-title">New task</span>
+                <span class="muted small">A task is one claude run. Everything below except the agent and the
+                    prompt is optional — an empty field means no flag, and the agent's own settings stay in charge.</span>
+                <span class="spacer"></span>
+                <button class="secondary mini" id="nt-close">✕</button>
+            </div>
+            <div class="ntgrid">
+                <label class="ntf wide"><span>Prompt <em>required</em></span>
+                    <textarea id="nt-prompt" rows="4"
+                        placeholder="What should the agent do? Ctrl+Enter queues it.">${C.esc(c.prompt)}</textarea></label>
+                <label class="ntf wide"><span>Title</span>
+                    <input type="text" id="nt-title" value="${C.esc(c.title)}"
+                        placeholder="(optional — the prompt's first line otherwise)"></label>
+                <label class="ntf" title="Whose folder it runs in, and whose CLAUDE.md it wakes up with."><span>Agent <em>required</em></span>
+                    <select id="nt-agent">${agentOpts}</select></label>
+                <label class="ntf" title="Headless is claude -p: it runs the prompt, writes its output to an archived file and exits — the mode a queued task is normally in. Interactive opens a real session in a terminal with the prompt already sent."><span>Mode</span>
+                    <select id="nt-mode">
+                        <option value="headless"${c.mode === 'headless' ? ' selected' : ''}>headless — runs and exits</option>
+                        <option value="interactive"${c.mode === 'interactive' ? ' selected' : ''}>interactive — opens a session</option>
+                    </select></label>
+                ${choiceSel('model', 'Model', L.models, c.model,
+            'Which model runs it — from your own agentFarm.modelAliases list. Beats the model-policy rules in Farm Settings.')}
+                ${choiceSel('effort', 'Effort', L.efforts, c.effort,
+                'How much reasoning per turn. Mechanical work does not need the expensive end — and a task nobody is watching is exactly where that choice is worth making.')}
+                ${choiceSel('permissionMode', 'Permissions', L.permissions, c.permissionMode,
+                    'What it may do without asking. ‼️ Nobody is sitting in front of a queued run: a task that stops to ask waits until you notice it, and one on bypassPermissions does not stop at all.')}
+                <label class="ntf" title="The project this task belongs to. Recorded when it is CREATED, not when it runs — a queued task can sit for hours, and by the time it starts the window may be showing something else entirely."><span>Project</span>
+                    <select id="nt-project">${projOpts}</select></label>
+                ${(L.clis || []).length ? `<label class="ntf" title="A named CLI profile from agentFarm.cliProfiles. A non-claude executor is not monitored the way claude is — its output is archived and that is all."><span>CLI</span>
+                    <select id="nt-cli">${cliOpts}</select></label>` : ''}
+                <label class="ntf" title="Higher runs sooner when the queue is full. It also ages up while waiting, so nothing starves."><span>Priority</span>
+                    <input type="number" id="nt-priority" step="1" value="${C.esc(String(c.priority || 0))}"></label>
+                <label class="ntf wide" title="Run it somewhere other than the agent's own folder — a worktree, a repo it is working on. Empty = the agent folder."><span>Working folder</span>
+                    <input type="text" id="nt-workdir" value="${C.esc(c.workDir)}" placeholder="(optional) — defaults to the agent's folder"></label>
+            </div>
+            ${composerMsg ? `<div class="ntmsg${composerDup ? ' warn' : ''}">${C.esc(composerMsg)}</div>` : ''}
+            <div class="ctl-row">
+                <label class="cbx" title="Off = it waits in the queue until you press start (or capacity frees up for something with a higher priority).">
+                    <input type="checkbox" id="nt-start"${c.start ? ' checked' : ''}> start it now</label>
+                <span class="spacer"></span>
+                ${composerDup ? '<button class="secondary" id="nt-force">Add it anyway</button>' : ''}
+                <button id="nt-add">${c.start ? 'Add and start' : 'Add to the queue'}</button>
+                <button class="secondary" id="nt-cancel">Cancel</button>
+            </div>
+        </div>`;
+    }
+
+    function readComposer() {
+        if (!composer) { return; }
+        const v = (id, key) => {
+            const el = document.getElementById('nt-' + id);
+            if (el && el.value != null) { composer[key] = String(el.value); }
+        };
+        v('prompt', 'prompt'); v('title', 'title'); v('agent', 'agent'); v('mode', 'mode');
+        v('model', 'model'); v('effort', 'effort'); v('permissionMode', 'permissionMode');
+        v('project', 'project'); v('cli', 'cli'); v('workdir', 'workDir');
+        const p = document.getElementById('nt-priority');
+        if (p) { composer.priority = Number(p.value) || 0; }
+        const s = document.getElementById('nt-start');
+        if (s) { composer.start = !!s.checked; }
+    }
+
+    function submitComposer(force) {
+        readComposer();
+        if (!composer.prompt.trim()) {
+            composerMsg = 'A task needs a prompt — it is the thing the agent is asked to do.';
+            render();
+            return;
+        }
+        post({ type: 'task-new', task: Object.assign({}, composer, { force: force === true }) });
+    }
+
     // -------------------------------------------------------------- RUN side
 
     const STATUS = {
@@ -450,10 +606,12 @@
                 ${sel('status', 'Status', v.status, Object.keys(STATUS))}
                 ${sel('source', 'From', v.source, [{ v: 'schedule', t: 'schedule' }, { v: 'trigger', t: 'trigger' }, { v: 'workflow', t: 'workflow' }, { v: 'manual', t: 'you' }])}
                 <span class="spacer"></span>
-                <button data-open="task-add">+ Run a task</button>
+                <button id="nt-open"${composer ? ' disabled' : ''} title="Make a task here, with every dimension a session start offers — agent, model, effort, permissions, project, priority, folder">+ New task</button>
                 <button class="secondary" data-open="cancel-queued">Cancel queued</button>
                 <button class="secondary" data-open="clear-finished">Clear finished</button>
             </div>
+            ${composerHtml()}
+            ${!composer && composerMsg ? `<div class="ntmsg">${C.esc(composerMsg)}</div>` : ''}
             ${activeChips(v, RUN_DEF, { agent: 'agent', status: 'status', source: 'from' }, rows.length, d.runs.length)}
             <div class="cmdbar">
                 <input id="cmd" placeholder="Tell the farm what to do, in words — e.g. “run the filing batch on manager now”" value="${C.esc(cmdText)}">
@@ -510,6 +668,25 @@
                 .bulk[hidden] { display:none; }
                 .cmdbar { display:flex; gap:6px; margin:0 0 10px; }
                 .cmdbar input { flex:1; }
+                /* NEW TASK. A card on the page, in the page's own language — the
+                   same box the Automation strip is drawn in — rather than a
+                   stack of modal dialogs in front of it. The fields WRAP: on a
+                   narrow panel a single row of eleven controls would push the
+                   prompt box down to a slit, which is an invitation to write
+                   less than you mean. */
+                .ntbox { border:1px solid var(--vscode-focusBorder); border-radius:9px; padding:9px 12px;
+                    margin:0 0 12px; background:var(--vscode-editorWidget-background, rgba(128,128,128,.05)); }
+                .ntgrid { display:flex; flex-wrap:wrap; gap:8px 10px; margin:8px 0; }
+                .ntf { display:flex; flex-direction:column; gap:3px; flex:1 1 150px; min-width:140px; font-size:11px; }
+                .ntf.wide { flex:1 1 100%; }
+                .ntf > span { opacity:.75; }
+                .ntf em { font-style:normal; opacity:.75; color:var(--vscode-editorWarning-foreground,#cca700); }
+                .ntf select, .ntf input { padding:3px 6px; }
+                .ntf textarea { font-family:inherit; font-size:13px; padding:6px 8px; resize:vertical; min-height:70px; }
+                .ntmsg { font-size:12px; margin:6px 0; padding:5px 10px; border-radius:5px;
+                    background:var(--vscode-editorWidget-background, rgba(128,128,128,.08)); }
+                .ntmsg.warn { color:var(--vscode-editorWarning-foreground,#cca700);
+                    border:1px solid currentColor; }
                 /* Columns size themselves to their content and use whatever
                    width the window gives them. Only the fixed-size furniture
                    (checkbox, caret) and the numeric/action columns are pinned;
@@ -691,6 +868,41 @@
         });
         syncBulk();
 
+        // ---- the New-task form. Every control writes into the draft as it is
+        // touched, because the page repaints itself on every host push and a
+        // form that lived only in the DOM would lose a half-written prompt to a
+        // task somewhere else finishing.
+        const byId = (id, ev, fn) => {
+            const el = document.getElementById(id);
+            if (el) { el.addEventListener(ev, fn); }
+        };
+        byId('nt-open', 'click', () => openComposer());
+        byId('nt-close', 'click', () => closeComposer());
+        byId('nt-cancel', 'click', () => closeComposer());
+        byId('nt-add', 'click', () => submitComposer(false));
+        byId('nt-force', 'click', () => submitComposer(true));
+        if (composer) {
+            ['prompt', 'title', 'workdir', 'priority'].forEach(id =>
+                byId('nt-' + id, 'input', () => readComposer()));
+            ['agent', 'mode', 'model', 'effort', 'permissionMode', 'project', 'cli'].forEach(id =>
+                byId('nt-' + id, 'change', () => {
+                    readComposer();
+                    // The Add button's own words follow the "start it now" box,
+                    // so what the press will do is readable before pressing it.
+                    if (id === 'start') { render(); }
+                }));
+            byId('nt-start', 'change', () => { readComposer(); render(); });
+            // Ctrl+Enter queues it — the same bargain the Console composer and
+            // the backlog capture box make. Plain Enter stays a newline: these
+            // prompts run to a paragraph.
+            byId('nt-prompt', 'keydown', ev => {
+                if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) {
+                    ev.preventDefault();
+                    submitComposer(false);
+                }
+            });
+        }
+
         // run actions
         click('[data-task]', e => post({ type: 'task', act: e.currentTarget.dataset.task, id: e.currentTarget.dataset.id }));
         click('[data-out]', e => post({ type: 'open-output', file: e.currentTarget.dataset.out }));
@@ -784,6 +996,11 @@
             case 'tkUnpark': task('unpark'); return;
             case 'tkRerun': task('rerun'); return;
             case 'tkRetryEdit': task('retryEdit'); return;
+            // ‼️ "Like this one, but…" — the same form, prefilled from the row.
+            // `retryEdit` above is the old one-question box (a new prompt and
+            // nothing else); this is the whole task, editable, which is what a
+            // person means when they say "run that again with opus".
+            case 'tkClone': task('clone'); return;
             case 'tkResume': task('resumeWorkflow'); return;
             case 'tkTemplate': task('saveTemplate'); return;
             case 'tkTerminal': task('terminal'); return;
@@ -828,14 +1045,36 @@
     window.addEventListener('message', ev => {
         if (ev.data.type === 'data') { DATA = ev.data.data; pendingCommand = false; render(); }
         if (ev.data.type === 'focus' && ev.data.tab) { tab = ev.data.tab; persist(); render(); }
+        // ---- the New-task form, driven from the host ----
+        // `task-compose` is the ONE door: the sidebar's +, the walkthrough and a
+        // row's "like this one" all arrive here, so there is a single form with
+        // a single set of fields whichever way you came in.
+        if (ev.data.type === 'task-compose') { openComposer(ev.data.seed); }
+        if (ev.data.type === 'task-error') { composerMsg = ev.data.text || ''; composerDup = false; render(); }
+        // ‼️ The duplicate guard, asked IN the form. It used to be a modal that
+        // took the focus off the fields it was complaining about; here the
+        // answer button sits next to the one you just pressed.
+        if (ev.data.type === 'task-dup') {
+            composerMsg = (ev.data.text || 'An identical task is already queued.')
+                + ' Add it anyway, or change the prompt.';
+            composerDup = true;
+            render();
+        }
+        if (ev.data.type === 'task-made') {
+            closeComposer(`Queued “${ev.data.title}”${ev.data.started ? ' and started it.' : ' — press start when you want it.'}`);
+        }
     });
 
     render();
     // Ages and durations go stale; never re-render under the user's fingers.
     setInterval(() => {
         if (document.hidden) { return; }
+        // ‼️ The composer is a half-written thought, and a repaint would move the
+        // caret out from under it — a textarea is exactly where the longest ones
+        // are typed, and it was not in this list.
+        if (composer) { return; }
         const a = document.activeElement;
-        if (a && (a.tagName === 'INPUT' || a.tagName === 'SELECT')) { return; }
+        if (a && (a.tagName === 'INPUT' || a.tagName === 'SELECT' || a.tagName === 'TEXTAREA')) { return; }
         render();
     }, 30000);
 })();

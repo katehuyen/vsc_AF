@@ -196,6 +196,7 @@ import { ToolboxPanel } from './panels/toolboxPanel';
 import { SecretsPanel } from './panels/secretsPanel';
 import { registerTurnsOps } from './core/turns';
 import { TurnsPanel } from './panels/turnsPanel';
+import { SessionsPanel } from './panels/sessionsPanel';
 import { ToolboxTreeProvider } from './views/toolboxTree';
 import { MemoryGraphPanel } from './panels/memoryGraph';
 import { DashboardPanel, sessionRowPool } from './panels/dashboard';
@@ -2669,13 +2670,67 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'tasks.add',
-            describe: 'Queue (and by default start) a task. args: agent (name|id), title, prompt, mode? (headless|interactive, default headless), start? (default true)',
+            describe: 'Queue (and by default start) a task — one claude run. '
+                + '‼️ THE LAUNCH DIMENSIONS ARE THE SAME ONES sessions.start TAKES, because a task IS a '
+                + 'session that nobody sits in: model · effort · permissionMode. An empty field means no '
+                + 'flag, exactly as it does there — the agent\'s own settings and your model-policy rules '
+                + 'stay in charge. `permissionMode` deserves a thought here that it does not deserve for an '
+                + 'interactive session: a queued run that stops to ask waits until somebody notices it. '
+                + 'The task-only dimensions are which project it belongs to (recorded at CREATION, not at '
+                + 'run time — a queued task can sit for hours and the window will have moved on), which CLI '
+                + 'profile executes it, how urgent it is, and where it runs. '
+                + 'args: agent (name|id), title, prompt, mode? (headless|interactive, default headless), '
+                + 'model? (alias or id), effort? (low|medium|high|xhigh|max), '
+                + 'permissionMode? (plan|acceptEdits|auto|manual|dontAsk|bypassPermissions), '
+                + 'cli? (a name from agentFarm.cliProfiles), project? (id or name; "" = explicitly none, '
+                + 'omit to inherit the window\'s active project), priority? (higher runs sooner), '
+                + 'workDir? (run it here instead of the agent folder), start? (default true)',
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
+                const effort = optStr(args, 'effort') ?? '';
+                const permissionMode = optStr(args, 'permissionMode') ?? '';
+                // The same validation the launcher does, for the same reason: a
+                // typo fails here with a readable message instead of the CLI
+                // refusing to start inside an archived output nobody reads.
+                const errors = validateLaunch({ effort, permissionMode });
+                need(!errors.length, errors.join(' · '));
+                const cli = optStr(args, 'cli') ?? '';
+                if (cli) {
+                    const known = cfg().get<CliProfile[]>('cliProfiles', []).map(p => p?.name);
+                    need(known.includes(cli),
+                        `no CLI profile called "${cli}" — agentFarm.cliProfiles has: ${known.filter(Boolean).join(', ') || '(none)'}`);
+                }
+                // ‼️ `project` follows the same three-state rule the rest of the
+                // system uses: absent = inherit the window's active project,
+                // "" = explicitly none, a value = that project.
+                const wantProject = optStr(args, 'project');
+                let projectExtra: { projectId?: string } | undefined;
+                if (wantProject !== undefined) {
+                    if (!wantProject) { projectExtra = { projectId: undefined }; } else {
+                        const p = projectStore.all().find(x => x.id === wantProject || x.name === wantProject);
+                        need(p, `no project called "${wantProject}"`);
+                        projectExtra = { projectId: p!.id };
+                    }
+                }
                 const task = taskManager.addTask(agent, argStr(args, 'title'), argStr(args, 'prompt'),
-                    optStr(args, 'mode') === 'interactive' ? 'interactive' : 'headless');
+                    optStr(args, 'mode') === 'interactive' ? 'interactive' : 'headless', {
+                        ...(projectExtra ?? {}),
+                        ...(optStr(args, 'model') ? { model: optStr(args, 'model') as string } : {}),
+                        ...(effort ? { effort } : {}),
+                        ...(permissionMode ? { permissionMode } : {}),
+                        ...(cli ? { cli } : {}),
+                        ...(optStr(args, 'workDir') ? { workDir: optStr(args, 'workDir') as string } : {}),
+                        ...(Number(args.priority) ? { priority: Math.trunc(Number(args.priority)) } : {})
+                    });
                 if (args.start !== false) { taskManager.startTask(task); }
-                return { id: task.id, status: task.status };
+                return {
+                    id: task.id, status: task.status,
+                    agent: task.agentName, mode: task.mode,
+                    model: task.model ?? null, effort: task.effort ?? null,
+                    permissionMode: task.permissionMode ?? null,
+                    projectId: task.projectId ?? null, cli: task.cli ?? null,
+                    priority: task.priority ?? 0
+                };
             }
         },
         {
@@ -3169,6 +3224,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 tags: s.tags ?? [], lastTs: s.lastTs, cwd: s.cwd ?? null,
                 cost: Math.round(s.cost * 100) / 100
             }))
+        },
+        {
+            op: 'sessions.page',
+            describe: 'Open the SESSIONS page — the log of every conversation on a page of its own: '
+                + '200 rows by default, every column, and the same sorting, filters, turn accordion and '
+                + 'right-click menu the Dashboard\'s corner table has. Optionally opens already scoped, '
+                + 'which is the point of passing anything: "show me what ran on this project" should not '
+                + 'mean the fleet-wide list plus a filter to find. `project` narrows by the project column '
+                + '(and widens the origin scope, so automation runs are not silently left out); '
+                + '`agent` limits the pool the page is built from in the first place. '
+                + 'args: project? (name), agent? (agent name)',
+            handler: (args) => {
+                const project = optStr(args, 'project') ?? '';
+                const agentName = optStr(args, 'agent') ?? '';
+                if (agentName) {
+                    need(agents.some(a => a.name === agentName), `no agent called "${agentName}"`);
+                }
+                void vscode.commands.executeCommand('agentfarm.openSessions',
+                    { ...(project ? { project } : {}), ...(agentName ? { agentName } : {}) });
+                return { opened: 'sessions', project: project || null, agent: agentName || null };
+            }
         },
         {
             op: 'sessions.interrupt',
@@ -6106,6 +6182,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             return forced > 0 ? forced : contextWindowFor(model);
         },
         titleFor: (sessionId: string) => sessionTitles()[sessionId],
+        // The shelf, read straight from the marks store — the same one the
+        // trees, the Dashboard rows and the right-click menu use, so the ★ on a
+        // session's own page can never disagree with the ★ on its row.
+        pinnedFor: (sessionId: string) => isPinned(sessionMarks(), sessionId),
+        tagsFor: (sessionId: string) => tagsOf(sessionMarks(), sessionId),
         lastExportDir: () => context.globalState.get<string>('agentfarm.lastExportDir'),
         setLastExportDir: (dir: string) => { void context.globalState.update('agentfarm.lastExportDir', dir); },
         launchTerminal: (name: string, cwd: string | undefined, command: string, sessionId?: string) =>
@@ -6309,7 +6390,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             perAgent: cfg().get<number>('maxConcurrentPerAgent', 1)
         }),
         lastExportDir: () => context.globalState.get<string>('agentfarm.lastExportDir'),
-        setLastExportDir: (dir: string) => { void context.globalState.update('agentfarm.lastExportDir', dir); }
+        setLastExportDir: (dir: string) => { void context.globalState.update('agentfarm.lastExportDir', dir); },
+        // U-9: everything the page's own New-task form offers. The same sources
+        // the Start Session… picker reads, so the two never drift: the model
+        // list is the user's own alias knowledge base, the CLI list their
+        // profiles, the defaults their launchDefaults.
+        modelAliases: () => cfg().get<string[]>('modelAliases', ['haiku', 'sonnet', 'opus', 'fable']),
+        // The same accessor the session launcher uses (declared below; this only
+        // ever runs when the page builds its data) — one reading of the setting,
+        // trimming included, rather than a second copy that drifts.
+        launchDefaults: () => launchDefaults(),
+        cliProfiles: () => cfg().get<CliProfile[]>('cliProfiles', []),
+        projects: () => projectStore.all().map(p => ({ id: p.id, name: p.name, icon: p.icon })),
+        activeProjectId: () => activeProject()?.id
     };
 
     needsEmitter.event(() => {
@@ -8168,8 +8261,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             md.appendMarkdown(
                 'Sessions you start here — Console or terminal — are filed under it. '
                 + 'Anything you already filed by hand keeps what you chose.\n\n');
+            // ‼️ The session count above is a LINK. It is the one figure in this
+            // tooltip a reader immediately wants to open — "23 sessions" invites
+            // "which ones?" — and it opens the Sessions page already scoped to
+            // this project rather than the fleet-wide list plus a filter to find.
             md.appendMarkdown(
                 `[Open the project](${barCmd('agentfarm.openProject', [{ id: p.id }])})`
+                + ` · [Its sessions](${barCmd('agentfarm.openSessions', [{ project: p.name }])})`
                 + ` · [Add to backlog](${barCmd('agentfarm.backlogAdd', [p.id])})`
                 + ` · [Change](${barCmd('agentfarm.setActiveProject')})`
                 + ` · [Clear](${barCmd('agentfarm.setActiveProject', [{ id: '' }])})`);
@@ -8180,12 +8278,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'Console or terminal — are filed under it.\n\n');
             md.appendMarkdown(
                 `[Pick a project](${barCmd('agentfarm.setActiveProject')})`
-                + ` · [Projects page](${barCmd('agentfarm.openProjects')})`);
+                + ` · [Projects page](${barCmd('agentfarm.openProjects')})`
+                + ` · [All sessions](${barCmd('agentfarm.openSessions')})`);
         }
         md.isTrusted = {
             enabledCommands: [
                 'agentfarm.setActiveProject', 'agentfarm.openProject',
-                'agentfarm.openProjects', 'agentfarm.backlogAdd'
+                'agentfarm.openProjects', 'agentfarm.backlogAdd',
+                'agentfarm.openSessions'
             ]
         };
         projectBar.tooltip = md;
@@ -10636,6 +10736,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             });
         }),
 
+        // The sessions table's own page. It takes an optional scope so the
+        // places that already know which slice you mean — a project's status-bar
+        // tooltip, an agent's page — can open it already narrowed, rather than
+        // dropping you in the fleet-wide list to find the filter yourself.
+        vscode.commands.registerCommand('agentfarm.openSessions',
+            (arg?: { project?: string; agentName?: string }) => {
+                SessionsPanel.show({
+                    extensionUri: context.extensionUri,
+                    getAgents: () => agents,
+                    index,
+                    getPricing: () => pricing,
+                    agentProjects: () => agentProjectNames(
+                        agents.map(a => ({ id: a.id, name: a.name, dir: a.dir })), projectStore.all()),
+                    projectStyle: (name: string) => projectStyleOf(name)
+                }, {
+                    ...(typeof arg?.project === 'string' && arg.project ? { project: arg.project } : {}),
+                    ...(typeof arg?.agentName === 'string' && arg.agentName ? { agentName: arg.agentName } : {})
+                });
+            }),
+
         // xterm.js render glitches (ghost spaces, lost lines) have two known remedies:
         // the DOM renderer (gpuAcceleration off) and skipping xterm.js entirely for long
         // claude sessions via the OS terminal. Both live behind this one command.
@@ -10932,48 +11052,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             await revealPath(agent.dir);
         }),
 
-        vscode.commands.registerCommand('agentfarm.addTask', async () => {
-            const agent = await resolveAgent(undefined);
-            if (!agent) { return; }
-            const title = await vscode.window.showInputBox({
-                prompt: `Task title for ${agent.name}`, ignoreFocusOut: true
-            });
-            if (!title) { return; }
-            const prompt = await vscode.window.showInputBox({
-                prompt: 'Prompt to send to claude', value: title, ignoreFocusOut: true
-            });
-            if (!prompt) { return; }
-            // Dedup guard: an identical task already waiting is almost always an accident.
-            if (taskManager.queuedDuplicate(agent.id, prompt)) {
-                const anyway = await vscode.window.showWarningMessage(
-                    `${agent.name} already has an identical task queued. Add another?`,
-                    { modal: true }, 'Add anyway');
-                if (anyway !== 'Add anyway') { return; }
-            }
-            const mode = await vscode.window.showQuickPick(
-                [
-                    { label: 'Interactive', description: 'opens a claude session with this prompt', mode: 'interactive' as TaskMode },
-                    { label: 'Headless', description: 'claude -p — runs the prompt and exits', mode: 'headless' as TaskMode }
-                ],
-                { ignoreFocusOut: true, placeHolder: 'How should this task run?' }
-            );
-            if (!mode) { return; }
-            // J5: alternative CLI executors, only offered when profiles exist.
-            const profiles = cfg().get<CliProfile[]>('cliProfiles', []).filter(p => p?.name && p.headless);
-            let cli: string | undefined;
-            if (profiles.length) {
-                const cliPick = await vscode.window.showQuickPick(
-                    [{ label: 'claude', description: 'default executor (full monitoring)' },
-                     ...profiles.map(p => ({ label: p.name, description: p.headless }))],
-                    { ignoreFocusOut: true, placeHolder: 'Which CLI runs this task? (non-claude executors get output archiving only)' });
-                if (!cliPick) { return; }
-                if (cliPick.label !== 'claude') { cli = cliPick.label; }
-            }
-            const task = taskManager.addTask(agent, title, prompt, mode.mode);
-            if (cli) { task.cli = cli; }
-            const start = await vscode.window.showInformationMessage(
-                `Agent Farm: task "${title}" queued for ${agent.name}.`, 'Start now');
-            if (start === 'Start now') { taskManager.startTask(task); }
+        /**
+         * ‼️ ADD A TASK = OPEN THE FORM ON THE TASKS PAGE. There is no dialog
+         * chain here any more, and that is the whole point of U-9.
+         *
+         * It used to ask five questions in five modal boxes — title, prompt,
+         * mode, CLI, "start now?" — and could not ask the five that matter most
+         * for an unattended run at all: which model, what effort, what
+         * permission mode, which project, how urgent. Meanwhile the page it
+         * queued into had a rich table of the results and no way to make one, so
+         * the sidebar's + and the page's own button produced different kinds of
+         * task and only one of them was visible where you were looking.
+         *
+         * The form on the page is now the single implementation, and every route
+         * in — this command, the tree's +, the walkthrough, a row's "like this
+         * one" — opens that same form. `arg.agentId` (from an agent row) simply
+         * arrives as a prefilled field instead of a first question.
+         */
+        vscode.commands.registerCommand('agentfarm.addTask', (arg?: AgentArg) => {
+            const agent = typeof arg === 'object' && arg && 'agentId' in arg
+                ? agents.find(a => a.id === (arg as { agentId?: string }).agentId)
+                : undefined;
+            TasksPanel.compose(tasksDeps, agent ? { agent: agent.name } : undefined);
         }),
 
         vscode.commands.registerCommand('agentfarm.addSchedule', async () => {

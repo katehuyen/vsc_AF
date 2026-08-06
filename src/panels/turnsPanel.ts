@@ -138,7 +138,7 @@ export function buildTurnsMarkdown(
         // quieter answer to the same question.
         const meta = [
             r.models.map(m => m.replace(/^claude-/, '')).join(', '),
-            r.steps || r.apiCalls ? `${fmtStepPair(r.apiCalls, r.steps)} steps` : '',
+            r.steps || r.apiCalls ? fmtStepPair(r.apiCalls, r.steps) : '',
             r.ms ? `took ${fmtDuration(r.ms)}` : '',
             r.tokens ? `${r.tokens} tok` : '',
             r.endCtx ? `ctx ${r.endCtx}` : '',

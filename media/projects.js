@@ -945,7 +945,14 @@
                    the position is chosen in the same glance as the press that
                    uses it. It does not stretch: it holds a number. */
                 .pj-bl-capr .pj-bl-atsel { flex:0 0 auto; width:74px; min-width:74px; margin-left:auto; }
-                .pj-bl-capr .pj-bl-atsel:disabled { opacity:.45; }
+                /* A place was asked for that the file cannot keep yet. Marked
+                   rather than disabled: the choice is real and is kept — what is
+                   missing is the area that would give the item a code. */
+                .pj-bl-capr .pj-bl-atsel.wants { border-color:var(--vscode-editorWarning-foreground,#cca700); }
+                .pj-bl-atwarn { flex:0 1 auto; margin-left:auto; font-size:10px; white-space:nowrap;
+                    overflow:hidden; text-overflow:ellipsis;
+                    color:var(--vscode-editorWarning-foreground,#cca700); }
+                .pj-bl-atwarn + .pj-bl-atsel { margin-left:6px; }
                 /* THE QUEUE STRIP. Entries are buttons because they do two things
                    — jump, and move — and a thing that only looked like a label
                    was a strip nobody tried to touch. */
@@ -1551,22 +1558,37 @@
      * and the item goes wherever it would have gone anyway — the box is an
      * option, never a field to fill in.
      *
-     * ‼️ IT NEEDS AN AREA, and says so rather than failing quietly. The queue
-     * holds CODES (see queueOrder in projectBacklog.ts) and a capture with no
-     * area gets no code, so there is nothing to place — the box is disabled
-     * until the area select next to it has a value.
+     * ‼️ IT IS NEVER DISABLED, AND IT USED TO BE. The queue holds CODES (see
+     * queueOrder in projectBacklog.ts) and a capture with no area gets no code,
+     * so there is genuinely nothing to place — but greying the box out made the
+     * PANEL enforce that, ahead of time, on a control the user had every reason
+     * to reach for first. Two things were wrong with it: a dead box explains
+     * itself only to a pointer that hovers it, and it silently threw the choice
+     * away the moment the area went back to blank. So the choice is always
+     * takeable and always kept; the answer comes from the file, once, in words
+     * (the host says "it went to the inbox without a code, so it could not be
+     * queued"), and the hint beside the box says the same thing before you
+     * press. The one rule the panel does not get to bend is the file's.
      */
     function blAtHtml(cap, queueLen) {
         const n = Math.max(0, Number(queueLen) || 0);
-        const off = !cap.area;
         const opts = ['<option value=""' + (cap.at ? '' : ' selected') + '>— # —</option>'];
         for (let i = 1; i <= n + 1; i++) {
             opts.push(`<option value="${i}"${String(i) === String(cap.at) ? ' selected' : ''}>${i}${i === 1 ? ' · top' : i === n + 1 ? ' · last' : ''}</option>`);
         }
-        return `<select id="bl-at" class="pj-bl-atsel"${off ? ' disabled' : ''}
-            title="${off
-        ? 'Where in the queue it lands. Pick an area first — the queue holds codes, and a capture with no area has none yet (file it later with 🗂 and it queues then).'
-        : `Where in the queue it lands: 1 puts it at the very top, ${n + 1} at the end. Leave it on — # — and it goes wherever a new item normally goes.`}">${opts.join('')}</select>`;
+        const base = `Where in the queue it lands: 1 puts it at the very top, ${n + 1} at the end. `
+            + 'Leave it on — # — and it goes wherever a new item normally goes.';
+        return `<select id="bl-at" class="pj-bl-atsel${cap.at && !cap.area ? ' wants' : ''}"
+            title="${C.esc(base + (cap.area ? '' : ' · The queue holds codes, so a place can only be kept for an item that has one'
+        + ' — pick an area beside it and this is honoured on Add; without one the item still goes to the inbox and the panel says so.'))}">${opts.join('')}</select>`;
+    }
+
+    /** The one sentence that is otherwise only in a tooltip: said out loud, next
+     *  to the box, exactly while it matters — a position was picked and there is
+     *  no area to give the item a code. */
+    function blAtWarnHtml(cap) {
+        if (!cap.at || cap.area) { return ''; }
+        return `<span class="pj-bl-atwarn" title="The 🎯 Queue block lists codes, because a code is the only handle that survives somebody editing the file in Obsidian. An inbox capture has none yet.">⚠ pick an area to keep place ${C.esc(String(cap.at))}</span>`;
     }
 
     /**
@@ -1665,6 +1687,7 @@
                     </select>
                     <span class="pj-bl-capr">
                         ${window.AFTextTools.html('bl', { wrap: 'span', className: 'tatools inline' })}
+                        ${blAtWarnHtml(cap)}
                         ${blAtHtml(cap, (d.queue || []).length)}
                         <button data-act="blAdd" class="pj-bl-addb" title="Ctrl+Enter in the box does the same">Add</button>
                     </span>
@@ -2640,21 +2663,27 @@
         });
         window.AFTextTools.paint('bl', !!blCapture().text);
         // The five axes are part of the draft too — see blCapture.
-        for (const pair of [['bl-type', 'type'], ['bl-prio', 'prio'], ['bl-effort', 'effort'], ['bl-at', 'at']]) {
+        for (const pair of [['bl-type', 'type'], ['bl-prio', 'prio'], ['bl-effort', 'effort']]) {
             const el = document.getElementById(pair[0]);
             if (el) { el.addEventListener('change', () => { blCapture()[pair[1]] = el.value; }); }
         }
-        // Area is the one that repaints: the position box next to Add is only
-        // live once an area is chosen (an uncoded capture has no code to queue),
-        // so leaving it grey after the choice that unlocks it would read as a
-        // dead control. The repaint is safe here — a `change` fires after the
-        // popup has closed, so nothing is torn out mid-gesture (see blOwnsGesture).
+        // ‼️ AREA AND POSITION BOTH REPAINT, AND NEITHER OVERRULES THE OTHER.
+        // They are one question asked twice — "where does this go?" — and the
+        // panel used to answer it for you in both directions: the position box
+        // was dead until an area was picked, and clearing the area threw the
+        // position away without saying so. Now each one repaints so the warning
+        // beside them is current, and the choices simply stand: what the file
+        // can and cannot keep is decided by the file, on Add, out loud.
+        // The repaint is safe here — a `change` fires after the popup has
+        // closed, so nothing is torn out mid-gesture (see blOwnsGesture).
+        const blAtSel = document.getElementById('bl-at');
+        if (blAtSel) {
+            blAtSel.addEventListener('change', () => { blCapture().at = blAtSel.value; render(); });
+        }
         const blAreaSel = document.getElementById('bl-area');
         if (blAreaSel) {
             blAreaSel.addEventListener('change', () => {
-                const cap = blCapture();
-                cap.area = blAreaSel.value;
-                if (!cap.area) { cap.at = ''; }
+                blCapture().area = blAreaSel.value;
                 render();
             });
         }
@@ -3143,7 +3172,15 @@
                         // or a 1 by default would make every capture jump the
                         // queue, which is the opposite of "touch nothing and
                         // nothing changes".
-                        ...(cap.area && Number(cap.at) > 0 ? { at: Number(cap.at) } : {})
+                        //
+                        // ‼️ SENT WITH OR WITHOUT AN AREA. It used to be dropped
+                        // here when there was no area — so the host's honest
+                        // answer for that case ("it went to the inbox without a
+                        // code, so it could not be queued") was written, tested
+                        // and unreachable, and the user's choice vanished on the
+                        // way out with nothing said. The rule belongs to the
+                        // file, and the file states it.
+                        ...(Number(cap.at) > 0 ? { at: Number(cap.at) } : {})
                     });
                     break;
                 }

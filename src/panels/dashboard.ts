@@ -142,7 +142,45 @@ export function sessionRowPool(
         // B3: how many distinct files this session wrote to (counted during the
         // index's own parse — the per-edit detail is read on demand)
         files: Object.keys(s.filesEdited ?? {}).length,
-        active: isActive ? isActive(s) : false
+        active: isActive ? isActive(s) : false,
+        // ---- what a HOVER answers. Everything below is here for the column
+        // tooltips and nothing else: the row's eleven cells used to carry one
+        // sentence about the right-click menu, so the pointer was already on
+        // the most informative surface on the page and it said nothing about
+        // the figure underneath it. None of it costs a second parse — the index
+        // counted all of it while reading the transcript once.
+        //
+        // The model(s) that served the session. It CAN change mid-session, so
+        // this is a list and the tooltip prints it as one.
+        models: s.models ?? [],
+        // Round trips. `tokens` says how much text moved and `turns` says how
+        // many times you asked; neither answers "how many times did it go to
+        // the model", which is the number the spend actually follows.
+        apiCalls: s.assistantMsgs,
+        // The token total, split the way it is billed. A session that is 90%
+        // cache reads and one that is 90% output cost wildly different money
+        // for the same total, and the column could not show the difference.
+        usage: {
+            input: s.usage.input, output: s.usage.output,
+            cacheRead: s.usage.cacheRead, cacheWrite: s.usage.cacheWrite
+        },
+        // What it mostly DID — the four tools it reached for most, with counts.
+        // "312 tool calls" says how busy it was and nothing about the work.
+        topTools: Object.entries(s.tools ?? {})
+            .sort((a, b) => b[1] - a[1]).slice(0, 4)
+            .map(([name, n]) => ({ name, n })),
+        // The circumstances of the run, all read verbatim off the transcript.
+        branch: s.gitBranch ?? '',
+        version: s.version ?? '',
+        permissionMode: s.permissionMode ?? '',
+        // How the CLI was entered ('cli', 'sdk-cli', 'claude-desktop'…) — the
+        // field the 🧑/🤖 column is decided from, so the column can show its
+        // own evidence instead of asking to be trusted.
+        entrypoint: s.entrypoint ?? '',
+        consoleHosted: s.consoleHosted === true,
+        // The name the session was STARTED with (`claude -n …`), when there was
+        // one — different from a rename, and the Title tooltip says which.
+        cliName: s.cliName ?? ''
     }));
     type Row = typeof rows[number];
     if (!(n > 0) || n >= rows.length) {

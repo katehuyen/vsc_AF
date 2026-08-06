@@ -204,11 +204,11 @@ function makeSandbox(opts) {
     // long, how many round trips (and the steps they carried), what it cost,
     // and where it left the window. It used to show a single step count, only
     // while folded — the number that explains the least, hidden the rest of the
-    // time. `14api/26` is the shape every surface uses (charts.js fmtSteps).
+    // time. `14api·26steps` is the shape every surface uses (charts.js fmtSteps).
     ok('band says how long the turn ran, in the shared duration format',
         html.includes('1h-2m-3s'));
     ok('band says round trips AND steps, never one number for both',
-        html.includes('14api/26') && !html.includes('26 msgs'));
+        html.includes('14api·26steps') && !html.includes('26 msgs'));
     ok('band says where the turn left the window',
         html.includes('ctx 202300'));
     ok('a turn with none of it measured says nothing rather than zeros',

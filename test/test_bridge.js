@@ -1106,6 +1106,8 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         let marks = {};
         const titles = {};
         const launched = [];
+        const opened = [];
+        const agents = [{ name: 'dev' }];
         const defaults = { model: 'sonnet' };
         const sessions = [
             { sessionId: 'sid1', title: 'zen release', agentName: 'dev', cwd: 'D:/a/dev', lastTs: 5, cost: 1.234 },
@@ -1168,6 +1170,23 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
                     .map(s => ({ sessionId: s.sessionId, title: s.title, tags: tagsOf(marks, s.sessionId) }))
             },
             {
+                // S-7: the sessions table's own page. Navigational, but it is on
+                // the bridge because it takes a SCOPE — "show me what ran on this
+                // project" is a request, not a theme, and an agent asked it must
+                // not have to answer "open the page and then filter it".
+                op: 'sessions.page',
+                describe: 'Open the SESSIONS page, optionally already scoped. args: project?, agent?',
+                handler: (args) => {
+                    const project = optStr(args, 'project');
+                    const agentName = optStr(args, 'agent');
+                    if (agentName) {
+                        need(agents.some(a => a.name === agentName), `no agent called "${agentName}"`);
+                    }
+                    opened.push({ project: project || null, agent: agentName || null });
+                    return { opened: 'sessions', project: project || null, agent: agentName || null };
+                }
+            },
+            {
                 op: 'sessions.interrupt',
                 describe: 'Type Esc into a live session\'s terminal. args: sessionId',
                 handler: (args) => {
@@ -1189,7 +1208,19 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         const cat = reg.catalog().map(c => c.op);
         ok('every session op is in the catalog',
             ['sessions.start', 'sessions.pin', 'sessions.rename', 'sessions.tag', 'sessions.shelf',
-                'sessions.interrupt'].every(op => cat.includes(op)));
+                'sessions.page', 'sessions.interrupt'].every(op => cat.includes(op)));
+
+        // S-7: the page, and the scope that is the reason it is on the bridge.
+        const page = await reg.dispatch('sessions.page', {});
+        ok('sessions.page opens the fleet-wide list when nothing is asked for',
+            page.ok && page.result.project === null && page.result.agent === null);
+        const scoped = await reg.dispatch('sessions.page', { project: 'AgentFarm' });
+        ok('…and opens already scoped when a project is named',
+            scoped.ok && scoped.result.project === 'AgentFarm'
+            && opened[opened.length - 1].project === 'AgentFarm');
+        const noSuch = await reg.dispatch('sessions.page', { agent: 'nobody' });
+        ok('an agent that does not exist is refused rather than opening an empty page',
+            !noSuch.ok && /no agent called "nobody"/.test(noSuch.error));
 
         const start = await reg.dispatch('sessions.start',
             { agent: 'dev', effort: 'high', name: 'plan', prompt: 'read the report first' });
