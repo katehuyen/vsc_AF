@@ -438,6 +438,7 @@ export class TasksPanel {
         type: string; taskId?: string; to?: string; text?: string; act?: string; id?: string;
         kind?: string; approvalId?: string; ok?: boolean; file?: string; transcriptPath?: string;
         sessionId?: string; content?: string; name?: string; rows?: { kind: string; id: string }[];
+        index?: number;
     }): Promise<void> {
         const m = this.deps.manager;
         const run = (cmd: string, ...args: unknown[]) => { void vscode.commands.executeCommand(cmd, ...args); };
@@ -475,6 +476,27 @@ export class TasksPanel {
                             run('agentfarm.deleteTemplate', node);
                         }
                         break;
+                    // Reachable only from the row's right-click menu — there is
+                    // no room on the row for a button nobody presses weekly.
+                    case 'schedule:export': run('agentfarm.exportSchtask', node); break;
+                }
+                this.refresh();
+                break;
+            }
+            // One step of a workflow, addressed by its place in the list. The
+            // step commands want a workflow-step node; building it here keeps
+            // the page from having to know that shape.
+            case 'wfstep': {
+                const node = this.planNode('workflow', msg.id);
+                const index = Number(msg.index);
+                if (!node?.workflow || !Number.isInteger(index)) { break; }
+                if (index < 0 || index >= node.workflow.steps.length) { break; }
+                const step = { kind: 'workflow-step', workflow: node.workflow, index };
+                switch (msg.act) {
+                    case 'edit': run('agentfarm.editWorkflowStep', step); break;
+                    case 'up': run('agentfarm.moveWorkflowStepUp', step); break;
+                    case 'down': run('agentfarm.moveWorkflowStepDown', step); break;
+                    case 'delete': run('agentfarm.deleteWorkflowStep', step); break;
                 }
                 this.refresh();
                 break;
@@ -546,6 +568,16 @@ export class TasksPanel {
                     t.deferredReason = undefined;
                     m.startTask(t);
                 }
+                // The rest exist as commands on the sidebar tree and had no way
+                // in from this page until the row grew a menu. Each one calls
+                // the command, so there is still exactly one implementation.
+                else if (msg.act === 'up' && t.status === 'queued') { run('agentfarm.taskUp', { kind: 'task', task: t }); }
+                else if (msg.act === 'down' && t.status === 'queued') { run('agentfarm.taskDown', { kind: 'task', task: t }); }
+                else if (msg.act === 'retryEdit' && t.status !== 'queued' && t.status !== 'running') {
+                    run('agentfarm.retryTaskEdit', { kind: 'task', task: t });
+                }
+                else if (msg.act === 'resumeWorkflow') { run('agentfarm.resumeWorkflow', { kind: 'task', task: t }); }
+                else if (msg.act === 'saveTemplate') { run('agentfarm.saveTaskTemplate', { kind: 'task', task: t }); }
                 this.refresh();
                 break;
             }
@@ -593,6 +625,9 @@ export class TasksPanel {
             // ---------------- bridges out ----------------
             case 'open-analytics':
                 run('agentfarm.openTaskAnalytics');
+                break;
+            case 'open-history':
+                run('agentfarm.openTaskHistory');
                 break;
             case 'export-md':
                 if (typeof msg.content === 'string' && msg.content.trim()) {

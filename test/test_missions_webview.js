@@ -13,14 +13,18 @@ const code = require(path.join(__dirname, 'lib_shared_media.js')).sharedMedia()
 const createAfmsDom = require(path.join(__dirname, 'lib_afms_dom.js'));
 
 let posted = [];
-let msgHandler = null;
+// ‼️ A LIST, not one handler. The page now listens twice: once for its own host
+// messages and once, at module scope, for the right-click relay. Keeping only
+// the last registration would silently drop whichever was wired first.
+const msgHandlers = [];
+const msgHandler = (ev) => msgHandlers.forEach(fn => fn(ev));
 const els = {};
 function getEl(id) {
     if (!els[id]) {
         els[id] = {
             id, listeners: {}, style: {}, value: '', checked: false, _html: '',
             addEventListener(ev, fn) { this.listeners[ev] = fn; },
-            focus() { },
+            focus() { }, scrollIntoView() { },
             set innerHTML(v) { this._html = v; }, get innerHTML() { return this._html; }
         };
     }
@@ -68,7 +72,7 @@ const sandbox = {
             fmtUSD: (v) => '$' + v.toFixed(2)
         },
         __DATA__: DATA,
-        addEventListener: (ev, fn) => { if (ev === 'message') { msgHandler = fn; } }
+        addEventListener: (ev, fn) => { if (ev === 'message') { msgHandlers.push(fn); } }
     },
     document: {
         getElementById: getEl,
@@ -129,6 +133,79 @@ ok('Cancel posts control/cancel', posted[0] && posted[0].type === 'control' && p
 posted = [];
 wired.openfile[0]._click();
 ok('step output link opens the archived file', posted[0] && posted[0].type === 'openFile' && posted[0].file === 'D:/out/s1.md');
+
+// ---------- right-click menus ----------
+// Every control this page has lived inside the expanded detail. The menu puts
+// them on the plain row — and has to send the SAME message the detail's button
+// sends, or the two would drift and only one of them would keep working.
+{
+    const send = (data) => msgHandler({ data });
+    const lastMsg = () => posted[posted.length - 1];
+    const contexts = () => (html().match(/data-vscode-context="([^"]*)"/g) || []).map(m =>
+        JSON.parse(m.slice(21, -1).replace(/&quot;/g, '"').replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>').replace(/&amp;/g, '&')));
+
+    const runCtx = contexts().find(c => c.webviewSection === 'afMissionRow');
+    ok('a mission row publishes itself to the menu', !!runCtx && runCtx.run === 'run1');
+    ok('…and says which of its controls apply right now',
+        !!runCtx && runCtx.afActive === true && runCtx.afApproval === true
+        && runCtx.afStatus === 'waiting-approval' && runCtx.afOpen === true);
+    ok('the page keeps the normal Copy/Paste items', !!runCtx && runCtx.preventDefaultContextMenuItems === false);
+
+    posted = [];
+    getEl('d-approve-run1').listeners.click();
+    const approveByButton = lastMsg();
+    send({ type: 'afctx', act: 'msApprove', ctx: runCtx });
+    ok('‼️ Approve from the menu is the wait box\'s own message, to the character',
+        JSON.stringify(lastMsg()) === JSON.stringify(approveByButton));
+
+    getEl('d-cancel-run1').listeners.click();
+    const cancelByButton = lastMsg();
+    send({ type: 'afctx', act: 'msCtl:cancel', ctx: runCtx });
+    ok('…and so is cancelling it', JSON.stringify(lastMsg()) === JSON.stringify(cancelByButton));
+
+    send({ type: 'afctx', act: 'msCtl:pause', ctx: runCtx });
+    ok('pausing reaches the host as a control act',
+        lastMsg().type === 'control' && lastMsg().action === 'pause' && lastMsg().runId === 'run1');
+    send({ type: 'afctx', act: 'msRerun', ctx: runCtx });
+    ok('running the mission again is an act the page had no button for at all',
+        lastMsg().type === 'rerun' && lastMsg().runId === 'run1');
+    send({ type: 'afctx', act: 'msDelete', ctx: runCtx });
+    ok('…and so is dropping a run from the history',
+        lastMsg().type === 'delete' && lastMsg().runId === 'run1');
+
+    const stepCtx = contexts().find(c => c.webviewSection === 'afMissionStep' && c.step === 's1');
+    ok('a delegation publishes its run, its id and the agent that ran it',
+        !!stepCtx && stepCtx.run === 'run1' && stepCtx.agentId === 'a1' && stepCtx.afOutput === true);
+    posted = [];
+    send({ type: 'afctx', act: 'mstOut', ctx: stepCtx });
+    ok('opening its output is the link\'s own message',
+        lastMsg().type === 'openFile' && lastMsg().file === 'D:/out/s1.md');
+    send({ type: 'afctx', act: 'mstAgent', ctx: stepCtx });
+    ok('and the agent behind it opens by id', lastMsg().type === 'openAgent' && lastMsg().agentId === 'a1');
+    const failed = contexts().find(c => c.webviewSection === 'afMissionStep' && c.step === 's2');
+    ok('‼️ a delegation with no output says so, so the menu never offers to open one',
+        !!failed && failed.afOutput === false);
+
+    const roundCtx = contexts().find(c => c.webviewSection === 'afMissionRound' && String(c.round) === '1');
+    ok('a planner round publishes its number and whether it is folded',
+        !!roundCtx && roundCtx.run === 'run1' && roundCtx.afClosed === false);
+    send({ type: 'afctx', act: 'msrFold:1', ctx: roundCtx });
+    ok('folding a round from the menu folds it', !html().includes('fix parser'));
+    send({ type: 'afctx', act: 'msrFold:0', ctx: roundCtx });
+    ok('…and unfolding brings its delegations back', html().includes('fix parser'));
+
+    const member = contexts().find(c => c.webviewSection === 'afMissionTeam' && c.agentId === 'a1');
+    ok('a team member publishes its agent, role and model',
+        !!member && member.agentName === 'coder' && member.role === 'implements');
+    posted = [];
+    send({ type: 'afctx', act: 'mtTalk', ctx: member });
+    ok('talking to a participant opens the Console for that agent',
+        lastMsg().type === 'consoleAgent' && lastMsg().agentId === 'a1');
+    const lead = contexts().find(c => c.webviewSection === 'afMissionTeam' && c.agentId === 'a0');
+    ok('‼️ the lead carries the same menu as the team — it is a participant too',
+        !!lead && lead.role === 'lead');
+}
 
 // ---------- question wait ----------
 msgHandler({

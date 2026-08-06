@@ -5675,6 +5675,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             else if (action === 'resume') { resumeMission(runId); }
             else { cancelMission(runId); }
         },
+        // Both go through the commands the sidebar tree uses — they own the
+        // confirmation wording and the "only a finished run can be deleted"
+        // rule, and a second copy of either would eventually disagree.
+        rerun: (runId: string) => {
+            const run = missionStore.run(runId);
+            if (run) { void vscode.commands.executeCommand('agentfarm.missionRerun', { kind: 'run', run }); }
+        },
+        remove: (runId: string) => {
+            const run = missionStore.run(runId);
+            if (run) { void vscode.commands.executeCommand('agentfarm.missionDelete', { kind: 'run', run }); }
+        },
         answer: (runId: string, text: string) => { void answerMissionQuestion(runId, text); },
         settleApproval: (runId: string, ok: boolean) => {
             const id = missionApprovals.get(runId);

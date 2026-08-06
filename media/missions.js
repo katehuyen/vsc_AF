@@ -247,9 +247,13 @@
         </td></tr>`;
     }
 
-    function stepRow(s) {
+    function stepRow(s, run) {
         const open = expandedStep === s.id;
-        return `<tr class="srow" data-step="${C.esc(s.id)}" title="Click to open this delegation: full prompt + live output">
+        const ctx = window.AFCtx.row('afMissionStep', {
+            run: run ? run.id : '', step: s.id, agentId: s.agentId, afOutput: !!s.outputFile
+        });
+        return `<tr class="srow" data-step="${C.esc(s.id)}" ${ctx}
+            title="Click to open this delegation: full prompt + live output — ${window.AFCtx.HINT}">
             <td class="stoggle">${open ? '▾' : '▸'}</td>
             <td>${C.esc(s.agentName)}${stepLive(s)}</td>
             <td>${C.esc(s.title)}${s.readonly ? ' <span class="mchip ro">read-only</span>' : ''}${s.note ? ` <span class="muted small">(${C.esc(s.note)})</span>` : ''}</td>
@@ -511,14 +515,16 @@
         let body = '';
         if (r.action === 'delegate') {
             body = `<table class="mtable"><thead><tr><th></th><th>Agent</th><th>Task</th><th>Status</th><th class="num">Tokens</th><th class="num">Cost</th><th></th></tr></thead>
-                <tbody>${r.steps.map(stepRow).join('')}</tbody></table>
+                <tbody>${r.steps.map(s => stepRow(s, run)).join('')}</tbody></table>
                 ${r.rejectedReason ? `<div class="muted small">✕ ${C.esc(r.rejectedReason)} — the planner re-planned</div>` : ''}`;
         } else if (r.action === 'ask_user') {
             body = `<div class="qa"><b>Q:</b> ${C.esc(r.question || '')}<br><b>A:</b> ${C.esc(r.answer || '(pending)')}</div>`;
         }
         const closedSummary = closed && r.steps.length ? `${r.steps.length} delegation(s) · ` : '';
         const stats = roundStats(r);
-        return `<div class="turnhdr${closed ? ' closed' : ''}" data-round="${C.esc(key)}" title="Click to ${closed ? 'expand' : 'collapse'} this round">
+        return `<div class="turnhdr${closed ? ' closed' : ''}" data-round="${C.esc(key)}"
+            ${window.AFCtx.row('afMissionRound', { run: run.id, round: r.n, afClosed: closed })}
+            title="Click to ${closed ? 'expand' : 'collapse'} this round — ${window.AFCtx.HINT}">
             <span class="tcaret">${closed ? '▸' : '▾'}</span>
             <span class="turnnum">R${r.n}</span>
             <span class="tag">${C.esc(r.action)}</span>
@@ -528,6 +534,15 @@
             ${r.thought ? `<div class="thought">${C.esc(r.thought)}</div>` : ''}
             ${body}
         </div>`);
+    }
+
+    /** A participant chip. The lead and every team member carry the SAME menu:
+     *  "who is this, and let me talk to it" is the same question either way. */
+    function teamCtx(agentId, agentName, role, model) {
+        return window.AFCtx.row('afMissionTeam', {
+            agentId: agentId || '', agentName: agentName || '',
+            role: role || '', model: model || ''
+        });
     }
 
     function detailHtml(run) {
@@ -563,8 +578,10 @@
                 ${canResume ? `<button id="d-resume-${C.esc(run.id)}">Resume</button>` : ''}
                 ${active ? `<button class="secondary" id="d-cancel-${C.esc(run.id)}" title="Cancel the mission and its running delegations">Cancel</button>` : ''}
             </div>
-            <div class="muted small">lead <b>${C.esc(sp.leadAgentName)}</b>${sp.plannerModel ? ` <span class="mchip mdl" title="planner model">${C.esc(sp.plannerModel)}</span>` : ''} · team ${sp.team.map(m =>
-                `<span class="mchip team">${C.esc(m.agentName)}${m.role ? ` — ${C.esc(m.role)}` : ''}${m.model ? ` <i class="mdl" title="delegation model">${C.esc(m.model)}</i>` : ''}</span>`).join(' ')}
+            <div class="muted small">lead <b ${teamCtx(sp.leadAgentId, sp.leadAgentName, 'lead', sp.plannerModel)}
+                title="${C.esc(window.AFCtx.hint('The lead — it plans the rounds'))}">${C.esc(sp.leadAgentName)}</b>${sp.plannerModel ? ` <span class="mchip mdl" title="planner model">${C.esc(sp.plannerModel)}</span>` : ''} · team ${sp.team.map(m =>
+                `<span class="mchip team" ${teamCtx(m.agentId, m.agentName, m.role, m.model)}
+                    title="${C.esc(window.AFCtx.hint(m.agentName + (m.role ? ' — ' + m.role : '')))}">${C.esc(m.agentName)}${m.role ? ` — ${C.esc(m.role)}` : ''}${m.model ? ` <i class="mdl" title="delegation model">${C.esc(m.model)}</i>` : ''}</span>`).join(' ')}
                 ${sp.workdir ? ` · workdir <code>${C.esc(sp.workdir)}</code>` : ''} · approval: ${C.esc(sp.approvalMode)}${pt ? ` · <a data-opensession="${C.esc(pt)}" title="Open the lead's full planner conversation (briefings, thoughts, decisions) in the session viewer">planner transcript</a>` : ''}</div>
             <div class="goal">${C.esc(sp.goal)}</div>
             ${nowStrip}
@@ -623,6 +640,26 @@
         </div>` + filterPanelHtml();
     }
 
+    /**
+     * What a run IS, for the right-click menu.
+     *
+     * ‼️ EVERY CONTROL THIS PAGE HAS LIVES INSIDE THE EXPANDED DETAIL — pause,
+     * resume, cancel, approve, answer. Reading the list means reading rows, and
+     * a row you have to open before you can steer it is a row you steer late.
+     * The flags below are exactly what the menu needs to decide which of those
+     * controls apply, so the menu offers "Resume" only on something paused.
+     */
+    function runCtx(r, open) {
+        const active = r.status !== 'done' && r.status !== 'failed' && r.status !== 'cancelled';
+        return window.AFCtx.row('afMissionRow', {
+            run: r.id, afOpen: !!open, afStatus: r.status, afActive: active,
+            afPausing: !!r.pausePending,
+            afPlanner: !!(DATA.plannerTranscripts || {})[r.id],
+            afQuestion: (DATA.pending.questions || []).some(q => q.runId === r.id),
+            afApproval: (DATA.pending.approvals || []).indexOf(r.id) >= 0
+        });
+    }
+
     /** Runs as an accordion list: plain rows until clicked, the full detail
      *  expands inline under the row (nothing opens on its own). */
     function listHtml() {
@@ -638,7 +675,8 @@
             // a non-success verdict deserves its own glanceable chip next to "done"
             const verdict = r.result && r.result.verdict !== 'success'
                 ? ` <span class="mchip ${r.result.verdict === 'failed' ? 'bad' : 'wait'}">${C.esc(r.result.verdict)}</span>` : '';
-            return `<tr class="mrow${open ? ' sel' : ''}" data-run="${C.esc(r.id)}" title="${C.esc(runTooltip(r, sp))}">
+            return `<tr class="mrow${open ? ' sel' : ''}" data-run="${C.esc(r.id)}" ${runCtx(r, open)}
+                title="${C.esc(runTooltip(r, sp) + '\n— ' + window.AFCtx.HINT)}">
                 <td class="stoggle">${open ? '▾' : '▸'}</td>
                 <td>${C.esc(sp.title)}</td>
                 <td>${C.esc(sp.leadAgentName)} <span class="muted small">+${sp.team.length}</span></td>
@@ -1009,6 +1047,145 @@
 
         armTicker(document.querySelectorAll('[data-since]').length > 0);
     }
+
+    // ------------------------------------------------------- right-click menu
+
+    /** One run, one round, one delegation, one participant — found by the ids
+     *  the row published, not by "whatever is under the pointer now". The list
+     *  re-sorts and repaints on every mission event; the pick has to survive
+     *  that, and only the identity in the context object does. */
+    function findRun(id) { return DATA.runs.find(r => r.id === id); }
+    function findStep(runId, stepId) {
+        const run = findRun(runId);
+        if (!run) { return null; }
+        for (const rd of run.rounds) {
+            const s = rd.steps.find(x => x.id === stepId);
+            if (s) { return s; }
+        }
+        return null;
+    }
+
+    /**
+     * Everything a right-click on this page can ask for.
+     *
+     * The steering acts post exactly what the detail's own buttons post
+     * (`control`, `approve`, `reject`) — one message shape, one handler in the
+     * panel. What the menu adds is REACH: those controls without opening the
+     * run first, plus the two the page never had a button for at all (run the
+     * mission again, delete a finished run from the history), which existed
+     * only as sidebar-tree commands.
+     */
+    function ctxDo(act, ctx) {
+        const verb = act.split(':')[0];
+        const arg = act.slice(verb.length + 1);
+        const runId = String(ctx.run || '');
+        const copy = (v) => window.AFCtx.copy(v);
+        const open = () => {
+            if (runSingle) { openRuns.clear(); }
+            openRuns.add(runId);
+        };
+
+        switch (verb) {
+            // ---- a mission run ----
+            case 'msOpen': open(); render(); return;
+            case 'msFold': openRuns.delete(runId); render(); return;
+            case 'msCtl': vscode.postMessage({ type: 'control', action: arg, runId: runId }); return;
+            case 'msApprove': vscode.postMessage({ type: 'approve', runId: runId }); return;
+            case 'msReject': vscode.postMessage({ type: 'reject', runId: runId }); return;
+            case 'msRerun': vscode.postMessage({ type: 'rerun', runId: runId }); return;
+            case 'msDelete': vscode.postMessage({ type: 'delete', runId: runId }); return;
+            // The answer box lives in the run's detail, so the menu opens the
+            // run and puts the caret in it rather than inventing a second way
+            // of asking the same question.
+            case 'msAnswer': {
+                open();
+                render();
+                const box = document.getElementById('d-answer-' + runId);
+                if (box) { box.scrollIntoView({ block: 'center' }); box.focus(); }
+                return;
+            }
+            case 'msPlanner': {
+                const file = (DATA.plannerTranscripts || {})[runId];
+                if (file) { vscode.postMessage({ type: 'openSession', file: file }); }
+                return;
+            }
+            case 'msCopy': {
+                const r = findRun(runId);
+                if (!r) { copy(''); return; }
+                const sp = spec(r);
+                copy(arg === 'goal' ? sp.goal
+                    : arg === 'verdict' ? (r.result
+                        ? r.result.verdict.toUpperCase() + ' — ' + r.result.summary
+                        : (r.note || ''))
+                        : arg === 'ledger' ? (r.ledger || []).join('\n')
+                            : r.id);
+                return;
+            }
+
+            // ---- one delegation ----
+            case 'mstOpen':
+                expandedStep = expandedStep === ctx.step ? null : String(ctx.step || '');
+                render();
+                return;
+            case 'mstOut': {
+                const s = findStep(runId, ctx.step);
+                if (s && s.outputFile) { vscode.postMessage({ type: 'openFile', file: s.outputFile }); }
+                return;
+            }
+            case 'mstAgent':
+                if (ctx.agentId) { vscode.postMessage({ type: 'openAgent', agentId: String(ctx.agentId) }); }
+                return;
+            case 'mstCopy': {
+                const s = findStep(runId, ctx.step);
+                if (!s) { copy(''); return; }
+                copy(arg === 'prompt' ? s.prompt : arg === 'output' ? s.outputFile : s.title);
+                return;
+            }
+
+            // ---- one planner round ----
+            case 'msrFold': {
+                const key = runId + ':' + ctx.round;
+                if (arg === '1') { closedRounds.add(key); } else { closedRounds.delete(key); }
+                render();
+                return;
+            }
+            case 'msrOnly': {
+                const r = findRun(runId);
+                if (!r) { return; }
+                r.rounds.forEach(rd => closedRounds.add(runId + ':' + rd.n));
+                closedRounds.delete(runId + ':' + ctx.round);
+                render();
+                return;
+            }
+            case 'msrCopy': {
+                const r = findRun(runId);
+                const rd = r && r.rounds.find(x => String(x.n) === String(ctx.round));
+                if (!rd) { copy(''); return; }
+                const lines = [`R${rd.n} · ${rd.action} · ${fmtTime(rd.at)}`];
+                if (rd.thought) { lines.push(rd.thought); }
+                if (rd.question) { lines.push('Q: ' + rd.question); }
+                if (rd.answer) { lines.push('A: ' + rd.answer); }
+                rd.steps.forEach(s => lines.push(`  · ${s.agentName}: ${s.title} — ${s.status}`));
+                copy(lines.join('\n'));
+                return;
+            }
+
+            // ---- a participant ----
+            case 'mtOpen':
+                if (ctx.agentId) { vscode.postMessage({ type: 'openAgent', agentId: String(ctx.agentId) }); }
+                return;
+            case 'mtTalk':
+                if (ctx.agentId) { vscode.postMessage({ type: 'consoleAgent', agentId: String(ctx.agentId) }); }
+                return;
+            case 'mtCopy':
+                copy([ctx.agentName, ctx.role, ctx.model].filter(Boolean).join(' — '));
+                return;
+        }
+    }
+
+    // ‼️ ONCE, at module scope: render() runs on every mission event and the
+    // page refreshes live — a listener wired inside it would multiply.
+    window.AFCtx.listen(ctxDo);
 
     window.addEventListener('message', ev => {
         const m = ev.data;

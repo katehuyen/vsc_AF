@@ -76,6 +76,17 @@ const DOC_ROW = "webviewSection == 'afDocRow'";
 const PROJECT_ROW = "webviewSection == 'afProjectRow'";
 const FEED_EVENT = "webviewSection == 'afFeedEvent'";
 
+/** The Tasks page: what defines work, one step of a workflow, one execution. */
+const PLAN_ROW = "webviewSection == 'afPlanRow'";
+const WF_STEP = "webviewSection == 'afWorkflowStep'";
+const TASK_RUN = "webviewSection == 'afTaskRun'";
+
+/** Missions: the run, one delegation, one planner round, one team member. */
+const MISSION_ROW = "webviewSection == 'afMissionRow'";
+const MISSION_STEP = "webviewSection == 'afMissionStep'";
+const MISSION_ROUND = "webviewSection == 'afMissionRound'";
+const MISSION_TEAM = "webviewSection == 'afMissionTeam'";
+
 /** The four ways a document can be opened — src/core/docopen.ts owns the list. */
 const OPEN_MODES: [string, string][] = [
     ['vscode', 'Editor'], ['preview', 'Preview'], ['obsidian', 'Obsidian'], ['custom', 'Your app']
@@ -92,7 +103,11 @@ export const CTX_SUBMENUS: CtxSubmenu[] = [
     { id: CTX_PREFIX + 'blCopy', label: 'Copy', group: '5_copy@1', when: BACKLOG_ROW },
     { id: CTX_PREFIX + 'planOpenWith', label: 'Open the plan with', group: '1_open@2', when: PLAN_ITEM },
     { id: CTX_PREFIX + 'docOpenWith', label: 'Open with', group: '1_open@2', when: DOC_ROW },
-    { id: CTX_PREFIX + 'projCopy', label: 'Copy', group: '5_copy@1', when: PROJECT_ROW }
+    { id: CTX_PREFIX + 'projCopy', label: 'Copy', group: '5_copy@1', when: PROJECT_ROW },
+    { id: CTX_PREFIX + 'plCopy', label: 'Copy', group: '5_copy@1', when: PLAN_ROW },
+    { id: CTX_PREFIX + 'tkCopy', label: 'Copy', group: '5_copy@1', when: TASK_RUN },
+    { id: CTX_PREFIX + 'msCopy', label: 'Copy', group: '5_copy@1', when: MISSION_ROW },
+    { id: CTX_PREFIX + 'mstCopy', label: 'Copy', group: '5_copy@1', when: MISSION_STEP }
 ];
 
 /**
@@ -330,6 +345,274 @@ export const CTX_ITEMS: CtxItem[] = [
     {
         id: 'feedCopy', title: 'Copy the line', act: 'evCopy',
         when: FEED_EVENT, group: '5_copy@1'
+    },
+
+    // =====================================================================
+    // TASKS — the Plan side defines work, the Runs side is what it did. Both
+    // relay to media/tasksPage.js, which sends the same message its own
+    // buttons send; the panel turns that into the very command the tree menus
+    // use, so three surfaces share one implementation.
+    // =====================================================================
+
+    // ---- a plan row: a schedule, a trigger, a workflow or a template ------
+    {
+        id: 'planRun', title: 'Run it now', act: 'plRun',
+        when: PLAN_ROW, group: '1_open@1'
+    },
+    {
+        id: 'planRuns', title: 'Show what it has run', act: 'plRuns',
+        when: PLAN_ROW, group: '1_open@2'
+    },
+    {
+        id: 'planDetail', title: 'Show its prompt and timing here', act: 'plDetail',
+        when: PLAN_ROW, group: '1_open@3'
+    },
+    // Switching is one act and two words; the row states which it is so the
+    // menu never offers "switch on" on something already on.
+    {
+        id: 'planOn', title: 'Switch it on', act: 'plToggle',
+        when: `${PLAN_ROW} && afSwitchable && !afOn`, group: '2_edit@1'
+    },
+    {
+        id: 'planOff', title: 'Switch it off', act: 'plToggle',
+        when: `${PLAN_ROW} && afSwitchable && afOn`, group: '2_edit@2'
+    },
+    // A workflow's "edit" IS adding a step (agentfarm.addWorkflowStep) — the
+    // menu says what will actually happen rather than borrowing one word.
+    {
+        id: 'planEdit', title: 'Edit it…', act: 'plEdit',
+        when: `${PLAN_ROW} && afKind != 'workflow'`, group: '2_edit@3'
+    },
+    {
+        id: 'planStep', title: 'Add a step…', act: 'plEdit',
+        when: `${PLAN_ROW} && afKind == 'workflow'`, group: '2_edit@3'
+    },
+    {
+        id: 'planRename', title: 'Rename it…', act: 'plRename',
+        when: `${PLAN_ROW} && afKind == 'workflow'`, group: '2_edit@4'
+    },
+    {
+        id: 'planExport', title: 'Export as a Windows Scheduled Task…', act: 'plExport',
+        when: `${PLAN_ROW} && afKind == 'schedule'`, group: '4_link@1'
+    },
+    {
+        id: 'planHistory', title: 'Open the task history', act: 'plHistory',
+        when: PLAN_ROW, group: '4_link@2'
+    },
+    ...picker(CTX_PREFIX + 'plCopy', PLAN_ROW, 'plCopy', [
+        ['title', 'Its name'],
+        ['prompt', 'The prompt it runs'],
+        ['when', 'When it runs'],
+        ['id', 'Its id — what an agent quotes']
+    ]),
+    {
+        id: 'planDelete', title: 'Delete it…', act: 'plDelete',
+        when: PLAN_ROW, group: '9_danger@1'
+    },
+
+    // ---- one step of a workflow, in the row's own detail ------------------
+    {
+        id: 'wfStepEdit', title: 'Edit this step…', act: 'wfEdit',
+        when: WF_STEP, group: '2_edit@1'
+    },
+    {
+        id: 'wfStepUp', title: 'Move it up', act: 'wfMove:up',
+        when: WF_STEP, group: '3_move@1'
+    },
+    {
+        id: 'wfStepDown', title: 'Move it down', act: 'wfMove:down',
+        when: WF_STEP, group: '3_move@2'
+    },
+    {
+        id: 'wfStepCopy', title: 'Copy the step', act: 'wfCopy',
+        when: WF_STEP, group: '5_copy@1'
+    },
+    {
+        id: 'wfStepDelete', title: 'Delete this step…', act: 'wfDelete',
+        when: WF_STEP, group: '9_danger@1'
+    },
+
+    // ---- one execution ----------------------------------------------------
+    {
+        id: 'runOutput', title: 'Open its output', act: 'tkOutput',
+        when: `${TASK_RUN} && afOutput`, group: '1_open@1'
+    },
+    {
+        id: 'runTranscript', title: 'Open the transcript', act: 'tkTranscript',
+        when: `${TASK_RUN} && afSession`, group: '1_open@2'
+    },
+    {
+        id: 'runTerminal', title: 'Reveal its terminal', act: 'tkTerminal',
+        when: `${TASK_RUN} && afStatus == 'running'`, group: '1_open@3'
+    },
+    {
+        id: 'runDetail', title: 'Show the prompt and where it came from', act: 'tkDetail',
+        when: TASK_RUN, group: '1_open@4'
+    },
+    {
+        id: 'runSource', title: 'Show what started it', act: 'tkSource',
+        when: `${TASK_RUN} && afFrom != 'manual'`, group: '1_open@5'
+    },
+    {
+        id: 'runStart', title: 'Start it now', act: 'tkStart',
+        when: `${TASK_RUN} && afStatus == 'queued'`, group: '2_edit@1'
+    },
+    {
+        id: 'runUnpark', title: 'Try to start it again', act: 'tkUnpark',
+        when: `${TASK_RUN} && afStatus == 'parked'`, group: '2_edit@2'
+    },
+    {
+        id: 'runAgain', title: 'Run it again', act: 'tkRerun',
+        when: `${TASK_RUN} && !afLive`, group: '2_edit@3'
+    },
+    {
+        id: 'runRetryEdit', title: 'Run it again with an edited prompt…', act: 'tkRetryEdit',
+        when: `${TASK_RUN} && !afLive`, group: '2_edit@4'
+    },
+    {
+        id: 'runResumeWf', title: 'Resume the workflow from this step', act: 'tkResume',
+        when: `${TASK_RUN} && afFrom == 'workflow' && !afLive`, group: '2_edit@5'
+    },
+    {
+        id: 'runNext', title: 'To the front of the queue', act: 'tkNext',
+        when: `${TASK_RUN} && afStatus == 'queued'`, group: '3_move@1'
+    },
+    {
+        id: 'runUp', title: 'Up one', act: 'tkMove:up',
+        when: `${TASK_RUN} && afStatus == 'queued'`, group: '3_move@2'
+    },
+    {
+        id: 'runDown', title: 'Down one', act: 'tkMove:down',
+        when: `${TASK_RUN} && afStatus == 'queued'`, group: '3_move@3'
+    },
+    {
+        id: 'runTemplate', title: 'Save the prompt as a template…', act: 'tkTemplate',
+        when: TASK_RUN, group: '4_link@1'
+    },
+    ...picker(CTX_PREFIX + 'tkCopy', TASK_RUN, 'tkCopy', [
+        ['prompt', 'The prompt it ran'],
+        ['title', 'Its name'],
+        ['id', 'Its id'],
+        ['output', 'The output file path']
+    ]),
+    {
+        id: 'runCancel', title: 'Cancel it', act: 'tkCancel',
+        when: `${TASK_RUN} && afLive`, group: '9_danger@1'
+    },
+    {
+        id: 'runDelete', title: 'Delete this run', act: 'tkDelete',
+        when: `${TASK_RUN} && !afLive`, group: '9_danger@2'
+    },
+
+    // =====================================================================
+    // MISSIONS — a run is the only object on the page you can steer, and
+    // every one of its controls was inside the expanded detail. The menu
+    // reaches them from the plain row, which is where the list is read.
+    // =====================================================================
+    {
+        id: 'msnOpen', title: 'Open this run', act: 'msOpen',
+        when: `${MISSION_ROW} && !afOpen`, group: '1_open@1'
+    },
+    {
+        id: 'msnFold', title: 'Fold it back to a row', act: 'msFold',
+        when: `${MISSION_ROW} && afOpen`, group: '1_open@1'
+    },
+    {
+        id: 'msnPlanner', title: "Open the lead's planner transcript", act: 'msPlanner',
+        when: `${MISSION_ROW} && afPlanner`, group: '1_open@2'
+    },
+    {
+        id: 'msnApprove', title: 'Approve this round', act: 'msApprove',
+        when: `${MISSION_ROW} && afApproval`, group: '2_edit@1'
+    },
+    {
+        id: 'msnReject', title: 'Reject this round', act: 'msReject',
+        when: `${MISSION_ROW} && afApproval`, group: '2_edit@2'
+    },
+    {
+        id: 'msnAnswer', title: 'Answer its question…', act: 'msAnswer',
+        when: `${MISSION_ROW} && afQuestion`, group: '2_edit@3'
+    },
+    {
+        id: 'msnPause', title: 'Pause it', act: 'msCtl:pause',
+        when: `${MISSION_ROW} && afActive && afStatus != 'paused' && !afPausing`, group: '2_edit@4'
+    },
+    {
+        id: 'msnUnpause', title: 'Withdraw the pause — keep it running', act: 'msCtl:unpause',
+        when: `${MISSION_ROW} && afPausing`, group: '2_edit@4'
+    },
+    {
+        id: 'msnResume', title: 'Resume it', act: 'msCtl:resume',
+        when: `${MISSION_ROW} && afStatus == 'paused'`, group: '2_edit@5'
+    },
+    {
+        id: 'msnRerun', title: 'Run this mission again…', act: 'msRerun',
+        when: MISSION_ROW, group: '4_link@1'
+    },
+    ...picker(CTX_PREFIX + 'msCopy', MISSION_ROW, 'msCopy', [
+        ['goal', 'The goal it was given'],
+        ['verdict', 'The verdict and its summary'],
+        ['ledger', 'The ledger — one line per round'],
+        ['id', 'The run id']
+    ]),
+    {
+        id: 'msnCancel', title: 'Cancel the mission…', act: 'msCtl:cancel',
+        when: `${MISSION_ROW} && afActive`, group: '9_danger@1'
+    },
+    {
+        id: 'msnDelete', title: 'Delete this run from the history…', act: 'msDelete',
+        when: `${MISSION_ROW} && !afActive`, group: '9_danger@2'
+    },
+
+    // ---- one delegation inside a round ------------------------------------
+    {
+        id: 'msStepOpen', title: 'Show its prompt and output here', act: 'mstOpen',
+        when: MISSION_STEP, group: '1_open@1'
+    },
+    {
+        id: 'msStepOut', title: 'Open the delegation output', act: 'mstOut',
+        when: `${MISSION_STEP} && afOutput`, group: '1_open@2'
+    },
+    {
+        id: 'msStepAgent', title: 'Open the agent that ran it', act: 'mstAgent',
+        when: MISSION_STEP, group: '1_open@3'
+    },
+    ...picker(CTX_PREFIX + 'mstCopy', MISSION_STEP, 'mstCopy', [
+        ['prompt', 'The prompt it was given'],
+        ['title', 'The task title'],
+        ['output', 'The output file path']
+    ]),
+
+    // ---- one planner round -------------------------------------------------
+    {
+        id: 'msRoundOpen', title: 'Expand this round', act: 'msrFold:0',
+        when: `${MISSION_ROUND} && afClosed`, group: '1_open@1'
+    },
+    {
+        id: 'msRoundClose', title: 'Fold this round', act: 'msrFold:1',
+        when: `${MISSION_ROUND} && !afClosed`, group: '1_open@1'
+    },
+    {
+        id: 'msRoundOnly', title: 'Only this round open', act: 'msrOnly',
+        when: MISSION_ROUND, group: '1_open@2'
+    },
+    {
+        id: 'msRoundCopy', title: "Copy the round — the planner's thought and its steps", act: 'msrCopy',
+        when: MISSION_ROUND, group: '5_copy@1'
+    },
+
+    // ---- a member of the team ----------------------------------------------
+    {
+        id: 'msTeamOpen', title: 'Open this agent', act: 'mtOpen',
+        when: MISSION_TEAM, group: '1_open@1'
+    },
+    {
+        id: 'msTeamTalk', title: 'Talk to it in the Console…', act: 'mtTalk',
+        when: MISSION_TEAM, group: '1_open@2'
+    },
+    {
+        id: 'msTeamCopy', title: 'Copy its name, role and model', act: 'mtCopy',
+        when: MISSION_TEAM, group: '5_copy@1'
     }
 ];
 

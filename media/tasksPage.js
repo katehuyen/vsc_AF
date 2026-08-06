@@ -212,6 +212,22 @@
         });
     }
 
+    /**
+     * What a plan row IS, for the right-click menu.
+     *
+     * The flags are what the menu's `when` clauses read — `afSwitchable`/`afOn`
+     * decide whether "switch on" or "switch off" is drawn, `afKind` whether the
+     * row gets "Add a step…" or "Edit it…". The words are NOT carried: the
+     * handler looks the row up in the data the page already holds, so a prompt
+     * that runs to paragraphs is not written into the markup a second time.
+     */
+    function planCtx(p) {
+        return window.AFCtx.row('afPlanRow', {
+            planKind: p.kind, planId: p.id,
+            afKind: p.kind, afOn: !!p.enabled, afSwitchable: !!p.switchable
+        });
+    }
+
     function planRowHtml(p) {
         const key = p.kind + ':' + p.id;
         const k = KIND[p.kind];
@@ -225,7 +241,8 @@
             ? `<button class="sw ${p.enabled ? 'on' : 'off'}" data-plan="toggle" data-kind="${p.kind}" data-id="${p.id}"
                     title="${p.enabled ? 'switch off' : 'switch on'}" aria-pressed="${p.enabled}"><span></span></button>`
             : '<span class="muted small">manual</span>';
-        return `<tr class="prow ${open ? 'open' : ''}" data-key="${key}">
+        return `<tr class="prow ${open ? 'open' : ''}" data-key="${key}"
+            ${planCtx(p)} title="${C.esc(window.AFCtx.hint(k.label + ' — ' + k.hint))}">
             <td class="tick">${p.switchable ? `<input type="checkbox" class="rowsel" data-kind="${p.kind}" data-id="${p.id}"${selected.has(key) ? ' checked' : ''}>` : ''}</td>
             <td class="expand" data-expand="${key}" role="button" tabindex="0" title="details">${open ? '▾' : '▸'}</td>
             <td class="main">
@@ -257,7 +274,14 @@
                 ${p.hasGuard ? `<div><b>Fires only if</b><div>${C.esc(p.guard)}</div></div>` : ''}
                 ${p.skipped7d || p.runs7d ? `<div><b>Last 7 days</b><div>${p.runs7d} run(s) · ${p.skipped7d} skipped (${p.skipRate}%) · ${fmtUSD(p.cost7d)}</div></div>` : ''}
             </div>
-            ${d.steps.length ? `<div class="dsteps"><b>Steps</b><ol>${d.steps.map(s => `<li>${C.esc(s)}</li>`).join('')}</ol></div>` : ''}
+            ${d.steps.length ? `<div class="dsteps"><b>Steps</b><ol>${d.steps.map((s, n) =>
+            // Only a WORKFLOW's steps are editable objects; a schedule's
+            // "steps" line is a description, and a menu on it would offer
+            // moves and deletes that have nothing to act on.
+            p.kind === 'workflow'
+                ? `<li ${window.AFCtx.row('afWorkflowStep', { planId: p.id, stepIndex: n, stepText: s })}
+                        title="${C.esc(window.AFCtx.hint('Step ' + (n + 1)))}">${C.esc(s)}</li>`
+                : `<li>${C.esc(s)}</li>`).join('')}</ol></div>` : ''}
             ${d.prompt ? `<div class="dprompt"><b>Prompt</b><pre>${C.esc(d.prompt)}</pre></div>` : ''}
         </div></td></tr>`;
     }
@@ -366,7 +390,16 @@
         const open = expanded.has(key);
         const st = STATUS[r.status] || [r.status, ''];
         const live = r.status === 'running' || r.status === 'queued' || r.status === 'parked';
-        return `<tr class="prow ${open ? 'open' : ''}">
+        // ‼️ `afLive` is computed here rather than derived from the status in a
+        // `when` clause: "live" is three statuses, and a menu that spelled that
+        // out three times would drift the day a fourth is added.
+        const ctx = window.AFCtx.row('afTaskRun', {
+            taskId: r.id, afStatus: r.status, afLive: live,
+            afOutput: !!r.hasOutput, afSession: !!r.sessionFile,
+            afFrom: r.sourceKind || 'manual'
+        });
+        return `<tr class="prow ${open ? 'open' : ''}" ${ctx}
+            title="${C.esc(window.AFCtx.hint(r.sourceKind === 'manual' ? 'You started this run' : 'Started by ' + r.sourceKind + ' · ' + r.source))}">
             <td class="expand" data-expand="${key}" role="button" tabindex="0">${open ? '▾' : '▸'}</td>
             <td class="main"><div class="rowtitle"><b>${C.esc(r.title)}</b></div>
                 <div class="muted small">${C.esc(r.agentName)} · ${C.esc(r.mode)}${r.detail ? ' · ' + C.esc(r.detail) : ''}</div></td>
@@ -678,6 +711,119 @@
             if (btn) { btn.addEventListener('click', go); }
         }
     }
+
+    // ------------------------------------------------------- right-click menu
+
+    /**
+     * Everything a right-click on this page can ask for.
+     *
+     * ‼️ EVERY BRANCH POSTS WHAT A BUTTON POSTS. `plRun` sends the same
+     * `{type:'plan', act:'run'}` the row's own run button sends, `tkCancel` the
+     * same `{type:'task', act:'cancel'}` — so the panel keeps one switch and a
+     * change to how a task is cancelled cannot leave the menu cancelling the
+     * old way. What the menu adds is REACH: the acts no button ever offered
+     * (move a queued run, retry with an edited prompt, save the prompt as a
+     * template, edit a workflow step) and the ones that were only reachable
+     * after expanding the row.
+     *
+     * The row's identity travels in the context object: by the time the pick
+     * arrives the table may have been re-sorted, re-filtered, or repainted by
+     * the 30-second ticker, and acting on "whatever is under the pointer now"
+     * would act on a different task.
+     */
+    function ctxDo(act, ctx) {
+        const verb = act.split(':')[0];
+        const arg = act.slice(verb.length + 1);
+        const planOf = () => DATA.plan.find(p => p.kind === ctx.planKind && p.id === ctx.planId);
+        const runOf = () => DATA.runs.find(r => r.id === ctx.taskId);
+        const plan = (a) => post({ type: 'plan', act: a, kind: ctx.planKind, id: ctx.planId });
+        const task = (a) => post({ type: 'task', act: a, id: ctx.taskId });
+        const copy = (v) => window.AFCtx.copy(v);
+        const toggle = (k) => { expanded.has(k) ? expanded.delete(k) : expanded.add(k); render(); };
+
+        switch (verb) {
+            // ---- a plan row ----
+            case 'plRun': plan('run'); return;
+            case 'plEdit': plan('edit'); return;
+            case 'plRename': plan('rename'); return;
+            case 'plToggle': plan('toggle'); return;
+            case 'plDelete': plan('delete'); return;
+            case 'plExport': plan('export'); return;
+            case 'plHistory': post({ type: 'open-history' }); return;
+            case 'plDetail': toggle(ctx.planKind + ':' + ctx.planId); return;
+            // "What has it run" is the Runs tab searched for this definition —
+            // the runs carry their source's title, which is what the search box
+            // already matches on.
+            case 'plRuns': {
+                const p = planOf();
+                tab = 'run';
+                runView = Object.assign({}, RUN_DEF, { q: p ? p.title : '' });
+                persist();
+                render();
+                return;
+            }
+            case 'plCopy': {
+                const p = planOf();
+                if (!p) { copy(''); return; }
+                copy(arg === 'prompt' ? (p.detail && p.detail.prompt)
+                    : arg === 'when' ? p.when
+                        : arg === 'id' ? p.id : p.title);
+                return;
+            }
+
+            // ---- one step of a workflow ----
+            case 'wfEdit': post({ type: 'wfstep', act: 'edit', id: ctx.planId, index: Number(ctx.stepIndex) }); return;
+            case 'wfMove': post({ type: 'wfstep', act: arg, id: ctx.planId, index: Number(ctx.stepIndex) }); return;
+            case 'wfDelete': post({ type: 'wfstep', act: 'delete', id: ctx.planId, index: Number(ctx.stepIndex) }); return;
+            case 'wfCopy': copy(ctx.stepText); return;
+
+            // ---- one execution ----
+            case 'tkStart': task('start'); return;
+            case 'tkNext': task('next'); return;
+            case 'tkMove': task(arg === 'up' ? 'up' : 'down'); return;
+            case 'tkUnpark': task('unpark'); return;
+            case 'tkRerun': task('rerun'); return;
+            case 'tkRetryEdit': task('retryEdit'); return;
+            case 'tkResume': task('resumeWorkflow'); return;
+            case 'tkTemplate': task('saveTemplate'); return;
+            case 'tkTerminal': task('terminal'); return;
+            case 'tkCancel': task('cancel'); return;
+            case 'tkDelete': task('delete'); return;
+            case 'tkDetail': toggle('run:' + ctx.taskId); return;
+            case 'tkOutput': {
+                const r = runOf();
+                if (r && r.outputFile) { post({ type: 'open-output', file: r.outputFile }); }
+                return;
+            }
+            case 'tkTranscript': {
+                const r = runOf();
+                if (r && r.sessionFile) { post({ type: 'open-transcript', file: r.sessionFile }); }
+                return;
+            }
+            case 'tkSource': {
+                const r = runOf();
+                tab = 'plan';
+                planView = Object.assign({}, PLAN_DEF, { q: r ? r.source : '' });
+                persist();
+                render();
+                return;
+            }
+            case 'tkCopy': {
+                const r = runOf();
+                if (!r) { copy(''); return; }
+                copy(arg === 'prompt' ? r.prompt
+                    : arg === 'id' ? r.id
+                        : arg === 'output' ? r.outputFile : r.title);
+                return;
+            }
+        }
+    }
+
+    // ‼️ Listened for ONCE, at module scope. render() runs on every repaint and
+    // every 30-second tick; a listener added there would accumulate a copy per
+    // paint, and one right-click would eventually run the action a hundred
+    // times.
+    window.AFCtx.listen(ctxDo);
 
     window.addEventListener('message', ev => {
         if (ev.data.type === 'data') { DATA = ev.data.data; pendingCommand = false; render(); }

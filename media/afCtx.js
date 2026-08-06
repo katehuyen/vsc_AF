@@ -106,5 +106,60 @@
         });
     }
 
-    window.AFCtx = { attr, obj, row, hint, listen, HINT, panel };
+    /**
+     * Put something on the clipboard and SAY SO.
+     *
+     * ‼️ WHY IT LIVES HERE. A copy changes nothing you can see, so a copy that
+     * reported nothing is indistinguishable from a menu item that does not work
+     * — and "Copy ▸" is on nearly every object's menu. Fifteen pages each
+     * writing their own clipboard call is fifteen chances for one of them to
+     * fail silently.
+     *
+     * `say(message, isError)` is optional: a page that already draws a flash
+     * line passes its own setter and the message lands where that page's other
+     * messages land. Without one, the toast below is used.
+     */
+    function copy(value, say) {
+        const text = String(value === undefined || value === null ? '' : value);
+        const tell = say || toast;
+        if (!text) { tell('Nothing to copy — that row does not carry it.', true); return; }
+        const shown = 'Copied: ' + (text.length > 60 ? text.slice(0, 57) + '…' : text);
+        const nav = typeof navigator !== 'undefined' ? navigator : null;
+        if (nav && nav.clipboard && nav.clipboard.writeText) {
+            nav.clipboard.writeText(text).then(
+                () => tell(shown, false),
+                () => tell('The clipboard refused that.', true));
+            return;
+        }
+        tell('This window has no clipboard access.', true);
+    }
+
+    /** The fallback report: one floating line, gone in three seconds. It is
+     *  positioned and styled inline because it has to work on every page,
+     *  including the ones whose stylesheet knows nothing about it. */
+    function toast(message, isError) {
+        const doc = typeof document !== 'undefined' ? document : null;
+        if (!doc || !doc.body) { return; }
+        let el = doc.getElementById('afctx-toast');
+        if (!el) {
+            el = doc.createElement('div');
+            el.id = 'afctx-toast';
+            el.style.cssText = 'position:fixed;right:14px;bottom:14px;z-index:9999;max-width:60ch;'
+                + 'padding:7px 12px;border-radius:6px;font-size:12px;pointer-events:none;'
+                + 'border:1px solid var(--vscode-widget-border,#4444);'
+                + 'background:var(--vscode-editorWidget-background,#222);'
+                + 'color:var(--vscode-foreground);box-shadow:0 2px 10px #0006;';
+            doc.body.appendChild(el);
+        }
+        el.textContent = message;
+        el.style.borderColor = isError
+            ? 'var(--vscode-errorForeground,#f85149)'
+            : 'var(--vscode-focusBorder,#0af)';
+        el.style.opacity = '1';
+        if (el._afT) { clearTimeout(el._afT); }
+        el._afT = setTimeout(() => { el.style.opacity = '0'; }, 3000);
+        el.style.transition = 'opacity .3s';
+    }
+
+    window.AFCtx = { attr, obj, row, hint, listen, copy, toast, HINT, panel };
 })();

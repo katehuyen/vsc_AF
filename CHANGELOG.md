@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.72.0 — Right-click reaches the Tasks page and Missions (2026-08-06)
+
+**Everything you can do to an automation is now on the right button, including the things that were only ever in the sidebar tree.** A plan row — a schedule, a trigger, a workflow or a template — runs now, switches on or off (the menu offers whichever way the switch is actually thrown, never both), edits, renames, opens the task history, shows what it has run, and copies its name, its prompt, when it runs or its id. Two acts that had no way in from this page at all: **Export as a Windows Scheduled Task…**, and **Add a step…** on a workflow, which is what "edit" honestly does to one.
+
+**A workflow's steps became objects.** They were a numbered list of grey text in the expanded row; each one now edits, moves up, moves down, copies and deletes — the four step commands that until now only existed on the sidebar tree. A schedule's "steps" line is prose and deliberately carries no menu: there is nothing there to move.
+
+**A run row stopped hiding half of itself.** Open its output, open its transcript, reveal its terminal, start it, retry a parked one, run it again — **or run it again with an edited prompt**, resume the workflow from that step, save its prompt as a template, move it up, down or to the front of the queue, cancel it, delete it, and copy the prompt, the name, the id or the output path. **Show what started it** jumps to the Plan tab with that definition searched for, which is the question a failed run always raises and never answered.
+
+**Missions: you can steer a run without opening it.** Approve, reject, answer its question, pause (or withdraw a pause that has not taken effect), resume, cancel — every one of those lived inside the expanded detail, so reading the list meant opening a run before you could act on it. Two more the page never had a button for at all: **run the mission again**, and **delete a finished run from the history**. Plus the lead's planner transcript, and copies of the goal, the verdict, the ledger or the run id. A **delegation** opens its prompt and live output, its archived output file, or the agent that ran it. A **round** folds, unfolds, goes single-open, and copies itself — the planner's thought and every step under it. A **participant chip** — the lead included, because the lead is one — opens that agent or starts talking to it in the Console.
+
+**Copying reports itself everywhere now.** A copy changes nothing you can see, so a copy that said nothing was indistinguishable from a menu item that does not work. One clipboard call, in `media/afCtx.js`, used by every page: a page with its own flash line gets the message there, and a page without one gets a small line bottom-right that fades.
+
 ## 3.71.0 — Right-click starts meaning something, beginning with the Projects page (2026-08-06)
 
 **‼️ Until now, right-clicking anything that was not a session gave you Cut, Copy and Paste.** Every row in this extension is an object — a backlog item, a task run, a notice, a skill, an asset — and everything you can do to one was either behind a small button on the row (narrow, and half of them only drawn in some states), or in the command palette among two hundred entries that say nothing about which row you are pointing at, or nowhere at all. Sessions had the full contract already: right-click one anywhere it is listed and you get the eleven things you can do to it. This release starts giving every other object the same deal, and the design and its running order are written down in `docs/SAG-TIK-MENULERI.tr.md` so it is a road, not a mood.

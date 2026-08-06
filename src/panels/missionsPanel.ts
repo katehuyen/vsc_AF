@@ -10,6 +10,11 @@ export interface MissionsDeps {
     /** Validate + start a new mission; error string when the form is bad. */
     create(input: Record<string, unknown>): string | undefined;
     control(action: 'pause' | 'unpause' | 'resume' | 'cancel', runId: string): void;
+    /** Run the same spec again / drop a finished run from the history. Both
+     *  confirm; both are the sidebar tree's commands, called with a node built
+     *  from the store — the page has no way to build one. */
+    rerun(runId: string): void;
+    remove(runId: string): void;
     answer(runId: string, text: string): void;
     settleApproval(runId: string, ok: boolean): void;
     pickFolder(): Thenable<string | undefined>;
@@ -129,9 +134,22 @@ export class MissionsPanel {
                         typeof msg.ts === 'number' && msg.ts > 0 ? msg.ts : undefined);
                 }
                 break;
+            // Reachable only from a row's right-click menu: both ask before
+            // they act, and neither belongs on the row as a button.
+            case 'rerun':
+                if (typeof msg.runId === 'string' && msg.runId) { this.deps.rerun(msg.runId); }
+                break;
+            case 'delete':
+                if (typeof msg.runId === 'string' && msg.runId) { this.deps.remove(msg.runId); }
+                break;
             case 'openAgent':
                 if (typeof msg.agentId === 'string' && msg.agentId) {
                     void vscode.commands.executeCommand('agentfarm.openAgentDetail', { agentId: msg.agentId });
+                }
+                break;
+            case 'consoleAgent':
+                if (typeof msg.agentId === 'string' && msg.agentId) {
+                    void vscode.commands.executeCommand('agentfarm.consoleForAgent', { agentId: msg.agentId });
                 }
                 break;
             case 'openGuide':

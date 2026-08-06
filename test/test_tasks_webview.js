@@ -12,12 +12,16 @@ const vm = require('vm');
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
+// afCtx.js is the right-click contract every row on this page publishes; the
+// page calls into it while it renders, so it loads before the page does.
 const code = fs.readFileSync(path.join(__dirname, '..', 'media', 'afFilters.js'), 'utf8')
+    + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'afCtx.js'), 'utf8')
     + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'tasksPage.js'), 'utf8');
 const createAfmsDom = require(path.join(__dirname, 'lib_afms_dom.js'));
 
 // ---------------------------------------------------------------- DOM shim
 let posted = [];
+const onMessage = [];
 let state = {};
 const els = {};
 const elCache = new Map();
@@ -106,7 +110,10 @@ const sandbox = {
         AFCharts: { esc: (s) => String(s == null ? '' : s), fmtUSD: (v) => '$' + Number(v).toFixed(2) },
         AFHeader: { html: (o) => `<header data-page="${o.page}">${o.title}</header>`, wire: () => { } },
         __DATA__: null,
-        addEventListener: () => { }
+        // The right-click relay arrives as a window message; the page listens
+        // for it once, at module scope, so the test has to hold that listener
+        // to be able to fire a menu pick at all.
+        addEventListener: (ev, fn) => { if (ev === 'message') { onMessage.push(fn); } }
     },
     document: {
         getElementById: (id) => els[id] || (id === 'app' ? getEl('app') : (query(`#${id}`)[0] || null)),
@@ -439,6 +446,97 @@ ok('and offers its transcript', html().includes('data-tr="D:/t/s.jsonl"'));
 clickData('tab', 'plan');
 ok('plan filters survived the tab round-trip (kind still grouped)', html().includes('class="grouphead"'));
 ok('the plan tab does NOT inherit the run tab filters', !html().includes('status: failed'));
+
+// --------------------------------------------------------- right-click menus
+// The contract is the same one the backlog rows proved: do it with the row's
+// own control, do it with the menu, and require the two messages to be
+// identical. A menu that sent its own shape would look like it worked and
+// would do nothing — silently, which is the failure this whole design exists
+// to make impossible.
+{
+    const send = (data) => onMessage.forEach(fn => fn({ data }));
+    const lastMsg = () => posted[posted.length - 1];
+    /** Every row's published identity, decoded out of the rendered markup. */
+    const contexts = () => (html().match(/data-vscode-context="([^"]*)"/g) || []).map(m =>
+        JSON.parse(m.slice(21, -1).replace(/&quot;/g, '"').replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>').replace(/&amp;/g, '&')));
+
+    clickData('tab', 'plan');
+    const plan = contexts().find(c => c.webviewSection === 'afPlanRow' && c.planId === 's1');
+    ok('a plan row publishes itself to the menu', !!plan && plan.planKind === 'schedule');
+    ok('…and says what the menu is allowed to offer',
+        !!plan && plan.afSwitchable === true && plan.afOn === true && plan.afKind === 'schedule');
+    ok('the page keeps the normal Copy/Paste items', !!plan && plan.preventDefaultContextMenuItems === false);
+    ok('…and it carries the address the pick has to come back to', !!plan && 'afPanel' in plan);
+    ok('‼️ the prompt is NOT in the attribute — it is written on every row',
+        !!plan && plan.prompt === undefined);
+
+    const runBtn = query('[data-plan="run"]').find(e => e.dataset.id === 's1');
+    posted = [];
+    if (runBtn) { runBtn.click(); }
+    const runByButton = lastMsg();
+    ok('the row has a run button to compare against', !!runByButton);
+    send({ type: 'afctx', act: 'plRun', ctx: plan });
+    ok('‼️ Run from the menu is the message the row button sends, to the character',
+        JSON.stringify(lastMsg()) === JSON.stringify(runByButton));
+
+    const swBtn = query('[data-plan="toggle"]').find(e => e.dataset.id === 's1');
+    if (swBtn) { swBtn.click(); }
+    const toggleByButton = lastMsg();
+    send({ type: 'afctx', act: 'plToggle', ctx: plan });
+    ok('…and so is switching it off', JSON.stringify(lastMsg()) === JSON.stringify(toggleByButton));
+
+    // Acts no button on this page ever offered.
+    send({ type: 'afctx', act: 'plExport', ctx: plan });
+    ok('exporting a schedule to Windows reaches the host as a plan act',
+        lastMsg().type === 'plan' && lastMsg().act === 'export' && lastMsg().kind === 'schedule');
+    send({ type: 'afctx', act: 'plHistory', ctx: plan });
+    ok('the task history opens from any plan row', lastMsg().type === 'open-history');
+
+    // A workflow's steps are objects; a schedule's "steps" line is prose.
+    clickData('expand', 'workflow:w1');
+    const step = contexts().find(c => c.webviewSection === 'afWorkflowStep');
+    ok('a workflow step publishes its place in the list',
+        !!step && step.planId === 'w1' && step.stepIndex === 0);
+    send({ type: 'afctx', act: 'wfMove:down', ctx: step });
+    ok('moving a step names the workflow and the index',
+        lastMsg().type === 'wfstep' && lastMsg().act === 'down' && lastMsg().index === 0);
+    clickData('expand', 'schedule:s1');
+    ok('‼️ a schedule\'s detail carries no step menu — there is nothing to move',
+        !contexts().some(c => c.webviewSection === 'afWorkflowStep' && c.planId === 's1'));
+    clickData('expand', 'schedule:s1');
+    clickData('expand', 'workflow:w1');
+
+    clickData('tab', 'run');
+    const done = contexts().find(c => c.webviewSection === 'afTaskRun' && c.taskId === 'r3');
+    ok('a run row publishes its status and what it actually has',
+        !!done && done.afStatus === 'done' && done.afOutput === true
+        && done.afSession === true && done.afLive === false);
+    const live = contexts().find(c => c.taskId === 'r1');
+    ok('‼️ "live" is computed once on the row, not spelled out as three statuses',
+        !!live && live.afLive === true && live.afStatus === 'running');
+
+    const rerunBtn = query('[data-task="rerun"]').find(e => e.dataset.id === 'r3');
+    if (rerunBtn) { rerunBtn.click(); }
+    const rerunByButton = lastMsg();
+    send({ type: 'afctx', act: 'tkRerun', ctx: done });
+    ok('running it again from the menu is the button\'s own message',
+        JSON.stringify(lastMsg()) === JSON.stringify(rerunByButton));
+    send({ type: 'afctx', act: 'tkRetryEdit', ctx: done });
+    ok('…and retrying with an edited prompt is an act only the menu offers',
+        lastMsg().type === 'task' && lastMsg().act === 'retryEdit' && lastMsg().id === 'r3');
+    send({ type: 'afctx', act: 'tkOutput', ctx: done });
+    ok('the output opens by the path the ROW carries, not by a lookup at click time',
+        lastMsg().type === 'open-output' && lastMsg().file === 'D:/out/r3.md');
+    send({ type: 'afctx', act: 'tkTranscript', ctx: done });
+    ok('and the transcript the same way',
+        lastMsg().type === 'open-transcript' && lastMsg().file === 'D:/t/s.jsonl');
+
+    send({ type: 'afctx', act: 'tkSource', ctx: done });
+    ok('"show what started it" lands on the Plan tab searched for that definition',
+        html().includes('repo backup'));
+    clickData('clear', 'q');   // leave the page as the blocks below expect it
+}
 
 // ------------------------------------------------------ paused-farm state
 {

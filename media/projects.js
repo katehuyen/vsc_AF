@@ -3378,24 +3378,15 @@
     }
 
     /**
-     * Put something on the clipboard and SAY SO. A copy changes nothing you can
-     * see, so a copy that reported nothing would be indistinguishable from a
-     * menu item that does not work — the same reason afTextTools flashes a ✓.
+     * Put something on the clipboard and SAY SO — the clipboard call is
+     * AFCtx.copy's, so every page reports a copy the same way; this page just
+     * lends it the flash line it already draws instead of a floating toast.
      */
     function copyOut(value) {
-        const text = String(value === undefined || value === null ? '' : value);
-        if (!text) { flash = { error: 'Nothing to copy — that row does not carry it.' }; render(); return; }
-        const done = () => { flash = { ok: 'Copied: ' + (text.length > 60 ? text.slice(0, 57) + '…' : text) }; render(); };
-        const nav = typeof navigator !== 'undefined' ? navigator : null;
-        if (nav && nav.clipboard && nav.clipboard.writeText) {
-            nav.clipboard.writeText(text).then(done, () => {
-                flash = { error: 'The clipboard refused that.' };
-                render();
-            });
-            return;
-        }
-        flash = { error: 'This window has no clipboard access.' };
-        render();
+        window.AFCtx.copy(value, (msg, bad) => {
+            flash = bad ? { error: msg } : { ok: msg };
+            render();
+        });
     }
 
     // ‼️ Listened for ONCE, at module scope. wire() runs on every repaint, and a
