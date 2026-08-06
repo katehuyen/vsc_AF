@@ -164,6 +164,14 @@ export class FarmSettingsPanel {
             case 'reset':
                 await this.setValue(String(msg.key ?? ''), undefined);
                 break;
+            // From a setting's right-click menu: the same key, in VS Code's own
+            // settings editor — where its raw JSON, its scope and its history
+            // live. This page is a curated view, not a replacement for that.
+            case 'openSettingsUi':
+                if (typeof msg.key === 'string' && msg.key) {
+                    void vscode.commands.executeCommand('workbench.action.openSettings', msg.key);
+                }
+                break;
             case 'docOpenSet': {
                 const field = String(msg.field ?? '');
                 if (field === 'defaultMode' || field === 'customCommand' || field === 'customArgs') {

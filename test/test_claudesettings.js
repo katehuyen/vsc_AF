@@ -71,7 +71,11 @@ const CC = require(path.join(__dirname, '..', 'out', 'core', 'claudesettings.js'
 
 // ---------- settings page: Claude section render + routing ----------
 {
-    const code = fs.readFileSync(path.resolve(__dirname, '../media/pageHeader.js'), 'utf8') + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afFilters.js'), 'utf8') + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/settings.js'), 'utf8');
+    // The shared scripts htmlShell ships to every page — from ONE list
+    // (lib_shared_media.js), because a copy of it in each test file is how
+    // adding a shared component breaks five suites at once.
+    const code = require(path.join(__dirname, 'lib_shared_media.js')).sharedMedia()
+        + fs.readFileSync(path.resolve(__dirname, '../media/settings.js'), 'utf8');
     let posted = [];
     let msgHandler = null;
     const els = {};

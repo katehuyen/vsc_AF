@@ -54,7 +54,8 @@
     function itemHtml(it) {
         const err = errors[it.key];
         return `<div class="setitem${it.modified ? ' modified' : ''}" data-item="${C.esc(it.key)}"
-            title="${C.esc(it.key)} — default: ${C.esc(fmtDefault(it.default))}">
+            ${window.AFCtx.row('afSettingRow', { setKey: it.key, afModified: !!it.modified })}
+            title="${C.esc(window.AFCtx.hint(it.key + ' — default: ' + fmtDefault(it.default)))}">
             <div class="sethead">
                 <span class="setname">${C.esc(shortKey(it.key))}</span>
                 ${it.modified ? `<span class="moddot" title="Changed from default (${C.esc(fmtDefault(it.default))})"></span>
@@ -128,7 +129,9 @@
     }
 
     function rootItemHtml(r) {
-        return `<div class="setitem${r.kind === 'missing' || r.duplicate ? '' : ' modified'}" data-item="root:${C.esc(r.root)}">
+        return `<div class="setitem${r.kind === 'missing' || r.duplicate ? '' : ' modified'}" data-item="root:${C.esc(r.root)}"
+            ${window.AFCtx.row('afAgentRoot', { rootPath: r.root, afMissing: r.kind === 'missing' })}
+            title="${C.esc(window.AFCtx.hint(r.root))}">
             <div class="sethead" style="flex-wrap:wrap">
                 <span class="setname">${C.esc(r.root)}</span>
                 ${rootBadge(r)}
@@ -523,6 +526,48 @@
         el.classList.add('flash');
         setTimeout(() => el.classList.remove('flash'), 2500);
     }
+
+    // ------------------------------------------------------- right-click menu
+
+    /**
+     * A setting and an agent root, from the right button. Reset and Remove are
+     * the page's own messages; the rest is what a settings row was never able
+     * to answer — what is this called, what is it set to, and where does VS
+     * Code's own editor show it.
+     */
+    function ctxDo(act, ctx) {
+        const verb = act.split(':')[0];
+        const arg = act.slice(verb.length + 1);
+        switch (verb) {
+            case 'stReset':
+                delete errors[ctx.setKey];
+                vscode.postMessage({ type: 'reset', key: String(ctx.setKey || '') });
+                return;
+            case 'stOpenUi':
+                vscode.postMessage({ type: 'openSettingsUi', key: String(ctx.setKey || '') });
+                return;
+            case 'stCopy': {
+                if (arg === 'key') { window.AFCtx.copy(ctx.setKey); return; }
+                // The settings live inside their categories, not in a flat list.
+                let it;
+                for (const cat of (DATA.categories || [])) {
+                    it = (cat.items || []).find(x => x.key === ctx.setKey);
+                    if (it) { break; }
+                }
+                const v = it ? it.value : undefined;
+                window.AFCtx.copy(v === undefined || v === null ? ''
+                    : typeof v === 'object' ? JSON.stringify(v) : String(v));
+                return;
+            }
+            case 'rtReveal': vscode.postMessage({ type: 'rootReveal', root: String(ctx.rootPath || '') }); return;
+            case 'rtRemove': vscode.postMessage({ type: 'rootRemove', root: String(ctx.rootPath || '') }); return;
+            case 'rtAdd': vscode.postMessage({ type: 'rootAdd' }); return;
+            case 'rtCopy': window.AFCtx.copy(ctx.rootPath); return;
+        }
+    }
+
+    // ‼️ ONCE, at module scope — render() rebinds every control on every change.
+    window.AFCtx.listen(ctxDo);
 
     window.addEventListener('message', ev => {
         if (ev.data.type === 'data') {

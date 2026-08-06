@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
 import { mcpUsage, readAgentMcpServers, removeMcpServer, setServerDisabled } from '../core/mcp';
 import { loadProbeCache, McpServerConfig, probeMcpServer, saveProbeCache } from '../core/mcpProbe';
-import { skillUsage } from '../core/skills';
+import { readAgentSkills, skillUsage } from '../core/skills';
 import { SessionIndex } from '../core/sessions';
 import { revealPath } from '../core/reveal';
 import {
@@ -163,7 +163,49 @@ export class ToolboxPanel {
                 this.changed();
                 break;
             }
+            // ---- reachable only from a row's right-click menu ----
+            // Each one CALLS the command the sidebar tree calls; the only work
+            // here is turning "the row at index N" back into the node those
+            // commands take, which the page has no way to build.
+            case 'editMcp': {
+                const node = this.mcpNode(String(msg.agentId ?? ''), String(msg.server ?? ''));
+                if (node) { await vscode.commands.executeCommand('agentfarm.editMcpServer', node); this.changed(); }
+                break;
+            }
+            case 'copyToAgent': {
+                const node = msg.kind === 'mcp'
+                    ? this.mcpNode(String(msg.agentId ?? ''), String(msg.name ?? ''))
+                    : this.skillNode(String(msg.agentId ?? ''), String(msg.name ?? ''));
+                if (!node) { this.warn('could not find that entry to copy.'); break; }
+                await vscode.commands.executeCommand(
+                    msg.kind === 'mcp' ? 'agentfarm.copyMcpServer' : 'agentfarm.duplicateSkill', node);
+                this.changed();
+                break;
+            }
+            case 'skillScope': {
+                const node = this.skillNode(String(msg.agentId ?? ''), String(msg.name ?? ''));
+                if (!node) { this.warn('a user-scope skill is already shared by every agent.'); break; }
+                await vscode.commands.executeCommand('agentfarm.shareSkill', node);
+                this.changed();
+                break;
+            }
         }
+    }
+
+    /** The tree node `agentfarm.duplicateSkill` / `shareSkill` take. */
+    private skillNode(agentId: string, name: string):
+        { kind: 'skill'; agent: AgentInfo; skill: ReturnType<typeof readAgentSkills>[number] } | undefined {
+        const agent = this.agentById(agentId);
+        const skill = agent ? readAgentSkills(agent).find(s => s.name === name) : undefined;
+        return agent && skill ? { kind: 'skill', agent, skill } : undefined;
+    }
+
+    /** The tree node `agentfarm.editMcpServer` / `copyMcpServer` take. */
+    private mcpNode(agentId: string, name: string):
+        { kind: 'mcp-server'; agent: AgentInfo; server: ReturnType<typeof readAgentMcpServers>[number] } | undefined {
+        const agent = this.agentById(agentId);
+        const server = agent ? readAgentMcpServers(agent).find(s => s.name === name) : undefined;
+        return agent && server ? { kind: 'mcp-server', agent, server } : undefined;
     }
 
     private async probe(scope: string, agentId: string, server: string): Promise<void> {

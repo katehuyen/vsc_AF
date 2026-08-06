@@ -18,18 +18,48 @@
         return Math.round(h / 24) + 'd ago';
     }
 
+    /**
+     * What one matrix cell IS, for the right-click menu.
+     *
+     * A cell is a claim about an agent: it HAS this skill / MCP server / memory
+     * file / duty, or it does not. Both halves are actions — open what is there,
+     * or copy it in where it is missing — and until now only one of them had a
+     * control (the ＋), while the other was a tooltip on a coloured pill.
+     *
+     * `afCopyable` is not "is it missing": a user-scope row is shared by every
+     * agent, so there is nothing to copy anywhere, and a menu that offered it
+     * would be offering a no-op.
+     */
+    function cellCtx(row, agent, cell, kind, copyable) {
+        return window.AFCtx.row('afCapCell', {
+            capKind: kind, capName: row.name || row.title || '',
+            capScope: row.scope || '', capTo: agent.id,
+            capSource: (cell && cell.source) || '',
+            afPresent: !!(cell && (kind === 'duty' ? true : cell.present)),
+            afCopyable: !!copyable
+        });
+    }
+
+    /** The row's own name — the thing the whole line is about. */
+    function rowCtx(row, kind, source) {
+        return window.AFCtx.row('afCapRow', {
+            capKind: kind, capName: row.name || row.title || '', capSource: source || ''
+        });
+    }
+
     function cellHtml(row, agent, cell, kind) {
         if (!cell || !cell.present) {
             // The host resolves the copy source: it compares every agent's copy
             // and asks the user to pick one whenever the copies differ.
             const donors = DATA.agents.filter(a => row.cells[a.id] && row.cells[a.id].present);
             if (!donors.length || row.scope === 'user') {
-                return '<td class="c absent"><span title="not installed">—</span></td>';
+                return `<td class="c absent" ${cellCtx(row, agent, null, kind, false)}><span title="not installed">—</span></td>`;
             }
             const tip = donors.length === 1
                 ? `not installed — copy from ${donors[0].name}`
                 : `not installed — copy here (${donors.length} agents have it; you pick which one it is copied from)`;
-            return `<td class="c absent"><button class="copyhere" title="${C.esc(tip)}" ` +
+            return `<td class="c absent" ${cellCtx(row, agent, null, kind, true)}>` +
+                `<button class="copyhere" title="${C.esc(tip)} — ${window.AFCtx.HINT}" ` +
                 `data-kind="${kind}" data-name="${C.esc(row.name)}" data-scope="${C.esc(row.scope || '')}" ` +
                 `data-to="${C.esc(agent.id)}">＋</button></td>`;
         }
@@ -41,17 +71,18 @@
             : (kind === 'memory' ? 'not recalled (30d)' : 'unused (30d)'));
         if (kind === 'memory' && typeof cell.tokens === 'number') { tipParts.push('~' + cell.tokens + ' tok · changed ' + relTime(cell.mtime)); }
         if (cell.source) { tipParts.push(cell.source); }
-        const tip = tipParts.join('\n');
+        const tip = tipParts.join('\n') + '\n— ' + window.AFCtx.HINT;
         const divCls = cell.diverged ? ' divg' : '';
+        const ctx = cellCtx(row, agent, cell, kind, false);
         if (cell.disabled) {
-            return `<td class="c"><button class="pill off" title="${C.esc(tip)}" data-open="${C.esc(cell.source || '')}">⏻</button></td>`;
+            return `<td class="c" ${ctx}><button class="pill off" title="${C.esc(tip)}" data-open="${C.esc(cell.source || '')}">⏻</button></td>`;
         }
         if (cell.calls > 0) {
             const heat = Math.min(1, 0.35 + Math.log10(cell.calls + 1) / 3);
-            return `<td class="c"><button class="pill used${divCls}" style="opacity:${heat.toFixed(2)}" title="${C.esc(tip)}" ` +
+            return `<td class="c" ${ctx}><button class="pill used${divCls}" style="opacity:${heat.toFixed(2)}" title="${C.esc(tip)}" ` +
                 `data-open="${C.esc(cell.source || '')}">${cell.calls}</button></td>`;
         }
-        return `<td class="c"><button class="pill idle${divCls}" title="${C.esc(tip)}" data-open="${C.esc(cell.source || '')}">✓</button></td>`;
+        return `<td class="c" ${ctx}><button class="pill idle${divCls}" title="${C.esc(tip)}" data-open="${C.esc(cell.source || '')}">✓</button></td>`;
     }
 
     const CADENCE_SHORT = { 'every-turn': 'turn', 'session-start': 'start', daily: 'daily', weekly: 'weekly', manual: 'manual' };
@@ -59,18 +90,23 @@
     function dutyCellHtml(row, agent, cell) {
         if (!cell) {
             const donors = DATA.agents.filter(a => row.cells[a.id]);
-            if (!donors.length) { return '<td class="c absent"><span title="no duty">—</span></td>'; }
+            if (!donors.length) {
+                return `<td class="c absent" ${cellCtx(row, agent, null, 'duty', false)}><span title="no duty">—</span></td>`;
+            }
             const tip = donors.length === 1
                 ? `no such duty — copy from ${donors[0].name}`
                 : `no such duty — copy here (${donors.length} agents have it; you pick which one it is copied from)`;
-            return `<td class="c absent"><button class="copyhere" title="${C.esc(tip)}" ` +
+            return `<td class="c absent" ${cellCtx(row, agent, null, 'duty', true)}>` +
+                `<button class="copyhere" title="${C.esc(tip)} — ${window.AFCtx.HINT}" ` +
                 `data-kind="duty" data-name="${C.esc(row.title)}" data-to="${C.esc(agent.id)}">＋</button></td>`;
         }
         const tip = `${row.title} [${cell.cadence}${cell.paused ? ', paused' : ''}]` +
             (cell.watch ? '\nWatch: ' + cell.watch : '') +
-            (cell.action ? '\nDo: ' + cell.action : '');
+            (cell.action ? '\nDo: ' + cell.action : '') +
+            '\n— ' + window.AFCtx.HINT;
         const label = (cell.paused ? '⏸ ' : '') + (CADENCE_SHORT[cell.cadence] || cell.cadence);
-        return `<td class="c"><button class="pill duty${cell.paused ? ' off' : ''}" title="${C.esc(tip)}" ` +
+        return `<td class="c" ${cellCtx(row, agent, cell, 'duty', false)}>` +
+            `<button class="pill duty${cell.paused ? ' off' : ''}" title="${C.esc(tip)}" ` +
             `data-open="${C.esc(cell.source || '')}">${C.esc(label)}</button></td>`;
     }
 
@@ -95,7 +131,7 @@
                 : kind === 'memory' ? 'memory file — green count = explicit recalls (30d)'
                 : (row.transport + ' · ' + row.commandOrUrl);
             return `<tr>
-                <td class="name"><button class="rowname${anyUse ? '' : ' muted'}" title="${C.esc(sub)}" data-open="${C.esc(firstSrc)}">${C.esc(row.name)}</button>${scopeTag}${anyUse ? '' : ' <span class="dead" title="no agent used this in 30 days">●</span>'}</td>` +
+                <td class="name" ${rowCtx(row, kind, firstSrc)}><button class="rowname${anyUse ? '' : ' muted'}" title="${C.esc(sub)} — ${window.AFCtx.HINT}" data-open="${C.esc(firstSrc)}">${C.esc(row.name)}</button>${scopeTag}${anyUse ? '' : ' <span class="dead" title="no agent used this in 30 days">●</span>'}</td>` +
                 agents.map(a => cellHtml(row, a, row.cells[a.id], kind)).join('') +
             '</tr>';
         }).join('');
@@ -117,7 +153,7 @@
         const body = rows.map(row => {
             const firstSrc = agents.map(a => row.cells[a.id] && row.cells[a.id].source).find(Boolean) || '';
             return `<tr>
-                <td class="name"><button class="rowname" title="standing duty" data-open="${C.esc(firstSrc)}">${C.esc(row.title)}</button></td>` +
+                <td class="name" ${rowCtx(row, 'duty', firstSrc)}><button class="rowname" title="standing duty — ${window.AFCtx.HINT}" data-open="${C.esc(firstSrc)}">${C.esc(row.title)}</button></td>` +
                 agents.map(a => dutyCellHtml(row, a, row.cells[a.id])).join('') +
             '</tr>';
         }).join('');
@@ -127,16 +163,20 @@
 
     const SOURCE_TAG = { manual: 'man', schedule: 'sch', trigger: 'trg', workflow: 'wf' };
 
-    function taskCellHtml(cell) {
-        if (!cell) { return '<td class="c absent"><span title="no runs on this agent">—</span></td>'; }
+    function taskCellHtml(cell, row, agent) {
+        const ctx = window.AFCtx.row('afCapCell', {
+            capKind: 'task', capName: (row && row.title) || '', capTo: agent ? agent.id : '',
+            capSource: '', afPresent: !!cell, afCopyable: false
+        });
+        if (!cell) { return `<td class="c absent" ${ctx}><span title="no runs on this agent">—</span></td>`; }
         const tip = `${cell.runs} completed run(s) (30d): ${cell.done}✓ / ${cell.failed}✗` +
-            `\nlast run ${relTime(cell.lastTs)}`;
+            `\nlast run ${relTime(cell.lastTs)}\n— ${window.AFCtx.HINT}`;
         const label = cell.failed === 0 ? String(cell.runs)
             : cell.done === 0 ? `${cell.failed}✗`
             : `${cell.done}✓/${cell.failed}✗`;
         const cls = cell.failed === 0 ? 'used' : cell.done === 0 ? 'fail' : 'mixed';
         const heat = Math.min(1, 0.35 + Math.log10(cell.runs + 1) / 3);
-        return `<td class="c"><button class="pill ${cls}" style="opacity:${heat.toFixed(2)}" ` +
+        return `<td class="c" ${ctx}><button class="pill ${cls}" style="opacity:${heat.toFixed(2)}" ` +
             `title="${C.esc(tip)}" data-taskhist="1">${C.esc(label)}</button></td>`;
     }
 
@@ -156,9 +196,9 @@
         const body = rows.map(row => {
             const title = row.title.length > 60 ? row.title.slice(0, 59) + '…' : row.title;
             return `<tr>
-                <td class="name"><button class="rowname" title="${C.esc(row.title)} — click for the full task history" data-taskhist="1">${C.esc(title)}</button>
+                <td class="name" ${rowCtx(row, 'task', '')}><button class="rowname" title="${C.esc(row.title)} — click for the full task history — ${window.AFCtx.HINT}" data-taskhist="1">${C.esc(title)}</button>
                     <span class="tag">${SOURCE_TAG[row.source] || row.source}</span>${row.alwaysFails ? ' <span class="dead" style="color:var(--vscode-charts-red,#f14c4c)" title="its last runs all failed">●</span>' : ''}</td>` +
-                agents.map(a => taskCellHtml(row.cells[a.id])).join('') +
+                agents.map(a => taskCellHtml(row.cells[a.id], row, a)).join('') +
             '</tr>';
         }).join('');
         return `<h2>Tasks <span class="chips">${chips}</span></h2>
@@ -237,6 +277,38 @@
                 });
             }));
     }
+
+    /**
+     * The menu on a matrix cell. Copying runs the SAME message the ＋ sends —
+     * with no donor named, because the host is what compares every agent's copy
+     * and asks which one spreads. A menu that picked a source itself would
+     * quietly undo that whole design.
+     */
+    const COPY_MSG = { skill: 'copySkill', mcp: 'copyMcp', memory: 'copyMemory', duty: 'copyDuty' };
+    function ctxDo(act, ctx) {
+        switch (act) {
+            case 'capOpen':
+                if (ctx.capSource) { vscode.postMessage({ type: 'open', path: String(ctx.capSource) }); }
+                return;
+            case 'capTasks':
+                vscode.postMessage({ type: 'openTaskHistory' });
+                return;
+            case 'capCopy':
+                vscode.postMessage({
+                    type: COPY_MSG[ctx.capKind] || 'copyMcp',
+                    name: String(ctx.capName || ''),
+                    title: String(ctx.capName || ''),
+                    scope: String(ctx.capScope || ''),
+                    toAgentId: String(ctx.capTo || '')
+                });
+                return;
+            case 'capPath': window.AFCtx.copy(ctx.capSource); return;
+            case 'capName': window.AFCtx.copy(ctx.capName); return;
+        }
+    }
+
+    // ‼️ ONCE, at module scope — render() rewires every cell on every refresh.
+    window.AFCtx.listen(ctxDo);
 
     render();
 })();

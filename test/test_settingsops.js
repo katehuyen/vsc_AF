@@ -96,7 +96,8 @@ const SO = require(path.join(__dirname, '..', 'out', 'core', 'settingsops.js'));
 
 // ---------- settings page: render, edit routing, focus ----------
 {
-    const code = fs.readFileSync(path.resolve(__dirname, '../media/pageHeader.js'), 'utf8') + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afFilters.js'), 'utf8') + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/settings.js'), 'utf8');
+    const code = require(path.join(__dirname, 'lib_shared_media.js')).sharedMedia()
+        + fs.readFileSync(path.resolve(__dirname, '../media/settings.js'), 'utf8');
     let posted = [];
     let msgHandler = null;
     let flashed = null;
@@ -193,7 +194,8 @@ const SO = require(path.join(__dirname, '..', 'out', 'core', 'settingsops.js'));
 
 // ---------- settings page: Agent folders section ----------
 {
-    const code = fs.readFileSync(path.resolve(__dirname, '../media/pageHeader.js'), 'utf8') + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afFilters.js'), 'utf8') + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/settings.js'), 'utf8');
+    const code = require(path.join(__dirname, 'lib_shared_media.js')).sharedMedia()
+        + fs.readFileSync(path.resolve(__dirname, '../media/settings.js'), 'utf8');
     let posted = [];
     const els = {};
     function getEl(id) {

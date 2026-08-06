@@ -72,6 +72,42 @@
             `<button class="mini danger" data-act="remove" data-i="${x.i}" title="remove (backup kept in .afbak)">remove</button>`;
     }
 
+    /** Which kinds this page can actually take away. A plugin is enabled or
+     *  disabled, not removed; a settings file is never deleted from here. */
+    const REMOVABLE = ['skill', 'subagent', 'command', 'style', 'mcp', 'hook'];
+
+    /**
+     * What one Toolbox row IS, for the right-click menu.
+     *
+     * ‼️ ONE SECTION FOR EIGHT KINDS. Every row on this page is the same shape —
+     * an inventory entry with a kind, a scope and a source file — so it
+     * publishes one section and lets `afKind` carry the difference. Eight
+     * section names would mean eight copies of open/reveal/copy/remove, and the
+     * day one of them was forgotten nothing would say so.
+     *
+     * The index is what the row already addresses itself by: every button on
+     * this page sends `data-i`, and the menu sending anything else would be a
+     * second way of naming the same row.
+     */
+    function toolCtx(x) {
+        const it = x.it, d = it.detail || {};
+        return window.AFCtx.row('afToolRow', {
+            toolIndex: x.i, afKind: it.kind, afScope: it.scope,
+            afRemovable: REMOVABLE.indexOf(it.kind) >= 0,
+            afDisabled: d.disabled === true,
+            afOn: it.kind === 'plugin' ? !!d.enabled : undefined,
+            afHome: it.kind === 'plugin' && !!d.homepage,
+            afProbed: it.kind === 'mcp' && !!DATA.probeCache[probeKeyOf(it)]
+        });
+    }
+
+    /** The row attribute plus the tooltip that says the menu is there. */
+    function rowCtx(x) {
+        return `${toolCtx(x)} title="${esc(window.AFCtx.hint(x.it.scope === 'user'
+            ? 'user scope — every agent sees this'
+            : (x.it.agentName || 'agent scope')))}"`;
+    }
+
     function searchBox(placeholder) {
         return `<div class="searchbar"><input id="tb-q" type="text" placeholder="${esc(placeholder)}" value="${esc(state.q)}"></div>`;
     }
@@ -127,7 +163,7 @@
     function skillTab() {
         return mdTable('skill', ['Skill', 'Scope', 'Description', 'Used (30d)', ''], x => {
             const u = x.it.detail.usage30d || 0;
-            return `<tr><td class="nm">${esc(x.it.name)}</td><td>${scopeBadge(x.it)}</td>
+            return `<tr ${rowCtx(x)}><td class="nm">${esc(x.it.name)}</td><td>${scopeBadge(x.it)}</td>
                 <td class="desc">${esc(x.it.description)}</td>
                 <td>${u ? `<span class="use">${u}×</span>` : '<span class="muted">—</span>'}</td>
                 <td class="act">${actionBtns(x)}</td></tr>`;
@@ -138,7 +174,7 @@
         return mdTable('subagent', ['Subagent', 'Scope', 'Description', 'Model / Tools', ''], x => {
             const d = x.it.detail;
             const facts = [d.model, d.tools].filter(Boolean).map(esc).join(' · ');
-            return `<tr><td class="nm">${esc(x.it.name)}</td><td>${scopeBadge(x.it)}</td>
+            return `<tr ${rowCtx(x)}><td class="nm">${esc(x.it.name)}</td><td>${scopeBadge(x.it)}</td>
                 <td class="desc">${esc(x.it.description)}</td><td class="small">${facts || '<span class="muted">inherits</span>'}</td>
                 <td class="act">${actionBtns(x)}</td></tr>`;
         });
@@ -146,7 +182,7 @@
 
     function commandTab() {
         return mdTable('command', ['Command', 'Scope', 'Description', 'Args', ''], x => {
-            return `<tr><td class="nm">${esc(x.it.name)}</td><td>${scopeBadge(x.it)}</td>
+            return `<tr ${rowCtx(x)}><td class="nm">${esc(x.it.name)}</td><td>${scopeBadge(x.it)}</td>
                 <td class="desc">${esc(x.it.description)}</td>
                 <td class="small">${esc(x.it.detail.argumentHint || '')}</td>
                 <td class="act">${actionBtns(x)}</td></tr>`;
@@ -173,7 +209,7 @@
                 ? `<button class="mini" data-act="togglemcp" data-i="${x.i}" title="${disabled ? 'enable for this agent' : 'disable for this agent (disabledMcpjsonServers)'}">${disabled ? 'enable' : 'disable'}</button>`
                 : '';
             const probeBtn = `<button class="mini" data-act="probe" data-i="${x.i}" title="connect to the server and ask for its tool list">${probe ? 're-probe' : 'probe'}</button>`;
-            let row = `<tr${disabled ? ' class="offrow"' : ''}><td class="nm">${esc(it.name)}${disabled ? ' <span class="tag off">disabled</span>' : ''}</td>
+            let row = `<tr${disabled ? ' class="offrow"' : ''} ${rowCtx(x)}><td class="nm">${esc(it.name)}${disabled ? ' <span class="tag off">disabled</span>' : ''}</td>
                 <td>${scopeBadge(it)}</td><td class="small">${esc(it.detail.transport || '')}</td>
                 <td class="desc small"><code>${esc(it.description)}</code></td>
                 <td>${toolsCell}</td>
@@ -196,7 +232,7 @@
     function hookTab() {
         return mdTable('hook', ['Event', 'Matcher', 'Command', 'Scope', ''], x => {
             const d = x.it.detail;
-            return `<tr><td class="nm">${esc(d.event)}</td><td class="small">${esc(d.matcher || '*')}</td>
+            return `<tr ${rowCtx(x)}><td class="nm">${esc(d.event)}</td><td class="small">${esc(d.matcher || '*')}</td>
                 <td class="desc small"><code title="${esc(d.command)}">${esc(String(d.command || '').slice(0, 90))}${String(d.command || '').length > 90 ? '…' : ''}</code></td>
                 <td>${scopeBadge(x.it)}</td><td class="act">${actionBtns(x)}</td></tr>`;
         });
@@ -213,7 +249,7 @@
         const rows = plugins.map(x => {
             const d = x.it.detail;
             const key = d.plugin + '@' + d.marketplace;
-            return `<tr${d.enabled ? '' : ' class="offrow"'}><td class="nm">${esc(d.plugin)}
+            return `<tr${d.enabled ? '' : ' class="offrow"'} ${rowCtx(x)}><td class="nm">${esc(d.plugin)}
                 ${d.enabled ? '<span class="tag on">enabled</span>' : ''}</td>
                 <td class="small">${esc(d.category || '')}</td>
                 <td class="desc small">${esc(x.it.description)}</td>
@@ -233,7 +269,7 @@
 
     function styleTab() {
         return mdTable('style', ['Style', 'Scope', 'Description', ''], x =>
-            `<tr><td class="nm">${esc(x.it.name)}</td><td>${scopeBadge(x.it)}</td>
+            `<tr ${rowCtx(x)}><td class="nm">${esc(x.it.name)}</td><td>${scopeBadge(x.it)}</td>
              <td class="desc">${esc(x.it.description)}</td><td class="act">${actionBtns(x)}</td></tr>`);
     }
 
@@ -242,7 +278,7 @@
             const d = x.it.detail;
             const info = d.keys ? `keys: ${esc(d.keys.join(', ')).slice(0, 160)}`
                 : d.tokens ? `~${esc(d.tokens)} tokens` : '';
-            return `<tr><td class="nm">${esc(x.it.name)}</td><td>${scopeBadge(x.it)}</td>
+            return `<tr ${rowCtx(x)}><td class="nm">${esc(x.it.name)}</td><td>${scopeBadge(x.it)}</td>
                 <td class="desc small">${info} <span class="muted">(${Math.round((d.sizeBytes || 0) / 102.4) / 10} KB)</span></td>
                 <td class="act"><button class="mini" data-act="open" data-i="${x.i}">open</button>
                 <button class="mini" data-act="reveal" data-i="${x.i}">folder</button></td></tr>`;
@@ -361,6 +397,63 @@
         document.querySelectorAll('[data-modnav]').forEach(b =>
             b.addEventListener('click', () => post({ type: 'afnav', to: b.dataset.modnav })));
     }
+
+    // ------------------------------------------------------- right-click menu
+
+    /**
+     * Everything a right-click on an inventory row can ask for. The first three
+     * branches post exactly what the row's three buttons post; the rest are the
+     * acts that existed only as sidebar-tree commands, so the page you use to
+     * SEE the inventory could not change it.
+     */
+    function ctxDo(act, ctx) {
+        const verb = act.split(':')[0];
+        const arg = act.slice(verb.length + 1);
+        const it = DATA.items[Number(ctx.toolIndex)];
+        if (!it) { return; }
+
+        switch (verb) {
+            case 'tbOpen': post({ type: 'open', path: it.source }); return;
+            case 'tbReveal': post({ type: 'reveal', path: it.dir || it.source }); return;
+            case 'tbRemove': post({ type: 'remove', item: it }); return;
+            case 'tbProbe': post({ type: 'probe', scope: it.scope, agentId: it.agentId || '', server: it.name }); return;
+            case 'tbMcp':
+                post({ type: 'toggleMcp', agentId: it.agentId || '', server: it.name, disabled: arg === 'off' });
+                return;
+            case 'tbMcpEdit': post({ type: 'editMcp', agentId: it.agentId || '', server: it.name }); return;
+            case 'tbPlug':
+                post({
+                    type: 'togglePlugin',
+                    key: it.detail.plugin + '@' + it.detail.marketplace,
+                    on: arg === '1'
+                });
+                return;
+            case 'tbHome':
+                if (it.detail.homepage) { post({ type: 'openExternal', url: it.detail.homepage }); }
+                return;
+            case 'tbCopyAgent':
+                post({ type: 'copyToAgent', kind: it.kind, agentId: it.agentId || '', name: it.name });
+                return;
+            case 'tbScope': post({ type: 'skillScope', agentId: it.agentId || '', name: it.name }); return;
+            // The tool list is already on the row behind a caret; the menu opens
+            // the same fold rather than drawing a second view of it.
+            case 'tbTools': {
+                const key = probeKeyOf(it);
+                state.tab = 'mcp';
+                state.expanded[key] = true;
+                render();
+                return;
+            }
+            case 'tbCopy':
+                window.AFCtx.copy(arg === 'path' ? (it.source || it.dir)
+                    : arg === 'invoke' ? '/' + it.name : it.name);
+                return;
+        }
+    }
+
+    // ‼️ ONCE, at module scope — wire() runs again on every keystroke in the
+    // filter box, and a listener added there would multiply with it.
+    window.AFCtx.listen(ctxDo);
 
     render();
 })();

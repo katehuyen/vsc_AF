@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.73.0",
+  "version": "3.74.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -2344,6 +2344,191 @@
         "command": "agentfarm.ctx.ndCopy",
         "title": "Copy the row",
         "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.tbOpen",
+        "title": "Open its file",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.tbReveal",
+        "title": "Reveal it in the file explorer",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.tbHome",
+        "title": "Open its homepage",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.tbProbe",
+        "title": "Ask it for its tool list",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.tbTools",
+        "title": "Show the tools it answered with",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.tbMcpOff",
+        "title": "Disable it for this agent",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.tbMcpOn",
+        "title": "Enable it for this agent",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.tbMcpEdit",
+        "title": "Edit its definition\u2026",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.tbPlugOn",
+        "title": "Enable it \u2014 for every new claude session",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.tbPlugOff",
+        "title": "Disable it",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.tbCopyAgent",
+        "title": "Copy it to another agent\u2026",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.tbScope",
+        "title": "Move it between user and agent scope\u2026",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.tbCopyName",
+        "title": "Its name",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.tbCopyPath",
+        "title": "Its file path",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.tbCopyInvoke",
+        "title": "How you invoke it \u2014 /name",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.tbRemove",
+        "title": "Remove it \u2014 a backup is kept beside it",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.capOpen",
+        "title": "Open the file behind it",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.capTasks",
+        "title": "Open the full task history",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.capCopy",
+        "title": "Copy it to this agent\u2026",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.capPath",
+        "title": "Copy its path",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.capRowOpen",
+        "title": "Open the file that defines it",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.capRowTasks",
+        "title": "Open the full task history",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.capRowName",
+        "title": "Copy its name",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.stOpenUi",
+        "title": "Open it in VS Code's settings editor",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.stReset",
+        "title": "Reset it to its default",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.stCopyKey",
+        "title": "Copy its setting key",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.stCopyValue",
+        "title": "Copy what it is set to",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.rtReveal",
+        "title": "Show the folder",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.rtAdd",
+        "title": "Add another root\u2026",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.rtCopy",
+        "title": "Copy its path",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.rtRemove",
+        "title": "Stop scanning this root",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.scValue",
+        "title": "Replace its value\u2026",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.scDesc",
+        "title": "Edit its description\u2026",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.scScope",
+        "title": "Choose which agents may use it\u2026",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.scCopyName",
+        "title": "Copy its name",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.scCopyRef",
+        "title": "Copy how a prompt refers to it \u2014 {secret:NAME}",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.scDelete",
+        "title": "Delete it from the keychain\u2026",
+        "category": "Agent Farm"
       }
     ],
     "submenus": [
@@ -2421,6 +2606,10 @@
   },
   {
     "id": "agentfarm.ctx.qCopy",
+    "label": "Copy"
+  },
+  {
+    "id": "agentfarm.ctx.tbCopy",
     "label": "Copy"
   }
 ],
@@ -3321,6 +3510,11 @@
           "group": "5_copy@1"
         },
         {
+          "submenu": "agentfarm.ctx.tbCopy",
+          "when": "webviewSection == 'afToolRow'",
+          "group": "5_copy@1"
+        },
+        {
           "command": "agentfarm.openSession",
           "when": "webviewSection =~ /^(afSessionRow|afNeedSession)$/",
           "group": "1_open@1"
@@ -4054,8 +4248,195 @@
           "command": "agentfarm.ctx.ndCopy",
           "when": "webviewSection =~ /^afNeed(Row|Session)$/",
           "group": "5_copy@1"
+        },
+        {
+          "command": "agentfarm.ctx.tbOpen",
+          "when": "webviewSection == 'afToolRow'",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.ctx.tbReveal",
+          "when": "webviewSection == 'afToolRow'",
+          "group": "1_open@2"
+        },
+        {
+          "command": "agentfarm.ctx.tbHome",
+          "when": "webviewSection == 'afToolRow' && afHome",
+          "group": "1_open@3"
+        },
+        {
+          "command": "agentfarm.ctx.tbProbe",
+          "when": "webviewSection == 'afToolRow' && afKind == 'mcp'",
+          "group": "2_edit@1"
+        },
+        {
+          "command": "agentfarm.ctx.tbTools",
+          "when": "webviewSection == 'afToolRow' && afKind == 'mcp' && afProbed",
+          "group": "2_edit@2"
+        },
+        {
+          "command": "agentfarm.ctx.tbMcpOff",
+          "when": "webviewSection == 'afToolRow' && afKind == 'mcp' && afScope == 'agent' && !afDisabled",
+          "group": "2_edit@3"
+        },
+        {
+          "command": "agentfarm.ctx.tbMcpOn",
+          "when": "webviewSection == 'afToolRow' && afKind == 'mcp' && afScope == 'agent' && afDisabled",
+          "group": "2_edit@3"
+        },
+        {
+          "command": "agentfarm.ctx.tbMcpEdit",
+          "when": "webviewSection == 'afToolRow' && afKind == 'mcp' && afScope == 'agent'",
+          "group": "2_edit@4"
+        },
+        {
+          "command": "agentfarm.ctx.tbPlugOn",
+          "when": "webviewSection == 'afToolRow' && afKind == 'plugin' && !afOn",
+          "group": "2_edit@5"
+        },
+        {
+          "command": "agentfarm.ctx.tbPlugOff",
+          "when": "webviewSection == 'afToolRow' && afKind == 'plugin' && afOn",
+          "group": "2_edit@5"
+        },
+        {
+          "command": "agentfarm.ctx.tbCopyAgent",
+          "when": "webviewSection == 'afToolRow' && afScope == 'agent' && afKind =~ /^(skill|mcp)$/",
+          "group": "4_link@1"
+        },
+        {
+          "command": "agentfarm.ctx.tbScope",
+          "when": "webviewSection == 'afToolRow' && afKind == 'skill'",
+          "group": "4_link@2"
+        },
+        {
+          "command": "agentfarm.ctx.tbRemove",
+          "when": "webviewSection == 'afToolRow' && afRemovable",
+          "group": "9_danger@1"
+        },
+        {
+          "command": "agentfarm.ctx.capOpen",
+          "when": "webviewSection == 'afCapCell' && afPresent && capSource",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.ctx.capTasks",
+          "when": "webviewSection == 'afCapCell' && capKind == 'task'",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.ctx.capCopy",
+          "when": "webviewSection == 'afCapCell' && !afPresent && afCopyable",
+          "group": "2_edit@1"
+        },
+        {
+          "command": "agentfarm.ctx.capPath",
+          "when": "webviewSection == 'afCapCell' && capSource",
+          "group": "5_copy@1"
+        },
+        {
+          "command": "agentfarm.ctx.capRowOpen",
+          "when": "webviewSection == 'afCapRow' && capSource",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.ctx.capRowTasks",
+          "when": "webviewSection == 'afCapRow' && capKind == 'task'",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.ctx.capRowName",
+          "when": "webviewSection == 'afCapRow'",
+          "group": "5_copy@1"
+        },
+        {
+          "command": "agentfarm.ctx.stOpenUi",
+          "when": "webviewSection == 'afSettingRow'",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.ctx.stReset",
+          "when": "webviewSection == 'afSettingRow' && afModified",
+          "group": "2_edit@1"
+        },
+        {
+          "command": "agentfarm.ctx.stCopyKey",
+          "when": "webviewSection == 'afSettingRow'",
+          "group": "5_copy@1"
+        },
+        {
+          "command": "agentfarm.ctx.stCopyValue",
+          "when": "webviewSection == 'afSettingRow'",
+          "group": "5_copy@2"
+        },
+        {
+          "command": "agentfarm.ctx.rtReveal",
+          "when": "webviewSection == 'afAgentRoot' && !afMissing",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.ctx.rtAdd",
+          "when": "webviewSection == 'afAgentRoot'",
+          "group": "4_link@1"
+        },
+        {
+          "command": "agentfarm.ctx.rtCopy",
+          "when": "webviewSection == 'afAgentRoot'",
+          "group": "5_copy@1"
+        },
+        {
+          "command": "agentfarm.ctx.rtRemove",
+          "when": "webviewSection == 'afAgentRoot'",
+          "group": "9_danger@1"
+        },
+        {
+          "command": "agentfarm.ctx.scValue",
+          "when": "webviewSection == 'afSecretRow'",
+          "group": "2_edit@1"
+        },
+        {
+          "command": "agentfarm.ctx.scDesc",
+          "when": "webviewSection == 'afSecretRow'",
+          "group": "2_edit@2"
+        },
+        {
+          "command": "agentfarm.ctx.scScope",
+          "when": "webviewSection == 'afSecretRow'",
+          "group": "2_edit@3"
+        },
+        {
+          "command": "agentfarm.ctx.scCopyName",
+          "when": "webviewSection == 'afSecretRow'",
+          "group": "5_copy@1"
+        },
+        {
+          "command": "agentfarm.ctx.scCopyRef",
+          "when": "webviewSection == 'afSecretRow'",
+          "group": "5_copy@2"
+        },
+        {
+          "command": "agentfarm.ctx.scDelete",
+          "when": "webviewSection == 'afSecretRow'",
+          "group": "9_danger@1"
         }
       ],
+      "agentfarm.ctx.tbCopy": [
+  {
+    "command": "agentfarm.ctx.tbCopyName",
+    "when": "webviewSection == 'afToolRow'",
+    "group": "1_pick@1"
+  },
+  {
+    "command": "agentfarm.ctx.tbCopyPath",
+    "when": "webviewSection == 'afToolRow'",
+    "group": "1_pick@2"
+  },
+  {
+    "command": "agentfarm.ctx.tbCopyInvoke",
+    "when": "webviewSection == 'afToolRow' && afKind =~ /^(skill|command)$/",
+    "group": "1_pick@3"
+  }
+],
       "agentfarm.ctx.qCopy": [
   {
     "command": "agentfarm.ctx.qCopyText",
@@ -5172,6 +5553,191 @@
   },
   {
     "command": "agentfarm.ctx.ndCopy",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.tbOpen",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.tbReveal",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.tbHome",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.tbProbe",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.tbTools",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.tbMcpOff",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.tbMcpOn",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.tbMcpEdit",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.tbPlugOn",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.tbPlugOff",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.tbCopyAgent",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.tbScope",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.tbCopyName",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.tbCopyPath",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.tbCopyInvoke",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.tbRemove",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.capOpen",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.capTasks",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.capCopy",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.capPath",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.capRowOpen",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.capRowTasks",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.capRowName",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.stOpenUi",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.stReset",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.stCopyKey",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.stCopyValue",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.rtReveal",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.rtAdd",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.rtCopy",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.rtRemove",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.scValue",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.scDesc",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.scScope",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.scCopyName",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.scCopyRef",
+    "when": "false",
+    "group": "ctx"
+  },
+  {
+    "command": "agentfarm.ctx.scDelete",
     "when": "false",
     "group": "ctx"
   }

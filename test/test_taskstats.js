@@ -155,9 +155,9 @@ function runWebview(file, data) {
     sandbox.window.window = sandbox.window;
     vm.createContext(sandbox);
     vm.runInContext(fs.readFileSync(path.join(ROOT, 'media/charts.js'), 'utf8'), sandbox);
-    // htmlShell ships the shared header + sessions-table components to every page
-    vm.runInContext(fs.readFileSync(path.join(ROOT, 'media/pageHeader.js'), 'utf8'), sandbox);
-    vm.runInContext(fs.readFileSync(path.join(ROOT, 'media/afFilters.js'), 'utf8'), sandbox);
+    // htmlShell ships the shared components to every page — the list lives in
+    // lib_shared_media.js so it cannot go stale one test file at a time.
+    vm.runInContext(require(path.join(__dirname, 'lib_shared_media.js')).sharedMedia(), sandbox);
     vm.runInContext(fs.readFileSync(path.join(ROOT, 'media/sessionsTable.js'), 'utf8'), sandbox);
     vm.runInContext(fs.readFileSync(path.join(ROOT, file), 'utf8'), sandbox);
     return dom.app._html;

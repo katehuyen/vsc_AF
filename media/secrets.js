@@ -45,7 +45,8 @@
                 DATA.secrets.length ? 'Nothing matches the filter.' : 'No secrets stored yet — click <b>+ Add secret</b>.'
             }</td></tr>`;
         }
-        return list.map(s => `<tr>
+        return list.map(s => `<tr ${window.AFCtx.row('afSecretRow', { secret: s.name })}
+            title="${esc(window.AFCtx.hint('The value is in the OS keychain and never leaves it'))}">
             <td class="nm">${esc(s.name)}</td>
             <td class="val"><span class="dots" title="stored in the OS keychain — never shown">••••••••</span>
                 <button class="mini" data-act="setValue" data-name="${esc(s.name)}" title="replace the stored value">replace</button></td>
@@ -129,6 +130,27 @@
         document.querySelectorAll('[data-act]').forEach(b =>
             b.addEventListener('click', () => post({ type: b.dataset.act, name: b.dataset.name })));
     }
+
+    /**
+     * The menu on a secret.
+     *
+     * ‼️ THERE IS NO "COPY THE VALUE", AND THERE WILL NOT BE ONE. The value
+     * never reaches this page at all — only metadata does — so there is
+     * nothing here to copy even if somebody added the item. What can be copied
+     * is the NAME and the reference a prompt uses, which is what you actually
+     * need when writing one.
+     */
+    function ctxDo(act, ctx) {
+        const verb = act.split(':')[0];
+        const arg = act.slice(verb.length + 1);
+        const name = String(ctx.secret || '');
+        if (verb === 'scAct') { post({ type: arg, name: name }); return; }
+        if (verb === 'scCopyName') { window.AFCtx.copy(name); return; }
+        if (verb === 'scCopyRef') { window.AFCtx.copy(name ? '{secret:' + name + '}' : ''); }
+    }
+
+    // ‼️ ONCE, at module scope — wire() runs again on every keystroke.
+    window.AFCtx.listen(ctxDo);
 
     render();
 })();

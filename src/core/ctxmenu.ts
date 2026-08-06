@@ -96,6 +96,27 @@ const QUEUE_ROW = "webviewSection == 'afQueueRow'";
 const QUEUE_LANE = "webviewSection == 'afQueueLane'";
 const NEED_ROW = 'webviewSection =~ /^afNeed(Row|Session)$/';
 
+/**
+ * The Toolbox's rows — skills, subagents, commands, MCP servers, hooks,
+ * plugins, styles, config files.
+ *
+ * ‼️ ONE SECTION, NOT EIGHT. Every row on that page is the same object: an
+ * entry in one inventory, with a kind, a scope and a source file. Eight section
+ * names would be eight copies of "open · reveal · copy · remove" that could
+ * drift apart; `afKind` carries the difference, and only the items that really
+ * are kind-specific (probe an MCP server, enable a plugin) name it.
+ */
+const TOOL_ROW = "webviewSection == 'afToolRow'";
+
+/** The capability matrix: one cell, and the row's name. */
+const CAP_CELL = "webviewSection == 'afCapCell'";
+const CAP_ROW = "webviewSection == 'afCapRow'";
+
+/** Farm Settings, and the vault. */
+const SETTING_ROW = "webviewSection == 'afSettingRow'";
+const AGENT_ROOT = "webviewSection == 'afAgentRoot'";
+const SECRET_ROW = "webviewSection == 'afSecretRow'";
+
 /** Missions: the run, one delegation, one planner round, one team member. */
 const MISSION_ROW = "webviewSection == 'afMissionRow'";
 const MISSION_STEP = "webviewSection == 'afMissionStep'";
@@ -128,7 +149,8 @@ export const CTX_SUBMENUS: CtxSubmenu[] = [
     { id: CTX_PREFIX + 'ntCopy', label: 'Copy', group: '5_copy@1', when: NOTICE_ROW },
     // Urgency is a live item's field; a dropped or finished one has no more of it.
     { id: CTX_PREFIX + 'qUrg', label: 'Urgency', group: '2_edit@3', when: `${QUEUE_ROW} && !afTerminal` },
-    { id: CTX_PREFIX + 'qCopy', label: 'Copy', group: '5_copy@1', when: QUEUE_ROW }
+    { id: CTX_PREFIX + 'qCopy', label: 'Copy', group: '5_copy@1', when: QUEUE_ROW },
+    { id: CTX_PREFIX + 'tbCopy', label: 'Copy', group: '5_copy@1', when: TOOL_ROW }
 ];
 
 /**
@@ -811,6 +833,178 @@ export const CTX_ITEMS: CtxItem[] = [
     {
         id: 'ndCopy', title: 'Copy the row', act: 'ndCopy',
         when: NEED_ROW, group: '5_copy@1'
+    },
+
+    // =====================================================================
+    // THE TOOLBOX — everything that extends claude, at both scopes. The rows
+    // carried three buttons (open · folder · remove) and the rest of what an
+    // entry can do was on the sidebar tree, where you cannot see the
+    // inventory you are deciding about.
+    // =====================================================================
+    {
+        id: 'tbOpen', title: 'Open its file', act: 'tbOpen',
+        when: TOOL_ROW, group: '1_open@1'
+    },
+    {
+        id: 'tbReveal', title: 'Reveal it in the file explorer', act: 'tbReveal',
+        when: TOOL_ROW, group: '1_open@2'
+    },
+    {
+        id: 'tbHome', title: 'Open its homepage', act: 'tbHome',
+        when: `${TOOL_ROW} && afHome`, group: '1_open@3'
+    },
+    {
+        id: 'tbProbe', title: 'Ask it for its tool list', act: 'tbProbe',
+        when: `${TOOL_ROW} && afKind == 'mcp'`, group: '2_edit@1'
+    },
+    {
+        id: 'tbTools', title: 'Show the tools it answered with', act: 'tbTools',
+        when: `${TOOL_ROW} && afKind == 'mcp' && afProbed`, group: '2_edit@2'
+    },
+    {
+        id: 'tbMcpOff', title: 'Disable it for this agent', act: 'tbMcp:off',
+        when: `${TOOL_ROW} && afKind == 'mcp' && afScope == 'agent' && !afDisabled`, group: '2_edit@3'
+    },
+    {
+        id: 'tbMcpOn', title: 'Enable it for this agent', act: 'tbMcp:on',
+        when: `${TOOL_ROW} && afKind == 'mcp' && afScope == 'agent' && afDisabled`, group: '2_edit@3'
+    },
+    {
+        id: 'tbMcpEdit', title: 'Edit its definition…', act: 'tbMcpEdit',
+        when: `${TOOL_ROW} && afKind == 'mcp' && afScope == 'agent'`, group: '2_edit@4'
+    },
+    {
+        id: 'tbPlugOn', title: 'Enable it — for every new claude session', act: 'tbPlug:1',
+        when: `${TOOL_ROW} && afKind == 'plugin' && !afOn`, group: '2_edit@5'
+    },
+    {
+        id: 'tbPlugOff', title: 'Disable it', act: 'tbPlug:0',
+        when: `${TOOL_ROW} && afKind == 'plugin' && afOn`, group: '2_edit@5'
+    },
+    {
+        id: 'tbCopyAgent', title: 'Copy it to another agent…', act: 'tbCopyAgent',
+        when: `${TOOL_ROW} && afScope == 'agent' && afKind =~ /^(skill|mcp)$/`, group: '4_link@1'
+    },
+    {
+        id: 'tbScope', title: 'Move it between user and agent scope…', act: 'tbScope',
+        when: `${TOOL_ROW} && afKind == 'skill'`, group: '4_link@2'
+    },
+    ...picker(CTX_PREFIX + 'tbCopy', TOOL_ROW, 'tbCopy', [
+        ['name', 'Its name'],
+        ['path', 'Its file path']
+    ]),
+    // Only the two kinds you TYPE have an invocation to copy.
+    {
+        menu: CTX_PREFIX + 'tbCopy', id: 'tbCopyInvoke', act: 'tbCopy:invoke',
+        title: 'How you invoke it — /name',
+        when: `${TOOL_ROW} && afKind =~ /^(skill|command)$/`, group: '1_pick@3'
+    },
+    {
+        id: 'tbRemove', title: 'Remove it — a backup is kept beside it', act: 'tbRemove',
+        when: `${TOOL_ROW} && afRemovable`, group: '9_danger@1'
+    },
+
+    // =====================================================================
+    // THE CAPABILITY MATRIX — a cell is "this agent has (or lacks) this
+    // thing". Both halves of that are actions, and neither had a menu.
+    // =====================================================================
+    {
+        id: 'capOpen', title: 'Open the file behind it', act: 'capOpen',
+        when: `${CAP_CELL} && afPresent && capSource`, group: '1_open@1'
+    },
+    {
+        id: 'capTasks', title: 'Open the full task history', act: 'capTasks',
+        when: `${CAP_CELL} && capKind == 'task'`, group: '1_open@1'
+    },
+    // The ＋ that was the only way to fill a hole: now it is a menu item too,
+    // and it runs the very same message — the host still picks the donor.
+    {
+        id: 'capCopy', title: 'Copy it to this agent…', act: 'capCopy',
+        when: `${CAP_CELL} && !afPresent && afCopyable`, group: '2_edit@1'
+    },
+    {
+        id: 'capPath', title: 'Copy its path', act: 'capPath',
+        when: `${CAP_CELL} && capSource`, group: '5_copy@1'
+    },
+    {
+        id: 'capRowOpen', title: 'Open the file that defines it', act: 'capOpen',
+        when: `${CAP_ROW} && capSource`, group: '1_open@1'
+    },
+    {
+        id: 'capRowTasks', title: 'Open the full task history', act: 'capTasks',
+        when: `${CAP_ROW} && capKind == 'task'`, group: '1_open@1'
+    },
+    {
+        id: 'capRowName', title: 'Copy its name', act: 'capName',
+        when: CAP_ROW, group: '5_copy@1'
+    },
+
+    // =====================================================================
+    // FARM SETTINGS — one setting, and one agent root.
+    // =====================================================================
+    {
+        id: 'stOpenUi', title: "Open it in VS Code's settings editor", act: 'stOpenUi',
+        when: SETTING_ROW, group: '1_open@1'
+    },
+    {
+        id: 'stReset', title: 'Reset it to its default', act: 'stReset',
+        when: `${SETTING_ROW} && afModified`, group: '2_edit@1'
+    },
+    {
+        id: 'stCopyKey', title: 'Copy its setting key', act: 'stCopy:key',
+        when: SETTING_ROW, group: '5_copy@1'
+    },
+    {
+        id: 'stCopyValue', title: 'Copy what it is set to', act: 'stCopy:value',
+        when: SETTING_ROW, group: '5_copy@2'
+    },
+    {
+        id: 'rtReveal', title: 'Show the folder', act: 'rtReveal',
+        when: `${AGENT_ROOT} && !afMissing`, group: '1_open@1'
+    },
+    {
+        id: 'rtAdd', title: 'Add another root…', act: 'rtAdd',
+        when: AGENT_ROOT, group: '4_link@1'
+    },
+    {
+        id: 'rtCopy', title: 'Copy its path', act: 'rtCopy',
+        when: AGENT_ROOT, group: '5_copy@1'
+    },
+    {
+        id: 'rtRemove', title: 'Stop scanning this root', act: 'rtRemove',
+        when: AGENT_ROOT, group: '9_danger@1'
+    },
+
+    // =====================================================================
+    // THE VAULT — ‼️ THERE IS NO "COPY THE VALUE" ITEM, AND THERE WILL NOT
+    // BE ONE. A secret that can reach the clipboard from a menu is a secret
+    // that reaches the clipboard by accident; the value never leaves the OS
+    // keychain, which is the whole reason this page exists (_REF/bridge.md
+    // makes the same exception for the same reason).
+    // =====================================================================
+    {
+        id: 'scValue', title: 'Replace its value…', act: 'scAct:setValue',
+        when: SECRET_ROW, group: '2_edit@1'
+    },
+    {
+        id: 'scDesc', title: 'Edit its description…', act: 'scAct:editDescription',
+        when: SECRET_ROW, group: '2_edit@2'
+    },
+    {
+        id: 'scScope', title: 'Choose which agents may use it…', act: 'scAct:editScope',
+        when: SECRET_ROW, group: '2_edit@3'
+    },
+    {
+        id: 'scCopyName', title: 'Copy its name', act: 'scCopyName',
+        when: SECRET_ROW, group: '5_copy@1'
+    },
+    {
+        id: 'scCopyRef', title: 'Copy how a prompt refers to it — {secret:NAME}', act: 'scCopyRef',
+        when: SECRET_ROW, group: '5_copy@2'
+    },
+    {
+        id: 'scDelete', title: 'Delete it from the keychain…', act: 'scAct:delete',
+        when: SECRET_ROW, group: '9_danger@1'
     }
 ];
 
