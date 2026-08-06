@@ -1656,10 +1656,11 @@
         let body;
         if (snip.loading) {
             body = '<div class="snipnone">Reading the file…</div>';
-        } else if (snip.error) {
-            body = `<div class="snipnone">${C.esc(snip.error)}<br><br>
-                Point <code>agentFarm.promptSnippetsFile</code> at a markdown file and put each
-                prompt inside a <code>\`\`\`</code> block.</div>`;
+        } else if (snip.error || !snip.file) {
+            body = `<div class="snipnone">${C.esc(snip.error || 'No file is set yet.')}<br><br>
+                Press <b>📁 Choose a file…</b> above and pick a markdown file — your machine's own
+                file picker opens. Put each prompt inside a <code>\`\`\`</code> block; everything
+                around the blocks is yours to write notes in and is never offered.</div>`;
         } else if (!all.length) {
             body = `<div class="snipnone">No blocks in that file yet. Anything you put inside a
                 <code>\`\`\`</code> fence shows up here; the text around the fences is yours to
@@ -1691,9 +1692,11 @@
                     <b>Saved prompts</b>
                     <input id="snip-q" type="text" placeholder="filter…" value="${C.esc(snip.q || '')}">
                     <span class="grow"></span>
-                    <button class="secondary" id="snip-file" title="${snip.file
-        ? 'Open the file this list is read from — add a ``` block and it is here the next time you right-click'
-        : 'No file is set. This opens the setting so you can point at one.'}">${snip.file ? '✎ Edit the file' : '⚙ Set the file'}</button>
+                    ${snip.file ? `<button class="secondary" id="snip-file"
+                        title="Open the file this list is read from — add a \`\`\` block and it is here the next time you right-click">✎ Edit the file</button>` : ''}
+                    <button class="secondary" id="snip-pick" title="${snip.file
+        ? 'Point at a different file — your machine\'s own file picker opens'
+        : 'Choose the markdown file your prompts live in — your machine\'s own file picker opens'}">📁 ${snip.file ? 'Change file…' : 'Choose a file…'}</button>
                     <button class="secondary" id="snip-x" title="Close (Esc)">✕</button>
                 </div>
                 <div class="sniplist">${body}</div>
@@ -1708,6 +1711,14 @@
         if (!snip) { return; }
         byId('snip-x', 'click', snipClose);
         byId('snip-file', 'click', () => vscode.postMessage({ type: 'openPromptSnippets' }));
+        // ‼️ The OS's own file picker, not a settings page. The panel stays
+        // open: the answer comes back as a fresh promptSnippets message and the
+        // list you were looking at is simply the new file's.
+        byId('snip-pick', 'click', () => {
+            snip.loading = true;
+            renderSnip();
+            vscode.postMessage({ type: 'pickPromptSnippets' });
+        });
         // Clicking the backdrop closes it; clicking the panel must not.
         byId('c-snipwrap', 'click', ev => { if (ev.target && ev.target.id === 'c-snipwrap') { snipClose(); } });
         const q = document.getElementById('snip-q');

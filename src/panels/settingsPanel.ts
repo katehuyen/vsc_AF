@@ -26,11 +26,11 @@ export interface AgentFolderReport {
 export interface FarmSettingsDeps {
     extensionUri: vscode.Uri;
     /** the agentFarm.* schema straight from package.json — the page renders it.
-     *  `format` is how a setting declares itself a path and earns a Browse…
-     *  button (see SettingSpec.browse). */
+     *  `x-af-browse` is how a setting declares itself a path and earns a
+     *  Browse… button (see SettingSpec.browse for why not `format`). */
     schema(): Record<string, {
         type?: unknown; enum?: unknown; default?: unknown;
-        description?: string; markdownDescription?: string; format?: unknown;
+        description?: string; markdownDescription?: string; 'x-af-browse'?: unknown;
     }>;
     getProfiles(): SettingsProfile[];
     setProfiles(list: SettingsProfile[]): Thenable<void>;

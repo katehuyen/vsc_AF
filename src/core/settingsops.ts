@@ -21,8 +21,18 @@ export interface SettingSpec {
      * tomorrow appears without anybody editing the page — so "this one is a
      * path" has to travel the same way, or the page grows a hand-written list
      * of keys that goes stale the first time somebody forgets it. Declare
-     * `"format": "file-path"` (or `"folder-path"`) in package.json and the
-     * text box gets a picker beside it. Anything else is just a text box.
+     * `"x-af-browse": "file"` (or `"folder"`) in package.json and the text box
+     * gets a picker beside it. Anything else is just a text box.
+     *
+     * ‼️ THE KEY IS `x-af-browse` AND NOT `format`, WHICH COST A RELEASE. VS
+     * Code validates every configuration property it is offered, and `format`
+     * is a JSON-Schema keyword it knows: given a value it does not recognise it
+     * REFUSES THE WHOLE PROPERTY. The setting then has no registered default,
+     * so `getConfiguration().get()` returns nothing and the page — which builds
+     * its rows from the raw manifest, not from the registry — draws the row
+     * with an empty box. It looks exactly like a setting nobody has filled in.
+     * An `x-` prefixed key is outside the vocabulary VS Code checks and rides
+     * through untouched.
      */
     browse?: 'file' | 'folder';
 }
@@ -123,7 +133,7 @@ export function sameValue(a: unknown, b: unknown): boolean {
 export function buildSettingsModel(
     properties: Record<string, {
         type?: unknown; enum?: unknown; default?: unknown;
-        description?: string; markdownDescription?: string; format?: unknown;
+        description?: string; markdownDescription?: string; 'x-af-browse'?: unknown;
     }>,
     valueOf: (key: string) => unknown
 ): SettingsCategory[] {
@@ -139,8 +149,8 @@ export function buildSettingsModel(
             default: p.default,
             description: p.description ?? p.markdownDescription ?? '',
             markdownDescription: p.markdownDescription,
-            ...(p.format === 'file-path' ? { browse: 'file' as const } : {}),
-            ...(p.format === 'folder-path' ? { browse: 'folder' as const } : {}),
+            ...(p['x-af-browse'] === 'file' ? { browse: 'file' as const } : {}),
+            ...(p['x-af-browse'] === 'folder' ? { browse: 'folder' as const } : {}),
             value,
             modified: !sameValue(value, p.default)
         };

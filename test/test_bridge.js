@@ -1916,6 +1916,14 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         ok('‼️ the reader clears a setting that points at nothing, and says so',
             /the setting has been cleared/.test(src)
             && /promptSnippetsFile', ''/.test(src));
+        // ‼️ Both doors to "which file?" open the SAME thing: the machine's own
+        // picker. Sending somebody to VS Code's settings editor is the
+        // extension talking about itself instead of doing the job.
+        const cons = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'consolePanel.ts'), 'utf8');
+        ok('the Console picks the prompts file with a file dialog',
+            /case 'pickPromptSnippets'/.test(cons) && /showOpenDialog\(\{/.test(cons));
+        ok('…and never sends anybody to the settings editor for it',
+            !/workbench\.action\.openSettings/.test(cons));
 
         try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ }
     }

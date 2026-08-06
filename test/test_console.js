@@ -772,6 +772,9 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         /No blocks in that file yet/.test(js) && /snip\.error/.test(js));
     ok('…and either way the file itself is one click away',
         /type: 'openPromptSnippets'/.test(js));
+    ok('‼️ choosing the file is the OS file dialog, not a trip to a settings page',
+        /type: 'pickPromptSnippets'/.test(js)
+        && /Choose a file…/.test(js) && /Change file…/.test(js));
     ok('…on the hosted rows and the resumable ones alike',
         /webviewSection: 'afConsoleSession'/.test(js) && /webviewSection: 'afConsoleResumable'/.test(js));
 }

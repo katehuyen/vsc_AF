@@ -775,12 +775,38 @@ export class ConsolePanel {
                 break;
             case 'openPromptSnippets': {
                 const file = this.deps.promptSnippets().file;
-                if (!file) {
-                    void vscode.commands.executeCommand(
-                        'workbench.action.openSettings', 'agentFarm.promptSnippetsFile');
-                    break;
+                if (file) { void vscode.window.showTextDocument(vscode.Uri.file(file)); }
+                break;
+            }
+            /**
+             * ‼️ CHOOSING THE FILE IS A FILE DIALOG, NOT A TRIP TO A SETTINGS
+             * PAGE. This used to open VS Code's own settings editor at the key,
+             * which is the extension talking about itself instead of doing the
+             * thing: the answer to "which file?" is a path on this disk, and
+             * the only control that answers it honestly is the operating
+             * system's own picker. It is the same gesture the Browse… button on
+             * the Farm Settings page makes, so both doors behave alike.
+             *
+             * The picker is answered in place afterwards — the list is re-read
+             * and pushed back, so the file you just chose is on screen without
+             * closing anything.
+             */
+            case 'pickPromptSnippets': {
+                const current = this.deps.promptSnippets().file;
+                const picked = await vscode.window.showOpenDialog({
+                    canSelectFiles: true, canSelectFolders: false, canSelectMany: false,
+                    openLabel: 'Use this file',
+                    filters: { 'Markdown / text': ['md', 'markdown', 'txt'], 'All files': ['*'] },
+                    ...(current ? { defaultUri: vscode.Uri.file(current) } : {})
+                });
+                const chosen = picked?.[0]?.fsPath;
+                if (chosen) {
+                    await vscode.workspace.getConfiguration().update(
+                        'agentFarm.promptSnippetsFile', chosen, vscode.ConfigurationTarget.Global);
                 }
-                void vscode.window.showTextDocument(vscode.Uri.file(file));
+                void this.panel.webview.postMessage({
+                    type: 'promptSnippets', ...this.deps.promptSnippets()
+                });
                 break;
             }
             case 'close':

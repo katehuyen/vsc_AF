@@ -2,6 +2,12 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.78.1 — The prompts file is picked with a file dialog, and the setting registers at all (2026-08-06)
+
+**‼️ The setting was declared with `"format": "file-path"`, and VS Code refused the whole property over it.** `format` is a JSON-Schema keyword VS Code validates; given a value it does not recognise it drops the property, so `agentFarm.promptSnippetsFile` had **no registered default** — its box on the Farm Settings page drew empty, looking exactly like a setting nobody had filled in, and the Console's picker started with no file even though the default path was right there on disk. The marker is `"x-af-browse": "file"` now — an `x-` key is outside the vocabulary VS Code checks and rides through untouched. `test_settingsops.js` fails the build if any `agentFarm.*` setting reintroduces a `format`, or if one ships without a default.
+
+**Choosing the file is the operating system's own picker, from both doors.** The Console's saved-prompts panel used to send you to VS Code's settings editor when no file was set — the extension talking about itself instead of doing the thing. It now has **📁 Choose a file… / 📁 Change file…**, which opens the native dialog (filtered to markdown/text, starting where the setting already points), saves what you pick and re-reads the list **in place** — the panel stays open and simply shows the new file's blocks. **✎ Edit the file** opens it in the editor when there is one. Same gesture as **Browse…** on the Farm Settings page, so the two doors behave alike.
+
 ## 3.78.0 — Five from the top of the queue: the two status-bar items, the tooltips that were saying nothing, where a capture lands, and the prompts you keep retyping (2026-08-06)
 
 **‼️ The status bar counted AGENTS and called them "active" (U-4).** Two Console tabs on one agent are two turns, two costs and two things that can be waiting for you — and the indicator folded them into `1 active`. It counts **sessions** now, on both halves of the reading (the live monitor's `activeTurns()` and the index's new `activeSessions()`), and a session whose folder matches no registered agent is counted too: it burns the same quota. The tooltip says which number it is — `Active sessions: 3 across 2 agents`. Where the question really is about agents (the daily digest, the chat `/status` line, an agent row's ● dot) nothing changed, because those say "agents".
