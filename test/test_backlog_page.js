@@ -71,7 +71,7 @@ function makeDom(getHtml) {
 
     function mkEl(tag, attrText) {
         const el = {
-            tag, dataset: {}, attrs: {}, value: '', checked: false, _h: {},
+            tag, tagName: tag.toUpperCase(), dataset: {}, attrs: {}, value: '', checked: false, _h: {},
             classes: new Set()
         };
         const ar = /([a-zA-Z][\w-]*)(?:="([^"]*)")?/g;
@@ -91,12 +91,20 @@ function makeDom(getHtml) {
             contains: c => el.classes.has(c),
             toggle: (c, on) => { if (on) { el.classes.add(c); } else { el.classes.delete(c); } }
         };
-        el.addEventListener = (ev, fn) => { el._h[ev] = fn; };
+        // ‼️ HANDLERS ACCUMULATE, exactly as a real element's do. This used to
+        // keep ONE per event, overwriting the last — which quietly hid a real
+        // bug for a whole release: the type badge had two click handlers, an old
+        // one that wrote a value and the picker that opens the menu. In a
+        // browser both ran, so opening the menu also set a type nobody had
+        // chosen; here the second registration erased the first and the test
+        // that asserts "opening the menu writes nothing at all" passed anyway.
+        // A stub that is more forgiving than the platform tests the wrong thing.
+        el.addEventListener = (ev, fn) => { (el._h[ev] = el._h[ev] || []).push(fn); };
         // The row pickers stop the click from reaching the document listener that
         // dismisses them, so the event object has to carry that method.
-        const evObj = () => ({ preventDefault() { }, stopPropagation() { } });
-        el.click = () => el._h.click && el._h.click(evObj());
-        el.fire = (ev, arg) => el._h[ev] && el._h[ev](Object.assign(evObj(), arg || {}));
+        const evObj = () => ({ preventDefault() { }, stopPropagation() { }, target: el });
+        el.click = () => (el._h.click || []).forEach(fn => fn(evObj()));
+        el.fire = (ev, arg) => (el._h[ev] || []).forEach(fn => fn(Object.assign(evObj(), arg || {})));
         el.focus = () => { };
         el.setSelectionRange = () => { };
         // Both axes: rows are dropped on above/below, queue chips left/right.
@@ -961,6 +969,98 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
 {
     const r = run(data());
     ok('the capture box offers the work type', /id="bl-type"/.test(r.html()));
+}
+
+// ---------- ▶ is a switch, and the row says which way it is thrown ----------
+//
+// ‼️ It was neither. It sent `doing` whatever the row already was, so a second
+// press asked the host to make no change and got none — a button that worked
+// once and looked broken for ever after. And what it did was invisible: the only
+// mark was a two-pixel left border, on the far side of the panel from the words,
+// declared BEFORE the queue's green border and therefore painted over on exactly
+// the rows most likely to be started. Pressing it and seeing nothing is why
+// nobody could say what it was for.
+{
+    const r = run(data());
+    const btn = code => r.all('[data-blstate]')
+        .find(e => e.closest().dataset.code === code && e.attrs.title.indexOf('Cancel') < 0);
+
+    ok('an open row offers to start it', btn('K-1').dataset.blstate === 'doing');
+    btn('K-1').click();
+    const m = r.posted.filter(x => x.type === 'backlogState').pop();
+    ok('…and that is what is sent', m && m.code === 'K-1' && m.state === 'doing');
+    ok('nothing on an open row claims to be started', !/pj-bl-m started/.test(r.html()));
+
+    // The same page with one item already in progress.
+    const d2 = data();
+    d2.tabData.backlog.items = items().map(i => (i.code === 'K-1' ? { ...i, state: 'doing' } : i));
+    d2.tabData.backlog.counts.doing = 1;
+    const r2 = run(d2);
+    ok('‼️ a started row SAYS SO, in the badges that are always on screen',
+        /data-key="K-1"[\s\S]{0,1600}?class="pj-bl-m started"[^>]*>▶ started</.test(r2.html()));
+    ok('…and the row itself is marked', r2.row('K-1').classList.contains('doing'));
+    ok('…with a rule that comes after the queue\'s, so being queued cannot paint over it',
+        r2.html().indexOf('.pj-bl-row.next {') < r2.html().indexOf('.pj-bl-row.doing {'));
+    ok('‼️ the button is now the way back, not a second press that does nothing',
+        r2.all('[data-blstate]').find(e => e.closest().dataset.code === 'K-1'
+            && e.attrs.title.indexOf('Cancel') < 0).dataset.blstate === 'open');
+    ok('…and it stays on screen without a hover, or the state could not be turned off',
+        r2.all('[data-blstate]').find(e => e.closest().dataset.code === 'K-1'
+            && e.attrs.title.indexOf('Cancel') < 0).classes.has('on')
+        && /\.pj-bl-act\.on \{ visibility:visible/.test(r2.html()));
+    r2.all('[data-blstate]').find(e => e.closest().dataset.code === 'K-1'
+        && e.attrs.title.indexOf('Cancel') < 0).click();
+    const back = r2.posted.filter(x => x.type === 'backlogState').pop();
+    ok('…and pressing it reopens the item', back && back.state === 'open');
+}
+
+// ---------- every ordering in the box actually orders ----------
+{
+    const r = run(data());
+    const texts = () => (r.html().match(/class="pj-bl-t">[^<]*/g) || [])
+        .map(s => s.replace('class="pj-bl-t">', ''));
+    const pick = v => { const s = r.byId('bl-sort'); s.value = v; s.fire('change'); };
+
+    pick('text');
+    const alpha = texts();
+    ok('‼️ alphabetical really is alphabetical',
+        alpha.join('|') === alpha.slice().sort((a, b) => a.localeCompare(b)).join('|'));
+    ok('…and the box still shows the ordering that is in force',
+        /value="text" selected/.test(r.html()));
+    pick('code');
+    ok('code order is code order', codesIn(r.html()).join() === 'K-1,K-2,P-1,P-2');
+    pick('file');
+    ok('and the queue is still the one you come back to',
+        codesIn(r.html()).join() === 'P-2,K-1,K-2,P-1');
+}
+
+// ---------- the dismissal does not tear out the control under the pointer ----------
+//
+// ‼️ THIS IS WHAT MADE THE SORT BOX LOOK DEAD. With the ? panel (or any row menu)
+// open, the click that opens a native <select> popup also reached the document
+// listener, which repainted the page, which detached the very <select> the popup
+// belonged to — so the popup shut and no option was ever chosen. "I pick
+// alphabetical and nothing sorts" was true, and had nothing to do with sorting.
+{
+    const r = run(data());
+    r.one('[data-blhelp]').click();
+    ok('the ? panel is open', /data-blhelppop/.test(r.html()));
+    const sortBox = r.byId('bl-sort');
+    r.doc('click', { target: sortBox });
+    ok('‼️ a click that landed ON a control leaves the page standing',
+        r.byId('bl-sort') === sortBox);
+    sortBox.value = 'text';
+    sortBox.fire('change');
+    ok('…so the choice made in it is the choice that lands',
+        /value="text" selected/.test(r.html()));
+    ok('…and finishing the gesture is what closes what was open',
+        !/data-blhelppop/.test(r.html()));
+
+    // A click on anything that is not a control still dismisses, as it always did.
+    const r2 = run(data());
+    r2.els('blprio')[0].click();
+    r2.doc('click', { target: { tagName: 'DIV' } });
+    ok('a click on the page itself still closes an open menu', !r2.els('blpick').length);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

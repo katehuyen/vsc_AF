@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.70.1",
+  "version": "3.70.2",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -3427,7 +3427,7 @@
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "package": "node test/test_encoding.js && vsce package --allow-missing-repository",
+    "package": "node test/test_encoding.js && vsce package --allow-missing-repository --out dist/vsix",
     "test": "tsc -p ./ && node test/run-all.js",
     "prepare": "node -e \"try{require('child_process').execSync('git config core.hooksPath .githooks')}catch(e){}\""
   },

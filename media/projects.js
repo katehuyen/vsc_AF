@@ -810,8 +810,18 @@
                    broken. Colour fades the words and leaves the box alone. */
                 .pj-bl-row.closed .pj-bl-t { color:var(--vscode-descriptionForeground);
                     text-decoration:line-through; }
-                .pj-bl-row.doing { border-left-color:var(--vscode-charts-yellow,#d7ba7d); }
                 .pj-bl-row.next { border-left-color:var(--vscode-charts-green,#3fb950); }
+                /* ‼️ STARTED WINS OVER QUEUED, and it is declared after .next
+                   so it does. The two are not the same kind of fact: the green
+                   is a RANK the page worked out, the yellow is something the
+                   reader said by hand — and an item you have started is, almost
+                   by definition, near the front of the queue, so the one you
+                   asked for was the one being painted over. A border alone was
+                   two pixels the width of the panel away from the words anyway;
+                   the row carries a ▶ started badge with it. */
+                .pj-bl-row.doing { border-left-color:var(--vscode-charts-yellow,#d7ba7d);
+                    background:var(--vscode-editor-selectionHighlightBackground,#d7ba7d18); }
+                .pj-bl-m.started { color:var(--vscode-charts-yellow,#d7ba7d); opacity:1; cursor:help; }
                 .pj-bl-row.container .pj-bl-t { font-weight:600; }
                 .pj-bl-code { font-size:11px; opacity:.85; white-space:nowrap;
                     background:var(--vscode-textCodeBlock-background,#8881); padding:0 5px; border-radius:4px; }
@@ -850,6 +860,12 @@
                 .pj-bl-act { visibility:hidden; padding:0 6px; font-size:11px; background:none;
                     border:1px solid transparent; color:inherit; opacity:.8; }
                 .pj-bl-row:hover .pj-bl-act { visibility:visible; }
+                /* The one exception: whatever is switched ON stays on screen. A
+                   state you can only turn off by finding the button again is a
+                   state nobody turns off. */
+                .pj-bl-act.on { visibility:visible; opacity:1;
+                    color:var(--vscode-charts-yellow,#d7ba7d);
+                    border-color:var(--vscode-charts-yellow,#d7ba7d); }
                 .pj-bl-act:hover { opacity:1;
                     background:var(--vscode-toolbar-hoverBackground,#8882);
                     border-color:var(--vscode-widget-border,#4443); }
@@ -1962,16 +1978,17 @@
     function backlogRowHtml(i, isNext, waitingOn, areas, queueAt, band) {
         const key = blKey(i);
         const closed = i.state === 'done' || i.state === 'cancelled';
+        const doing = i.state === 'doing';
         const cls = ['pj-bl-row'];
         if (closed) { cls.push('closed'); }
-        if (i.state === 'doing') { cls.push('doing'); }
+        if (doing) { cls.push('doing'); }
         if (isNext) { cls.push('next'); }
         if (i.container) { cls.push('container'); }
         const type = blTypeOf(i);
         // The canonical type is one settable badge; anything else the user tagged
         // rides along beside it, read-only, because it is theirs.
         const others = (i.kinds || []).filter(k => k !== type)
-            .map(k => `<span class="pj-bl-kind" title="Your own tag — it filters, but the type badge only cycles the canonical set">#${C.esc(k)}</span>`);
+            .map(k => `<span class="pj-bl-kind" title="Your own tag — it filters, but the type badge only sets the canonical set">#${C.esc(k)}</span>`);
         const full = i.text || '(empty)';
         const open = blOpen.has(key);
         const cut = blChars > 0 && full.length > blChars && !open;
@@ -2042,6 +2059,10 @@
                     <span class="pj-bl-mw"><button class="pj-bl-badge" data-bleffort
                         title="Size — ${C.esc(i.effort || 'not sized')}. Click to pick.">${C.esc(i.effort || '–')}</button>
                         ${blMenuHtml('effort', key, blEffortRows(), i.effort || '')}</span>
+                    ${doing ? `<span class="pj-bl-m started" title="${C.esc(
+                    'Started — the line in your file is [/] instead of [ ], which is what Obsidian\'s Tasks '
+                    + 'plugin draws as in-progress, and the moment you pressed it is a row in Backloglog. '
+                    + 'It is still live work: agents are still handed it. ▶ again puts it back to open.')}">▶ started</span>` : ''}
                     ${i.due ? `<span class="pj-bl-m" title="due">📅 ${C.esc(i.due)}</span>` : ''}
                     ${i.plan ? `<span class="pj-bl-m" title="plan item">🆔 ${C.esc(i.plan)}</span>` : ''}
                     ${waitingOn && waitingOn.length
@@ -2051,7 +2072,16 @@
                     <button class="pj-bl-act" data-bledit title="Edit the words — the code and every axis stay put">✎</button>
                 </span>
                 <span class="pj-bl-srow">
-                    <button class="pj-bl-act" data-blstate="doing" title="Mark in progress">▶</button>
+                    ${/* ‼️ A SWITCH, NOT A ONE-WAY DOOR — and it says which way it is
+                          pointing. It used to send `doing` whatever the row already
+                          was, so pressing it on something already started asked the
+                          host to make no change and got none: a button that had
+                          worked once and looked broken for ever after. */''}
+                    <button class="pj-bl-act${doing ? ' on' : ''}" data-blstate="${doing ? 'open' : 'doing'}"
+                        title="${C.esc(doing
+                    ? 'Started. Press to put it back to open — the [/] in your file goes back to [ ].'
+                    : 'Start it — writes [/] on the line instead of [ ], marks the row, and puts the '
+                    + 'moment in Backloglog. It stays live work, and ▶ again undoes it.')}">▶</button>
                     <button class="pj-bl-act" data-blstate="cancelled" title="Cancel — it stays in the file, with its code spent">✕</button>
                     ${queueAt ? blStepHtml('up', queueAt) + blStepHtml('down', queueAt) : ''}
                 </span>
@@ -2606,7 +2636,17 @@
             });
         }
         const blSortSel = document.getElementById('bl-sort');
-        if (blSortSel) { blSortSel.addEventListener('change', () => { blSort = blSortSel.value; render(); }); }
+        if (blSortSel) {
+            // The gesture the document listener stepped back from ends here, so
+            // this is where anything it left open gets closed — one repaint, and
+            // it happens after the choice rather than instead of it.
+            blSortSel.addEventListener('change', () => {
+                blSort = blSortSel.value;
+                blMenu = null;
+                blHelpOpen = false;
+                render();
+            });
+        }
 
         document.querySelectorAll('[data-blcheck]').forEach(el =>
             el.addEventListener('click', () =>
@@ -2796,20 +2836,6 @@
         document.querySelectorAll('[data-blcancel]').forEach(el =>
             el.addEventListener('click', () => { blEdit = null; render(); }));
 
-        // ---- the work type. Cycles the CANONICAL set only and writes the rest of
-        // the item's tags back untouched — a cycle that quietly ate somebody's
-        // `#regression` would be a worse bargain than no cycle at all.
-        document.querySelectorAll('[data-bltype]').forEach(el =>
-            el.addEventListener('click', () => {
-                const row = blRow(el);
-                const now = row.dataset.type || '';
-                const ring = ['', ...BL_TYPE_IDS];
-                const next = ring[(ring.indexOf(now) + 1) % ring.length];
-                const item = (((td().backlog || {}).items) || []).find(i => blKey(i) === row.dataset.key);
-                const mine = ((item && item.kinds) || []).filter(k => BL_TYPE_IDS.indexOf(k) < 0);
-                blPost('backlogSet', row, { fields: { kinds: next ? [next, ...mine] : mine } });
-            }));
-
         // ---- drag to reorder. Only in queue order, because that is the only
         // order there is to change; the drop names the row it landed against and
         // the host moves the code against the full list. It has no section rule
@@ -2886,6 +2912,13 @@
                 }));
         blOpener('data-blprio', 'prio');
         blOpener('data-bleffort', 'effort');
+        // ‼️ OPENING A MENU IS NOT ANSWERING IT. The type badge carried a second,
+        // older handler that CYCLED to the next type — so one press both opened
+        // the picker and wrote a value nobody had chosen, and the menu you were
+        // reading was already out of date about the item underneath it. A control
+        // that commits on the way to asking the question cannot be cancelled:
+        // there was no way to look at the list and walk away. The badge opens;
+        // the menu writes; clicking off it writes nothing.
         blOpener('data-bltype', 'type');
         // ‼️ THIS IS THE ONE THAT WAS BROKEN. "file it under an area" silently
         // required an area to have been chosen in the CAPTURE box first — a
@@ -3060,6 +3093,28 @@
     }
 
     /**
+     * ‼️ THE DISMISSAL REPAINTS, AND A REPAINT DESTROYS WHATEVER THE POINTER IS
+     * HOLDING. This is the bug that made the sort dropdown look dead.
+     *
+     * `render()` replaces `#app`'s innerHTML whole. So with the `?` panel — or
+     * any row menu — open, the click that OPENS the native `<select>` popup also
+     * reached this listener, which repainted, which detached the very `<select>`
+     * the popup belonged to: the list shut itself before an option could be
+     * picked. From the outside that reads as "I choose alphabetical and nothing
+     * sorts" — the choice was never made, because the control was thrown away
+     * mid-gesture. The same repaint took the caret out of the search box and the
+     * cursor out of the capture textarea.
+     *
+     * A control that owns the gesture in progress is therefore left alone. It
+     * closes the menu itself when the gesture finishes, or the next ordinary
+     * click does — either way nothing is torn out from under the pointer.
+     */
+    const blOwnsGesture = ev => {
+        const tag = ev && ev.target && ev.target.tagName ? String(ev.target.tagName).toLowerCase() : '';
+        return tag === 'select' || tag === 'option' || tag === 'input' || tag === 'textarea';
+    };
+
+    /**
      * Clicking anywhere else closes an open row menu.
      *
      * ‼️ Attached ONCE, at module scope, and not in `wire()`. `wire()` runs on
@@ -3068,8 +3123,9 @@
      * itself, a single click would run hundreds of them. `#app`'s innerHTML is
      * replaced on a repaint, `document` is not, so once is enough.
      */
-    document.addEventListener('click', () => {
+    document.addEventListener('click', ev => {
         if (!blMenu && !blHelpOpen) { return; }
+        if (blOwnsGesture(ev)) { return; }
         blMenu = null;
         blHelpOpen = false;
         render();
