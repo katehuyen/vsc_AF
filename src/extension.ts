@@ -205,7 +205,8 @@ import { NoticesPanel } from './panels/noticesPanel';
 import { QueuePanel } from './panels/queuePanel';
 import { openReportDoc } from './panels/openDoc';
 import { DocOpenStore, DOC_OPEN_LABELS, DOC_OPEN_MODES, DocOpenMode, registerDocOpenOps } from './core/docopen';
-import { pushHeaderCounts, setNoticesUnreadProvider, setQueueBlockedProvider } from './panels/base';
+import { postCtx, pushHeaderCounts, setNoticesUnreadProvider, setQueueBlockedProvider } from './panels/base';
+import { ctxRelays } from './core/ctxmenu';
 import { SearchPanel } from './panels/searchPanel';
 import { FarmSettingsPanel } from './panels/settingsPanel';
 import { SelectionPanel } from './panels/selectionPanel';
@@ -14401,6 +14402,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 });
         })
     );
+
+    /**
+     * ‼️ THE RIGHT-CLICK RELAY — one registration for every page action in the
+     * catalogue (src/core/ctxmenu.ts).
+     *
+     * These commands exist only to carry a menu pick back to the page whose row
+     * was clicked; the page then runs the same function its own button runs, so
+     * a menu item can never do something subtly different from the button
+     * beside it. They are hidden from the command palette (the catalogue writes
+     * those `when: false` entries itself) because a hundred and fifty internal
+     * verbs would drown the palette for the ones a person actually types.
+     *
+     * A page that has been closed between the right-click and the pick says so
+     * out loud: a menu item that quietly does nothing is worse than one that is
+     * not there.
+     */
+    for (const relay of ctxRelays()) {
+        context.subscriptions.push(vscode.commands.registerCommand(relay.command, async (arg?: unknown) => {
+            const ctx = arg && typeof arg === 'object' ? arg as Record<string, unknown> : {};
+            const delivered = await postCtx(String(ctx.afPanel ?? ''), relay.act, ctx);
+            if (!delivered) {
+                void vscode.window.showWarningMessage(
+                    `Agent Farm: "${relay.title}" needs the page that row was on, and it is no longer open.`);
+            }
+        }));
+    }
 
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration(e => {

@@ -2198,6 +2198,61 @@
       ],
       "webview/context": [
         {
+          "command": "agentfarm.openSession",
+          "when": "webviewSection == 'afSessionRow'",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.resumeSession",
+          "when": "webviewSection == 'afSessionRow'",
+          "group": "1_open@2"
+        },
+        {
+          "command": "agentfarm.resumeInConsole",
+          "when": "webviewSection == 'afSessionRow'",
+          "group": "1_open@3"
+        },
+        {
+          "command": "agentfarm.focusSessionTerminal",
+          "when": "webviewSection == 'afSessionRow'",
+          "group": "1_open@4"
+        },
+        {
+          "command": "agentfarm.renameSession",
+          "when": "webviewSection == 'afSessionRow'",
+          "group": "2_mark@1"
+        },
+        {
+          "command": "agentfarm.pinSession",
+          "when": "webviewSection == 'afSessionRow'",
+          "group": "2_mark@2"
+        },
+        {
+          "command": "agentfarm.tagSession",
+          "when": "webviewSection == 'afSessionRow'",
+          "group": "2_mark@3"
+        },
+        {
+          "command": "agentfarm.copySessionId",
+          "when": "webviewSection == 'afSessionRow'",
+          "group": "2_mark@4"
+        },
+        {
+          "command": "agentfarm.interruptSession",
+          "when": "webviewSection == 'afSessionRow'",
+          "group": "3_stop@1"
+        },
+        {
+          "command": "agentfarm.endSession",
+          "when": "webviewSection == 'afSessionRow'",
+          "group": "3_stop@2"
+        },
+        {
+          "command": "agentfarm.dismissSession",
+          "when": "webviewSection == 'afSessionRow'",
+          "group": "3_stop@3"
+        },
+        {
           "command": "agentfarm.assignSessionProject",
           "when": "webviewSection == 'afSessionRow'",
           "group": "4_project@1"
@@ -2303,6 +2358,11 @@
           "group": "1_session@7"
         },
         {
+          "command": "agentfarm.resumeSession",
+          "when": "webviewSection == 'afTimelineSession'",
+          "group": "1_session@8"
+        },
+        {
           "command": "agentfarm.interruptSession",
           "when": "webviewSection == 'afTimelineSession'",
           "group": "2_stop@1"
@@ -2313,69 +2373,9 @@
           "group": "2_stop@2"
         },
         {
-          "command": "agentfarm.resumeSession",
-          "when": "webviewSection == 'afTimelineSession'",
-          "group": "1_session@8"
-        },
-        {
           "command": "agentfarm.dismissSession",
           "when": "webviewSection == 'afTimelineSession'",
           "group": "2_stop@3"
-        },
-        {
-          "command": "agentfarm.openSession",
-          "when": "webviewSection == 'afSessionRow'",
-          "group": "1_open@1"
-        },
-        {
-          "command": "agentfarm.resumeSession",
-          "when": "webviewSection == 'afSessionRow'",
-          "group": "1_open@2"
-        },
-        {
-          "command": "agentfarm.resumeInConsole",
-          "when": "webviewSection == 'afSessionRow'",
-          "group": "1_open@3"
-        },
-        {
-          "command": "agentfarm.focusSessionTerminal",
-          "when": "webviewSection == 'afSessionRow'",
-          "group": "1_open@4"
-        },
-        {
-          "command": "agentfarm.renameSession",
-          "when": "webviewSection == 'afSessionRow'",
-          "group": "2_mark@1"
-        },
-        {
-          "command": "agentfarm.pinSession",
-          "when": "webviewSection == 'afSessionRow'",
-          "group": "2_mark@2"
-        },
-        {
-          "command": "agentfarm.tagSession",
-          "when": "webviewSection == 'afSessionRow'",
-          "group": "2_mark@3"
-        },
-        {
-          "command": "agentfarm.copySessionId",
-          "when": "webviewSection == 'afSessionRow'",
-          "group": "2_mark@4"
-        },
-        {
-          "command": "agentfarm.interruptSession",
-          "when": "webviewSection == 'afSessionRow'",
-          "group": "3_stop@1"
-        },
-        {
-          "command": "agentfarm.endSession",
-          "when": "webviewSection == 'afSessionRow'",
-          "group": "3_stop@2"
-        },
-        {
-          "command": "agentfarm.dismissSession",
-          "when": "webviewSection == 'afSessionRow'",
-          "group": "3_stop@3"
         }
       ]
     },
@@ -3427,7 +3427,7 @@
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "package": "node test/test_encoding.js && vsce package --allow-missing-repository --out dist/vsix",
+    "package": "node test/test_encoding.js && node test/test_ctxmenu.js && vsce package --allow-missing-repository --out dist/vsix",
     "test": "tsc -p ./ && node test/run-all.js",
     "prepare": "node -e \"try{require('child_process').execSync('git config core.hooksPath .githooks')}catch(e){}\""
   },

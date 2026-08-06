@@ -6,13 +6,28 @@
 # it something nobody has to remember.
 #
 # Installed by "npm install" (the prepare script). To skip once: git commit --no-verify
-node test/test_encoding.js >/dev/null 2>&1 && exit 0
+if ! node test/test_encoding.js >/dev/null 2>&1; then
+  echo ""
+  echo "COMMIT BLOCKED - mojibake in the working tree."
+  node test/test_encoding.js | tail -20
+  echo ""
+  echo "Repair with:  node test/test_encoding.js --fix"
+  echo "Cause: a tool read a UTF-8 file as CP1252 and wrote it back as UTF-8."
+  echo "In Windows PowerShell 5.1 that is Get-Content without -Encoding UTF8."
+  exit 1
+fi
 
-echo ""
-echo "COMMIT BLOCKED — mojibake in the working tree."
-node test/test_encoding.js | tail -20
-echo ""
-echo "Repair with:  node test/test_encoding.js --fix"
-echo "Cause: a tool read a UTF-8 file as CP1252 and wrote it back as UTF-8."
-echo "In Windows PowerShell 5.1 that is Get-Content without -Encoding UTF8."
-exit 1
+# Right-click catalogue guard. src/core/ctxmenu.ts is the single source of truth
+# for every webview context-menu item; a package.json that has drifted from it
+# loses menu items without a word (see test/test_ctxmenu.js). Skipped silently
+# when out/ has not been built - the test cannot judge what it cannot load.
+if [ -f out/core/ctxmenu.js ] && ! node test/test_ctxmenu.js >/dev/null 2>&1; then
+  echo ""
+  echo "COMMIT BLOCKED - the right-click menus and package.json disagree."
+  node test/test_ctxmenu.js | tail -20
+  echo ""
+  echo "Repair with:  node test/test_ctxmenu.js --fix"
+  exit 1
+fi
+
+exit 0

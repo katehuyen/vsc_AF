@@ -58,6 +58,53 @@ export function pushHeaderCounts(): void {
     }
 }
 
+/**
+ * ‼️ THE RETURN ADDRESS FOR A RIGHT-CLICK.
+ *
+ * A `webview/context` command runs in the HOST and is handed the row's context
+ * object — but VS Code does not say which webview it came from. Menu items that
+ * are page actions (see src/core/ctxmenu.ts) have to reach the page that drew
+ * the row, so every page instance gets a key here, publishes it inside its
+ * context objects as `afPanel`, and the relay posts back to exactly that one.
+ *
+ * Keyed by the WEBVIEW, not by the page name: a page that rebuilds its HTML
+ * (the session viewer does, per session) must keep the key its rows already
+ * carry, and two windows of the same page must never answer for each other.
+ */
+const ctxPanels = new Map<string, vscode.Webview>();
+const ctxKeys = new WeakMap<vscode.Webview, string>();
+let ctxSeq = 0;
+
+/** The key for this webview, minted once and stable for its lifetime. */
+function ctxKeyFor(webview: vscode.Webview, scriptFile: string): string {
+    const had = ctxKeys.get(webview);
+    if (had) { ctxPanels.set(had, webview); return had; }
+    const key = `${scriptFile.replace(/\.js$/, '')}#${++ctxSeq}`;
+    ctxKeys.set(webview, key);
+    ctxPanels.set(key, webview);
+    return key;
+}
+
+/**
+ * Deliver one menu action to the page that drew the row.
+ *
+ * False means the page is gone — the panel was closed between the right-click
+ * and the pick, or the key is from a previous window. The caller says so out
+ * loud rather than swallowing it: a menu item that silently does nothing is the
+ * worst of the three possible outcomes.
+ */
+export async function postCtx(
+    key: string, act: string, ctx: Record<string, unknown>
+): Promise<boolean> {
+    const webview = ctxPanels.get(key);
+    if (!webview) { return false; }
+    try {
+        const delivered = await webview.postMessage({ type: 'afctx', act, ctx });
+        if (!delivered) { ctxPanels.delete(key); }
+        return !!delivered;
+    } catch { ctxPanels.delete(key); return false; }
+}
+
 export function getNonce(): string {
     let text = '';
     const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -174,12 +221,13 @@ export function htmlShell(
     const nonce = getNonce();
     const css = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'common.css'));
     const charts = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'charts.js'));
-    // shared components (page header/toolbar + filter controls + the session
-    // right-click contract + a text box's four tools + sessions table); tiny,
-    // so they ship to every page rather than growing htmlShell a per-page
-    // script list
+    // shared components (page header/toolbar + filter controls + the right-click
+    // contract, general and session-shaped + a text box's four tools + sessions
+    // table); tiny, so they ship to every page rather than growing htmlShell a
+    // per-page script list
     const header = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'pageHeader.js'));
     const filters = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afFilters.js'));
+    const ctx = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afCtx.js'));
     const sessCtx = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSessionCtx.js'));
     const textTools = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afTextTools.js'));
     const sessTable = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'sessionsTable.js'));
@@ -196,7 +244,9 @@ export function htmlShell(
         },
         // 🔔 unread notices + 📥 queue items that need you. Only the STARTING
         // values — from here on they arrive by push (see pushHeaderCounts).
-        ...headerCounts()
+        ...headerCounts(),
+        // Where a right-click on this page's rows posts back to (media/afCtx.js).
+        ctxPanel: ctxKeyFor(webview, scriptFile)
     };
     // This page is now live: it must receive count changes for as long as it exists.
     livePages.add(webview);
@@ -216,6 +266,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${charts}"></script>
 <script nonce="${nonce}" src="${header}"></script>
 <script nonce="${nonce}" src="${filters}"></script>
+<script nonce="${nonce}" src="${ctx}"></script>
 <script nonce="${nonce}" src="${sessCtx}"></script>
 <script nonce="${nonce}" src="${textTools}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>

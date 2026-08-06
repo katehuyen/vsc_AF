@@ -10,7 +10,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const SHARED = ['pageHeader.js', 'afFilters.js', 'afSessionCtx.js', 'afTextTools.js'];
+const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js', 'afTextTools.js'];
 
 const read = f => fs.readFileSync(path.resolve(__dirname, '..', 'media', f), 'utf8');
 

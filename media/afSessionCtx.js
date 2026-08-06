@@ -17,6 +17,11 @@
 // the host resolves the rest from the session index (see sessionFromArg in
 // extension.ts), so a search hit that only has a transcript path gets the same
 // menu as a live Console card.
+//
+// The escaping and the `afPanel` return address live in afCtx.js, which every
+// object's menu now shares; this file is the SESSION-shaped door to it and
+// keeps its own payload contract (the five keys below, empty rather than
+// missing).
 (function () {
     'use strict';
 
@@ -24,8 +29,9 @@
     const ROW_SECTION = 'afSessionRow';
 
     function attr(o) {
-        return `data-vscode-context="${JSON.stringify(o)
-            .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}"`;
+        // Sections that are not a plain session row (the Console's cards, the
+        // Timeline's lanes) build their own object and come through here.
+        return window.AFCtx.attr(window.AFCtx.obj(o.webviewSection || ROW_SECTION, o));
     }
 
     /**
@@ -35,14 +41,11 @@
      *           webviewSection when the page has surface-specific items too)
      */
     function row(s, extra) {
-        const o = {
-            webviewSection: ROW_SECTION, preventDefaultContextMenuItems: false,
+        return window.AFCtx.row(ROW_SECTION, {
             sessionId: (s && s.sessionId) || '', file: (s && s.file) || '',
             title: (s && s.title) || '', agentName: (s && s.agentName) || '',
             cwd: (s && s.cwd) || ''
-        };
-        if (extra) { for (const k of Object.keys(extra)) { o[k] = extra[k]; } }
-        return attr(o);
+        }, extra);
     }
 
     /** The tooltip tail every session row carries, so the menu is discoverable
