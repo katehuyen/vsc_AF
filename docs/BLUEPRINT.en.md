@@ -1099,9 +1099,13 @@ A precondition that fails wakes nobody; a schedule stamps that occurrence as set
 
 ## Multi-Agent Workflows
 
-Phase 4's most powerful tool: **Workflows** — chains where several agents run in sequence. Set up with `Agent Farm: New Multi-Agent Workflow…`: step by step you pick agent + title + prompt + mode.
+Phase 4's most powerful tool: **Workflows** — chains where several agents run in sequence. Set up with `+ Workflow` on the Tasks page's **Plan** tab.
 
-Finishing the wizard (fixed in 2.8.0): after adding at least one step, `✓ Finish & save workflow` appears at the **top** of the agent list — select it, and the chain is saved and drops into the **Workflows** section of the Tasks view. If you press Esc your effort isn't wasted: it asks "Save / Discard". If you cancel in the middle of a step (in the title/prompt box) only **that step** is cancelled, and the wizard stays on the step picker. The "If this step fails: stop the workflow" option asked during step setup is not a command to finish the chain — it selects what happens if **that step fails** (see [Conditional Branching](#conditional-branching)).
+**‼️ A CHAIN IS A LIST, SO ITS FORM IS A LIST TOO (3.83.0 · U-9 phase 2).** This used to be a 294-line wizard: it asked for step 4 without ever showing steps 1–3, there was no way back to step 2, and Esc discarded the lot. The chain now sits on the page — a list you can read, reorder with `↑ ↓`, copy, delete and edit in place. **Adding, moving and deleting a step act on the DRAFT**, so `Cancel` really cancels and a reorder is one save rather than N separate commands. The save button sends the name and the whole chain in **one message**.
+
+**One step is one card, and what it IS decides the rest of the card.** Six kinds: 🤖 **agent** (runs a prompt), 🌐 **webhook** (an HTTP call, no agent), 🎬 **media** (fal.ai / Replicate), 🧭 **browser** (an agent drives a site), ✋ **approval** (the chain waits for you), 🖼 **select** (you keep some of the produced assets). Changing the kind changes half the card; in the wizard that was the **first question** and everything after it depended on the answer — in a form you can change your mind on step three. The block at the bottom of the card is the same on every kind, because it is about the **chain** rather than the step: failure policy (`onFail`), conditional run (`runIf`), output contract, judge criteria and parallelism. It refuses **inside the card**, never in a modal.
+
+`agentfarm.newWorkflow`, `addWorkflowStep`, `editWorkflowStep` and `renameWorkflow` — from the palette, the sidebar or a row's menu — all open this form; `addWorkflowStep` opens it with a blank card, `editWorkflowStep` on that step. On the bridge: `workflows.update` (name + the whole chain in one call), `workflows.step.add` / `.update` / `.move` / `.delete`.
 
 - When a step becomes **done** the next step starts by itself (it can be a different agent). If a step **fails**, the chain stops and a notification drops.
 - **Handoff mechanism:** if you write `{prev_output}` in a step's prompt, the path of the previous step's archived output file is placed there. The next agent starts by reading that file — a real handoff of information from agent to agent.
@@ -1176,9 +1180,9 @@ Typical chain: *agent writes prompt → media (produce 4 candidates) → **visua
 
 You don't need to delete and rebuild an installed chain (0.7.0):
 
-- **On a workflow:** ▶ run, **+** add step, trash to delete; right-click → **Rename Workflow**.
-- **On a step:** pencil icon → **Edit Step…** asks which field to change (title / prompt / agent / mode / on-fail / run-if); reorder with ↑↓; right-click → delete the step.
-- Changes are persistent and take effect on the next run; they don't affect a run in progress.
+- **On a workflow:** the row's `edit` — it opens the name **and the whole chain**. A workflow's "edit" used to be `addWorkflowStep`, which made editing the one thing you could not do to a workflow; the name had a separate "Rename" entry. Both are one entry now (3.83.0).
+- **On a step:** `edit` in the form — it opens that step's card. This used to be a **quickpick of FIELD NAMES**: pick "On fail", answer one box, reopen the menu for the next field; fifteen entries deep on a media step, with no way to see two of them at once. `↑ ↓ copy ✕` sit on the row.
+- Changes are persistent **once you save** and take effect on the next run; they don't affect a run in progress.
 
 ### Visualizing Chains
 

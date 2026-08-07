@@ -9,7 +9,7 @@ import { NeedItem } from '../core/needs';
 import { EFFORT_CHOICES, modelChoices, PERMISSION_CHOICES } from '../core/launch';
 import {
     FarmSchedule, FarmTask, FarmTemplate, FarmTrigger, FarmWorkflow, MissedPolicy, newId,
-    RunDimensions, ScheduleKind, TaskManager, TaskMode
+    RunDimensions, ScheduleKind, TaskManager, TaskMode, WorkflowStep
 } from '../core/tasks';
 import { TaskRecord } from '../core/taskstats';
 import { TriggerManager } from '../core/triggers';
@@ -63,6 +63,13 @@ export interface TasksDeps {
     /** Projects a task can be filed under, and the window's current one. */
     projects(): { id: string; name: string; icon?: string }[];
     activeProjectId(): string | undefined;
+    /**
+     * Production scenes a MEDIA workflow step can tie its assets to, as
+     * `projectId` or `projectId/sceneId`. Optional because a farm with no
+     * production manifest has none, and a picker with one dead entry is worse
+     * than no picker — the field is simply not drawn.
+     */
+    scenes?: () => { id: string; label: string }[];
     /** live tasks merged with the finished-task archive */
     allRecords(): TaskRecord[];
     /** urgent Needs-You rows (permission waits + browser approvals). */
@@ -375,6 +382,14 @@ function buildData(deps: TasksDeps, tab?: TasksTab): Record<string, unknown> {
         runs,
         agents: deps.getAgents().map(a => a.name),
         perAgentLimit: limits.perAgent,
+        // ‼️ THE TRIGGER FORM'S "run a workflow" OPTION WAS NEVER DRAWN. The
+        // page reads `DATA.workflows` to build it and this object never carried
+        // the key, so the option list was always empty — and editing a trigger
+        // that already ran a workflow fell back to the first option, quietly
+        // turning it into a task trigger on the next save.
+        workflows: m.workflows.map(w => ({ id: w.id, title: w.title, steps: w.steps.length })),
+        // Production scenes a media step can file its assets under.
+        scenes: deps.scenes ? deps.scenes() : [],
         // ---- what the New-task form offers. One vocabulary with the session
         // launcher (core/launch.ts), so "run it on opus at low effort" means the
         // same thing whether you start a session or queue a task.
@@ -393,6 +408,188 @@ function buildData(deps: TasksDeps, tab?: TasksTab): Record<string, unknown> {
             // what a task made here would have been stamped with anyway.
             activeProjectId: deps.activeProjectId() ?? ''
         }
+    };
+}
+
+/**
+ * ‼️ ONE WORKFLOW STEP, BOTH WAYS — Faz 2 of U-9.
+ *
+ * The page holds a flat draft (`stype`/`whUrl`/`mModel`…) because that is what
+ * a set of form fields is; the manager holds a `WorkflowStep`, whose shape is
+ * decided by WHICH optional sub-object is present. The translation lives here,
+ * next to the manager, exactly like the schedule and trigger seeds above — the
+ * page never learns the model's shape and the model never learns the form's.
+ */
+const STEP_SYNTHETIC = ['webhook', 'media', 'approval', 'select'];
+
+function stepSeed(s: WorkflowStep): Record<string, unknown> {
+    const stype = s.webhook ? 'webhook' : s.media ? 'media' : s.browser ? 'browser'
+        : s.approval ? 'approval' : s.select ? 'select' : 'agent';
+    const hdr = Object.entries(s.webhook?.headers ?? {})[0];
+    const scene = s.media?.projectId
+        ? s.media.projectId + (s.media.sceneId ? '/' + s.media.sceneId : '')
+        : '';
+    return {
+        stype,
+        title: s.title,
+        // A webhook step's `agentName` is the literal word "webhook" — a label,
+        // not an agent. Handing it to the picker would offer a name that is not
+        // in the list, and the browser would silently show the first one.
+        agent: STEP_SYNTHETIC.includes(s.agentName) ? '' : (s.agentName ?? ''),
+        prompt: s.prompt ?? '',
+        smode: s.mode === 'interactive' ? 'interactive' : 'headless',
+        onFail: s.onFail === undefined || s.onFail === 'stop' ? 'stop'
+            : s.onFail === 'continue' ? 'continue' : 'goto',
+        onFailStep: typeof s.onFail === 'number' ? s.onFail : 1,
+        runIf: s.runIf ?? '',
+        contract: s.outputContract === 'json' ? 'json' : 'text',
+        verifyCriteria: s.verify?.criteria ?? '',
+        verifyRetries: s.verify?.retries ?? 1,
+        parallel: !!s.parallel,
+        whUrl: s.webhook?.url ?? '',
+        whMethod: s.webhook?.method ?? 'POST',
+        whBody: s.webhook?.body ?? '',
+        whHeader: hdr ? `${hdr[0]}: ${hdr[1]}` : '',
+        whPoll: !!s.webhook?.poll,
+        whPollUrl: s.webhook?.poll?.urlField ?? '',
+        whStatusField: s.webhook?.poll?.statusField ?? 'status',
+        whDone: s.webhook?.poll?.doneRegex ?? 'succeeded|completed|complete|done|success',
+        whInterval: s.webhook?.poll?.intervalSec ?? 3,
+        mModel: s.media?.model ?? 'fal-ai/flux/schnell',
+        mInput: s.media?.input ?? '{"prompt": "{prev_text}"}',
+        mScene: scene,
+        bUrl: s.browser?.url ?? '',
+        bGoal: s.browser?.goal ?? '',
+        bHosts: (s.browser?.allowHosts ?? []).join(', '),
+        apMsg: s.approval?.message ?? '',
+        selMsg: s.select?.message ?? '',
+        selMin: s.select?.min ?? 1,
+        selMax: s.select?.max ?? 0
+    };
+}
+
+/** The other direction. Returns the step, or the sentence the form should say
+ *  about why it could not be built. */
+export function stepFromDraft(
+    raw: Record<string, unknown>,
+    agents: { id: string; name: string }[],
+    n: number
+): { step?: WorkflowStep; error?: string } {
+    const str = (k: string): string => String(raw[k] ?? '').trim();
+    const num = (k: string, d: number): number => {
+        const v = Number(raw[k]);
+        return Number.isFinite(v) ? Math.trunc(v) : d;
+    };
+    const stype = str('stype') || 'agent';
+    const title = str('title');
+    if (!title) { return { error: `Step ${n} has no title.` }; }
+    const mode: TaskMode = str('smode') === 'interactive' ? 'interactive' : 'headless';
+    const chain: Partial<WorkflowStep> = {
+        onFail: str('onFail') === 'continue' ? 'continue'
+            : str('onFail') === 'goto' ? Math.max(1, num('onFailStep', 1)) : undefined,
+        runIf: str('runIf') || undefined,
+        parallel: raw.parallel === true ? true : undefined
+    };
+    const verify = str('verifyCriteria')
+        ? { criteria: str('verifyCriteria'), retries: Math.max(1, num('verifyRetries', 1)) }
+        : undefined;
+    const named = (label: string): Pick<WorkflowStep, 'agentId' | 'agentName' | 'prompt' | 'mode'> =>
+        ({ agentId: '', agentName: label, prompt: '', mode: 'headless' });
+
+    if (stype === 'webhook') {
+        if (!str('whUrl')) { return { error: `Step ${n} ("${title}") is a webhook with no URL.` }; }
+        const headers: Record<string, string> = {};
+        const h = str('whHeader');
+        const at = h.indexOf(':');
+        if (at > 0) { headers[h.slice(0, at).trim()] = h.slice(at + 1).trim(); }
+        const poll = raw.whPoll === true && str('whPollUrl')
+            ? {
+                urlField: str('whPollUrl'),
+                statusField: str('whStatusField') || undefined,
+                doneRegex: str('whDone') || undefined,
+                intervalSec: Math.max(1, num('whInterval', 3))
+            }
+            : undefined;
+        if (raw.whPoll === true && !str('whPollUrl')) {
+            return { error: `Step ${n} ("${title}") polls, but does not say which field holds the poll URL.` };
+        }
+        return {
+            step: {
+                ...named('webhook'), title, ...chain,
+                webhook: {
+                    url: str('whUrl'),
+                    method: str('whMethod') === 'GET' ? 'GET' : 'POST',
+                    body: str('whMethod') === 'GET' ? undefined : (str('whBody') || undefined),
+                    headers: Object.keys(headers).length ? headers : undefined,
+                    poll
+                }
+            }
+        };
+    }
+    if (stype === 'media') {
+        if (!str('mModel')) { return { error: `Step ${n} ("${title}") is a media step with no model.` }; }
+        if (!str('mInput')) { return { error: `Step ${n} ("${title}") is a media step with no input.` }; }
+        const [projectId, sceneId] = str('mScene').split('/');
+        return {
+            step: {
+                ...named('media'), title, ...chain, verify,
+                media: {
+                    model: str('mModel'), input: str('mInput'),
+                    projectId: projectId || undefined, sceneId: sceneId || undefined
+                }
+            }
+        };
+    }
+    if (stype === 'approval') {
+        return {
+            step: { ...named('approval'), title, ...chain, approval: { message: str('apMsg') || undefined } }
+        };
+    }
+    if (stype === 'select') {
+        const min = Math.max(1, num('selMin', 1));
+        const max = num('selMax', 0);
+        if (max && max < min) { return { error: `Step ${n} ("${title}") may keep at most fewer than at least.` }; }
+        return {
+            step: {
+                ...named('select'), title, ...chain,
+                select: { message: str('selMsg') || undefined, min, max: max || undefined }
+            }
+        };
+    }
+    const agent = agents.find(a => a.name === str('agent'));
+    if (!agent) { return { error: `Step ${n} ("${title}") has no agent.` }; }
+    if (stype === 'browser') {
+        if (!str('bUrl')) { return { error: `Step ${n} ("${title}") is a browser step with no start URL.` }; }
+        if (!str('bGoal')) { return { error: `Step ${n} ("${title}") is a browser step with no goal.` }; }
+        return {
+            step: {
+                agentId: agent.id, agentName: agent.name, title, prompt: '', mode: 'headless', ...chain,
+                browser: {
+                    url: str('bUrl'), goal: str('bGoal'),
+                    allowHosts: str('bHosts').split(',').map(x => x.trim()).filter(Boolean)
+                }
+            }
+        };
+    }
+    if (!str('prompt')) { return { error: `Step ${n} ("${title}") has no prompt.` }; }
+    return {
+        step: {
+            agentId: agent.id, agentName: agent.name, title, prompt: str('prompt'), mode, ...chain,
+            outputContract: mode === 'headless' && str('contract') === 'json' ? 'json' : undefined,
+            verify
+        }
+    };
+}
+
+/** A run, in the New-task form's own vocabulary. Both "one like this" and
+ *  "run it again with changes" start from exactly the same reading of it. */
+function taskSeed(t: FarmTask): Record<string, unknown> {
+    return {
+        agent: t.agentName, title: t.title, prompt: t.prompt, mode: t.mode,
+        model: t.model ?? '', effort: t.effort ?? '',
+        permissionMode: t.permissionMode ?? '', cli: t.cli ?? '',
+        project: t.projectId ?? '', workDir: t.workDir ?? '',
+        priority: t.priority ?? 0
     };
 }
 
@@ -452,14 +649,55 @@ export class TasksPanel {
      * The same door for a PLAN object — U-9.
      *
      * `agentfarm.addSchedule`, `editSchedule`, `addTrigger`, `editTrigger`,
-     * `newWorkflow` and `renameWorkflow` all come through here instead of
-     * opening their own chain of input boxes, so the palette, the sidebar and
-     * the page cannot produce three different objects. `id` prefills it for an
-     * edit; without one it is a new object.
+     * `newWorkflow`, `renameWorkflow`, `addWorkflowStep` and `editWorkflowStep`
+     * all come through here instead of opening their own chain of input boxes,
+     * so the palette, the sidebar and the page cannot produce three different
+     * objects. `id` prefills it for an edit; without one it is a new object.
+     * `step` opens the chain with one link already under the pen: a number for
+     * an existing step, `'new'` for one that is not there yet.
      */
-    static composePlan(deps: TasksDeps, kind: string, id?: string): void {
+    static composePlan(deps: TasksDeps, kind: string, id?: string, step?: number | 'new'): void {
         TasksPanel.show(deps, 'plan');
-        TasksPanel.current?.compose(kind, id);
+        TasksPanel.current?.compose(kind, id, step);
+    }
+
+    /** "Run it again, with changes" from anywhere — the sidebar tree, the
+     *  palette, a row's menu. The same New-task form, in retry mode. */
+    static retryCompose(deps: TasksDeps, taskId: string): void {
+        TasksPanel.show(deps, 'run');
+        const t = TasksPanel.current?.task(taskId);
+        if (!t) { return; }
+        void TasksPanel.current?.panel.webview.postMessage({
+            type: 'task-compose', seed: { ...taskSeed(t), mode2: 'retry', retryOf: t.id }
+        });
+    }
+
+    /** The same door, opened on a seed that is not a stored object — "save this
+     *  run's prompt as a template" fills the template form from the run. */
+    static composePlanSeed(deps: TasksDeps, kind: string, seed: Record<string, unknown>): void {
+        TasksPanel.show(deps, 'plan');
+        void TasksPanel.current?.panel.webview.postMessage({ type: 'plan-compose', kind, seed });
+    }
+
+    /** Open the Plan tab with a filter already set — the page's own list is the
+     *  answer to "which one?", and it carries what a quickpick cannot. */
+    static showPlan(deps: TasksDeps, view: Record<string, unknown>, note?: string): void {
+        TasksPanel.show(deps, 'plan');
+        void TasksPanel.current?.panel.webview.postMessage({ type: 'plan-focus', view, note });
+    }
+
+    /** The farm-wide gate, set on the strip that reports it — the palette's
+     *  `setQuietHours` / `pauseAutomations` land here rather than on a
+     *  quickpick followed by two input boxes. */
+    static showGate(deps: TasksDeps, which: 'quiet' | 'pause'): void {
+        TasksPanel.show(deps, 'plan');
+        void TasksPanel.current?.panel.webview.postMessage({ type: 'gate-open', which });
+    }
+
+    /** A picker drawn as a list ON the page instead of a quickpick over it. */
+    static showChooser(deps: TasksDeps, chooser: Record<string, unknown>): void {
+        TasksPanel.show(deps, (chooser.tab as TasksTab) ?? 'run');
+        void TasksPanel.current?.panel.webview.postMessage({ type: 'chooser', chooser });
     }
 
     private constructor(readonly panel: vscode.WebviewPanel, private deps: TasksDeps, tab?: TasksTab) {
@@ -501,7 +739,7 @@ export class TasksPanel {
      * fields is, and the translation both ways lives here, next to the manager
      * that owns the real shape.
      */
-    private compose(kind: string, id?: string): void {
+    private compose(kind: string, id?: string, step?: number | 'new'): void {
         const send = (seed: Record<string, unknown>): void => {
             void this.panel.webview.postMessage({ type: 'plan-compose', kind, seed });
         };
@@ -553,7 +791,15 @@ export class TasksPanel {
         }
         if (kind === 'workflow') {
             const w = node?.workflow;
-            send(w ? { mode2: 'edit', id: w.id, title: w.title } : { mode2: 'new' });
+            const steps = (w?.steps ?? []).map(stepSeed);
+            // Which link is under the pen. `addWorkflowStep` asks for a new one;
+            // `editWorkflowStep` and the step's own right-click name an index.
+            const at = step === 'new' ? -1
+                : typeof step === 'number' && step >= 0 && step < steps.length ? step
+                    : null;
+            send(w
+                ? { mode2: 'edit', id: w.id, title: w.title, steps, stepIdx: at, step: at !== null && at >= 0 ? steps[at] : null }
+                : { mode2: 'new', steps: [], stepIdx: step === 'new' ? -1 : null, step: null });
             return;
         }
         const tpl = node?.template;
@@ -687,14 +933,28 @@ export class TasksPanel {
         }
 
         if (kind === 'workflow') {
+            // ‼️ THE CHAIN IS SAVED WITH THE NAME, not one step per dialog. The
+            // draft is the whole workflow, so Cancel really cancels and a
+            // reorder is one save rather than N move commands.
+            const drafts = Array.isArray(item.steps) ? item.steps as Record<string, unknown>[] : [];
+            const steps: WorkflowStep[] = [];
+            for (let i = 0; i < drafts.length; i++) {
+                const built = stepFromDraft(drafts[i], this.deps.getAgents(), i + 1);
+                if (built.error) { this.say(built.error); return; }
+                steps.push(built.step as WorkflowStep);
+            }
+            const note = steps.length
+                ? `${steps.length} step(s).`
+                : 'It has no steps yet, so running it does nothing.';
             const existing = editing ? m.workflows.find(w => w.id === id) : undefined;
             if (existing) {
                 existing.title = str('title');
+                existing.steps = steps;
                 m.persist();
-                done(`Workflow renamed to “${existing.title}”.`);
+                done(`Workflow “${existing.title}” saved — ${note}`);
             } else {
-                m.addWorkflow(str('title'), []);
-                done(`Workflow “${str('title')}” created — add its steps on the row.`);
+                m.addWorkflow(str('title'), steps);
+                done(`Workflow “${str('title')}” created — ${note}`);
             }
             return;
         }
@@ -741,6 +1001,7 @@ export class TasksPanel {
         kind?: string; approvalId?: string; ok?: boolean; file?: string; transcriptPath?: string;
         sessionId?: string; content?: string; name?: string; rows?: { kind: string; id: string }[];
         index?: number; task?: unknown; item?: unknown;
+        quietFrom?: string; quietTo?: string; reason?: string;
     }): Promise<void> {
         const m = this.deps.manager;
         const run = (cmd: string, ...args: unknown[]) => { void vscode.commands.executeCommand(cmd, ...args); };
@@ -771,8 +1032,10 @@ export class TasksPanel {
                     case 'trigger:edit': this.compose('trigger', msg.id); break;
                     case 'trigger:delete': run('agentfarm.deleteTrigger', node); break;   // command confirms
                     case 'workflow:run': run('agentfarm.runWorkflow', node); break;
-                    case 'workflow:edit': run('agentfarm.addWorkflowStep', node); break;
-                    case 'workflow:rename': this.compose('workflow', msg.id); break;
+                    // ‼️ A workflow's Edit is the workflow — its name AND its
+                    // chain. It used to be `addWorkflowStep`, so the one thing
+                    // "edit" could not do on a workflow was edit it.
+                    case 'workflow:edit': this.compose('workflow', msg.id); break;
                     case 'template:edit': this.compose('template', msg.id); break;
                     case 'workflow:delete': run('agentfarm.deleteWorkflow', node); break; // command confirms
                     case 'template:run': run('agentfarm.runTemplate', node); break;
@@ -788,9 +1051,10 @@ export class TasksPanel {
                 this.refresh();
                 break;
             }
-            // One step of a workflow, addressed by its place in the list. The
-            // step commands want a workflow-step node; building it here keeps
-            // the page from having to know that shape.
+            // One step of a workflow, addressed by its place in the list —
+            // right-clicked in the table row's own detail. Editing opens the
+            // chain's form at that link; moving and deleting stay the manager's
+            // one-line acts, because there is nothing to fill in.
             case 'wfstep': {
                 const node = this.planNode('workflow', msg.id);
                 const index = Number(msg.index);
@@ -798,7 +1062,7 @@ export class TasksPanel {
                 if (index < 0 || index >= node.workflow.steps.length) { break; }
                 const step = { kind: 'workflow-step', workflow: node.workflow, index };
                 switch (msg.act) {
-                    case 'edit': run('agentfarm.editWorkflowStep', step); break;
+                    case 'edit': this.compose('workflow', msg.id, index); break;
                     case 'up': run('agentfarm.moveWorkflowStepUp', step); break;
                     case 'down': run('agentfarm.moveWorkflowStepDown', step); break;
                     case 'delete': run('agentfarm.deleteWorkflowStep', step); break;
@@ -812,12 +1076,10 @@ export class TasksPanel {
             // template on this page was impossible. All four kinds now open the
             // page's own form.
             case 'plan-add':
-                // Workflow is the one kind whose CREATION is not one object:
-                // making it means writing its steps, and that chain is Faz 2 of
-                // the U-9 roadmap. Until it is a form, it stays whole rather
-                // than being replaced by a form that can only name it.
-                if (msg.kind === 'workflow') { run('agentfarm.newWorkflow'); }
-                else { this.compose(String(msg.kind || 'schedule')); }
+                // …including the workflow, whose creation is a LIST rather than
+                // one object. That was the last dialog on this page: a 294-line
+                // chain that asked for step 4 without ever showing steps 1–3.
+                this.compose(String(msg.kind || 'schedule'));
                 break;
             case 'plan-save':
                 await this.savePlan((msg.item ?? {}) as Record<string, unknown>);
@@ -855,13 +1117,22 @@ export class TasksPanel {
                 } else if (msg.act === 'pause-for') {
                     const mins = Number(msg.text ?? 0);
                     if (mins > 0) {
+                        const why = (msg.reason ?? '').trim();
                         m.setAutomationState({
                             paused: false, pausedUntil: Date.now() + mins * 60_000,
-                            pauseReason: `paused for ${mins} min`
+                            pauseReason: why ? `${why} (${mins} min)` : `paused for ${mins} min`
                         });
                     }
-                } else if (msg.act === 'quiet') {
-                    run('agentfarm.setQuietHours');
+                    // ‼️ THE QUIET WINDOW IS TWO TIMES, SET ON THE STRIP THAT SHOWS IT.
+                    // It used to call `agentfarm.setQuietHours`: a quickpick of two canned
+                    // windows, and for anything else two more input boxes after it.
+                } else if (msg.act === 'quiet-set') {
+                    const ok = (v?: string) => /^([01]?\d|2[0-3]):[0-5]\d$/.test(String(v ?? ''));
+                    if (ok(msg.quietFrom) && ok(msg.quietTo)) {
+                        m.setAutomationState({ quietFrom: msg.quietFrom, quietTo: msg.quietTo });
+                    }
+                } else if (msg.act === 'quiet-off') {
+                    m.setAutomationState({ quietFrom: undefined, quietTo: undefined });
                 }
                 this.refresh();
                 break;
@@ -888,27 +1159,36 @@ export class TasksPanel {
                 // the command, so there is still exactly one implementation.
                 else if (msg.act === 'up' && t.status === 'queued') { run('agentfarm.taskUp', { kind: 'task', task: t }); }
                 else if (msg.act === 'down' && t.status === 'queued') { run('agentfarm.taskDown', { kind: 'task', task: t }); }
+                // ‼️ A RETRY IS THE FORM TOO. It was one input box holding the
+                // old prompt: you could rewrite the words and nothing else,
+                // while the reason people retry is usually "the same words, on
+                // a better model". Now it is the whole task, editable, and the
+                // host turns it back into a real retry of THIS run.
                 else if (msg.act === 'retryEdit' && t.status !== 'queued' && t.status !== 'running') {
-                    run('agentfarm.retryTaskEdit', { kind: 'task', task: t });
+                    void this.panel.webview.postMessage({
+                        type: 'task-compose', seed: { ...taskSeed(t), mode2: 'retry', retryOf: t.id }
+                    });
                 }
                 else if (msg.act === 'resumeWorkflow') { run('agentfarm.resumeWorkflow', { kind: 'task', task: t }); }
-                else if (msg.act === 'saveTemplate') { run('agentfarm.saveTaskTemplate', { kind: 'task', task: t }); }
+                // …and so is "save the prompt as a template". That was a
+                // quickpick whose only question was bind-to-agent or not; every
+                // other thing a template carries was decided for you.
+                else if (msg.act === 'saveTemplate') {
+                    void this.panel.webview.postMessage({
+                        type: 'plan-compose', kind: 'template',
+                        seed: {
+                            mode2: 'new', title: t.title, prompt: t.prompt,
+                            mode: t.mode, agent: t.agentName
+                        }
+                    });
+                }
                 // ‼️ "Like this one, but…" — the gesture the page could not make.
                 // Editing a run meant a single input box asking for a new prompt
                 // (agentfarm.retryTaskEdit) and no way to change the agent, the
                 // model or anything else — while ADDING one asked a different
                 // set of questions again. Same form, prefilled from the row.
                 else if (msg.act === 'clone') {
-                    void this.panel.webview.postMessage({
-                        type: 'task-compose',
-                        seed: {
-                            agent: t.agentName, title: t.title, prompt: t.prompt, mode: t.mode,
-                            model: t.model ?? '', effort: t.effort ?? '',
-                            permissionMode: t.permissionMode ?? '', cli: t.cli ?? '',
-                            project: t.projectId ?? '', workDir: t.workDir ?? '',
-                            priority: t.priority ?? 0
-                        }
-                    });
+                    void this.panel.webview.postMessage({ type: 'task-compose', seed: taskSeed(t) });
                 }
                 this.refresh();
                 break;
@@ -950,6 +1230,35 @@ export class TasksPanel {
                 // "none" here really means none rather than "whatever the
                 // window happens to be showing".
                 const projectId = str('project');
+                // ‼️ A RETRY GOES BACK THROUGH `retryTask`, not through addTask
+                // with a hand-copied lineage: the attempt number, the "(retry
+                // N)" naming, the output contract, the mission it belongs to
+                // and the workflow-step resume rule all live there, and a
+                // second implementation of them here would drift on the first
+                // change. The form only says what it CHANGED.
+                const retryOf = str('retryOf');
+                if (retryOf) {
+                    const original = this.task(retryOf);
+                    if (!original) { this.say('That run is no longer in the list, so there is nothing to retry.'); break; }
+                    const copy = m.retryTask(original, prompt, {
+                        agent, title, mode,
+                        autoStart: t.start === true,
+                        projectId: projectId || undefined,
+                        model: str('model') || undefined,
+                        effort: str('effort') || undefined,
+                        permissionMode: str('permissionMode') || undefined,
+                        cli: str('cli') || undefined,
+                        workDir: str('workDir') || undefined,
+                        priority: Number(t.priority) ? Math.trunc(Number(t.priority)) : undefined
+                    });
+                    if (copy) {
+                        void this.panel.webview.postMessage({
+                            type: 'task-made', id: copy.id, title: copy.title, started: t.start === true
+                        });
+                    }
+                    this.refresh();
+                    break;
+                }
                 const task = m.addTask(agent, title, prompt, mode, {
                     projectId: projectId || undefined,
                     ...(str('model') ? { model: str('model') } : {}),
@@ -1017,6 +1326,13 @@ export class TasksPanel {
                 break;
             case 'open-history':
                 run('agentfarm.openTaskHistory');
+                break;
+            // One row of an in-page picker was pressed. The act names what kind
+            // of list it was; the id is the row's own.
+            case 'chooser-pick':
+                if (msg.act === 'history' && msg.id) {
+                    run('vscode.open', vscode.Uri.file(path.join(m.historyDir, msg.id)));
+                }
                 break;
             case 'export-md':
                 if (typeof msg.content === 'string' && msg.content.trim()) {

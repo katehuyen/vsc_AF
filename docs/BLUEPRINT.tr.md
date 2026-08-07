@@ -1149,9 +1149,13 @@ Sağlanmayan önkoşul hiçbir ajan uyandırmaz; zamanlamada o günkü koşu "ha
 
 ## Çoklu-Ajan İş Akışları
 
-Faz 4'ün en güçlü aracı: **Workflows** — birden çok ajanın sırayla çalıştığı zincirler. `Agent Farm: New Multi-Agent Workflow…` ile kurulur: adım adım ajan + başlık + prompt + mod seçersin.
+Faz 4'ün en güçlü aracı: **Workflows** — birden çok ajanın sırayla çalıştığı zincirler. Tasks sayfasının **Plan** sekmesinde `+ Workflow` ile kurulur.
 
-Sihirbazı bitirmek (2.8.0'da düzeltildi): en az bir adım ekledikten sonra ajan listesinin **en üstünde** `✓ Finish & save workflow` görünür — onu seç, zincir kaydedilir ve Tasks görünümündeki **Workflows** bölümüne düşer. Esc'ye basarsan emek çöpe gitmez: "Save / Discard" diye sorar. Bir adımın ortasında (başlık/prompt kutusunda) vazgeçersen yalnızca **o adım** iptal olur, sihirbaz adım seçicide kalır. Adım kurulurken sorulan "If this step fails: stop the workflow" seçeneği zinciri bitirme komutu değildir — o adım **hata verirse** ne olacağını seçer (bkz. [Koşullu Dallanma](#kosullu-dallanma)).
+**‼️ ZİNCİR BİR LİSTEDİR, BU YÜZDEN FORMU DA LİSTE (3.83.0 · U-9 Faz 2).** Bu iş 294 satırlık bir sihirbazdı: adım 4'ü, adım 1-3'ü hiç göstermeden soruyordu; adım 2'ye dönmenin yolu yoktu; Esc her şeyi çöpe atıyordu. Artık zincirin kendisi sayfada duruyor — okunan, `↑ ↓` ile sıralanan, kopyalanan, silinen ve yerinde düzenlenen bir liste. **Adım eklemek, taşımak ve silmek taslak üzerinde olur**, yani `Cancel` gerçekten iptal eder ve bir yeniden sıralama N ayrı komut değil tek kayıttır. Kaydet düğmesi adın ve zincirin tamamını **tek mesajda** gönderir.
+
+**Bir adım bir karttır ve ne OLDUĞU kartın geri kalanını belirler.** Altı tür: 🤖 **agent** (prompt koşturur), 🌐 **webhook** (HTTP çağrısı, ajansız), 🎬 **media** (fal.ai / Replicate), 🧭 **browser** (ajan siteyi sürer), ✋ **approval** (zincir seni bekler), 🖼 **select** (üretilen varlıkların bir kısmını sen seçersin). Türü değiştirmek kartın yarısını değiştirir; sihirbazda bu **ilk soruydu** ve sonraki her şey ona bağlıydı — bir formda ise adım üçteyken fikrini değiştirebilirsin. Kartın altındaki blok her türde aynıdır, çünkü **zinciri** ilgilendirir, adımı değil: hata politikası (`onFail`), koşullu çalıştırma (`runIf`), çıktı sözleşmesi, hakem ölçütü ve paralellik. Reddi modal değil **kartın içinde** söyler.
+
+`agentfarm.newWorkflow`, `addWorkflowStep`, `editWorkflowStep` ve `renameWorkflow` — paletten, sol panelden, satır menüsünden — hepsi bu formu açar; `addWorkflowStep` kartı boş, `editWorkflowStep` o adımın üstünde açar. Köprüde: `workflows.update` (ad + bütün zincir tek çağrıda), `workflows.step.add` / `.update` / `.move` / `.delete`.
 
 - Bir adım **done** olunca sonraki adım kendiliğinden başlar (farklı ajan olabilir). Adım **failed** olursa zincir durur ve bildirim düşer.
 - **Devir mekanizması:** Bir adımın prompt'unda `{prev_output}` yazarsan, önceki adımın arşivlenmiş çıktı dosyasının yolu oraya yerleştirilir. Sonraki ajan o dosyayı okuyarak işe başlar — ajandan ajana gerçek bilgi devri.
@@ -1226,9 +1230,9 @@ Tipik zincir: *ajan prompt yazar → media (4 aday üret) → **görsel seçim (
 
 Kurulu bir zinciri silip yeniden kurmana gerek yok (0.7.0):
 
-- **Workflow üzerinde:** ▶ çalıştır, **+** adım ekle, çöp kutusu sil; sağ tık → **Rename Workflow**.
-- **Adım üzerinde:** kalem ikonu → **Edit Step…** hangi alanı değiştireceğini sorar (başlık / prompt / ajan / mod / on-fail / run-if); ↑↓ ile sırala; sağ tık → adımı sil.
-- Değişiklikler kalıcıdır ve bir sonraki çalıştırmada geçerli olur; süren bir koşuyu etkilemez.
+- **Workflow üzerinde:** satırdaki `edit` — adı ve **bütün zinciri** açar. Bir akışın "düzenle"si eskiden `addWorkflowStep`'ti, yani bir akışta yapılamayan tek şey onu düzenlemekti; ve ad için ayrı bir "Rename" girişi vardı. İkisi de tek girişte birleşti (3.83.0).
+- **Adım üzerinde:** formdaki `edit` — o adımın kartını açar. Eskiden bu bir **alan adları quickpick'iydi**: "On fail"i seç, tek kutuyu yanıtla, bir sonraki alan için menüyü baştan aç; bir medya adımında on beş giriş derinliğinde ve iki alanı aynı anda görmenin yolu yok. `↑ ↓ copy ✕` satırın üzerindedir.
+- Değişiklikler **kaydedince** kalıcı olur ve bir sonraki çalıştırmada geçerlidir; süren bir koşuyu etkilemez.
 
 ### Zincirlerin Görselleştirilmesi
 

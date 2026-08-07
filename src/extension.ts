@@ -41,7 +41,6 @@ import { describePlan, FarmPlan, interpretCommand } from './core/commandbar';
 import { DispatchRule, dispatchText } from './core/dispatch';
 import { EmbeddingsConfig, EmbeddingsProvider, embedTexts } from './core/embeddings';
 import { searchTranscripts, SearchResult } from './core/search';
-import { WebhookPollConfig } from './core/mediaProviders';
 import { chunkTranscript, SemanticIndex } from './core/semantic';
 import {
     addDuty, CADENCES, CLAUDE_MD_SNIPPET, claudeMdReferencesDuties, deleteDuty,
@@ -172,7 +171,7 @@ import {
 } from './core/bridge';
 import {
     archivedOutputBody, buildCliCommand, CliProfile, FarmSchedule, FarmTask, FarmTemplate,
-    FarmTrigger, FarmWorkflow, MissedPolicy, newId, parseSeedSchedules, PREV_OUTPUT_PLACEHOLDER,
+    FarmTrigger, FarmWorkflow, MissedPolicy, newId, parseSeedSchedules,
     previousOccurrenceKey, sanitizePrompt, ScheduleKind, TaskManager, TaskMode, WorkflowStep
 } from './core/tasks';
 import {
@@ -2630,6 +2629,45 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         need(a, `Agent "${ref}" not found — agents.list shows the current farm.`);
         return a as AgentInfo;
     };
+    /**
+     * One workflow step off the bridge, in the shape `workflows.add` accepts.
+     *
+     * Shared by `workflows.add`, `workflows.update` and the per-step ops so the
+     * same object cannot end up with three dialects. A webhook / media /
+     * approval / select step carries no agent of its own — its `agentName` is
+     * the label its run is filed under, which is why one is not demanded.
+     */
+    const bridgeStep = (raw: Record<string, unknown>, i: number): WorkflowStep => {
+        need(raw && typeof raw === 'object' && !Array.isArray(raw), `Step ${i + 1} must be an object.`);
+        const stepTitle = String(raw.title ?? '').trim();
+        need(stepTitle, `Step ${i + 1}: title is required.`);
+        const prompt = String(raw.prompt ?? '').trim();
+        const label = raw.webhook ? 'webhook' : raw.media ? 'media'
+            : raw.approval ? 'approval' : raw.select ? 'select' : '';
+        need(prompt || label || raw.browser, `Step ${i + 1}: prompt is required.`);
+        const { agent: agentRef, ...passthrough } = raw;
+        const who = label && !String(agentRef ?? '').trim()
+            ? { id: '', name: label }
+            : findAgent(String(agentRef ?? ''));
+        return {
+            ...passthrough,
+            agentId: who.id, agentName: who.name,
+            title: stepTitle, prompt,
+            mode: raw.mode === 'interactive' ? 'interactive' : 'headless'
+        } as WorkflowStep;
+    };
+    /** A workflow by id or title, and one of its steps by 1-based place. */
+    const bridgeWorkflow = (ref: string): FarmWorkflow => {
+        const w = taskManager.workflows.find(x => x.id === ref || x.title === ref);
+        need(w, 'Workflow not found — workflows.list shows current ones.');
+        return w as FarmWorkflow;
+    };
+    const bridgeStepAt = (w: FarmWorkflow, at: unknown): number => {
+        const n = Number(at);
+        need(Number.isInteger(n) && n >= 1 && n <= w.steps.length,
+            `at must be a step number between 1 and ${w.steps.length}.`);
+        return n - 1;
+    };
     // Duties are keyed by title inside the agent's DUTIES.md — always re-read
     // from disk so bridge edits and hand-edits never race a stale cache.
     const findDuty = (agent: AgentInfo, title: string): Duty => {
@@ -2747,14 +2785,54 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'tasks.rerun',
-            describe: 'Re-run a finished task as a fresh copy (a workflow-step task resumes its chain). args: id',
+            describe: 'Re-run a finished task as a fresh copy — it keeps the original\'s lineage and is named '
+                + '"… (retry N)". Everything omitted is the ORIGINAL\'s, which is the point of a retry; what '
+                + 'you pass is what you are CHANGING, the way the page\'s retry form does. A workflow-step '
+                + 'task with no edits resumes its chain instead. '
+                + 'args: id, prompt?, agent? (name|id), title?, mode? (headless|interactive), model?, '
+                + 'effort?, permissionMode?, cli?, workDir?, priority?, start? (default true)',
             handler: (args) => {
                 const t = taskManager.tasks.find(x => x.id === argStr(args, 'id'));
                 need(t, 'Task not found — tasks.list shows current ids.');
                 need((t as FarmTask).status !== 'queued' && (t as FarmTask).status !== 'running',
                     'Only a finished task can be re-run — it is still queued/running.');
-                const copy = taskManager.retryTask(t as FarmTask);
-                return copy ? { id: copy.id, status: copy.status } : { resumedWorkflow: true };
+                const effort = optStr(args, 'effort') ?? '';
+                const permissionMode = optStr(args, 'permissionMode') ?? '';
+                const errors = validateLaunch({ effort, permissionMode });
+                need(!errors.length, errors.join(' · '));
+                const over = {
+                    ...(optStr(args, 'agent') ? { agent: findAgent(optStr(args, 'agent') as string) } : {}),
+                    ...(optStr(args, 'title') ? { title: optStr(args, 'title') as string } : {}),
+                    ...(optStr(args, 'mode') ? { mode: optStr(args, 'mode') === 'interactive' ? 'interactive' as TaskMode : 'headless' as TaskMode } : {}),
+                    ...(optStr(args, 'model') ? { model: optStr(args, 'model') as string } : {}),
+                    ...(effort ? { effort } : {}),
+                    ...(permissionMode ? { permissionMode } : {}),
+                    ...(optStr(args, 'cli') ? { cli: optStr(args, 'cli') as string } : {}),
+                    ...(optStr(args, 'workDir') ? { workDir: optStr(args, 'workDir') as string } : {}),
+                    ...(Number(args.priority) ? { priority: Math.trunc(Number(args.priority)) } : {}),
+                    ...(args.start === false ? { autoStart: false } : {})
+                };
+                const copy = taskManager.retryTask(t as FarmTask, optStr(args, 'prompt'), over);
+                return copy
+                    ? {
+                        id: copy.id, status: copy.status, title: copy.title, attempt: copy.attempt ?? 1,
+                        model: copy.model ?? null, effort: copy.effort ?? null
+                    }
+                    : { resumedWorkflow: true };
+            }
+        },
+        {
+            op: 'tasks.history',
+            describe: 'The archived task history — one .jsonl file per month, newest first, holding the runs '
+                + 'that have been cleared off the board. args: none',
+            handler: () => {
+                const dir = taskManager.historyDir;
+                if (!fs.existsSync(dir)) { return []; }
+                return fs.readdirSync(dir).filter(f => f.endsWith('.jsonl')).sort().reverse()
+                    .map(f => {
+                        const st = fs.statSync(path.join(dir, f));
+                        return { month: f.replace(/\.jsonl$/, ''), file: path.join(dir, f), bytes: st.size, writtenAt: st.mtimeMs };
+                    });
             }
         },
         {
@@ -5255,23 +5333,89 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     `A workflow titled "${title}" already exists.`);
                 const stepsIn = Array.isArray(args.steps) ? args.steps as Record<string, unknown>[] : [];
                 need(stepsIn.length, 'steps is required — at least one step.');
-                const steps: WorkflowStep[] = stepsIn.map((raw, i) => {
-                    need(raw && typeof raw === 'object' && !Array.isArray(raw), `Step ${i + 1} must be an object.`);
-                    const agent = findAgent(String(raw.agent ?? ''));
-                    const stepTitle = String(raw.title ?? '').trim();
-                    need(stepTitle, `Step ${i + 1}: title is required.`);
-                    const prompt = String(raw.prompt ?? '').trim();
-                    need(prompt || raw.webhook || raw.media, `Step ${i + 1}: prompt is required.`);
-                    const { agent: _agentRef, ...passthrough } = raw;
-                    return {
-                        ...passthrough,
-                        agentId: agent.id, agentName: agent.name,
-                        title: stepTitle, prompt,
-                        mode: raw.mode === 'interactive' ? 'interactive' : 'headless'
-                    } as WorkflowStep;
-                });
+                const steps: WorkflowStep[] = stepsIn.map(bridgeStep);
                 const w = taskManager.addWorkflow(title, steps);
                 return { id: w.id, title: w.title, steps: w.steps.length };
+            }
+        },
+        {
+            op: 'workflows.update',
+            describe: 'Rename a workflow and/or replace its whole step chain — the same save the page\'s '
+                + 'workflow form makes. args: id or title, newTitle?, steps? (the FULL list, same shape as '
+                + 'workflows.add; omit to leave the chain alone, [] to empty it)',
+            handler: (args) => {
+                const w = bridgeWorkflow(optStr(args, 'id') || argStr(args, 'title'));
+                const newTitle = optStr(args, 'newTitle');
+                if (newTitle) {
+                    need(!taskManager.workflows.some(x => x.id !== w.id && x.title === newTitle),
+                        `A workflow titled "${newTitle}" already exists.`);
+                    w.title = newTitle;
+                }
+                if (Array.isArray(args.steps)) {
+                    w.steps = (args.steps as Record<string, unknown>[]).map(bridgeStep);
+                }
+                taskManager.persist();
+                return { id: w.id, title: w.title, steps: w.steps.length };
+            }
+        },
+        {
+            op: 'workflows.step.add',
+            describe: 'Append one step to a workflow. args: workflow (id or title), step ({agent (name|id — '
+                + 'omit on a webhook/media/approval/select step), title, prompt, mode?, onFail? ("continue"|'
+                + '1-based step), runIf?, outputContract? ("json"), verify? ({criteria, retries?}), parallel?, '
+                + 'webhook?, media?, browser?, approval?, select?})',
+            handler: (args) => {
+                const w = bridgeWorkflow(optStr(args, 'workflow') || argStr(args, 'id'));
+                need(args.step && typeof args.step === 'object', 'step is required.');
+                taskManager.addWorkflowStep(w, bridgeStep(args.step as Record<string, unknown>, w.steps.length));
+                return { id: w.id, title: w.title, steps: w.steps.length };
+            }
+        },
+        {
+            op: 'workflows.step.update',
+            describe: 'Replace one step of a workflow by its 1-based place. args: workflow (id or title), '
+                + 'at (1-based), step (the WHOLE step, same shape as workflows.step.add)',
+            handler: (args) => {
+                const w = bridgeWorkflow(optStr(args, 'workflow') || argStr(args, 'id'));
+                const i = bridgeStepAt(w, args.at);
+                need(args.step && typeof args.step === 'object', 'step is required.');
+                // ‼️ `updateWorkflowStep` MERGES, and the thing that decides a
+                // step's kind is which sub-object it carries — so turning a
+                // webhook step into an agent step would leave the webhook on it
+                // and the runner would still call the URL. Every optional field
+                // is cleared first, then the new step is laid over the top.
+                const cleared: Partial<WorkflowStep> = {
+                    webhook: undefined, media: undefined, browser: undefined,
+                    approval: undefined, select: undefined,
+                    onFail: undefined, runIf: undefined, outputContract: undefined,
+                    verify: undefined, parallel: undefined
+                };
+                taskManager.updateWorkflowStep(w, i,
+                    { ...cleared, ...bridgeStep(args.step as Record<string, unknown>, i) });
+                return { id: w.id, at: i + 1, title: w.steps[i].title };
+            }
+        },
+        {
+            op: 'workflows.step.move',
+            describe: 'Move one step up or down the chain. args: workflow (id or title), at (1-based), dir (up|down)',
+            handler: (args) => {
+                const w = bridgeWorkflow(optStr(args, 'workflow') || argStr(args, 'id'));
+                const i = bridgeStepAt(w, args.at);
+                const dir = optStr(args, 'dir') === 'up' ? -1 : 1;
+                need(i + dir >= 0 && i + dir < w.steps.length, 'That step is already at the end it is being moved to.');
+                taskManager.moveWorkflowStep(w, i, dir);
+                return { id: w.id, at: i + 1 + dir, steps: w.steps.map(s => s.title) };
+            }
+        },
+        {
+            op: 'workflows.step.delete',
+            describe: 'Remove one step from a workflow by its 1-based place. args: workflow (id or title), at (1-based)',
+            handler: (args) => {
+                const w = bridgeWorkflow(optStr(args, 'workflow') || argStr(args, 'id'));
+                const i = bridgeStepAt(w, args.at);
+                const gone = w.steps[i].title;
+                taskManager.deleteWorkflowStep(w, i);
+                return { id: w.id, deleted: gone, steps: w.steps.length };
             }
         },
         {
@@ -6509,7 +6653,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         launchDefaults: () => launchDefaults(),
         cliProfiles: () => cfg().get<CliProfile[]>('cliProfiles', []),
         projects: () => projectStore.all().map(p => ({ id: p.id, name: p.name, icon: p.icon })),
-        activeProjectId: () => activeProject()?.id
+        activeProjectId: () => activeProject()?.id,
+        // A media step can file the assets it produces under a production
+        // scene. Flattened here — `projectId` on its own for the whole
+        // production, `projectId/sceneId` for one scene of it.
+        scenes: () => {
+            const out: { id: string; label: string }[] = [];
+            for (const p of discoverProductions(agents)) {
+                out.push({ id: p.production.id, label: `${p.production.title} — the whole production` });
+                for (const s of p.production.scenes) {
+                    out.push({ id: `${p.production.id}/${s.id}`, label: `${p.production.title} · ${s.title}` });
+                }
+            }
+            return out;
+        }
     };
 
     needsEmitter.event(() => {
@@ -11276,15 +11433,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('agentfarm.retryTask', (node?: TaskNode) => {
             if (node?.kind === 'task') { taskManager.retryTask(node.task); }
         }),
-        vscode.commands.registerCommand('agentfarm.retryTaskEdit', async (node?: TaskNode) => {
+        // ‼️ THE RETRY FORM (U-9 Faz 3). One input box holding the old prompt is
+        // the wrong shape for a retry: you could rewrite the words and change
+        // nothing else, while the commonest reason to retry at all is the same
+        // words on a different model or effort.
+        vscode.commands.registerCommand('agentfarm.retryTaskEdit', (node?: TaskNode) => {
             if (node?.kind !== 'task') { return; }
-            const prompt = await vscode.window.showInputBox({
-                title: `Retry "${node.task.title}" with an edited prompt`,
-                value: node.task.prompt,
-                ignoreFocusOut: true
-            });
-            if (prompt === undefined) { return; }
-            taskManager.retryTask(node.task, prompt);
+            TasksPanel.retryCompose(tasksDeps, node.task.id);
         }),
         vscode.commands.registerCommand('agentfarm.resumeWorkflow', (node?: TaskNode) => {
             if (node?.kind === 'task') { taskManager.resumeWorkflowFromTask(node.task); }
@@ -11322,26 +11477,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }),
 
         // ---- the automation gate: master switch · quiet hours ----
-        vscode.commands.registerCommand('agentfarm.pauseAutomations', async () => {
-            const pick = await vscode.window.showQuickPick([
-                { label: '$(debug-pause) Pause indefinitely', mins: 0, description: 'until you resume' },
-                { label: '$(clock) Pause for 1 hour', mins: 60 },
-                { label: '$(clock) Pause for 8 hours', mins: 480 },
-                { label: '$(clock) Pause for 24 hours', mins: 1440 }
-            ], { ignoreFocusOut: true, placeHolder: 'Master switch — nothing fires on its own while paused' });
-            if (!pick) { return; }
-            const reason = await vscode.window.showInputBox({
-                title: 'Why? (shown in the UI so a forgotten pause is explainable)',
-                placeHolder: 'e.g. reviewing cost', ignoreFocusOut: true
-            });
-            if (reason === undefined) { return; }
-            taskManager.setAutomationState(pick.mins
-                ? { paused: false, pausedUntil: Date.now() + pick.mins * 60_000, pauseReason: reason }
-                : { paused: true, pausedUntil: undefined, pauseReason: reason });
-            TasksPanel.refreshIfOpen();
-            LivingPanel.refreshIfOpen();
-            void vscode.window.showInformationMessage(
-                `Agent Farm: automations paused${pick.mins ? ` for ${pick.mins} min` : ''}.`);
+        // ‼️ THE GATE IS SET ON THE STRIP THAT REPORTS IT (U-9). This asked a
+        // quickpick of four durations and then typed the reason into an input
+        // box; the quiet window asked a quickpick of two canned windows and then
+        // two more boxes for anything else. Both are two numbers and a sentence.
+        vscode.commands.registerCommand('agentfarm.pauseAutomations', () => {
+            TasksPanel.showGate(tasksDeps, 'pause');
         }),
         vscode.commands.registerCommand('agentfarm.resumeAutomations', () => {
             taskManager.setAutomationState({ paused: false, pausedUntil: undefined, pauseReason: undefined });
@@ -11349,43 +11490,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             LivingPanel.refreshIfOpen();
             void vscode.window.showInformationMessage('Agent Farm: automations resumed.');
         }),
-        vscode.commands.registerCommand('agentfarm.setQuietHours', async () => {
-            const cur = taskManager.automation;
-            const pick = await vscode.window.showQuickPick([
-                { label: '🌙 23:00 – 07:00', from: '23:00', to: '07:00', description: 'nothing wakes overnight' },
-                { label: '🌙 00:00 – 08:00', from: '00:00', to: '08:00' },
-                { label: '$(edit) Custom…', from: '', to: '' },
-                { label: '$(circle-slash) Turn quiet hours off', from: 'off', to: 'off' }
-            ], {
-                ignoreFocusOut: true,
-                placeHolder: cur.quietFrom
-                    ? `Quiet hours (currently ${cur.quietFrom}–${cur.quietTo})`
-                    : 'Quiet hours (currently off) — a due schedule is DEFERRED to the window end, never dropped'
-            });
-            if (!pick) { return; }
-            if (pick.from === 'off') {
-                taskManager.setAutomationState({ quietFrom: undefined, quietTo: undefined });
-                TasksPanel.refreshIfOpen();
-                LivingPanel.refreshIfOpen();
-                void vscode.window.showInformationMessage('Agent Farm: quiet hours off.');
-                return;
-            }
-            let { from, to } = pick;
-            if (!from) {
-                const ask = async (what: string, def: string) => vscode.window.showInputBox({
-                    title: `Quiet hours — ${what}`, value: def, ignoreFocusOut: true,
-                    validateInput: v => /^\d{1,2}:\d{2}$/.test(v.trim()) ? undefined : 'Use HH:MM (e.g. 23:00).'
-                });
-                const f = await ask('start', cur.quietFrom || '23:00');
-                if (!f) { return; }
-                const t = await ask('end', cur.quietTo || '07:00');
-                if (!t) { return; }
-                from = f.trim(); to = t.trim();
-            }
-            taskManager.setAutomationState({ quietFrom: from, quietTo: to });
-            TasksPanel.refreshIfOpen();
-            LivingPanel.refreshIfOpen();
-            void vscode.window.showInformationMessage(`Agent Farm: quiet hours ${from}–${to}.`);
+        vscode.commands.registerCommand('agentfarm.setQuietHours', () => {
+            TasksPanel.showGate(tasksDeps, 'quiet');
         }),
 
         vscode.commands.registerCommand('agentfarm.quickStart', () => {
@@ -12235,21 +12341,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             TasksPanel.composePlan(tasksDeps, 'trigger', node.trigger.id);
         }),
 
-        vscode.commands.registerCommand('agentfarm.openTaskHistory', async () => {
+        // ‼️ "WHICH MONTH?" IS A LIST ON THE PAGE (U-9 Faz 3). It was a quickpick
+        // of bare file names floating over the very page that is about task
+        // history, and it said nothing about any of them. The same months, on
+        // the page, with how big each archive is and when it was last written.
+        vscode.commands.registerCommand('agentfarm.openTaskHistory', () => {
             const dir = taskManager.historyDir;
-            if (!fs.existsSync(dir)) {
-                void vscode.window.showInformationMessage('Agent Farm: no task history yet.');
-                return;
-            }
-            const files = fs.readdirSync(dir).filter(f => f.endsWith('.jsonl')).sort().reverse();
-            if (!files.length) {
-                void vscode.window.showInformationMessage('Agent Farm: no task history yet.');
-                return;
-            }
-            const pick = await vscode.window.showQuickPick(files, { ignoreFocusOut: true, placeHolder: 'Which month?' });
-            if (pick) {
-                await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(path.join(dir, pick)));
-            }
+            const files = fs.existsSync(dir)
+                ? fs.readdirSync(dir).filter(f => f.endsWith('.jsonl')).sort().reverse()
+                : [];
+            TasksPanel.showChooser(tasksDeps, {
+                tab: 'run',
+                title: 'Task history',
+                lede: 'One file per month, holding the runs that have been cleared off the Runs tab.',
+                verb: 'open',
+                act: 'history',
+                empty: 'No task history yet — a month\'s file is written the first time finished runs are cleared.',
+                items: files.map(f => {
+                    let detail = '';
+                    try {
+                        const st = fs.statSync(path.join(dir, f));
+                        detail = `${Math.max(1, Math.round(st.size / 1024))} KB · last written ${st.mtime.toLocaleDateString()}`;
+                    } catch { /* a file that vanished between readdir and stat says nothing */ }
+                    return { id: f, label: f.replace(/\.jsonl$/, ''), detail };
+                })
+            });
         }),
 
         vscode.commands.registerCommand('agentfarm.openForecast', async () => {
@@ -12269,37 +12385,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             await vscode.window.showTextDocument(doc, { preview: false });
         }),
 
-        vscode.commands.registerCommand('agentfarm.saveTaskTemplate', async (node?: TaskNode) => {
+        // ‼️ SAVING A TEMPLATE IS THE TEMPLATE FORM. This asked exactly one
+        // question — bind it to this agent, or not — and decided the title, the
+        // prompt and the mode for you, silently, from the run.
+        vscode.commands.registerCommand('agentfarm.saveTaskTemplate', (node?: TaskNode) => {
             if (node?.kind !== 'task') { return; }
             const t = node.task;
-            const bindAgent = await vscode.window.showQuickPick(
-                [
-                    { label: `Bind to ${t.agentName}`, bind: true },
-                    { label: 'Any agent (choose at run time)', bind: false }
-                ],
-                { ignoreFocusOut: true, placeHolder: 'Template scope' }
-            );
-            if (!bindAgent) { return; }
-            taskManager.addTemplate({
-                title: t.title, prompt: t.prompt, mode: t.mode,
-                agentId: bindAgent.bind ? t.agentId : undefined,
-                agentName: bindAgent.bind ? t.agentName : undefined
+            TasksPanel.composePlanSeed(tasksDeps, 'template', {
+                mode2: 'new', title: t.title, prompt: t.prompt, mode: t.mode, agent: t.agentName ?? ''
             });
-            void vscode.window.showInformationMessage(`Agent Farm: template "${t.title}" saved.`);
         }),
 
         vscode.commands.registerCommand('agentfarm.runTemplate', async (node?: TaskNode) => {
-            let template = node?.kind === 'template' ? node.template : undefined;
+            const template = node?.kind === 'template' ? node.template : undefined;
+            // ‼️ "WHICH TEMPLATE?" IS THE PLAN TAB, FILTERED TO TEMPLATES. The
+            // quickpick listed titles and an agent name; the page's own rows
+            // carry the prompt, the mode, the last run and a Run button, which
+            // is the same question answered with everything it needs.
             if (!template) {
-                const pick = await vscode.window.showQuickPick(
-                    taskManager.templates.map(t => ({
-                        label: t.title, description: t.agentName ?? 'any agent', template: t
-                    })),
-                    { ignoreFocusOut: true, placeHolder: 'Which template?' }
-                );
-                template = pick?.template;
+                TasksPanel.showPlan(tasksDeps, { kind: ['template'] },
+                    taskManager.templates.length
+                        ? 'Every template you have saved — press run on the one you want.'
+                        : 'No templates yet. Save one from a run\'s right-click menu, or with + Template.');
+                return;
             }
-            if (!template) { return; }
             const agent = template.agentId
                 ? agents.find(a => a.id === template.agentId)
                 : await resolveAgent(undefined);
@@ -12315,297 +12424,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (node?.kind === 'template') { taskManager.deleteTemplate(node.template); }
         }),
 
-        vscode.commands.registerCommand('agentfarm.newWorkflow', async () => {
-            const title = await vscode.window.showInputBox({
-                prompt: 'Workflow name', ignoreFocusOut: true
-            });
-            if (!title) { return; }
-            const steps: WorkflowStep[] = [];
-            for (;;) {
-                const stepNo = steps.length + 1;
-                const agentPick = await vscode.window.showQuickPick(
-                    [
-                        // Finish sits on top once there is something to save — bottom of a long
-                        // agent list is invisible, and Esc used to silently discard everything.
-                        ...(steps.length ? [{ label: '$(check) Finish & save workflow', description: `save "${title}" with ${steps.length} step(s)`, agent: undefined as AgentInfo | undefined, isWebhook: false, isMedia: false, isBrowser: false, isApproval: false, isSelect: false }] : []),
-                        ...agents.map(a => ({ label: a.name, description: a.dir, agent: a as AgentInfo | undefined, isWebhook: false, isMedia: false, isBrowser: false, isApproval: false, isSelect: false })),
-                        { label: '$(globe) Webhook step', description: 'HTTP call to n8n/Make/any URL — no agent', agent: undefined as AgentInfo | undefined, isWebhook: true, isMedia: false, isBrowser: false, isApproval: false, isSelect: false },
-                        { label: '$(device-camera-video) Media step (fal.ai)', description: 'image/video/audio generation — needs FAL_KEY secret', agent: undefined as AgentInfo | undefined, isWebhook: false, isMedia: true, isBrowser: false, isApproval: false, isSelect: false },
-                        { label: '$(checklist) Select assets (visual pick)', description: 'keep a subset of produced assets — the chosen ones flow on', agent: undefined as AgentInfo | undefined, isWebhook: false, isMedia: false, isBrowser: false, isApproval: false, isSelect: true },
-                        { label: '$(browser) Browser step', description: 'agent drives its browser MCP — allowlist + approval enforced', agent: undefined as AgentInfo | undefined, isWebhook: false, isMedia: false, isBrowser: true, isApproval: false, isSelect: false },
-                        { label: '$(check) Approval gate', description: 'pause the chain for human sign-off — no agent, no model call', agent: undefined as AgentInfo | undefined, isWebhook: false, isMedia: false, isBrowser: false, isApproval: false, isSelect: false }
-                    ],
-                    { placeHolder: `Step ${stepNo}: which agent? (Esc = ${steps.length ? 'finish' : 'cancel'})`, ignoreFocusOut: true }
-                );
-                if (!agentPick) {
-                    if (!steps.length) { return; }
-                    const save = await vscode.window.showWarningMessage(
-                        `Save workflow "${title}" with ${steps.length} step(s)?`, { modal: true }, 'Save', 'Discard');
-                    if (save === 'Save') { break; }
-                    if (save === 'Discard') { return; }
-                    continue;
-                }
-                if (agentPick.isBrowser) {
-                    // Cancelling any field drops this half-built step and returns to the
-                    // step picker — it no longer discards the whole workflow.
-                    const bAgent = await resolveAgent(undefined);
-                    if (!bAgent) { continue; }
-                    const bTitle = await vscode.window.showInputBox({
-                        prompt: `Step ${stepNo} title (browser)`, value: 'Siteden veri topla', ignoreFocusOut: true
-                    });
-                    if (!bTitle) { continue; }
-                    const bUrl = await vscode.window.showInputBox({
-                        prompt: 'Start URL — {prev_text}/{prev_json.x} are substituted',
-                        placeHolder: 'https://example.com/reports', ignoreFocusOut: true
-                    });
-                    if (!bUrl) { continue; }
-                    const bGoal = await vscode.window.showInputBox({
-                        prompt: 'Goal — what should the agent do on the site?',
-                        placeHolder: 'e.g. find the latest report, summarize it and extract the numbers', ignoreFocusOut: true
-                    });
-                    if (!bGoal) { continue; }
-                    const defaultHost = (() => { try { return new URL(bUrl).hostname; } catch { return ''; } })();
-                    const bHosts = await vscode.window.showInputBox({
-                        prompt: 'Allowed hosts (comma-separated) — the agent may NOT leave these domains',
-                        value: defaultHost, ignoreFocusOut: true
-                    });
-                    if (bHosts === undefined) { continue; }
-                    steps.push({
-                        agentId: bAgent.id, agentName: bAgent.name, title: bTitle, prompt: '', mode: 'headless',
-                        browser: {
-                            url: bUrl, goal: bGoal,
-                            allowHosts: bHosts.split(',').map(h => h.trim()).filter(Boolean)
-                        }
-                    });
-                    continue;
-                }
-                if (agentPick.isMedia) {
-                    const mTitle = await vscode.window.showInputBox({
-                        prompt: `Step ${stepNo} title (media)`, value: 'Render image', ignoreFocusOut: true
-                    });
-                    if (!mTitle) { continue; }
-                    const mModel = await vscode.window.showInputBox({
-                        prompt: 'Media model id — fal (default) or "replicate:owner/name[:version]" (Replicate)',
-                        value: 'fal-ai/flux/schnell',
-                        placeHolder: 'e.g. fal-ai/flux/schnell · replicate:black-forest-labs/flux-schnell',
-                        ignoreFocusOut: true
-                    });
-                    if (!mModel) { continue; }
-                    const mInput = await vscode.window.showInputBox({
-                        prompt: 'JSON input template — {prev_text}/{prev_json.x} are substituted',
-                        value: '{"prompt": "{prev_text}"}', ignoreFocusOut: true
-                    });
-                    if (!mInput) { continue; }
-                    // Wave A: optional production/scene link (asked only when a manifest exists).
-                    const mLink = await pickProductionScene('Tie produced assets to a production scene? (gallery grouping)');
-                    // Wave B2: optional vision QA — a vision model checks the asset; FAIL regenerates.
-                    const mQA = await vscode.window.showInputBox({
-                        prompt: 'Vision QA criteria (optional) — a vision model checks the asset; FAIL regenerates with feedback',
-                        placeHolder: 'e.g. a single person, clear face, no six fingers, matches the storyboard brief', ignoreFocusOut: true
-                    });
-                    if (mQA === undefined) { continue; }
-                    const mRetries = mQA.trim() ? await vscode.window.showInputBox({
-                        prompt: 'How many regeneration attempts on QA failure?', value: '1',
-                        validateInput: v => /^\d+$/.test(v.trim()) ? undefined : 'A number', ignoreFocusOut: true
-                    }) : undefined;
-                    if (mQA.trim() && mRetries === undefined) { continue; }
-                    steps.push({
-                        agentId: '', agentName: 'media', title: mTitle, prompt: '', mode: 'headless',
-                        media: { model: mModel, input: mInput, projectId: mLink?.projectId, sceneId: mLink?.sceneId },
-                        ...(mQA.trim() ? { verify: { criteria: mQA.trim(), retries: Number(mRetries) || 1 } } : {})
-                    });
-                    continue;
-                }
-                if (agentPick.isApproval) {
-                    const aTitle = await vscode.window.showInputBox({
-                        prompt: `Step ${stepNo} title (approval gate)`, value: 'Wait for approval', ignoreFocusOut: true
-                    });
-                    if (!aTitle) { continue; }
-                    const aMsg = await vscode.window.showInputBox({
-                        prompt: 'Message shown when asking for approval (optional) — {prev_text}/{prev_json.x} are substituted',
-                        placeHolder: 'e.g. Review the output before it goes live', ignoreFocusOut: true
-                    });
-                    if (aMsg === undefined) { continue; }
-                    steps.push({
-                        agentId: '', agentName: 'approval', title: aTitle, prompt: '', mode: 'headless',
-                        approval: { message: aMsg.trim() || undefined }
-                    });
-                    continue;
-                }
-                if (agentPick.isSelect) {
-                    const sTitle = await vscode.window.showInputBox({
-                        prompt: `Step ${stepNo} title (select assets)`, value: 'Pick candidates', ignoreFocusOut: true
-                    });
-                    if (!sTitle) { continue; }
-                    const sMsg = await vscode.window.showInputBox({
-                        prompt: 'Message shown in the picker (optional) — {prev_text}/{prev_json.x} are substituted',
-                        placeHolder: 'e.g. Pick the frames that go on to video generation', ignoreFocusOut: true
-                    });
-                    if (sMsg === undefined) { continue; }
-                    const sRange = await vscode.window.showInputBox({
-                        prompt: 'How many to keep? min or min-max (empty = at least 1)',
-                        placeHolder: 'e.g. 2  ·  1-3  ·  empty', ignoreFocusOut: true,
-                        validateInput: v => v.trim() && !/^\d+(-\d+)?$/.test(v.trim()) ? 'Use N or N-M' : undefined
-                    });
-                    if (sRange === undefined) { continue; }
-                    const rm = /^(\d+)(?:-(\d+))?$/.exec(sRange.trim());
-                    const min = rm ? Number(rm[1]) : 1;
-                    const max = rm && rm[2] ? Number(rm[2]) : undefined;
-                    steps.push({
-                        agentId: '', agentName: 'select', title: sTitle, prompt: '', mode: 'headless',
-                        select: { message: sMsg.trim() || undefined, min, max }
-                    });
-                    continue;
-                }
-                if (agentPick.isWebhook) {
-                    const whTitle = await vscode.window.showInputBox({
-                        prompt: `Step ${stepNo} title (webhook)`, value: 'Notify outward', ignoreFocusOut: true
-                    });
-                    if (!whTitle) { continue; }
-                    const whUrl = await vscode.window.showInputBox({
-                        prompt: 'URL — {secret:NAME} and {prev_*} variables are substituted',
-                        placeHolder: 'https://n8n.example.com/webhook/…', ignoreFocusOut: true
-                    });
-                    if (!whUrl) { continue; }
-                    const whMethod = await vscode.window.showQuickPick(['POST', 'GET'],
-                        { placeHolder: 'Method', ignoreFocusOut: true });
-                    if (!whMethod) { continue; }
-                    const whBody = whMethod === 'GET' ? '' : ((await vscode.window.showInputBox({
-                        prompt: 'JSON body template — e.g. {"text": "{prev_text}"} (empty = none)',
-                        ignoreFocusOut: true
-                    })) ?? '');
-                    // Optional auth header (queued APIs): "Name: Value", {secret:NAME} substituted.
-                    const whHeader = await vscode.window.showInputBox({
-                        prompt: 'Auth header (optional) — "Name: Value", {secret:NAME} substituted',
-                        placeHolder: 'e.g. Authorization: Bearer {secret:MY_TOKEN}', ignoreFocusOut: true
-                    });
-                    if (whHeader === undefined) { continue; }
-                    const headers: Record<string, string> = {};
-                    const hIdx = whHeader.indexOf(':');
-                    if (hIdx > 0) { headers[whHeader.slice(0, hIdx).trim()] = whHeader.slice(hIdx + 1).trim(); }
-                    // Optional poll mode: turn this into a submit→poll queue client.
-                    const whPollUrlField = await vscode.window.showInputBox({
-                        prompt: 'Poll until done? JSON path in the response to the poll URL (empty = single call)',
-                        placeHolder: 'e.g. urls.get · status_url · name', ignoreFocusOut: true
-                    });
-                    if (whPollUrlField === undefined) { continue; }
-                    let poll: WebhookPollConfig | undefined;
-                    if (whPollUrlField.trim()) {
-                        const whStatusField = await vscode.window.showInputBox({
-                            prompt: 'JSON path to the status field in each poll response',
-                            value: 'status', ignoreFocusOut: true
-                        });
-                        if (whStatusField === undefined) { continue; }
-                        const whDone = await vscode.window.showInputBox({
-                            prompt: 'Status regex meaning "done"', value: 'succeeded|completed|complete|done|success', ignoreFocusOut: true
-                        });
-                        if (whDone === undefined) { continue; }
-                        const whInterval = await vscode.window.showInputBox({
-                            prompt: 'Poll interval seconds', value: '3',
-                            validateInput: v => /^\d+$/.test(v.trim()) ? undefined : 'A number', ignoreFocusOut: true
-                        });
-                        if (whInterval === undefined) { continue; }
-                        poll = {
-                            urlField: whPollUrlField.trim(),
-                            statusField: whStatusField.trim() || undefined,
-                            doneRegex: whDone.trim() || undefined,
-                            intervalSec: Number(whInterval) || 3
-                        };
-                    }
-                    steps.push({
-                        agentId: '', agentName: 'webhook', title: whTitle,
-                        prompt: '', mode: 'headless',
-                        webhook: {
-                            url: whUrl, method: whMethod, body: whBody.trim() || undefined,
-                            headers: Object.keys(headers).length ? headers : undefined,
-                            poll
-                        }
-                    });
-                    continue;
-                }
-                if (!agentPick.agent) { break; }
-                const stepTitle = await vscode.window.showInputBox({
-                    prompt: `Step ${stepNo} title (${agentPick.agent.name})`, ignoreFocusOut: true
-                });
-                if (!stepTitle) { continue; }
-                const stepPrompt = await vscode.window.showInputBox({
-                    prompt: `Step ${stepNo} prompt — use ${PREV_OUTPUT_PLACEHOLDER} for the previous step's output file`,
-                    value: stepTitle, ignoreFocusOut: true
-                });
-                if (!stepPrompt) { continue; }
-                const stepMode = await vscode.window.showQuickPick(
-                    [
-                        { label: 'Headless', description: 'recommended for chains — output is archived and passed on', mode: 'headless' as TaskMode },
-                        { label: 'Interactive', description: 'opens a terminal; chain continues when it closes', mode: 'interactive' as TaskMode }
-                    ],
-                    { placeHolder: `Step ${stepNo} run mode`, ignoreFocusOut: true }
-                );
-                if (!stepMode) { continue; }
-                // "if it fails" lives in the labels too — the bare "Stop workflow" wording
-                // read like "stop adding steps" and derailed users mid-wizard.
-                const onFailPick = await vscode.window.showQuickPick(
-                    [
-                        { label: 'If this step fails: stop the workflow (default)', onFail: 'stop' as const },
-                        { label: 'If this step fails: continue to next step', onFail: 'continue' as const },
-                        { label: 'If this step fails: jump to step…', onFail: 'goto' as const }
-                    ],
-                    { placeHolder: `Step ${stepNo}: what happens if this step fails?`, ignoreFocusOut: true }
-                );
-                if (!onFailPick) { continue; }
-                let onFail: 'stop' | 'continue' | number = 'stop';
-                if (onFailPick.onFail === 'goto') {
-                    const target = await vscode.window.showInputBox({
-                        prompt: 'Jump to step number (1-based)', ignoreFocusOut: true,
-                        validateInput: v => /^\d+$/.test(v) && Number(v) >= 1 ? undefined : 'Enter a step number'
-                    });
-                    if (!target) { continue; }
-                    onFail = Number(target);
-                } else {
-                    onFail = onFailPick.onFail;
-                }
-                const runIf = steps.length === 0 ? '' : (await vscode.window.showInputBox({
-                    prompt: `Step ${stepNo}: run only if previous output matches (regex, or json:field~regex) — empty = always run`,
-                    ignoreFocusOut: true
-                }) ?? '');
-                const contractPick = stepMode.mode === 'headless'
-                    ? await vscode.window.showQuickPick(
-                        [
-                            { label: 'Text output (default)', contract: undefined as 'json' | undefined },
-                            { label: 'JSON output', description: 'structured handoff: next step can use {prev_json.field}', contract: 'json' as const }
-                        ],
-                        { placeHolder: `Step ${stepNo} output contract`, ignoreFocusOut: true })
-                    : { contract: undefined };
-                if (!contractPick) { continue; }
-                const verifyCriteria = stepMode.mode === 'headless'
-                    ? ((await vscode.window.showInputBox({
-                        prompt: `Step ${stepNo}: verification criteria for the cheap-model judge — empty = no verification`,
-                        placeHolder: 'e.g. the output must contain a plan with at least 3 items',
-                        ignoreFocusOut: true
-                    })) ?? '')
-                    : '';
-                // Parallel grouping: only meaningful once there's a prior step to run alongside.
-                const parallelPick = steps.length ? await vscode.window.showQuickPick(
-                    [
-                        { label: 'Sequential (default)', description: 'runs after the previous step', parallel: false },
-                        { label: 'Parallel', description: 'runs concurrently with adjacent parallel steps; the next step gets all their outputs merged', parallel: true }
-                    ],
-                    { placeHolder: `Step ${stepNo}: run in sequence or in parallel?`, ignoreFocusOut: true }) : undefined;
-                if (steps.length && !parallelPick) { continue; }
-                steps.push({
-                    agentId: agentPick.agent.id, agentName: agentPick.agent.name,
-                    title: stepTitle, prompt: stepPrompt, mode: stepMode.mode,
-                    onFail: onFail === 'stop' ? undefined : onFail,
-                    runIf: runIf.trim() || undefined,
-                    outputContract: contractPick.contract,
-                    verify: verifyCriteria.trim() ? { criteria: verifyCriteria.trim(), retries: 1 } : undefined,
-                    parallel: parallelPick?.parallel || undefined
-                });
-            }
-            if (!steps.length) { return; }
-            const created = taskManager.addWorkflow(title, steps);
-            const run = await vscode.window.showInformationMessage(
-                `Agent Farm: workflow "${title}" created (${steps.length} steps) — see Tasks → Workflows.`, 'Run now');
-            if (run === 'Run now') { taskManager.runWorkflow(created); }
+        // ‼️ THE LAST DIALOG ON THIS PAGE. `newWorkflow` was 294 lines of
+        // quickpicks and input boxes that asked for step 4 without ever showing
+        // steps 1-3, offered no way back to step 2, and answered Esc by
+        // discarding the lot. The chain is a list on the page now.
+        vscode.commands.registerCommand('agentfarm.newWorkflow', () => {
+            TasksPanel.composePlan(tasksDeps, 'workflow');
         }),
 
         vscode.commands.registerCommand('agentfarm.runWorkflow', (node?: TaskNode) => {
@@ -12617,214 +12441,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             TasksPanel.composePlan(tasksDeps, 'workflow', node.workflow.id);
         }),
 
-        vscode.commands.registerCommand('agentfarm.addWorkflowStep', async (node?: TaskNode) => {
+        // ‼️ THE STEP FORM, NOT A THIRD SET OF QUESTIONS (U-9 Faz 2). This asked
+        // agent · title · prompt · mode and stopped — a step the builder itself
+        // could give a failure policy, a run-if, an output contract, a judge and
+        // a parallel flag was appended here as the poorest kind the model has.
+        vscode.commands.registerCommand('agentfarm.addWorkflowStep', (node?: TaskNode) => {
             if (node?.kind !== 'workflow') { return; }
-            const agent = await resolveAgent(undefined);
-            if (!agent) { return; }
-            const stepTitle = await vscode.window.showInputBox({
-                prompt: `New step title (${agent.name})`, ignoreFocusOut: true
-            });
-            if (!stepTitle) { return; }
-            const stepPrompt = await vscode.window.showInputBox({
-                prompt: `Step prompt — ${PREV_OUTPUT_PLACEHOLDER} inserts the previous step's output file`,
-                value: stepTitle, ignoreFocusOut: true
-            });
-            if (!stepPrompt) { return; }
-            const mode = await vscode.window.showQuickPick(
-                [
-                    { label: 'Headless', mode: 'headless' as TaskMode },
-                    { label: 'Interactive', mode: 'interactive' as TaskMode }
-                ], { ignoreFocusOut: true, placeHolder: 'Run mode' });
-            if (!mode) { return; }
-            taskManager.addWorkflowStep(node.workflow, {
-                agentId: agent.id, agentName: agent.name,
-                title: stepTitle, prompt: stepPrompt, mode: mode.mode
-            });
+            TasksPanel.composePlan(tasksDeps, 'workflow', node.workflow.id, 'new');
         }),
 
-        vscode.commands.registerCommand('agentfarm.editWorkflowStep', async (node?: TaskNode) => {
+        // ‼️ …AND EDITING ONE IS THE SAME FORM. This was a quickpick of FIELD
+        // NAMES: pick "On fail", answer one box, reopen the menu for the next
+        // field — fifteen entries deep on a media step, and no way to see two
+        // of them at once. The step's card shows all of it, and the chain
+        // around it, at the same time.
+        vscode.commands.registerCommand('agentfarm.editWorkflowStep', (node?: TaskNode) => {
             if (node?.kind !== 'workflow-step') { return; }
-            const w = node.workflow;
-            const step = w.steps[node.index];
-            const field = await vscode.window.showQuickPick(
-                [
-                    { label: 'Title', description: step.title, id: 'title' },
-                    ...(step.webhook ? [
-                        { label: 'Webhook URL', description: step.webhook.url.slice(0, 50), id: 'whUrl' },
-                        { label: 'Webhook body', description: (step.webhook.body ?? '(none)').slice(0, 50), id: 'whBody' }
-                    ] : []),
-                    ...(step.media ? [
-                        { label: 'Media model', description: step.media.model, id: 'mModel' },
-                        { label: 'Media input', description: step.media.input.slice(0, 50), id: 'mInput' }
-                    ] : []),
-                    ...(step.browser ? [
-                        { label: 'Browser URL', description: step.browser.url.slice(0, 50), id: 'bUrl' },
-                        { label: 'Browser goal', description: step.browser.goal.slice(0, 50), id: 'bGoal' },
-                        { label: 'Browser allowed hosts', description: (step.browser.allowHosts ?? []).join(', ') || '(global list)', id: 'bHosts' }
-                    ] : []),
-                    ...(step.approval ? [
-                        { label: 'Approval message', description: (step.approval.message ?? '(none)').slice(0, 50), id: 'apMsg' }
-                    ] : []),
-                    { label: 'Prompt', description: step.prompt.slice(0, 60), id: 'prompt' },
-                    { label: 'Agent', description: step.agentName, id: 'agent' },
-                    { label: 'Mode', description: step.mode, id: 'mode' },
-                    { label: 'On fail', description: String(step.onFail ?? 'stop'), id: 'onFail' },
-                    { label: 'Parallel', description: step.parallel ? 'on — runs with adjacent parallel steps' : 'off — sequential', id: 'parallel' },
-                    { label: 'Run-if condition', description: step.runIf ?? '(always runs)', id: 'runIf' },
-                    { label: 'Output contract', description: step.outputContract ?? 'text', id: 'contract' },
-                    { label: 'Verification', description: step.verify ? `${step.verify.criteria.slice(0, 40)} (retries ${step.verify.retries ?? 1})` : '(none)', id: 'verify' }
-                ],
-                { ignoreFocusOut: true, placeHolder: `Edit step ${node.index + 1}: ${step.title}` }
-            );
-            if (!field) { return; }
-            switch (field.id) {
-                case 'title': {
-                    const v = await vscode.window.showInputBox({ prompt: 'Step title', value: step.title, ignoreFocusOut: true });
-                    if (v) { taskManager.updateWorkflowStep(w, node.index, { title: v }); }
-                    break;
-                }
-                case 'whUrl': {
-                    const v = await vscode.window.showInputBox({ prompt: 'Webhook URL', value: step.webhook!.url, ignoreFocusOut: true });
-                    if (v) { taskManager.updateWorkflowStep(w, node.index, { webhook: { ...step.webhook!, url: v } }); }
-                    break;
-                }
-                case 'whBody': {
-                    const v = await vscode.window.showInputBox({ prompt: 'Webhook body template (empty = none)', value: step.webhook!.body ?? '', ignoreFocusOut: true });
-                    if (v === undefined) { return; }
-                    taskManager.updateWorkflowStep(w, node.index, { webhook: { ...step.webhook!, body: v.trim() || undefined } });
-                    break;
-                }
-                case 'mModel': {
-                    const v = await vscode.window.showInputBox({ prompt: 'fal.ai model id', value: step.media!.model, ignoreFocusOut: true });
-                    if (v) { taskManager.updateWorkflowStep(w, node.index, { media: { ...step.media!, model: v } }); }
-                    break;
-                }
-                case 'mInput': {
-                    const v = await vscode.window.showInputBox({ prompt: 'JSON input template', value: step.media!.input, ignoreFocusOut: true });
-                    if (v) { taskManager.updateWorkflowStep(w, node.index, { media: { ...step.media!, input: v } }); }
-                    break;
-                }
-                case 'apMsg': {
-                    const v = await vscode.window.showInputBox({ prompt: 'Approval message (empty = none)', value: step.approval!.message ?? '', ignoreFocusOut: true });
-                    if (v === undefined) { return; }
-                    taskManager.updateWorkflowStep(w, node.index, { approval: { message: v.trim() || undefined } });
-                    break;
-                }
-                case 'bUrl': {
-                    const v = await vscode.window.showInputBox({ prompt: 'Start URL', value: step.browser!.url, ignoreFocusOut: true });
-                    if (v) { taskManager.updateWorkflowStep(w, node.index, { browser: { ...step.browser!, url: v } }); }
-                    break;
-                }
-                case 'bGoal': {
-                    const v = await vscode.window.showInputBox({ prompt: 'Browser goal', value: step.browser!.goal, ignoreFocusOut: true });
-                    if (v) { taskManager.updateWorkflowStep(w, node.index, { browser: { ...step.browser!, goal: v } }); }
-                    break;
-                }
-                case 'bHosts': {
-                    const v = await vscode.window.showInputBox({
-                        prompt: 'Allowed hosts, comma-separated (empty = use agentFarm.browserAllowHosts)',
-                        value: (step.browser!.allowHosts ?? []).join(', '), ignoreFocusOut: true
-                    });
-                    if (v === undefined) { return; }
-                    taskManager.updateWorkflowStep(w, node.index, {
-                        browser: { ...step.browser!, allowHosts: v.split(',').map(h => h.trim()).filter(Boolean) }
-                    });
-                    break;
-                }
-                case 'prompt': {
-                    const v = await vscode.window.showInputBox({
-                        prompt: `Step prompt (${PREV_OUTPUT_PLACEHOLDER} = previous output file)`,
-                        value: step.prompt, ignoreFocusOut: true
-                    });
-                    if (v) { taskManager.updateWorkflowStep(w, node.index, { prompt: v }); }
-                    break;
-                }
-                case 'agent': {
-                    const agent = await resolveAgent(undefined);
-                    if (agent) {
-                        taskManager.updateWorkflowStep(w, node.index, { agentId: agent.id, agentName: agent.name });
-                    }
-                    break;
-                }
-                case 'mode': {
-                    const v = await vscode.window.showQuickPick(
-                        [
-                            { label: 'Headless', mode: 'headless' as TaskMode },
-                            { label: 'Interactive', mode: 'interactive' as TaskMode }
-                        ], { ignoreFocusOut: true, placeHolder: 'Run mode' });
-                    if (v) { taskManager.updateWorkflowStep(w, node.index, { mode: v.mode }); }
-                    break;
-                }
-                case 'onFail': {
-                    const v = await vscode.window.showQuickPick(
-                        [
-                            { label: 'If this step fails: stop the workflow', value: undefined as 'continue' | number | undefined },
-                            { label: 'If this step fails: continue to next step', value: 'continue' as const },
-                            { label: 'If this step fails: jump to step…', value: 'goto' as unknown as number }
-                        ], { ignoreFocusOut: true, placeHolder: 'What happens if this step fails?' });
-                    if (!v) { return; }
-                    if (String(v.value) === 'goto') {
-                        const target = await vscode.window.showInputBox({
-                            prompt: 'Jump to step number (1-based)', ignoreFocusOut: true,
-                            validateInput: x => /^\d+$/.test(x) && Number(x) >= 1 ? undefined : 'Enter a step number'
-                        });
-                        if (!target) { return; }
-                        taskManager.updateWorkflowStep(w, node.index, { onFail: Number(target) });
-                    } else {
-                        taskManager.updateWorkflowStep(w, node.index, { onFail: v.value });
-                    }
-                    break;
-                }
-                case 'parallel': {
-                    const v = await vscode.window.showQuickPick(
-                        [
-                            { label: 'Sequential', description: 'runs after the previous step', parallel: false },
-                            { label: 'Parallel', description: 'runs concurrently with adjacent parallel steps (grouped; fan-in to the next step)', parallel: true }
-                        ], { ignoreFocusOut: true, placeHolder: `Step ${node.index + 1}: sequential or parallel?` });
-                    if (!v) { return; }
-                    taskManager.updateWorkflowStep(w, node.index, { parallel: v.parallel || undefined });
-                    break;
-                }
-                case 'runIf': {
-                    const v = await vscode.window.showInputBox({
-                        prompt: 'Run only if previous output matches (regex, or json:field~regex) — empty = always run',
-                        value: step.runIf ?? '', ignoreFocusOut: true
-                    });
-                    if (v === undefined) { return; }
-                    taskManager.updateWorkflowStep(w, node.index, { runIf: v.trim() || undefined });
-                    break;
-                }
-                case 'contract': {
-                    const v = await vscode.window.showQuickPick(
-                        [
-                            { label: 'Text output', contract: undefined as 'json' | undefined },
-                            { label: 'JSON output', description: 'next step can use {prev_json.field}', contract: 'json' as const }
-                        ], { ignoreFocusOut: true, placeHolder: 'Output contract' });
-                    if (!v) { return; }
-                    taskManager.updateWorkflowStep(w, node.index, { outputContract: v.contract });
-                    break;
-                }
-                case 'verify': {
-                    const criteria = await vscode.window.showInputBox({
-                        prompt: 'Verification criteria for the judge — empty = remove verification',
-                        value: step.verify?.criteria ?? '', ignoreFocusOut: true
-                    });
-                    if (criteria === undefined) { return; }
-                    if (!criteria.trim()) {
-                        taskManager.updateWorkflowStep(w, node.index, { verify: undefined });
-                        break;
-                    }
-                    const retries = await vscode.window.showInputBox({
-                        prompt: 'Retries on FAIL', value: String(step.verify?.retries ?? 1),
-                        validateInput: x => /^\d+$/.test(x) ? undefined : 'Enter a number', ignoreFocusOut: true
-                    });
-                    if (retries === undefined) { return; }
-                    taskManager.updateWorkflowStep(w, node.index, {
-                        verify: { criteria: criteria.trim(), retries: Number(retries) }
-                    });
-                    break;
-                }
-            }
+            TasksPanel.composePlan(tasksDeps, 'workflow', node.workflow.id, node.index);
         }),
 
         vscode.commands.registerCommand('agentfarm.moveWorkflowStepUp', (node?: TaskNode) => {

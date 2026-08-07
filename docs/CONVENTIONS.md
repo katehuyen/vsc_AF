@@ -103,9 +103,36 @@ decide what the object actually does.
   (`core/launch.ts`), plus project, working folder and priority. Empty means
   "no flag", exactly as it does there.
 
+- **An object whose content is a LIST gets a list editor, not a wizard.** A
+  workflow is the case that proved it: asking for step 4 without ever showing
+  steps 1–3, with no way back to step 2 and Esc discarding the lot, is not a
+  form with extra pages — it is a form that cannot be read. Draw the list, put
+  `↑ ↓ copy ✕` on each row, and open ONE item at a time in a nested card. The
+  list is part of the **draft**: reordering and deleting must not touch the
+  stored object, or `Cancel` is a lie and a reorder becomes N commands.
+- **A sub-object's KIND is a picker, not a first question.** Six kinds of
+  workflow step used to be the wizard's opening quickpick, and everything after
+  it depended on that answer, so changing your mind meant starting over. In a
+  form the kind is one field near the top: it redraws the half of the card that
+  depends on it and keeps everything that does not.
+- **A picker over rows a page already draws belongs ON that page.** "Which
+  template?" is the Plan tab filtered to templates — the rows carry the agent,
+  the mode, the last run and a Run button, which a quickpick of bare titles
+  cannot. Where there is no such page, draw an in-page chooser card
+  (`chooser` on the Tasks page) rather than a floating list: it can say how big
+  each item is and when it was last written.
+
 **What stays native, deliberately:** a **modal confirmation** for something
 destructive (a page-side warning can be missed while the focus is elsewhere),
 and the **OS file picker** (`showOpenDialog`), which has no webview equivalent.
+
+**The measurement, so the next sweep can be compared to it** (2026-08-08, U-9
+phase 4): of 215 commands, **113** open some native dialog, **58** use
+`showInputBox`/`showQuickPick`, and **20** are chains of two or more boxes. The
+finding worth keeping is not the count but its shape — nearly every one of those
+objects already HAS a page, and that page lists the object without being able to
+make one. The full table is in the project's `10_Notes/U-9 Faz 4 - diyalog
+supurme taramasi.md`; the remaining work is backlog `U-14`.
 
 ## Right-click
 

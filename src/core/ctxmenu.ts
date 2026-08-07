@@ -483,19 +483,13 @@ export const CTX_ITEMS: CtxItem[] = [
         id: 'planOff', title: 'Switch it off', act: 'plToggle',
         when: `${PLAN_ROW} && afSwitchable && afOn`, group: '2_edit@2'
     },
-    // A workflow's "edit" IS adding a step (agentfarm.addWorkflowStep) — the
-    // menu says what will actually happen rather than borrowing one word.
+    // ‼️ ONE ENTRY FOR ALL FOUR KINDS. A workflow used to get two of its own —
+    // "Add a step…" (because Edit could only append one) and "Rename it…"
+    // (because that was the only part of a workflow a form could reach). Both
+    // are the same act now: Edit opens the chain, name and steps together.
     {
         id: 'planEdit', title: 'Edit it…', act: 'plEdit',
-        when: `${PLAN_ROW} && afKind != 'workflow'`, group: '2_edit@3'
-    },
-    {
-        id: 'planStep', title: 'Add a step…', act: 'plEdit',
-        when: `${PLAN_ROW} && afKind == 'workflow'`, group: '2_edit@3'
-    },
-    {
-        id: 'planRename', title: 'Rename it…', act: 'plRename',
-        when: `${PLAN_ROW} && afKind == 'workflow'`, group: '2_edit@4'
+        when: PLAN_ROW, group: '2_edit@3'
     },
     {
         id: 'planExport', title: 'Export as a Windows Scheduled Task…', act: 'plExport',
@@ -572,15 +566,15 @@ export const CTX_ITEMS: CtxItem[] = [
         when: `${TASK_RUN} && !afLive`, group: '2_edit@3'
     },
     {
-        id: 'runRetryEdit', title: 'Run it again with an edited prompt…', act: 'tkRetryEdit',
+        id: 'runRetryEdit', title: 'Run it again, with changes…', act: 'tkRetryEdit',
         when: `${TASK_RUN} && !afLive`, group: '2_edit@4'
     },
     {
-        // ‼️ Not the same as the line above it. That one asks for a new prompt
-        // in a box and changes nothing else; this opens the page's own New-task
-        // form with the whole run in it — agent, model, effort, permissions,
-        // project, priority, folder — which is what "run that again on opus"
-        // actually means. Available on a live run too: "another one like this,
+        // ‼️ Not the same as the line above it, though both now open the same
+        // form. A RETRY is this run once more — it keeps the lineage, counts up
+        // the attempt, is named "… (retry N)" and resumes a workflow step in
+        // place. A CLONE is a new, unrelated task that merely starts from the
+        // same words. Available on a live run too: "another one like this,
         // but…" is a normal thing to want while the first is still going.
         id: 'runClone', title: 'New task like this one…', act: 'tkClone',
         when: TASK_RUN, group: '2_edit@5'

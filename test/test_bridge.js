@@ -815,6 +815,206 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         ok('templates.delete removes the template', tplGone.ok && mgr.templates.length === 1);
     }
 
+    // ---------- §19.C: U-9 Faz 2 — the workflow CHAIN is bridge-manageable ----------
+    // ‼️ WHATEVER THE PAGE CAN DO, AN AGENT CAN ASK FOR. The workflow form now
+    // builds, reorders and edits a chain; the same acts have to exist as ops or
+    // the surfaces have drifted the day the form shipped. Same handler shapes
+    // extension.ts registers, over a mock manager.
+    {
+        const agents = [{ id: 'a1', name: 'dev' }, { id: 'a2', name: 'genel' }];
+        const findAgent = (ref) => {
+            const a = agents.find(x => x.id === ref || x.name === String(ref).toLowerCase());
+            need(a, `Agent "${ref}" not found.`);
+            return a;
+        };
+        const bridgeStep = (raw, i) => {
+            need(raw && typeof raw === 'object' && !Array.isArray(raw), `Step ${i + 1} must be an object.`);
+            const stepTitle = String(raw.title || '').trim();
+            need(stepTitle, `Step ${i + 1}: title is required.`);
+            const prompt = String(raw.prompt || '').trim();
+            const label = raw.webhook ? 'webhook' : raw.media ? 'media'
+                : raw.approval ? 'approval' : raw.select ? 'select' : '';
+            need(prompt || label || raw.browser, `Step ${i + 1}: prompt is required.`);
+            const { agent: agentRef, ...passthrough } = raw;
+            const who = label && !String(agentRef || '').trim()
+                ? { id: '', name: label }
+                : findAgent(String(agentRef || ''));
+            return {
+                ...passthrough, agentId: who.id, agentName: who.name,
+                title: stepTitle, prompt,
+                mode: raw.mode === 'interactive' ? 'interactive' : 'headless'
+            };
+        };
+        const mgr = {
+            persisted: 0,
+            workflows: [{
+                id: 'w1', title: 'zincir', steps: [
+                    { agentId: 'a1', agentName: 'dev', title: 'bir', prompt: 'p1', mode: 'headless' },
+                    { agentId: 'a1', agentName: 'dev', title: 'iki', prompt: 'p2', mode: 'headless' }
+                ]
+            }],
+            persist() { this.persisted++; },
+            addWorkflowStep(w, s) { w.steps.push(s); this.persist(); },
+            updateWorkflowStep(w, i, patch) { w.steps[i] = { ...w.steps[i], ...patch }; this.persist(); },
+            moveWorkflowStep(w, i, d) { const s = w.steps[i]; w.steps[i] = w.steps[i + d]; w.steps[i + d] = s; this.persist(); },
+            deleteWorkflowStep(w, i) { w.steps.splice(i, 1); this.persist(); }
+        };
+        const bridgeWorkflow = (ref) => {
+            const w = mgr.workflows.find(x => x.id === ref || x.title === ref);
+            need(w, 'Workflow not found — workflows.list shows current ones.');
+            return w;
+        };
+        const bridgeStepAt = (w, at) => {
+            const n = Number(at);
+            need(Number.isInteger(n) && n >= 1 && n <= w.steps.length,
+                `at must be a step number between 1 and ${w.steps.length}.`);
+            return n - 1;
+        };
+        reg.register([
+            {
+                op: 'workflows.update',
+                describe: 'Rename a workflow and/or replace its whole step chain. args: id or title, newTitle?, steps?',
+                handler: (args) => {
+                    const w = bridgeWorkflow(optStr(args, 'id') || argStr(args, 'title'));
+                    const newTitle = optStr(args, 'newTitle');
+                    if (newTitle) {
+                        need(!mgr.workflows.some(x => x.id !== w.id && x.title === newTitle),
+                            `A workflow titled "${newTitle}" already exists.`);
+                        w.title = newTitle;
+                    }
+                    if (Array.isArray(args.steps)) { w.steps = args.steps.map(bridgeStep); }
+                    mgr.persist();
+                    return { id: w.id, title: w.title, steps: w.steps.length };
+                }
+            },
+            {
+                op: 'workflows.step.add',
+                describe: 'Append one step to a workflow. args: workflow (id or title), step',
+                handler: (args) => {
+                    const w = bridgeWorkflow(optStr(args, 'workflow') || argStr(args, 'id'));
+                    need(args.step && typeof args.step === 'object', 'step is required.');
+                    mgr.addWorkflowStep(w, bridgeStep(args.step, w.steps.length));
+                    return { id: w.id, title: w.title, steps: w.steps.length };
+                }
+            },
+            {
+                op: 'workflows.step.update',
+                describe: 'Replace one step of a workflow by its 1-based place. args: workflow, at, step',
+                handler: (args) => {
+                    const w = bridgeWorkflow(optStr(args, 'workflow') || argStr(args, 'id'));
+                    const i = bridgeStepAt(w, args.at);
+                    need(args.step && typeof args.step === 'object', 'step is required.');
+                    const cleared = {
+                        webhook: undefined, media: undefined, browser: undefined,
+                        approval: undefined, select: undefined,
+                        onFail: undefined, runIf: undefined, outputContract: undefined,
+                        verify: undefined, parallel: undefined
+                    };
+                    mgr.updateWorkflowStep(w, i, { ...cleared, ...bridgeStep(args.step, i) });
+                    return { id: w.id, at: i + 1, title: w.steps[i].title };
+                }
+            },
+            {
+                op: 'workflows.step.move',
+                describe: 'Move one step up or down the chain. args: workflow, at, dir (up|down)',
+                handler: (args) => {
+                    const w = bridgeWorkflow(optStr(args, 'workflow') || argStr(args, 'id'));
+                    const i = bridgeStepAt(w, args.at);
+                    const dir = optStr(args, 'dir') === 'up' ? -1 : 1;
+                    need(i + dir >= 0 && i + dir < w.steps.length,
+                        'That step is already at the end it is being moved to.');
+                    mgr.moveWorkflowStep(w, i, dir);
+                    return { id: w.id, at: i + 1 + dir, steps: w.steps.map(s => s.title) };
+                }
+            },
+            {
+                op: 'workflows.step.delete',
+                describe: 'Remove one step from a workflow by its 1-based place. args: workflow, at',
+                handler: (args) => {
+                    const w = bridgeWorkflow(optStr(args, 'workflow') || argStr(args, 'id'));
+                    const i = bridgeStepAt(w, args.at);
+                    const gone = w.steps[i].title;
+                    mgr.deleteWorkflowStep(w, i);
+                    return { id: w.id, deleted: gone, steps: w.steps.length };
+                }
+            }
+        ]);
+
+        ok('the chain ops are in the catalog',
+            ['workflows.update', 'workflows.step.add', 'workflows.step.update',
+                'workflows.step.move', 'workflows.step.delete']
+                .every(op => reg.catalog().some(c => c.op === op)));
+
+        const added = await reg.dispatch('workflows.step.add', {
+            workflow: 'zincir',
+            step: { agent: 'genel', title: 'üç', prompt: 'p3', onFail: 'continue', parallel: true }
+        });
+        ok('workflows.step.add appends a step with its chain behaviour',
+            added.ok && added.result.steps === 3
+            && mgr.workflows[0].steps[2].agentId === 'a2'
+            && mgr.workflows[0].steps[2].onFail === 'continue'
+            && mgr.workflows[0].steps[2].parallel === true);
+
+        // ‼️ A step that is NOT an agent does not need one — its agentName is
+        // the label its run is filed under. The old mapper demanded an agent
+        // for every step, so an approval gate could not be added at all.
+        const gate = await reg.dispatch('workflows.step.add', {
+            workflow: 'zincir', step: { title: 'onay', approval: { message: 'bak' } }
+        });
+        ok('workflows.step.add takes an approval gate with no agent and no prompt',
+            gate.ok && mgr.workflows[0].steps[3].agentName === 'approval');
+        const nameless = await reg.dispatch('workflows.step.add', { workflow: 'zincir', step: { prompt: 'p' } });
+        ok('…but it still demands a title', !nameless.ok && /title is required/.test(nameless.error));
+
+        const moved = await reg.dispatch('workflows.step.move', { workflow: 'zincir', at: 1, dir: 'down' });
+        ok('workflows.step.move swaps two steps', moved.ok && mgr.workflows[0].steps[0].title === 'iki');
+        const offEnd = await reg.dispatch('workflows.step.move', { workflow: 'zincir', at: 1, dir: 'up' });
+        ok('…and refuses to move the first step up', !offEnd.ok && /already at the end/.test(offEnd.error));
+        const badAt = await reg.dispatch('workflows.step.delete', { workflow: 'zincir', at: 99 });
+        ok('a place off the end is refused with the range', !badAt.ok && /between 1 and 4/.test(badAt.error));
+
+        // Switching a step's KIND has to take the old kind off it, or the runner
+        // still sees the webhook it was told to stop being.
+        await reg.dispatch('workflows.step.update', {
+            workflow: 'zincir', at: 1, step: { title: 'çağır', webhook: { url: 'https://x/y' } }
+        });
+        ok('workflows.step.update can turn a step into a webhook',
+            mgr.workflows[0].steps[0].webhook && mgr.workflows[0].steps[0].agentName === 'webhook');
+        await reg.dispatch('workflows.step.update', {
+            workflow: 'zincir', at: 1, step: { agent: 'dev', title: 'geri', prompt: 'p' }
+        });
+        ok('‼️ …and turning it back drops the webhook rather than merging over it',
+            mgr.workflows[0].steps[0].webhook === undefined
+            && mgr.workflows[0].steps[0].agentName === 'dev');
+
+        const whole = await reg.dispatch('workflows.update', {
+            id: 'w1', newTitle: 'yeni zincir',
+            steps: [{ agent: 'dev', title: 'tek', prompt: 'p' }]
+        });
+        ok('workflows.update saves the name and the whole chain in one call',
+            whole.ok && mgr.workflows[0].title === 'yeni zincir' && mgr.workflows[0].steps.length === 1);
+        const emptied = await reg.dispatch('workflows.update', { id: 'w1', steps: [] });
+        ok('…and an empty list really empties it', emptied.ok && mgr.workflows[0].steps.length === 0);
+        const noWf = await reg.dispatch('workflows.update', { title: 'yok' });
+        ok('an unknown workflow is refused by name', !noWf.ok && /Workflow not found/.test(noWf.error));
+    }
+
+    // ---------- §19.C: U-9 — extension.ts really registers the new ops ----------
+    {
+        const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        for (const op of ['workflows.update', 'workflows.step.add', 'workflows.step.update',
+            'workflows.step.move', 'workflows.step.delete', 'tasks.history']) {
+            ok(`extension.ts registers ${op}`, src.includes(`op: '${op}'`));
+        }
+        const at = src.indexOf("op: 'tasks.rerun'");
+        const block = src.slice(at, at + 2600);
+        ok('‼️ tasks.rerun takes the retry\'s edits, the way the page\'s retry form does',
+            /prompt\?/.test(block) && /model\?/.test(block) && /effort\?/.test(block)
+            && /permissionMode\?/.test(block));
+        ok('…and it CALLS retryTask rather than rebuilding the lineage',
+            /taskManager\.retryTask\(/.test(block));
+    }
+
     // ---------- §19.C: mission-control ops contract (pause/resume/cancel/answer/approve) ----------
     {
         const runs = [

@@ -1462,28 +1462,57 @@ export class TaskManager implements vscode.Disposable {
     /**
      * Re-run a finished task as a fresh copy. A workflow-step task (with no edited
      * prompt) resumes the chain from its step instead of running in isolation.
+     *
+     * ‼️ A RETRY IS AN EDIT, NOT ONLY A NEW PROMPT. `over` is what the page's
+     * retry form changed before pressing go — agent, title, mode, model,
+     * effort, permissions, project, CLI, folder, priority — because "run that
+     * again on opus at low effort" is the commonest reason to retry anything.
+     * Everything omitted is the ORIGINAL's, which is the point of a retry.
      */
-    retryTask(task: FarmTask, newPrompt?: string): FarmTask | undefined {
+    retryTask(
+        task: FarmTask, newPrompt?: string,
+        over?: { agent?: AgentInfo; title?: string; mode?: TaskMode; autoStart?: boolean }
+            & Partial<Pick<FarmTask,
+                'model' | 'effort' | 'permissionMode' | 'cli' | 'workDir' | 'priority' | 'projectId'>>
+    ): FarmTask | undefined {
         if (task.workflowId !== undefined && task.stepIndex !== undefined && newPrompt === undefined) {
             this.resumeWorkflowFromTask(task);
             return undefined;
         }
-        const agent = this.getAgents().find(a => a.id === task.agentId);
+        const agent = over?.agent ?? this.getAgents().find(a => a.id === task.agentId);
         if (!agent) {
             void vscode.window.showWarningMessage(`Agent Farm: agent for "${task.title}" not found.`);
             return undefined;
         }
-        const baseTitle = task.title.replace(/ \(retry \d+\)$/i, '');
+        const baseTitle = (over?.title ?? task.title).replace(/ \(retry \d+\)$/i, '');
         const attempt = (task.attempt ?? 0) + 1;
-        // The retry belongs to the ORIGINAL's project, not to whatever the window
-        // moved on to in the meantime — a rerun of the same work is the same work.
-        const copy = this.addTask(agent, `${baseTitle} (retry ${attempt})`, newPrompt ?? task.prompt, task.mode,
-            { projectId: task.projectId });
+        // ‼️ THE RETRY RUNS THE WAY THE ORIGINAL RAN. Only `projectId` was
+        // carried, so a task launched on haiku at low effort came back as a
+        // retry with no --model and no --effort at all: the same prompt on a
+        // different, more expensive command line, silently.
+        const copy = this.addTask(agent, `${baseTitle} (retry ${attempt})`, newPrompt ?? task.prompt,
+            over?.mode ?? task.mode,
+            {
+                // The retry belongs to the ORIGINAL's project, not to whatever the
+                // window moved on to in the meantime — a rerun of the same work is
+                // the same work.
+                projectId: over && 'projectId' in over ? over.projectId : task.projectId,
+                model: over?.model ?? task.model,
+                effort: over?.effort ?? task.effort,
+                permissionMode: over?.permissionMode ?? task.permissionMode,
+                priority: over?.priority ?? task.priority
+            });
         copy.attempt = attempt;
         copy.outputContract = task.outputContract;
-        copy.cli = task.cli;
-        copy.workDir = task.workDir;
+        copy.cli = over?.cli ?? task.cli;
+        copy.workDir = over?.workDir ?? task.workDir;
         copy.missionId = task.missionId;
+        // A retry started by hand from a form can be queued rather than run —
+        // the same "start it now" bargain every other route offers.
+        if (over?.autoStart === false) {
+            this.save();
+            return copy;
+        }
         this.startTask(copy);
         return copy;
     }

@@ -145,6 +145,11 @@ const DATA = {
     },
     agents: ['manager', 'genel', 'basit'],
     perAgentLimit: 1,
+    // ‼️ The page reads this to offer "run a workflow" on a trigger, and the
+    // host never sent it — so the option was never drawn, and editing a
+    // workflow trigger fell back to the first choice and turned it into a task.
+    workflows: [{ id: 'w1', title: 'publish pipeline', steps: 2 }],
+    scenes: [{ id: 'prod1/s01', label: 'Tanıtım · Açılış' }],
     // U-9: everything the page's own New-task form offers. Same vocabulary as
     // the session launcher (core/launch.ts) — the point of the item is that a
     // task can be stated as precisely as a session can.
@@ -272,9 +277,44 @@ ok('Pause all posts gate/pause', posted[0] && posted[0].type === 'gate' && poste
 posted = [];
 clickData('gate', 'pause-for:480');
 ok('a timed pause carries its minutes', posted[0] && posted[0].act === 'pause-for' && posted[0].text === '480');
+// ‼️ THE GATE IS SET ON THE STRIP THAT REPORTS IT (U-9). 🌙 used to call
+// `agentfarm.setQuietHours`, which asked a quickpick of two canned windows and
+// then, for anything else, two more input boxes; the pause reason was a third.
 posted = [];
-clickData('gate', 'quiet');
-ok('quiet hours button posts gate/quiet', posted[0] && posted[0].act === 'quiet');
+clickData('gate', 'open');
+ok('the quiet button opens the card instead of asking the host for a dialog',
+    !posted.length && /id="gtbox"/.test(html()));
+ok('…and the card is filled from what the gate currently says',
+    /id="gt-from"[^>]*value="23:30"/.test(html()) && /id="gt-to"[^>]*value="04:30"/.test(html()));
+{
+    const fldg = (id) => sandbox.document.getElementById(id);
+    fldg('gt-from').value = '';
+    fldg('gt-from').fire('input');
+    fldg('gt-quiet').click();
+    ok('half a window is refused in the card', html().includes('needs both ends'));
+    fldg('gt-from').value = '22:15';
+    fldg('gt-from').fire('input');
+    posted = [];
+    fldg('gt-quiet').click();
+    ok('a whole one is sent as two times', posted[0] && posted[0].act === 'quiet-set'
+        && posted[0].quietFrom === '22:15' && posted[0].quietTo === '04:30');
+    clickData('gate', 'open');
+    posted = [];
+    fldg('gt-quietoff').click();
+    ok('and turning it off is its own act', posted[0] && posted[0].act === 'quiet-off');
+    clickData('gate', 'open');
+    fldg('gt-reason').value = 'reviewing cost';
+    fldg('gt-reason').fire('input');
+    fldg('gt-mins').value = '480';
+    fldg('gt-mins').fire('change');
+    posted = [];
+    fldg('gt-pause').click();
+    ok('‼️ a timed pause finally carries WHY, which is what makes it explainable later',
+        posted[0] && posted[0].act === 'pause-for' && posted[0].text === '480'
+        && posted[0].reason === 'reviewing cost');
+    fldg('gt-close').click();
+    ok('the card closes', !/id="gtbox"/.test(html()));
+}
 
 // ------------------------------------------------------------------- tabs
 ok('there are exactly two tabs', query('[data-tab]').length === 2);
@@ -812,6 +852,238 @@ ok('the plan tab does NOT inherit the run tab filters', !html().includes('status
         edited && edited.item.mode2 === 'edit' && edited.item.id === 's1');
     send({ type: 'plan-saved', text: 'Schedule saved.' });
     ok('the form closes on the host\'s receipt', !/id="ntbox"/.test(html()));
+}
+
+// ------------------- U-9 Faz 2: the workflow CHAIN is a form -------------
+// `newWorkflow` was 294 lines of quickpicks that asked for step 4 without ever
+// showing steps 1-3, offered no way back to step 2, and answered Esc by
+// discarding the lot; `addWorkflowStep` appended the poorest kind of step the
+// model has; `editWorkflowStep` was a quickpick of FIELD NAMES.
+{
+    const send = (data) => onMessage.forEach(fn => fn({ data }));
+    const fld = (id) => sandbox.document.getElementById(id);
+    clickData('tab', 'plan');
+    posted = [];
+
+    clickData('add', 'workflow');
+    ok('+ Workflow asks the host for the form, not for a wizard',
+        posted[0] && posted[0].type === 'plan-add' && posted[0].kind === 'workflow');
+
+    send({ type: 'plan-compose', kind: 'workflow', seed: { mode2: 'new', steps: [], stepIdx: null } });
+    ok('a workflow is composed on the page', /id="ntbox"/.test(html()));
+    ok('…it asks for a name and NOT for one prompt of its own',
+        /id="nt-title"/.test(html()) && !/id="nt-prompt"/.test(html()));
+    ok('…and it shows the chain, empty, saying what that means',
+        html().includes('Steps') && html().includes('running it does nothing'));
+    ok('an empty chain offers the one button that starts it', /id="nt-stadd"/.test(html()));
+
+    // ---- one step is one card, and its KIND decides the card
+    fld('nt-stadd').click();
+    ok('+ Add a step opens the step card', /id="stbox"/.test(html()));
+    ok('…which asks what the step IS, all six kinds',
+        /id="nt-st-stype"/.test(html())
+        && html().includes('webhook — an HTTP call, no agent')
+        && html().includes('media — fal.ai / Replicate render')
+        && html().includes('browser — an agent drives a site')
+        && html().includes('approval — the chain waits for you')
+        && html().includes('select — you keep some of the assets'));
+    ok('an agent step asks for the agent, the prompt and the mode',
+        /id="nt-st-agent"/.test(html()) && /id="nt-st-prompt"/.test(html()) && /id="nt-st-smode"/.test(html()));
+    ok('…and the three things that are about the CHAIN, not the step',
+        /id="nt-st-onFail"/.test(html()) && /id="nt-st-contract"/.test(html())
+        && /id="nt-st-verifyCriteria"/.test(html()));
+    ok('the first step is offered no run-if and no parallel — there is nothing beside it',
+        !/id="nt-st-runIf"/.test(html()) && !/id="nt-st-parallel"/.test(html()));
+
+    // it refuses IN the card
+    posted = [];
+    fld('nt-st-title').value = '';
+    fld('nt-st-title').fire('input');
+    fld('nt-stsave').click();
+    ok('a nameless step is refused inside the card', html().includes('A step needs a title')
+        && /id="stbox"/.test(html()));
+    fld('nt-st-title').value = 'Collect';
+    fld('nt-st-title').fire('input');
+    fld('nt-st-prompt').value = '';
+    fld('nt-st-prompt').fire('input');
+    fld('nt-stsave').click();
+    ok('…and so is one with no prompt', html().includes('An agent step needs a prompt'));
+    fld('nt-st-prompt').value = 'collect the numbers';
+    fld('nt-st-prompt').fire('input');
+    fld('nt-st-agent').value = 'genel';
+    fld('nt-st-agent').fire('change');
+    fld('nt-stsave').click();
+    ok('a complete step joins the chain and the card closes',
+        !/id="stbox"/.test(html()) && html().includes('Collect') && html().includes('genel'));
+    ok('the host has not been asked for anything yet — the draft is the page\'s',
+        !posted.some(p => p.type === 'plan-save'));
+
+    // ---- a second step, of a different kind
+    fld('nt-stadd').click();
+    fld('nt-st-stype').value = 'webhook';
+    fld('nt-st-stype').fire('change');
+    ok('a webhook step swaps the prompt for a URL',
+        /id="nt-st-whUrl"/.test(html()) && !/id="nt-st-prompt"/.test(html()));
+    ok('…and asks for the method, a body and one auth header',
+        /id="nt-st-whMethod"/.test(html()) && /id="nt-st-whBody"/.test(html())
+        && /id="nt-st-whHeader"/.test(html()));
+    ok('polling is off until asked for', /id="nt-st-whPoll"/.test(html())
+        && !/id="nt-st-whPollUrl"/.test(html()));
+    fld('nt-st-whPoll').checked = true;
+    fld('nt-st-whPoll').fire('change');
+    ok('…and asking turns a one-shot call into a submit-then-poll client',
+        /id="nt-st-whPollUrl"/.test(html()) && /id="nt-st-whStatusField"/.test(html())
+        && /id="nt-st-whDone"/.test(html()) && /id="nt-st-whInterval"/.test(html()));
+    ok('a second step CAN run beside the first', /id="nt-st-parallel"/.test(html())
+        && /id="nt-st-runIf"/.test(html()));
+    fld('nt-st-title').value = 'Notify';
+    fld('nt-st-title').fire('input');
+    fld('nt-st-whUrl').value = '';
+    fld('nt-st-whUrl').fire('input');
+    fld('nt-stsave').click();
+    ok('a webhook with no URL is refused', html().includes('needs the URL it calls'));
+    fld('nt-st-whUrl').value = 'https://n8n.example/hook';
+    fld('nt-st-whUrl').fire('input');
+    fld('nt-st-whPollUrl').value = 'urls.get';
+    fld('nt-st-whPollUrl').fire('input');
+    fld('nt-stsave').click();
+    ok('…and one with a URL joins the chain', html().includes('Notify')
+        && html().includes('https://n8n.example/hook'));
+
+    // ---- the list is a list: it reorders, copies and deletes on the draft
+    posted = [];
+    query('[data-st="down"]').find(e => e.dataset.i === '0').click();
+    ok('a step moves down the chain without asking the host',
+        !posted.length && html().indexOf('Notify') < html().indexOf('Collect'));
+    query('[data-st="up"]').find(e => e.dataset.i === '1').click();
+    ok('…and back up', html().indexOf('Collect') < html().indexOf('Notify'));
+    query('[data-st="dup"]').find(e => e.dataset.i === '0').click();
+    ok('a step can be copied rather than retyped',
+        (html().match(/Collect/g) || []).length >= 2);
+    query('[data-st="del"]').find(e => e.dataset.i === '1').click();
+    ok('…and deleted', (html().match(/Collect/g) || []).length === 1);
+
+    // ---- saving sends the name and the chain in ONE message
+    fld('nt-title').value = 'report chain';
+    fld('nt-title').fire('input');
+    posted = [];
+    fld('nt-add').click();
+    const wfSave = posted.find(p => p.type === 'plan-save');
+    ok('‼️ the whole workflow is one save, not one dialog per step',
+        wfSave && wfSave.item.kind === 'workflow' && wfSave.item.title === 'report chain'
+        && wfSave.item.steps.length === 2);
+    ok('…and each step carries its own shape',
+        wfSave && wfSave.item.steps[0].stype === 'agent' && wfSave.item.steps[0].agent === 'genel'
+        && wfSave.item.steps[1].stype === 'webhook'
+        && wfSave.item.steps[1].whUrl === 'https://n8n.example/hook'
+        && wfSave.item.steps[1].whPoll === true);
+
+    // ---- the palette's addWorkflowStep / editWorkflowStep land on the same card
+    send({
+        type: 'plan-compose', kind: 'workflow',
+        seed: {
+            mode2: 'edit', id: 'w1', title: 'publish pipeline', stepIdx: 'new'.length && -1,
+            steps: [{ stype: 'agent', title: 'render', agent: 'genel', prompt: 'render it', smode: 'headless' }]
+        }
+    });
+    ok('“add a step” from outside the page opens the chain WITH the card up',
+        /id="stbox"/.test(html()) && html().includes('publish pipeline') && html().includes('render'));
+    send({
+        type: 'plan-compose', kind: 'workflow',
+        seed: {
+            mode2: 'edit', id: 'w1', title: 'publish pipeline', stepIdx: 0,
+            steps: [{ stype: 'media', title: 'render', mModel: 'fal-ai/flux/schnell', mInput: '{}' }]
+        }
+    });
+    ok('“edit this step” opens that step, not the first field of a quickpick tree',
+        /id="stbox"/.test(html()) && /id="nt-st-mModel"/.test(html()) && html().includes('Step 1'));
+    ok('a media step offers the production scene, because the farm has one',
+        /id="nt-st-mScene"/.test(html()) && html().includes('Tanıtım · Açılış'));
+    ok('…and a vision-QA criteria, which is a verify by another name',
+        html().includes('Vision QA criteria'));
+
+    // ---- a trigger can finally point at a workflow
+    send({ type: 'plan-compose', kind: 'trigger', seed: { mode2: 'new' } });
+    ok('‼️ the trigger form offers "run a workflow" now that the host sends the list',
+        html().includes('run a workflow') && html().includes('publish pipeline'));
+    fld('nt-act').value = 'workflow';
+    fld('nt-act').fire('change');
+    ok('…and picking it asks WHICH workflow, and stops asking for a prompt',
+        /id="nt-workflowId"/.test(html()) && !/id="nt-prompt"/.test(html()));
+    fld('nt-close').click();
+}
+
+// ------------------- U-9 Faz 3: retry, template, and the in-page picker ----
+{
+    const send = (data) => onMessage.forEach(fn => fn({ data }));
+    const fld = (id) => sandbox.document.getElementById(id);
+
+    // ---- a retry is the whole task, editable
+    send({
+        type: 'task-compose',
+        seed: {
+            agent: 'genel', title: 'the failed one', prompt: 'do the thing', mode: 'headless',
+            model: 'haiku', mode2: 'retry', retryOf: 'r4'
+        }
+    });
+    ok('a retry says it is a retry rather than pretending to be new',
+        html().includes('Retry task') && !html().includes('New task</span>'));
+    ok('…and it is the whole form, not one box holding the old prompt',
+        /id="nt-model"/.test(html()) && /id="nt-effort"/.test(html())
+        && /id="nt-permissionMode"/.test(html()) && /id="nt-agent"/.test(html()));
+    ok('…with the button saying what pressing it does', html().includes('Retry it now'));
+    fld('nt-model').value = 'opus';
+    fld('nt-model').fire('change');
+    posted = [];
+    fld('nt-add').click();
+    const retried = posted.find(p => p.type === 'task-new');
+    ok('‼️ the retry names the run it is a retry OF, so the host keeps the lineage',
+        retried && retried.task.retryOf === 'r4' && retried.task.model === 'opus');
+    send({ type: 'task-made', id: 'n9', title: 'the failed one (retry 1)', started: true });
+
+    // ---- a template may be unbound, and that is a field now, not a first question
+    send({
+        type: 'plan-compose', kind: 'template',
+        seed: { mode2: 'new', title: 'triage', prompt: 'triage it', mode: 'headless', agent: 'genel' }
+    });
+    ok('saving a run as a template opens the template form, prefilled',
+        /id="ntbox"/.test(html()) && html().includes('New template')
+        && /id="nt-title"[^>]*value="triage"/.test(html()));
+    ok('‼️ …and "any agent" is one entry in the picker, not a modal asked first',
+        html().includes('any agent: you pick when you launch it'));
+    ok('a template is not asked for a model or a project — it is a saved prompt',
+        !/id="nt-model"/.test(html()) && !/id="nt-project"/.test(html()));
+    fld('nt-cancel').click();
+
+    // ---- "which month of history?" is a list on the page
+    send({
+        type: 'chooser',
+        chooser: {
+            tab: 'run', title: 'Task history', lede: 'One file per month.', verb: 'open', act: 'history',
+            items: [{ id: '2026-08.jsonl', label: '2026-08', detail: '12 KB · last written 07.08.2026' }]
+        }
+    });
+    ok('the picker is drawn ON the page, with what a quickpick could not say',
+        /id="chbox"/.test(html()) && html().includes('Task history')
+        && html().includes('2026-08') && html().includes('12 KB'));
+    posted = [];
+    query('[data-ch]')[0].click();
+    ok('picking a row tells the host which one, by the act the list was for',
+        posted[0] && posted[0].type === 'chooser-pick' && posted[0].act === 'history'
+        && posted[0].id === '2026-08.jsonl');
+    ok('…and the picker closes behind it', !/id="chbox"/.test(html()));
+
+    // ---- "which template?" is the Plan tab, filtered
+    send({
+        type: 'plan-focus', view: { kind: ['template'] },
+        note: 'Every template you have saved — press run on the one you want.'
+    });
+    ok('the answer to "which template" is this page\'s own list',
+        /class="tab on" data-tab="plan"/.test(html())
+        && html().includes('press run on the one you want'));
+    ok('…already filtered to templates, and saying so where filters are always visible',
+        html().includes('kind: template'));
+    resetView();
 }
 
 // --------------------------------------------------------- empty states

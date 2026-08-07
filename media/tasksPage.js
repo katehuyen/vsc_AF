@@ -113,8 +113,9 @@
                          <button class="secondary mini" data-gate="pause-for:480">8h</button>
                          <button class="secondary mini" data-gate="pause-for:1440">24h</button>
                        </span>`}
-                <button class="secondary" data-gate="quiet" title="Nightly window: nothing wakes on its own. A due schedule is deferred to the end of the window, not dropped.">🌙 Quiet ${quiet}</button>
+                <button class="secondary" data-gate="open" title="Nightly window: nothing wakes on its own. A due schedule is deferred to the end of the window, not dropped.">🌙 Quiet ${quiet}</button>
             </div>
+            ${gateEdit ? gateHtml(g) : ''}
             <div class="ctl-row stats">
                 <span class="stat" title="running / farm-wide limit">⚙️ <b>${s.running}</b>/${s.runLimit} running</span>
                 ${s.queued ? `<span class="stat">⏳ <b>${s.queued}</b> queued</span>` : ''}
@@ -125,6 +126,74 @@
                 ${s.savedWakeups7d ? `<span class="stat" title="wake-ups the preconditions suppressed — agent runs never paid for">🛡 <b>${s.savedWakeups7d}</b> saved</span>` : ''}
                 ${s.issues ? `<span class="stat hot" data-fixissues role="button" tabindex="0" title="show only the rows that need attention">⚠️ <b>${s.issues}</b> need attention</span>` : ''}
             </div>
+        </div>`;
+    }
+
+    /**
+     * ‼️ THE GATE'S OWN TWO DIALOGS — the last ones on this page.
+     *
+     * The header's 🌙 button called `agentfarm.setQuietHours`, which asked a
+     * quickpick of two canned windows and then, for anything else, two more
+     * input boxes; `pauseAutomations` asked a duration and then typed the
+     * reason into a third. Both are two numbers and a sentence, on the strip
+     * that already shows what they set.
+     *
+     * `gateEdit` is `'quiet' | 'pause' | null` — which half opened it. Both
+     * halves are drawn either way, because they are one thing: what the farm is
+     * allowed to do on its own.
+     */
+    let gateEdit = null;
+    let gateFrom = '', gateTo = '', gateReason = '', gateMins = '0', gateMsg = '';
+
+    /** Open the gate card, filled from what the gate currently says. */
+    function openGate(which) {
+        const g = (DATA && DATA.gate) || {};
+        gateEdit = which || 'quiet';
+        gateFrom = g.quietFrom || '23:00';
+        gateTo = g.quietTo || '07:00';
+        gateReason = g.pauseReason || '';
+        gateMins = '0';
+        gateMsg = '';
+        render();
+    }
+
+    function gateHtml(g) {
+        return `<div class="ntbox" id="gtbox">
+            <div class="ctl-row">
+                <span class="ctl-title">What the farm may do on its own</span>
+                <span class="spacer"></span>
+                <button class="secondary mini" id="gt-close">✕</button>
+            </div>
+            <div class="ntsec"><b>Quiet hours</b>
+                <span class="muted small">Nothing wakes inside the window. A schedule that comes due in it is
+                    <b>deferred to the end of the window</b>, never dropped.</span></div>
+            <div class="ntgrid">
+                <label class="ntf" title="When the window starts, local 24h."><span>From</span>
+                    <input type="time" id="gt-from" value="${C.esc(gateFrom)}"></label>
+                <label class="ntf" title="When it ends. An end earlier than the start means the window crosses midnight."><span>To</span>
+                    <input type="time" id="gt-to" value="${C.esc(gateTo)}"></label>
+                <span class="ntf"><span>&nbsp;</span><span class="btngroup">
+                    <button class="mini" id="gt-quiet">Set the window</button>
+                    <button class="mini secondary" id="gt-quietoff"${g.quietFrom ? '' : ' disabled'}>Turn it off</button>
+                </span></span>
+            </div>
+            <div class="ntsec"><b>Pause everything</b>
+                <span class="muted small">The master switch. ‼️ Say WHY — a pause with no reason is the one that
+                    is still on three days later with nobody able to explain it.</span></div>
+            <div class="ntgrid">
+                <label class="ntf" title="How long the pause lasts."><span>For</span>
+                    <select id="gt-mins">
+                        <option value="0"${gateMins === '0' ? ' selected' : ''}>until I resume it</option>
+                        <option value="60"${gateMins === '60' ? ' selected' : ''}>1 hour</option>
+                        <option value="480"${gateMins === '480' ? ' selected' : ''}>8 hours</option>
+                        <option value="1440"${gateMins === '1440' ? ' selected' : ''}>24 hours</option>
+                    </select></label>
+                <label class="ntf wide" title="Shown on this strip and on the Living page for as long as the pause lasts."><span>Reason</span>
+                    <input type="text" id="gt-reason" value="${C.esc(gateReason)}" placeholder="e.g. reviewing what last night cost"></label>
+                <span class="ntf"><span>&nbsp;</span>
+                    <button class="mini" id="gt-pause">⏸ Pause it</button></span>
+            </div>
+            ${gateMsg ? `<div class="ntmsg warn">${C.esc(gateMsg)}</div>` : ''}
         </div>`;
     }
 
@@ -259,7 +328,6 @@
             <td class="acts">
                 <button class="mini secondary" data-plan="run" data-kind="${p.kind}" data-id="${p.id}" title="run it now">run</button>
                 <button class="mini secondary" data-plan="edit" data-kind="${p.kind}" data-id="${p.id}" title="edit">edit</button>
-                ${p.kind === 'workflow' ? `<button class="mini secondary" data-plan="rename" data-kind="workflow" data-id="${p.id}" title="rename">name</button>` : ''}
                 <button class="mini secondary" data-plan="delete" data-kind="${p.kind}" data-id="${p.id}" title="delete">✕</button>
             </td>
         </tr>${open ? planDetailHtml(p) : ''}`;
@@ -363,6 +431,7 @@
                 </span>
             </div>
             ${composer && (COMPOSE[composer.kind] || COMPOSE.task).tab === 'plan' ? composerHtml() : ''}
+            ${chooser && chooser.tab === 'plan' ? chooserHtml() : ''}
             ${!composer && composerMsg && tab === 'plan' ? `<div class="ntmsg">${C.esc(composerMsg)}</div>` : ''}
             ${activeChips(v, PLAN_DEF, { kind: 'kind', agent: 'agent', model: 'model', state: 'state', guard: 'guard', issues: 'needs attention' }, rows.length, d.plan.length)}
             <div class="bulk" ${selected.size ? '' : 'hidden'}>
@@ -418,6 +487,16 @@
     let composer = null;      // null = closed; an object = the draft
     let composerMsg = '';     // a refusal or a confirmation, shown in the card
     let composerDup = false;  // the host says an identical task is already queued
+    let stepMsg = '';         // a step's own refusal, shown inside the step card
+    /**
+     * ‼️ A PICKER THAT IS A LIST ON THE PAGE.
+     *
+     * "Which month of task history?" was a quickpick over the editor — a
+     * floating list with no context, drawn on top of the very page that is
+     * about task history. The same rows, on the page, keep their surroundings.
+     * `{ tab, title, lede, act, items:[{id,label,detail}], empty }`.
+     */
+    let chooser = null;
 
     /** Which kinds carry the shared run block, and which tab they belong to. */
     const COMPOSE = {
@@ -444,6 +523,49 @@
         { id: 'subagent', label: 'subagent — a subagent finished' }
     ];
 
+    /**
+     * ‼️ THE SIX SHAPES A STEP CAN TAKE — and the reason a workflow could not be
+     * a form until now.
+     *
+     * A step is not always "an agent runs a prompt". It can call an HTTP
+     * endpoint, render an asset on fal.ai, drive a browser, or stop the chain
+     * and wait for a person. The builder knew all six; it asked them as a
+     * 294-line quickpick tree in which the shape was decided by the FIRST
+     * question and every later one depended on it — the exact case a form with
+     * a kind picker answers better than a wizard, because you can change your
+     * mind on step three without starting over.
+     */
+    const STEP_KINDS = [
+        { id: 'agent', icon: '🤖', label: 'agent — it runs a prompt' },
+        { id: 'webhook', icon: '🌐', label: 'webhook — an HTTP call, no agent' },
+        { id: 'media', icon: '🎬', label: 'media — fal.ai / Replicate render' },
+        { id: 'browser', icon: '🧭', label: 'browser — an agent drives a site' },
+        { id: 'approval', icon: '✋', label: 'approval — the chain waits for you' },
+        { id: 'select', icon: '🖼', label: 'select — you keep some of the assets' }
+    ];
+    const PREV = '{prev_output}';
+
+    /** A step draft, in the FORM's flat vocabulary. The translation into a real
+     *  WorkflowStep lives next to the manager that owns the shape (tasksPanel). */
+    function newStep(seed) {
+        const d = Object.assign({
+            stype: 'agent', title: '', agent: '', prompt: '', smode: 'headless',
+            onFail: 'stop', onFailStep: 1, runIf: '', contract: 'text',
+            verifyCriteria: '', verifyRetries: 1, parallel: false,
+            whUrl: '', whMethod: 'POST', whBody: '', whHeader: '',
+            whPoll: false, whPollUrl: '', whStatusField: 'status',
+            whDone: 'succeeded|completed|complete|done|success', whInterval: 3,
+            mModel: 'fal-ai/flux/schnell', mInput: '{"prompt": "{prev_text}"}', mScene: '',
+            bUrl: '', bGoal: '', bHosts: '',
+            apMsg: '', selMsg: '', selMin: 1, selMax: 0
+        }, seed || {});
+        // A webhook or media step carries no real agent, so switching one to
+        // "agent" would land on an empty picker that LOOKS filled — the select
+        // draws the first name whatever the draft says.
+        if (!d.agent) { d.agent = (DATA.agents || [])[0] || ''; }
+        return d;
+    }
+
     function newDraft(kind, seed) {
         const L = DATA.launch || {};
         const d = L.defaults || {};
@@ -461,6 +583,10 @@
             // only ever the one it DECLARES (core/tasks.ts RunDimensions).
             project: kind && kind !== 'task' ? '' : (L.activeProjectId || ''),
             start: true,
+            // Set when the form was opened as "run that one again, but…": the
+            // host turns it into a retry of THAT task (its lineage, its attempt
+            // number) rather than an unrelated new one.
+            retryOf: '',
             // schedule
             every: 'daily', time: '09:00', dow: 1, onceAt: '', missed: 'skip', enabled: true,
             // trigger
@@ -468,9 +594,24 @@
             act: 'task', workflowId: '',
             debounceSec: 5, cooldownSec: 60, maxPerHour: 12,
             // guard — shared by schedule and trigger
-            guardKind: '', guardPath: '', guardExcept: '', guardMin: 1, guardHours: 24, guardRecursive: true
+            guardKind: '', guardPath: '', guardExcept: '', guardMin: 1, guardHours: 24, guardRecursive: true,
+            // workflow: the chain itself lives in the draft, so Cancel really
+            // cancels — a step added here is not written to the stored workflow
+            // until the whole form is saved.
+            steps: [], stepIdx: null, step: null
         };
-        return Object.assign(base, seed || {});
+        const draft = Object.assign(base, seed || {});
+        if (!Array.isArray(draft.steps)) { draft.steps = []; }
+        // `agentfarm.addWorkflowStep` / `editWorkflowStep` arrive with the card
+        // already asked for; a card with nothing in it has nothing to read.
+        if (draft.stepIdx === undefined) { draft.stepIdx = null; }
+        if (draft.step) { draft.step = newStep(draft.step); }
+        else if (draft.stepIdx !== null) {
+            // An index on its own is enough: "edit step 3" means the step that
+            // is already in the chain, not a blank one over the top of it.
+            draft.step = newStep(draft.stepIdx >= 0 ? draft.steps[draft.stepIdx] : null);
+        }
+        return draft;
     }
 
     function openComposer(seed, kind) {
@@ -478,6 +619,7 @@
         composer = newDraft(k, seed);
         composerMsg = '';
         composerDup = false;
+        stepMsg = '';
         tab = (COMPOSE[k] || COMPOSE.task).tab;
         persist();
         render();
@@ -488,6 +630,7 @@
     function closeComposer(msg) {
         composer = null;
         composerDup = false;
+        stepMsg = '';
         composerMsg = msg || '';
         render();
     }
@@ -602,18 +745,290 @@
             ${guardHtml(c)}`;
     }
 
+    // ------------------------------------------------ WORKFLOW: the chain (Faz 2)
+    /**
+     * ‼️ A WORKFLOW WAS THE LAST OBJECT YOU COULD NOT SEE WHILE YOU BUILT IT.
+     *
+     * `newWorkflow` was a 294-line chain of boxes that asked for one step, then
+     * offered to ask for another — with no list of what you had already said,
+     * no way back to step 2, and Esc discarding the lot. `addWorkflowStep`
+     * appended a step of the poorest kind it knew (agent · title · prompt ·
+     * mode, and nothing else the model carries), and `editWorkflowStep` was a
+     * quickpick of FIELD NAMES: pick "On fail", answer one question, start over
+     * for the next field.
+     *
+     * Here the chain is a list you can read, reorder and edit in place, and one
+     * step is one card with everything that step actually is.
+     */
+    function trunc(s, n) {
+        const t = String(s == null ? '' : s);
+        return t.length > n ? t.slice(0, n - 1) + '…' : t;
+    }
+
+    /** The one line a step reads as in the list — what it is, then what is odd
+     *  about it. The flags are the fields a reader would otherwise have to open
+     *  the card to find out about. */
+    function stepSummary(s) {
+        const k = STEP_KINDS.find(x => x.id === s.stype) || STEP_KINDS[0];
+        const who = s.stype === 'webhook' ? (s.whMethod || 'POST') + ' ' + trunc(s.whUrl || '(no url)', 44)
+            : s.stype === 'media' ? (s.mModel || '(no model)')
+                : s.stype === 'browser' ? (s.agent || '?') + ' → ' + trunc(s.bUrl || '(no url)', 34)
+                    : s.stype === 'approval' ? 'the chain waits for you'
+                        : s.stype === 'select' ? 'keep ' + (s.selMin || 1) + (s.selMax ? '–' + s.selMax : ' or more')
+                            : (s.agent || '(no agent)') + ' · ' + (s.smode || 'headless');
+        const flags = [];
+        if (s.parallel) { flags.push('∥ runs in parallel'); }
+        if (s.runIf) { flags.push('only if ' + trunc(s.runIf, 24)); }
+        if (s.onFail === 'continue') { flags.push('on fail: carry on'); }
+        if (s.onFail === 'goto') { flags.push('on fail → step ' + (s.onFailStep || 1)); }
+        if (s.contract === 'json') { flags.push('json handoff'); }
+        if (String(s.verifyCriteria || '').trim()) { flags.push('checked by a judge'); }
+        return { icon: k.icon, hint: k.label, who: who, flags: flags };
+    }
+
+    function workflowHtml(c) {
+        const last = c.steps.length - 1;
+        const list = c.steps.map((s, i) => {
+            const d = stepSummary(s);
+            return `<li class="wfstep${c.stepIdx === i ? ' on' : ''}">
+                <span class="wfsi" title="${C.esc(d.hint)}">${d.icon}</span>
+                <span class="wfst"><b>${C.esc(s.title || '(untitled step)')}</b>
+                    <span class="muted small">${C.esc(d.who)}${d.flags.length ? ' · ' + C.esc(d.flags.join(' · ')) : ''}</span></span>
+                <span class="wfsa">
+                    <button class="mini secondary" data-st="up" data-i="${i}"${i === 0 ? ' disabled' : ''} title="move it up">↑</button>
+                    <button class="mini secondary" data-st="down" data-i="${i}"${i === last ? ' disabled' : ''} title="move it down">↓</button>
+                    <button class="mini secondary" data-st="edit" data-i="${i}" title="edit this step">edit</button>
+                    <button class="mini secondary" data-st="dup" data-i="${i}" title="add a copy of it below">copy</button>
+                    <button class="mini secondary" data-st="del" data-i="${i}" title="remove this step">✕</button>
+                </span></li>`;
+        }).join('');
+        return `<div class="ntsec"><b>Steps</b>
+            <span class="muted small">Each step runs after the one above and is handed its output —
+                <code>${PREV}</code> in a prompt inserts the previous step's output file,
+                <code>{prev_text}</code> its text and <code>{prev_json.x}</code> a field of it.</span></div>
+            ${c.steps.length
+                ? `<ol class="wfsteps">${list}</ol>`
+                : '<div class="ntmsg">No steps yet. A workflow with none is saved, but running it does nothing.</div>'}
+            ${c.stepIdx === null
+                ? '<div class="ctl-row"><button class="secondary" id="nt-stadd">+ Add a step</button></div>'
+                : stepCardHtml(c)}`;
+    }
+
+    function stepCardHtml(c) {
+        const s = c.step || newStep();
+        const isNew = c.stepIdx === -1;
+        const n = isNew ? c.steps.length + 1 : c.stepIdx + 1;
+        const agentOpts = (DATA.agents || []).map(a =>
+            `<option value="${C.esc(a)}"${a === s.agent ? ' selected' : ''}>${C.esc(a)}</option>`).join('');
+        const wantsAgent = s.stype === 'agent' || s.stype === 'browser';
+        const wantsVerify = s.stype === 'agent' || s.stype === 'media';
+        const scenes = DATA.scenes || [];
+        const stepOpts = c.steps.map((x, i) => ({ id: String(i + 1), label: (i + 1) + '. ' + trunc(x.title || 'step', 30) }));
+        if (isNew) { stepOpts.push({ id: String(n), label: n + '. (this one)' }); }
+        return `<div class="stbox" id="stbox">
+            <div class="ctl-row">
+                <span class="ctl-title">${isNew ? 'New step' : 'Step ' + n}</span>
+                <span class="muted small">A step is one link of the chain. What it IS decides the rest of this card.</span>
+            </div>
+            <div class="ntgrid">
+                ${pickSel('st-stype', 'This step is…', STEP_KINDS.map(k => ({ id: k.id, label: k.label })), s.stype,
+            'A chain is not only agents: it can call an API, render an asset, drive a site, or stop and ask you.')}
+                ${textF('st-title', 'Step title', s.title, 'What is this link called?',
+                'The name the run is given when this step fires — it is what you will look for on the Runs tab.', true)}
+                ${wantsAgent ? `<label class="ntf" title="Whose folder it runs in, and whose CLAUDE.md it wakes up with."><span>Agent <em>required</em></span>
+                    <select id="nt-st-agent">${agentOpts}</select></label>` : ''}
+                ${s.stype === 'agent' ? `<label class="ntf" title="Headless is the mode a chain normally runs in: the output is archived and handed to the next step."><span>Mode</span>
+                    <select id="nt-st-smode">
+                        <option value="headless"${s.smode === 'headless' ? ' selected' : ''}>headless — runs and exits</option>
+                        <option value="interactive"${s.smode === 'interactive' ? ' selected' : ''}>interactive — opens a session</option>
+                    </select></label>` : ''}
+            </div>
+            ${s.stype === 'agent' ? `<div class="ntgrid">
+                <label class="ntf wide"><span>Prompt <em>required</em></span>
+                    <textarea id="nt-st-prompt" rows="3"
+                        placeholder="What should this step do? ${PREV} inserts the previous step's output file.">${C.esc(s.prompt)}</textarea></label>
+            </div>` : ''}
+            ${s.stype === 'webhook' ? `<div class="ntgrid">
+                ${textF('st-whUrl', 'URL', s.whUrl, 'https://n8n.example.com/webhook/…',
+                '{secret:NAME} and the {prev_*} variables are substituted before the call.', true)}
+                ${pickSel('st-whMethod', 'Method', [{ id: 'POST', label: 'POST' }, { id: 'GET', label: 'GET' }], s.whMethod, 'How it is called.')}
+                ${s.whMethod !== 'GET'
+                ? textF('st-whBody', 'JSON body', s.whBody, '{"text": "{prev_text}"}', 'Empty = no body.', true) : ''}
+                ${textF('st-whHeader', 'Auth header', s.whHeader, 'Authorization: Bearer {secret:MY_TOKEN}',
+                    'One "Name: Value" header — this is where a queued API\'s key goes.', true)}
+                <label class="cbx" title="Submit, then poll a status URL until it says done — how every queued API works."><input type="checkbox" id="nt-st-whPoll"${s.whPoll ? ' checked' : ''}> poll until it is done</label>
+            </div>
+            ${s.whPoll ? `<div class="ntgrid">
+                ${textF('st-whPollUrl', 'Poll URL field', s.whPollUrl, 'urls.get · status_url · name',
+                        'The JSON path IN THE SUBMIT RESPONSE that holds the URL to poll.')}
+                ${textF('st-whStatusField', 'Status field', s.whStatusField, 'status', 'The JSON path to the status in each poll response.')}
+                ${textF('st-whDone', 'Done when status matches', s.whDone, '', 'A regex. Anything matching it means the job finished.', true)}
+                ${numF('st-whInterval', 'Poll every (s)', s.whInterval, 'Seconds between polls.')}
+            </div>` : ''}` : ''}
+            ${s.stype === 'media' ? `<div class="ntgrid">
+                ${textF('st-mModel', 'Model', s.mModel, 'fal-ai/flux/schnell · replicate:owner/name',
+                    'fal.ai by default; prefix with "replicate:" for Replicate.', true)}
+                ${textF('st-mInput', 'JSON input', s.mInput, '{"prompt": "{prev_text}"}',
+                        'The provider\'s own input object. {prev_text} / {prev_json.x} / {secret:NAME} are substituted.', true)}
+                ${scenes.length ? pickSel('st-mScene', 'Production scene',
+                            [{ id: '', label: '— no scene —' }].concat(scenes.map(x => ({ id: x.id, label: x.label }))), s.mScene,
+                            'Ties the produced assets to a scene so the gallery groups them.') : ''}
+            </div>` : ''}
+            ${s.stype === 'browser' ? `<div class="ntgrid">
+                ${textF('st-bUrl', 'Start URL', s.bUrl, 'https://example.com/reports',
+                                '{prev_text} / {prev_json.x} are substituted.', true)}
+                ${textF('st-bGoal', 'Goal', s.bGoal, 'find the latest report and extract the numbers',
+                                    'What the agent is trying to achieve on the site.', true)}
+                ${textF('st-bHosts', 'Allowed hosts', s.bHosts, 'example.com, cdn.example.com',
+                                        '‼️ The agent may not leave these domains. Empty = the global agentFarm.browserAllowHosts list.', true)}
+            </div>` : ''}
+            ${s.stype === 'approval' ? `<div class="ntgrid">
+                ${textF('st-apMsg', 'Message', s.apMsg, 'Review the output before it goes live',
+                                            'Shown when the chain stops to ask you. {prev_text} is substituted.', true)}
+            </div>` : ''}
+            ${s.stype === 'select' ? `<div class="ntgrid">
+                ${textF('st-selMsg', 'Message', s.selMsg, 'Pick the frames that go on to video',
+                                                'Shown above the gallery picker. {prev_text} is substituted.', true)}
+                ${numF('st-selMin', 'Keep at least', s.selMin, 'The fewest assets you may pick.')}
+                ${numF('st-selMax', 'Keep at most', s.selMax, '0 = no ceiling.')}
+            </div>` : ''}
+            <div class="ntsec"><b>How it behaves in the chain</b>
+                <span class="muted small">These are the same on every kind of step — they are about the CHAIN,
+                    not about what this step does.</span></div>
+            <div class="ntgrid">
+                ${pickSel('st-onFail', 'If it fails', [
+                                                    { id: 'stop', label: 'stop the workflow (default)' },
+                                                    { id: 'continue', label: 'carry on to the next step' },
+                                                    { id: 'goto', label: 'jump to a step…' }
+                                                ], s.onFail, 'A failing step stops the chain unless you say otherwise.')}
+                ${s.onFail === 'goto' ? pickSel('st-onFailStep', 'Jump to', stepOpts.length ? stepOpts : [{ id: '1', label: '1' }],
+                                                    String(s.onFailStep || 1), 'Which step it jumps to — 1-based.') : ''}
+                ${n > 1 ? textF('st-runIf', 'Run only if', s.runIf, 'regex  ·  json:field.path~regex',
+                                                        'Checked against the previous step\'s output. Empty = it always runs.', true) : ''}
+                ${s.stype === 'agent' && s.smode === 'headless'
+                ? pickSel('st-contract', 'Output', [
+                    { id: 'text', label: 'text (default)' },
+                    { id: 'json', label: 'json — the next step can use {prev_json.field}' }
+                ], s.contract, 'A json contract runs it with --output-format json and parses the result.') : ''}
+                ${n > 1 ? `<label class="cbx" title="Adjacent parallel steps form one group; the step after the group receives all their outputs merged."><input type="checkbox" id="nt-st-parallel"${s.parallel ? ' checked' : ''}> runs in parallel with the steps next to it</label>` : ''}
+            </div>
+            ${wantsVerify ? `<div class="ntgrid">
+                ${textF('st-verifyCriteria', s.stype === 'media' ? 'Vision QA criteria' : 'Verify the output',
+                    s.verifyCriteria,
+                    s.stype === 'media' ? 'a single person, clear face, no six fingers' : 'the output holds a plan with at least 3 items',
+                    s.stype === 'media'
+                        ? 'A vision model looks at the asset; FAIL regenerates it with the feedback. Empty = no check.'
+                        : 'A cheap model judges the output; FAIL retries the step with the feedback. Empty = no check.', true)}
+                ${String(s.verifyCriteria || '').trim() ? numF('st-verifyRetries', 'Attempts on FAIL', s.verifyRetries, 'How many times it is redone before the step gives up.') : ''}
+            </div>` : ''}
+            ${stepMsg ? `<div class="ntmsg warn">${C.esc(stepMsg)}</div>` : ''}
+            <div class="ctl-row">
+                <span class="spacer"></span>
+                <button id="nt-stsave">${isNew ? 'Add this step' : 'Keep the changes'}</button>
+                <button class="secondary" id="nt-stcancel">Discard</button>
+            </div>
+        </div>`;
+    }
+
+    function readStep() {
+        if (!composer || !composer.step) { return; }
+        const s = composer.step;
+        const g = (id) => document.getElementById('nt-st-' + id);
+        const v = (id) => { const el = g(id); if (el && el.value != null) { s[id] = String(el.value); } };
+        const n = (id) => { const el = g(id); if (el) { s[id] = Number(el.value) || 0; } };
+        const b = (id) => { const el = g(id); if (el) { s[id] = !!el.checked; } };
+        ['stype', 'title', 'agent', 'prompt', 'smode', 'onFail', 'runIf', 'contract', 'verifyCriteria',
+            'whUrl', 'whMethod', 'whBody', 'whHeader', 'whPollUrl', 'whStatusField', 'whDone',
+            'mModel', 'mInput', 'mScene', 'bUrl', 'bGoal', 'bHosts', 'apMsg', 'selMsg'].forEach(v);
+        ['onFailStep', 'verifyRetries', 'whInterval', 'selMin', 'selMax'].forEach(n);
+        ['parallel', 'whPoll'].forEach(b);
+    }
+
+    /** What a step cannot be saved without — said inside the step card. */
+    function stepError(s) {
+        if (!String(s.title || '').trim()) {
+            return 'A step needs a title — it is what its run is called on the Runs tab.';
+        }
+        if (s.stype === 'agent') {
+            if (!s.agent) { return 'Pick the agent this step runs on.'; }
+            if (!String(s.prompt || '').trim()) { return 'An agent step needs a prompt — it is the thing being asked.'; }
+        }
+        if (s.stype === 'webhook') {
+            if (!String(s.whUrl || '').trim()) { return 'A webhook step needs the URL it calls.'; }
+            if (s.whPoll && !String(s.whPollUrl || '').trim()) {
+                return 'Polling needs the field in the submit response that holds the poll URL.';
+            }
+        }
+        if (s.stype === 'media') {
+            if (!String(s.mModel || '').trim()) { return 'A media step needs a model id.'; }
+            if (!String(s.mInput || '').trim()) { return 'A media step needs its JSON input.'; }
+        }
+        if (s.stype === 'browser') {
+            if (!s.agent) { return 'Pick the agent that drives the browser.'; }
+            if (!String(s.bUrl || '').trim()) { return 'A browser step needs a start URL.'; }
+            if (!String(s.bGoal || '').trim()) { return 'A browser step needs a goal — what it is trying to do there.'; }
+        }
+        if (s.stype === 'select' && s.selMax && s.selMax < (s.selMin || 1)) {
+            return 'The most you may keep cannot be fewer than the least.';
+        }
+        return '';
+    }
+
+    /** Fold the open step card back into the chain. Returns false when it
+     *  refused, so the caller can stop rather than save half a thought. */
+    function commitStep() {
+        if (!composer || composer.stepIdx === null) { return true; }
+        readStep();
+        const err = stepError(composer.step);
+        if (err) { stepMsg = err; render(); return false; }
+        const s = Object.assign({}, composer.step);
+        if (composer.stepIdx === -1) { composer.steps.push(s); }
+        else { composer.steps[composer.stepIdx] = s; }
+        composer.stepIdx = null;
+        composer.step = null;
+        stepMsg = '';
+        return true;
+    }
+
+    function chooserHtml() {
+        const ch = chooser;
+        return `<div class="ntbox" id="chbox">
+            <div class="ctl-row">
+                <span class="ctl-title">${C.esc(ch.title || 'Pick one')}</span>
+                <span class="muted small">${C.esc(ch.lede || '')}</span>
+                <span class="spacer"></span>
+                <button class="secondary mini" id="ch-close">✕</button>
+            </div>
+            ${(ch.items || []).length
+                ? `<ul class="chlist">${ch.items.map(i => `<li>
+                    <button class="mini" data-ch="${C.esc(i.id)}">${C.esc(ch.verb || 'open')}</button>
+                    <b>${C.esc(i.label)}</b>${i.detail ? ` <span class="muted small">${C.esc(i.detail)}</span>` : ''}
+                </li>`).join('')}</ul>`
+                : `<div class="ntmsg">${C.esc(ch.empty || 'Nothing here yet.')}</div>`}
+        </div>`;
+    }
+
     function composerHtml() {
         if (!composer) { return ''; }
         const L = DATA.launch || {};
         const c = composer;
         const spec = COMPOSE[c.kind] || COMPOSE.task;
         const editing = c.mode2 === 'edit';
+        const retry = c.mode2 === 'retry';
         // A trigger that runs a workflow has no agent, no prompt and no run
         // dimensions of its own — the workflow's steps carry all of that.
         const wantsRun = spec.runs && !(c.kind === 'trigger' && c.act === 'workflow');
         const wantsAgent = wantsRun && !(c.kind === 'trigger' && c.act === 'dispatch');
-        const agentOpts = (DATA.agents || []).map(a =>
-            `<option value="${C.esc(a)}"${a === c.agent ? ' selected' : ''}>${C.esc(a)}</option>`).join('');
+        // ‼️ A TEMPLATE MAY BE UNBOUND. The quickpick this replaced asked
+        // "bind to X / any agent (choose at run time)" as its FIRST question;
+        // here it is one more entry in the same picker every other kind uses.
+        const anyAgent = c.kind === 'template';
+        const agentOpts = (anyAgent
+            ? ['<option value=""' + (c.agent ? '' : ' selected') + '>— any agent: you pick when you launch it —</option>']
+            : [])
+            .concat((DATA.agents || []).map(a =>
+                `<option value="${C.esc(a)}"${a === c.agent ? ' selected' : ''}>${C.esc(a)}</option>`))
+            .join('');
         const projOpts = ['<option value=""' + (c.project ? '' : ' selected') + '>— no project —</option>']
             .concat((L.projects || []).map(p =>
                 `<option value="${C.esc(p.id)}"${p.id === c.project ? ' selected' : ''}>${p.icon ? C.esc(p.icon) + ' ' : ''}${C.esc(p.name)}</option>`))
@@ -627,12 +1042,14 @@
             schedule: 'A schedule is a task that has not happened yet: it runs on its own at a set time, so it takes every dimension a task takes — and a guard, so it does not wake an agent for nothing.',
             trigger: 'A trigger runs when something happens. The brakes cap how OFTEN it fires; the guard caps WHETHER it should fire at all.',
             template: 'A template is a saved prompt you launch by hand. It carries an agent and a mode so launching it is one click, not a form.',
-            workflow: 'A workflow chains several agents. Name it here; its steps are edited on the row.'
+            workflow: 'A workflow is a chain: each step is handed the previous one\'s output. A step is not always an agent — it can call an API, render an asset, drive a browser, or stop and ask you.'
         };
         return `<div class="ntbox" id="ntbox">
             <div class="ctl-row">
-                <span class="ctl-title">${editing ? 'Edit' : 'New'} ${C.esc(spec.label)}</span>
-                <span class="muted small">${C.esc(LEDE[c.kind] || '')}</span>
+                <span class="ctl-title">${retry ? 'Retry' : editing ? 'Edit' : 'New'} ${C.esc(spec.label)}</span>
+                <span class="muted small">${C.esc(retry
+                ? 'A retry is the original run again, and every field below is yours to change first — that is what “run it again on opus” means. It keeps the original\'s lineage and is queued as “… (retry N)”.'
+                : (LEDE[c.kind] || ''))}</span>
                 <span class="spacer"></span>
                 <button class="secondary mini" id="nt-close">✕</button>
             </div>
@@ -643,7 +1060,7 @@
                 <label class="ntf wide"><span>${c.kind === 'task' ? 'Title' : 'Name'}${c.kind === 'task' ? '' : ' <em>required</em>'}</span>
                     <input type="text" id="nt-title" value="${C.esc(c.title)}"
                         placeholder="${c.kind === 'task' ? '(optional — the prompt\'s first line otherwise)' : 'What is this called?'}"></label>
-                ${wantsAgent ? `<label class="ntf" title="Whose folder it runs in, and whose CLAUDE.md it wakes up with."><span>Agent <em>required</em></span>
+                ${wantsAgent ? `<label class="ntf" title="Whose folder it runs in, and whose CLAUDE.md it wakes up with."><span>Agent${anyAgent ? '' : ' <em>required</em>'}</span>
                     <select id="nt-agent">${agentOpts}</select></label>` : ''}
                 ${wantsRun ? `<label class="ntf" title="Headless is claude -p: it runs the prompt, writes its output to an archived file and exits — the mode an unattended run is normally in. Interactive opens a real session in a terminal with the prompt already sent."><span>Mode</span>
                     <select id="nt-mode">
@@ -670,6 +1087,7 @@
             </div>
             ${c.kind === 'schedule' ? scheduleHtml(c) : ''}
             ${c.kind === 'trigger' ? triggerHtml(c) : ''}
+            ${c.kind === 'workflow' ? workflowHtml(c) : ''}
             ${composerMsg ? `<div class="ntmsg${composerDup ? ' warn' : ''}">${C.esc(composerMsg)}</div>` : ''}
             <div class="ctl-row">
                 ${c.kind === 'task' ? `<label class="cbx" title="Off = it waits in the queue until you press start (or capacity frees up for something with a higher priority).">
@@ -679,7 +1097,9 @@
                 <span class="spacer"></span>
                 ${composerDup ? '<button class="secondary" id="nt-force">Add it anyway</button>' : ''}
                 <button id="nt-add">${c.kind === 'task'
-                ? (c.start ? 'Add and start' : 'Add to the queue')
+                ? (retry
+                    ? (c.start ? 'Retry it now' : 'Queue the retry')
+                    : (c.start ? 'Add and start' : 'Add to the queue'))
                 : (editing ? 'Save changes' : 'Create the ' + spec.label)}</button>
                 <button class="secondary" id="nt-cancel">Cancel</button>
             </div>
@@ -753,6 +1173,9 @@
 
     function submitComposer(force) {
         readComposer();
+        // A step card left open is a thought half-typed, not a thought
+        // abandoned: saving the workflow folds it in rather than dropping it.
+        if (composer.kind === 'workflow' && !commitStep()) { return; }
         const err = composerError(composer);
         if (err) { composerMsg = err; render(); return; }
         if (composer.kind === 'task') {
@@ -853,6 +1276,7 @@
                 <button class="secondary" data-open="clear-finished">Clear finished</button>
             </div>
             ${composer && (COMPOSE[composer.kind] || COMPOSE.task).tab === 'run' ? composerHtml() : ''}
+            ${chooser && chooser.tab === 'run' ? chooserHtml() : ''}
             ${!composer && composerMsg && tab === 'run' ? `<div class="ntmsg">${C.esc(composerMsg)}</div>` : ''}
             ${activeChips(v, RUN_DEF, { agent: 'agent', status: 'status', source: 'from' }, rows.length, d.runs.length)}
             <div class="cmdbar">
@@ -929,6 +1353,43 @@
                     background:var(--vscode-editorWidget-background, rgba(128,128,128,.08)); }
                 .ntmsg.warn { color:var(--vscode-editorWarning-foreground,#cca700);
                     border:1px solid currentColor; }
+                /* A section heading inside the form. The form is long enough
+                   that "When", "Brakes" and "Steps" have to be findable at a
+                   glance rather than read for. */
+                .ntsec { margin:10px 0 0; padding-top:7px; font-size:12px;
+                    border-top:1px solid var(--vscode-panel-border); }
+                .ntsec b { margin-right:8px; }
+                .ntsec .small { line-height:1.5; }
+                /* THE CHAIN. A workflow is the one plan object whose content is
+                   a LIST, so the form has to show the list — the wizard it
+                   replaces asked for step 4 without ever showing steps 1–3. */
+                .wfsteps { list-style:none; margin:8px 0; padding:0;
+                    border:1px solid var(--vscode-panel-border); border-radius:7px; overflow:hidden; }
+                .wfstep { display:flex; gap:9px; align-items:flex-start; padding:6px 9px; font-size:12px;
+                    counter-increment:wfs; }
+                .wfstep + .wfstep { border-top:1px solid var(--vscode-panel-border); }
+                .wfstep:hover { background:var(--vscode-list-hoverBackground); }
+                .wfstep.on { background:var(--vscode-list-activeSelectionBackground, rgba(128,128,255,.12)); }
+                .wfstep::before { content:counter(wfs) "."; opacity:.55; min-width:1.4em; text-align:right; }
+                .wfsteps { counter-reset:wfs; }
+                .wfsi { font-size:14px; line-height:1.2; }
+                .wfst { flex:1 1 auto; display:flex; flex-direction:column; gap:1px; min-width:0; }
+                .wfst .small { word-break:break-word; }
+                .wfsa { white-space:nowrap; }
+                .wfsa .mini { margin-left:3px; }
+                .wfsa .mini[disabled] { opacity:.35; cursor:default; }
+                /* One step, opened. Nested inside the form's own card, so it is
+                   visibly a part of the workflow rather than a second dialog. */
+                .stbox { border:1px solid var(--vscode-focusBorder); border-left-width:3px; border-radius:7px;
+                    padding:7px 11px; margin:8px 0 4px;
+                    background:var(--vscode-editorWidget-background, rgba(128,128,128,.09)); }
+                .stbox .ntsec:first-of-type { margin-top:6px; }
+                .stbox code { font-size:11px; }
+                /* The in-page picker. Same card as the form, because it is the
+                   same kind of thing: a question answered on the page. */
+                .chlist { list-style:none; margin:8px 0 2px; padding:0; }
+                .chlist li { display:flex; gap:8px; align-items:baseline; padding:4px 2px; font-size:12px; }
+                .chlist li + li { border-top:1px solid var(--vscode-panel-border); }
                 /* Columns size themselves to their content and use whatever
                    width the window gives them. Only the fixed-size furniture
                    (checkbox, caret) and the numeric/action columns are pinned;
@@ -1017,6 +1478,9 @@
         click('[data-tab]', e => { tab = e.currentTarget.dataset.tab; expanded.clear(); persist(); render(); });
         click('[data-gate]', e => {
             const [a, arg] = e.currentTarget.dataset.gate.split(':');
+            // 🌙 used to call a command that asked a quickpick and then two
+            // input boxes. It opens the card on the strip instead.
+            if (a === 'open') { openGate('quiet'); return; }
             post({ type: 'gate', act: a, text: arg });
         });
         click('[data-open]', e => post({ type: e.currentTarget.dataset.open }));
@@ -1152,6 +1616,112 @@
             });
         }
 
+        // ---- the chain, and the one step being written (Faz 2). Reordering
+        // and deleting act on the DRAFT: Cancel has to really cancel, and a new
+        // workflow has no stored object to act on in the first place.
+        if (composer && composer.kind === 'workflow') {
+            byId('nt-stadd', 'click', () => {
+                if (!commitStep()) { return; }
+                composer.stepIdx = -1;
+                composer.step = newStep();
+                stepMsg = '';
+                render();
+            });
+            click('[data-st]', e => {
+                const el = e.currentTarget;
+                const i = Number(el.dataset.i);
+                const act = el.dataset.st;
+                const steps = composer.steps;
+                if (!(i >= 0 && i < steps.length)) { return; }
+                if (act === 'edit') {
+                    if (composer.stepIdx !== null && composer.stepIdx !== i && !commitStep()) { return; }
+                    composer.stepIdx = i;
+                    composer.step = newStep(steps[i]);
+                    stepMsg = '';
+                } else if (act === 'del') {
+                    steps.splice(i, 1);
+                    if (composer.stepIdx === i) { composer.stepIdx = null; composer.step = null; }
+                    else if (composer.stepIdx > i) { composer.stepIdx--; }
+                } else if (act === 'dup') {
+                    steps.splice(i + 1, 0, Object.assign({}, steps[i]));
+                    if (composer.stepIdx > i) { composer.stepIdx++; }
+                } else if (act === 'up' || act === 'down') {
+                    const j = act === 'up' ? i - 1 : i + 1;
+                    if (j < 0 || j >= steps.length) { return; }
+                    const tmp = steps[i]; steps[i] = steps[j]; steps[j] = tmp;
+                    if (composer.stepIdx === i) { composer.stepIdx = j; }
+                    else if (composer.stepIdx === j) { composer.stepIdx = i; }
+                }
+                render();
+            });
+            byId('nt-stsave', 'click', () => { if (commitStep()) { render(); } });
+            byId('nt-stcancel', 'click', () => {
+                composer.stepIdx = null;
+                composer.step = null;
+                stepMsg = '';
+                render();
+            });
+            if (composer.stepIdx !== null) {
+                ['title', 'prompt', 'runIf', 'verifyCriteria', 'verifyRetries',
+                    'whUrl', 'whBody', 'whHeader', 'whPollUrl', 'whStatusField', 'whDone', 'whInterval',
+                    'mModel', 'mInput', 'bUrl', 'bGoal', 'bHosts',
+                    'apMsg', 'selMsg', 'selMin', 'selMax'].forEach(id =>
+                        byId('nt-st-' + id, 'input', () => readStep()));
+                ['agent', 'smode', 'contract', 'onFailStep', 'mScene'].forEach(id =>
+                    byId('nt-st-' + id, 'change', () => readStep()));
+                byId('nt-st-parallel', 'change', () => readStep());
+                // ‼️ These five REDRAW: the kind decides which half of the card
+                // exists at all, the method whether there is a body, polling
+                // whether there are poll fields, "jump to" which step, and a
+                // criteria box whether retries are worth asking about.
+                ['stype', 'whMethod', 'whPoll', 'onFail'].forEach(id =>
+                    byId('nt-st-' + id, 'change', () => { readStep(); render(); }));
+                byId('nt-st-verifyCriteria', 'change', () => { readStep(); render(); });
+            }
+        }
+
+        // the farm-wide gate, set on the strip that reports it
+        if (gateEdit) {
+            byId('gt-close', 'click', () => { gateEdit = null; render(); });
+            const readGate = () => {
+                const v = (id) => { const el = document.getElementById('gt-' + id); return el ? String(el.value || '') : ''; };
+                gateFrom = v('from'); gateTo = v('to'); gateReason = v('reason'); gateMins = v('mins') || '0';
+            };
+            ['from', 'to', 'reason'].forEach(id => byId('gt-' + id, 'input', readGate));
+            byId('gt-mins', 'change', readGate);
+            byId('gt-quiet', 'click', () => {
+                readGate();
+                if (!gateFrom || !gateTo) {
+                    gateMsg = 'A quiet window needs both ends — a start and an end.';
+                    render();
+                    return;
+                }
+                post({ type: 'gate', act: 'quiet-set', quietFrom: gateFrom, quietTo: gateTo });
+                gateEdit = null;
+            });
+            byId('gt-quietoff', 'click', () => { post({ type: 'gate', act: 'quiet-off' }); gateEdit = null; });
+            byId('gt-pause', 'click', () => {
+                readGate();
+                post({
+                    type: 'gate',
+                    act: gateMins === '0' ? 'pause' : 'pause-for',
+                    text: gateMins === '0' ? gateReason : gateMins,
+                    reason: gateReason
+                });
+                gateEdit = null;
+            });
+        }
+
+        // the in-page picker
+        if (chooser) {
+            byId('ch-close', 'click', () => { chooser = null; render(); });
+            click('[data-ch]', e => {
+                post({ type: 'chooser-pick', act: chooser.act, id: e.currentTarget.dataset.ch });
+                chooser = null;
+                render();
+            });
+        }
+
         // run actions
         click('[data-task]', e => post({ type: 'task', act: e.currentTarget.dataset.task, id: e.currentTarget.dataset.id }));
         click('[data-out]', e => post({ type: 'open-output', file: e.currentTarget.dataset.out }));
@@ -1206,7 +1776,6 @@
             // ---- a plan row ----
             case 'plRun': plan('run'); return;
             case 'plEdit': plan('edit'); return;
-            case 'plRename': plan('rename'); return;
             case 'plToggle': plan('toggle'); return;
             case 'plDelete': plan('delete'); return;
             case 'plExport': plan('export'); return;
@@ -1302,7 +1871,31 @@
         // …and the same door for every plan kind (U-9). `agentfarm.addSchedule`,
         // `editTrigger`, the toolbar's + and a row's edit button all arrive
         // here, so the palette and the page cannot make two different objects.
-        if (ev.data.type === 'plan-compose') { openComposer(ev.data.seed, ev.data.kind); }
+        if (ev.data.type === 'plan-compose') { chooser = null; openComposer(ev.data.seed, ev.data.kind); }
+        // ‼️ "WHICH TEMPLATE?" IS THE PLAN TAB, FILTERED. It used to be a
+        // quickpick of bare titles; the rows on this page carry the agent, the
+        // mode, what it last cost and a run button, which is strictly more of
+        // the same question answered.
+        if (ev.data.type === 'plan-focus') {
+            tab = 'plan';
+            planView = Object.assign({}, PLAN_DEF, ev.data.view || {});
+            composer = null;
+            chooser = null;
+            composerMsg = ev.data.note || '';
+            persist();
+            render();
+        }
+        // `agentfarm.setQuietHours` / `pauseAutomations` from the palette open
+        // the card too, so the strip and the palette set the same thing.
+        if (ev.data.type === 'gate-open') { openGate(ev.data.which); }
+        // A picker the host filled, drawn as a list on the page.
+        if (ev.data.type === 'chooser') {
+            chooser = ev.data.chooser || null;
+            if (chooser && chooser.tab) { tab = chooser.tab; }
+            composer = null;
+            persist();
+            render();
+        }
         if (ev.data.type === 'task-error') { composerMsg = ev.data.text || ''; composerDup = false; render(); }
         if (ev.data.type === 'plan-saved') {
             closeComposer(ev.data.text || 'Saved.');

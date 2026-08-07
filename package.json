@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.82.0",
+  "version": "3.83.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -1844,16 +1844,6 @@
         "category": "Agent Farm"
       },
       {
-        "command": "agentfarm.ctx.planStep",
-        "title": "Add a step\u2026",
-        "category": "Agent Farm"
-      },
-      {
-        "command": "agentfarm.ctx.planRename",
-        "title": "Rename it\u2026",
-        "category": "Agent Farm"
-      },
-      {
         "command": "agentfarm.ctx.planExport",
         "title": "Export as a Windows Scheduled Task\u2026",
         "category": "Agent Farm"
@@ -1955,7 +1945,7 @@
       },
       {
         "command": "agentfarm.ctx.runRetryEdit",
-        "title": "Run it again with an edited prompt\u2026",
+        "title": "Run it again, with changes\u2026",
         "category": "Agent Farm"
       },
       {
@@ -4378,18 +4368,8 @@
         },
         {
           "command": "agentfarm.ctx.planEdit",
-          "when": "webviewSection == 'afPlanRow' && afKind != 'workflow'",
+          "when": "webviewSection == 'afPlanRow'",
           "group": "2_edit@3"
-        },
-        {
-          "command": "agentfarm.ctx.planStep",
-          "when": "webviewSection == 'afPlanRow' && afKind == 'workflow'",
-          "group": "2_edit@3"
-        },
-        {
-          "command": "agentfarm.ctx.planRename",
-          "when": "webviewSection == 'afPlanRow' && afKind == 'workflow'",
-          "group": "2_edit@4"
         },
         {
           "command": "agentfarm.ctx.planExport",
@@ -6072,16 +6052,6 @@
   },
   {
     "command": "agentfarm.ctx.planEdit",
-    "when": "false",
-    "group": "ctx"
-  },
-  {
-    "command": "agentfarm.ctx.planStep",
-    "when": "false",
-    "group": "ctx"
-  },
-  {
-    "command": "agentfarm.ctx.planRename",
     "when": "false",
     "group": "ctx"
   },
