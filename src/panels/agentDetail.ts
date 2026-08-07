@@ -22,10 +22,16 @@ export interface AgentDetailDeps {
     contextBudget(): number;
     /** live task list merged with the task-history archive (see taskstats). */
     taskRecords(): TaskRecord[];
+    /** Project name per agent name — the Project column's source, resolved
+     *  exactly the way the Dashboard and the Sessions page resolve it. */
+    agentProjects?(): Record<string, string>;
+    /** A project's own colour, icon and description, by name. */
+    projectStyle?(name: string): { icon?: string; color?: string; detail?: string } | undefined;
 }
 
 function buildData(agent: AgentInfo, deps: AgentDetailDeps, tableN = AGENT_SESSION_TABLE_N): Record<string, unknown> {
     const sessions = deps.index.forAgent(agent.id).sort((a, b) => b.mtime - a.mtime);
+    const projectByAgent = deps.agentProjects?.() ?? {};
     const daily: Record<string, { cost: number; tokens: number; wTokens: number; msgs: number }> = {};
     const tools: Record<string, number> = {};
     const models: Record<string, { cost: number; tokens: number; wTokens: number }> = {};
@@ -155,7 +161,9 @@ function buildData(agent: AgentInfo, deps: AgentDetailDeps, tableN = AGENT_SESSI
         // union of the true top-N per sortable criterion, sorted client-side;
         // N follows the webview's Show box (0 = all sessions ship)
         sessions: sessionRowPool(sessions,
-            s => deps.index.isSessionActive(s), tableN),
+            s => deps.index.isSessionActive(s), tableN,
+            s => (s.agentName ? projectByAgent[s.agentName] : undefined),
+            name => deps.projectStyle?.(name)),
         sessionTableN: tableN
     };
 }

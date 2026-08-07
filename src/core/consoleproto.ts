@@ -352,8 +352,9 @@ export interface ConsoleSessionState {
      * Round trips to the model in the RUNNING turn.
      *
      * ‼️ THE STRIP COUNTED STEPS AND CALLED IT THE TURN'S SIZE. A step is one
-     * reply fragment or one tool call; several of them ride on a single API
-     * call, and it is the CALLS the tokens follow. So a turn doing the same
+     * thing the agent did — it reasoned, it wrote, or it called a tool; several
+     * of them ride on a single API call, and it is the CALLS the tokens follow.
+     * So a turn doing the same
      * visible amount of work with half the round trips read as unchanged while
      * its token figure moved underneath it. Incremented where the usage is
      * counted — inside the repeat guard — so it can never drift from the
@@ -371,6 +372,21 @@ export interface ConsoleSessionState {
      * the strip says how many there were.
      */
     turnThinking?: number;
+    /**
+     * Steps in the RUNNING turn — every one of them.
+     *
+     * ‼️ THE STRIP USED TO COUNT WHAT IT HAD DRAWN, AND THAT IS NOT THE SAME
+     * SET. The panel worked it out in the view by walking the rows since your
+     * last message, which swept in every tool RESULT (one per call, so the
+     * figure was roughly doubled) and every system row the panel writes for
+     * itself — and it could not see a thinking block at all, because thinking
+     * is deliberately not rendered. Counted here instead, on the transcript's
+     * own blocks, in the same loop that pushes the rows: the Console, the
+     * session tables and the Turns page now all count the same three things
+     * (think + say + tool call) off the same shapes, so one surface can no
+     * longer make another look broken. See SessionTurn.steps.
+     */
+    turnSteps?: number;
     /**
      * The turn that just FINISHED — kept until the next one starts.
      *
@@ -398,6 +414,10 @@ export interface ConsoleSessionState {
         cost: number;
         /** round trips the turn took — see turnApiCalls */
         apiCalls?: number;
+        /** every step those calls carried — see turnSteps */
+        steps?: number;
+        /** of those steps, the ones that were reasoning — see turnThinking */
+        thinking?: number;
         /** how it ended, in one word: 'done' | 'interrupted' | 'failed' */
         outcome: 'done' | 'interrupted' | 'failed';
         /** what it was thinking with — see turnModel; '' when never known */
@@ -767,7 +787,7 @@ export function reduceEvent(
             const bt = String(b.type ?? '');
             if (bt === 'text' && String(b.text ?? '').trim()) {
                 next = {
-                    ...next, lastTs: now,
+                    ...next, lastTs: now, turnSteps: (next.turnSteps ?? 0) + 1,
                     messages: [...next.messages, {
                         id: nextId(), ts: now, role: 'agent', text: String(b.text),
                         kind: 'say', ...takeCharge()
@@ -781,7 +801,7 @@ export function reduceEvent(
                     ? String(input?.['file_path'] ?? input?.['notebook_path'] ?? '') || undefined
                     : undefined;
                 next = {
-                    ...next, lastTs: now,
+                    ...next, lastTs: now, turnSteps: (next.turnSteps ?? 0) + 1,
                     messages: [...next.messages, {
                         id: nextId(), ts: now, role: 'tool',
                         tool: { id: typeof b.id === 'string' ? b.id : undefined, name, detail: shortArg(name, input), file },
@@ -790,11 +810,15 @@ export function reduceEvent(
                 };
                 changed = true;
             }
-            // 'thinking' blocks are deliberately not rendered as rows — but the
-            // turn is TOLD about them, because they are the biggest output-token
-            // spender in a turn and used to be invisible everywhere.
+            // 'thinking' blocks are deliberately not rendered as rows — the
+            // model's private working is not conversation — but they ARE steps,
+            // and the most expensive kind, so they are counted twice over: into
+            // the turn's total and into their own figure beside it.
             else if (bt === 'thinking' || bt === 'redacted_thinking') {
-                next = { ...next, turnThinking: (next.turnThinking ?? 0) + 1 };
+                next = {
+                    ...next, turnThinking: (next.turnThinking ?? 0) + 1,
+                    turnSteps: (next.turnSteps ?? 0) + 1
+                };
                 changed = true;
             }
         }
@@ -866,6 +890,7 @@ export function reduceEvent(
                 turnWTokens: undefined,
                 turnThinking: undefined,
                 turnApiCalls: undefined,
+                turnSteps: undefined,
                 // …and it is kept, so the strip above the composer still says
                 // what the turn that just ended cost — and what it thought with,
                 // which a switch made in the meantime must not rewrite
@@ -874,6 +899,11 @@ export function reduceEvent(
                     endedAt: now, ms, tokens: spent || undefined,
                     wTokens: Math.round(state.turnWTokens ?? 0) || undefined, cost,
                     apiCalls: state.turnApiCalls || undefined,
+                    // …and the steps those calls carried, kept for the same
+                    // reason: the strip that closes a turn has to be able to
+                    // say the same pair the running strip said a second ago.
+                    steps: state.turnSteps || undefined,
+                    thinking: state.turnThinking || undefined,
                     outcome: !isError ? 'done'
                         : sub === 'error_during_execution' ? 'interrupted' : 'failed',
                     model: state.turnModel, effort: state.turnEffort

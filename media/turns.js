@@ -336,6 +336,14 @@
         line('API calls', r.apiCalls || ''),
         line('Steps', r.steps || ''),
         line('Steps per call', r.apiCalls && r.steps ? round1(r.steps / r.apiCalls) : ''),
+        // What the total is MADE OF. Thinking is the dearest step there is and
+        // was missing from the total until it was counted (see sessions.ts
+        // SessionTurn.steps); saying its share here is what stops the number
+        // being a black box again.
+        line('…reasoning', r.thinking ? `${r.thinking} (${pctOf(r.thinking, r.steps)})` : ''),
+        line('…tool calls', r.tools ? `${r.tools} (${pctOf(r.tools, r.steps)})` : ''),
+        line('…replies', r.steps - (r.thinking || 0) - (r.tools || 0) > 0
+            ? `${r.steps - (r.thinking || 0) - (r.tools || 0)} (${pctOf(r.steps - (r.thinking || 0) - (r.tools || 0), r.steps)})` : ''),
         line('Tool calls', r.tools || ''),
         line('Errors', r.errors || ''),
         line('Tokens', r.tokens ? C.fmtTok(r.tokens) : ''),

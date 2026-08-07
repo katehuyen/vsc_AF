@@ -1262,36 +1262,6 @@
     let spinAt = 0;
 
     /**
-     * How many STEPS this turn has taken, counted the way EVERY OTHER SURFACE
-     * counts them: one reply fragment or one tool call.
-     *
-     * ‼️ IT USED TO COUNT ROWS, AND A ROW IS NOT A STEP. Everything since your
-     * last message was counted — which sweeps in every tool RESULT (one per
-     * tool call, so the figure was roughly doubled), plus the permission asks
-     * and the "model changed" notices the panel writes for itself. The session
-     * tables and the Turns page count the transcript's own blocks (text +
-     * tool_use, see sessions.ts), so the very same turn read here and read
-     * there gave two different numbers under one label — with the strip's the
-     * larger, which is exactly the direction that makes a correct counter look
-     * broken. The `kind` on every row already says which is which: a step
-     * either says something ('agent') or calls a tool (a 'tool' row carrying
-     * the call itself; the answer that comes back carries none).
-     */
-    function turnSteps(s) {
-        const list = (s && s.messages) || [];
-        let start = 0;
-        for (let i = list.length - 1; i >= 0; i--) {
-            if (list[i].role === 'user') { start = i + 1; break; }
-        }
-        let n = 0;
-        for (let i = start; i < list.length; i++) {
-            const m = list[i];
-            if (m.role === 'agent' || (m.role === 'tool' && m.tool)) { n++; }
-        }
-        return n;
-    }
-
-    /**
      * The turn's size, in the shape every surface uses: `14api·26steps`.
      *
      * ‼️ THE STRIP USED TO SAY ONLY THE SECOND NUMBER, AND IT IS THE ONE THAT
@@ -1300,10 +1270,21 @@
      * turn doing the same visible work in half the round trips reads as
      * unchanged here while its token figure halves — which is exactly how a
      * correct counter comes to look broken.
+     *
+     * ‼️ AND THE STEP COUNT IS NO LONGER WORKED OUT FROM THE ROWS ON SCREEN.
+     * It arrives with the state (`turnSteps`), counted off the transcript's own
+     * blocks by the reducer — which is the only place that can see a thinking
+     * block, since thinking is deliberately never drawn. Counting rows here
+     * swept in tool results and the panel's own notices and could not see the
+     * reasoning at all: too big and short of the expensive part at the same
+     * time. See core/consoleproto.ts ConsoleState.turnSteps.
      */
-    function stepsHtml(apiCalls, steps) {
+    function stepsHtml(apiCalls, steps, thinking) {
         if (!steps && !apiCalls) { return ''; }
-        return ` · <span title="${C.esc(C.STEPS_TIP)}">${C.esc(C.fmtSteps(apiCalls, steps))}</span>`;
+        const tip = thinking
+            ? `${C.STEPS_TIP}\n\nOf these ${steps} steps, ${thinking} were the model reasoning — billed as output tokens, the dearest kind.`
+            : C.STEPS_TIP;
+        return ` · <span title="${C.esc(tip)}">${C.esc(C.fmtSteps(apiCalls, steps))}</span>`;
     }
 
     /**
@@ -1378,7 +1359,7 @@
             ? ` · <span title="What that turn cost, as the CLI reported it — not an estimate. The line under the box is the whole session.">${spend(t.cost, t.tokens, t.wTokens)}</span>`
             : '';
         return `<span class="dspin">${glyph}</span> <b>${word}</b>
-            <span class="wmeta">${t.ms ? C.fmtDur(t.ms) : ''}${money}${stepsHtml(t.apiCalls, turnSteps(s))}${turnBrainHtml(t.model, t.effort, false)} · your turn now</span>`;
+            <span class="wmeta">${t.ms ? C.fmtDur(t.ms) : ''}${money}${stepsHtml(t.apiCalls, t.steps, t.thinking)}${turnBrainHtml(t.model, t.effort, false)} · your turn now</span>`;
     }
 
     function workingHtml(s) {
@@ -1422,7 +1403,7 @@
         // tooltip, where a key hint belongs. What took its place is the one thing
         // nothing else on screen was saying: WHAT this turn is thinking with.
         return `<span class="spin">${glyph}</span> ${doingChip}<b>${C.esc(doing)}</b>
-            <span class="wmeta">${C.fmtDur(ran)}${cost}${stepsHtml(s.turnApiCalls, turnSteps(s))}${q ? ` · ${q} held` : ''}${turnBrainHtml(s.turnModel, s.turnEffort, true)}</span>`;
+            <span class="wmeta">${C.fmtDur(ran)}${cost}${stepsHtml(s.turnApiCalls, s.turnSteps, s.turnThinking)}${q ? ` · ${q} held` : ''}${turnBrainHtml(s.turnModel, s.turnEffort, true)}</span>`;
     }
 
     /** The glyph has to turn on its own — a data push only arrives when the CLI
@@ -1707,13 +1688,22 @@
                     group = it.group;
                     if (group) { rows.push(`<div class="snipgrp">${C.esc(group)}</div>`); }
                 }
-                // The whole block rides in the row as a tooltip: choosing
-                // between two prompts means reading them, and a picker that
-                // only shows names makes you guess.
-                rows.push(`<button class="snipitem" data-snip="${i}" title="${C.esc(it.text)}">
+                // The whole block rides in the row as a hover: choosing between
+                // two prompts means reading them, and a picker that only shows
+                // names makes you guess.
+                //
+                // ‼️ IN THE RICH PANEL, NOT A `title`. A saved prompt is TEXT —
+                // the exact case docs/CONVENTIONS.md sends here: the native
+                // tooltip repeated the 120-character preview the row had just
+                // drawn and then stopped wherever the platform felt like
+                // stopping, which on a prompt worth saving is nearly all of it.
+                rows.push(window.AFTip.wrap(
+                    `<button class="snipitem" data-snip="${i}">
                     <span class="sniplbl">${C.esc(it.label)}</span>
                     <span class="snipprev">${C.esc(it.text.replace(/\s+/g, ' ').slice(0, 120))}</span>
-                </button>`);
+                </button>`,
+                    `${it.label}${it.group ? ` · ${it.group}` : ''} · ${window.AFTip.sizeNote(it.text)}`,
+                    it.text));
             }
             body = rows.join('');
         }

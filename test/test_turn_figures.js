@@ -54,6 +54,12 @@ ok('every number in the pair says what it is',
 ok('the shared tooltip says they are two measurements, not two parts of a total',
     /SAME turn/.test(C.STEPS_TIP) && /never added together/.test(C.STEPS_TIP)
     && /tokens follow the CALLS/.test(C.STEPS_TIP));
+// ‼️ …and that the second number is the WHOLE turn. The old wording defined a
+// step as "one reply fragment or one tool call", which is the definition that
+// left the reasoning out of the total.
+ok('…and that a step is any of the three things an agent does',
+    /reasoned/.test(C.STEPS_TIP) && /every step of the turn is in that number/.test(C.STEPS_TIP)
+    && !/reply fragment or one tool call/.test(C.STEPS_TIP));
 
 // ---------- 3) the accounting behind them ----------
 // sessions.ts imports 'vscode' at load; the compiled module needs it stubbed to
@@ -90,6 +96,7 @@ const asst = (msgId, reqId, ts, blocks, usage) => JSON.stringify({
 const USAGE = { input_tokens: 10, output_tokens: 90, cache_creation_input_tokens: 100, cache_read_input_tokens: 800 };
 fs.writeFileSync(file, [
     JSON.stringify({ type: 'user', timestamp: at(0), message: { role: 'user', content: 'do the thing' } }),
+    asst('m1', 'r1', 900, [{ type: 'thinking', thinking: 'how do I do the thing' }], USAGE),
     asst('m1', 'r1', 1000, [{ type: 'text', text: 'on it' }], USAGE),
     asst('m1', 'r1', 1100, [{ type: 'tool_use', name: 'Bash', input: {} }], USAGE),
     asst('m2', 'r2', 5000, [{ type: 'text', text: 'done' }], USAGE),
@@ -101,8 +108,15 @@ const info = parseSessionFile(file, new PricingEngine(DEFAULT_PRICING), 0);
 const [t1, t2] = info.turns;
 
 eq('two turns', info.turns.length, 2);
-// ‼️ THE WHOLE REASON THE PAIR EXISTS: three steps, two round trips.
-eq('turn 1 counts its steps', t1.steps, 3);
+// ‼️ THE WHOLE REASON THE PAIR EXISTS: four steps, two round trips.
+// ‼️ AND FOUR, NOT THREE. A step used to mean "a reply fragment or a tool call",
+// which left the model's own REASONING out of the number that called itself the
+// total — measured over this machine's six largest recent transcripts
+// (2026-08-07): 149 replies + 1 583 tool calls counted against 490 thinking
+// blocks not counted, a 22% under-count of exactly the part billed at the
+// output rate. Think + say + tool call, all three.
+eq('turn 1 counts its steps — reasoning included', t1.steps, 4);
+eq('…and says how many of them were reasoning', t1.thinking, 1);
 eq('turn 1 counts its round trips, not its lines', t1.apiCalls, 2);
 eq('…and its tokens follow the CALLS, not the steps', t1.tokens, 2 * 1000);
 eq('turn 2 counts its own', t2.steps + '/' + t2.apiCalls, '1/1');

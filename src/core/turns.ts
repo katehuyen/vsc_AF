@@ -33,9 +33,11 @@ export interface TurnRow {
     durationMs: number;
     /** How long the turn itself ran — prompt to its last line. */
     ms: number;
-    /** Round trips, and the visible steps they carried — see SessionTurn. */
+    /** Round trips, and every step they carried — see SessionTurn.steps. */
     apiCalls: number;
     steps: number;
+    /** Of those steps, the ones that were the model reasoning. */
+    thinking: number;
     /** What the window held when the turn ended. */
     endCtx: number;
     tokens: number;
@@ -72,6 +74,7 @@ export function turnRowsFor(s: SessionInfo, active: boolean): TurnRow[] {
             ms: t.ms,
             apiCalls: t.apiCalls,
             steps: t.steps,
+            thinking: t.thinking,
             endCtx: t.endCtx,
             tokens: t.tokens,
             wTokens: t.wTokens,

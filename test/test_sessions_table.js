@@ -784,6 +784,101 @@ const mkRow = (i, extra) => Object.assign({
         !posted.some(p => p.type === 'openSession'));
 }
 
+// ---------- part: the declared column widths ----------
+//
+// ‼️ THE TABLE USED TO BE LAID OUT BY WHATEVER WAS IN IT. `table-layout: auto`
+// makes every column's width a function of the listed CONTENT, so the very same
+// component rendered the same column at a different width on the Dashboard
+// (20 rows) and on the Sessions page (200 rows) — measured in headless Chromium
+// at a 1314px table: Title 462px against 457px, Cost 41px against 48px. Nobody
+// chose that. These assertions are about the choice that replaced it.
+{
+    const DASH = ['origin', 'agent', 'project', 'title', 'when', 'duration', 'turns',
+        'tools', 'files', 'errors', 'tokens', 'ctx', 'cost'];
+    const mk = (id, cols, n) => {
+        const t = sandbox.window.AFSessionsTable.create({
+            vscode: vscodeStub, C, containerId: id, columns: cols, stateKey: id
+        });
+        t.setRows([mkRow(1, { project: 'P' }), mkRow(2, { project: '' })], n);
+        return containers[id].innerHTML;
+    };
+    const colgroup = html => (/<colgroup>[\s\S]*?<\/colgroup>/.exec(html) || [''])[0];
+    const widths = html => (colgroup(html).match(/width:([^"]+)"/g) || [])
+        .map(s => s.replace(/width:|"/g, ''));
+
+    const dash = mk('wdash', DASH, 20);
+    const page = mk('wpage', DASH, 200);
+    ok('the layout is declared, not inferred', /table class="sesstable"/.test(dash));
+    ok('…and every column has a width', widths(dash).length === DASH.length + 3);
+    // THE point of the exercise: the Dashboard's table and the Sessions page's
+    // table are the same table. Same columns in, same widths out — whatever the
+    // row cap is, whatever happens to be listed.
+    ok('‼️ the Dashboard and the Sessions page cannot disagree about a column',
+        colgroup(dash) === colgroup(page));
+
+    // The shares sum to the whole of what is left after the px columns —
+    // a `<col>` percentage is resolved against that remainder, so anything
+    // short of 100 would leave the browser distributing the rest by its own
+    // rules and the declared proportions would stop being the real ones.
+    const pcts = widths(dash).filter(w => w.endsWith('%')).map(parseFloat);
+    ok('the shares are normalised to the space they divide',
+        Math.abs(pcts.reduce((a, b) => a + b, 0) - 100) < 0.01);
+    // …and they normalise again for a page that shows fewer columns, without
+    // changing the proportion between the columns both pages do show.
+    const agentPage = mk('wagent', ['origin', 'title', 'project', 'when', 'duration', 'turns',
+        'tools', 'files', 'errors', 'tokens', 'ctx', 'cost'], 50);
+    const share = (html, col, cols) => parseFloat(widths(html)[3 + cols.indexOf(col)]);
+    const AGENT_COLS = ['origin', 'title', 'project', 'when', 'duration', 'turns',
+        'tools', 'files', 'errors', 'tokens', 'ctx', 'cost'];
+    ok('a page with fewer columns keeps the same proportions',
+        Math.abs(share(dash, 'title', DASH) / share(dash, 'project', DASH)
+            - share(agentPage, 'title', AGENT_COLS) / share(agentPage, 'project', AGENT_COLS)) < 0.01);
+
+    // The one deliberate change to the measured baseline: Title gives up a
+    // quarter of itself. It held 462px of the 1210px the px columns leave in a
+    // 1314px table — 38.15% — and a quarter off that is 28.61%, which comes back
+    // out of the browser as 346px (re-measured, same conditions).
+    ok('‼️ Title is a quarter narrower than the layout it replaced',
+        Math.abs(share(dash, 'title', DASH) - 28.61) < 0.1);
+
+    // A glyph column is px, not a share: a share would make the checkbox column
+    // grow with the monitor.
+    ok('the glyph columns are fixed, not shares',
+        /^<colgroup><col style="width:23px"><col style="width:32px"><col style="width:23px"><col style="width:26px">/
+            .test(colgroup(dash)));
+
+    // S-5: the grey dot in front of a project name meant nothing on a project
+    // with no colour of its own — it was the panel border, on every row.
+    ok('‼️ the project dot is drawn only where there is a colour to draw',
+        !/<span class="af-pdot"/.test(mk('wnodot', ['project'], 5)));
+    ok('…and it is drawn where there is', /<span class="af-pdot" style="background:#f00"/.test(
+        (() => {
+            const t = sandbox.window.AFSessionsTable.create({
+                vscode: vscodeStub, C, containerId: 'wdot', columns: ['project'], stateKey: 'wdot'
+            });
+            t.setRows([mkRow(1, { project: 'P', projectColor: '#f00' })], 5);
+            return containers.wdot.innerHTML;
+        })()));
+    // The words are the only part of a text cell allowed to shrink; the ⌨ and ⎋
+    // buttons at the end of the line are controls, and a control that gets
+    // clipped is not a control.
+    ok('a text cell shrinks its words, not its buttons',
+        /class="cellline"/.test(dash) && /class="ctext"/.test(dash));
+}
+
+// ---------- part: the agent page carries the Project column too (S-5) ----------
+{
+    const js = fs.readFileSync(path.resolve(__dirname, '../media/agentDetail.js'), 'utf8');
+    ok('‼️ the agent page lists a session\'s project', /'title', 'project'/.test(js));
+    const ts = fs.readFileSync(path.resolve(__dirname, '../src/panels/agentDetail.ts'), 'utf8');
+    ok('…and the host actually resolves one', /agentProjects\?\(\)/.test(ts)
+        && /projectStyle\?\.\(name\)/.test(ts));
+    const ext = fs.readFileSync(path.resolve(__dirname, '../src/extension.ts'), 'utf8');
+    const deps = ext.slice(ext.indexOf('const detailDeps = {'), ext.indexOf('const detailDeps = {') + 900);
+    ok('…off the same project axis the other two pages use',
+        /agentProjects: \(\) => agentProjectNames\(/.test(deps) && /projectStyle: /.test(deps));
+}
+
 // ---------- part 11: the host side of a bulk action ----------
 {
     const ext = fs.readFileSync(path.resolve(__dirname, '../src/extension.ts'), 'utf8');

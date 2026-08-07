@@ -261,10 +261,15 @@ export class ConsolePanel {
                 // …the same turn in limit terms, live. This is the figure that
                 // tracks the 5-hour window; the raw one beside it does not.
                 turnWTokens: Math.round(s.turnWTokens ?? 0),
-                // …how many ROUND TRIPS those tokens took, beside how many steps
-                // the strip can see — the two are different numbers and the
-                // tokens follow this one (see turnApiCalls).
+                // …how many ROUND TRIPS those tokens took, and how many steps
+                // they carried — two different numbers, and the tokens follow
+                // the first (see turnApiCalls). The steps are counted by the
+                // reducer, not by the strip walking its own rows: only the
+                // reducer sees a thinking block, which is never drawn and is
+                // the dearest step there is (see turnSteps / turnThinking).
                 turnApiCalls: s.turnApiCalls ?? 0,
+                turnSteps: s.turnSteps ?? 0,
+                turnThinking: s.turnThinking ?? 0,
                 // …priced at the RUNNING turn's own model: a switch applies from
                 // the next turn, so `model` can already be the next one's.
                 turnCost: s.turnUsage

@@ -114,6 +114,33 @@ export function optStr(args: Record<string, unknown>, key: string): string {
 }
 
 /**
+ * The run dimensions an automation can state — read the same way for every op
+ * that installs one.
+ *
+ * ‼️ ONE SPELLING, OR THE TWO SURFACES DRIFT. The page's form offers model ·
+ * effort · permission mode · CLI · working folder · priority · project on a
+ * schedule and on a trigger; an agent driving the same feature over the bridge
+ * has to be able to say the same things with the same names, or "run it on
+ * opus at low effort" means one thing on screen and another in a request
+ * (`_REF/agentfarm-dev.md`). Absent fields are left out entirely rather than
+ * written as empty strings — "not stated" is not the same as "no flag".
+ */
+export function bridgeRunDimensions(args: Record<string, unknown>): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    for (const k of ['model', 'effort', 'permissionMode', 'cli', 'workDir']) {
+        const v = optStr(args, k);
+        if (v) { out[k] = v; }
+    }
+    // `project` on the wire, `projectId` in the model: the caller names the
+    // thing, the store holds its id.
+    const project = optStr(args, 'project') || optStr(args, 'projectId');
+    if (project) { out.projectId = project; }
+    const priority = Number(args.priority);
+    if (Number.isFinite(priority) && priority) { out.priority = Math.trunc(priority); }
+    return out;
+}
+
+/**
  * The session (or sessions) an op was called about — `sessionId`, `sessionIds`,
  * or both.
  *

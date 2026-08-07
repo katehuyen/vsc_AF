@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 import { AgentInfo } from './agents';
 import { DispatchRule, dispatchText } from './dispatch';
 import { LiveEvent, LiveMonitor } from './live';
-import { FarmTrigger, TaskManager, TaskMode } from './tasks';
+import { FarmTrigger, RunDimensions, runExtras, TaskManager, TaskMode } from './tasks';
 import { normPath, safeReadFile, truncate } from './util';
 
 export interface DispatchOptions {
@@ -161,11 +161,11 @@ export class TriggerManager implements vscode.Disposable {
             return;
         }
         const prompt = substitute(action.prompt);
-        // No project: a trigger fires off a file change or a webhook, not off a
-        // person working in a project. See TaskManager.addTask.
+        // The project is the trigger's own declaration and nothing else: a
+        // trigger fires off a file change or a webhook, not off a person working
+        // in a project, so the window is never read (see TaskManager.addTask).
         const task = this.tasks.addTask(agent, action.title, prompt, action.mode,
-            { fromTrigger: trigger.id, projectId: undefined });
-        if (action.model) { task.model = action.model; }
+            { fromTrigger: trigger.id, projectId: action.projectId || undefined, ...runExtras(action) });
         void vscode.window.showInformationMessage(
             `Agent Farm: trigger "${trigger.title}" fired (${reason}) → task "${action.title}".`);
         this.tasks.startTask(task);
@@ -200,9 +200,9 @@ export class TriggerManager implements vscode.Disposable {
         }
         const agent = this.getAgents().find(a => a.name === result.agent);
         if (!agent) { return; }
+        const dims = action as RunDimensions;
         const task = this.tasks.addTask(agent, `${action.title} → ${agent.name}`, prompt, action.mode,
-            { fromTrigger: trigger.id, projectId: undefined });
-        if ((action as { model?: string }).model) { task.model = (action as { model?: string }).model; }
+            { fromTrigger: trigger.id, projectId: dims.projectId || undefined, ...runExtras(dims) });
         void vscode.window.showInformationMessage(
             `Agent Farm: dispatch "${trigger.title}" (${reason}) → ${agent.name} [${result.method}: ${truncate(result.reason, 60)}].`);
         this.tasks.startTask(task);

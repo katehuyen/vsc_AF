@@ -699,6 +699,121 @@ ok('the plan tab does NOT inherit the run tab filters', !html().includes('status
         posted.some(p => p.type === 'task' && p.act === 'clone' && p.id === 'r9'));
 }
 
+// ------------------------- U-9: the page makes a PLAN object too ----------
+// The run side got the form in 3.80.0 and the plan side did not, which left the
+// worse half untouched: `addSchedule` asked six to eight boxes in a row and
+// could not ask effort, permission mode, project, working folder or priority —
+// so a SCHEDULE could say less about a run than the task it produces, and a
+// task is exactly what a schedule is before it happens.
+{
+    const send = (data) => onMessage.forEach(fn => fn({ data }));
+    const fld = (id) => sandbox.document.getElementById(id);
+    clickData('tab', 'plan');
+    posted = [];
+
+    // ---- the + no longer hands the job back to a dialog
+    clickData('add', 'schedule');
+    ok('+ Schedule asks the host for the form', posted[0] && posted[0].type === 'plan-add'
+        && posted[0].kind === 'schedule');
+    // ‼️ THE ONE BUTTON THAT DID THE WRONG THING. There was no + Template at
+    // all, and the kind it would have posted was mapped to `runTemplate` on the
+    // host — an ADD button that RUNS.
+    posted = [];
+    clickData('add', 'template');
+    ok('+ Template exists, and asks to CREATE one', posted[0] && posted[0].type === 'plan-add'
+        && posted[0].kind === 'template');
+
+    // ---- the host opens the form; it is the same form
+    send({ type: 'plan-compose', kind: 'schedule', seed: { mode2: 'new' } });
+    ok('a plan object is composed ON the page', /id="ntbox"/.test(html()));
+    ok('…and it is the run form, with every dimension a task has',
+        /id="nt-model"/.test(html()) && /id="nt-effort"/.test(html())
+        && /id="nt-permissionMode"/.test(html()) && /id="nt-project"/.test(html())
+        && /id="nt-priority"/.test(html()) && /id="nt-workdir"/.test(html()));
+    // ‼️ …and the project does NOT open on the window's. A schedule fires at
+    // 03:00 with nobody looking; the only honest project is one it declares.
+    ok('an automation opens with no project rather than the window\'s',
+        !/value="prj_1" selected/.test(html()));
+    ok('it asks when it fires', /id="nt-every"/.test(html()) && /id="nt-time"/.test(html()));
+    ok('…and what happens to a missed occurrence', /id="nt-missed"/.test(html()));
+    ok('it offers the guard — the brake that costs nothing', /id="nt-guardKind"/.test(html()));
+
+    // ---- fields that change the SHAPE of the form redraw it
+    fld('nt-every').value = 'weekly';
+    fld('nt-every').fire('change');
+    ok('weekly brings the day picker with it', /id="nt-dow"/.test(html()));
+    fld('nt-every').value = 'once';
+    fld('nt-every').fire('change');
+    ok('once swaps the time of day for a moment', /id="nt-onceAt"/.test(html())
+        && !/id="nt-time"/.test(html()));
+    ok('…and a one-off has nothing to say about a missed occurrence',
+        !/id="nt-missed"/.test(html()));
+    fld('nt-every').value = 'daily';
+    fld('nt-every').fire('change');
+    fld('nt-guardKind').value = 'folderHasFiles';
+    fld('nt-guardKind').fire('change');
+    ok('a guard that looks at a folder asks for the folder', /id="nt-guardPath"/.test(html()));
+    ok('…and what does not count as work there', /id="nt-guardExcept"/.test(html()));
+
+    // ---- it refuses in the form, never in a modal
+    posted = [];
+    fld('nt-add').click();
+    ok('a nameless schedule is refused where the mistake is',
+        !posted.some(p => p.type === 'plan-save') && html().includes('needs a name'));
+    fld('nt-title').value = 'nightly filing';
+    fld('nt-title').fire('input');
+    posted = [];
+    fld('nt-add').click();
+    ok('…and so is one with no prompt',
+        !posted.some(p => p.type === 'plan-save') && html().includes('needs a prompt'));
+    fld('nt-prompt').value = 'file everything in the inbox';
+    fld('nt-prompt').fire('input');
+    posted = [];
+    fld('nt-add').click();
+    ok('…and a guard with no path, because it could never pass',
+        !posted.some(p => p.type === 'plan-save') && html().includes('take the guard off'));
+    fld('nt-guardPath').value = 'D:/zone/inbox';
+    fld('nt-guardPath').fire('input');
+    fld('nt-effort').value = 'low';
+    fld('nt-effort').fire('change');
+    posted = [];
+    fld('nt-add').click();
+    const saved = posted.find(p => p.type === 'plan-save');
+    ok('a complete schedule is sent as ONE message, whole', !!saved);
+    ok('…carrying the dimensions the dialog chain could never ask',
+        saved && saved.item.effort === 'low' && saved.item.kind === 'schedule');
+    ok('…and its guard', saved && saved.item.guardKind === 'folderHasFiles'
+        && saved.item.guardPath === 'D:/zone/inbox');
+
+    // ---- a trigger is the same form with its own second half
+    send({ type: 'plan-compose', kind: 'trigger', seed: { mode2: 'new' } });
+    ok('a trigger asks what fires it', /id="nt-ttype"/.test(html()) && /id="nt-watchPath"/.test(html()));
+    ok('…and its frequency brakes', /id="nt-debounceSec"/.test(html())
+        && /id="nt-cooldownSec"/.test(html()) && /id="nt-maxPerHour"/.test(html()));
+    fld('nt-ttype').value = 'hook';
+    fld('nt-ttype').fire('change');
+    ok('a hook trigger asks which event instead of a path',
+        /id="nt-hookEvent"/.test(html()) && !/id="nt-watchPath"/.test(html()));
+    fld('nt-act').value = 'dispatch';
+    fld('nt-act').fire('change');
+    ok('a dispatch trigger stops asking for a fixed agent', !/id="nt-agent"/.test(html()));
+
+    // ---- an edit is the same form, prefilled
+    send({
+        type: 'plan-compose', kind: 'schedule',
+        seed: { mode2: 'edit', id: 's1', title: 'morning', prompt: 'p', every: 'daily', time: '07:30' }
+    });
+    ok('editing says so rather than pretending to be new', html().includes('Edit schedule'));
+    ok('…and arrives filled in', /id="nt-title"[^>]*value="morning"/.test(html()));
+    posted = [];
+    fld('nt-add').click();
+    const edited = posted.find(p => p.type === 'plan-save');
+    ok('saving an edit names the object it edits',
+        edited && edited.item.mode2 === 'edit' && edited.item.id === 's1');
+    send({ type: 'plan-saved', text: 'Schedule saved.' });
+    ok('the form closes on the host\'s receipt', !/id="ntbox"/.test(html()));
+}
+
 // --------------------------------------------------------- empty states
 // The page captured DATA by reference at load, so a fresh object would be
 // ignored — mutate the object it is actually holding.

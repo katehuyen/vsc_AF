@@ -447,7 +447,11 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     ok('full column set incl. Agent / Tools / Err / Ctx now',
         ['>Agent</th>', '>Tools</th>', '>Err</th>', '>Ctx now</th>'].every(h => sessHtml().includes(h)));
     ok('default sort is Recent (newest row first)', order().join(',') === 'new.jsonl,mid.jsonl,old.jsonl');
-    ok('active session carries the green dot + ⌨', /dot on[^>]*><\/span> dev/.test(sessHtml()) && sessHtml().includes('data-sid="s-new"'));
+    // the name now sits in its own truncating span — the words are the only
+    // part of a text cell that may shrink (see sessionsTable NARROW/SHARE)
+    ok('active session carries the green dot + ⌨',
+        /dot on[^>]*><\/span> <span class="ctext">dev/.test(sessHtml())
+        && sessHtml().includes('data-sid="s-new"'));
     ok('ctx cell rendered (~ known, — unknown)', sessHtml().includes('~155000') && sessHtml().includes('>—</td>'));
     ok('every row folds', sess().querySelectorAll('[data-fold]').length === 3);
     ok('session rows are tinted apart from nested turn content',

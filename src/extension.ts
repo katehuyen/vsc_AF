@@ -167,7 +167,9 @@ import {
     applySuggestionToClaudeMd, collectUserMessages, scanCorrections, SuggestionStore
 } from './core/suggest';
 import { buildWeeklyFactsText, generateWeeklySummary, isoWeek, WeeklyFacts } from './core/summary';
-import { argSessionIds, argStr, BridgeRegistry, need, optStr, parseBridgeRequest } from './core/bridge';
+import {
+    argSessionIds, argStr, BridgeRegistry, bridgeRunDimensions, need, optStr, parseBridgeRequest
+} from './core/bridge';
 import {
     archivedOutputBody, buildCliCommand, CliProfile, FarmSchedule, FarmTask, FarmTemplate,
     FarmTrigger, FarmWorkflow, MissedPolicy, newId, parseSeedSchedules, PREV_OUTPUT_PLACEHOLDER,
@@ -2782,7 +2784,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'schedules.add',
-            describe: 'Install a schedule. args: agent (name|id), title, prompt, kind? (daily|weekly|once), hour?, minute?, dow?, onceAt?, mode?, missed? (skip|run|ask), model? (opus|sonnet|haiku — stated ON the schedule, beats the modelPolicy engine), fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} — no agent is woken when it fails)',
+            describe: 'Install a schedule. args: agent (name|id), title, prompt, kind? (daily|weekly|once), hour?, minute?, dow?, onceAt?, mode?, missed? (skip|run|ask), and the SAME run dimensions a task takes — model?, effort?, permissionMode?, cli?, workDir?, priority?, project? (a schedule fires with nobody looking, so a project is DECLARED here or it has none) — plus fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} — no agent is woken when it fails)',
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const seeds = parseSeedSchedules(JSON.stringify([
@@ -2795,8 +2797,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const fireIf = args.fireIf === undefined ? undefined : parsePrecondition(args.fireIf);
                 need(args.fireIf === undefined || fireIf,
                     'fireIf.kind must be folderHasFiles | fileMissing | pathChangedWithin | queueHasWork.');
-                const s = taskManager.addSchedule({ ...seeds[0], model: model || undefined, fireIf });
-                return { id: s.id, title: s.title, model: s.model ?? null, fireIf: s.fireIf ?? null };
+                // ‼️ The same dimensions the form offers, in the same words — an
+                // agent setting a schedule up over the bridge and a person
+                // setting one up on the page must be able to say the same
+                // things (see core/tasks.ts RunDimensions).
+                const dims = bridgeRunDimensions(args);
+                const s = taskManager.addSchedule({ ...seeds[0], model: model || undefined, fireIf, ...dims });
+                return {
+                    id: s.id, title: s.title, model: s.model ?? null, fireIf: s.fireIf ?? null,
+                    effort: s.effort ?? null, permissionMode: s.permissionMode ?? null,
+                    project: s.projectId ?? null, workDir: s.workDir ?? null, priority: s.priority ?? 0
+                };
             }
         },
         {
@@ -2906,6 +2917,89 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 fireCount: t.fireCount ?? 0, skipCount: t.skipCount ?? 0,
                 lastSkipReason: t.lastSkipReason ?? null
             }))
+        },
+        {
+            // ‼️ The page can make a trigger, so the bridge can too — the rule
+            // in `_REF/agentfarm-dev.md`: a function a person can reach from a
+            // panel is a function an agent can be told to use, in the same
+            // commit, with the same dimensions.
+            op: 'triggers.add',
+            describe: 'Install a trigger. args: title, type (watch|hook|webhook), watchPath? (watch), hookEvent?/hookAgent? (hook), token? (webhook — generated when absent), action? (task|dispatch|workflow, default task), agent (name|id, for action=task), prompt (for task/dispatch), mode? (headless|interactive), workflow? (id|title, for action=workflow), debounceSec?, cooldownSec?, maxPerHour?, enabled?, the run dimensions model?/effort?/permissionMode?/cli?/workDir?/priority?/project?, and fireIf? (same shape as schedules.add — the free brake that stops a wake-up before it costs anything)',
+            handler: (args) => {
+                const title = argStr(args, 'title');
+                need(!taskManager.triggers.some(t => t.title === title),
+                    `A trigger titled "${title}" already exists.`);
+                const type = optStr(args, 'type') || 'watch';
+                need(['watch', 'hook', 'webhook'].includes(type),
+                    'type must be watch | hook | webhook.');
+                const actKind = optStr(args, 'action') || 'task';
+                need(['task', 'dispatch', 'workflow'].includes(actKind),
+                    'action must be task | dispatch | workflow.');
+                const mode: TaskMode = optStr(args, 'mode') === 'interactive' ? 'interactive' : 'headless';
+                const dims = bridgeRunDimensions(args);
+                let action: FarmTrigger['action'];
+                if (actKind === 'workflow') {
+                    const ref = optStr(args, 'workflow') || optStr(args, 'workflowId');
+                    const w = taskManager.workflows.find(x => x.id === ref || x.title === ref);
+                    need(w, 'Workflow not found — workflows.list shows current ones.');
+                    action = { kind: 'workflow', workflowId: (w as FarmWorkflow).id };
+                } else if (actKind === 'dispatch') {
+                    action = { kind: 'dispatch', title, prompt: argStr(args, 'prompt'), mode, ...dims };
+                } else {
+                    const agent = findAgent(argStr(args, 'agent'));
+                    action = {
+                        kind: 'task', agentId: agent.id, agentName: agent.name,
+                        title, prompt: argStr(args, 'prompt'), mode, ...dims
+                    };
+                }
+                need(type !== 'watch' || optStr(args, 'watchPath'),
+                    'A watch trigger needs watchPath — the file or folder it watches.');
+                const fireIf = args.fireIf === undefined ? undefined : parsePrecondition(args.fireIf);
+                need(args.fireIf === undefined || fireIf,
+                    'fireIf.kind must be folderHasFiles | fileMissing | pathChangedWithin | queueHasWork.');
+                const num = (k: string, d: number): number => {
+                    const n = Number(args[k]);
+                    return Number.isFinite(n) ? Math.trunc(n) : d;
+                };
+                const t = taskManager.addTrigger({
+                    title, type: type as FarmTrigger['type'],
+                    watchPath: type === 'watch' ? optStr(args, 'watchPath') : undefined,
+                    hookEvent: type === 'hook' ? (optStr(args, 'hookEvent') || 'stop') : undefined,
+                    hookAgent: type === 'hook' ? (optStr(args, 'hookAgent') || undefined) : undefined,
+                    token: type === 'webhook' ? (optStr(args, 'token') || newId() + newId()) : undefined,
+                    action,
+                    debounceSec: num('debounceSec', 5),
+                    cooldownSec: num('cooldownSec', 60),
+                    maxPerHour: num('maxPerHour', 12),
+                    enabled: args.enabled !== false,
+                    fireIf
+                });
+                return { id: t.id, title: t.title, type: t.type, token: t.token ?? null, enabled: t.enabled };
+            }
+        },
+        {
+            op: 'templates.list',
+            describe: 'Saved prompt templates. args: none',
+            handler: () => taskManager.templates.map(t => ({
+                id: t.id, title: t.title, mode: t.mode, agent: t.agentName ?? null
+            }))
+        },
+        {
+            op: 'templates.add',
+            describe: 'Save a prompt template (launched by hand from its row). args: title, prompt, mode? (headless|interactive), agent? (name|id)',
+            handler: (args) => {
+                const title = argStr(args, 'title');
+                need(!taskManager.templates.some(t => t.title === title),
+                    `A template titled "${title}" already exists.`);
+                const who = optStr(args, 'agent');
+                const agent = who ? findAgent(who) : undefined;
+                const t = taskManager.addTemplate({
+                    title, prompt: argStr(args, 'prompt'),
+                    mode: optStr(args, 'mode') === 'interactive' ? 'interactive' : 'headless',
+                    agentId: agent?.id, agentName: agent?.name
+                });
+                return { id: t.id, title: t.title, agent: t.agentName ?? null };
+            }
         },
         {
             op: 'triggers.toggle',
@@ -6175,7 +6269,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         getInsights: () => insights,
         getPricing: () => pricing,
         contextBudget: () => cfg().get<number>('contextBudgetTokens', 8000),
-        taskRecords: () => allTaskRecords()
+        taskRecords: () => allTaskRecords(),
+        // The same project axis the Dashboard and the Sessions page use — the
+        // agent page's session table carries the Project column too (S-5).
+        agentProjects: () => agentProjectNames(
+            agents.map(a => ({ id: a.id, name: a.name, dir: a.dir })), projectStore.all()),
+        projectStyle: (name: string) => projectStyleOf(name)
     };
     const viewerDeps = {
         extensionUri: context.extensionUri,
@@ -11152,73 +11251,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             TasksPanel.compose(tasksDeps, agent ? { agent: agent.name } : undefined);
         }),
 
-        vscode.commands.registerCommand('agentfarm.addSchedule', async () => {
-            const agent = await resolveAgent(undefined);
-            if (!agent) { return; }
-            const title = await vscode.window.showInputBox({
-                prompt: `Schedule title for ${agent.name}`, ignoreFocusOut: true
-            });
-            if (!title) { return; }
-            const prompt = await vscode.window.showInputBox({
-                prompt: 'Prompt to send to claude', value: title, ignoreFocusOut: true
-            });
-            if (!prompt) { return; }
-            const kindPick = await vscode.window.showQuickPick(
-                [
-                    { label: 'Daily', sched: 'daily' as ScheduleKind },
-                    { label: 'Weekly', sched: 'weekly' as ScheduleKind },
-                    { label: 'Once', sched: 'once' as ScheduleKind }
-                ],
-                { ignoreFocusOut: true, placeHolder: 'How often?' }
-            );
-            if (!kindPick) { return; }
-
-            let hour = 9, minute = 0, dow: number | undefined, onceAt: number | undefined;
-            if (kindPick.sched === 'once') {
-                const when = await vscode.window.showInputBox({
-                    prompt: 'When? (YYYY-MM-DD HH:MM)', ignoreFocusOut: true,
-                    validateInput: v => isNaN(Date.parse(v.replace(' ', 'T'))) ? 'Use YYYY-MM-DD HH:MM' : undefined
-                });
-                if (!when) { return; }
-                onceAt = Date.parse(when.replace(' ', 'T'));
-            } else {
-                const time = await vscode.window.showInputBox({
-                    prompt: 'Time of day (HH:MM)', value: '09:00', ignoreFocusOut: true,
-                    validateInput: v => /^([01]?\d|2[0-3]):[0-5]\d$/.test(v) ? undefined : 'Use HH:MM (24h)'
-                });
-                if (!time) { return; }
-                [hour, minute] = time.split(':').map(Number);
-                if (kindPick.sched === 'weekly') {
-                    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-                    const dayPick = await vscode.window.showQuickPick(
-                        days.map((d, i) => ({ label: d, dow: i })), { ignoreFocusOut: true, placeHolder: 'Which day?' });
-                    if (!dayPick) { return; }
-                    dow = dayPick.dow;
-                }
-            }
-            const mode = await vscode.window.showQuickPick(
-                [
-                    { label: 'Interactive', mode: 'interactive' as TaskMode },
-                    { label: 'Headless', description: 'claude -p — runs and exits', mode: 'headless' as TaskMode }
-                ],
-                { ignoreFocusOut: true, placeHolder: 'Run mode' }
-            );
-            if (!mode) { return; }
-            // daily/weekly: what happens when the time passes with VS Code closed
-            let missed: MissedPolicy | undefined;
-            if (kindPick.sched !== 'once') {
-                const missedPick = await vscode.window.showQuickPick(MISSED_POLICY_PICKS,
-                    { ignoreFocusOut: true, placeHolder: 'If the scheduled time is missed (no VS Code window open)?' });
-                if (!missedPick) { return; }
-                missed = missedPick.missed;
-            }
-            taskManager.addSchedule({
-                agentId: agent.id, agentName: agent.name, title, prompt,
-                mode: mode.mode, kind: kindPick.sched, hour, minute, dow, onceAt, enabled: true, missed
-            });
-            void vscode.window.showInformationMessage(
-                `Agent Farm: schedule "${title}" created (runs while VS Code is open` +
-                (missed === 'run' ? '; a missed time is caught up in the next window' : '') + ').');
+        // ‼️ NO LONGER A CHAIN OF INPUT BOXES — U-9. This asked six to eight
+        // questions in a row and could not ask the five that decide what an
+        // unattended run DOES (effort, permission mode, project, working
+        // folder, priority). It opens the page's own form instead — the SAME
+        // form the toolbar + and a row's edit open, so the palette and the
+        // page can no longer make two different objects.
+        vscode.commands.registerCommand('agentfarm.addSchedule', () => {
+            TasksPanel.composePlan(tasksDeps, 'schedule');
         }),
 
         vscode.commands.registerCommand('agentfarm.startTask', (node?: TaskNode) => {
@@ -11272,68 +11312,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (node?.kind === 'schedule') { taskManager.deleteSchedule(node.schedule); }
         }),
         // Parity with editTrigger — changing a schedule's time used to mean delete + recreate.
-        vscode.commands.registerCommand('agentfarm.editSchedule', async (node?: TaskNode) => {
+        vscode.commands.registerCommand('agentfarm.editSchedule', (node?: TaskNode) => {
             if (node?.kind !== 'schedule') { return; }
-            const s = node.schedule;
-            const p2 = (n: number) => String(n).padStart(2, '0');
-            const title = await vscode.window.showInputBox({
-                prompt: 'Schedule title', value: s.title, ignoreFocusOut: true
-            });
-            if (!title) { return; }
-            const prompt = await vscode.window.showInputBox({
-                prompt: 'Prompt to send to claude', value: s.prompt, ignoreFocusOut: true
-            });
-            if (!prompt) { return; }
-            let { hour, minute, dow, onceAt } = s;
-            if (s.kind === 'once') {
-                const cur = onceAt ? new Date(onceAt) : new Date();
-                const when = await vscode.window.showInputBox({
-                    prompt: 'When? (YYYY-MM-DD HH:MM)', ignoreFocusOut: true,
-                    value: `${cur.getFullYear()}-${p2(cur.getMonth() + 1)}-${p2(cur.getDate())} ${p2(cur.getHours())}:${p2(cur.getMinutes())}`,
-                    validateInput: v => isNaN(Date.parse(v.replace(' ', 'T'))) ? 'Use YYYY-MM-DD HH:MM' : undefined
-                });
-                if (!when) { return; }
-                onceAt = Date.parse(when.replace(' ', 'T'));
-            } else {
-                const time = await vscode.window.showInputBox({
-                    prompt: 'Time of day (HH:MM)', value: `${p2(s.hour)}:${p2(s.minute)}`, ignoreFocusOut: true,
-                    validateInput: v => /^([01]?\d|2[0-3]):[0-5]\d$/.test(v) ? undefined : 'Use HH:MM (24h)'
-                });
-                if (!time) { return; }
-                [hour, minute] = time.split(':').map(Number);
-                if (s.kind === 'weekly') {
-                    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-                    const dayPick = await vscode.window.showQuickPick(
-                        days.map((d, i) => ({ label: `${d}${i === s.dow ? ' (current)' : ''}`, dow: i })),
-                        { ignoreFocusOut: true, placeHolder: 'Which day?' });
-                    if (!dayPick) { return; }
-                    dow = dayPick.dow;
-                }
-            }
-            let missed = s.missed;
-            if (s.kind !== 'once') {
-                const cur = s.missed ?? 'skip';
-                const missedPick = await vscode.window.showQuickPick(
-                    MISSED_POLICY_PICKS.map(p => ({ ...p, label: `${p.label}${p.missed === cur ? ' (current)' : ''}` })),
-                    { ignoreFocusOut: true, placeHolder: 'If the scheduled time is missed (no VS Code window open)?' });
-                if (!missedPick) { return; }
-                missed = missedPick.missed;
-            }
-            const model = await pickAutomationModel(s.model);
-            if (model === undefined) { return; }
-            const fireIf = await pickPrecondition(s.fireIf, s.title);
-            if (fireIf === undefined) { return; }
-            const patch: Partial<FarmSchedule> = {
-                title, prompt, hour, minute, dow, onceAt, missed,
-                model: model || undefined, fireIf: fireIf.value
-            };
-            // switching catch-up ON settles the past first — otherwise the edit
-            // itself would instantly fire an occurrence from before the choice
-            if (missed !== (s.missed ?? 'skip') && missed !== 'skip') {
-                patch.lastRunKey = previousOccurrenceKey({ kind: s.kind, dow }, new Date());
-            }
-            taskManager.updateSchedule(s.id, patch);
+            TasksPanel.composePlan(tasksDeps, 'schedule', node.schedule.id);
         }),
+
         vscode.commands.registerCommand('agentfarm.runScheduleNow', (node?: TaskNode) => {
             if (node?.kind === 'schedule') { taskManager.runScheduleNow(node.schedule); }
         }),
@@ -12225,155 +12208,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             void vscode.window.showInformationMessage(`Agent Farm: webhook URL copied — ${url}`);
         }),
 
-        vscode.commands.registerCommand('agentfarm.addTrigger', async () => {
-            const title = await vscode.window.showInputBox({
-                prompt: 'Trigger name (e.g. "Inbox factory")', ignoreFocusOut: true
-            });
-            if (!title) { return; }
-            const typePick = await vscode.window.showQuickPick(
-                [
-                    { label: '$(file-directory) Watch a folder', description: 'fires when files change inside', type: 'watch' as const, dir: true },
-                    { label: '$(file) Watch a file', description: 'fires when the file changes', type: 'watch' as const, dir: false },
-                    { label: '$(broadcast) Hook event', description: 'fires on a live event (needs Live Hooks)', type: 'hook' as const, dir: false },
-                    { label: '$(globe) Webhook', description: 'fires when n8n/Make/anything POSTs to a local URL', type: 'webhook' as const, dir: false }
-                ],
-                { placeHolder: 'What should fire this trigger?', ignoreFocusOut: true }
-            );
-            if (!typePick) { return; }
-
-            let watchPath: string | undefined;
-            let hookEvent: string | undefined;
-            let hookAgent: string | undefined;
-            let token: string | undefined;
-            if (typePick.type === 'webhook') {
-                token = newId() + newId();
-            } else if (typePick.type === 'watch') {
-                const picked = await vscode.window.showOpenDialog({
-                    canSelectFolders: typePick.dir, canSelectFiles: !typePick.dir,
-                    canSelectMany: false, openLabel: 'Watch this'
-                });
-                if (!picked?.length) { return; }
-                watchPath = picked[0].fsPath;
-            } else {
-                const eventPick = await vscode.window.showQuickPick(
-                    [
-                        { label: 'stop', description: 'an agent finished its turn' },
-                        { label: 'end', description: 'a session ended' },
-                        { label: 'permission', description: 'an agent is waiting for permission' },
-                        { label: 'compact', description: 'a session compacted' },
-                        { label: 'subagent', description: 'a subagent finished' }
-                    ],
-                    { placeHolder: 'Which live event?', ignoreFocusOut: true }
-                );
-                if (!eventPick) { return; }
-                hookEvent = eventPick.label;
-                const agentFilter = await vscode.window.showQuickPick(
-                    [{ label: 'Any agent' }, ...agents.map(a => ({ label: a.name }))],
-                    { placeHolder: 'Only for a specific agent?', ignoreFocusOut: true });
-                if (!agentFilter) { return; }
-                if (agentFilter.label !== 'Any agent') { hookAgent = agentFilter.label; }
-            }
-
-            const actionPick = await vscode.window.showQuickPick(
-                [
-                    { label: '$(play) Run a task on an agent you pick', description: 'next: choose the agent, then the prompt', id: 'task' },
-                    { label: '$(arrow-swap) Dispatch — route to the best agent automatically', description: 'no fixed agent: rules + cheap-model classifier decide per firing', id: 'dispatch' },
-                    ...(taskManager.workflows.length ? [{ label: '$(type-hierarchy-sub) Run a workflow', id: 'workflow' }] : [])
-                ],
-                { placeHolder: 'What should it do when it fires?', ignoreFocusOut: true }
-            );
-            if (!actionPick) { return; }
-
-            let action: FarmTrigger['action'];
-            if (actionPick.id === 'dispatch') {
-                const prompt = await vscode.window.showInputBox({
-                    prompt: 'Task prompt — {watch} = watched path, {payload} = webhook body (routing looks at the payload)',
-                    value: typePick.type === 'webhook' ? 'Şu isteği işle: {payload}'
-                        : 'Şu hedefteki yeni işi değerlendir ve gereğini yap: {watch}',
-                    ignoreFocusOut: true
-                });
-                if (!prompt) { return; }
-                action = { kind: 'dispatch', title, prompt, mode: 'headless' };
-            } else if (actionPick.id === 'workflow') {
-                const wfPick = await vscode.window.showQuickPick(
-                    taskManager.workflows.map(w => ({ label: w.title, description: `${w.steps.length} steps`, w })),
-                    { placeHolder: 'Which workflow?', ignoreFocusOut: true });
-                if (!wfPick) { return; }
-                action = { kind: 'workflow', workflowId: wfPick.w.id };
-            } else {
-                const agentPick = await vscode.window.showQuickPick(
-                    agents.map(a => ({ label: a.name, description: a.dir, agent: a })),
-                    { placeHolder: 'Which agent runs this task when the trigger fires?', ignoreFocusOut: true }
-                );
-                if (!agentPick) { return; }
-                const agent = agentPick.agent;
-                const prompt = await vscode.window.showInputBox({
-                    prompt: `Prompt for ${agent.name} — {watch} = watched path, {payload} = webhook body`,
-                    value: typePick.type === 'watch' ? 'DUTIES.md dosyanı oku ve şu hedefle ilgili görevini uygula: {watch}'
-                        : typePick.type === 'webhook' ? 'Şu isteği işle: {payload}' : '',
-                    ignoreFocusOut: true
-                });
-                if (!prompt) { return; }
-                action = {
-                    kind: 'task', agentId: agent.id, agentName: agent.name,
-                    title: title, prompt, mode: 'headless'
-                };
-            }
-
-            // Per-trigger timing: defaults are fine for most, but every trigger can be tuned
-            // here or later via right-click → Edit Trigger (values are read at fire time).
-            const defDebounce = typePick.type === 'watch' ? 10 : 1;
-            let debounceSec = defDebounce, cooldownSec = 60, maxPerHour = 6;
-            const timingPick = await vscode.window.showQuickPick(
-                [
-                    { label: '$(watch) Default timing', description: `debounce ${defDebounce}s · cooldown 60s · max 6/h`, custom: false },
-                    { label: '$(gear) Customize timing…', description: 'set debounce, cooldown and hourly cap for this trigger', custom: true }
-                ],
-                { placeHolder: 'Trigger timing (Esc = defaults)', ignoreFocusOut: true }
-            );
-            if (timingPick?.custom) {
-                const askNum = async (label: string, value: number, min: number) => {
-                    const v = await vscode.window.showInputBox({
-                        prompt: label, value: String(value), ignoreFocusOut: true,
-                        validateInput: s => /^\d+$/.test(s) && Number(s) >= min ? undefined : `Enter a whole number ≥ ${min}`
-                    });
-                    return v === undefined ? undefined : Number(v);
-                };
-                debounceSec = await askNum('Debounce seconds — quiet time after a change before firing', debounceSec, 1) ?? debounceSec;
-                cooldownSec = await askNum('Cooldown seconds — minimum gap between two firings', cooldownSec, 0) ?? cooldownSec;
-                maxPerHour = await askNum('Max firings per hour (0 = unlimited)', maxPerHour, 0) ?? maxPerHour;
-            }
-
-            // The content brake. Offered up-front for a WATCH trigger because
-            // that is where it matters most: a folder watch fires on any change,
-            // including noise, and without a guard every one of those is a paid
-            // agent wake-up.
-            let fireIf: Precondition | undefined;
-            if (typePick.type === 'watch') {
-                const guardPick = await pickPrecondition(
-                    watchPath ? { kind: 'folderHasFiles', path: watchPath, except: ['_LOG_.md'] } : undefined,
-                    title);
-                if (guardPick === undefined) { return; }
-                fireIf = guardPick.value;
-            }
-
-            taskManager.addTrigger({
-                title, type: typePick.type, watchPath, hookEvent, hookAgent, token, action, fireIf,
-                debounceSec, cooldownSec, maxPerHour, enabled: true
-            });
-            const target = action.kind === 'task' ? `runs on ${action.agentName}`
-                : action.kind === 'dispatch' ? 'dispatches to the best agent per firing'
-                    : 'runs a workflow';
-            const timing = `debounce ${debounceSec}s, cooldown ${cooldownSec}s, max ${maxPerHour || '∞'}/h`;
-            if (typePick.type === 'webhook' && token) {
-                const url = `http://127.0.0.1:${cfg().get<number>('livePort', 8377)}/trigger/${token}`;
-                await vscode.env.clipboard.writeText(url);
-                void vscode.window.showInformationMessage(
-                    `Agent Farm: webhook trigger armed — ${target}; URL copied to clipboard: ${url} (POST; the request body reaches the task as {payload}; ${timing}).`);
-            } else {
-                void vscode.window.showInformationMessage(
-                    `Agent Farm: trigger "${title}" armed — ${target} (${timing}; right-click the trigger to edit).`);
-            }
+        // ‼️ NO LONGER A CHAIN OF INPUT BOXES — U-9. This asked six to eight
+        // questions in a row and could not ask the five that decide what an
+        // unattended run DOES (effort, permission mode, project, working
+        // folder, priority). It opens the page's own form instead — the SAME
+        // form the toolbar + and a row's edit open, so the palette and the
+        // page can no longer make two different objects.
+        vscode.commands.registerCommand('agentfarm.addTrigger', () => {
+            TasksPanel.composePlan(tasksDeps, 'trigger');
         }),
 
         vscode.commands.registerCommand('agentfarm.toggleTrigger', (node?: TaskNode) => {
@@ -12388,95 +12230,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('agentfarm.fireTrigger', (node?: TaskNode) => {
             if (node?.kind === 'trigger') { triggerManager.fire(node.trigger, 'manual'); }
         }),
-        vscode.commands.registerCommand('agentfarm.editTrigger', async (node?: TaskNode) => {
+        vscode.commands.registerCommand('agentfarm.editTrigger', (node?: TaskNode) => {
             if (node?.kind !== 'trigger') { return; }
-            const t = node.trigger;
-            const fields = [
-                { label: '$(edit) Rename', description: t.title, id: 'title' },
-                ...(t.action.kind !== 'workflow'
-                    ? [{ label: '$(comment) Prompt', description: t.action.prompt.replace(/\s+/g, ' ').slice(0, 60), id: 'prompt' }] : []),
-                ...(t.action.kind === 'task'
-                    ? [{ label: '$(person) Agent', description: t.action.agentName, id: 'agent' }] : []),
-                ...(t.action.kind !== 'workflow'
-                    ? [{ label: '$(sparkle) Model', description: t.action.model || 'default (policy/agent)', id: 'model' }] : []),
-                {
-                    label: '$(shield) Fire only if… (precondition)',
-                    description: describePrecondition(t.fireIf) || 'no guard — fires on ANY change',
-                    id: 'fireIf'
-                },
-                { label: '$(watch) Debounce seconds', description: String(t.debounceSec), id: 'debounce' },
-                { label: '$(history) Cooldown seconds', description: String(t.cooldownSec), id: 'cooldown' },
-                { label: '$(dashboard) Max firings per hour (0 = unlimited)', description: String(t.maxPerHour), id: 'cap' }
-            ];
-            const pick = await vscode.window.showQuickPick(fields,
-                { placeHolder: `Edit trigger "${t.title}"`, ignoreFocusOut: true });
-            if (!pick) { return; }
-            const askNum = async (label: string, value: number, min: number) => {
-                const v = await vscode.window.showInputBox({
-                    prompt: label, value: String(value), ignoreFocusOut: true,
-                    validateInput: s => /^\d+$/.test(s) && Number(s) >= min ? undefined : `Enter a whole number ≥ ${min}`
-                });
-                return v === undefined ? undefined : Number(v);
-            };
-            switch (pick.id) {
-                case 'title': {
-                    const v = await vscode.window.showInputBox({
-                        prompt: 'Trigger name', value: t.title, ignoreFocusOut: true });
-                    if (!v) { return; }
-                    t.title = v;
-                    if (t.action.kind !== 'workflow') { t.action.title = v; }
-                    break;
-                }
-                case 'model': {
-                    if (t.action.kind === 'workflow') { return; }
-                    const m = await pickAutomationModel(t.action.model);
-                    if (m === undefined) { return; }
-                    t.action.model = m || undefined;
-                    break;
-                }
-                case 'fireIf': {
-                    const pre = await pickPrecondition(t.fireIf, t.title);
-                    if (pre === undefined) { return; }
-                    t.fireIf = pre.value;
-                    break;
-                }
-                case 'prompt': {
-                    if (t.action.kind === 'workflow') { return; }
-                    const v = await vscode.window.showInputBox({
-                        prompt: 'Task prompt — {watch} = watched path, {payload} = webhook body',
-                        value: t.action.prompt, ignoreFocusOut: true });
-                    if (!v) { return; }
-                    t.action.prompt = v;
-                    break;
-                }
-                case 'agent': {
-                    if (t.action.kind !== 'task') { return; }
-                    const agent = await resolveAgent(undefined);
-                    if (!agent) { return; }
-                    t.action.agentId = agent.id;
-                    t.action.agentName = agent.name;
-                    break;
-                }
-                case 'debounce': {
-                    const v = await askNum('Debounce seconds — quiet time after a change before firing', t.debounceSec, 1);
-                    if (v === undefined) { return; }
-                    t.debounceSec = v;
-                    break;
-                }
-                case 'cooldown': {
-                    const v = await askNum('Cooldown seconds — minimum gap between two firings', t.cooldownSec, 0);
-                    if (v === undefined) { return; }
-                    t.cooldownSec = v;
-                    break;
-                }
-                case 'cap': {
-                    const v = await askNum('Max firings per hour (0 = unlimited)', t.maxPerHour, 0);
-                    if (v === undefined) { return; }
-                    t.maxPerHour = v;
-                    break;
-                }
-            }
-            taskManager.updateTrigger(t);
+            TasksPanel.composePlan(tasksDeps, 'trigger', node.trigger.id);
         }),
 
         vscode.commands.registerCommand('agentfarm.openTaskHistory', async () => {
@@ -12856,12 +12612,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (node?.kind === 'workflow') { taskManager.runWorkflow(node.workflow); }
         }),
 
-        vscode.commands.registerCommand('agentfarm.renameWorkflow', async (node?: TaskNode) => {
+        vscode.commands.registerCommand('agentfarm.renameWorkflow', (node?: TaskNode) => {
             if (node?.kind !== 'workflow') { return; }
-            const title = await vscode.window.showInputBox({
-                prompt: 'Workflow name', value: node.workflow.title, ignoreFocusOut: true
-            });
-            if (title) { taskManager.renameWorkflow(node.workflow, title); }
+            TasksPanel.composePlan(tasksDeps, 'workflow', node.workflow.id);
         }),
 
         vscode.commands.registerCommand('agentfarm.addWorkflowStep', async (node?: TaskNode) => {

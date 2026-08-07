@@ -354,8 +354,16 @@
                     <button data-add="schedule" title="run an agent at a set time">+ Schedule</button>
                     <button class="secondary" data-add="trigger" title="run an agent when something happens">+ Trigger</button>
                     <button class="secondary" data-add="workflow" title="chain several agents">+ Workflow</button>
+                    <!-- ‼️ This button did not exist, and the one thing worse
+                         than a missing button was what "+ Template" would have
+                         done: the plan-add message mapped the template kind to
+                         agentfarm.runTemplate, so the ADD button RAN one. There
+                         was no way to make a template on this page at all. -->
+                    <button class="secondary" data-add="template" title="save a prompt you launch by hand">+ Template</button>
                 </span>
             </div>
+            ${composer && (COMPOSE[composer.kind] || COMPOSE.task).tab === 'plan' ? composerHtml() : ''}
+            ${!composer && composerMsg && tab === 'plan' ? `<div class="ntmsg">${C.esc(composerMsg)}</div>` : ''}
             ${activeChips(v, PLAN_DEF, { kind: 'kind', agent: 'agent', model: 'model', state: 'state', guard: 'guard', issues: 'needs attention' }, rows.length, d.plan.length)}
             <div class="bulk" ${selected.size ? '' : 'hidden'}>
                 <b><span id="bulkn">${selected.size}</span> selected</b>
@@ -389,32 +397,91 @@
      * means the same thing it means in the launcher — no flag, and whatever the
      * agent and the CLI already decide stays in charge.
      */
+    /**
+     * ‼️ AND IT MAKES EVERY OTHER KIND TOO — U-9.
+     *
+     * The run side got this form in 3.80.0; the PLAN side did not, and a plan
+     * object is not a lesser thing than a task. Measured in `extension.ts`:
+     * `addSchedule` asked six to eight boxes in a row and could not ask effort,
+     * permission mode, project, working folder or priority — the dimensions
+     * that decide what an unattended run DOES. A schedule is a task that has
+     * not happened yet, so it could say strictly less about itself than the
+     * thing it produces.
+     *
+     * One composer, five kinds. The shared block (agent · prompt · title · mode
+     * · model · effort · permissions · project · CLI · folder · priority) is
+     * written once and every kind that runs something gets it; the kind-specific
+     * block sits under it. `agentfarm.addSchedule` and friends no longer open a
+     * dialog — they open THIS, so the palette, the sidebar + and the page all
+     * produce the same object.
+     */
     let composer = null;      // null = closed; an object = the draft
     let composerMsg = '';     // a refusal or a confirmation, shown in the card
     let composerDup = false;  // the host says an identical task is already queued
 
-    function newDraft(seed) {
+    /** Which kinds carry the shared run block, and which tab they belong to. */
+    const COMPOSE = {
+        task: { tab: 'run', label: 'task', runs: true },
+        schedule: { tab: 'plan', label: 'schedule', runs: true },
+        trigger: { tab: 'plan', label: 'trigger', runs: true },
+        template: { tab: 'plan', label: 'template', runs: true },
+        workflow: { tab: 'plan', label: 'workflow', runs: false }
+    };
+
+    /** The guard (`fireIf`) kinds, in the automation module's own vocabulary. */
+    const GUARDS = [
+        { id: '', label: '— none: it fires every time —' },
+        { id: 'folderHasFiles', label: 'a folder holds files' },
+        { id: 'fileMissing', label: 'a file is missing' },
+        { id: 'pathChangedWithin', label: 'a path changed recently' },
+        { id: 'queueHasWork', label: 'the work queue has items' }
+    ];
+    const HOOK_EVENTS = [
+        { id: 'stop', label: 'stop — an agent finished its turn' },
+        { id: 'end', label: 'end — a session ended' },
+        { id: 'permission', label: 'permission — an agent is waiting' },
+        { id: 'compact', label: 'compact — a session compacted' },
+        { id: 'subagent', label: 'subagent — a subagent finished' }
+    ];
+
+    function newDraft(kind, seed) {
         const L = DATA.launch || {};
         const d = L.defaults || {};
-        return Object.assign({
+        const base = {
+            kind: kind || 'task', mode2: 'new', id: '',
             agent: (DATA.agents || [])[0] || '',
             title: '', prompt: '', mode: 'headless',
             // The launcher's own defaults are the starting point, exactly as
             // they would be for a session started by hand.
             model: d.model || '', effort: d.effort || '', permissionMode: d.permissionMode || '',
-            cli: '', project: L.activeProjectId || '', workDir: '', priority: 0,
-            start: true
-        }, seed || {});
+            cli: '', workDir: '', priority: 0,
+            // ‼️ A TASK OPENS ON THE WINDOW'S PROJECT; AN AUTOMATION DOES NOT.
+            // A task made here is made by a person who is looking at a project.
+            // A schedule fires at 03:00 with nobody looking, so its project is
+            // only ever the one it DECLARES (core/tasks.ts RunDimensions).
+            project: kind && kind !== 'task' ? '' : (L.activeProjectId || ''),
+            start: true,
+            // schedule
+            every: 'daily', time: '09:00', dow: 1, onceAt: '', missed: 'skip', enabled: true,
+            // trigger
+            ttype: 'watch', watchPath: '', hookEvent: 'stop', hookAgent: '', token: '',
+            act: 'task', workflowId: '',
+            debounceSec: 5, cooldownSec: 60, maxPerHour: 12,
+            // guard — shared by schedule and trigger
+            guardKind: '', guardPath: '', guardExcept: '', guardMin: 1, guardHours: 24, guardRecursive: true
+        };
+        return Object.assign(base, seed || {});
     }
 
-    function openComposer(seed) {
-        composer = newDraft(seed);
+    function openComposer(seed, kind) {
+        const k = kind || (seed && seed.kind) || 'task';
+        composer = newDraft(k, seed);
         composerMsg = '';
         composerDup = false;
-        tab = 'run';
+        tab = (COMPOSE[k] || COMPOSE.task).tab;
         persist();
         render();
-        const box = document.getElementById('nt-prompt');
+        const box = document.getElementById('nt-prompt') || document.getElementById('nt-title');
         if (box) { box.focus(); }
     }
 
@@ -434,10 +501,117 @@
             <select id="nt-${id}">${opts}</select></label>`;
     }
 
+    /** A plain <select> over `{id,label}` rows — the kind-specific fields. */
+    function pickSel(id, label, list, value, title) {
+        const opts = list.map(o =>
+            `<option value="${C.esc(o.id)}"${o.id === value ? ' selected' : ''}>${C.esc(o.label)}</option>`).join('');
+        return `<label class="ntf" title="${C.esc(title || '')}"><span>${C.esc(label)}</span>
+            <select id="nt-${id}">${opts}</select></label>`;
+    }
+    function textF(id, label, value, ph, title, wide) {
+        return `<label class="ntf${wide ? ' wide' : ''}" title="${C.esc(title || '')}"><span>${C.esc(label)}</span>
+            <input type="text" id="nt-${id}" value="${C.esc(value == null ? '' : String(value))}" placeholder="${C.esc(ph || '')}"></label>`;
+    }
+    function numF(id, label, value, title) {
+        return `<label class="ntf" title="${C.esc(title || '')}"><span>${C.esc(label)}</span>
+            <input type="number" id="nt-${id}" step="1" value="${C.esc(String(value == null ? '' : value))}"></label>`;
+    }
+
+    /** The guard — the one brake that is evaluated for FREE, before anything
+     *  wakes a model. It is the same object on a schedule and on a trigger, so
+     *  it is drawn once. */
+    function guardHtml(c) {
+        const needsPath = c.guardKind && c.guardKind !== 'queueHasWork';
+        return `<div class="ntsec"><b>Fires only if…</b>
+            <span class="muted small">A guard is checked before any agent is woken, and costs nothing.
+                Without one, every wake-up is paid whether or not there was work.</span></div>
+            <div class="ntgrid">
+                ${pickSel('guardKind', 'Guard', GUARDS, c.guardKind, 'What has to be true for this to fire at all.')}
+                ${needsPath ? textF('guardPath', 'Path', c.guardPath, 'D:/…  — {today} and {yesterday} are expanded',
+            'The folder or file the guard looks at. {today} / {yesterday} become YYYY-MM-DD.', true) : ''}
+                ${c.guardKind === 'folderHasFiles'
+                ? textF('guardExcept', 'Ignore these names', c.guardExcept, '_LOG_.md, .gitkeep',
+                    'File names that do not count as work — comma separated.', true)
+                + `<label class="cbx" title="Look into sub-folders too."><input type="checkbox" id="nt-guardRecursive"${c.guardRecursive ? ' checked' : ''}> include sub-folders</label>`
+                : ''}
+                ${c.guardKind === 'pathChangedWithin' ? numF('guardHours', 'Within (hours)', c.guardHours, 'How recently the path must have changed.') : ''}
+                ${c.guardKind && c.guardKind !== 'fileMissing' && c.guardKind !== 'pathChangedWithin'
+                ? numF('guardMin', 'At least', c.guardMin, 'How many hits are needed before it counts as work.') : ''}
+            </div>`;
+    }
+
+    function scheduleHtml(c) {
+        return `<div class="ntsec"><b>When</b></div>
+            <div class="ntgrid">
+                ${pickSel('every', 'How often', [
+            { id: 'daily', label: 'daily' }, { id: 'weekly', label: 'weekly' }, { id: 'once', label: 'once' }
+        ], c.every, 'A schedule fires while VS Code is open; what happens to a missed time is the next field.')}
+                ${c.every === 'once'
+                ? `<label class="ntf" title="The single moment it fires."><span>At</span>
+                        <input type="datetime-local" id="nt-onceAt" value="${C.esc(c.onceAt)}"></label>`
+                : `<label class="ntf" title="Local time, 24h."><span>Time of day</span>
+                        <input type="time" id="nt-time" value="${C.esc(c.time)}"></label>`}
+                ${c.every === 'weekly' ? pickSel('dow', 'Day', [
+            { id: '0', label: 'Sunday' }, { id: '1', label: 'Monday' }, { id: '2', label: 'Tuesday' },
+            { id: '3', label: 'Wednesday' }, { id: '4', label: 'Thursday' }, { id: '5', label: 'Friday' },
+            { id: '6', label: 'Saturday' }
+        ], String(c.dow), 'Which day of the week.') : ''}
+                ${c.every !== 'once' ? pickSel('missed', 'If the time is missed', [
+            { id: 'skip', label: 'skip it — that occurrence is lost' },
+            { id: 'run', label: 'run it at the first opportunity' },
+            { id: 'ask', label: 'ask me, with Run / Skip' }
+        ], c.missed, 'What happens when the time passes with no VS Code window open.') : ''}
+            </div>
+            ${guardHtml(c)}`;
+    }
+
+    function triggerHtml(c) {
+        const wfOpts = (DATA.workflows || []).map(w => ({ id: w.id, label: `${w.title} — ${w.steps} step(s)` }));
+        return `<div class="ntsec"><b>What fires it</b></div>
+            <div class="ntgrid">
+                ${pickSel('ttype', 'Source', [
+            { id: 'watch', label: 'watch — a file or folder changes' },
+            { id: 'hook', label: 'hook — a live event (needs Live Hooks)' },
+            { id: 'webhook', label: 'webhook — something POSTs to a local URL' }
+        ], c.ttype, 'Where the firing comes from.')}
+                ${c.ttype === 'watch' ? textF('watchPath', 'Watched path', c.watchPath, 'D:/…  a file or a folder',
+            'Any change inside fires it — which is why the guard below matters.', true) : ''}
+                ${c.ttype === 'hook' ? pickSel('hookEvent', 'Event', HOOK_EVENTS, c.hookEvent, 'Which live event fires it.') : ''}
+                ${c.ttype === 'hook' ? pickSel('hookAgent', 'Only for', [{ id: '', label: 'any agent' }]
+            .concat((DATA.agents || []).map(a => ({ id: a, label: a }))), c.hookAgent, 'Limit it to one agent, or leave it open.') : ''}
+                ${c.ttype === 'webhook' ? textF('token', 'URL token', c.token, '(generated when you save)',
+                'POST to http://127.0.0.1:&lt;port&gt;/trigger/&lt;token&gt;. Leave empty and one is made for you.', true) : ''}
+            </div>
+            <div class="ntsec"><b>What it does</b></div>
+            <div class="ntgrid">
+                ${pickSel('act', 'Action', [
+                    { id: 'task', label: 'run a task on an agent you pick' },
+                    { id: 'dispatch', label: 'dispatch — route to the best agent per firing' }
+                ].concat(wfOpts.length ? [{ id: 'workflow', label: 'run a workflow' }] : []),
+                    c.act, 'What happens when it fires.')}
+                ${c.act === 'workflow' ? pickSel('workflowId', 'Workflow', wfOpts, c.workflowId, 'Which chain runs.') : ''}
+            </div>
+            <div class="ntsec"><b>Brakes</b>
+                <span class="muted small">Frequency brakes. They cap how often it can fire; the guard above caps
+                    WHETHER it should.</span></div>
+            <div class="ntgrid">
+                ${numF('debounceSec', 'Debounce (s)', c.debounceSec, 'Wait this long after the last change before firing — a save storm is one firing.')}
+                ${numF('cooldownSec', 'Cooldown (s)', c.cooldownSec, 'Minimum gap between two firings.')}
+                ${numF('maxPerHour', 'Max per hour', c.maxPerHour, 'Hard ceiling on firings in a rolling hour.')}
+            </div>
+            ${guardHtml(c)}`;
+    }
+
     function composerHtml() {
         if (!composer) { return ''; }
         const L = DATA.launch || {};
         const c = composer;
+        const spec = COMPOSE[c.kind] || COMPOSE.task;
+        const editing = c.mode2 === 'edit';
+        // A trigger that runs a workflow has no agent, no prompt and no run
+        // dimensions of its own — the workflow's steps carry all of that.
+        const wantsRun = spec.runs && !(c.kind === 'trigger' && c.act === 'workflow');
+        const wantsAgent = wantsRun && !(c.kind === 'trigger' && c.act === 'dispatch');
         const agentOpts = (DATA.agents || []).map(a =>
             `<option value="${C.esc(a)}"${a === c.agent ? ' selected' : ''}>${C.esc(a)}</option>`).join('');
         const projOpts = ['<option value=""' + (c.project ? '' : ' selected') + '>— no project —</option>']
@@ -448,50 +622,65 @@
             .concat((L.clis || []).map(p =>
                 `<option value="${C.esc(p.name)}"${p.name === c.cli ? ' selected' : ''}>${C.esc(p.name)}</option>`))
             .join('');
+        const LEDE = {
+            task: 'A task is one claude run. Everything except the agent and the prompt is optional — an empty field means no flag, and the agent\'s own settings stay in charge.',
+            schedule: 'A schedule is a task that has not happened yet: it runs on its own at a set time, so it takes every dimension a task takes — and a guard, so it does not wake an agent for nothing.',
+            trigger: 'A trigger runs when something happens. The brakes cap how OFTEN it fires; the guard caps WHETHER it should fire at all.',
+            template: 'A template is a saved prompt you launch by hand. It carries an agent and a mode so launching it is one click, not a form.',
+            workflow: 'A workflow chains several agents. Name it here; its steps are edited on the row.'
+        };
         return `<div class="ntbox" id="ntbox">
             <div class="ctl-row">
-                <span class="ctl-title">New task</span>
-                <span class="muted small">A task is one claude run. Everything below except the agent and the
-                    prompt is optional — an empty field means no flag, and the agent's own settings stay in charge.</span>
+                <span class="ctl-title">${editing ? 'Edit' : 'New'} ${C.esc(spec.label)}</span>
+                <span class="muted small">${C.esc(LEDE[c.kind] || '')}</span>
                 <span class="spacer"></span>
                 <button class="secondary mini" id="nt-close">✕</button>
             </div>
             <div class="ntgrid">
-                <label class="ntf wide"><span>Prompt <em>required</em></span>
+                ${wantsRun ? `<label class="ntf wide"><span>Prompt <em>required</em></span>
                     <textarea id="nt-prompt" rows="4"
-                        placeholder="What should the agent do? Ctrl+Enter queues it.">${C.esc(c.prompt)}</textarea></label>
-                <label class="ntf wide"><span>Title</span>
+                        placeholder="What should the agent do? Ctrl+Enter saves it.">${C.esc(c.prompt)}</textarea></label>` : ''}
+                <label class="ntf wide"><span>${c.kind === 'task' ? 'Title' : 'Name'}${c.kind === 'task' ? '' : ' <em>required</em>'}</span>
                     <input type="text" id="nt-title" value="${C.esc(c.title)}"
-                        placeholder="(optional — the prompt's first line otherwise)"></label>
-                <label class="ntf" title="Whose folder it runs in, and whose CLAUDE.md it wakes up with."><span>Agent <em>required</em></span>
-                    <select id="nt-agent">${agentOpts}</select></label>
-                <label class="ntf" title="Headless is claude -p: it runs the prompt, writes its output to an archived file and exits — the mode a queued task is normally in. Interactive opens a real session in a terminal with the prompt already sent."><span>Mode</span>
+                        placeholder="${c.kind === 'task' ? '(optional — the prompt\'s first line otherwise)' : 'What is this called?'}"></label>
+                ${wantsAgent ? `<label class="ntf" title="Whose folder it runs in, and whose CLAUDE.md it wakes up with."><span>Agent <em>required</em></span>
+                    <select id="nt-agent">${agentOpts}</select></label>` : ''}
+                ${wantsRun ? `<label class="ntf" title="Headless is claude -p: it runs the prompt, writes its output to an archived file and exits — the mode an unattended run is normally in. Interactive opens a real session in a terminal with the prompt already sent."><span>Mode</span>
                     <select id="nt-mode">
                         <option value="headless"${c.mode === 'headless' ? ' selected' : ''}>headless — runs and exits</option>
                         <option value="interactive"${c.mode === 'interactive' ? ' selected' : ''}>interactive — opens a session</option>
-                    </select></label>
+                    </select></label>` : ''}
+                ${wantsRun && c.kind !== 'template' ? `
                 ${choiceSel('model', 'Model', L.models, c.model,
             'Which model runs it — from your own agentFarm.modelAliases list. Beats the model-policy rules in Farm Settings.')}
                 ${choiceSel('effort', 'Effort', L.efforts, c.effort,
-                'How much reasoning per turn. Mechanical work does not need the expensive end — and a task nobody is watching is exactly where that choice is worth making.')}
+                'How much reasoning per turn. Mechanical work does not need the expensive end — and a run nobody is watching is exactly where that choice is worth making.')}
                 ${choiceSel('permissionMode', 'Permissions', L.permissions, c.permissionMode,
-                    'What it may do without asking. ‼️ Nobody is sitting in front of a queued run: a task that stops to ask waits until you notice it, and one on bypassPermissions does not stop at all.')}
-                <label class="ntf" title="The project this task belongs to. Recorded when it is CREATED, not when it runs — a queued task can sit for hours, and by the time it starts the window may be showing something else entirely."><span>Project</span>
+                    'What it may do without asking. ‼️ Nobody is sitting in front of an unattended run: one that stops to ask waits until you notice it, and one on bypassPermissions does not stop at all.')}
+                <label class="ntf" title="${c.kind === 'task'
+                        ? 'The project this task belongs to. Recorded when it is CREATED, not when it runs — a queued task can sit for hours, and by the time it starts the window may be showing something else entirely.'
+                        : 'The project its runs belong to. An automation fires with nobody looking at a window, so it has no project unless you declare one here.'}"><span>Project</span>
                     <select id="nt-project">${projOpts}</select></label>
                 ${(L.clis || []).length ? `<label class="ntf" title="A named CLI profile from agentFarm.cliProfiles. A non-claude executor is not monitored the way claude is — its output is archived and that is all."><span>CLI</span>
                     <select id="nt-cli">${cliOpts}</select></label>` : ''}
                 <label class="ntf" title="Higher runs sooner when the queue is full. It also ages up while waiting, so nothing starves."><span>Priority</span>
                     <input type="number" id="nt-priority" step="1" value="${C.esc(String(c.priority || 0))}"></label>
                 <label class="ntf wide" title="Run it somewhere other than the agent's own folder — a worktree, a repo it is working on. Empty = the agent folder."><span>Working folder</span>
-                    <input type="text" id="nt-workdir" value="${C.esc(c.workDir)}" placeholder="(optional) — defaults to the agent's folder"></label>
+                    <input type="text" id="nt-workdir" value="${C.esc(c.workDir)}" placeholder="(optional) — defaults to the agent's folder"></label>` : ''}
             </div>
+            ${c.kind === 'schedule' ? scheduleHtml(c) : ''}
+            ${c.kind === 'trigger' ? triggerHtml(c) : ''}
             ${composerMsg ? `<div class="ntmsg${composerDup ? ' warn' : ''}">${C.esc(composerMsg)}</div>` : ''}
             <div class="ctl-row">
-                <label class="cbx" title="Off = it waits in the queue until you press start (or capacity frees up for something with a higher priority).">
-                    <input type="checkbox" id="nt-start"${c.start ? ' checked' : ''}> start it now</label>
+                ${c.kind === 'task' ? `<label class="cbx" title="Off = it waits in the queue until you press start (or capacity frees up for something with a higher priority).">
+                    <input type="checkbox" id="nt-start"${c.start ? ' checked' : ''}> start it now</label>` : ''}
+                ${c.kind === 'schedule' || c.kind === 'trigger' ? `<label class="cbx" title="Off = it is saved but does not fire until you switch it on.">
+                    <input type="checkbox" id="nt-enabled"${c.enabled ? ' checked' : ''}> switched on</label>` : ''}
                 <span class="spacer"></span>
                 ${composerDup ? '<button class="secondary" id="nt-force">Add it anyway</button>' : ''}
-                <button id="nt-add">${c.start ? 'Add and start' : 'Add to the queue'}</button>
+                <button id="nt-add">${c.kind === 'task'
+                ? (c.start ? 'Add and start' : 'Add to the queue')
+                : (editing ? 'Save changes' : 'Create the ' + spec.label)}</button>
                 <button class="secondary" id="nt-cancel">Cancel</button>
             </div>
         </div>`;
@@ -503,23 +692,76 @@
             const el = document.getElementById('nt-' + id);
             if (el && el.value != null) { composer[key] = String(el.value); }
         };
+        const n = (id, key) => {
+            const el = document.getElementById('nt-' + id);
+            if (el) { composer[key] = Number(el.value) || 0; }
+        };
+        const b = (id, key) => {
+            const el = document.getElementById('nt-' + id);
+            if (el) { composer[key] = !!el.checked; }
+        };
         v('prompt', 'prompt'); v('title', 'title'); v('agent', 'agent'); v('mode', 'mode');
         v('model', 'model'); v('effort', 'effort'); v('permissionMode', 'permissionMode');
         v('project', 'project'); v('cli', 'cli'); v('workdir', 'workDir');
-        const p = document.getElementById('nt-priority');
-        if (p) { composer.priority = Number(p.value) || 0; }
-        const s = document.getElementById('nt-start');
-        if (s) { composer.start = !!s.checked; }
+        n('priority', 'priority');
+        b('start', 'start'); b('enabled', 'enabled');
+        // schedule
+        v('every', 'every'); v('time', 'time'); v('onceAt', 'onceAt'); v('missed', 'missed');
+        n('dow', 'dow');
+        // trigger
+        v('ttype', 'ttype'); v('watchPath', 'watchPath'); v('hookEvent', 'hookEvent');
+        v('hookAgent', 'hookAgent'); v('token', 'token'); v('act', 'act'); v('workflowId', 'workflowId');
+        n('debounceSec', 'debounceSec'); n('cooldownSec', 'cooldownSec'); n('maxPerHour', 'maxPerHour');
+        // guard
+        v('guardKind', 'guardKind'); v('guardPath', 'guardPath'); v('guardExcept', 'guardExcept');
+        n('guardMin', 'guardMin'); n('guardHours', 'guardHours'); b('guardRecursive', 'guardRecursive');
+    }
+
+    /**
+     * What the form refuses to send, and why it says so IN the form.
+     *
+     * A modal that steals focus from a half-filled form to tell you the form is
+     * half-filled is the worst of both worlds — the message belongs where the
+     * mistake is.
+     */
+    function composerError(c) {
+        const spec = COMPOSE[c.kind] || COMPOSE.task;
+        const wantsRun = spec.runs && !(c.kind === 'trigger' && c.act === 'workflow');
+        if (c.kind !== 'task' && !String(c.title || '').trim()) {
+            return 'A ' + spec.label + ' needs a name — it is how you find it on this page.';
+        }
+        if (wantsRun && !String(c.prompt || '').trim()) {
+            return 'A ' + spec.label + ' needs a prompt — it is the thing the agent is asked to do.';
+        }
+        if (c.kind === 'schedule' && c.every === 'once' && !c.onceAt) {
+            return 'A one-off schedule needs the moment it fires.';
+        }
+        if (c.kind === 'schedule' && c.every !== 'once' && !/^([01]?\d|2[0-3]):[0-5]\d$/.test(String(c.time || ''))) {
+            return 'The time of day has to read HH:MM, 24-hour.';
+        }
+        if (c.kind === 'trigger' && c.ttype === 'watch' && !String(c.watchPath || '').trim()) {
+            return 'A watch trigger needs the path it watches.';
+        }
+        if (c.kind === 'trigger' && c.act === 'workflow' && !c.workflowId) {
+            return 'Pick the workflow this trigger runs.';
+        }
+        if (c.guardKind && c.guardKind !== 'queueHasWork' && !String(c.guardPath || '').trim()) {
+            return 'That guard looks at a path — say which one, or take the guard off.';
+        }
+        return '';
     }
 
     function submitComposer(force) {
         readComposer();
-        if (!composer.prompt.trim()) {
-            composerMsg = 'A task needs a prompt — it is the thing the agent is asked to do.';
-            render();
+        const err = composerError(composer);
+        if (err) { composerMsg = err; render(); return; }
+        if (composer.kind === 'task') {
+            post({ type: 'task-new', task: Object.assign({}, composer, { force: force === true }) });
             return;
         }
-        post({ type: 'task-new', task: Object.assign({}, composer, { force: force === true }) });
+        // One message for every other kind: the host knows which manager method
+        // a kind belongs to, and the page does not have to.
+        post({ type: 'plan-save', item: Object.assign({}, composer) });
     }
 
     // -------------------------------------------------------------- RUN side
@@ -610,8 +852,8 @@
                 <button class="secondary" data-open="cancel-queued">Cancel queued</button>
                 <button class="secondary" data-open="clear-finished">Clear finished</button>
             </div>
-            ${composerHtml()}
-            ${!composer && composerMsg ? `<div class="ntmsg">${C.esc(composerMsg)}</div>` : ''}
+            ${composer && (COMPOSE[composer.kind] || COMPOSE.task).tab === 'run' ? composerHtml() : ''}
+            ${!composer && composerMsg && tab === 'run' ? `<div class="ntmsg">${C.esc(composerMsg)}</div>` : ''}
             ${activeChips(v, RUN_DEF, { agent: 'agent', status: 'status', source: 'from' }, rows.length, d.runs.length)}
             <div class="cmdbar">
                 <input id="cmd" placeholder="Tell the farm what to do, in words — e.g. “run the filing batch on manager now”" value="${C.esc(cmdText)}">
@@ -882,15 +1124,22 @@
         byId('nt-add', 'click', () => submitComposer(false));
         byId('nt-force', 'click', () => submitComposer(true));
         if (composer) {
-            ['prompt', 'title', 'workdir', 'priority'].forEach(id =>
-                byId('nt-' + id, 'input', () => readComposer()));
-            ['agent', 'mode', 'model', 'effort', 'permissionMode', 'project', 'cli'].forEach(id =>
-                byId('nt-' + id, 'change', () => {
-                    readComposer();
-                    // The Add button's own words follow the "start it now" box,
-                    // so what the press will do is readable before pressing it.
-                    if (id === 'start') { render(); }
-                }));
+            ['prompt', 'title', 'workdir', 'priority', 'watchPath', 'token', 'time', 'onceAt',
+                'debounceSec', 'cooldownSec', 'maxPerHour',
+                'guardPath', 'guardExcept', 'guardMin', 'guardHours'].forEach(id =>
+                    byId('nt-' + id, 'input', () => readComposer()));
+            ['agent', 'mode', 'model', 'effort', 'permissionMode', 'project', 'cli',
+                'dow', 'missed', 'hookEvent', 'hookAgent', 'workflowId'].forEach(id =>
+                    byId('nt-' + id, 'change', () => readComposer()));
+            // ‼️ These five REDRAW, because they change which fields exist:
+            // "weekly" adds a day picker, "watch" a path, a guard its own row.
+            // A field that only appears after a reload is a field nobody finds.
+            ['every', 'ttype', 'act', 'guardKind'].forEach(id =>
+                byId('nt-' + id, 'change', () => { readComposer(); render(); }));
+            byId('nt-guardRecursive', 'change', () => readComposer());
+            byId('nt-enabled', 'change', () => readComposer());
+            // The Add button's own words follow the "start it now" box, so what
+            // the press will do is readable before pressing it.
             byId('nt-start', 'change', () => { readComposer(); render(); });
             // Ctrl+Enter queues it — the same bargain the Console composer and
             // the backlog capture box make. Plain Enter stays a newline: these
@@ -1050,7 +1299,14 @@
         // row's "like this one" all arrive here, so there is a single form with
         // a single set of fields whichever way you came in.
         if (ev.data.type === 'task-compose') { openComposer(ev.data.seed); }
+        // …and the same door for every plan kind (U-9). `agentfarm.addSchedule`,
+        // `editTrigger`, the toolbar's + and a row's edit button all arrive
+        // here, so the palette and the page cannot make two different objects.
+        if (ev.data.type === 'plan-compose') { openComposer(ev.data.seed, ev.data.kind); }
         if (ev.data.type === 'task-error') { composerMsg = ev.data.text || ''; composerDup = false; render(); }
+        if (ev.data.type === 'plan-saved') {
+            closeComposer(ev.data.text || 'Saved.');
+        }
         // ‼️ The duplicate guard, asked IN the form. It used to be a modal that
         // took the focus off the fields it was complaining about; here the
         // answer button sits next to the one you just pressed.

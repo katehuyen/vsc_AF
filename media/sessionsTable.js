@@ -62,6 +62,67 @@
     const UNASSIGNED = 'Unassigned';
     const projectOf = r => r.project || UNASSIGNED;
 
+    /**
+     * ‼️ HOW WIDE A COLUMN IS, DECIDED HERE — NOT BY WHATEVER HAPPENED TO BE IN
+     * IT.
+     *
+     * The table used to lay itself out (`table-layout: auto`, the default),
+     * which means every column's width is a function of the CONTENT THAT
+     * HAPPENS TO BE LISTED. Measured, same component, same thirteen columns,
+     * same 1314px table (headless Chromium, 2026-08-07): with 20 rows Title took
+     * 462px and Cost 41px; with 200 rows Title took 457px and Cost 48px. So the
+     * Dashboard and the Sessions page — the same table twice, one capped at 20
+     * rows and one at 200 — could not agree on where a column started, and
+     * neither could the same page after a filter. Nobody chose that; it is what
+     * auto-layout does.
+     *
+     * Now the shares are declared, so the table is the same table everywhere:
+     * `table-layout: fixed` plus a `<colgroup>`. The numbers below are the
+     * measured widths above turned into shares, with ONE deliberate change —
+     * **Title gives up a quarter of itself** (462px → 346px, 35.2% → 26.4% of
+     * the table) and the space is handed back to every other column in
+     * proportion to what it already had. Nothing else was re-designed.
+     *
+     * `NARROW` is px because those columns hold one glyph or one checkbox: a
+     * share would make them grow on a wide monitor, and a 40px-wide checkbox
+     * column is a bug. Everything else is a share of what is left, normalised
+     * over whichever columns the embedding page asked for — so a page without
+     * Agent and Project (the agent detail page) keeps the same proportions
+     * between the columns it does show.
+     */
+    const NARROW = { sel: 23, fold: 32, pin: 23, origin: 26 };
+    /** Shares of the space the px columns leave behind — which is what a `<col>`
+     *  percentage is measured against (see colgroupHtml). They sum to 100 for
+     *  the full set and are re-normalised for any subset. */
+    const SHARE = {
+        agent: 9.048, project: 20.679, title: 28.610, when: 5.056, duration: 5.522,
+        turns: 3.721, tools: 3.624, files: 3.244, errors: 2.387, tokens: 8.962,
+        ctx: 5.241, cost: 3.906
+    };
+
+    /**
+     * The colgroup for one embed's column set.
+     *
+     * The shares are normalised across the columns actually shown, so they sum
+     * to 100 whatever the page asked for — and a percentage on a `<col>` is
+     * resolved against WHAT IS LEFT after the px columns, not against the whole
+     * table (measured, Chromium 1232: a 968px table with one 23px column gave
+     * 70%/30% as 661/283 of the remaining 945). That is exactly the arithmetic
+     * wanted here, so no `calc()` is needed — which is just as well, because
+     * `calc()` mixing a percentage into a column width is silently dropped and
+     * every column falls back to an equal slice (measured the same way).
+     */
+    function colgroupHtml(cols) {
+        const total = cols.reduce((n, c) => n + (NARROW[c] ? 0 : (SHARE[c] || 0)), 0) || 1;
+        const w = c => (NARROW[c]
+            ? `${NARROW[c]}px`
+            : `${((SHARE[c] || 0) / total * 100).toFixed(3)}%`);
+        return `<colgroup>`
+            + `<col style="width:${NARROW.sel}px"><col style="width:${NARROW.fold}px"><col style="width:${NARROW.pin}px">`
+            + cols.map(c => `<col style="width:${w(c)}">`).join('')
+            + `</colgroup>`;
+    }
+
     const STYLE = `<style>
         .chiprow { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:8px 0; }
         .chip { font-size:11px; padding:2px 10px; border-radius:10px; cursor:pointer;
@@ -123,6 +184,21 @@
         .tag { font-size:10px; padding:1px 6px; margin-right:4px; border-radius:8px; white-space:nowrap;
             background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); opacity:.85; }
         .turnmini td { border-bottom-color:var(--vscode-widget-border, #1111); }
+        /* the declared layout — see NARROW/SHARE above */
+        table.sesstable { table-layout:fixed; }
+        /* ‼️ A TEXT CELL SHRINKS ITS WORDS AND NEVER ITS CONTROLS. Once the
+           column has a declared width, something has to give when the title is
+           longer than it: wrapping turns one row into four, and clipping the
+           whole cell would eat the ⌨ jump and ⎋ interrupt buttons that sit at
+           the end of the line — a control you cannot see is not a control. So the
+           line is a flex row: the words are the only flexible part, and what
+           does not fit is what the hover panel is for. */
+        .cellline { display:flex; align-items:baseline; gap:4px; min-width:0; }
+        .cellline > * { flex:0 0 auto; }
+        .cellline > .ctext { flex:1 1 auto; min-width:0;
+            overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        /* figures are never wrapped: the widths above already carry them */
+        table.sesstable td.num, table.sesstable th.num { white-space:nowrap; }
     </style>`;
 
     function relTime(ts) {
@@ -551,26 +627,37 @@
                 const o = originMeta(originOf(r));
                 return `<td class="origcell ${o.id}" title="${tipOf(TIP.origin(r))}">${o.glyph}</td>`;
             },
-            agent: r => `<td title="${tipOf(TIP.agent(r))}">${dot(r)}${C.esc(r.agent)}${subBadge(r)}${termBtn(r)}${stopBtn(r)}</td>`,
+            agent: r => `<td title="${tipOf(TIP.agent(r))}"><span class="cellline">${dot(r)}<span class="ctext">${C.esc(r.agent)}</span>${subBadge(r)}${termBtn(r)}${stopBtn(r)}</span></td>`,
             // ‼️ The title cell hands its hover to the rich panel: the answer to
             // "what was this session actually asked to do" is the opening
             // PROMPT, whole, and a native tooltip cannot hold one.
             title: r => {
                 const b = TIPBOX.title(r);
-                const inner = hasAgentCol
-                    ? `${C.esc(r.title)}${tagChips(r)}`
-                    : `${dot(r)}${C.esc(r.title)}${tagChips(r)}${subBadge(r)}${termBtn(r)}${stopBtn(r)}`;
+                const inner = '<span class="cellline">' + (hasAgentCol
+                    ? `<span class="ctext">${C.esc(r.title)}</span>${tagChips(r)}`
+                    : `${dot(r)}<span class="ctext">${C.esc(r.title)}</span>${tagChips(r)}${subBadge(r)}${termBtn(r)}${stopBtn(r)}`)
+                    + '</span>';
                 return window.AFTip.cell('', '', inner, b.head, b.body);
             },
             // A project is recognisable by its colour and icon everywhere else
             // it appears (sidebar, status bar, its own page); the table that
             // lists sessions BY project was the one place showing a bare name —
             // and now the hover carries what the project IS, folders first.
+            //
+            // ‼️ THE DOT IS DRAWN ONLY WHEN IT SAYS SOMETHING. It is the
+            // project's OWN colour, the mark the sidebar and the status bar use,
+            // so it earns its place on a project that has one. On a project
+            // that does not it used to fall back to the panel border — an
+            // identical grey dot in front of every name, carrying no
+            // information and taking the narrowest column's first 12px.
             project: r => {
                 const b = TIPBOX.project(r);
                 const inner = r.project
-                    ? `<span class="af-pdot" style="${r.projectColor ? `background:${C.esc(r.projectColor)}` : ''}"></span>`
-                    + (r.projectIcon ? C.esc(r.projectIcon) + ' ' : '') + C.esc(r.project)
+                    ? '<span class="cellline">'
+                    + (r.projectColor
+                        ? `<span class="af-pdot" style="background:${C.esc(r.projectColor)}"></span>` : '')
+                    + (r.projectIcon ? `<span>${C.esc(r.projectIcon)}</span>` : '')
+                    + `<span class="ctext">${C.esc(r.project)}</span></span>`
                     : '—';
                 return window.AFTip.cell(r.project ? '' : 'muted', '', inner, b.head, b.body);
             },
@@ -614,6 +701,13 @@
                 line('API calls', t.apiCalls || ''),
                 line('Steps', t.steps || ''),
                 line('Steps per call', t.apiCalls && t.steps ? round1(t.steps / t.apiCalls) : ''),
+                // …and what those steps WERE. Reasoning is the dearest kind and
+                // was missing from the total until it was counted (sessions.ts
+                // SessionTurn.steps), so the split is said out loud here.
+                line('…reasoning', t.thinking ? `${t.thinking} (${pct(t.thinking, t.steps)}%)` : ''),
+                line('…tool calls', t.tools ? `${t.tools} (${pct(t.tools, t.steps)}%)` : ''),
+                line('…replies', t.steps - (t.thinking || 0) - (t.tools || 0) > 0
+                    ? `${t.steps - (t.thinking || 0) - (t.tools || 0)} (${pct(t.steps - (t.thinking || 0) - (t.tools || 0), t.steps)}%)` : ''),
                 line('Tool calls', t.tools || ''),
                 line('Top tools', (t.topTools || []).map(x => `${x.name} ${x.n}`).join(' · ')),
                 line('Errors', t.errors || ''),
@@ -712,7 +806,8 @@
             </div>
             ${filterPanelHtml()}
             ${selBarHtml(chosen)}
-            <div class="tablewrap"><table>
+            <div class="tablewrap"><table class="sesstable">
+                ${colgroupHtml(cols)}
                 <tr>
                     <th class="selcell"><input type="checkbox" class="af-selall"${allOn ? ' checked' : ''}
                         title="${allOn ? 'Clear the selection' : 'Select every session listed here'}"></th>

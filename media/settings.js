@@ -363,11 +363,17 @@
                     group = it.group;
                     if (group) { rows.push(`<div class="promptgrp">${C.esc(group)}</div>`); }
                 }
-                rows.push(`<div class="promptrow" title="${C.esc(it.text)}">
+                // The prompt itself is TEXT, so it opens the rich panel rather
+                // than a native tooltip that repeats the preview beside it and
+                // then cuts (docs/CONVENTIONS.md → Hover).
+                rows.push(window.AFTip.wrap(
+                    `<div class="promptrow">
                     <span class="promptlbl">${C.esc(it.label)}</span>
                     <span class="promptprev">${C.esc(String(it.text).replace(/\s+/g, ' ').slice(0, 140))}</span>
                     <span class="promptline">line ${it.line}</span>
-                </div>`);
+                </div>`,
+                    `${it.label}${it.group ? ` · ${it.group}` : ''} · line ${it.line} · ${window.AFTip.sizeNote(it.text)}`,
+                    it.text));
             }
             list = `<div class="promptlist">${rows.join('')}</div>`;
         }

@@ -91,6 +91,51 @@ export interface FarmTask {
     costSessionFile?: string;
 }
 
+/**
+ * ‼️ THE DIMENSIONS OF A RUN — THE SAME ONES WHEREVER THE RUN COMES FROM.
+ *
+ * A task carries model · effort · permission mode · CLI · working folder ·
+ * priority · project (see FarmTask). A schedule and a trigger are nothing but
+ * a task that has not happened yet — and they could state only the FIRST of
+ * those. So "run the nightly batch on opus at low effort, in the worktree, and
+ * file it under this project" was sayable when a person queued the work by hand
+ * and not when they automated the identical work, which is the case where it
+ * matters MORE because nobody is sitting there to correct it.
+ *
+ * Empty means what it means everywhere else: no flag, and whatever the agent
+ * and the CLI already decide stays in charge.
+ */
+export interface RunDimensions {
+    model?: string;
+    effort?: string;
+    permissionMode?: string;
+    cli?: string;
+    workDir?: string;
+    priority?: number;
+    /**
+     * ‼️ DECLARED, NEVER INFERRED. An automation fires off a timer or a file
+     * change; nobody was looking at a window, so there is no active project to
+     * read (see addTask). A project stated HERE is a decision the user made
+     * about this automation, which is the only honest way an unattended run can
+     * have one.
+     */
+    projectId?: string;
+}
+
+/** The run dimensions of an automation, in the shape `addTask` takes them —
+ *  empty fields dropped, so "not stated" never becomes an explicit empty flag. */
+export function runExtras(d: RunDimensions | undefined): Partial<FarmTask> {
+    const r: Partial<FarmTask> = {};
+    if (!d) { return r; }
+    if (d.model) { r.model = d.model; }
+    if (d.effort) { r.effort = d.effort; }
+    if (d.permissionMode) { r.permissionMode = d.permissionMode; }
+    if (d.cli) { r.cli = d.cli; }
+    if (d.workDir) { r.workDir = d.workDir; }
+    if (d.priority) { r.priority = Math.trunc(d.priority); }
+    return r;
+}
+
 export type ScheduleKind = 'daily' | 'weekly' | 'once';
 
 /** What happens when a scheduled time passes while no VS Code window was open:
@@ -99,7 +144,7 @@ export type ScheduleKind = 'daily' | 'weekly' | 'once';
  *  opportunity, no questions asked; 'ask' = it is offered with Run/Skip buttons. */
 export type MissedPolicy = 'skip' | 'run' | 'ask';
 
-export interface FarmSchedule {
+export interface FarmSchedule extends RunDimensions {
     id: string;
     agentId: string;
     agentName: string;
@@ -114,11 +159,6 @@ export interface FarmSchedule {
     enabled: boolean;
     lastRunKey?: string;
     missed?: MissedPolicy;
-    /** Explicit model for this schedule's runs. Beats the model-policy engine,
-     *  so "this nightly batch needs real judgment — run it on opus" is stated
-     *  ON the schedule instead of hidden in a settings regex that silently
-     *  contradicts it. Empty = policy/agent default. */
-    model?: string;
     /** Is there work? Evaluated for free before any agent is woken; a schedule
      *  whose precondition fails is stamped as handled for the day and skipped. */
     fireIf?: Precondition;
@@ -219,10 +259,10 @@ export interface FarmTrigger {
     /** hook: only fire for this agent (name); empty = any agent */
     hookAgent?: string;
     action:
-        | { kind: 'task'; agentId: string; agentName: string; title: string; prompt: string; mode: TaskMode; model?: string }
+        | ({ kind: 'task'; agentId: string; agentName: string; title: string; prompt: string; mode: TaskMode } & RunDimensions)
         | { kind: 'workflow'; workflowId: string }
         /** F2: no fixed agent — the dispatcher routes each firing to the best agent. */
-        | { kind: 'dispatch'; title: string; prompt: string; mode: TaskMode; model?: string };
+        | ({ kind: 'dispatch'; title: string; prompt: string; mode: TaskMode } & RunDimensions);
     debounceSec: number;
     cooldownSec: number;
     maxPerHour: number;
@@ -2429,11 +2469,12 @@ export class TaskManager implements vscode.Disposable {
             void vscode.window.showWarningMessage(`Agent Farm: agent for schedule "${s.title}" not found.`);
             return;
         }
-        // No project — see fireSchedule. Run Now must produce the same run the
-        // timer would, or the button is not a test of anything.
+        // The project is the schedule's own declaration, never the window's —
+        // see fireSchedule. Run Now must produce the same run the timer would,
+        // or the button is not a test of anything, so it takes the same
+        // dimensions from the same place.
         const task = this.addTask(agent, s.title, s.prompt, s.mode,
-            { fromSchedule: s.id, projectId: undefined });
-        if (s.model) { task.model = s.model; }
+            { fromSchedule: s.id, projectId: s.projectId || undefined, ...runExtras(s) });
         this.logAutomation({
             kind: 'schedule', id: s.id, title: s.title, outcome: 'fired', reason: 'run now (manual)'
         });
@@ -2534,16 +2575,15 @@ export class TaskManager implements vscode.Disposable {
         if (s.kind === 'once') { s.enabled = false; }
         const agent = this.getAgents().find(a => a.id === s.agentId);
         if (!agent) { return; }
-        // ‼️ A SCHEDULE HAS NO PROJECT, so its task gets none.
+        // ‼️ A SCHEDULE'S PROJECT IS THE ONE IT DECLARES, AND NOTHING ELSE.
         // A schedule fires from a timer — nobody was in a project when it went
         // off. Stamping it with whatever the window happened to be showing at
         // 03:00 would tell an unattended watch agent "work on this project, and
         // record what you did in its worklog", about work it knows nothing
-        // about. Binding a schedule to a project is a thing to DECLARE on the
-        // schedule, not to infer from a window.
+        // about. So the window is never read here; `s.projectId` is, and it is
+        // there only because someone chose it ON the schedule (RunDimensions).
         const task = this.addTask(agent, s.title, s.prompt, s.mode,
-            { fromSchedule: s.id, projectId: undefined });
-        if (s.model) { task.model = s.model; }
+            { fromSchedule: s.id, projectId: s.projectId || undefined, ...runExtras(s) });
         this.logAutomation({
             kind: 'schedule', id: s.id, title: s.title,
             outcome: 'fired', reason: note ? `${pre.detail} (${note})` : pre.detail

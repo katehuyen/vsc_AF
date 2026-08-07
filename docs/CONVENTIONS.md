@@ -76,6 +76,37 @@ one click.
 
 ---
 
+## Making things
+
+**An object is made by a form on the page. A chain of VS Code boxes is not a
+fallback, it is a missing feature.** The extension exists because the platform's
+own surfaces cannot say enough: `showInputBox` asks one question, cannot show a
+default list, cannot redraw when an answer changes what else matters, and loses
+everything typed so far when Esc is pressed by accident. Every dialog chain in
+this repo has been found asking four questions and unable to ask the five that
+decide what the object actually does.
+
+- **One form per object, and every route opens the same one.** The toolbar `+`,
+  the sidebar `+`, a row's Edit, the walkthrough and the command palette all
+  post to the panel and the panel opens the form. Two doors that build the
+  object differently is the defect this rule exists to prevent — measured twice:
+  a task made from the tree once carried different fields from one made on the
+  page, and a schedule could state less about a run than the task it produces.
+- **The form redraws when a choice changes what exists.** "Weekly" brings a day
+  picker, "watch" brings a path, a guard brings its own row. A field that only
+  appears after a reload is a field nobody finds.
+- **A refusal is shown IN the form**, next to the button that was pressed. A
+  modal that takes focus off the half-filled fields it is complaining about is
+  the worst of both worlds.
+- **Anything that runs a CLI takes the launcher's own vocabulary** — the same
+  model list, efforts and permission modes a session start offers
+  (`core/launch.ts`), plus project, working folder and priority. Empty means
+  "no flag", exactly as it does there.
+
+**What stays native, deliberately:** a **modal confirmation** for something
+destructive (a page-side warning can be missed while the focus is elsewhere),
+and the **OS file picker** (`showOpenDialog`), which has no webview equivalent.
+
 ## Right-click
 
 Every surface that shows a session carries the full session menu —

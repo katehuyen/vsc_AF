@@ -1981,6 +1981,54 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ }
     }
 
+    // ---------- U-9: an automation takes the same dimensions a task does ----------
+    // A schedule is a task that has not happened yet. It could state only its
+    // model, so "run the nightly batch on low effort, in the worktree, filed
+    // under this project" was sayable for a task and not for the schedule that
+    // produces one — on the page AND on the bridge. The rule in
+    // `_REF/agentfarm-dev.md` is that the two surfaces move together.
+    {
+        const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        const at = (op) => src.slice(src.indexOf(`op: '${op}'`), src.indexOf(`op: '${op}'`) + 4200);
+
+        const sched = at('schedules.add');
+        ok('schedules.add takes the run dimensions', /bridgeRunDimensions\(args\)/.test(sched));
+        ok('…and its contract names them', /effort\?/.test(sched) && /permissionMode\?/.test(sched)
+            && /workDir\?/.test(sched) && /priority\?/.test(sched) && /project\?/.test(sched));
+        ok('…and says why a project has to be DECLARED on an automation',
+            /nobody looking/.test(sched));
+
+        // The page can make a trigger and a template now, so an agent can too —
+        // in the same commit, which is the whole rule.
+        ok('‼️ triggers.add exists', /op: 'triggers\.add'/.test(src));
+        const trig = at('triggers.add');
+        ok('…and takes the same dimensions', /bridgeRunDimensions\(args\)/.test(trig));
+        ok('…refuses a watch trigger with nothing to watch',
+            /A watch trigger needs watchPath/.test(trig));
+        ok('…and mints a webhook token rather than saving a URL nobody can call',
+            /newId\(\) \+ newId\(\)/.test(trig));
+        ok('templates.add and templates.list exist',
+            /op: 'templates\.add'/.test(src) && /op: 'templates\.list'/.test(src));
+
+        // The dimensions are read ONE way, or the form and the bridge drift.
+        const bridge = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'bridge.ts'), 'utf8');
+        ok('there is one reader for the run dimensions',
+            /export function bridgeRunDimensions/.test(bridge));
+        ok('…"project" on the wire is "projectId" in the store',
+            /out\.projectId = project/.test(bridge));
+        ok('…and an absent field is left out, never written as an empty flag',
+            /if \(v\) \{ out\[k\] = v; \}/.test(bridge));
+
+        // ‼️ And the commands that used to ask in boxes now open the form.
+        for (const cmd of ['addSchedule', 'editSchedule', 'addTrigger', 'editTrigger', 'renameWorkflow']) {
+            const i = src.indexOf(`registerCommand('agentfarm.${cmd}'`);
+            const body = src.slice(i, src.indexOf('vscode.commands.registerCommand(', i + 30));
+            ok(`agentfarm.${cmd} opens the page form, not a dialog chain`,
+                /TasksPanel\.composePlan\(/.test(body)
+                && !/showInputBox/.test(body) && !/showQuickPick/.test(body));
+        }
+    }
+
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })();

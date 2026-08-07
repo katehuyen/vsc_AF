@@ -156,20 +156,26 @@
      * The turn's size, in the one shape every surface uses: `14api·26steps`.
      *
      * ‼️ ONE NUMBER HERE WAS TWO QUESTIONS. "26" is how many STEPS the agent
-     * took — each reply fragment and each tool call is one — while what it
-     * actually spent is decided by how many API CALLS those steps took, and a
-     * single call routinely carries several steps. A run whose call count
-     * halved while its step count held looked unchanged, and the token total
-     * moving underneath it looked like a counting bug. Both numbers, always, in
-     * the same order, everywhere.
+     * took — every one of them — while what it actually spent is decided by how
+     * many API CALLS those steps arrived in, and a single call routinely
+     * carries several steps. A run whose call count halved while its step count
+     * held looked unchanged, and the token total moving underneath it looked
+     * like a counting bug. Both numbers, always, in the same order, everywhere.
      *
-     * ‼️ AND THE SEPARATOR IS A DOT, NOT A SLASH — this was read as a fraction.
+     * ‼️ THE SEPARATOR IS A DOT, NOT A SLASH — this was read as a fraction.
      * `14api/26` says "14 out of 26" to every reader who has not been told
      * otherwise, and the honest reading is neither that nor "14 + 26 = 40":
      * the 26 steps were CARRIED BY the 14 calls, so the same turn is being
-     * measured twice, on two different scales. Nothing about the counting
-     * changed here (it was right); the string that reported it was not, and
-     * both numbers now say what they are.
+     * measured twice, on two different scales.
+     *
+     * ‼️ AND THE SECOND NUMBER IS NOW ACTUALLY THE TOTAL. A step used to be
+     * defined as "a reply fragment or a tool call", which left the model's own
+     * REASONING out of the figure that called itself the total — measured over
+     * the six largest recent transcripts on this machine (2026-08-07): 149
+     * replies + 1 583 tool calls counted, 490 thinking blocks not, so the
+     * number was 22% short, and short of precisely the part billed at the
+     * output rate. Think + say + tool call, all three (see sessions.ts
+     * SessionTurn.steps).
      */
     function fmtSteps(apiCalls, steps) {
         const a = Number(apiCalls) || 0;
@@ -182,9 +188,10 @@
     /** The one sentence that explains `14api·26steps` wherever it is shown. */
     const STEPS_TIP = 'Two measurements of the SAME turn, not two parts of a total: '
         + '14api·26steps means 14 round trips to the model, which between them carried '
-        + '26 visible steps (a step is one reply fragment or one tool call). One call '
-        + 'usually carries several steps, so the numbers are never added together — '
-        + 'and the tokens follow the CALLS, not the steps.';
+        + 'all 26 of the turn\'s steps. A step is one thing the agent did — it reasoned, '
+        + 'it wrote, or it called a tool — and every step of the turn is in that number. '
+        + 'One call usually carries several steps, so the two are never added together; '
+        + 'the tokens follow the CALLS.';
 
     /**
      * Stacked bar chart.

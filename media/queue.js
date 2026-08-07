@@ -229,7 +229,15 @@
                 title="${esc(window.AFCtx.hint('Click to open it'))}">
                 <span class="q-caret">${open ? '▾' : '▸'}</span>
                 <span class="q-author" title="${n.author === 'user' ? 'your entry' : 'agent entry'}">${authorChip(n.author)}</span>
-                <span class="q-text" title="${esc(n.text)}">${esc(n.text)}</span>
+                <!-- The item is TEXT and the row ellipsises it, so the hover has
+                     to carry the WHOLE of it — the rich panel, never a native
+                     title that stops where the platform pleases
+                     (docs/CONVENTIONS.md → Hover). The wrapper takes the row's
+                     flex share; the ellipsis stays on the span inside it. -->
+                ${window.AFTip.wrap(`<span class="q-text">${esc(n.text)}</span>`,
+                `${n.author === 'user' ? 'Your entry' : 'Agent entry'} · ${timeLabel(n.ts)}`
+                + `${n.target ? ` · for ${n.target}` : ''} · ${window.AFTip.sizeNote(n.text)}`,
+                n.text)}
                 ${liveChip(n)}
                 ${urgencyBadge(n)}
                 ${n.target ? `<span class="q-target">${esc(n.target)}</span>` : ''}
@@ -351,7 +359,9 @@
         .q-row:hover { background:var(--vscode-list-hoverBackground); }
         .q-caret { width:12px; opacity:.7; flex-shrink:0; }
         .q-author { flex-shrink:0; font-size:11px; opacity:.85; }
-        .q-text { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        /* the hover wrapper is the flex item now; the ellipsis stays on the text */
+        .q-row > .af-tipw { flex:1 1 auto; min-width:0; }
+        .q-text { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .q-target { flex-shrink:0; font-size:10px; border:1px solid var(--vscode-panel-border); border-radius:3px; padding:1px 5px; opacity:.85; }
         .q-urg { flex-shrink:0; font-size:10px; }
         .q-urg.u-urgent { color:var(--vscode-charts-red,#f14c4c); font-weight:700; }

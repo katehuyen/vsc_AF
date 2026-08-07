@@ -65,8 +65,28 @@ export interface SessionTurn {
      * tokens come from.
      */
     apiCalls: number;
-    /** Reply fragments + tool calls — what the agent visibly did. */
+    /**
+     * EVERY step the turn took: thinking + reply fragments + tool calls.
+     *
+     * ‼️ IT USED TO LEAVE OUT THE MOST EXPENSIVE KIND. A step was defined as
+     * "a reply fragment or a tool call", so the model's own reasoning — the
+     * thing `stepkind.ts` calls `think` and the thing billed at the OUTPUT rate
+     * — was not in the total that called itself the total. Measured over the
+     * six largest recent transcripts on this machine (2026-08-07): 149 text
+     * blocks, 1 583 tool calls, 490 thinking blocks — so the number labelled
+     * "steps" was reporting 1 732 of 2 222, a **22% under-count**, and the
+     * missing fifth was the part that cost the most. `thinking` below carries
+     * the same figure separately so a hover can still say what the total is
+     * made of.
+     *
+     * Tool RESULTS are deliberately not here: a result is the answer coming
+     * back, not a step the agent took, and counting them roughly doubles the
+     * figure (they run 1:1 with tool calls — 1 582 against 1 583 in the same
+     * measurement).
+     */
     steps: number;
+    /** Of those steps, the ones that were the model reasoning. */
+    thinking: number;
     /** Prompt → last recorded line, in ms. 0 while the turn is still open. */
     ms: number;
     /** What the window held when the turn ended (0 = never measured). */
@@ -334,7 +354,7 @@ export function parseSessionFile(
     const openTurn = (text: string, tsIn: number) => {
         info.turns.push({
             n: info.turns.length + 1, label: turnLabel(text), ts: tsIn,
-            tokens: 0, wTokens: 0, cost: 0, apiCalls: 0, steps: 0, ms: 0, endCtx: 0,
+            tokens: 0, wTokens: 0, cost: 0, apiCalls: 0, steps: 0, thinking: 0, ms: 0, endCtx: 0,
             tools: 0, errors: 0, models: []
         });
         turnModelSets.push(new Set());
@@ -494,9 +514,13 @@ export function parseSessionFile(
 
             if (Array.isArray(msg.content)) {
                 for (const block of msg.content as { type?: string; name?: string; text?: string; input?: Record<string, unknown> }[]) {
-                    // A step is one thing the agent visibly did: a fragment of
-                    // reply, or a tool call. Counted on the same blocks the
-                    // viewer renders, so the two surfaces agree on the number.
+                    // A step is one thing the agent did: it reasoned, it wrote,
+                    // or it called a tool. All three, because the total has to
+                    // be the total (see SessionTurn.steps).
+                    if (block?.type === 'thinking' || block?.type === 'redacted_thinking') {
+                        const t = curTurn();
+                        if (t) { t.steps++; t.thinking++; }
+                    }
                     if (block?.type === 'text' && block.text?.trim()) {
                         const t = curTurn();
                         if (t) { t.steps++; }

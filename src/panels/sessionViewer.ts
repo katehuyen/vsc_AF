@@ -313,23 +313,26 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
      * Per-turn accounting.
      *
      * `apiCalls` and `steps` are two different questions and the surfaces used
-     * to answer only the second: a STEP is one reply fragment or one tool call,
-     * an API CALL is one round trip, and one call routinely carries several
-     * steps. The tokens follow the calls, so a turn whose call count halved
-     * while its steps held looked unchanged while its total moved.
+     * to answer only the second: a STEP is one thing the agent did (it reasoned,
+     * it wrote, or it called a tool), an API CALL is one round trip, and one
+     * call routinely carries several steps. The tokens follow the calls, so a
+     * turn whose call count halved while its steps held looked unchanged while
+     * its total moved. `thinking` is the share of the steps that was the model
+     * reasoning — counted in the same pass, off the same blocks, so the two
+     * cannot drift (see SessionTurn.steps for why it belongs in the total).
      *
      * `endTs` and `endCtx` close the other gap: the turn row said what it spent
      * but never how long it took or where it left the window.
      */
     const turnTotals: Record<number, {
         tokens: number; wTokens: number; cost: number; apiCalls: number; steps: number;
-        endTs: number; endCtx: number;
+        thinking: number; endTs: number; endCtx: number;
     }> = {};
     const turnAcc = (n: number): {
         tokens: number; wTokens: number; cost: number; apiCalls: number; steps: number;
-        endTs: number; endCtx: number;
+        thinking: number; endTs: number; endCtx: number;
     } => (turnTotals[n] ?? (turnTotals[n] =
-        { tokens: 0, wTokens: 0, cost: 0, apiCalls: 0, steps: 0, endTs: 0, endCtx: 0 }));
+        { tokens: 0, wTokens: 0, cost: 0, apiCalls: 0, steps: 0, thinking: 0, endTs: 0, endCtx: 0 }));
     // Which model(s) served each turn — the model can change mid-session (it does
     // in ~1 of 4 real sessions), so this is per turn, not per session.
     const turnModels: Record<number, Set<string>> = {};
@@ -461,7 +464,13 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
             }
             if (Array.isArray(msg.content)) {
                 for (const b of msg.content as { type?: string; text?: string; name?: string; input?: unknown }[]) {
-                    if (b?.type === 'text' && b.text?.trim()) {
+                    // ‼️ Thinking is a STEP, and the most expensive kind (see
+                    // SessionTurn.steps). The rows are still not rendered — the
+                    // model's private working is not conversation — but the
+                    // count is no longer missing from the total.
+                    if (b?.type === 'thinking' || b?.type === 'redacted_thinking') {
+                        if (inTurn > 0) { turnAcc(inTurn).steps++; turnAcc(inTurn).thinking++; }
+                    } else if (b?.type === 'text' && b.text?.trim()) {
                         messages.push({
                             role: 'assistant', ts, text: b.text,
                             model: msg.model, tokens: msgTokens, wTokens: Math.round(msgWTokens) || undefined,
@@ -531,7 +540,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
     const turns: {
         n: number; label: string; prompt: string; ts: number;
         tokens: number; wTokens: number; cost: number;
-        apiCalls: number; steps: number; ms: number; endCtx: number;
+        apiCalls: number; steps: number; thinking: number; ms: number; endCtx: number;
         tools: number; errors: number; topTools: { name: string; n: number }[];
         models: string[]; attrs: Record<string, string>;
     }[] = [];
@@ -553,6 +562,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
             cost: acc?.cost ?? 0,
             apiCalls: acc?.apiCalls ?? 0,
             steps: acc?.steps ?? 0,
+            thinking: acc?.thinking ?? 0,
             // How long the turn ran: from the prompt to its last recorded line.
             // A turn still running has no end yet — 0, and the surfaces then
             // count from `ts` themselves rather than showing a frozen figure.

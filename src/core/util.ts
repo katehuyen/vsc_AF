@@ -158,8 +158,8 @@ export function fmtDuration(ms: number): string {
     return `${sec}s`;
 }
 
-/** Round trips · visible steps — see media/charts.js fmtSteps for the why,
- *  including why the separator is a dot and not a slash. */
+/** Round trips · every step they carried — see media/charts.js fmtSteps for the
+ *  why, including why the separator is a dot and not a slash. */
 export function fmtStepPair(apiCalls: number, steps: number): string {
     const a = Number(apiCalls) || 0;
     const s = Number(steps) || 0;

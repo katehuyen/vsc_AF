@@ -3,11 +3,14 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
-import { describePrecondition, rollupAutomationLog } from '../core/automation';
+import { describePrecondition, Precondition, rollupAutomationLog } from '../core/automation';
 import { nextOccurrences } from '../core/forecast';
 import { NeedItem } from '../core/needs';
 import { EFFORT_CHOICES, modelChoices, PERMISSION_CHOICES } from '../core/launch';
-import { FarmSchedule, FarmTask, FarmTemplate, FarmTrigger, FarmWorkflow, TaskManager, TaskMode } from '../core/tasks';
+import {
+    FarmSchedule, FarmTask, FarmTemplate, FarmTrigger, FarmWorkflow, MissedPolicy, newId,
+    RunDimensions, ScheduleKind, TaskManager, TaskMode
+} from '../core/tasks';
 import { TaskRecord } from '../core/taskstats';
 import { TriggerManager } from '../core/triggers';
 import { buildTriggerStats, describeTriggerStat } from '../core/triggerstats';
@@ -393,6 +396,15 @@ function buildData(deps: TasksDeps, tab?: TasksTab): Record<string, unknown> {
     };
 }
 
+/** An epoch stamp in the shape `<input type="datetime-local">` reads — LOCAL
+ *  time, because that is the clock the schedule fires on and the one the user
+ *  typed. `toISOString()` here would move a 09:00 schedule by the UTC offset. */
+function localInput(ts: number): string {
+    const d = new Date(ts);
+    const p = (n: number): string => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 export class TasksPanel {
     private static current: TasksPanel | undefined;
     private disposables: vscode.Disposable[] = [];
@@ -436,6 +448,20 @@ export class TasksPanel {
         });
     }
 
+    /**
+     * The same door for a PLAN object — U-9.
+     *
+     * `agentfarm.addSchedule`, `editSchedule`, `addTrigger`, `editTrigger`,
+     * `newWorkflow` and `renameWorkflow` all come through here instead of
+     * opening their own chain of input boxes, so the palette, the sidebar and
+     * the page cannot produce three different objects. `id` prefills it for an
+     * edit; without one it is a new object.
+     */
+    static composePlan(deps: TasksDeps, kind: string, id?: string): void {
+        TasksPanel.show(deps, 'plan');
+        TasksPanel.current?.compose(kind, id);
+    }
+
     private constructor(readonly panel: vscode.WebviewPanel, private deps: TasksDeps, tab?: TasksTab) {
         panel.webview.html = htmlShell(
             panel.webview, deps.extensionUri, 'Agent Farm Tasks',
@@ -466,6 +492,230 @@ export class TasksPanel {
         void this.panel.webview.postMessage({ type: 'task-error', text });
     }
 
+    /**
+     * Open the form on a plan object — empty for a new one, filled from the
+     * stored object for an edit.
+     *
+     * The seed is the FORM's own vocabulary, not the model's: the page holds a
+     * flat draft (`every`/`time`/`guardKind`…) because that is what a set of
+     * fields is, and the translation both ways lives here, next to the manager
+     * that owns the real shape.
+     */
+    private compose(kind: string, id?: string): void {
+        const send = (seed: Record<string, unknown>): void => {
+            void this.panel.webview.postMessage({ type: 'plan-compose', kind, seed });
+        };
+        const node = id ? this.planNode(kind, id) : undefined;
+        const guardSeed = (p: Precondition | undefined): Record<string, unknown> => ({
+            guardKind: p?.kind ?? '',
+            guardPath: p?.path ?? '',
+            guardExcept: (p?.except ?? []).join(', '),
+            guardMin: p?.minCount ?? 1,
+            guardHours: p?.hours ?? 24,
+            guardRecursive: p?.recursive !== false
+        });
+        if (kind === 'schedule') {
+            const s = node?.schedule;
+            if (!s) { send({ mode2: 'new' }); return; }
+            send({
+                mode2: 'edit', id: s.id, title: s.title, prompt: s.prompt, agent: s.agentName,
+                mode: s.mode, model: s.model ?? '', effort: s.effort ?? '',
+                permissionMode: s.permissionMode ?? '', project: s.projectId ?? '',
+                cli: s.cli ?? '', workDir: s.workDir ?? '', priority: s.priority ?? 0,
+                every: s.kind, dow: s.dow ?? 1, missed: s.missed ?? 'skip', enabled: s.enabled,
+                time: `${String(s.hour).padStart(2, '0')}:${String(s.minute).padStart(2, '0')}`,
+                onceAt: s.onceAt ? localInput(s.onceAt) : '',
+                ...guardSeed(s.fireIf)
+            });
+            return;
+        }
+        if (kind === 'trigger') {
+            const t = node?.trigger;
+            if (!t) { send({ mode2: 'new' }); return; }
+            const a = t.action;
+            const dims = a.kind === 'workflow' ? {} : (a as RunDimensions);
+            send({
+                mode2: 'edit', id: t.id, title: t.title, ttype: t.type,
+                watchPath: t.watchPath ?? '', hookEvent: t.hookEvent ?? 'stop',
+                hookAgent: t.hookAgent ?? '', token: t.token ?? '',
+                act: a.kind, workflowId: a.kind === 'workflow' ? a.workflowId : '',
+                agent: a.kind === 'task' ? a.agentName : ((this.deps.getAgents()[0]?.name) ?? ''),
+                prompt: a.kind === 'workflow' ? '' : a.prompt,
+                mode: a.kind === 'workflow' ? 'headless' : a.mode,
+                model: dims.model ?? '', effort: dims.effort ?? '',
+                permissionMode: dims.permissionMode ?? '', project: dims.projectId ?? '',
+                cli: dims.cli ?? '', workDir: dims.workDir ?? '', priority: dims.priority ?? 0,
+                debounceSec: t.debounceSec, cooldownSec: t.cooldownSec, maxPerHour: t.maxPerHour,
+                enabled: t.enabled,
+                ...guardSeed(t.fireIf)
+            });
+            return;
+        }
+        if (kind === 'workflow') {
+            const w = node?.workflow;
+            send(w ? { mode2: 'edit', id: w.id, title: w.title } : { mode2: 'new' });
+            return;
+        }
+        const tpl = node?.template;
+        send(tpl
+            ? {
+                mode2: 'edit', id: tpl.id, title: tpl.title, prompt: tpl.prompt,
+                mode: tpl.mode, agent: tpl.agentName ?? ''
+            }
+            : { mode2: 'new' });
+    }
+
+    /**
+     * Take a draft back into the manager's own shape and store it.
+     *
+     * ‼️ IT CALLS THE MANAGER, IT DOES NOT REIMPLEMENT IT. Everything about
+     * when a schedule next fires, how a trigger is armed and where any of it is
+     * persisted stays where it already was; this is a translation layer and
+     * nothing else.
+     */
+    private async savePlan(item: Record<string, unknown>): Promise<void> {
+        const m = this.deps.manager;
+        const str = (k: string): string => String(item[k] ?? '').trim();
+        const num = (k: string, d: number): number => {
+            const n = Number(item[k]);
+            return Number.isFinite(n) ? Math.trunc(n) : d;
+        };
+        const kind = str('kind');
+        const editing = str('mode2') === 'edit';
+        const id = str('id');
+        const agent = this.deps.getAgents().find(a => a.name === str('agent'));
+        const guard = (): Precondition | undefined => {
+            const gk = str('guardKind');
+            if (!gk) { return undefined; }
+            const p: Precondition = { kind: gk as Precondition['kind'] };
+            if (str('guardPath')) { p.path = str('guardPath'); }
+            const except = str('guardExcept').split(',').map(s => s.trim()).filter(Boolean);
+            if (except.length) { p.except = except; }
+            if (num('guardMin', 1) > 1) { p.minCount = num('guardMin', 1); }
+            if (gk === 'pathChangedWithin') { p.hours = num('guardHours', 24); }
+            if (gk === 'folderHasFiles') { p.recursive = item.guardRecursive !== false; }
+            return p;
+        };
+        const dims = (): RunDimensions => ({
+            ...(str('model') ? { model: str('model') } : {}),
+            ...(str('effort') ? { effort: str('effort') } : {}),
+            ...(str('permissionMode') ? { permissionMode: str('permissionMode') } : {}),
+            ...(str('cli') ? { cli: str('cli') } : {}),
+            ...(str('workDir') ? { workDir: str('workDir') } : {}),
+            ...(num('priority', 0) ? { priority: num('priority', 0) } : {}),
+            ...(str('project') ? { projectId: str('project') } : {})
+        });
+        const done = (text: string): void => {
+            void this.panel.webview.postMessage({ type: 'plan-saved', text });
+            this.refresh();
+        };
+
+        if (kind === 'schedule') {
+            if (!agent) { this.say('Pick the agent this schedule runs on.'); return; }
+            const every = (str('every') || 'daily') as ScheduleKind;
+            const [hh, mm] = (str('time') || '09:00').split(':').map(Number);
+            const onceAt = every === 'once' ? Date.parse(str('onceAt')) : undefined;
+            if (every === 'once' && !onceAt) { this.say('That date and time could not be read.'); return; }
+            const fields = {
+                agentId: agent.id, agentName: agent.name, title: str('title'), prompt: str('prompt'),
+                mode: str('mode') === 'interactive' ? 'interactive' as TaskMode : 'headless' as TaskMode,
+                kind: every, hour: hh || 0, minute: mm || 0,
+                dow: every === 'weekly' ? num('dow', 1) : undefined,
+                onceAt, enabled: item.enabled !== false,
+                missed: every === 'once' ? undefined : (str('missed') || 'skip') as MissedPolicy,
+                fireIf: guard(), ...dims()
+            };
+            const existing = editing ? m.schedules.find(s => s.id === id) : undefined;
+            if (existing) {
+                Object.assign(existing, fields);
+                // A changed time is a different occurrence: the old day-stamp
+                // would otherwise mark the new time as already handled.
+                existing.lastRunKey = undefined;
+                m.persist();
+                done(`Schedule “${fields.title}” saved.`);
+            } else {
+                m.addSchedule(fields);
+                done(`Schedule “${fields.title}” created — it fires while VS Code is open.`);
+            }
+            return;
+        }
+
+        if (kind === 'trigger') {
+            const act = str('act') || 'task';
+            const mode = str('mode') === 'interactive' ? 'interactive' as TaskMode : 'headless' as TaskMode;
+            let action: FarmTrigger['action'];
+            if (act === 'workflow') {
+                if (!m.workflows.some(w => w.id === str('workflowId'))) {
+                    this.say('Pick the workflow this trigger runs.'); return;
+                }
+                action = { kind: 'workflow', workflowId: str('workflowId') };
+            } else if (act === 'dispatch') {
+                action = { kind: 'dispatch', title: str('title'), prompt: str('prompt'), mode, ...dims() };
+            } else {
+                if (!agent) { this.say('Pick the agent this trigger runs.'); return; }
+                action = {
+                    kind: 'task', agentId: agent.id, agentName: agent.name,
+                    title: str('title'), prompt: str('prompt'), mode, ...dims()
+                };
+            }
+            const type = (str('ttype') || 'watch') as FarmTrigger['type'];
+            const fields = {
+                title: str('title'), type,
+                watchPath: type === 'watch' ? str('watchPath') : undefined,
+                hookEvent: type === 'hook' ? (str('hookEvent') || 'stop') : undefined,
+                hookAgent: type === 'hook' ? (str('hookAgent') || undefined) : undefined,
+                // A webhook with no token has no URL — one is made rather than
+                // saving something that can never be called.
+                token: type === 'webhook' ? (str('token') || newId() + newId()) : undefined,
+                action,
+                debounceSec: num('debounceSec', 5),
+                cooldownSec: num('cooldownSec', 60),
+                maxPerHour: num('maxPerHour', 12),
+                enabled: item.enabled !== false,
+                fireIf: guard()
+            };
+            const existing = editing ? m.triggers.find(t => t.id === id) : undefined;
+            if (existing) {
+                Object.assign(existing, fields);
+                m.persist();
+                done(`Trigger “${fields.title}” saved.`);
+            } else {
+                m.addTrigger(fields);
+                done(`Trigger “${fields.title}” created.`);
+            }
+            return;
+        }
+
+        if (kind === 'workflow') {
+            const existing = editing ? m.workflows.find(w => w.id === id) : undefined;
+            if (existing) {
+                existing.title = str('title');
+                m.persist();
+                done(`Workflow renamed to “${existing.title}”.`);
+            } else {
+                m.addWorkflow(str('title'), []);
+                done(`Workflow “${str('title')}” created — add its steps on the row.`);
+            }
+            return;
+        }
+
+        // template
+        const fields = {
+            title: str('title'), prompt: str('prompt'),
+            mode: str('mode') === 'interactive' ? 'interactive' as TaskMode : 'headless' as TaskMode,
+            agentId: agent?.id, agentName: agent?.name
+        };
+        const existing = editing ? m.templates.find(t => t.id === id) : undefined;
+        if (existing) {
+            Object.assign(existing, fields);
+            m.persist();
+            done(`Template “${fields.title}” saved.`);
+        } else {
+            m.addTemplate(fields);
+            done(`Template “${fields.title}” saved — launch it from its row.`);
+        }
+    }
+
     /** Resolve a PLAN row id back to its concrete definition. */
     private planNode(kind: unknown, id: unknown):
         { kind: string; schedule?: FarmSchedule; trigger?: FarmTrigger; workflow?: FarmWorkflow; template?: FarmTemplate } | undefined {
@@ -490,7 +740,7 @@ export class TasksPanel {
         type: string; taskId?: string; to?: string; text?: string; act?: string; id?: string;
         kind?: string; approvalId?: string; ok?: boolean; file?: string; transcriptPath?: string;
         sessionId?: string; content?: string; name?: string; rows?: { kind: string; id: string }[];
-        index?: number; task?: unknown;
+        index?: number; task?: unknown; item?: unknown;
     }): Promise<void> {
         const m = this.deps.manager;
         const run = (cmd: string, ...args: unknown[]) => { void vscode.commands.executeCommand(cmd, ...args); };
@@ -508,7 +758,9 @@ export class TasksPanel {
                 switch (`${msg.kind}:${msg.act}`) {
                     case 'schedule:toggle': run('agentfarm.toggleSchedule', node); break;
                     case 'schedule:run': run('agentfarm.runScheduleNow', node); break;
-                    case 'schedule:edit': run('agentfarm.editSchedule', node); break;
+                    // ‼️ Edit opens THE FORM, not a chain of boxes. The same
+                    // form the + opens, prefilled — see composeFor.
+                    case 'schedule:edit': this.compose('schedule', msg.id); break;
                     case 'schedule:delete':
                         if (await this.confirm(`Delete schedule "${label}"?`, 'Delete')) {
                             run('agentfarm.deleteSchedule', node);
@@ -516,11 +768,12 @@ export class TasksPanel {
                         break;
                     case 'trigger:toggle': run('agentfarm.toggleTrigger', node); break;
                     case 'trigger:run': run('agentfarm.fireTrigger', node); break;
-                    case 'trigger:edit': run('agentfarm.editTrigger', node); break;
+                    case 'trigger:edit': this.compose('trigger', msg.id); break;
                     case 'trigger:delete': run('agentfarm.deleteTrigger', node); break;   // command confirms
                     case 'workflow:run': run('agentfarm.runWorkflow', node); break;
                     case 'workflow:edit': run('agentfarm.addWorkflowStep', node); break;
-                    case 'workflow:rename': run('agentfarm.renameWorkflow', node); break;
+                    case 'workflow:rename': this.compose('workflow', msg.id); break;
+                    case 'template:edit': this.compose('template', msg.id); break;
                     case 'workflow:delete': run('agentfarm.deleteWorkflow', node); break; // command confirms
                     case 'template:run': run('agentfarm.runTemplate', node); break;
                     case 'template:delete':
@@ -553,11 +806,21 @@ export class TasksPanel {
                 this.refresh();
                 break;
             }
+            // ‼️ THE + USED TO HAND THE JOB BACK TO A DIALOG — AND FOR TEMPLATES
+            // IT HANDED IT TO THE WRONG ONE: the template kind was mapped to
+            // `agentfarm.runTemplate`, so "add a template" RAN one, and making a
+            // template on this page was impossible. All four kinds now open the
+            // page's own form.
             case 'plan-add':
-                run(msg.kind === 'trigger' ? 'agentfarm.addTrigger'
-                    : msg.kind === 'workflow' ? 'agentfarm.newWorkflow'
-                        : msg.kind === 'template' ? 'agentfarm.runTemplate'
-                            : 'agentfarm.addSchedule');
+                // Workflow is the one kind whose CREATION is not one object:
+                // making it means writing its steps, and that chain is Faz 2 of
+                // the U-9 roadmap. Until it is a form, it stays whole rather
+                // than being replaced by a form that can only name it.
+                if (msg.kind === 'workflow') { run('agentfarm.newWorkflow'); }
+                else { this.compose(String(msg.kind || 'schedule')); }
+                break;
+            case 'plan-save':
+                await this.savePlan((msg.item ?? {}) as Record<string, unknown>);
                 break;
 
             // Bulk switching — the thing that used to force one-by-one clicking.

@@ -150,6 +150,18 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     // thinking is counted even though it is deliberately not rendered
     ok('thinking is counted, not shown', st.turnThinking === 1 && rows.every(r => r.kind !== 'think'));
 
+    // ‼️ AND IT IS IN THE TOTAL. A step is one thing the agent did — it
+    // reasoned, it wrote, or it called a tool — so this batch is four, not the
+    // three that were drawn. The Console used to work the number out from the
+    // rows on screen, which could not see the thinking block at all and swept
+    // in every tool RESULT instead: short of the dearest step and double-counting
+    // the answers. Counted here now, off the same blocks the tables count.
+    ok('‼️ every step is in the turn total — reasoning included', st.turnSteps === 4);
+    ok('…and a tool RESULT is not a step the agent took',
+        CP.reduceEvent(st, {
+            type: 'user', message: { content: [{ type: 'tool_result', content: 'x' }] }
+        }, 2200).state.turnSteps === 4);
+
     // a repeated line (same call, next block batch) must not charge again
     const before = st.messages.length;
     st = CP.reduceEvent(st, {

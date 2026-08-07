@@ -613,7 +613,9 @@ const html = allHtml;
     const status = () => (els['c-status'] ? els['c-status']._html : '');
 
     push(data(CONVO.concat([msg('agent', { text: 'thinking out loud' })]), {
-        status: 'working', turnStartedAt: Date.now() - 41000, turnTokens: 4200, turnCost: 0.031
+        status: 'working', turnStartedAt: Date.now() - 41000, turnTokens: 4200, turnCost: 0.031,
+        // the reducer's own count, pushed with the state — see below
+        turnSteps: 3, turnThinking: 1
     }));
     ok('the running turn says what IT has spent', /~\$0\.031 \(4200t tokens\)/.test(working()));
     // ‼️ …and says WHICH it is. Two numbers three centimetres apart, one
@@ -623,16 +625,18 @@ const html = allHtml;
         /4200t tokens\) this turn/.test(working())
         && / this session/.test(status()));
     ok('…marked as the estimate it is until the turn closes', /estimate/.test(working()));
-    // ‼️ A STEP IS A STEP EVERYWHERE, AND THE STRIP USED TO DISAGREE. It counted
-    // ROWS since your last message — which sweeps in every tool RESULT (one per
-    // call, so the figure was roughly doubled) and the turn's own result line,
-    // while the session tables and the Turns page count the transcript's blocks:
-    // reply fragments and tool calls. Of the six rows after the prompt here,
-    // three are steps: "on it", the Read call, and the fragment that just
-    // streamed in. The result body, the error result and the turn's result line
-    // are not things the agent did — they are what came back.
-    ok('…with the steps it has produced, counted the way every other surface counts them',
+    // ‼️ A STEP IS A STEP EVERYWHERE, AND THE STRIP USED TO DISAGREE — TWICE
+    // OVER. It worked the figure out HERE, in the view, by walking the rows
+    // since your last message: that sweeps in every tool RESULT (one per call,
+    // so the figure was roughly doubled) and the turn's own result line, and it
+    // cannot see a thinking block at all, because thinking is deliberately
+    // never drawn. Too big and short of the most expensive part at the same
+    // time. The count now arrives WITH the state, off the transcript's own
+    // blocks (core/consoleproto.ts turnSteps) — the strip only prints it.
+    ok('…with the steps it has produced, counted where the blocks are, not where the rows are',
         />3steps</.test(working()) && !/>6</.test(working()) && !/· \d+ lines?/.test(working()));
+    ok('…and the hover says how much of that was reasoning',
+        /3 steps, 1 were the model reasoning/.test(working()));
     // ‼️ …AND HOW MANY ROUND TRIPS CARRIED THEM. The steps are what you watch
     // scroll past; the tokens are charged per API CALL, and one call carries
     // several steps. Showing only the steps let a turn whose call count halved

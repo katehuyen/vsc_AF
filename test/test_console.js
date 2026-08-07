@@ -1179,6 +1179,26 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     ok('…then Sessions, then the Turns inside them',
         title.indexOf('agentfarm.openSessions') === title.indexOf('agentfarm.openConsole') + 1
         && title.indexOf('agentfarm.openTurns') === title.indexOf('agentfarm.openSessions') + 1);
+    // The reading row ends where the writing row begins: everything above opens
+    // something to look at, and the LAST thing on the strip is the one button
+    // that creates. So the matrix — the last read — sits directly before "+".
+    ok('the Capability Matrix is the last thing you read, so it sits before the +',
+        title.indexOf('agentfarm.openCapabilities') === title.indexOf('agentfarm.newAgent') - 1);
+    ok('…and + closes the strip', title[title.length - 1] === 'agentfarm.newAgent');
+    // A title strip is not a menu: what does not belong to THIS view's subject
+    // is taken off it. The Timeline is the Live Feed's own title button and the
+    // Guide is reachable from the welcome view, the walkthrough and the palette.
+    ok('the Live Timeline is not on the Agents strip', !title.includes('agentfarm.openTimeline'));
+    ok('the Guide is not on the Agents strip', !title.includes('agentfarm.openGuide'));
+    // Two buttons a centimetre apart carrying the same glyph are one button as
+    // far as the eye is concerned. Console talks to an agent, Sessions reads
+    // what was said — and `openSession` (one) to `openSessions` (all) is book
+    // to library.
+    const iconOf = c => (pkg.contributes.commands.find(x => x.command === c) || {}).icon;
+    ok('Sessions does not wear the Console glyph',
+        iconOf('agentfarm.openSessions') && iconOf('agentfarm.openSessions') !== iconOf('agentfarm.openConsole'));
+    ok('…every icon on the Agents strip is distinct',
+        new Set(title.map(iconOf)).size === title.length);
 }
 
 // ---------- the fleet line on the portfolio ----------
