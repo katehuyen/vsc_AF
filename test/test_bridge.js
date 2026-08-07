@@ -987,9 +987,15 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
 
         // the real registration must carry the same contract (this mirror can drift)
         const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
-        const block = src.slice(src.indexOf("op: 'sessions.recent'"), src.indexOf("op: 'sessions.recent'") + 1200);
+        // Wide enough to hold the whole registration, describe included — a
+        // window sized to yesterday's describe fails the day one grows.
+        const block = src.slice(src.indexOf("op: 'sessions.recent'"), src.indexOf("op: 'sessions.start'"));
         ok('extension.ts registers sessions.recent with the origin arg',
             /origin\?/.test(block) && /sessionOrigin\(s\) === origin/.test(block) && /origin: sessionOrigin\(s\)/.test(block));
+        // …and says WHICH mechanism started an automation run, by name — the
+        // fact origin is now decided from (core/sessions.ts sessionOrigin).
+        ok('…and carries the launcher and the session id an agent needs to act',
+            /launchedBy: s\.launchedBy/.test(block) && /id: s\.sessionId/.test(block));
     }
 
     // ---------- §19.C: usage.plan — the real subscription quota ----------

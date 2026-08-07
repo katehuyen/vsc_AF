@@ -316,45 +316,93 @@
         ` <button class="fold" data-term="${C.esc(r.agentName || '')}" data-sid="${C.esc(r.sessionId || '')}" data-cwd="${C.esc(r.cwd || '')}" title="Jump to this session's terminal window (if one is open)">⌨</button>`;
     const cut = (s, n) => (s || '').length > n ? s.slice(0, n - 1) + '…' : (s || '—');
 
+    /**
+     * ‼️ SAME RULE AS THE SESSIONS TABLE (docs/CONVENTIONS.md → Hover): the
+     * heading defines the column once, and a cell hover is `Label: value` lines
+     * — figures, never a sentence. Everything below comes off the row the page
+     * already has; nothing here asks the host a second question.
+     */
+    const line = (k, v) => (v === '' || v === undefined || v === null ? '' : `${k}: ${v}`);
+    const round1 = n => Math.round(n * 10) / 10;
+    const pctOf = (n, of) => (of > 0 ? Math.round(n / of * 100) + '%' : '');
+    const stamp = ts => (ts ? new Date(ts).toLocaleString() : '');
+    const tip = parts => C.esc(parts.filter(Boolean).join('\n'));
+    /** Everything known about ONE turn — the shared readout its cells share. */
+    const turnTip = r => tip([
+        line('Turn', `${r.n} of ${r.of}`),
+        line('When', stamp(r.ts)),
+        line('Took', r.ms ? C.fmtDur(r.ms) : ''),
+        line('Duration', r.durationMs ? C.fmtDur(r.durationMs) : ''),
+        line('API calls', r.apiCalls || ''),
+        line('Steps', r.steps || ''),
+        line('Steps per call', r.apiCalls && r.steps ? round1(r.steps / r.apiCalls) : ''),
+        line('Tool calls', r.tools || ''),
+        line('Errors', r.errors || ''),
+        line('Tokens', r.tokens ? C.fmtTok(r.tokens) : ''),
+        line('Weighted', r.wTokens ? C.fmtTok(r.wTokens) : ''),
+        line('Tokens per call', r.apiCalls && r.tokens ? C.fmtTok(Math.round(r.tokens / r.apiCalls)) : ''),
+        line('Cost', r.cost ? C.fmtUSD(r.cost) : ''),
+        line('Models', (r.models || []).map(m => m.replace(/^claude-/, '')).join(', ')),
+        line('Agent', r.agent),
+        line('Session', r.session)
+    ]);
+
     const HEAD = {
-        origin: '<th class="origcell" title="Who started the session this turn belongs to — 🧑 you, in an interactive session · 🤖 automation (schedule / trigger / task / mission). Switch the scope with the 🧑 chip above.">By</th>',
-        agent: '<th>Agent</th>',
-        label: '<th>Turn</th>',
-        session: '<th title="The session this turn belongs to — hover a cell for the full title">Session</th>',
-        n: '<th class="num" title="turn number / the session\'s turn count">#</th>',
-        models: '<th>Model</th>',
-        tokens: '<th class="num">Tokens</th>',
-        when: '<th class="num">When</th>',
-        duration: '<th class="num" title="Until the next turn opened (last turn: until the session\'s end) — this includes the time the ball was with you. &quot;Took&quot; is the turn\'s own running time.">Duration</th>',
+        origin: '<th class="origcell" title="Who started the session this turn belongs to: 🧑 you · 🤖 automation">By</th>',
+        agent: '<th title="Agent whose folder the session ran in">Agent</th>',
+        label: '<th title="The prompt that opened the turn">Turn</th>',
+        session: '<th title="The session this turn belongs to">Session</th>',
+        n: '<th class="num" title="Turn number / the session\'s turn count">#</th>',
+        models: '<th title="Model(s) that served the turn">Model</th>',
+        tokens: '<th class="num" title="Raw tokens; after ⚖ weighted against the plan limit">Tokens</th>',
+        when: '<th class="num" title="Time since the turn opened">When</th>',
+        duration: '<th class="num" title="Until the next turn opened (last turn: until the session ended) — includes the time the ball was with you; Took is the turn\'s own running time">Duration</th>',
         steps: `<th class="num" title="${C.esc(C.STEPS_TIP)}">Steps</th>`,
         took: '<th class="num" title="How long the turn itself ran — its prompt to its last line">Took</th>',
         ctx: '<th class="num" title="What the model\'s window held when this turn ended">Ctx</th>',
-        tools: '<th class="num">Tools</th>',
-        errors: '<th class="num">Err</th>',
-        cost: '<th class="num">Cost</th>'
+        tools: '<th class="num" title="Tool calls made inside this turn">Tools</th>',
+        errors: '<th class="num" title="Tool results that came back as errors">Err</th>',
+        cost: '<th class="num" title="API-equivalent cost of this turn">Cost</th>'
     };
     const CELL = {
         origin: r => {
             const o = originMeta(originOf(r));
-            return `<td class="origcell ${o.id}" title="${o.id === 'auto'
-                ? 'Automation started this session (schedule / trigger / task / mission)'
-                : 'You started this session — an interactive dialog'}">${o.glyph}</td>`;
+            return `<td class="origcell ${o.id}" title="${tip([
+                line('Started by', o.id === 'auto' ? '🤖 Automation' : '🧑 You'),
+                line('Agent', r.agent),
+                line('Session', r.session)
+            ])}">${o.glyph}</td>`;
         },
-        agent: r => `<td>${dot(r)}${C.esc(r.agent)}${subBadge(r)}${termBtn(r)}</td>`,
-        label: r => `<td class="turncol" title="${C.esc(r.label || '')}">${C.esc(cut(r.label, LABEL_CHARS))}</td>`,
-        session: r => `<td class="sesscol" title="${C.esc(r.session || '')}">${C.esc(cut(r.session, SESSION_CHARS))}</td>`,
-        n: r => `<td class="num" title="turn ${r.n} of ${r.of} in this session">${r.n}/${r.of}</td>`,
-        models: r => `<td>${(r.models || []).map(m =>
+        agent: r => `<td title="${turnTip(r)}">${dot(r)}${C.esc(r.agent)}${subBadge(r)}${termBtn(r)}</td>`,
+        // ‼️ The two TEXT columns hover into the rich panel (media/afTip.js):
+        // a native tooltip cuts wherever the platform likes, which is the worst
+        // possible treatment of the one cell that is actually words.
+        label: r => window.AFTip.cell('turncol', '', C.esc(cut(r.label, LABEL_CHARS)),
+            `Turn ${r.n} of ${r.of} · ${stamp(r.ts)}`, r.label || ''),
+        session: r => window.AFTip.cell('sesscol', '', C.esc(cut(r.session, SESSION_CHARS)),
+            `Session · ${r.agent || ''}`, r.session || ''),
+        n: r => `<td class="num" title="${turnTip(r)}">${r.n}/${r.of}</td>`,
+        models: r => `<td title="${turnTip(r)}">${(r.models || []).map(m =>
             `<span class="tag">${C.esc(m.replace(/^claude-/, ''))}</span>`).join('') || '—'}</td>`,
-        tokens: r => `<td class="num">${r.tokens ? C.fmtTokW(r.tokens, r.wTokens) : '—'}</td>`,
-        when: r => `<td class="num">${relTime(r.ts)}</td>`,
-        duration: r => `<td class="num">${r.durationMs ? C.esc(C.fmtDur(r.durationMs)) : '—'}</td>`,
-        steps: r => `<td class="num">${r.steps || r.apiCalls ? C.esc(C.fmtSteps(r.apiCalls, r.steps)) : '—'}</td>`,
-        took: r => `<td class="num">${r.ms ? C.esc(C.fmtDur(r.ms)) : '—'}</td>`,
-        ctx: r => `<td class="num">${r.endCtx ? C.fmtTok(r.endCtx) : '—'}</td>`,
-        tools: r => `<td class="num">${r.tools || 0}</td>`,
-        errors: r => `<td class="num">${r.errors || ''}</td>`,
-        cost: r => `<td class="num"><strong>${r.cost ? C.fmtUSD(r.cost) : '—'}</strong></td>`
+        tokens: r => `<td class="num" title="${turnTip(r)}">${r.tokens ? C.fmtTokW(r.tokens, r.wTokens) : '—'}</td>`,
+        when: r => `<td class="num" title="${turnTip(r)}">${relTime(r.ts)}</td>`,
+        duration: r => `<td class="num" title="${turnTip(r)}">${r.durationMs ? C.esc(C.fmtDur(r.durationMs)) : '—'}</td>`,
+        steps: r => `<td class="num" title="${turnTip(r)}">${r.steps || r.apiCalls ? C.esc(C.fmtSteps(r.apiCalls, r.steps)) : '—'}</td>`,
+        took: r => `<td class="num" title="${turnTip(r)}">${r.ms ? C.esc(C.fmtDur(r.ms)) : '—'}</td>`,
+        ctx: r => `<td class="num" title="${tip([
+            line('Ctx at end', r.endCtx ? C.fmtTok(r.endCtx) : '—'),
+            line('Of a 200k window', r.endCtx ? pctOf(r.endCtx, 200000) : ''),
+            line('Turn tokens', r.tokens ? C.fmtTok(r.tokens) : ''),
+            line('Turn', `${r.n} of ${r.of}`)
+        ])}">${r.endCtx ? C.fmtTok(r.endCtx) : '—'}</td>`,
+        tools: r => `<td class="num" title="${turnTip(r)}">${r.tools || 0}</td>`,
+        errors: r => `<td class="num" title="${tip([
+            line('Errors', r.errors || 0),
+            line('Tool calls', r.tools || 0),
+            line('Share', r.errors ? pctOf(r.errors, r.tools) : ''),
+            line('Turn', `${r.n} of ${r.of}`)
+        ])}">${r.errors || ''}</td>`,
+        cost: r => `<td class="num" title="${turnTip(r)}"><strong>${r.cost ? C.fmtUSD(r.cost) : '—'}</strong></td>`
     };
 
     /** Show chips for the content of unfolded turns (the session viewer's set). */

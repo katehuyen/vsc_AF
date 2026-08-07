@@ -231,6 +231,10 @@ export function htmlShell(
     const ctx = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afCtx.js'));
     const sessCtx = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSessionCtx.js'));
     const textTools = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afTextTools.js'));
+    // The rich hover panel. Ships everywhere for the same reason the others do:
+    // the rule is "any hover carrying TEXT uses this", and a rule that needs a
+    // script tag added first is a rule that gets skipped.
+    const tip = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afTip.js'));
     const sessTable = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'sessionsTable.js'));
     const script = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', scriptFile));
     // Global UI config shared by every page (not page data): the user's AI
@@ -270,6 +274,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${ctx}"></script>
 <script nonce="${nonce}" src="${sessCtx}"></script>
 <script nonce="${nonce}" src="${textTools}"></script>
+<script nonce="${nonce}" src="${tip}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>
 <script nonce="${nonce}" src="${script}"></script>
 </body>

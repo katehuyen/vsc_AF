@@ -38,6 +38,10 @@ export interface ViewerDeps {
     /** True while the session has a live claude process (live monitor). Guards
      *  Capture now: we never `--resume` a session that another process is writing. */
     isSessionLive?(sessionId: string): boolean;
+    /** Which of Agent Farm's own mechanisms started this run, when one did —
+     *  see SessionInfo.launchedBy. Decides the origin and names the schedule
+     *  in the subtitle instead of "automation run". */
+    launchedByFor?(sessionId: string): { kind: string; label: string } | undefined;
 }
 
 interface ViewMessage {
@@ -66,6 +70,11 @@ interface ViewMessage {
 /** Ceiling for TOOL payloads only (a Read of a big file, a huge JSON result).
  *  The conversation itself is never cut — see clipTool. */
 const TOOL_LIMIT = 200_000;
+
+/** How much of a turn's opening prompt travels with the turn table, for the
+ *  hover that shows it whole. Higher than the index's own cap because this is
+ *  fetched on demand for ONE session, not held for every session for ever. */
+const TURN_PROMPT_MAX = 8000;
 
 /** Hard ceiling for the tab caption: `Session #<8-char id>` is 17, so this
  *  leaves the name about a dozen characters — a hint, not a headline. Tabs are
@@ -484,22 +493,46 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
     // where usage from non-rendering assistant lines is still visible).
     let turnNo = 0;
     const turnLabels: Record<number, string> = {};
+    const turnPrompts: Record<number, string> = {};
     const turnTs: Record<number, number> = {};
+    // Per-turn tool activity. Counted here rather than in the parse loop because
+    // this is where a message finally knows which turn it belongs to — and the
+    // turn row said what it SPENT while saying nothing about what it did.
+    const turnTools: Record<number, number> = {};
+    const turnErrors: Record<number, number> = {};
+    const turnToolNames: Record<number, Record<string, number>> = {};
     for (const m of messages) {
         if (m.role === 'user' && !m.sidechain) {
             turnNo++;
             m.turnStart = true;
             turnLabels[turnNo] = promptLabel(m.text ?? '');
+            // The opening ask WHOLE, for the hover (media/afTip.js). Only the
+            // turn table travels with it and only on demand, so unlike the
+            // index's `firstPrompt` this is not a permanent cost.
+            turnPrompts[turnNo] = String(m.text ?? '').trim().slice(0, TURN_PROMPT_MAX);
             turnTs[turnNo] = m.ts;
         }
-        if (turnNo > 0) { m.turn = turnNo; }
+        if (turnNo > 0) {
+            m.turn = turnNo;
+            if (m.role === 'tool') {
+                turnTools[turnNo] = (turnTools[turnNo] ?? 0) + 1;
+                const name = m.tool ?? '?';
+                const bag = turnToolNames[turnNo] ?? (turnToolNames[turnNo] = {});
+                bag[name] = (bag[name] ?? 0) + 1;
+            }
+            if (m.role === 'toolResult' && m.isError) {
+                turnErrors[turnNo] = (turnErrors[turnNo] ?? 0) + 1;
+            }
+        }
     }
     // Flat per-turn table for the "Turn breakdown" box. `ts` (the opening prompt's
     // time) lets other surfaces deep-link into a turn via openSession(file, focusTs).
     // `models`/`attrs` are verbatim transcript values — see ATTR_KEYS.
     const turns: {
-        n: number; label: string; ts: number; tokens: number; wTokens: number; cost: number;
+        n: number; label: string; prompt: string; ts: number;
+        tokens: number; wTokens: number; cost: number;
         apiCalls: number; steps: number; ms: number; endCtx: number;
+        tools: number; errors: number; topTools: { name: string; n: number }[];
         models: string[]; attrs: Record<string, string>;
     }[] = [];
     for (let n = 1; n <= turnNo; n++) {
@@ -507,6 +540,13 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
         const startTs = turnTs[n] ?? 0;
         turns.push({
             n, label: turnLabels[n] ?? '',
+            // the whole ask, for the hover — see turnPrompts above
+            prompt: turnPrompts[n] ?? '',
+            tools: turnTools[n] ?? 0,
+            errors: turnErrors[n] ?? 0,
+            topTools: Object.entries(turnToolNames[n] ?? {})
+                .sort((a, b) => b[1] - a[1]).slice(0, 4)
+                .map(([name, c]) => ({ name, n: c })),
             ts: startTs,
             tokens: acc?.tokens ?? 0,
             wTokens: Math.round(acc?.wTokens ?? 0),
@@ -538,8 +578,11 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
         cwd,
         permissionMode,
         // Who started this session — the same 🧑/🤖 distinction the Sessions
-        // tables filter on, so opening a transcript says it too.
-        origin: sessionOrigin({ entrypoint }),
+        // tables filter on, so opening a transcript says it too, and by the
+        // same rule: a run the farm's own record names beats a reading of the
+        // entrypoint (see core/sessions.ts sessionOrigin).
+        origin: sessionOrigin({ entrypoint, launchedBy: deps.launchedByFor?.(sessionId) }),
+        launchedBy: deps.launchedByFor?.(sessionId) ?? null,
         firstTs,
         lastTs,
         models: [...models],

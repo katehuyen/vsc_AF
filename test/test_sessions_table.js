@@ -82,7 +82,12 @@ const C = {
             fmtTokW(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' [w' + this.fmtTok(Math.round(w)) + ']' : ''); },
             fmtTokWText(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' (w' + this.fmtTok(Math.round(w)) + ')' : ''); },
             WEIGHTED_TIP: 'weighted',
-    fmtUSD: v => '$' + v
+    // rounded like the real one (charts.js): a per-hour rate is a division, and
+    // a stub that prints 24.000000000000004 tests the stub, not the page
+    fmtUSD: v => '$' + Math.round(v * 100) / 100,
+    fmtDur: ms => Math.round(ms / 1000) + 's',
+    fmtSteps: (calls, steps) => (calls ? calls + 'api·' : '') + steps + 'steps',
+    STEPS_TIP: 'two measurements of the SAME turn'
 };
 const ev = () => ({ stopPropagation() { } });
 const click = el => el._fn(ev());
@@ -138,14 +143,15 @@ const mkRow = (i, extra) => Object.assign({
     ok('row click posts openSession', posted.some(p => p.type === 'openSession' && p.file === 'f2'));
 }
 
-// ---------- S-6 / S-17: every column answers its own question on hover ----------
+// ---------- S-6 / S-17: every column is a READOUT on hover ----------
 // The row's tooltip used to be the only one, so all eleven cells said
 // "right-click for session actions" and the figures they covered — when the
 // session ran, what a turn cost — were reachable only by opening it. S-17 then
-// took the hint back OUT of the cells: appending one sentence to eleven
-// tooltips on every row is the same waste in a smaller font. It is said once,
-// above the table (and by the selection bar, with the count), and the cells got
-// longer rather than shorter.
+// took the hint back OUT of the cells (one sentence appended to eleven tooltips
+// on every row is the same waste in a smaller font; it is said once, above the
+// table) and finally took the PROSE out too: a cell hover is `Label: value`
+// lines, the way a spreadsheet says it, and anything that is TEXT — a prompt, a
+// project's details — moves to the rich panel where it can actually be read.
 {
     posted = []; state = {};
     const t = sandbox.window.AFSessionsTable.create({
@@ -174,32 +180,62 @@ const mkRow = (i, extra) => Object.assign({
     ok('…while the strip above the table says it in words for the whole table',
         /class="muted small">[^<]*right-click for session actions/.test(html()));
     ok('When says the whole date and both ends',
-        /title="[^"]*Last activity:[^"]*Started:[^"]*Ran for 20 min/.test(html()));
-    ok('Duration derives the per-turn average', html().includes('5 min per turn'));
-    ok('Duration is honest that it is wall clock', html().includes('not time spent working'));
-    ok('Turns names what a turn is, and what one costs',
-        html().includes('prompts you sent')
-        && html().includes('100t tokens per turn') && html().includes('$2 per turn'));
+        /title="[^"]*Last activity:[^"]*Started:[^"]*Ran for: 20 min/.test(html()));
+    ok('Duration derives the per-turn average', html().includes('Per turn: 5 min'));
+    ok('Duration says it is wall clock — as a value, not a lecture',
+        html().includes('Duration: 20 min (wall clock)'));
+    ok('Turns derives what one turn costs',
+        html().includes('Tokens per turn: 100t') && html().includes('Cost per turn: $2'));
     ok('Turns separates the prompts you sent from the round trips they took',
-        html().includes('8 API calls carried them') && html().includes('2 calls per turn'));
+        html().includes('API calls: 8') && html().includes('Calls per turn: 2'));
     ok('Tokens separates the raw total from the weighted one',
-        /title="Raw total: 400t[^"]*Against the plan limit: 900t/.test(html()));
+        /title="Raw total: 400t[^"]*Weighted \(plan\): 900t/.test(html()));
     // ‼️ Two sessions with the same total differ by an order of magnitude in
     // money when one is cache reads and the other is output.
     ok('Tokens splits the total the way it is billed',
-        html().includes('in 100t · out 100t · cache read 160t · cache write 40t')
-        && html().includes('Cache reads are 40% of the total'));
+        html().includes('In: 100 (25%)') && html().includes('Out: 100 (25%)')
+        && html().includes('Cache read: 160 (40%)') && html().includes('Cache write: 40 (10%)'));
+    ok('…and the weight ratio is a figure, not a warning',
+        html().includes('Weight ratio: 2.3×'));
     ok('Tools says WHAT it did, not only how much',
-        html().includes('Mostly: Read 7 · Edit 5'));
-    ok('Errors says what share of the tool calls they are', html().includes('25% of the tool calls'));
-    ok('Ctx explains what the number is', html().includes('after the last reply'));
-    ok('Cost is honest about being API-equivalent', html().includes('a plan session is not billed this way'));
-    ok('Cost names the model the price came from', html().includes('Priced at: opus-5'));
+        html().includes('Top: Read 7 · Edit 5'));
+    ok('Errors says what share of the tool calls they are',
+        html().includes('Share of tool calls: 25%'));
+    ok('Ctx opens up instead of showing one number',
+        html().includes('Context now: 90000t') && html().includes('Of a 200k window: 45%')
+        && html().includes('Share of the total:'));
+    ok('Cost derives a rate from every denominator it has',
+        html().includes('Per turn: $2') && html().includes('Per API call: $1')
+        && html().includes('Per 1M tokens: $20000'));
+    // ‼️ …and NOT from one that is not worth dividing by. A 20-minute session
+    // has no hourly rate; the old tooltip clamped the divisor to one hour and
+    // printed the session's whole cost as its "per hour" figure.
+    ok('a session under an hour is not given an hourly rate',
+        !html().includes('Per hour:'));
+    ok('Cost names the model the price came from', html().includes('Models: opus-5'));
     ok('Agent carries the circumstances of the run',
-        html().includes('Git branch: master') && html().includes('Permission mode: acceptEdits')
-        && html().includes('CLI version: 2.0.31'));
+        html().includes('Branch: master') && html().includes('Permissions: acceptEdits')
+        && html().includes('CLI: 2.0.31'));
     ok('By shows its own evidence rather than asking to be trusted',
         html().includes('Entrypoint: cli'));
+
+    // ‼️ THE POINT OF THE PASS: no cell explains itself. These are the exact
+    // sentences that used to be repeated under every figure on every row.
+    const PROSE = [
+        'not time spent working', 'prompts you sent', 'carried them',
+        'a plan session is not billed this way', 'after the last reply',
+        'Cache reads are', 'is a long one even if', 'an error is not always a fault',
+        'Resolved in a fixed order', 'open the session to see the changes'
+    ];
+    // Only the CELLS — a `<th>` is where a column's one definition belongs, and
+    // that is the whole point of taking the definitions out of the cells.
+    const cellTips = (html().match(/<td[^>]*title="[^"]*"/g) || []).join(' ');
+    ok('no cell tooltip explains itself — figures only',
+        PROSE.every(p => !cellTips.includes(p)));
+    ok('…and no cell tooltip has grown into a paragraph',
+        (html().match(/<td[^>]*title="([^"]*)"/g) || [])
+            .filter(t => t.indexOf('right-click') < 0)
+            .every(t => t.length < 800));
 
     // …and the selection bar is where "what would a right-click do to all of
     // them" is answered — with the count, once, not in every cell.
@@ -210,6 +246,87 @@ const mkRow = (i, extra) => Object.assign({
     ok('a selection says the menu acts on all of them — once, on its own bar',
         sel.includes('1 session selected — right-click to act on all of them')
         && (sel.match(/1 session selected/g) || []).length <= 2);
+}
+
+// ---------- S-17: the text columns hover into the RICH PANEL ----------
+// A native tooltip repeats what the row already drew and then stops wherever
+// the platform feels like stopping — which is the worst possible treatment of
+// the two cells whose content is words. Title and Project open the same panel
+// the backlog's `more` proved out (media/afTip.js): the whole opening prompt,
+// the project's own folders, scrollable, pointer can go in.
+{
+    posted = []; state = {};
+    const t = sandbox.window.AFSessionsTable.create({
+        vscode: vscodeStub, C, containerId: 'box',
+        columns: ['title', 'project', 'when', 'cost'], stateKey: 'box'
+    });
+    const PROMPT = 'do the top seven items of the backlog. '.repeat(60);   // ~2400 chars
+    t.setRows([mkRow(1, {
+        title: 'backlog ilerleme', firstPrompt: PROMPT, turns: 4,
+        project: 'AgentFarm', projectIcon: '◧', projectColor: '#f80',
+        projectDetail: 'Status: active · product\nDocs: D:\\zone\\know\\PRS\nCode: D:\\zone\\dev\\vsc_AgentFarm',
+        cliName: 'nightly', tags: ['zen'], sessionId: 'sidX'
+    })], 10);
+    const html = () => containers.box.innerHTML;
+
+    ok('the title cell opens the rich panel, not a native title',
+        html().includes('class="af-tipw"') && html().includes('class="af-tipb"'));
+    // ‼️ THE WHOLE PROMPT. Not eighty characters of it, not a platform's idea
+    // of enough — the reason the panel exists at all.
+    ok('…carrying the opening prompt whole',
+        html().indexOf(PROMPT.trim()) > 0);
+    ok('…with the identity facts above it, as Label: value',
+        html().includes('Session: sidX') && html().includes('Turns: 4')
+        && html().includes('Started as: nightly'));
+    // the count is grouped by the user's own locale (2,280 · 2.280 · 2 280),
+    // so the assertion must not pin one country's separator
+    ok('…and a head that says how big the thing you are reading is',
+        /first prompt [\d.,\s  ]+ characters/.test(html()));
+    ok('the project cell carries what the project IS, folders first',
+        html().includes('Docs: D:\\zone\\know\\PRS') && html().includes('Code: D:'));
+    ok('…headed by the project name', html().includes('Project · AgentFarm'));
+    // A session with no project must not open an empty box on hover.
+    t.setRows([mkRow(2, { project: '', projectDetail: '' })], 10);
+    ok('a session with no project opens nothing',
+        !containers.box.innerHTML.includes('Project · '));
+}
+
+// ---------- S-17: the TURN rows are where the detail actually lives ----------
+{
+    posted = []; state = {};
+    const t = sandbox.window.AFSessionsTable.create({
+        vscode: vscodeStub, C, containerId: 'trn',
+        columns: ['title', 'when', 'cost'], stateKey: 'trn'
+    });
+    t.setRows([mkRow(1)], 10);
+    click(containers.trn.querySelectorAll('[data-fold]')[0]);
+    const TP = 'fix the encoding bug in the packager, and explain why. '.repeat(30);
+    t.onMessage({
+        data: {
+            type: 'sessionTurns', file: 'f1', turns: [
+                {
+                    n: 1, label: 'fix the encoding bug', prompt: TP, ts: NOW - 3600000,
+                    models: ['claude-opus-5'], tokens: 300, wTokens: 700, cost: 3,
+                    apiCalls: 6, steps: 18, ms: 90000, endCtx: 40000,
+                    tools: 9, errors: 1, topTools: [{ name: 'Edit', n: 5 }, { name: 'Bash', n: 3 }]
+                },
+                { n: 2, label: 'and the tests', prompt: 'and the tests', ts: NOW, tokens: 100, cost: 1 }
+            ]
+        }
+    });
+    const html = () => containers.trn.innerHTML;
+
+    ok('the turn prompt opens the rich panel with the whole ask',
+        html().includes('class="af-tipb"') && html().indexOf(TP.trim()) > 0);
+    ok('…headed by the turn and its size', /Turn 1 · .* · [\d.,\s  ]+ characters/.test(html()));
+    ok('a turn row carries the figures the session row is a SUM of',
+        html().includes('Tool calls: 9') && html().includes('Top tools: Edit 5 · Bash 3')
+        && html().includes('Errors: 1') && html().includes('Steps per call: 3'));
+    ok('…and each turn against the session it is part of',
+        html().includes('Share of session tokens: 75%')
+        && html().includes('Share of session cost: 75%'));
+    ok('…and the turn columns keep their own headings',
+        html().includes('>steps</th>') && html().includes('>prompt</th>'));
 }
 
 // ---------- part 2: turn accordion — fold, host round-trip, turn jump ----------

@@ -105,6 +105,20 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
         sessionOrigin({ entrypoint: 'sdk-cli', consoleHosted: true }) === 'user');
     ok('…and a headless run over the same channel is still automation',
         sessionOrigin({ entrypoint: 'sdk-cli', consoleHosted: false }) === 'auto');
+    // ‼️ AND A KNOWN LAUNCHER OUTRANKS THE CONSOLE EXCEPTION. The hosted-id list
+    // records every session a Console has ever HELD, `--resume` included: opening
+    // an automation run in the panel to read it relabelled the run, permanently,
+    // as a person's dialog. Measured: a scheduled headless task showed under
+    // 🧑 User while its own limit-retries showed under 🤖 Auto.
+    ok('a run the farm started is automation even after the Console resumed it',
+        sessionOrigin({
+            entrypoint: 'sdk-cli', consoleHosted: true,
+            launchedBy: { kind: 'schedule', label: 'backlog ilerleme' }
+        }) === 'auto');
+    ok('…and a task run with no Console history is automation too',
+        sessionOrigin({ entrypoint: 'sdk-cli', launchedBy: { kind: 'task', label: 't' } }) === 'auto');
+    ok('a hosted conversation with no launcher on record is still a person',
+        sessionOrigin({ entrypoint: 'sdk-cli', consoleHosted: true, launchedBy: undefined }) === 'user');
 
     const usage = i => ({ input: i, output: 0, cacheWrite: 0, cacheRead: 0 });
     // 20 automation runs are the newest AND the most expensive; 3 user dialogs

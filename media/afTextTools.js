@@ -225,9 +225,49 @@
         }
     }
 
+    /**
+     * ‼️ ONE CLIPBOARD PATH, AND ONE RECEIPT — for anything, not just a box.
+     *
+     * A session id in a subtitle, a path in a card: plenty of things on a page
+     * are worth one click to copy, and every one of them needs the same two
+     * behaviours this file already got right — the async API with the
+     * execCommand fallback, and a ✓ that appears only once the write ACTUALLY
+     * happened. Written twice, they drift; the second copy is always the one
+     * that shows a tick for a failed write.
+     *
+     * `el` is the element that was clicked: it becomes its own receipt for a
+     * moment and then goes back to what it said.
+     */
+    function copyFrom(el, value) {
+        const restore = el ? el.textContent : '';
+        const done = () => {
+            if (!el) { return; }
+            el.textContent = '✓ copied';
+            el.classList.add('done');
+            setTimeout(() => { el.textContent = restore; el.classList.remove('done'); }, 900);
+        };
+        const nav = typeof navigator !== 'undefined' ? navigator : null;
+        if (nav && nav.clipboard && nav.clipboard.writeText) {
+            nav.clipboard.writeText(String(value)).then(done, () => { /* denied: no false receipt */ });
+            return;
+        }
+        // No async clipboard: put the text in a throwaway box and cut from it.
+        try {
+            const ta = document.createElement('textarea');
+            ta.value = String(value);
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            const ok = document.execCommand('copy') !== false;
+            document.body.removeChild(ta);
+            if (ok) { done(); }
+        } catch { /* nothing claimed, nothing shown */ }
+    }
+
     // `insert` is `pasteAtCursor` under its public name: anything that puts
     // text into one of these boxes from outside (the Console's saved-prompt
     // picker) must land it the way a paste lands, or the box would have two
     // different ideas about where a space belongs.
-    window.AFTextTools = { html, wire, paint, insert: pasteAtCursor, TOOLS };
+    window.AFTextTools = { html, wire, paint, insert: pasteAtCursor, copyFrom, TOOLS };
 })();

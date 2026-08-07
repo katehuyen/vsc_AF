@@ -389,5 +389,37 @@ function makeSandbox(opts) {
         && res.btn.textContent === '—');
 }
 
+// ---------- the page's own heading is a session row too ----------
+// A session listed in a table carries the whole right-click action set; on that
+// session's OWN page the heading offered Copy/Paste and nothing else. And the
+// id under it — the one string on the page that is constantly wanted elsewhere
+// — was plain text you had to select by hand between two separators.
+{
+    const t = makeSandbox();
+    const html = t.appHtml();
+    ok('the heading block carries the session right-click contract',
+        html.includes('data-vscode-context') && html.includes('afSessionRow'));
+    ok('…naming THIS session', html.includes('sess'));
+    ok('the session id in the subtitle is a copy button',
+        html.includes('class="idcopy"') && html.includes('data-copy="sess"'));
+
+    // …and an automation run says WHICH mechanism started it, when the farm's
+    // own record knows: "🤖 automation run" and "🤖 schedule · backlog" are
+    // different facts about the same run.
+    const auto = makeSandbox();
+    const d = JSON.parse(JSON.stringify(auto.data()));
+    d.origin = 'auto';
+    d.launchedBy = { kind: 'schedule', label: 'backlog ilerleme' };
+    auto.pushData(d);
+    ok('an automation run names its launcher instead of saying "automation"',
+        auto.appHtml().includes('🤖 schedule · backlog ilerleme'));
+    const plain = makeSandbox();
+    const p = JSON.parse(JSON.stringify(plain.data()));
+    p.origin = 'auto';
+    plain.pushData(p);
+    ok('…and falls back honestly when nothing is on record',
+        plain.appHtml().includes('🤖 automation run'));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

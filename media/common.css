@@ -246,3 +246,37 @@ body.guide li { line-height: 1.5; margin: 3px 0; }
     0% { background: var(--vscode-editor-findMatchHighlightBackground, #ffd33d44); }
     100% { background: transparent; }
 }
+
+/* ---------------------------------------------------------------- AFTip
+   The rich hover panel — media/afTip.js. Used wherever a hover has to carry
+   TEXT rather than a handful of figures: a prompt, a backlog item, a project's
+   details. Scrollable, and the pointer can travel into it, because :hover sits
+   on the WRAPPER and there is no gap between the two.
+   The trigger is the positioning context; the panel hangs under it and is as
+   wide as it needs up to a ceiling. */
+.af-tipw { position: relative; }
+span.af-tipw { display: inline; }
+.af-tip {
+    position: absolute; left: 0; top: 100%; z-index: 40; display: block;
+    width: max-content; min-width: 280px; max-width: min(760px, 62vw);
+    max-height: 46vh; overflow: auto; overscroll-behavior: contain;
+    visibility: hidden; opacity: 0;
+    transition: opacity .08s linear 0s, visibility 0s linear .08s;
+    padding: 8px 11px 10px; border-radius: 7px;
+    font-size: 12px; line-height: 1.55; font-weight: normal; text-align: left;
+    white-space: pre-wrap; word-break: break-word; text-decoration: none;
+    cursor: auto;
+    border: 1px solid var(--vscode-widget-border, #4446);
+    background: var(--vscode-editorWidget-background, #252526);
+    color: var(--vscode-foreground);
+    box-shadow: 0 5px 16px #0007;
+}
+/* the same beat the backlog's step menus use: sweeping a pointer down two
+   hundred rows must not flash a paragraph at every one. Closing is instant. */
+.af-tipw:hover > .af-tip, .af-tip:hover { visibility: visible; opacity: 1; transition-delay: .25s; }
+.af-tiph {
+    display: block; margin-bottom: 6px; padding-bottom: 5px;
+    font-size: 10px; opacity: .6; white-space: normal;
+    border-bottom: 1px solid var(--vscode-widget-border, #4443);
+}
+.af-tipb { display: block; }

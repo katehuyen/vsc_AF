@@ -323,23 +323,23 @@
             ` <button class="fold" data-term="${C.esc(r.agentName || '')}" data-sid="${C.esc(r.sessionId || '')}" data-cwd="${C.esc(r.cwd || '')}" title="Jump to this session's terminal window (if one is open)">⌨</button>`;
 
         /**
-         * ‼️ EVERY COLUMN ANSWERS ITS OWN QUESTION ON HOVER — AND ONLY THAT.
+         * ‼️ A CELL HOVER IS A READOUT, NOT A PARAGRAPH.
          *
-         * The row carried one tooltip — "right-click for session actions" — and
-         * a `<td>` with no title of its own inherits it, so all eleven columns
-         * said the same eight words. That is the most valuable surface on the
-         * page (the pointer is already there) spent on a sentence you only need
-         * to read once, while the figures it was covering — when the session
-         * ran, how long for, what a turn cost on average — were reachable only
-         * by opening the session.
+         * Every line below is `Label: value`. No sentence explains what a
+         * column means — the column heading does that, once, the way a
+         * spreadsheet does; a figure does not get a paragraph next to it on
+         * every row of every table for ever. The one exception in the whole
+         * table is the ⚖ weighted-token note, which is a definition rather than
+         * a figure and lives behind its own ? glyph (charts.js WEIGHTED_TIP).
          *
-         * ‼️ AND THE HINT NO LONGER RIDES ALONG. It was hung on the end of all
-         * eleven, which is the same mistake in a smaller font: one sentence,
-         * read once, repeated under every figure on every row for ever. It is
-         * said ONCE now, in the strip above the table (and by the selection bar
-         * when rows are picked, where it also says how many rows a menu would
-         * act on) — the place a thing that is true of the whole table belongs.
-         * Nothing was taken away from the tooltips themselves; they got longer.
+         * ‼️ AND ANYTHING THAT IS TEXT LEAVES THE `title` ALTOGETHER. A prompt,
+         * a project's details — a native tooltip repeats what the cell already
+         * drew and then stops wherever the platform feels like stopping. Those
+         * go in the rich panel (media/afTip.js): as wide as it needs, scrollable,
+         * and you can put the pointer in it. See docs/CONVENTIONS.md → Hover.
+         *
+         * The right-click hint is said ONCE, in the strip above the table (and
+         * by the selection bar when rows are picked) — not eleven times a row.
          */
         const line = (label, value) => (value === '' || value === undefined || value === null
             ? '' : `${label}: ${value}`);
@@ -358,135 +358,188 @@
         /** Join the tooltip's lines. Nothing is appended: see the block above. */
         const tipOf = parts => C.esc(parts.filter(Boolean).join('\n'));
 
+        /** A count with its share of a total, the way a table says it. */
+        const ofTotal = (n, total, unit) => (n
+            ? `${n.toLocaleString()}${unit ? ' ' + unit : ''} (${pct(n, total)}%)` : '');
+        /** Duration in the units it deserves — 3400 min is not a figure. */
+        const dur = min => (!min ? '' : min < 90 ? `${min} min`
+            : min < 60 * 48 ? `${round1(min / 60)} h` : `${round1(min / 1440)} d`);
+        /** What Agent Farm's own record says started this run, when it says so. */
+        const launcher = r => (r.launchedBy && r.launchedBy.kind
+            ? `${r.launchedBy.kind}${r.launchedBy.label ? ` · ${r.launchedBy.label}` : ''}` : '');
+        /**
+         * Spend per hour — and ONLY for a session that ran an hour.
+         *
+         * The figure used to be clamped (`max(1, hours)`), which meant every
+         * short session reported its whole cost as its hourly rate: a
+         * twenty-minute $8 session said "$8 per hour" when the arithmetic says
+         * $24 and neither number means anything. A rate needs a denominator
+         * worth dividing by; below one hour there is none, so nothing is said.
+         */
+        const perHour = r => (r.durationMin >= 60
+            ? C.fmtUSD((r.cost || 0) / (r.durationMin / 60)) : '');
+
         const TIP = {
-            origin: r => [originOf(r) === 'auto'
-                ? 'Automation started this session (schedule / trigger / task / mission)'
-                : 'You started this session — an interactive dialog',
-            // The evidence, not just the verdict: this is read off the
-            // transcript's own entrypoint field and never guessed from timing.
-            line('Entrypoint', r.entrypoint || 'not recorded'),
-            r.consoleHosted
-                ? 'Hosted by the Console — it reaches the CLI the way a headless run does, '
-                    + 'so the entrypoint says sdk-cli while a person was typing'
-                : '',
-            line('Scope chip above', 'switches between your own sessions and all of them')],
+            origin: r => [
+                line('Started by', originOf(r) === 'auto' ? '🤖 Automation' : '🧑 You'),
+                line('Launched by', launcher(r)),
+                line('Entrypoint', r.entrypoint || '—'),
+                line('Console-hosted', r.consoleHosted ? 'yes' : ''),
+                line('Agent', r.agent),
+                line('Session', r.sessionId)
+            ],
             agent: r => [
-                `Agent: ${r.agent}${r.active ? ' — running now' : ''}`,
-                r.sidechain ? 'A sub-agent session, spawned by another one' : '',
-                line('Working folder', r.cwd),
-                line('Git branch', r.branch),
-                line('Permission mode', r.permissionMode),
-                line('CLI version', r.version),
-                line('Session id', r.sessionId)
+                line('Agent', r.agent),
+                line('State', (r.active ? 'running' : 'idle') + (r.sidechain ? ' · sub-agent' : '')),
+                line('Folder', r.cwd),
+                line('Branch', r.branch),
+                line('Permissions', r.permissionMode),
+                line('CLI', r.version),
+                line('Models', modelNames(r).join(', ')),
+                line('Session', r.sessionId)
             ],
-            title: r => [
-                r.title || '(no title yet)',
-                r.cliName && r.cliName !== r.title ? `Started as: ${r.cliName} (claude -n)` : '',
-                r.autoTitle && r.autoTitle !== r.title ? `From the conversation: ${r.autoTitle}` : '',
-                (r.tags || []).length ? `Labels: ${(r.tags || []).join(', ')}` : '',
-                r.pinned ? 'Pinned to your shelf — always listed first' : '',
-                line('Session id', r.sessionId)
-            ],
-            project: r => [
-                r.project ? `Project: ${r.project}` : 'No project — this session is not filed under one',
-                'Resolved in a fixed order: filed by hand · explicitly off every project · '
-                + 'the longest matching code root · the agent rule'
-            ],
+            // ‼️ title/project are NOT here: they are text, so they use the rich
+            // panel (AFTip) rather than a native title. See TIPBOX below.
             files: r => [
-                `${r.files || 0} distinct file${r.files === 1 ? '' : 's'} written to`,
-                per(r.files, r.turns, n => `≈ ${round1(n)} per turn`),
-                'Edit / Write / MultiEdit / NotebookEdit — open the session to see the changes'
+                line('Files written', r.files || 0),
+                line('Per turn', per(r.files, r.turns, n => round1(n))),
+                line('Tool calls', r.toolCalls || 0),
+                line('Memory files read', r.memoryReads || '')
             ],
             when: r => [
-                line('Last activity', `${stamp(r.ts)} (${relTime(r.ts)})`),
+                line('Last activity', `${stamp(r.ts)} · ${relTime(r.ts)}`),
                 line('Started', stamp(r.firstTs)),
-                r.durationMin ? `Ran for ${r.durationMin} min` : '',
-                r.active ? 'Active now' : ''
+                line('Ran for', dur(r.durationMin)),
+                line('Turns', r.turns || 0),
+                line('State', r.active ? 'running' : 'idle')
             ],
             duration: r => [
-                `${r.durationMin || 0} min from the first turn to the last`,
-                'Wall clock, not time spent working — a session you left open all afternoon '
-                + 'is a long one even if it worked for five minutes',
+                line('Duration', dur(r.durationMin) + ' (wall clock)'),
                 line('Started', stamp(r.firstTs)),
-                line('Last activity', stamp(r.ts)),
-                per(r.durationMin, r.turns, n => `≈ ${round1(n)} min per turn`)
+                line('Ended', stamp(r.ts)),
+                line('Per turn', per(r.durationMin, r.turns, n => `${round1(n)} min`)),
+                line('Per API call', r.apiCalls && r.durationMin
+                    ? `${round1(r.durationMin * 60 / r.apiCalls)} s` : ''),
+                line('Cost per hour', perHour(r))
             ],
             turns: r => [
-                `${r.turns || 0} turn${r.turns === 1 ? '' : 's'} — prompts you sent`,
-                // ‼️ The distinction the whole extension is built on, said where
-                // the number is: a turn is one thing you ASKED for; a call is one
-                // round trip to the model, and one turn takes many. The tokens
-                // follow the calls, which is why both are here.
-                r.apiCalls ? `${r.apiCalls} API call${r.apiCalls === 1 ? '' : 's'} carried them` : '',
-                per(r.apiCalls, r.turns, n => `≈ ${round1(n)} calls per turn`),
-                per(r.tokens, r.turns, n => `≈ ${C.fmtTok(Math.round(n))} tokens per turn`),
-                per(r.cost, r.turns, n => `≈ ${C.fmtUSD(n)} per turn`),
-                per(r.toolCalls, r.turns, n => `≈ ${round1(n)} tool calls per turn`),
-                per(r.durationMin, r.turns, n => `≈ ${round1(n)} min per turn`)
+                line('Turns', r.turns || 0),
+                line('API calls', r.apiCalls || ''),
+                line('Calls per turn', per(r.apiCalls, r.turns, n => round1(n))),
+                line('Tokens per turn', per(r.tokens, r.turns, n => C.fmtTok(Math.round(n)))),
+                line('Cost per turn', per(r.cost, r.turns, n => C.fmtUSD(n))),
+                line('Tools per turn', per(r.toolCalls, r.turns, n => round1(n))),
+                line('Files per turn', per(r.files, r.turns, n => round1(n))),
+                line('Minutes per turn', per(r.durationMin, r.turns, n => round1(n)))
             ],
             tools: r => [
-                `${r.toolCalls || 0} tool call${r.toolCalls === 1 ? '' : 's'}`,
-                per(r.toolCalls, r.turns, n => `≈ ${round1(n)} per turn`),
+                line('Tool calls', r.toolCalls || 0),
+                line('Per turn', per(r.toolCalls, r.turns, n => round1(n))),
                 // WHAT it did, not just how much: "312 tool calls" and "312 tool
                 // calls, 210 of them Read" are different facts about a session.
-                (r.topTools || []).length
-                    ? 'Mostly: ' + r.topTools.map(t => `${t.name} ${t.n}`).join(' · ') : '',
-                r.errors ? `${r.errors} of the results came back as errors` : ''
+                line('Top', (r.topTools || []).map(t => `${t.name} ${t.n}`).join(' · ')),
+                line('Skills', (r.topSkills || []).map(t => `${t.name} ${t.n}`).join(' · ')),
+                line('Errors', ofTotal(r.errors, r.toolCalls, '')),
+                line('Files written', r.files || '')
             ],
             errors: r => [
-                r.errors ? `${r.errors} tool result${r.errors === 1 ? '' : 's'} came back as an error`
-                    : 'No tool errors in this session',
-                r.errors ? `${pct(r.errors, r.toolCalls)}% of the tool calls` : '',
-                per(r.errors, r.turns, n => `≈ ${round1(n)} per turn`),
-                'A refused permission counts here too — an error is not always a fault'
+                line('Tool errors', r.errors || 0),
+                line('Share of tool calls', r.errors ? `${pct(r.errors, r.toolCalls)}%` : ''),
+                line('Per turn', per(r.errors, r.turns, n => round1(n))),
+                line('Tool calls', r.toolCalls || 0)
             ],
             tokens: r => [
-                line('Raw total', `${C.fmtTok(r.tokens || 0)} tokens (input + cache + output)`),
-                line('Against the plan limit', `${C.fmtTok(r.wTokens || 0)} weighted`),
+                line('Raw total', C.fmtTok(r.tokens || 0)),
+                line('Weighted (plan)', C.fmtTok(r.wTokens || 0)),
+                line('Weight ratio', r.tokens ? `${round1((r.wTokens || 0) / r.tokens)}×` : ''),
                 // ‼️ THE SPLIT IS THE ANSWER TO "WHY DID THIS ONE COST THAT".
                 // Two sessions with the same total differ by an order of
                 // magnitude in money when one is cache reads and the other is
                 // output — and the column could not show the difference.
-                r.usage ? `in ${C.fmtTok(r.usage.input)} · out ${C.fmtTok(r.usage.output)} `
-                    + `· cache read ${C.fmtTok(r.usage.cacheRead)} · cache write ${C.fmtTok(r.usage.cacheWrite)}` : '',
-                r.usage && r.tokens ? `Cache reads are ${pct(r.usage.cacheRead, r.tokens)}% of the total — the cheap part` : '',
-                per(r.tokens, r.turns, n => `≈ ${C.fmtTok(Math.round(n))} per turn`),
-                per(r.tokens, r.apiCalls, n => `≈ ${C.fmtTok(Math.round(n))} per API call`),
-                'The two totals are not proportional — the weighted figure is what burns the window'
+                line('In', r.usage ? ofTotal(r.usage.input, r.tokens, '') : ''),
+                line('Out', r.usage ? ofTotal(r.usage.output, r.tokens, '') : ''),
+                line('Cache read', r.usage ? ofTotal(r.usage.cacheRead, r.tokens, '') : ''),
+                line('Cache write', r.usage ? ofTotal(r.usage.cacheWrite, r.tokens, '') : ''),
+                line('Per turn', per(r.tokens, r.turns, n => C.fmtTok(Math.round(n)))),
+                line('Per API call', per(r.tokens, r.apiCalls, n => C.fmtTok(Math.round(n)))),
+                line('Per $', r.cost ? C.fmtTok(Math.round((r.tokens || 0) / r.cost)) : '')
             ],
             ctx: r => [
-                r.ctx
-                    ? `≈ ${C.fmtTok(r.ctx)} tokens in the model window after the last reply`
-                    : 'Not known for this session',
-                'Input + cache + output of that one request — what the next turn starts from',
-                // A live session's window is a thing you act on; a finished
-                // one's is a fact about how it ended.
-                r.active ? 'This session is still running — this is where its next turn starts' : ''
+                line('Context now', r.ctx ? `${C.fmtTok(r.ctx)} tokens` : '—'),
+                line('Of a 200k window', r.ctx ? `${pct(r.ctx, 200000)}%` : ''),
+                line('Session raw total', C.fmtTok(r.tokens || 0)),
+                line('Share of the total', r.ctx && r.tokens ? `${pct(r.ctx, r.tokens)}%` : ''),
+                line('Per turn', per(r.tokens, r.turns, n => C.fmtTok(Math.round(n)))),
+                line('Turns', r.turns || 0),
+                line('Last activity', `${stamp(r.ts)} · ${relTime(r.ts)}`),
+                line('State', r.active ? 'running' : 'idle')
             ],
             cost: r => [
-                line('API-equivalent cost', C.fmtUSD(r.cost || 0)),
-                per(r.cost, r.turns, n => `≈ ${C.fmtUSD(n)} per turn`),
-                per(r.cost, r.apiCalls, n => `≈ ${C.fmtUSD(n)} per API call`),
-                r.durationMin ? `≈ ${C.fmtUSD((r.cost || 0) / Math.max(1, r.durationMin / 60))} per hour of wall clock` : '',
-                modelNames(r).length ? line('Priced at', modelNames(r).join(', ')) : '',
-                'What these tokens would have cost on the API — a plan session is not billed this way'
+                line('API-equivalent', C.fmtUSD(r.cost || 0)),
+                line('Per turn', per(r.cost, r.turns, n => C.fmtUSD(n))),
+                line('Per API call', per(r.cost, r.apiCalls, n => C.fmtUSD(n))),
+                line('Per hour', perHour(r)),
+                line('Per 1M tokens', r.tokens
+                    ? C.fmtUSD((r.cost || 0) / (r.tokens / 1000000)) : ''),
+                line('Models', modelNames(r).join(', '))
             ]
         };
 
+        /**
+         * ‼️ THE TEXT COLUMNS, IN THE RICH PANEL.
+         *
+         * Title and Project are the two cells whose content is WORDS, and words
+         * are exactly what a native tooltip is worst at. Each returns
+         * `{ head, body }` for AFTip: `head` is one line of scale (what this is,
+         * how big), `body` is the thing itself, whole.
+         */
+        const TIPBOX = {
+            title: r => {
+                const prompt = String(r.firstPrompt || '');
+                const facts = [
+                    line('Session', r.sessionId),
+                    line('Agent', r.agent),
+                    line('Project', r.project),
+                    line('Started as', r.cliName && r.cliName !== r.title ? r.cliName : ''),
+                    line('From the conversation', r.autoTitle && r.autoTitle !== r.title ? r.autoTitle : ''),
+                    line('Labels', (r.tags || []).join(', ')),
+                    line('Pinned', r.pinned ? 'yes' : ''),
+                    line('Turns', r.turns || 0),
+                    line('Started', stamp(r.firstTs))
+                ].filter(Boolean).join('\n');
+                return {
+                    head: `${r.turns || 0} turns · ${relTime(r.ts)}`
+                        + (prompt ? ` · first prompt ${prompt.length.toLocaleString()} characters` : ''),
+                    body: (r.title || '(no title yet)') + '\n\n' + facts
+                        + (prompt ? '\n\n── First prompt ──\n' + prompt : '')
+                };
+            },
+            project: r => (r.project
+                ? { head: `Project · ${r.project}`, body: r.projectDetail || r.project }
+                : { head: 'No project', body: '' })
+        };
+
+        /**
+         * ‼️ THE DEFINITION IS ON THE HEADING, ONCE — the spreadsheet rule.
+         *
+         * A column means one thing, so it is said one place: here, at the top,
+         * where you look once. Each is a short definition, never a paragraph
+         * and never advice; the cells below carry figures only.
+         */
         const HEAD = {
-            origin: '<th class="origcell" title="Who started the session — 🧑 you, in an interactive session · 🤖 automation (schedule / trigger / task / mission). Switch the scope with the 🧑 chip above.">By</th>',
-            agent: '<th title="The agent whose folder this session ran in. ● = running now · sub = a sub-agent session · ⌨ jumps to its terminal · ⎋ interrupts the turn.">Agent</th>',
-            project: '<th title="Which project this session\'s work belongs to. Resolved in a fixed order: filed by hand · explicitly taken off every project · the longest matching code root · the agent rule. Edit any of it on the ◧ Projects page.">Project</th>',
-            files: '<th class="num" title="Distinct files this session wrote to (Edit / Write / MultiEdit / NotebookEdit) — open the session to see the changes themselves">Files</th>',
-            title: '<th title="The session\'s name when it has one (given at launch with -n, or a rename); otherwise the title the conversation itself suggests. Hover a row to see both.">Title</th>',
-            when: '<th class="num" title="How long ago the session was last active. Hover a cell for the whole date, when it started, and how long it ran.">When</th>',
-            duration: '<th class="num" title="Minutes from the session\'s first turn to its last — wall clock, not time spent working. Hover for both endpoints and the per-turn average.">Duration</th>',
-            turns: '<th class="num" title="Prompts you sent, not API calls — one turn is one thing you asked for. Hover for tokens, cost and tool calls per turn.">Turns</th>',
-            tools: '<th class="num" title="Tool calls made across the whole session (Read, Edit, Bash, MCP…). Hover for the per-turn average.">Tools</th>',
-            errors: '<th class="num" title="Tool results that came back as errors. Hover for what share of the session\'s tool calls that is.">Err</th>',
-            tokens: '<th class="num" title="Raw tokens (input + cache + output), and after ⚖ the same session weighted against the plan limit. The two are not proportional — the weighted one is what burns the window.">Tokens</th>',
-            ctx: '<th class="num" title="Approximate context in the model window after this session’s last reply (input + cache + output of that request)">Ctx now</th>',
-            cost: '<th class="num" title="What this session\'s tokens would have cost on the API. A plan session is not billed this way — it is the comparable figure, not an invoice. Hover a cell for the per-turn average.">Cost</th>'
+            origin: '<th class="origcell" title="Who started the session: 🧑 you · 🤖 automation">By</th>',
+            agent: '<th title="Agent whose folder the session ran in. ● running · sub = sub-agent · ⌨ terminal · ⎋ interrupt">Agent</th>',
+            project: '<th title="Project this session\'s work belongs to">Project</th>',
+            files: '<th class="num" title="Distinct files written to (Edit / Write / MultiEdit / NotebookEdit)">Files</th>',
+            title: '<th title="Session name — the launch name (-n) or a rename, otherwise what the conversation suggests">Title</th>',
+            when: '<th class="num" title="Time since the session was last active">When</th>',
+            duration: '<th class="num" title="First turn to last, in wall clock">Duration</th>',
+            turns: '<th class="num" title="Prompts sent. One turn = one thing asked for; it takes many API calls">Turns</th>',
+            tools: '<th class="num" title="Tool calls across the session (Read, Edit, Bash, MCP…)">Tools</th>',
+            errors: '<th class="num" title="Tool results that came back as errors">Err</th>',
+            tokens: '<th class="num" title="Raw tokens (input + cache + output); after ⚖ the same session weighted against the plan limit">Tokens</th>',
+            ctx: '<th class="num" title="Context in the model window after the last reply">Ctx now</th>',
+            cost: '<th class="num" title="What these tokens would have cost on the API — the comparable figure, not an invoice">Cost</th>'
         };
         // the active dot / sub badge / ⌨ button live in the leftmost identity
         // cell — Agent when present (dashboard), otherwise Title (agent page)
@@ -499,16 +552,28 @@
                 return `<td class="origcell ${o.id}" title="${tipOf(TIP.origin(r))}">${o.glyph}</td>`;
             },
             agent: r => `<td title="${tipOf(TIP.agent(r))}">${dot(r)}${C.esc(r.agent)}${subBadge(r)}${termBtn(r)}${stopBtn(r)}</td>`,
-            title: r => hasAgentCol
-                ? `<td title="${tipOf(TIP.title(r))}">${C.esc(r.title)}${tagChips(r)}</td>`
-                : `<td title="${tipOf(TIP.title(r))}">${dot(r)}${C.esc(r.title)}${tagChips(r)}${subBadge(r)}${termBtn(r)}${stopBtn(r)}</td>`,
+            // ‼️ The title cell hands its hover to the rich panel: the answer to
+            // "what was this session actually asked to do" is the opening
+            // PROMPT, whole, and a native tooltip cannot hold one.
+            title: r => {
+                const b = TIPBOX.title(r);
+                const inner = hasAgentCol
+                    ? `${C.esc(r.title)}${tagChips(r)}`
+                    : `${dot(r)}${C.esc(r.title)}${tagChips(r)}${subBadge(r)}${termBtn(r)}${stopBtn(r)}`;
+                return window.AFTip.cell('', '', inner, b.head, b.body);
+            },
             // A project is recognisable by its colour and icon everywhere else
             // it appears (sidebar, status bar, its own page); the table that
-            // lists sessions BY project was the one place showing a bare name.
-            project: r => `<td class="${r.project ? '' : 'muted'}" title="${tipOf(TIP.project(r))}">${r.project
-                ? `<span class="af-pdot" style="${r.projectColor ? `background:${C.esc(r.projectColor)}` : ''}"></span>` +
-                (r.projectIcon ? C.esc(r.projectIcon) + ' ' : '') + C.esc(r.project)
-                : '—'}</td>`,
+            // lists sessions BY project was the one place showing a bare name —
+            // and now the hover carries what the project IS, folders first.
+            project: r => {
+                const b = TIPBOX.project(r);
+                const inner = r.project
+                    ? `<span class="af-pdot" style="${r.projectColor ? `background:${C.esc(r.projectColor)}` : ''}"></span>`
+                    + (r.projectIcon ? C.esc(r.projectIcon) + ' ' : '') + C.esc(r.project)
+                    : '—';
+                return window.AFTip.cell(r.project ? '' : 'muted', '', inner, b.head, b.body);
+            },
             files: r => `<td class="num" title="${tipOf(TIP.files(r))}">${r.files || ''}</td>`,
             when: r => `<td class="num" title="${tipOf(TIP.when(r))}">${relTime(r.ts)}</td>`,
             duration: r => `<td class="num" title="${tipOf(TIP.duration(r))}">${r.durationMin || 0}m</td>`,
@@ -528,21 +593,62 @@
             // name table here, so tomorrow's model shows up on its own
             const tags = t => (t.models || []).map(m => m.replace(/^claude-/, ''))
                 .concat(Object.values(t.attrs || {}));
-            // The same four figures the viewer's turn band carries, in the same
-            // order and the same words — a turn read here and read there must
-            // not look like two different turns.
+            // The same figures the viewer's turn band carries, in the same order
+            // and the same words — a turn read here and read there must not look
+            // like two different turns.
+            //
+            // ‼️ The turn rows follow the SAME hover rule as the session rows
+            // above them: `prompt` is text, so it opens the rich panel with the
+            // whole ask in it; everything else is figures in a native title,
+            // `Label: value`, no sentences. A turn is where the detail actually
+            // lives — the session row is a sum of these — so this is the last
+            // place that should have been showing one number and stopping.
+            const total = c.turns.reduce((a, t) => ({
+                tokens: a.tokens + (t.tokens || 0), cost: a.cost + (t.cost || 0),
+                steps: a.steps + (t.steps || 0), calls: a.calls + (t.apiCalls || 0)
+            }), { tokens: 0, cost: 0, steps: 0, calls: 0 });
+            const tTip = t => tipOf([
+                line('Turn', `${t.n} of ${c.turns.length}`),
+                line('When', stamp(t.ts)),
+                line('Took', t.ms ? C.fmtDur(t.ms) : ''),
+                line('API calls', t.apiCalls || ''),
+                line('Steps', t.steps || ''),
+                line('Steps per call', t.apiCalls && t.steps ? round1(t.steps / t.apiCalls) : ''),
+                line('Tool calls', t.tools || ''),
+                line('Top tools', (t.topTools || []).map(x => `${x.name} ${x.n}`).join(' · ')),
+                line('Errors', t.errors || ''),
+                line('Tokens', t.tokens ? C.fmtTok(t.tokens) : ''),
+                line('Weighted', t.wTokens ? C.fmtTok(t.wTokens) : ''),
+                line('Share of session tokens', t.tokens && total.tokens ? `${pct(t.tokens, total.tokens)}%` : ''),
+                line('Cost', t.cost ? C.fmtUSD(t.cost) : ''),
+                line('Share of session cost', t.cost && total.cost ? `${pct(t.cost, total.cost)}%` : ''),
+                line('Tokens per call', t.apiCalls && t.tokens ? C.fmtTok(Math.round(t.tokens / t.apiCalls)) : ''),
+                line('Ctx at end', t.endCtx ? C.fmtTok(t.endCtx) : ''),
+                line('Models', tags(t).join(', ')),
+                line('Click', 'opens the transcript here')
+            ]);
+            const pTip = t => {
+                const p = String(t.prompt || t.label || '');
+                return {
+                    head: `Turn ${t.n} · ${stamp(t.ts)}`
+                        + (p ? ` · ${p.length.toLocaleString()} characters` : ''),
+                    body: p
+                };
+            };
             return `<table class="turnmini">
-                <tr><th>#</th><th>prompt</th><th>model</th><th class="num" title="${C.esc(C.STEPS_TIP)}">steps</th><th class="num">took</th><th class="num">tokens</th><th class="num">cost</th><th class="num" title="What the window held when the turn ended">ctx</th></tr>
-                ${c.turns.map(t => `<tr class="click" data-turnjump="${C.esc(r.file)}" data-turnts="${t.ts || 0}"
-                    title="Open the transcript at turn ${t.n}">
-                    <td class="num">${t.n}</td><td title="${C.esc(t.label || '')}">${C.esc(t.label || '—')}</td>
-                    <td>${tags(t).map(x => `<span class="tag">${C.esc(x)}</span>`).join('') || '—'}</td>
-                    <td class="num">${t.steps || t.apiCalls ? C.esc(C.fmtSteps(t.apiCalls, t.steps)) : '—'}</td>
-                    <td class="num">${t.ms ? C.esc(C.fmtDur(t.ms)) : '—'}</td>
-                    <td class="num">${t.tokens ? C.fmtTokW(t.tokens, t.wTokens) : '—'}</td>
-                    <td class="num">${t.cost ? C.fmtUSD(t.cost) : '—'}</td>
-                    <td class="num">${t.endCtx ? C.fmtTok(t.endCtx) : '—'}</td>
-                </tr>`).join('')}
+                <tr><th class="num" title="Turn number within the session">#</th><th title="The prompt that opened the turn">prompt</th><th title="Model(s) that served the turn">model</th><th class="num" title="${C.esc(C.STEPS_TIP)}">steps</th><th class="num" title="Prompt to the turn's last recorded line">took</th><th class="num" title="Raw tokens; after ⚖ weighted against the plan limit">tokens</th><th class="num" title="API-equivalent cost of the turn">cost</th><th class="num" title="Context in the window when the turn ended">ctx</th></tr>
+                ${c.turns.map(t => {
+        const tip = tTip(t), p = pTip(t);
+        return `<tr class="click" data-turnjump="${C.esc(r.file)}" data-turnts="${t.ts || 0}">
+                    <td class="num" title="${tip}">${t.n}</td>${window.AFTip.cell('', '', C.esc(t.label || '—'), p.head, p.body)}
+                    <td title="${tip}">${tags(t).map(x => `<span class="tag">${C.esc(x)}</span>`).join('') || '—'}</td>
+                    <td class="num" title="${tip}">${t.steps || t.apiCalls ? C.esc(C.fmtSteps(t.apiCalls, t.steps)) : '—'}</td>
+                    <td class="num" title="${tip}">${t.ms ? C.esc(C.fmtDur(t.ms)) : '—'}</td>
+                    <td class="num" title="${tip}">${t.tokens ? C.fmtTokW(t.tokens, t.wTokens) : '—'}</td>
+                    <td class="num" title="${tip}">${t.cost ? C.fmtUSD(t.cost) : '—'}</td>
+                    <td class="num" title="${tip}">${t.endCtx ? C.fmtTok(t.endCtx) : '—'}</td>
+                </tr>`;
+    }).join('')}
             </table>`;
         }
 

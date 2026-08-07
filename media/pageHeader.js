@@ -216,9 +216,17 @@
         const left = (o.controls || '') + (o.actions || '');
         const nav = `<div class="af-head-nav${left ? ' has-actions' : ''}">${cluster.join('')}</div>`;
         const bar = left ? `<div class="af-head-actions">${left}</div>${nav}` : nav;
+        // ‼️ THE PAGE'S TITLE IS A ROW TOO. A session listed in a table carries
+        // the whole session menu on right-click; on that session's OWN page the
+        // heading offered Copy/Paste and nothing else — the one place where
+        // there is no doubt which session you mean was the one place you could
+        // not act on it. `infoCtx` is a data-vscode-context attribute (see
+        // afSessionCtx.js) and covers the title block, heading and subtitle
+        // alike, because both name the same object.
+        const info = o.infoCtx ? ` ${o.infoCtx}` : '';
         return `${STYLE}
             <div class="af-head">
-                <div class="af-head-info"><h1>${o.title}</h1>${o.sub ? `<div class="muted small">${o.sub}</div>` : ''}</div>
+                <div class="af-head-info"${info}><h1>${o.title}</h1>${o.sub ? `<div class="muted small">${o.sub}</div>` : ''}</div>
                 <div class="af-head-bar">${bar}</div>
             </div>`;
     }

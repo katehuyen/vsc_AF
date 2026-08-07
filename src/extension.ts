@@ -3126,7 +3126,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'sessions.recent',
-            describe: 'Most recent sessions farm-wide. args: origin? ("user" = sessions a person started interactively — what the Sessions tables show by default; "auto" = automation runs (schedule/trigger/task/mission, any `claude -p`); omit or "all" = both), limit? (default 10)',
+            describe: 'Most recent sessions farm-wide. args: origin? ("user" = sessions a person started interactively — what the Sessions tables show by default; "auto" = automation runs (schedule/trigger/task/mission, any `claude -p`); omit or "all" = both), limit? (default 10). Each row carries `id` (the session id, which sessions.open / the viewer take) and, when Agent Farm started the run itself, `launchedBy` = { kind: task|schedule|trigger|workflow|mission, label } — the mechanism BY NAME, which is also what decides `origin` rather than the transcript\'s entrypoint.',
             handler: (args) => {
                 const limit = typeof args.limit === 'number' && args.limit > 0 ? Math.floor(args.limit) : 10;
                 const origin = optStr(args, 'origin').toLowerCase();
@@ -3135,8 +3135,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     .slice().sort((a, b) => (b.lastTs || b.mtime) - (a.lastTs || a.mtime))
                     .slice(0, limit)
                     .map(s => ({
+                        id: s.sessionId,
                         agent: s.agentName, title: s.title, lastTs: s.lastTs,
                         origin: sessionOrigin(s),
+                        // WHICH mechanism, not just "a program" — the same fact
+                        // the origin column now decides on (see sessionOrigin).
+                        launchedBy: s.launchedBy ?? null,
                         turns: s.userTurns, cost: Math.round(s.cost * 100) / 100,
                         tokens: totalTokens(s.usage), wTokens: Math.round(s.wTokens)
                     }));
@@ -6205,7 +6209,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         // Capture-now guard: never `--resume` a transcript the live monitor says
         // another claude process is still writing.
-        isSessionLive: (sessionId: string) => live.sessions().some(s => s.sessionId === sessionId)
+        isSessionLive: (sessionId: string) => live.sessions().some(s => s.sessionId === sessionId),
+        // The mechanism that started this run, straight off the index's own
+        // record (see publishLaunchers) — never re-derived here.
+        launchedByFor: (sessionId: string) =>
+            index.all().find(s => s.sessionId === sessionId)?.launchedBy
     };
 
     // ---------- G1/G5: Needs You queue + kanban board ----------
@@ -7037,6 +7045,45 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
     let consoleIds = readConsoleIds();
     index.setConsoleSessions(consoleIds);
+
+    /**
+     * ‼️ WHICH OF OUR OWN MECHANISMS STARTED WHICH SESSION.
+     *
+     * A task run is matched to its transcript already (`costSessionFile`, used
+     * for the run's cost), and the task itself records whether a schedule, a
+     * trigger, a workflow or a mission created it. That chain is the only PROOF
+     * of a launcher there is: the transcript can say a program entered the CLI
+     * and never which program. Handing it to the index does two jobs at once —
+     * the origin column stops guessing from the entrypoint (a scheduled run
+     * that had once been opened in the Console read as 🧑 User, while its own
+     * limit-retries read as 🤖 Auto), and the origin hover can NAME the
+     * schedule instead of saying "automation" and stopping.
+     */
+    const publishLaunchers = (): void => {
+        const map: Record<string, { kind: string; label: string }> = {};
+        for (const t of taskManager.tasks) {
+            const f = t.costSessionFile;
+            if (!f) { continue; }
+            const id = path.basename(String(f)).replace(/\.jsonl$/i, '');
+            if (!id) { continue; }
+            const sched = t.fromSchedule
+                ? taskManager.schedules.find(s => s.id === t.fromSchedule) : undefined;
+            const trig = t.fromTrigger
+                ? taskManager.triggers.find(x => x.id === t.fromTrigger) : undefined;
+            const flow = t.workflowId
+                ? taskManager.workflows.find(w => w.id === t.workflowId) : undefined;
+            map[id] = t.missionId ? { kind: 'mission', label: t.title }
+                : sched ? { kind: 'schedule', label: sched.title }
+                    : trig ? { kind: 'trigger', label: trig.title }
+                        : flow ? { kind: 'workflow', label: flow.title }
+                            : t.fromSchedule ? { kind: 'schedule', label: t.title }
+                                : t.fromTrigger ? { kind: 'trigger', label: t.title }
+                                    : { kind: 'task', label: t.title };
+        }
+        index.setLaunchers(map);
+    };
+    publishLaunchers();
+    context.subscriptions.push(taskManager.onDidChange(() => publishLaunchers()));
 
     /**
      * Where you were when the last window went away.
@@ -7947,12 +7994,41 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return { sessions: row?.sessions ?? 0, cost: row?.cost ?? 0 };
     };
 
-    /** A project's colour and icon, by name — every surface that names a
-     *  project should show the same mark for it, not just the ones that
-     *  happened to be written after the fields existed. */
+    /**
+     * A project's colour, icon — and the FACTS about it, by name.
+     *
+     * Every surface that names a project should show the same mark for it, not
+     * just the ones that happened to be written after the fields existed. The
+     * `detail` block is the same idea one step further: a Sessions row said
+     * which project it belonged to and a person then had to open the Projects
+     * page to find out what that project IS. It is built here, once per
+     * project, and shared by every row that names it — the folders first,
+     * because "where does this live" is the question a project name raises.
+     */
     const projectStyleOf = (name: string) => {
         const p = projectStore.all().find(x => x.name === name);
-        return p ? { icon: p.icon, color: p.color } : undefined;
+        if (!p) { return undefined; }
+        const line = (k: string, v: unknown) =>
+            (v === undefined || v === null || v === '' ? '' : `${k}: ${String(v)}`);
+        const day = (ms?: number) => (ms ? new Date(ms).toLocaleDateString() : '');
+        const parent = p.parentId ? projectStore.get(p.parentId)?.name : '';
+        const detail = [
+            p.summary ?? '',
+            '',
+            line('Status', p.status + (p.kind ? ` · ${p.kind}` : '')),
+            line('Docs', p.folder ?? ''),
+            ...(p.repos ?? []).map((r, i) => line(i === 0 ? 'Code' : '    ', r)),
+            line('Parent', parent),
+            line('Started', day(p.startedAt)),
+            line('Due', day(p.dueAt)),
+            line('Closed', day(p.closedAt)),
+            line('Budget', p.budgetUSD ? `$${p.budgetUSD}/day` : ''),
+            line('Budget total', p.budgetTotalUSD ? `$${p.budgetTotalUSD}` : ''),
+            line('People', (p.people ?? []).map(x => `${x.name}${x.role ? ` (${x.role})` : ''}`).join(', ')),
+            line('Tags', (p.tags ?? []).join(', ')),
+            line('Id', p.id)
+        ].filter((s, i) => s !== '' || i === 1).join('\n').trim();
+        return { icon: p.icon, color: p.color, detail };
     };
 
     // ---------- the project feed: sessions · tasks · missions · commits ----------

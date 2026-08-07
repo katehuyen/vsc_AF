@@ -4,13 +4,26 @@
 // the shared ones by hand. That list used to be copied into eight test files,
 // so adding a shared component (afSessionCtx.js was the fourth) broke five of
 // them at once with a "cannot read properties of undefined" that says nothing
-// about the real cause. It lives here now, and `checkAgainstShell` proves the
-// list still matches src/panels/base.ts — a stale list must fail loudly, not
-// silently drift (charts.js is excluded: tests stub it as `C`).
+// about the real cause. It lives here now, and `matchesShell` proves the list
+// still matches src/panels/base.ts — a stale list must fail loudly, not
+// silently drift.
+//
+// ‼️ THE CHECK RUNS BOTH WAYS. Asking only "is every file here still in the
+// shell?" catches a REMOVED component and is blind to an ADDED one — which is
+// the case that actually happens (afTip.js was the sixth) and which produces
+// exactly the same nameless "cannot read properties of undefined". So the shell
+// is parsed for what it loads and the two sets are compared.
+//
+// EXCLUDED, deliberately: charts.js (tests stub it as `C`) and sessionsTable.js
+// (its own test IS the page script, and pages that embed it load it themselves).
 const fs = require('fs');
 const path = require('path');
 
-const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js', 'afTextTools.js'];
+const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
+    'afTextTools.js', 'afTip.js'];
+
+/** Scripts the shell loads that a page-script test has to stand in for. */
+const NOT_SHARED = ['charts.js', 'sessionsTable.js', 'common.css'];
 
 const read = f => fs.readFileSync(path.resolve(__dirname, '..', 'media', f), 'utf8');
 
@@ -19,10 +32,20 @@ function sharedMedia() {
     return SHARED.map(read).join('\n') + '\n';
 }
 
-/** True when base.ts still loads exactly the shared scripts listed here. */
-function matchesShell() {
+/** Everything base.ts asks the webview for out of /media, in file order. */
+function shellScripts() {
     const shell = fs.readFileSync(path.resolve(__dirname, '..', 'src', 'panels', 'base.ts'), 'utf8');
-    return SHARED.every(f => shell.includes(`'${f}'`));
+    const out = [];
+    const re = /'media',\s*'([\w.-]+)'/g;
+    let m;
+    while ((m = re.exec(shell))) { if (out.indexOf(m[1]) < 0) { out.push(m[1]); } }
+    return out;
 }
 
-module.exports = { SHARED, sharedMedia, matchesShell };
+/** True when base.ts still loads exactly the shared scripts listed here. */
+function matchesShell() {
+    const shell = shellScripts().filter(f => NOT_SHARED.indexOf(f) < 0);
+    return shell.length === SHARED.length && SHARED.every(f => shell.indexOf(f) >= 0);
+}
+
+module.exports = { SHARED, NOT_SHARED, sharedMedia, shellScripts, matchesShell };

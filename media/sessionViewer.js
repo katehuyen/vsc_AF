@@ -846,6 +846,35 @@
         : 'Pin this session to your shelf: it is then listed first everywhere and never cut by a row limit.'}">${on ? '★' : '☆'}</button>`;
     }
 
+    /**
+     * The line under the title: what kind of run this was, where it ran, its
+     * ID, and how it was permitted to work.
+     *
+     * ‼️ THE ID IS A BUTTON. It is the one string on this page that is
+     * constantly wanted somewhere else — a `--resume`, a bridge call, a
+     * message to another agent — and it was plain text you had to select by
+     * hand without catching the separators around it. One click copies it, and
+     * the word itself becomes the receipt (afTextTools.copyFrom), because a
+     * copy leaves the screen otherwise identical.
+     *
+     * The origin also says WHICH mechanism started an automation run when the
+     * farm's own record knows (a schedule, a task): "🤖 automation" and
+     * "🤖 automation · schedule Backlog ilerleme" are different facts.
+     */
+    function subLineHtml() {
+        const by = DATA.launchedBy && DATA.launchedBy.kind
+            ? `🤖 ${C.esc(DATA.launchedBy.kind)}${DATA.launchedBy.label ? ' · ' + C.esc(DATA.launchedBy.label) : ''}`
+            : DATA.origin === 'auto' ? '🤖 automation run' : '🧑 your session';
+        const bits = [
+            by,
+            C.esc(DATA.cwd || ''),
+            `<button class="idcopy" id="idcopy" data-copy="${C.esc(DATA.sessionId)}"
+                title="Click to copy this session id">${C.esc(DATA.sessionId)}</button>`,
+            DATA.permissionMode ? 'mode: ' + C.esc(DATA.permissionMode) : ''
+        ];
+        return bits.filter(Boolean).join(' · ');
+    }
+
     /** The labels this session carries, beside its name. Read-only here — they
      *  are set from a row's right-click menu, and one owner is the point. */
     function tagChipsHtml() {
@@ -949,6 +978,14 @@
                 .htag { font-size:10px; padding:1px 7px; margin-left:6px; border-radius:8px;
                     white-space:nowrap; vertical-align:middle; opacity:.8;
                     border:1px solid var(--vscode-widget-border, #4444); }
+                /* The session id in the subtitle: a button that looks like the
+                   text it replaced until you go near it. See subLineHtml. */
+                .idcopy { background:none; border:none; padding:0; cursor:pointer;
+                    font:inherit; color:inherit; opacity:.85; }
+                .idcopy:hover { opacity:1; color:var(--vscode-textLink-foreground);
+                    text-decoration:underline; }
+                .idcopy.done { color:var(--vscode-charts-green, #4caf50); opacity:1;
+                    text-decoration:none; }
                 /* Timeline click-through: briefly spotlight the message we jumped to. */
                 .msg.flash { outline:2px solid var(--vscode-textLink-foreground); outline-offset:2px; }
                 /* Context-breakdown popover: overlays the "Context now" card without
@@ -1007,7 +1044,13 @@
             ${window.AFHeader.html({
                 page: 'viewer',
                 title: pinStarHtml() + C.esc(DATA.title) + tagChipsHtml(),
-                sub: `${DATA.origin === 'auto' ? '🤖 automation run' : '🧑 your session'} · ${C.esc(DATA.cwd || '')} · ${C.esc(DATA.sessionId)} · ${DATA.permissionMode ? 'mode: ' + C.esc(DATA.permissionMode) : ''}`,
+                sub: subLineHtml(),
+                // The whole session action set, on the heading — the same menu
+                // every table row carries (afSessionCtx.js).
+                infoCtx: window.AFSessionCtx.row({
+                    sessionId: DATA.sessionId, file: DATA.file, title: DATA.title,
+                    agentName: DATA.agentName || '', cwd: DATA.cwd || ''
+                }),
                 // On a session's own page the Console nav button means "continue
                 // THIS session there" — first item of its menu; the page itself
                 // is the second, so one button carries both.
@@ -1123,6 +1166,13 @@
             if (star) {
                 star.addEventListener('click', () =>
                     vscode.postMessage({ type: 'pinSession', pinned: !(DATA.pinned === true) }));
+            }
+            // The id in the subtitle: one click, one ✓, no round trip — the
+            // clipboard path and the receipt are shared (afTextTools.copyFrom).
+            const idb = document.getElementById('idcopy');
+            if (idb) {
+                idb.addEventListener('click', () =>
+                    window.AFTextTools.copyFrom(idb, idb.dataset.copy || ''));
             }
         }
         // Export MD asks first (current view vs everything, + folded-title choice

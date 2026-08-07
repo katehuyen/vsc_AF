@@ -97,7 +97,7 @@ export function sessionRowPool(
      * because the dashboard can be asked for rows before the registry is
      * available, and a missing mark must degrade to the plain name.
      */
-    projectStyle?: (name: string) => { icon?: string; color?: string } | undefined
+    projectStyle?: (name: string) => { icon?: string; color?: string; detail?: string } | undefined
 ): unknown[] {
     const rows = sessions.map(s => ({
         file: s.file,
@@ -139,6 +139,10 @@ export function sessionRowPool(
         project: projectOf?.(s) ?? '',
         projectIcon: projectStyle?.(projectOf?.(s) ?? '')?.icon ?? '',
         projectColor: projectStyle?.(projectOf?.(s) ?? '')?.color ?? '',
+        // What the project IS, not just its name — the hover shows it, so a row
+        // no longer sends you to the Projects page to find out where the work
+        // it belongs to actually lives. Built once per project by the host.
+        projectDetail: projectStyle?.(projectOf?.(s) ?? '')?.detail ?? '',
         // B3: how many distinct files this session wrote to (counted during the
         // index's own parse — the per-edit detail is read on demand)
         files: Object.keys(s.filesEdited ?? {}).length,
@@ -180,7 +184,24 @@ export function sessionRowPool(
         consoleHosted: s.consoleHosted === true,
         // The name the session was STARTED with (`claude -n …`), when there was
         // one — different from a rename, and the Title tooltip says which.
-        cliName: s.cliName ?? ''
+        cliName: s.cliName ?? '',
+        // The opening ask, whole. The Title column shows eighty characters of
+        // it; the hover shows the prompt (see media/afTip.js), which is the
+        // difference between "which session" and "what was it asked to do".
+        firstPrompt: s.firstPrompt ?? '',
+        // Which of Agent Farm's own mechanisms started this run, when one did —
+        // a recorded fact, not a reading of the entrypoint. Decides the origin
+        // column and names the schedule/task in its hover.
+        launchedBy: s.launchedBy ?? null,
+        // Skills and typed /commands the session used, counted in the same
+        // parse — "312 tool calls" says how busy it was, this says what it
+        // reached for that a plain tool count cannot show.
+        topSkills: Object.entries(s.skillCalls ?? {})
+            .sort((a, b) => b[1] - a[1]).slice(0, 4)
+            .map(([name, n]) => ({ name, n })),
+        // How many memory files it opened — the recall signal, on the row that
+        // already knows it.
+        memoryReads: Object.keys(s.memoryReads ?? {}).length
     }));
     type Row = typeof rows[number];
     if (!(n > 0) || n >= rows.length) {

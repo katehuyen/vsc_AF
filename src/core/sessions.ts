@@ -95,6 +95,15 @@ export interface SessionInfo {
     title: string;
     /** Title derived from the transcript, kept so clearing a user rename can restore it. */
     autoTitle: string;
+    /**
+     * The session's OPENING PROMPT, whole (up to FIRST_PROMPT_MAX).
+     *
+     * The title is eighty characters of it, which answers "which session" and
+     * nothing else — "what was this actually asked to do" was reachable only by
+     * opening the transcript. It rides on the session because the Sessions
+     * tables show it on hover (AFTip), and a hover cannot make a round trip.
+     */
+    firstPrompt?: string;
     /** Display name the session was started with (`claude -n …`), read from the
      *  CLI's own session registry (cliSessions.ts) — not in the transcript. */
     cliName?: string;
@@ -141,6 +150,19 @@ export interface SessionInfo {
     /** Agent Farm's Console hosted this session: `sdk-cli` in the transcript, a
      *  person at the keyboard in reality. Set from the id registry, not the file. */
     consoleHosted?: boolean;
+    /**
+     * ‼️ AGENT FARM STARTED THIS RUN ITSELF — and knows which mechanism did.
+     *
+     * The transcript's `entrypoint` says the CLI was entered by a program and
+     * cannot say WHICH program, so the origin column was reading a proxy. When
+     * a task / schedule / trigger / mission run is matched to its transcript
+     * the launcher is a recorded FACT, and a fact beats a proxy: this is
+     * consulted before anything else in `sessionOrigin`.
+     *
+     * `kind` is the mechanism ('task' · 'schedule' · 'trigger' · 'mission');
+     * `label` is what a person calls it — the schedule's name, the task's title.
+     */
+    launchedBy?: { kind: string; label: string };
     daily: Record<string, DailyBucket>;
     /** assistant message counts in 7x24 local-time buckets, index = dow*24+hour */
     heat: number[];
@@ -170,8 +192,20 @@ export type SessionOrigin = 'user' | 'auto';
  * page, which default to the User scope, showed no sign that the conversation
  * had ever happened. Agent Farm knows which ids it hosted (`consoleHosted`,
  * carried in `globalStorage/console-sessions.json`), so it says so.
+ *
+ * ‼️ …AND THAT EXCEPTION IS NOT ALLOWED TO OUTRANK A KNOWN LAUNCHER. The id
+ * list is a list of ids a Console has ever HELD, which includes every session
+ * it was asked to `--resume`; opening a robot's transcript in the panel to read
+ * it therefore relabelled the run, permanently, as a person's dialog. A run
+ * Agent Farm itself started (`launchedBy` — the task/schedule/trigger/mission
+ * that owns the transcript) is automation whatever happened to it afterwards,
+ * so that is read FIRST. Measured on a real case: a scheduled headless run
+ * appeared under 🧑 User while its own limit-retries appeared under 🤖 Auto.
  */
-export function sessionOrigin(s: Pick<SessionInfo, 'entrypoint' | 'consoleHosted'>): SessionOrigin {
+export function sessionOrigin(
+    s: Pick<SessionInfo, 'entrypoint' | 'consoleHosted' | 'launchedBy'>
+): SessionOrigin {
+    if (s.launchedBy) { return 'auto'; }
     if (s.consoleHosted) { return 'user'; }
     return String(s.entrypoint ?? '').startsWith('sdk') ? 'auto' : 'user';
 }
@@ -201,6 +235,16 @@ interface JsonlLine {
 
 const RECENT_MSG_WINDOW_MS = 48 * 3600 * 1000;
 const MAX_EVENTS_PER_FILE = 40;
+/**
+ * How much of the opening prompt the index keeps (`SessionInfo.firstPrompt`).
+ *
+ * The index holds every session in memory, so this is a per-session cost paid
+ * for ever: 4000 characters over a few thousand transcripts is a few megabytes,
+ * which buys a hover that shows what nearly every real prompt actually said.
+ * A prompt longer than this is a pasted document, and the tail of a pasted
+ * document is not what the hover is for — open the session.
+ */
+const FIRST_PROMPT_MAX = 4000;
 
 /** Tools that change a file on disk (codeedits.ts parses their inputs in full). */
 export const WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
@@ -327,6 +371,10 @@ export function parseSessionFile(
             const countPrompt = (text: string) => {
                 info.userTurns++;
                 if (!info.title) { info.title = titleFromPrompt(text); }
+                // The whole opening ask, kept once — see SessionInfo.firstPrompt.
+                if (info.firstPrompt === undefined) {
+                    info.firstPrompt = truncate(text.trim(), FIRST_PROMPT_MAX);
+                }
                 if (ts) {
                     info.events.push({
                         ts, kind: 'prompt', detail: truncate(text, 90), sessionFile: file
@@ -523,6 +571,8 @@ export class SessionIndex implements vscode.Disposable {
     private marks: SessionMarks = {};
     /** Session ids the Console hosted — see setConsoleSessions. */
     private consoleIds = new Set<string>();
+    /** Session id → the farm mechanism that started it — see setLaunchers. */
+    private launchers = new Map<string, { kind: string; label: string }>();
     /** Session display names from the CLI's registry (sessionId → -n name). */
     private cliNames = new Map<string, string>();
     private watchers: fs.FSWatcher[] = [];
@@ -659,6 +709,31 @@ export class SessionIndex implements vscode.Disposable {
         info.pinned = mark?.pinned === true ? true : undefined;
         info.tags = mark?.tags?.length ? mark.tags : undefined;
         info.consoleHosted = this.consoleIds.has(info.sessionId) ? true : undefined;
+        info.launchedBy = this.launchers.get(info.sessionId);
+    }
+
+    /**
+     * Which of Agent Farm's own mechanisms started which session.
+     *
+     * Fed from the run records that already name their transcript (a task's
+     * `costSessionFile`, and through it the schedule / trigger / mission that
+     * created the task). This is the only PROOF of a launcher there is — the
+     * transcript itself can say a program entered the CLI and never which one —
+     * so `sessionOrigin` reads it before anything else, and the origin tooltip
+     * can name the schedule instead of saying "automation" and stopping.
+     */
+    setLaunchers(map: Record<string, { kind: string; label: string }>): void {
+        const next = new Map(Object.entries(map ?? {}).filter(([id, v]) => !!id && !!v));
+        const same = next.size === this.launchers.size
+            && [...next].every(([id, v]) => {
+                const had = this.launchers.get(id);
+                return had && had.kind === v.kind && had.label === v.label;
+            });
+        if (same) { return; }
+        this.launchers = next;
+        for (const s of this.sessions.values()) { this.applyMark(s); }
+        for (const s of this.externalList) { this.applyMark(s); }
+        this.onDidUpdateEmitter.fire();
     }
 
     /**
