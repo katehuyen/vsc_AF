@@ -7,15 +7,344 @@
     let agentId = DATA.selectAgentId || (DATA.agents[0] && DATA.agents[0].id);
 
     window.addEventListener('message', ev => {
-        if (ev.data.type === 'data') {
-            DATA = ev.data.data;
-            if (DATA.selectAgentId) { agentId = DATA.selectAgentId; }
+        const m = ev.data;
+        if (m.type === 'data') {
+            DATA = m.data;
+            if (m.data.selectAgentId) { agentId = m.data.selectAgentId; }
             if (!DATA.agents.some(a => a.id === agentId)) {
                 agentId = DATA.agents[0] && DATA.agents[0].id;
             }
             render();
+            return;
+        }
+        // ---- the memory surface's own messages (U-14, surface 3)
+        if (m.type === 'mem-compose') { openCard(m.seed || {}); return; }
+        if (m.type === 'mem-msg') {
+            memMsg = String(m.text || '');
+            memMsgOk = m.ok === true;
+            busy = '';
+            // A receipt means the write happened; the card that made it steps
+            // aside. A refusal keeps it open with everything still typed in it.
+            if (memMsgOk && card && (card.kind === 'new' || card.kind === 'copy')) { card = null; }
+            render();
+            return;
+        }
+        if (m.type === 'mem-asking') { busy = 'ask'; render(); return; }
+        if (m.type === 'mem-distilling') { busy = 'distill:' + m.path; render(); return; }
+        if (m.type === 'mem-hits') {
+            busy = '';
+            if (card && card.kind === 'ask') { card.hits = m.hits || []; card.asked = m.query; }
+            render();
+            return;
         }
     });
+
+    // ------------------------------------------------------------- THE CARDS
+    /**
+     * ‼️ THE PAGE THAT DRAWS AN AGENT'S MEMORY CAN NOW CHANGE IT — U-14.
+     *
+     * Six commands lived in the palette as dialog chains over whatever page
+     * happened to be on screen: `syncMemory` stacked five quickpicks (which
+     * file → which action → left copy → right copy → confirm), `addMemory`
+     * three boxes, `fixMemoryIndex` a multi-pick with the index it was
+     * repairing nowhere in sight, `askMemory` a box whose ANSWER was a
+     * quickpick of one-line labels, and `distillMemory` and `copyMemory` a
+     * quickpick each.
+     *
+     * One card at a time, on the page, beside the graph they are about.
+     */
+    let card = null;      // { kind: 'new'|'copy'|'index'|'ask'|'sync'|'distill', … }
+    let memMsg = '';
+    let memMsgOk = false;
+    let busy = '';        // '' | 'ask' | 'distill:<path>' — a round trip in flight
+
+    function openCard(seed) {
+        const s = seed || {};
+        const kind = s.kind || 'new';
+        if (s.agentId && DATA.agents.some(a => a.id === s.agentId)) { agentId = s.agentId; }
+        card = {
+            kind: kind,
+            // new
+            name: s.name || '', type: s.type || (DATA.memoryTypes || [])[0] || 'project',
+            description: s.description || '',
+            // copy
+            path: s.path || '', fileName: s.fileName || '', target: '',
+            // index — which lines stay ticked. Everything, until unticked.
+            off: {},
+            // ask
+            query: s.query || '', hits: null, asked: '',
+            // sync
+            group: s.group || '', source: '', left: '', right: ''
+        };
+        memMsg = '';
+        memMsgOk = false;
+        render();
+        const box = document.getElementById('memcard');
+        if (box) { box.scrollIntoView(); }
+    }
+
+    function closeCard() { card = null; memMsg = ''; render(); }
+
+    const entryFor = (id) => DATA.agents.find(a => a.id === id);
+
+    function newCardHtml(F, a) {
+        return F.card({
+            id: 'memcard',
+            title: 'New memory file',
+            lede: 'One file, one fact. The description is not a caption — it IS the line that goes into MEMORY.md, and that index is all the agent reads before deciding whether this file is worth opening.',
+            body: F.grid([
+                F.sel('agentId', 'Agent', (DATA.allAgents || []).map(x => ({ id: x.id, label: x.name })),
+                    card.agentId || (a && a.id) || '', { tip: 'Whose memory folder it lands in.' }),
+                F.text('name', 'File name', card.name, {
+                    required: true, ph: 'project-notescribe',
+                    tip: 'Lowercase letters, digits, - and _ . The .md is added for you, and the same name becomes the index target.'
+                }),
+                F.sel('type', 'Type', (DATA.memoryTypes || []).map(t => ({ id: t, label: t })), card.type, {
+                    tip: 'The frontmatter metadata.type. user = who they are · feedback = how to work · project = ongoing work · reference = a pointer to something external.'
+                }),
+                F.text('description', 'Description', card.description, {
+                    wide: true, required: true,
+                    ph: 'One line — what this file answers',
+                    tip: 'Written into the frontmatter AND appended to MEMORY.md as the pointer line.'
+                })
+            ]),
+            msg: memMsg, warn: !memMsgOk,
+            submit: 'Create and index it'
+        });
+    }
+
+    function copyCardHtml(F) {
+        return F.card({
+            id: 'memcard',
+            title: 'Copy memory file',
+            lede: 'It arrives indexed in the target\'s MEMORY.md — a copy that lands as an orphan is a copy the agent never reads.',
+            body: F.grid([
+                F.stat('Copying', card.fileName || card.path),
+                F.sel('target', 'To', [{ id: '', label: '— pick an agent —' }]
+                    .concat((DATA.allAgents || []).filter(x => x.id !== agentId).map(x => ({ id: x.id, label: x.name }))),
+                    card.target, { tip: 'Which agent gets its own copy. Editing one afterwards leaves the other alone.' })
+            ]),
+            msg: memMsg, warn: !memMsgOk,
+            submit: 'Copy it'
+        });
+    }
+
+    /** The index repair plan, with the index it is repairing named above it. */
+    function indexCardHtml(F, a) {
+        const fixes = (a && a.fixes) || [];
+        const body = !fixes.length
+            ? F.msg('This agent\'s MEMORY.md is consistent — every file is pointed at, and every pointer resolves.')
+            : F.list({
+                numbered: false, acts: [],
+                items: fixes.map((f, i) => ({
+                    icon: f.kind === 'add' ? '＋' : '－',
+                    hint: f.kind === 'add' ? 'a file with no pointer' : 'a pointer with no file',
+                    title: f.target,
+                    sub: f.line
+                }))
+            })
+            + F.grid(fixes.map((f, i) => F.check('k' + i, (f.kind === 'add' ? 'index ' : 'drop ') + f.target,
+                !card.off['k' + i], { tip: f.line })));
+        return F.card({
+            id: 'memcard',
+            title: 'Repair MEMORY.md',
+            lede: 'A file with no pointer is a file the agent will never open; a pointer with no file is a promise it cannot keep. Untick anything you want left alone — the index is backed up before it is written.',
+            body: body,
+            msg: memMsg, warn: !memMsgOk,
+            submit: fixes.length ? 'Apply the ticked ones' : 'Nothing to apply'
+        });
+    }
+
+    function askCardHtml(F) {
+        const hits = card.hits;
+        const results = hits === null ? ''
+            : !hits.length
+                ? F.msg('Nothing above the noise floor — the fleet does not know about that yet.')
+                : F.sec('Answers', hits.length + ' record(s) for “' + card.asked + '” · the strongest first')
+                + F.list({
+                    numbered: false, acts: [],
+                    items: hits.map(h => ({
+                        icon: '📄',
+                        title: h.agent + ' — ' + h.title,
+                        sub: Math.round(h.score * 100) + '% · ' + String(h.text || '').slice(0, 220)
+                    }))
+                })
+                + '<div class="btnrow">' + hits.map((h, i) =>
+                    `<button class="mini secondary" data-memopen="${C.esc(h.file)}">open ${C.esc(h.title)}</button>`).join('') + '</div>';
+        return F.card({
+            id: 'memcard',
+            title: 'Ask the fleet',
+            lede: 'A meaning search across every agent\'s memory, not a word search — ask it the way you would ask a person, in any language.',
+            body: F.grid([
+                F.text('query', '', card.query, {
+                    wide: true, required: true,
+                    ph: 'e.g. what is known about the user\'s sleep pattern',
+                    tip: 'Embedded and compared against every memory file in the farm. The first query after a change also re-indexes what moved, so it can take a moment.'
+                })
+            ]) + results,
+            msg: memMsg, warn: !memMsgOk,
+            submit: busy === 'ask' ? 'Asking…' : 'Ask'
+        });
+    }
+
+    function syncCardHtml(F) {
+        const groups = DATA.duplicates || [];
+        if (!groups.length) {
+            return F.card({
+                id: 'memcard', title: 'Shared memory',
+                lede: '', body: F.msg('No memory file exists on two agents at once — there is nothing to keep in step.'),
+                msg: memMsg, warn: !memMsgOk, submit: 'Close'
+            });
+        }
+        const g = groups.find(x => x.name === card.group) || groups[0];
+        card.group = g.name;
+        const copyOpts = g.copies.map(c => ({
+            id: c.path, label: c.agentName + ' — ' + relTime(c.mtime) + ' · ' + (c.size / 1024).toFixed(1) + ' KB'
+        }));
+        const body =
+            F.grid([
+                F.sel('group', 'File', groups.map(x => ({
+                    id: x.name,
+                    label: (x.identical ? '✓ ' : '⚠ ') + x.name + ' — ' + x.copies.length + ' copies'
+                        + (x.identical ? ', identical' : ', DIVERGED')
+                })), g.name, { wide: true, redraw: true, tip: 'Every memory file that exists on more than one agent.' })
+            ])
+            + F.list({
+                numbered: false, acts: [],
+                items: g.copies.map((c, i) => ({
+                    icon: i === 0 ? '🕐' : '·',
+                    hint: i === 0 ? 'the most recently changed copy' : '',
+                    title: c.agentName,
+                    sub: relTime(c.mtime) + ' · ' + (c.size / 1024).toFixed(1) + ' KB · ' + c.path
+                }))
+            })
+            + F.sec('Compare two', 'Opens the real diff editor — better than anything this page could draw.')
+            + F.grid([
+                F.sel('left', 'Left', copyOpts, card.left || g.copies[0].path, {}),
+                F.sel('right', 'Right', copyOpts, card.right || (g.copies[1] && g.copies[1].path) || '', {})
+            ])
+            + '<div class="btnrow"><button class="secondary" data-memact="diff">Compare them</button>'
+            + '<button class="secondary" data-memact="merge">Make a merge draft</button></div>'
+            + F.sec('Or make one of them the truth',
+                'Every other copy is overwritten, each with a timestamped .afbak backup beside it.')
+            + F.grid([
+                F.sel('source', 'Source of truth', [{ id: '', label: '— pick a copy —' }].concat(copyOpts),
+                    card.source, { wide: true })
+            ]);
+        return F.card({
+            id: 'memcard',
+            title: 'Shared memory across agents',
+            lede: 'The same file name on two agents is two files. This says which ones have drifted apart and lets you decide what to do about it.',
+            body: body,
+            msg: memMsg, warn: !memMsgOk,
+            submit: 'Sync from the source'
+        });
+    }
+
+    function distillCardHtml(F, a) {
+        const files = ((a && a.files) || []).slice()
+            .sort((x, y) => (y.stale ? 1 : 0) - (x.stale ? 1 : 0) || y.tokens - x.tokens);
+        return F.card({
+            id: 'memcard',
+            title: 'Distil a memory file',
+            lede: 'A cheap model rewrites the file shorter, and you get a diff before anything is touched. Big and stale come first — they are what a fixed context load is actually made of.',
+            body: !files.length
+                ? F.msg('This agent has no memory files to distil.')
+                : F.list({
+                    numbered: false, acts: [],
+                    items: files.map(f => ({
+                        icon: f.stale ? '🥀' : '📄',
+                        hint: f.stale ? 'not touched for a long time' : '',
+                        title: f.name,
+                        sub: '~' + f.tokens + ' tok · last changed ' + f.staleDays + 'd ago'
+                    }))
+                })
+                + '<div class="btnrow">' + files.map(f =>
+                    `<button class="mini secondary" data-memdistill="${C.esc(f.path)}"${busy === 'distill:' + f.path ? ' disabled' : ''}>${busy === 'distill:' + f.path ? 'working…' : 'distil'} ${C.esc(f.name)}</button>`).join('') + '</div>',
+            msg: memMsg, warn: !memMsgOk,
+            submit: 'Close'
+        });
+    }
+
+    function cardHtml() {
+        const F = window.AFForm;
+        const a = entryFor(agentId);
+        if (card.kind === 'copy') { return copyCardHtml(F); }
+        if (card.kind === 'index') { return indexCardHtml(F, a); }
+        if (card.kind === 'ask') { return askCardHtml(F); }
+        if (card.kind === 'sync') { return syncCardHtml(F); }
+        if (card.kind === 'distill') { return distillCardHtml(F, a); }
+        return newCardHtml(F, a);
+    }
+
+    function submitCard() {
+        const a = entryFor(agentId);
+        if (card.kind === 'new') {
+            memMsg = '';
+            vscode.postMessage({
+                type: 'mem-save',
+                mem: { mode: 'new', agentId: card.agentId || agentId, name: card.name, type: card.type, description: card.description }
+            });
+            return;
+        }
+        if (card.kind === 'copy') {
+            memMsg = '';
+            vscode.postMessage({ type: 'mem-save', mem: { mode: 'copy', path: card.path, target: card.target } });
+            return;
+        }
+        if (card.kind === 'index') {
+            const fixes = (a && a.fixes) || [];
+            const lines = fixes.filter((f, i) => !card.off['k' + i]).map(f => f.line);
+            if (!lines.length) { memMsg = 'Nothing is ticked.'; memMsgOk = false; render(); return; }
+            memMsg = '';
+            vscode.postMessage({ type: 'mem-fix', agentId: agentId, lines: lines });
+            return;
+        }
+        if (card.kind === 'ask') {
+            memMsg = '';
+            vscode.postMessage({ type: 'mem-ask', query: card.query });
+            return;
+        }
+        if (card.kind === 'sync') {
+            memMsg = '';
+            vscode.postMessage({ type: 'mem-sync', act: 'sync', name: card.group, source: card.source });
+            return;
+        }
+        closeCard();
+    }
+
+    function wireCard() {
+        const F = window.AFForm;
+        const box = document.getElementById('memcard');
+        if (!box || !card) { return; }
+        F.wire(box, {
+            onEdit: v => {
+                // The index card's ticks are `k<i>` booleans; everything else
+                // is a field of the draft.
+                Object.keys(v).forEach(k => {
+                    if (/^k\d+$/.test(k)) { card.off[k] = !v[k]; } else { card[k] = v[k]; }
+                });
+            },
+            onRedraw: () => render(),
+            onSubmit: submitCard,
+            onCancel: closeCard
+        });
+        box.querySelectorAll('[data-memact]').forEach(b =>
+            b.addEventListener('click', () => {
+                memMsg = '';
+                vscode.postMessage({
+                    type: 'mem-sync', act: b.dataset.memact, name: card.group,
+                    left: card.left, right: card.right
+                });
+            }));
+        box.querySelectorAll('[data-memdistill]').forEach(b =>
+            b.addEventListener('click', () => {
+                memMsg = '';
+                vscode.postMessage({ type: 'mem-distill', agentId: agentId, path: b.dataset.memdistill });
+            }));
+        box.querySelectorAll('[data-memopen]').forEach(b =>
+            b.addEventListener('click', () => vscode.postMessage({ type: 'open', path: b.dataset.memopen })));
+    }
 
     function relTime(ts) {
         const h = Math.round((Date.now() - ts) / 3600000);
@@ -77,6 +406,34 @@
         return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${edges}${dots}</svg>`;
     }
 
+    /**
+     * Everything this page can now DO, in one band above the graph.
+     *
+     * Each button opens a card; none of them opens a dialog. The counts are on
+     * the buttons because "is there anything to repair here?" is a question the
+     * old command could only answer by being run.
+     */
+    function toolbar(entry) {
+        const fixes = (entry && entry.fixes) || [];
+        const dups = (DATA.duplicates || []).length;
+        const diverged = (DATA.duplicates || []).filter(g => !g.identical).length;
+        const on = k => card && card.kind === k ? ' disabled' : '';
+        return `<div class="btnrow">
+            <button class="secondary" data-memcard="new"${on('new')}
+                title="Make a memory file here — it is created with its frontmatter and indexed in MEMORY.md in one go, so it is never born an orphan">+ New memory</button>
+            <button class="secondary" data-memcard="index"${on('index')}
+                title="${fixes.length ? C.esc(fixes.length + ' problem(s): a file with no pointer, or a pointer with no file') : 'The index and the folder agree'}">Repair index${fixes.length ? ` (${fixes.length})` : ''}</button>
+            <button class="secondary" data-memcard="sync"${on('sync')}
+                title="${dups ? C.esc(dups + ' file name(s) exist on more than one agent' + (diverged ? '; ' + diverged + ' of them have drifted apart' : ', all identical')) : 'No memory file exists on two agents at once'}">Shared${dups ? ` (${dups}${diverged ? '⚠' : ''})` : ''}</button>
+            ${DATA.canDistill ? `<button class="secondary" data-memcard="distill"${on('distill')}
+                title="A cheap model rewrites a file shorter and shows you the diff before anything is touched">Distil…</button>` : ''}
+            <button class="secondary" data-memcard="ask"${on('ask')}${DATA.embeddingsOn ? '' : ' disabled'}
+                title="${DATA.embeddingsOn
+                ? 'A meaning search across every agent&#39;s memory — ask it the way you would ask a person'
+                : 'Needs an embeddings provider — set agentFarm.embeddingsProvider (gemini, or a local OpenAI-compatible endpoint)'}">Ask the fleet</button>
+        </div>`;
+    }
+
     function render() {
         const entry = DATA.agents.find(a => a.id === agentId);
         const seg = DATA.agents.map(a =>
@@ -112,11 +469,12 @@
                         `<div class="sub">• <button class="linkish" data-open="${C.esc(n.path)}">${C.esc(n.name)}</button> — ${n.incoming} in</div>`).join('')}</div>` : ''}
                     ${notIndexed.length ? `<div class="card"><h3>Not in MEMORY.md</h3><p class="muted small">Files with no line in the index — the agent cannot find them.</p>${notIndexed.map(n =>
                         `<div class="sub">• <button class="linkish" data-open="${C.esc(n.path)}">${C.esc(n.name)}</button></div>`).join('')}
-                        <div class="btnrow" style="margin-top:8px"><button id="fixindex">Fix Memory Index…</button></div></div>` : ''}
+                        <div class="btnrow" style="margin-top:8px"><button id="fixindex">Repair MEMORY.md…</button></div></div>` : ''}
                 </div>`;
 
             body = `
-                <div class="spread" style="margin-top:6px"><div>${chips}</div></div>
+                <div class="spread" style="margin-top:6px"><div>${chips}</div>${toolbar(entry)}</div>
+                ${card ? cardHtml() : (memMsg ? window.AFForm.msg(memMsg, !memMsgOk) : '')}
                 <div class="card chartbox">${graphSvg(g)}
                     <div class="legend">
                         <span><i style="background:var(--vscode-charts-green,#4caf50);border-radius:50%"></i>recalled (30d)</span>
@@ -147,13 +505,16 @@
 
         window.AFHeader.wire(vscode);
         const fix = document.getElementById('fixindex');
-        if (fix) { fix.addEventListener('click', () => vscode.postMessage({ type: 'fixIndex', agentId })); }
+        if (fix) { fix.addEventListener('click', () => openCard({ kind: 'index' })); }
+        document.querySelectorAll('[data-memcard]').forEach(b =>
+            b.addEventListener('click', () => openCard({ kind: b.dataset.memcard })));
         document.querySelectorAll('[data-agent]').forEach(b =>
-            b.addEventListener('click', () => { agentId = b.dataset.agent; render(); }));
+            b.addEventListener('click', () => { agentId = b.dataset.agent; card = null; render(); }));
         document.querySelectorAll('[data-open]').forEach(el =>
             el.addEventListener('click', () => {
                 if (el.dataset.open) { vscode.postMessage({ type: 'open', path: el.dataset.open }); }
             }));
+        wireCard();
     }
 
     // ------------------------------------------------------- right-click menu
@@ -167,10 +528,20 @@
         }
         // Already the memory graph — the item scopes it to the row's agent.
         if (act === 'memGraph') {
-            if (ctx.agentId) { agentId = String(ctx.agentId); render(); }
+            if (ctx.agentId) { agentId = String(ctx.agentId); card = null; render(); }
             return;
         }
-        if (act === 'memCopy') { window.AFCtx.copy(ctx.memPath); }
+        if (act === 'memCopy') { window.AFCtx.copy(ctx.memPath); return; }
+        // The two acts a memory row could not offer until the page had a form.
+        if (act === 'memCopyTo') {
+            if (ctx.agentId) { agentId = String(ctx.agentId); }
+            openCard({ kind: 'copy', path: String(ctx.memPath || ''), fileName: String(ctx.memName || '') });
+            return;
+        }
+        if (act === 'memDistil') {
+            if (ctx.agentId) { agentId = String(ctx.agentId); }
+            openCard({ kind: 'distill' });
+        }
     }
 
     // ‼️ ONCE, at module scope — render() redraws the whole graph.

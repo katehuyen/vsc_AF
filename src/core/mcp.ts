@@ -178,14 +178,18 @@ export function updateMcpServer(server: McpServerDef, def: Record<string, unknow
 export function copyMcpServerTo(server: McpServerDef, target: AgentInfo): string | undefined {
     const def = readServerRawDef(server);
     if (!def) { return undefined; }
-    return addMcpServer(target, server.name, def as { command?: string; url?: string; type?: string });
+    return addMcpServer(target, server.name, def);
 }
 
 /** Add a server to the agent's .mcp.json (created if missing). */
 export function addMcpServer(
     agent: AgentInfo,
     name: string,
-    def: { command?: string; url?: string; type?: string }
+    // ‼️ The whole definition, not the three keys a dialog chain could ask for.
+    // A real server entry carries `args`, `env` and `headers` too, and the page
+    // form (U-14) asks for them — writing a def that silently dropped them
+    // would produce a server that starts and then cannot authenticate.
+    def: Record<string, unknown>
 ): string {
     const file = path.join(agent.dir, '.mcp.json');
     let json: McpServersJson = {};

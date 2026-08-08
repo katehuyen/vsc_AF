@@ -1,9 +1,12 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
-import { mcpUsage, readAgentMcpServers, removeMcpServer, setServerDisabled } from '../core/mcp';
+import {
+    addMcpServer, copyMcpServerTo, mcpUsage, readAgentMcpServers, readServerRawDef,
+    removeMcpServer, setServerDisabled, updateMcpServer
+} from '../core/mcp';
 import { loadProbeCache, McpServerConfig, probeMcpServer, saveProbeCache } from '../core/mcpProbe';
-import { readAgentSkills, skillUsage } from '../core/skills';
+import { copySkillTo, readAgentSkills, skillUsage } from '../core/skills';
 import { SessionIndex } from '../core/sessions';
 import { revealPath } from '../core/reveal';
 import {
@@ -28,6 +31,53 @@ export interface ToolboxPanelDeps {
     cacheFile: string;
     refreshTrees(): void;
     home?: string;
+}
+
+/**
+ * What the Toolbox form is opened with — U-14, surface 2.
+ *
+ * ‼️ THE PAGE LISTED EVERY TOOL AND COULD MAKE ALMOST NONE OF THEM. `+ new
+ * skill` was two input boxes in the host; `addMcpServer` was four in the
+ * palette; `editMcpServer` reduced a server to one line of text and threw away
+ * whatever else the definition held; `copyMcpServer` and `duplicateSkill` were
+ * a quickpick of agent names each. Four routes, four vocabularies, one page
+ * that could show you all of it and change none of it.
+ */
+export interface ToolCompose {
+    kind: 'skill' | 'subagent' | 'command' | 'mcp';
+    mode: 'new' | 'edit' | 'copy';
+    /** '' = user scope; otherwise the agent it belongs to (or is made on). */
+    agentId?: string;
+    name?: string;
+    description?: string;
+    /** MCP only. */
+    transport?: 'stdio' | 'http';
+    command?: string;
+    args?: string;
+    env?: string;
+    url?: string;
+    headers?: string;
+}
+
+/** `KEY=value` lines ⇄ an object. The env block an MCP server needs is a
+ *  handful of pairs; a JSON box for it would be a JSON box people get wrong. */
+function parsePairs(text: string): Record<string, string> | undefined {
+    const out: Record<string, string> = {};
+    let any = false;
+    for (const line of String(text || '').split(/\r?\n/)) {
+        const t = line.trim();
+        if (!t) { continue; }
+        const eq = t.indexOf('=');
+        if (eq <= 0) { continue; }
+        out[t.slice(0, eq).trim()] = t.slice(eq + 1).trim();
+        any = true;
+    }
+    return any ? out : undefined;
+}
+function formatPairs(v: unknown): string {
+    if (!v || typeof v !== 'object') { return ''; }
+    return Object.entries(v as Record<string, unknown>)
+        .map(([k, val]) => `${k}=${String(val)}`).join('\n');
 }
 
 const USAGE_WINDOW_MS = 30 * 24 * 3600 * 1000;
@@ -86,6 +136,13 @@ export class ToolboxPanel {
         ToolboxPanel.current?.refresh();
     }
 
+    /** The ONE door to a tool. Every command that used to build one out of
+     *  input boxes opens this instead. */
+    static compose(deps: ToolboxPanelDeps, seed: ToolCompose): void {
+        ToolboxPanel.show(deps);
+        void ToolboxPanel.current?.panel.webview.postMessage({ type: 'tool-compose', seed });
+    }
+
     private constructor(readonly panel: vscode.WebviewPanel, private deps: ToolboxPanelDeps) {
         panel.webview.html = htmlShell(
             panel.webview, deps.extensionUri, 'Toolbox', buildData(deps), 'toolbox.js');
@@ -142,9 +199,28 @@ export class ToolboxPanel {
             case 'remove':
                 await this.remove(msg.item as ToolboxItem | undefined);
                 break;
-            case 'create':
-                await this.create(String(msg.kind), String(msg.scope), String(msg.agentId ?? ''));
+            case 'tool-save':
+                await this.saveTool((msg.tool ?? {}) as Record<string, unknown>);
                 break;
+            // The page needs a server's whole definition to fill the edit form
+            // — the inventory row carries a summary, not the JSON.
+            case 'mcp-def': {
+                const node = this.mcpNode(String(msg.agentId ?? ''), String(msg.name ?? ''));
+                const def = node ? readServerRawDef(node.server) ?? {} : {};
+                void this.panel.webview.postMessage({
+                    type: 'mcp-def',
+                    name: String(msg.name ?? ''),
+                    def: {
+                        transport: def.url ? 'http' : 'stdio',
+                        command: String(def.command ?? ''),
+                        args: Array.isArray(def.args) ? (def.args as unknown[]).map(String).join('\n') : '',
+                        env: formatPairs(def.env),
+                        url: String(def.url ?? ''),
+                        headers: formatPairs(def.headers)
+                    }
+                });
+                break;
+            }
             case 'togglePlugin': {
                 const key = String(msg.key ?? '');
                 if (!key) { return; }
@@ -163,25 +239,10 @@ export class ToolboxPanel {
                 this.changed();
                 break;
             }
-            // ---- reachable only from a row's right-click menu ----
-            // Each one CALLS the command the sidebar tree calls; the only work
-            // here is turning "the row at index N" back into the node those
-            // commands take, which the page has no way to build.
-            case 'editMcp': {
-                const node = this.mcpNode(String(msg.agentId ?? ''), String(msg.server ?? ''));
-                if (node) { await vscode.commands.executeCommand('agentfarm.editMcpServer', node); this.changed(); }
-                break;
-            }
-            case 'copyToAgent': {
-                const node = msg.kind === 'mcp'
-                    ? this.mcpNode(String(msg.agentId ?? ''), String(msg.name ?? ''))
-                    : this.skillNode(String(msg.agentId ?? ''), String(msg.name ?? ''));
-                if (!node) { this.warn('could not find that entry to copy.'); break; }
-                await vscode.commands.executeCommand(
-                    msg.kind === 'mcp' ? 'agentfarm.copyMcpServer' : 'agentfarm.duplicateSkill', node);
-                this.changed();
-                break;
-            }
+            // ---- reachable from a row's buttons and its right-click menu ----
+            // Editing and copying are FORMS now (U-14), so these two open the
+            // page's own card rather than running a command that opens a chain
+            // of boxes on top of the page the row is on.
             case 'skillScope': {
                 const node = this.skillNode(String(msg.agentId ?? ''), String(msg.name ?? ''));
                 if (!node) { this.warn('a user-scope skill is already shared by every agent.'); break; }
@@ -267,27 +328,113 @@ export class ToolboxPanel {
         else { this.warn(`could not remove "${item.name}" — see its source file.`); }
     }
 
-    private async create(kind: string, scope: string, agentId: string): Promise<void> {
-        if (kind !== 'skill' && kind !== 'command' && kind !== 'subagent') { return; }
-        const agent = scope === 'agent' ? this.agentById(agentId) : undefined;
-        if (scope === 'agent' && !agent) { return; }
-        const name = await vscode.window.showInputBox({
-            prompt: `New ${kind} name` + (kind === 'command' ? ' (":" nests into folders, e.g. git:cleanup)' : ''),
-            ignoreFocusOut: true
-        });
-        if (!name?.trim()) { return; }
-        const description = await vscode.window.showInputBox({
-            prompt: `One-line description (${kind === 'skill' ? 'also decides when claude auto-loads it' : 'shown in listings'})`,
-            ignoreFocusOut: true
-        }) ?? '';
-        try {
-            const claudeDir = agent ? path.join(agent.dir, '.claude') : userClaudeDir(this.deps.home);
-            const file = scaffoldItem(kind, claudeDir, name.trim(), description.trim());
-            void vscode.window.showTextDocument(vscode.Uri.file(file));
-            this.changed();
-        } catch (e) {
-            this.warn((e as Error).message ?? String(e));
+    /** A refusal the FORM shows, in the form. */
+    private say(text: string, ok = false): void {
+        void this.panel.webview.postMessage({ type: 'tool-msg', text, ok });
+    }
+
+    /**
+     * The one write behind every "make a tool" route.
+     *
+     * Three kinds scaffold a markdown file (skill · subagent · command) and one
+     * edits a JSON entry (mcp). What the form can state that no chain of boxes
+     * could: an MCP server's `args`, its `env` and its `headers` — the fields
+     * that decide whether the server it just wrote can actually authenticate.
+     */
+    private async saveTool(raw: Record<string, unknown>): Promise<void> {
+        const s = (k: string) => String(raw[k] ?? '').trim();
+        const kind = s('kind');
+        const mode = s('mode') || 'new';
+        const name = s('name');
+        if (!name) { return this.say('It needs a name — that is what claude loads it by.'); }
+
+        if (kind === 'skill' || kind === 'subagent' || kind === 'command') {
+            if (mode === 'copy') {
+                const from = this.skillNode(s('agentId'), name);
+                const target = this.agentById(s('target'));
+                if (!from) { return this.say('That skill is no longer where it was — refresh the page.'); }
+                if (!target) { return this.say('Pick the agent it is copied to.'); }
+                try { copySkillTo(from.skill, target); } catch (e) {
+                    return this.say((e as Error).message ?? String(e));
+                }
+                this.changed();
+                return this.say(`Copied to ${target.name}.`, true);
+            }
+            const agent = s('agentId') ? this.agentById(s('agentId')) : undefined;
+            if (s('agentId') && !agent) { return this.say('That agent is gone — pick another scope.'); }
+            try {
+                const claudeDir = agent ? path.join(agent.dir, '.claude') : userClaudeDir(this.deps.home);
+                const file = scaffoldItem(kind, claudeDir, name, s('description'));
+                this.changed();
+                this.say(`Created — ${path.basename(file)} is open for the instructions.`, true);
+                void vscode.window.showTextDocument(vscode.Uri.file(file));
+            } catch (e) {
+                this.say((e as Error).message ?? String(e));
+            }
+            return;
         }
+
+        if (kind !== 'mcp') { return; }
+
+        if (mode === 'copy') {
+            const from = this.mcpNode(s('agentId'), name);
+            const target = this.agentById(s('target'));
+            if (!from) { return this.say('That server is no longer where it was — refresh the page.'); }
+            if (!target) { return this.say('Pick the agent it is copied to.'); }
+            const file = copyMcpServerTo(from.server, target);
+            if (!file) { return this.say('Could not read the server definition to copy it.'); }
+            this.changed();
+            return this.say(`Copied to ${target.name} (${path.basename(file)}).`, true);
+        }
+
+        // ‼️ AN EDIT KEEPS EVERYTHING IT WAS NOT ASKED ABOUT. The old editor
+        // read the definition, replaced `command`+`args` (or `url`) from one
+        // text box and wrote the object back — so any key it had no question
+        // for survived by luck. Here the untouched keys are carried over
+        // explicitly, and the ones the form owns are rewritten.
+        const http = s('transport') === 'http';
+        const def: Record<string, unknown> = {};
+        if (mode === 'edit') {
+            const from = this.mcpNode(s('agentId'), name);
+            if (!from) { return this.say('That server is no longer where it was — refresh the page.'); }
+            const prev = readServerRawDef(from.server) ?? {};
+            for (const [k, v] of Object.entries(prev)) {
+                if (['command', 'args', 'env', 'url', 'headers', 'type'].indexOf(k) < 0) { def[k] = v; }
+            }
+        }
+        if (http) {
+            if (!s('url')) { return this.say('An http server needs its URL.'); }
+            def.type = 'http';
+            def.url = s('url');
+            const headers = parsePairs(s('headers'));
+            if (headers) { def.headers = headers; }
+        } else {
+            if (!s('command')) { return this.say('A stdio server needs the command that starts it.'); }
+            def.command = s('command');
+            const args = s('args').split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+            if (args.length) { def.args = args; }
+            const env = parsePairs(s('env'));
+            if (env) { def.env = env; }
+        }
+
+        if (mode === 'edit') {
+            const from = this.mcpNode(s('agentId'), name);
+            if (!from) { return this.say('That server is no longer where it was — refresh the page.'); }
+            if (!updateMcpServer(from.server, def)) {
+                return this.say('Could not update it — the source file is unreadable or the entry is gone.');
+            }
+            this.changed();
+            return this.say(`"${name}" updated — a one-time .afbak backup is kept. Restart the agent's sessions to load it.`, true);
+        }
+
+        const agent = this.agentById(s('agentId'));
+        if (!agent) { return this.say('An MCP server belongs to an agent — pick which one.'); }
+        if (readAgentMcpServers(agent).some(x => x.name === name)) {
+            return this.say(`${agent.name} already has a server called "${name}".`);
+        }
+        const file = addMcpServer(agent, name, def);
+        this.changed();
+        this.say(`"${name}" added to ${path.basename(file)}. Restart the agent's sessions to load it.`, true);
     }
 
     private dispose(): void {

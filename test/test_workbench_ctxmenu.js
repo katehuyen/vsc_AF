@@ -90,10 +90,15 @@ const NOW = Date.now();
     p.send({ type: 'afctx', act: 'tbRemove', ctx: agentSkill });
     ok('…and so is removing it', JSON.stringify(p.last()) === JSON.stringify(removeByButton));
 
-    // Acts that existed only on the sidebar tree until now.
+    // Acts that existed only on the sidebar tree until now. Copying opens the
+    // page's own card (U-14) rather than a quickpick of agent names, so what it
+    // "reaches" is the form — the target is chosen with the list still visible.
     p.send({ type: 'afctx', act: 'tbCopyAgent', ctx: agentSkill });
-    ok('copying a skill to another agent reaches the host with its kind and name',
-        p.last().type === 'copyToAgent' && p.last().kind === 'skill' && p.last().name === 'account-signup');
+    ok('copying a skill to another agent opens the copy card on the page',
+        p.html().indexOf('id="toolform"') >= 0 && p.html().indexOf('data-af="target"') >= 0);
+    ok('the copy card names what is being copied',
+        p.html().indexOf('account-signup') >= 0);
+    p.query('[data-afact="cancel"]')[0].click();
     p.send({ type: 'afctx', act: 'tbScope', ctx: agentSkill });
     ok('moving it between scopes names the agent it is leaving',
         p.last().type === 'skillScope' && p.last().agentId === 'a1');
@@ -108,8 +113,18 @@ const NOW = Date.now();
     p.send({ type: 'afctx', act: 'tbMcp:off', ctx: mcp });
     ok('disabling it for this agent is one gesture',
         p.last().type === 'toggleMcp' && p.last().disabled === true && p.last().agentId === 'a1');
+    // Editing is a form now, and the form needs the server's real definition —
+    // the inventory row only carries a summary of it.
     p.send({ type: 'afctx', act: 'tbMcpEdit', ctx: mcp });
-    ok('editing its definition reaches the host', p.last().type === 'editMcp' && p.last().server === 'obsidian');
+    ok('editing asks the host for the whole definition',
+        p.last().type === 'mcp-def' && p.last().name === 'obsidian' && p.last().agentId === 'a1');
+    ok('the edit card is already on screen while it is read',
+        p.html().indexOf('id="toolform"') >= 0);
+    p.send({ type: 'mcp-def', name: 'obsidian', def: { transport: 'stdio', command: 'npx', args: '-y\nsomething', env: '', url: '', headers: '' } });
+    ok('the definition fills the card', p.html().indexOf('value="npx"') >= 0);
+    ok('arguments are one per line, not one string',
+        p.html().indexOf('data-af="args"') >= 0);
+    p.query('[data-afact="cancel"]')[0].click();
 
     tab('plugin');
     const plug = p.contexts().find(c => c.afKind === 'plugin');

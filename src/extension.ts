@@ -46,7 +46,7 @@ import {
 import { chunkTranscript, SemanticIndex } from './core/semantic';
 import {
     addDuty, CADENCES, CLAUDE_MD_SNIPPET, claudeMdReferencesDuties, deleteDuty,
-    DUTIES_FILENAME, Duty, DUTY_TEMPLATES, moveDuty, readDuties, togglePauseDuty,
+    DUTIES_FILENAME, Duty, moveDuty, readDuties, togglePauseDuty,
     updateDuty, watchStatus
 } from './core/duties';
 import { buildEvalReport, compareRuns, EvalCase, EvalStore, runEvalSet, summarizeRun } from './core/evals';
@@ -76,11 +76,9 @@ import {
     buildDelegationPrompt, delegationTitle, DismissEntry, filterDismissed,
     FIX_COMMANDS, insightKey, pickAutoDelegates
 } from './core/insightops';
-import {
-    addMcpServer, copyMcpServerTo, readServerRawDef, removeMcpServer, setServerDisabled, updateMcpServer
-} from './core/mcp';
+import { removeMcpServer, setServerDisabled } from './core/mcp';
 import { queryMatches } from './core/query';
-import { addSkill, copySkillTo, moveSkillScope, removeSkill } from './core/skills';
+import { moveSkillScope, removeSkill } from './core/skills';
 import {
     addMemoryFile, applyIndexFixes, archiveMemoryFile, copyMemoryFileTo, MEMORY_TYPES, planIndexFixes
 } from './core/memusage';
@@ -6632,7 +6630,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // agent page's session table carries the Project column too (S-5).
         agentProjects: () => agentProjectNames(
             agents.map(a => ({ id: a.id, name: a.name, dir: a.dir })), projectStore.all()),
-        projectStyle: (name: string) => projectStyleOf(name)
+        projectStyle: (name: string) => projectStyleOf(name),
+        // The page writes DUTIES.md now (U-14). Nothing watches that file, so
+        // the trees and the Toolbox would keep yesterday's list until the next
+        // Refresh — the write has to say so itself.
+        refreshAll: () => refreshAll()
+    };
+    // One dependency object for the Toolbox page, because the page is now
+    // opened from six places (the nav, the palette, and the four tool commands
+    // that used to build their object out of input boxes — U-14).
+    const toolboxDeps = {
+        extensionUri: context.extensionUri,
+        getAgents: () => agents,
+        index,
+        cacheFile: toolboxProbeCacheFile,
+        refreshTrees: () => refreshAll()
     };
     const viewerDeps = {
         extensionUri: context.extensionUri,
@@ -6951,6 +6963,113 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     taskManager.onDidChange(() => livingEmitter.fire(), null, context.subscriptions);
 
     let pendingMerge: { name: string; files: string[] } | undefined;
+
+    /**
+     * ‼️ THE MEMORY SURFACE — U-14, surface 3.
+     *
+     * Six commands used to build a memory act out of dialog boxes over
+     * whatever page happened to be on screen. They all open the Memory Graph
+     * now, with the card they need already up. Three of the acts still need
+     * things only the host has — the embeddings index, the judge model, the
+     * pending-merge handoff — so those come in as callbacks rather than being
+     * reimplemented behind the page.
+     */
+    /**
+     * The fleet-wide semantic memory query, without its old two dialogs.
+     *
+     * It re-indexes whatever memory file moved since last time and then
+     * searches; the ANSWER used to be a quickpick of one-line labels, which is
+     * the worst possible container for a paragraph of recalled text. The page
+     * draws the hits instead — score, agent, file and enough of the passage to
+     * recognise it.
+     */
+    const askFleetMemory = async (query: string): Promise<{
+        hits?: { agent: string; title: string; score: number; text: string; file: string }[];
+        error?: string;
+    }> => {
+        const ecfg = embeddingsCfg();
+        if (ecfg.provider === 'off') {
+            return { error: 'Semantic memory needs an embeddings provider — set agentFarm.embeddingsProvider (gemini, or a local OpenAI-compatible endpoint).' };
+        }
+        try {
+            return await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: 'Agent Farm: querying fleet memory…' },
+                async (progress) => {
+                    const refs = memoryFileRefs(agents);
+                    memIndex.prune(new Set(refs.map(r => r.key)));
+                    const pending = memIndex.pending(refs.map(r => ({ sessionId: r.key, mtime: r.mtime })));
+                    const byKey = new Map(refs.map(r => [r.key, r]));
+                    for (const [i, p] of pending.entries()) {
+                        const ref = byKey.get(p.sessionId)!;
+                        progress.report({ message: `indexing ${i + 1}/${pending.length}` });
+                        const texts = chunkMemoryFile(ref.file);
+                        if (texts.length) {
+                            const { vectors, error } = await embedTexts(texts, ecfg);
+                            if (error) { throw new Error(error); }
+                            memIndex.addSession(p.sessionId, p.mtime, texts.map(t => ({
+                                sessionFile: ref.file, sessionId: ref.key,
+                                agentName: ref.agentName, title: ref.name, ts: ref.mtime, text: t
+                            })), vectors!);
+                        } else {
+                            memIndex.addSession(p.sessionId, p.mtime, [], []);
+                        }
+                    }
+                    memIndex.save();
+                    const q = await embedTexts([query], ecfg);
+                    if (q.error || !q.vectors) { throw new Error(q.error ?? 'query embedding failed'); }
+                    return {
+                        hits: memIndex.search(q.vectors[0], 12)
+                            .filter(h => h.score > 0.15)
+                            .map(h => ({
+                                agent: h.chunk.agentName, title: h.chunk.title, score: h.score,
+                                text: h.chunk.text, file: h.chunk.sessionFile
+                            }))
+                    };
+                });
+        } catch (err) {
+            return { error: `Memory query failed — ${String((err as Error).message ?? err)}` };
+        }
+    };
+
+    /** Distil one memory file: cheap model, real diff, and a decision. The
+     *  picker in front of it is the page's own list now. */
+    const distillOne = async (agentDir: string, file: string): Promise<{
+        error?: string; tokensBefore?: number; tokensAfter?: number; applied?: boolean;
+    }> => {
+        const name = path.basename(file);
+        const result = await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title: `Agent Farm: distilling ${name} (cheap model)…` },
+            () => distillFile(agentDir, judgeArgs(), file));
+        if (!result.draft) { return { error: result.error ?? 'no draft came back' }; }
+        const draftFile = path.join(os.tmpdir(), `af-distill-${Date.now()}-${name}`);
+        fs.writeFileSync(draftFile, result.draft, 'utf8');
+        await vscode.commands.executeCommand('vscode.diff',
+            vscode.Uri.file(file), vscode.Uri.file(draftFile),
+            `${name}: current ↔ distilled draft`);
+        const choice = await vscode.window.showInformationMessage(
+            `Distilled draft: ~${result.tokensBefore} → ~${result.tokensAfter} tokens. Apply over the original? (.afbak backup)`,
+            'Apply', 'Discard');
+        let applied = false;
+        if (choice === 'Apply') {
+            applyDistilled(file, result.draft);
+            refreshAll();
+            applied = true;
+        }
+        try { fs.unlinkSync(draftFile); } catch { /* temp cleanup */ }
+        return { tokensBefore: result.tokensBefore, tokensAfter: result.tokensAfter, applied };
+    };
+
+    const memGraphDeps = {
+        extensionUri: context.extensionUri,
+        getAgents: () => agents,
+        index,
+        refreshAll: () => refreshAll(),
+        staleDays: () => cfg().get<number>('staleMemoryDays', 45),
+        embeddingsOn: () => embeddingsCfg().provider !== 'off',
+        setPendingMerge: (name: string, files: string[]) => { pendingMerge = { name, files }; },
+        askMemory: (query: string) => askFleetMemory(query),
+        distill: (agentDir: string, file: string) => distillOne(agentDir, file)
+    };
 
     // `agentName` is here for the same reason SessionRef has five keys: a
     // surface publishes what it KNOWS. A Timeline lane knows the agent's name
@@ -10122,19 +10241,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return pick?.ins;
     };
 
-    // A duty only works if the agent's CLAUDE.md actually points at DUTIES.md.
-    const ensureDutiesReference = async (agent: AgentInfo) => {
-        if (!agent.claudeMdPath) { return; }
-        const claudeMd = fs.readFileSync(agent.claudeMdPath, 'utf8');
-        if (claudeMdReferencesDuties(claudeMd)) { return; }
-        const choice = await vscode.window.showWarningMessage(
-            `${agent.name}'s CLAUDE.md does not mention ${DUTIES_FILENAME} yet — without a reference the agent will never check its duties. Append a short instruction section?`,
-            { modal: true }, 'Append to CLAUDE.md'
-        );
-        if (choice === 'Append to CLAUDE.md') {
-            fs.writeFileSync(agent.claudeMdPath, claudeMd.replace(/\n*$/, '\n') + CLAUDE_MD_SNIPPET, 'utf8');
-        }
-    };
+    // A duty only works if the agent's CLAUDE.md actually points at DUTIES.md —
+    // and the one place that writes a duty is now the agent page's own form, so
+    // the check lives next to the write (src/panels/agentDetail.ts).
 
     const toggleMcp = (node: AgentNode | undefined, disable: boolean) => {
         if (node?.kind !== 'mcp-server') { return; }
@@ -11459,13 +11568,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }),
 
         vscode.commands.registerCommand('agentfarm.openToolbox', () => {
-            ToolboxPanel.show({
-                extensionUri: context.extensionUri,
-                getAgents: () => agents,
-                index,
-                cacheFile: toolboxProbeCacheFile,
-                refreshTrees: refreshAll
-            });
+            ToolboxPanel.show(toolboxDeps);
         }),
 
         vscode.commands.registerCommand('agentfarm.openSecrets', () => {
@@ -11965,6 +12068,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 'ULTRA-GELISIM.tr.md', 'Agent Farm — ULTRA Gelişim Planı');
         }),
 
+        // ‼️ THE FOUR DUTY DOORS ALL OPEN THE SAME CARD — U-14, surface 1.
+        // `addDuty` was five boxes, `editDuty` five more, and the two shortcuts
+        // a quickpick each; between them they could produce three differently
+        // shaped duties and lose everything typed on one Esc. The command still
+        // exists — the palette, the sidebar tree, the walkthrough and the
+        // right-click menu all still reach it — but what it opens is the agent
+        // page's own form.
         vscode.commands.registerCommand('agentfarm.addDuty', async (arg?: AgentNode | { agentId?: string }) => {
             let agent: AgentInfo | undefined;
             if (arg && 'kind' in arg && (arg.kind === 'section' || arg.kind === 'agent' || arg.kind === 'duty')) {
@@ -11973,95 +12083,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 agent = await resolveAgent(arg as { agentId?: string } | undefined);
             }
             if (!agent) { return; }
-
-            const title = await vscode.window.showInputBox({
-                prompt: `Duty title for ${agent.name} (e.g. "Inbox triage")`, ignoreFocusOut: true
-            });
-            if (!title) { return; }
-
-            const cadenceDescriptions: Record<string, string> = {
-                'every-turn': 'agent checks on every turn',
-                'session-start': 'checked once at session start',
-                'daily': 'first opportunity each day',
-                'weekly': 'first opportunity each week',
-                'manual': 'only when you ask'
-            };
-            const cadencePick = await vscode.window.showQuickPick(
-                CADENCES.map(c => ({ label: c, description: cadenceDescriptions[c] })),
-                { placeHolder: 'How often should the agent check?', ignoreFocusOut: true }
-            );
-            if (!cadencePick) { return; }
-
-            const watchPick = await vscode.window.showQuickPick(
-                [
-                    { label: '$(file) Pick a file to watch…', id: 'file' },
-                    { label: '$(folder) Pick a folder to watch…', id: 'folder' },
-                    { label: '$(edit) Type a path or description', id: 'type' },
-                    { label: '$(circle-slash) No watch target', id: 'none' }
-                ],
-                { placeHolder: 'What should the agent watch?', ignoreFocusOut: true }
-            );
-            if (!watchPick) { return; }
-            let watch: string | undefined;
-            if (watchPick.id === 'file' || watchPick.id === 'folder') {
-                const picked = await vscode.window.showOpenDialog({
-                    canSelectFiles: watchPick.id === 'file',
-                    canSelectFolders: watchPick.id === 'folder',
-                    canSelectMany: false,
-                    openLabel: 'Watch this'
-                });
-                if (!picked?.length) { return; }
-                watch = picked[0].fsPath;
-            } else if (watchPick.id === 'type') {
-                watch = await vscode.window.showInputBox({
-                    prompt: 'Path or description of the watch target', ignoreFocusOut: true
-                });
-                if (watch === undefined) { return; }
-                watch = watch.trim() || undefined;
-            }
-
-            const action = await vscode.window.showInputBox({
-                prompt: 'Do: what should the agent do when something changed / is waiting?',
-                ignoreFocusOut: true,
-                placeHolder: 'e.g. Act on the answered questions and remove them from the file'
-            });
-            if (!action) { return; }
-
-            addDuty(agent.dir, {
-                title, cadence: cadencePick.label, paused: false, watch, action
-            });
-
-            await ensureDutiesReference(agent);
-            refreshAll();
-            void vscode.window.showInformationMessage(
-                `Agent Farm: duty "${title}" added to ${agent.name} (${DUTIES_FILENAME}).`);
+            AgentDetailPanel.composeDuty(agent.id, detailDeps, { mode: 'new' });
         }),
 
+        // The templates are no longer a command's own quickpick — they are the
+        // form's "Start from" picker, so the pattern lands in fields you can
+        // still change instead of straight into the file.
         vscode.commands.registerCommand('agentfarm.addDutyFromTemplate', async (node?: AgentNode) => {
             const agent = node && 'agent' in node ? node.agent : await resolveAgent(undefined);
             if (!agent) { return; }
-            const pick = await vscode.window.showQuickPick(
-                DUTY_TEMPLATES.map(t => ({ label: t.label, description: t.detail, template: t })),
-                { placeHolder: `Duty template for ${agent.name}`, ignoreFocusOut: true });
-            if (!pick) { return; }
-            const t = pick.template;
-            let watch: string | undefined;
-            if (t.watchKind !== 'none') {
-                const picked = await vscode.window.showOpenDialog({
-                    canSelectFiles: t.watchKind === 'file',
-                    canSelectFolders: t.watchKind === 'folder',
-                    canSelectMany: false,
-                    openLabel: 'Watch this',
-                    title: `${t.label} — what should the agent watch?`
-                });
-                if (!picked?.length) { return; }
-                watch = picked[0].fsPath;
-            }
-            addDuty(agent.dir, { ...t.duty, watch });
-            await ensureDutiesReference(agent);
-            refreshAll();
-            void vscode.window.showInformationMessage(
-                `Agent Farm: duty "${t.duty.title}" added to ${agent.name} from template — right-click → Edit Duty… to fine-tune.`);
+            AgentDetailPanel.composeDuty(agent.id, detailDeps, { mode: 'new' });
         }),
 
         vscode.commands.registerCommand('agentfarm.automateDuty', async (node?: AgentNode) => {
@@ -12081,27 +12112,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 `Agent Farm: trigger "Duty: ${d.title}" armed (debounce 10s, cooldown 60s, max 6/h) — manage it in the Tasks view under Triggers.`);
         }),
 
-        vscode.commands.registerCommand('agentfarm.copyDuty', async (node?: AgentNode) => {
+        vscode.commands.registerCommand('agentfarm.copyDuty', (node?: AgentNode) => {
             if (node?.kind !== 'duty') { return; }
-            const targets = agents.filter(a => a.id !== node.agent.id);
-            if (!targets.length) {
+            if (!agents.some(a => a.id !== node.agent.id)) {
                 void vscode.window.showInformationMessage('Agent Farm: no other agent to copy to.');
                 return;
             }
-            const pick = await vscode.window.showQuickPick(
-                targets.map(a => ({ label: a.name, description: a.dir, agent: a })),
-                { placeHolder: `Copy duty "${node.duty.title}" to which agent?`, ignoreFocusOut: true });
-            if (!pick) { return; }
-            if (pick.agent.duties.some(x => x.title === node.duty.title)) {
-                void vscode.window.showWarningMessage(
-                    `Agent Farm: ${pick.agent.name} already has a duty titled "${node.duty.title}".`);
-                return;
-            }
-            addDuty(pick.agent.dir, { ...node.duty });
-            await ensureDutiesReference(pick.agent);
-            refreshAll();
-            void vscode.window.showInformationMessage(
-                `Agent Farm: duty "${node.duty.title}" copied to ${pick.agent.name}.`);
+            const d = node.duty;
+            AgentDetailPanel.composeDuty(node.agent.id, detailDeps, {
+                mode: 'copy', oldTitle: d.title, title: d.title, cadence: d.cadence,
+                watch: d.watch, action: d.action, note: d.note, paused: d.paused
+            });
         }),
 
         vscode.commands.registerCommand('agentfarm.moveDutyUp', (node?: AgentNode) => {
@@ -12119,40 +12140,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         }),
 
-        vscode.commands.registerCommand('agentfarm.editDuty', async (node?: AgentNode) => {
+        vscode.commands.registerCommand('agentfarm.editDuty', (node?: AgentNode) => {
             if (node?.kind !== 'duty') { return; }
             const d = node.duty;
-            const title = await vscode.window.showInputBox({
-                prompt: 'Duty title', value: d.title, ignoreFocusOut: true
+            AgentDetailPanel.composeDuty(node.agent.id, detailDeps, {
+                mode: 'edit', oldTitle: d.title, title: d.title, cadence: d.cadence,
+                watch: d.watch, action: d.action, note: d.note, paused: d.paused
             });
-            if (!title) { return; }
-            const cadencePick = await vscode.window.showQuickPick(
-                CADENCES.map(c => ({ label: c, description: c === d.cadence ? 'current' : undefined })),
-                { placeHolder: `Cadence (current: ${d.cadence})`, ignoreFocusOut: true });
-            if (!cadencePick) { return; }
-            const watch = await vscode.window.showInputBox({
-                prompt: 'Watch target — path or description (empty = none)',
-                value: d.watch ?? '', ignoreFocusOut: true
-            });
-            if (watch === undefined) { return; }
-            const action = await vscode.window.showInputBox({
-                prompt: 'Do: what should the agent do?', value: d.action ?? '', ignoreFocusOut: true
-            });
-            if (action === undefined) { return; }
-            const note = await vscode.window.showInputBox({
-                prompt: 'Note (optional)', value: d.note ?? '', ignoreFocusOut: true
-            });
-            if (note === undefined) { return; }
-            updateDuty(node.agent.dir, d.title, {
-                title,
-                cadence: cadencePick.label,
-                paused: d.paused,
-                watch: watch.trim() || undefined,
-                action: action.trim() || undefined,
-                note: note.trim() || undefined
-            });
-            refreshAll();
-            void vscode.window.showInformationMessage(`Agent Farm: duty "${title}" updated.`);
         }),
 
         vscode.commands.registerCommand('agentfarm.deleteDuty', async (node?: AgentNode) => {
@@ -12419,38 +12413,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     : 'Agent Farm: no secrets stored — use "Set Secret…".');
         }),
 
+        // ‼️ THE TOOLBOX MAKES THE TOOL — U-14, surface 2. Four commands used to
+        // build an MCP server or a skill out of input boxes that could not ask
+        // for the server's arguments, its environment or its headers. They open
+        // the Toolbox page's own card now; the palette, the sidebar tree and
+        // the page all produce the same entry.
         vscode.commands.registerCommand('agentfarm.addMcpServer', async (node?: AgentNode) => {
             const agent = node && 'agent' in node ? node.agent : await resolveAgent(undefined);
             if (!agent) { return; }
-            const name = await vscode.window.showInputBox({
-                prompt: `MCP server name for ${agent.name} (e.g. obsidian)`, ignoreFocusOut: true,
-                validateInput: v => /^[\w-]+$/.test(v) ? undefined : 'Letters, digits, - _ only'
-            });
-            if (!name) { return; }
-            const kind = await vscode.window.showQuickPick(
-                [
-                    { label: 'stdio (command)', id: 'stdio' },
-                    { label: 'http / sse (url)', id: 'http' }
-                ], { placeHolder: 'Transport', ignoreFocusOut: true });
-            if (!kind) { return; }
-            let def: { command?: string; url?: string; type?: string };
-            if (kind.id === 'stdio') {
-                const command = await vscode.window.showInputBox({
-                    prompt: 'Command (e.g. npx -y @some/mcp-server)', ignoreFocusOut: true
-                });
-                if (!command) { return; }
-                def = { command };
-            } else {
-                const url = await vscode.window.showInputBox({
-                    prompt: 'Server URL', ignoreFocusOut: true
-                });
-                if (!url) { return; }
-                def = { url, type: 'http' };
-            }
-            const file = addMcpServer(agent, name, def);
-            refreshAll();
-            void vscode.window.showInformationMessage(
-                `Agent Farm: MCP server "${name}" added to ${path.basename(file)}. Restart the agent's sessions to load it.`);
+            ToolboxPanel.compose(toolboxDeps, { kind: 'mcp', mode: 'new', agentId: agent.id });
         }),
 
         vscode.commands.registerCommand('agentfarm.removeMcpServer', async (node?: AgentNode) => {
@@ -12470,27 +12441,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('agentfarm.addSkill', async (node?: AgentNode) => {
             const agent = node && 'agent' in node ? node.agent : await resolveAgent(undefined);
             if (!agent) { return; }
-            const name = await vscode.window.showInputBox({
-                prompt: `Skill name for ${agent.name} (folder under .claude/skills, e.g. release-notes)`,
-                ignoreFocusOut: true,
-                validateInput: v => /^[a-z0-9][a-z0-9-]*$/.test(v) ? undefined : 'Lowercase letters, digits and - only'
-            });
-            if (!name) { return; }
-            const description = await vscode.window.showInputBox({
-                prompt: 'One-line description (claude uses it to decide when to load the skill)',
-                ignoreFocusOut: true
-            });
-            if (description === undefined) { return; }
-            try {
-                const file = addSkill(agent, name, description.trim() || name);
-                refreshAll();
-                const doc = await vscode.workspace.openTextDocument(file);
-                await vscode.window.showTextDocument(doc);
-                void vscode.window.showInformationMessage(
-                    `Agent Farm: skill "${name}" scaffolded — write the instructions in SKILL.md. New claude sessions pick it up.`);
-            } catch (e) {
-                void vscode.window.showWarningMessage(`Agent Farm: ${(e as Error).message ?? String(e)}`);
-            }
+            ToolboxPanel.compose(toolboxDeps, { kind: 'skill', mode: 'new', agentId: agent.id });
         }),
 
         vscode.commands.registerCommand('agentfarm.removeSkill', async (node?: AgentNode) => {
@@ -12510,34 +12461,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         }),
 
+        // ‼️ THE SIX MEMORY ACTS ARE CARDS ON THE MEMORY GRAPH — U-14, surface 3.
+        // Each command still exists and still resolves its agent; what it opens
+        // is the page, with the right card already up, beside the graph it is about.
         vscode.commands.registerCommand('agentfarm.addMemory', async (arg?: AgentNode | { agentId?: string }) => {
             const agent = arg && 'agent' in arg ? arg.agent : await resolveAgent(arg as { agentId?: string } | undefined);
             if (!agent) { return; }
-            const name = await vscode.window.showInputBox({
-                prompt: `Memory file name for ${agent.name} (kebab-case, e.g. project-notescribe)`,
-                ignoreFocusOut: true,
-                validateInput: v => /^[a-z0-9][a-z0-9_-]*$/.test(v) ? undefined : 'Lowercase letters, digits, - _ only'
-            });
-            if (!name) { return; }
-            const typePick = await vscode.window.showQuickPick(
-                MEMORY_TYPES.map(t => ({ label: t })),
-                { placeHolder: 'Memory type (frontmatter metadata.type)', ignoreFocusOut: true });
-            if (!typePick) { return; }
-            const description = await vscode.window.showInputBox({
-                prompt: 'One-line description (goes into frontmatter AND the MEMORY.md index line)',
-                ignoreFocusOut: true
-            });
-            if (!description) { return; }
-            try {
-                const file = addMemoryFile(agent.dir, name, typePick.label, description.trim());
-                refreshAll();
-                const doc = await vscode.workspace.openTextDocument(file);
-                await vscode.window.showTextDocument(doc);
-                void vscode.window.showInformationMessage(
-                    `Agent Farm: memory "${name}.md" created and indexed in MEMORY.md — write the fact into the body.`);
-            } catch (e) {
-                void vscode.window.showWarningMessage(`Agent Farm: ${(e as Error).message ?? String(e)}`);
-            }
+            MemoryGraphPanel.compose(memGraphDeps, { kind: 'new', agentId: agent.id });
         }),
 
         vscode.commands.registerCommand('agentfarm.archiveMemory', async (node?: AgentNode) => {
@@ -12558,39 +12488,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         vscode.commands.registerCommand('agentfarm.openMemoryGraph', (arg?: AgentNode | { agentId?: string }) => {
             const agentId = arg && 'agent' in arg ? arg.agent.id : (arg as { agentId?: string } | undefined)?.agentId;
-            MemoryGraphPanel.show({
-                extensionUri: context.extensionUri,
-                getAgents: () => agents,
-                index
-            }, agentId);
+            MemoryGraphPanel.show(memGraphDeps, agentId);
         }),
 
         vscode.commands.registerCommand('agentfarm.fixMemoryIndex', async (arg?: AgentNode | { agentId?: string }) => {
             const agent = arg && 'agent' in arg ? arg.agent : await resolveAgent(arg as { agentId?: string } | undefined);
             if (!agent) { return; }
-            const fixes = planIndexFixes(agent.dir, agent.memoryFiles);
-            if (!fixes.length) {
-                void vscode.window.showInformationMessage(`Agent Farm: ${agent.name}'s MEMORY.md index is consistent — nothing to fix.`);
-                return;
-            }
-            const picks = await vscode.window.showQuickPick(
-                fixes.map(f => ({
-                    label: f.kind === 'add' ? `$(add) Index "${f.target}"` : `$(trash) Drop dead reference "${f.target}"`,
-                    description: f.line.length > 80 ? f.line.slice(0, 79) + '…' : f.line,
-                    picked: true,
-                    fix: f
-                })),
-                {
-                    canPickMany: true, ignoreFocusOut: true,
-                    placeHolder: `${agent.name} — MEMORY.md fixes (add orphan pointers, drop dead lines); index is backed up`
-                });
-            if (!picks?.length) { return; }
-            const backup = applyIndexFixes(agent.dir, picks.map(p => p.fix));
-            refreshAll();
-            void vscode.window.showInformationMessage(
-                `Agent Farm: MEMORY.md updated — ${picks.filter(p => p.fix.kind === 'add').length} added, ` +
-                `${picks.filter(p => p.fix.kind === 'remove').length} removed` +
-                (backup ? ` (backup: ${path.basename(backup)})` : '') + '.');
+            MemoryGraphPanel.compose(memGraphDeps, { kind: 'index', agentId: agent.id });
         }),
 
         vscode.commands.registerCommand('agentfarm.scanMemoryContradictions', async (node?: AgentNode) => {
@@ -12633,46 +12537,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             await vscode.window.showTextDocument(doc);
         }),
 
-        vscode.commands.registerCommand('agentfarm.copyMemory', async (node?: AgentNode) => {
-            if (node?.kind !== 'memory-file') { return; }
-            const targets = agents.filter(a => a.id !== node.agent.id);
-            if (!targets.length) {
-                void vscode.window.showInformationMessage('Agent Farm: no other agent to copy to.');
-                return;
-            }
-            const pick = await vscode.window.showQuickPick(
-                targets.map(a => ({ label: a.name, description: a.dir, agent: a })),
-                { placeHolder: `Copy "${node.file.name}" to which agent?`, ignoreFocusOut: true });
-            if (!pick) { return; }
-            try {
-                copyMemoryFileTo(node.file.path, pick.agent.dir);
-                refreshAll();
-                void vscode.window.showInformationMessage(
-                    `Agent Farm: "${node.file.name}" copied to ${pick.agent.name} and indexed in its MEMORY.md.`);
-            } catch (e) {
-                void vscode.window.showWarningMessage(`Agent Farm: ${(e as Error).message ?? String(e)}`);
-            }
-        }),
+        vscode.commands.registerCommand('agentfarm.copyMemory',
+            async (arg?: AgentNode | { agentId?: string; memPath?: string; memName?: string }) => {
+                const node = arg && 'kind' in arg && arg.kind === 'memory-file' ? arg : undefined;
+                const agent = node ? node.agent : await resolveAgent(arg as { agentId?: string } | undefined);
+                if (!agent) { return; }
+                const memPath = node ? node.file.path : String((arg as { memPath?: string })?.memPath ?? '');
+                const memName = node ? node.file.name : String((arg as { memName?: string })?.memName ?? '');
+                if (!memPath) {
+                    void vscode.window.showInformationMessage(
+                        'Agent Farm: right-click the memory file you want to copy — the card has to know which one.');
+                    return;
+                }
+                MemoryGraphPanel.compose(memGraphDeps,
+                    { kind: 'copy', agentId: agent.id, path: memPath, fileName: memName });
+            }),
 
-        vscode.commands.registerCommand('agentfarm.duplicateSkill', async (node?: AgentNode) => {
+        vscode.commands.registerCommand('agentfarm.duplicateSkill', (node?: AgentNode) => {
             if (node?.kind !== 'skill') { return; }
-            const targets = agents.filter(a => a.id !== node.agent.id);
-            if (!targets.length) {
+            if (!agents.some(a => a.id !== node.agent.id)) {
                 void vscode.window.showInformationMessage('Agent Farm: no other agent to copy to.');
                 return;
             }
-            const pick = await vscode.window.showQuickPick(
-                targets.map(a => ({ label: a.name, description: a.dir, agent: a })),
-                { placeHolder: `Copy skill "${node.skill.name}" to which agent?`, ignoreFocusOut: true });
-            if (!pick) { return; }
-            try {
-                copySkillTo(node.skill, pick.agent);
-                refreshAll();
-                void vscode.window.showInformationMessage(
-                    `Agent Farm: skill "${node.skill.name}" copied to ${pick.agent.name}. New claude sessions pick it up.`);
-            } catch (e) {
-                void vscode.window.showWarningMessage(`Agent Farm: ${(e as Error).message ?? String(e)}`);
-            }
+            ToolboxPanel.compose(toolboxDeps, {
+                kind: 'skill', mode: 'copy', agentId: node.agent.id, name: node.skill.name
+            });
         }),
 
         vscode.commands.registerCommand('agentfarm.shareSkill', async (node?: AgentNode) => {
@@ -12699,61 +12588,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             void revealPath(node.skill.source);
         }),
 
-        vscode.commands.registerCommand('agentfarm.editMcpServer', async (node?: AgentNode) => {
+        vscode.commands.registerCommand('agentfarm.editMcpServer', (node?: AgentNode) => {
             if (node?.kind !== 'mcp-server') { return; }
-            const def = readServerRawDef(node.server);
-            if (!def) {
-                void vscode.window.showWarningMessage('Agent Farm: could not read the server definition from its source file.');
-                return;
-            }
-            if (def.url) {
-                const url = await vscode.window.showInputBox({
-                    prompt: `Server URL for "${node.server.name}"`, value: String(def.url), ignoreFocusOut: true
-                });
-                if (!url) { return; }
-                def.url = url;
-            } else {
-                const current = [def.command, ...((def.args as string[] | undefined) ?? [])].filter(Boolean).join(' ');
-                const command = await vscode.window.showInputBox({
-                    prompt: `Command for "${node.server.name}" (first word = executable, rest = args)`,
-                    value: current, ignoreFocusOut: true
-                });
-                if (!command) { return; }
-                const parts = command.trim().split(/\s+/);
-                def.command = parts[0];
-                if (parts.length > 1) { def.args = parts.slice(1); } else { delete def.args; }
-            }
-            if (updateMcpServer(node.server, def)) {
-                refreshAll();
-                void vscode.window.showInformationMessage(
-                    `Agent Farm: MCP server "${node.server.name}" updated (a one-time .afbak backup is kept). Restart the agent's sessions to load it.`);
-            } else {
-                void vscode.window.showWarningMessage('Agent Farm: could not update (file unreadable or entry missing).');
-            }
+            ToolboxPanel.compose(toolboxDeps, {
+                kind: 'mcp', mode: 'edit', agentId: node.agent.id, name: node.server.name
+            });
         }),
 
         vscode.commands.registerCommand('agentfarm.disableMcpServer', (node?: AgentNode) => toggleMcp(node, true)),
         vscode.commands.registerCommand('agentfarm.enableMcpServer', (node?: AgentNode) => toggleMcp(node, false)),
 
-        vscode.commands.registerCommand('agentfarm.copyMcpServer', async (node?: AgentNode) => {
+        vscode.commands.registerCommand('agentfarm.copyMcpServer', (node?: AgentNode) => {
             if (node?.kind !== 'mcp-server') { return; }
-            const targets = agents.filter(a => a.id !== node.agent.id);
-            if (!targets.length) {
+            if (!agents.some(a => a.id !== node.agent.id)) {
                 void vscode.window.showInformationMessage('Agent Farm: no other agent to copy to.');
                 return;
             }
-            const pick = await vscode.window.showQuickPick(
-                targets.map(a => ({ label: a.name, description: a.dir, agent: a })),
-                { placeHolder: `Copy MCP server "${node.server.name}" to which agent?`, ignoreFocusOut: true });
-            if (!pick) { return; }
-            const file = copyMcpServerTo(node.server, pick.agent);
-            if (file) {
-                refreshAll();
-                void vscode.window.showInformationMessage(
-                    `Agent Farm: MCP server "${node.server.name}" copied to ${pick.agent.name} (${path.basename(file)}).`);
-            } else {
-                void vscode.window.showWarningMessage('Agent Farm: could not read the server definition to copy it.');
-            }
+            ToolboxPanel.compose(toolboxDeps, {
+                kind: 'mcp', mode: 'copy', agentId: node.agent.id, name: node.server.name
+            });
         }),
 
         vscode.commands.registerCommand('agentfarm.copyWebhookUrl', async (node?: TaskNode) => {
@@ -13006,92 +12859,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         }),
 
-        vscode.commands.registerCommand('agentfarm.syncMemory', async () => {
-            const groups = findDuplicateGroups(agents);
-            if (!groups.length) {
-                void vscode.window.showInformationMessage(
-                    'Agent Farm: no shared memory files found across agents.');
-                return;
-            }
-            const groupPick = await vscode.window.showQuickPick(
-                groups.map(g => ({
-                    label: `${g.identical ? '$(check)' : '$(warning)'} ${g.name}`,
-                    description: g.copies.map(c => c.agent.name).join(', '),
-                    detail: g.identical ? 'all copies identical' : 'copies have DIVERGED',
-                    group: g
-                })),
-                { ignoreFocusOut: true, placeHolder: 'Which shared memory file do you want to work on?' }
-            );
-            if (!groupPick) { return; }
-            const g = groupPick.group;
-
-            const action = await vscode.window.showQuickPick(
-                [
-                    { label: '$(diff) Compare two copies', id: 'diff' },
-                    { label: '$(sync) Sync all copies from one source', id: 'sync' },
-                    { label: '$(edit) Create merge draft (combine by hand, then apply)', id: 'merge' }
-                ],
-                { ignoreFocusOut: true, placeHolder: `${g.name} — ${g.identical ? 'identical' : 'diverged'} across ${g.copies.length} agents` }
-            );
-            if (!action) { return; }
-
-            if (action.id === 'merge') {
-                pendingMerge = { name: g.name, files: g.copies.map(c => c.file.path) };
-                const doc = await vscode.workspace.openTextDocument({
-                    content: buildMergeDraft(g), language: 'markdown'
-                });
-                await vscode.window.showTextDocument(doc);
-                void vscode.window.showInformationMessage(
-                    `Agent Farm: edit the draft into the final "${g.name}", then run "Agent Farm: Apply Merged Memory".`);
-                return;
-            }
-
-            if (action.id === 'diff') {
-                const left = await vscode.window.showQuickPick(
-                    g.copies.map(c => ({
-                        label: c.agent.name,
-                        description: relTime(c.file.mtime),
-                        copy: c
-                    })), { ignoreFocusOut: true, placeHolder: 'Left side' });
-                if (!left) { return; }
-                const right = await vscode.window.showQuickPick(
-                    g.copies.filter(c => c !== left.copy).map(c => ({
-                        label: c.agent.name,
-                        description: relTime(c.file.mtime),
-                        copy: c
-                    })), { ignoreFocusOut: true, placeHolder: 'Right side' });
-                if (!right) { return; }
-                await vscode.commands.executeCommand('vscode.diff',
-                    vscode.Uri.file(left.copy.file.path),
-                    vscode.Uri.file(right.copy.file.path),
-                    `${g.name}: ${left.copy.agent.name} ↔ ${right.copy.agent.name}`);
-                return;
-            }
-
-            const source = await vscode.window.showQuickPick(
-                g.copies.map((c, i) => ({
-                    label: `${c.agent.name}${i === 0 ? ' (newest)' : ''}`,
-                    description: `${relTime(c.file.mtime)} • ${(c.file.size / 1024).toFixed(1)} KB`,
-                    copy: c
-                })),
-                { ignoreFocusOut: true, placeHolder: 'Which copy is the source of truth?' }
-            );
-            if (!source) { return; }
-            const targets = g.copies.filter(c => c !== source.copy);
-            const confirmed = await vscode.window.showWarningMessage(
-                `Overwrite ${targets.length} copies of "${g.name}" with ${source.copy.agent.name}'s version?\n\n` +
-                targets.map(t => t.file.path).join('\n') +
-                '\n\nTimestamped .afbak backups are created next to each file.',
-                { modal: true }, 'Sync'
-            );
-            if (confirmed !== 'Sync') { return; }
-            const result = syncGroup(g, source.copy.file.path);
-            if (result.errors.length) {
-                void vscode.window.showErrorMessage('Agent Farm: sync errors — ' + result.errors.join('; '));
-            }
-            void vscode.window.showInformationMessage(
-                `Agent Farm: "${g.name}" synced to ${result.written.length} agent(s) (${result.backups.length} backups).`);
-            refreshAll();
+        vscode.commands.registerCommand('agentfarm.syncMemory', () => {
+            MemoryGraphPanel.compose(memGraphDeps, { kind: 'sync' });
         }),
 
         vscode.commands.registerCommand('agentfarm.applyMergedMemory', async () => {
@@ -13979,106 +13748,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('agentfarm.distillMemory', async (arg?: AgentArg) => {
             const agent = await resolveAgent(arg);
             if (!agent) { return; }
-            const candidates = distillCandidates(agent.memoryFiles, {
-                staleDays: cfg().get<number>('staleMemoryDays', 45)
-            });
-            const items = (candidates.length ? candidates : agent.memoryFiles
-                .filter(f => f.name.toLowerCase() !== 'memory.md')
-                .map(f => ({ path: f.path, name: f.name, tokens: f.tokens, staleDays: 0, reason: 'elle seçildi' })))
-                .map(c => ({ label: c.name, description: c.reason, detail: c.path, cand: c }));
-            if (!items.length) {
-                void vscode.window.showInformationMessage(`Agent Farm: ${agent.name} has no memory files to distill.`);
-                return;
-            }
-            const pick = await vscode.window.showQuickPick(items, {
-                ignoreFocusOut: true, placeHolder: candidates.length
-                    ? 'Distill which memory file? (oversized/stale candidates first)'
-                    : 'No obvious candidates — pick any memory file'
-            });
-            if (!pick) { return; }
-            const result = await vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Notification, title: `Agent Farm: distilling ${pick.label} (cheap model)…` },
-                () => distillFile(agent.dir, judgeArgs(), pick.cand.path));
-            if (!result.draft) {
-                void vscode.window.showWarningMessage(`Agent Farm: distillation failed — ${result.error}`);
-                return;
-            }
-            const draftFile = path.join(os.tmpdir(), `af-distill-${Date.now()}-${pick.label}`);
-            fs.writeFileSync(draftFile, result.draft, 'utf8');
-            await vscode.commands.executeCommand('vscode.diff',
-                vscode.Uri.file(pick.cand.path), vscode.Uri.file(draftFile),
-                `${pick.label}: current ↔ distilled draft`);
-            const choice = await vscode.window.showInformationMessage(
-                `Distilled draft: ~${result.tokensBefore} → ~${result.tokensAfter} tokens. Apply over the original? (.afbak backup)`,
-                'Apply', 'Discard');
-            if (choice === 'Apply') {
-                const backup = applyDistilled(pick.cand.path, result.draft);
-                refreshAll();
-                void vscode.window.showInformationMessage(
-                    `Agent Farm: ${pick.label} distilled ✓ (backup: ${path.basename(backup)})`);
-            }
-            try { fs.unlinkSync(draftFile); } catch { /* temp cleanup */ }
+            MemoryGraphPanel.compose(memGraphDeps, { kind: 'distill', agentId: agent.id });
         }),
 
         // ---------- I4: semantic memory query ----------
 
-        vscode.commands.registerCommand('agentfarm.askMemory', async () => {
-            const ecfg = embeddingsCfg();
-            if (ecfg.provider === 'off') {
-                void vscode.window.showWarningMessage(
-                    'Agent Farm: semantic memory needs an embeddings provider — set agentFarm.embeddingsProvider (gemini, or a local OpenAI-compatible endpoint).');
-                return;
-            }
-            const query = await vscode.window.showInputBox({
-                prompt: 'What does the fleet know about this? (semantic memory query — Turkish queries are fine)',
-                placeHolder: 'e.g. what is known about the user\'s sleep pattern',
-                ignoreFocusOut: true
-            });
-            if (!query?.trim()) { return; }
-            const hits = await vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Notification, title: 'Agent Farm: querying fleet memory…' },
-                async (progress) => {
-                    const refs = memoryFileRefs(agents);
-                    memIndex.prune(new Set(refs.map(r => r.key)));
-                    const pending = memIndex.pending(refs.map(r => ({ sessionId: r.key, mtime: r.mtime })));
-                    const byKey = new Map(refs.map(r => [r.key, r]));
-                    for (const [i, p] of pending.entries()) {
-                        const ref = byKey.get(p.sessionId)!;
-                        progress.report({ message: `indexing ${i + 1}/${pending.length}` });
-                        const texts = chunkMemoryFile(ref.file);
-                        if (texts.length) {
-                            const { vectors, error } = await embedTexts(texts, ecfg);
-                            if (error) { throw new Error(error); }
-                            memIndex.addSession(p.sessionId, p.mtime, texts.map(t => ({
-                                sessionFile: ref.file, sessionId: ref.key,
-                                agentName: ref.agentName, title: ref.name, ts: ref.mtime, text: t
-                            })), vectors!);
-                        } else {
-                            memIndex.addSession(p.sessionId, p.mtime, [], []);
-                        }
-                    }
-                    memIndex.save();
-                    const q = await embedTexts([query], ecfg);
-                    if (q.error || !q.vectors) { throw new Error(q.error ?? 'query embedding failed'); }
-                    return memIndex.search(q.vectors[0], 12).filter(h => h.score > 0.15);
-                }).then(h => h, err => {
-                    void vscode.window.showWarningMessage(`Agent Farm: memory query failed — ${String(err.message ?? err)}`);
-                    return undefined;
-                });
-            if (!hits) { return; }
-            if (!hits.length) {
-                void vscode.window.showInformationMessage('Agent Farm: no memory matches — the fleet knows nothing about that (yet).');
-                return;
-            }
-            const pick = await vscode.window.showQuickPick(hits.map(h => ({
-                label: `${h.chunk.agentName} — ${h.chunk.title}`,
-                description: `${Math.round(h.score * 100)}%`,
-                detail: h.chunk.text.slice(0, 160),
-                file: h.chunk.sessionFile
-            })), { ignoreFocusOut: true, placeHolder: `"${query}" — ${hits.length} memory record(s), pick to open`, matchOnDetail: true });
-            if (pick) {
-                void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(pick.file));
-            }
+        vscode.commands.registerCommand('agentfarm.askMemory', () => {
+            MemoryGraphPanel.compose(memGraphDeps, { kind: 'ask' });
         }),
 
         // ---------- J3: OpenTelemetry export ----------

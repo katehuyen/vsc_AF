@@ -163,6 +163,37 @@ export async function askExportOptions(
 }
 
 /**
+ * The OS file picker, asked for BY a form field (media/afForm.js `path`).
+ *
+ * ‼️ THIS IS THE ONE DIALOG THAT STAYS. A webview cannot open a folder chooser,
+ * so the alternative to this round trip is a person typing an absolute path by
+ * hand — which is precisely the argument the dialog chains used to justify
+ * themselves. The difference is what happens around it: one dialog, its answer
+ * lands in one field, and nothing else in the half-filled form is disturbed.
+ *
+ * The page posts `{ type:'af-browse', key, kind }`; the answer comes back as
+ * `{ type:'af-browsed', key, path }` and the form's own `AFForm.browsed` files
+ * it. A cancel posts nothing: a field the user declined to change must keep
+ * what was in it.
+ */
+export async function handleFormBrowse(
+    webview: vscode.Webview, msg: Record<string, unknown>
+): Promise<void> {
+    const key = typeof msg.key === 'string' ? msg.key : '';
+    if (!key) { return; }
+    const folder = msg.kind !== 'file';
+    const picked = await vscode.window.showOpenDialog({
+        canSelectFiles: !folder,
+        canSelectFolders: folder,
+        canSelectMany: false,
+        openLabel: 'Use this',
+        title: typeof msg.title === 'string' && msg.title ? msg.title : undefined
+    });
+    if (!picked?.length) { return; }
+    void webview.postMessage({ type: 'af-browsed', key, path: picked[0].fsPath });
+}
+
+/**
  * Where a session should run, as a webview stated it.
  *
  * A page whose button already ASKED (a two-item dropdown) sends the answer
@@ -235,6 +266,12 @@ export function htmlShell(
     // the rule is "any hover carrying TEXT uses this", and a rule that needs a
     // script tag added first is a rule that gets skipped.
     const tip = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afTip.js'));
+    // The page's own form. Ships everywhere for the reason the rule exists:
+    // "an object is made by a form on the page, a chain of VS Code boxes is a
+    // missing feature" (docs/CONVENTIONS.md). A component a page had to opt
+    // into is a component the next surface skips — which is exactly how eight
+    // surfaces ended up listing an object they could not make.
+    const form = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afForm.js'));
     // The query language. Ships everywhere for the strongest version of that
     // reason: the extension host runs the SAME FILE (src/core/query.ts loads it
     // out of media/), so a page that had to opt in would be a page whose filter
@@ -284,6 +321,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${sessCtx}"></script>
 <script nonce="${nonce}" src="${textTools}"></script>
 <script nonce="${nonce}" src="${tip}"></script>
+<script nonce="${nonce}" src="${form}"></script>
 <script nonce="${nonce}" src="${query}"></script>
 <script nonce="${nonce}" src="${time}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>

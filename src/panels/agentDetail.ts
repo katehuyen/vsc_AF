@@ -1,6 +1,10 @@
+import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
-import { watchStatus } from '../core/duties';
+import {
+    addDuty, CADENCES, claudeMdReferencesDuties, CLAUDE_MD_SNIPPET, deleteDuty, Duty,
+    DUTIES_FILENAME, DUTY_TEMPLATES, moveDuty, togglePauseDuty, updateDuty, watchStatus
+} from '../core/duties';
 import { Insight } from '../core/health';
 import { mcpUsage, readAgentMcpServers, readDisabledServers } from '../core/mcp';
 import { indexedMemoryNames, memoryUsage } from '../core/memusage';
@@ -9,7 +13,7 @@ import { buildAgentTaskStats, TaskRecord } from '../core/taskstats';
 import { SessionIndex } from '../core/sessions';
 import { PriceRule, PricingEngine, totalTokens } from '../core/pricing';
 import { safeReadFile } from '../core/util';
-import { handleAfNav, htmlShell, runSurface } from './base';
+import { handleAfNav, handleFormBrowse, htmlShell, runSurface } from './base';
 import { AGENT_SESSION_TABLE_N, sessionRowPool } from './dashboard';
 import { buildData as buildViewerData } from './sessionViewer';
 
@@ -27,6 +31,49 @@ export interface AgentDetailDeps {
     agentProjects?(): Record<string, string>;
     /** A project's own colour, icon and description, by name. */
     projectStyle?(name: string): { icon?: string; color?: string; detail?: string } | undefined;
+    /** Re-read the agent folders and repaint every tree and page. Writing a
+     *  duty changes a file no session index is watching, so the page has to say
+     *  so itself — otherwise the tree keeps yesterday's duty list. */
+    refreshAll?(): void;
+}
+
+/**
+ * ‼️ A DUTY ONLY WORKS IF THE AGENT'S CLAUDE.md POINTS AT DUTIES.md.
+ *
+ * Writing the file is not the whole job: an agent that is never told to read
+ * DUTIES.md will not read it, and the duty then exists only in this extension's
+ * tables. The offer is a modal on purpose — it is a write into the user's own
+ * CLAUDE.md, which is exactly the class of thing a page-side notice must not be
+ * allowed to slip past while the focus is elsewhere.
+ */
+async function ensureDutiesReference(agent: AgentInfo): Promise<void> {
+    if (!agent.claudeMdPath) { return; }
+    let claudeMd: string;
+    try { claudeMd = fs.readFileSync(agent.claudeMdPath, 'utf8'); } catch { return; }
+    if (claudeMdReferencesDuties(claudeMd)) { return; }
+    const choice = await vscode.window.showWarningMessage(
+        `${agent.name}'s CLAUDE.md does not mention ${DUTIES_FILENAME} yet — without a reference the agent will never check its duties. Append a short instruction section?`,
+        { modal: true }, 'Append to CLAUDE.md'
+    );
+    if (choice === 'Append to CLAUDE.md') {
+        fs.writeFileSync(agent.claudeMdPath, claudeMd.replace(/\n*$/, '\n') + CLAUDE_MD_SNIPPET, 'utf8');
+    }
+}
+
+/** What the duty form is opened with — the FORM's flat vocabulary, not the
+ *  model's. `mode` decides which of the three writes happens on save. */
+export interface DutyCompose {
+    mode: 'new' | 'edit' | 'copy';
+    title?: string;
+    cadence?: string;
+    watch?: string;
+    action?: string;
+    note?: string;
+    paused?: boolean;
+    /** edit/copy: the duty this started from, so the right block is replaced. */
+    oldTitle?: string;
+    /** copy: which agent it lands on. Empty until the picker is answered. */
+    target?: string;
 }
 
 function buildData(agent: AgentInfo, deps: AgentDetailDeps, tableN = AGENT_SESSION_TABLE_N): Record<string, unknown> {
@@ -131,6 +178,9 @@ function buildData(agent: AgentInfo, deps: AgentDetailDeps, tableN = AGENT_SESSI
                     paused: d.paused,
                     watch: d.watch,
                     action: d.action,
+                    // The form edits it, so the page has to be given it — an
+                    // "edit" that silently drops a field is worse than no edit.
+                    note: d.note,
                     status: d.paused ? 'paused' : (ws ? ws.summary : '—'),
                     pending: !d.paused && !!ws?.pending,
                     missing: !!ws && !ws.exists
@@ -164,9 +214,36 @@ function buildData(agent: AgentInfo, deps: AgentDetailDeps, tableN = AGENT_SESSI
             s => deps.index.isSessionActive(s), tableN,
             s => (s.agentName ? projectByAgent[s.agentName] : undefined),
             name => deps.projectStyle?.(name)),
-        sessionTableN: tableN
+        sessionTableN: tableN,
+        // ‼️ WHAT THE DUTY FORM NEEDS TO EXIST AT ALL (U-14, surface 1).
+        // `addDuty` was five boxes in a row and `editDuty` five more, asking
+        // one field at a time and starting over on Esc. The page already drew
+        // every duty this agent has (afDutyRow); what it could not do was make
+        // one. These three lists are the whole difference: the cadences the
+        // parser understands, the ready-made patterns, and the other agents a
+        // duty can be copied onto — with their titles, so the form can refuse a
+        // duplicate before it is written rather than after.
+        dutyMeta: {
+            cadences: CADENCES.map(c => ({ id: c, label: c, title: CADENCE_HINT[c] ?? '' })),
+            templates: DUTY_TEMPLATES.map((t, i) => ({
+                id: String(i), label: t.label, detail: t.detail, watchKind: t.watchKind,
+                title: t.duty.title, cadence: t.duty.cadence, action: t.duty.action ?? ''
+            })),
+            agents: deps.getAgents()
+                .filter(a => a.id !== agent.id)
+                .map(a => ({ id: a.id, name: a.name, titles: a.duties.map(d => d.title) }))
+        }
     };
 }
+
+/** What each cadence means, said once — on the picker, not under every row. */
+const CADENCE_HINT: Record<string, string> = {
+    'every-turn': 'the agent checks on every turn',
+    'session-start': 'checked once, at the start of a session',
+    'daily': 'at the first opportunity each day',
+    'weekly': 'at the first opportunity each week',
+    'manual': 'only when you ask for it'
+};
 
 export class AgentDetailPanel {
     private static open = new Map<string, AgentDetailPanel>();
@@ -199,6 +276,21 @@ export class AgentDetailPanel {
             { enableScripts: true, retainContextWhenHidden: true }
         );
         AgentDetailPanel.open.set(agentId, new AgentDetailPanel(panel, agentId, deps));
+    }
+
+    /**
+     * The ONE door to a duty — U-14.
+     *
+     * `agentfarm.addDuty`, `editDuty`, `addDutyFromTemplate` and `copyDuty` all
+     * arrive here instead of opening their own chain of boxes, so a duty made
+     * from the palette, from the sidebar tree and from this page is the same
+     * duty made by the same form. The seed is the form's vocabulary; the page
+     * fills in whatever is not stated.
+     */
+    static composeDuty(agentId: string, deps: AgentDetailDeps, seed: DutyCompose): void {
+        AgentDetailPanel.show(agentId, deps);
+        void AgentDetailPanel.open.get(agentId)?.panel.webview
+            .postMessage({ type: 'duty-compose', seed });
     }
 
     private constructor(
@@ -234,8 +326,104 @@ export class AgentDetailPanel {
         this.panel.webview.postMessage({ type: 'data', data: buildData(agent, this.deps, this.tableN) });
     }
 
+    /** A refusal the FORM shows, in the form, beside the button that was
+     *  pressed. A modal here would take the focus off the half-filled fields it
+     *  is complaining about. */
+    private say(text: string, ok = false): void {
+        void this.panel.webview.postMessage({ type: 'duty-msg', text, ok });
+    }
+
+    /**
+     * Write the duty the form built — the only place a duty is written from
+     * this side. Three modes, one write each, and the checks the dialog chain
+     * could not make: a duty needs a title and something to DO, and no agent
+     * may end up with two duties under the same heading (the parser keys blocks
+     * by title, so a duplicate would make the second one unaddressable).
+     */
+    private async saveDuty(raw: Record<string, unknown>): Promise<void> {
+        const agent = this.agent();
+        if (!agent) { return; }
+        const s = (k: string) => String(raw[k] ?? '').trim();
+        const mode = s('mode') === 'edit' ? 'edit' : s('mode') === 'copy' ? 'copy' : 'new';
+        const title = s('title');
+        const action = s('action');
+        if (!title) { return this.say('A duty needs a title — it is the heading its block is stored under.'); }
+        if (!action) { return this.say('A duty needs a Do: what the agent should actually do when something is waiting.'); }
+
+        const duty: Duty = {
+            title,
+            cadence: s('cadence') || 'manual',
+            paused: raw.paused === true,
+            watch: s('watch') || undefined,
+            action,
+            note: s('note') || undefined
+        };
+
+        if (mode === 'copy') {
+            const target = this.deps.getAgents().find(a => a.id === s('target'));
+            if (!target) { return this.say('Pick the agent this duty is copied to.'); }
+            if (target.duties.some(d => d.title === title)) {
+                return this.say(`${target.name} already has a duty titled “${title}” — give the copy its own title.`);
+            }
+            addDuty(target.dir, duty);
+            await ensureDutiesReference(target);
+            this.deps.refreshAll?.();
+            this.refresh();
+            this.say(`Copied to ${target.name}.`, true);
+            return;
+        }
+
+        const oldTitle = s('oldTitle');
+        const clash = agent.duties.some(d => d.title === title && d.title !== oldTitle);
+        if (clash) {
+            return this.say(`${agent.name} already has a duty titled “${title}”. Two blocks under one heading cannot be told apart.`);
+        }
+        if (mode === 'edit' && oldTitle) {
+            updateDuty(agent.dir, oldTitle, duty);
+        } else {
+            addDuty(agent.dir, duty);
+            await ensureDutiesReference(agent);
+        }
+        this.deps.refreshAll?.();
+        this.refresh();
+        this.say(mode === 'edit' ? `Duty “${title}” updated.` : `Duty “${title}” added.`, true);
+    }
+
+    /**
+     * The single acts a duty row offers — pause, reorder, delete. They are not
+     * a form: "move it up" has nothing to fill in. Delete is the one that keeps
+     * its modal, deliberately (docs/CONVENTIONS.md — a destructive act must not
+     * pass while the focus is somewhere else).
+     */
+    private async dutyAct(act: string, title: string): Promise<void> {
+        const agent = this.agent();
+        if (!agent || !title) { return; }
+        if (act === 'toggle') { togglePauseDuty(agent.dir, title); }
+        else if (act === 'up') { moveDuty(agent.dir, title, -1); }
+        else if (act === 'down') { moveDuty(agent.dir, title, 1); }
+        else if (act === 'del') {
+            const yes = await vscode.window.showWarningMessage(
+                `Delete duty "${title}" from ${agent.name}?`, { modal: true }, 'Delete');
+            if (yes !== 'Delete') { return; }
+            deleteDuty(agent.dir, title);
+        } else { return; }
+        this.deps.refreshAll?.();
+        this.refresh();
+    }
+
     private onMessage(msg: { type: string; [k: string]: unknown }): void {
         switch (msg.type) {
+            // The form's own two messages: the OS picker for a watch path, and
+            // the save. Everything else the duty surface needs it already has.
+            case 'af-browse':
+                void handleFormBrowse(this.panel.webview, msg);
+                break;
+            case 'duty-save':
+                void this.saveDuty((msg.duty ?? {}) as Record<string, unknown>);
+                break;
+            case 'duty-act':
+                void this.dutyAct(String(msg.act ?? ''), String(msg.title ?? ''));
+                break;
             case 'openFile':
                 vscode.commands.executeCommand('vscode.open', vscode.Uri.file(String(msg.path)));
                 break;
@@ -318,13 +506,21 @@ export class AgentDetailPanel {
             case 'reveal':
                 vscode.commands.executeCommand('agentfarm.revealAgent', { agentId: this.agentId });
                 break;
-            case 'addDuty':
-                vscode.commands.executeCommand('agentfarm.addDuty', { agentId: this.agentId });
-                break;
             // From a memory row's right-click menu — the graph, scoped to the
             // agent whose page this is.
             case 'openMemoryGraph':
                 vscode.commands.executeCommand('agentfarm.openMemoryGraph', { agentId: this.agentId });
+                break;
+            // …and the two acts that need the graph's own cards (U-14). This
+            // page lists a memory file; that page is where one is worked on.
+            case 'memCard':
+                vscode.commands.executeCommand(
+                    msg.card === 'distill' ? 'agentfarm.distillMemory' : 'agentfarm.copyMemory',
+                    {
+                        agentId: typeof msg.agentId === 'string' && msg.agentId ? msg.agentId : this.agentId,
+                        memPath: typeof msg.path === 'string' ? msg.path : '',
+                        memName: typeof msg.name === 'string' ? msg.name : ''
+                    });
                 break;
             // Quick cross-navigation between the three main surfaces.
             case 'openDashboard':

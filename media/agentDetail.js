@@ -39,8 +39,186 @@
 
     window.addEventListener('message', ev => {
         if (sessTable.onMessage(ev)) { return; }
-        if (ev.data.type === 'data') { DATA = ev.data.data; if (!suspendRender) render(); }
+        const m = ev.data;
+        if (m.type === 'data') { DATA = m.data; if (!suspendRender) render(); return; }
+        // ---- the duty form's three messages (U-14)
+        if (m.type === 'duty-compose') { openDutyForm(m.seed || {}); return; }
+        if (m.type === 'duty-msg') {
+            dutyMsg = String(m.text || '');
+            dutyMsgOk = m.ok === true;
+            // A receipt means the write happened: the form has done its job and
+            // stays out of the way. A refusal keeps it open with what was typed.
+            if (dutyMsgOk) { dutyForm = null; }
+            render();
+            return;
+        }
+        if (m.type === 'af-browsed' && dutyForm) {
+            window.AFForm.browsed(dutyForm, m);
+            render();
+            return;
+        }
     });
+
+    // --------------------------------------------------------- STANDING DUTIES
+    /**
+     * ‼️ THE PAGE MAKES THE DUTY. IT DOES NOT OPEN A DIALOG THAT DOES.
+     *
+     * This page has always DRAWN an agent's duties — the table below is older
+     * than most of the extension. What it could not do was make one. `addDuty`
+     * asked five questions in a row (title → cadence → how to name the watch
+     * target → the target itself → what to do), `editDuty` asked five more and
+     * started from the top every time, `addDutyFromTemplate` and `copyDuty`
+     * were a quickpick each — and Esc anywhere in any of them threw the lot
+     * away. Meanwhile the one thing a duty is FOR — being read by the agent
+     * every session — depends on fields that chain never showed together.
+     *
+     * So: one card, on the page, under the table it belongs to, and every route
+     * in opens it (this button, the row's edit, the palette, the sidebar tree,
+     * the right-click menu). The three writes it can make are the three the
+     * dialogs made — add, edit, copy-to-another-agent — and it makes them with
+     * the whole duty visible while you decide.
+     */
+    let dutyForm = null;      // null = closed; an object = the draft
+    let dutyMsg = '';         // a refusal or a receipt, shown where the form was
+    let dutyMsgOk = false;
+
+    function newDutyDraft(seed) {
+        const s = seed || {};
+        return {
+            mode: s.mode === 'edit' || s.mode === 'copy' ? s.mode : 'new',
+            oldTitle: s.oldTitle || '',
+            target: s.target || '',
+            title: s.title || '',
+            cadence: s.cadence || 'every-turn',
+            watch: s.watch || '',
+            action: s.action || '',
+            note: s.note || '',
+            paused: !!s.paused,
+            template: ''
+        };
+    }
+
+    function openDutyForm(seed) {
+        dutyForm = newDutyDraft(seed);
+        dutyMsg = '';
+        dutyMsgOk = false;
+        render();
+        const box = document.getElementById('dutyform');
+        if (box) { box.scrollIntoView(); }
+    }
+
+    /** A ready-made pattern is a STARTING POINT, not a separate command.
+     *  `addDutyFromTemplate` was its own quickpick that then went straight to a
+     *  file dialog and wrote the duty unseen — "right-click → Edit Duty… to
+     *  fine-tune", said its own confirmation. Here it fills the form you are
+     *  already looking at, and nothing is written until you say so. */
+    function applyTemplate(id) {
+        const t = ((DATA.dutyMeta || {}).templates || []).find(x => x.id === id);
+        if (!t) { return; }
+        dutyForm.title = t.title;
+        dutyForm.cadence = t.cadence;
+        dutyForm.action = t.action;
+        dutyForm.watchKind = t.watchKind;
+    }
+
+    function dutyFormHtml() {
+        const F = window.AFForm;
+        const meta = DATA.dutyMeta || {};
+        const d = dutyForm;
+        const copying = d.mode === 'copy';
+        const editing = d.mode === 'edit';
+        const targets = (meta.agents || []).map(a => ({
+            id: a.id, name: a.name,
+            clash: a.titles.indexOf(d.title) >= 0
+        }));
+        const LEDE = {
+            'new': 'A duty is a standing agreement: keep watching X, and when something is there, do Y. The agent reads DUTIES.md every session and re-checks the [every-turn] ones every turn.',
+            edit: 'Editing rewrites this duty\'s block in DUTIES.md. Everything else in the file — your own notes, the order, the header — is left exactly as it is.',
+            copy: 'The same agreement, on another agent. It is copied, not shared: editing one afterwards does not touch the other.'
+        };
+        const body =
+            F.grid([
+                !editing && !copying ? F.sel('template', 'Start from', [{ id: '', label: '— blank —' }]
+                    .concat((meta.templates || []).map(t => ({ id: t.id, label: t.label, title: t.detail }))),
+                    d.template, {
+                    redraw: true,
+                    tip: 'A proven pattern, dropped into the fields below. Nothing is written until you press the button — change any of it first.'
+                }) : '',
+                copying ? F.sel('target', 'Copy to', [{ id: '', label: '— pick an agent —' }]
+                    .concat(targets.map(a => ({
+                        id: a.id, label: a.name + (a.clash ? '  ⚠ already has this title' : '')
+                    }))), d.target, {
+                    redraw: true,
+                    tip: 'Which agent gets its own copy of this duty.'
+                }) : '',
+                F.text('title', 'Title', d.title, {
+                    wide: true, required: true,
+                    ph: 'e.g. Inbox triage',
+                    tip: 'The heading its block is stored under in DUTIES.md — which is also how the extension finds it again, so two duties cannot share one.'
+                }),
+                F.sel('cadence', 'How often', meta.cadences || [], d.cadence, {
+                    tip: 'How often the agent re-checks it. [every-turn] is the strongest and the most expensive: it is read on every single turn.'
+                }),
+                F.check('paused', 'paused', d.paused, {
+                    tip: 'A paused duty stays in the file, marked, and the agent is told to skip it.'
+                })
+            ])
+            + F.sec('Watch', 'What the agent looks at. A real path lets the page report whether work is waiting; a description is allowed, and then there is nothing to measure.')
+            + F.grid([
+                F.path('watch', 'Watched file or folder', d.watch, {
+                    kind: d.watchKind === 'file' ? 'file' : 'folder',
+                    ph: '(optional) D:/…  — or a description, if there is no path'
+                })
+            ])
+            + F.sec('Do', 'What happens when something is there. This is the half a duty is actually for.')
+            + F.grid([
+                F.area('action', '', d.action, {
+                    rows: 3, required: true,
+                    ph: 'e.g. Act on the answered questions, then remove them from the file; add any new question you need answered.',
+                    tip: 'Written into the block as “Do:”. Ctrl+Enter saves.'
+                }),
+                F.text('note', 'Note', d.note, {
+                    wide: true, ph: '(optional) anything the agent should know about this duty',
+                    tip: 'A free line kept with the duty — context that is neither the watch nor the action.'
+                })
+            ]);
+        return F.card({
+            id: 'dutyform',
+            title: copying ? 'Copy duty' : editing ? 'Edit duty' : 'New duty',
+            lede: LEDE[d.mode],
+            body: body,
+            msg: dutyMsg,
+            warn: !dutyMsgOk,
+            submit: copying ? 'Copy it' : editing ? 'Save changes' : 'Add the duty'
+        });
+    }
+
+    function wireDutyForm() {
+        const F = window.AFForm;
+        const box = document.getElementById('dutyform');
+        if (!box || !dutyForm) { return; }
+        F.wire(box, {
+            onEdit: v => {
+                const prevT = dutyForm.template;
+                Object.assign(dutyForm, v);
+                dutyForm._tChanged = v.template !== undefined && v.template !== prevT;
+            },
+            onRedraw: () => {
+                if (dutyForm._tChanged && dutyForm.template) { applyTemplate(dutyForm.template); }
+                dutyForm._tChanged = false;
+                render();
+            },
+            onBrowse: (key, kind) => vscode.postMessage({
+                type: 'af-browse', key: key, kind: kind,
+                title: 'What should the agent watch?'
+            }),
+            onSubmit: () => {
+                dutyMsg = '';
+                vscode.postMessage({ type: 'duty-save', duty: dutyForm });
+            },
+            onCancel: () => { dutyForm = null; dutyMsg = ''; render(); }
+        });
+    }
 
     function relTime(ts) {
         if (!ts) return 'never';
@@ -274,16 +452,19 @@
             <div class="spread">
                 <p class="muted small" style="margin:4px 0">Recurring watch-and-act agreements — the agent reads DUTIES.md every session.</p>
                 <div class="btnrow">
-                    <button class="secondary" id="addDuty">Add duty</button>
+                    <button class="secondary" id="addDuty"${dutyForm ? ' disabled' : ''}
+                        title="Make a standing duty here — title, cadence, what is watched and what to do about it, all on one card">Add duty</button>
                     ${a.dutiesPath ? `<button class="secondary" data-file="${C.esc(a.dutiesPath)}">Open DUTIES.md</button>` : ''}
                 </div>
             </div>
+            ${dutyForm ? dutyFormHtml() : (dutyMsg ? window.AFForm.msg(dutyMsg, !dutyMsgOk) : '')}
             <div class="tablewrap"><table>
-                <tr><th></th><th>Duty</th><th>Cadence</th><th>Watch</th><th>Do</th><th class="num">Status</th></tr>
-                ${a.duties.length ? a.duties.map(d => `
-                    <tr class="${a.dutiesPath ? 'click' : ''}" ${a.dutiesPath ? `data-file="${C.esc(a.dutiesPath)}"` : ''} style="${d.paused ? 'opacity:.5' : ''}"
+                <tr><th></th><th>Duty</th><th>Cadence</th><th>Watch</th><th>Do</th><th class="num">Status</th><th class="num"></th></tr>
+                ${a.duties.length ? a.duties.map((d, i) => `
+                    <tr style="${d.paused ? 'opacity:.5' : ''}"
                         ${window.AFCtx.row('afDutyRow', {
-                        dutyPath: a.dutiesPath || '', agentId: a.id,
+                        dutyPath: a.dutiesPath || '', agentId: a.id, dutyTitle: d.title,
+                        dutyPaused: !!d.paused,
                         dutyText: [d.title, d.cadence, d.watch && ('watch: ' + d.watch), d.action && ('do: ' + d.action)]
                             .filter(Boolean).join(' · ')
                     })}
@@ -294,7 +475,15 @@
                         <td class="small">${C.esc(d.watch || '—')}</td>
                         <td class="small">${C.esc(d.action || '—')}</td>
                         <td class="num">${C.esc(d.status)}</td>
-                    </tr>`).join('') : '<tr><td colspan="6" class="muted">No standing duties yet — add the recurring "keep watching X, then do Y" agreements you have with this agent.</td></tr>'}
+                        <td class="num" style="white-space:nowrap">
+                            <button class="mini secondary" data-duty="edit" data-t="${C.esc(d.title)}" title="Edit it — the same card the + opens, filled in">edit</button>
+                            <button class="mini secondary" data-duty="copy" data-t="${C.esc(d.title)}" title="Give another agent its own copy of this duty">copy</button>
+                            <button class="mini secondary" data-duty="toggle" data-t="${C.esc(d.title)}" title="${d.paused ? 'Resume it — the agent starts checking it again' : 'Pause it — it stays in the file, marked, and the agent skips it'}">${d.paused ? '▶' : '⏸'}</button>
+                            <button class="mini secondary" data-duty="up" data-t="${C.esc(d.title)}"${i === 0 ? ' disabled' : ''} title="move it up">↑</button>
+                            <button class="mini secondary" data-duty="down" data-t="${C.esc(d.title)}"${i === a.duties.length - 1 ? ' disabled' : ''} title="move it down">↓</button>
+                            <button class="mini secondary" data-duty="del" data-t="${C.esc(d.title)}" title="Delete it from DUTIES.md">✕</button>
+                        </td>
+                    </tr>`).join('') : '<tr><td colspan="7" class="muted">No standing duties yet — add the recurring "keep watching X, then do Y" agreements you have with this agent.</td></tr>'}
             </table></div>
             <h2>Health &amp; optimization <a data-guide="saglik-ve-optimizasyon">?</a></h2>
             <div class="tablewrap"><table><tr><th></th><th>Category</th><th>Finding</th></tr>${insightsHtml}</table></div>
@@ -307,10 +496,24 @@
             <div id="sessblock"></div>
         `;
 
+        // ‼️ THE EMBEDDED TABLE FILLS ITS OWN CONTAINER FIRST, THEN THE PAGE
+        // WIRES ITSELF. The shared component replaces the whole of #sessblock
+        // and wires its controls inside it; doing that in the middle of this
+        // page's own wiring means every control above it is bound against a
+        // section of the document that is about to be rewritten.
+        // sessionTableN echoes the Show box (0 = all) — pass it through as-is.
+        sessTable.setRows(DATA.sessions || [], DATA.sessionTableN);
+
         window.AFHeader.wire(vscode, {
             navActions: { console: { onClick: () => vscode.postMessage({ type: 'consoleSession' }) } }
         });
-        document.getElementById('addDuty').addEventListener('click', () => vscode.postMessage({ type: 'addDuty' }));
+        // The + opens the form on the page. It does not ask the host to ask us:
+        // one route, one card, and the palette's own `addDuty` lands on the
+        // same one from the other side.
+        document.getElementById('addDuty').addEventListener('click', () => openDutyForm({ mode: 'new' }));
+        document.querySelectorAll('[data-duty]').forEach(el =>
+            el.addEventListener('click', ev => { ev.stopPropagation(); dutyAct(el.dataset.duty, el.dataset.t); }));
+        wireDutyForm();
         // the surface rides along, so the host never has to ask again
         window.AFHeader.wireMenu(document, 'start',
             surface => vscode.postMessage({ type: 'startSession', surface }));
@@ -364,10 +567,37 @@
             });
         }
 
-        // The shared component fills its container and wires its own controls
-        // (sort box, turn accordion, single-open, ⌨) — after every full render.
-        // sessionTableN echoes the Show box (0 = all) — pass it through as-is
-        sessTable.setRows(DATA.sessions || [], DATA.sessionTableN);
+    }
+
+    /**
+     * Everything a duty row can do, from the row itself.
+     *
+     * ‼️ THE ROW IS THE OBJECT. The page listed six facts about a duty and
+     * offered no way to act on any of them: pausing, reordering and deleting
+     * lived only on the sidebar tree, and editing lived in a chain of boxes
+     * reachable from there. `edit` and `copy` open the card above; the other
+     * four are single acts, so they go straight to the host — a form for "move
+     * it up" would be furniture.
+     */
+    function dutyAct(act, title) {
+        if (!title) { return; }
+        const d = (DATA.agent.duties || []).find(x => x.title === title);
+        if (!d) { return; }
+        if (act === 'edit') {
+            openDutyForm({
+                mode: 'edit', oldTitle: d.title, title: d.title, cadence: d.cadence,
+                watch: d.watch || '', action: d.action || '', note: d.note || '', paused: !!d.paused
+            });
+            return;
+        }
+        if (act === 'copy') {
+            openDutyForm({
+                mode: 'copy', oldTitle: d.title, title: d.title, cadence: d.cadence,
+                watch: d.watch || '', action: d.action || '', note: d.note || '', paused: !!d.paused
+            });
+            return;
+        }
+        vscode.postMessage({ type: 'duty-act', act: act, title: title });
     }
 
     // ------------------------------------------------------- right-click menu
@@ -382,8 +612,28 @@
                 vscode.postMessage({ type: 'openMemoryGraph', agentId: String(ctx.agentId || '') });
                 return;
             case 'memCopy': window.AFCtx.copy(ctx.memPath); return;
+            // Both of these are cards on the memory graph — this page lists a
+            // memory file, that one is where a memory file is worked on.
+            case 'memCopyTo':
+                vscode.postMessage({
+                    type: 'memCard', card: 'copy', agentId: String(ctx.agentId || ''),
+                    path: String(ctx.memPath || ''), name: String(ctx.memName || '')
+                });
+                return;
+            case 'memDistil':
+                vscode.postMessage({
+                    type: 'memCard', card: 'distill', agentId: String(ctx.agentId || '')
+                });
+                return;
             case 'dutyOpen': open(ctx.dutyPath); return;
             case 'dutyCopy': window.AFCtx.copy(ctx.dutyText); return;
+            // The menu reaches the same four acts the row's buttons do — a menu
+            // that offers less than the row it was opened on is a menu nobody
+            // trusts twice.
+            case 'dutyEdit': dutyAct('edit', String(ctx.dutyTitle || '')); return;
+            case 'dutyTo': dutyAct('copy', String(ctx.dutyTitle || '')); return;
+            case 'dutyPause': dutyAct('toggle', String(ctx.dutyTitle || '')); return;
+            case 'dutyDel': dutyAct('del', String(ctx.dutyTitle || '')); return;
             case 'insOpen': open(ctx.insFile); return;
             case 'insGuide':
                 vscode.postMessage({ type: 'openGuide', anchor: String(ctx.insAnchor || '') });

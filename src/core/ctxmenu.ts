@@ -1326,6 +1326,16 @@ export const CTX_ITEMS: CtxItem[] = [
         id: 'memGraph', title: 'Show it in the memory graph', act: 'memGraph',
         when: MEMORY_ROW, group: '1_open@2'
     },
+    // U-14: the two acts a memory row could not offer while making one meant a
+    // chain of boxes. Both open a card on the memory graph.
+    {
+        id: 'memCopyTo', title: 'Copy it to another agent…', act: 'memCopyTo',
+        when: MEMORY_ROW, group: '2_act@1'
+    },
+    {
+        id: 'memDistil', title: 'Distil it — shorter, with a diff first', act: 'memDistil',
+        when: MEMORY_ROW, group: '2_act@2'
+    },
     {
         id: 'memCopyPath', title: 'Copy its path', act: 'memCopy',
         when: MEMORY_ROW, group: '5_copy@1'
@@ -1333,6 +1343,25 @@ export const CTX_ITEMS: CtxItem[] = [
     {
         id: 'dutyOpen', title: 'Open DUTIES.md', act: 'dutyOpen',
         when: DUTY_ROW, group: '1_open@1'
+    },
+    // ‼️ The menu reaches everything the row's own buttons reach (U-14). It used
+    // to offer "open the file" and "copy the text" over a row whose object
+    // could only be edited, paused, reordered or deleted from the sidebar tree.
+    {
+        id: 'dutyEdit', title: 'Edit it — title, cadence, watch, what to do', act: 'dutyEdit',
+        when: DUTY_ROW, group: '2_act@1'
+    },
+    {
+        id: 'dutyTo', title: 'Copy it to another agent…', act: 'dutyTo',
+        when: DUTY_ROW, group: '2_act@2'
+    },
+    {
+        id: 'dutyPause', title: 'Pause / resume it', act: 'dutyPause',
+        when: DUTY_ROW, group: '2_act@3'
+    },
+    {
+        id: 'dutyDel', title: 'Delete it from DUTIES.md', act: 'dutyDel',
+        when: DUTY_ROW, group: '9_danger@1'
     },
     {
         id: 'dutyCopy', title: 'Copy the duty — watch, and what to do', act: 'dutyCopy',

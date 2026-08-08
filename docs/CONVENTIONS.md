@@ -252,13 +252,57 @@ decide what the object actually does.
 destructive (a page-side warning can be missed while the focus is elsewhere),
 and the **OS file picker** (`showOpenDialog`), which has no webview equivalent.
 
-**The measurement, so the next sweep can be compared to it** (2026-08-08, U-9
-phase 4): of 215 commands, **113** open some native dialog, **58** use
-`showInputBox`/`showQuickPick`, and **20** are chains of two or more boxes. The
-finding worth keeping is not the count but its shape — nearly every one of those
-objects already HAS a page, and that page lists the object without being able to
-make one. The full table is in the project's `10_Notes/U-9 Faz 4 - diyalog
-supurme taramasi.md`; the remaining work is backlog `U-14`.
+### The form is a component — `media/afForm.js`
+
+**Never hand-roll a form card again.** The Tasks page proved the shape and then
+kept it to itself for three versions, which is exactly why eight other surfaces
+stayed on dialog chains: writing one was a day per page. `AFForm` ships to every
+page from `htmlShell`, and the CSS is in `common.css`, so there is nothing to
+wire.
+
+```js
+const F = window.AFForm;
+F.card({ id: 'dutyform', title: 'New duty', lede: '…', submit: 'Add the duty',
+         msg: refusal, warn: true,
+         body: F.grid([ F.text('title', 'Title', v, { required: true, wide: true }),
+                        F.sel('cadence', 'How often', list, v, { tip: '…' }) ])
+             + F.sec('Watch', 'what the agent looks at')
+             + F.grid([ F.path('watch', 'File or folder', v, { kind: 'folder' }) ]) });
+F.wire(root, { onEdit, onRedraw, onSubmit, onCancel, onBrowse, onList });
+```
+
+- **A field declares the key it writes and the type it writes it as.**
+  `F.read(root)` hands back a typed object; a number field reads as a number.
+  Nothing lists its field ids twice, which is how a form quietly stops carrying
+  one.
+- **`{ redraw: true }` on the fields that change what EXISTS**, and only those.
+  `wire` binds `change` for every control and `input` for text as well — a
+  redraw on `input` repaints the page under the cursor.
+- **`F.path` keeps the OS picker** next to the box: the page posts
+  `{type:'af-browse', key, kind}` and the host answers with `handleFormBrowse`
+  (`panels/base.ts`), which fills that one field and disturbs nothing else.
+- **`F.list`** is for an object whose content is a list — rows with
+  `↑ ↓ edit copy ✕` acting on the DRAFT, never on the stored object.
+- **The refusal goes in the card** (`msg`), never in a modal.
+
+**The measurement, so the next sweep can be compared to it.** Same method both
+times: every `registerCommand` body in `extension.ts`, cut at the next
+registration.
+
+| | commands | opens a native dialog | uses input box / quick pick | 2+ box chain |
+|---|---|---|---|---|
+| 2026-08-08 (U-9 phase 4) | 215 | 113 | 58 | 20 |
+| 2026-08-09 (U-14, surfaces 1–3) | 217 | 67 | 42 | 13 |
+
+The finding worth keeping is not the count but its shape — nearly every one of
+those objects already HAS a page, and that page listed the object without being
+able to make one. The full table is in the project's `10_Notes/U-9 Faz 4 -
+diyalog supurme taramasi.md`; the remaining work is backlog `U-13` / `U-14`.
+
+‼️ **The scan only reads `extension.ts`.** A panel may open its own dialogs and
+the number will not move — the Toolbox's `+ new skill` was two input boxes
+inside `toolboxPanel.ts` and no measurement ever saw it. When you convert a
+surface, grep its panel too.
 
 ## Right-click
 

@@ -127,7 +127,24 @@
     }
 
     window.addEventListener('message', ev => {
-        if (ev.data.type === 'data') { DATA = ev.data.data; render(); }
+        const m = ev.data;
+        if (m.type === 'data') { DATA = m.data; render(); return; }
+        // ---- the form's three messages (U-14)
+        if (m.type === 'tool-compose') { openToolForm(m.seed || {}); return; }
+        if (m.type === 'tool-msg') {
+            toolMsg = String(m.text || '');
+            toolMsgOk = m.ok === true;
+            // A receipt means the write happened; a refusal keeps the card open
+            // with everything that was typed still in it.
+            if (toolMsgOk) { toolForm = null; }
+            render();
+            return;
+        }
+        if (m.type === 'mcp-def' && toolForm && toolForm.name === m.name) {
+            Object.assign(toolForm, m.def || {});
+            render();
+            return;
+        }
     });
 
     const post = (m) => vscode.postMessage(m);
@@ -270,11 +287,166 @@
     }
 
     function newButtons(kind) {
-        if (kind !== 'skill' && kind !== 'subagent' && kind !== 'command') { return ''; }
-        const opts = ['<option value="">User (all agents)</option>']
-            .concat(DATA.agents.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`)).join('');
-        return `<span class="newrow">in <select id="tb-newscope">${opts}</select>
-            <button class="mini add" data-new="${kind}">+ new ${kind}</button></span>`;
+        if (kind !== 'skill' && kind !== 'subagent' && kind !== 'command' && kind !== 'mcp') { return ''; }
+        return `<span class="newrow"><button class="mini add" data-new="${kind}"${toolForm ? ' disabled' : ''}
+            title="Make one here — name, description and, for a server, the command, its arguments and the environment it needs">+ new ${kind === 'mcp' ? 'MCP server' : kind}</button></span>`;
+    }
+
+    // ------------------------------------------------------------- THE FORM
+    /**
+     * ‼️ THE PAGE THAT LISTS EVERY TOOL CAN NOW MAKE ONE — U-14, surface 2.
+     *
+     * Measured before this change: `+ new skill` posted to the host, which
+     * asked two input boxes; `addMcpServer` asked four in the palette;
+     * `editMcpServer` flattened a server to one line of text and silently kept
+     * or dropped whatever else its definition held; `copyMcpServer` and
+     * `duplicateSkill` were a quickpick of agent names each. Four routes, four
+     * vocabularies — and none of them could state an MCP server's `args`, its
+     * `env` or its `headers`, which is exactly what decides whether the server
+     * they just wrote can authenticate.
+     *
+     * One card. Four kinds, three modes, and the fields each combination
+     * actually has.
+     */
+    let toolForm = null;
+    let toolMsg = '';
+    let toolMsgOk = false;
+
+    const KIND_LABEL = { skill: 'skill', subagent: 'subagent', command: 'command', mcp: 'MCP server' };
+    const KIND_LEDE = {
+        skill: 'A skill is a procedure claude loads on demand. The description is not decoration — it is what claude reads to decide whether this is the moment to load it.',
+        subagent: 'A subagent is a named specialist claude can delegate to with the Agent tool. It gets its own file under .claude/agents.',
+        command: 'A command is a /slash prompt. A ":" in the name nests it into folders exactly the way claude reads them — git:cleanup lives in commands/git/cleanup.md.',
+        mcp: 'An MCP server is an external tool process claude connects to. It belongs to one agent (.mcp.json in the agent folder), and it starts with whatever command, arguments and environment you give it here.'
+    };
+
+    function newToolDraft(seed) {
+        const s = seed || {};
+        return {
+            kind: s.kind || 'skill',
+            mode: s.mode === 'edit' || s.mode === 'copy' ? s.mode : 'new',
+            agentId: s.agentId || '',
+            target: '',
+            name: s.name || '',
+            description: s.description || '',
+            transport: s.transport === 'http' ? 'http' : 'stdio',
+            command: s.command || '',
+            args: s.args || '',
+            env: s.env || '',
+            url: s.url || '',
+            headers: s.headers || ''
+        };
+    }
+
+    function openToolForm(seed) {
+        toolForm = newToolDraft(seed);
+        toolMsg = '';
+        toolMsgOk = false;
+        // ‼️ An MCP server's real definition is not on the inventory row — the
+        // row carries a summary. The card opens NOW and fills itself when the
+        // host answers, rather than a click that appears to do nothing while a
+        // file is read.
+        if (toolForm.kind === 'mcp' && toolForm.mode === 'edit'
+            && !toolForm.command && !toolForm.url) {
+            post({ type: 'mcp-def', agentId: toolForm.agentId, name: toolForm.name });
+        }
+        // The card belongs to the tab whose object it makes; landing on the
+        // Overview with an MCP form open would be a form with no list behind it.
+        if (toolForm.kind && state.tab !== toolForm.kind) { state.tab = toolForm.kind; }
+        render();
+        const box = document.getElementById('toolform');
+        if (box) { box.scrollIntoView(); }
+    }
+
+    function toolFormHtml() {
+        const F = window.AFForm;
+        const d = toolForm;
+        const mcp = d.kind === 'mcp';
+        const copying = d.mode === 'copy';
+        const editing = d.mode === 'edit';
+        const agentOpts = (DATA.agents || []).map(a => ({ id: a.id, name: a.name }));
+        const scopeOpts = [{ id: '', label: 'User — every agent on this machine sees it' }]
+            .concat(agentOpts.map(a => ({ id: a.id, label: a.name + ' — this agent only' })));
+        const body = copying
+            ? F.grid([
+                F.stat('Copying', KIND_LABEL[d.kind] + ' “' + d.name + '”'),
+                F.sel('target', 'To', [{ id: '', label: '— pick an agent —' }]
+                    .concat(agentOpts.filter(a => a.id !== d.agentId).map(a => ({ id: a.id, label: a.name }))),
+                    d.target, { tip: 'Which agent gets its own copy. It is a copy, not a link: editing one afterwards leaves the other alone.' })
+            ])
+            : F.grid([
+                editing
+                    ? F.stat('Editing', KIND_LABEL[d.kind] + ' “' + d.name + '”')
+                    : F.text('name', 'Name', d.name, {
+                        required: true, wide: !mcp,
+                        ph: d.kind === 'command' ? 'e.g. git:cleanup' : d.kind === 'mcp' ? 'e.g. obsidian' : 'e.g. release-notes',
+                        tip: d.kind === 'command'
+                            ? 'What you type after the slash. A ":" nests it into a folder, the way claude reads commands.'
+                            : 'The folder or key it is stored under — and what claude loads it by.'
+                    }),
+                !editing && mcp ? F.sel('agentId', 'On agent', [{ id: '', label: '— pick an agent —' }]
+                    .concat(agentOpts.map(a => ({ id: a.id, label: a.name }))), d.agentId, {
+                    required: true,
+                    tip: 'An MCP server is written into that agent\'s own .mcp.json. There is no user-scope write from here — a shared server is a decision about every agent at once.'
+                }) : '',
+                !editing && !mcp ? F.sel('agentId', 'Scope', scopeOpts, d.agentId, {
+                    tip: 'USER scope is shared by every agent on this machine; an agent-scope entry belongs to that agent alone and shadows a user one of the same name.'
+                }) : '',
+                !mcp ? F.text('description', 'Description', d.description, {
+                    wide: true,
+                    ph: d.kind === 'skill' ? 'When should claude reach for this?' : 'One line, shown in listings',
+                    tip: d.kind === 'skill'
+                        ? 'claude reads this to decide when to load the skill on its own. A vague line is a skill that never fires.'
+                        : 'Shown wherever it is listed.'
+                }) : ''
+            ])
+            + (mcp ? F.sec('How it is reached',
+                'A stdio server is a process this machine starts; an http server is a URL it talks to.')
+                + F.grid([
+                    F.sel('transport', 'Transport', [
+                        { id: 'stdio', label: 'stdio — a command this machine runs' },
+                        { id: 'http', label: 'http / sse — a URL' }
+                    ], d.transport, { redraw: true, tip: 'Which of the two shapes this entry takes.' }),
+                    d.transport === 'http' ? F.text('url', 'URL', d.url, {
+                        wide: true, required: true, ph: 'https://…',
+                        tip: 'The endpoint claude connects to.'
+                    }) : F.text('command', 'Command', d.command, {
+                        wide: true, required: true, mono: true, ph: 'npx',
+                        tip: 'The executable only. Its arguments go in the box below, one per line — which is how the file stores them, and why a single line of text could never round-trip an argument with a space in it.'
+                    }),
+                    d.transport === 'http' ? F.area('headers', 'Headers', d.headers, {
+                        rows: 3, ph: 'Authorization=Bearer {secret:MY_TOKEN}',
+                        tip: 'One KEY=value per line. {secret:NAME} is substituted from the vault at launch, so a token never has to sit in the file.'
+                    }) : F.area('args', 'Arguments', d.args, {
+                        rows: 3, ph: '-y\n@modelcontextprotocol/server-filesystem\nD:/zone',
+                        tip: 'One argument per line. A path with a space in it is one line, not two — which is the whole reason this is not a single text box.'
+                    }),
+                    d.transport === 'http' ? '' : F.area('env', 'Environment', d.env, {
+                        rows: 3, ph: 'API_KEY={secret:MY_KEY}',
+                        tip: 'One KEY=value per line, handed to the process when it starts. {secret:NAME} is substituted from the vault.'
+                    })
+                ]) : '');
+        return F.card({
+            id: 'toolform',
+            title: (copying ? 'Copy ' : editing ? 'Edit ' : 'New ') + KIND_LABEL[d.kind],
+            lede: copying ? '' : KIND_LEDE[d.kind],
+            body: body,
+            msg: toolMsg,
+            warn: !toolMsgOk,
+            submit: copying ? 'Copy it' : editing ? 'Save changes' : 'Create it'
+        });
+    }
+
+    function wireToolForm() {
+        const F = window.AFForm;
+        const box = document.getElementById('toolform');
+        if (!box || !toolForm) { return; }
+        F.wire(box, {
+            onEdit: v => Object.assign(toolForm, v),
+            onRedraw: () => render(),
+            onSubmit: () => { toolMsg = ''; post({ type: 'tool-save', tool: toolForm }); },
+            onCancel: () => { toolForm = null; toolMsg = ''; render(); }
+        });
     }
 
     // ---------------------------------------------------------------- tabs
@@ -309,14 +481,19 @@
         const total = allOf(kind).length;
         const rows = items(kind);
         const head = searchBox(`filter ${total} entries…`) + filterBar(kind, rows.length, total);
+        // The form belongs to the tab whose object it makes, directly under the
+        // + that opened it — so what is being built stays next to the list of
+        // what is already there.
+        const form = toolForm && toolForm.kind === kind ? toolFormHtml()
+            : (toolMsg && state.tab === kind ? window.AFForm.msg(toolMsg, !toolMsgOk) : '');
         if (!rows.length) {
             return head + `<p class="muted">${anyActive(kind)
                 ? 'Nothing matches — narrow it less, or ✕ clear.'
                 : 'None installed at either scope.'} ${EXPLAIN[kind]}</p>` +
-                (newButtons(kind) ? `<p>${newButtons(kind)}</p>` : '');
+                (newButtons(kind) ? `<p>${newButtons(kind)}</p>` : '') + form;
         }
         return head +
-            (newButtons(kind) ? `<p>${newButtons(kind)}</p>` : '') +
+            (newButtons(kind) ? `<p>${newButtons(kind)}</p>` : '') + form +
             `<div class="card tablewrap"><table class="tb">
             <tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr>${rows.map(rowFn).join('')}</table></div>`;
     }
@@ -567,11 +744,8 @@
                 render();
             }));
         document.querySelectorAll('[data-new]').forEach(b =>
-            b.addEventListener('click', () => {
-                const sel = document.getElementById('tb-newscope');
-                const agentId = sel && sel.value ? sel.value : '';
-                post({ type: 'create', kind: b.dataset.new, scope: agentId ? 'agent' : 'user', agentId });
-            }));
+            b.addEventListener('click', () => openToolForm({ kind: b.dataset.new, mode: 'new' })));
+        wireToolForm();
         document.querySelectorAll('[data-act]').forEach(b =>
             b.addEventListener('click', () => {
                 const act = b.dataset.act;
@@ -588,6 +762,26 @@
         // module tiles navigate to their own page (same handler the nav uses)
         document.querySelectorAll('[data-modnav]').forEach(b =>
             b.addEventListener('click', () => post({ type: 'afnav', to: b.dataset.modnav })));
+    }
+
+    /**
+     * Open the edit card for a row.
+     *
+     * An MCP server's real definition is not on the row — the inventory carries
+     * a summary — so the host is asked for it and the form opens as soon as it
+     * lands. Everything else on this page is edited by opening its file, which
+     * is what the row's own "open" already does.
+     */
+    function editTool(it) {
+        if (it.kind !== 'mcp') { post({ type: 'open', path: it.source }); return; }
+        if (it.scope === 'user') {
+            toolMsg = 'That server is user scope — it lives in ' + (DATA.paths.userConfigJson || 'the user config')
+                + ', which is shared by every agent on this machine. Open the file to change it.';
+            toolMsgOk = false;
+            render();
+            return;
+        }
+        openToolForm({ kind: 'mcp', mode: 'edit', agentId: it.agentId || '', name: it.name });
     }
 
     // ------------------------------------------------------- right-click menu
@@ -612,7 +806,7 @@
             case 'tbMcp':
                 post({ type: 'toggleMcp', agentId: it.agentId || '', server: it.name, disabled: arg === 'off' });
                 return;
-            case 'tbMcpEdit': post({ type: 'editMcp', agentId: it.agentId || '', server: it.name }); return;
+            case 'tbMcpEdit': editTool(it); return;
             case 'tbPlug':
                 post({
                     type: 'togglePlugin',
@@ -624,7 +818,7 @@
                 if (it.detail.homepage) { post({ type: 'openExternal', url: it.detail.homepage }); }
                 return;
             case 'tbCopyAgent':
-                post({ type: 'copyToAgent', kind: it.kind, agentId: it.agentId || '', name: it.name });
+                openToolForm({ kind: it.kind, mode: 'copy', agentId: it.agentId || '', name: it.name });
                 return;
             case 'tbScope': post({ type: 'skillScope', agentId: it.agentId || '', name: it.name }); return;
             // The tool list is already on the row behind a caret; the menu opens

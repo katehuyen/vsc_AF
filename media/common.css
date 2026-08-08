@@ -315,3 +315,67 @@ span.af-tipw { display: inline; }
     font-size: 11px; line-height: 1; color: var(--vscode-descriptionForeground);
 }
 .af-clr > .af-clrx:hover { color: var(--vscode-foreground); background: transparent; }
+
+/* -------------------------------------------------------------------- AFForm
+   ‼️ THE PAGE MAKES THE OBJECT — media/afForm.js, docs/CONVENTIONS.md.
+   The card the Tasks page proved, extracted so that every surface can draw one:
+   a bordered box on the page, in the page's own language, instead of a stack of
+   modal dialogs in front of it.
+
+   The fields WRAP. A single row of eleven controls squeezes the paragraph box
+   into a slit, which is an invitation to write less than you mean. */
+.affbox {
+    border: 1px solid var(--vscode-focusBorder); border-radius: 9px;
+    padding: 9px 12px; margin: 0 0 12px;
+    background: var(--vscode-editorWidget-background, rgba(128, 128, 128, .05));
+}
+.affgrid { display: flex; flex-wrap: wrap; gap: 8px 10px; margin: 8px 0; }
+.aff { display: flex; flex-direction: column; gap: 3px; flex: 1 1 150px; min-width: 140px; font-size: 11px; }
+.aff.wide { flex: 1 1 100%; }
+.aff > span { opacity: .75; }
+.aff em { font-style: normal; opacity: .75; color: var(--vscode-editorWarning-foreground, #cca700); }
+.aff select, .aff input { padding: 3px 6px; }
+.aff input.mono { font-family: var(--vscode-editor-font-family, monospace); }
+.aff textarea {
+    font-family: inherit; font-size: 13px; padding: 6px 8px;
+    resize: vertical; min-height: 70px;
+}
+.affstat { font-size: 12px; opacity: .85; padding: 3px 0; word-break: break-all; }
+/* The path field: the box and the system dialog side by side, because the OS
+   picker is the one thing a webview cannot draw, and typing a path by hand is
+   what the dialog chains were defending. */
+.affpath { display: flex; gap: 5px; align-items: center; }
+.affpath > input { flex: 1 1 auto; min-width: 0; }
+/* A section heading inside the form — a long form is scanned, not read. */
+.affsec {
+    margin: 10px 0 0; padding-top: 7px; font-size: 12px;
+    border-top: 1px solid var(--vscode-panel-border);
+}
+.affsec b { margin-right: 8px; }
+.affsec .small { line-height: 1.5; }
+/* A refusal, or a receipt. It belongs where the mistake is: a modal that takes
+   focus off the half-filled fields it is complaining about is the worst of both
+   worlds. */
+.affmsg {
+    font-size: 12px; margin: 6px 0; padding: 5px 10px; border-radius: 5px;
+    background: var(--vscode-editorWidget-background, rgba(128, 128, 128, .08));
+}
+.affmsg.warn { color: var(--vscode-editorWarning-foreground, #cca700); border: 1px solid currentColor; }
+/* The list a form holds. An object whose content is a LIST gets a list editor,
+   not a wizard — you cannot be asked for item four without being shown one to
+   three. */
+.afflist {
+    list-style: none; margin: 8px 0; padding: 0; counter-reset: affn;
+    border: 1px solid var(--vscode-panel-border); border-radius: 7px; overflow: hidden;
+}
+.affrow { display: flex; gap: 9px; align-items: flex-start; padding: 6px 9px; font-size: 12px; counter-increment: affn; }
+.affrow + .affrow { border-top: 1px solid var(--vscode-panel-border); }
+.affrow:hover { background: var(--vscode-list-hoverBackground); }
+.affrow.on { background: var(--vscode-list-activeSelectionBackground, rgba(128, 128, 255, .12)); }
+.afflist:not(.plain) .affrow::before { content: counter(affn) "."; opacity: .55; min-width: 1.4em; text-align: right; }
+.affri { font-size: 14px; line-height: 1.2; }
+.affrt { flex: 1 1 auto; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.affrt .small { word-break: break-word; }
+.affra { white-space: nowrap; }
+.affra .mini { margin-left: 3px; }
+.affra .mini[disabled] { opacity: .35; cursor: default; }
