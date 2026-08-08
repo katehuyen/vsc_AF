@@ -391,6 +391,25 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
         /P-2 · #1 of 3 in your queue/.test(r.html()) && /characters<\/span>/.test(r.html()));
     ok('…and the figures below it, as Label: value',
         /Size: S/.test(r.html()) && /Priority: highest/.test(r.html()));
+    // U-19 — ‼️ AND IT OPENS WHERE THE STRIP STARTS, NOT WHERE THE CHIP IS.
+    // Anchored to the chip, a 760px panel opened off the right of the window for
+    // every chip in the right-hand half: the item was there, and unreadable.
+    // The row's `more` has always been right about this because its row is one
+    // positioning context; a chip's distance from the strip's left edge depends
+    // on where the flex wrap fell, so the two numbers are measured on hover.
+    ok('the strip is the panel\'s horizontal anchor, and the cap is the strip\'s width',
+        /\.pj-bl-nextrow > \.af-tipw > \.af-tip \{ left:var\(--af-x, 0px\);/.test(r.html())
+        && /max-width:min\(760px, var\(--af-w, 62vw\)\)/.test(r.html()));
+    ok('…measured against a strip that IS a positioning context',
+        /\.pj-bl-next \.pj-bl-nextrow \{[\s\S]*?position:relative/.test(r.html()));
+    ok('…and both numbers are taken on the way in',
+        /--af-x/.test(code) && /--af-w/.test(code)
+        && /closest\('\.pj-bl-nextrow > \.af-tipw'\)/.test(code));
+    // ‼️ The chip stays the VERTICAL anchor. Hanging the whole box off the strip
+    // would open it below the LAST wrapped line, and the pointer could not reach
+    // it across the chips in between — which is the same panel, unscrollable.
+    ok('…while the chip stays the vertical anchor, so the pointer can still reach it',
+        !/\.pj-bl-nextrow > \.af-tipw \{[^}]*position:static/.test(r.html()));
 
     // Clicking one takes you to its row and marks it. Nothing is written.
     chips[1].click();

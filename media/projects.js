@@ -97,6 +97,12 @@
             DATA = ev.data.data;
             if (DATA.newForm) { creating = newForm(DATA.newForm); askSuggestion(creating.name); }
             if (DATA.focusId) { selectedId = DATA.focusId; }
+            // ‼️ ONE-SHOT, AND IT IS NOT `DATA.tab`. `tab` is echoed back on
+            // every refresh (the host builds only the open tab's data), so
+            // obeying it here would drag the reader back the moment anything
+            // repainted. `openTab` is sent once, by a shortcut that asked for a
+            // page rather than for a project — see ProjectsPanel.show.
+            if (DATA.openTab && TABS.some(t => t.id === DATA.openTab)) { tab = DATA.openTab; }
             if (!DATA.projects.some(p => p.id === selectedId)) {
                 selectedId = (DATA.projects[0] && DATA.projects[0].id) || '';
             }
@@ -116,6 +122,30 @@
         // the sessions table asks the host for a row's turn breakdown
         if (sessTable && sessTable.onMessage(ev)) { return; }
     });
+
+    /**
+     * Where a Next-up chip's hover panel opens — see the `--af-x` rule in the
+     * page's CSS.
+     *
+     * Two numbers, both only knowable after layout: how far the chip sits from
+     * the strip's left edge (so the panel can be pushed back to it) and how wide
+     * the strip is (so the panel is capped by the strip rather than by the
+     * window, which is what stopped it fitting in the first place). Measured on
+     * the way IN, once per chip, which is the last moment before the panel is
+     * drawn and the first at which a flex wrap has settled — a resize or a
+     * re-render therefore costs nothing, because the next hover measures again.
+     *
+     * Registered on the document, not per render: the strip is rebuilt by
+     * `innerHTML` on every repaint, and a listener per chip would be re-attached
+     * a few dozen times a minute for the life of the page.
+     */
+    document.addEventListener('pointerover', ev => {
+        const t = ev.target;
+        const w = t && t.closest ? t.closest('.pj-bl-nextrow > .af-tipw') : null;
+        if (!w || !w.parentElement) { return; }
+        w.style.setProperty('--af-x', (-w.offsetLeft) + 'px');
+        w.style.setProperty('--af-w', w.parentElement.clientWidth + 'px');
+    }, true);
 
     /** The kinds the timeline is currently showing, as the host wants them.
      *  Empty means "everything off" — a state the page draws by itself rather
@@ -973,11 +1003,30 @@
                    — jump, and move — and a thing that only looked like a label
                    was a strip nobody tried to touch. */
                 .pj-bl-next .pj-bl-nextrow { display:flex; gap:6px; flex-wrap:wrap; align-items:center;
-                    min-height:24px; }
+                    min-height:24px; position:relative; }
                 /* Each chip is its own AFTip trigger, so the wrapper IS the
                    positioning context; common.css makes a span.af-tipw inline,
                    which would collapse the chip's own layout. */
                 .pj-bl-nextrow > .af-tipw { display:inline-flex; align-items:center; }
+                /* ‼️ THE BOX OPENS WHERE THE STRIP STARTS, NOT WHERE THE CHIP IS.
+                   Anchored to the chip, a panel up to 760px wide opened off the
+                   right of the window for every chip in the right-hand half —
+                   the item was there and unreadable. This is what the "more"
+                   hover does below (a box the width of the line, always in the
+                   same place), with the one difference the strip forces: that
+                   one hands the whole job to CSS because its row is a single
+                   positioning context, while a chip's distance from the strip's
+                   left edge depends on where the flex wrap fell and is only
+                   knowable after layout. So the two numbers are measured on
+                   hover (the pointerover listener at the top of this file) and
+                   arrive as custom properties; the fallback is the old
+                   behaviour, which is the right thing to degrade to.
+                   The chip stays the VERTICAL anchor — the box opens directly
+                   under it with no gap, so the pointer can still travel into it
+                   and scroll, which anchoring the whole thing to the strip would
+                   have cost on any strip more than one line tall. */
+                .pj-bl-nextrow > .af-tipw > .af-tip { left:var(--af-x, 0px);
+                    max-width:min(760px, var(--af-w, 62vw)); }
                 .pj-bl-nextb { display:inline-flex; align-items:center; gap:5px; cursor:grab;
                     background:none; color:inherit; border:1px solid var(--vscode-widget-border,#4443);
                     border-radius:12px; padding:2px 8px; font-size:11px; }

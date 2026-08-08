@@ -2315,6 +2315,7 @@ Tümü komut paletinde `Agent Farm:` önekiyle:
 - **Copy Skill to Agent… / Move Skill Between Agent/User Scope… / Reveal Skill Folder** — skill filo yönetimi (sağ tık)
 - **Edit MCP Server… / Disable MCP Server / Enable MCP Server / Copy MCP Server to Agent…** — MCP yönetimi (sağ tık)
 - **Open Capability Matrix (Skills × MCP × Agents)** — filonun yetenek ızgarası, kullanım yoğunluğu ve tek tıkla kopyalama
+- **Open Backlog (the active project's standing pile of work)** — proje sayfasını doğrudan Backlog sekmesinde açar. Durum çubuğunu izler: bu pencerede hangi proje aktifse onu açar, aktif proje yoksa sorar — verdiğiniz cevap pencerenin aktif projesi olur, yani her basışta değil bir kez sorulur
 - **Open Turns (every turn across the farm)** — çiftlik çapında kullanıcı turu başına bir satır ([Turlar Sayfası](#turlar-sayfasi))
 - **Copy Webhook URL** — webhook tetiğinin gizli adresi
 - **Open Media Gallery** — üretilen medyalar (önizleme + Re-run/Vary)

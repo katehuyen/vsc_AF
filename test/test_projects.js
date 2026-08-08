@@ -53,7 +53,51 @@ const {
     // disagree with the first.
     ok('‼️ the old agentFarm.projects setting is no longer declared',
         !pkg.contributes.configuration.properties['agentFarm.projects']);
+    // P-12 — …and it is no longer left sitting in the user's file either.
+    // Undeclaring a setting does not delete what somebody typed: VS Code marks
+    // the block "Unknown Configuration Setting", and any older VSIX installed to
+    // check a symptom still carries the importer that reads it. The value is
+    // ARCHIVED FIRST — that is what makes removing it without asking honest —
+    // and the marker is a one-shot, so a user who types the key back is not
+    // argued with every window.
+    {
+        const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        ok('the dead setting is retired on activation',
+            /retireProjectsSetting/.test(src) && /agentfarm\.projectsSetting\.retired/.test(src));
+        const archiveAt = src.indexOf('RETIRED_SETTINGS_FILE, JSON.stringify(archive');
+        const removeAt = src.indexOf("cfg().update('projects', undefined, target)");
+        ok('…every scope it could be written in is looked at',
+            /globalValue/.test(src) && /workspaceValue/.test(src) && /workspaceFolderValue/.test(src));
+        ok('‼️ …and the copy is written BEFORE the removal, never after',
+            archiveAt > 0 && removeAt > 0 && archiveAt < removeAt);
+        ok('…the user is told, with the copy one press away',
+            /Show the copy/.test(src));
+    }
     const ids = new Set(pkg.contributes.commands.map(c => c.command));
+    // P-11 — the backlog is two presses from the tree, and it FOLLOWS the status
+    // bar rather than asking a question the window already has an answer to.
+    {
+        const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        const panel = fs.readFileSync(
+            path.join(__dirname, '..', 'src', 'panels', 'projectsPanel.ts'), 'utf8');
+        const page = fs.readFileSync(path.join(__dirname, '..', 'media', 'projects.js'), 'utf8');
+        ok('the Backlog shortcut exists', ids.has('agentfarm.openBacklog'));
+        const body = src.slice(src.indexOf("registerCommand('agentfarm.openBacklog'"));
+        ok('…it opens the project page ON the backlog tab',
+            /ProjectsPanel\.show\(.*, 'backlog'\)/.test(body.slice(0, 1400)));
+        ok('…it reads the window\'s active project first',
+            body.slice(0, 1400).includes('activeProjectId()'));
+        ok('…and asks with the ONE picker when there is none',
+            body.slice(0, 1400).includes('chooseActiveProject('));
+        ok('…a deleted project counts as no answer, not as an error',
+            /projectStore\.get\(id\)/.test(body.slice(0, 1400)));
+        // ‼️ `tab` is echoed on every refresh (the host builds only the open
+        // tab's data); a shortcut that set THAT would drag the reader back every
+        // repaint. `openTab` is the one-shot beside it.
+        ok('the panel carries a one-shot open-on-this-tab', /openTab/.test(panel));
+        ok('…cleared the moment it is sent', /this\.openTab = '';/.test(panel));
+        ok('…and the page obeys it once', /DATA\.openTab/.test(page));
+    }
     ok('Manage Projects… exists', ids.has('agentfarm.manageProjects'));
     ok('Assign Agent to Project… exists', ids.has('agentfarm.assignProject'));
     ok('the portfolio page exists', ids.has('agentfarm.openPortfolio'));

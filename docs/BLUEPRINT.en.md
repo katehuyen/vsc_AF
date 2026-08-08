@@ -2267,6 +2267,7 @@ All in the command palette with the `Agent Farm:` prefix:
 - **Copy Skill to Agent… / Move Skill Between Agent/User Scope… / Reveal Skill Folder** — skill fleet management (right-click)
 - **Edit MCP Server… / Disable MCP Server / Enable MCP Server / Copy MCP Server to Agent…** — MCP management (right-click)
 - **Open Capability Matrix (Skills × MCP × Agents)** — the fleet's capability grid, usage density and one-click copy
+- **Open Backlog (the active project's standing pile of work)** — the project page, opened straight onto its Backlog tab. It follows the status bar: whatever project is active in this window is the one it opens, and it only asks when nothing is active — the answer then becomes the window's active project, so it is asked once rather than at every press
 - **Open Turns (every turn across the farm)** — one row per user turn, farm-wide ([Turns Page](#turlar-sayfasi))
 - **Copy Webhook URL** — the secret address of a webhook trigger
 - **Open Media Gallery** — produced media (preview + Re-run/Vary)

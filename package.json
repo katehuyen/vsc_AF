@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.88.0",
+  "version": "3.89.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -1116,6 +1116,12 @@
         "title": "Open Capability Matrix (Skills × MCP × Agents)",
         "category": "Agent Farm",
         "icon": "$(table)"
+      },
+      {
+        "command": "agentfarm.openBacklog",
+        "title": "Open Backlog (the active project's standing pile of work)",
+        "category": "Agent Farm",
+        "icon": "$(list-ordered)"
       },
       {
         "command": "agentfarm.openToolbox",
@@ -3138,6 +3144,11 @@
           "command": "agentfarm.openCapabilities",
           "when": "view == agentfarm.agents",
           "group": "navigation@2"
+        },
+        {
+          "command": "agentfarm.openBacklog",
+          "when": "view == agentfarm.agents",
+          "group": "navigation@2.5"
         },
         {
           "command": "agentfarm.newAgent",

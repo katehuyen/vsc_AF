@@ -188,13 +188,26 @@ export class ProjectsPanel {
      *  project folder. */
     private docPath = '';
 
-    static show(deps: ProjectsPanelDeps, focusId?: string, newForm?: NewProjectSeed): void {
+    /**
+     * ‼️ ONE-SHOT: "open ON this tab". Not the same thing as `tab`, which is
+     * where the reader IS — that is remembered and re-sent on every refresh, so
+     * a shortcut that set it would be obeyed once and then argue with every
+     * tab the reader pressed afterwards. This is sent once and cleared.
+     */
+    private openTab = '';
+
+    static show(
+        deps: ProjectsPanelDeps, focusId?: string, newForm?: NewProjectSeed, tab?: string
+    ): void {
+        const wanted = tab && (TABS as readonly string[]).includes(tab) ? tab : '';
         if (ProjectsPanel.current) {
-            ProjectsPanel.current.deps = deps;
-            ProjectsPanel.current.focusId = focusId;
-            ProjectsPanel.current.seed = newForm;
-            ProjectsPanel.current.panel.reveal();
-            ProjectsPanel.current.refresh();
+            const p = ProjectsPanel.current;
+            p.deps = deps;
+            p.focusId = focusId;
+            p.seed = newForm;
+            if (wanted) { p.openTab = wanted; p.tab = wanted; p.tabProject = focusId ?? p.tabProject; }
+            p.panel.reveal();
+            p.refresh();
             return;
         }
         const panel = vscode.window.createWebviewPanel(
@@ -203,17 +216,22 @@ export class ProjectsPanel {
             vscode.ViewColumn.One,
             { enableScripts: true, retainContextWhenHidden: true }
         );
-        ProjectsPanel.current = new ProjectsPanel(panel, deps, focusId, newForm);
+        ProjectsPanel.current = new ProjectsPanel(panel, deps, focusId, newForm, wanted);
     }
 
     static refreshIfOpen(): void { ProjectsPanel.current?.refresh(); }
 
     private constructor(
         readonly panel: vscode.WebviewPanel, private deps: ProjectsPanelDeps,
-        focusId?: string, newForm?: NewProjectSeed
+        focusId?: string, newForm?: NewProjectSeed, tab?: string
     ) {
         this.focusId = focusId;
         this.seed = newForm;
+        // The first paint has to carry the tab too: the panel is what decides
+        // which tab's DATA is built, so opening on Overview and switching a
+        // frame later would build a payload nobody asked for and show the wrong
+        // page while the right one was still being made.
+        if (tab) { this.openTab = tab; this.tab = tab; this.tabProject = focusId ?? ''; }
         this.render();
         panel.onDidDispose(() => this.dispose(), null, this.disposables);
         panel.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
@@ -262,10 +280,13 @@ export class ProjectsPanel {
             project: this.tabProject, tab: this.tab, tableN: this.tableN,
             kinds: this.feedKinds, doc: this.docPath
         });
+        const openTab = this.openTab;
+        this.openTab = '';
         return {
             ...this.deps.data(),
             focusId: this.focusId ?? null,
             newForm: seed ?? null,
+            openTab: openTab || null,
             tab: this.tab,
             tabProject: this.tabProject,
             // echoed back so the page can tell whether its request landed —

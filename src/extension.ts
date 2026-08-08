@@ -1093,6 +1093,69 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const projectStore = new ProjectStore(
         path.join(context.globalStorageUri.fsPath, 'projects.json'), portableRoots);
     projectStore.load();
+
+    /**
+     * ‼️ RETIRING A SETTING THIS VERSION NO LONGER DECLARES — ONCE, AND WITH THE
+     * VALUE KEPT.
+     *
+     * Projects were once declared in `agentFarm.projects`. The contribution
+     * point went in 3.58.0, but dropping a contribution point does not delete
+     * what somebody typed: the block stays in their `settings.json`, VS Code
+     * marks it "Unknown Configuration Setting", and — the part that bites — it
+     * is still there for any older VSIX installed to check a symptom, which
+     * still carries the importer (see MIGRATED_TOMBSTONE in projectStore.ts).
+     * The tombstone answers that from OUR side; this answers it at the source.
+     *
+     * ‼️ THE VALUE IS ARCHIVED BEFORE IT IS REMOVED, and that is the whole
+     * reason this is allowed to run without asking. Nothing here can tell a
+     * value that was migrated years ago from one on a machine that never ran
+     * the importer — so it does not try to. It writes what it found to
+     * `retired-settings.json` next to the store and says so once; deleting
+     * becomes moving, and a mistake stays recoverable.
+     *
+     * One-shot by a globalState marker, not by "is it still there": a user who
+     * types the key back has said something, and a housekeeping task that
+     * argues with them every window is a bug.
+     */
+    const RETIRED_SETTINGS_FILE = path.join(context.globalStorageUri.fsPath, 'retired-settings.json');
+    const PROJECTS_SETTING_RETIRED_KEY = 'agentfarm.projectsSetting.retired';
+    const retireProjectsSetting = async (): Promise<void> => {
+        const found = cfg().inspect<unknown>('projects');
+        const held: Array<[unknown, vscode.ConfigurationTarget, string]> = [
+            [found?.globalValue, vscode.ConfigurationTarget.Global, 'user'],
+            [found?.workspaceValue, vscode.ConfigurationTarget.Workspace, 'workspace'],
+            [found?.workspaceFolderValue, vscode.ConfigurationTarget.WorkspaceFolder, 'folder']
+        ].filter(([v]) => v !== undefined) as Array<[unknown, vscode.ConfigurationTarget, string]>;
+        // Nothing to retire is still an answer: mark it done so a machine that
+        // never had the setting does not inspect it on every activation.
+        if (!held.length) { await context.globalState.update(PROJECTS_SETTING_RETIRED_KEY, true); return; }
+        let archive: unknown[] = [];
+        try { archive = JSON.parse(fs.readFileSync(RETIRED_SETTINGS_FILE, 'utf8')) as unknown[]; } catch { archive = []; }
+        if (!Array.isArray(archive)) { archive = []; }
+        for (const [value, , scope] of held) {
+            archive.push({ key: 'agentFarm.projects', scope, value, retiredAt: new Date().toISOString() });
+        }
+        // ‼️ The archive is written BEFORE the removal, and the marker only
+        // after both. A crash between the two leaves a copy too many, which
+        // costs nothing; the other order loses the value outright.
+        try {
+            fs.writeFileSync(RETIRED_SETTINGS_FILE, JSON.stringify(archive, null, 2), 'utf8');
+        } catch { return; }   // no archive, no removal
+        for (const [, target] of held) {
+            try { await cfg().update('projects', undefined, target); } catch { /* a scope we may not write */ }
+        }
+        await context.globalState.update(PROJECTS_SETTING_RETIRED_KEY, true);
+        void vscode.window.showInformationMessage(
+            'Agent Farm removed the dead "agentFarm.projects" setting from your settings — projects have lived in their own registry since 3.58.0. A copy of what it held was kept.',
+            'Show the copy'
+        ).then(answer => {
+            if (answer) { void vscode.window.showTextDocument(vscode.Uri.file(RETIRED_SETTINGS_FILE)); }
+        });
+    };
+    if (!context.globalState.get<boolean>(PROJECTS_SETTING_RETIRED_KEY, false)) {
+        void retireProjectsSetting();
+    }
+
     /** Where new project folders are offered, and what a rescan walks. */
     const projectsRoot = (): string => (cfg().get<string>('projectsRoot', '') || '').trim();
     const projectSkeleton = () => normalizeSkeleton(cfg().get('projectSkeleton', []));
@@ -10731,6 +10794,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('agentfarm.openProject', (arg?: { id?: string } | string) => {
             const id = typeof arg === 'string' ? arg : arg?.id;
             ProjectsPanel.show(projectsPanelDeps(), id);
+        }),
+
+        /**
+         * The backlog in two presses from the tree — the page the user is in
+         * most, and until now it took opening Projects, finding the project and
+         * then finding the tab.
+         *
+         * ‼️ IT FOLLOWS THE STATUS BAR rather than asking. The window already
+         * has an answer to "what am I working on" and a shortcut that made you
+         * say it a second time would be the thing U-16 fixed for sessions. When
+         * there is no answer it asks with the ONE picker
+         * (`chooseActiveProject`), which also makes the choice stick: having
+         * named the project you are about to read, being asked again at the next
+         * press is not caution, it is a memory leak.
+         *
+         * A stale id — the project was deleted while it was the active one —
+         * counts as no answer rather than as an error.
+         */
+        vscode.commands.registerCommand('agentfarm.openBacklog', async () => {
+            let id = activeProjectId();
+            if (id && !projectStore.get(id)) { id = ''; }
+            if (!id) {
+                if (!projectStore.all().length) {
+                    void vscode.window.showInformationMessage(
+                        'Agent Farm: there is no project yet, so there is no backlog. Make one on the Projects page.');
+                    void vscode.commands.executeCommand('agentfarm.openProjects');
+                    return;
+                }
+                await chooseActiveProject('Whose backlog? — this also becomes the window\'s active project');
+                id = activeProjectId();
+                if (!id) { return; }   // backed out, or went to make a new project
+            }
+            ProjectsPanel.show(projectsPanelDeps(), id, undefined, 'backlog');
         }),
 
         vscode.commands.registerCommand('agentfarm.setActiveProject', async (arg?: { id?: string }) => {

@@ -1208,9 +1208,13 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         && title.indexOf('agentfarm.openTurns') === title.indexOf('agentfarm.openSessions') + 1);
     // The reading row ends where the writing row begins: everything above opens
     // something to look at, and the LAST thing on the strip is the one button
-    // that creates. So the matrix — the last read — sits directly before "+".
-    ok('the Capability Matrix is the last thing you read, so it sits before the +',
-        title.indexOf('agentfarm.openCapabilities') === title.indexOf('agentfarm.newAgent') - 1);
+    // that creates. P-11 put the Backlog at the end of the reading row — what
+    // the fleet is FOR comes after what it is made of — so the matrix is no
+    // longer the last read, but the shape of the strip is unchanged: reads,
+    // then "+".
+    ok('the Backlog closes the reading row, between the matrix and the +',
+        title.indexOf('agentfarm.openBacklog') === title.indexOf('agentfarm.openCapabilities') + 1
+        && title.indexOf('agentfarm.openBacklog') === title.indexOf('agentfarm.newAgent') - 1);
     ok('…and + closes the strip', title[title.length - 1] === 'agentfarm.newAgent');
     // A title strip is not a menu: what does not belong to THIS view's subject
     // is taken off it. The Timeline is the Live Feed's own title button and the
