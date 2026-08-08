@@ -198,5 +198,108 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
         posted[0] && posted[0].type === 'openAgent' && posted[0].cwd === 'D:/a/developer');
 }
 
+// ---------- part 3: S-4 — the page opens in the scope the opener asked in ----
+//
+// ‼️ THE WIDENING WAS A TIE BROKEN THE WRONG WAY, not the deep link's doing.
+// A prompt and the tool call it sets off share a timestamp, so "nearest overall"
+// picked whichever came first in the file — and when that was a tool call, the
+// page threw the whole filter away to reach it. A search made in Dialog
+// therefore landed on a transcript showing everything, every time.
+{
+    const code = require(require('path').join(__dirname, 'lib_shared_media.js')).sharedMedia()
+        + fs.readFileSync(require('path').resolve(__dirname, '../media/sessionViewer.js'), 'utf8');
+    const msgHandlers = [];
+    const msgHandler = (ev) => msgHandlers.forEach(fn => fn(ev));
+    let focused = null;
+    const els = {};
+    const getEl = (id) => {
+        if (id === 'turnbox') { return null; }
+        if (!els[id]) {
+            els[id] = {
+                id, listeners: {}, style: {}, value: '', _html: '',
+                addEventListener(ev, fn) { this.listeners[ev] = fn; },
+                set innerHTML(v) { this._html = v; }, get innerHTML() { return this._html; },
+                focus() { this.focused = true; }
+            };
+        }
+        return els[id];
+    };
+    const C = {
+        esc: (s) => String(s), fmtTok: (n) => String(n || 0), STEP_KIND: {},
+        stepChip: () => '', stepKindLegend: () => '', stepKindLegendText: () => 'legend',
+        fmtTokW(n) { return this.fmtTok(n || 0); }, fmtTokWText(n) { return this.fmtTok(n || 0); },
+        WEIGHTED_TIP: 'weighted', fmtUSD: (n) => '$' + (n || 0), aiLabel: () => 'agent'
+    };
+    // A user prompt and the tool call it triggered, at the SAME instant — the
+    // shape the old tie-break got wrong. The tool call is listed first.
+    const DATA = {
+        title: 't', sessionId: 'sess', cwd: '', permissionMode: '',
+        firstTs: 1000, lastTs: 9000, models: [],
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        totalTokens: 0, cost: 0, errors: 0, toolCalls: 1,
+        context: { tokens: 0, limit: 0 },
+        turnCount: 1, turnTotals: {}, turns: [],
+        messageCount: 3, truncatedCount: 0,
+        messages: [
+            { role: 'tool', ts: 5000, text: 'ran a thing', tool: 'Bash', turn: 1 },
+            { role: 'user', ts: 5000, text: 'the parser question', turn: 1, turnStart: true },
+            { role: 'assistant', ts: 9000, text: 'the answer', turn: 1 }
+        ],
+        focusTs: 5000,
+        // what the Search page was searching IN
+        focusRoles: ['user', 'assistant']
+    };
+    const sandbox = {
+        acquireVsCodeApi: () => ({ postMessage: () => { }, getState() { }, setState() { } }),
+        window: {
+            AFCharts: C, __DATA__: DATA,
+            addEventListener: (ev, fn) => { if (ev === 'message') { msgHandlers.push(fn); } },
+            scrollTo() { }, scrollX: 0, scrollY: 0
+        },
+        document: {
+            getElementById: getEl, querySelectorAll: () => [],
+            querySelector: (sel) => {
+                const m = /data-idx="(\d+)"/.exec(sel);
+                if (!m) { return null; }
+                focused = {
+                    idx: Number(m[1]), classes: [], scrollIntoView() { },
+                    classList: { add: (c) => focused.classes.push(c), remove: () => { } }
+                };
+                return focused;
+            }
+        },
+        setTimeout: () => 0, clearTimeout: () => { }, console
+    };
+    sandbox.globalThis = sandbox;
+    vm.createContext(sandbox);
+    vm.runInContext(code, sandbox);
+
+    const html = () => getEl('app')._html;
+    ok('‼️ the opener\'s scope wins over the page default',
+        /class="chip on"[^>]*data-chip="user"/.test(html())
+        && /class="chip on"[^>]*data-chip="assistant"/.test(html()));
+    ok('…so tool traffic is NOT switched on by the jump',
+        !/class="chip on"[^>]*data-chip="tool"/.test(html()));
+    // ‼️ The tool call is listed FIRST and shares the prompt's timestamp, so
+    // "nearest overall" used to land on it — and reaching a hidden target meant
+    // wiping the filter. Now a shown message at the same instant wins, and the
+    // page the reader asked for is the page they get.
+    ok('‼️ …and the filter survives the jump: a shown message at the same instant wins',
+        html().indexOf('the parser question') !== -1);
+    ok('…the tool line it used to widen for stays hidden',
+        html().indexOf('ran a thing') === -1);
+
+    // A scope handed over to an ALREADY-OPEN page is taken too — otherwise the
+    // second click from the results answers differently from the first.
+    msgHandler({ data: { type: 'focus', ts: 5000, roles: ['tool'] } });
+    ok('a scope handed over later is taken too',
+        /class="chip on"[^>]*data-chip="tool"/.test(html()));
+    ok('…and it reaches the tool line it was pointed at',
+        /<div id="msgs"><div class="msg tool"/.test(html())
+        && html().indexOf('the parser question') === -1);
+    ok('…without the filter having to be thrown away to get there',
+        !/class="chip on"[^>]*data-chip="user"/.test(html()));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

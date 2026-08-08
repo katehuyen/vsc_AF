@@ -40,7 +40,9 @@ import { syncCodexExtras } from './core/codex';
 import { describePlan, FarmPlan, interpretCommand } from './core/commandbar';
 import { DispatchRule, dispatchText } from './core/dispatch';
 import { EmbeddingsConfig, EmbeddingsProvider, embedTexts } from './core/embeddings';
-import { searchTranscripts, SearchResult } from './core/search';
+import {
+    searchLiveEvents, searchMemory, searchTranscripts, SearchResult, SearchRole
+} from './core/search';
 import { chunkTranscript, SemanticIndex } from './core/semantic';
 import {
     addDuty, CADENCES, CLAUDE_MD_SNIPPET, claudeMdReferencesDuties, deleteDuty,
@@ -3301,6 +3303,78 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            // ‼️ THE SEARCH PAGE'S OWN QUESTION, ASKABLE WITHOUT THE PAGE. An
+            // agent's commonest research question — "where did we discuss this,
+            // and what was said" — had no answer on the bridge at all, so the
+            // only way to it was reading transcripts by hand. Same engine as the
+            // panel (core/search.ts), same query language (core/query.ts), same
+            // three sources: one behaviour, not a second implementation that
+            // drifts. Read-only.
+            op: 'search.transcripts',
+            describe: 'Search the fleet\'s transcripts, the agents\' memory notes and the orphaned live events — the Search panel\'s own engine. args: query (the query LANGUAGE by default: `foo bar` = both words in any order, `OR`, `-foo` excludes, `"a phrase"` is whole-word and ordered, `*` wildcards; a bare word is a plain substring), regex? (hands the query to RegExp instead — none of that grammar applies), caseSensitive?, agents? (array of agent names; omit = every agent incl. unassigned sessions, [] = none), file? (one transcript path — scopes to that session, and its memory/event sources are dropped because the scan already covers it), roles? (array of user|assistant|tool|toolResult; default user+assistant = the conversation. Use ["user"] to search only what a person asked and ["assistant"] only what an agent answered), from?/to? (ISO date or ms — the window applies to WHAT WAS SAID, i.e. the message\'s own time, not the session\'s last-touched date, and it applies to all three sources), memory? (default true), events? (default true), limit? (default 150). Each hit carries file, sessionId, agentName, title, ts, role, turn, the snippet split as before/match/after, and `kind` for the two non-transcript sources. `file` + `ts` are what sessions.open takes to land on the exact moment.',
+            handler: (args) => {
+                const query = argStr(args, 'query');
+                const strs = (v: unknown): string[] | undefined =>
+                    Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : undefined;
+                // ISO or ms, because an agent writing a date by hand writes ISO
+                // and one passing a figure through has ms. Both are a moment.
+                const when = (v: unknown, endOfDay: boolean): number | undefined => {
+                    if (typeof v === 'number' && v > 0) { return v; }
+                    if (typeof v !== 'string' || !v.trim()) { return undefined; }
+                    const bare = /^\d{4}-\d{2}-\d{2}$/.test(v.trim());
+                    const t = Date.parse(bare ? `${v.trim()}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}` : v);
+                    return Number.isFinite(t) ? t : undefined;
+                };
+                const roles = strs(args.roles)?.filter((r): r is SearchRole =>
+                    r === 'user' || r === 'assistant' || r === 'tool' || r === 'toolResult');
+                const file = optStr(args, 'file');
+                const limit = typeof args.limit === 'number' && args.limit > 0 ? Math.floor(args.limit) : 150;
+                const opts = {
+                    regex: args.regex === true,
+                    caseSensitive: args.caseSensitive === true,
+                    agentNames: strs(args.agents),
+                    roles: roles?.length ? roles : undefined,
+                    tsFrom: when(args.from, false),
+                    tsTo: when(args.to, true),
+                    files: file ? [file] : undefined,
+                    maxHits: limit,
+                    maxPerFile: file ? 400 : 3
+                };
+                const result = searchTranscripts(
+                    index.all().map(s => ({
+                        file: s.file, agentName: s.agentName, title: s.title, mtime: s.mtime
+                    })), query, opts);
+                // Scoped to one session, the two extra sources are noise: that
+                // session's text is already covered in full by the scan above.
+                if (!file && args.memory !== false) {
+                    result.hits.push(...searchMemory(
+                        agents.flatMap(a => a.memoryFiles.map(f => ({ file: f.path, agentName: a.name }))),
+                        query, opts));
+                }
+                if (!file && args.events !== false) {
+                    result.hits.push(...searchLiveEvents(
+                        path.join(context.globalStorageUri.fsPath, 'live-events.jsonl'), query, opts));
+                }
+                need(!result.error, result.error ?? 'the query could not be read');
+                const idOf = new Map(index.all().map(s => [s.file, s.sessionId]));
+                return {
+                    scanned: result.filesScanned,
+                    // said out loud: a capped or timed-out scan is a PARTIAL
+                    // answer, and an agent that does not know that will report
+                    // "nothing was ever said about X" from an unfinished read.
+                    partial: result.truncated || result.timedOut === true,
+                    hits: result.hits.map(h => ({
+                        file: h.file,
+                        sessionId: h.kind ? null : (idOf.get(h.file) ?? null),
+                        agentName: h.agentName, title: h.title, ts: h.ts,
+                        role: h.role, turn: h.turn ?? null, tool: h.tool ?? null,
+                        kind: h.kind ?? null,
+                        before: h.before, match: h.match, after: h.after
+                    }))
+                };
+            }
+        },
+        {
             op: 'sessions.recent',
             describe: 'Most recent sessions farm-wide. args: origin? ("user" = sessions a person started interactively — what the Sessions tables show by default; "auto" = automation runs (schedule/trigger/task/mission, any `claude -p`); omit or "all" = both), limit? (default 10). Each row carries `id` (the session id, which sessions.open / the viewer take) and, when Agent Farm started the run itself, `launchedBy` = { kind: task|schedule|trigger|workflow|mission, label } — the mechanism BY NAME, which is also what decides `origin` rather than the transcript\'s entrypoint.',
             handler: (args) => {
@@ -3324,7 +3398,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'sessions.start',
-            describe: 'Start an INTERACTIVE claude session in an agent\'s folder — the same launch the Start Session… picker performs, with the same flags. Not a headless run: it opens a session a human then talks in (use tasks.add for work that should run by itself). args: agent (name|id), surface? (terminal = a claude terminal, the default | console = hosted in the Console panel), model? (alias or id), effort? (low|medium|high|xhigh|max), permissionMode? (plan|acceptEdits|auto|manual|dontAsk|bypassPermissions), name? (session display name), prompt? (first message), resume? (session id), continue? (true = latest session in that folder), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none — note that the UI\'s own start paths do NOT inherit: a session started by a person is under no project until they pick one, so state it here rather than assuming the two agree). Unset fields fall back to agentFarm.launchDefaults. surface=console ignores resume/continue — console.start and resumeInConsole own those.',
+            describe: 'Start an INTERACTIVE claude session in an agent\'s folder — the same launch the Start Session… picker performs, with the same flags. Not a headless run: it opens a session a human then talks in (use tasks.add for work that should run by itself). args: agent (name|id), surface? (terminal = a claude terminal, the default | console = hosted in the Console panel), model? (alias or id), effort? (low|medium|high|xhigh|max), permissionMode? (plan|acceptEdits|auto|manual|dontAsk|bypassPermissions), name? (session display name), prompt? (first message), resume? (session id), continue? (true = latest session in that folder), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none. The UI\'s start pickers now OPEN on the active project too and say where it came from, so the two agree — except the Console composer, which is per-session and starts at none by design). Unset fields fall back to agentFarm.launchDefaults. surface=console ignores resume/continue — console.start and resumeInConsole own those.',
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const o: LaunchOptions = {
@@ -7087,9 +7161,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     ): Promise<void> => {
         let o: LaunchOptions = { ...seed };
         let where: RunSurface = surface;
-        // …and WHAT it belongs to, per launch and starting at nothing — the same
-        // rule the one-click start follows (see launchProjectRow).
-        let project = '';
+        // …and WHAT it belongs to, per launch, starting at the window's active
+        // project — the same rule the one-click start follows (launchProjectRow).
+        // No escape row is needed here: in this list EVERY line is a control, so
+        // the project row does not have to argue that it is one.
+        let project = seedLaunchProject();
+        let projectSeeded = !!project;
         const show = (v: string | undefined, empty = 'default') => (v?.trim() ? v.trim() : empty);
         for (;;) {
             const merged = withDefaults(o, launchDefaults());
@@ -7127,7 +7204,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 },
                 // WHICH PROJECT is a dimension too, and the launcher was the one
                 // start path that did not show it — see pickRunSurface.
-                launchProjectRow(project),
+                launchProjectRow(project, projectSeeded),
                 {
                     label: '$(star-full) Model', description: show(merged.model) + inherited(o.model, d.model),
                     detail: 'from your agentFarm.modelAliases list — --model', act: 'model'
@@ -7199,7 +7276,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
             if (pick.act === 'project') {
                 const chosen = await pickLaunchProject(project, `${agent.name}'s session`);
-                if (chosen !== undefined) { project = chosen; }
+                if (chosen !== undefined) { project = chosen; projectSeeded = false; }
                 continue;
             }
             if (pick.act === 'agent') {
@@ -7742,26 +7819,43 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     /**
      * ‼️ WHICH PROJECT **THIS** SESSION IS FILED UNDER — a per-launch answer,
-     * and it starts at NO PROJECT every single time.
+     * and it OPENS ON THE WINDOW'S ACTIVE PROJECT when there is one.
      *
-     * It used to start at the window's active project, which made every start
-     * path quietly inherit a decision taken somewhere else, hours ago, for a
-     * different piece of work: the session was filed, told about a project and
-     * charged to it without anybody choosing that here. "Nothing unless you say
-     * so" is the only default that cannot be wrong by accident, and it is the
-     * one the row shows before it is touched.
+     * The danger in inheriting is silence, not inheritance: a session filed,
+     * briefed and charged to a project nobody chose HERE. That is answered by
+     * saying it out loud rather than by refusing to inherit — this row states
+     * the project and where it came from before anything is started, and the
+     * row under it (see `pickRunSurface`) changes or drops it in one press. A
+     * window with an active project shown in the status bar, that then offers
+     * "No project" as the answer for the session you start from the tree, is
+     * asking you to say the same thing twice.
      *
-     * The window's active project is a separate thing and stays what it was:
-     * this picker never writes it (see chooseActiveProject, which is the
-     * command that does).
+     * When NOTHING is active the row reads No project, exactly as before — the
+     * status bar's own answer either way.
+     *
+     * Seeding is one-directional. This picker never WRITES the active project
+     * (`chooseActiveProject` is the command that does), and a closed or
+     * archived project is never seeded: it is not on the list this row's picker
+     * offers, so it must not arrive pre-chosen either.
      */
-    const launchProjectRow = (projectId: string): vscode.QuickPickItem & { act: string } => {
+    const seedLaunchProject = (): string => {
+        const id = activeProjectId();
+        if (!id) { return ''; }
+        const p = projectStore.all().find(x => x.id === id);
+        return p && !CLOSED_PROJECT_STATUSES.includes(p.status) ? id : '';
+    };
+
+    const launchProjectRow = (
+        projectId: string, fromStatusBar = false
+    ): vscode.QuickPickItem & { act: string } => {
         const p = projectId
             ? projectStore.all().find(x => x.id === projectId)
             : undefined;
         return {
             label: `$(project) Project`,
-            description: p ? `${p.icon ? p.icon + ' ' : '◧ '}${p.name}` : '◧ No project',
+            description: p
+                ? `${p.icon ? p.icon + ' ' : '◧ '}${p.name}${fromStatusBar ? ' • the window\'s active project' : ''}`
+                : '◧ No project',
             detail: p
                 ? 'the session is told about it before you type, and is filed under it'
                 : 'nothing extra is sent and the session is filed nowhere — pick one here',
@@ -7819,7 +7913,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     ): Promise<RunChoice | undefined> => {
         interface Item extends vscode.QuickPickItem { surface?: RunSurface; act?: string }
         const last = context.globalState.get<RunSurface>(SURFACE_KEY);
-        let projectId = '';
+        // The window's answer is this launch's STARTING answer (see
+        // launchProjectRow). `seeded` is only true until it is touched: once
+        // you have chosen here, the row stops crediting the status bar for it.
+        let projectId = opts.project ? seedLaunchProject() : '';
+        let seeded = !!projectId;
         for (;;) {
             const where: Item[] = [
                 {
@@ -7839,7 +7937,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const items: Item[] = opts.project
                 ? [
                     { label: 'Filed under', kind: vscode.QuickPickItemKind.Separator },
-                    launchProjectRow(projectId),
+                    launchProjectRow(projectId, seeded),
+                    // ‼️ THE WAY OUT IS A ROW, NOT A HABIT. A project that
+                    // arrived on its own has to be as easy to refuse as it was
+                    // to inherit, and "press the line that states the fact" is
+                    // not something a reader knows to try — a statement does
+                    // not look like a control. So the escape is written down.
+                    // It appears only while there IS something to escape.
+                    ...(projectId ? [{
+                        label: '$(list-selection) Choose a different project…',
+                        description: 'or no project at all',
+                        act: 'project'
+                    }] : []),
                     { label: 'Where it runs', kind: vscode.QuickPickItemKind.Separator },
                     ...where
                 ]
@@ -7850,7 +7959,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (!pick) { return undefined; }
             if (pick.act === 'project') {
                 const chosen = await pickLaunchProject(projectId, what);
-                if (chosen !== undefined) { projectId = chosen; }
+                if (chosen !== undefined) { projectId = chosen; seeded = false; }
                 continue;   // back to this picker, now showing what it will file under
             }
             if (!pick.surface) { continue; }
@@ -9977,8 +10086,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // (a tree row, a Console row) — the object that identifies the session.
         // A menu hands its context to the command; only the id is guaranteed to
         // be in it, so the path is resolved here.
+        // `roles` is the opener's line scope when it has one — the Search page
+        // hands over what it was searching IN, so the transcript opens showing
+        // the same kinds of line (see SessionViewerPanel.show).
         vscode.commands.registerCommand('agentfarm.openSession',
-            (arg?: string | SessionRef, focusTs?: number) => {
+            (arg?: string | SessionRef, focusTs?: number, roles?: string[]) => {
                 let file = typeof arg === 'string' ? arg : arg?.file;
                 if (!file && arg && typeof arg === 'object' && arg.sessionId) {
                     file = sessionFromArg(arg)?.file;
@@ -9990,7 +10102,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
                 if (file) {
                     SessionViewerPanel.show(file, viewerDeps,
-                        typeof focusTs === 'number' && focusTs > 0 ? focusTs : undefined);
+                        typeof focusTs === 'number' && focusTs > 0 ? focusTs : undefined,
+                        Array.isArray(roles) ? roles.filter(r => typeof r === 'string') : undefined);
                 }
             }),
 
@@ -11423,7 +11536,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (!agent) { return; }
                 // `project: true` — a new session gets the project question
                 // wherever it is started from, not only in the Console's
-                // composer, and it starts at No project (see launchProjectRow).
+                // composer, and it opens on the window's active project when
+                // there is one (see launchProjectRow).
                 const chosen: RunChoice | undefined = arg?.surface
                     ? { surface: arg.surface, projectId: '' }
                     : await pickRunSurface(`New session for ${agent.name}`, { project: true });

@@ -23,7 +23,12 @@ const ingestDir = path.join(tmp, 'downloads'); fs.mkdirSync(ingestDir);
 (async () => {
     // ---------- production.ts ----------
     const p = prod.newProduction('Tanıtım Filmi!', ['Açılış', 'Ürün', 'Kapanış']);
-    eq('slug id', p.id, 'tan-t-m-filmi');
+    // X-9: the id is ASCII because it becomes a folder name and a key — but
+    // ASCII by FOLDING, not by deletion. This used to read `tan-t-m-filmi`:
+    // every letter the alphabet does not share was turned into a separator, so
+    // a Turkish title arrived as a row of dashes. `slugify` (core/util.ts) maps
+    // the six Turkish letters and decomposes the rest, so the word survives.
+    eq('slug id', p.id, 'tanitim-filmi');
     eq('scene ids', p.scenes.map(s => s.id), ['s01', 's02', 's03']);
     eq('scene default status', p.scenes[0].status, 'draft');
 

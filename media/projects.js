@@ -933,6 +933,18 @@
                    riding one long row: on a narrow panel that row pushed the
                    writing box down to a slit, which is an invitation to write
                    less than you mean. */
+                /* ‼️ THE AXES STICK ON PURPOSE, SO THE WAY OUT IS A CONTROL.
+                   Filing a run of items into one area costs one choice rather
+                   than one per item (see blCapture) — which is right, and is
+                   exactly why the fifth item of a different kind quietly
+                   inherits the fourth's area, type, priority and size. The
+                   escape sits ON THE HEADING, small and set apart from the
+                   word: it is a reset, not a fifth thing to fill in. */
+                .pj-bl-capreset { margin-left:14px; cursor:pointer; font-size:10px;
+                    opacity:.45; padding:0 4px; border-radius:4px;
+                    border:1px solid transparent; text-transform:none; }
+                .pj-bl-capreset:hover { opacity:1; border-color:var(--vscode-focusBorder);
+                    background:var(--vscode-toolbar-hoverBackground,#8882); }
                 .pj-bl-cap { display:flex; gap:10px; align-items:stretch; flex-wrap:wrap; }
                 .pj-bl-cap textarea { flex:1 1 340px; min-width:220px; min-height:86px;
                     font-family:inherit; font-size:13px; resize:vertical; padding:6px 8px; }
@@ -1612,6 +1624,40 @@
         return `<span class="pj-bl-atwarn" title="The 🎯 Queue block lists codes, because a code is the only handle that survives somebody editing the file in Obsidian. An inbox capture has none yet.">⚠ pick an area to keep place ${C.esc(String(cap.at))}</span>`;
     }
 
+    /** The five axes a capture carries, in the order they are drawn — the one
+     *  list ↺ and the tooltip both read, so neither can forget one. */
+    const BL_CAP_AXES = [
+        { k: 'area', label: 'area', empty: '' },
+        { k: 'type', label: 'type', empty: '' },
+        { k: 'prio', label: 'priority', empty: 'normal' },
+        { k: 'effort', label: 'size', empty: '' },
+        { k: 'at', label: 'queue place', empty: '' }
+    ];
+
+    /**
+     * ↺ on the CAPTURE heading — put the boxes back to blank.
+     *
+     * ‼️ THE TEXT IS NOT AN AXIS AND IS NEVER TOUCHED. The written thought is
+     * the one thing on this page that is expensive to lose (see blCapture), so
+     * a control whose whole job is to empty things stays away from it — and
+     * says so, because a reset button next to a paragraph you just wrote is
+     * frightening until you know what it covers.
+     *
+     * Drawn dimmed and inert when everything is already at its default: an
+     * always-live button would say "there is something to undo here" on a fresh
+     * box, which is the sort of small lie that makes a panel untrustworthy.
+     */
+    function blCapResetHtml(cap) {
+        const set = BL_CAP_AXES.filter(a => String(cap[a.k] || '') !== a.empty);
+        if (!set.length) {
+            return `<span class="pj-bl-capreset" style="opacity:.2;cursor:default"
+                title="The four boxes and the queue place are already at their defaults — nothing to reset. Your text is never touched by this.">↺</span>`;
+        }
+        const now = set.map(a => `${a.label}: ${cap[a.k]}`).join(' · ');
+        return `<span class="pj-bl-capreset" data-act="blCapReset"
+            title="Put the capture boxes back to blank — ${C.esc(now)}. They keep their last value on purpose, so filing a run of items into one area costs one choice; this is the way out when the next item is a different kind of thing. What you have WRITTEN is not touched.">↺</span>`;
+    }
+
     /**
      * The backlog tab.
      *
@@ -1688,7 +1734,7 @@
         </div>
 
         <div class="pj-card">
-            <div class="pj-card-h">Capture</div>
+            <div class="pj-card-h">Capture${blCapResetHtml(cap)}</div>
             <div class="pj-bl-cap">
                 <textarea id="bl-new" rows="4"
                     placeholder="what needs doing — no code needed, file it later&#10;&#10;Write as much as the thought needs; Ctrl+Enter adds it."
@@ -3292,6 +3338,15 @@
                         // file, and the file states it.
                         ...(Number(cap.at) > 0 ? { at: Number(cap.at) } : {})
                     });
+                    break;
+                }
+                case 'blCapReset': {
+                    // The draft object itself, so the repaint below redraws
+                    // every <select> from it — setting the DOM would be undone
+                    // by the next render, which this page does constantly.
+                    const cap = blCapture();
+                    for (const a of BL_CAP_AXES) { cap[a.k] = a.empty; }
+                    render();
                     break;
                 }
                 case 'blArchive': vscode.postMessage({ type: 'backlogArchive', id }); break;

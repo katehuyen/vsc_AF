@@ -1198,6 +1198,103 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             /launchedBy: s\.launchedBy/.test(block) && /id: s\.sessionId/.test(block));
     }
 
+    // ---------- U-3: search.transcripts — the Search page's own question ------
+    //
+    // ‼️ AN AGENT'S COMMONEST RESEARCH QUESTION HAD NO ANSWER ON THE BRIDGE.
+    // "Where did we discuss this, and what was said" was reachable only by
+    // reading transcripts by hand, while the panel that answers it in a second
+    // sat behind a webview. Same engine as the panel (core/search.ts), so there
+    // is one behaviour rather than a second implementation that drifts.
+    {
+        const Module = require('module');
+        const origLoad = Module._load;
+        Module._load = function (request) {
+            if (request === 'vscode') { return { Uri: {}, window: {}, workspace: { getConfiguration: () => ({ get: (_k, d) => d }) } }; }
+            return origLoad.apply(this, arguments);
+        };
+        const S = require(path.join(__dirname, '..', 'out', 'core', 'search.js'));
+        Module._load = origLoad;
+
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-bridge-search-'));
+        const f = path.join(dir, 'sess.jsonl');
+        const at = (d) => new Date(d).toISOString();
+        fs.writeFileSync(f, [
+            JSON.stringify({ type: 'user', timestamp: at('2026-08-01T10:00:00Z'), message: { content: 'the parser is wrong' } }),
+            JSON.stringify({ type: 'assistant', timestamp: at('2026-08-01T10:00:05Z'), message: { content: [{ type: 'text', text: 'I will fix the parser' }] } }),
+            JSON.stringify({ type: 'user', timestamp: at('2026-08-09T09:00:00Z'), message: { content: 'the parser again' } })
+        ].join('\n'), 'utf8');
+        const sessions = [{ file: f, agentName: 'dev', title: 'parser work', mtime: Date.now() }];
+
+        const roleOf = v => Array.isArray(v)
+            ? v.filter(r => ['user', 'assistant', 'tool', 'toolResult'].includes(r)) : undefined;
+        const when = (v, end) => {
+            if (typeof v === 'number' && v > 0) { return v; }
+            if (typeof v !== 'string' || !v.trim()) { return undefined; }
+            const bare = /^\d{4}-\d{2}-\d{2}$/.test(v.trim());
+            const t = Date.parse(bare ? `${v.trim()}T${end ? '23:59:59.999' : '00:00:00.000'}` : v);
+            return Number.isFinite(t) ? t : undefined;
+        };
+        reg.register({
+            op: 'search.transcripts',
+            describe: 'Search the fleet\'s transcripts. args: query, roles?, from?/to?, agents?, limit?',
+            handler: (args) => {
+                const roles = roleOf(args.roles);
+                const r = S.searchTranscripts(sessions, String(args.query || ''), {
+                    roles: roles && roles.length ? roles : undefined,
+                    tsFrom: when(args.from, false),
+                    tsTo: when(args.to, true),
+                    maxHits: 150, maxPerFile: 400
+                });
+                return {
+                    scanned: r.filesScanned,
+                    partial: r.truncated || r.timedOut === true,
+                    hits: r.hits.map(h => ({ role: h.role, ts: h.ts, match: h.match, after: h.after }))
+                };
+            }
+        });
+
+        ok('search.transcripts appears in the catalog',
+            reg.catalog().some(c => c.op === 'search.transcripts'));
+        const all = await reg.dispatch('search.transcripts', { query: 'parser' });
+        ok('a query finds what was said, both sides of the conversation',
+            all.ok && all.result.hits.length === 3);
+        ok('…and says whether the answer is complete', all.ok && all.result.partial === false);
+
+        // ‼️ The two questions the roles arg exists for, and the reason the
+        // Search page's chips were rebuilt: "only what I asked" and "only what
+        // it answered" are different questions from "the conversation".
+        const mine = await reg.dispatch('search.transcripts', { query: 'parser', roles: ['user'] });
+        ok('‼️ roles=["user"] searches only what a person asked',
+            mine.ok && mine.result.hits.length === 2 && mine.result.hits.every(h => h.role === 'user'));
+        const theirs = await reg.dispatch('search.transcripts', { query: 'parser', roles: ['assistant'] });
+        ok('‼️ …and roles=["assistant"] only what an agent answered',
+            theirs.ok && theirs.result.hits.length === 1 && theirs.result.hits[0].role === 'assistant');
+
+        // The window is the MESSAGE's own time, not the session's mtime — this
+        // transcript was written today and still has nothing from the 1st in a
+        // window that ends on the 1st… and everything, in one that includes it.
+        const day = await reg.dispatch('search.transcripts', { query: 'parser', from: '2026-08-01', to: '2026-08-01' });
+        ok('‼️ a date window filters what was SAID, not when the file was touched',
+            day.ok && day.result.hits.length === 2);
+        ok('…and "to" covers the whole of its day, or a one-day window finds nothing',
+            day.ok && day.result.hits.some(h => h.ts === Date.parse('2026-08-01T10:00:05Z')));
+        const late = await reg.dispatch('search.transcripts', { query: 'parser', from: '2026-08-05' });
+        ok('…an open-ended window is honoured too', late.ok && late.result.hits.length === 1);
+
+        // the real registration must carry the same contract
+        const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        const block = src.slice(src.indexOf("op: 'search.transcripts'"), src.indexOf("op: 'sessions.recent'"));
+        ok('extension.ts registers it against the panel\'s own engine, not a copy',
+            /searchTranscripts\(/.test(block) && /searchMemory\(/.test(block) && /searchLiveEvents\(/.test(block));
+        ok('…with the roles, the window and the sources on the wire',
+            /roles\?/.test(block) && /from\?\/to\?/.test(block)
+            && /tsFrom: when\(args\.from, false\)/.test(block) && /tsTo: when\(args\.to, true\)/.test(block));
+        ok('‼️ …and it says out loud when the scan was cut short',
+            /partial: result\.truncated \|\| result\.timedOut === true/.test(block));
+        ok('…handing back what sessions.open needs to land on the moment',
+            /sessionId: h\.kind \? null : \(idOf\.get\(h\.file\) \?\? null\)/.test(block));
+    }
+
     // ---------- §19.C: usage.plan — the real subscription quota ----------
     // Every other figure the bridge exposes is derived from local transcripts.
     // This one is the plan's own rate-limit state, so an agent can answer

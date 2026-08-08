@@ -194,9 +194,17 @@ const TS = (m) => Date.parse(T(m));
     ok('memory + events sources default on', app._html.includes('id="srcmem" type="checkbox" checked') && app._html.includes('id="srcevents" type="checkbox" checked'));
 
     // run a search: the message must carry scope + roles + sources
+    //
+    // ‼️ The source ticks are CHANGED, not just written to. The page holds them
+    // in its own state now (U-3) because `shell()` rebuilds the markup on every
+    // chip press and a checkbox written as `checked` came back ticked however
+    // you had left it — so a value set on the element without telling it is a
+    // value the page never hears about, exactly as in a real browser.
     getEl('q').value = 'parser';
     getEl('srcmem').checked = true;
+    getEl('srcmem').listeners.change();
     getEl('srcevents').checked = false;
+    getEl('srcevents').listeners.change();
     getEl('go').listeners.click();
     const sm = posted.find(p => p.type === 'search');
     ok('search message carries the session scope', sm && sm.file === 'D:/t/sess1.jsonl');
@@ -234,6 +242,78 @@ const TS = (m) => Date.parse(T(m));
     posted = [];
     out['_open-session'][0]._click();
     ok('group header opens the session', posted[0] && posted[0].type === 'openSession' && posted[0].file === 'D:/t/sess1.jsonl');
+
+    // ---- S-4: the answer opens in the scope the question was asked in -------
+    //
+    // ‼️ The transcript used to open showing EVERYTHING however narrow the
+    // search had been, so a Dialog search landed on a page full of tool calls —
+    // answering a question nobody asked. The scope rides along with the click.
+    posted = [];
+    out._hit.find(e => e.dataset.hit === '0')._click();
+    ok('‼️ a hit hands the viewer the kinds the search was made in',
+        posted[0] && JSON.stringify((posted[0].roles || []).slice().sort()) === '["assistant","user"]');
+    posted = [];
+    out['_open-session'][0]._click();
+    ok('…and so does the group header, not only the hit',
+        posted[0] && (posted[0].roles || []).length === 2);
+
+    // ---- U-3: the filter panel the Sessions and Turns pages already have ----
+    ok('a date window is offered, as a WHEN range like the tables',
+        app._html.includes('id="f-from"') && app._html.includes('id="f-to"')
+        && /class="frange"/.test(app._html));
+    ok('…and the results can be ordered rather than only listed',
+        app._html.includes('id="f-sort"')
+        && ['Newest first', 'Oldest first', 'Most matches', 'By agent']
+            .every(s => app._html.includes(s)));
+    ok('…with one press back to the defaults',
+        app._html.includes('id="f-clear"') && app._html.includes('Clear filters'));
+    // Nothing is set yet, so Clear has nothing to do and says so rather than
+    // pretending — the same rule the Backlog capture box's ↺ follows.
+    ok('…drawn inert while there is nothing to clear', /class="chip off" id="f-clear"/.test(app._html));
+    ok('the row says in words which kinds it is searching',
+        app._html.includes('→ the conversation'));
+
+    // The window is the engine's own message-time filter, and a day means the
+    // WHOLE day — a one-day window with a midnight `to` would find nothing.
+    posted = [];
+    getEl('f-from').value = '2026-08-01';
+    getEl('f-from').listeners.change();
+    getEl('go').listeners.click();
+    const dated = posted.find(p => p.type === 'search');
+    ok('a date window reaches the engine as tsFrom/tsTo',
+        dated && dated.tsFrom === Date.parse('2026-08-01T00:00:00.000') && dated.tsTo === 0);
+    posted = [];
+    getEl('f-to').value = '2026-08-01';
+    getEl('f-to').listeners.change();
+    getEl('go').listeners.click();
+    const both = posted.find(p => p.type === 'search');
+    ok('…and "to" is the END of its day, or a one-day window finds nothing',
+        both && both.tsTo === Date.parse('2026-08-01T23:59:59.999'));
+}
+
+// ---------- U-3: what a click on a kind MEANS ------------------------------
+//
+// ‼️ THE REPORTED BREAKAGE, AND IT WAS NOT A DRAWING BUG. With Dialog on,
+// 🧑 User is lit — so pressing it TOGGLED IT OFF and the search silently became
+// "agent replies only": the chip you pressed went dark, the one you did not
+// touch stayed lit, and the row read as if the selection had not registered.
+// A plain click now means "only this kind", which is also the two questions the
+// page most needs ("only my prompts", "only its answers"), one press each.
+{
+    const src = fs.readFileSync(path.resolve(__dirname, '../media/search.js'), 'utf8');
+    ok('‼️ a plain click on a kind means ONLY that kind',
+        /\} else \{\s*\n\s*roleSel = new Set\(\[id\]\);\s*\n\s*\}/.test(src));
+    ok('…Ctrl/⌘-click keeps the old add-and-remove',
+        /if \(ev\.ctrlKey \|\| ev\.metaKey\) \{\s*\n\s*if \(roleSel\.has\(id\)\) \{ roleSel\.delete\(id\); \} else \{ roleSel\.add\(id\); \}/.test(src));
+    ok('…and the scope can never be emptied into "matches nothing"',
+        /if \(!roleSel\.size\) \{ roleSel = new Set\(\[id\]\); \}/.test(src));
+    ok('…the gesture is written down where it is used, not only in the code',
+        /Click a kind to search ONLY in it · Ctrl-click \(⌘ on Mac\) to add or remove one/.test(src));
+    // Only the session GROUPS are re-ordered: the hits inside one are read
+    // forwards, and the turn sub-headers are computed by walking that order.
+    ok('sorting moves the groups and never the hits inside a session',
+        /const groupTs = g => r\.hits\[g\.hits\[0\]\]\.ts \|\| 0;/.test(src)
+        && /ONLY THE GROUPS MOVE/.test(src));
 }
 
 // ---------- webview: agent picker (checkbox dropdown, fleet scope) ----------

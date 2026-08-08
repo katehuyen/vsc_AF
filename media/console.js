@@ -70,6 +70,16 @@
         attach: [],
         // which kinds of line the conversation shows; null = everything
         kinds: null,
+        /**
+         * How tall the writing box was dragged, as a css length ('220px').
+         *
+         * The drag handle writes an inline height, and `buildShell` writes the
+         * whole composer from scratch — so the two disagreed and the rebuild
+         * always won. This is the box's own answer to "how tall", kept next to
+         * the draft it holds: it outlives a rebuild, a session change and the
+         * panel being closed. Empty means "never dragged" — the css min-height.
+         */
+        boxH: '',
         // is the miniature filter open, and what is it asking for
         showRFilter: false, rq: EMPTY_RQ(),
         // is the card-order panel open, and what has it been told (see ORDER)
@@ -428,7 +438,18 @@
         /* the same fact, on a session row: which project it was started under */
         .pbadge { font-size:9px; opacity:.75; padding:0 4px; border-radius:7px;
             border:1px solid var(--vscode-widget-border,#4443); }
-        .composer textarea { width:100%; min-height:64px; max-height:30vh; resize:vertical; font:inherit;
+        /* ‼️ THE HEIGHT YOU DRAG IS A SETTING, NOT A SIDE EFFECT (see st.boxH).
+           Two things used to throw it away. The ceiling was 30vh, so a drag past
+           a third of the window did nothing and the handle just stopped under
+           the cursor — it read as "it snapped back". And the height a drag sets
+           is an INLINE style on the element, which buildShell replaces: any
+           rebuild (another session selected, a turn ending, an agent pinned) put
+           the box back to 64px, so whether it survived depended on whether a
+           rebuild happened to land between the drag and the next look.
+           Now: the ceiling is 70vh — the conversation above is a min-height:0
+           flex scroller, so it simply yields the room and the composer never
+           leaves the window — and the dragged height is saved and restored. */
+        .composer textarea { width:100%; min-height:64px; max-height:70vh; resize:vertical; font:inherit;
             font-size:13px; border-radius:6px; padding:7px 9px;
             border:1px solid var(--vscode-widget-border,#4443);
             background:var(--vscode-input-background); color:var(--vscode-input-foreground); }
@@ -1998,6 +2019,21 @@
                     }
                 }
             });
+            // The height survives the rebuild that just destroyed the element
+            // it was set on. Restored BEFORE focus, so the box is already its
+            // real size when the caret lands in it and nothing is seen to jump.
+            if (st.boxH) { text.style.height = st.boxH; }
+            // …and a drag is recorded. Inline `height` is written by the resize
+            // handle and by the line above and by nothing else, so watching the
+            // element and reading its INLINE height tells a user drag apart
+            // from a re-layout (a window resize changes the rendered height and
+            // leaves the inline one alone, and must not be saved as a choice).
+            if (typeof ResizeObserver === 'function') {
+                new ResizeObserver(() => {
+                    const h = text.style.height;
+                    if (h && h !== st.boxH) { st.boxH = h; save(); }
+                }).observe(text);
+            }
             // Only here — never on a data update. Focusing scrolls the element
             // into view, which is exactly the "it dragged me back down" bug.
             try { text.focus({ preventScroll: true }); } catch (e) { text.focus(); }

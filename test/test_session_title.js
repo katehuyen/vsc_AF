@@ -101,6 +101,53 @@ ok('a bracket that is part of a sentence is left alone',
         first === 'devam et');
 }
 
+// ---- U-17: the command is machinery, its ARGUMENT is the brief -------------
+//
+// `/goal finish the top eight backlog items` reaches the transcript as a command
+// block, and the block starts with `<` — so the whole opening turn was thrown
+// away and the session went on to be named by whatever came next, which in a
+// long run is a continuation ("devam et"). The sentence saying what the work IS
+// sat in the first turn, discarded.
+//
+// ‼️ The shape test is what makes this safe, and it is the same kind of rule as
+// the bracket one above: an argument earns the name by reading like PROSE.
+const GOAL = a => `<command-name>/goal</command-name>\n            <command-message>goal</command-message>\n            <command-args>${a}</command-args>`;
+
+ok('‼️ what was typed after the command names the session',
+    conversationTitle(GOAL("backlog'daki en üst 8 kalemi tamamla")) === "backlog'daki en üst 8 kalemi tamamla");
+ok('…the command name itself is never part of it',
+    !/goal/.test(conversationTitle(GOAL('rewrite the parser and measure it again'))));
+ok('…and a long argument is cut like any other title',
+    conversationTitle(GOAL('x '.repeat(200))).length <= 80);
+
+ok('a one-word argument is a flag, not a description',
+    conversationTitle(GOAL('clear')) === '' && conversationTitle(GOAL('bitir')) === '');
+ok('…nor is a short pair of tokens',
+    conversationTitle('<command-name>/loop</command-name><command-args>5m /babysit</command-args>') === ''
+    && conversationTitle('<command-name>/model</command-name><command-args>opus 5</command-args>') === '');
+ok('a command with no argument at all still names nothing',
+    conversationTitle(GOAL('')) === '' && conversationTitle('<command-name>/context</command-name>') === '');
+ok('an argument that is itself machinery gets the same judgment as any text',
+    conversationTitle(GOAL('[Request interrupted by user]')) === ''
+    && conversationTitle(GOAL('/loop 5m check the deploy')) === '');
+ok('command OUTPUT is still not a name — only the argument is',
+    conversationTitle('<local-command-stdout>Goal set: backlog\'daki en üst 8 kalemi tamamla</local-command-stdout>') === '');
+
+// The reported session, in the shape the transcript actually has it: a `/goal`
+// carrying the whole brief, then hours of work, then a bare "devam et" after a
+// limit cut the turn off. The name must come from the first line, not the last.
+{
+    const lines = [
+        GOAL("session ID'yi oku ve orada plan dosyasını da göreceksin zaten onu da oku"),
+        '<local-command-stdout>Goal set: …</local-command-stdout>',
+        'devam et'
+    ];
+    let title = '';
+    for (const t of lines) { if (!title) { title = conversationTitle(t); } }
+    ok('‼️ a session briefed through /goal is named after the brief, not after "devam et"',
+        title === "session ID'yi oku ve orada plan dosyasını da göreceksin zaten onu da oku");
+}
+
 // ---- one judgment, not two -------------------------------------------------
 //
 // The viewer used to carry its own copy, which is how the two drifted apart —

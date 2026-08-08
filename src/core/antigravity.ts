@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { Duty } from './duties';
-import { hashString, safeReadFile } from './util';
+import { hashString, safeReadFile, slugify } from './util';
 
 /**
  * Antigravity compatibility layer. A Claude-optimized agent can also run
@@ -129,13 +129,9 @@ export function stripConstitution(content: string): string {
         .replace(/^\s+/, '');
 }
 
+/** ASCII: this becomes `/slug`, a command name another engine has to accept. */
 export function dutySlug(title: string): string {
-    return title.toLowerCase()
-        .replace(/ç/g, 'c').replace(/ğ/g, 'g').replace(/ı/g, 'i')
-        .replace(/ö/g, 'o').replace(/ş/g, 's').replace(/ü/g, 'u')
-        .replace(/[^a-z0-9\s-]/g, '')
-        .trim()
-        .replace(/\s+/g, '-') || 'duty';
+    return slugify(title, { ascii: true }) || 'duty';
 }
 
 /** A standing duty becomes an Antigravity workflow (invocable as /slug). */

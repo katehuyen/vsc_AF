@@ -1317,5 +1317,52 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
         r.all('[data-blpick]').length > 0);
 }
 
+// ---------------------------------------------------------------------------
+// S-14 — ↺ on the CAPTURE heading
+// ---------------------------------------------------------------------------
+// ‼️ THE AXES STICK ON PURPOSE, SO THE WAY OUT HAS TO BE A CONTROL. Keeping the
+// last area/type/priority/size is what makes filing a run of items into one
+// area cost one choice instead of one per item — and it is exactly why the
+// fifth item, of a different kind, quietly inherits the fourth's answers. The
+// escape sits on the heading, small and set apart from the word, and it never
+// touches what has been WRITTEN: the thought is the expensive thing on this
+// page, and a reset button next to a paragraph you just typed is frightening
+// until you know what it covers.
+{
+    const r = run(data());
+    const heading = /<div class="pj-card-h">Capture([\s\S]{0,600}?)<\/div>/.exec(r.html());
+    ok('↺ sits on the CAPTURE heading, after a gap', !!heading && /pj-bl-capreset/.test(heading[1]));
+    ok('‼️ …and is inert while every box is already at its default',
+        !!heading && /opacity:\.2;cursor:default/.test(heading[1]) && !/data-act="blCapReset"/.test(heading[1]));
+    ok('…saying so rather than looking pressable',
+        !!heading && /nothing to reset/.test(heading[1]));
+
+    // Pick a size and an area, the way a run of items leaves the box. Area is
+    // set LAST because it is the axis that repaints — the four boxes are held
+    // in the draft (blCapture) and only the area's own handler redraws, which
+    // is what a real reader's next keystroke or click does anyway.
+    r.byId('bl-effort').value = 'M';
+    r.byId('bl-effort').fire('change');
+    r.byId('bl-area').value = 'K';
+    r.byId('bl-area').fire('change');
+    const set = /<div class="pj-card-h">Capture([\s\S]{0,900}?)<\/div>/.exec(r.html());
+    ok('once something is chosen the control comes alive',
+        !!set && /data-act="blCapReset"/.test(set[1]));
+    ok('‼️ …and its hover names the values it is about to drop',
+        !!set && /area: K/.test(set[1]) && /size: M/.test(set[1]));
+    ok('…and promises the words are safe',
+        !!set && /What you have WRITTEN is not touched/.test(set[1]));
+
+    // …and the boxes really do go back
+    r.all('[data-act]').find(e => e.dataset.act === 'blCapReset').fire('click');
+    ok('‼️ pressing it puts every box back to blank',
+        r.byId('bl-area').value === '' && r.byId('bl-effort').value === '');
+    ok('…including the queue place, which is one of the ones that stuck',
+        !/class="pj-bl-atsel[^"]*"[^>]*>[\s\S]{0,200}?<option value="1" selected/.test(r.html()));
+    const after = /<div class="pj-card-h">Capture([\s\S]{0,600}?)<\/div>/.exec(r.html());
+    ok('…and it goes back to inert, because there is nothing left to reset',
+        !!after && !/data-act="blCapReset"/.test(after[1]));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

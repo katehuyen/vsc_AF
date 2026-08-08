@@ -255,6 +255,13 @@ export interface MemorySearchable {
     agentName: string;
 }
 
+/** Is this moment outside the caller's `tsFrom..tsTo`? A hit with no time of
+ *  its own is never excluded — a missing timestamp is not evidence of a date. */
+function outsideWindow(ts: number, opts: SearchOptions): boolean {
+    if (!ts) { return false; }
+    return !!((opts.tsFrom && ts < opts.tsFrom) || (opts.tsTo && ts > opts.tsTo));
+}
+
 /** Search the agents' memory/*.md notes. */
 export function searchMemory(
     files: MemorySearchable[],
@@ -276,6 +283,13 @@ export function searchMemory(
             raw = fs.readFileSync(f.file, 'utf8');
             mtime = fs.statSync(f.file).mtimeMs;
         } catch { continue; }
+        // ‼️ The time window applies to EVERY source or it applies to none. A
+        // date filter that quietly held only for transcripts, while memory
+        // notes and orphaned events came through from any date at all, is a
+        // filter the reader cannot use — they would have to know which third of
+        // the results it governed. A note's "when" is when it was last written,
+        // which is the only time it has.
+        if (outsideWindow(mtime, opts)) { continue; }
         let fileHits = 0;
         // paragraph-wise so one note can yield distinct matches
         for (const para of raw.split(/\n\s*\n/)) {
@@ -327,6 +341,8 @@ export function searchLiveEvents(
         if (!text) { continue; }
         if (opts.agentName && ev.agentName !== opts.agentName) { continue; }
         if (agentSet && !agentSet.has(ev.agentName ?? '')) { continue; }
+        // the same window the transcript scan and the memory scan honour
+        if (outsideWindow(ev.ts ?? 0, opts)) { continue; }
         const tp = ev.transcriptPath ?? '';
         if (tp) {
             if (!transcriptExists.has(tp)) {

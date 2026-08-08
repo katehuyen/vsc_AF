@@ -29,6 +29,24 @@
     // came to read. Tool traffic is one chip away — and a deep link (focusTs)
     // pointing at a tool message clears the filter so it can never hide a jump.
     let roleSel = new Set(['user', 'assistant']);
+    /**
+     * ‼️ AN OPENER THAT HAS A SCOPE HANDS IT OVER, AND IT WINS OVER THE DEFAULT.
+     *
+     * Reached from the Search page, this transcript is the answer to a question
+     * that was asked with a scope attached: searching in Dialog means "show me
+     * the conversation", and landing on a page full of tool calls answers
+     * something else. Searched in Everything, it opens in everything — the same
+     * rule, read the other way, and it is why this is a handover rather than a
+     * second default. Openers with no scope (a timeline mark, a table row, the
+     * turn breakdown) send nothing and the page keeps Dialog.
+     */
+    const applyScope = roles => {
+        if (!Array.isArray(roles) || !roles.length) { return; }
+        const known = new Set(ROLE_CHIPS.map(c => c.id));
+        const picked = roles.filter(r => known.has(r));
+        if (picked.length) { roleSel = new Set(picked); }
+    };
+    applyScope(DATA.focusRoles);
     // Turns unticked in their band are left out of Export MD (default: all included).
     const exportOff = new Set();
     // Accordion: collapsed turns show only their band (session-local, display-only —
@@ -67,7 +85,10 @@
     const replay = { active: false, playing: false, pos: 0, speed: 2, timer: null, msgs: [] };
 
     window.addEventListener('message', ev => {
-        if (ev.data.type === 'focus') { focusAt(ev.data.ts); return; }
+        // An already-open page reached again from the Search results takes the
+        // new scope too — otherwise the second click answers differently from
+        // the first for no reason the reader can see.
+        if (ev.data.type === 'focus') { applyScope(ev.data.roles); render({ keepScroll: true }); focusAt(ev.data.ts); return; }
         if (ev.data.type === 'ctxCapture') { onCtxCaptureResult(ev.data); return; }
         // The receipt for one step's copy button — drawn on the button itself, and
         // only after the host says the clipboard actually took it. No repaint: the
@@ -291,14 +312,32 @@
         if (replay.active) { stopTimer(); replay.active = false; render(); }
         // Nearest among ALL messages, not just the visible ones: a jump must reach
         // its target even when the current filters (Dialog by default) hide it.
+        //
+        // ‼️ …BUT A MESSAGE THE FILTER ALREADY SHOWS, AT THE SAME MOMENT, WINS.
+        // Several messages share a timestamp — a prompt and the tool call it set
+        // off are the same instant — so "nearest overall" picked whichever came
+        // first in the file, and when that was a tool call the page threw the
+        // whole filter away to reach it. A search made in Dialog therefore
+        // landed on a transcript showing everything, every time: the widening
+        // was not the deep link's doing, it was a tie broken the wrong way.
+        // Comparing the two distances is the whole fix. `visible ⊆ all`, so
+        // they are equal exactly when something already on screen is just as
+        // close — and then nothing has to be hidden or unhidden to get there.
+        const shown = m => matchesRole(m) && matchesText(m);
         let target = null, bestDist = Infinity;
+        let visTarget = null, visDist = Infinity;
         (DATA.messages || []).forEach(m => {
             if (!m.ts) { return; }
             const d = Math.abs(m.ts - ts);
             if (d < bestDist) { bestDist = d; target = m; }
+            if (shown(m) && d < visDist) { visDist = d; visTarget = m; }
         });
+        if (visTarget && visDist === bestDist) { target = visTarget; }
         if (!target) { return; }
-        if (!matchesRole(target) || !matchesText(target)) {
+        if (!shown(target)) {
+            // Genuinely only reachable by widening — a tool call nobody else
+            // was next to. The filter goes, because a jump that lands nowhere
+            // is worse than a view that shows more than you asked for.
             roleSel = new Set();
             filter = '';
             render({ keepScroll: true });

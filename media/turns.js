@@ -589,6 +589,9 @@
                 wireEl(`.af-forig-${o.id || 'all'}`, 'click', () => { filters.origin = o.id; apply(); }));
             liveEl('.af-fturn', el => { filters.text = el.value || ''; apply(); });
             liveEl('.af-fsess', el => { filters.session = el.value || ''; apply(); });
+            // the ✕ that empties them — the shared control (common.css .af-clr)
+            window.AFFilter.clearableAll(root, '.af-fturn', el => { filters.text = ''; el.value = ''; apply(); });
+            window.AFFilter.clearableAll(root, '.af-fsess', el => { filters.session = ''; el.value = ''; apply(); });
             window.AFFilter.wireMulti({
                 root, id: 'turns-agents',
                 onChange: sel => { filters.agents = sel; apply(); }

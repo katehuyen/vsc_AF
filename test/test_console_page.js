@@ -1634,5 +1634,31 @@ const html = allHtml;
     sandbox.FileReader = realReader;
 }
 
+// ---------- K-9: the height you drag is a SETTING, not a side effect --------
+//
+// ‼️ TWO THINGS THREW IT AWAY, WHICH IS WHY IT LOOKED RANDOM. The ceiling was
+// 30vh, so a drag past a third of the window did nothing and the handle stopped
+// under the cursor. And the height a drag sets is an INLINE style, which
+// `buildShell` replaces — so any rebuild (another session picked, a turn
+// ending, an agent pinned) put the box back to 64px, and whether it survived
+// depended on whether a rebuild happened to land between the drag and the next
+// look. Both are gone: the box is saved and restored with the draft it holds.
+{
+    const src = fs.readFileSync(path.resolve(__dirname, '../media/console.js'), 'utf8');
+    ok('‼️ the writing box has room to be dragged into',
+        /max-height:70vh; resize:vertical/.test(src)
+        && !/max-height:30vh/.test(src));
+    ok('the dragged height is part of the page\'s own state, next to the draft',
+        /boxH: '',/.test(src));
+    ok('‼️ …restored after the rebuild that just destroyed the element it was on',
+        /if \(st\.boxH\) \{ text\.style\.height = st\.boxH; \}/.test(src));
+    ok('…and restored BEFORE focus, so the box is its real size when the caret lands',
+        src.indexOf('text.style.height = st.boxH') < src.indexOf('text.focus({ preventScroll: true })'));
+    // A window resize changes the RENDERED height and leaves the inline one
+    // alone — so reading the inline value tells a user drag from a re-layout.
+    ok('‼️ a drag is recorded, a re-layout is not',
+        /new ResizeObserver\(\(\) => \{\s*\n\s*const h = text\.style\.height;\s*\n\s*if \(h && h !== st\.boxH\) \{ st\.boxH = h; save\(\); \}/.test(src));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

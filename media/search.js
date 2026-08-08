@@ -24,12 +24,58 @@
     // Role chips: dialog is the default — tool traffic is opt-in, or the noise
     // would drown the conversation ("memory" matches hundreds of file listings).
     const ROLE_CHIPS = [
-        { id: 'user', label: '🧑 User' },
-        { id: 'assistant', label: '🤖 Agent' },
-        { id: 'tool', label: '🔧 Tool calls' },
-        { id: 'toolResult', label: '📄 Results' }
+        { id: 'user', label: '🧑 User', tip: 'What YOU asked — prompts only' },
+        { id: 'assistant', label: '🤖 Agent', tip: "The agent's own words — its replies only" },
+        { id: 'tool', label: '🔧 Tool calls', tip: 'What it ran: commands, paths, patterns, queries' },
+        { id: 'toolResult', label: '📄 Results', tip: 'What came back — file contents, command output' }
     ];
     let roleSel = new Set(['user', 'assistant']);
+
+    /**
+     * ‼️ CLICKING A KIND MEANS "ONLY THIS KIND". Ctrl/⌘-click adds and removes.
+     *
+     * These chips were a plain toggle, and with Dialog as the default that made
+     * the two most useful questions on the page unreachable by the obvious
+     * gesture: pressing 🧑 User — visibly lit, because Dialog is user+agent —
+     * SWITCHED IT OFF and left the search running over agent replies alone. The
+     * chip you pressed went dark and the one you did not touch stayed lit, so
+     * the row read as broken; what it was actually doing was the opposite of
+     * what it looked like. "Search only my prompts" and "search only its
+     * answers" now cost one press each, which is what they are worth.
+     *
+     * This is the rule the Console's show-filter already uses for the same
+     * reason (K-1): the name means "only that one", the modifier means "and
+     * also". One vocabulary across the extension, learned once.
+     */
+    const ROLE_HINT = 'Click a kind to search ONLY in it · Ctrl-click (⌘ on Mac) to add or remove one';
+
+    /** Which results are ordered how. The engine returns newest-session-first;
+     *  these re-order the SESSION GROUPS, never the hits inside one — a session
+     *  is read forwards, and shuffling it would make the turn headers a lie. */
+    const SORTS = [
+        { id: 'newest', label: 'Newest first', tip: 'Most recently active session at the top — the engine\'s own order' },
+        { id: 'oldest', label: 'Oldest first', tip: 'Where did this start — the earliest session that mentions it' },
+        { id: 'hits', label: 'Most matches', tip: 'The session that says it most, first — where the subject actually lives' },
+        { id: 'agent', label: 'By agent', tip: 'Grouped by agent name, A→Z, newest first within each' }
+    ];
+    // The date window is the engine's own `tsFrom..tsTo` (core/search.ts): it
+    // filters the MESSAGE, not the session, so "last Tuesday" means what was
+    // said that day and not every session that happens to have been touched.
+    let flt = { from: '', to: '', sort: 'newest' };
+    // The two extra sources. Held here rather than read off the DOM because
+    // `shell()` rebuilds the whole page on every chip press, and a checkbox
+    // written as `checked` in the markup came back ticked however you left it.
+    let srcMem = true, srcEvents = true;
+    const fltDefaults = () => ({ from: '', to: '', sort: 'newest' });
+    const fltActive = () => !!(flt.from || flt.to) || flt.sort !== 'newest'
+        || !(roleSel.size === 2 && roleSel.has('user') && roleSel.has('assistant'));
+    /** A day string from a date box → the ms bound the engine wants. `to` is the
+     *  END of its day, or a one-day window would find nothing. */
+    const dayMs = (d, end) => {
+        if (!d) { return 0; }
+        const t = Date.parse(end ? `${d}T23:59:59.999` : `${d}T00:00:00.000`);
+        return Number.isFinite(t) ? t : 0;
+    };
 
     function relTime(ts) {
         if (!ts) return '';
@@ -59,16 +105,41 @@
         return '';
     }
 
+    /**
+     * The filter panel — the same three-row shape the Sessions and Turns tables
+     * use (kinds · sources · when/sort/clear), so a reader who has learned one
+     * of those pages has learned this one.
+     */
     function chipRow() {
         const dialog = roleSel.size === 2 && roleSel.has('user') && roleSel.has('assistant');
         const all = roleSel.size === ROLE_CHIPS.length;
+        // ‼️ The word says what the row is doing RIGHT NOW, so the answer to
+        // "which one is on" never depends on reading four chips at once.
+        const scopeWord = all ? 'everything'
+            : dialog ? 'the conversation'
+                : roleSel.size === 1
+                    ? (ROLE_CHIPS.find(c => roleSel.has(c.id)) || {}).label || '—'
+                    : `${roleSel.size} kinds`;
         return `<div class="chiprow" id="rolechips">
-            <span class="muted small">Search in:</span>
-            <button class="chip${dialog ? ' on' : ''}" data-preset="dialog" title="You + the agent's text">Dialog</button>
+            <span class="muted small" title="${C.esc(ROLE_HINT)}">Search in:</span>
+            <button class="chip${dialog ? ' on' : ''}" data-preset="dialog" title="You + the agent's text — the conversation, without the machinery">Dialog</button>
             <button class="chip${all ? ' on' : ''}" data-preset="all" title="Everything incl. tool inputs and results">Everything</button>
-            ${ROLE_CHIPS.map(c => `<button class="chip${roleSel.has(c.id) ? ' on' : ''}" data-chip="${c.id}">${c.label}</button>`).join('')}
-            <label class="small" title="Agents' memory/*.md notes"><input id="srcmem" type="checkbox" checked> memory</label>
-            <label class="small" title="Live events whose transcript is gone (external CLIs, pruned sessions)"><input id="srcevents" type="checkbox" checked> events</label>
+            <span class="chipsep"></span>
+            ${ROLE_CHIPS.map(c => `<button class="chip${roleSel.has(c.id) ? ' on' : ''}" data-chip="${c.id}"
+                title="${C.esc(c.tip)} — ${ROLE_HINT}">${c.label}</button>`).join('')}
+            <span class="muted small nowrap" title="${C.esc(ROLE_HINT)}">→ ${C.esc(scopeWord)}</span>
+            <span class="grow"></span>
+            <label class="small" title="Agents' memory/*.md notes"><input id="srcmem" type="checkbox"${srcMem ? ' checked' : ''}> memory</label>
+            <label class="small" title="Live events whose transcript is gone (external CLIs, pruned sessions)"><input id="srcevents" type="checkbox"${srcEvents ? ' checked' : ''}> events</label>
+        </div>
+        <div class="chiprow">
+            <label class="frange" title="Only what was SAID in this window — the engine filters the message's own time (tsFrom/tsTo), not the session's last-touched date, so a day means that day's words.">When
+                <input type="date" id="f-from" value="${C.esc(flt.from)}" title="From this day, included">–<input type="date" id="f-to" value="${C.esc(flt.to)}" title="To this day, included"></label>
+            <label class="small" title="Which session comes first in the results. Hits INSIDE a session always stay in the order they were said.">sort
+                <select id="f-sort">${SORTS.map(s =>
+            `<option value="${s.id}"${flt.sort === s.id ? ' selected' : ''} title="${C.esc(s.tip)}">${C.esc(s.label)}</option>`).join('')}</select></label>
+            <button class="chip${fltActive() ? '' : ' off'}" id="f-clear"
+                title="Back to the defaults: the conversation, every date, newest first. Your query and the agent picker are left alone.">Clear filters</button>
         </div>`;
     }
 
@@ -89,6 +160,19 @@
                     border:1px solid var(--vscode-widget-border, #4444); }
                 .chip.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground);
                     border-color:transparent; opacity:1; }
+                /* nothing to clear — drawn, so the row does not reflow when a
+                   filter is set, but plainly inert (the same rule the capture
+                   box's ↺ follows on the Backlog tab) */
+                .chip.off { opacity:.25; cursor:default; }
+                .chip.off:hover { background:transparent; }
+                /* the two presets are a different question from the four kinds:
+                   "the usual readings" then "exactly these" */
+                .chipsep { width:1px; align-self:stretch; margin:0 4px;
+                    background:var(--vscode-widget-border, #4444); }
+                .chiprow .grow { flex:1; }
+                .nowrap { white-space:nowrap; }
+                .frange { font-size:11px; display:inline-flex; gap:4px; align-items:center; }
+                .frange input { font-size:11px; padding:1px 4px; }
                 .scopepill { font-size:11px; padding:2px 10px; border-radius:10px; white-space:nowrap;
                     background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); }
                 .scopepill a { cursor:pointer; margin-left:4px; }
@@ -143,8 +227,11 @@
                 agents: preset && preset.file ? null : (agentSel ? [...agentSel] : null),
                 file: preset && preset.file ? preset.file : '',
                 roles: [...roleSel],
-                memory: document.getElementById('srcmem').checked,
-                events: document.getElementById('srcevents').checked
+                memory: srcMem,
+                events: srcEvents,
+                // the engine's own message-time window (core/search.ts)
+                tsFrom: dayMs(flt.from, false),
+                tsTo: dayMs(flt.to, true)
             });
         };
         // Any control change re-searches after a short debounce — but never in
@@ -160,8 +247,44 @@
             clearTimeout(timer);
             if (!semBox.checked && q.value.trim().length >= 3) { timer = setTimeout(run, 500); }
         });
-        ['regex', 'case', 'srcmem', 'srcevents'].forEach(id =>
+        // ✕ inside the box — the shared control (common.css `.af-clr`). Clearing
+        // it clears the RESULTS too: leaving the last search's hits under an
+        // empty box is the page claiming to have found something for nothing.
+        window.AFFilter.clearable(q, () => {
+            clearTimeout(timer);
+            lastResult = null;
+            searching = false;
+            const out = document.getElementById('out');
+            if (out) { out.innerHTML = '<p class="muted">Type a query and press Enter.</p>'; }
+        });
+        ['regex', 'case'].forEach(id =>
             document.getElementById(id).addEventListener('change', scheduleRun));
+        const srcBox = (id, set) => {
+            const el = document.getElementById(id);
+            if (el) { el.addEventListener('change', () => { set(el.checked); scheduleRun(); }); }
+        };
+        srcBox('srcmem', v => { srcMem = v; });
+        srcBox('srcevents', v => { srcEvents = v; });
+
+        // ---- when / sort / clear (the Sessions and Turns filter vocabulary) ----
+        // AFFilter.live is what the tables use, and it is what keeps the native
+        // calendar from closing under the cursor: a date box commits on `change`
+        // only, never on the half-formed values a picker walks through (A-4).
+        window.AFFilter.live(document.getElementById('f-from'), el => { flt.from = el.value; scheduleRun(); }, 300);
+        window.AFFilter.live(document.getElementById('f-to'), el => { flt.to = el.value; scheduleRun(); }, 300);
+        const sortSel = document.getElementById('f-sort');
+        if (sortSel) {
+            // sorting is a re-read of what is already here — no round trip
+            sortSel.addEventListener('change', () => { flt.sort = sortSel.value; rebuildKeepingQuery(false); });
+        }
+        const clearBtn = document.getElementById('f-clear');
+        if (clearBtn && fltActive()) {
+            clearBtn.addEventListener('click', () => {
+                flt = fltDefaults();
+                roleSel = new Set(['user', 'assistant']);
+                rebuildKeepingQuery(true);
+            });
+        }
 
         // ---- agent picker (the shared multi-pick control) ----
         // a selection that no longer matches the "Agent: X" pill retires the pill
@@ -185,19 +308,27 @@
             document.getElementById('regexLbl').style.opacity = semBox.checked ? '0.4' : '1';
             document.getElementById('caseLbl').style.opacity = semBox.checked ? '0.4' : '1';
         });
-        document.querySelectorAll('#rolechips .chip').forEach(chip => chip.addEventListener('click', () => {
+        document.querySelectorAll('#rolechips .chip').forEach(chip => chip.addEventListener('click', ev => {
             if (chip.dataset.preset === 'dialog') { roleSel = new Set(['user', 'assistant']); }
             else if (chip.dataset.preset === 'all') { roleSel = new Set(ROLE_CHIPS.map(c => c.id)); }
             else {
                 const id = chip.dataset.chip;
-                if (roleSel.has(id)) { roleSel.delete(id); } else { roleSel.add(id); }
-                if (!roleSel.size) { roleSel = new Set(['user', 'assistant']); }
+                // ‼️ PLAIN CLICK = ONLY THIS ONE (see ROLE_HINT). Toggling was
+                // the whole reported breakage: with Dialog on, pressing 🧑 User
+                // — lit — turned it OFF, so the chip you pressed went dark and
+                // the search silently became "agent replies only". The gesture
+                // now says what it looks like it says, and the two questions
+                // this page most needs ("only my prompts", "only its answers")
+                // are one press each. Ctrl/⌘ keeps the old add-and-remove.
+                if (ev.ctrlKey || ev.metaKey) {
+                    if (roleSel.has(id)) { roleSel.delete(id); } else { roleSel.add(id); }
+                    // an empty scope matches nothing and reads as a broken page
+                    if (!roleSel.size) { roleSel = new Set([id]); }
+                } else {
+                    roleSel = new Set([id]);
+                }
             }
-            const held = { q: q.value, sem: semBox.checked };
-            shell();
-            document.getElementById('q').value = held.q;
-            document.getElementById('semantic').checked = held.sem;
-            if (held.q.trim()) { document.getElementById('go').click(); } else { document.getElementById('q').focus(); }
+            rebuildKeepingQuery(true);
         }));
         const clear = document.getElementById('clearscope');
         if (clear) {
@@ -205,6 +336,36 @@
             clear.addEventListener('click', () => { preset = null; agentSel = null; shell(); });
         }
         wireCommon();
+    }
+
+    /**
+     * Rebuild the controls without losing what is typed in the box.
+     *
+     * Every filter on this page is part of the markup, so changing one means
+     * `shell()` — and `shell()` writes an empty query box. The query is the one
+     * thing on the page the user paid for with typing, so it is carried across
+     * by hand, along with the semantic tick (which decides whether a rerun
+     * costs money and must not be flipped by a repaint).
+     *
+     * `rerun` is false for anything the results can answer without the host —
+     * changing the sort re-reads hits that are already here.
+     */
+    function rebuildKeepingQuery(rerun) {
+        const qEl = document.getElementById('q');
+        const semEl = document.getElementById('semantic');
+        const held = { q: qEl ? qEl.value : '', sem: semEl ? semEl.checked : false };
+        shell();
+        const q2 = document.getElementById('q');
+        const sem2 = document.getElementById('semantic');
+        if (q2) {
+            q2.value = held.q;
+            // the ✕ is drawn from the value, and the value arrived after wiring
+            q2.dispatchEvent(new Event('change'));
+        }
+        if (sem2) { sem2.checked = held.sem; }
+        if (rerun && held.q.trim()) { document.getElementById('go').click(); return; }
+        renderResults();
+        if (!held.q.trim() && q2) { q2.focus(); }
     }
 
     function wireCommon() {
@@ -270,6 +431,23 @@
             if (!byFile[h.file]) { byFile[h.file] = { hits: [] }; groups.push(byFile[h.file]); }
             byFile[h.file].hits.push(i);
         }
+        /**
+         * ‼️ ONLY THE GROUPS MOVE. The hits inside a session stay in the order
+         * they were said — the turn sub-headers are computed by walking that
+         * order, so a session sorted by anything else would print "Turn 7"
+         * above a line from turn 2 and the map would lie.
+         *
+         * The engine hands them over newest-session-first, which is `newest`
+         * and therefore costs nothing. The other three are a re-read of what is
+         * already on the page: no round trip, and the same figures.
+         */
+        const groupTs = g => r.hits[g.hits[0]].ts || 0;
+        const groupAgent = g => String(r.hits[g.hits[0]].agentName || '');
+        if (flt.sort === 'oldest') { groups.sort((a, b) => groupTs(a) - groupTs(b)); }
+        else if (flt.sort === 'hits') { groups.sort((a, b) => b.hits.length - a.hits.length || groupTs(b) - groupTs(a)); }
+        else if (flt.sort === 'agent') {
+            groups.sort((a, b) => groupAgent(a).localeCompare(groupAgent(b)) || groupTs(b) - groupTs(a));
+        }
         const sessHtml = groups.map(g => {
             const first = r.hits[g.hits[0]];
             // turn sub-headers whenever the turn changes (hits arrive in file order)
@@ -306,23 +484,32 @@
         out.innerHTML = `
             <p class="muted small">${r.hits.length} match(es) in ${r.filesScanned} scanned session(s)${r.timedOut ? ' — ⏱ time budget hit, results are partial (narrow the scope or query)' : r.truncated ? ' — results capped, refine your query' : ''}.</p>
             ${sessHtml}${memHtml}${evHtml}`;
+        // ‼️ THE ANSWER OPENS IN THE SCOPE THE QUESTION WAS ASKED IN. A hit is
+        // reached by clicking it, and the transcript used to open showing
+        // EVERYTHING — tool calls, results, the lot — however narrow the search
+        // had been. Searching in Dialog is a statement about what you are
+        // looking through, and it has to survive the click, or the page you
+        // land on is answering a question you did not ask. `roles` carries it
+        // (see SessionViewerPanel.show); searched in Everything, it opens in
+        // everything, which is the same rule and not an exception to it.
+        const openSession = (file, ts) => vscode.postMessage({
+            type: 'openSession', file, ts: ts || 0, roles: [...roleSel]
+        });
         out.querySelectorAll('[data-hit]').forEach(el =>
             el.addEventListener('click', () => {
                 const hit = r.hits[Number(el.dataset.hit)];
                 if (hit.kind === 'memory') {
                     vscode.postMessage({ type: 'openFile', file: hit.file });
                 } else if (hit.kind === 'event') {
-                    if (hit.file) { vscode.postMessage({ type: 'openSession', file: hit.file, ts: hit.ts || 0 }); }
+                    if (hit.file) { openSession(hit.file, hit.ts); }
                     else { vscode.postMessage({ type: 'openTimeline' }); }
                 } else {
                     // ts rides along: the viewer opens scrolled to the matched message.
-                    vscode.postMessage({ type: 'openSession', file: hit.file, ts: hit.ts || 0 });
+                    openSession(hit.file, hit.ts);
                 }
             }));
         out.querySelectorAll('[data-open-session]').forEach(el =>
-            el.addEventListener('click', () => vscode.postMessage({
-                type: 'openSession', file: el.dataset.openSession, ts: Number(el.dataset.ts) || 0
-            })));
+            el.addEventListener('click', () => openSession(el.dataset.openSession, Number(el.dataset.ts) || 0)));
     }
 
     // ------------------------------------------------------- right-click menu
@@ -340,8 +527,10 @@
         const hit = lastResult && lastResult.hits ? lastResult.hits[Number(ctx.hitIndex)] : null;
 
         if (verb === 'shOpen') {
+            // the same handover the left-click makes — see openSession above
             vscode.postMessage({
-                type: 'openSession', file: String(ctx.file || ''), ts: Number(ctx.hitTs) || 0
+                type: 'openSession', file: String(ctx.file || ''), ts: Number(ctx.hitTs) || 0,
+                roles: [...roleSel]
             });
             return;
         }

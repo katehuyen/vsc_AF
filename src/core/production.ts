@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { assetKind, MediaMeta } from './media';
+import { slugify } from './util';
 
 /**
  * Wave A (media roadmap) — production manifest: a small user-editable
@@ -76,7 +77,9 @@ export function writeProduction(file: string, production: Production): void {
 /** Build a fresh manifest; scene ids are stable s01/s02/… slugs. */
 export function newProduction(title: string, sceneTitles: string[]): Production {
     return {
-        id: title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'production',
+        // ASCII: the id becomes a folder name and a key. Set once, at creation —
+        // an existing manifest carries its own id and is never re-slugged.
+        id: slugify(title, { ascii: true, max: 40 }) || 'production',
         title,
         scenes: sceneTitles.map((t, i) => ({
             id: 's' + String(i + 1).padStart(2, '0'),

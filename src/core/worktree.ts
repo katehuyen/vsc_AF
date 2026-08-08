@@ -1,6 +1,7 @@
 import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { slugify } from './util';
 
 /**
  * J1 — Parallel worktree runs. Code agents work on isolated `git worktree`
@@ -42,8 +43,10 @@ export function worktreeBase(repoDir: string): string {
 }
 
 export async function createWorktree(repoDir: string, name: string): Promise<{ wt?: WorktreeInfo; error?: string }> {
-    const safe = name.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) ||
-        Date.now().toString(36);
+    // ASCII: this is a git branch name. Only NEW worktrees are named here —
+    // `listAfWorktrees` reads what git already recorded — so a slug that keeps
+    // more of the name cannot orphan a worktree created under the old rule.
+    const safe = slugify(name, { ascii: true, max: 40 }) || Date.now().toString(36);
     const branch = `${BRANCH_PREFIX}${safe}-${Date.now().toString(36).slice(-4)}`;
     const wtPath = path.join(worktreeBase(repoDir), branch.replace('/', '-'));
     fs.mkdirSync(path.dirname(wtPath), { recursive: true });

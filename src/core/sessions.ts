@@ -321,9 +321,40 @@ const WHOLE_NOTICE = /^\[[^\]]*\]$/;
 export function conversationTitle(text: string): string {
     let t = String(text ?? '').replace(/\s+/g, ' ').trim();
     while (ATTACHMENT_MARK.test(t)) { t = t.replace(ATTACHMENT_MARK, ''); }
-    if (!t || t.startsWith('<') || t.startsWith('/') || t.startsWith('!')) { return ''; }
+    if (t.startsWith('<')) { return commandArgsTitle(t); }
+    if (!t || t.startsWith('/') || t.startsWith('!')) { return ''; }
     if (WHOLE_NOTICE.test(t)) { return ''; }
     return truncate(t, 80);
+}
+
+/**
+ * ‼️ A SLASH COMMAND IS MACHINERY. WHAT WAS TYPED AFTER IT IS NOT.
+ *
+ * `/goal finish the top eight backlog items` reaches the transcript as a
+ * command block — `<command-name>/goal</command-name>` with the sentence in
+ * `<command-args>` — and the block starts with `<`, so the whole turn was
+ * discarded as plumbing. The command was; the argument was the entire brief.
+ * Sessions opened this way were then named by whatever ordinary message came
+ * next, several turns later, which in practice is a continuation ("keep going",
+ * "devam et") — a session named after its own interruption while the sentence
+ * that says what it is about sat in the first turn, thrown away.
+ *
+ * The shape test is why this is safe. Args are taken only when they read as
+ * PROSE — a space and enough characters to be a sentence — so `/loop 5m /x`,
+ * `/goal clear` and `/model opus` are still machinery and the session goes on
+ * to be named by something a person said. And the args run back through
+ * `conversationTitle`, so an argument that is itself a notice or another
+ * command gets the same judgment as any other text; there is one rule here.
+ */
+const COMMAND_ARGS = /<command-args>([\s\S]*?)<\/command-args>/;
+/** Below this, the argument is a flag or a word, not a description of work. */
+const ARGS_MIN_CHARS = 15;
+
+function commandArgsTitle(text: string): string {
+    const m = COMMAND_ARGS.exec(text);
+    const args = (m?.[1] ?? '').replace(/\s+/g, ' ').trim();
+    if (args.length < ARGS_MIN_CHARS || !args.includes(' ')) { return ''; }
+    return conversationTitle(args);
 }
 
 /** Turn label from its opening prompt: typed /commands show as the command
@@ -452,6 +483,20 @@ export function parseSessionFile(
                 // Typed /commands land as <command-name>/x</command-name> user messages.
                 const m = /<command-name>\/?([\w:-]+)<\/command-name>/.exec(text);
                 if (m) { info.skillCalls[m[1]] = (info.skillCalls[m[1]] ?? 0) + 1; }
+                // ‼️ THE ARGUMENT IS THE BRIEF — see commandArgsTitle. This turn
+                // is NOT counted as a prompt (`userTurns` is untouched, and the
+                // figures every table shows stay exactly what the transcript
+                // says); all it may do is SPEAK FOR the session when nothing
+                // else has yet.
+                const said = conversationTitle(text);
+                if (!said) { return; }
+                if (!info.title) { info.title = said; }
+                if (info.firstPrompt === undefined) {
+                    // What the person actually typed, command and all — the
+                    // hover promises the opening prompt, and `/goal …` is it.
+                    const args = (/<command-args>([\s\S]*?)<\/command-args>/.exec(text)?.[1] ?? '').trim();
+                    info.firstPrompt = truncate(`/${m ? m[1] : ''} ${args}`.trim(), FIRST_PROMPT_MAX);
+                }
             };
             if (typeof content === 'string') {
                 if (!line.isMeta) {

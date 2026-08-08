@@ -130,6 +130,39 @@ the extension — there is nothing to opt into:
 `test/lib_afms_dom.js` drives all of it (`toggle` · `clickName` · `preset` ·
 `selectAll` · `clear`), so a picker's behaviour is testable from any page test.
 
+**Chips that are a scope, not a set, follow the same two gestures.** The Search
+page's kind chips are the case that proved it: they were a plain toggle, and
+because the default scope is Dialog the two chips a reader most wants to press
+were already lit — so pressing one *removed* it and the row read as broken. A
+plain click means **only this**; Ctrl/⌘-click adds and removes. Never let the
+scope empty into "matches nothing", and write the gesture down beside the chips,
+not only in the code.
+
+### A text filter box has a ✕ inside it
+
+`AFFilter.clearable(input, onClear)` (`media/afFilters.js`, styled `.af-clr` in
+`common.css`). The button sits **inside** the box's right edge, so clearing
+happens where the text is rather than at a second widget along the row.
+
+- **It is created and destroyed with the text**, never hidden and shown: an
+  empty box with a dead ✕ in it is a control claiming it can do something.
+- **`onClear` is the same handler the box filters with** — clearing IS a filter
+  change, not just a blank box. Where the box drives a round trip (the Search
+  page's query), clearing drops the last results too: hits sitting under an
+  empty box are the page claiming to have found something for nothing.
+- Wiring the same element twice is a no-op, so a render path may call it freely.
+
+### A date box commits on `change`, never on `input`
+
+`AFFilter.live` enforces this and you get it for nothing — but know why, because
+the same trap catches any control with a native popup. `fn` repaints, a repaint
+replaces the element, and the calendar popup belongs to the element it was
+opened from — so it shuts. `<input type="date">` fires `input` the moment its
+three segments happen to form a valid date, which during a picker gesture is
+while the user is still moving through it: the calendar closed under the cursor,
+and only sometimes. `change` is the event that means *a date was chosen* and
+arrives after the popup has closed itself.
+
 ---
 
 ## Making things

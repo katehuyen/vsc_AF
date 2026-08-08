@@ -296,3 +296,22 @@ span.af-tipw { display: inline; }
     border-bottom: 1px solid var(--vscode-widget-border, #4443);
 }
 .af-tipb { display: block; }
+
+/* ------------------------------------------------------- clearable text box
+   ‼️ A SEARCH BOX YOU CANNOT EMPTY IN ONE PRESS IS A SEARCH BOX YOU RETYPE.
+   The ✕ sits INSIDE the box's right edge, so clearing happens where the text
+   is rather than at a second widget somewhere along the row — and it is drawn
+   only while there is something to clear, because a clear button on an empty
+   box is furniture. Wire it with `window.AFFilter.clearable(input)`.
+
+   The padding lives on the INPUT, not the wrapper: the ✕ overlaps the box, so
+   without it a long query slides underneath the button and the last characters
+   are unreadable exactly when you most want to see them. */
+.af-clr { position: relative; display: inline-flex; align-items: stretch; }
+.af-clr > input { width: 100%; padding-right: 24px; }
+.af-clr > .af-clrx {
+    position: absolute; right: 2px; top: 50%; transform: translateY(-50%);
+    background: transparent; border: none; padding: 2px 5px; cursor: pointer;
+    font-size: 11px; line-height: 1; color: var(--vscode-descriptionForeground);
+}
+.af-clr > .af-clrx:hover { color: var(--vscode-foreground); background: transparent; }

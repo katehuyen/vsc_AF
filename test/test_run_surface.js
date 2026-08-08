@@ -66,7 +66,7 @@ const base = read('src/panels/base.ts');
     ok('the surface picker can carry the project too',
         /const pickRunSurface = async \(\s*\n?\s*what: string, opts: \{ project\?: boolean \} = \{\}/.test(ext));
     ok('…drawn by one shared row, so it says what the Console\'s chip says',
-        /const launchProjectRow = \(projectId: string\)/.test(ext)
+        /const launchProjectRow = \(\s*\n?\s*projectId: string, fromStatusBar = false\s*\n?\s*\)/.test(ext)
         && /'◧ No project'/.test(ext)
         && /the session is told about it before you type, and is filed under it/.test(ext));
     // ‼️ THE NAMES ARE THE SECOND STEP, NEVER THE FIRST. One row saying
@@ -76,14 +76,32 @@ const base = read('src/panels/base.ts');
         /const pickLaunchProject = async \(current: string, what: string\)/.test(ext)
         && /if \(pick\.act === 'project'\) \{\s*\n\s*const chosen = await pickLaunchProject\(projectId, what\);/.test(ext));
     ok('…asked FIRST, before where it runs',
-        /label: 'Filed under', kind: vscode\.QuickPickItemKind\.Separator \},\s*\n\s*launchProjectRow\(projectId\),\s*\n\s*\{ label: 'Where it runs'/.test(ext));
-    // ‼️ …AND IT STARTS AT NOTHING. Inheriting the window's active project filed
-    // and briefed a session under a decision taken hours ago for other work.
-    ok('‼️ a new session is under NO project until somebody says so',
-        /let projectId = '';/.test(ext)
-        && /it starts at NO PROJECT every single time/i.test(ext));
+        /label: 'Filed under', kind: vscode\.QuickPickItemKind\.Separator \},\s*\n\s*launchProjectRow\(projectId, seeded\),/.test(ext));
+
+    // ---- U-16: it OPENS ON THE ACTIVE PROJECT, and says where that came from
+    //
+    // ‼️ THE DANGER WAS SILENCE, NOT INHERITANCE. Starting at nothing was the
+    // answer to a session filed and briefed under a decision taken hours ago
+    // for other work — but a window whose status bar names an active project,
+    // that then offers "No project" for the session you start from the tree, is
+    // asking the same thing to be said twice. So it inherits AND states it: the
+    // row credits the status bar, and the row under it drops or changes it in
+    // one press. Nothing is active → No project, exactly as before.
+    ok('‼️ a new session opens on the window\'s active project when there is one',
+        /let projectId = opts\.project \? seedLaunchProject\(\) : '';/.test(ext)
+        && /it OPENS ON THE WINDOW'S ACTIVE PROJECT when there is one/.test(ext));
+    ok('…and a closed or archived project is never the one it opens on',
+        /const seedLaunchProject = \(\): string => \{[\s\S]{0,320}CLOSED_PROJECT_STATUSES\.includes\(p\.status\) \? '' : ''/.test(ext)
+        || /return p && !CLOSED_PROJECT_STATUSES\.includes\(p\.status\) \? id : '';/.test(ext));
+    ok('…the row says the project came from the status bar rather than from you',
+        /fromStatusBar \? ' • the window\\'s active project' : ''/.test(ext));
+    ok('‼️ …and the way out is a ROW, not a habit — one press to change or drop it',
+        /\.\.\.\(projectId \? \[\{\s*\n\s*label: '\$\(list-selection\) Choose a different project…',/.test(ext)
+        && /description: 'or no project at all',/.test(ext));
+    ok('…once you have chosen here, the row stops crediting the status bar',
+        /if \(chosen !== undefined\) \{ projectId = chosen; seeded = false; \}/.test(ext));
     ok('…and the picker never writes the window\'s active project',
-        /this picker never writes it \(see chooseActiveProject/.test(ext));
+        /This picker never WRITES the active project/.test(ext));
     ok('…while the command that owns that list still does',
         /registerCommand\('agentfarm\.setActiveProject', async \(arg\?: \{ id\?: string \}\) => \{[\s\S]{0,400}await chooseActiveProject\(\);/.test(ext));
 
@@ -97,7 +115,11 @@ const base = read('src/panels/base.ts');
     // before the first prompt, and spawning on the spot skipped that moment.
     ok('…and the Console path opens the composer with the agent pinned',
         /ConsolePanel\.show\(consoleDeps, \{\s*\n\s*agentId: agent\.id, pinAgent: true, projectId: chosen\.projectId\s*\n\s*\}\);/.test(startBody));
-    ok('the launcher shows it as one of its rows', /launchProjectRow\(project\),/.test(ext));
+    ok('the launcher shows it as one of its rows', /launchProjectRow\(project, projectSeeded\),/.test(ext));
+    // In the launcher every line is a control, so the project row does not have
+    // to argue that it is one — no escape row there, but the same seeding.
+    ok('…seeded the same way, so the two start paths cannot disagree',
+        /let project = seedLaunchProject\(\);/.test(ext));
     ok('…and its Where sub-picker does NOT repeat the question',
         /const v = await pickRunSurface\(`Session for \$\{agent\.name\}`\);/.test(ext));
 

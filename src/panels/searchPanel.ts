@@ -96,11 +96,19 @@ export class SearchPanel {
                         title: s.title,
                         mtime: s.mtime
                     }));
+                    // The date window is the MESSAGE's own time (core/search.ts
+                    // tsFrom/tsTo), not the session's mtime: "what was said on
+                    // Tuesday" and "sessions last written to on Tuesday" are
+                    // different questions, and the page asks the first one.
+                    const ms = (v: unknown): number | undefined =>
+                        typeof v === 'number' && v > 0 ? v : undefined;
                     const opts = {
                         regex: !!msg.regex,
                         caseSensitive: !!msg.caseSensitive,
                         agentNames,
                         roles,
+                        tsFrom: ms(msg.tsFrom),
+                        tsTo: ms(msg.tsTo),
                         files: file ? [file] : undefined,
                         // a single session can take many more hits than a fleet scan
                         maxHits: file ? 400 : 150,
@@ -127,8 +135,14 @@ export class SearchPanel {
             }
             case 'openSession':
                 // ts = matched message time — the viewer scrolls right to it.
+                // roles = what this search was looking IN, so the transcript
+                // opens in the same view rather than throwing every tool call
+                // in front of somebody who asked about the conversation.
                 void vscode.commands.executeCommand('agentfarm.openSession', msg.file,
-                    typeof msg.ts === 'number' && msg.ts > 0 ? msg.ts : undefined);
+                    typeof msg.ts === 'number' && msg.ts > 0 ? msg.ts : undefined,
+                    Array.isArray(msg.roles)
+                        ? (msg.roles as unknown[]).filter((r): r is string => typeof r === 'string')
+                        : undefined);
                 break;
             case 'openFile':
                 if (typeof msg.file === 'string' && msg.file) {

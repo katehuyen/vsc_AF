@@ -3,6 +3,7 @@ import * as path from 'path';
 import { BacklogItem, nextBacklog } from './projectBacklog';
 import { openPlanItems } from './projectPlan';
 import { folderNameFor, Project } from './projects';
+import { slugify } from './util';
 
 /**
  * The project's folder — the copy that outlives everything else.
@@ -974,12 +975,10 @@ export function tracksFolder(dir: string, skeleton: SkeletonEntry[] = DEFAULT_SK
 /** A file name a person can read in a folder listing. The extension never looks
  *  at it — discovery is by `af-role` — so this is purely for the human. */
 function decisionFileName(title: string, day: string): string {
-    const slug = String(title ?? '')
-        .toLowerCase()
-        .replace(/[^\p{L}\p{N}]+/gu, '-')
-        .replace(/^-+|-+$/g, '')
-        .slice(0, 60) || 'decision';
-    return `${day}-${slug}.md`;
+    // NOT ascii-folded: this name is read in a vault whose own rule is that
+    // Turkish characters in file names are preserved (`iş-türü-kararı`).
+    // The İ that used to break it is handled inside slugify.
+    return `${day}-${slugify(title, { max: 60 }) || 'decision'}.md`;
 }
 
 export interface AddDecisionInput {

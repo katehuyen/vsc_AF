@@ -945,6 +945,8 @@
                 ORIGINS.forEach(o =>
                     wireEl(`.af-forig-${o.id || 'all'}`, 'click', () => { filters.origin = o.id; apply(); }));
                 liveEl('.af-ftext', el => { filters.text = el.value || ''; apply(); });
+                // the ✕ that empties it — the shared control (common.css .af-clr)
+                window.AFFilter.clearableAll(root, '.af-ftext', el => { filters.text = ''; el.value = ''; apply(); });
                 window.AFFilter.wireMulti({
                     root, id: AGENT_MS,
                     onChange: sel => { filters.agents = sel; apply(); }

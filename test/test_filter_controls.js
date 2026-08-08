@@ -214,6 +214,92 @@ ok('opening the menu is not a filter change', renders === before);
     ok('a number box filters as you type without a caret to save', numApplied === 1);
 
     ok('live() on a missing element is a no-op', AF.live(null, () => { }) === undefined);
+
+    // ---- A-4: a date box is never filtered while its calendar is open ------
+    //
+    // ‼️ THE REPORTED RANDOMNESS HAD ONE CAUSE. `fn` repaints the page, and a
+    // repaint replaces the element — so the native calendar popup, which hangs
+    // off the element it was opened from, shut itself. `<input type="date">`
+    // fires `input` whenever its three segments happen to form a valid date,
+    // which during a picker gesture is while you are still moving through it:
+    // the calendar closed under the cursor before a day had been chosen, and
+    // only sometimes, because it depended on where in the popup you had got to.
+    // `change` is the event that means A DATE WAS CHOSEN, and by then the popup
+    // has closed itself — so nothing is lost by waiting for it.
+    const mkDate = () => ({
+        tagName: 'INPUT', type: 'date', value: '', className: 'af-ffrom', listeners: {},
+        addEventListener(ev, fn) { this.listeners[ev] = fn; },
+        getAttribute: () => null, focus() { }, selectionStart: null, selectionEnd: null
+    });
+    const d = mkDate();
+    let dApplied = 0;
+    sandbox.document.querySelectorAll = () => [];
+    AF.live(d, () => { dApplied++; }, 50);
+    ok('‼️ a date box has no as-you-type listener at all', d.listeners.input === undefined);
+    d.value = '2026-08-01';
+    d.listeners.change();
+    runTimers();
+    ok('…and commits on change, which is what "a date was chosen" means', dApplied === 1);
+    d.value = '';
+    d.listeners.change();
+    ok('…clearing it is a change too, so the filter really widens again', dApplied === 2);
+
+    // the other picker-backed types have the same popup and the same problem
+    const dt = mkDate(); dt.type = 'datetime-local';
+    AF.live(dt, () => { }, 50);
+    ok('…the rule covers every type with a native picker', dt.listeners.input === undefined);
+    const txt = mkDate(); txt.type = 'text';
+    AF.live(txt, () => { }, 50);
+    ok('…and a plain text box still filters as you type', typeof txt.listeners.input === 'function');
+}
+
+// ---------------------------------------------------------------- clearable
+//
+// U-3: a search box you cannot empty in one press is a search box you retype.
+// The ✕ is BORN AND DIES WITH THE TEXT rather than being hidden and shown — an
+// empty box with a dead ✕ in it is a control claiming it can do something.
+{
+    const made = [];
+    const mkNode = (tag) => ({
+        tagName: String(tag).toUpperCase(), className: '', type: 'button', textContent: '',
+        style: {}, children: [], listeners: {}, dataset: {}, title: '',
+        addEventListener(ev, fn) { this.listeners[ev] = fn; },
+        appendChild(c) { this.children.push(c); c.parent = this; },
+        insertBefore(n) { this.children.push(n); n.parent = this; },
+        remove() { if (this.parent) { this.parent.children = this.parent.children.filter(x => x !== this); } },
+        focus() { this.focused = true; }
+    });
+    sandbox.document.createElement = (tag) => { const n = mkNode(tag); made.push(n); return n; };
+
+    const parent = mkNode('div');
+    const box = mkNode('input');
+    box.type = 'text';
+    box.value = '';
+    box.parent = parent;
+    box.parentNode = parent;
+    box.dispatchEvent = () => { };
+
+    let cleared = 0;
+    AF.clearable(box, () => { cleared++; });
+    const wrap = made.find(n => n.className === 'af-clr');
+    ok('the box is wrapped in place', !!wrap && wrap.children.indexOf(box) >= 0);
+    ok('‼️ no ✕ while the box is empty — a clear button on nothing is furniture',
+        wrap.children.filter(c => c.className === 'af-clrx').length === 0);
+
+    box.value = 'parser';
+    box.listeners.input();
+    const x = wrap.children.find(c => c.className === 'af-clrx');
+    ok('typing brings the ✕ into being', !!x && x.textContent === '✕');
+
+    x.listeners.click();
+    ok('pressing it empties the box', box.value === '');
+    ok('…tells the page, so clearing IS a filter change', cleared === 1);
+    ok('…puts the caret back where the typing was', box.focused === true);
+    ok('…and takes itself away again', wrap.children.filter(c => c.className === 'af-clrx').length === 0);
+
+    AF.clearable(box, () => { });
+    ok('wiring the same box twice is a no-op', made.filter(n => n.className === 'af-clr').length === 1);
+    ok('clearable() on a missing element is a no-op', AF.clearable(null) === undefined);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

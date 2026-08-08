@@ -167,6 +167,61 @@ export function fmtStepPair(apiCalls: number, steps: number): string {
     return a ? `${a}api·${st}` : st;
 }
 
+/**
+ * ‼️ ONE SLUG RULE, TWO AUDIENCES — and the dotted İ is why this exists.
+ *
+ * `'İ'.toLowerCase()` is `'i' + U+0307 COMBINING DOT ABOVE`: the fold splits
+ * the letter into a letter plus a MARK, and a mark is neither `\p{L}` nor
+ * `\p{N}`. Every separator rule in this codebase therefore turned it into a
+ * separator, and "İş türü kararı" filed itself as `i-ş-türü-kararı` — a name
+ * a person reads as broken, on a file whose whole purpose is to be readable in
+ * a folder listing. Measured, all four call sites, before the fix:
+ *
+ *   decision file name   i-ş-türü-kararı     ← the reported bug
+ *   guide anchors, duty  is-turu-karari      ← right for Turkish, but
+ *                        lem-beyoglu-caf       Â/é/î vanished entirely
+ *   production, worktree i-t-r-karar         ← every non-ASCII letter a dash
+ *
+ * So: fold the Turkish capital İ before lowercasing (never `toLocaleLowerCase`
+ * — that also maps ASCII `I` to `ı`, which mangles English titles), then drop
+ * any combining mark left over, and only then decide what an audience can take.
+ *
+ * `ascii:true` is for things a machine must accept — a git branch, a stored id,
+ * an html anchor. It folds accents through NFD so `Âlem Café` keeps its letters
+ * (`alem-cafe`) instead of losing them. The Turkish six are mapped by hand
+ * first: NFD does not decompose `ı`, `ğ` or `ş` into a base letter this side of
+ * a full transliteration table.
+ *
+ * `ascii:false` (the default) is for things a PERSON reads — a vault file name.
+ * The vault's own rule is that Turkish characters in file names are preserved,
+ * so `iş-türü-kararı` is the correct answer there and folding would be wrong.
+ */
+export function slugify(text: string, opts: { ascii?: boolean; max?: number } = {}): string {
+    let s = String(text ?? '')
+        .replace(/İ/g, 'i')       // İ → i, before the fold splits it
+        .toLowerCase()
+        .replace(/̇/g, '');       // …and any dot the fold already split off
+    if (opts.ascii) {
+        s = s
+            .replace(/ı/g, 'i').replace(/ğ/g, 'g').replace(/ş/g, 's')
+            .replace(/ç/g, 'c').replace(/ö/g, 'o').replace(/ü/g, 'u')
+            .normalize('NFD').replace(/\p{M}+/gu, '')
+            .replace(/[^a-z0-9]+/g, '-');
+    } else {
+        s = s.replace(/[^\p{L}\p{N}]+/gu, '-');
+    }
+    s = s.replace(/-{2,}/g, '-').replace(/^-+|-+$/g, '');
+    if (!opts.max || s.length <= opts.max) { return s; }
+    // ‼️ A CUT NEVER LEAVES HALF A WORD. `…-p-7-k-8-x-7-s` reads as a corrupted
+    // name rather than a shortened one, and this is a file name a person sees
+    // in a folder listing. So a cut that lands mid-word falls back to the last
+    // separator — unless the fragment is all there is, because a one-word title
+    // longer than the budget still has to be called something.
+    let cut = s.slice(0, opts.max);
+    if (s[opts.max] !== '-' && cut.includes('-')) { cut = cut.slice(0, cut.lastIndexOf('-')); }
+    return cut.replace(/-+$/g, '');
+}
+
 export function debounce<T extends (...args: never[]) => void>(fn: T, ms: number): T {
     let timer: NodeJS.Timeout | undefined;
     return ((...args: never[]) => {

@@ -279,16 +279,101 @@
             fn(el);
             restore(snap);
         };
-        el.addEventListener('input', () => {
-            if (timer) { clearTimeout(timer); }
-            timer = setTimeout(run, wait);
-        });
+        /**
+         * ‼️ A DATE BOX IS NEVER FILTERED WHILE ITS CALENDAR IS OPEN.
+         *
+         * `fn` repaints the page, and a repaint replaces this element — so the
+         * native calendar popup, which belongs to the element it was opened
+         * from, is left hanging off a detached node and shuts. `restore()`
+         * puts the caret back in the new box but cannot reopen a popup.
+         *
+         * `<input type="date">` fires `input` the moment its three segments
+         * happen to form a valid date, which during a calendar gesture is
+         * whenever the picker moves through a complete one — so the popup
+         * closed under the cursor, before a day had been chosen, and only
+         * sometimes: it depended on whether the field already had a value and
+         * where in the popup you had got to. That is the reported randomness.
+         *
+         * `change` is the event that means A DATE WAS CHOSEN. Chromium fires
+         * it when the popup commits, when a typed date completes, and when the
+         * field is cleared — every case the debounce was covering — and by
+         * then the popup has closed itself. So nothing is lost by waiting for
+         * it, and the gesture is never interrupted. (Dashboard's own date
+         * boxes already did exactly this; the table filters went through here.)
+         */
+        const isDate = /^(date|datetime-local|month|week|time)$/i.test(String(el.type || ''));
+        if (!isDate) {
+            el.addEventListener('input', () => {
+                if (timer) { clearTimeout(timer); }
+                timer = setTimeout(run, wait);
+            });
+        }
         // blur / Enter / a date picked from the calendar: apply straight away,
         // unless the debounce already did it
         el.addEventListener('change', () => {
             if (timer) { clearTimeout(timer); timer = null; }
             if (el.value !== last) { run(); }
         });
+    }
+
+    /**
+     * Give a text box the ✕ that empties it (styled in common.css, `.af-clr`).
+     *
+     * ‼️ THE BUTTON IS BORN AND DIES WITH THE TEXT. It is created when there is
+     * something to clear and removed when there is not, rather than hidden and
+     * shown: an empty box with a dead ✕ hanging in it is a control that says it
+     * can do something it cannot, and this row already has enough of those.
+     *
+     * The box is wrapped once, in place. Calling this twice on the same element
+     * is a no-op, so a page may wire it from a render path without counting.
+     * `onClear` runs after the value is emptied — pass the same handler the box
+     * filters with, so clearing IS a filter change and not just a blank box.
+     */
+    function clearable(el, onClear) {
+        if (!el || !el.parentNode || el.dataset.afClr === '1') { return; }
+        el.dataset.afClr = '1';
+        const wrap = document.createElement('span');
+        wrap.className = 'af-clr';
+        // whatever the box was laid out as, the wrapper now has to be
+        el.parentNode.insertBefore(wrap, el);
+        wrap.style.flex = el.style.flex || '';
+        wrap.style.minWidth = el.style.minWidth || '';
+        el.style.flex = '';
+        el.style.minWidth = '';
+        wrap.appendChild(el);
+        let btn = null;
+        const sync = () => {
+            const want = !!el.value;
+            if (want && !btn) {
+                btn = document.createElement('button');
+                btn.className = 'af-clrx';
+                btn.type = 'button';
+                btn.textContent = '✕';
+                btn.title = 'Clear this box';
+                btn.addEventListener('mousedown', ev => ev.preventDefault()); // keep the caret
+                btn.addEventListener('click', () => {
+                    el.value = '';
+                    sync();
+                    el.focus();
+                    if (typeof onClear === 'function') { onClear(el); }
+                    else { el.dispatchEvent(new Event('input', { bubbles: true })); }
+                });
+                wrap.appendChild(btn);
+            } else if (!want && btn) {
+                btn.remove();
+                btn = null;
+            }
+        };
+        el.addEventListener('input', sync);
+        el.addEventListener('change', sync);
+        sync();
+    }
+
+    /** clearable() over every match — the same convenience liveAll is. */
+    function clearableAll(root, selector, onClear) {
+        const scope = root && root.querySelectorAll ? root : document;
+        if (!scope || typeof scope.querySelectorAll !== 'function') { return; }
+        Array.prototype.forEach.call(scope.querySelectorAll(selector), el => clearable(el, onClear));
     }
 
     /** live() over every match — for the class-based filter boxes in tables. */
@@ -299,7 +384,7 @@
     }
 
     window.AFFilter = {
-        multi, wireMulti, live, liveAll, esc,
+        multi, wireMulti, live, liveAll, clearable, clearableAll, esc,
         // testing / reset hooks
         _closeMenus: () => { openId = null; closeMenus(document); },
         _openId: () => openId

@@ -632,13 +632,27 @@ export class SessionViewerPanel {
     private lastCaptureAt = 0;
     private capturing = false;
 
-    /** focusTs: scroll to (and flash) the message nearest this timestamp — the
-     *  timeline passes the clicked mark's time so the viewer opens right there. */
-    static show(file: string, deps: ViewerDeps, focusTs?: number): void {
+    /**
+     * focusTs: scroll to (and flash) the message nearest this timestamp — the
+     * timeline passes the clicked mark's time so the viewer opens right there.
+     *
+     * ‼️ `roles` IS THE OPENER'S SCOPE, AND THE PAGE OPENS IN IT. A search made
+     * in Dialog is a question about the conversation, so the transcript it
+     * lands on has no business opening with every tool call in it: the reader
+     * already said what they were looking through. Searched in Everything, the
+     * page opens in everything, for exactly the same reason. Only openers that
+     * HAVE a scope pass one; a timeline mark or a table row has none and the
+     * page keeps its own default (Dialog).
+     */
+    static show(file: string, deps: ViewerDeps, focusTs?: number, roles?: string[]): void {
         const existing = SessionViewerPanel.open.get(file);
         if (existing) {
             existing.panel.reveal();
-            if (focusTs) { void existing.panel.webview.postMessage({ type: 'focus', ts: focusTs }); }
+            if (focusTs) {
+                void existing.panel.webview.postMessage({
+                    type: 'focus', ts: focusTs, ...(roles?.length ? { roles } : {})
+                });
+            }
             return;
         }
         const panel = vscode.window.createWebviewPanel(
@@ -647,7 +661,7 @@ export class SessionViewerPanel {
             vscode.ViewColumn.One,
             { enableScripts: true, retainContextWhenHidden: true }
         );
-        SessionViewerPanel.open.set(file, new SessionViewerPanel(panel, file, deps, focusTs));
+        SessionViewerPanel.open.set(file, new SessionViewerPanel(panel, file, deps, focusTs, roles));
     }
 
     /** A session renamed anywhere is renamed here too — tab caption included. */
@@ -661,10 +675,12 @@ export class SessionViewerPanel {
         readonly panel: vscode.WebviewPanel,
         private file: string,
         private deps: ViewerDeps,
-        focusTs?: number
+        focusTs?: number,
+        roles?: string[]
     ) {
         const data = this.viewData();
         if (focusTs) { data.focusTs = focusTs; }
+        if (roles?.length) { data.focusRoles = roles; }
         panel.webview.html = htmlShell(
             panel.webview,
             deps.extensionUri,

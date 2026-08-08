@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { getNonce } from './base';
+import { slugify as slugifyText } from '../core/util';
 
 export type GuideLang = 'en' | 'tr';
 
@@ -45,13 +46,10 @@ function escapeHtml(s: string): string {
     return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+/** ASCII: these are html anchors, and both the heading and the link that jumps
+ *  to it are produced by this one call — so they agree by construction. */
 export function slugify(s: string): string {
-    return s.toLowerCase()
-        .replace(/ç/g, 'c').replace(/ğ/g, 'g').replace(/ı/g, 'i')
-        .replace(/ö/g, 'o').replace(/ş/g, 's').replace(/ü/g, 'u')
-        .replace(/[^a-z0-9\s-]/g, '')
-        .trim()
-        .replace(/\s+/g, '-');
+    return slugifyText(s, { ascii: true });
 }
 
 function inline(md: string): string {
