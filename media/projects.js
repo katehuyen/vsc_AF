@@ -835,13 +835,17 @@
                 .pj-bl-row.doing { border-left-color:var(--vscode-charts-yellow,#d7ba7d);
                     background:var(--vscode-editor-selectionHighlightBackground,#d7ba7d18); }
                 .pj-bl-m.started { color:var(--vscode-charts-yellow,#d7ba7d); opacity:1; cursor:help; }
-                .pj-bl-row.container .pj-bl-t { font-weight:600; }
                 .pj-bl-code { font-size:11px; opacity:.85; white-space:nowrap;
                     background:var(--vscode-textCodeBlock-background,#8881); padding:0 5px; border-radius:4px; }
                 .pj-bl-code.unfiled { background:none; }
                 .pj-bl-t { flex:1; min-width:0; }
                 .pj-bl-kind { font-size:10px; padding:0 5px; border-radius:8px; opacity:.85; white-space:nowrap;
                     background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); }
+                /* WHO wrote the line is not WHAT the work is, so it does not
+                   wear a work-type colour: outlined, quiet, and a hover that
+                   says which of the two it is. See BL_ORIGIN_TIP. */
+                .pj-bl-kind.origin { background:none; opacity:.6; cursor:help;
+                    border:1px solid var(--vscode-widget-border,#4446); color:inherit; }
                 .pj-bl-badge { background:none; border:none; color:inherit; cursor:pointer;
                     font-size:11px; padding:0 4px; border-radius:4px; opacity:.75; min-width:22px; }
                 .pj-bl-badge:hover { opacity:1; background:var(--vscode-toolbar-hoverBackground,#8882); }
@@ -958,7 +962,10 @@
                    was a strip nobody tried to touch. */
                 .pj-bl-next .pj-bl-nextrow { display:flex; gap:6px; flex-wrap:wrap; align-items:center;
                     min-height:24px; }
-                .pj-bl-nextw { display:inline-flex; align-items:center; }
+                /* Each chip is its own AFTip trigger, so the wrapper IS the
+                   positioning context; common.css makes a span.af-tipw inline,
+                   which would collapse the chip's own layout. */
+                .pj-bl-nextrow > .af-tipw { display:inline-flex; align-items:center; }
                 .pj-bl-nextb { display:inline-flex; align-items:center; gap:5px; cursor:grab;
                     background:none; color:inherit; border:1px solid var(--vscode-widget-border,#4443);
                     border-radius:12px; padding:2px 8px; font-size:11px; }
@@ -1320,8 +1327,6 @@
         filed: null,
         /** null any · ['yes'] waiting on something · ['no'] startable now */
         blocked: null,
-        /** null any · ['container'] just the parents · ['leaf'] just the leaves */
-        epics: null,
         /** null any · ['yes'] linked to a plan item · ['no'] not linked */
         plan: null,
         /** null any · ['yes'] has a 📅 · ['no'] none */
@@ -1344,8 +1349,8 @@
      * and this tab was the one exception, with plain <select>s that could say
      * "all" or "exactly one" and nothing in between. That is a different bargain
      * from the rest of the extension for no reason, and it left ordinary
-     * questions unaskable: "done and cancelled", "everything that is not a
-     * container". Declared once and read twice — the html draws them and wire()
+     * questions unaskable: "done and cancelled", "everything with no date".
+     * Declared once and read twice — the html draws them and wire()
      * wires them from this same list — so a new axis cannot reach one and be
      * forgotten in the other.
      *
@@ -1375,12 +1380,6 @@
             where: 'panel', width: 200,
             title: '⛔ — is something it waits on still open',
             options: [{ v: 'no', t: 'startable now' }, { v: 'yes', t: 'waiting on something' }]
-        },
-        {
-            id: 'bl-epics', key: 'epics', label: 'epics', allLabel: 'any',
-            where: 'panel', width: 200,
-            title: 'An item with children is a container — work lives at the leaves',
-            options: [{ v: 'leaf', t: 'leaves only' }, { v: 'container', t: 'containers only' }]
         },
         {
             id: 'bl-plan', key: 'plan', label: 'plan', allLabel: 'any',
@@ -1450,6 +1449,28 @@
      *  queue strip, consumed once. Cannot be done in the handler: the paint that
      *  draws the row it points at has not happened yet. */
     let blJump = '';
+
+    /**
+     * WHO PUT THE LINE THERE — the two tags an agent stamps, and what each of
+     * them is actually telling you.
+     *
+     * ‼️ THE DISTINCTION IS PROPOSAL vs DECISION. An item an agent thought of
+     * has not been agreed to by anybody; an item the user dictated has. A
+     * backlog where those two look identical fills up with work nobody chose,
+     * and you find out months later. An item the user typed themselves wears
+     * neither tag — absence IS the third state.
+     *
+     * They are ordinary `#tags` on purpose (see BACKLOG_ORIGIN_TAGS): they
+     * filter with everything else and can be added or removed in Obsidian with
+     * no tool. All the page adds is a hover that says what they mean, because
+     * "your own tag" would be a lie about the only two that are not.
+     */
+    const BL_ORIGIN_TIP = {
+        'by-agent': 'An agent noticed this while working and filed it ITSELF — a proposal, '
+            + 'not something you have agreed to. Read it as a suggestion; cancelling it costs nothing.',
+        'by-request': 'An agent wrote this line, but YOU asked for it — the thought is yours, '
+            + 'the agent was the typist.'
+    };
 
     const PRIO_ORDER = ['lowest', 'low', 'normal', 'medium', 'high', 'highest'];
     const PRIO_ICON = { highest: '🔺', high: '⏫', medium: '🔼', normal: '·', low: '🔽', lowest: '⏬' };
@@ -1703,7 +1724,7 @@
                 ${C.esc(a.code)} <span class="muted">${a.open}</span></button>`).join('')}
             <span class="grow"></span>
             <button class="pj-chip${blFiltersOpen ? ' on' : ''}" data-act="blFilters"
-                title="Type, priority, size, blocked, epics, plan link, due date">⚙ filters${active ? ` (${active})` : ''}</button>
+                title="Type, priority, size, blocked, plan link, due date">⚙ filters${active ? ` (${active})` : ''}</button>
             ${active ? '<button class="pj-chip" data-act="blClear" title="Drop every filter and show the pile again">clear</button>' : ''}
         </div>
 
@@ -1746,7 +1767,7 @@
                 ${blFilter.q.trim() ? '<button class="pj-bl-qx" data-blclearf="q" title="Clear the search box only">✕</button>' : ''}
             </span>
             ${blPickHtml('bar')}
-            <select id="bl-sort" title="Ordering. Queue order is your own — it is what 'do the top five' follows, and the only one you can drag rows in">
+            <select id="bl-sort" title="Ordering. Queue order is your own — it is what 'do the top five' follows, and the only one you can drag rows in. 'closed' answers what you finished last: newest closing at the top, and anything still open at the bottom, where it belongs.">
                 <option value="file"${blSort === 'file' ? ' selected' : ''}>queue order (yours)</option>
                 <option value="score"${blSort === 'score' ? ' selected' : ''}>score (priority ÷ effort)</option>
                 <option value="priority"${blSort === 'priority' ? ' selected' : ''}>priority</option>
@@ -1755,6 +1776,7 @@
                 <option value="state"${blSort === 'state' ? ' selected' : ''}>state</option>
                 <option value="type"${blSort === 'type' ? ' selected' : ''}>work type</option>
                 <option value="due"${blSort === 'due' ? ' selected' : ''}>due date</option>
+                <option value="closed"${blSort === 'closed' ? ' selected' : ''}>closed — last finished first</option>
                 <option value="text"${blSort === 'text' ? ' selected' : ''}>alphabetical</option>
             </select>
             <button class="pj-bl-badge" data-act="blDir"
@@ -1803,10 +1825,16 @@
                     <b>The area sections below it are the dictionary, not the order</b> — what exists,
                     grouped, each area in its own code order, which is what 🧹 restores. Moving something
                     in the queue does not touch one byte of those lines.</span>
-                <span class="pj-helpp"><b>A code is permanent through all of it:</b> <code>P-5.3</code>
-                    means the same item for ever. <b>Clicking a code opens the file at that item's line</b>
+                <span class="pj-helpp"><b>A code is permanent through all of it:</b> <code>K-8</code>
+                    means the same item for ever, and the list is <b>flat</b> — no sub-items, no parents.
+                    <b>Clicking a code opens the file at that item's line</b>
                     (↗ does the same) in whatever you chose under Settings → Open with; the button at the
                     top of this tab opens the whole document.</span>
+                <span class="pj-helpp"><b>“What did I finish last?” is its own ordering.</b> Pick
+                    <b>closed — last finished first</b> and the most recent closing goes to the top, with
+                    everything still open at the bottom; ↓ turns it round to oldest-first. Closed rows carry
+                    the date, and its hover says whether that came from the track ledger (the moment the box
+                    moved) or from a ✅ your Tasks plugin wrote (the day only).</span>
                 <span class="pj-helpp"><b>The row is the editor.</b> A badge opens a menu; 🗂 files an
                     uncoded item under an area, which is also what puts it in the queue; ✎ edits the words
                     in place. Resting on <b>more</b> shows the whole item without opening the row. Closing a
@@ -1839,14 +1867,12 @@
      *     stopped is marked, because the strip must not quietly promise an agent
      *     takes fourteen.
      *   * every entry OPENS. Click jumps to that row in the list below and
-     *     flashes it; hover gives the first 600 characters, which is the whole
-     *     point of a code — you cannot recognise K-6 from three letters.
+     *     flashes it; hover gives the item WHOLE, which is the whole point of a
+     *     code — you cannot recognise K-6 from three letters.
      *   * an entry with no code cannot be ordered, and says so rather than
      *     failing: an entry has to mean the same item after the file is edited,
      *     and only a code does.
      */
-    const BL_NEXT_TIP = 620;
-
     function nextQueueHtml(list, all, cut, queue, stale) {
         if (!list.length) { return ''; }
         const byKey = new Map(all.map(i => [blKey(i), i]));
@@ -1856,37 +1882,45 @@
             const key = x.code || ('L' + x.line);
             const i = byKey.get(key) || {};
             const words = String(i.text || '');
-            const tip = [
-                `#${n + 1} in your queue${n + 1 > cut ? ' — beyond the default ' + cut : ''}`,
-                i.section ? `under ${i.section}` : '',
-                i.effort ? `size ${i.effort}` : 'not sized',
-                i.priority && i.priority !== 'normal' ? `priority ${i.priority}` : '',
-                '',
-                words.length > BL_NEXT_TIP ? words.slice(0, BL_NEXT_TIP) + '…' : (words || '(empty)'),
-                '',
+            // ‼️ THE SAME PANEL THE ROW'S `more` USES, for the same reason: this
+            // is TEXT. A native title cut these off at whatever length the
+            // platform felt like and then closed itself, which on a strip whose
+            // entire job is "recognise the item behind this code" is the one
+            // failure that matters. See docs/CONVENTIONS.md → Hover.
+            const head = `${x.code || '📥 unfiled'} · #${n + 1} of ${queue.length} in your queue`
+                + `${n + 1 > cut ? ` (past the first ${cut})` : ''}`
+                + `${words ? ' · ' + window.AFTip.sizeNote(words) : ''}`;
+            const body = (words || '(empty)') + '\n\n' + window.AFTip.lines([
+                i.section ? `Section: ${i.section}` : '',
+                `Size: ${i.effort || 'not sized'}`,
+                `Priority: ${i.priority || 'normal'}`,
+                (i.kinds || []).length ? `Type: ${i.kinds.map(k => '#' + k).join(' ')}` : '',
+                (i.blockedBy || []).length ? `Waiting on: ${i.blockedBy.join(' ')}` : '',
+                i.plan ? `Plan item: ${i.plan}` : '',
                 x.code
-                    ? 'Click to jump to it below · drag it anywhere in the strip'
-                    : 'Click to jump to it below · it needs a code before it can be queued (🗂 on its row)'
-            ].filter(s => s).join('\n');
+                    ? 'Click to jump to its row below · drag it anywhere in the strip'
+                    : 'Click to jump to its row below · it needs a code before it can be queued (🗂 on its row)'
+            ]);
             // The cut mark goes BEFORE the entry that falls past it, so it reads
             // as a line drawn across the queue rather than a badge on an item.
             const mark = (n === cut && list.length > cut)
                 ? `<span class="pj-bl-nextcut" title="An agent that just says &quot;do the top five&quot; stops here — projects.backlog.next defaults to ${cut}. Everything to the right is still your queue.">┊</span>`
                 : '';
-            return mark + `<span class="pj-bl-nextw"><button class="pj-bl-nextb${n >= cut ? ' past' : ''}"
+            const chip = `<button class="pj-bl-nextb${n >= cut ? ' past' : ''}"
                 draggable="true"
                 data-blnext="${C.esc(key)}" data-code="${C.esc(x.code || '')}" data-line="${x.line}"
-                data-at="${n}" title="${C.esc(tip)}">
+                data-at="${n}">
                 <span class="pj-bl-nextn">${n + 1}</span>
                 <span class="pj-bl-code">${C.esc(x.code || '📥')}</span>
                 ${i.effort ? `<span class="pj-bl-nexte">${C.esc(i.effort)}</span>` : ''}
-            </button></span>`;
+            </button>`;
+            return mark + window.AFTip.wrap(chip, head, body);
         }).join('');
         // An entry whose item was closed or deleted in Obsidian is reported
         // rather than swept up: the block is the user's own list, and a program
         // that prunes it quietly loses their ordering without saying so.
         const staleNote = stale.length
-            ? `<span class="pj-bl-stale" title="These are in the 🎯 Queue block but are closed, gone, or have grown children. They are not handed to anybody, and the next reorder drops them.">⚠ ${C.esc(stale.join(' '))}</span>`
+            ? `<span class="pj-bl-stale" title="These are in the 🎯 Queue block but are closed or gone. They are not handed to anybody, and the next reorder drops them.">⚠ ${C.esc(stale.join(' '))}</span>`
             : '';
         // ‼️ A HEADING IS A LABEL, NOT A MANUAL. Three lines of prose beside the
         // word "Next up" said what the strip is, how to click it, how to drag it
@@ -1986,7 +2020,6 @@
             if (blFilter.efforts.indexOf(e) < 0) { return false; }
         }
         if (!on(blFilter.blocked, (i.blockedBy || []).length ? 'yes' : 'no')) { return false; }
-        if (!on(blFilter.epics, i.container ? 'container' : 'leaf')) { return false; }
         if (!on(blFilter.plan, i.plan ? 'yes' : 'no')) { return false; }
         if (!on(blFilter.due, i.due ? 'yes' : 'no')) { return false; }
         // the code is part of the searchable text, so `K-3 bug` is one query
@@ -1995,8 +2028,8 @@
         return true;
     }
 
-    /** `P-2` before `P-10`, `P-5` before `P-5.1` — the way a person reads them,
-     *  which string comparison does not. */
+    /** `P-2` before `P-10` — the way a person reads them, which string
+     *  comparison does not. */
     function blCompareCodes(a, b) {
         const pa = /^([A-Z]{1,2})-(\d+(?:\.\d+)*)$/.exec(a || '');
         const pb = /^([A-Z]{1,2})-(\d+(?:\.\d+)*)$/.exec(b || '');
@@ -2011,6 +2044,36 @@
     }
 
     const BL_STATE_ORDER = ['doing', 'open', 'done', 'cancelled'];
+    /** Finished with, either way — the two states "when was this closed" is
+     *  about. A cancelled item was closed too; it just was not done. */
+    const blClosedState = i => i.state === 'done' || i.state === 'cancelled';
+
+    /** `6 Aug`, or `6 Aug 25` once it is not this year — a closing date on two
+     *  hundred rows has to be short, and the year only earns its place when it
+     *  is not the one you are in. */
+    function blClosedShort(ts) {
+        const d = new Date(Number(ts) || 0);
+        if (!Number.isFinite(d.getTime()) || !ts) { return ''; }
+        const day = d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+        const now = new Date();
+        return d.getFullYear() === now.getFullYear()
+            ? day : `${day} ${String(d.getFullYear()).slice(2)}`;
+    }
+
+    /** The hover behind that mark: the full moment, and where it came from —
+     *  the ledger knows the second, a ✅ the Tasks plugin wrote knows the day. */
+    function blClosedTip(i) {
+        const d = new Date(i.closedAt);
+        const exact = i.doneOn && Math.abs(i.closedAt - Date.parse(i.doneOn + 'T12:00:00')) < 1000;
+        return `Closed as ${i.state}: `
+            + d.toLocaleString(undefined, {
+                year: 'numeric', month: 'short', day: 'numeric',
+                ...(exact ? {} : { hour: '2-digit', minute: '2-digit' })
+            })
+            + (exact
+                ? '\nFrom the ✅ on the line — your Tasks plugin wrote it, so it is the day and not the hour.'
+                : '\nFrom the track ledger — the moment the box actually moved.');
+    }
 
     /**
      * Order the visible rows.
@@ -2021,9 +2084,9 @@
      * dragging pointless. Every other ordering here is a way of LOOKING at the
      * pile, never of changing it.
      *
-     * Rows that cannot be in the queue (closed, containers, uncoded captures)
-     * come after it, in file order: they are not waiting their turn, they are
-     * simply also in the file.
+     * Rows that cannot be in the queue (closed items, uncoded captures) come
+     * after it, in file order: they are not waiting their turn, they are simply
+     * also in the file.
      */
     function blOrder(list, at) {
         const dir = blDesc ? -1 : 1;
@@ -2031,6 +2094,25 @@
             const rank = i => (i.code && at[i.code]) || (1e6 + i.line);
             const out = list.slice().sort((a, b) => rank(a) - rank(b));
             return blDesc ? out.reverse() : out;
+        }
+        /**
+         * ‼️ "WHAT DID I FINISH LAST" — three groups, not one comparator.
+         *
+         * Hunting the last few closed items through a two-hundred-line file is
+         * the thing this answers, so the newest closing comes FIRST and the
+         * arrow flips that (oldest closing first) without disturbing anything
+         * else. What must not move either way is the tail: an item that is not
+         * closed is not "closed longest ago", and an item closed before any of
+         * this was recorded has no time rather than an old one. Both keep their
+         * file order at the back, closed-but-undated ahead of still-open,
+         * because that is the honest amount each of them says.
+         */
+        if (blSort === 'closed') {
+            const timed = list.filter(i => i.closedAt);
+            const undated = list.filter(i => !i.closedAt && blClosedState(i));
+            const live = list.filter(i => !i.closedAt && !blClosedState(i));
+            timed.sort((a, b) => ((b.closedAt - a.closedAt) * dir) || (a.line - b.line));
+            return timed.concat(undated, live);
         }
         const by = {
             score: (a, b) => (b.score - a.score),
@@ -2090,12 +2172,13 @@
         if (closed) { cls.push('closed'); }
         if (doing) { cls.push('doing'); }
         if (isNext) { cls.push('next'); }
-        if (i.container) { cls.push('container'); }
         const type = blTypeOf(i);
         // The canonical type is one settable badge; anything else the user tagged
         // rides along beside it, read-only, because it is theirs.
         const others = (i.kinds || []).filter(k => k !== type)
-            .map(k => `<span class="pj-bl-kind" title="Your own tag — it filters, but the type badge only sets the canonical set">#${C.esc(k)}</span>`);
+            .map(k => `<span class="pj-bl-kind${BL_ORIGIN_TIP[k] ? ' origin' : ''}"
+                title="${C.esc(BL_ORIGIN_TIP[k]
+                || 'Your own tag — it filters, but the type badge only sets the canonical set')}">#${C.esc(k)}</span>`);
         const full = i.text || '(empty)';
         const open = blOpen.has(key);
         const cut = blChars > 0 && full.length > blChars && !open;
@@ -2103,7 +2186,7 @@
         const dragging = blSort === 'file';
 
         if (blEdit && blEdit.key === key) {
-            return `<div class="${cls.join(' ')}" style="padding-left:${6 + (i.depth || 0) * 10}px"
+            return `<div class="${cls.join(' ')}"
                 data-blrow data-code="${C.esc(i.code || '')}" data-line="${i.line}"
                 data-prio="${C.esc(i.priority || 'normal')}" data-effort="${C.esc(i.effort || '')}">
                 <span class="pj-bl-code">${C.esc(i.code || '📥')}</span>
@@ -2128,19 +2211,19 @@
             + ` · ${window.AFCtx.HINT}: state, priority, size, type, queue position`;
         // The handle carries the row's place in the queue. Off means there is no
         // place to carry: an uncoded capture cannot be in the queue, and a
-        // closed item or a container is not work waiting to be done.
+        // closed item is not work waiting to be done.
         const gripTip = queueAt
             ? (dragging
                 ? `#${queueAt} in the queue. Drag it anywhere — areas do not hold it, and its code, line and section do not change.`
                 : `#${queueAt} in the queue. Dragging needs the list in queue order; the other sorts are ways of LOOKING, not of changing.`)
             : (i.code
-                ? 'Not in the queue — a closed item or a container is not work waiting.'
+                ? 'Not in the queue — a closed item is not work waiting.'
                 : 'Not in the queue — file it with 🗂 first; only a code survives the file being edited.');
 
-        return `<div class="${cls.join(' ')}" style="padding-left:${6 + (i.depth || 0) * 10}px"
+        return `<div class="${cls.join(' ')}"
             data-blrow data-key="${C.esc(key)}" data-code="${C.esc(i.code || '')}" data-line="${i.line}"
             data-prio="${C.esc(i.priority || 'normal')}" data-effort="${C.esc(i.effort || '')}"
-            data-type="${C.esc(type)}" data-section="${C.esc(i.section || '')}" data-depth="${i.depth || 0}"
+            data-type="${C.esc(type)}" data-section="${C.esc(i.section || '')}"
             ${blCtx(i, key, queueAt)}>
             <span class="pj-bl-grip${queueAt && dragging ? '' : ' off'}${band || ''}"
                 ${queueAt && dragging ? 'draggable="true"' : ''} data-blgrip
@@ -2173,6 +2256,14 @@
                     + 'plugin draws as in-progress, and the moment you pressed it is a row in Backloglog. '
                     + 'It is still live work: agents are still handed it. ▶ again puts it back to open.')}">▶ started</span>` : ''}
                     ${i.due ? `<span class="pj-bl-m" title="due">📅 ${C.esc(i.due)}</span>` : ''}
+                    ${/* ‼️ WHEN it was closed, on the row that says it IS closed —
+                          because an ordering nobody can read is a list in an
+                          order you have to take on trust. The ledger holds the
+                          moment to the second; a `✅` the Tasks plugin wrote is
+                          only to the day, and the hover says which of the two
+                          this is rather than levelling them. */''}
+                    ${closed && i.closedAt
+                ? `<span class="pj-bl-m closedat" title="${C.esc(blClosedTip(i))}">✅ ${C.esc(blClosedShort(i.closedAt))}</span>` : ''}
                     ${i.plan ? `<span class="pj-bl-m" title="plan item">🆔 ${C.esc(i.plan)}</span>` : ''}
                     ${waitingOn && waitingOn.length
                 ? `<span class="pj-bl-m blocked" title="Waiting on ${C.esc(waitingOn.join(', '))}">⛔ ${C.esc(waitingOn.join(' '))}</span>` : ''}
@@ -2777,6 +2868,19 @@
                 blSort = blSortSel.value;
                 blMenu = null;
                 blHelpOpen = false;
+                // ‼️ "Last finished first" over a list that hides finished work
+                // is an empty answer to a question that was asked properly. The
+                // state axis is widened to include the closed states and the
+                // page SAYS so — the chip shows the change, so this is a filter
+                // the reader can see and undo, not one applied behind them.
+                if (blSort === 'closed') {
+                    const want = ['open', 'doing', 'done', 'cancelled'];
+                    const have = blFilter.states || want;
+                    if (!have.includes('done') || !have.includes('cancelled')) {
+                        blFilter.states = want.filter(s => have.includes(s) || s === 'done' || s === 'cancelled');
+                        flash = { ok: 'Closed items brought into view — the state filter now includes done and cancelled.' };
+                    }
+                }
                 render();
             });
         }

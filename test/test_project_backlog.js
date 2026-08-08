@@ -8,9 +8,12 @@
 //     silently repoint every note that ever quoted it.
 //   - closing a box changes EXACTLY ONE CHARACTER, the same promise the plan
 //     makes. Rebuilding the line would pass a naive test and mangle a vault.
-//   - `next` is what "do the top five" runs on, so its exclusions (containers,
-//     blocked items, oversized ones) are the difference between five items an
-//     agent finishes and five it abandons half-done.
+//   - `next` is what "do the top five" runs on, so its exclusions (blocked
+//     items, oversized ones) are the difference between five items an agent
+//     finishes and five it abandons half-done.
+//   - the backlog is FLAT. A dotted code and an indented line are things a file
+//     on disk may already contain, so they must keep parsing and keep their
+//     number — but neither makes an item the child of anything.
 const path = require('path');
 
 let pass = 0, fail = 0;
@@ -30,7 +33,8 @@ function diff(a, b) {
 }
 
 // A backlog written the way this vault writes them: CRLF, an inbox with
-// uncoded captures, areas as headings, a nested child, real Tasks metadata.
+// uncoded captures, areas as headings, legacy dotted+indented lines, real Tasks
+// metadata.
 const VAULT = [
     '---',
     'af-role: backlog',
@@ -68,10 +72,12 @@ const VAULT = [
     ok('a code at the start of the line is the item\'s code',
         s.items[1].code === 'P-5' && s.items[5].code === 'P-12');
     ok('an uncoded capture is an inbox item', !s.items[0].code && s.items[0].inbox === true);
-    ok('the parent comes from the code, not the indent', by('P-5.1').parent === 'P-5');
-    ok('an item with children is a container, a leaf is not',
-        by('P-5').container === true && by('P-5.1').container === false);
-    ok('the area comes off the code', by('K-8').area === 'K');
+    // ‼️ THE LIST IS FLAT. A dotted code and an indented line still parse — a
+    // file on disk may contain both — but neither hangs one item under another.
+    ok('a dotted legacy code is an item like any other, not a child',
+        by('P-5.1').parent === undefined && by('P-5').container === undefined);
+    ok('the area comes off the code even when it is dotted',
+        by('K-8').area === 'K' && by('P-5.1').area === 'P');
     ok('`## P — Projects` declares an area',
         s.areas.length === 2 && s.areas[0].code === 'P' && s.areas[0].label === 'Projects');
     ok('an area counts its own open items', s.areas[1].code === 'K' && s.areas[1].open === 1);
@@ -115,15 +121,15 @@ const VAULT = [
 
 // ---------- codes ----------
 {
-    ok('a code carries its own path', B.parentCode('P-5.3') === 'P-5');
-    ok('an area root has no parent', B.parentCode('P-5') === undefined);
     ok('codes sort like a person expects: P-2 before P-10',
         ['P-10', 'P-2', 'P-5.1', 'P-5'].sort(B.compareCodes).join() === 'P-2,P-5,P-5.1,P-10');
     const items = B.parseBacklog(VAULT).items;
     ok('the next area code is one past the highest, not one past the count',
         B.nextCode(items, 'P') === 'P-13');
-    ok('the next child code counts children only, not grandchildren',
-        B.nextCode(items, 'P', 'P-5') === 'P-5.4');
+    // ‼️ A dotted legacy code spends its FIRST number, so a flat code handed out
+    // now can never collide with `P-5.3`.
+    ok('a dotted code counts under its own first number',
+        B.nextCode(B.parseBacklog('## Z — Z\n- [ ] Z-4.7 x\n').items, 'Z') === 'Z-5');
     ok('a fresh area starts at 1', B.nextCode(items, 'Z') === 'Z-1');
 }
 
@@ -180,14 +186,14 @@ const VAULT = [
 {
     const r = B.nextBacklog(VAULT, { limit: 10, maxEffort: 'XL' });
     const codes = r.items.map(i => i.code || 'inbox');
-    ok('a container is never handed out as work — the work is at the leaves',
-        codes.indexOf('P-5') < 0);
+    ok('‼️ nothing is held back for having a dotted code — the list is flat',
+        codes.indexOf('P-5') >= 0 && codes.indexOf('P-5.1') >= 0);
     ok('a blocked item is held back and reported, not silently dropped',
         codes.indexOf('P-5.3') < 0 && r.blocked.some(b => b.item.code === 'P-5.3'));
     ok('a closed item is not next', codes.indexOf('K-3') < 0);
     ok('an uncoded capture is still work', codes.indexOf('inbox') >= 0);
     ok('the queue is the default — the user\'s own arrangement wins',
-        codes.join() === 'P-5.1,P-5.2,P-12,K-8,inbox');
+        codes.join() === 'P-5,P-5.1,P-5.2,P-12,K-8,inbox');
     ok('‼️ …and an item that cannot be IN the queue comes after it, not among it',
         codes[codes.length - 1] === 'inbox');
 
@@ -223,11 +229,14 @@ const VAULT = [
     ok('the document\'s own line ending is used',
         (r.text.match(/\r\n/g) || []).length === (VAULT.match(/\r\n/g) || []).length + 1);
 
-    const child = B.addBacklogItem(VAULT, { text: 'a child', parent: 'P-5' });
-    ok('a parent gives it the next child code', child.code === 'P-5.4');
-    ok('a child joins its family rather than the end of the section',
-        child.text.indexOf('P-5.4') < child.text.indexOf('P-12'));
-    ok('a child is indented under its parent', /\n {4}- \[ \] P-5\.4/.test(child.text));
+    // ‼️ A NEW ITEM IS NEVER A SUB-ITEM. It goes at the end of its area with a
+    // flat code and no indent, whatever the file already contains.
+    const flat = B.addBacklogItem(VAULT, { text: 'a new one', area: 'P' });
+    ok('a new item in an area with dotted legacy codes still gets a flat one',
+        flat.code === 'P-13');
+    ok('…at the end of the area, at the left margin',
+        /\n- \[ \] P-13 a new one/.test(flat.text)
+        && flat.text.indexOf('P-13') > flat.text.indexOf('P-12'));
 
     const loose = B.addBacklogItem(VAULT, { text: 'just a thought' });
     ok('with no area it goes in uncoded — capture must cost nothing',
@@ -242,8 +251,8 @@ const VAULT = [
     });
     ok('every axis is written in the vault\'s own notation',
         /- \[ \] K-9 everything #bug 🔺 \[effort:: S\] ⛔ K-8 📅 2026-09-01/.test(full.text));
-    ok('an unknown parent is refused rather than guessed at',
-        !B.addBacklogItem(VAULT, { text: 'x', parent: 'Q-1' }).ok);
+    ok('something that is not an area code is refused rather than guessed at',
+        !B.addBacklogItem(VAULT, { text: 'x', area: 'Q-1' }).ok);
     ok('a lower-case area is accepted and normalised',
         B.addBacklogItem(VAULT, { text: 'x', area: 'k' }).code === 'K-9');
     ok('an empty item is refused', !B.addBacklogItem(VAULT, { text: '  ' }).ok);
@@ -321,8 +330,8 @@ const VAULT = [
         (r.text.match(/console history search is case sensitive/g) || []).length === 1);
     ok('an item that already has a code is refused',
         !B.codeBacklogItem(VAULT, { code: 'K-8' }, 'P').ok);
-    ok('an unknown parent is refused',
-        !B.codeBacklogItem(VAULT, { text: 'console history search' }, '', 'Q-9').ok);
+    ok('something that is not an area code is refused, never guessed',
+        !B.codeBacklogItem(VAULT, { text: 'console history search' }, 'Q-9').ok);
 }
 
 // ---------- order ----------
@@ -332,11 +341,9 @@ const VAULT = [
 // because the order stopped being where the item's line sits.
 {
     const order = () => B.queueOrder(B.parseBacklog(VAULT).items, B.parseBacklog(VAULT).queue);
-    ok('with no block, the order is the file — live leaves only, in line order',
-        order().join() === 'P-5.1,P-5.2,P-5.3,P-12,K-8');
-    ok('…a container is not in it: work lives at the leaves',
-        order().indexOf('P-5') < 0);
-    ok('…and neither is a closed item', order().indexOf('K-3') < 0);
+    ok('with no block, the order is the file — every live coded item, in line order',
+        order().join() === 'P-5,P-5.1,P-5.2,P-5.3,P-12,K-8');
+    ok('…a closed item is not in it', order().indexOf('K-3') < 0);
 
     // The move nobody could make before: last area to the front.
     const toTop = B.moveInQueue(VAULT, 'K-8', 'top');
@@ -348,19 +355,19 @@ const VAULT = [
         /## K — Console\r\n\r\n- \[x\] K-3[\s\S]*- \[ \] K-8 history search/.test(toTop.text));
 
     const up1 = B.moveInQueue(VAULT, 'K-8', 'up');
-    ok('a plain click moves one place', up1.queue.join() === 'P-5.1,P-5.2,P-5.3,K-8,P-12');
+    ok('a plain click moves one place', up1.queue.join() === 'P-5,P-5.1,P-5.2,P-5.3,K-8,P-12');
     const up3 = B.moveInQueue(VAULT, 'K-8', 'up', 3);
     ok('‼️ and the step menu moves several — the whole point of resting on ▲',
-        up3.queue.join() === 'P-5.1,K-8,P-5.2,P-5.3,P-12');
+        up3.queue.join() === 'P-5,P-5.1,K-8,P-5.2,P-5.3,P-12');
     const up99 = B.moveInQueue(VAULT, 'K-8', 'up', 99);
     ok('a jump bigger than the queue lands on the end, it does not fail',
         up99.ok && up99.queue[0] === 'K-8');
     const down = B.moveInQueue(VAULT, 'P-5.1', 'down', 2);
-    ok('…the same downwards', down.queue.join() === 'P-5.2,P-5.3,P-5.1,P-12,K-8');
+    ok('…the same downwards', down.queue.join() === 'P-5,P-5.2,P-5.3,P-5.1,P-12,K-8');
     const bottom = B.moveInQueue(VAULT, 'P-5.1', 'bottom');
-    ok('…and to the very back', bottom.queue.join() === 'P-5.2,P-5.3,P-12,K-8,P-5.1');
+    ok('…and to the very back', bottom.queue.join() === 'P-5,P-5.2,P-5.3,P-12,K-8,P-5.1');
 
-    const already = B.moveInQueue(VAULT, 'P-5.1', 'up');
+    const already = B.moveInQueue(VAULT, 'P-5', 'up');
     ok('already at the front is a no-op that says so, not an error',
         already.ok && already.text === VAULT && /already at the top/.test(already.note || ''));
     ok('the line ending is preserved when the block is written',
@@ -370,23 +377,21 @@ const VAULT = [
     // ---- absolute position: "do this one third" ----
     const at3 = B.placeInQueue(VAULT, 'K-8', 3);
     ok('a code can be put at a position counted the way a person says it',
-        at3.queue.join() === 'P-5.1,P-5.2,K-8,P-5.3,P-12');
+        at3.queue.join() === 'P-5,P-5.1,K-8,P-5.2,P-5.3,P-12');
     ok('…and position 1 is the front', B.placeInQueue(VAULT, 'K-8', 1).queue[0] === 'K-8');
 
     // ---- the drag: a named destination rather than a count of steps ----
     const dropped = B.dropInQueue(VAULT, 'K-8', 'P-5.1', 'before');
     ok('an entry can be dropped directly in front of another',
-        dropped.ok && dropped.queue.join() === 'K-8,P-5.1,P-5.2,P-5.3,P-12');
+        dropped.ok && dropped.queue.join() === 'P-5,K-8,P-5.1,P-5.2,P-5.3,P-12');
     const after = B.dropInQueue(VAULT, 'P-5.1', 'K-8', 'after');
     ok('…or behind one, across areas, with no refusal anywhere',
-        after.ok && after.queue.join() === 'P-5.2,P-5.3,P-12,K-8,P-5.1');
+        after.ok && after.queue.join() === 'P-5,P-5.2,P-5.3,P-12,K-8,P-5.1');
     ok('dropping something on itself is a no-op, not an error',
         B.dropInQueue(VAULT, 'K-8', 'K-8', 'after').text === VAULT);
 
-    // ---- the four refusals, each said precisely: one message for all of them
+    // ---- the three refusals, each said precisely: one message for all of them
     // would send somebody to read the file.
-    ok('a container is refused — work lives at the leaves',
-        /has children/.test(B.moveInQueue(VAULT, 'P-5', 'up').error || ''));
     ok('a closed item is refused', /is done/.test(B.moveInQueue(VAULT, 'K-3', 'up').error || ''));
     ok('an unknown code is refused by name',
         /no backlog item with code Z-9/.test(B.moveInQueue(VAULT, 'Z-9', 'up').error || ''));
@@ -409,7 +414,7 @@ const VAULT = [
         !/K-8 history search[^\r\n]*\r\n\r\n/.test(t.text));
     ok('a file already in order says so and is returned byte-identical',
         B.tidyBacklogFile(t.text).text === t.text && B.tidyBacklogFile(t.text).moved === 0);
-    ok('‼️ children ride with their parent — P-5.1 stays under P-5',
+    ok('a dotted legacy code sorts numerically, not as a string',
         /P-5 Faz 5[\s\S]*P-5\.1[\s\S]*P-5\.2[\s\S]*P-5\.3[\s\S]*P-12/.test(t.text));
     ok('the queue is untouched by it: it names codes, and a code has no line',
         B.queueOrder(B.parseBacklog(t.text).items, ['K-8']).join()
@@ -487,12 +492,12 @@ const VAULT = [
     ok('a file with no block has an empty queue', B.parseBacklog(VAULT).queue.length === 0);
     ok('…and the order is then exactly the file order',
         B.nextBacklog(VAULT, { limit: 3, maxEffort: 'XL' }).items.map(i => i.code ?? '📥').join()
-        === 'P-5.1,P-5.2,P-12');
+        === 'P-5,P-5.1,P-5.2');
 
     // The move that was unsayable: a K item ahead of every P item.
     const first = B.moveInQueue(VAULT, 'K-8', 'top');
     ok('‼️ THE FIRST WRITE MATERIALISES THE WHOLE ORDER — no half-list, no prefix',
-        first.ok && first.queue.join() === 'K-8,P-5.1,P-5.2,P-5.3,P-12');
+        first.ok && first.queue.join() === 'K-8,P-5,P-5.1,P-5.2,P-5.3,P-12');
     ok('…and K-8 is now first, across the areas', B.nextBacklog(first.text,
         { limit: 3, maxEffort: 'XL' }).items[0].code === 'K-8');
     ok('the item itself is untouched — same line, same words, same code',
@@ -506,14 +511,14 @@ const VAULT = [
 
     // Reading it back is the same list — the file is the truth, not a cache.
     ok('the block round-trips',
-        B.parseBacklog(first.text).queue.join() === 'K-8,P-5.1,P-5.2,P-5.3,P-12');
+        B.parseBacklog(first.text).queue.join() === 'K-8,P-5,P-5.1,P-5.2,P-5.3,P-12');
 
     // ‼️ THE BUG THE PIN DESIGN HAD: moving one thing must move nothing else.
     // Sending the front item back to third used to drag the two above it into
     // the block as pins nobody had asked for.
     const third = B.placeInQueue(first.text, 'K-8', 3);
     ok('‼️ moving one entry back leaves every other entry exactly where it was',
-        third.queue.join() === 'P-5.1,P-5.2,K-8,P-5.3,P-12');
+        third.queue.join() === 'P-5,P-5.1,K-8,P-5.2,P-5.3,P-12');
 
     const empty = B.setBacklogQueue(first.text, []);
     ok('emptying the queue removes the block rather than leaving a heading',
@@ -538,7 +543,7 @@ const VAULT = [
     // An uncoded capture has no handle that survives an edit, so it queues last.
     ok('an uncoded capture comes after everything that can be ordered',
         B.nextBacklog(first.text, { limit: 9, maxEffort: 'XL' })
-            .items.map(i => i.code ?? '📥').join() === 'K-8,P-5.1,P-5.2,P-12,📥');
+            .items.map(i => i.code ?? '📥').join() === 'K-8,P-5,P-5.1,P-5.2,P-12,📥');
 
     // `sort` is a different QUESTION, and the queue must not answer it.
     ok('asking for the cheapest is not asking for your queue',
@@ -562,9 +567,11 @@ const VAULT = [
     ok('a duplicate code is flagged on the line', /used more than once/.test(s.items[1].warn || ''));
     ok('and addressing it is refused rather than guessed at',
         !B.setBacklogState(dupe, { code: 'P-1' }, 'done').ok);
-    const orphan = B.parseBacklog('## P — P\n- [ ] P-9.1 child of nothing\n');
-    ok('a child whose parent is not in the file is flagged, not hidden',
-        /parent P-9 is not in this file/.test(orphan.items[0].warn || ''));
+    // ‼️ A dotted code standing on its own is NOT a complaint any more: nothing
+    // is its parent, so there is nothing missing to report.
+    const dotted = B.parseBacklog('## P — P\n- [ ] P-9.1 on its own\n');
+    ok('a lone dotted code is an ordinary item, warned about nothing',
+        dotted.items[0].code === 'P-9.1' && !dotted.items[0].warn);
 }
 
 console.log(`${pass} passed, ${fail} failed`);

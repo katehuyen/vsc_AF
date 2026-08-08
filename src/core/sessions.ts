@@ -277,12 +277,52 @@ function toolDetail(input: Record<string, unknown> | undefined): string {
 }
 
 /**
- * Session title from a user prompt: skip harness/command noise (XML-ish blocks,
- * slash commands, shell passthrough) so names read like the conversation.
+ * An attachment marker the harness writes in front of what the person typed:
+ * `[Image #2] look at this`, `[Pasted text #1 +40 lines] and fix it`. The marker
+ * is machinery, the sentence after it is not — so it comes off and the sentence
+ * stays. Recognised by SHAPE (a short bracket carrying `#<n>`), never by a list
+ * of names, because the names change and the shape does not.
  */
-function titleFromPrompt(text: string): string {
-    const t = text.replace(/\s+/g, ' ').trim();
+const ATTACHMENT_MARK = /^\[[^\]]{0,60}#\d+[^\]]{0,60}\]\s*/;
+
+/** A whole message that is nothing but one bracketed notice — the harness
+ *  speaking in the user's place: `[Request interrupted by user]`. */
+const WHOLE_NOTICE = /^\[[^\]]*\]$/;
+
+/**
+ * ‼️ IS THIS THE CONVERSATION, OR IS IT THE MACHINERY TALKING?
+ *
+ * One function answers it, and every surface that names a session asks THIS one.
+ * There used to be a second copy in the session viewer, which is how the rule
+ * drifted in the first place: two lists of exceptions, maintained separately,
+ * agreeing by luck.
+ *
+ * Four kinds of machinery ride in the transcript as ordinary user messages, and
+ * a session named after any of them is named after its own plumbing:
+ *
+ *   `<…>`   command blocks, local-command output, system reminders
+ *   `/…`    a typed slash command — the command is not what the session is about
+ *   `!…`    shell passthrough
+ *   `[…]`   ‼️ a bracketed NOTICE, whole: `[Request interrupted by user]`.
+ *           This is the one that got through, and it produced exactly the
+ *           failure reported — a session named after a STATE rather than after
+ *           anything anybody said.
+ *
+ * ‼️ AND THE DISTINCTION THAT MATTERS: only a message that is ENTIRELY the
+ * bracket is machinery. `[Image #2] look at this file` is a person talking with
+ * an attachment in front of it — measured, it is a real title in this vault —
+ * so the marker is stripped and the sentence names the session. A blanket
+ * "starts with [" rule would have thrown that away, which is why the shape is
+ * checked rather than the first character.
+ *
+ * Empty means "not a name" and the caller simply asks the next message; nothing
+ * is invented and no prompt is dropped from any count.
+ */
+export function conversationTitle(text: string): string {
+    let t = String(text ?? '').replace(/\s+/g, ' ').trim();
+    while (ATTACHMENT_MARK.test(t)) { t = t.replace(ATTACHMENT_MARK, ''); }
     if (!t || t.startsWith('<') || t.startsWith('/') || t.startsWith('!')) { return ''; }
+    if (WHOLE_NOTICE.test(t)) { return ''; }
     return truncate(t, 80);
 }
 
@@ -389,10 +429,17 @@ export function parseSessionFile(
         if (line.type === 'user' && line.message) {
             const content = line.message.content;
             const countPrompt = (text: string) => {
+                // ‼️ THE TURN IS COUNTED EITHER WAY. A harness notice really did
+                // arrive as a user message, and a count that quietly disagreed
+                // with the transcript would be a worse bug than a bad name. What
+                // changes is only whether it may SPEAK FOR the session.
                 info.userTurns++;
-                if (!info.title) { info.title = titleFromPrompt(text); }
+                const said = conversationTitle(text);
+                if (!info.title) { info.title = said; }
                 // The whole opening ask, kept once — see SessionInfo.firstPrompt.
-                if (info.firstPrompt === undefined) {
+                // Same judgment as the title, deliberately: the hover says "the
+                // opening prompt", and `[Request interrupted by user]` is not one.
+                if (info.firstPrompt === undefined && said) {
                     info.firstPrompt = truncate(text.trim(), FIRST_PROMPT_MAX);
                 }
                 if (ts) {

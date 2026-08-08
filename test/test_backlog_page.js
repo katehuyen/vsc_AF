@@ -31,7 +31,12 @@ const shared = fs.readFileSync(path.resolve(__dirname, '../media/afTextTools.js'
     + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afCtx.js'), 'utf8')
     + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afSessionCtx.js'), 'utf8')
     // …and the query language, because the search box is one (media/afQuery.js)
-    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afQuery.js'), 'utf8');
+    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afQuery.js'), 'utf8')
+    // …and the rich hover panel, because the Next up strip and the row's `more`
+    // BOTH open it: a stub would let the page and the panel drift apart, which
+    // is the drift that put a truncating native title on the strip in the first
+    // place (docs/CONVENTIONS.md → Hover).
+    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afTip.js'), 'utf8');
 const createAfmsDom = require(path.resolve(__dirname, 'lib_afms_dom.js'));
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
@@ -239,35 +244,50 @@ const items = () => [
     // an uncoded capture in the inbox — the line-number path
     {
         code: null, text: 'console history search is case sensitive', state: 'open', area: null,
-        parent: null, line: 9, depth: 0, section: '📥 Gelen', kinds: [], priority: 'normal',
+        line: 9, section: '📥 Gelen', kinds: [], priority: 'normal',
         effort: null, blockedBy: [], plan: null, from: null, due: null, score: 0.5,
-        container: false, inbox: true
+        inbox: true
     },
     {
-        code: 'P-1', text: 'the work layer', state: 'open', area: 'P', parent: null, line: 13,
-        depth: 0, section: 'P — Projeler', kinds: ['feat'], priority: 'high', effort: 'M',
-        blockedBy: [], plan: 'afprj-05', from: null, due: null, score: 1, container: true, inbox: false
+        code: 'P-1', text: 'the work layer', state: 'open', area: 'P', line: 13,
+        section: 'P — Projeler', kinds: ['feat'], priority: 'high', effort: 'M',
+        blockedBy: [], plan: 'afprj-05', from: null, due: null, score: 1, inbox: false
     },
     {
-        code: 'P-2', text: LONG, state: 'open', area: 'P', parent: 'P-1', line: 14, depth: 4,
+        code: 'P-2', text: LONG, state: 'open', area: 'P', line: 14,
         section: 'P — Projeler', kinds: ['bug', 'regression'], priority: 'highest', effort: 'S',
-        blockedBy: [], plan: null, from: null, due: '2026-08-09', score: 2.5, container: false, inbox: false
+        blockedBy: [], plan: null, from: null, due: '2026-08-09', score: 2.5, inbox: false
     },
     {
         code: 'K-1', text: 'measure what the counter actually sees', state: 'open', area: 'K',
-        parent: null, line: 18, depth: 0, section: 'K — Konsol', kinds: ['research'],
+        line: 18, section: 'K — Konsol', kinds: ['research'],
         priority: 'medium', effort: 'XS', blockedBy: [], plan: null, from: null, due: null,
-        score: 3, container: false, inbox: false
+        score: 3, inbox: false
     },
     {
-        code: 'K-2', text: 'end and remove session', state: 'open', area: 'K', parent: null,
-        line: 19, depth: 0, section: 'K — Konsol', kinds: [], priority: 'normal', effort: null,
-        blockedBy: ['K-1'], plan: null, from: null, due: null, score: 0.5, container: false, inbox: false
+        code: 'K-2', text: 'end and remove session', state: 'open', area: 'K',
+        line: 19, section: 'K — Konsol', kinds: [], priority: 'normal', effort: null,
+        blockedBy: ['K-1'], plan: null, from: null, due: null, score: 0.5, inbox: false
     },
     {
-        code: 'U-1', text: 'a finished one', state: 'done', area: 'U', parent: null, line: 23,
-        depth: 0, section: 'U — Arayüz', kinds: ['ux'], priority: 'low', effort: 'L',
-        blockedBy: [], plan: null, from: null, due: null, score: 0.125, container: false, inbox: false
+        code: 'U-1', text: 'a finished one', state: 'done', area: 'U', line: 23,
+        section: 'U — Arayüz', kinds: ['ux'], priority: 'low', effort: 'L',
+        blockedBy: [], plan: null, from: null, due: null, score: 0.125, inbox: false,
+        // the ledger knows the moment the box moved
+        closedAt: Date.parse('2026-08-05T09:30:00Z')
+    },
+    {
+        code: 'U-2', text: 'finished more recently', state: 'done', area: 'U', line: 24,
+        section: 'U — Arayüz', kinds: ['ux'], priority: 'low', effort: 'S',
+        blockedBy: [], plan: null, from: null, due: null, score: 0.5, inbox: false,
+        closedAt: Date.parse('2026-08-07T18:00:00Z')
+    },
+    {
+        // closed before any of this was recorded: no ledger row, no ✅
+        code: 'U-3', text: 'cancelled long ago, undated', state: 'cancelled', area: 'U', line: 25,
+        section: 'U — Arayüz', kinds: [], priority: 'normal', effort: null,
+        blockedBy: [], plan: null, from: null, due: null, score: 0.5, inbox: false,
+        closedAt: null
     }
 ];
 
@@ -320,7 +340,7 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
     const r = run(data());
     ok('every live item is a row', codesIn(r.html()).join() === 'P-2,K-1,K-2,P-1');
     ok('the closed one is folded away until asked for', !/data-code="U-1"/.test(r.html()));
-    ok('the count says how much of the pile is on screen', /5 of 6<\/span>/.test(r.html()));
+    ok('the count says how much of the pile is on screen', /5 of 8<\/span>/.test(r.html()));
     ok('the Next-up card names what an agent would be handed',
         /projects\.backlog\.next/.test(r.html()) && /pj-bl-code">P-2</.test(r.html()));
     ok('a blocked row wears what it waits on', /⛔ K-1/.test(r.html()));
@@ -339,12 +359,18 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
         chips[2].dataset.blnext === 'L9' && chips[2].dataset.line === '9');
     ok('where the op\'s default stops is MARKED rather than being the end',
         /pj-bl-nextcut/.test(r.html()) && /class="pj-bl-nextb past"/.test(r.html()));
-    ok('a chip carries the words in its hover, so a code is recognisable',
-        chips[0].attrs.title.includes(LONG.slice(0, 120)));
-    ok('…cut, so one thousand-word item cannot become the tooltip',
-        chips[0].attrs.title.includes('…') && !chips[0].attrs.title.includes(LONG.slice(-40)));
-    ok('…and says where in the queue it is, and what it would cost',
-        /#1 in your queue/.test(chips[0].attrs.title) && /size S/.test(chips[0].attrs.title));
+    // ‼️ THE CHIP'S HOVER IS THE RICH PANEL, NOT A NATIVE TITLE. A code is three
+    // letters; the only thing that makes it recognisable is the item behind it,
+    // and a native tooltip cut that off wherever the platform felt like and then
+    // closed itself. Same panel the row's `more` opens (docs/CONVENTIONS.md).
+    ok('a chip hands its hover to the rich panel, not to a native title',
+        chips[0].attrs.title === undefined && /class="af-tipw"/.test(r.html()));
+    ok('…carrying the item WHOLE — the thousand-word one is not cut',
+        r.html().includes(LONG.slice(-40)));
+    ok('…under a head that says where in the queue it is and how big it is',
+        /P-2 · #1 of 3 in your queue/.test(r.html()) && /characters<\/span>/.test(r.html()));
+    ok('…and the figures below it, as Label: value',
+        /Size: S/.test(r.html()) && /Priority: highest/.test(r.html()));
 
     // Clicking one takes you to its row and marks it. Nothing is written.
     chips[1].click();
@@ -684,11 +710,6 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
     only('bl-blocked', 'no');
     ok('"startable now" drops what is waiting on something', codesIn(r.html()).join() === 'P-2,K-1,P-1');
     any('bl-blocked');
-    only('bl-epics', 'leaf');
-    ok('"leaves only" drops the containers', codesIn(r.html()).join() === 'P-2,K-1,K-2');
-    only('bl-epics', 'container');
-    ok('…and "containers only" is the other half', codesIn(r.html()).join() === 'P-1');
-    any('bl-epics');
     only('bl-plan', 'yes');
     ok('the plan link filters', codesIn(r.html()).join() === 'P-1');
     any('bl-plan');
@@ -729,10 +750,12 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
     ok('ticking done brings the finished one back — no second checkbox for it',
         codesIn(r.html()).indexOf('U-1') >= 0);
     r.ms.only('bl-states', ['done', 'cancelled']);
-    ok('‼️ and two closed states at once is now sayable', codesIn(r.html()).join() === 'U-1');
+    ok('‼️ and two closed states at once is now sayable',
+        codesIn(r.html()).join() === 'U-1,U-2,U-3');
     r.ms.selectAll('bl-states');
     ok('every state ticked is the same as no state filter at all',
-        codesIn(r.html()).join() === 'P-2,K-1,K-2,P-1,U-1' && r.ms.label('bl-states') === 'state: every state');
+        codesIn(r.html()).join() === 'P-2,K-1,K-2,P-1,U-1,U-2,U-3'
+        && r.ms.label('bl-states') === 'state: every state');
 
     // Being unfiled is not a STATE — it is whether the item has a code — so it
     // is its own axis rather than a seventh option pretending to be one.
@@ -798,6 +821,45 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
     ok('and back', codesIn(r.html()).join() === 'P-2,K-1,K-2,P-1');
 }
 
+// ---------- "what did I finish last" ----------
+//
+// ‼️ Hunting the last few closed items through two hundred lines is the thing
+// this ordering exists to end, so the shape of the answer is fixed: newest
+// closing FIRST, and the tail is not negotiable. An item that is not closed is
+// not "closed longest ago" and an item closed before any of this was recorded
+// has no time rather than an old one — both stay at the back in either
+// direction, or the ordering would quietly lie about them.
+{
+    const r = run(data());
+    const sort = v => { const s = r.byId('bl-sort'); s.value = v; s.fire('change'); };
+
+    sort('closed');
+    ok('‼️ choosing it brings closed work into view — the answer is not an empty list',
+        r.ms.ticked('bl-states').join() === 'open,doing,done,cancelled');
+    ok('…and the page says it widened the filter rather than doing it behind you',
+        /state filter now includes done and cancelled/.test(r.html()));
+    ok('‼️ the last thing finished is at the top',
+        codesIn(r.html()).slice(0, 2).join() === 'U-2,U-1');
+    ok('…and everything still open is behind all of it',
+        codesIn(r.html()).slice(2).join() === 'U-3,P-1,P-2,K-1,K-2');
+
+    r.els('act').find(e => e.dataset.act === 'blDir').click();
+    ok('the arrow turns the closed ones round…',
+        codesIn(r.html()).slice(0, 2).join() === 'U-1,U-2');
+    ok('‼️ …and does NOT drag the open ones to the front: they are not old closings',
+        codesIn(r.html()).slice(2).join() === 'U-3,P-1,P-2,K-1,K-2');
+    r.els('act').find(e => e.dataset.act === 'blDir').click();
+
+    // The date is ON the row, because an order nobody can read is a list you
+    // have to take on trust.
+    ok('a closed row carries the date it was closed',
+        /class="pj-bl-m closedat"[^>]*>✅ /.test(r.html()));
+    ok('…and its hover says where that time came from',
+        /From the track ledger/.test(r.html()));
+    ok('an undated closed item wears no date rather than a made-up one',
+        !new RegExp('data-key="U-3"[\\s\\S]{0,1200}?closedat').test(r.html()));
+}
+
 // ---------- long items are cut, and open ----------
 {
     // What the ROW actually DRAWS, as opposed to what its tooltip carries.
@@ -817,8 +879,16 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
     ok('…the cut is a real prefix of the item, at a word boundary',
         LONG.startsWith(visible) && (LONG[visible.length] === ' ' || LONG[visible.length] === undefined));
     ok('…and no longer than the cut asked for', visible.length <= 220);
-    ok('…with the whole of it on hover, exactly once',
-        (r.html().split(LONG).length - 1) === 1);
+    // Once in the ROW — the cut body and the hover must not both carry it, which
+    // would put the whole backlog into the markup a second time. The Next up
+    // strip is a different surface and has its own copy; that is the point of it.
+    const rowMarkup = html => {
+        const rest = html.slice(html.indexOf('data-key="P-2"'));
+        const next = rest.indexOf('data-blrow', 10);
+        return next < 0 ? rest : rest.slice(0, next);
+    };
+    ok('…with the whole of it on hover, exactly once in the row',
+        (rowMarkup(r.html()).split(LONG).length - 1) === 1);
     // ‼️ AND THE HOVER IS WORTH HOVERING NOW. It used to be the native `title` on
     // the text span: a grey box repeating the two hundred characters already on
     // the row and then stopping wherever the platform felt like. It is the whole

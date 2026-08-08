@@ -61,7 +61,15 @@ AFTip.wrap(triggerHtml, head, body)
 
 Where this already applies, and where a new surface should follow it: session
 Title (title + the whole opening prompt) · Project (what the project IS, folders
-first) · every turn's prompt · backlog items.
+first) · every turn's prompt · backlog items · the Next up strip's codes.
+
+**‼️ It survives a repaint, and that is the component's job, not yours.** These
+pages redraw whole sections on the host's beat, and a browser does not put
+`:hover` back on the node that replaced the one the pointer was on until the
+pointer moves — so a panel somebody was reading used to close by itself. The
+component bridges it (a `.af-on` class, the scroll position carried over, dropped
+the moment the pointer moves); `test_tip_repaint.js` holds it. Nothing a page
+does has to know about this, and no page should re-invent it.
 
 ---
 

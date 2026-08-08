@@ -2135,12 +2135,51 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             /editProjectDoc\(folder,/.test(src) && !/fs\.writeFileSync\(.*roles\.plan/.test(src));
 
         // ---- S-12: the capture box's position picker reaches the bridge too ----
-        const addBlock = src.slice(src.indexOf("op: 'projects.backlog.add'"),
-            src.indexOf("op: 'projects.backlog.add'") + 3400);
+        // ‼️ To the NEXT op, not a fixed number of characters: a window that has
+        // to be widened every time a contract gains a sentence is a test that
+        // fails for the wrong reason, and this one already did.
+        const addAt = src.indexOf("op: 'projects.backlog.add'");
+        const addBlock = src.slice(addAt, src.indexOf("op: 'projects.backlog.check'", addAt));
         ok('‼️ backlog.add takes a queue position, and its contract says an area is needed',
             /at\? \(1-based queue position/.test(addBlock) && /uncoded capture has none/.test(addBlock));
         ok('…and it places inside the SAME guarded write, not a second one',
             /placeInQueue\(res\.text as string, res\.code, at\)/.test(addBlock));
+
+        // ---- K-8: an item an agent wrote says so, and says whose idea it was --
+        //
+        // ‼️ The failure this stops is silent and permanent: an agent's own
+        // suggestion filed as if the user had decided it. So the stamp is not
+        // opt-in, and the contract has to state the default out loud — an agent
+        // that forgets `origin` must at least be wrong in the direction that
+        // under-claims agreement rather than over-claiming it.
+        ok('‼️ backlog.add stamps WHO wrote the line, both ways',
+            /BACKLOG_ORIGIN_TAGS\[/.test(addBlock)
+            && /optStr\(args, 'origin'\) === 'user' \? 'user' : 'agent'/.test(addBlock));
+        ok('…and its contract says which tag is which, and that the default is by-agent',
+            /#by-agent/.test(addBlock) && /#by-request/.test(addBlock)
+            && /origin\? \(agent\|user, default agent\)/.test(addBlock));
+        ok('…and that an item the user typed themselves carries neither',
+            /carry neither/.test(addBlock));
+
+        // ---- X-7: which build was watching, and the comparison that needs ----
+        //
+        // ‼️ A STAMP WITH NO OP TO READ IT IS NOT A MEASUREMENT. The point of
+        // this pair is that "the extension went deaf in version N" stops being
+        // an argument and becomes a query, so the op has to exist AND its
+        // contract has to name the number that settles it — a rate per hour of
+        // ACTIVITY. Compared per calendar hour, a version installed over a quiet
+        // weekend looks broken, which is the wrong answer arrived at confidently.
+        const verAt = src.indexOf("op: 'live.versions'");
+        ok('live.versions is registered on the bridge', verAt > 0);
+        const verBlock = src.slice(verAt, src.indexOf("op: 'sessions.live'", verAt));
+        ok('…and its contract points at the rate, not at the totals',
+            /perActiveHour/.test(verBlock) && /not per calendar hour/.test(verBlock));
+        ok('…and says an unstamped line is UNKNOWN rather than attributed',
+            /empty `version`/.test(verBlock) && /rather than attributed/.test(verBlock));
+        ok('…and it CALLS the monitor rather than re-reading the log itself',
+            /live\.versionSpans\(\)/.test(verBlock));
+        ok('‼️ and sessions.live carries the builds that watched each session',
+            /afVersions: s\.afVersions \?\? \[\]/.test(src));
 
         // ---- S-11: the saved prompts are readable by an agent, not only by hand ----
         const promptsAt = src.indexOf("op: 'prompts.list'");

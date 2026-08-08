@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { addUsage, contextAfter, emptyUsage, PricingEngine, RawUsage, toUsage, totalTokens, Usage, weightedTokens } from '../core/pricing';
-import { sessionOrigin } from '../core/sessions';
+import { conversationTitle, sessionOrigin } from '../core/sessions';
 import { StepKind, stepKindForTool } from '../core/stepkind';
 import { collectEdits, fileStats, groupByFile } from '../core/codeedits';
 import { revealPath } from '../core/reveal';
@@ -152,12 +152,11 @@ function promptLabel(text: string): string {
     return t.slice(0, 90);
 }
 
-/** Title candidate from a user prompt — command/harness noise never names a session. */
-function titleCandidate(text: string): string {
-    const t = text.replace(/\s+/g, ' ').trim();
-    if (!t || t.startsWith('<') || t.startsWith('/') || t.startsWith('!')) { return ''; }
-    return t.slice(0, 80);
-}
+/** ‼️ The page does NOT have its own idea of what names a session — it asks the
+ *  index's (`conversationTitle`). Two copies of this judgment is how the rule
+ *  drifted apart before, and a viewer that disagreed with the tables about a
+ *  session's name is a bug nobody can explain from either side. */
+const titleCandidate = conversationTitle;
 
 function contentToText(content: unknown): string {
     if (typeof content === 'string') { return content; }

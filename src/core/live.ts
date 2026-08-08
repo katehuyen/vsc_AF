@@ -32,6 +32,11 @@ export interface LiveSession {
     compactions: number;
     subagentStops: number;
     notifiedStuck: boolean;
+    /** Which Agent Farm builds watched this session, oldest first — see `af` on
+     *  LiveEvent. Usually one; more than one means the extension was updated (or
+     *  rolled back) while the session was still running, which is exactly the
+     *  case a version comparison must not average over. */
+    afVersions?: string[];
 }
 
 export type LiveEventKind =
@@ -47,6 +52,22 @@ export interface LiveEvent {
     tool?: string;
     detail?: string;
     transcriptPath?: string;
+    /**
+     * ‼️ WHICH AGENT FARM BUILD SAW THIS EVENT.
+     *
+     * The store is the only durable record of what the watcher itself was doing,
+     * and it did not say which watcher. So "capture got worse in 3.58" could
+     * only ever be argued from the INSTALL TIMESTAMPS of extension folders —
+     * indirect evidence about a claim that is directly measurable. Now it is on
+     * the line: any two ranges of this file can be compared per version without
+     * reconstructing anything.
+     *
+     * A stamp per event and not per file, because a file is appended to across
+     * upgrades — and it is the boundary inside a day that the comparison needs.
+     * Absent on lines written before this existed; that absence is honest and is
+     * never filled in with a guess.
+     */
+    af?: string;
 }
 
 export type ListenerState = 'listening' | 'disabled' | 'port-in-use' | 'error';
@@ -106,6 +127,26 @@ export interface DensityData {
     totalEvents: number;
 }
 
+/** What one Agent Farm build saw — see `versionSpans`. */
+export interface VersionSpan {
+    /** Empty for lines written before the stamp existed. */
+    version: string;
+    from: number;
+    to: number;
+    events: number;
+    sessions: number;
+    /** Time inside gaps short enough to count as one working stretch — the
+     *  denominator that makes two versions comparable. */
+    activeMs: number;
+    kinds: Record<string, number>;
+}
+
+/** Two events further apart than this were not the same stretch of work, so the
+ *  gap between them is not time this version was watching anything. Ten minutes:
+ *  long enough to cover a slow tool call, short enough that an overnight pause
+ *  cannot be counted as activity. */
+const ACTIVE_GAP_MS = 10 * 60 * 1000;
+
 /**
  * E2a: sessions opened via "Start Session With…" use namespaced ids
  * (`cli:<cliId>:<agentId>:<ts>`) so they can never collide with claude's UUID
@@ -142,7 +183,11 @@ export class LiveMonitor implements vscode.Disposable {
         /** B3 inbound: /trigger/<token> requests land here; return true if a trigger accepted it. */
         private onTrigger?: (token: string, payload: unknown) => boolean,
         /** JSONL file persisting events across reloads (timeline history). */
-        private storeFile?: string
+        private storeFile?: string,
+        /** X-7: the running extension's version, stamped on every event and
+         *  carried on the session. Optional so a test can leave it out; when it
+         *  is absent nothing is written rather than a placeholder. */
+        private afVersion?: string
     ) {
         this.stuckTimer = setInterval(() => this.checkStuck(), 30_000);
         this.loadCleared();
@@ -261,6 +306,13 @@ export class LiveMonitor implements vscode.Disposable {
             }
             s.lastEventTs = e.ts;
             if (e.transcriptPath) { s.transcriptPath = e.transcriptPath; }
+            // Read back out of the store rather than assumed to be this build:
+            // after a reload the session's earlier events may well have been
+            // watched by the version that was installed before the update.
+            if (e.af) {
+                s.afVersions = s.afVersions ?? [];
+                if (s.afVersions[s.afVersions.length - 1] !== e.af) { s.afVersions.push(e.af); }
+            }
             switch (e.kind) {
                 case 'start': s.status = 'idle'; s.startedAt = e.ts; break;
                 case 'prompt': s.status = 'working'; s.prompts++; s.lastPrompt = e.detail; break;
@@ -307,6 +359,65 @@ export class LiveMonitor implements vscode.Disposable {
         const over = (this.eventLog.length - drop) - MEMORY_MAX_EVENTS;
         if (over > 0) { drop += over; }
         if (drop > 0) { this.eventLog = this.eventLog.slice(drop); }
+    }
+
+    /**
+     * X-7: WHAT EACH AGENT FARM BUILD ACTUALLY SAW.
+     *
+     * ‼️ THE POINT IS NOT THE STAMP, IT IS THE COMPARISON. "Capture went deaf in
+     * version N" is a claim about RATE — events per running hour — and until now
+     * closing it meant matching install timestamps against a JSONL by hand,
+     * which is why one such claim ran for days. With the stamp on the line this
+     * is a single pass over the store: per version, when it was running, how
+     * many sessions it watched, how many events of each kind, and the rate.
+     *
+     * ‼️ THE RATE IS PER RUNNING HOUR, NOT PER CALENDAR HOUR. A version installed
+     * over a weekend looks silent by the clock and is not; what is comparable is
+     * activity while sessions were actually live, so the denominator counts only
+     * the time inside gaps short enough to be one working stretch.
+     *
+     * Lines with no `af` are the ones written before the stamp existed. They are
+     * reported under an empty version rather than being attributed to whatever
+     * was installed at the time — that guess is the thing being replaced.
+     */
+    versionSpans(): VersionSpan[] {
+        const out = new Map<string, VersionSpan>();
+        const sessions = new Map<string, Set<string>>();
+        let last = new Map<string, number>();
+        const each = (e: LiveEvent): void => {
+            if (typeof e.ts !== 'number' || !e.kind) { return; }
+            const v = e.af ?? '';
+            let row = out.get(v);
+            if (!row) {
+                row = { version: v, from: e.ts, to: e.ts, events: 0, sessions: 0, activeMs: 0, kinds: {} };
+                out.set(v, row);
+                sessions.set(v, new Set());
+            }
+            row.from = Math.min(row.from, e.ts);
+            row.to = Math.max(row.to, e.ts);
+            row.events++;
+            row.kinds[e.kind] = (row.kinds[e.kind] ?? 0) + 1;
+            (sessions.get(v) as Set<string>).add(e.sessionId);
+            const prev = last.get(v);
+            if (prev !== undefined && e.ts > prev && e.ts - prev <= ACTIVE_GAP_MS) { row.activeMs += e.ts - prev; }
+            last.set(v, e.ts);
+        };
+
+        // The store when there is one (a month of history), memory otherwise.
+        let read = false;
+        if (this.storeFile && fs.existsSync(this.storeFile)) {
+            try {
+                for (const line of fs.readFileSync(this.storeFile, 'utf8').split('\n')) {
+                    if (!line.trim()) { continue; }
+                    try { each(JSON.parse(line) as LiveEvent); } catch { /* a torn line proves nothing */ }
+                }
+                read = true;
+            } catch { /* unreadable — fall through to memory */ }
+        }
+        if (!read) { last = new Map(); for (const e of this.eventLog) { each(e); } }
+
+        for (const [v, row] of out) { row.sessions = (sessions.get(v) as Set<string>).size; }
+        return [...out.values()].sort((a, b) => a.from - b.from);
     }
 
     /**
@@ -475,6 +586,14 @@ export class LiveMonitor implements vscode.Disposable {
     }
 
     private push(s: LiveSession, kind: LiveEventKind, tool?: string, detail?: string): void {
+        // The build doing the watching, on the event and on the session. A
+        // session that spans an upgrade collects both, in the order they ran —
+        // averaged together they would hide the very change being looked for.
+        const af = this.afVersion;
+        if (af) {
+            s.afVersions = s.afVersions ?? [];
+            if (s.afVersions[s.afVersions.length - 1] !== af) { s.afVersions.push(af); }
+        }
         const event: LiveEvent = {
             ts: Date.now(),
             sessionId: s.sessionId,
@@ -483,7 +602,8 @@ export class LiveMonitor implements vscode.Disposable {
             kind,
             tool,
             detail,
-            transcriptPath: s.transcriptPath
+            transcriptPath: s.transcriptPath,
+            ...(af ? { af } : {})
         };
         this.eventLog.push(event);
         this.capMemory();

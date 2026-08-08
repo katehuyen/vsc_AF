@@ -135,7 +135,7 @@ import {
 } from './core/projectPlan';
 import {
     addBacklogItem, archiveBacklogDone, BACKLOG_CODE, BACKLOG_EFFORTS, BACKLOG_MOVES,
-    BACKLOG_PRIORITIES,
+    BACKLOG_ORIGIN_TAGS, BACKLOG_PRIORITIES,
     BACKLOG_STATES, BacklogEffort, BacklogItem, BacklogMoveDir, BacklogPriority, BacklogState,
     BacklogTarget, codeBacklogItem, dropInQueue, findBacklogItem, moveInQueue, nextBacklog,
     parseBacklog, placeInQueue, queueOrder, setBacklogFields, setBacklogQueue, setBacklogState,
@@ -823,7 +823,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         resolveAgentByCwd,
         // B3 inbound: /trigger/<token> → webhook trigger (late-bound; manager is created below)
         (token, payload) => triggerManagerRef?.fireWebhook(token, payload) ?? false,
-        path.join(context.globalStorageUri.fsPath, 'live-events.jsonl')
+        path.join(context.globalStorageUri.fsPath, 'live-events.jsonl'),
+        // X-7: which build watched each event. Read from the extension manifest
+        // rather than a constant, so it can never disagree with what is
+        // installed — the one thing this stamp exists to be trusted about.
+        String((context.extension?.packageJSON as { version?: string } | undefined)?.version ?? '')
     );
     context.subscriptions.push(live);
     live.start();
@@ -3448,8 +3452,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            op: 'live.versions',
+            describe: '‼️ WHAT EACH AGENT FARM BUILD ACTUALLY SAW — the op that closes a "the extension went deaf in version N" argument with a measurement instead of an argument. One pass over live-events.jsonl, grouped by the `af` stamp every event now carries: per version, when it ran (`from`/`to`), how many sessions it watched, how many events of each kind, and `perActiveHour` — events per hour OF SESSION ACTIVITY, not per calendar hour, because a version installed over a quiet weekend is not a version that captured less. Compare THAT number between two versions; the raw totals are there but they answer a different question. A row with an empty `version` is the part of the log written before the stamp existed: reported as unknown rather than attributed to whatever happened to be installed, which is the indirect evidence this replaced. args: none',
+            handler: () => {
+                const spans = live.versionSpans();
+                return {
+                    file: path.join(context.globalStorageUri.fsPath, 'live-events.jsonl'),
+                    running: String((context.extension?.packageJSON as { version?: string } | undefined)?.version ?? ''),
+                    versions: spans.map(s => ({
+                        version: s.version || null,
+                        from: s.from, to: s.to,
+                        at: `${localStamp(s.from)} → ${localStamp(s.to)}`,
+                        events: s.events, sessions: s.sessions,
+                        activeHours: Math.round(s.activeMs / 36000) / 100,
+                        perActiveHour: s.activeMs > 0
+                            ? Math.round(s.events / (s.activeMs / 3600000) * 10) / 10 : null,
+                        kinds: s.kinds
+                    }))
+                };
+            }
+        },
+        {
             op: 'sessions.live',
-            describe: 'The sessions the live monitor is tracking right now — what the Live Timeline shows: status, current tool, counters, the transcript\'s cost/tokens/turns, and whether a CLI process still owns each one (`alive`: false = it is over, its hooks just never said so; null = the CLI registry is unreadable, so nothing can be claimed). args: none',
+            describe: 'The sessions the live monitor is tracking right now — what the Live Timeline shows: status, current tool, counters, the transcript\'s cost/tokens/turns, and whether a CLI process still owns each one (`alive`: false = it is over, its hooks just never said so; null = the CLI registry is unreadable, so nothing can be claimed). `afVersions` is which Agent Farm build(s) watched it, oldest first — more than one means the extension was updated or rolled back mid-session, so do not average the two halves together. args: none',
             handler: () => {
                 const rows = new Map(index.all().map(r => [r.sessionId, r]));
                 const owners = readCliSessions(claudeDir());
@@ -3469,7 +3494,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         tokens: row ? totalTokens(row.usage) : 0,
                         turns: row?.userTurns ?? 0,
                         alive: s.source ? null : (known ? !!owner : null),
-                        pid: owner?.pid ?? null
+                        pid: owner?.pid ?? null,
+                        // X-7: which build was watching. Empty means the session
+                        // predates the stamp — reported as nothing, never guessed
+                        // from an install date, which is exactly the indirect
+                        // evidence this replaced.
+                        afVersions: s.afVersions ?? []
                     };
                 });
             }
@@ -4265,7 +4295,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.backlog',
-            describe: 'The project\'s BACKLOG — its standing pile of work, which is not the plan (that is the phase-sized roadmap) and not the work queue (that is the global user→agent channel). Every checkbox line in the file with `af-role: backlog`, with the axes read off it: `code` (P-5.3 — permanent, and what you quote back), `state` (open|doing|done|cancelled, from the checkbox itself), `kinds` (#tags), `priority` (Obsidian Tasks icons), `effort` (XS|S|M|L|XL), `blockedBy` (⛔), `plan` (which plan item it serves), `score` (priority÷effort), `container` (has children — work lives at the leaves) and `warn` when the line says something inconsistent. Also returns the AREAS the file\'s `## P — Name` headings declare, and the `queue` — the pinned head from the `## 🎯 Queue` block. ITEMS COME BACK IN FILE ORDER (the document as it is); the WORKING order is the queue first and then file order, which is what projects.backlog.next answers. args: project (id or name), open? (true drops closed items), area?, kind?, state?, code? (that item and its subtree), limit?',
+            describe: 'The project\'s BACKLOG — its standing pile of work, which is not the plan (that is the phase-sized roadmap) and not the work queue (that is the global user→agent channel). ‼️ IT IS A FLAT LIST: an item is an item, there are no epics and no sub-items. Every checkbox line in the file with `af-role: backlog`, with the axes read off it: `code` (K-8 — permanent, and what you quote back), `state` (open|doing|done|cancelled, from the checkbox itself), `kinds` (#tags), `priority` (Obsidian Tasks icons), `effort` (XS|S|M|L|XL), `blockedBy` (⛔), `plan` (which plan item it serves), `score` (priority÷effort) and `warn` when the line says something inconsistent. Every item also carries `closedAt`/`closedOn` — WHEN it was closed, from the track ledger (the moment the box moved) or failing that from a ✅ on the line (the day only); null means nobody recorded it, never "long ago". Also returns the AREAS the file\'s `## P — Name` headings declare, and the `queue` — the order from the `## 🎯 Queue` block. ITEMS COME BACK IN FILE ORDER (the document as it is); the WORKING order is the queue first and then file order, which is what projects.backlog.next answers. `sort: "closed"` instead answers WHAT WAS FINISHED LAST — newest closing first, everything with no closing time behind it. args: project (id or name), open? (true drops closed items), area?, kind?, state?, code? (that item), sort? (file|closed, default file), limit?',
             handler: (args) => {
                 const { project, folder, file, text } = backlogDoc(argStr(args, 'project'));
                 const sum = parseBacklog(text);
@@ -4278,7 +4308,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (area) { items = items.filter(i => i.area === area); }
                 if (kind) { items = items.filter(i => i.kinds.includes(kind)); }
                 if (state) { items = items.filter(i => i.state === state); }
-                if (code) { items = items.filter(i => i.code === code || i.code?.startsWith(`${code}.`)); }
+                if (code) { items = items.filter(i => i.code === code); }
+                const closedOf = backlogClosedAt(folder);
+                // ‼️ `closed` is a DIFFERENT QUESTION from the file's order, and
+                // the only one the document cannot answer on its own: a closing
+                // time lives in the track ledger. Hunting the last few finished
+                // items down two hundred lines is what it ends.
+                if (optStr(args, 'sort') === 'closed') { items = items.slice().sort(byClosedDesc(closedOf)); }
                 const limit = typeof args.limit === 'number' ? Math.max(1, args.limit) : 200;
                 return {
                     project: project.name, file: relDoc(folder, file),
@@ -4290,13 +4326,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     sections: sum.sections,
                     queue: sum.queue,
                     shown: Math.min(items.length, limit), matched: items.length,
-                    items: items.slice(0, limit).map(backlogOut)
+                    items: items.slice(0, limit).map(i => ({
+                        ...backlogOut(i),
+                        closedAt: closedOf(i),
+                        closedOn: closedOf(i) ? localStamp(closedOf(i) as number) : null
+                    }))
                 };
             }
         },
         {
             op: 'projects.backlog.next',
-            describe: '‼️ WHAT TO WORK ON — the op behind "do the top five from the backlog". Returns items that are actually startable: containers are dropped (work lives at the leaves), anything waiting on an unfinished ⛔ item is dropped (doing it now would be doing it out of order) and reported separately under `blocked`. THE ORDER IS THE USER\'S: the pinned head of the queue first (the `## 🎯 Queue` block — see projects.backlog.queue), then the file\'s own line order for everything not in it. That is the prioritisation, and `sort` overrides it only because asking "what is cheapest" is a different question from "what is next". `maxEffort` defaults to M on purpose: "five you can manage" means five that fit in the turn, and without a ceiling an agent picks an XL, leaves it half done, and wastes the run. An item with no effort stated is never excluded by the ceiling (it has not been sized; excluding it would empty a fresh backlog). args: project (id or name), limit? (default 5, max 50), area?, kind?, minPriority? (highest|high|medium|normal|low|lowest), maxEffort? (XS|S|M|L|XL, default M), sort? (file|score|priority, default file), includeBlocked?',
+            describe: '‼️ WHAT TO WORK ON — the op behind "do the top five from the backlog". Returns items that are actually startable: anything waiting on an unfinished ⛔ item is dropped (doing it now would be doing it out of order) and reported separately under `blocked`. THE ORDER IS THE USER\'S: the pinned head of the queue first (the `## 🎯 Queue` block — see projects.backlog.queue), then the file\'s own line order for everything not in it. That is the prioritisation, and `sort` overrides it only because asking "what is cheapest" is a different question from "what is next". `maxEffort` defaults to M on purpose: "five you can manage" means five that fit in the turn, and without a ceiling an agent picks an XL, leaves it half done, and wastes the run. An item with no effort stated is never excluded by the ceiling (it has not been sized; excluding it would empty a fresh backlog). args: project (id or name), limit? (default 5, max 50), area?, kind?, minPriority? (highest|high|medium|normal|low|lowest), maxEffort? (XS|S|M|L|XL, default M), sort? (file|score|priority, default file), includeBlocked?',
             handler: (args) => {
                 const { project, folder, file, text } = backlogDoc(argStr(args, 'project'));
                 const res = nextBacklog(text, {
@@ -4322,7 +4362,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.backlog.add',
-            describe: 'Put an item in the backlog. EVERYTHING EXCEPT THE TEXT IS OPTIONAL, deliberately: a system that demands a code before it will take a thought does not get the thought. With `area` (or `parent`) the item is filed there and given the next free code — codes only ever count UP, so a cancelled item\'s number stays spent and a note from three months ago quoting K-8 still means this item. With neither, it lands in the 📥 inbox with no code, to be classified later by whoever has the context (see projects.backlog.code). Creates the backlog document from the skeleton if the project has none. args: project (id or name), text, area? (1-2 capital letters), parent? (a code — the area comes from it), kind?/kinds?, priority? (highest|high|medium|normal|low|lowest), effort? (XS|S|M|L|XL), due? (YYYY-MM-DD), plan? (a plan item\'s 🆔), from?, blockedBy? (code or array), at? (1-based queue position for the new item — 1 puts it at the very top; needs an area, because the queue holds codes and an uncoded capture has none; omit it and the item queues wherever a new one normally would)',
+            describe: 'Put an item in the backlog. EVERYTHING EXCEPT THE TEXT IS OPTIONAL, deliberately: a system that demands a code before it will take a thought does not get the thought. With `area` the item is filed there and given the next free code — codes only ever count UP, so a cancelled item\'s number stays spent and a note from three months ago quoting K-8 still means this item. Without one, it lands in the 📥 inbox with no code, to be classified later by whoever has the context (see projects.backlog.code). ‼️ The backlog is FLAT — there is no sub-item, so a thought that feels like a child of another one is either its own item or a paragraph inside that item\'s text. ‼️ ORIGIN IS STAMPED AND YOU MUST GET IT RIGHT: every item added through this op carries `#by-agent` (you noticed it yourself and filed it — a PROPOSAL nobody has agreed to) or, when you pass `origin:"user"`, `#by-request` (the user asked for it; you were the typist). Default is `by-agent`, so a line the user dictated and you forgot to mark reads as your own idea for ever. Items the user writes in the panel or in Obsidian carry neither. Creates the backlog document from the skeleton if the project has none. args: project (id or name), text, area? (1-2 capital letters), origin? (agent|user, default agent), kind?/kinds?, priority? (highest|high|medium|normal|low|lowest), effort? (XS|S|M|L|XL), due? (YYYY-MM-DD), plan? (a plan item\'s 🆔), from?, blockedBy? (code or array), at? (1-based queue position for the new item — 1 puts it at the very top; needs an area, because the queue holds codes and an uncoded capture has none; omit it and the item queues wherever a new one normally would)',
             handler: (args) => {
                 const { project, folder, file, text } = backlogDoc(argStr(args, 'project'), true);
                 const body = argStr(args, 'text').trim();
@@ -4336,12 +4376,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     const res = addBacklogItem(src, {
                         text: body,
                         ...(optStr(args, 'area') ? { area: optStr(args, 'area') as string } : {}),
-                        ...(optStr(args, 'parent') ? { parent: optStr(args, 'parent') as string } : {}),
                         ...(BACKLOG_PRIORITIES.includes(optStr(args, 'priority') as BacklogPriority)
                             ? { priority: optStr(args, 'priority') as BacklogPriority } : {}),
                         ...(BACKLOG_EFFORTS.includes(optStr(args, 'effort')?.toUpperCase() as BacklogEffort)
                             ? { effort: optStr(args, 'effort')?.toUpperCase() as BacklogEffort } : {}),
-                        kinds: listArg(args, 'kinds', 'kind'),
+                        // ‼️ WHOSE IDEA IT WAS, stamped on the line. A bridge
+                        // request is by definition an agent writing, so the only
+                        // open question is whether the user asked for it — and
+                        // `agent` is the default because an unstated origin is
+                        // the agent's own initiative until it says otherwise.
+                        // See BACKLOG_ORIGIN_TAGS for why this is not optional
+                        // decoration: a proposal nobody has agreed to must be
+                        // tellable from a decision, or the pile stops meaning
+                        // anything.
+                        kinds: listArg(args, 'kinds', 'kind')
+                            .concat(BACKLOG_ORIGIN_TAGS[
+                                optStr(args, 'origin') === 'user' ? 'user' : 'agent']),
                         ...(optStr(args, 'due') ? { due: optStr(args, 'due') as string } : {}),
                         ...(optStr(args, 'plan') ? { plan: optStr(args, 'plan') as string } : {}),
                         ...(optStr(args, 'from') ? { from: optStr(args, 'from') as string } : {}),
@@ -4430,16 +4480,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.backlog.code',
-            describe: 'Classify a capture: give a coded home to an item that has none, moving it out of the 📥 inbox into its area (or under a parent) and handing it the next free code. This is the second half of friction-free capture — writing the note costs nothing, and the cost of filing it is paid later by whoever has the context, which may well be an agent doing a sweep. Refuses an item that already has a code; re-parenting an existing one is a different and rarer thing (projects.backlog.set, then say so in the item). args: project (id or name), line?/item? (which capture), area? (1-2 capital letters), parent? (a code — the area comes from it)',
+            describe: 'Classify a capture: give a coded home to an item that has none, moving it out of the 📥 inbox into its area and handing it the next free code. This is the second half of friction-free capture — writing the note costs nothing, and the cost of filing it is paid later by whoever has the context, which may well be an agent doing a sweep. Refuses an item that already has a code; moving a coded item to another area is a different and rarer thing (projects.backlog.set, then say so in the item). args: project (id or name), line?/item? (which capture), area (1-2 capital letters)',
             handler: (args) => {
                 const { project, folder, file } = backlogDoc(argStr(args, 'project'));
                 const target = backlogTarget(args);
                 const area = optStr(args, 'area') ?? '';
-                const parent = optStr(args, 'parent');
-                need(area || parent, 'say where it goes: area or parent');
+                need(area, 'say where it goes: area');
                 let code: string | null = null;
                 const out = editProjectDoc(folder, file, src => {
-                    const res = codeBacklogItem(src, target, area, parent);
+                    const res = codeBacklogItem(src, target, area);
                     if (res.code) { code = res.code; }
                     return res;
                 });
@@ -4532,7 +4581,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.backlog.tidy',
-            describe: 'Put each area\'s items back in code order — K-1, K-2, K-3 — so the file can be read as the dictionary it is. Safe by construction: the queue names CODES and a code does not care which line it is on, so the order a person sees is untouched by this. Children ride with their parent (P-5.1 stays under P-5). ‼️ A section with PROSE between its items is left alone and reported: somebody wrote that paragraph where it is for a reason and no sort knows what it was. Blank lines between items are furniture and are closed up. The inbox (nothing to sort by) and the archive (a record, not a list) are skipped. args: project (id or name)',
+            describe: 'Put each area\'s items back in code order — K-1, K-2, K-3 — so the file can be read as the dictionary it is. Safe by construction: the queue names CODES and a code does not care which line it is on, so the order a person sees is untouched by this. ‼️ A section with PROSE between its items is left alone and reported: somebody wrote that paragraph where it is for a reason and no sort knows what it was. Blank lines between items are furniture and are closed up. The inbox (nothing to sort by) and the archive (a record, not a list) are skipped. args: project (id or name)',
             handler: (args) => {
                 const { project, folder, file } = backlogDoc(argStr(args, 'project'));
                 let moved = 0;
@@ -4569,7 +4618,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.backlog.archive',
-            describe: 'Move closed items (done, and cancelled unless you say otherwise) under an archive heading AT THE END OF THE SAME FILE. Deliberately not a separate file: a code must never be handed out twice, and the cheapest guarantee of that is that every code the project has ever used is still in the file the generator reads. Containers are left where they are — a parent whose children are archived would otherwise lose the context that explains it. args: project (id or name), cancelled? (default true — also archive cancelled items)',
+            describe: 'Move closed items (done, and cancelled unless you say otherwise) under an archive heading AT THE END OF THE SAME FILE. Deliberately not a separate file: a code must never be handed out twice, and the cheapest guarantee of that is that every code the project has ever used is still in the file the generator reads. args: project (id or name), cancelled? (default true — also archive cancelled items)',
             handler: (args) => {
                 const { project, folder, file } = backlogDoc(argStr(args, 'project'));
                 let moved = 0;
@@ -4584,7 +4633,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.backlog.promote',
-            describe: 'Move a work-queue item into a project\'s backlog: the flow hands over to the stock. The queue is where "whose is this, who should do it" gets answered; once the answer is "that project, when its turn comes", the item belongs here instead. The queue item is stamped and closed as `done` with a pointer to the code it became, and the new backlog item carries `[from:: <queue id>]` so the origin stays legible from either end. One direction only — a backlog item is never pushed back into the queue. args: project (id or name), item (queue item id), area?, parent?, priority?, effort?, kind?/kinds?',
+            describe: 'Move a work-queue item into a project\'s backlog: the flow hands over to the stock. The queue is where "whose is this, who should do it" gets answered; once the answer is "that project, when its turn comes", the item belongs here instead. The queue item is stamped and closed as `done` with a pointer to the code it became, and the new backlog item carries `[from:: <queue id>]` so the origin stays legible from either end. One direction only — a backlog item is never pushed back into the queue. args: project (id or name), item (queue item id), area?, priority?, effort?, kind?/kinds?',
             handler: (args) => {
                 const { project, folder, file } = backlogDoc(argStr(args, 'project'), true);
                 const id = argStr(args, 'item');
@@ -4596,7 +4645,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     const res = addBacklogItem(src, {
                         text: source.text,
                         ...(optStr(args, 'area') ? { area: optStr(args, 'area') as string } : {}),
-                        ...(optStr(args, 'parent') ? { parent: optStr(args, 'parent') as string } : {}),
                         ...(BACKLOG_PRIORITIES.includes(optStr(args, 'priority') as BacklogPriority)
                             ? { priority: optStr(args, 'priority') as BacklogPriority }
                             : (source.urgency === 'urgent' ? { priority: 'highest' as BacklogPriority }
@@ -8777,11 +8825,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      *  number off the answer and hand it straight back. */
     const backlogOut = (i: BacklogItem) => ({
         code: i.code ?? null, text: i.text, state: i.state, area: i.area ?? null,
-        parent: i.parent ?? null, line: i.line + 1, depth: i.depth, section: i.section,
+        line: i.line + 1, section: i.section,
         kinds: i.kinds, priority: i.priority, effort: i.effort ?? null,
         blockedBy: i.blockedBy, plan: i.plan ?? null, from: i.from ?? null,
         due: i.due ?? null, score: Math.round(i.score * 100) / 100,
-        container: i.container, inbox: i.inbox, ...(i.warn ? { warn: i.warn } : {})
+        inbox: i.inbox, ...(i.warn ? { warn: i.warn } : {})
     });
 
     /** A list argument that tolerates a single value, an array, or a
@@ -8811,6 +8859,45 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         trackFileIn(tracksFolder(folder, projectSkeleton()));
 
     const readTracks = (folder: string): TrackRecord[] => readTrackFile(trackLedgerOf(folder));
+
+    /**
+     * WHEN each item was closed — the axis "what did I finish last" needs and
+     * the backlog file alone cannot answer.
+     *
+     * ‼️ Two sources, in this order, because they are not equally good. The
+     * TRACK LEDGER holds the moment the box actually moved, to the second, and
+     * it is written whichever way the item was closed (panel, bridge, or noticed
+     * afterwards in Obsidian). A `✅ 2026-08-03` is the fallback: the user's own
+     * Tasks plugin wrote it, so it is true but only to the day. An item closed
+     * before any of this existed has neither, and is reported with NO time
+     * rather than being handed a made-up one — every reader of this then keeps
+     * those at the back of an ordering instead of calling them ancient.
+     */
+    const backlogClosedAt = (folder: string): ((i: BacklogItem) => number | null) => {
+        const records = readTracks(folder);
+        const byCode = new Map<string, number>();
+        for (const code of trackedCodes(records)) {
+            const ts = summarizeCode(code, records).closed?.ts;
+            if (ts) { byCode.set(code, ts); }
+        }
+        return (i: BacklogItem): number | null => {
+            const ts = i.code ? byCode.get(i.code) : undefined;
+            if (ts) { return ts; }
+            const day = i.doneOn ? Date.parse(`${i.doneOn}T12:00:00`) : NaN;
+            return Number.isFinite(day) ? day : null;
+        };
+    };
+
+    /** Newest closing first, with everything that has no closing time behind it
+     *  — in either direction, because "not closed" is not "closed long ago". */
+    const byClosedDesc = (closedOf: (i: BacklogItem) => number | null) =>
+        (a: BacklogItem, b: BacklogItem): number => {
+            const ta = closedOf(a); const tb = closedOf(b);
+            if (ta && tb) { return tb - ta; }
+            if (ta) { return -1; }
+            if (tb) { return 1; }
+            return a.line - b.line;
+        };
 
     /**
      * ‼️ WHICH SESSION IS CALLING — the inference this whole feature stands on,
@@ -9049,6 +9136,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // The strip is a window on the queue; the ROWS need all of it, because
         // every row shows its own place in it.
         const order = queueOrder(sum.items, sum.queue);
+        // WHEN each row was closed, so the page can answer "what did I finish
+        // last" without a second idea of where that time comes from.
+        const closedOf = backlogClosedAt(doc.folder);
         return {
             ...doc,
             counts: {
@@ -9056,7 +9146,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 cancelled: sum.cancelled, unclassified: sum.unclassified
             },
             areas: sum.areas,
-            items: sum.items.map(backlogOut),
+            items: sum.items.map(i => ({ ...backlogOut(i), closedAt: closedOf(i) })),
             // Addressed exactly as a row is: the code when there is one, the
             // 1-based line only for an uncoded capture. The page looks the words
             // up in `items` itself rather than being sent them twice.
@@ -9480,7 +9570,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                  * three possible answers.
                  */
                 backlogAdd: (id: string, input: {
-                    text: string; area?: string; parent?: string;
+                    text: string; area?: string;
                     priority?: string; effort?: string; kinds?: string[]; at?: number;
                 }) => {
                     let code: string | undefined;
@@ -9490,7 +9580,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         const r = addBacklogItem(text, {
                             text: input.text,
                             ...(input.area ? { area: input.area } : {}),
-                            ...(input.parent ? { parent: input.parent } : {}),
                             ...(BACKLOG_PRIORITIES.includes(input.priority as BacklogPriority)
                                 ? { priority: input.priority as BacklogPriority } : {}),
                             ...(BACKLOG_EFFORTS.includes(input.effort as BacklogEffort)
@@ -9572,10 +9661,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     });
                     return { ...res, moved };
                 },
-                backlogCode: (id: string, target: BacklogTarget, area: string, parent?: string) => {
+                backlogCode: (id: string, target: BacklogTarget, area: string) => {
                     let code: string | undefined;
                     const res = edit(id, text => {
-                        const r = codeBacklogItem(text, target, area, parent);
+                        const r = codeBacklogItem(text, target, area);
                         if (r.code) { code = r.code; }
                         return r;
                     });

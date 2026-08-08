@@ -75,5 +75,90 @@
             + inner + panel(head, body) + '</td>';
     }
 
+    /* ------------------------------------------------------------------
+       ‼️ THE PANEL MUST SURVIVE A REPAINT UNDER A STATIONARY POINTER.
+
+       The pages this thing lives on redraw whole sections on the host's own
+       beat (`setRows` → `innerHTML = …`), and a browser does NOT re-apply
+       `:hover` to the node that replaced the one the pointer was on — not
+       until the pointer moves again. So a panel you were three lines into
+       reading closed by itself, with the mouse never having left it, and did
+       not come back. That is the bug, and it belongs HERE rather than in each
+       page: every surface that uses this component had it.
+
+       The bridge: when the wrapper under the pointer is torn out, find what is
+       now at the point where the pointer ENTERED it (not where the pointer is —
+       it may be inside the panel, which floats over other rows) and mark that
+       with a class the CSS honours with no delay. The class lasts exactly until
+       the pointer moves somewhere else, at which moment `:hover` is honest
+       again and takes over. The panel's scroll position rides along, because a
+       long prompt jumping back to its first line is the same interruption in a
+       quieter form.
+       ------------------------------------------------------------------ */
+    const doc = typeof document === 'object' && document ? document : null;
+    if (doc && typeof doc.addEventListener === 'function'
+        && typeof MutationObserver === 'function' && typeof doc.elementFromPoint === 'function') {
+
+        const closestW = el => (el && typeof el.closest === 'function' ? el.closest('.af-tipw') : null);
+        /** The wrapper the pointer is over, where it entered, how far the panel
+         *  had been scrolled — the three things a rebuild would otherwise lose. */
+        let over = null, atX = -1, atY = -1, scrolled = 0;
+        /** Set only while the class is standing in for a lost `:hover`. */
+        let bridged = null;
+
+        const drop = () => {
+            if (bridged) { bridged.classList.remove('af-on'); bridged = null; }
+        };
+
+        doc.addEventListener('pointerover', function (e) {
+            const w = closestW(e.target);
+            if (!w || w === over) { return; }
+            over = w; atX = e.clientX; atY = e.clientY; scrolled = 0;
+        }, true);
+
+        doc.addEventListener('pointermove', function (e) {
+            if (!bridged) { return; }
+            // A real move re-computes :hover for whatever is under the pointer,
+            // so the stand-in has done its job — unless the pointer is still on
+            // the same wrapper, where :hover now carries it anyway.
+            if (closestW(doc.elementFromPoint(e.clientX, e.clientY)) !== bridged) { over = null; }
+            drop();
+        }, true);
+
+        doc.addEventListener('pointerout', function (e) {
+            const w = closestW(e.target);
+            if (w && w === over && !(e.relatedTarget && w.contains(e.relatedTarget))) {
+                over = null; drop();
+            }
+        }, true);
+
+        // Remember how far into a long body the reader had got.
+        doc.addEventListener('scroll', function (e) {
+            const t = e.target;
+            if (t && t.classList && t.classList.contains('af-tip')) { scrolled = t.scrollTop || 0; }
+        }, true);
+
+        let queued = false;
+        const restore = () => {
+            queued = false;
+            if (!over || over.isConnected) { return; }
+            const w = closestW(doc.elementFromPoint(atX, atY));
+            over = w;
+            if (!w) { return; }
+            w.classList.add('af-on');
+            bridged = w;
+            const tip = w.querySelector('.af-tip');
+            if (tip && scrolled) { tip.scrollTop = scrolled; }
+        };
+
+        new MutationObserver(function () {
+            // Cheap on the common path: nothing is open, or what is open is
+            // still in the document.
+            if (queued || !over || over.isConnected) { return; }
+            queued = true;
+            if (typeof requestAnimationFrame === 'function') { requestAnimationFrame(restore); } else { restore(); }
+        }).observe(doc.documentElement || doc, { childList: true, subtree: true });
+    }
+
     window.AFTip = { wrap: wrap, cell: cell, lines: lines, sizeNote: sizeNote, esc: esc };
 })();

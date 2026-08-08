@@ -90,7 +90,7 @@ export interface ProjectsPanelDeps {
      *  is the point: writing a note down must cost nothing. `at` is the 1-based
      *  queue position it should take — only meaningful once it has a code. */
     backlogAdd(id: string, input: {
-        text: string; area?: string; parent?: string;
+        text: string; area?: string;
         priority?: string; effort?: string; kinds?: string[]; at?: number;
     }): { error?: string; code?: string; note?: string };
     /** Move one item between open/doing/done/cancelled — one character. */
@@ -111,7 +111,7 @@ export interface ProjectsPanelDeps {
     /** Put each area's items back in code order. The queue is unaffected. */
     backlogTidy(id: string): { error?: string; note?: string; moved?: number };
     /** Give an inbox capture a code and file it under an area. */
-    backlogCode(id: string, target: { line?: number }, area: string, parent?: string):
+    backlogCode(id: string, target: { line?: number }, area: string):
         { error?: string; code?: string };
     /** Sweep closed items under the archive heading. */
     backlogArchive(id: string): { error?: string; moved?: number };
@@ -507,7 +507,6 @@ export class ProjectsPanel {
                 const res = this.deps.backlogAdd(id, {
                     text,
                     ...(typeof msg.area === 'string' && msg.area ? { area: msg.area } : {}),
-                    ...(typeof msg.parent === 'string' && msg.parent ? { parent: msg.parent } : {}),
                     ...(typeof msg.priority === 'string' && msg.priority ? { priority: msg.priority } : {}),
                     ...(typeof msg.effort === 'string' && msg.effort ? { effort: msg.effort } : {}),
                     ...(Array.isArray(msg.kinds) ? { kinds: msg.kinds.map(String) } : {}),
@@ -578,10 +577,8 @@ export class ProjectsPanel {
             case 'backlogCode': {
                 if (!id) { break; }
                 const area = String(msg.area ?? '').trim();
-                const parent = String(msg.parent ?? '').trim();
-                if (!area && !parent) { break; }
-                const res = this.deps.backlogCode(id, backlogRowTarget(msg), area,
-                    parent ? parent : undefined);
+                if (!area) { break; }
+                const res = this.deps.backlogCode(id, backlogRowTarget(msg), area);
                 this.done(res.error, res.error ? undefined : `Filed as ${res.code ?? 'coded'}.`);
                 break;
             }

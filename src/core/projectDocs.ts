@@ -156,9 +156,11 @@ af-role: backlog
 
 <!-- Every field is OPTIONAL: a line of plain text is a valid item.
 
-     - [ ] P-5.3 What to do  #bug 🔺 [effort:: S] ⛔ P-5.1 [plan:: afprj-05]
+     - [ ] P-5 What to do  #bug 🔺 [effort:: S] ⛔ P-3 [plan:: afprj-05]
 
-     code  <AREA>-<n>[.<n>]  permanent, never reissued, says where in the tree
+     code  <AREA>-<n>       permanent, never reissued. The list is FLAT: there
+                            is no sub-item, so something that feels like one is
+                            either its own item or a paragraph inside this text.
      #tag  the kind          bug · feat · ux · chore · debt · idea · doc
      🔺⏫🔼🔽⏬               priority (no icon = normal)
      [effort:: XS|S|M|L|XL]  XS≈5min · S≈½h · M≈½day · L≈a day · XL=split it
@@ -167,6 +169,13 @@ af-role: backlog
      [closed:: 9c4d1f#3]     Agent Farm writes this: the session and turn it was
                              closed in. Its full history is in the Backloglog.
      [ ] open · [/] doing · [x] done · [-] cancelled
+
+     WHO PUT THE LINE HERE, when it was not you:
+     #by-agent               an agent noticed this while working and filed it
+                             ITSELF — a proposal, not a decision you made.
+     #by-request             an agent wrote the line, but you asked for it.
+     Neither tag = you wrote it. They are ordinary tags: filter them, remove
+     them, ignore them.
 
      Write the items in ANY language — only the field names are fixed, and they
      are English because they are part of the mechanism, not part of what you

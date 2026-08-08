@@ -24,9 +24,9 @@ import { eolOf, lineStartOffset, TASK_LINE } from './projectPlan';
  * Nothing here is invented. A backlog line is an ordinary Obsidian task line
  * carrying things the user's vault already understands:
  *
- *   - [ ] P-5.3 Work tab #feat 🔼 [effort:: L] ⛔ P-5.1 [plan:: afprj-05]
- *     └─┬─┘ └─┬┘ └──┬───┘ └─┬─┘ └┬┘ └─────┬────┘ └───┬──┘ └──────┬──────┘
- *    state code   text   kind  pri    effort     blockedBy    plan link
+ *   - [ ] P-5 Work tab #feat 🔼 [effort:: L] ⛔ P-3 [plan:: afprj-05]
+ *     └─┬─┘ └┬┘ └──┬───┘ └─┬─┘ └┬┘ └─────┬────┘ └──┬─┘ └──────┬──────┘
+ *    state code  text    kind  pri    effort   blockedBy   plan link
  *
  * state = the checkbox itself (Obsidian's own alternate states), kind = a real
  * `#tag` (clickable in the vault), priority = Obsidian Tasks' own icons,
@@ -110,22 +110,25 @@ const UNKNOWN_EFFORT_WEIGHT = EFFORT_WEIGHT.M;
 // ---------------------------------------------------------------------------
 
 /**
- * `<AREA>-<n>[.<n>…]` — P-5, P-5.3, P-5.3.1.
+ * `<AREA>-<n>` — P-5, K-8, X-12.
  *
- * Every level is a valid code on its own (`P-5` is a real item, an epic), so a
- * code carries its own position in the tree the way an ATC code does. What it
+ * ‼️ THE BACKLOG IS A FLAT LIST. An item is an item; there is no epic, no
+ * sub-item and no tree, and nothing here reads a code as a path. What it
  * deliberately does NOT copy from ATC is the letter/digit alternation: `C09AA05`
- * can be written but not SAID, and this user dictates. "P five three" is
- * speakable; that is a hard constraint on an identifier whose first job is to be
- * quoted at an agent out loud.
+ * can be written but not SAID, and this user dictates. "P five" is speakable;
+ * that is a hard constraint on an identifier whose first job is to be quoted at
+ * an agent out loud.
+ *
+ * The dotted form (`P-5.3`) is still ACCEPTED — a code is permanent, so one that
+ * exists in somebody's file has to keep resolving — but it is never handed out
+ * and it says nothing about where the item belongs.
  *
  * Two rules that never bend:
  *   1. A code is permanent. Cancel an item and its number is still spent — a
  *      note written three months ago that says `K-8` means this item, forever.
- *   2. A code is not an order. The order is the PINNED HEAD (`## 🎯 Queue`)
- *      followed by the ORDER OF LINES IN THE FILE, both of which the user
- *      changes by hand in Obsidian or from the panel. That is what makes "do
- *      the top five" work without renumbering anything.
+ *   2. A code is not an order. The order is the `## 🎯 Queue` block, which the
+ *      user changes by hand in Obsidian or from the panel. That is what makes
+ *      "do the top five" work without renumbering anything.
  */
 export const BACKLOG_CODE = /^([A-Z]{1,2})-(\d+(?:\.\d+)*)$/;
 
@@ -133,13 +136,7 @@ export const BACKLOG_CODE = /^([A-Z]{1,2})-(\d+(?:\.\d+)*)$/;
  *  A code mentioned mid-sentence is prose about another item, not this one's. */
 const LEADING_CODE = /^([A-Z]{1,2}-\d+(?:\.\d+)*)\s+/;
 
-/** `P-5.3` → `P-5`; `P-5` → undefined (an area root has no parent item). */
-export function parentCode(code: string): string | undefined {
-    const at = code.lastIndexOf('.');
-    return at < 0 ? undefined : code.slice(0, at);
-}
-
-/** Sorts codes the way a person expects: P-2 before P-10, P-5 before P-5.1. */
+/** Sorts codes the way a person expects: P-2 before P-10. */
 export function compareCodes(a: string, b: string): number {
     const pa = BACKLOG_CODE.exec(a); const pb = BACKLOG_CODE.exec(b);
     if (!pa || !pb) { return a.localeCompare(b); }
@@ -207,6 +204,38 @@ const TAG = /(?:^|\s)#([\p{L}\d/_-]+)/giu;
  * as `#chore` (its only previous home) made it invisible next to the fixes.
  */
 export const BACKLOG_KINDS = ['bug', 'research', 'feat', 'ux', 'chore', 'debt', 'idea', 'doc'];
+
+/**
+ * WHO PUT THIS LINE HERE — a second axis, deliberately NOT one of the kinds.
+ *
+ * ‼️ THE QUESTION IT ANSWERS IS "WHOSE IDEA WAS THIS", and it matters because
+ * three different things arrive in a backlog and only one of them was decided
+ * by the person who owns it:
+ *
+ *   (nothing)     the user wrote it — in the capture box or in Obsidian.
+ *   #by-request   an agent wrote the line, but the user asked for it. The
+ *                 thought is theirs; the agent was the typist.
+ *   #by-agent     an agent noticed it mid-job and filed it on its own
+ *                 initiative. Nobody has agreed to this yet.
+ *
+ * That last distinction is the whole point. An agent's own suggestion is a
+ * PROPOSAL, and a backlog where proposals are indistinguishable from decisions
+ * quietly fills up with work nobody chose. Marked, they can be read as what they
+ * are — and skimmed past, or swept, without doubting the rest of the pile.
+ *
+ * ‼️ These are ORDINARY `#tags`, and that is the design, not a shortcut. They
+ * are read as kinds like anything else, they filter like anything else, and they
+ * need no field of their own — so a person editing the file in Obsidian can add,
+ * remove or query one with the tools they already use. Nothing here is
+ * canonical-set business: the panel's type badge never touches them.
+ */
+export const BACKLOG_ORIGIN_TAGS = { agent: 'by-agent', user: 'by-request' } as const;
+export type BacklogOrigin = keyof typeof BACKLOG_ORIGIN_TAGS;
+export const BACKLOG_ORIGINS: BacklogOrigin[] = ['agent', 'user'];
+/** True for the two tags above — the panel labels them for what they are
+ *  instead of calling them "your own tag". */
+export const isOriginTag = (tag: string): boolean =>
+    (Object.values(BACKLOG_ORIGIN_TAGS) as string[]).includes(String(tag).replace(/^#/, '').toLowerCase());
 
 /** ⛔ P-5.1 — blocked until that one closes. Several may sit on one line. */
 const BLOCKED = /⛔\s*((?:[A-Z]{1,2}-\d+(?:\.\d+)*)(?:\s*,\s*[A-Z]{1,2}-\d+(?:\.\d+)*)*)/gu;
@@ -322,10 +351,6 @@ export interface BacklogItem {
     /** From the code when there is one, otherwise from the heading it sits
      *  under. Absent for an item in the inbox with no area heading above it. */
     area?: string;
-    /** The code of the item this one hangs under, by CODE (not by indent). */
-    parent?: string;
-    /** Leading whitespace in columns — the tree as the file DRAWS it. */
-    depth: number;
     /** The nearest heading above it. */
     section: string;
     /** True when it sits under the 📥 heading or carries no code. */
@@ -341,7 +366,8 @@ export interface BacklogItem {
     plan?: string;
     /** `[from:: …]` — a queue item or notice it was promoted from. */
     from?: string;
-    /** `[was:: K-8]` — the code it carried before a re-parent. */
+    /** `[was:: K-8]` — a code this item carried earlier. Read and carried
+     *  through every rewrite, never invented. */
     was?: string;
     /** `[closed:: 9c4d1f#3]` — the session and turn this was closed in. Written
      *  by `stampBacklogClosed`, carried through every rebuild, and never
@@ -354,13 +380,10 @@ export interface BacklogItem {
     /** priority ÷ effort. Computed, never stored: a number in the file would be
      *  one more thing to keep true by hand. */
     score: number;
-    /** True when the item has children — a container, never handed out as work
-     *  (see `nextBacklog`). */
-    container: boolean;
     /** Something true about the line the reader should know. NOT an error: the
-     *  line still works. E.g. the indent says one parent and the code says
-     *  another. ‼️ Reported, never silently corrected — rearranging somebody's
-     *  file to match our idea of it is precisely what this module must not do. */
+     *  line still works. E.g. the same code is on two lines. ‼️ Reported, never
+     *  silently corrected — rearranging somebody's file to match our idea of it
+     *  is precisely what this module must not do. */
     warn?: string;
 }
 
@@ -516,8 +539,6 @@ export function parseBacklog(text: string): BacklogSummary {
             state,
             ...(code ? { code } : {}),
             ...(code ? { area: code.split('-')[0] } : (area ? { area } : {})),
-            ...(code && parentCode(code) ? { parent: parentCode(code) as string } : {}),
-            depth: m[1].replace(/\t/g, ' ').length,
             section,
             inbox: inInbox || !code,
             kinds,
@@ -534,26 +555,17 @@ export function parseBacklog(text: string): BacklogSummary {
             ...(dateAfter(line, '✅') ? { doneOn: dateAfter(line, '✅') as string } : {}),
             score: PRIORITY_WEIGHT[priority] /
                 (effort ? EFFORT_WEIGHT[effort] : UNKNOWN_EFFORT_WEIGHT),
-            container: false,
             ...(inArchive ? {} : {})
         });
     }
 
-    // A second pass, because "is this a container" and "does the indent agree
-    // with the code" can only be answered once every line has been read.
-    const byCode = new Map<string, BacklogItem>();
-    for (const it of items) { if (it.code && !byCode.has(it.code)) { byCode.set(it.code, it); } }
+    // A second pass, because "is this code on another line too" can only be
+    // answered once every line has been read.
     const seen = new Set<string>();
     for (const it of items) {
-        if (it.parent && byCode.has(it.parent)) { (byCode.get(it.parent) as BacklogItem).container = true; }
-        if (it.code) {
-            if (seen.has(it.code)) {
-                it.warn = `code ${it.code} is used more than once`;
-            } else if (it.parent && !byCode.has(it.parent)) {
-                it.warn = `parent ${it.parent} is not in this file`;
-            }
-            seen.add(it.code);
-        }
+        if (!it.code) { continue; }
+        if (seen.has(it.code)) { it.warn = `code ${it.code} is used more than once`; }
+        seen.add(it.code);
     }
 
     for (const a of areas) {
@@ -611,8 +623,8 @@ export interface NextResult {
      *  what a row's position number means and what a reorder is computed
      *  against; the raw block is `parseBacklog(...).queue`. */
     queue: string[];
-    /** Codes in the block that lead nowhere any more — the item is closed, gone,
-     *  or has grown children. ‼️ Reported, never quietly removed: the queue is
+    /** Codes in the block that lead nowhere any more — the item is closed or
+     *  gone. ‼️ Reported, never quietly removed: the queue is
      *  the user's own list and a program that prunes it silently is a program
      *  that loses their ordering while telling them nothing. */
     staleQueue: string[];
@@ -627,12 +639,11 @@ export interface NextResult {
  * something that just arrived. Every write materialises the whole list, so the
  * tail is empty from the first edit onwards.
  *
- * Only live leaves with a code are in it: a container is not work, a closed item
- * is not waiting, and an uncoded capture has no handle that survives an edit of
- * the file.
+ * Only live coded items are in it: a closed item is not waiting, and an uncoded
+ * capture has no handle that survives an edit of the file.
  */
 export function queueOrder(items: BacklogItem[], queue: string[]): string[] {
-    const placeable = items.filter(i => i.code && isLive(i.state) && !i.container);
+    const placeable = items.filter(i => i.code && isLive(i.state));
     const byCode = new Map(placeable.map(i => [i.code as string, i]));
     const out: string[] = [];
     const seen = new Set<string>();
@@ -649,11 +660,10 @@ export function queueOrder(items: BacklogItem[], queue: string[]): string[] {
 /**
  * The engine behind "do the top five".
  *
- * Order of operations matters and each step earns its place: containers out
- * (work lives at the leaves), blocked out (doing it now would be doing it in the
- * wrong order), filters, then the user's own order — because the user arranging
- * their queue IS the prioritisation, and a clever sort that overrules it would
- * make dragging pointless.
+ * Order of operations matters and each step earns its place: blocked out (doing
+ * it now would be doing it in the wrong order), filters, then the user's own
+ * order — because the user arranging their queue IS the prioritisation, and a
+ * clever sort that overrules it would make dragging pointless.
  *
  * That order is the `## 🎯 Queue` block, resolved by `queueOrder` — one list
  * holding every queueable item, areas interleaved however the user shuffled
@@ -662,7 +672,7 @@ export function queueOrder(items: BacklogItem[], queue: string[]): string[] {
 export function nextBacklog(text: string, opts: NextOptions = {}): NextResult {
     const { items, queue } = parseBacklog(text);
     const byCode = new Map(items.filter(i => i.code).map(i => [i.code as string, i]));
-    const live = items.filter(i => isLive(i.state) && !i.container);
+    const live = items.filter(i => isLive(i.state));
     const blocked: NextResult['blocked'] = [];
     const minW = PRIORITY_WEIGHT[opts.minPriority ?? 'lowest'];
     const maxW = EFFORT_WEIGHT[opts.maxEffort ?? 'M'];
@@ -717,14 +727,14 @@ export function nextBacklog(text: string, opts: NextOptions = {}): NextResult {
                 PRIORITY_WEIGHT[b.priority] - PRIORITY_WEIGHT[a.priority] || a.line - b.line)
             : [...passed].sort(queued);
 
-    // An entry whose item is closed, gone or has become a container leads
-    // nowhere, and the caller is told which — so "why is X-5 not in the list any
-    // more" never needs the file to be read by hand. ‼️ Measured against the
-    // ITEM, not against this call's filters: an `area: 'K'` query must not
-    // report every other area's entries as rubbish.
+    // An entry whose item is closed or gone leads nowhere, and the caller is told
+    // which — so "why is X-5 not in the list any more" never needs the file to be
+    // read by hand. ‼️ Measured against the ITEM, not against this call's
+    // filters: an `area: 'K'` query must not report every other area's entries
+    // as rubbish.
     const staleQueue = queue.filter(c => {
         const it = byCode.get(c);
-        return !it || !isLive(it.state) || it.container;
+        return !it || !isLive(it.state);
     });
 
     const limit = Math.max(1, Math.min(50, opts.limit ?? 5));
@@ -997,22 +1007,13 @@ export function setBacklogFields(
 // writing — adding
 // ---------------------------------------------------------------------------
 
-/** The next free number in an area (or under a parent). Only ever counts UP:
- *  a cancelled item's number stays spent, because a note from three months ago
- *  that says `K-8` must not start meaning something else. */
-export function nextCode(items: BacklogItem[], area: string, parent?: string): string {
+/** The next free number in an area. Only ever counts UP: a cancelled item's
+ *  number stays spent, because a note from three months ago that says `K-8`
+ *  must not start meaning something else. ‼️ A dotted legacy code counts under
+ *  its own first number (`U-14.3` is spent U-14), so a flat code handed out now
+ *  can never collide with one. */
+export function nextCode(items: BacklogItem[], area: string): string {
     const a = area.trim().toUpperCase();
-    if (parent) {
-        const prefix = `${parent}.`;
-        let max = 0;
-        for (const it of items) {
-            if (!it.code?.startsWith(prefix)) { continue; }
-            const tail = it.code.slice(prefix.length);
-            if (tail.includes('.')) { continue; }          // a grandchild, not a child
-            max = Math.max(max, Number(tail) || 0);
-        }
-        return `${parent}.${max + 1}`;
-    }
     let max = 0;
     for (const it of items) {
         const m = it.code ? BACKLOG_CODE.exec(it.code) : null;
@@ -1025,12 +1026,10 @@ export function nextCode(items: BacklogItem[], area: string, parent?: string): s
 export interface AddBacklogInput {
     /** The words. Everything else is optional, on purpose. */
     text: string;
-    /** Where it belongs. With neither area nor parent the item goes to the
-     *  inbox WITHOUT a code — which is the friction-free path and the one the
-     *  quick-capture box uses. */
+    /** Where it belongs. With no area the item goes to the inbox WITHOUT a code
+     *  — which is the friction-free path and the one the quick-capture box
+     *  uses. */
     area?: string;
-    /** Hang it under this code; the area is taken from the parent. */
-    parent?: string;
     priority?: BacklogPriority;
     effort?: BacklogEffort;
     kinds?: string[];
@@ -1049,8 +1048,7 @@ export interface AddBacklogResult extends BacklogEditResult {
 /**
  * Add an item.
  *
- * Where it lands, in order of preference: under its parent's last descendant
- * (so a child joins its family), else at the end of its area's section, else
+ * Where it lands, in order of preference: at the end of its area's section, else
  * under the 📥 heading, else at the end of the file. Appending is the one
  * insertion that cannot damage a structure we read wrongly, so it is the last
  * resort rather than the first move.
@@ -1062,32 +1060,18 @@ export function addBacklogItem(text: string, input: AddBacklogInput): AddBacklog
     const parsed = parseBacklog(src);
     const eol = eolOf(src);
 
-    const parent = input.parent?.trim().toUpperCase();
-    if (parent && !parsed.items.some(i => i.code === parent)) {
-        return { ok: false, error: `no backlog item with code ${parent} to hang this under` };
-    }
-    const area = parent ? parent.split('-')[0] : input.area?.trim().toUpperCase();
+    const area = input.area?.trim().toUpperCase();
     if (area && !BACKLOG_CODE.test(`${area}-1`)) {
         return { ok: false, error: `"${area}" is not an area code — one or two capital letters` };
     }
-    const code = area ? nextCode(parsed.items, area, parent) : undefined;
+    const code = area ? nextCode(parsed.items, area) : undefined;
 
     // Where to put it.
     let after = -1;                                    // insert AFTER this line
-    let indent = '';
-    if (parent) {
-        const owner = parsed.items.find(i => i.code === parent) as BacklogItem;
-        const family = parsed.items.filter(i => i.code?.startsWith(`${parent}.`));
-        const last = family.length ? family[family.length - 1] : owner;
-        after = last.line;
-        indent = ' '.repeat((family.length ? last.depth : owner.depth + 4));
-    } else if (area) {
-        const inArea = parsed.items.filter(i => i.area === area && i.depth === 0);
+    if (area) {
+        const inArea = parsed.items.filter(i => i.area === area);
         if (inArea.length) {
-            // past the last top-level item of the area AND its children
-            const last = inArea[inArea.length - 1];
-            const kids = parsed.items.filter(i => i.line > last.line && i.depth > last.depth);
-            after = kids.length ? kids[kids.length - 1].line : last.line;
+            after = inArea[inArea.length - 1].line;
         } else {
             const heading = parsed.areas.find(x => x.code === area);
             if (heading) { after = heading.line; }
@@ -1101,7 +1085,7 @@ export function addBacklogItem(text: string, input: AddBacklogInput): AddBacklog
         after = mine.length ? mine[mine.length - 1].line : (parsed.inboxLine as number);
     }
 
-    const parts = [`${indent}- [${STATE_CHAR[input.state ?? 'open']}]`];
+    const parts = [`- [${STATE_CHAR[input.state ?? 'open']}]`];
     if (code) { parts.push(code); }
     parts.push(words);
     for (const k of input.kinds ?? []) { parts.push(`#${k.replace(/^#/, '')}`); }
@@ -1143,7 +1127,7 @@ export function addBacklogItem(text: string, input: AddBacklogInput): AddBacklog
  * context — which may well be an agent.
  */
 export function codeBacklogItem(
-    text: string, target: BacklogTarget, area: string, parent?: string
+    text: string, target: BacklogTarget, area: string
 ): AddBacklogResult {
     const src = String(text ?? '');
     const parsed = parseBacklog(src);
@@ -1152,21 +1136,17 @@ export function codeBacklogItem(
     const item = found.item;
     if (item.code) { return { ok: false, error: `${item.code} already has a code` }; }
 
-    const owner = parent?.trim().toUpperCase();
-    if (owner && !parsed.items.some(i => i.code === owner)) {
-        return { ok: false, error: `no backlog item with code ${owner}` };
-    }
-    const a = (owner ? owner.split('-')[0] : area.trim().toUpperCase());
+    const a = area.trim().toUpperCase();
     if (!BACKLOG_CODE.test(`${a}-1`)) {
         return { ok: false, error: `"${a}" is not an area code — one or two capital letters` };
     }
-    const code = nextCode(parsed.items, a, owner);
+    const code = nextCode(parsed.items, a);
 
     // Re-add it where it belongs, then take the old line out. Doing it in this
     // order keeps the line numbers we already resolved valid while inserting.
     const added = addBacklogItem(src, {
         text: item.text,
-        ...(owner ? { parent: owner } : { area: a }),
+        area: a,
         priority: item.priority,
         ...(item.effort ? { effort: item.effort } : {}),
         kinds: item.kinds,
@@ -1208,22 +1188,13 @@ function removeLine(src: string, line: number, expect: string): string | undefin
 export type BacklogMoveDir = 'up' | 'down' | 'top' | 'bottom';
 export const BACKLOG_MOVES: BacklogMoveDir[] = ['up', 'down', 'top', 'bottom'];
 
-/** An item plus every line indented under it — what a tidy carries. */
-function blockOf(items: BacklogItem[], start: BacklogItem): { from: number; to: number } {
-    let to = start.line;
-    for (const it of items) {
-        if (it.line > start.line && it.depth > start.depth) { to = it.line; } else if (it.line > start.line) { break; }
-    }
-    return { from: start.line, to };
-}
-
 /**
  * Move one code some number of steps through the queue.
  *
  * ‼️ THIS MOVES IT IN THE QUEUE, NOT IN THE FILE. Not one line is touched, so the
- * item keeps its code, its area, its section and its indent — and the move can
- * cross areas, which is the whole point: a line cannot leave its own heading, an
- * entry in a list can go anywhere.
+ * item keeps its code, its area and its section — and the move can cross areas,
+ * which is the whole point: a line cannot leave its own heading, an entry in a
+ * list can go anywhere.
  *
  * `by` is what the step menu under ▲/▼ sends. One step is a plain click; the
  * menu offers the jumps a hand actually wants (2, 3, 4, 5, 10, 15, 20), and
@@ -1300,9 +1271,9 @@ export function dropInQueue(
     return setBacklogQueue(src, moved);
 }
 
-/** Why a code is not in the queue, said precisely. ‼️ Four different causes, and
+/** Why a code is not in the queue, said precisely. ‼️ Three different causes, and
  *  one message covering all of them would send somebody to read the file: not a
- *  code at all, no such item, closed, or a container. */
+ *  code at all, no such item, or closed. */
 function queueRefusal(parsed: BacklogSummary, code: string): string {
     if (!BACKLOG_CODE.test(code)) {
         return `"${code}" is not a backlog code`
@@ -1311,9 +1282,6 @@ function queueRefusal(parsed: BacklogSummary, code: string): string {
     const item = parsed.items.find(i => i.code === code);
     if (!item) { return `no backlog item with code ${code}`; }
     if (!isLive(item.state)) { return `${code} is ${item.state} — a closed item is not in the queue`; }
-    if (item.container) {
-        return `${code} has children — work lives at the leaves, so queue one of them instead`;
-    }
     return `${code} is not in the queue`;
 }
 
@@ -1432,9 +1400,6 @@ export interface TidyResult extends BacklogEditResult {
  * Nothing about the queue changes when this runs: it names codes, and a code
  * does not care which line it is on.
  *
- * Children ride with their parent (`P-5.1` stays under `P-5`) because a block is
- * moved, never a line.
- *
  * ‼️ A SECTION WITH PROSE BETWEEN ITS ITEMS IS LEFT ALONE AND REPORTED. Somebody
  * wrote that paragraph where it is for a reason and no sort knows what it was;
  * refusing the section is honest, silently relocating the paragraph is not.
@@ -1469,13 +1434,10 @@ export function tidyBacklogFile(text: string): TidyResult {
         if (INBOX_HEADING.test(section) || ARCHIVE_HEADING.test(section)) { continue; }
         if (mine.length < 2) { continue; }
 
-        // Roots and their children, in file order — each is one block of lines.
-        const blocks: { code?: string; from: number; to: number }[] = [];
-        for (let n = 0; n < mine.length;) {
-            const b = blockOf(mine, mine[n]);
-            blocks.push({ ...(mine[n].code ? { code: mine[n].code } : {}), from: b.from, to: b.to });
-            while (n < mine.length && mine[n].line <= b.to) { n++; }
-        }
+        // One item is one line, so one item is one block.
+        const blocks = mine.map(it => ({
+            ...(it.code ? { code: it.code } : {}), from: it.line, to: it.line
+        }));
         if (blocks.length < 2) { continue; }
 
         const span = { from: blocks[0].from, to: blocks[blocks.length - 1].to };
@@ -1543,7 +1505,6 @@ export function archiveBacklogDone(text: string, opts: { cancelled?: boolean } =
     const parsed = parseBacklog(src);
     const wanted = parsed.items.filter(i =>
         (i.state === 'done' || (opts.cancelled !== false && i.state === 'cancelled'))
-        && !i.container
         && !(parsed.archiveLine !== undefined && i.line > parsed.archiveLine));
     if (!wanted.length) { return { ok: true, text: src, moved: 0, note: 'nothing closed to archive' }; }
 
