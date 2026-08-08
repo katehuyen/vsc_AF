@@ -356,6 +356,22 @@ const html = allHtml;
     afms.clear('c-kinds');
     ok('Clear is an honest empty view, not a reset',
         /Every line is filtered out/.test(html()));
+
+    // ‼️ THE ONE SUBSET THIS LIST HAS A WORD FOR. Seven kinds of line exist and
+    // the reading people keep coming back to is the conversation itself; it used
+    // to cost Clear plus two ticks, every time.
+    ok('the show box offers Dialog as a named subset',
+        afms.presets('c-kinds').join(',') === 'dialog');
+    afms.preset('c-kinds', 'dialog');
+    ok('…and it leaves exactly you and the agent showing',
+        state.afConsole.kinds.slice().sort().join(',') === 'agent,user');
+
+    // …and the per-row version of the same idea: the NAME means "only this".
+    afms.clickName('c-kinds', 'user');
+    ok('clicking a kind\'s name shows only that kind',
+        state.afConsole.kinds.join(',') === 'user'
+        && html().includes('read the report') && !html().includes('file body'));
+    afms.selectAll('c-kinds');
 }
 
 // ---------- a line you filtered out is not news you are missing ----------
@@ -568,6 +584,15 @@ const html = allHtml;
     ok('…saying what it is doing right now, not just "thinking"',
         /Read D:\/a\/b\.md/.test(working()));
     ok('…and how long it has been at it', /12s/.test(working()));
+    // ‼️ TWO ROWS, NOT ONE. On one line the sentence and the figures competed
+    // for the same width, and whichever was longer ate the other — the tail of
+    // the meta ran off the right edge and could not be read at all.
+    ok('…on its own second row, so the sentence and the figures stop competing',
+        /<div class="wrow">[\s\S]*<\/div><div class="wmeta">/.test(working()));
+    ok('…with what it is DOING on the first row and nothing else',
+        !/wmeta/.test(/<div class="wrow">([\s\S]*?)<\/div>/.exec(working())[1]));
+    ok('…and the duration is where the second row begins',
+        /<div class="wmeta">12s/.test(working()));
     // ‼️ The way to stop it is a BUTTON, and it is on screen while the turn runs
     // — the strip used to spend its last column spelling that out in words, two
     // centimetres above the button itself (see workingHtml).

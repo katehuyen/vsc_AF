@@ -207,16 +207,30 @@
         .hiddenote:empty { display:none; }
         /* "still working" — between the conversation and the composer, so it
            never moves either of them (flex:none: it takes its own height) */
-        .working { flex:none; font-size:11px; padding:5px 4px 0; display:flex; gap:6px;
-            align-items:baseline; color:var(--vscode-descriptionForeground); }
+        /* ‼️ TWO LINES, NOT ONE. On one line the strip was a single row that had
+           to hold BOTH the sentence ("Read src/core/live.ts") and every figure
+           the turn has produced, so whichever end was longer ate the other: the
+           tail of the meta ran off the right edge and could not be read at all.
+           Line 1 is what is happening, line 2 is what it has cost — the numbers
+           right-aligned, exactly where the eye already goes for a total. The
+           gap between them is deliberately nothing: this is one strip printed
+           on two rows, not two strips. */
+        .working { flex:none; font-size:11px; padding:5px 4px 0; display:flex;
+            flex-direction:column; gap:0; line-height:1.3;
+            color:var(--vscode-descriptionForeground); }
         .working:empty { display:none; }
+        .working .wrow { display:flex; gap:6px; align-items:baseline; min-width:0; }
         .working b { color:var(--vscode-foreground); font-weight:600;
             overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .working .spin { color:var(--vscode-charts-blue,#3794ff); font-size:13px; }
         /* the finished turn's summary sits in the same strip, deliberately
            quieter and motionless — a settled number, not a live one */
         .working .dspin { color:var(--vscode-charts-green,#89d185); font-size:12px; }
-        .working .wmeta { margin-left:auto; opacity:.75; white-space:nowrap; }
+        /* the second row: still right-aligned. It is allowed to WRAP rather than
+           be cut — the figures are the reason the strip grew a second line, so
+           losing their tail again would undo the change. */
+        .working .wmeta { align-self:flex-end; max-width:100%; opacity:.75;
+            text-align:right; white-space:normal; }
         /* the model + effort field: the only part of the meta line that is not
            a measurement but the REASON for one, so it is the one part allowed a
            little weight — it is what the numbers next to it are explained by */
@@ -402,7 +416,10 @@
            every message sent from this box, not a control. It is what the user
            hovers to READ THE TEXT the session is being given, which is the only
            way an invisible channel can be honest. */
-        .pchip { font-size:10px; opacity:.85; margin-bottom:6px; cursor:help;
+        /* the spacing lives on the SLOT, not on the chip: the chip is inside an
+           AFTip wrapper now, and margin on an inline trigger does nothing */
+        #c-project { margin-bottom:6px; }
+        .pchip { font-size:10px; opacity:.85; cursor:help;
             display:inline-flex; align-items:center; gap:6px; padding:2px 7px; border-radius:9px;
             border:1px solid var(--vscode-widget-border,#4443);
             background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); }
@@ -494,6 +511,14 @@
             border-top:1px solid var(--vscode-widget-border,#4443);
             white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .fixed { font-size:11px; opacity:.75; }
+        /* the same word, but on a composer that has NOT started yet: it reads as
+           a chosen value rather than a fact, so it gets a border and a way out */
+        .fixed.pinned { display:inline-flex; align-items:center; gap:4px; opacity:.9;
+            padding:2px 4px 2px 8px; border-radius:9px;
+            border:1px solid var(--vscode-widget-border,#4443); }
+        .fixed.pinned .only { background:none; border:none; opacity:.5; cursor:pointer;
+            font-size:11px; padding:0 3px; color:inherit; }
+        .fixed.pinned .only:hover { opacity:1; }
         .permlbl { font-size:10px; opacity:.75; display:flex; align-items:center; gap:4px; }
         .owned { opacity:.5; }
         .owned .n::after { content:' · open elsewhere'; font-weight:400; opacity:.8; }
@@ -1171,7 +1196,7 @@
         return `<div class="rpanel">
             <div class="rtext">
                 <input type="text" id="c-rq-text" placeholder="name, agent, label or #id…"
-                       title="Matched against the session's name, its agent, its labels and its id — paste an id from any card or menu to land on that one session">
+                       title="${C.esc(window.AFQuery.tip("Searched against the session's name, its agent, its labels and its id — paste an id from any card or menu to land on that one session."))}">
                 <button class="rx" id="c-rq-xtext" hidden title="Clear what you typed (the rest of the filter stays)">⨯</button>
             </div>
             <div class="rrow">
@@ -1349,6 +1374,22 @@
     }
 
     const DONE_GLYPH = { done: '✓', interrupted: '⎋', failed: '⚠' };
+
+    /**
+     * The strip, printed as the two rows it is: WHAT is happening on top, WHAT
+     * IT HAS COST underneath and right-aligned (see the `.working` styles).
+     *
+     * The meta pieces each arrive with their own ` · ` in front, because on one
+     * line they were appended to a duration that was always there. On its own
+     * row the duration can be the missing one, so a leading separator would
+     * open the line with a floating dot — trimmed here rather than in six
+     * callers.
+     */
+    function stripHtml(head, meta) {
+        const m = String(meta || '').replace(/^\s*·\s*/, '').trim();
+        return `<div class="wrow">${head}</div>${m ? `<div class="wmeta">${m}</div>` : ''}`;
+    }
+
     function lastTurnHtml(s) {
         const t = s && s.lastTurn;
         if (!t) { return ''; }
@@ -1358,8 +1399,9 @@
         const money = t.cost || t.tokens
             ? ` · <span title="What that turn cost, as the CLI reported it — not an estimate. The line under the box is the whole session.">${spend(t.cost, t.tokens, t.wTokens)}</span>`
             : '';
-        return `<span class="dspin">${glyph}</span> <b>${word}</b>
-            <span class="wmeta">${t.ms ? C.fmtDur(t.ms) : ''}${money}${stepsHtml(t.apiCalls, t.steps, t.thinking)}${turnBrainHtml(t.model, t.effort, false)} · your turn now</span>`;
+        return stripHtml(
+            `<span class="dspin">${glyph}</span> <b>${word}</b>`,
+            `${t.ms ? C.fmtDur(t.ms) : ''}${money}${stepsHtml(t.apiCalls, t.steps, t.thinking)}${turnBrainHtml(t.model, t.effort, false)} · your turn now`);
     }
 
     function workingHtml(s) {
@@ -1402,8 +1444,9 @@
         // already says. The Esc key it also taught now lives in that button's
         // tooltip, where a key hint belongs. What took its place is the one thing
         // nothing else on screen was saying: WHAT this turn is thinking with.
-        return `<span class="spin">${glyph}</span> ${doingChip}<b>${C.esc(doing)}</b>
-            <span class="wmeta">${C.fmtDur(ran)}${cost}${stepsHtml(s.turnApiCalls, s.turnSteps, s.turnThinking)}${q ? ` · ${q} held` : ''}${turnBrainHtml(s.turnModel, s.turnEffort, true)}</span>`;
+        return stripHtml(
+            `<span class="spin">${glyph}</span> ${doingChip}<b>${C.esc(doing)}</b>`,
+            `${C.fmtDur(ran)}${cost}${stepsHtml(s.turnApiCalls, s.turnSteps, s.turnThinking)}${q ? ` · ${q} held` : ''}${turnBrainHtml(s.turnModel, s.turnEffort, true)}`);
     }
 
     /** The glyph has to turn on its own — a data push only arrives when the CLI
@@ -1658,11 +1701,11 @@
 
     function snipHtml() {
         if (!snip) { return ''; }
-        const q = (snip.q || '').toLowerCase();
+        // the box is a QUERY, not a substring — media/afQuery.js
+        const q = window.AFQuery.compile(snip.q || '');
         const all = snip.items || [];
-        const shown = q
-            ? all.filter(x => (x.label + ' ' + x.group + ' ' + x.text).toLowerCase().includes(q))
-            : all;
+        const shown = q.empty ? all
+            : all.filter(x => q.test(x.label + ' ' + x.group + ' ' + x.text));
         let body;
         if (snip.loading) {
             body = '<div class="snipnone">Reading the file…</div>';
@@ -1769,10 +1812,10 @@
             if (again) { try { again.focus({ preventScroll: true }); } catch (e) { again.focus(); } }
         });
         const list = (snip.items || []);
-        const shownQ = (snip.q || '').toLowerCase();
-        const shown = shownQ
-            ? list.filter(x => (x.label + ' ' + x.group + ' ' + x.text).toLowerCase().includes(shownQ))
-            : list;
+        // the same filter snipHtml drew with — the indices have to agree
+        const shownQ = window.AFQuery.compile(snip.q || '');
+        const shown = shownQ.empty ? list
+            : list.filter(x => shownQ.test(x.label + ' ' + x.group + ' ' + x.text));
         document.querySelectorAll('[data-snip]').forEach(el =>
             el.addEventListener('click', () => {
                 const it = shown[Number(el.dataset.snip)];
@@ -1793,6 +1836,30 @@
     /** The tail every sending button's tooltip carries — a menu nobody knows
      *  about is not a feature. */
     const SNIP_HINT = 'right-click for your saved prompts';
+
+    /**
+     * ‼️ THE AGENT, FIXED — a composer opened FROM an agent is about that agent.
+     *
+     * ▶ on a sidebar row used to spawn the session on the spot, which put the
+     * composer straight into its running shape: agent fixed (right) and no
+     * project box (wrong, and the project can only be chosen BEFORE the first
+     * prompt — it rides in on the system prompt at spawn). Nothing is spawned
+     * any more; the composer opens with the agent pinned and every box that
+     * still decides something live. The CLI starts on the first message.
+     *
+     * The pin is never a trap: ✕ hands the picker back. Returns '' when the
+     * composer was not opened from an agent, and the caller draws the picker.
+     */
+    function pinnedAgentHtml() {
+        const id = DATA.pinnedAgent || '';
+        if (!id) { return ''; }
+        const a = (DATA.agents || []).find(x => x.id === id);
+        if (!a) { return ''; }
+        return `<span class="fixed pinned" title="You came here from ${C.esc(a.name)} — the session will open in its folder. ✕ gives the picker back.">
+                ${C.esc(a.name)}
+                <button class="only" id="c-unpin" title="Choose a different agent instead">✕</button>
+            </span>`;
+    }
 
     function buildShell(s) {
         const opts = (list, cur) => (list || []).map(o =>
@@ -1836,19 +1903,28 @@
                     // here is how the button came to read "show: show: …"
                     id: 'c-kinds', label: 'show', allLabel: 'everything',
                     options: KINDS, selected: st.kinds,
-                    title: 'Which kinds of line the conversation shows — tick any combination'
+                    // ‼️ THE ONE SUBSET THIS LIST HAS A WORD FOR. Seven kinds of
+                    // line exist, and the reading a person keeps coming back to
+                    // is the conversation itself — what was asked and what was
+                    // answered, with the machinery in between out of the way.
+                    // Reaching it meant Clear plus two ticks, every time.
+                    presets: [{
+                        id: 'dialog', label: 'Dialog', values: ['agent', 'user'],
+                        title: 'Just the conversation — you and the agent. Tool calls, results, system lines and questions are hidden.'
+                    }],
+                    title: 'Which kinds of line the conversation shows'
                 })}
                 <span class="grow"></span>
                 <span id="c-live"></span>
                 <button id="c-send"${dead ? ' disabled' : ''}>Send</button>`
-            : `<select id="c-agent" title="Which agent — the session opens in its folder">
+            : `${pinnedAgentHtml() || `<select id="c-agent" title="Which agent — the session opens in its folder">
                     <option value="">Choose an agent…</option>
                     ${(DATA.agents || []).map(a => `<option value="${C.esc(a.id)}"${a.id === st.agentId ? ' selected' : ''}>${C.esc(a.name)}</option>`).join('')}
-                </select>
+                </select>`}
                 <select id="c-model" title="Model for the new session (--model)">${opts(DATA.models, st.model)}</select>
                 <select id="c-effort" title="Reasoning effort (--effort)">${opts(DATA.efforts, st.effort)}</select>
                 <select id="c-perm" title="What it may do without asking (--permission-mode)">${opts(DATA.permissions, st.permissionMode)}</select>
-                <select id="c-proj" title="Project — the session is told about it before you type, and is filed under it. This is the window's active project, the same one the status bar shows.">
+                <select id="c-proj" title="Project for THIS session — it is told about it before you type, and is filed under it. It starts at No project every time: the status bar's active project is the window's answer, not this session's, and neither writes the other.">
                     <option value=""${DATA.activeProjectId ? '' : ' selected'}>◧ No project</option>
                     ${(DATA.projects || []).map(p => `<option value="${C.esc(p.id)}"${p.id === DATA.activeProjectId ? ' selected' : ''}>${p.icon ? C.esc(p.icon) + ' ' : '◧ '}${C.esc(p.name)}</option>`).join('')}
                 </select>
@@ -2008,6 +2084,9 @@
         // a second answer to "what am I working on", and the two would disagree
         // within a minute.
         byId('c-proj', 'change', e => vscode.postMessage({ type: 'setProject', id: e.target.value }));
+        // giving the pin back: the picker returns, and st keeps whatever agent
+        // was pinned as its starting selection
+        byId('c-unpin', 'click', () => vscode.postMessage({ type: 'unpinAgent' }));
         resetTail();
     }
 
@@ -2292,26 +2371,55 @@
      * It is also drawn when NO project is set, saying so: "nothing is being
      * added" is information too, and its absence is what would make the
      * presence of a stamp feel arbitrary.
+     *
+     * ‼️ AND IT HANGS OFF AFTip, NOT A NATIVE `title`. The text this chip exists
+     * to show is a whole appended system prompt — hundreds of lines on a real
+     * project. A platform tooltip takes that, draws as much of it as it feels
+     * like, cuts, and cannot be scrolled or reached with the pointer; so the one
+     * surface built to make an invisible channel readable was the one surface
+     * that could not show what it was hiding. AFTip is the box the backlog's
+     * `more` proved out: as tall as the screen allows, scrollable, and the
+     * pointer travels into it (docs/CONVENTIONS.md → Hover).
      */
     function projectChipHtml() {
         const id = DATA.activeProjectId || '';
         const p = (DATA.projects || []).find(x => x.id === id);
+        const T = window.AFTip;
         if (!p) {
-            return `<div class="pchip none" title="No project — sessions you start here are told nothing extra and are filed nowhere. Pick one in the row below.">◧ No project</div>`;
+            return T.wrap(
+                '<span class="pchip none">◧ No project<span class="pchip-hint">hover to read what is sent</span></span>',
+                'No project — nothing is added to the system prompt',
+                'Sessions you start here are told nothing extra and are filed nowhere.\n\n'
+                + 'Pick a project in the row below and this chip shows the exact text it will be given.');
         }
         const ctx = DATA.projectContext || '';
-        const tip = ctx
-            ? `This exact text is added to the session's system prompt, before your first message:\n\n${ctx}`
-            : 'This session is filed under the project. Its context could not be read back — the folder may have moved.';
-        return `<div class="pchip" title="${C.esc(tip)}">◧ ${C.esc(p.name)} — project context active<span class="pchip-hint">hover to read what is sent</span></div>`;
+        const trigger = `<span class="pchip">◧ ${C.esc(p.name)} — project context active<span class="pchip-hint">hover to read what is sent</span></span>`;
+        if (!ctx) {
+            return T.wrap(trigger, `${p.name} · context unreadable`,
+                'This session is filed under the project. Its context could not be read back — the folder may have moved.');
+        }
+        return T.wrap(trigger,
+            T.lines([`${p.name} · ${T.sizeNote(ctx)} · added to the system prompt before your first message`]),
+            ctx);
     }
 
     function paint() {
         const s = sel();
-        const key = `${DATA.selected || ''}|${s ? s.status === 'ended' || s.status === 'error' : 'none'}`;
+        // ‼️ THE PIN IS PART OF THE KEY. It decides whether the composer draws a
+        // picker or a name, which is markup — so a pin that arrived while the
+        // composer was already on screen has to rebuild the shell, exactly as a
+        // change of session does.
+        const key = `${DATA.selected || ''}|${s ? s.status === 'ended' || s.status === 'error' : 'none'}|${DATA.pinnedAgent || ''}`;
         if (shellKey !== key) {
             shellKey = key;
             buildShell(s);
+        }
+        // A pinned composer has no picker to disagree with, and the agent it is
+        // fixed to is the one that must be started — not whatever was last left
+        // in the page's own state.
+        if (DATA.pinnedAgent && st.agentId !== DATA.pinnedAgent) {
+            st.agentId = DATA.pinnedAgent;
+            save();
         }
         // The shell is only rebuilt when the SELECTED SESSION changes, so an
         // agent chosen for us — "Talk to Agent" on an agent's page — would land

@@ -292,13 +292,14 @@
         }
 
         function filterRows(list) {
-            const text = (filters.text || '').toLowerCase();
+            // the box is a QUERY, not a substring — media/afQuery.js
+            const text = window.AFQuery.compile(filters.text || '');
             return list.filter(r => {
                 if (filters.pinnedOnly && !r.pinned) { return false; }
                 // tags are part of the searchable text: "zen" finds both the
                 // sessions titled that way and the ones you labelled zen
-                if (text && ((r.title || '') + ' ' + (r.agent || '') + ' ' + (r.tags || []).join(' '))
-                    .toLowerCase().indexOf(text) < 0) { return false; }
+                if (!text.empty && !text.test((r.title || '') + ' ' + (r.agent || '') + ' '
+                    + (r.tags || []).join(' '))) { return false; }
                 if (filters.agents && filters.agents.indexOf(r.agentName) < 0) { return false; }
                 if (filters.projects && filters.projects.indexOf(projectOf(r)) < 0) { return false; }
                 if (filters.origin && originOf(r) !== filters.origin) { return false; }
@@ -356,7 +357,8 @@
                     <span class="muted small" title="Who started the session">Started by:</span>${origins}
                 </div>
                 <div class="af-frow">
-                    <input type="text" class="af-ftext" placeholder="title contains…" value="${C.esc(filters.text)}">
+                    <input type="text" class="af-ftext" placeholder="title contains…" value="${C.esc(filters.text)}"
+                        title="${C.esc(window.AFQuery.tip('Searched against the session title, its agent and its labels.'))}">
                     ${hasAgentCol && agents.length > 1 ? window.AFFilter.multi({
                         id: AGENT_MS, label: 'Agents', options: agents, selected: filters.agents,
                         title: 'Which agents to list — tick any combination'

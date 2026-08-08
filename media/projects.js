@@ -1741,7 +1741,8 @@
 
         <div class="pj-chips-row">
             <span class="pj-bl-qwrap">
-                <input id="bl-q" class="pj-bl-q" placeholder="search text or code" value="${C.esc(blFilter.q)}">
+                <input id="bl-q" class="pj-bl-q" placeholder="search text or code" value="${C.esc(blFilter.q)}"
+                    title="${C.esc(window.AFQuery.tip('Searched against each item\'s code and its words.'))}">
                 ${blFilter.q.trim() ? '<button class="pj-bl-qx" data-blclearf="q" title="Clear the search box only">✕</button>' : ''}
             </span>
             ${blPickHtml('bar')}
@@ -1965,7 +1966,11 @@
      *  them", it is what Clear leaves behind, and it must honestly return
      *  nothing rather than quietly behaving like "all". */
     function blPasses(i) {
-        const q = blFilter.q.trim().toLowerCase();
+        // ‼️ The box is a QUERY, not a substring — media/afQuery.js. `bug K-`
+        // means both, `-done` excludes, `"more"` is the whole word. Compiled per
+        // call and not per row: blPasses is the row-level predicate, and the
+        // compile is a parse of a handful of tokens, not of the list.
+        const q = window.AFQuery.compile(blFilter.q);
         const on = (axis, value) => !axis || axis.indexOf(value) >= 0;
         if (!on(blFilter.states, i.state)) { return false; }
         if (!on(blFilter.filed, i.code ? 'coded' : 'unfiled')) { return false; }
@@ -1984,8 +1989,9 @@
         if (!on(blFilter.epics, i.container ? 'container' : 'leaf')) { return false; }
         if (!on(blFilter.plan, i.plan ? 'yes' : 'no')) { return false; }
         if (!on(blFilter.due, i.due ? 'yes' : 'no')) { return false; }
-        if (q && (i.text || '').toLowerCase().indexOf(q) < 0
-            && (i.code || '').toLowerCase().indexOf(q) < 0) { return false; }
+        // the code is part of the searchable text, so `K-3 bug` is one query
+        // over one string rather than two half-answers OR'd together
+        if (!q.empty && !q.test(`${i.code || ''} ${i.text || ''}`)) { return false; }
         return true;
     }
 

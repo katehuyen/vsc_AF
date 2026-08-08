@@ -123,13 +123,20 @@
 
     function haystack(n) {
         return [n.title, n.body || '', (n.sections || []).map(s => s.title + ' ' + s.body).join(' '),
-            (n.tags || []).join(' '), n.agentName].join(' ').toLowerCase();
+            (n.tags || []).join(' '), n.agentName].join(' ');
     }
     function matchesQuery(n) {
-        const q = query.trim().toLowerCase();
+        const q = query.trim();
         if (!q) { return true; }
-        if (q[0] === '#') { const t = q.slice(1); return (n.tags || []).some(x => x.toLowerCase().indexOf(t) >= 0); }
-        return haystack(n).indexOf(q) >= 0;
+        // `#tag` stays its own thing — it is a SCOPE ("only the tags"), not a
+        // term, and folding it into the grammar would make `#bug` mean "the
+        // characters #bug anywhere", which is not what anybody typing it means.
+        if (q[0] === '#') {
+            const t = window.AFQuery.compile(q.slice(1));
+            return (n.tags || []).some(x => t.test(x));
+        }
+        // everything else is a QUERY, not a substring — media/afQuery.js
+        return window.AFQuery.compile(q).test(haystack(n));
     }
 
     /** null = no filter; otherwise the value must be in the picked set. */
@@ -333,7 +340,8 @@
         const total = (DATA.notices || []).length, unread = DATA.unread || 0, q = DATA.openQuestions || 0;
         const sortOpts = SORTS.map(([k, l]) => `<option value="${k}" ${sortKey === k ? 'selected' : ''}>Sort: ${l}</option>`).join('');
         return `<div class="nt-controls">
-            <input id="nt-search" type="search" placeholder="🔍 search (text or #tag)" value="${esc(query)}">
+            <input id="nt-search" type="search" placeholder="🔍 search (text or #tag)" value="${esc(query)}"
+                title="${esc(window.AFQuery.tip('Searched against the title, the body, every section, the tags and the agent. A query that STARTS with # searches the tags only.'))}">
             ${chip('all', `All (${total})`, fMode === 'all')}
             ${chip('unread', `Unread (${unread})`, fMode === 'unread')}
             ${chip('questions', `❓ (${q})`, fMode === 'questions')}

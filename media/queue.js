@@ -101,10 +101,9 @@
     }
 
     function matchesQuery(n) {
-        const q = query.trim().toLowerCase();
-        if (!q) { return true; }
-        return [n.text, n.target || '', n.author, n.resolution || '', n.stamp || '', (n.tags || []).join(' ')]
-            .join(' ').toLowerCase().indexOf(q) >= 0;
+        // the box is a QUERY, not a substring — media/afQuery.js
+        return window.AFQuery.compile(query).test(
+            [n.text, n.target || '', n.author, n.resolution || '', n.stamp || '', (n.tags || []).join(' ')].join(' '));
     }
     function passesFilters(n) {
         return (!fTarget || fTarget.indexOf(n.target || '') >= 0) &&
@@ -324,7 +323,8 @@
 
     function controls() {
         return `<div class="q-controls">
-            <input id="q-search" type="search" placeholder="🔍 search" value="${esc(query)}">
+            <input id="q-search" type="search" placeholder="🔍 search" value="${esc(query)}"
+                title="${esc(window.AFQuery.tip('Searched against the item, its target, its author, its resolution, its stamp and its tags.'))}">
             ${filterPickers().map(p => window.AFFilter.multi({
                 id: p.id, label: p.label, options: p.options, selected: p.get(), title: p.title
             })).join('')}

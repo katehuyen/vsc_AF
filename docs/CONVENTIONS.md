@@ -76,6 +76,54 @@ one click.
 
 ---
 
+## Filtering
+
+### A search box is a QUERY box
+
+**`media/afQuery.js` is the only place a query becomes a match.** Never write
+`hay.toLowerCase().includes(q)` again: compile once outside the row loop, then
+ask.
+
+```js
+const q = window.AFQuery.compile(state.q);       // once per render
+rows.filter(r => q.test(r.title + ' ' + r.agent));
+// q.empty is true when nothing was typed — test() is true for everything then,
+// so the guard is only worth writing where the haystack is expensive to build.
+```
+
+- **The extension host runs the same file** (`src/core/query.ts` loads it out of
+  `media/`), so a page filter and the search that feeds it cannot drift apart.
+  Anything host-side goes through `compileQuery` for the same reason.
+- **Pass the RAW box value.** The grammar decides its own case handling; a
+  pre-lowercased string breaks `match case` and nothing else improves.
+- **Every box gets `AFQuery.tip('what THIS box searches.')` as its hover** — one
+  line of subject, then the shared grammar. A box that explains the grammar in
+  its own words is a box that will explain it differently next month.
+- The grammar itself is documented for users in `docs/BLUEPRINT.{en,tr}.md`; the
+  file is the spec, `test/test_query.js` is the guard.
+
+### A multi-pick dropdown has TWO gestures
+
+`AFFilter.multi` (`media/afFilters.js`), and both are free on every picker in
+the extension — there is nothing to opt into:
+
+- **the checkbox toggles** one value, as it always did;
+- **the NAME beside it means "only this"** — one click for the move people make
+  most, which used to be Clear plus a tick. This is why an item is a `<span>`
+  and not a `<label>`: a label hands every click to its checkbox, which is
+  exactly the behaviour being split in two. The name underlines on hover; a
+  re-bound click with no affordance is worse than no gesture.
+- **`presets`** are the named subsets a *particular* list has a word for —
+  `[{ id, label, title, values }]`, drawn between Select all and Clear. The
+  Console's `show` box declares `Dialog` (you + the agent). The component knows
+  the mechanism; only the page knows what the word means, so never put a preset
+  in the component.
+
+`test/lib_afms_dom.js` drives all of it (`toggle` · `clickName` · `preset` ·
+`selectAll` · `clear`), so a picker's behaviour is testable from any page test.
+
+---
+
 ## Making things
 
 **An object is made by a form on the page. A chain of VS Code boxes is not a

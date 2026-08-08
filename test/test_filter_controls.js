@@ -97,6 +97,23 @@ ok('Clear is an honest empty set', JSON.stringify(picked) === '[]' && ms.label('
 ms.only('p1', ['manager', 'psy']);
 ok('clear-then-tick-two expresses an arbitrary subset', JSON.stringify(picked) === '["manager","psy"]');
 
+// ‼️ THE NAME IS ITS OWN CONTROL — "only this", in one gesture rather than
+// Clear plus a tick. The checkbox next to it still toggles, which is why the
+// two stopped being one <label>.
+ms.clickName('p1', 'psy');
+ok('clicking a name means ONLY that one', JSON.stringify(picked) === '["psy"]');
+ok('…and the button says so', ms.label('p1') === 'Agents: psy');
+ms.toggle('p1', 'dev', true);
+ok('the checkbox still toggles, so "only" is not a mode you get stuck in',
+    JSON.stringify(picked) === '["dev","psy"]');
+ok('the row is no longer a <label> — a label hands every click to its box',
+    !/<label class="afms-item"/.test(rendered) && /data-afms-only=/.test(rendered));
+ok('a picker with no presets declares none', ms.presets('p1').length === 0);
+
+// the two gestures are explained on the button, once, for every picker
+ok('the hint says what a name-click does',
+    /Click a NAME to show only that one/.test(AF.multi({ id: 'p5', options: AGENTS })));
+
 // the button click toggles the menu without touching the selection
 const before = renders;
 ms.open('p1');
@@ -120,6 +137,23 @@ ok('opening the menu is not a filter change', renders === before);
     ok('an empty picker says so', rendered.includes('nothing to filter by'));
     AF.wireMulti({ id: 'p3', onChange: sel => { last = sel; } });
     ok('an empty picker has nothing to click', last === 'untouched');
+}
+
+// ------------------------------------------------------------ presets ----
+// A named subset a particular list has a word for. The component knows the
+// mechanism; only the page knows what the word means.
+{
+    let last = 'untouched';
+    rendered = AF.multi({
+        id: 'p4', label: 'show', options: ['user', 'agent', 'tool', 'result'],
+        selected: null,
+        presets: [{ id: 'dialog', label: 'Dialog', values: ['agent', 'user'], title: 'just the conversation' }]
+    });
+    ok('a preset is offered between Select all and Clear',
+        /Select all<\/a> · <a data-afms-preset="dialog"[^>]*>Dialog<\/a> · <a data-afms-act="none">Clear/.test(rendered));
+    AF.wireMulti({ id: 'p4', onChange: sel => { last = sel; } });
+    ms.preset('p4', 'dialog');
+    ok('pressing it ticks exactly its values', JSON.stringify(last) === '["user","agent"]');
 }
 
 // ------------------------------------------------------- live typing ----

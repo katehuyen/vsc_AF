@@ -336,6 +336,14 @@ A card in the left panel **is** a session, so **right-click it**: Rename · Resu
 
 **The menu reaches further (3.38.0).** The whole point of a right-click menu is not having to go anywhere else, so Console cards also carry **📌 Pin · Label… · Copy Session ID · ⌨ Terminal**, and a **Live Timeline lane row or live-sessions card** — which is a session too — carries **📌 Pin · Label… · Copy Session ID · Resume in Console** on top of the menu it already had. Pinning from any of them now repaints **every open surface**: the trees used to be the only thing told, so a star appeared on a page only when something else happened to force a redraw, which reads as *"sometimes it works"*.
 
+**…and does both halves at once (3.84.0): 🗑 End & Remove Session.** End and Remove stay separate on purpose — a finished conversation must remain readable — but the ordinary case is both, and it cost two right-clicks with a repaint in between that moves the card you were pointing at, so the second one lands on a neighbour. One item does the pair. The agent-side equivalent already existed: `console.close { id, forget: true }`.
+
+**Three more things the composer got in 3.84.0:**
+
+- **The live strip is two rows.** On one row the sentence (*"Read src/core/live.ts"*) and every figure the turn has produced competed for the same width, and whichever was longer ate the other — the tail of the meta ran off the right edge and could not be read at all. Now **row one is what is happening** and **row two is what it has cost** (duration · money · api calls/steps · held messages · model and effort), right-aligned. The gap between them is deliberately nothing: this is one strip printed on two rows, not two strips.
+- **The project chip's hover scrolls.** The chip shows the *whole text* a session is being given — hundreds of lines on a real project. A native tooltip took that, drew as much of it as it felt like, cut, and could be neither scrolled nor reached with the pointer: the one surface built to make an invisible channel visible was the one that could not show what it was hiding. It hangs off the rich panel now (`media/afTip.js`, the box the backlog's `more` proved out).
+- **The `show` box gained two gestures**, and they are free on **every** multi-pick dropdown in the extension: the **checkbox** toggles one value as it always did, and the **name beside it means "only this"** — one click for the move people make most, which used to be Clear plus a tick. Between *Select all* and *Clear* sit the named subsets a particular list has a word for; here it is **Dialog** (you and the agent, with the machinery out of the way). See `docs/CONVENTIONS.md` → Filtering.
+
 ### Two lines of numbers: the turn above the box, the session below it (3.35.0)
 
 Both strips used to say **ctx** — the same session-wide figure twice, three centimetres apart — while the question you actually have about a running turn had no answer anywhere on the page.
@@ -547,6 +555,14 @@ A session has had two places to live since the [Console](#console) arrived, and 
 - **Everywhere else** — command palette, a tree row's right-click, `Ctrl+Alt+S`, the Dashboard's and Portfolio's own start buttons — a **QuickPick** asks the same two words and remembers what you picked last (`• last used`).
 - **In the launcher** it is the **Where** row, a dimension of the launch like the model is. In Console mode the Start row prints the launch summary instead of a command line, because a command line is not what runs there.
 - **For an agent**: `sessions.start` takes `surface: "terminal" | "console"` (default `terminal`, validated, never guessed).
+
+**‼️ …and under WHICH PROJECT, asked first and answered "none" by default (3.84.0).** The QuickPick opens with a single **`Project`** row above the two places — one row, never the list of project names, which lives one step in behind it. Two questions in the order a person thinks them: what is this work, then where do I want to sit while I do it. Three rules hold everywhere a new session is started:
+
+- **The answer starts at `◧ No project`, every time, wherever you start from** — the picker, the launcher's own **Project** row, and the Console composer's project box. It used to inherit the window's active project, so one choice made in the status bar hours ago, for other work, silently filed and briefed every session started afterwards. The status bar's active project is still the *window's* answer; it is no longer this session's, and neither writes the other.
+- **The choice is per launch.** Answering it here does not move the status bar. (`agentfarm.setActiveProject` is the command that does, and it is unchanged.)
+- **▶ → In the Console opens the composer; it does not spawn.** The agent comes **pinned** — its name where the picker was, with a ✕ that gives the picker back — and the project box stays live, because the project rides in on the system prompt *at spawn* and before your first message is the only moment it can still be chosen. The CLI starts when you send.
+- A **resume** is never asked: its project was decided when it started and `stampSession` refuses to overwrite that, so the answer would be thrown away.
+- For an agent, `sessions.start` still takes `project?` and still inherits the window's active project when it is omitted — an agent has to be explicit either way, and its `describe` says the UI does not inherit.
 
 Two things make the Console path honest rather than approximate:
 
@@ -1679,7 +1695,26 @@ Against signal fatigue: instead of ten separate warnings, once a week a three-se
 - **Open:** `Agent Farm: Search Transcripts…`, the 🔍 on the Recent Sessions header, or the **⌕ Search** buttons on the Dashboard, an Agent Detail page and the Session Viewer (2.53.0) — the latter two open the panel **pre-scoped** to that agent / that session, and the ✕ on the scope pill widens back to the whole fleet.
 - **What is searched (2.53.0):** the default is **Dialog** — your requests + agent replies. The chip row widens it to **tool inputs** (file paths, commands, code — "which session touched this file?") and **tool results** (outputs, error messages); *Everything* covers all four. Measured on a ~95 MB fleet, a full everything-scan stays under ~1.5 s. Two extra sources ride along, each with its own tick: the agents' **memory notes** (`memory/*.md`, hits open the file) and **orphaned live events** — events whose transcript no longer exists (external CLIs, pruned sessions); events still backed by a transcript are deliberately excluded, the transcript scan already covers them.
 - **Agent picker (checkbox dropdown, 2.60.0):** the `Agents: all ▾` button opens a tick list of every agent — pick **any combination**: one, two, all-but-one… **Select all / Clear** links do the bulk moves. Everything is ticked by default (new agents join automatically), so "all agents" needs no separate mode; unticking narrows the scan (memory notes and live events follow the same pick). The button reads `Agent: dev`, `Agents: 2/7` or `Agents: none` — an all-unticked pick honestly finds nothing. Opening the panel from an Agent Detail page pre-ticks just that agent; changing the pick retires the stale agent pill.
-- Other options: `regex` box (plain text by default, case-insensitive), `match case`.
+- Other options: `regex` box (the query language by default, case-insensitive — see below), `match case`.
+
+**‼️ The query language (3.84.0) — one grammar, every box that searches.** Every filter box in the extension used to ask one question, "does this substring appear?", which is the wrong one the moment a list is longer than a screen: you could not ask for two words that are not next to each other, nor for either of two things, nor for a whole word rather than a fragment of a longer one, nor to leave something out. The grammar below is the answer, and it is **the same grammar everywhere** — the Search page, the backlog, sessions, turns, tasks, notices, the queue, secrets, the toolbox, settings, the Console's resume filter and its saved-prompts picker. The extension host and the pages literally run the same file (`media/afQuery.js`, loaded by `src/core/query.ts`), so the two can never disagree.
+
+| You type | It means |
+|---|---|
+| `foo bar` | **both**, in any order — whitespace is AND |
+| `foo OR bar` | either (`|` works too). `AND` may be written out. |
+| `-foo` / `NOT foo` | rows **without** it |
+| `(a OR b) c` | parentheses group; AND binds tighter than OR |
+| `"tool call"` | that **phrase**, in order — and **whole words**: `"log"` is not found inside `dialogue` |
+| `kelime*` | `*` stands for any run of non-space characters |
+| `"kelime* bazıları ol*"` | the two together: finds *"kelimelerin bazıları olsun"* **and** *"kelimenin bazıları oldu"* |
+
+- **A bare word is still a plain case-insensitive substring** — deliberately: nothing anybody typed before this existed behaves differently now. Quotes are how you ask for *more* precision, not less.
+- `OR`, `AND`, `NOT` are **uppercase only**, because "or" is an ordinary word people search for. A hyphen inside a word (`agent-farm`) is a hyphen; only one at the start of a term is an operator.
+- The whole-word anchor is Unicode-aware, so it works on Turkish letters — `\b` would not.
+- **A half-typed query is not an error.** These boxes filter as you type, so an unclosed `"` or `(` is treated as the prefix it is rather than blanking the list under your hands. A genuinely broken query (a stray `)`) says so in words.
+- `regex` on the Search page still hands the box to `RegExp` untouched — none of the grammar above applies in that mode.
+- Every box carries the grammar in its own hover, with a first line saying what *that* box searches.
 - **The search re-runs by itself** (2.54.0): changing any control — agent, chips, sources, regex/case — re-searches immediately (measured cheap, and a superseded search's results are dropped). Only semantic mode still waits for Enter, since each semantic query is a paid embedding call.
 - **Results are grouped per session with turn sub-headers** (2.53.0): each session is one block (header click → open the session), hits inside it are labeled `Turn 3 — <its opening prompt>`; tool hits carry the tool name. Clicking a hit opens the session viewer and scrolls to **the exact matching message** (2.40.0) — briefly highlighted with a frame.
 - Results are limited to 3 per session, 150 total (a session-scoped search gets much higher caps) — narrow the query if it overflows. A runaway regex is cut by a **10 s time budget**; partial results say so honestly.

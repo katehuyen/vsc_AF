@@ -111,7 +111,8 @@
             })}
             <div class="card" style="margin-top:10px">
                 <div class="btnrow" style="flex-wrap:wrap; align-items:center">
-                    <input id="q" type="text" placeholder="Search text, regex or a semantic question…" style="flex:1; min-width:240px; padding:6px 8px" autofocus>
+                    <input id="q" type="text" placeholder="Search text, regex or a semantic question…" style="flex:1; min-width:240px; padding:6px 8px" autofocus
+                        title="${C.esc(window.AFQuery.tip('Searched against whatever the scope and the kind chips let through. “regex” hands the box to RegExp instead and none of the grammar below applies.'))}">
                     <span id="scope">${scopeLine()}</span>
                     ${agentMenu}
                     <label class="small"><input id="semantic" type="checkbox"> semantic</label>

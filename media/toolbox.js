@@ -56,13 +56,13 @@
     }
 
     function items(kind) {
-        const q = state.q.trim().toLowerCase();
+        // the box is a QUERY, not a substring — media/afQuery.js
+        const q = window.AFQuery.compile(state.q);
         return DATA.items
             .map((it, i) => ({ it, i }))
             .filter(x => x.it.kind === kind)
-            .filter(x => !q ||
-                (x.it.name + ' ' + x.it.description + ' ' + (x.it.agentName || '') + ' ' +
-                    JSON.stringify(x.it.detail || {})).toLowerCase().includes(q));
+            .filter(x => q.test(x.it.name + ' ' + x.it.description + ' ' + (x.it.agentName || '') + ' ' +
+                JSON.stringify(x.it.detail || {})));
     }
 
     function actionBtns(x, extra) {
@@ -109,7 +109,8 @@
     }
 
     function searchBox(placeholder) {
-        return `<div class="searchbar"><input id="tb-q" type="text" placeholder="${esc(placeholder)}" value="${esc(state.q)}"></div>`;
+        return `<div class="searchbar"><input id="tb-q" type="text" placeholder="${esc(placeholder)}" value="${esc(state.q)}"
+            title="${esc(window.AFQuery.tip('Searched against the name, the description, the agent and the whole definition.'))}"></div>`;
     }
 
     function newButtons(kind) {

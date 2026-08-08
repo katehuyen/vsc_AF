@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { compileQuery, CompiledQuery } from './query';
 
 /**
  * D4 — Transcript search. Fast text/regex scan over session .jsonl files.
@@ -76,10 +77,6 @@ export interface SearchResult {
     error?: string;
 }
 
-function escapeRegExp(s: string): string {
-    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 function contentToText(content: unknown): string {
     if (typeof content === 'string') { return content; }
     if (Array.isArray(content)) {
@@ -99,29 +96,40 @@ const TEXT_CAP = 200_000;
 const DEFAULT_ROLES: SearchRole[] = ['user', 'assistant'];
 const DEFAULT_TIME_BUDGET_MS = 10_000;
 
-export function buildMatcher(query: string, opts: SearchOptions): RegExp | string {
-    try {
-        return new RegExp(
-            opts.regex ? query : escapeRegExp(query),
-            opts.caseSensitive ? '' : 'i');
-    } catch (e) {
-        return 'Invalid regex: ' + String((e as Error).message).slice(0, 120);
-    }
+/**
+ * ‼️ THE QUERY IS A LANGUAGE NOW, NOT A SUBSTRING — see core/query.ts.
+ *
+ * `foo bar` means both words, in any order; `OR` means either; `-foo` excludes;
+ * `"a phrase"` is whole-word and ordered; `*` is a wildcard. A bare word is
+ * still a plain case-insensitive substring, which is what this function used to
+ * be and the only behaviour anybody had learned — so nothing typed before this
+ * change means something different after it.
+ *
+ * The return type is the compiled query rather than a RegExp because a match is
+ * no longer one pattern: `find()` says WHERE to cut the snippet (the earliest
+ * positive term), and `test()` answers the boolean the two can disagree on —
+ * `-foo` matches a text it can point at nothing inside.
+ */
+export function buildMatcher(query: string, opts: SearchOptions): CompiledQuery {
+    return compileQuery(query, { regex: opts.regex, caseSensitive: opts.caseSensitive });
 }
 
 /** Flatten + match one text; null when it doesn't match. */
-function snip(text: string, matcher: RegExp): { before: string; match: string; after: string } | null {
+function snip(text: string, matcher: CompiledQuery): { before: string; match: string; after: string } | null {
     const flat = text.length > TEXT_CAP
         ? text.slice(0, TEXT_CAP).replace(/\s+/g, ' ').trim()
         : text.replace(/\s+/g, ' ').trim();
-    const m = matcher.exec(flat);
-    if (!m || !m[0]) { return null; }
-    const start = m.index;
-    const end = m.index + m[0].length;
+    if (!matcher.test(flat)) { return null; }
+    // A query with only exclusions in it (`-foo`) matches a text without
+    // pointing at anything in it. The head of the text is then the honest
+    // snippet: there is no "the bit that matched".
+    const at = matcher.find(flat) ?? { index: 0, length: 0 };
+    const start = at.index;
+    const end = at.index + at.length;
     return {
         before: (start > CONTEXT_CHARS ? '…' : '') +
             flat.slice(Math.max(0, start - CONTEXT_CHARS), start),
-        match: m[0].slice(0, 200),
+        match: flat.slice(start, end).slice(0, 200),
         after: flat.slice(end, end + CONTEXT_CHARS) +
             (end + CONTEXT_CHARS < flat.length ? '…' : '')
     };
@@ -136,8 +144,8 @@ export function searchTranscripts(
     if (!query.trim()) { return result; }
 
     const matcher = buildMatcher(query, opts);
-    if (typeof matcher === 'string') {
-        result.error = matcher;
+    if (!matcher.ok) {
+        result.error = matcher.error;
         return result;
     }
 
@@ -255,7 +263,7 @@ export function searchMemory(
 ): SearchHit[] {
     if (!query.trim()) { return []; }
     const matcher = buildMatcher(query, opts);
-    if (typeof matcher === 'string') { return []; }
+    if (!matcher.ok) { return []; }
     const maxPerFile = opts.maxPerFile ?? 3;
     const agentSet = opts.agentNames ? new Set(opts.agentNames) : null;
     const hits: SearchHit[] = [];
@@ -300,7 +308,7 @@ export function searchLiveEvents(
 ): SearchHit[] {
     if (!query.trim()) { return []; }
     const matcher = buildMatcher(query, opts);
-    if (typeof matcher === 'string') { return []; }
+    if (!matcher.ok) { return []; }
     let raw = '';
     try { raw = fs.readFileSync(storeFile, 'utf8'); } catch { return []; }
     const transcriptExists = new Map<string, boolean>();

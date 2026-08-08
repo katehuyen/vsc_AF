@@ -189,8 +189,18 @@ mark {
     color: var(--vscode-descriptionForeground);
 }
 .afms-menu .afms-tools a { cursor: pointer; }
-.afms-menu .afms-item { display: block; padding: 2px 0; cursor: pointer; white-space: nowrap; font-size: 12px; }
+.afms-menu .afms-tools a:hover { text-decoration: underline; }
+.afms-menu .afms-item { display: block; padding: 2px 0; white-space: nowrap; font-size: 12px; }
 .afms-menu .afms-item input { cursor: pointer; margin-right: 6px; vertical-align: middle; }
+/* The name is its OWN control — "show only this" — so it has to look like one.
+   Underlining on hover is the whole affordance: without it the row reads as a
+   label whose click was quietly re-bound, which is worse than not having the
+   gesture at all. */
+.afms-menu .afms-item .afms-name { cursor: pointer; vertical-align: middle; }
+.afms-menu .afms-item .afms-name:hover {
+    text-decoration: underline;
+    color: var(--vscode-textLink-foreground, inherit);
+}
 
 /* A text box's own four tools — paste · copy · cut · clear (media/afTextTools.js).
    Miniature and half-lit on purpose: they act on TEXT, never on an agent, so

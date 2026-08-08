@@ -267,7 +267,8 @@
 
     function planRows(d) {
         const v = planView;
-        const q = v.q.trim().toLowerCase();
+        // the box is a QUERY, not a substring — media/afQuery.js
+        const q = window.AFQuery.compile(v.q);
         return d.plan.filter(p => {
             if (v.kind && v.kind.indexOf(p.kind) < 0) { return false; }
             if (v.agent && v.agent.indexOf(p.agentName) < 0) { return false; }
@@ -276,7 +277,7 @@
             if (v.state && !(p.switchable && v.state.indexOf(p.enabled ? 'on' : 'off') >= 0)) { return false; }
             if (v.guard && v.guard.indexOf(p.hasGuard ? 'yes' : 'no') < 0) { return false; }
             if (v.issues && !p.issues.length) { return false; }
-            if (q && !(p.title + ' ' + p.detail.prompt + ' ' + p.when + ' ' + p.agentName).toLowerCase().includes(q)) { return false; }
+            if (!q.empty && !q.test(p.title + ' ' + p.detail.prompt + ' ' + p.when + ' ' + p.agentName)) { return false; }
             return true;
         });
     }
@@ -403,7 +404,8 @@
         return `
             ${lede}
             <div class="toolbar">
-                <input type="search" id="planq" placeholder="Search name, prompt, agent…" value="${C.esc(v.q)}" class="${v.q ? 'set' : ''}">
+                <input type="search" id="planq" placeholder="Search name, prompt, agent…" value="${C.esc(v.q)}" class="${v.q ? 'set' : ''}"
+                    title="${C.esc(window.AFQuery.tip('Searched against the name, the prompt, the schedule and the agent.'))}">
                 ${sel('kind', 'Kind', v.kind, Object.keys(KIND).map(k => ({ v: k, t: KIND[k].label })))}
                 ${sel('agent', 'Agent', v.agent, d.agents)}
                 ${sel('model', 'Model', v.model, models)}
@@ -1196,12 +1198,13 @@
 
     function runRows(d) {
         const v = runView;
-        const q = v.q.trim().toLowerCase();
+        // …and so is this one
+        const q = window.AFQuery.compile(v.q);
         return d.runs.filter(r => {
             if (v.agent && v.agent.indexOf(r.agentName) < 0) { return false; }
             if (v.status && v.status.indexOf(r.status) < 0) { return false; }
             if (v.source && v.source.indexOf(r.sourceKind) < 0) { return false; }
-            if (q && !(r.title + ' ' + r.prompt + ' ' + r.agentName + ' ' + r.source).toLowerCase().includes(q)) { return false; }
+            if (!q.empty && !q.test(r.title + ' ' + r.prompt + ' ' + r.agentName + ' ' + r.source)) { return false; }
             return true;
         });
     }
@@ -1266,7 +1269,8 @@
             <p class="lede">A <b>task</b> is one execution. It is started by a schedule, a trigger or a
                 workflow step — or by you, with <b>+ Run a task</b>. Everything on the Plan tab produces tasks here.</p>
             <div class="toolbar">
-                <input type="search" id="runq" placeholder="Search run, prompt, agent…" value="${C.esc(v.q)}" class="${v.q ? 'set' : ''}">
+                <input type="search" id="runq" placeholder="Search run, prompt, agent…" value="${C.esc(v.q)}" class="${v.q ? 'set' : ''}"
+                    title="${C.esc(window.AFQuery.tip('Searched against the run title, its prompt, the agent and what started it.'))}">
                 ${sel('agent', 'Agent', v.agent, d.agents)}
                 ${sel('status', 'Status', v.status, Object.keys(STATUS))}
                 ${sel('source', 'From', v.source, [{ v: 'schedule', t: 'schedule' }, { v: 'trigger', t: 'trigger' }, { v: 'workflow', t: 'workflow' }, { v: 'manual', t: 'you' }])}

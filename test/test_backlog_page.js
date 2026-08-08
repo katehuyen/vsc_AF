@@ -29,7 +29,9 @@ const shared = fs.readFileSync(path.resolve(__dirname, '../media/afTextTools.js'
     // …and the right-click contract, because every row publishes itself through
     // it. A stub here would let the rows and their menus drift apart in silence.
     + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afCtx.js'), 'utf8')
-    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afSessionCtx.js'), 'utf8');
+    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afSessionCtx.js'), 'utf8')
+    // …and the query language, because the search box is one (media/afQuery.js)
+    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afQuery.js'), 'utf8');
 const createAfmsDom = require(path.resolve(__dirname, 'lib_afms_dom.js'));
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };

@@ -114,16 +114,18 @@ export interface ConsoleDeps {
     estimateCost(model: string, usage: Usage): number;
 
     /**
-     * The projects a session can be started under, and which one is active.
+     * The projects a session can be started under.
      *
-     * The picker sets the WINDOW'S active project rather than a console-only
-     * one. Two separate notions of "the project I am working on" — one in the
-     * status bar, one above the composer — would disagree within a minute, and
-     * the user would have no way to tell which one the session actually got.
+     * ‼️ The composer's picker answers for the SESSION IT IS ABOUT TO START and
+     * writes nothing else (see ConsolePanel.composerProject). It used to be the
+     * window's active project, so a project chosen once — in the status bar,
+     * for other work — filed and briefed every session started here from then
+     * on, and "this one, under nothing" could not be said without changing what
+     * the whole window meant. A new session is under no project until somebody
+     * says otherwise; the status bar keeps its own answer, and neither writes
+     * the other.
      */
     projects(): { id: string; name: string; icon?: string; color?: string; status: string }[];
-    activeProjectId(): string;
-    setActiveProject(id: string): void;
     /**
      * ‼️ THE EXACT TEXT A SESSION IS GIVEN — read back off the file that was
      * handed to the CLI, not rebuilt for display.
@@ -169,15 +171,46 @@ export class ConsolePanel {
     private resumeOpen = false;
     private resumeQuery: ResumeQuery = {};
 
-    static show(deps: ConsoleDeps, opts?: { sessionId?: string; agentId?: string }): void {
-        if (ConsolePanel.current) {
-            ConsolePanel.current.panel.reveal();
-            if (opts?.sessionId) { ConsolePanel.current.selected = opts.sessionId; }
+    /**
+     * ‼️ THE PROJECT THE NEXT SESSION WILL BE STARTED UNDER — the composer's own
+     * answer, and it is `''` (no project) until somebody says otherwise.
+     *
+     * It used to BE the window's active project: the box read it, changing the
+     * box moved it, and a session started here inherited it. So a project
+     * chosen once, for something else, silently filed and briefed every session
+     * started afterwards — and the box could not say "this one, no project"
+     * without changing what the status bar meant for the whole window.
+     * They are separate now. This is per-session; the status bar's active
+     * project is the window's, and neither writes the other.
+     */
+    private composerProject = '';
+
+    /**
+     * The agent this composer is FIXED to, when it was opened from that agent.
+     * `presetAgent` seeds the picker once; this replaces the picker with the
+     * name, because a composer reached from an agent's row is about that agent
+     * and a dropdown there is only a way to lose it by accident. It is let go
+     * the moment a session starts, or when the user says so.
+     */
+    private pinnedAgent?: string;
+
+    static show(deps: ConsoleDeps, opts?: {
+        sessionId?: string; agentId?: string; pinAgent?: boolean; projectId?: string;
+    }): void {
+        const apply = (c: ConsolePanel): void => {
+            if (opts?.sessionId) { c.selected = opts.sessionId; }
             if (opts?.agentId) {
                 // "talk to THIS agent": composer mode, nothing spawned yet
-                ConsolePanel.current.presetAgent = opts.agentId;
-                ConsolePanel.current.selected = '';
+                c.presetAgent = opts.agentId;
+                c.selected = '';
+                c.pinnedAgent = opts.pinAgent ? opts.agentId : undefined;
             }
+            // undefined = "I have no opinion"; '' = "explicitly no project"
+            if (opts?.projectId !== undefined) { c.composerProject = opts.projectId; }
+        };
+        if (ConsolePanel.current) {
+            ConsolePanel.current.panel.reveal();
+            apply(ConsolePanel.current);
             ConsolePanel.current.refresh();
             return;
         }
@@ -185,11 +218,7 @@ export class ConsolePanel {
             'agentfarm.console', 'Console', vscode.ViewColumn.Active,
             { enableScripts: true, retainContextWhenHidden: true });
         ConsolePanel.current = new ConsolePanel(panel, deps);
-        if (opts?.sessionId) { ConsolePanel.current.selected = opts.sessionId; }
-        if (opts?.agentId) {
-            ConsolePanel.current.presetAgent = opts.agentId;
-            ConsolePanel.current.selected = '';
-        }
+        apply(ConsolePanel.current);
         ConsolePanel.current.refresh();
     }
 
@@ -331,9 +360,12 @@ export class ConsolePanel {
             projects: this.deps.projects()
                 .filter(p => p.status !== 'done' && p.status !== 'archived')
                 .map(p => ({ id: p.id, name: p.name, icon: p.icon ?? '', color: p.color ?? '' })),
-            activeProjectId: this.deps.activeProjectId(),
+            // ‼️ the COMPOSER's project, not the window's — see composerProject
+            activeProjectId: this.composerProject,
             // see ConsoleDeps.projectContextText — the chip shows this verbatim
-            projectContext: this.deps.projectContextText(this.deps.activeProjectId()),
+            projectContext: this.deps.projectContextText(this.composerProject),
+            // the agent this composer is fixed to, when it was opened from one
+            pinnedAgent: this.pinnedAgent ?? '',
             // the shelf + the transcripts the query asks for (see resumeList)
             ...this.resumeList()
         };
@@ -467,10 +499,17 @@ export class ConsolePanel {
                 this.selected = str('id');
                 this.refresh();
                 break;
-            // The picker above the composer moves the WINDOW's active project —
-            // the same one the status bar shows. See ConsoleDeps.projects.
+            // The picker above the composer answers for the SESSION IT IS ABOUT
+            // TO START — it no longer moves the window's active project. See
+            // composerProject for why the two were separated.
             case 'setProject':
-                this.deps.setActiveProject(str('id'));
+                this.composerProject = str('id');
+                this.refresh();
+                break;
+            // "this composer is no longer about that agent" — the way out of a
+            // pin, so a fixed agent is never a trap (see pinnedAgent).
+            case 'unpinAgent':
+                this.pinnedAgent = undefined;
                 this.refresh();
                 break;
             case 'start': {
@@ -485,9 +524,17 @@ export class ConsolePanel {
                     model: str('model') || d.model,
                     effort: str('effort') || d.effort,
                     permissionMode: str('permissionMode') || d.permissionMode,
+                    // ‼️ ALWAYS EXPLICIT, including the empty string. Leaving it
+                    // out means "inherit the window's active project" one layer
+                    // down (ConsoleHost.start), which is the inheritance the box
+                    // above exists to replace.
+                    projectId: this.composerProject,
                     firstPrompt: str('text') || undefined,
                     firstAttachments: attachmentsOf(msg)
                 });
+                // the next new session starts its own two answers from scratch
+                this.composerProject = '';
+                this.pinnedAgent = undefined;
                 this.refresh();
                 break;
             }

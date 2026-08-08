@@ -37,9 +37,10 @@
     }
 
     function rows() {
-        const q = state.q.trim().toLowerCase();
-        const list = DATA.secrets.filter(s => !q ||
-            (s.name + ' ' + s.description + ' ' + s.agents.map(a => a.name).join(' ')).toLowerCase().includes(q));
+        // the box is a QUERY, not a substring — media/afQuery.js
+        const q = window.AFQuery.compile(state.q);
+        const list = DATA.secrets.filter(s =>
+            q.test(s.name + ' ' + s.description + ' ' + s.agents.map(a => a.name).join(' ')));
         if (!list.length) {
             return `<tr><td colspan="6" class="muted" style="padding:14px">${
                 DATA.secrets.length ? 'Nothing matches the filter.' : 'No secrets stored yet — click <b>+ Add secret</b>.'
@@ -104,7 +105,8 @@
                 by default, or restrict a secret to specific agents so only their tasks receive it. The value itself is
                 never shown here — use <b>replace</b> to change it.
             </div>
-            <div class="searchbar" style="margin-bottom:8px"><input id="sec-q" type="text" placeholder="filter secrets…" value="${esc(state.q)}"></div>
+            <div class="searchbar" style="margin-bottom:8px"><input id="sec-q" type="text" placeholder="filter secrets…" value="${esc(state.q)}"
+                title="${esc(window.AFQuery.tip('Searched against the name, the description and the agents it is scoped to.'))}"></div>
             <div class="card tablewrap"><table class="tb">
                 <tr><th>Name</th><th>Value</th><th>Description</th><th>Used by (scope)</th><th>Updated</th><th></th></tr>
                 ${rows()}

@@ -20,7 +20,7 @@ const fs = require('fs');
 const path = require('path');
 
 const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
-    'afTextTools.js', 'afTip.js'];
+    'afTextTools.js', 'afTip.js', 'afQuery.js'];
 
 /** Scripts the shell loads that a page-script test has to stand in for. */
 const NOT_SHARED = ['charts.js', 'sessionsTable.js', 'common.css'];

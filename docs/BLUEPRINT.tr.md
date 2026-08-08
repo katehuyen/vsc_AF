@@ -286,7 +286,14 @@ Filodaki son olayların canlı akışı: kullanıcı komutları (prompt), araç 
 
 **Akış seni takip eder, sen akışı değil (3.30.4).** Konuşma **yalnızca sen en alttayken** yeni satırı takip eder. Yukarı kaydırıp bir şey okuyorsan sayfa yerinde kalır, gelen satırları sayar ve altta **↓ N new lines** düğmesi çıkarır; ona basınca ya da elinle en alta inince takip kendiliğinden devam eder. Oturum değiştirmek sayacı sıfırlar ve en yeni satırda başlar. (Terminalin davranışının aynısı.)
 
-**Satır türü filtresi (3.30.4).** Yazma kutusunun altındaki **show** seçicisi: 🧑 You · 🤖 Agent · 🔧 Tool calls · 📄 Tool results · ⚠ Errors · ⚙ System. Oturum Görüntüleyicideki Show çipleriyle **aynı sözlük**, Search/Notices sayfalarındaki **aynı çoklu-seçim kutusu** (herhangi bir alt küme; *Select all* = filtre yok, yani sonradan eklenen bir tür otomatik içeride). Kaç satırın gizlendiğini altında yazar, seçim yeniden yüklemede korunur.
+**Satır türü filtresi (3.30.4).** Yazma kutusunun altındaki **show** seçicisi: 🧑 You · 🤖 Agent · 🔧 Tool calls · 📄 Tool results · ⚠ Errors · ⚙ System · ❓ Questions. Oturum Görüntüleyicideki Show çipleriyle **aynı sözlük**, Search/Notices sayfalarındaki **aynı çoklu-seçim kutusu** (herhangi bir alt küme; *Select all* = filtre yok, yani sonradan eklenen bir tür otomatik içeride). Kaç satırın gizlendiğini altında yazar, seçim yeniden yüklemede korunur.
+**3.84.0'ta kutu iki jest kazandı** — ve ikisi de eklentideki *bütün* çoklu-seçim kutularında geçerlidir, açılacak bir ayar yoktur: **onay kutusu** eskisi gibi tek değeri açıp kapar, **yanındaki ad ise "yalnızca bunu"** demektir. İkincisi insanların en sık yaptığı harekettir ve eskiden Clear artı bir tık ediyordu. Ayrıca *Select all* ile *Clear* arasında, o listenin bir adı olan alt kümeleri duruyor: Console'un show kutusunda **Dialog** (sen + ajan, arada makine yok). Ayrıntı: `docs/CONVENTIONS.md` → Filtering.
+
+**Canlı şerit iki satırdır (3.84.0).** Yazma kutusunun üstündeki şerit tek satırken hem cümleyi (*"Read src/core/live.ts"*) hem turun bütün rakamlarını taşımak zorundaydı; hangisi uzunsa diğerini yiyordu ve meta'nın kuyruğu sağ kenardan taşıp okunamıyordu. Artık **birinci satır ne olduğunu**, **ikinci satır ne tuttuğunu** söyler — süre, para, adım/tur sayısı, bekleyen mesaj, model ve effort — sağa yaslı. Aralarında bilerek boşluk yok: bu iki şerit değil, iki satıra basılmış tek şerittir.
+
+**Proje şeridi artık kaydırılabiliyor (3.84.0).** Kutunun üstündeki proje çipi, oturuma verilecek metnin tamamını hover'da gösterir. O metin gerçek bir projede yüzlerce satırdır; yerleşik tooltip onu canı nerede isterse orada kesiyor, kaydırılamıyor ve imleç içine giremiyordu — yani görünmez kanalı görünür kılmak için var olan tek yüzey, sakladığı şeyi gösteremeyen tek yüzeydi. Artık backlog'un `more` kutusunu kanıtlayan zengin panelde (`media/afTip.js`): ekranın izin verdiği kadar uzun, kaydırılır, ve imleç içine girebilir.
+
+**Kartın sağ tık menüsünde "End & Remove Session" (3.84.0).** End ile Remove ayrı olmaya devam ediyor — biten bir oturumun konuşması okunabilir kalmalı — ama sıradan durum ikisidir birden ve bu iki sağ tık ediyordu; arada gelen yeniden çizim de işaret ettiğin kartı oynatıyordu. Tek maddede ikisi. Ajan tarafında karşılığı zaten vardı: `console.close { id, forget: true }`.
 
 **Console'da devam = kaldığın yerden devam (3.30.3).** Bir oturumu Console'a devam ettirdiğinde **önceki konuşma da geliyor**: yukarı kaydır, orada. Satırların kaynağı diskteki transkript (`~/.claude/projects/…jsonl`) — **yalnızca görüntü**: hiçbir yere bir şey gönderilmez, **tek token harcanmaz**; modelin kendi hafızası zaten `--resume` ile geliyor. Son **150** mesaj taşınır (üstteki satır kalanın transkriptte olduğunu söyler) ve dosyanın yalnızca **sonu** ayrıştırılır, yani devam ettirme maliyeti oturum uzadıkça büyümez.
 
@@ -593,6 +600,14 @@ Alt kısımda **profiller**: *Save this as a profile…* mevcut seçimi `agentFa
 - **Diğer her yerde** — komut paleti, ağaçtaki satırın sağ tık menüsü, `Ctrl+Alt+S`, Dashboard'un ve Portfolio'nun kendi başlat düğmeleri — aynı iki kelimeyi soran bir **QuickPick** çıkıyor ve en son seçtiğini hatırlıyor (`• last used`).
 - **Launcher'da** bu bir satır: **Where** — model gibi, başlatmanın bir boyutu. Console modunda Start satırı komut satırı yerine başlatma özetini yazar, çünkü orada çalışan şey bir komut satırı değildir.
 - **Ajan için**: `sessions.start` artık `surface: "terminal" | "console"` alıyor (varsayılan `terminal`, doğrulanır, asla tahmin edilmez).
+
+**‼️ …ve HANGİ PROJE altında — ilk soru bu, ve varsayılan cevabı "hiçbiri" (3.84.0).** QuickPick, iki yerin üstünde tek bir **`Project`** satırıyla açılır — tek satır, asla proje adlarının listesi; adlar bir adım içeride, o satırın arkasındadır. İnsanın düşündüğü sırayla iki soru: bu iş ne, sonra bunu yaparken nerede oturmak istiyorum. Yeni oturumun başlatıldığı her yerde geçerli üç kural:
+
+- **Cevap her seferinde `◧ No project` ile başlar, nereden başlatırsan başlat** — QuickPick, launcher'ın kendi **Project** satırı ve Console yazma kutusundaki proje kutusu. Eskiden pencerenin aktif projesini devralıyordu; yani saatler önce, başka bir iş için durum çubuğunda yapılmış tek bir seçim, ondan sonra başlatılan her oturumu sessizce dosyalıyor ve brifingliyordu. Durum çubuğundaki aktif proje hâlâ **pencerenin** cevabıdır; artık bu oturumun cevabı değildir ve ikisi birbirine yazmaz.
+- **Seçim başlatmaya özeldir.** Buradaki cevap durum çubuğunu oynatmaz. (Onu oynatan komut `agentfarm.setActiveProject`'tir ve değişmedi.)
+- **▶ → In the Console yazma kutusunu açar; oturum başlatmaz.** Ajan **sabitlenmiş** gelir — seçicinin yerinde adı, yanında seçiciyi geri veren bir ✕ — ve proje kutusu canlı kalır; çünkü proje bağlamı sistem promptuna **başlatma anında** biner ve ilk mesajından önce, onu seçebileceğin tek an odur. CLI, sen gönderince başlar.
+- **Devam ettirmeye (resume) hiç sorulmaz:** projesi başladığı anda belirlenmiştir ve `stampSession` onun üzerine yazmayı reddeder; sorulsa cevap çöpe giderdi.
+- Ajan tarafında `sessions.start` hâlâ `project?` alır ve boş bırakılınca pencerenin aktif projesini devralır — ajan her hâlükârda açık olmak zorundadır; `describe` metni arayüzün devralmadığını söyler.
 
 Console yolunu "yaklaşık" değil **dürüst** yapan iki şey:
 
@@ -1729,7 +1744,26 @@ Sinyal yorgunluğuna karşı: on ayrı uyarı yerine haftada bir, üç cümlelik
 - **Aç:** `Agent Farm: Search Transcripts…`, Recent Sessions başlığındaki 🔍, ya da Dashboard / Ajan Detay / Oturum Görüntüleyicideki **⌕ Search** düğmeleri (2.53.0) — son ikisi paneli o ajana / o oturuma **ön-kapsamlı** açar; kapsam rozetindeki ✕ tekrar tüm filoya genişletir.
 - **Ne taranır (2.53.0):** varsayılan **Dialog** — senin isteklerin + ajan cevapları. Chip satırı kapsamı **araç girdilerine** (dosya yolları, komutlar, kod — "bu dosyaya hangi seansta dokunuldu?") ve **araç sonuçlarına** (çıktılar, hata mesajları) genişletir; *Everything* dördünü de kapsar. ~95 MB'lık filoda tam everything-taraması ~1.5 sn altında ölçüldü. İki ek kaynak kendi kutusuyla eşlik eder: ajanların **hafıza notları** (`memory/*.md`, isabet dosyayı açar) ve **öksüz canlı olaylar** — transkripti artık var olmayan olaylar (harici CLI'lar, budanmış oturumlar); transkripti duran olaylar bilerek dışarıda, onları transkript taraması zaten kapsıyor.
 - **Ajan seçici (onay kutulu menü, 2.60.0):** `Agents: all ▾` düğmesi tüm ajanların işaretlenebilir listesini açar — **herhangi bir kombinasyon** seçilir: bir, iki, biri hariç hepsi… Toplu işlemler için **Select all / Clear** bağlantıları. Varsayılan hepsi işaretli (yeni ajan kendiliğinden dahil olur), bu yüzden ayrı bir "tüm ajanlar" moduna gerek yok; işaret kaldırmak taramayı daraltır (hafıza notları ve canlı olaylar da aynı seçime uyar). Düğme `Agent: dev`, `Agents: 2/7` ya da `Agents: none` diye okunur — hiçbir şey işaretli değilse arama dürüstçe boş döner. Panel Ajan Detay sayfasından açılınca yalnız o ajan işaretli gelir; seçim değişince bayatlayan ajan rozeti kendiliğinden kalkar.
-- Diğer seçenekler: `regex` kutusu (düz metin varsayılan, büyük/küçük harf duyarsız), `match case`.
+- Diğer seçenekler: `regex` kutusu (varsayılan aşağıdaki sorgu dili, büyük/küçük harf duyarsız), `match case`.
+
+**‼️ Sorgu dili (3.84.0) — tek dilbilgisi, arama yapılan her kutu.** Eklentideki her filtre kutusu tek bir soru soruyordu: "bu alt dizi geçiyor mu?" Liste bir ekranı aştığı anda bu yanlış sorudur — yan yana olmayan iki kelimeyi birlikte arayamıyor, "şu ya da bu" diyemiyor, uzun bir kelimenin parçası değil **tam kelime** isteyemiyor, bir şeyi dışarıda bırakamıyordun. Aşağıdaki dilbilgisi bunun cevabıdır ve **her yerde aynı dilbilgisidir** — Search sayfası, backlog, oturumlar, turlar, görevler, notices, kuyruk, secrets, toolbox, ayarlar, Console'un devam listesi ve kalıp prompt seçicisi. Eklenti host'u ile sayfalar birebir aynı dosyayı çalıştırır (`media/afQuery.js`, `src/core/query.ts` onu yükler), dolayısıyla ikisi asla farklı cevap veremez.
+
+| Yazdığın | Anlamı |
+|---|---|
+| `foo bar` | **ikisi de**, sırası önemsiz — boşluk VE demektir |
+| `foo OR bar` | ikisinden biri (`|` da olur). `AND` açıkça yazılabilir. |
+| `-foo` / `NOT foo` | onu **içermeyen** satırlar |
+| `(a OR b) c` | parantez gruplar; VE, VEYA'dan sıkı bağlar |
+| `"tool call"` | o **öbek**, sırasıyla — ve **tam kelime**: `"log"`, `dialogue` içinde bulunmaz |
+| `kelime*` | `*` boşluksuz herhangi bir karakter dizisi yerine geçer |
+| `"kelime* bazıları ol*"` | ikisi birlikte: hem *"kelimelerin bazıları olsun"* hem *"kelimenin bazıları oldu"* |
+
+- **Tırnaksız tek kelime hâlâ düz, harf duyarsız bir alt dizidir** — bilerek: bu dil gelmeden önce yazdığın hiçbir şey artık başka anlama gelmiyor. Tırnak, *daha az* değil **daha çok** kesinlik istemenin yoludur.
+- `OR`, `AND`, `NOT` **yalnız büyük harfle** işler; "or" insanların gerçekten aradığı sıradan bir kelimedir. Kelime içindeki tire (`agent-farm`) tiredir; yalnız terimin başındakisi operatördür.
+- Tam kelime sınırı Unicode farkındadır, yani Türkçe harflerde de çalışır — `\b` çalışmazdı.
+- **Yarım yazılmış sorgu hata değildir.** Bu kutular yazarken süzer; kapanmamış `"` ya da `(` listeyi elinin altında boşaltmak yerine olduğu gibi, bir önek olarak ele alınır. Gerçekten bozuk bir sorgu (öksüz bir `)`) durumu kelimelerle söyler.
+- Search sayfasındaki `regex` kutusu hâlâ metni doğrudan `RegExp`'e verir — o modda yukarıdaki dilbilgisi geçerli değildir.
+- Her kutu dilbilgisini kendi hover'ında taşır; ilk satırı **o kutunun** neyi aradığını söyler.
 - **Arama kendiliğinden yeniden koşar** (2.54.0): herhangi bir kontrolü değiştirmek — ajan, chip'ler, kaynaklar, regex/case — aramayı anında yeniler (ölçümle ucuz; geçersiz kalan aramanın sonucu atılır). Yalnız semantik mod Enter bekler, çünkü her semantik sorgu ücretli bir embedding çağrısıdır.
 - **Sonuçlar oturum başına gruplu, tur alt-başlıklı** (2.53.0): her oturum tek blok (başlığa tık → oturumu aç), içindeki isabetler `Turn 3 — <açılış komutu>` etiketli; araç isabetleri araç adını taşır. İsabete tıklayınca oturum görüntüleyici açılır ve **tam eşleşen mesaja kayar** (2.40.0) — kısa süreliğine çerçeveyle vurgulanır.
 - Sonuçlar oturum başına 3, toplam 150 ile sınırlıdır (tek-oturum kapsamında sınırlar çok daha yüksektir) — taşarsa sorguyu daralt. Azgın bir regex **10 sn'lik süre bütçesiyle** kesilir; kısmi sonuç dürüstçe söylenir.

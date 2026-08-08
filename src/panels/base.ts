@@ -235,6 +235,11 @@ export function htmlShell(
     // the rule is "any hover carrying TEXT uses this", and a rule that needs a
     // script tag added first is a rule that gets skipped.
     const tip = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afTip.js'));
+    // The query language. Ships everywhere for the strongest version of that
+    // reason: the extension host runs the SAME FILE (src/core/query.ts loads it
+    // out of media/), so a page that had to opt in would be a page whose filter
+    // box quietly answers a different question from the search that feeds it.
+    const query = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afQuery.js'));
     const sessTable = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'sessionsTable.js'));
     const script = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', scriptFile));
     // Global UI config shared by every page (not page data): the user's AI
@@ -275,6 +280,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${sessCtx}"></script>
 <script nonce="${nonce}" src="${textTools}"></script>
 <script nonce="${nonce}" src="${tip}"></script>
+<script nonce="${nonce}" src="${query}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>
 <script nonce="${nonce}" src="${script}"></script>
 </body>

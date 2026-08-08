@@ -189,11 +189,12 @@
     }
 
     function filterRows(list) {
-        const text = (filters.text || '').toLowerCase();
-        const sess = (filters.session || '').toLowerCase();
+        // both boxes are QUERIES, not substrings — media/afQuery.js
+        const text = window.AFQuery.compile(filters.text || '');
+        const sess = window.AFQuery.compile(filters.session || '');
         return list.filter(r => {
-            if (text && (r.label || '').toLowerCase().indexOf(text) < 0) { return false; }
-            if (sess && (r.session || '').toLowerCase().indexOf(sess) < 0) { return false; }
+            if (!text.empty && !text.test(r.label || '')) { return false; }
+            if (!sess.empty && !sess.test(r.session || '')) { return false; }
             if (filters.agents && filters.agents.indexOf(r.agentName) < 0) { return false; }
             if (filters.origin && originOf(r) !== filters.origin) { return false; }
             if (filters.models && !(r.models || []).some(m => filters.models.indexOf(m) >= 0)) { return false; }
@@ -249,8 +250,10 @@
                 <span class="muted small" title="Who started the session the turn belongs to">Started by:</span>${origins}
             </div>
             <div class="af-frow">
-                <input type="text" class="af-ftext af-fturn" placeholder="turn contains…" value="${C.esc(filters.text)}" title="Filter by the turn's opening prompt">
-                <input type="text" class="af-ftext af-fsess" placeholder="session contains…" value="${C.esc(filters.session)}" title="Filter by the session title the turn belongs to">
+                <input type="text" class="af-ftext af-fturn" placeholder="turn contains…" value="${C.esc(filters.text)}"
+                    title="${C.esc(window.AFQuery.tip("Searched against the turn's opening prompt."))}">
+                <input type="text" class="af-ftext af-fsess" placeholder="session contains…" value="${C.esc(filters.session)}"
+                    title="${C.esc(window.AFQuery.tip('Searched against the title of the session the turn belongs to.'))}">
                 ${agents.length > 1 ? window.AFFilter.multi({
                     id: 'turns-agents', label: 'Agents', options: agents, selected: filters.agents,
                     title: 'Which agents\' turns to list — tick any combination'

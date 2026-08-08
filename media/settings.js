@@ -29,7 +29,7 @@
         // type looking for it — its own key and description say "snippets file"
         // and nothing about right-clicking Send (see PROMPT_TERMS).
         const extra = it.key === 'agentFarm.promptSnippetsFile' ? ' ' + PROMPT_TERMS : '';
-        return (it.key + ' ' + (it.description || '') + extra).toLowerCase().includes(filter);
+        return window.AFQuery.compile(filter).test(it.key + ' ' + (it.description || '') + extra);
     }
 
     function controlHtml(it) {
@@ -159,8 +159,9 @@
     function foldersSection() {
         const f = DATA.folders;
         if (!f) { return ''; }
-        const reports = f.reports.filter(r => !filter ||
-            (r.root + ' ' + r.candidates.map(c => c.name).join(' ')).toLowerCase().includes(filter));
+        const fq = window.AFQuery.compile(filter);
+        const reports = f.reports.filter(r =>
+            fq.test(r.root + ' ' + r.candidates.map(c => c.name).join(' ')));
         if (filter && !reports.length) { return ''; }
         const dupes = f.reports.some(r => r.duplicate);
         const agentCount = f.reports.reduce((a, r) => a + (r.duplicate ? 0 : r.candidates.filter(c => !c.excluded).length), 0);
@@ -223,7 +224,8 @@
     function claudeSection() {
         const cc = DATA.claude;
         if (!cc) { return ''; }
-        const items = cc.items.filter(it => !filter || (it.label + ' ' + it.description).toLowerCase().includes(filter));
+        const ccq = window.AFQuery.compile(filter);
+        const items = cc.items.filter(it => ccq.test(it.label + ' ' + it.description));
         if (filter && !items.length) { return ''; }
         const rawErr = errors['cc:__raw__'];
         return `
@@ -479,7 +481,8 @@
             })}
             ${profileBar()}
             <div class="searchbar" style="margin:10px 0; position:relative">
-                <input id="filter" type="text" placeholder="Filter settings… (name or description)" value="${C.esc(filter)}" style="width:100%; max-width:420px; padding:6px 8px">
+                <input id="filter" type="text" placeholder="Filter settings… (name or description)" value="${C.esc(filter)}" style="width:100%; max-width:420px; padding:6px 8px"
+                    title="${C.esc(window.AFQuery.tip('Searched against every setting key and its description.'))}">
             </div>
             <div class="catnav">${foldersHtml ? '<a data-cat="folders">Agent folders</a>' : ''}${docOpenHtml ? '<a data-cat="docopen">Open with</a>' : ''}${cats.map(c => `<a data-cat="${c.id}">${C.esc(c.label)}</a>`).join('')}${claudeHtml ? '<a data-cat="claude">Claude Code</a>' : ''}</div>
             ${foldersHtml}
@@ -511,7 +514,9 @@
         onClick('promptsdefault', 'promptsUseDefault');
         const filterEl = document.getElementById('filter');
         filterEl.addEventListener('input', () => {
-            filter = filterEl.value.toLowerCase();
+            // the box is a QUERY, not a substring — media/afQuery.js. Kept as
+            // typed: the grammar decides its own case handling.
+            filter = filterEl.value;
             render();
             const el = document.getElementById('filter');
             el.focus();

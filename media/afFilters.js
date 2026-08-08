@@ -72,26 +72,55 @@
         return label + ': ' + sel.length + '/' + opts.length;
     }
 
+    /** The sentence every one of these boxes now needs, because it gained a
+     *  second gesture. Written once so twenty pickers cannot describe it in
+     *  twenty ways. */
+    const MULTI_HINT = 'Tick any combination. Click a NAME to show only that one; '
+        + 'the checkbox itself still toggles. Select all / Clear are above the list.';
+
     /**
      * o: { id, label, options, selected, title, allLabel, disabled, width,
+     *      presets: [{ id, label, title, values: [...] }],
      *      align: 'right' when the picker sits at the right edge of a header }
      * `id` must be unique on the page — it keys the button, the menu and the
      * survives-a-re-render open state.
+     *
+     * ‼️ TWO GESTURES ON ONE ROW, and they answer two different questions.
+     * "Also show me tool calls" is a TOGGLE and always was. "Show me only what
+     * the agent said" is the far commoner move and used to cost a Clear plus a
+     * tick — or, before Clear existed, unticking six boxes one at a time. So the
+     * checkbox keeps the toggle and the NAME beside it means ONLY THIS. That is
+     * why the item is no longer a `<label>`: a label hands every click to its
+     * checkbox, which is precisely the behaviour being split in two.
+     *
+     * `presets` are the named subsets a particular list has a word for — the
+     * Console's "Dialog" (you and the agent, nothing else). They sit in the
+     * tools row between Select all and Clear because that is where a reader
+     * already looks for "set the whole list at once", and they are per-picker
+     * data rather than a component-level idea: nothing here knows what a dialog
+     * is.
      */
     function multi(o) {
         const opts = normOptions(o.options);
         const sel = o.selected === undefined ? null : o.selected;
-        defs[o.id] = { label: o.label, allLabel: o.allLabel, opts };
+        const presets = (o.presets || []).filter(p => p && p.id && Array.isArray(p.values));
+        defs[o.id] = { label: o.label, allLabel: o.allLabel, opts, presets };
         const on = v => sel === null || sel.indexOf(v) >= 0;
         const items = opts.map(x =>
-            `<label class="afms-item"><input type="checkbox" data-afms-opt="${esc(x.v)}"${on(x.v) ? ' checked' : ''}> ${esc(x.t)}</label>`).join('');
+            `<span class="afms-item">` +
+            `<input type="checkbox" data-afms-opt="${esc(x.v)}"${on(x.v) ? ' checked' : ''}` +
+            ` title="Tick or untick just this one">` +
+            `<span class="afms-name" data-afms-only="${esc(x.v)}"` +
+            ` title="Show only ${esc(x.t)}">${esc(x.t)}</span></span>`).join('');
+        const presetHtml = presets.map(p =>
+            ` · <a data-afms-preset="${esc(p.id)}" title="${esc(p.title || '')}">${esc(p.label || p.id)}</a>`).join('');
         const style = o.width ? ` style="min-width:${Number(o.width)}px"` : '';
         return `<span class="afms" data-afms-wrap="${esc(o.id)}">` +
             `<button type="button" class="secondary afms-btn" data-afms="${esc(o.id)}"` +
-            `${o.disabled ? ' disabled' : ''} title="${esc(o.title || 'Tick any combination — Select all / Clear above')}">` +
+            `${o.disabled ? ' disabled' : ''} title="${esc(o.title ? o.title + '\n\n' + MULTI_HINT : MULTI_HINT)}">` +
             `${esc(buttonText(o, opts, sel))} ▾</button>` +
             `<div class="afms-menu${o.align === 'right' ? ' right' : ''}" data-afms-menu="${esc(o.id)}"${style}${openId === o.id ? '' : ' hidden'}>` +
-            `<div class="afms-tools"><a data-afms-act="all">Select all</a> · <a data-afms-act="none">Clear</a></div>` +
+            `<div class="afms-tools"><a data-afms-act="all">Select all</a>${presetHtml} · <a data-afms-act="none">Clear</a></div>` +
             `${items || '<span class="muted small">nothing to filter by</span>'}` +
             `</div></span>`;
     }
@@ -157,6 +186,30 @@
         };
         act('all', b => { b.checked = true; });
         act('none', b => { b.checked = false; });
+        // A named subset: tick exactly its values, untick the rest. A value the
+        // preset names but this list does not have is simply not there — the
+        // preset is written against a vocabulary, not against one render.
+        (def.presets || []).forEach(p => {
+            const a = menu.querySelector(`[data-afms-preset="${cssEsc(p.id)}"]`);
+            if (!a || !a.addEventListener) { return; }
+            a.addEventListener('click', ev => {
+                stop(ev);
+                boxes().forEach(b => { b.checked = p.values.indexOf(b.dataset.afmsOpt) >= 0; });
+                emit(read());
+            });
+        });
+        // …and the same idea per row: the NAME means "only this". The checkbox
+        // next to it keeps the toggle, which is why the two are separate
+        // elements now (see multi()).
+        Array.prototype.forEach.call(menu.querySelectorAll('[data-afms-only]'), el => {
+            if (!el.addEventListener) { return; }
+            el.addEventListener('click', ev => {
+                stop(ev);
+                const only = el.dataset.afmsOnly;
+                boxes().forEach(b => { b.checked = b.dataset.afmsOpt === only; });
+                emit(read(), only);
+            });
+        });
         // reopen where the user left off — the re-render that a tick causes
         // must not close the menu under their hand
         if (openId === o.id) {

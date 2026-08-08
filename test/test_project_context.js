@@ -240,13 +240,24 @@ const project = {
     const consoleJs = fs.readFileSync(path.join(__dirname, '..', 'media', 'console.js'), 'utf8');
     ok('the composer carries a project chip', /function projectChipHtml\(\)/.test(consoleJs));
     ok('‼️ and the chip shows the VERBATIM text, not a summary of it',
-        /This exact text is added to the session's system prompt/.test(consoleJs)
-        && /\$\{ctx\}/.test(consoleJs));
+        /added to the system prompt before your first message/.test(consoleJs)
+        && /T\.wrap\(trigger,[\s\S]{0,200}\bctx\)/.test(consoleJs));
+    // ‼️ …and it can actually BE read. A native tooltip takes an appended system
+    // prompt, draws as much of it as it feels like, cuts, and cannot be
+    // scrolled — so the one surface built to make an invisible channel visible
+    // was the one that could not show what it was hiding.
+    ok('…in the rich panel, which scrolls and can be reached with the pointer',
+        /const T = window\.AFTip;/.test(consoleJs) && !/pchip" title=/.test(consoleJs));
     ok('…it is drawn when there is NO project too — "nothing is added" is news as well',
         /pchip none/.test(consoleJs));
     ok('a session row says which project it was started under', /pbadge/.test(consoleJs));
-    ok('the picker moves the WINDOW\'s active project, not a console-only one',
-        /type: 'setProject'/.test(consoleJs));
+    // ‼️ The picker answers for the SESSION IT IS ABOUT TO START. It used to be
+    // the window's active project, so one choice made in the status bar filed
+    // and briefed every session started here from then on, and "this one, under
+    // nothing" could not be said without changing what the whole window meant.
+    ok('the picker answers for the session, not for the window',
+        /type: 'setProject'/.test(consoleJs)
+        && /It starts at No project every time/.test(consoleJs));
 
     const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'consolePanel.ts'), 'utf8');
     ok('…and the panel reads that text back rather than rebuilding it for display',

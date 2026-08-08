@@ -41,22 +41,35 @@ module.exports = function createAfmsDom(getHtml) {
                 textContent: (/<button[^>]*>([\s\S]*?)<\/button>/.exec(inner) || ['', ''])[1]
             });
             const boxes = [];
-            const optRe = /<input type="checkbox" data-afms-opt="([^"]*)"( checked)?>\s*([^<]*)/g;
+            // ‼️ The row is a checkbox AND a name, and they do different things
+            // (toggle vs "only this"), so the stub carries both elements.
+            const names = [];
+            const optRe = /<input type="checkbox" data-afms-opt="([^"]*)"( checked)?[^>]*>\s*<span class="afms-name" data-afms-only="[^"]*"[^>]*>([^<]*)</g;
             let o;
             while ((o = optRe.exec(inner))) {
                 boxes.push(mkEl({ afmsOpt: o[1] }, { checked: !!o[2], label: o[3].trim() }));
+                names.push(mkEl({ afmsOnly: o[1] }));
             }
             const tools = { all: mkEl({ afmsAct: 'all' }), none: mkEl({ afmsAct: 'none' }) };
-            const menuTag = /<div class="afms-menu"[^>]*>/.exec(inner);
+            // named subsets ("Dialog"), whatever the page declared
+            const presets = {};
+            const presetRe = /data-afms-preset="([^"]*)"/g;
+            let pr;
+            while ((pr = presetRe.exec(inner))) { presets[pr[1]] = mkEl({ afmsPreset: pr[1] }); }
+            const menuTag = /<div class="afms-menu[^"]*"[^>]*>/.exec(inner);
             const menu = mkEl({ afmsMenu: id }, {
                 hidden: !!(menuTag && / hidden>/.test(menuTag[0])),
-                querySelectorAll: sel => (sel.indexOf('afms-opt') >= 0 ? boxes : []),
+                querySelectorAll: sel => (sel.indexOf('afms-opt') >= 0 ? boxes
+                    : sel.indexOf('afms-only') >= 0 ? names : []),
                 querySelector: sel => {
-                    const m = /data-afms-act="([a-z]+)"/.exec(sel);
-                    return m ? tools[m[1]] || null : null;
+                    const a = /data-afms-act="([a-z]+)"/.exec(sel);
+                    if (a) { return tools[a[1]] || null; }
+                    const p = /data-afms-preset="([^"]+)"/.exec(sel);
+                    if (p) { return presets[unesc(p[1])] || null; }
+                    return null;
                 }
             });
-            next[id] = { id, inner, btn, menu, boxes, tools };
+            next[id] = { id, inner, btn, menu, boxes, names, tools, presets };
         }
         pickers = next;
         return pickers;
@@ -99,6 +112,20 @@ module.exports = function createAfmsDom(getHtml) {
         only(id, values) {
             this.clear(id);
             values.forEach(v => this.toggle(id, v, true));
+        },
+        /** Click an option's NAME: "show only that one", in one gesture. */
+        clickName(id, value) {
+            const p = pick(id);
+            const el = p.names.filter(n => n.dataset.afmsOnly === String(value))[0];
+            if (!el) { throw new Error('picker "' + id + '" has no option "' + value + '"'); }
+            fire(el, 'click');
+        },
+        /** The named subsets this picker declared, and pressing one. */
+        presets: id => Object.keys(pick(id).presets),
+        preset(id, name) {
+            const el = pick(id).presets[name];
+            if (!el) { throw new Error('picker "' + id + '" has no preset "' + name + '"'); }
+            fire(el, 'click');
         },
         selectAll: id => { fire(pick(id).tools.all, 'click'); },
         clear: id => { fire(pick(id).tools.none, 'click'); }

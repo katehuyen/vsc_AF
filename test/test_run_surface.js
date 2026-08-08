@@ -43,9 +43,10 @@ const base = read('src/panels/base.ts');
         const i = ext.indexOf(`registerCommand('agentfarm.${cmd}'`);
         return i < 0 ? '' : ext.slice(i, i + 2200);
     };
-    const asks = cmd => /arg\?\.surface\s*\n?\s*\?\? await pickRunSurface\(/.test(body(cmd));
-    ['startSession', 'continueSession'].forEach(c =>
-        ok(`agentfarm.${c} asks where it should run`, asks(c)));
+    ok('agentfarm.startSession asks where it should run',
+        /\? \{ surface: arg\.surface, projectId: '' \}\s*\n\s*: await pickRunSurface\(/.test(body('startSession')));
+    ok('agentfarm.continueSession asks where it should run',
+        /arg\?\.surface\s*\n?\s*\?\? \(await pickRunSurface\(/.test(body('continueSession')));
     // the launcher asks inside itself instead: WHERE is one of its rows
     ok('the launcher carries Where as a dimension of the launch',
         /act: 'where'/.test(ext) && /label: '\$\(window\) Where'/.test(ext));
@@ -65,20 +66,38 @@ const base = read('src/panels/base.ts');
     ok('the surface picker can carry the project too',
         /const pickRunSurface = async \(\s*\n?\s*what: string, opts: \{ project\?: boolean \} = \{\}/.test(ext));
     ok('…drawn by one shared row, so it says what the Console\'s chip says',
-        /const activeProjectRow = \(\)/.test(ext)
+        /const launchProjectRow = \(projectId: string\)/.test(ext)
         && /'◧ No project'/.test(ext)
         && /the session is told about it before you type, and is filed under it/.test(ext));
-    ok('…opening the one shared list rather than a second one built next to it',
-        /const chooseActiveProject = async \(/.test(ext)
-        && /if \(pick\.act === 'project'\) \{\s*\n\s*await chooseActiveProject\(\);\s*\n\s*continue;/.test(ext));
-    ok('…and the command that used to own that list now calls it',
+    // ‼️ THE NAMES ARE THE SECOND STEP, NEVER THE FIRST. One row saying
+    // "Project" keeps "where should this run?" and "what is this about?" from
+    // competing for the same twelve rows.
+    ok('…and the project NAMES live one step in, behind that row',
+        /const pickLaunchProject = async \(current: string, what: string\)/.test(ext)
+        && /if \(pick\.act === 'project'\) \{\s*\n\s*const chosen = await pickLaunchProject\(projectId, what\);/.test(ext));
+    ok('…asked FIRST, before where it runs',
+        /label: 'Filed under', kind: vscode\.QuickPickItemKind\.Separator \},\s*\n\s*launchProjectRow\(projectId\),\s*\n\s*\{ label: 'Where it runs'/.test(ext));
+    // ‼️ …AND IT STARTS AT NOTHING. Inheriting the window's active project filed
+    // and briefed a session under a decision taken hours ago for other work.
+    ok('‼️ a new session is under NO project until somebody says so',
+        /let projectId = '';/.test(ext)
+        && /it starts at NO PROJECT every single time/i.test(ext));
+    ok('…and the picker never writes the window\'s active project',
+        /this picker never writes it \(see chooseActiveProject/.test(ext));
+    ok('…while the command that owns that list still does',
         /registerCommand\('agentfarm\.setActiveProject', async \(arg\?: \{ id\?: string \}\) => \{[\s\S]{0,400}await chooseActiveProject\(\);/.test(ext));
 
     const startBody = ext.slice(ext.indexOf("registerCommand('agentfarm.startSession'"),
-        ext.indexOf("registerCommand('agentfarm.startSession'") + 1200);
+        ext.indexOf("registerCommand('agentfarm.startSession'") + 2600);
     ok('‼️ one-click Start asks for the project as well as the place',
         /pickRunSurface\(`New session for \$\{agent\.name\}`, \{ project: true \}\)/.test(startBody));
-    ok('the launcher shows it as one of its rows', /activeProjectRow\(\),/.test(ext));
+    ok('…and the answer really reaches the launch',
+        /startClaudeSession\(agent, \{\}, undefined, undefined, chosen\.projectId\)/.test(startBody));
+    // ▶ → In the Console opens the COMPOSER: the project can only be chosen
+    // before the first prompt, and spawning on the spot skipped that moment.
+    ok('…and the Console path opens the composer with the agent pinned',
+        /ConsolePanel\.show\(consoleDeps, \{\s*\n\s*agentId: agent\.id, pinAgent: true, projectId: chosen\.projectId\s*\n\s*\}\);/.test(startBody));
+    ok('the launcher shows it as one of its rows', /launchProjectRow\(project\),/.test(ext));
     ok('…and its Where sub-picker does NOT repeat the question',
         /const v = await pickRunSurface\(`Session for \$\{agent\.name\}`\);/.test(ext));
 

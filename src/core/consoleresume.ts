@@ -14,6 +14,7 @@
  *
  * Pure: no io, no vscode, no index. The panel maps its own rows in and out.
  */
+import { compileQuery } from './query';
 
 /** What the panel asks for. Every field is optional; an empty query is the
  *  default list, unchanged — a filter you did not set never narrows anything. */
@@ -111,7 +112,9 @@ export function isResumeFiltered(q: ResumeQuery): boolean {
 export function filterResumable<T extends ResumeCandidate>(
     rows: T[], q: ResumeQuery, now: number
 ): { rows: T[]; total: number } {
-    const text = String(q.text ?? '').trim().toLowerCase();
+    // the box is a QUERY, not a substring — core/query.ts, the same grammar the
+    // pages use. Compiled once, not per row.
+    const text = compileQuery(String(q.text ?? ''));
     const agent = String(q.agent ?? '');
     const { from, to } = resumeRange(q, now);
     const hits = rows.filter(r => {
@@ -119,9 +122,9 @@ export function filterResumable<T extends ResumeCandidate>(
         if (q.userOnly && r.origin === 'auto') { return false; }
         if (agent && (r.agentName ?? '') !== agent) { return false; }
         if (r.ts < from || r.ts >= to) { return false; }
-        if (text) {
-            const hay = `${r.title ?? ''} ${r.agentName ?? ''} ${(r.tags ?? []).join(' ')} ${r.sessionId ?? ''}`.toLowerCase();
-            if (hay.indexOf(text) < 0) { return false; }
+        if (!text.empty
+            && !text.test(`${r.title ?? ''} ${r.agentName ?? ''} ${(r.tags ?? []).join(' ')} ${r.sessionId ?? ''}`)) {
+            return false;
         }
         return true;
     });

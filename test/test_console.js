@@ -704,7 +704,8 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     // The composer row is one ternary in buildShell: the live branch first, the
     // new-session branch after the `:`.
     const controls = js.slice(js.indexOf('const controls = s'), js.indexOf("getElementById('app').innerHTML"));
-    const split = controls.indexOf(": `<select id=\"c-agent\"");
+    // the new-session branch opens with the pinned-agent name OR the picker
+    const split = controls.indexOf(': `${pinnedAgentHtml()');
     const liveRow = split > 0 ? controls.slice(0, split) : '';
     // A running session shows only the controls that DO something — and the ONE
     // thing that genuinely cannot change is the agent, because that is the
@@ -735,6 +736,26 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         /if \(!st\.agentId\)/.test(js));
     ok('an agent row can open the Console with that agent preselected',
         /presetAgent/.test(js));
+    // ‼️ …and PINNED, which is a different thing: preselected is a picker with a
+    // value in it, pinned is the name and no picker. ▶ → In the Console used to
+    // spawn on the spot, so the composer went straight to its running shape —
+    // agent fixed (right) and no project box at all (wrong: the project can only
+    // be chosen before the first prompt). Nothing is spawned now.
+    ok('a composer opened from an agent fixes it instead of offering a picker',
+        /function pinnedAgentHtml\(\)/.test(js)
+        && /const id = DATA\.pinnedAgent \|\| ''/.test(js));
+    ok('…and the pin is never a trap — it can be handed back',
+        /id="c-unpin"/.test(js) && /type: 'unpinAgent'/.test(js));
+    ok('…and it rebuilds the shell, because it decides which markup is drawn',
+        /\$\{DATA\.pinnedAgent \|\| ''\}`;/.test(js));
+    ok('…while the project box stays, which is the point of not spawning',
+        (() => {
+            const c = js.slice(js.indexOf('const controls = s'), js.indexOf("getElementById('app').innerHTML"));
+            const newRow = c.slice(c.indexOf(': `${pinnedAgentHtml()'));
+            return /id="c-proj"/.test(newRow) && /pinnedAgentHtml\(\) \|\|/.test(newRow);
+        })());
+    ok('a new session starts under NO project until it is chosen',
+        /It starts at No project every time/.test(js));
     ok('a session row carries its own title, not just the agent name',
         /class="t2"/.test(js));
     // Right-click must reach VS Code's OWN menu (Copy/Paste and the session's
@@ -811,7 +832,13 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         && /afConsoleWorking: s\.status === 'working'/.test(js));
     ok('…as does the process they act on', /hostId: s\.id/.test(js));
     ok('the actions sit in their own group, under the naming ones',
-        web.filter(m => /^2_run@/.test(m.group || '')).length === 3);
+        web.filter(m => /^2_run@/.test(m.group || '')).length === 4);
+    // ‼️ End and Remove are separate on purpose — ending leaves the card
+    // readable — but the ordinary case is both, and it used to cost two
+    // right-clicks with a repaint between them that moves the card you are
+    // pointing at.
+    ok('…and one of them does both halves at once',
+        web.some(m => m.command === 'agentfarm.consoleEndAndRemove'));
     // The shelf is what the filter is FOR: pinning is how a session gets onto
     // it, so it belongs on the card you are looking at — running or ended, in
     // the hosted list or the resumable one.

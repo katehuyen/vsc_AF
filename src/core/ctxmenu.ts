@@ -264,7 +264,12 @@ export const CTX_ITEMS: CtxItem[] = [
     { command: 'agentfarm.focusSessionTerminal', when: CONSOLE_RESUMABLE, group: '1_session@8' },
     { command: 'agentfarm.consoleInterruptTurn', when: CONSOLE_LIVE, group: '2_run@1' },
     { command: 'agentfarm.consoleEndSession', when: CONSOLE_LIVE, group: '2_run@2' },
-    { command: 'agentfarm.consoleForgetSession', when: CONSOLE_LIVE, group: '2_run@3' },
+    // ‼️ …and the pair of them in one click. End leaves the card on the shelf
+    // (deliberately — the conversation is still readable), so tidying a panel
+    // of eight finished sessions meant right-clicking every one of them TWICE,
+    // with a repaint in between that moves the card you were pointing at.
+    { command: 'agentfarm.consoleEndAndRemove', when: CONSOLE_LIVE, group: '2_run@3' },
+    { command: 'agentfarm.consoleForgetSession', when: CONSOLE_LIVE, group: '2_run@4' },
 
     // ---------------------------------------------------------------------
     // The Live Timeline's lanes and cards.
