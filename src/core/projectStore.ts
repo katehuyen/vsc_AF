@@ -37,7 +37,31 @@ interface StoreFile {
     version?: number;
     projects?: unknown;
     links?: unknown;
+    /** ‼️ A TOMBSTONE, NOT A FLAG — see MIGRATED_TOMBSTONE. */
+    migrated?: boolean;
 }
+
+/**
+ * ‼️ ROLLING A VERSION BACK IS A DIAGNOSTIC, AND A DIAGNOSTIC MUST NOT LEAVE A
+ * MARK. Projects were once declared in an `agentFarm.projects` SETTING, and a
+ * one-time import moved them into this file, recording `migrated: true` here so
+ * it could never run twice. 3.58.0 deleted the old model: the setting, the
+ * importer, and — the part that bites — the marker this file used to carry.
+ *
+ * The setting itself is still sitting in the user's `settings.json`, because
+ * dropping a contribution point does not delete what somebody typed. So the
+ * moment an older VSIX is installed to check a symptom, that build finds a
+ * store with no marker, re-runs the import it still has, and writes a project
+ * nobody asked for back into the registry. Measured on this machine: a
+ * folderless `Me.DEV.AgentFarm` claiming developer/basit/manager, created 13
+ * seconds after a 3.52.0 install.
+ *
+ * ‼️ So the marker is written even though NOTHING here reads it. That is the
+ * whole point: it is not state this version needs, it is a promise kept to a
+ * version that is no longer here — the same reason a tombstone outlives the
+ * thing it marks. Deleting it because "nothing uses it" re-opens the trap.
+ */
+const MIGRATED_TOMBSTONE = true;
 
 /** Everything a new project may be given; `name` is the only requirement. */
 export type ProjectInput = { name: string } &
@@ -90,6 +114,7 @@ export class ProjectStore {
     }
 
     load(): void {
+        let heal = false;
         try {
             const raw = expandDeep(
                 JSON.parse(fs.readFileSync(this.file, 'utf8')) as StoreFile,
@@ -98,6 +123,13 @@ export class ProjectStore {
             this.linkTable = coerceLinks(raw.links);
             // a link to a project the file no longer holds is dead weight
             this.linkTable = pruneLinks(this.linkTable, this.projects);
+            // ‼️ A store written by a build that had already forgotten the old
+            // model carries no tombstone, so re-arms the trap MIGRATED_TOMBSTONE
+            // describes. Stamp it once, here, where the absence is visible. Only
+            // for a store that EXISTS: on a machine that has none, an old build
+            // importing the setting is the migration doing its job, not a
+            // rollback leaving a mark.
+            heal = raw.migrated !== true;
         } catch {
             // first run, or a file we cannot read — start clean rather than
             // half-loaded; a partial registry would resolve sessions wrongly
@@ -105,6 +137,7 @@ export class ProjectStore {
             this.linkTable = emptyLinks();
         }
         this.lastMtimeMs = this.statMtime();
+        if (heal) { this.save(); }
     }
 
     /**
@@ -116,7 +149,8 @@ export class ProjectStore {
         const payload: StoreFile = {
             version: STORE_VERSION,
             projects: this.projects,
-            links: this.linkTable
+            links: this.linkTable,
+            migrated: MIGRATED_TOMBSTONE
         };
         const body = JSON.stringify(tokenizeDeep(payload, this.portableRoots()), null, 2);
         const tmp = `${this.file}.tmp`;

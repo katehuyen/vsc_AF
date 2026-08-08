@@ -346,6 +346,14 @@
         .crow .afms-btn { font-size:11px; }
         .msg { margin:8px 10px; display:flex; gap:9px; align-items:flex-start; }
         .msg .who { flex:none; width:56px; font-size:10px; opacity:.65; padding-top:3px; text-transform:uppercase; }
+        /* the step-kind chip lives in this gutter (see messageHtml): the column
+           is sized for a 10px word, so the glyph is given back its own size and
+           the gutter's dimming is undone — a mark you scan a thousand rows by
+           must not be the faintest thing on the row. Parent opacity is a
+           compositing group a child cannot climb out of, so the gutter itself
+           stops dimming on the rows that hold a chip. */
+        .msg .who:has(.skind) { opacity:1; }
+        .msg .who .skind { font-size:13px; line-height:1; }
         .msg .body { flex:1; min-width:0; white-space:pre-wrap; word-break:break-word; }
         .msg.user .body { background:color-mix(in srgb, var(--vscode-textLink-foreground) 10%, transparent);
             border-radius:7px; padding:6px 9px; }
@@ -826,6 +834,13 @@
         // output rate. The chip is the category, the figure beside it is what
         // that API call spent — written ONCE per call, on its first block, so
         // a row with no figure rode on the one above it (see stepkind.ts).
+        //
+        // ‼️ AND ONE ROW CARRIES ONE MARK. A tool row used to draw two: a fixed
+        // 🔧 in the `who` gutter and the kind chip glued to the front of the
+        // text, side by side, saying the same thing twice — and the fixed one
+        // said the less: 🔧 on a web fetch, on an MCP call and on a local Read
+        // alike. So the kind chip MOVED into the gutter, where the eye already
+        // scans, and nothing sits in front of the words any more.
         const step = m => C.stepChip(m.kind, m.stepTokens, m.stepWTokens)
             + (m.stepTokens > 0
                 ? `<span class="steptok" title="What this API call spent — one call carries several steps and the figure is written once.">${C.fmtTokW(m.stepTokens, m.stepWTokens)}</span>`
@@ -839,9 +854,12 @@
                     ? `<span class="filechip" data-open="${C.esc(m.tool.file)}" title="Open this file">✎ open</span>
                        <span class="filechip" data-diff="${C.esc(m.tool.file)}" title="Diff it against git HEAD">vs HEAD</span>`
                     : '';
-                return `<div class="msg tool"><span class="who">🔧</span><div class="body">${C.stepChip(m.kind, m.stepTokens, m.stepWTokens)}<strong>${C.esc(m.tool.name)}</strong> ${C.esc(m.tool.detail)}${chip}${m.stepTokens > 0 ? `<span class="steptok" title="What this API call spent — one call carries several steps and the figure is written once.">${C.fmtTokW(m.stepTokens, m.stepWTokens)}</span>` : ''}</div></div>`;
+                return `<div class="msg tool"><span class="who">${C.stepChip(m.kind, m.stepTokens, m.stepWTokens)}</span><div class="body"><strong>${C.esc(m.tool.name)}</strong> ${C.esc(m.tool.detail)}${chip}${m.stepTokens > 0 ? `<span class="steptok" title="What this API call spent — one call carries several steps and the figure is written once.">${C.fmtTokW(m.stepTokens, m.stepWTokens)}</span>` : ''}</div></div>`;
             }
-            return `<div class="msg tool${m.isError ? ' err' : ''}"><span class="who">${m.isError ? '⚠' : '↳'}</span><div class="body">${C.stepChip(m.kind)}${C.esc(m.text || '')}</div></div>`;
+            // An error keeps ⚠ in the gutter rather than the kind chip: `↩ tool
+            // result` is true of every result row and says nothing about this
+            // one, while "it failed" is the only thing worth a glyph here.
+            return `<div class="msg tool${m.isError ? ' err' : ''}"><span class="who">${m.isError ? '⚠' : C.stepChip(m.kind)}</span><div class="body">${C.esc(m.text || '')}</div></div>`;
         }
         // The record of a question and of what you said back. The CARD above the
         // composer is where you answer; this is the transcript's memory of it,

@@ -300,8 +300,62 @@ const readFile = f => JSON.parse(fs.readFileSync(f, 'utf8'));
     reopened.create({ name: 'After' });
     const written = readFile(file);
     ok('…and what it writes back holds only what it owns',
-        Object.keys(written).sort().join() === 'links,projects,version');
+        Object.keys(written).sort().join() === 'links,migrated,projects,version');
     ok('the project it just created is there', written.projects[0].name === 'After');
+}
+
+// ---------- X-8: rolling a version back must leave no mark ----------
+//
+// The old `agentFarm.projects` SETTING is still in the user's settings.json —
+// dropping a contribution point does not delete what somebody typed — and the
+// builds that still carry the importer skip it only when this file says
+// `migrated: true`. This version removed the importer AND stopped writing the
+// marker, so installing an older VSIX to check a symptom re-ran the import and
+// wrote a project nobody asked for (measured: a folderless `Me.DEV.AgentFarm`,
+// 13 s after a 3.52.0 install).
+//
+// ‼️ Nothing in THIS version reads the marker. It is written for a version that
+// is no longer here, which is exactly why a test has to hold it: "unused" is
+// the argument that would delete it and re-arm the trap.
+{
+    const { store, file } = newStore();
+    store.create({ name: 'Tombstone' });
+    ok('‼️ a store this version writes carries the migration tombstone',
+        readFile(file).migrated === true);
+}
+{
+    // The damage already on disk: a store written by 3.58.0–3.87.0, which had
+    // forgotten the marker. Opening it is what has to repair it — waiting for
+    // the next project edit would leave the trap armed for however long the
+    // user does not touch a project.
+    const file = path.join(tmpDir, 'no-tombstone.json');
+    fs.writeFileSync(file, JSON.stringify({
+        version: 1, projects: [], links: { sessions: {} }
+    }, null, 2), 'utf8');
+    const s = new ProjectStore(file);
+    s.load();
+    ok('‼️ a store left without the tombstone is stamped on load, not on next write',
+        readFile(file).migrated === true);
+}
+{
+    // …and the healing must not invent a store. A machine that has never run
+    // Agent Farm SHOULD let an old build import the setting: that is the
+    // migration doing its job, not a rollback leaving a mark.
+    const file = path.join(tmpDir, 'never-existed.json');
+    const s = new ProjectStore(file);
+    s.load();
+    ok('a machine with no store is not given one just for being read',
+        !fs.existsSync(file));
+}
+{
+    // A file too broken to parse is not evidence of anything, and writing over
+    // it would destroy the link table — the one thing here that cannot be rebuilt.
+    const file = path.join(tmpDir, 'still-broken.json');
+    fs.writeFileSync(file, '{ not json at all', 'utf8');
+    const s = new ProjectStore(file);
+    s.load();
+    ok('an unreadable store is left exactly as it was',
+        fs.readFileSync(file, 'utf8') === '{ not json at all');
 }
 
 // ---------- rescan ----------

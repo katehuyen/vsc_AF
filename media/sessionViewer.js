@@ -368,7 +368,13 @@
 
     // The chips' glyphs, repeated on the messages themselves: a long transcript
     // is scanned by these marks long before the words are read.
-    const ROLE_GLYPH = { user: '🧑', assistant: '🤖', tool: '🔧', toolResult: '📄' };
+    //
+    // ‼️ DIALOG ONLY. A tool row already opens with its step-kind chip (⌘ ⇄ ⌗ ⑂
+    // ⚙ ↩ — charts.js STEP_KIND), so a 🔧 next to it was a second mark for the
+    // same fact, and the weaker of the two: 🔧 was drawn on a web fetch, an MCP
+    // call and a local Read alike, while the chip says which. The dialog rows
+    // keep theirs — 🧑 and 🤖 name a SPEAKER, which no chip does.
+    const ROLE_GLYPH = { user: '🧑', assistant: '🤖' };
 
     /**
      * The WORDS of one step — what a copy button has to put on the clipboard.
