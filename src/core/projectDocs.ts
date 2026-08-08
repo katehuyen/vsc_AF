@@ -157,14 +157,18 @@ af-role: backlog
 
 <!-- Every field is OPTIONAL: a line of plain text is a valid item.
 
-     - [ ] P-5 What to do  #bug 🔺 [effort:: S] ⛔ P-3 [plan:: afprj-05]
+     - [ ] P-5 What to do  #bug 🔺 [effort:: S] [parent:: P-1] ⛔ P-3 [plan:: afprj-05]
 
-     code  <AREA>-<n>       permanent, never reissued. The list is FLAT: there
-                            is no sub-item, so something that feels like one is
-                            either its own item or a paragraph inside this text.
+     code  <AREA>-<n>       permanent, never reissued. A code is FLAT — it says
+                            which item, never where in a tree; use [parent:: …]
+                            for that, and a child may be in any area.
      #tag  the kind          bug · feat · ux · chore · debt · idea · doc
      🔺⏫🔼🔽⏬               priority (no icon = normal)
      [effort:: XS|S|M|L|XL]  XS≈5min · S≈½h · M≈½day · L≈a day · XL=split it
+     [parent:: CODE]         this item is PART OF that one. Not ⛔: composition,
+                            not dependency — a child is not waiting on its
+                            parent. No line moves and no code changes; the queue
+                            does not know about it, so both queue on their own.
      ⛔ CODE                 waits on that item
      [plan:: 🆔]             which plan item it belongs to
      [closed:: 9c4d1f#3]     Agent Farm writes this: the session and turn it was
@@ -1379,6 +1383,12 @@ function briefBacklogLine(item: BacklogItem, chars?: number): string {
         ...item.kinds.map(k => `#${k}`),
         item.priority !== 'normal' ? BRIEF_PRIORITY[item.priority] : '',
         item.effort ?? '',
+        // ‼️ A CHILD WITHOUT ITS PARENT IS HALF A SENTENCE. These lines are the
+        // whole of what an agent is told about the pile at session start, and
+        // "add the retry form" read on its own is a different job from "add the
+        // retry form, part of U-9". Four characters, and it is the difference
+        // between doing the item and doing the item for the right reason.
+        item.parent ? `↳${item.parent}` : '',
         item.state === 'doing' ? '(in progress)' : ''
     ].filter(Boolean).join(' ');
     const head = item.code ? `${item.code} ` : '';

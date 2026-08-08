@@ -91,7 +91,7 @@ export interface ProjectsPanelDeps {
      *  queue position it should take — only meaningful once it has a code. */
     backlogAdd(id: string, input: {
         text: string; area?: string;
-        priority?: string; effort?: string; kinds?: string[]; at?: number;
+        priority?: string; effort?: string; kinds?: string[]; parent?: string; at?: number;
     }): { error?: string; code?: string; note?: string };
     /** Move one item between open/doing/done/cancelled — one character. */
     backlogState(id: string, target: { code?: string; line?: number }, state: string):
@@ -532,6 +532,11 @@ export class ProjectsPanel {
                     ...(typeof msg.priority === 'string' && msg.priority ? { priority: msg.priority } : {}),
                     ...(typeof msg.effort === 'string' && msg.effort ? { effort: msg.effort } : {}),
                     ...(Array.isArray(msg.kinds) ? { kinds: msg.kinds.map(String) } : {}),
+                    // What it is part of. Independent of `area`: the child of a
+                    // P epic is a U item as often as not, and an uncoded
+                    // capture carries the link just as well — it is stored on
+                    // the child and the child needs no code to hold it.
+                    ...(typeof msg.parent === 'string' && msg.parent ? { parent: msg.parent } : {}),
                     // The position box beside Add. Absent = the item goes where
                     // a new item normally goes; the host says so when a place
                     // was asked for and there was no code to place.

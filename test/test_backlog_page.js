@@ -1094,6 +1094,212 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
         e4 && Object.prototype.hasOwnProperty.call(e4.fields, 'effort') && e4.fields.effort === '');
 }
 
+// ---------- M-2: an item that is PART OF another one ----------
+//
+// ‼️ WHAT THIS SURFACE IS A REBUILD OF. The backlog had a hierarchy once, and it
+// was drawn as INDENTATION taken from the file, inside a list ordered by the
+// QUEUE. Two unrelated structures on one screen: a child appeared under whatever
+// row happened to precede it and moved somewhere else on every re-sort. So what
+// is asserted here is not "the tree renders" — it is the three rules that stop
+// that happening again:
+//   1. the relation is a MARK on the row, never its position, in every ordering
+//      but the one explicitly called "family";
+//   2. an indent is measured against WHAT IS ON SCREEN, so a row is never drawn
+//      under something that is not its parent;
+//   3. the queue is untouched — a part and its whole are separate chips, in
+//      whatever order the user put them.
+const famData = () => {
+    const d = data();
+    d.tabData.backlog.items = d.tabData.backlog.items.map(i => {
+        if (i.code === 'K-2') { return Object.assign({}, i, { parent: 'P-1', children: [] }); }
+        if (i.code === 'K-1') { return Object.assign({}, i, { parent: 'K-2', children: [] }); }
+        if (i.code === 'P-1') { return Object.assign({}, i, { parent: null, children: ['K-2'] }); }
+        return i;
+    });
+    // K-2 now has a part of its own, so it is both a child and a parent — the
+    // middle of a chain, which is the case a three-way "is it a parent or a
+    // child" control gets wrong.
+    d.tabData.backlog.items = d.tabData.backlog.items.map(i =>
+        i.code === 'K-2' ? Object.assign({}, i, { children: ['K-1'] }) : i);
+    return d;
+};
+
+{
+    const r = run(famData());
+    ok('a row that is part of something says so, by code',
+        /data-bljump="P-1"[^>]*>↳ P-1</.test(r.html()));
+    ok('…and the whole says how many parts it has',
+        /data-blfamily="P-1"[^>]*>⊂ 1</.test(r.html()));
+    ok('an item that is part of nothing wears neither mark',
+        !/data-key="P-2"[\s\S]{0,900}?data-bljump/.test(r.html()));
+    // ‼️ NOT A POSITION. Queue order is the default, and the rows come back in
+    // it whatever the links say.
+    ok('‼️ the links change NOTHING about the order the rows are in',
+        codesIn(r.html()).join() === 'P-2,K-1,K-2,P-1');
+    ok('…and no row is indented outside the family ordering',
+        !/class="pj-bl-row[^"]*nested/.test(r.html()));
+    // The strip is the other place the last hierarchy tried to draw a tree.
+    ok('the queue strip marks a part without moving it',
+        /pj-bl-nextp">↳/.test(r.html()));
+    ok('…and its hover names the whole', /Part of: K-2/.test(r.html()));
+
+    // ‼️ OPEN OF TOTAL, because that is the number a whole is read for. A bare
+    // count says the same thing on the day it was written and on the day it was
+    // finished; the two collapse to one number when they agree.
+    const finished = famData();
+    finished.tabData.backlog.items = finished.tabData.backlog.items.map(i =>
+        i.code === 'K-2' ? Object.assign({}, i, { state: 'done' }) : i);
+    const r2 = run(finished);
+    r2.ms.only('bl-states', ['open', 'doing', 'done']);
+    ok('a whole whose parts are all closed says 0 of them are open',
+        /data-blfamily="P-1"[^>]*>⊂ 0\/1</.test(r2.html()));
+    ok('…and stops wearing the colour of work waiting',
+        /class="pj-bl-m parts allclosed"/.test(r2.html()));
+
+    // A link whose whole was deleted in Obsidian: the field is left exactly as
+    // it is, and the row says so where the eye is.
+    const broken = famData();
+    broken.tabData.backlog.items = broken.tabData.backlog.items.map(i =>
+        i.code === 'K-2' ? Object.assign({}, i, { parent: 'Z-9' }) : i);
+    const r3 = run(broken);
+    ok('‼️ a part whose whole is gone is marked, not silently unlinked',
+        /pj-bl-m warn[^>]*>↳ Z-9 \?</.test(r3.html()));
+    ok('…and it is not a link to nowhere', !/data-bljump="Z-9"/.test(r3.html()));
+}
+
+// The picker on the row: what it offers, and the one thing it must never offer.
+{
+    const r = run(famData());
+    const badge = r.els('blparent').find(e => e.closest().dataset.code === 'P-1');
+    badge.click();
+    ok('‼️ opening the parent menu writes nothing', !r.posted.some(m => m.type === 'backlogSet'));
+    const picks = r.els('blpick').map(e => e.dataset.blpick);
+    ok('"no parent" leads the list', picks[0] === '');
+    ok('‼️ …and neither the item itself nor anything under it is on offer',
+        picks.indexOf('P-1') < 0 && picks.indexOf('K-2') < 0 && picks.indexOf('K-1') < 0);
+    ok('…while an unrelated live item is', picks.indexOf('P-2') >= 0);
+    ok('a closed item is not offered as a whole to belong to', picks.indexOf('U-1') < 0);
+    r.els('blpick').find(e => e.dataset.blpick === 'P-2').click();
+    const msg = r.posted.filter(m => m.type === 'backlogSet').pop();
+    ok('picking one sends exactly that field',
+        msg && msg.fields.parent === 'P-2' && Object.keys(msg.fields).join() === 'parent');
+
+    const r2 = run(famData());
+    r2.els('blparent').find(e => e.closest().dataset.code === 'K-2').click();
+    r2.els('blpick').find(e => e.dataset.blpick === '').click();
+    const clear = r2.posted.filter(m => m.type === 'backlogSet').pop();
+    ok('…and "no parent" clears it through the same field', clear && clear.fields.parent === '');
+}
+
+// The capture box gained a sixth axis, and it waits on none of the others.
+{
+    const r = run(famData());
+    const sel = r.byId('bl-parent');
+    ok('the capture box offers a parent', !!sel);
+    ok('‼️ …without an area having to be picked first — one control, one question',
+        !r.byId('bl-area').attrs.disabled && !sel.attrs.disabled);
+    sel.value = 'P-1';
+    sel.fire('change');
+    ok('the choice survives the repaint it causes, like every other axis',
+        /<option value="P-1" selected/.test(r.html()));
+    r.els('blarea').find(e => e.dataset.blarea === 'K').click();      // any repaint
+    ok('…and any other repaint too', /<option value="P-1" selected/.test(r.html()));
+    r.byId('bl-new').value = 'a new part';
+    r.byId('bl-new').fire('input');
+    r.one('[data-act="blAdd"]').click();
+    const add = r.posted.filter(m => m.type === 'backlogAdd').pop();
+    ok('Add sends it', add && add.parent === 'P-1' && add.text === 'a new part');
+    // ‼️ The parent is kept after a successful add, exactly like the area:
+    // filing three parts of one epic is ONE choice, not three. The queue place
+    // is the only thing that goes, because it is about the item just written.
+    r.send({ type: 'result', ok: 'Added.' });
+    r.send({ type: 'data', data: famData() });
+    ok('…and keeps it for the next part of the same whole',
+        /<option value="P-1" selected/.test(r.html()));
+    ok('the ↺ reset covers it', /part of: P-1/.test(r.html()));
+}
+
+// ‼️ A CHOICE THE FILE CAN NO LONGER HONOUR IS SAID, NOT SWALLOWED. The parent
+// was closed or deleted in Obsidian while the box sat there holding it; adding
+// the item quietly at the top level would lose the one thing that was set.
+{
+    const r = run(famData());
+    const sel = r.byId('bl-parent');
+    sel.value = 'P-1';
+    sel.fire('change');
+    const gone = famData();
+    gone.tabData.backlog.items = gone.tabData.backlog.items.map(i =>
+        i.code === 'P-1' ? Object.assign({}, i, { state: 'done' }) : i);
+    r.send({ type: 'data', data: gone });
+    ok('a parent that has closed under the box is marked', /is gone/.test(r.html()));
+    ok('…and the choice is still SENT, so the file gives the real answer', true);
+}
+
+// The two ways of asking about a family, and the rule that keeps them honest.
+{
+    const r = run(famData());
+    r.one('[data-blfamily="P-1"]').click();
+    ok('⊂ narrows the list to that item and everything under it',
+        codesIn(r.html()).join() === 'K-1,K-2,P-1');
+    ok('‼️ …and SAYS it is doing so, in a chip that comes off in one press',
+        /data-blfamily=""[^>]*>⊂ P-1 ✕/.test(r.html()));
+    ok('…and it counts as a filter, so "clear" is on screen', /data-act="blClear"/.test(r.html()));
+    r.one('[data-blfamily=""]').click();
+    ok('pressing the chip gives the whole pile back',
+        codesIn(r.html()).join() === 'P-2,K-1,K-2,P-1');
+}
+
+// The three-way relation axis. A middle node is BOTH, which is what OR-within-
+// the-axis is for.
+{
+    const r = run(famData());
+    r.els('act').find(e => e.dataset.act === 'blFilters').click();
+    r.ms.only('bl-rel', ['alone']);
+    ok('"stands on its own" leaves out both ends of every chain',
+        codesIn(r.html()).join() === 'P-2');
+    r.ms.only('bl-rel', ['parent']);
+    ok('"has parts" finds the middle of a chain as well as its head',
+        codesIn(r.html()).slice().sort().join() === 'K-2,P-1');
+    r.ms.only('bl-rel', ['child']);
+    ok('"part of something" finds the middle of a chain as well as its tail',
+        codesIn(r.html()).slice().sort().join() === 'K-1,K-2');
+    r.ms.selectAll('bl-rel');
+    ok('…and every option ticked asks nothing at all',
+        codesIn(r.html()).join() === 'P-2,K-1,K-2,P-1');
+}
+
+// ---------- the family ordering: the ONE place a tree is drawn ----------
+{
+    const r = run(famData());
+    const sort = r.byId('bl-sort');
+    sort.value = 'family';
+    sort.fire('change');
+    // ‼️ FAMILIES COME IN THE ORDER THEIR HEADS ARE QUEUED IN, and inside a
+    // family the parts follow depth first. P-2 leads because it is #1 in the
+    // queue; the P-1 family follows even though its middle member K-2 is #3,
+    // because a family that jumped the queue on the strength of one part would
+    // be a second ordering pretending to be this one.
+    ok('a whole is followed by its parts, depth first',
+        codesIn(r.html()).join() === 'P-2,P-1,K-2,K-1');
+    ok('…and only here is a row indented at all', /class="pj-bl-row[^"]*nested/.test(r.html()));
+    ok('the depth is the real depth, capped so nothing is pushed off the row',
+        /data-depth="2"/.test(r.html()));
+    // ‼️ THE RULE THE LAST HIERARCHY BROKE. An item whose parent is not on
+    // screen is drawn at the margin — an indent under nothing is a claim the
+    // list is not making, and drawing it under a stranger is what made the old
+    // one unusable.
+    const r2 = run(famData());
+    r2.els('blarea').find(e => e.dataset.blarea === 'K').click();     // hides P-1
+    const s2 = r2.byId('bl-sort');
+    s2.value = 'family';
+    s2.fire('change');
+    ok('‼️ a part whose whole is filtered out is drawn at the margin, not under a stranger',
+        codesIn(r2.html()).join() === 'K-2,K-1'
+        && !/data-key="K-2"[^>]*data-depth/.test(r2.html()));
+    ok('…and its own part is still nested under IT, because that one IS on screen',
+        /data-key="K-1"[^>]*data-depth="1"/.test(r2.html()));
+}
+
 // ---------- ‼️ filing an uncoded capture ----------
 //
 // This is the one that was BROKEN: the row's "file…" link silently required an

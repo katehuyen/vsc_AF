@@ -882,6 +882,24 @@
                 .pj-bl-m { opacity:.6; font-size:11px; white-space:nowrap; }
                 .pj-bl-m.blocked { color:var(--vscode-editorWarning-foreground); opacity:.9; }
                 .pj-bl-m.warn { color:var(--vscode-editorWarning-foreground); opacity:1; cursor:help; }
+                /* ‼️ COMPOSITION IS NOT DEPENDENCY, SO IT IS NOT THE ⛔ COLOUR.
+                   The blocked mark is a warning — something is in the way — and
+                   an item being PART of something is neither a problem nor a
+                   delay. Both marks are buttons because both go somewhere: ↳ to
+                   the whole, ⊂ to the parts. */
+                .pj-bl-m.partof, .pj-bl-m.parts { background:none; border:none; color:inherit;
+                    font:inherit; padding:0 3px; border-radius:4px; cursor:pointer; opacity:1; }
+                .pj-bl-m.partof:hover, .pj-bl-m.parts:hover {
+                    background:var(--vscode-toolbar-hoverBackground,#8882); }
+                .pj-bl-m.parts { color:var(--vscode-charts-green,#3fb950); opacity:.85; }
+                /* Nothing left open under it: still a way into the family, but
+                   it is a fact about the past rather than work waiting. */
+                .pj-bl-m.parts.allclosed { color:inherit; opacity:.55; }
+                /* The one indent in the whole page, and it is drawn ONLY in the
+                   family ordering — the sort that says it is showing a tree. The
+                   depth is capped so a chain nobody meant to build cannot push
+                   the text off the row. */
+                .pj-bl-row.nested { padding-left:calc(var(--bl-depth,0) * 15px); }
                 /* ‼️ THE BADGES AND THE ACTIONS ARE TWO STACKED ROWS, AND THE
                    BLOCK IS AS WIDE AS THE WIDER OF THEM — no more.
                    Every axis this page can set is a control, and on one line the
@@ -981,6 +999,17 @@
                 .pj-bl-capf { flex:1 1 240px; max-width:340px; display:flex; flex-wrap:wrap;
                     gap:6px; align-content:flex-start; }
                 .pj-bl-capf select { flex:1 1 128px; min-width:112px; }
+                /* ‼️ THE ONE BOX WHOSE OPTIONS ARE THE PROJECT'S OWN ITEMS, so
+                   it is the one that needs the whole width: a line reading
+                   "P-4 — complete the project system phases" does not fit beside
+                   three others, and a parent picker showing four codes and no
+                   words is a picker nobody can choose from. Own line, stretched. */
+                .pj-bl-capf .pj-bl-capparent { flex:1 1 100%; min-width:0; }
+                /* A parent that has been closed or deleted since it was picked —
+                   marked, not silently dropped. The same amber the queue-place
+                   box uses for a place the file cannot keep. */
+                .pj-bl-capf .pj-bl-capparent.wants {
+                    border-color:var(--vscode-editorWarning-foreground,#cca700); }
                 /* The last row of the footer: the box's own four text tools on
                    the left, Add on the right. Add is a BUTTON, not a banner —
                    it used to span the whole width, which said "this is the big
@@ -1050,6 +1079,11 @@
                     background:var(--vscode-charts-green,#3fb950);
                     color:var(--vscode-editor-background,#1f1f1f); }
                 .pj-bl-nexte { opacity:.7; font-size:10px; }
+                /* "there is a whole this belongs to" — four pixels of fact. The
+                   parent's code is in the hover; putting it on the chip would
+                   double the width of every child in a strip whose entire job is
+                   to be scannable. */
+                .pj-bl-nextp { opacity:.75; font-size:10px; }
                 .pj-bl-nextb .pj-bl-code { opacity:1; }
                 .pj-bl-stale { font-size:10px; margin-left:8px; cursor:help;
                     color:var(--vscode-editorWarning-foreground); }
@@ -1091,7 +1125,13 @@
                    it is, and a menu positioned from a click event lands in the
                    wrong place the moment the list scrolls under it. */
                 .pj-bl-mw { position:relative; display:inline-flex; align-items:baseline; }
+                /* ‼️ CAPPED AND SCROLLABLE. Four of these menus hold a handful of
+                   fixed choices, but the parent picker holds every live item in
+                   the project — on a real backlog that is fifty rows, and an
+                   uncapped menu simply runs off the bottom of the window with
+                   its own list unreachable. */
                 .pj-bl-menu { display:block; position:absolute; top:100%; left:0; z-index:30; min-width:172px;
+                    max-height:min(340px, 52vh); overflow:auto; overscroll-behavior:contain;
                     margin-top:2px; padding:3px; border-radius:6px;
                     border:1px solid var(--vscode-widget-border,#4446);
                     background:var(--vscode-menu-background, var(--vscode-editorWidget-background,#252526));
@@ -1391,7 +1431,19 @@
         /** null any · ['yes'] linked to a plan item · ['no'] not linked */
         plan: null,
         /** null any · ['yes'] has a 📅 · ['no'] none */
-        due: null
+        due: null,
+        /** null any · any subset of child (has a parent) · parent (has children)
+         *  · alone (neither). ‼️ Not mutually exclusive: an item in the middle of
+         *  a chain is BOTH a child and a parent, and OR-within-the-axis is what
+         *  makes that read correctly — asking for children shows it. */
+        rel: null,
+        /** ‼️ ONE FAMILY, WHOLE — a code, or '' for no such narrowing. This is
+         *  the only filter that is not an axis of the item: it asks "show me
+         *  this thing and everything under it", which is the question a parent
+         *  exists to make askable. It is drawn as its own removable chip rather
+         *  than hidden in the panel, because a list narrowed to eight rows with
+         *  nothing on screen saying why is a backlog that has lost your items. */
+        family: ''
     });
     let blFilter = blFilterDefaults();
     let blSort = 'file';
@@ -1453,6 +1505,16 @@
             where: 'panel', width: 200,
             title: '📅 — a date on the line',
             options: [{ v: 'yes', t: 'has a date' }, { v: 'no', t: 'no date' }]
+        },
+        {
+            id: 'bl-rel', key: 'rel', label: 'family', allLabel: 'any',
+            where: 'panel', width: 210,
+            title: '[parent:: CODE] — what an item is PART OF. Not ⛔: a child is not waiting on its parent.',
+            options: [
+                { v: 'child', t: 'part of something' },
+                { v: 'parent', t: 'has parts' },
+                { v: 'alone', t: 'stands on its own' }
+            ]
         }
     ];
 
@@ -1512,6 +1574,14 @@
             // means never dragged: the css min-height.
             blCap = {
                 id: id, text: '', area: '', type: '', prio: 'normal', effort: '',
+                // ‼️ `parent` is INDEPENDENT OF `area`, and that independence is
+                // deliberate: a U item is a child of a P epic as often as not,
+                // and an uncoded capture carries the link perfectly well (it is
+                // stored on the child, and the child needs no code of its own).
+                // The queue-place box was once gated behind picking an area and
+                // the user's verdict on that was blunt — one control must not
+                // wait on another for a reason it does not have.
+                parent: '',
                 at: '', boxH: '', sending: false
             };
         }
@@ -1637,6 +1707,68 @@
         title: `${a.open} open of ${a.total} — it gets the next free ${a.code}- number, and that number is permanent`
     }));
 
+    /** How much of a parent's words fit on a picker line. Long enough to tell
+     *  two items in the same area apart, short enough that the list stays a
+     *  list. */
+    const BL_PARENT_LABEL = 46;
+    const blShort = t => {
+        const s = String(t || '').replace(/\s+/g, ' ').trim();
+        return s.length > BL_PARENT_LABEL
+            ? s.slice(0, BL_PARENT_LABEL).replace(/\s+\S*$/, '') + '…' : s;
+    };
+
+    /**
+     * What may be chosen as a parent.
+     *
+     * ‼️ LIVE, CODED, AND NOT INSIDE THE ITEM'S OWN FAMILY. The last is the
+     * one that matters: offering a choice the write will refuse is a control
+     * that lies, and every descendant of an item would close a loop. Closed
+     * items are left out because "part of something finished" is a state you
+     * reach by finishing the parent, not one you choose; the field itself still
+     * accepts one, so a file that already says so keeps working.
+     *
+     * `exclude` is the code being edited (nothing to exclude when capturing —
+     * the item does not exist yet).
+     */
+    function blParentChoices(all, exclude) {
+        const out = [];
+        const banned = new Set();
+        if (exclude) {
+            banned.add(exclude);
+            // Walk down from the item: everything under it would close a loop.
+            const kids = new Map();
+            for (const i of all) {
+                if (!i.parent || !i.code) { continue; }
+                if (!kids.has(i.parent)) { kids.set(i.parent, []); }
+                kids.get(i.parent).push(i.code);
+            }
+            const stack = [exclude];
+            while (stack.length) {
+                for (const kid of (kids.get(stack.pop()) || [])) {
+                    if (banned.has(kid)) { continue; }
+                    banned.add(kid);
+                    stack.push(kid);
+                }
+            }
+        }
+        for (const i of all) {
+            if (!i.code || banned.has(i.code)) { continue; }
+            if (i.state !== 'open' && i.state !== 'doing') { continue; }
+            out.push(i);
+        }
+        return out.sort((a, b) => blCompareCodes(a.code, b.code));
+    }
+
+    /** The row menu's shape. "No parent" leads, because taking a link off is the
+     *  commonest single thing this menu is opened for. */
+    const blParentRows = (all, exclude) => [{
+        value: '', label: 'no parent', glyph: '–',
+        title: 'Clears the [parent:: …] field. Nothing else on the line moves.'
+    }].concat(blParentChoices(all, exclude).map(i => ({
+        value: i.code, label: blShort(i.text), glyph: i.code,
+        title: `${i.code}${i.effort ? ' · ' + i.effort : ''} — ${(i.children || []).length} part(s) already`
+    })));
+
     /**
      * WHERE THE NEW ITEM LANDS IN THE QUEUE — the little box left of Add.
      *
@@ -1691,6 +1823,7 @@
         { k: 'type', label: 'type', empty: '' },
         { k: 'prio', label: 'priority', empty: 'normal' },
         { k: 'effort', label: 'size', empty: '' },
+        { k: 'parent', label: 'part of', empty: '' },
         { k: 'at', label: 'queue place', empty: '' }
     ];
 
@@ -1711,7 +1844,7 @@
         const set = BL_CAP_AXES.filter(a => String(cap[a.k] || '') !== a.empty);
         if (!set.length) {
             return `<span class="pj-bl-capreset" style="opacity:.2;cursor:default"
-                title="The four boxes and the queue place are already at their defaults — nothing to reset. Your text is never touched by this.">↺</span>`;
+                title="The five boxes and the queue place are already at their defaults — nothing to reset. Your text is never touched by this.">↺</span>`;
         }
         const now = set.map(a => `${a.label}: ${cap[a.k]}`).join(' · ');
         return `<span class="pj-bl-capreset" data-act="blCapReset"
@@ -1750,8 +1883,19 @@
         const blockedBy = {};
         for (const b of (d.blocked || [])) { if (b.code) { blockedBy[b.code] = b.waitingOn; } }
 
-        const shown = all.filter(i => blPasses(i));
+        const family = blFamilySet(all);
+        const shown = all.filter(i => blPasses(i, family));
         const ordered = blOrder(shown, queueAt);
+        // ‼️ RESOLVED AGAINST THE WHOLE FILE, NOT AGAINST THE VISIBLE LIST. A
+        // parent hidden by a filter is still what the item is part of, and a row
+        // that answered "↳ P-4 (gone)" because of a chip somebody clicked would
+        // be lying about the file. Only the INDENT is measured against what is
+        // on screen (blDepths) — an indent is a claim about the list, a mark is
+        // a fact about the item.
+        const byCode = new Map();
+        for (const i of all) { if (i.code) { byCode.set(i.code, i); } }
+        const depths = blSort === 'family' ? blDepths(ordered) : null;
+        const fam = { all: all, byCode: byCode };
 
         // Every tag in the file, canonical ones first and in their own order, so
         // the filter row does not reshuffle itself as the backlog grows.
@@ -1768,6 +1912,20 @@
         const areaOpts = [`<option value=""${cap.area ? '' : ' selected'}>— area —</option>`]
             .concat(areas.map(a => `<option value="${C.esc(a.code)}"${a.code === cap.area ? ' selected' : ''}>${C.esc(a.code)} · ${C.esc(a.label)}</option>`))
             .join('');
+        // What the new item is PART OF. A native select on purpose: it is the
+        // same control as the four beside it, and typing a code jumps to it —
+        // which on a list of live items is the fastest way there is to reach a
+        // code you already know. A parent chosen last time is KEPT, like the
+        // other axes: filing three parts of one epic is one choice, not three.
+        const parentPicks = blParentChoices(all, '');
+        const parentOpts = [`<option value=""${cap.parent ? '' : ' selected'}>— part of —</option>`]
+            .concat(parentPicks.map(i => `<option value="${C.esc(i.code)}"${i.code === cap.parent ? ' selected' : ''}>${C.esc(i.code)} — ${C.esc(blShort(i.text))}</option>`))
+            .join('');
+        // ‼️ A choice the file can no longer honour is SAID, not silently
+        // dropped: the parent was closed or deleted in Obsidian while the box
+        // sat there holding it, and an Add that quietly filed the item at the
+        // top level would lose the one thing the user had set.
+        const parentGone = cap.parent && !parentPicks.some(i => i.code === cap.parent);
 
         // The queue's two colour bands, worked out once here: the front, where an
         // agent asked for "the top five" stops, and the rest of what Next up
@@ -1776,7 +1934,8 @@
         const qRest = Math.max(qTop, nextList.length);
         const rows = ordered.map(i =>
             backlogRowHtml(i, nextKeys.has(blKey(i)), blockedBy[i.code], areas, queueAt[i.code] || 0,
-                blBand(queueAt[i.code] || 0, qTop, qRest))).join('');
+                blBand(queueAt[i.code] || 0, qTop, qRest),
+                { all: fam.all, byCode: fam.byCode, depth: depths ? (depths.get(blKey(i)) || 0) : 0 })).join('');
         const active = blActiveFilters();
 
         return `
@@ -1812,7 +1971,10 @@
                     <select id="bl-effort" title="Effort">
                         ${EFFORT_ORDER.map(e => `<option value="${e}"${e === cap.effort ? ' selected' : ''}>${e || '— size —'}</option>`).join('')}
                     </select>
+                    <select id="bl-parent" class="pj-bl-capparent${parentGone ? ' wants' : ''}"
+                        title="‼️ WHAT THIS ITEM IS PART OF — the epic, the phase, the bigger job it belongs to. It is a link on THIS line ([parent:: CODE]), so nothing in the file moves and this item still gets its own next free code in its own area: a U item is a part of a P epic as often as not. It is NOT ⛔ — a part is not waiting on its whole. And the queue does not know about it: both queue on their own account, which is why choosing this never changes where anything is worked. Independent of the area box; an uncoded capture carries the link too.">${parentOpts}</select>
                     <span class="pj-bl-capr">
+                        ${parentGone ? `<span class="pj-bl-atwarn" title="${C.esc(cap.parent + ' is closed or gone from the file, so it cannot be a parent any more. Pick another, or clear the box — Add will refuse it as it stands.')}">⚠ ${C.esc(cap.parent)} is gone</span>` : ''}
                         ${window.AFTextTools.html('bl', { wrap: 'span', className: 'tatools inline' })}
                         ${blAtWarnHtml(cap)}
                         ${blAtHtml(cap, (d.queue || []).length)}
@@ -1828,9 +1990,18 @@
             ${areas.map(a => `<button class="pj-chip${blFilter.areas.indexOf(a.code) >= 0 ? ' on' : ''}"
                 data-blarea="${C.esc(a.code)}" title="${C.esc(a.label)} — ${a.open} open of ${a.total}">
                 ${C.esc(a.code)} <span class="muted">${a.open}</span></button>`).join('')}
+            ${/* ‼️ THE FAMILY NARROWING IS NOT ALLOWED TO BE INVISIBLE. It can
+                  cut two hundred rows to four, and a list that short with
+                  nothing on screen saying why is indistinguishable from a
+                  backlog that has lost your items — which is exactly the
+                  complaint that ended the last hierarchy. So it is a chip, it
+                  names the code, and it comes off in one press. */''}
+            ${blFilter.family ? `<button class="pj-chip on" data-blfamily=""
+                title="${C.esc(`Showing only ${blFilter.family} and everything that is part of it — `
+                + 'press to see the whole pile again. Nothing about the items has changed; this narrows the view.')}">⊂ ${C.esc(blFilter.family)} ✕</button>` : ''}
             <span class="grow"></span>
             <button class="pj-chip${blFiltersOpen ? ' on' : ''}" data-act="blFilters"
-                title="Type, priority, size, blocked, plan link, due date">⚙ filters${active ? ` (${active})` : ''}</button>
+                title="Type, priority, size, blocked, plan link, due date, family">⚙ filters${active ? ` (${active})` : ''}</button>
             ${active ? '<button class="pj-chip" data-act="blClear" title="Drop every filter and show the pile again">clear</button>' : ''}
         </div>
 
@@ -1873,8 +2044,9 @@
                 ${blFilter.q.trim() ? '<button class="pj-bl-qx" data-blclearf="q" title="Clear the search box only">✕</button>' : ''}
             </span>
             ${blPickHtml('bar')}
-            <select id="bl-sort" title="Ordering. Queue order is your own — it is what 'do the top five' follows, and the only one you can drag rows in. 'closed' answers what you finished last: newest closing at the top, and anything still open at the bottom, where it belongs.">
+            <select id="bl-sort" title="Ordering. Queue order is your own — it is what 'do the top five' follows, and the only one you can drag rows in. 'family' is the one view that NESTS: each parent followed by its parts, families in the order their heads are queued in — a way of looking, which changes neither the queue nor the file. 'closed' answers what you finished last: newest closing at the top, and anything still open at the bottom, where it belongs.">
                 <option value="file"${blSort === 'file' ? ' selected' : ''}>queue order (yours)</option>
+                <option value="family"${blSort === 'family' ? ' selected' : ''}>family — parents, then their parts</option>
                 <option value="score"${blSort === 'score' ? ' selected' : ''}>score (priority ÷ effort)</option>
                 <option value="priority"${blSort === 'priority' ? ' selected' : ''}>priority</option>
                 <option value="effort"${blSort === 'effort' ? ' selected' : ''}>size</option>
@@ -1932,10 +2104,19 @@
                     grouped, each area in its own code order, which is what 🧹 restores. Moving something
                     in the queue does not touch one byte of those lines.</span>
                 <span class="pj-helpp"><b>A code is permanent through all of it:</b> <code>K-8</code>
-                    means the same item for ever, and the list is <b>flat</b> — no sub-items, no parents.
-                    <b>Clicking a code opens the file at that item's line</b>
+                    means the same item for ever, and it stays <b>flat</b> — a code says which item, never
+                    where in a tree. <b>Clicking a code opens the file at that item's line</b>
                     (↗ does the same) in whatever you chose under Settings → Open with; the button at the
                     top of this tab opens the whole document.</span>
+                <span class="pj-helpp"><b>An item can be PART OF another one.</b> ↳ on the hover row sets
+                    it; the row then shows <b>↳ P-4</b> (press it to go to the whole) and the whole shows
+                    <b>⊂ 3</b> (press it to see only that family). It is a
+                    <code>[parent:: P-4]</code> field on the child's own line, so <b>no line moves and no
+                    code changes</b> — a <code>U</code> item is part of a <code>P</code> epic as often as
+                    not. It is <b>not ⛔</b>: a part is not waiting on its whole. And <b>the queue does not
+                    know about it</b> — a part and its whole are queued separately and either can be worked
+                    first. The one place the tree is drawn is the <b>family</b> ordering, which is a way of
+                    looking; closing a whole never closes its parts, and it says so when you do.</span>
                 <span class="pj-helpp"><b>“What did I finish last?” is its own ordering.</b> Pick
                     <b>closed — last finished first</b> and the most recent closing goes to the top, with
                     everything still open at the bottom; ↓ turns it round to oldest-first. Closed rows carry
@@ -2002,6 +2183,12 @@
                 `Priority: ${i.priority || 'normal'}`,
                 (i.kinds || []).length ? `Type: ${i.kinds.map(k => '#' + k).join(' ')}` : '',
                 (i.blockedBy || []).length ? `Waiting on: ${i.blockedBy.join(' ')}` : '',
+                // ‼️ Which whole this is a part of, on the strip that decides
+                // what gets worked. An agent handed "add the retry form" without
+                // "part of U-9" does the item and misses the point of it — and
+                // this is the surface `backlog.next` mirrors.
+                i.parent ? `Part of: ${i.parent}` : '',
+                (i.children || []).length ? `Has parts: ${i.children.join(' ')}` : '',
                 i.plan ? `Plan item: ${i.plan}` : '',
                 x.code
                     ? 'Click to jump to its row below · drag it anywhere in the strip'
@@ -2018,6 +2205,13 @@
                 data-at="${n}">
                 <span class="pj-bl-nextn">${n + 1}</span>
                 <span class="pj-bl-code">${C.esc(x.code || '📥')}</span>
+                ${/* ‼️ A MARK, AND DELIBERATELY NOT A POSITION. The strip is one
+                      flat list in the order things will be worked, and the last
+                      hierarchy died trying to draw a tree in exactly this
+                      control. A part and its whole queue independently and may
+                      sit anywhere relative to each other; all this says is that
+                      there IS a whole, and the hover names it. */''}
+                ${i.parent ? `<span class="pj-bl-nextp">↳</span>` : ''}
                 ${i.effort ? `<span class="pj-bl-nexte">${C.esc(i.effort)}</span>` : ''}
             </button>`;
             return mark + window.AFTip.wrap(chip, head, body);
@@ -2094,6 +2288,7 @@
         return blFilter.areas.length + blFilter.kinds.length + blFilter.prios.length
             + blFilter.efforts.length
             + BL_PICKS.filter(p => !same(blFilter[p.key], dflt[p.key])).length
+            + (blFilter.family ? 1 : 0)
             + (blFilter.q.trim() ? 1 : 0);
     }
 
@@ -2105,13 +2300,24 @@
      *  blFilterDefaults. An EMPTY list is not the same thing: it means "none of
      *  them", it is what Clear leaves behind, and it must honestly return
      *  nothing rather than quietly behaving like "all". */
-    function blPasses(i) {
+    function blPasses(i, family) {
         // ‼️ The box is a QUERY, not a substring — media/afQuery.js. `bug K-`
         // means both, `-done` excludes, `"more"` is the whole word. Compiled per
         // call and not per row: blPasses is the row-level predicate, and the
         // compile is a parse of a handful of tokens, not of the list.
         const q = window.AFQuery.compile(blFilter.q);
         const on = (axis, value) => !axis || axis.indexOf(value) >= 0;
+        // ‼️ THE FAMILY NARROWING IS AN AND LIKE EVERY OTHER AXIS. Passed in
+        // rather than computed here: it is a walk over the whole list and this
+        // predicate runs once per row, so working it out inside would make one
+        // filter cost the square of the backlog.
+        if (blFilter.family && family && !family.has(i.code || '')) { return false; }
+        if (blFilter.rel) {
+            const kids = (i.children || []).length;
+            const mine = [i.parent ? 'child' : '', kids ? 'parent' : '',
+                (!i.parent && !kids) ? 'alone' : ''].filter(Boolean);
+            if (!mine.some(m => blFilter.rel.indexOf(m) >= 0)) { return false; }
+        }
         if (!on(blFilter.states, i.state)) { return false; }
         if (!on(blFilter.filed, i.code ? 'coded' : 'unfiled')) { return false; }
         if (blFilter.areas.length && blFilter.areas.indexOf(i.area) < 0) { return false; }
@@ -2132,6 +2338,64 @@
         // over one string rather than two half-answers OR'd together
         if (!q.empty && !q.test(`${i.code || ''} ${i.text || ''}`)) { return false; }
         return true;
+    }
+
+    /**
+     * The codes in the family filter: the named item and everything under it.
+     * `null` when no family is being asked for — which is not the same as an
+     * empty set, and the difference is a list showing everything against a list
+     * showing nothing.
+     *
+     * ‼️ CYCLE-SAFE, because a `[parent:: …]` chain that loops is a thing a user
+     * can type in Obsidian in four seconds, and a page that hangs on it is worse
+     * than one that draws the loop once.
+     */
+    function blFamilySet(all) {
+        const root = blFilter.family;
+        if (!root) { return null; }
+        const kids = new Map();
+        for (const i of all) {
+            if (!i.parent || !i.code) { continue; }
+            if (!kids.has(i.parent)) { kids.set(i.parent, []); }
+            kids.get(i.parent).push(i.code);
+        }
+        const out = new Set([root]);
+        const stack = [root];
+        while (stack.length) {
+            for (const kid of (kids.get(stack.pop()) || [])) {
+                if (out.has(kid)) { continue; }
+                out.add(kid);
+                stack.push(kid);
+            }
+        }
+        return out;
+    }
+
+    /** How deep an item sits under the ones ABOVE IT IN THE VISIBLE LIST.
+     *
+     *  ‼️ MEASURED AGAINST WHAT IS ON SCREEN, not against the file. An item
+     *  whose parent is filtered out is drawn at the left margin, because an
+     *  indent under nothing is a claim the list is not making — and the P-9
+     *  failure this whole feature is a rebuild of was exactly a row drawn under
+     *  something that was not its parent. Cycle-safe for the same reason as
+     *  above. */
+    function blDepths(list) {
+        const shown = new Map();
+        for (const i of list) { if (i.code) { shown.set(i.code, i); } }
+        const depth = new Map();
+        for (const i of list) {
+            let n = 0;
+            let at = i;
+            const seen = new Set(i.code ? [i.code] : []);
+            while (at && at.parent && shown.has(at.parent) && !seen.has(at.parent)) {
+                seen.add(at.parent);
+                at = shown.get(at.parent);
+                n++;
+                if (n > 20) { break; }
+            }
+            depth.set(blKey(i), n);
+        }
+        return depth;
     }
 
     /** `P-2` before `P-10` — the way a person reads them, which string
@@ -2213,6 +2477,56 @@
          * file order at the back, closed-but-undated ahead of still-open,
          * because that is the honest amount each of them says.
          */
+        /**
+         * ‼️ THE ONE PLACE A TREE IS DRAWN, AND IT IS A WAY OF LOOKING.
+         *
+         * The hierarchy this replaced drew rows indented by the FILE, inside a
+         * list ordered by the QUEUE — two unrelated structures on one screen, so
+         * a child appeared under whatever item happened to precede it and moved
+         * somewhere else on every re-sort. Here the nesting comes from the
+         * `parent` field and is drawn ONLY in this ordering, which is explicitly
+         * "family". Every other ordering shows the relation as a mark on the row
+         * and no indentation at all, and none of them — this one included —
+         * changes the queue or the file by a byte.
+         *
+         * Roots keep the QUEUE's order among themselves, so the families come in
+         * the order their heads are actually waiting in; inside a family the
+         * children follow in queue order too, depth first. An item whose parent
+         * is not in the visible list is a root here — it has nothing on screen
+         * to hang under, and hanging it under a stranger is the bug this is a
+         * rebuild of.
+         */
+        if (blSort === 'family') {
+            const shown = new Map();
+            for (const i of list) { if (i.code) { shown.set(i.code, i); } }
+            const rank = i => (i.code && at[i.code]) || (1e6 + i.line);
+            const kids = new Map();
+            const roots = [];
+            for (const i of list) {
+                const up = i.parent && shown.has(i.parent) ? i.parent : '';
+                if (!up) { roots.push(i); continue; }
+                if (!kids.has(up)) { kids.set(up, []); }
+                kids.get(up).push(i);
+            }
+            const bySpot = (a, b) => rank(a) - rank(b);
+            roots.sort(bySpot);
+            for (const v of kids.values()) { v.sort(bySpot); }
+            const out = [];
+            const placed = new Set();
+            const walk = i => {
+                const key = blKey(i);
+                if (placed.has(key)) { return; }
+                placed.add(key);
+                out.push(i);
+                for (const kid of (kids.get(i.code) || [])) { walk(kid); }
+            };
+            for (const r of roots) { walk(r); }
+            // A loop in the chain leaves its members with no root to reach; they
+            // are drawn at the end rather than dropped, because an item the page
+            // refuses to show is an item nobody can fix.
+            for (const i of list) { walk(i); }
+            return blDesc ? out.reverse() : out;
+        }
         if (blSort === 'closed') {
             const timed = list.filter(i => i.closedAt);
             const undated = list.filter(i => !i.closedAt && blClosedState(i));
@@ -2270,8 +2584,9 @@
         });
     }
 
-    function backlogRowHtml(i, isNext, waitingOn, areas, queueAt, band) {
+    function backlogRowHtml(i, isNext, waitingOn, areas, queueAt, band, fam) {
         const key = blKey(i);
+        const rel = fam || { all: [], byCode: new Map(), depth: 0 };
         const closed = i.state === 'done' || i.state === 'cancelled';
         const doing = i.state === 'doing';
         const cls = ['pj-bl-row'];
@@ -2326,10 +2641,11 @@
                 ? 'Not in the queue — a closed item is not work waiting.'
                 : 'Not in the queue — file it with 🗂 first; only a code survives the file being edited.');
 
-        return `<div class="${cls.join(' ')}"
+        return `<div class="${cls.join(' ')}${rel.depth ? ' nested' : ''}"
             data-blrow data-key="${C.esc(key)}" data-code="${C.esc(i.code || '')}" data-line="${i.line}"
             data-prio="${C.esc(i.priority || 'normal')}" data-effort="${C.esc(i.effort || '')}"
             data-type="${C.esc(type)}" data-section="${C.esc(i.section || '')}"
+            ${rel.depth ? `data-depth="${rel.depth}" style="--bl-depth:${Math.min(rel.depth, 6)}"` : ''}
             ${blCtx(i, key, queueAt)}>
             <span class="pj-bl-grip${queueAt && dragging ? '' : ' off'}${band || ''}"
                 ${queueAt && dragging ? 'draggable="true"' : ''} data-blgrip
@@ -2370,6 +2686,8 @@
                           this is rather than levelling them. */''}
                     ${closed && i.closedAt
                 ? `<span class="pj-bl-m closedat" title="${C.esc(blClosedTip(i))}">✅ ${C.esc(blClosedShort(i.closedAt))}</span>` : ''}
+                    ${blPartOfHtml(i, rel)}
+                    ${blPartsHtml(i, rel)}
                     ${i.plan ? `<span class="pj-bl-m" title="plan item">🆔 ${C.esc(i.plan)}</span>` : ''}
                     ${waitingOn && waitingOn.length
                 ? `<span class="pj-bl-m blocked" title="Waiting on ${C.esc(waitingOn.join(', '))}">⛔ ${C.esc(waitingOn.join(' '))}</span>` : ''}
@@ -2389,10 +2707,110 @@
                     : 'Start it — writes [/] on the line instead of [ ], marks the row, and puts the '
                     + 'moment in Backloglog. It stays live work, and ▶ again undoes it.')}">▶</button>
                     <button class="pj-bl-act" data-blstate="cancelled" title="Cancel — it stays in the file, with its code spent">✕</button>
+                    ${/* ‼️ AN ACTION, NOT A BADGE, WHEN THERE IS NOTHING TO SHOW.
+                          Most items are part of nothing, and a "part?" badge on
+                          two hundred rows would be two hundred pieces of
+                          furniture asking a question almost nobody answers. So
+                          the SET link lives with the hover actions, where ▶ ✕ ▲▼
+                          already are, and the badge above appears only once
+                          there is a fact to state. */''}
+                    <span class="pj-bl-mw"><button class="pj-bl-act${i.parent ? ' on' : ''}" data-blparent
+                        title="${C.esc('What this is PART OF' + (i.parent ? ` — ${i.parent}` : '')
+                    + '. A link on this line: no code changes, no line moves, and the queue is untouched — '
+                    + 'a part and its whole are queued separately. It is not ⛔: a part does not wait on its whole.')}">↳</button>
+                        ${/* ‼️ BUILT ONLY FOR THE ROW WHOSE MENU IS OPEN. The
+                              other four pickers offer fixed handfuls, but this
+                              one offers every live item in the project and walks
+                              the tree to leave out the row's own descendants —
+                              so composing it per row would be that walk two
+                              hundred times, on a page that repaints on every
+                              filter chip, host push and keystroke. */''}
+                        ${blMenuOpen('parent', key)
+                    ? blMenuHtml('parent', key, blParentRows(rel.all, i.code || ''), i.parent || '') : ''}</span>
                     ${queueAt ? blStepHtml('up', queueAt) + blStepHtml('down', queueAt) : ''}
                 </span>
             </span>
         </div>`;
+    }
+
+    /**
+     * ↳ P-4 — WHAT THIS ITEM IS PART OF.
+     *
+     * ‼️ A MARK, NOT A POSITION. The hierarchy this replaced said "part of" by
+     * drawing the row somewhere else, and it was wrong the first time anybody
+     * used it: the row's PLACE is its place in the queue, and one screen cannot
+     * carry two structures. So the relation is stated where every other fact
+     * about the item is stated — in the badges — and the row stays exactly where
+     * the ordering put it.
+     *
+     * Pressing it goes to the parent's row, because the question a reader has
+     * when they see a code is always "which one is that", and the answer is
+     * eleven rows up. The hover carries the parent's words WHOLE, in the row's
+     * own box, for the reader who does not want to lose their place at all.
+     */
+    function blPartOfHtml(i, rel) {
+        if (!i.parent) { return ''; }
+        const up = rel.byCode.get(i.parent);
+        // ‼️ A dangling link is drawn as a WARNING, not swallowed. The parse
+        // already says so on the item (`warn`), and this is the same fact where
+        // the eye is: the code was deleted or renamed in Obsidian, the field is
+        // still there, and only the user knows what they meant.
+        if (!up) {
+            return `<span class="pj-bl-m warn" title="${C.esc(
+                `Part of ${i.parent} — but there is no ${i.parent} in this backlog any more. `
+                + 'The field is left exactly as it is: the line was probably deleted or renamed '
+                + 'in Obsidian, and guessing what was meant would be worse than saying so.')}">↳ ${C.esc(i.parent)} ?</span>`;
+        }
+        const head = `${up.code} · ${up.state}${up.effort ? ' · ' + up.effort : ''}`
+            + ` · ${(up.children || []).length} parts · press to go to its row`;
+        return blRowTipHtml(
+            `<button class="pj-bl-m partof" data-bljump="${C.esc(i.parent)}">↳ ${C.esc(i.parent)}</button>`,
+            head, up.text || '(empty)');
+    }
+
+    /**
+     * ⊂ 2/3 — HOW MANY PARTS ARE STILL OPEN, and the way into seeing only them.
+     *
+     * ‼️ OPEN OF TOTAL, not a bare count, because that is the number a whole is
+     * actually read for: an epic showing 0 of 8 is finished in everything but
+     * its own checkbox, and a bare "8" says the same thing on the day it was
+     * written and on the day it was done. The two collapse to one number when
+     * they agree, so the commoner case stays short.
+     *
+     * Pressing it narrows the list to this family — the one question a whole
+     * exists to make askable, and otherwise unaskable at all.
+     */
+    function blPartsHtml(i, rel) {
+        const kids = i.children || [];
+        if (!kids.length) { return ''; }
+        const live = kids.filter(c => {
+            const kid = rel.byCode.get(c);
+            return kid ? (kid.state === 'open' || kid.state === 'doing') : true;
+        });
+        const label = live.length === kids.length ? String(kids.length) : `${live.length}/${kids.length}`;
+        return `<button class="pj-bl-m parts${live.length ? '' : ' allclosed'}" data-blfamily="${C.esc(i.code || '')}"
+            title="${C.esc(`${kids.length} item(s) are part of ${i.code}, ${live.length} still open: ${kids.join(', ')}. `
+            + 'Press to show only this family — that item and everything under it. '
+            + 'Closing this one does not close them, and each is queued on its own account.')}">⊂ ${label}</button>`;
+    }
+
+    /**
+     * A rich hover measured against the ROW.
+     *
+     * ‼️ THE ROW, NOT THE TRIGGER, AND THAT IS THE WHOLE REASON THIS IS SHARED.
+     * `.pj-bl-tw` is `position:static`, so the box opens the width of the line
+     * and always in the same place — which is what stops a panel 800px wide from
+     * opening off the right of the window when the thing you hovered happens to
+     * sit near the edge. `more` proved it; every text hover on a backlog row uses
+     * it, so the next one cannot get it wrong by writing its own.
+     *
+     * Spans only, no div: a backlog row is one flat div, which is what lets the
+     * row be found by scanning to its first `</div>`.
+     */
+    function blRowTipHtml(trigger, head, body) {
+        return `<span class="pj-bl-tw">${trigger}`
+            + `<span class="pj-bl-tip"><span class="pj-bl-tiph">${C.esc(head)}</span>`
+            + `<span class="pj-bl-tipb">${C.esc(body)}</span></span></span>`;
     }
 
     /**
@@ -2883,10 +3301,21 @@
             }
         });
         window.AFTextTools.paint('bl', !!blCapture().text);
-        // The five axes are part of the draft too — see blCapture.
+        // The six axes are part of the draft too — see blCapture.
         for (const pair of [['bl-type', 'type'], ['bl-prio', 'prio'], ['bl-effort', 'effort']]) {
             const el = document.getElementById(pair[0]);
             if (el) { el.addEventListener('change', () => { blCapture()[pair[1]] = el.value; }); }
+        }
+        // The parent box repaints for the same reason area and position do: the
+        // ⚠ beside it (a parent that has been closed or deleted since it was
+        // picked) has to be current, and nothing else about the box depends on
+        // this choice — picking one never disables another control.
+        const blParentSel = document.getElementById('bl-parent');
+        if (blParentSel) {
+            blParentSel.addEventListener('change', () => {
+                blCapture().parent = blParentSel.value;
+                render();
+            });
         }
         // ‼️ AREA AND POSITION BOTH REPAINT, AND NEITHER OVERRULES THE OTHER.
         // They are one question asked twice — "where does this go?" — and the
@@ -3041,15 +3470,40 @@
         // ago can still be hiding it, and a click that silently did nothing would
         // read as a broken strip. So the filters are dropped and the page SAYS SO,
         // rather than either failing quietly or leaving them on.
+        /** Go to a row and flash it, dropping whatever was hiding it and saying
+         *  so. Shared by the queue strip and the ↳ mark, because "take me to
+         *  that code" is one gesture however it was asked for — and a jump that
+         *  lands nowhere reads as a broken control either way. */
+        const blGoTo = key => {
+            const rows = ((td().backlog || {}).items) || [];
+            const item = rows.find(i => blKey(i) === key);
+            if (item && !blPasses(item, blFamilySet(rows))) {
+                blFilter = blFilterDefaults();
+                flash = { ok: `Filters cleared — ${item.code || 'that item'} was hidden by one.` };
+            }
+            // Whatever menu was open belonged to a row we are about to leave.
+            blMenu = null;
+            blJump = key;
+            render();
+        };
         document.querySelectorAll('[data-blnext]').forEach(el =>
-            el.addEventListener('click', () => {
-                const key = el.dataset.blnext;
-                const item = (((td().backlog || {}).items) || []).find(i => blKey(i) === key);
-                if (item && !blPasses(item)) {
-                    blFilter = blFilterDefaults();
-                    flash = { ok: `Filters cleared — ${item.code || 'that item'} was hidden by one.` };
-                }
-                blJump = key;
+            el.addEventListener('click', () => blGoTo(el.dataset.blnext)));
+        // ↳ on a row: the parent is a code, and a code IS the key for a coded
+        // item — which every parent is, because the link is named by code.
+        document.querySelectorAll('[data-bljump]').forEach(el =>
+            el.addEventListener('click', ev => {
+                ev.stopPropagation();
+                blGoTo(el.dataset.bljump);
+            }));
+        // ⊂ n on a row: show only this family. Toggles, so pressing it on the
+        // row you already narrowed to is the way back out — the same rule the
+        // area chips follow.
+        document.querySelectorAll('[data-blfamily]').forEach(el =>
+            el.addEventListener('click', ev => {
+                ev.stopPropagation();
+                const code = el.dataset.blfamily;
+                blFilter.family = blFilter.family === code ? '' : code;
+                blMenu = null;
                 render();
             }));
 
@@ -3287,6 +3741,11 @@
         // pressing it did nothing at all in the normal case. The area is chosen
         // here now, on the row being filed, where the question is asked.
         blOpener('data-blfile', 'area');
+        // ↳ — what the item is PART OF. The list it offers already leaves out
+        // the item itself and everything under it (blParentChoices), so a choice
+        // that would close a loop is never on screen; the write refuses one
+        // anyway, because the file can change under an open panel.
+        blOpener('data-blparent', 'parent');
 
         document.querySelectorAll('[data-blpick]').forEach(mi =>
             mi.addEventListener('click', ev => {
@@ -3309,6 +3768,10 @@
                     blPost('backlogSet', row, { fields: { kinds: value ? [value, ...mine] : mine } });
                     return;
                 }
+                // '' clears the link. Sent as a field like any other, so the
+                // refusal for a parent that has gone or would loop comes back
+                // through the one path every write on this row uses.
+                if (kind === 'parent') { blPost('backlogSet', row, { fields: { parent: value } }); return; }
                 if (kind === 'area') { blPost('backlogCode', row, { area: value }); }
             }));
 
@@ -3402,6 +3865,14 @@
                         type: 'backlogAdd', id, text,
                         area: cap.area, priority: cap.prio || 'normal', effort: cap.effort,
                         ...(cap.type ? { kinds: [cap.type] } : {}),
+                        // ‼️ SENT AS PICKED, AND THE FILE DECIDES. Same rule as
+                        // the queue place below: if the parent was closed or
+                        // deleted while the box held it, the write REFUSES and
+                        // says so — the box keeps the words and the choice, and
+                        // the user fixes one control. Dropping it here would
+                        // file the item at the top level silently, which is the
+                        // one outcome nobody could see.
+                        ...(cap.parent ? { parent: cap.parent } : {}),
                         // Only when a position was actually picked. Sending a 0
                         // or a 1 by default would make every capture jump the
                         // queue, which is the opposite of "touch nothing and
@@ -3493,8 +3964,15 @@
      * click does — either way nothing is torn out from under the pointer.
      */
     const blOwnsGesture = ev => {
-        const tag = ev && ev.target && ev.target.tagName ? String(ev.target.tagName).toLowerCase() : '';
-        return tag === 'select' || tag === 'option' || tag === 'input' || tag === 'textarea';
+        const t = ev && ev.target;
+        const tag = t && t.tagName ? String(t.tagName).toLowerCase() : '';
+        if (tag === 'select' || tag === 'option' || tag === 'input' || tag === 'textarea') { return true; }
+        // ‼️ A MENU LONG ENOUGH TO SCROLL IS ONE YOU CLICK THE SCROLLBAR OF, and
+        // that click lands on the menu itself — no button, so nothing calls
+        // stopPropagation for it. Without this the parent picker (which holds
+        // every live item in the project) closed itself the moment you reached
+        // for the bottom of its own list.
+        return !!(t && t.closest && t.closest('.pj-bl-menu'));
     };
 
     /**

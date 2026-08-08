@@ -140,9 +140,9 @@ import {
     addBacklogItem, archiveBacklogDone, BACKLOG_CODE, BACKLOG_EFFORTS, BACKLOG_MOVES,
     BACKLOG_ORIGIN_TAGS, BACKLOG_PRIORITIES,
     BACKLOG_STATES, BacklogEffort, BacklogItem, BacklogMoveDir, BacklogPriority, BacklogState,
-    BacklogTarget, codeBacklogItem, dropInQueue, findBacklogItem, moveInQueue, nextBacklog,
-    parseBacklog, placeInQueue, queueOrder, setBacklogFields, setBacklogQueue, setBacklogState,
-    stampBacklogClosed, tidyBacklogFile
+    BacklogTarget, codeBacklogItem, descendantCodes, dropInQueue, findBacklogItem, moveInQueue,
+    nextBacklog, parseBacklog, placeInQueue, queueOrder, setBacklogFields, setBacklogQueue,
+    setBacklogState, stampBacklogClosed, tidyBacklogFile
 } from './core/projectBacklog';
 import {
     buildProjectContext, contextFileName, isQuotableContextPath, PROJECT_BRIEF_MAX
@@ -4433,7 +4433,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.backlog',
-            describe: 'The project\'s BACKLOG — its standing pile of work, which is not the plan (that is the phase-sized roadmap) and not the work queue (that is the global user→agent channel). ‼️ IT IS A FLAT LIST: an item is an item, there are no epics and no sub-items. Every checkbox line in the file with `af-role: backlog`, with the axes read off it: `code` (K-8 — permanent, and what you quote back), `state` (open|doing|done|cancelled, from the checkbox itself), `kinds` (#tags), `priority` (Obsidian Tasks icons), `effort` (XS|S|M|L|XL), `blockedBy` (⛔), `plan` (which plan item it serves), `score` (priority÷effort) and `warn` when the line says something inconsistent. Every item also carries `closedAt`/`closedOn` — WHEN it was closed, from the track ledger (the moment the box moved) or failing that from a ✅ on the line (the day only); null means nobody recorded it, never "long ago". Also returns the AREAS the file\'s `## P — Name` headings declare, and the `queue` — the order from the `## 🎯 Queue` block. ITEMS COME BACK IN FILE ORDER (the document as it is); the WORKING order is the queue first and then file order, which is what projects.backlog.next answers. `sort: "closed"` instead answers WHAT WAS FINISHED LAST — newest closing first, everything with no closing time behind it. args: project (id or name), open? (true drops closed items), area?, kind?, state?, code? (that item), sort? (file|closed, default file), limit?',
+            describe: 'The project\'s BACKLOG — its standing pile of work, which is not the plan (that is the phase-sized roadmap) and not the work queue (that is the global user→agent channel). Every checkbox line in the file with `af-role: backlog`, with the axes read off it: `code` (K-8 — permanent, and what you quote back), `state` (open|doing|done|cancelled, from the checkbox itself), `kinds` (#tags), `priority` (Obsidian Tasks icons), `effort` (XS|S|M|L|XL), `blockedBy` (⛔), `plan` (which plan item it serves), `score` (priority÷effort) and `warn` when the line says something inconsistent. ‼️ AN ITEM MAY BE PART OF ANOTHER: `parent` is the code it belongs to (a `[parent:: P-4]` field on ITS line) and `children` are the codes that name it. That is COMPOSITION and it is not ⛔ dependency — a child is not blocked by its parent and a parent is not blocked by its children. The tree lives only in these links: a code stays flat (a `U` item is a child of a `P` epic as often as not), no line moves because of it, and the QUEUE does not know about it at all — every live coded item queues on its own account. Every item also carries `closedAt`/`closedOn` — WHEN it was closed, from the track ledger (the moment the box moved) or failing that from a ✅ on the line (the day only); null means nobody recorded it, never "long ago". Also returns the AREAS the file\'s `## P — Name` headings declare, and the `queue` — the order from the `## 🎯 Queue` block. ITEMS COME BACK IN FILE ORDER (the document as it is); the WORKING order is the queue first and then file order, which is what projects.backlog.next answers. `sort: "closed"` instead answers WHAT WAS FINISHED LAST — newest closing first, everything with no closing time behind it. args: project (id or name), open? (true drops closed items), area?, kind?, state?, code? (that item), parent? (a code = its direct children; "none" = items that belong to nothing), deep? (with parent: the WHOLE subtree including the named item — what "do P-4" means), sort? (file|closed, default file), limit?',
             handler: (args) => {
                 const { project, folder, file, text } = backlogDoc(argStr(args, 'project'));
                 const sum = parseBacklog(text);
@@ -4441,12 +4441,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const kind = optStr(args, 'kind')?.toLowerCase();
                 const state = optStr(args, 'state');
                 const code = optStr(args, 'code')?.toUpperCase();
+                const parent = optStr(args, 'parent')?.trim().toUpperCase();
                 let items = sum.items;
                 if (args.open === true) { items = items.filter(i => i.state === 'open' || i.state === 'doing'); }
                 if (area) { items = items.filter(i => i.area === area); }
                 if (kind) { items = items.filter(i => i.kinds.includes(kind)); }
                 if (state) { items = items.filter(i => i.state === state); }
                 if (code) { items = items.filter(i => i.code === code); }
+                // ‼️ THE FAMILY, ASKED FOR THE WAY IT IS THOUGHT ABOUT. "NONE"
+                // is the other half of the question and the one that is
+                // unaskable otherwise: what is standing on its own. `deep`
+                // walks the whole subtree (cycle-safe) and INCLUDES the named
+                // item, because "do P-4" means P-4 and everything under it.
+                if (parent === 'NONE') {
+                    items = items.filter(i => !i.parent);
+                } else if (parent) {
+                    const family = args.deep === true
+                        ? new Set([parent, ...descendantCodes(sum.items, parent)])
+                        : null;
+                    items = family
+                        ? items.filter(i => !!i.code && family.has(i.code))
+                        : items.filter(i => i.parent === parent);
+                }
                 const closedOf = backlogClosedAt(folder);
                 // ‼️ `closed` is a DIFFERENT QUESTION from the file's order, and
                 // the only one the document cannot answer on its own: a closing
@@ -4474,13 +4490,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.backlog.next',
-            describe: '‼️ WHAT TO WORK ON — the op behind "do the top five from the backlog". Returns items that are actually startable: anything waiting on an unfinished ⛔ item is dropped (doing it now would be doing it out of order) and reported separately under `blocked`. THE ORDER IS THE USER\'S: the pinned head of the queue first (the `## 🎯 Queue` block — see projects.backlog.queue), then the file\'s own line order for everything not in it. That is the prioritisation, and `sort` overrides it only because asking "what is cheapest" is a different question from "what is next". `maxEffort` defaults to M on purpose: "five you can manage" means five that fit in the turn, and without a ceiling an agent picks an XL, leaves it half done, and wastes the run. An item with no effort stated is never excluded by the ceiling (it has not been sized; excluding it would empty a fresh backlog). args: project (id or name), limit? (default 5, max 50), area?, kind?, minPriority? (highest|high|medium|normal|low|lowest), maxEffort? (XS|S|M|L|XL, default M), sort? (file|score|priority, default file), includeBlocked?',
+            describe: '‼️ WHAT TO WORK ON — the op behind "do the top five from the backlog". Returns items that are actually startable: anything waiting on an unfinished ⛔ item is dropped (doing it now would be doing it out of order) and reported separately under `blocked`. THE ORDER IS THE USER\'S: the pinned head of the queue first (the `## 🎯 Queue` block — see projects.backlog.queue), then the file\'s own line order for everything not in it. That is the prioritisation, and `sort` overrides it only because asking "what is cheapest" is a different question from "what is next". `maxEffort` defaults to M on purpose: "five you can manage" means five that fit in the turn, and without a ceiling an agent picks an XL, leaves it half done, and wastes the run. An item with no effort stated is never excluded by the ceiling (it has not been sized; excluding it would empty a fresh backlog). ‼️ `parent` narrows this to one FAMILY — the answer to "do P-4", which is a whole with parts under it: `parent` alone is its direct parts, `parent` + `deep` is the whole subtree including P-4 itself. Same two words, same two meanings, as on projects.backlog. Without them nothing about composition changes what is handed out: a part and its whole are queued separately and either can come first. args: project (id or name), limit? (default 5, max 50), area?, kind?, parent?, deep?, minPriority? (highest|high|medium|normal|low|lowest), maxEffort? (XS|S|M|L|XL, default M), sort? (file|score|priority, default file), includeBlocked?',
             handler: (args) => {
                 const { project, folder, file, text } = backlogDoc(argStr(args, 'project'));
                 const res = nextBacklog(text, {
                     ...(typeof args.limit === 'number' ? { limit: args.limit } : {}),
                     ...(optStr(args, 'area') ? { area: optStr(args, 'area')?.toUpperCase() as string } : {}),
                     ...(optStr(args, 'kind') ? { kind: optStr(args, 'kind') as string } : {}),
+                    ...(optStr(args, 'parent') ? { parent: optStr(args, 'parent') as string } : {}),
+                    ...(args.deep === true ? { deep: true } : {}),
                     ...(BACKLOG_PRIORITIES.includes(optStr(args, 'minPriority') as BacklogPriority)
                         ? { minPriority: optStr(args, 'minPriority') as BacklogPriority } : {}),
                     ...(BACKLOG_EFFORTS.includes(optStr(args, 'maxEffort')?.toUpperCase() as BacklogEffort)
@@ -4500,7 +4518,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.backlog.add',
-            describe: 'Put an item in the backlog. EVERYTHING EXCEPT THE TEXT IS OPTIONAL, deliberately: a system that demands a code before it will take a thought does not get the thought. With `area` the item is filed there and given the next free code — codes only ever count UP, so a cancelled item\'s number stays spent and a note from three months ago quoting K-8 still means this item. Without one, it lands in the 📥 inbox with no code, to be classified later by whoever has the context (see projects.backlog.code). ‼️ The backlog is FLAT — there is no sub-item, so a thought that feels like a child of another one is either its own item or a paragraph inside that item\'s text. ‼️ ORIGIN IS STAMPED AND YOU MUST GET IT RIGHT: every item added through this op carries `#byAI` (you noticed it yourself and filed it — a PROPOSAL nobody has agreed to) or, when you pass `origin:"user"`, `#byREQ` (the user asked for it; you were the typist). Default is `byAI`, so a line the user dictated and you forgot to mark reads as your own idea for ever. Items the user writes in the panel or in Obsidian carry neither. Creates the backlog document from the skeleton if the project has none. args: project (id or name), text, area? (1-2 capital letters), origin? (agent|user, default agent), kind?/kinds?, priority? (highest|high|medium|normal|low|lowest), effort? (XS|S|M|L|XL), due? (YYYY-MM-DD), plan? (a plan item\'s 🆔), from?, blockedBy? (code or array), at? (1-based queue position for the new item — 1 puts it at the very top; needs an area, because the queue holds codes and an uncoded capture has none; omit it and the item queues wherever a new one normally would)',
+            describe: 'Put an item in the backlog. EVERYTHING EXCEPT THE TEXT IS OPTIONAL, deliberately: a system that demands a code before it will take a thought does not get the thought. With `area` the item is filed there and given the next free code — codes only ever count UP, so a cancelled item\'s number stays spent and a note from three months ago quoting K-8 still means this item. Without one, it lands in the 📥 inbox with no code, to be classified later by whoever has the context (see projects.backlog.code). ‼️ `parent` says this item is PART OF another one, by its code — a link on THIS line, not a code shape and not an indent, so a `U` child of a `P` epic is ordinary and nothing moves in the file. It is refused if the code is not there. An uncoded capture may carry one too (the link is stored on the child). What it is NOT is ⛔ `blockedBy`: composition, not dependency. ‼️ ORIGIN IS STAMPED AND YOU MUST GET IT RIGHT: every item added through this op carries `#byAI` (you noticed it yourself and filed it — a PROPOSAL nobody has agreed to) or, when you pass `origin:"user"`, `#byREQ` (the user asked for it; you were the typist). Default is `byAI`, so a line the user dictated and you forgot to mark reads as your own idea for ever. Items the user writes in the panel or in Obsidian carry neither. Creates the backlog document from the skeleton if the project has none. args: project (id or name), text, area? (1-2 capital letters), origin? (agent|user, default agent), kind?/kinds?, priority? (highest|high|medium|normal|low|lowest), effort? (XS|S|M|L|XL), parent? (the code this is part of), due? (YYYY-MM-DD), plan? (a plan item\'s 🆔), from?, blockedBy? (code or array), at? (1-based queue position for the new item — 1 puts it at the very top; needs an area, because the queue holds codes and an uncoded capture has none; omit it and the item queues wherever a new one normally would)',
             handler: (args) => {
                 const { project, folder, file, text } = backlogDoc(argStr(args, 'project'), true);
                 const body = argStr(args, 'text').trim();
@@ -4518,6 +4536,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             ? { priority: optStr(args, 'priority') as BacklogPriority } : {}),
                         ...(BACKLOG_EFFORTS.includes(optStr(args, 'effort')?.toUpperCase() as BacklogEffort)
                             ? { effort: optStr(args, 'effort')?.toUpperCase() as BacklogEffort } : {}),
+                        ...(optStr(args, 'parent') ? { parent: optStr(args, 'parent') as string } : {}),
                         // ‼️ WHOSE IDEA IT WAS, stamped on the line. A bridge
                         // request is by definition an agent writing, so the only
                         // open question is whether the user asked for it — and
@@ -4587,7 +4606,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.backlog.set',
-            describe: 'Change an item\'s axes — priority, effort, kinds, due date, plan link, what it waits on, or its words. Honest about what it does: unlike backlog.check this REBUILDS the line, in a fixed order (`code text #kinds PRIO [fields] ⛔ 🆔 📅`), which is the price of being able to set a priority without hand-writing markdown. It never touches a line it was not asked about and never drops a piece it did not understand — anything unrecognised rides along in the text. Pass `null` for effort/due/plan to clear one; `kinds`/`blockedBy` REPLACE what is there (an empty array clears them). args: project (id or name), code?/line?/item? (which one), priority?, effort?, kinds?, due?, plan?, blockedBy?, text? (new words)',
+            describe: 'Change an item\'s axes — priority, effort, kinds, due date, plan link, the item it is PART OF, what it waits on, or its words. Honest about what it does: unlike backlog.check this REBUILDS the line, in a fixed order (`code text #kinds PRIO [fields] ⛔ 🆔 📅`), which is the price of being able to set a priority without hand-writing markdown. It never touches a line it was not asked about and never drops a piece it did not understand — anything unrecognised rides along in the text. Pass `null` for effort/due/plan/parent to clear one; `kinds`/`blockedBy` REPLACE what is there (an empty array clears them). ‼️ `parent` is REFUSED rather than warned about when it names something that is not there, the item itself, or one of its own descendants — a loop in the chain is invisible on the row you are editing and breaks every walk over the tree afterwards. Changing a parent moves NO line and changes NO code. args: project (id or name), code?/line?/item? (which one), priority?, effort?, kinds?, due?, plan?, parent? (a code, or null), blockedBy?, text? (new words)',
             handler: (args) => {
                 const { project, folder, file } = backlogDoc(argStr(args, 'project'));
                 const target = backlogTarget(args);
@@ -4603,6 +4622,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         ...(has('kinds') || has('kind') ? { kinds: listArg(args, 'kinds', 'kind') } : {}),
                         ...(has('due') ? { due: args.due === null ? null : optStr(args, 'due') as string } : {}),
                         ...(has('plan') ? { plan: args.plan === null ? null : optStr(args, 'plan') as string } : {}),
+                        // An empty string clears it too: `parent: ""` is what a
+                        // picker sends for "none", and refusing it as "not a
+                        // code" would make the only way to unset a parent be to
+                        // know that null is spelled differently.
+                        ...(has('parent')
+                            ? { parent: (args.parent === null || !optStr(args, 'parent')) ? null : optStr(args, 'parent') as string }
+                            : {}),
                         ...(has('blockedBy') ? { blockedBy: listArg(args, 'blockedBy', 'blocks') } : {}),
                         ...(optStr(args, 'text') ? { text: optStr(args, 'text') as string } : {})
                     });
@@ -9003,6 +9029,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         line: i.line + 1, section: i.section,
         kinds: i.kinds, priority: i.priority, effort: i.effort ?? null,
         blockedBy: i.blockedBy, plan: i.plan ?? null, from: i.from ?? null,
+        // What this item is PART OF, and what is part of it. `parent` is stored
+        // on the line; `children` is computed on every parse and never written
+        // — one link, held once, on the child.
+        parent: i.parent ?? null, children: i.children,
         due: i.due ?? null, score: Math.round(i.score * 100) / 100,
         inbox: i.inbox, ...(i.warn ? { warn: i.warn } : {})
     });
@@ -9746,7 +9776,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                  */
                 backlogAdd: (id: string, input: {
                     text: string; area?: string;
-                    priority?: string; effort?: string; kinds?: string[]; at?: number;
+                    priority?: string; effort?: string; kinds?: string[]; parent?: string; at?: number;
                 }) => {
                     let code: string | undefined;
                     let placed: string | undefined;
@@ -9759,6 +9789,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                                 ? { priority: input.priority as BacklogPriority } : {}),
                             ...(BACKLOG_EFFORTS.includes(input.effort as BacklogEffort)
                                 ? { effort: input.effort as BacklogEffort } : {}),
+                            ...(input.parent ? { parent: input.parent } : {}),
                             ...(input.kinds?.length ? { kinds: input.kinds } : {})
                         });
                         if (r.code) { code = r.code; }
@@ -9807,6 +9838,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         ...(Array.isArray(fields.kinds) ? { kinds: fields.kinds.map(String) } : {}),
                         ...(Object.prototype.hasOwnProperty.call(fields, 'due')
                             ? { due: (fields.due ? String(fields.due) : null) } : {}),
+                        // The row's parent picker sends '' for "no parent" —
+                        // one control, both directions, and the refusal for a
+                        // link that would loop comes back as the write's error.
+                        ...(Object.prototype.hasOwnProperty.call(fields, 'parent')
+                            ? { parent: (fields.parent ? String(fields.parent) : null) } : {}),
                         ...(typeof fields.text === 'string' && fields.text ? { text: fields.text } : {})
                     })),
                 /**

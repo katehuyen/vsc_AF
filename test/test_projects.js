@@ -108,6 +108,36 @@ const {
     for (const op of ['projects.list', 'projects.assign', 'projects.set', 'sessions.files']) {
         ok(`${op} is on the bridge`, ext.includes(`op: '${op}'`));
     }
+    // M-2 — ‼️ WHAT THE PAGE CAN ASK, AN AGENT CAN ASK. A parent picker that
+    // existed only in the panel would be a structure agents could read the
+    // effects of and never set, which is the half-built state this repo's own
+    // development rule exists to prevent. Four ops carry it: two that read a
+    // family and two that write the link.
+    {
+        const opBody = name => {
+            const at = ext.indexOf(`op: '${name}'`);
+            return at < 0 ? '' : ext.slice(at, at + 9000);
+        };
+        ok('projects.backlog can ask for a family',
+            /parent\? \(a code = its direct children/.test(opBody('projects.backlog'))
+            && /descendantCodes\(sum\.items, parent\)/.test(opBody('projects.backlog')));
+        ok('‼️ …and "none" is the other half of the question — what stands on its own',
+            /parent === 'NONE'/.test(opBody('projects.backlog')));
+        ok('projects.backlog.next takes the same two words for the same two things',
+            /\{ parent: optStr\(args, 'parent'\) as string \}/.test(opBody('projects.backlog.next'))
+            && /args\.deep === true/.test(opBody('projects.backlog.next')));
+        ok('projects.backlog.add can set it on the way in',
+            /\{ parent: optStr\(args, 'parent'\) as string \}/.test(opBody('projects.backlog.add')));
+        ok('projects.backlog.set can change or clear it',
+            /has\('parent'\)/.test(opBody('projects.backlog.set')));
+        ok('‼️ …and the describes say it is composition, not ⛔ dependency',
+            /composition, not dependency/.test(opBody('projects.backlog.add')));
+        // The claim that outlived its truth: the ops used to open by declaring
+        // the list flat, and a stale contract is worse than none — an agent
+        // reads it and files a "child" as a paragraph.
+        ok('‼️ no op still tells an agent the backlog cannot have parts',
+            !/‼️ IT IS A FLAT LIST/.test(ext) && !/The backlog is FLAT/.test(ext));
+    }
     const table = fs.readFileSync(path.join(__dirname, '..', 'media', 'sessionsTable.js'), 'utf8');
     ok('the sessions table filters by project', /filters\.projects/.test(table));
     ok('…and has a Project column', /project: r =>/.test(table));

@@ -72,10 +72,14 @@ const VAULT = [
     ok('a code at the start of the line is the item\'s code',
         s.items[1].code === 'P-5' && s.items[5].code === 'P-12');
     ok('an uncoded capture is an inbox item', !s.items[0].code && s.items[0].inbox === true);
-    // ‼️ THE LIST IS FLAT. A dotted code and an indented line still parse — a
-    // file on disk may contain both — but neither hangs one item under another.
+    // ‼️ NEITHER A DOT NOR AN INDENT MAKES A PARENT — only `[parent:: CODE]`
+    // does. Both of these exist in files on disk and both must keep parsing
+    // and keep their number; the hierarchy that was removed read exactly these
+    // two as structure, which is how a child ended up under a stranger.
     ok('a dotted legacy code is an item like any other, not a child',
         by('P-5.1').parent === undefined && by('P-5').container === undefined);
+    ok('…and an indented line is not a child either',
+        by('P-5.2').parent === undefined && by('P-5').children.join() === '');
     ok('the area comes off the code even when it is dotted',
         by('K-8').area === 'K' && by('P-5.1').area === 'P');
     ok('`## P — Projects` declares an area',
@@ -109,6 +113,215 @@ const VAULT = [
         by('P-12').score > by('P-5.1').score);
     ok('an unsized item is scored as M, not as free',
         Math.abs(B.parseBacklog('- [ ] P-1 x').items[0].score - 0.5) < 1e-9);
+}
+
+// ---------- M-2: an item may be PART OF another one ----------
+//
+// ‼️ WHAT THIS FEATURE IS A REBUILD OF, because the tests below are shaped by
+// it. The backlog carried a hierarchy once, drawn from the FILE's indentation
+// and shown inside a list ordered by the QUEUE — two unrelated structures on one
+// screen. The first time anybody used it a child appeared under an item that was
+// not its parent and moved somewhere else on every re-sort. It was taken out
+// whole with the note that a rebuild must cover the queue too.
+//
+// So the three things asserted hardest here are the three that went wrong:
+//   1. the link is a FIELD — no line moves, no indent means anything, tidying
+//      and archiving cannot disturb it;
+//   2. the CODE is untouched — a child gets its own area's next number, and a
+//      child in another area is the ordinary case, not the exotic one;
+//   3. the QUEUE does not know — a part and its whole queue independently, and
+//      nothing here drops either from `next`.
+const FAMILY = [
+    '# B',
+    '',
+    '## 🎯 Queue',
+    '',
+    '1. P-1 — the epic',
+    '2. U-1 — a part of it',
+    '',
+    '## P — Projects',
+    '',
+    '- [ ] P-1 the epic #feat',
+    '- [ ] P-2 unrelated',
+    '',
+    '## U — Interface',
+    '',
+    '- [ ] U-1 a part of it [parent:: P-1]',
+    '- [ ] U-2 a part of the part [parent:: U-1]',
+    ''
+].join('\n');
+
+{
+    const s = B.parseBacklog(FAMILY);
+    const by = c => s.items.find(i => i.code === c);
+    ok('[parent:: CODE] is read off the child\'s own line', by('U-1').parent === 'P-1');
+    ok('…and the parent learns its parts, in file order',
+        by('P-1').children.join() === 'U-1' && by('U-1').children.join() === 'U-2');
+    ok('an item that is part of nothing has no parent and no parts',
+        by('P-2').parent === undefined && by('P-2').children.length === 0);
+    // ‼️ THE CHILD IS IN ANOTHER AREA. That is the case a dotted code (`P-1.1`)
+    // would have made impossible, and it is the common one here.
+    ok('a child keeps its own area and its own flat code',
+        by('U-1').area === 'U' && by('U-1').code === 'U-1');
+    ok('the field never reaches the displayed words', by('U-1').text === 'a part of it');
+    // Typed by hand in Obsidian, in whatever case was to hand.
+    ok('a lower-case code in the field is the same link',
+        B.parseBacklog('- [ ] P-1 a\n- [ ] P-2 b [parent:: p-1]').items[1].parent === 'P-1');
+
+    // ‼️ THE QUEUE DOES NOT KNOW ABOUT ANY OF IT. Both are startable, neither is
+    // a container, and neither drags the other.
+    const next = B.nextBacklog(FAMILY, { limit: 10 });
+    ok('a part and its whole are both handed out, on their own account',
+        next.items.map(i => i.code).join() === 'P-1,U-1,P-2,U-2');
+    ok('…and the parent carries its parts to whoever is handed it',
+        next.items[0].children.join() === 'U-1');
+
+    // "Do P-4" is a real instruction, so it is one argument. ‼️ The two words
+    // mean the same two things here as on the plain read — direct parts, or the
+    // whole family including the head — because two ops answering the same word
+    // differently is the kind of thing nobody reads the docs to discover.
+    const direct = B.nextBacklog(FAMILY, { limit: 10, parent: 'P-1' });
+    ok('next narrows to a whole\'s direct parts', direct.items.map(i => i.code).join() === 'U-1');
+    const deep = B.nextBacklog(FAMILY, { limit: 10, parent: 'P-1', deep: true });
+    ok('…and deep is the whole family, the head included',
+        deep.items.map(i => i.code).join() === 'P-1,U-1,U-2');
+    ok('…still in the user\'s own order, not in tree order',
+        deep.items[0].code === 'P-1' && deep.queue.join() === 'P-1,U-1,P-2,U-2');
+    ok('a family nobody named narrows nothing',
+        B.nextBacklog(FAMILY, { limit: 10 }).items.length === 4);
+}
+
+// Three ways a link can be wrong, and each is REPORTED on the line rather than
+// corrected — the same rule the duplicate-code check follows. The commonest
+// cause is a file half-way through being edited, and a program that "fixed" it
+// would destroy the only evidence of what was meant.
+{
+    const gone = B.parseBacklog('- [ ] P-1 a [parent:: Z-9]').items[0];
+    ok('a parent that is not in the file is reported, not dropped',
+        gone.parent === 'Z-9' && /Z-9 is not in this backlog/.test(gone.warn || ''));
+    const self = B.parseBacklog('- [ ] P-1 a [parent:: P-1]').items[0];
+    ok('an item that names itself is reported', /its own parent/.test(self.warn || ''));
+    const loop = B.parseBacklog('- [ ] P-1 a [parent:: P-2]\n- [ ] P-2 b [parent:: P-1]');
+    ok('a chain that loops is reported on both members',
+        loop.items.every(i => /loops/.test(i.warn || '')));
+    ok('…and every walk over it still terminates',
+        B.descendantCodes(loop.items, 'P-1').join() === 'P-2');
+    const both = B.parseBacklog('- [ ] P-1 a\n- [ ] P-1 b [parent:: Z-9]').items[1];
+    ok('‼️ two things wrong with one line are both said, not the last one only',
+        /more than once/.test(both.warn) && /Z-9/.test(both.warn));
+}
+
+// The whole family, and the check both writers share.
+{
+    const items = B.parseBacklog(FAMILY).items;
+    ok('descendants are depth first and include the grandchild',
+        B.descendantCodes(items, 'P-1').join() === 'U-1,U-2');
+    ok('an item with no parts has none', B.descendantCodes(items, 'P-2').join() === '');
+    ok('a parent must be a code', !!B.parentLinkError(items, 'P-2', 'nonsense'));
+    ok('…and must exist', /no backlog item with code Z-9/.test(B.parentLinkError(items, 'P-2', 'Z-9')));
+    ok('…and may not be the item itself', /its own parent/.test(B.parentLinkError(items, 'P-2', 'P-2')));
+    ok('‼️ …and may not be one of its own descendants — that would close a loop',
+        /close a loop/.test(B.parentLinkError(items, 'P-1', 'U-2')));
+    ok('an ordinary link is allowed', B.parentLinkError(items, 'P-2', 'P-1') === undefined);
+    ok('a NEW item has no descendants to loop with, so only existence applies',
+        B.parentLinkError(items, undefined, 'P-1') === undefined);
+}
+
+// ---------- writing the link ----------
+{
+    const r = B.addBacklogItem(FAMILY, { text: 'another part', area: 'U', parent: 'P-1' });
+    ok('add writes the field on the new line', r.ok && /\[parent:: P-1\]/.test(r.item.raw));
+    ok('…and the new item still gets its OWN area\'s next code', r.code === 'U-3');
+    ok('…which is what the parse then reads back',
+        B.parseBacklog(r.text).items.find(i => i.code === 'U-3').parent === 'P-1');
+    // ‼️ An uncoded capture carries the link perfectly well: it is stored on the
+    // child, and the child does not need a code of its own to hold one.
+    const cap = B.addBacklogItem(FAMILY, { text: 'a thought', parent: 'P-1' });
+    ok('an uncoded capture may name a parent', cap.ok && /\[parent:: P-1\]/.test(cap.item.raw));
+    ok('a parent that is not there is refused rather than written and warned about',
+        !B.addBacklogItem(FAMILY, { text: 'x', area: 'U', parent: 'Z-9' }).ok);
+}
+
+{
+    const set = B.setBacklogFields(FAMILY, { code: 'P-2' }, { parent: 'P-1' });
+    ok('set writes the link', set.ok && set.item.parent === 'P-1');
+    ok('…in the fixed field order, after the size and before the plan link',
+        /\[parent:: P-1\]/.test(set.item.raw));
+    const clear = B.setBacklogFields(set.text, { code: 'P-2' }, { parent: null });
+    ok('null clears it', clear.ok && clear.item.parent === undefined
+        && !/parent::/.test(clear.item.raw));
+    // ‼️ THE REBUILD TRAP THIS FILE ALREADY DOCUMENTS: a field the rebuild does
+    // not know about is in neither half of the line and disappears the first
+    // time anybody clicks a priority badge. Nobody sees it go.
+    const other = B.setBacklogFields(FAMILY, { code: 'U-1' }, { priority: 'high' });
+    ok('‼️ a change to another axis does not drop the link',
+        other.ok && other.item.parent === 'P-1' && other.item.priority === 'high');
+    ok('a loop is refused before a byte is written',
+        !B.setBacklogFields(FAMILY, { code: 'P-1' }, { parent: 'U-2' }).ok);
+    ok('…and so is naming yourself',
+        !B.setBacklogFields(FAMILY, { code: 'P-1' }, { parent: 'P-1' }).ok);
+}
+
+// Filing a capture REBUILDS its line, which is the other place a field can
+// silently evaporate — and the one where nobody is looking at it.
+{
+    const src = '# B\n\n## U — Interface\n\n- [ ] U-1 a\n\n## 📥 Inbox\n\n- [ ] a thought [parent:: U-1]\n';
+    const filed = B.codeBacklogItem(src, { text: 'a thought' }, 'U');
+    ok('‼️ filing a capture carries its parent through the rebuild',
+        filed.ok && filed.item.parent === 'U-1' && filed.code === 'U-2');
+    // ‼️ AND A BROKEN LINK MUST NOT MAKE A CAPTURE UNFILEABLE. The whole was
+    // deleted in Obsidian; the field is the user's own data and the row already
+    // warns about it. Refusing here would block an action about something else,
+    // and dropping it would take their data away without saying so.
+    const dangling = '# B\n\n## U — Interface\n\n- [ ] U-1 a\n\n## 📥 Inbox\n\n- [ ] a thought [parent:: Z-9]\n';
+    const still = B.codeBacklogItem(dangling, { text: 'a thought' }, 'U');
+    ok('a capture whose whole has been deleted still files, link and all',
+        still.ok && still.item.parent === 'Z-9' && /Z-9 is not in this backlog/.test(still.item.warn || ''));
+    // …but a fresh CLAIM of the same link is still refused, because there a typo
+    // must not look like success.
+    ok('…while adding a new item that names it is still refused',
+        !B.addBacklogItem(dangling, { text: 'x', area: 'U', parent: 'Z-9' }).ok);
+}
+
+// A field that is there but is not a code says so, rather than reading as
+// nothing at all — somebody typed it and meant something by it.
+{
+    const p = B.parseBacklog('- [ ] P-1 a [parent:: the big one]').items[0];
+    ok('a parent that is not a code is reported',
+        p.parent === undefined && /is not a backlog code/.test(p.warn || ''));
+}
+
+// Closing a whole does not close its parts — SAID, never refused. Both are real
+// things to do; doing it in ignorance is the failure worth naming.
+{
+    const done = B.setBacklogState(FAMILY, { code: 'P-1' }, 'done');
+    ok('closing a parent with open parts says which are still open',
+        done.ok && /U-1 is still open under P-1/.test(done.note || ''));
+    ok('…and changes exactly one character of the file',
+        diff(FAMILY, done.text).count === 1);
+    ok('a parent with nothing open under it says nothing',
+        !B.setBacklogState(FAMILY, { code: 'P-2' }, 'done').note);
+    ok('reopening says nothing either — it is closing that strands them',
+        !B.setBacklogState(FAMILY, { code: 'P-1' }, 'doing').note);
+}
+
+// ‼️ NOTHING ABOUT THE FILE'S SHAPE FOLLOWS FROM A LINK. This is rule 1, and it
+// is what makes the whole thing safe: tidying sorts by code as it always did,
+// and archiving moves the closed line and only that line.
+{
+    const tidy = B.tidyBacklogFile(FAMILY);
+    ok('tidying does not group families — the file is still in code order',
+        tidy.ok && B.parseBacklog(tidy.text).items.map(i => i.code).join() === 'P-1,P-2,U-1,U-2');
+    const closed = B.setBacklogState(FAMILY, { code: 'P-1' }, 'done').text;
+    const arch = B.archiveBacklogDone(closed);
+    const after = B.parseBacklog(arch.text);
+    ok('archiving a whole moves ONLY its own line', arch.moved === 1);
+    ok('…its open parts stay where they are, still coded, still live',
+        after.items.find(i => i.code === 'U-1').state === 'open');
+    ok('…the link still resolves, because the archive is the same file',
+        after.items.find(i => i.code === 'P-1').children.join() === 'U-1');
+    ok('‼️ …and it is said out loud, because the row you were reading them under has moved',
+        /U-1 (is|are) still open under an item that just moved to the archive/.test(arch.note || ''));
 }
 
 // A `- [ ] thing` inside a fence is documentation, not a task.

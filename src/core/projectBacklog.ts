@@ -24,14 +24,21 @@ import { eolOf, lineStartOffset, TASK_LINE } from './projectPlan';
  * Nothing here is invented. A backlog line is an ordinary Obsidian task line
  * carrying things the user's vault already understands:
  *
- *   - [ ] P-5 Work tab #feat 🔼 [effort:: L] ⛔ P-3 [plan:: afprj-05]
- *     └─┬─┘ └┬┘ └──┬───┘ └─┬─┘ └┬┘ └─────┬────┘ └──┬─┘ └──────┬──────┘
- *    state code  text    kind  pri    effort   blockedBy   plan link
+ *   - [ ] P-5 Work tab #feat 🔼 [effort:: L] [parent:: P-1] ⛔ P-3 [plan:: afprj-05]
+ *     └─┬─┘ └┬┘ └──┬───┘ └─┬─┘ └┬┘ └─────┬────┘ └─────┬─────┘ └──┬─┘ └──────┬──────┘
+ *    state code  text    kind  pri    effort      part of    blockedBy   plan link
  *
  * state = the checkbox itself (Obsidian's own alternate states), kind = a real
  * `#tag` (clickable in the vault), priority = Obsidian Tasks' own icons,
- * blockedBy = its ⛔. Only `effort`, `plan` and `from` needed a field of their
- * own, and those use Dataview's `[key:: value]`, which the vault already reads.
+ * blockedBy = its ⛔. Only `effort`, `parent`, `plan` and `from` needed a field
+ * of their own, and those use Dataview's `[key:: value]`, which the vault
+ * already reads.
+ *
+ * ‼️ `parent` is COMPOSITION and ⛔ is DEPENDENCY — two different questions that
+ * a single link would blur. "P-5 is part of P-1" says nothing about when either
+ * can be started; "P-5 waits on P-3" says nothing about what P-5 belongs to. The
+ * two are never derived from each other: a child is not blocked by its parent,
+ * and a parent is not blocked by its children.
  * The gain is concrete: every one of these lines keeps working in the user's
  * existing task queries, and a person editing the file in Obsidian is editing
  * something they already know how to write.
@@ -112,12 +119,17 @@ const UNKNOWN_EFFORT_WEIGHT = EFFORT_WEIGHT.M;
 /**
  * `<AREA>-<n>` — P-5, K-8, X-12.
  *
- * ‼️ THE BACKLOG IS A FLAT LIST. An item is an item; there is no epic, no
- * sub-item and no tree, and nothing here reads a code as a path. What it
- * deliberately does NOT copy from ATC is the letter/digit alternation: `C09AA05`
- * can be written but not SAID, and this user dictates. "P five" is speakable;
- * that is a hard constraint on an identifier whose first job is to be quoted at
- * an agent out loud.
+ * ‼️ A CODE IS FLAT, AND IT STAYS FLAT EVEN THOUGH ITEMS CAN NOW HAVE PARENTS.
+ * Nothing here reads a code as a path: `U-20` may be a child of `P-4`, and the
+ * only thing that says so is the child's `[parent:: P-4]` field (see F_PARENT).
+ * Putting the tree in the identifier would mean an item could not change parent
+ * without changing its name, and a child could never belong to another area —
+ * which is the common case here, not the exotic one.
+ *
+ * What it deliberately does NOT copy from ATC is the letter/digit alternation:
+ * `C09AA05` can be written but not SAID, and this user dictates. "P five" is
+ * speakable; that is a hard constraint on an identifier whose first job is to be
+ * quoted at an agent out loud.
  *
  * The dotted form (`P-5.3`) is still ACCEPTED — a code is permanent, so one that
  * exists in somebody's file has to keep resolving — but it is never handed out
@@ -175,6 +187,35 @@ const field = (names: string): RegExp =>
 
 const F_EFFORT = field('effort|efor|boyut|size');
 const F_PLAN = field('plan');
+/**
+ * `[parent:: P-4]` — THE ITEM THIS ONE IS PART OF.
+ *
+ * ‼️ A FIELD, NOT AN INDENT, AND THAT IS THE WHOLE DESIGN. The backlog once
+ * carried a hierarchy drawn from the file's own INDENTATION, and the first time
+ * anybody used it the surface fell apart: the queue is one flat list of codes,
+ * the rows were being indented by a property of the DOCUMENT, and a child ended
+ * up drawn under an item that was not its parent and moved somewhere else on
+ * every re-sort. It was removed whole (3.85.0) with the note that a rebuild must
+ * cover the queue too.
+ *
+ * This is that rebuild, and the three rules it obeys are the three things that
+ * went wrong:
+ *
+ *   1. THE LINK IS DATA. It is a Dataview field like `effort` and `plan`, so it
+ *      survives tidying, archiving, reordering and being edited in Obsidian. No
+ *      line moves because of it, ever; the file's line order and its indentation
+ *      mean exactly what they meant before.
+ *   2. THE CODE IS UNTOUCHED. A child gets the next free code in its OWN area —
+ *      `U-20` may be a child of `P-4`, which is the common real case, and a
+ *      dotted `P-4.1` would have forbidden it. A code says which item, never
+ *      where in a tree.
+ *   3. THE QUEUE DOES NOT KNOW. Every live coded item queues on its own account;
+ *      a parent is not a container, is not dropped from `next`, and does not
+ *      drag its children with it. The relation is drawn as a MARK on a row, and
+ *      the one place a tree is drawn (the page's `family` ordering) is a way of
+ *      LOOKING at the pile, not the order anything is worked in.
+ */
+const F_PARENT = field('parent');
 const F_FROM = field('from|kaynak|source');
 const F_WAS = field('was|eski');
 /** `[closed:: 9c4d1f#3]` — the session and turn a closed item was closed in.
@@ -393,6 +434,14 @@ export interface BacklogItem {
     taskId?: string;
     /** `[plan:: afprj-05]` — which plan item this belongs to. */
     plan?: string;
+    /** `[parent:: P-4]` — the item this one is PART OF. A code, from another
+     *  area as often as not. See F_PARENT for why it is a field and not an
+     *  indent. */
+    parent?: string;
+    /** Codes that name THIS item as their parent, in file order. Computed on
+     *  every parse and never written to the file — the link is stored once, on
+     *  the child, exactly like `blockedBy`. */
+    children: string[];
     /** `[from:: …]` — a queue item or notice it was promoted from. */
     from?: string;
     /** `[was:: K-8]` — a code this item carried earlier. Read and carried
@@ -429,6 +478,110 @@ function displayText(body: string): string {
         .replace(TAG, ' ')
         .replace(/\s+/g, ' ')
         .trim();
+}
+
+/** Add one more thing worth knowing about a line, without losing the last one.
+ *  ‼️ `warn` is a single string and a line can be wrong in two ways at once —
+ *  a duplicate code that ALSO points at a parent that is not there. Overwriting
+ *  would silently hide whichever was noticed first. */
+function warnOn(item: BacklogItem, what: string): void {
+    item.warn = item.warn ? `${item.warn}; ${what}` : what;
+}
+
+/**
+ * Resolve `[parent:: …]` across the whole file: fill in `children`, and say so
+ * when a link cannot mean what it says.
+ *
+ * ‼️ NOTHING IS EVER CORRECTED HERE — the same rule the duplicate-code check
+ * follows. A parent that is not in the file is REPORTED on the child's row; the
+ * field stays exactly as the user typed it, because the commonest cause is a
+ * line they are half-way through moving, and a program that "helpfully" deleted
+ * the link would take the only evidence of what they meant.
+ *
+ * Three things can be wrong, and they are three different sentences:
+ *   - the parent code is not in this backlog (deleted, or a typo);
+ *   - the item names ITSELF;
+ *   - the chain loops (A → B → A), which no reader spots by eye and which every
+ *     walk over the tree must survive.
+ */
+function linkParents(items: BacklogItem[]): void {
+    const byCode = new Map<string, BacklogItem>();
+    for (const it of items) { if (it.code && !byCode.has(it.code)) { byCode.set(it.code, it); } }
+    for (const it of items) {
+        const p = it.parent;
+        if (!p) { continue; }
+        if (it.code && p === it.code) { warnOn(it, `${it.code} is its own parent`); continue; }
+        const up = byCode.get(p);
+        if (!up) { warnOn(it, `parent ${p} is not in this backlog`); continue; }
+        if (it.code) { up.children.push(it.code); }
+    }
+    // The loop check walks UP from every item; `seen` is per walk, so a chain
+    // that rejoins a healthy branch is not mistaken for a cycle.
+    for (const it of items) {
+        if (!it.parent || !it.code) { continue; }
+        const seen = new Set<string>([it.code]);
+        let at: BacklogItem | undefined = byCode.get(it.parent);
+        while (at?.code) {
+            if (seen.has(at.code)) { warnOn(it, `the parent chain loops at ${at.code}`); break; }
+            seen.add(at.code);
+            at = at.parent ? byCode.get(at.parent) : undefined;
+        }
+    }
+}
+
+/**
+ * Every code under `code`, depth first, cycle-safe.
+ *
+ * Exported because "the whole family" is asked for in three places that must
+ * agree: the bridge's `deep` read, the page's family ordering, and the check
+ * that refuses a parent link which would close a loop.
+ */
+export function descendantCodes(items: BacklogItem[], code: string): string[] {
+    const kids = new Map<string, string[]>();
+    for (const it of items) {
+        if (!it.parent || !it.code) { continue; }
+        const list = kids.get(it.parent) ?? [];
+        list.push(it.code);
+        kids.set(it.parent, list);
+    }
+    const out: string[] = [];
+    const seen = new Set<string>([String(code ?? '').toUpperCase()]);
+    const walk = (c: string): void => {
+        for (const kid of kids.get(c) ?? []) {
+            if (seen.has(kid)) { continue; }
+            seen.add(kid);
+            out.push(kid);
+            walk(kid);
+        }
+    };
+    walk(String(code ?? '').toUpperCase());
+    return out;
+}
+
+/**
+ * May `child` name `parent`? Returns the refusal, or undefined when it may.
+ *
+ * ‼️ THE ONE CHECK BOTH WRITERS SHARE. `addBacklogItem` calls it with no child
+ * code (the item does not exist yet, so only "is that a real item" applies) and
+ * `setBacklogFields` calls it with one, which is where the loop check earns its
+ * place: a cycle is invisible on the row you are editing and breaks every walk
+ * over the tree afterwards.
+ */
+export function parentLinkError(
+    items: BacklogItem[], child: string | undefined, parent: string
+): string | undefined {
+    const want = String(parent ?? '').trim().toUpperCase();
+    if (!BACKLOG_CODE.test(want)) {
+        return `"${parent}" is not a backlog code — a parent is named by its code, like P-4`;
+    }
+    if (!items.some(i => i.code === want)) { return `no backlog item with code ${want}`; }
+    const me = child ? child.trim().toUpperCase() : '';
+    if (!me) { return undefined; }
+    if (me === want) { return `${me} cannot be its own parent`; }
+    if (descendantCodes(items, me).includes(want)) {
+        return `${want} is already under ${me} — that would close a loop`;
+    }
+    return undefined;
 }
 
 export interface BacklogSummary {
@@ -560,6 +713,11 @@ export function parseBacklog(text: string): BacklogSummary {
         const effortRaw = F_EFFORT.exec(body)?.[1]?.trim().toUpperCase();
         const effort = BACKLOG_EFFORTS.includes(effortRaw as BacklogEffort)
             ? effortRaw as BacklogEffort : undefined;
+        // Read in whatever case it was typed and held in ONE case, because
+        // everything downstream compares codes as strings — `[parent:: p-4]`
+        // typed in Obsidian must be the same link as `[parent:: P-4]`.
+        const parentRaw = F_PARENT.exec(body)?.[1]?.trim().toUpperCase();
+        const parent = parentRaw && BACKLOG_CODE.test(parentRaw) ? parentRaw : undefined;
 
         items.push({
             line: i,
@@ -578,6 +736,13 @@ export function parseBacklog(text: string): BacklogSummary {
             ...(/🆔\s*([A-Za-z0-9_-]+)/u.exec(line)?.[1]
                 ? { taskId: /🆔\s*([A-Za-z0-9_-]+)/u.exec(line)?.[1] as string } : {}),
             ...(F_PLAN.exec(body)?.[1] ? { plan: F_PLAN.exec(body)?.[1]?.trim() as string } : {}),
+            ...(parent ? { parent } : {}),
+            // ‼️ A field that is THERE but is not a code is reported, not
+            // swallowed. Somebody typed `[parent:: the big one]` in Obsidian and
+            // meant something by it; a parser that silently read nothing would
+            // leave them with a line that looks linked and is not.
+            ...(parentRaw && !parent ? { warn: `"${parentRaw}" is not a backlog code, so the parent link does nothing` } : {}),
+            children: [],
             ...(F_FROM.exec(body)?.[1] ? { from: F_FROM.exec(body)?.[1]?.trim() as string } : {}),
             ...(F_WAS.exec(body)?.[1] ? { was: F_WAS.exec(body)?.[1]?.trim() as string } : {}),
             ...(F_CLOSED.exec(body)?.[1] ? { closed: F_CLOSED.exec(body)?.[1]?.trim() as string } : {}),
@@ -594,9 +759,10 @@ export function parseBacklog(text: string): BacklogSummary {
     const seen = new Set<string>();
     for (const it of items) {
         if (!it.code) { continue; }
-        if (seen.has(it.code)) { it.warn = `code ${it.code} is used more than once`; }
+        if (seen.has(it.code)) { warnOn(it, `code ${it.code} is used more than once`); }
         seen.add(it.code);
     }
+    linkParents(items);
 
     for (const a of areas) {
         for (const it of items) {
@@ -628,6 +794,13 @@ export interface NextOptions {
     limit?: number;
     area?: string;
     kind?: string;
+    /** Only what is part of this code. ‼️ The same two arguments mean the same
+     *  two things here as on the plain read: `parent` alone is the DIRECT parts,
+     *  `parent` + `deep` is the whole family including the named item — which is
+     *  what "do P-4" means. Two ops answering the same word differently would be
+     *  the kind of inconsistency nobody reads the docs to discover. */
+    parent?: string;
+    deep?: boolean;
     /** Nothing below this priority. */
     minPriority?: BacklogPriority;
     /** ‼️ Nothing ABOVE this size. Default M. "Five you can manage" means five
@@ -707,9 +880,16 @@ export function nextBacklog(text: string, opts: NextOptions = {}): NextResult {
     const minW = PRIORITY_WEIGHT[opts.minPriority ?? 'lowest'];
     const maxW = EFFORT_WEIGHT[opts.maxEffort ?? 'M'];
 
+    const wantParent = opts.parent ? String(opts.parent).trim().toUpperCase() : '';
+    const familyOf = wantParent && opts.deep
+        ? new Set([wantParent, ...descendantCodes(items, wantParent)]) : null;
+
     const passed = live.filter(i => {
         if (opts.area && i.area !== opts.area) { return false; }
         if (opts.kind && !i.kinds.includes(canonKind(opts.kind))) { return false; }
+        if (wantParent) {
+            if (familyOf ? !(i.code && familyOf.has(i.code)) : i.parent !== wantParent) { return false; }
+        }
         if (PRIORITY_WEIGHT[i.priority] < minW) { return false; }
         // An item with no effort stated is NOT excluded by the ceiling: it has
         // not been sized, and refusing to hand out everything unsized would make
@@ -888,11 +1068,31 @@ export function setBacklogState(
     const ch = STATE_CHAR[state];
     const nextText = src.slice(0, box) + ch + src.slice(box + 1);
     const raw = item.raw.slice(0, item.raw.indexOf('[') + 1) + ch + item.raw.slice(item.raw.indexOf('[') + 2);
+    /**
+     * ‼️ SAID, NEVER REFUSED. Closing something that still has open parts is a
+     * real and ordinary thing to do — the parts may have been split off, or
+     * cancelled in spirit — and a tick that argued back would be a tick nobody
+     * trusts. But closing it in ignorance is the failure worth naming, because
+     * the children do not move, do not close and do not leave the queue: they
+     * are simply now hanging off something finished, which nothing else on the
+     * screen would tell you.
+     */
+    const strays = isLive(state) ? [] : item.children.filter(c => {
+        const kid = items.find(i => i.code === c);
+        return kid ? isLive(kid.state) : false;
+    });
+    const notes = [
+        state !== 'done' && item.doneOn
+            ? `the line still carries its ✅ ${item.doneOn} — Agent Farm does not remove metadata it did not write`
+            : '',
+        strays.length
+            ? `${strays.join(', ')} ${strays.length === 1 ? 'is' : 'are'} still open under ${item.code}`
+            + ' — closing a parent does not close its children, and they stay in the queue'
+            : ''
+    ].filter(Boolean);
     return {
         ok: true, text: nextText, item: { ...item, state, raw },
-        ...(state !== 'done' && item.doneOn
-            ? { note: `the line still carries its ✅ ${item.doneOn} — Agent Farm does not remove metadata it did not write` }
-            : {})
+        ...(notes.length ? { note: notes.join(' · ') } : {})
     };
 }
 
@@ -963,6 +1163,9 @@ export interface BacklogFields {
     due?: string | null;
     /** A plan item's 🆔, or `null`. */
     plan?: string | null;
+    /** The code this item is PART OF, or `null` to clear. Refused when it names
+     *  something that is not there, itself, or one of its own descendants. */
+    parent?: string | null;
     /** Codes this waits on. `[]` clears. */
     blockedBy?: string[];
     /** Replace the item's words, keeping code and every axis in place. */
@@ -1009,6 +1212,18 @@ export function setBacklogFields(
     const words = (fields.text ?? item.text).replace(/\r?\n/g, ' ').trim();
     if (!words) { return { ok: false, error: 'an item needs some text' }; }
 
+    // ‼️ REFUSED BEFORE A BYTE IS WRITTEN. A loop in the parent chain is
+    // invisible on the row being edited and breaks every walk over the tree
+    // afterwards, so it is caught here rather than reported later.
+    let parent = item.parent;
+    if (fields.parent === null) {
+        parent = undefined;
+    } else if (fields.parent !== undefined) {
+        const bad = parentLinkError(items, item.code, fields.parent);
+        if (bad) { return { ok: false, error: bad }; }
+        parent = fields.parent.trim().toUpperCase();
+    }
+
     const indent = /^(\s*)/.exec(item.raw)?.[1] ?? '';
     const bullet = /^\s*([-*+]|\d+[.)])/.exec(item.raw)?.[1] ?? '-';
     const parts = [`${indent}${bullet} [${STATE_CHAR[item.state]}]`];
@@ -1017,6 +1232,7 @@ export function setBacklogFields(
     for (const k of kinds) { parts.push(`#${canonKind(k)}`); }
     if (PRIORITY_ICON[priority]) { parts.push(PRIORITY_ICON[priority]); }
     if (effort) { parts.push(`[effort:: ${effort}]`); }
+    if (parent) { parts.push(`[parent:: ${parent}]`); }
     if (plan) { parts.push(`[plan:: ${plan}]`); }
     if (item.from) { parts.push(`[from:: ${item.from}]`); }
     if (item.was) { parts.push(`[was:: ${item.was}]`); }
@@ -1065,6 +1281,23 @@ export interface AddBacklogInput {
     kinds?: string[];
     due?: string;
     plan?: string;
+    /** The code this new item is PART OF. Independent of `area` on purpose: a
+     *  `U` item is a child of a `P` epic as often as not, and an uncoded capture
+     *  may name a parent too — the link is stored on the child and the child
+     *  does not need a code of its own to carry one. */
+    parent?: string;
+    /**
+     * ‼️ THE LINK IS BEING CARRIED, NOT CLAIMED — set only by `codeBacklogItem`.
+     *
+     * Filing a capture REBUILDS its line, so it comes back through here with
+     * whatever the line already said. If the whole it names has since been
+     * deleted in Obsidian, a fresh claim would rightly be refused — but refusing
+     * HERE would mean a broken link in the user's file makes a capture
+     * unfileable, and dropping it would take their data away on an action about
+     * something else. So a carried link is kept as it stands: the row already
+     * warns about it, which is where it can actually be fixed.
+     */
+    carriedParent?: boolean;
     from?: string;
     blockedBy?: string[];
     state?: BacklogState;
@@ -1094,6 +1327,20 @@ export function addBacklogItem(text: string, input: AddBacklogInput): AddBacklog
     if (area && !BACKLOG_CODE.test(`${area}-1`)) {
         return { ok: false, error: `"${area}" is not an area code — one or two capital letters` };
     }
+    // The item does not exist yet, so there is nothing to loop with — only
+    // "is that a real item" applies. Refused rather than written and warned
+    // about: a link nobody asked for is not worth a line in somebody's file.
+    let parent: string | undefined;
+    if (input.parent) {
+        const want = input.parent.trim().toUpperCase();
+        if (input.carriedParent) {
+            parent = BACKLOG_CODE.test(want) ? want : undefined;
+        } else {
+            const bad = parentLinkError(parsed.items, undefined, input.parent);
+            if (bad) { return { ok: false, error: bad }; }
+            parent = want;
+        }
+    }
     const code = area ? nextCode(parsed.items, area) : undefined;
 
     // Where to put it.
@@ -1121,6 +1368,7 @@ export function addBacklogItem(text: string, input: AddBacklogInput): AddBacklog
     for (const k of input.kinds ?? []) { parts.push(`#${canonKind(k)}`); }
     if (input.priority && PRIORITY_ICON[input.priority]) { parts.push(PRIORITY_ICON[input.priority]); }
     if (input.effort) { parts.push(`[effort:: ${input.effort}]`); }
+    if (parent) { parts.push(`[parent:: ${parent}]`); }
     if (input.plan) { parts.push(`[plan:: ${input.plan}]`); }
     if (input.from) { parts.push(`[from:: ${input.from}]`); }
     for (const b of input.blockedBy ?? []) { parts.push(`⛔ ${b}`); }
@@ -1182,6 +1430,11 @@ export function codeBacklogItem(
         kinds: item.kinds,
         ...(item.due ? { due: item.due } : {}),
         ...(item.plan ? { plan: item.plan } : {}),
+        // ‼️ Filing REBUILDS the line, so every field it is to keep has to be
+        // listed here — the same trap `setBacklogFields` documents. A parent
+        // dropped in this one place would vanish exactly when a capture got its
+        // code, which is the moment nobody is looking at the field.
+        ...(item.parent ? { parent: item.parent, carriedParent: true } : {}),
         ...(item.from ? { from: item.from } : {}),
         blockedBy: item.blockedBy,
         state: item.state
@@ -1626,5 +1879,24 @@ export function archiveBacklogDone(text: string, opts: { cancelled?: boolean } =
         while (kept.length && !kept[kept.length - 1].trim()) { kept.pop(); }
         out = [...kept, '', ARCHIVE_TITLE, '', ...body, ''];
     }
-    return { ok: true, text: out.join(eol), moved: wanted.length };
+    /**
+     * ‼️ NOTHING IS DRAGGED ALONG, AND THAT IS WHY IT IS SAID OUT LOUD. A
+     * family is a set of links, not a block of lines: a closed parent goes to
+     * the archive on its own account and its open children stay exactly where
+     * they are, still coded, still queued, still pointing at it — which is
+     * correct (the parent is in the same file, so the link still resolves) and
+     * surprising (the row you were reading them under is no longer in the
+     * list). Moving them too would archive open work; saying nothing would
+     * leave somebody hunting for a heading that moved.
+     */
+    const archivedCodes = new Set(wanted.map(i => i.code).filter(Boolean) as string[]);
+    const orphaned = parsed.items.filter(i =>
+        !!i.parent && archivedCodes.has(i.parent) && isLive(i.state)
+        && !archivedCodes.has(i.code ?? ''));
+    const note = orphaned.length
+        ? `${orphaned.map(i => i.code ?? `line ${i.line + 1}`).join(', ')} `
+        + `${orphaned.length === 1 ? 'is' : 'are'} still open under an item that just moved to the archive`
+        + ' — the link still resolves, the children did not move'
+        : '';
+    return { ok: true, text: out.join(eol), moved: wanted.length, ...(note ? { note } : {}) };
 }
