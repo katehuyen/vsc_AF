@@ -62,7 +62,9 @@
 
     function rowHtml(item, i) {
         const meta = KIND_META[item.kind] || { icon: '•', label: item.kind, cls: '' };
-        const when = item.ts ? new Date(item.ts).toLocaleTimeString() : '';
+        const when = item.ts
+            ? `<span title="${C.esc(window.AFTime.tip(item.ts, 'Raised'))}">${window.AFTime.clock(item.ts)}</span>`
+            : '';
         const actions = item.actions.map(a =>
             `<button data-i="${i}" data-action="${C.esc(a.id)}"${a.id === 'reject' ? ' class="secondary"' : ''}>${C.esc(a.label)}</button>`
         ).join(' ');
@@ -125,7 +127,7 @@
             ${window.AFHeader.html({
                 page: 'needs',
                 title: 'Needs You',
-                sub: `${items.length} item(s) · ${urgent} urgent${hidden ? ` · ${hidden} cleared` : ''}${selected.size ? ` · ${selected.size} selected` : ''} · ${new Date(DATA.generatedAt).toLocaleTimeString()}`,
+                sub: `${items.length} item(s) · ${urgent} urgent${hidden ? ` · ${hidden} cleared` : ''}${selected.size ? ` · ${selected.size} selected` : ''} · ${window.AFTime.clockUtc(DATA.generatedAt)}`,
                 guide: 'onay-kuyrugu'
             })}
             ${bar}

@@ -14,6 +14,7 @@ import { LiveMonitor, LiveStatus } from '../core/live';
 import { emptyUsage, totalTokens } from '../core/pricing';
 import { SessionIndex, SessionInfo } from '../core/sessions';
 import { fmtTokens, fmtUSD, relTime, dayKey, safeReadFile } from '../core/util';
+import { full as afFull } from '../core/aftime';
 
 /** Findings whose evidence is the agent's own cost view, not a guide section. */
 const COST_CATEGORIES = new Set(['cost-anomaly', 'trend', 'budget', 'error-rate']);
@@ -676,7 +677,7 @@ export class FeedTreeProvider implements vscode.TreeDataProvider<FeedItem> {
                         color: meta.color,
                         sessionFile: ev.transcriptPath ?? '',
                         ts: ev.ts,
-                        tooltip: `${agent} — ${meta.label}${ev.tool ? ` (${ev.tool})` : ''}\n${ev.detail ?? ''}\n${new Date(ev.ts).toLocaleString()}`
+                        tooltip: `${agent} — ${meta.label}${ev.tool ? ` (${ev.tool})` : ''}\n${ev.detail ?? ''}\n${afFull(ev.ts)}`
                     };
                 });
         }
@@ -689,7 +690,7 @@ export class FeedTreeProvider implements vscode.TreeDataProvider<FeedItem> {
                     icon: 'tools',
                     sessionFile: ev.sessionFile,
                     ts: ev.ts,
-                    tooltip: `${agent} used ${ev.tool}\n${ev.detail}\n${new Date(ev.ts).toLocaleString()}`
+                    tooltip: `${agent} used ${ev.tool}\n${ev.detail}\n${afFull(ev.ts)}`
                 };
             }
             if (ev.kind === 'error') {
@@ -700,7 +701,7 @@ export class FeedTreeProvider implements vscode.TreeDataProvider<FeedItem> {
                     color: 'errorForeground',
                     sessionFile: ev.sessionFile,
                     ts: ev.ts,
-                    tooltip: `${agent} tool error\n${new Date(ev.ts).toLocaleString()}`
+                    tooltip: `${agent} tool error\n${afFull(ev.ts)}`
                 };
             }
             return {
@@ -710,7 +711,7 @@ export class FeedTreeProvider implements vscode.TreeDataProvider<FeedItem> {
                 color: 'charts.blue',
                 sessionFile: ev.sessionFile,
                 ts: ev.ts,
-                tooltip: `${agent} received prompt\n${ev.detail}\n${new Date(ev.ts).toLocaleString()}`
+                tooltip: `${agent} received prompt\n${ev.detail}\n${afFull(ev.ts)}`
             };
         });
     }

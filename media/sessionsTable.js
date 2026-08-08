@@ -423,7 +423,7 @@
             ? '' : `${label}: ${value}`);
         /** A whole timestamp, in the user's own locale — the column shows "2h
          *  ago" and the question a hover asks is "yes, but when". */
-        const stamp = ts => ts ? new Date(ts).toLocaleString() : '';
+        const stamp = ts => (ts ? window.AFTime.full(ts) : '');
         /** A per-turn average, only where it means something. Turns are the
          *  denominator everywhere here: a session is a stack of turns, and
          *  "expensive" nearly always means "expensive per turn". */

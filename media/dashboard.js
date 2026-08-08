@@ -324,7 +324,7 @@
     function puReset(ts) {
         if (!ts) { return ''; }
         const d = new Date(ts);
-        const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        const time = window.AFTime.clockUtc(d);
         const sameDay = d.toDateString() === new Date().toDateString();
         const when = sameDay ? time : `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${time}`;
         const left = ts - Date.now();
@@ -348,7 +348,7 @@
             foot = '';
         } else if (pu.state !== 'ok') {
             body = `<div class="sub" style="margin-top:8px">${C.esc(pu.note || 'Usage data is unavailable.')}</div>`;
-            foot = `<div class="sub muted" style="margin-top:8px">Checked ${new Date(pu.fetchedAt).toLocaleTimeString()}</div>`;
+            foot = `<div class="sub muted" style="margin-top:8px">Checked ${window.AFTime.clockUtc(pu.fetchedAt)}</div>`;
         } else {
             body = pu.bars.map(b => {
                 const cls = b.percent >= 90 ? ' hot' : b.percent >= 75 ? ' warn' : '';
@@ -358,7 +358,7 @@
                     <div class="sub">${C.esc(puReset(b.resetsAt))}</div>
                 </div>`;
             }).join('');
-            foot = `<div class="sub muted" style="margin-top:10px">${pu.plan ? C.esc(pu.plan) + ' plan · ' : ''}updated ${new Date(pu.fetchedAt).toLocaleTimeString()} · ${beatText}</div>`;
+            foot = `<div class="sub muted" style="margin-top:10px">${pu.plan ? C.esc(pu.plan) + ' plan · ' : ''}updated ${window.AFTime.clockUtc(pu.fetchedAt)} · ${beatText}</div>`;
         }
         // The card's own controls are one ⟳; everything else about the plan
         // window (check it now, reset the token lap, clear it) lived only in the
@@ -577,7 +577,7 @@
             ${window.AFHeader.html({
                 page: 'dashboard',
                 title: 'Agent Farm',
-                sub: `Generated ${new Date(DATA.generatedAt).toLocaleString()} · data: local Claude Code transcripts`,
+                sub: `Generated ${window.AFTime.full(DATA.generatedAt)} · data: local Claude Code transcripts`,
                 // Every day of the first week, then the longer spans, then two
                 // dates. "Yesterday and today" and "that week in July" were
                 // both unaskable when the smallest step was 7 days.

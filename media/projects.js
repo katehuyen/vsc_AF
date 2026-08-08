@@ -464,7 +464,7 @@
             ev: i, evKind: e.kind || '', afLinked: !!e.link,
             text: [e.title, e.detail, e.agent].filter(Boolean).join(' · ')
         })}
-                title="${C.esc(when.toLocaleString())}${e.link ? ' — click to open' : ''} — ${window.AFCtx.HINT}">
+                title="${C.esc(window.AFTime.tip(when))}${e.link ? ' — click to open' : ''} — ${window.AFCtx.HINT}">
             <span class="pj-ev-g" title="${C.esc(meta.label)}">${meta.glyph}</span>
             <span class="pj-ev-t">${C.esc(e.title)}</span>
             <span class="pj-ev-d">${C.esc(e.detail || '')}</span>
@@ -1453,7 +1453,18 @@
         if (!blCap || blCap.id !== id) {
             // `at` = the 1-based queue position picked beside Add ('' = none,
             // which is the default and means "wherever it would have gone").
-            blCap = { id: id, text: '', area: '', type: '', prio: 'normal', effort: '', at: '', sending: false };
+            // `boxH` = how tall the box was DRAGGED, as a css length ('220px').
+            // It belongs next to the draft for the same reason the draft is
+            // here at all: the drag handle writes an inline height onto an
+            // element this page rebuilds from scratch, so without somewhere to
+            // keep it the rebuild always won — and picking an area or a queue
+            // position IS a rebuild, which is why the box snapped back mid-item
+            // while the five controls beside it were being filled in. Empty
+            // means never dragged: the css min-height.
+            blCap = {
+                id: id, text: '', area: '', type: '', prio: 'normal', effort: '',
+                at: '', boxH: '', sending: false
+            };
         }
         return blCap;
     }
@@ -1478,9 +1489,9 @@
      * "your own tag" would be a lie about the only two that are not.
      */
     const BL_ORIGIN_TIP = {
-        'by-agent': 'An agent noticed this while working and filed it ITSELF — a proposal, '
+        byAI: 'An agent noticed this while working and filed it ITSELF — a proposal, '
             + 'not something you have agreed to. Read it as a suggestion; cancelling it costs nothing.',
-        'by-request': 'An agent wrote this line, but YOU asked for it — the thought is yours, '
+        byREQ: 'An agent wrote this line, but YOU asked for it — the thought is yours, '
             + 'the agent was the typist.'
     };
 
@@ -1727,7 +1738,7 @@
             ${blHelpHtml(d)}
             <span class="grow"></span>
             <button class="secondary" data-act="blTidy"
-                title="Put each area's items back in code order — K-1, K-2, K-3 — so the file reads as the dictionary it is. Your order is untouched: the queue names codes, and a code does not care which line it is on. A section with prose between its items is left alone and said so.">🧹 Tidy file order</button>
+                title="Put the file back in its own order, in two moves. FIRST, an item filed under somebody else's heading goes back under its own — a P-coded line parked in the ## U section is invisible to anyone scrolling to ## P for it, and this page hides that damage because it groups by the CODE and draws the row in the right place regardless. THEN each area's items go back in code order — K-1, K-2, K-3 — so the file reads as the dictionary it is. Your order is untouched by both: the queue names codes, and a code does not care which line it is on. A section with prose between its items is left alone and said so, and an area with no heading in the file is never invented.">🧹 Tidy file order</button>
             <button class="secondary" data-act="blArchive"
                 title="Move closed items under an archive heading at the end of the same file">🗄 Archive closed</button>
             ${openWithHtml(d.path)}
@@ -2794,6 +2805,24 @@
                 blCapture().text = blNew.value;
                 window.AFTextTools.paint('bl', !!blNew.value);
             });
+            // ‼️ THE HEIGHT SURVIVES THE REBUILD THAT JUST DESTROYED THE ELEMENT
+            // IT WAS SET ON — the same bargain the draft text gets, and for the
+            // same reason: a box you widened to write a long item is a choice,
+            // and this page repaints on a filter chip, a tab, an area, a queue
+            // position and every host push.
+            const capH = blCapture();
+            if (capH.boxH) { blNew.style.height = capH.boxH; }
+            // A drag is then recorded. Inline `height` is written by the resize
+            // handle and by the line above and by nothing else, so reading the
+            // INLINE height tells a user drag apart from a re-layout — a panel
+            // being made narrower changes the rendered height and leaves the
+            // inline one alone, and must not be saved as a choice.
+            if (typeof ResizeObserver === 'function') {
+                new ResizeObserver(() => {
+                    const h = blNew.style.height;
+                    if (h && h !== blCapture().boxH) { blCapture().boxH = h; }
+                }).observe(blNew);
+            }
         }
         // The box's four text tools — the same component the console composer
         // uses (media/afTextTools.js), so paste lands with the same space rule.

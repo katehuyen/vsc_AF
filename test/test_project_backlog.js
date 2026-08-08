@@ -430,6 +430,76 @@ const VAULT = [
         !/[^\r]\n/.test(t.text));
 }
 
+// ---------- ‼️ P-10: an item under the WRONG heading is carried home ----------
+//
+// The sort above works on runs of consecutive items and cannot cross a heading,
+// so before this a misfiled line was merely sorted into a tidy-looking place
+// among its new neighbours — and the panel never showed the damage, because it
+// groups by the CODE. The only reader who saw it was the person scrolling the
+// file to `## P` and finding items missing. Measured on the real vault: A-4 and
+// P-6…P-10 all sat under `## U`, in perfect code order, looking deliberate.
+{
+    const misfiled = [
+        '## P — Projects',
+        '- [ ] P-1 first',
+        '',
+        '## K — Console',
+        '- [ ] K-1 console thing',
+        '- [ ] P-2 filed under the wrong heading',
+        '- [ ] P-3 and so is this one',
+        ''
+    ].join('\n');
+    const r = B.tidyBacklogFile(misfiled);
+    ok('‼️ a P-coded line parked under `## K` goes back under `## P`',
+        r.ok && /## P — Projects\n- \[ \] P-1 first\n- \[ \] P-2 filed[\s\S]*- \[ \] P-3 and so/.test(r.text));
+    ok('…and the section it was squatting in keeps its own item',
+        /## K — Console\n- \[ \] K-1 console thing/.test(r.text));
+    ok('…the codes that moved are NAMED, not counted — a reader has to know which',
+        r.reseated.join() === 'P-2,P-3' && /P-2, P-3/.test(r.note || ''));
+    ok('…a run of strays arrives in the order it left',
+        r.text.indexOf('P-2 filed') < r.text.indexOf('P-3 and so'));
+    ok('…nothing is lost or invented: the same items, the same count',
+        B.parseBacklog(r.text).items.length === B.parseBacklog(misfiled).items.length);
+    ok('…and it is idempotent — a repaired file reports nothing to do',
+        B.tidyBacklogFile(r.text).reseated.length === 0
+        && B.tidyBacklogFile(r.text).text === r.text);
+
+    // An area with no heading has nowhere to go, and inventing one would be
+    // restructuring the user's document rather than repairing it.
+    const homeless = '## K — Console\n- [ ] K-1 x\n- [ ] Z-1 no Z section exists\n';
+    ok('‼️ an area with no heading in the file is never invented — the line stays',
+        B.tidyBacklogFile(homeless).reseated.length === 0
+        && /Z-1 no Z section/.test(B.tidyBacklogFile(homeless).text));
+
+    ok('the queue is untouched by a reseat too — it names codes',
+        B.parseBacklog(r.text).queue.join() === B.parseBacklog(misfiled).queue.join());
+}
+
+// ---------- ‼️ K-8: the origin tags keep the capitals they were given ----------
+{
+    ok('the two tags are the ones the user named',
+        B.BACKLOG_ORIGIN_TAGS.agent === 'byAI' && B.BACKLOG_ORIGIN_TAGS.user === 'byREQ');
+    const added = B.addBacklogItem('## P — P\n- [ ] P-1 x\n',
+        { text: 'agent noticed this', area: 'P', kinds: [B.BACKLOG_ORIGIN_TAGS.agent] });
+    ok('an added line carries `#byAI` exactly as spelled', /#byAI\b/.test(added.text));
+    // ‼️ The silent failure this guards: everything downstream compares tags
+    // folded, so the parser folds them — and a rebuild writes back what the
+    // parser returned. Without the canonical form the user's capitals would
+    // vanish the first time somebody clicked a priority badge, in their vault.
+    const parsed = B.parseBacklog(added.text).items.find(i => i.code === 'P-2');
+    ok('…and the parser hands it back canonical, not folded',
+        parsed.kinds.indexOf('byAI') >= 0 && parsed.kinds.indexOf('byai') < 0);
+    const rebuilt = B.setBacklogFields(added.text, { code: 'P-2' }, { priority: 'high' });
+    ok('‼️ …so setting a priority does not quietly fold it to `#byai`',
+        /#byAI\b/.test(rebuilt.text) && !/#byai\b/.test(rebuilt.text));
+    ok('a hand-typed `#byai` in Obsidian lands on the one spelling',
+        B.parseBacklog('## P — P\n- [ ] P-1 x #BYAI\n').items[0].kinds.indexOf('byAI') >= 0);
+    ok('both are recognised as origin tags, whatever the case',
+        B.isOriginTag('#byREQ') && B.isOriginTag('byreq') && !B.isOriginTag('bug'));
+    ok('an ordinary tag is still folded, as everything downstream expects',
+        B.parseBacklog('## P — P\n- [ ] P-1 x #Regression\n').items[0].kinds.join() === 'regression');
+}
+
 // ---------- the work-type axis ----------
 {
     ok('research is a canonical kind — work whose deliverable is an answer',

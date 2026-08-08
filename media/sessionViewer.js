@@ -134,7 +134,7 @@
     });
 
     function fmtTime(ts) {
-        return ts ? new Date(ts).toLocaleString() : '—';
+        return ts ? window.AFTime.full(ts) : '—';
     }
 
     /**
@@ -156,9 +156,7 @@
      * kind of stamp you have to re-read.
      */
     function fmtStamp(ts) {
-        const d = new Date(ts);
-        return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
-            + ', ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+        return window.AFTime.full(ts);
     }
 
     function agoWords(ts) {
@@ -429,7 +427,7 @@
         // one API call carries several steps and the figure is written once.
         const meta = [
             C.stepChip(m.kind, m.tokens, m.wTokens) + roleLabel + (m.tool ? ` · ${C.esc(m.tool)}` : ''),
-            m.ts ? new Date(m.ts).toLocaleTimeString() : '',
+            m.ts ? `<span title="${C.esc(window.AFTime.tip(m.ts, 'This step'))}">${window.AFTime.clock(m.ts)}</span>` : '',
             m.model ? C.esc(m.model.replace(/^claude-/, '')) : '',
             m.tokens ? C.fmtTokW(m.tokens, m.wTokens) + ' tok' : '',
             m.cost ? C.fmtUSD(m.cost) : '',
@@ -596,7 +594,7 @@
                 ? `${C.STEP_KIND[m.kind].glyph} ${C.STEP_KIND[m.kind].label}` : '';
             const bits = [
                 kindBit,
-                m.ts ? new Date(m.ts).toLocaleTimeString() : '',
+                m.ts ? window.AFTime.clockUtc(m.ts) : '',
                 m.model ? m.model.replace(/^claude-/, '') : '',
                 m.tokens ? C.fmtTokWText(m.tokens, m.wTokens) + ' tok' : '',
                 m.cost ? C.fmtUSD(m.cost) : '',

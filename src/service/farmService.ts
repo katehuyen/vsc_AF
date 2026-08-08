@@ -23,6 +23,7 @@
 import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { full as afFull } from '../core/aftime';
 
 interface ServiceConfig {
     agents: { id: string; name: string; dir: string }[];
@@ -149,7 +150,7 @@ function spawnHeadless(cfgSvc: ServiceConfig, task: StoredTask, agentDir: string
     task.outputFile = outFile;
     task.status = 'running';
     task.startedAt = Date.now();
-    const header = `# ${task.title}\n\n- Agent: ${task.agentName}\n- Started: ${new Date().toLocaleString()} (headless service)\n- Prompt: ${task.prompt}\n\n---\n\n`;
+    const header = `# ${task.title}\n\n- Agent: ${task.agentName}\n- Started: ${afFull(Date.now())} (headless service)\n- Prompt: ${task.prompt}\n\n---\n\n`;
     fs.writeFileSync(outFile, header, 'utf8');
     const stream = fs.createWriteStream(outFile, { flags: 'a' });
     const extra = (cfgSvc.extraArgs ?? '').trim();
@@ -164,7 +165,7 @@ function spawnHeadless(cfgSvc: ServiceConfig, task: StoredTask, agentDir: string
     child.stderr?.on('data', c => stream.write(c));
     const finish = (status: string, note: string) => {
         runningCount--;
-        stream.write(`\n\n---\nFinished: ${new Date().toLocaleString()} · ${note}\n`);
+        stream.write(`\n\n---\nFinished: ${afFull(Date.now())} · ${note}\n`);
         stream.end();
         task.status = status;
         task.endedAt = Date.now();

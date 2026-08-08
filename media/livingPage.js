@@ -56,7 +56,7 @@
                 precondition suppressed — lands here, so a guard can never quietly swallow real work.</p>`;
         }
         const rows = recent.map(e => `<tr class="${e.outcome}">
-            <td class="muted small nowrap">${C.esc(new Date(e.ts).toLocaleString())}</td>
+            <td class="muted small nowrap" title="${C.esc(window.AFTime.tip(e.ts, 'Decided'))}">${C.esc(window.AFTime.stamp(e.ts))}</td>
             <td>${e.outcome === 'fired' ? '▶ fired' : '🛡 skipped'}</td>
             <td>${C.esc(e.title)} <span class="muted small">(${C.esc(e.kind)})</span></td>
             <td class="muted small">${C.esc(e.reason)}</td>
@@ -108,7 +108,7 @@
             ${window.AFHeader.html({
                 page: 'living',
                 title: 'Living',
-                sub: `is the system alive? — updated ${new Date(d.generatedAt).toLocaleTimeString()}`,
+                sub: `is the system alive? — updated ${window.AFTime.clockUtc(d.generatedAt)}`,
                 actions: '<button class="secondary" id="cfg">Configure checks…</button>',
                 guide: 'yasam-panosu'
             })}

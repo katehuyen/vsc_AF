@@ -118,6 +118,11 @@ function makeDom(getHtml) {
         el.fire = (ev, arg) => (el._h[ev] || []).forEach(fn => fn(Object.assign(evObj(), arg || {})));
         el.focus = () => { };
         el.setSelectionRange = () => { };
+        // ‼️ An inline `style` is not decoration here: the capture box's dragged
+        // height IS an inline height, and telling a drag apart from a re-layout
+        // is done by reading it (U-18). A stub without one would make the whole
+        // mechanism untestable and the test would silently assert nothing.
+        el.style = {};
         // Both axes: rows are dropped on above/below, queue chips left/right.
         el.getBoundingClientRect = () => ({ top: 0, height: 20, left: 0, width: 40 });
         el.querySelectorAll = () => [];
@@ -162,8 +167,13 @@ function run(data) {
     // shim (lib_afms_dom.js) rather than a second, private idea of one.
     const ms = createAfmsDom(() => html);
 
+    // The observer the capture box watches its own height with (U-18). Kept as
+    // a list the test can fire by hand: a drag is a user gesture, and there is
+    // nothing in a stub DOM that would produce one on its own.
+    const observed = [];
     const sandbox = {
         acquireVsCodeApi: () => ({ postMessage: m => posted.push(m), getState: () => ({}), setState() { } }),
+        ResizeObserver: function (fn) { this.observe = el => observed.push({ el, fn }); },
         CSS: { escape: s => String(s).replace(/["\\]/g, '\\$&') },
         window: {
             __DATA__: data,
@@ -210,6 +220,16 @@ function run(data) {
     return {
         posted,
         ms,
+        /** Simulate a drag on the box the page is watching: set the inline
+         *  height the resize handle would have written, then let the observer
+         *  see it. */
+        drag: (id, h) => {
+            const hit = observed.filter(o => o.el.attrs.id === id).pop();
+            if (!hit) { return false; }
+            hit.el.style.height = h;
+            hit.fn();
+            return true;
+        },
         html: () => html,
         all: sel => dom.all(sel),
         one: sel => dom.one(sel),
@@ -538,6 +558,46 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
     r.send({ type: 'result', ok: 'Added as K-9.' });
     r.send({ type: 'data', data: data() });
     ok('…and a confirmed add does', !/half a thought about the counter/.test(r.html()));
+}
+
+// ---------- ‼️ U-18: the box also keeps how TALL you made it ----------
+//
+// The drag handle writes an inline height onto an element this page rebuilds
+// from scratch, so without somewhere to keep it the rebuild always won. What
+// made it look random is that only SOME gestures repaint: typing does not, but
+// picking an area or a queue position does — so the box snapped back mid-item,
+// while the controls beside it were being filled in.
+{
+    const r = run(data());
+    ok('the box is watched for a drag at all', r.drag('bl-new', '260px'));
+
+    const area = r.byId('bl-area');
+    area.value = 'K';
+    area.fire('change');                                   // the reported repaint
+    ok('‼️ picking an area does not snap the box back',
+        (r.byId('bl-new').style.height || '') === '260px');
+
+    const at = r.byId('bl-at');
+    if (at) { at.value = '1'; at.fire('change'); }          // the other reported one
+    ok('…nor does picking a queue position',
+        (r.byId('bl-new').style.height || '') === '260px');
+
+    r.send({ type: 'data', data: data() });                 // a host push
+    ok('…nor does a push from the host', (r.byId('bl-new').style.height || '') === '260px');
+
+    // A second drag replaces the first: the box remembers the LAST answer, not
+    // the first one it was ever given.
+    r.drag('bl-new', '120px');
+    r.els('blarea').find(e => e.dataset.blarea === '').click();
+    ok('a later drag wins', (r.byId('bl-new').style.height || '') === '120px');
+
+    // The ↺ on the heading is about the five AXES. Height is part of the
+    // writing surface, like the words — and its tooltip promises those are not
+    // touched.
+    const reset = r.els('act').find(e => e.dataset.act === 'blCapReset');
+    if (reset) { reset.click(); }
+    ok('‼️ the axes reset does not shrink the box — it resets choices, not the surface',
+        (r.byId('bl-new').style.height || '') === '120px');
 }
 
 // ---------- S-12: say WHERE it goes in the same gesture as writing it ----------

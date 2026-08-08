@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { barText, peakPercent, PlanUsageSnapshot, PlanUsageService, untilText } from '../core/planusage';
 import { OPEN_DASHBOARD_AT_TOP } from './statusBar';
+import { clockUtc as afClockUtc } from '../core/aftime';
 
 /**
  * Your plan's session countdown and two percentages, permanently in view.
@@ -177,7 +178,7 @@ export class PlanUsageBar implements vscode.Disposable {
                 lines.push('');
             }
             if (snap.plan) { lines.push(`Plan: ${snap.plan}`, ''); }
-            lines.push(`_Checked ${new Date(snap.fetchedAt).toLocaleTimeString()}_`, '');
+            lines.push(`_Checked ${afClockUtc(snap.fetchedAt)}_`, '');
         }
         lines.push(this.beatLine(), '');
         lines.push('[Check now](command:agentfarm.planUsageRefresh) · _click the bar for the Dashboard card_');

@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { MissionRound, MissionRun, MissionSpec, MissionStep } from '../core/missions';
 import { relTime } from '../core/util';
+import { full as afFull } from '../core/aftime';
 
 export type MissionNode =
     | { kind: 'run'; run: MissionRun; spec?: MissionSpec }
@@ -137,7 +138,7 @@ export class MissionsTreeProvider implements vscode.TreeDataProvider<MissionNode
             : round.action === 'ask_user'
                 ? (round.question ?? '').slice(0, 80)
                 : round.thought.slice(0, 80);
-        item.tooltip = `R${round.n} ${round.action} · ${new Date(round.at).toLocaleString()}\nthought: ${round.thought}`
+        item.tooltip = `R${round.n} ${round.action} · ${afFull(round.at)}\nthought: ${round.thought}`
             + (round.question ? `\nQ: ${round.question}\nA: ${round.answer ?? '(pending)'}` : '')
             + (round.rejectedReason ? `\n${round.rejectedReason}` : '');
         item.contextValue = 'mission-round';

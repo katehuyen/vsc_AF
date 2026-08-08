@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { LiveMonitor } from '../core/live';
 import { SessionIndex } from '../core/sessions';
 import { dayKey, fmtTokens, fmtUSD } from '../core/util';
+import { clockUtc as afClockUtc } from '../core/aftime';
 
 /**
  * What a click on the plan-usage status-bar indicator means: open the
@@ -96,7 +97,7 @@ export class FarmStatusBar implements vscode.Disposable {
             : 'Live listener: off';
         const lapAge = lap ? Date.now() - lap.sinceTs : 0;
         const lapLine = lap
-            ? `⏱ Lap since ${new Date(lap.sinceTs).toLocaleTimeString()}: ${fmtTokens(lap.tokens)} tokens ` +
+            ? `⏱ Lap since ${afClockUtc(lap.sinceTs)}: ${fmtTokens(lap.tokens)} tokens ` +
               `(⚖ ${fmtTokens(lap.wTokens)} against the limit) • ` +
               `${fmtUSD(lap.cost)} • ${lap.msgs} msgs` +
               (lapAge > 48 * 3600 * 1000 ? ' _(lap older than 48h — only the last 48h are counted)_' : '') +

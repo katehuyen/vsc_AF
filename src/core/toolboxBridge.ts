@@ -2,6 +2,7 @@ import { AgentInfo } from './agents';
 import { argStr, BridgeRegistry, need, optStr } from './bridge';
 import { readAgentMcpServers, readServerRawDef } from './mcp';
 import { loadProbeCache, McpProbeResult, McpServerConfig, probeMcpServer, saveProbeCache } from './mcpProbe';
+import { queryMatches } from './query';
 import { buildToolboxInventory, readUserMcpServerRaw, ToolboxKind, TOOLBOX_KINDS } from './toolbox';
 
 /**
@@ -44,7 +45,7 @@ export function registerToolboxOps(bridge: BridgeRegistry, deps: ToolboxBridgeDe
     bridge.register([
         {
             op: 'toolbox.list',
-            describe: 'Installed Claude extensions inventory (skills, subagents, commands, MCP, hooks, plugins, output styles, settings files) at user + agent scope. args: kind? (' + TOOLBOX_KINDS.join('|') + '), scope? (user|agent), agent? (name|id)',
+            describe: 'Installed Claude extensions inventory (skills, subagents, commands, MCP, hooks, plugins, output styles, settings files) at user + agent scope. USER scope applies to every agent on this machine; an AGENT-scope entry shadows a user one of the same name — so "which one will actually run" is a question about both, which is why one op answers for both. ‼️ THE FILTERS ARE ANDed AND ARE THE PAGE\'S OWN FACETS, so a question the Toolbox page can ask, this op can ask: `q` is the extension\'s query language (two words = both · OR · -word · "phrase" · wildcard*) searched against the name, description, agent and whole definition; `state` (enabled|disabled) covers MCP servers and plugins with one word whichever the row speaks; `event` is a hook\'s lifecycle event, `transport` an MCP server\'s, `author` and `marketplace` a plugin\'s, `model` a subagent\'s. args: kind? (' + TOOLBOX_KINDS.join('|') + '), scope? (user|agent), agent? (name|id — implies agent scope), q?, state?, event?, transport?, author?, marketplace?, model?, limit? (default 500)',
             handler: (args) => {
                 const kind = optStr(args, 'kind');
                 need(!kind || TOOLBOX_KINDS.includes(kind as ToolboxKind),
@@ -52,14 +53,45 @@ export function registerToolboxOps(bridge: BridgeRegistry, deps: ToolboxBridgeDe
                 const scope = optStr(args, 'scope');
                 const agentRef = optStr(args, 'agent');
                 const agentId = agentRef ? findAgent(agentRef).id : '';
+                const q = optStr(args, 'q');
+                const state = optStr(args, 'state').toLowerCase();
+                need(!state || state === 'enabled' || state === 'disabled',
+                    `state is "enabled" or "disabled", not "${state}"`);
+                const limit = Math.max(1, Number(optStr(args, 'limit') || 500));
+                // Each of these names one `detail` field, compared case-blind
+                // because the values are somebody else's JSON, not ours.
+                const DETAIL_FILTERS: [string, string][] = [
+                    ['event', 'event'], ['transport', 'transport'],
+                    ['author', 'author'], ['marketplace', 'marketplace'], ['model', 'model']
+                ];
+                const wanted = DETAIL_FILTERS
+                    .map(([arg, field]) => [field, optStr(args, arg)] as [string, string])
+                    .filter(([, v]) => !!v);
+
                 const inv = buildToolboxInventory(deps.getAgents(), deps.home);
-                const items = inv.items.filter(it =>
-                    (!kind || it.kind === kind) &&
-                    (!scope || it.scope === scope) &&
-                    (!agentId || it.agentId === agentId));
+                const items = inv.items.filter(it => {
+                    if (kind && it.kind !== kind) { return false; }
+                    if (scope && it.scope !== scope) { return false; }
+                    if (agentId && it.agentId !== agentId) { return false; }
+                    for (const [field, want] of wanted) {
+                        if (String(it.detail[field] ?? '').toLowerCase() !== want.toLowerCase()) { return false; }
+                    }
+                    if (state) {
+                        // A plugin says `enabled`, an MCP server says `disabled`
+                        // — one word for the caller, whichever the row speaks.
+                        const on = it.kind === 'plugin' ? it.detail.enabled === true : it.detail.disabled !== true;
+                        if ((state === 'enabled') !== on) { return false; }
+                    }
+                    if (q && !queryMatches(
+                        `${it.name} ${it.description} ${it.agentName ?? ''} ${JSON.stringify(it.detail ?? {})}`, q
+                    )) { return false; }
+                    return true;
+                });
                 return {
                     counts: inv.counts,
-                    items: items.map(it => ({
+                    total: inv.items.length,
+                    matched: items.length,
+                    items: items.slice(0, limit).map(it => ({
                         kind: it.kind, name: it.name, scope: it.scope, agent: it.agentName,
                         description: it.description.slice(0, 200), source: it.source
                     }))

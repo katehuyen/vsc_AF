@@ -79,6 +79,7 @@ import {
 import {
     addMcpServer, copyMcpServerTo, readServerRawDef, removeMcpServer, setServerDisabled, updateMcpServer
 } from './core/mcp';
+import { queryMatches } from './core/query';
 import { addSkill, copySkillTo, moveSkillScope, removeSkill } from './core/skills';
 import {
     addMemoryFile, applyIndexFixes, archiveMemoryFile, copyMemoryFileTo, MEMORY_TYPES, planIndexFixes
@@ -4436,7 +4437,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.backlog.add',
-            describe: 'Put an item in the backlog. EVERYTHING EXCEPT THE TEXT IS OPTIONAL, deliberately: a system that demands a code before it will take a thought does not get the thought. With `area` the item is filed there and given the next free code — codes only ever count UP, so a cancelled item\'s number stays spent and a note from three months ago quoting K-8 still means this item. Without one, it lands in the 📥 inbox with no code, to be classified later by whoever has the context (see projects.backlog.code). ‼️ The backlog is FLAT — there is no sub-item, so a thought that feels like a child of another one is either its own item or a paragraph inside that item\'s text. ‼️ ORIGIN IS STAMPED AND YOU MUST GET IT RIGHT: every item added through this op carries `#by-agent` (you noticed it yourself and filed it — a PROPOSAL nobody has agreed to) or, when you pass `origin:"user"`, `#by-request` (the user asked for it; you were the typist). Default is `by-agent`, so a line the user dictated and you forgot to mark reads as your own idea for ever. Items the user writes in the panel or in Obsidian carry neither. Creates the backlog document from the skeleton if the project has none. args: project (id or name), text, area? (1-2 capital letters), origin? (agent|user, default agent), kind?/kinds?, priority? (highest|high|medium|normal|low|lowest), effort? (XS|S|M|L|XL), due? (YYYY-MM-DD), plan? (a plan item\'s 🆔), from?, blockedBy? (code or array), at? (1-based queue position for the new item — 1 puts it at the very top; needs an area, because the queue holds codes and an uncoded capture has none; omit it and the item queues wherever a new one normally would)',
+            describe: 'Put an item in the backlog. EVERYTHING EXCEPT THE TEXT IS OPTIONAL, deliberately: a system that demands a code before it will take a thought does not get the thought. With `area` the item is filed there and given the next free code — codes only ever count UP, so a cancelled item\'s number stays spent and a note from three months ago quoting K-8 still means this item. Without one, it lands in the 📥 inbox with no code, to be classified later by whoever has the context (see projects.backlog.code). ‼️ The backlog is FLAT — there is no sub-item, so a thought that feels like a child of another one is either its own item or a paragraph inside that item\'s text. ‼️ ORIGIN IS STAMPED AND YOU MUST GET IT RIGHT: every item added through this op carries `#byAI` (you noticed it yourself and filed it — a PROPOSAL nobody has agreed to) or, when you pass `origin:"user"`, `#byREQ` (the user asked for it; you were the typist). Default is `byAI`, so a line the user dictated and you forgot to mark reads as your own idea for ever. Items the user writes in the panel or in Obsidian carry neither. Creates the backlog document from the skeleton if the project has none. args: project (id or name), text, area? (1-2 capital letters), origin? (agent|user, default agent), kind?/kinds?, priority? (highest|high|medium|normal|low|lowest), effort? (XS|S|M|L|XL), due? (YYYY-MM-DD), plan? (a plan item\'s 🆔), from?, blockedBy? (code or array), at? (1-based queue position for the new item — 1 puts it at the very top; needs an area, because the queue holds codes and an uncoded capture has none; omit it and the item queues wherever a new one normally would)',
             handler: (args) => {
                 const { project, folder, file, text } = backlogDoc(argStr(args, 'project'), true);
                 const body = argStr(args, 'text').trim();
@@ -4655,21 +4656,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.backlog.tidy',
-            describe: 'Put each area\'s items back in code order — K-1, K-2, K-3 — so the file can be read as the dictionary it is. Safe by construction: the queue names CODES and a code does not care which line it is on, so the order a person sees is untouched by this. ‼️ A section with PROSE between its items is left alone and reported: somebody wrote that paragraph where it is for a reason and no sort knows what it was. Blank lines between items are furniture and are closed up. The inbox (nothing to sort by) and the archive (a record, not a list) are skipped. args: project (id or name)',
+            describe: 'Put the file back in its own order, in two moves. FIRST, an item filed under somebody else\'s heading is carried back under its own — a P-coded line parked in the `## U` section is invisible to the person who scrolls to `## P` looking for it, and the panel hides the damage because it groups by the CODE and draws it in the right place regardless. THEN each area\'s items go back in code order — K-1, K-2, K-3 — so the file reads as the dictionary it is. Safe by construction: the queue names CODES and a code does not care which line it is on, so the order a person sees is untouched by this. ‼️ A section with PROSE between its items is left alone and reported: somebody wrote that paragraph where it is for a reason and no sort knows what it was. Blank lines between items are furniture and are closed up. An area with no heading in the file is never invented; the inbox (nothing to sort by) and the archive (a record, not a list) are skipped. Returns `reseated` (the codes that went home, by name) and `moved` (how many were re-ordered). args: project (id or name)',
             handler: (args) => {
                 const { project, folder, file } = backlogDoc(argStr(args, 'project'));
                 let moved = 0;
                 let skipped: string[] = [];
+                let reseated: string[] = [];
                 const out = editProjectDoc(folder, file, src => {
                     const res = tidyBacklogFile(src);
                     moved = res.moved;
                     skipped = res.skipped;
+                    reseated = res.reseated;
                     return res;
                 });
                 projectDocWritten(project.id);
                 return {
                     project: project.name, file: relDoc(folder, out.file),
-                    moved, skipped, note: out.note ?? null
+                    moved, reseated, skipped, note: out.note ?? null
                 };
             }
         },
@@ -9763,12 +9766,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     edit(id, text => setBacklogQueue(text, codes)),
                 backlogTidy: (id: string) => {
                     let moved = 0;
+                    let reseated: string[] = [];
                     const res = edit(id, text => {
                         const r = tidyBacklogFile(text);
                         moved = r.moved;
+                        reseated = r.reseated;
                         return r;
                     });
-                    return { ...res, moved };
+                    return { ...res, moved, reseated };
                 },
                 backlogCode: (id: string, target: BacklogTarget, area: string) => {
                     let code: string | undefined;

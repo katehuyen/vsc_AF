@@ -328,7 +328,7 @@
     const line = (k, v) => (v === '' || v === undefined || v === null ? '' : `${k}: ${v}`);
     const round1 = n => Math.round(n * 10) / 10;
     const pctOf = (n, of) => (of > 0 ? Math.round(n / of * 100) + '%' : '');
-    const stamp = ts => (ts ? new Date(ts).toLocaleString() : '');
+    const stamp = ts => (ts ? window.AFTime.full(ts) : '');
     const tip = parts => C.esc(parts.filter(Boolean).join('\n'));
     /** Everything known about ONE turn — the shared readout its cells share. */
     const turnTip = r => tip([
@@ -486,7 +486,7 @@
             ${window.AFHeader.html({
                 page: 'turns',
                 title: 'Turns',
-                sub: `every user turn across the farm, sessions unrolled · generated ${new Date(DATA.generatedAt).toLocaleString()}`,
+                sub: `every user turn across the farm, sessions unrolled · generated ${window.AFTime.full(DATA.generatedAt)}`,
                 actions: `<button class="secondary" id="exportmd" title="Export the listed turns to Markdown — asks whether to save the current view (folding/Show applied) or everything">⬇ Export MD</button>`,
                 guide: 'turlar-sayfasi'
             })}

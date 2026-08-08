@@ -178,7 +178,7 @@
     function questionBlock(n) {
         if (n.type !== 'question') { return ''; }
         const s = n.status || 'open';
-        if (s === 'answered') { return `<div class="nt-answer"><div class="muted small">Your answer${n.answeredAt ? ' · ' + esc(new Date(n.answeredAt).toLocaleString()) : ''}:</div><div class="nt-md">${mdToHtml(n.answer || '')}</div></div>`; }
+        if (s === 'answered') { return `<div class="nt-answer"><div class="muted small">Your answer${n.answeredAt ? ' · ' + esc(window.AFTime.full(n.answeredAt)) : ''}:</div><div class="nt-md">${mdToHtml(n.answer || '')}</div></div>`; }
         if (s === 'declined') { return `<div class="muted small nt-answer">✕ You dismissed this question without answering. The agent will see it was passed over.</div>`; }
         const draft = drafts[n.id] != null ? drafts[n.id] : '';
         const del = convertDelete[n.id] !== undefined ? convertDelete[n.id] : true;
@@ -274,7 +274,7 @@
         const t = tmeta(n.type), open = expanded.has(n.id), L = lvl(n), isQ = n.type === 'question';
         const inEdit = editing.has(n.id);
         const tags = (n.tags || []).map(x => `<span class="tag">#${esc(x)}</span>`).join(' ');
-        const due = n.dueAt ? `<div class="muted small">⏰ due ${esc(new Date(n.dueAt).toLocaleString())}</div>` : '';
+        const due = n.dueAt ? `<div class="muted small">⏰ due ${esc(window.AFTime.full(n.dueAt))}</div>` : '';
         let body = '';
         if (inEdit) { body = editForm(n); }
         else {
@@ -282,7 +282,7 @@
                     ${docSplit(n.id, '📄 Open full report', n.reportPath)}
                     <span class="muted small nt-reppath" title="${esc(n.reportPath)}">${esc(reportBase(n.reportPath))}</span>
                 </div>` : '';
-            body = `<div class="muted small nt-sub">${esc(t.label)} · L${L} ${esc(LEVELS[L])}${n.edited ? ' · ✎ edited' + (n.editedAt ? ' ' + esc(new Date(n.editedAt).toLocaleString()) : '') : ''}</div>
+            body = `<div class="muted small nt-sub">${esc(t.label)} · L${L} ${esc(LEVELS[L])}${n.edited ? ' · ✎ edited' + (n.editedAt ? ' ' + esc(window.AFTime.full(n.editedAt).toLocaleString()) : '') : ''}</div>
                 ${due}
                 ${n.body ? `<div class="nt-md">${mdToHtml(n.body)}</div>` : (!n.sections && !isQ ? '<div class="muted small">(no details)</div>' : '')}
                 ${sectionsHtml(n)}${reportBtn}${questionBlock(n)}${spawnedHtml(n)}${convertHtml(n)}${originalBlock(n)}
@@ -485,7 +485,7 @@
             ${window.AFHeader.tabs('notices')}
             ${window.AFHeader.html({
                 page: 'notices', title: '🔔 Notices',
-                sub: `${(DATA.notices || []).length} total · ${DATA.unread || 0} unread · ${DATA.openQuestions || 0} open question(s) · showing ${items.length}${selected.size ? ` · ${selected.size} selected` : ''} · ${new Date(DATA.generatedAt).toLocaleTimeString()}`,
+                sub: `${(DATA.notices || []).length} total · ${DATA.unread || 0} unread · ${DATA.openQuestions || 0} open question(s) · showing ${items.length}${selected.size ? ` · ${selected.size} selected` : ''} · ${window.AFTime.clockUtc(DATA.generatedAt)}`,
                 controls: controls(), actions: actionsHtml()
             })}
             ${listHtml}`;

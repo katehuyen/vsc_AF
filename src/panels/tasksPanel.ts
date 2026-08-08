@@ -15,6 +15,7 @@ import { TaskRecord } from '../core/taskstats';
 import { TriggerManager } from '../core/triggers';
 import { buildTriggerStats, describeTriggerStat } from '../core/triggerstats';
 import { handleAfNav, htmlShell } from './base';
+import { full as afFull } from '../core/aftime';
 
 /**
  * Tasks — the agent-activity CONTROL PANEL.
@@ -147,7 +148,7 @@ function scheduleWhen(s: FarmSchedule): string {
     const hm = `${String(s.hour).padStart(2, '0')}:${String(s.minute).padStart(2, '0')}`;
     if (s.kind === 'daily') { return `every day ${hm}`; }
     if (s.kind === 'weekly') { return `${DOW[s.dow ?? 0]} ${hm}`; }
-    return s.onceAt ? `once · ${new Date(s.onceAt).toLocaleString()}` : 'once';
+    return s.onceAt ? `once · ${afFull(s.onceAt)}` : 'once';
 }
 
 function triggerWhen(t: FarmTrigger): string {

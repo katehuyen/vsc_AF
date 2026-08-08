@@ -172,9 +172,9 @@ af-role: backlog
      [ ] open · [/] doing · [x] done · [-] cancelled
 
      WHO PUT THE LINE HERE, when it was not you:
-     #by-agent               an agent noticed this while working and filed it
+     #byAI                   an agent noticed this while working and filed it
                              ITSELF — a proposal, not a decision you made.
-     #by-request             an agent wrote the line, but you asked for it.
+     #byREQ                  an agent wrote the line, but you asked for it.
      Neither tag = you wrote it. They are ordinary tags: filter them, remove
      them, ignore them.
 

@@ -96,7 +96,7 @@
         const head = '| ' + t.cols.map(c => c.label).join(' | ') + ' |';
         const sep = '| ' + t.cols.map(() => '---').join(' | ') + ' |';
         const body = t.rows.map(r => '| ' + t.cols.map(c => cell(c.get(r))).join(' | ') + ' |').join('\n');
-        post({ type: 'export-md', name: id, content: `# ${t.title}\n\n_Exported ${new Date().toLocaleString()} · ${t.rows.length} row(s)_\n\n${head}\n${sep}\n${body}\n` });
+        post({ type: 'export-md', name: id, content: `# ${t.title}\n\n_Exported ${window.AFTime.full(Date.now())} · ${t.rows.length} row(s)_\n\n${head}\n${sep}\n${body}\n` });
     }
 
     function render() {
@@ -144,7 +144,7 @@
             { key: 'success', label: 'Success', num: true, get: u => u.successRate !== undefined ? u.successRate : -1 }
         ], 'Forecast — upcoming runs');
         const upcoming = ttFore.rows.map(u => `<tr>
-            <td title="${C.esc(new Date(u.ts).toLocaleString())}">${C.esc(fmtNext(u.ts))}</td>
+            <td title="${C.esc(window.AFTime.tip(u.ts, 'Next run'))}">${C.esc(fmtNext(u.ts))}</td>
             <td><b>${C.esc(u.title)}</b></td>
             <td>${C.esc(u.agentName)}</td>
             <td class="num">${fmtDurMs(u.medianMs)}</td>
@@ -164,7 +164,7 @@
             ${window.AFHeader.html({
                 page: 'tasks',
                 title: 'Task Analytics',
-                sub: `30-day history and forecast — updated ${new Date(a.generatedAt).toLocaleTimeString()}`,
+                sub: `30-day history and forecast — updated ${window.AFTime.clockUtc(a.generatedAt)}`,
                 actions: '<button class="secondary" data-go="open-tasks">← Back to Tasks</button>',
                 guide: 'tasks-sayfasi'
             })}

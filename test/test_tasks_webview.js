@@ -19,6 +19,8 @@ const code = fs.readFileSync(path.join(__dirname, '..', 'media', 'afFilters.js')
     // the search boxes are QUERIES now (media/afQuery.js), and the real grammar
     // runs here rather than a stub
     + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'afQuery.js'), 'utf8')
+    // …and every clock on the page goes through the one clock (media/afTime.js)
+    + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'afTime.js'), 'utf8')
     + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'tasksPage.js'), 'utf8');
 const createAfmsDom = require(path.join(__dirname, 'lib_afms_dom.js'));
 

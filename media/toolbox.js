@@ -31,7 +31,100 @@
         settings: 'The config files themselves at both scopes — what exists, what keys it sets, one click to open.'
     };
 
-    const state = { tab: 'overview', q: '', expanded: {} };
+    /**
+     * ‼️ A FILTER MUST BE ABLE TO ASK THIS PAGE'S OWN QUESTIONS.
+     *
+     * There are several hundred rows here and the only way to narrow them was a
+     * text box. That answers "does this word appear", which is the wrong
+     * question nearly every time you have this many rows: "the Anthropic ones
+     * that are actually enabled" is two axes, and typing `anthropic` gets you
+     * every plugin that merely mentions them. Each tab is a different TABLE with
+     * different columns, so a single shared filter bar could never be right —
+     * what is needed is per-tab facets, drawn from the columns that tab already
+     * shows.
+     *
+     * A facet is: an id, a label, and the one value a row has for it. The
+     * options are then read off the DATA rather than declared, so a new
+     * marketplace, a new transport or a new hook event appears in the picker on
+     * its own — a hard-coded vocabulary here would go stale silently, which is
+     * the failure this page already had.
+     *
+     * Selection semantics are AFFilter's, extension-wide: null = all (and a
+     * value that appears later is included without touching the picker), [] =
+     * none, a list = exactly that subset.
+     */
+    const SCOPE_FACET = {
+        id: 'scope', label: 'Scope',
+        of: x => (x.it.scope === 'user' ? 'user' : (x.it.agentName || 'agent')),
+        title: 'USER scope is shared by every agent on this machine; an agent-scope entry belongs to that agent alone and shadows a user one of the same name.'
+    };
+    const usedOf = x => ((x.it.detail.usage30d || 0) > 0 ? 'used' : 'never used');
+    const FACETS = {
+        skill: [SCOPE_FACET,
+            { id: 'used', label: 'Use', of: usedOf, title: 'Real invocations found in the last 30 days of transcripts.' }],
+        subagent: [SCOPE_FACET,
+            { id: 'model', label: 'Model', of: x => x.it.detail.model || 'inherits' }],
+        command: [SCOPE_FACET,
+            {
+                id: 'ns', label: 'Namespace',
+                of: x => (String(x.it.name).indexOf(':') >= 0 ? String(x.it.name).split(':')[0] : '(top level)'),
+                title: 'Commands are ":" namespaced by the folder they sit in.'
+            }],
+        mcp: [SCOPE_FACET,
+            { id: 'transport', label: 'Transport', of: x => x.it.detail.transport || '(unstated)' },
+            { id: 'state', label: 'State', of: x => (x.it.detail.disabled === true ? 'disabled' : 'enabled') },
+            {
+                id: 'probe', label: 'Probe',
+                of: x => {
+                    const p = DATA.probeCache[probeKeyOf(x.it)];
+                    return !p ? 'not probed' : (p.ok ? 'answered' : 'failed');
+                },
+                title: 'Whether this server has been connected to and asked for its tool list.'
+            }],
+        hook: [SCOPE_FACET,
+            { id: 'event', label: 'Event', of: x => x.it.detail.event || '(none)' }],
+        plugin: [
+            { id: 'state', label: 'State', of: x => (x.it.detail.enabled ? 'enabled' : 'disabled') },
+            { id: 'author', label: 'Author', of: x => x.it.detail.author || '(unknown)' },
+            { id: 'mkt', label: 'Marketplace', of: x => x.it.detail.marketplace || '(unknown)' },
+            { id: 'category', label: 'Category', of: x => x.it.detail.category || '(none)' }],
+        style: [SCOPE_FACET],
+        settings: [SCOPE_FACET]
+    };
+
+    /** How each tab can be ordered. `name` is everywhere; the rest are the one
+     *  or two axes that tab is actually read by. */
+    const SORTS = {
+        skill: [{ v: 'name', t: 'name' }, { v: 'used', t: 'most used' }, { v: 'scope', t: 'scope' }],
+        subagent: [{ v: 'name', t: 'name' }, { v: 'scope', t: 'scope' }],
+        command: [{ v: 'name', t: 'name' }, { v: 'scope', t: 'scope' }],
+        mcp: [{ v: 'name', t: 'name' }, { v: 'used', t: 'most used' }, { v: 'scope', t: 'scope' }],
+        hook: [{ v: 'name', t: 'event' }, { v: 'scope', t: 'scope' }],
+        plugin: [{ v: 'name', t: 'name' }, { v: 'state', t: 'enabled first' }, { v: 'author', t: 'author' }],
+        style: [{ v: 'name', t: 'name' }, { v: 'scope', t: 'scope' }],
+        settings: [{ v: 'name', t: 'name' }, { v: 'size', t: 'largest' }, { v: 'scope', t: 'scope' }]
+    };
+
+    /** Per TAB, so stepping into MCP to check something does not throw away the
+     *  plugin filter you spent four clicks building. */
+    const state = { tab: 'overview', q: '', expanded: {}, facets: {}, sort: {} };
+
+    const facetsFor = (kind) => FACETS[kind] || [];
+    /** null = all. Kept per tab AND per facet. */
+    function facetSel(kind, id) {
+        const t = state.facets[kind] || (state.facets[kind] = {});
+        return t[id] === undefined ? null : t[id];
+    }
+    function setFacet(kind, id, sel) {
+        const t = state.facets[kind] || (state.facets[kind] = {});
+        if (sel === null) { delete t[id]; } else { t[id] = sel; }
+    }
+    const sortOf = (kind) => state.sort[kind] || 'name';
+    /** Is anything narrowing this tab right now? */
+    function anyActive(kind) {
+        const t = state.facets[kind] || {};
+        return !!state.q || Object.keys(t).length > 0;
+    }
 
     window.addEventListener('message', ev => {
         if (ev.data.type === 'data') { DATA = ev.data.data; render(); }
@@ -55,14 +148,77 @@
             : `<span class="tag agent" title="agent scope — only this agent">${esc(it.agentName || '')}</span>`;
     }
 
+    /** Every row of this kind, before any narrowing — what the facet pickers
+     *  read their options off, so an option never disappears because you
+     *  already used it. */
+    function allOf(kind) {
+        return DATA.items.map((it, i) => ({ it, i })).filter(x => x.it.kind === kind);
+    }
+
+    /** The facet options a tab has RIGHT NOW, in a stable order. */
+    function facetOptions(kind, f) {
+        const seen = [];
+        for (const x of allOf(kind)) {
+            const v = String(f.of(x));
+            if (seen.indexOf(v) < 0) { seen.push(v); }
+        }
+        return seen.sort((a, b) => a.localeCompare(b));
+    }
+
+    const SORT_KEY = {
+        name: x => String(x.it.detail.event || x.it.detail.plugin || x.it.name).toLowerCase(),
+        used: x => -(x.it.detail.usage30d || 0),
+        scope: x => (x.it.scope === 'user' ? '0' : '1' + (x.it.agentName || '')),
+        state: x => (x.it.detail.enabled || x.it.detail.disabled === false ? '0' : '1'),
+        author: x => String(x.it.detail.author || '~').toLowerCase(),
+        size: x => -(x.it.detail.sizeBytes || 0)
+    };
+
     function items(kind) {
         // the box is a QUERY, not a substring — media/afQuery.js
         const q = window.AFQuery.compile(state.q);
-        return DATA.items
-            .map((it, i) => ({ it, i }))
-            .filter(x => x.it.kind === kind)
+        const facets = facetsFor(kind);
+        const rows = allOf(kind)
             .filter(x => q.test(x.it.name + ' ' + x.it.description + ' ' + (x.it.agentName || '') + ' ' +
-                JSON.stringify(x.it.detail || {})));
+                JSON.stringify(x.it.detail || {})))
+            // Every facet must pass — the axes are ANDed, which is the whole
+            // point of having more than one ("Anthropic AND enabled").
+            .filter(x => facets.every(f => {
+                const sel = facetSel(kind, f.id);
+                return sel === null || sel.indexOf(String(f.of(x))) >= 0;
+            }));
+        const key = SORT_KEY[sortOf(kind)] || SORT_KEY.name;
+        // A stable tiebreak on the name, so two rows with the same usage do not
+        // swap places between renders.
+        return rows.sort((a, b) => {
+            const ka = key(a), kb = key(b);
+            if (ka < kb) { return -1; }
+            if (ka > kb) { return 1; }
+            return SORT_KEY.name(a) < SORT_KEY.name(b) ? -1 : 1;
+        });
+    }
+
+    /** The filter row a tab wears: its facets, its sort, and the way out. */
+    function filterBar(kind, shown, total) {
+        const pickers = facetsFor(kind).map(f => window.AFFilter.multi({
+            id: 'tbf-' + kind + '-' + f.id,
+            label: f.label,
+            options: facetOptions(kind, f),
+            selected: facetSel(kind, f.id),
+            title: f.title || ''
+        })).join(' ');
+        const sorts = (SORTS[kind] || []).map(s =>
+            `<option value="${esc(s.v)}"${sortOf(kind) === s.v ? ' selected' : ''}>${esc(s.t)}</option>`).join('');
+        const clear = anyActive(kind)
+            ? `<button class="mini" data-tbclear="${esc(kind)}"
+                 title="Drop the text and every facet on this tab — the other tabs keep theirs">✕ clear</button>`
+            : '';
+        return `<div class="tb-filters">${pickers}
+            ${sorts ? `<span class="muted small">sort</span><select id="tb-sort">${sorts}</select>` : ''}
+            ${clear}
+            <span class="grow"></span>
+            <span class="muted small">${shown === total ? `${total}` : `${shown} of ${total}`} shown</span>
+        </div>`;
     }
 
     function actionBtns(x, extra) {
@@ -150,12 +306,16 @@
     }
 
     function mdTable(kind, cols, rowFn) {
+        const total = allOf(kind).length;
         const rows = items(kind);
+        const head = searchBox(`filter ${total} entries…`) + filterBar(kind, rows.length, total);
         if (!rows.length) {
-            return searchBox('filter…') + `<p class="muted">${state.q ? 'Nothing matches the filter.' : 'None installed at either scope.'} ${EXPLAIN[kind]}</p>` +
+            return head + `<p class="muted">${anyActive(kind)
+                ? 'Nothing matches — narrow it less, or ✕ clear.'
+                : 'None installed at either scope.'} ${EXPLAIN[kind]}</p>` +
                 (newButtons(kind) ? `<p>${newButtons(kind)}</p>` : '');
         }
-        return searchBox(`filter ${rows.length} entries…`) +
+        return head +
             (newButtons(kind) ? `<p>${newButtons(kind)}</p>` : '') +
             `<div class="card tablewrap"><table class="tb">
             <tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr>${rows.map(rowFn).join('')}</table></div>`;
@@ -240,7 +400,11 @@
     }
 
     function pluginTab() {
-        const marketplaces = items('plugin').filter(x => x.it.detail.isMarketplace);
+        // Marketplaces are the CATALOGUES, not entries in the list — they are
+        // named in the line above the table and must not be narrowed away by a
+        // filter meant for the plugins inside them.
+        const marketplaces = allOf('plugin').filter(x => x.it.detail.isMarketplace);
+        const totalPlugins = allOf('plugin').filter(x => !x.it.detail.isMarketplace).length;
         const plugins = items('plugin').filter(x => !x.it.detail.isMarketplace);
         const mkts = marketplaces.map(x => `<span class="badge" title="last updated ${esc(x.it.detail.lastUpdated || '?')}">
             ${esc(x.it.name)} · ${esc(x.it.detail.pluginCount)} plugins
@@ -260,12 +424,15 @@
                     ${d.homepage ? `<button class="mini" data-act="home" data-url="${esc(d.homepage)}">homepage</button>` : ''}
                 </td></tr>`;
         }).join('');
-        return searchBox(`filter ${plugins.length} plugins…`) +
-            `<p class="muted small">Marketplaces: ${mkts || 'none'} — ${enabledCount} plugin(s) enabled.
+        return searchBox(`filter ${totalPlugins} plugins…`) +
+            filterBar('plugin', plugins.length, totalPlugins) +
+            `<p class="muted small">Marketplaces: ${mkts || 'none'} — ${enabledCount} of ${totalPlugins} plugin(s) enabled.
              Enabling writes <code>enabledPlugins</code> in user settings.json; claude installs/loads it on the next session start.</p>` +
             (plugins.length
                 ? `<div class="card tablewrap"><table class="tb"><tr><th>Plugin</th><th>Category</th><th>Description</th><th>Author</th><th></th></tr>${rows}</table></div>`
-                : `<p class="muted">No marketplace catalog found. ${EXPLAIN.plugin}</p>`);
+                : `<p class="muted">${totalPlugins
+                    ? 'Nothing matches — narrow it less, or ✕ clear.'
+                    : 'No marketplace catalog found.'} ${EXPLAIN.plugin}</p>`);
     }
 
     function styleTab() {
@@ -340,6 +507,12 @@
                 .tb-cat { font-weight: 600; margin: 2px 0; }
                 .tb-exp { margin-top: 6px; line-height: 1.35; }
                 .newrow select { max-width: 180px; }
+                /* The facet row sits directly under the text box: one band that
+                   reads left to right as "narrow it · order it · undo it ·
+                   how many are left". */
+                .tb-filters { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0 10px; }
+                .tb-filters .grow { flex: 1; }
+                .tb-filters select { font-size: 11px; }
                 .searchbar input { width: 280px; }            </style>
             ${window.AFHeader.html({
                 page: 'toolbox',
@@ -356,19 +529,37 @@
 
     function wire() {
         window.AFHeader.wire(vscode);
+        // ‼️ The text box is per PAGE and the facets are per TAB, deliberately:
+        // typed words are a passing thought and rarely mean the same thing on
+        // the next tab, while a facet selection is four clicks of setting up a
+        // view and throwing it away for a glance at MCP is the annoyance this
+        // whole change exists to remove.
         document.querySelectorAll('[data-tab]').forEach(b =>
             b.addEventListener('click', () => { state.tab = b.dataset.tab; state.q = ''; render(); }));
+        for (const f of facetsFor(state.tab)) {
+            window.AFFilter.wireMulti({
+                id: 'tbf-' + state.tab + '-' + f.id,
+                onChange: sel => { setFacet(state.tab, f.id, sel); render(); }
+            });
+        }
+        const sortSel = document.getElementById('tb-sort');
+        if (sortSel) {
+            sortSel.addEventListener('change', () => { state.sort[state.tab] = sortSel.value; render(); });
+        }
+        document.querySelectorAll('[data-tbclear]').forEach(b =>
+            b.addEventListener('click', () => {
+                state.q = '';
+                delete state.facets[b.dataset.tbclear];
+                render();
+            }));
         document.querySelectorAll('[data-afnav]').forEach(b =>
             b.addEventListener('click', () => post({ type: 'afnav', to: b.dataset.afnav })));
         const q = document.getElementById('tb-q');
         if (q) {
-            q.addEventListener('input', () => {
-                state.q = q.value;
-                const pos = q.selectionStart;
-                render();
-                const nq = document.getElementById('tb-q');
-                if (nq) { nq.focus(); nq.setSelectionRange(pos, pos); }
-            });
+            // live() keeps the caret across the re-render it triggers, and the
+            // ✕ is the convention every other filter box on this extension has.
+            window.AFFilter.live(q, el => { state.q = el.value; render(); });
+            window.AFFilter.clearable(q, () => { state.q = ''; render(); });
         }
         document.querySelectorAll('[data-exp]').forEach(b =>
             b.addEventListener('click', () => {

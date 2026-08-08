@@ -156,7 +156,7 @@
         if (n.answerPath) { files.push(docSplit('answer', n.id, `📝 Open answer (${esc(fileBase(n.answerPath))})`, n.answerPath)); }
         if (n.reportPath) { files.push(docSplit('report', n.id, `📄 Open report (${esc(fileBase(n.reportPath))})`, n.reportPath)); }
         if (files.length) { h += `<div class="q-files">${files.join(' ')}</div>`; }
-        if (n.handledAt) { h += `<div class="muted small">handled: ${esc(new Date(n.handledAt).toLocaleString())}</div>`; }
+        if (n.handledAt) { h += `<div class="muted small">handled: ${esc(window.AFTime.full(n.handledAt))}</div>`; }
         return h + '</div>';
     }
 
@@ -455,7 +455,7 @@
             ${window.AFHeader.tabs('queue')}
             ${window.AFHeader.html({
                 page: 'queue', title: '📥 Work Queue',
-                sub: `${(DATA.items || []).length} items · ${active} active${blocked ? ` · ${blocked} need you` : ''} · showing ${items.length} · ${new Date(DATA.generatedAt).toLocaleTimeString()}`,
+                sub: `${(DATA.items || []).length} items · ${active} active${blocked ? ` · ${blocked} need you` : ''} · showing ${items.length} · ${window.AFTime.clockUtc(DATA.generatedAt)}`,
                 controls: controls()
             })}
             ${addForm()}

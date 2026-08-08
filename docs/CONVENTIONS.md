@@ -165,6 +165,43 @@ arrives after the popup has closed itself.
 
 ---
 
+## Time
+
+**Every clock goes through `AFTime` (`media/afTime.js`).** Never
+`toLocaleTimeString` or `toLocaleString` in a page, a tree or a status bar
+again. The extension host loads the same file through `src/core/aftime.ts`, so
+the two sides cannot round a minute differently.
+
+**Why UTC is not decoration here.** Everything this extension shows is a record
+of when a machine did something, and machines state their times in UTC: a
+transcript, a plan-quota window, a rate limit, a scheduled run. The page renders
+them in whatever zone this computer is set to, so `14:32` on its own is not a
+fact — it is a fact plus an offset nothing on screen mentioned. Comparing a run
+against a provider's own log then means doing the arithmetic in your head,
+which is the sort of small tax that makes people stop checking.
+
+| Where the clock is | What to call | What it gives |
+|---|---|---|
+| a table cell, a dense meta line | `clock(ts)` **+ `title={tip(ts, label)}`** | `20:14`, hover carries the rest |
+| a detail line, a card footer, a page sub | `clockUtc(ts)` / `full(ts)` | `20:14 (17:14 UTC)` |
+| a tree or status-bar hover, an exported file | `full(ts)` | there is no second hover to hide in |
+| "how long ago" | `ago(ts)` | `4h ago` |
+
+- **No clock is ever bare.** A cell may show `20:14` alone, but then its `title`
+  is `tip(ts, …)` — three lines: the moment to the second, its UTC, and this
+  machine's offset *at that moment* (not today's — a session from before a DST
+  change was not recorded in the offset we are in now).
+- **`tip` takes a label**, because a row has three dates that look alike and a
+  hover with no subject makes the reader guess which one they are on.
+- **A missing timestamp prints nothing**, never `Invalid Date` and never
+  1 Jan 1970. Rows with an unset date are normal — a task that has never fired,
+  a session with no end.
+- **Inline UTC does not go in a table cell.** Widening every date column by
+  eleven characters to repeat what the hover already says costs the columns that
+  carry the actual measurements.
+
+---
+
 ## Making things
 
 **An object is made by a form on the page. A chain of VS Code boxes is not a

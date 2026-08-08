@@ -108,8 +108,9 @@ export interface ProjectsPanelDeps {
      *  ‼️ Codes only: an entry has to mean the same item after the file is
      *  edited, and a line number does not survive that. */
     backlogQueue(id: string, codes: string[]): { error?: string; note?: string };
-    /** Put each area's items back in code order. The queue is unaffected. */
-    backlogTidy(id: string): { error?: string; note?: string; moved?: number };
+    /** Carry misfiled items back under their own heading, then put each area's
+     *  items in code order. The queue is unaffected by either. */
+    backlogTidy(id: string): { error?: string; note?: string; moved?: number; reseated?: string[] };
     /** Give an inbox capture a code and file it under an area. */
     backlogCode(id: string, target: { line?: number }, area: string):
         { error?: string; code?: string };
@@ -567,11 +568,18 @@ export class ProjectsPanel {
             case 'backlogTidy': {
                 if (!id) { break; }
                 const res = this.deps.backlogTidy(id);
+                // ‼️ A RESEAT IS NAMED, A SORT IS COUNTED. "3 items back in code
+                // order" is housekeeping nobody needs to check; "P-6, P-7 were
+                // under the wrong heading" is the one thing here worth reading,
+                // because it says the file was not showing what it was meant to.
+                const home = (res.reseated ?? []).length
+                    ? `${(res.reseated as string[]).join(', ')} moved back under `
+                    + `${(res.reseated as string[]).length === 1 ? 'its' : 'their'} own heading. `
+                    : '';
                 this.done(res.error, res.error ? undefined
-                    : (res.moved
+                    : home + (res.moved
                         ? `${res.moved} item${res.moved === 1 ? '' : 's'} back in code order.`
-                        + (res.note ? ` ${res.note}` : '')
-                        : (res.note ?? 'Already in code order.')));
+                        : (home ? '' : (res.note ?? 'Already in code order.'))));
                 break;
             }
             case 'backlogCode': {

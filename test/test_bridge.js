@@ -2252,8 +2252,8 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         ok('‼️ backlog.add stamps WHO wrote the line, both ways',
             /BACKLOG_ORIGIN_TAGS\[/.test(addBlock)
             && /optStr\(args, 'origin'\) === 'user' \? 'user' : 'agent'/.test(addBlock));
-        ok('…and its contract says which tag is which, and that the default is by-agent',
-            /#by-agent/.test(addBlock) && /#by-request/.test(addBlock)
+        ok('…and its contract says which tag is which, and that the default is byAI',
+            /#byAI/.test(addBlock) && /#byREQ/.test(addBlock)
             && /origin\? \(agent\|user, default agent\)/.test(addBlock));
         ok('…and that an item the user typed themselves carries neither',
             /carry neither/.test(addBlock));

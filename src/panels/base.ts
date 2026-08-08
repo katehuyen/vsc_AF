@@ -240,6 +240,10 @@ export function htmlShell(
     // out of media/), so a page that had to opt in would be a page whose filter
     // box quietly answers a different question from the search that feeds it.
     const query = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afQuery.js'));
+    // The clock, for the same two reasons as the query language: the extension
+    // host loads the SAME FILE (src/core/aftime.ts), and the rule "every time
+    // carries UTC in its hover" cannot hold on a page that had to opt in.
+    const time = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afTime.js'));
     const sessTable = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'sessionsTable.js'));
     const script = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', scriptFile));
     // Global UI config shared by every page (not page data): the user's AI
@@ -281,6 +285,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${textTools}"></script>
 <script nonce="${nonce}" src="${tip}"></script>
 <script nonce="${nonce}" src="${query}"></script>
+<script nonce="${nonce}" src="${time}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>
 <script nonce="${nonce}" src="${script}"></script>
 </body>

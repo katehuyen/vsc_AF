@@ -9,6 +9,7 @@ import { normalizeSpeakerConfig, renderSpeaker } from '../core/speaker';
 import { fmtDuration, fmtStepPair } from '../core/util';
 import { askExportOptions, handleAfNav, htmlShell } from './base';
 import { buildData as buildViewerData } from './sessionViewer';
+import { full as afFull } from '../core/aftime';
 
 /**
  * Turns page: the whole farm unrolled to one row per user turn — the Sessions
@@ -117,7 +118,7 @@ export function buildTurnsMarkdown(
         fallback: sc.get('speakerLabelFallback')
     });
     const lines: string[] = ['# Agent Farm — Turns export', ''];
-    lines.push(`- Generated: ${new Date().toLocaleString()}`);
+    lines.push(`- Generated: ${afFull(Date.now())}`);
     lines.push(opts.view
         ? `- Export: current view · ${shown.length} listed turn(s) · open turns' content shown${roles.length ? ` (show: ${roles.join(', ')})` : ''} · folded turns ${opts.foldedTitles ? 'as titles only' : 'omitted'}`
         : `- Export: everything · ${shown.length} listed turn(s), each with its full content`);
@@ -145,7 +146,7 @@ export function buildTurnsMarkdown(
             r.cost ? `$${r.cost.toFixed(r.cost >= 1 ? 2 : 4)}` : '',
             r.tools ? `${r.tools} tools` : '',
             r.errors ? `${r.errors} err` : '',
-            r.ts ? new Date(r.ts).toLocaleString() : ''
+            r.ts ? afFull(r.ts) : ''
         ].filter(Boolean).join(' · ');
         lines.push('', `## ${r.agentName || '?'} · turn ${r.n}/${r.of} — ${r.label || '(no prompt)'}`);
         lines.push(`*session: ${r.session}${meta ? ' · ' + meta : ''}*`);

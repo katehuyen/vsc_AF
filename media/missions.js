@@ -69,7 +69,7 @@
     const spec = (run) => DATA.specs.find(s => s.id === run.specId) || {
         title: run.specId, goal: '', team: [], limits: DATA.defaults, approvalMode: 'each-round', leadAgentName: '?'
     };
-    const fmtTime = (ts) => ts ? new Date(ts).toLocaleString() : '—';
+    const fmtTime = (ts) => (ts ? window.AFTime.full(ts) : '—');
     const usd = (n) => '$' + (n || 0).toFixed(2);
     const elapsed = (since) => {
         const s = Math.max(0, Math.floor((Date.now() - since) / 1000));

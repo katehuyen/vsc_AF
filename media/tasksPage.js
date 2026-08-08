@@ -96,7 +96,7 @@
         const state = g.paused
             ? '<span class="pill stop">ALL PAUSED</span>' + (g.pauseReason ? ` <span class="muted small">${C.esc(g.pauseReason)}</span>` : '')
             : g.pausedUntil && g.pausedUntil > Date.now()
-                ? `<span class="pill warn">paused until ${C.esc(new Date(g.pausedUntil).toLocaleTimeString())}</span>`
+                ? `<span class="pill warn" title="${C.esc(window.AFTime.tip(g.pausedUntil, 'Paused until'))}">paused until ${C.esc(window.AFTime.clock(g.pausedUntil))}</span>`
                 : g.blocked
                     ? `<span class="pill warn">${C.esc(g.blockReason)}</span>`
                     : '<span class="pill go">running</span>';
@@ -1449,7 +1449,7 @@
             ${window.AFHeader.html({
                 page: 'tasks',
                 title: 'Tasks',
-                sub: `plan what runs · see what ran — updated ${new Date(d.generatedAt).toLocaleTimeString()}`,
+                sub: `plan what runs · see what ran — updated ${window.AFTime.clockUtc(d.generatedAt)}`,
                 guide: 'tasks-sayfasi'
             })}
             ${headerHtml(d)}

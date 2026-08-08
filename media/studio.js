@@ -72,7 +72,7 @@
 
     const cur = () => (DATA.productions || []).find(p => p.id === DATA.project);
     const post = (type, extra) => vscode.postMessage(Object.assign({ type }, extra || {}));
-    const fmtTime = ts => new Date(ts).toLocaleString();
+    const fmtTime = ts => window.AFTime.full(ts);
 
     function thumb(a) {
         if (!a.uri) { return ''; }

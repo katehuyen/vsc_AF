@@ -227,6 +227,41 @@ rl.on('line', l => {
     const badKind = await reg.dispatch('toolbox.list', { kind: 'nope' });
     ok('toolbox.list rejects unknown kind', !badKind.ok && /Unknown kind/.test(badKind.error));
 
+    // ---- S-15: the op asks the page's own questions, and ANDs them ----
+    //
+    // "the Anthropic ones that are actually enabled" is two axes. With one text
+    // box it was not askable at all — on the page or here — and typing the word
+    // returned every row that merely mentions it.
+    const byTransport = await reg.dispatch('toolbox.list', { kind: 'mcp', transport: 'stdio' });
+    ok('toolbox.list narrows MCP by transport',
+        byTransport.ok && byTransport.result.items.length >= 1
+        && byTransport.result.matched < byTransport.result.total);
+    // (PreToolUse was removed by the removeHookEntry test above — `Stop` is the
+    // one this fixture still has by the time the ops run.)
+    const byEvent = await reg.dispatch('toolbox.list', { kind: 'hook', event: 'Stop' });
+    ok('…hooks by their lifecycle event',
+        byEvent.ok && byEvent.result.items.length === 1 && byEvent.result.items[0].name === 'Stop');
+    ok('…and the event match is case-blind, because the value is somebody else\'s JSON',
+        (await reg.dispatch('toolbox.list', { kind: 'hook', event: 'stop' })).result.items.length === 1);
+    ok('…while an event nothing carries returns nothing rather than everything',
+        (await reg.dispatch('toolbox.list', { kind: 'hook', event: 'PreToolUse' })).result.items.length === 0);
+    const byModel = await reg.dispatch('toolbox.list', { kind: 'subagent', model: 'haiku' });
+    ok('…subagents by model', byModel.ok && byModel.result.items.some(i => i.name === 'reviewer'));
+    const anded = await reg.dispatch('toolbox.list', { kind: 'subagent', model: 'haiku', scope: 'agent' });
+    ok('‼️ two axes are ANDed, not ORed — that is the whole point of having two',
+        anded.ok && anded.result.items.every(i => i.scope === 'agent'));
+    const byQuery = await reg.dispatch('toolbox.list', { kind: 'skill', q: 'ship -noname' });
+    ok('…and `q` is the real query language, not a substring',
+        byQuery.ok && byQuery.result.items.length === 1 && byQuery.result.items[0].name === 'deploy');
+    const enabled = await reg.dispatch('toolbox.list', { kind: 'mcp', state: 'enabled' });
+    ok('…one word for enabled/disabled, whichever the row itself speaks',
+        enabled.ok && enabled.result.matched <= enabled.result.total);
+    const badState = await reg.dispatch('toolbox.list', { state: 'sort of' });
+    ok('…and a state that is neither is refused in words', !badState.ok && /enabled/.test(badState.error));
+    const unfiltered = await reg.dispatch('toolbox.list', {});
+    ok('an unfiltered call still says how many there are in total',
+        unfiltered.ok && unfiltered.result.matched === unfiltered.result.total);
+
     const insp = await reg.dispatch('toolbox.inspect', { kind: 'skill', name: 'local', agent: 'dev' });
     ok('toolbox.inspect returns the item detail', insp.ok && insp.result[0].description === 'agent-only skill');
     const inspMiss = await reg.dispatch('toolbox.inspect', { kind: 'skill', name: 'ghost' });

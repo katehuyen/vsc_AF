@@ -3,6 +3,7 @@ import { describePrecondition } from '../core/automation';
 import { FarmSchedule, FarmTask, FarmTemplate, FarmTrigger, FarmWorkflow, TaskManager } from '../core/tasks';
 import { TriggerManager } from '../core/triggers';
 import { relTime } from '../core/util';
+import { full as afFull } from '../core/aftime';
 
 /**
  * Tasks tree — the sidebar NAVIGATOR for the Tasks page.
@@ -46,7 +47,7 @@ function scheduleWhen(s: FarmSchedule): string {
     const hm = `${String(s.hour).padStart(2, '0')}:${String(s.minute).padStart(2, '0')}`;
     if (s.kind === 'daily') { return `daily ${hm}`; }
     if (s.kind === 'weekly') { return `${DOW[s.dow ?? 0]} ${hm}`; }
-    return s.onceAt ? `once ${new Date(s.onceAt).toLocaleString()}` : 'once';
+    return s.onceAt ? `once ${afFull(s.onceAt)}` : 'once';
 }
 
 const isLive = (t: FarmTask) => t.status === 'queued' || t.status === 'running';
@@ -186,7 +187,7 @@ export class TasksTreeProvider implements vscode.TreeDataProvider<TaskNode> {
                 + `model: ${t.action.kind === 'workflow' ? '—' : (t.action.model || 'default')}\n`
                 + `fires only if: ${describePrecondition(t.fireIf) || 'no guard — any change wakes an agent'}\n`
                 + `debounce ${t.debounceSec}s • cooldown ${t.cooldownSec}s • max ${t.maxPerHour}/h\n`
-                + (t.lastFiredAt ? `last fired: ${new Date(t.lastFiredAt).toLocaleString()}` : 'never fired')
+                + (t.lastFiredAt ? `last fired: ${afFull(t.lastFiredAt)}` : 'never fired')
                 + (t.lastSkipReason ? `\nlast skip: ${t.lastSkipReason}` : '')
                 + (stat ? `\nreliability: ${stat}` : '');
             item.contextValue = t.type === 'webhook' ? 'trigger-webhook' : 'trigger';

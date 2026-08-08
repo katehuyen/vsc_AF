@@ -213,9 +213,9 @@ export const BACKLOG_KINDS = ['bug', 'research', 'feat', 'ux', 'chore', 'debt', 
  * by the person who owns it:
  *
  *   (nothing)     the user wrote it — in the capture box or in Obsidian.
- *   #by-request   an agent wrote the line, but the user asked for it. The
+ *   #byREQ        an agent wrote the line, but the user asked for it. The
  *                 thought is theirs; the agent was the typist.
- *   #by-agent     an agent noticed it mid-job and filed it on its own
+ *   #byAI         an agent noticed it mid-job and filed it on its own
  *                 initiative. Nobody has agreed to this yet.
  *
  * That last distinction is the whole point. An agent's own suggestion is a
@@ -229,13 +229,36 @@ export const BACKLOG_KINDS = ['bug', 'research', 'feat', 'ux', 'chore', 'debt', 
  * remove or query one with the tools they already use. Nothing here is
  * canonical-set business: the panel's type badge never touches them.
  */
-export const BACKLOG_ORIGIN_TAGS = { agent: 'by-agent', user: 'by-request' } as const;
+export const BACKLOG_ORIGIN_TAGS = { agent: 'byAI', user: 'byREQ' } as const;
 export type BacklogOrigin = keyof typeof BACKLOG_ORIGIN_TAGS;
 export const BACKLOG_ORIGINS: BacklogOrigin[] = ['agent', 'user'];
+
+/** The two above, found by their folded spelling. */
+const ORIGIN_BY_FOLD = new Map(
+    (Object.values(BACKLOG_ORIGIN_TAGS) as string[]).map(v => [v.toLowerCase(), v])
+);
+
+/**
+ * One spelling for a tag, so the same tag never becomes two.
+ *
+ * ‼️ TAGS ARE MATCHED FOLDED AND WRITTEN CANONICAL, and the second half is not
+ * tidiness. Everything downstream compares tags in lower case, so the parser
+ * folds them — but the ORIGIN tags carry deliberate capitals (`byAI`, `byREQ`),
+ * and folding is what a rebuild would write BACK to the file. A user's chosen
+ * casing would then vanish the first time somebody clicked a priority badge,
+ * silently, in their vault. So the fold is undone for exactly these two, on the
+ * way in and on the way out — and `#byai`, `#BYAI` or `#ByAi` typed by hand in
+ * Obsidian all land on the one spelling.
+ */
+export const canonKind = (tag: string): string => {
+    const t = String(tag ?? '').replace(/^#/, '').toLowerCase();
+    return ORIGIN_BY_FOLD.get(t) ?? t;
+};
+
 /** True for the two tags above — the panel labels them for what they are
  *  instead of calling them "your own tag". */
 export const isOriginTag = (tag: string): boolean =>
-    (Object.values(BACKLOG_ORIGIN_TAGS) as string[]).includes(String(tag).replace(/^#/, '').toLowerCase());
+    ORIGIN_BY_FOLD.has(String(tag).replace(/^#/, '').toLowerCase());
 
 /** ⛔ P-5.1 — blocked until that one closes. Several may sit on one line. */
 const BLOCKED = /⛔\s*((?:[A-Z]{1,2}-\d+(?:\.\d+)*)(?:\s*,\s*[A-Z]{1,2}-\d+(?:\.\d+)*)*)/gu;
@@ -353,6 +376,12 @@ export interface BacklogItem {
     area?: string;
     /** The nearest heading above it. */
     section: string;
+    /** The AREA that heading declares — `U` for `## U — Interface` — and
+     *  undefined under a heading that declares none (📥, 🎯, an archive).
+     *  ‼️ NOT the same as `area`, which a coded line takes from its own code:
+     *  the two disagreeing is precisely a line filed under the wrong heading,
+     *  and there is no other way to see it. */
+    sectionArea?: string;
     /** True when it sits under the 📥 heading or carries no code. */
     inbox: boolean;
     kinds: string[];
@@ -522,7 +551,7 @@ export function parseBacklog(text: string): BacklogSummary {
         }
         const kinds: string[] = [];
         TAG.lastIndex = 0;
-        for (let t = TAG.exec(body); t; t = TAG.exec(body)) { kinds.push(t[1].toLowerCase()); }
+        for (let t = TAG.exec(body); t; t = TAG.exec(body)) { kinds.push(canonKind(t[1])); }
 
         let priority: BacklogPriority = 'normal';
         for (const [icon, p] of Object.entries(ICON_PRIORITY)) {
@@ -540,6 +569,7 @@ export function parseBacklog(text: string): BacklogSummary {
             ...(code ? { code } : {}),
             ...(code ? { area: code.split('-')[0] } : (area ? { area } : {})),
             section,
+            ...(area ? { sectionArea: area } : {}),
             inbox: inInbox || !code,
             kinds,
             priority,
@@ -679,7 +709,7 @@ export function nextBacklog(text: string, opts: NextOptions = {}): NextResult {
 
     const passed = live.filter(i => {
         if (opts.area && i.area !== opts.area) { return false; }
-        if (opts.kind && !i.kinds.includes(opts.kind.toLowerCase())) { return false; }
+        if (opts.kind && !i.kinds.includes(canonKind(opts.kind))) { return false; }
         if (PRIORITY_WEIGHT[i.priority] < minW) { return false; }
         // An item with no effort stated is NOT excluded by the ceiling: it has
         // not been sized, and refusing to hand out everything unsized would make
@@ -984,7 +1014,7 @@ export function setBacklogFields(
     const parts = [`${indent}${bullet} [${STATE_CHAR[item.state]}]`];
     if (item.code) { parts.push(item.code); }
     parts.push(words);
-    for (const k of kinds) { parts.push(`#${k}`); }
+    for (const k of kinds) { parts.push(`#${canonKind(k)}`); }
     if (PRIORITY_ICON[priority]) { parts.push(PRIORITY_ICON[priority]); }
     if (effort) { parts.push(`[effort:: ${effort}]`); }
     if (plan) { parts.push(`[plan:: ${plan}]`); }
@@ -1088,7 +1118,7 @@ export function addBacklogItem(text: string, input: AddBacklogInput): AddBacklog
     const parts = [`- [${STATE_CHAR[input.state ?? 'open']}]`];
     if (code) { parts.push(code); }
     parts.push(words);
-    for (const k of input.kinds ?? []) { parts.push(`#${k.replace(/^#/, '')}`); }
+    for (const k of input.kinds ?? []) { parts.push(`#${canonKind(k)}`); }
     if (input.priority && PRIORITY_ICON[input.priority]) { parts.push(PRIORITY_ICON[input.priority]); }
     if (input.effort) { parts.push(`[effort:: ${input.effort}]`); }
     if (input.plan) { parts.push(`[plan:: ${input.plan}]`); }
@@ -1388,6 +1418,67 @@ export interface TidyResult extends BacklogEditResult {
     moved: number;
     /** Sections left alone, and why — see the prose rule below. */
     skipped: string[];
+    /** Codes that were sitting under somebody else's heading and were carried
+     *  back to their own section. Named rather than counted: this one is worth
+     *  reading, because a line in the wrong place is a line its owner cannot
+     *  find in Obsidian. */
+    reseated: string[];
+}
+
+/**
+ * Carry a coded item back under its own area's heading.
+ *
+ * ‼️ WHY THIS IS THE OTHER HALF OF TIDYING, AND WHY ITS ABSENCE WAS INVISIBLE.
+ * The sort below works on RUNS of consecutive items and cannot cross a heading,
+ * by design — so an item filed under the wrong one was never moved back; it was
+ * merely sorted into a tidy-looking position among its new neighbours. Measured
+ * on the real file: `A-4, P-6 … P-10, U-1, U-3 …` all sat under `## U`, in
+ * perfect code order, looking deliberate. The panel never showed the damage,
+ * because it groups by the CODE and so drew every one of them under P and A as
+ * if nothing were wrong. The only reader who saw it was the person scrolling
+ * `Backlog.md` to the `## P` section and finding five items missing from a file
+ * that is supposed to be the record. That is what this repairs, and — running
+ * on every tidy — what stops it accumulating again.
+ *
+ * An item goes home only if its area HAS a heading here: inventing one would be
+ * restructuring somebody's document rather than repairing it. Anything under an
+ * archive heading is left where it is — the archive is a record of what was, not
+ * a section to sort. Uncoded captures have no home to go to and never move.
+ *
+ * One item per pass, re-parsing between: an insertion renumbers every line under
+ * it, and the cost of getting that arithmetic wrong is a line deleted from the
+ * user's vault. A backlog is hundreds of lines, so re-reading it is free.
+ */
+function reseatMisfiled(src: string): { text: string; moved: string[] } {
+    const eol = eolOf(src);
+    let text = String(src ?? '');
+    const moved: string[] = [];
+    for (let guard = 0; guard < 400; guard++) {
+        const parsed = parseBacklog(text);
+        const home = new Map<string, number>();
+        for (const a of parsed.areas) { home.set(a.code, a.line); }
+        const stray = parsed.items.find(i =>
+            !!i.code && !!i.area && home.has(i.area)
+            && i.sectionArea !== i.area
+            && !ARCHIVE_HEADING.test(i.section));
+        if (!stray) { break; }
+
+        const area = stray.area as string;
+        // Land after the last item ALREADY seated correctly, so a run of strays
+        // arrives in the order it left; with none seated yet, straight under the
+        // heading.
+        const seated = parsed.items.filter(i => i.area === area && i.sectionArea === area);
+        const after = seated.length ? seated[seated.length - 1].line : (home.get(area) as number);
+        const cut = removeLine(text, stray.line, stray.raw);
+        if (!cut) { break; }
+        // Taking the line out pulled everything below it up by one.
+        const at = lineStartOffset(cut, stray.line < after + 1 ? after : after + 1);
+        text = at >= 0
+            ? cut.slice(0, at) + stray.raw + eol + cut.slice(at)
+            : cut + (cut.endsWith('\n') ? '' : eol) + stray.raw + eol;
+        moved.push(stray.code as string);
+    }
+    return { text, moved };
 }
 
 /**
@@ -1406,7 +1497,12 @@ export interface TidyResult extends BacklogEditResult {
  * Blank lines between items are furniture, not prose, and are closed up.
  */
 export function tidyBacklogFile(text: string): TidyResult {
-    const src = String(text ?? '');
+    // ‼️ HOME FIRST, THEN ORDER. Sorting cannot cross a heading, so an item
+    // sorted before it is reseated is sorted into the wrong section and stays
+    // there looking correct. See reseatMisfiled.
+    const reseat = reseatMisfiled(String(text ?? ''));
+    const reseated = reseat.moved;
+    const src = reseat.text;
     const parsed = parseBacklog(src);
     const lines = src.split(/\r?\n/);
     const eol = eolOf(src);
@@ -1465,16 +1561,21 @@ export function tidyBacklogFile(text: string): TidyResult {
         lines.splice(span.from, span.to - span.from + 1, ...body);
     }
 
-    const left = skipped.length
-        ? `left ${skipped.join(', ')} alone — prose sits between those items`
-        : '';
+    const parts: string[] = [];
+    if (reseated.length) {
+        parts.push(`carried ${reseated.join(', ')} back under ${reseated.length === 1 ? 'its' : 'their'} own heading`);
+    }
+    if (skipped.length) {
+        parts.push(`left ${skipped.join(', ')} alone — prose sits between those items`);
+    }
+    const left = parts.join('; ');
     if (!moved) {
         return {
-            ok: true, text: src, moved: 0, skipped,
-            note: left ? `everything else was already in order; ${left}` : 'already in code order'
+            ok: true, text: src, moved: 0, skipped, reseated,
+            note: left || 'already in code order'
         };
     }
-    return { ok: true, text: lines.join(eol), moved, skipped, ...(left ? { note: left } : {}) };
+    return { ok: true, text: lines.join(eol), moved, skipped, reseated, ...(left ? { note: left } : {}) };
 }
 
 const insideBlock = (blocks: { from: number; to: number }[], line: number): boolean =>
