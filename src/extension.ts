@@ -109,6 +109,7 @@ import {
     allTags, isPinned, normalizeMarks, parseTags, SessionMarks, setTags, tagsOf, togglePin
 } from './core/sessionmarks';
 import { INTERRUPT_KEY, resolveInterrupt, TermRecord } from './core/interrupt';
+import { readEngines, enginesSummary, EngineStatus } from './core/engines';
 import { QUICK_MENU, QUICK_MENU_GROUPS } from './core/quickmenu';
 import { describeOwner, mergeSessionNames, ownerOf, pidAlive, readCliSessions, sessionsDir } from './core/cliSessions';
 import { revealPath } from './core/reveal';
@@ -7010,6 +7011,47 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vault,
         getAgents: () => agents
     };
+
+    /**
+     * X-3 — WHAT THIS MACHINE CAN ACTUALLY RUN.
+     *
+     * The probe is the only place the engine matrix touches the world: a home
+     * directory, PATH, the vault's index and this process's environment. Every
+     * reader is best-effort — a locked credentials file makes one row say less,
+     * never the page fail. See core/engines.ts for why this is not "the keys".
+     */
+    const engineProbe = {
+        readHome: (rel: string): string | undefined => {
+            // The Claude credentials live wherever agentFarm.claudeDir says, so
+            // that one is resolved through the same accessor everything else
+            // uses rather than assumed to be ~/.claude.
+            const p = rel.startsWith('.claude/')
+                ? path.join(claudeDir(), rel.slice('.claude/'.length))
+                : path.join(os.homedir(), rel);
+            try { return fs.readFileSync(p, 'utf8'); } catch { return undefined; }
+        },
+        existsHome: (rel: string): boolean => {
+            try { return fs.existsSync(path.join(os.homedir(), rel)); } catch { return false; }
+        },
+        which: (command: string): string | undefined => {
+            const exts = process.platform === 'win32'
+                ? (process.env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean)
+                : [''];
+            for (const dir of (process.env.PATH ?? '').split(path.delimiter)) {
+                if (!dir) { continue; }
+                for (const ext of ['', ...exts]) {
+                    const p = path.join(dir, command + ext);
+                    try { if (fs.existsSync(p) && fs.statSync(p).isFile()) { return p; } } catch { /* keep looking */ }
+                }
+            }
+            return undefined;
+        },
+        // ‼️ The NAME only. Asking the vault whether it holds a key is not the
+        // same as reading it, and this path never reads it.
+        hasSecret: (name: string): boolean => vault.names().includes(name),
+        hasEnv: (name: string): boolean => !!process.env[name]
+    };
+    const engineMatrix = (): EngineStatus[] => readEngines(engineProbe);
     // One dependency object for the Toolbox page, because the page is now
     // opened from six places (the nav, the palette, and the four tool commands
     // that used to build their object out of input boxes — U-14).
@@ -8371,6 +8413,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // chip shows is what the next session will actually be given. Cached,
         // because this is asked for on every repaint (see the preview above).
         projectContextText: (projectId: string) => projectContextPreviewFor(projectId),
+        // ‼️ …and the project a session ALREADY belongs to, for the panel's own
+        // resume — the same membership order every other resume route uses.
+        sessionProject: (s: { sessionId?: string; agentId?: string; agentName?: string; cwd?: string }) =>
+            sessionOwnProject(s),
         promptSnippets: () => readPromptSnippets()
     };
 
@@ -13630,6 +13676,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // a path in a box that says nothing either way.
                     promptSnippets: () => readPromptSnippets(),
                     setPromptSnippetsFile: (file) => setPromptSnippetsFile(file),
+                    // X-3 — the engine matrix, and its two gestures. Neither of
+                    // them handles a credential here: the sign-in is the CLI's
+                    // own command in a real terminal (the browser and the CLI
+                    // settle it between them, and the grant stays in the CLI's
+                    // file), and the key route hands over to the vault's own
+                    // form, which is the one surface allowed to hold a value.
+                    engines: () => engineMatrix(),
+                    engineLogin: (command: string) => {
+                        const term = vscode.window.createTerminal({ name: 'Agent Farm: sign in' });
+                        term.show();
+                        term.sendText(command, false);
+                        void vscode.window.showInformationMessage(
+                            `Agent Farm: "${command}" is typed into a terminal — press Enter to run it. `
+                            + 'The sign-in happens in your browser and the CLI keeps the grant; Agent Farm never sees it.');
+                    },
+                    engineKey: (name: string) => { SecretsPanel.compose(secretsDeps, name); },
                     // Which editor a .md document opens in — reports and answers
                     // (Notices, Work Queue) AND the project documents.
                     docOpen: () => ({ ...docOpenStore.get(), modes: [...DOC_OPEN_MODES] }),
@@ -14769,6 +14831,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 await setPromptSnippetsFile(file);
                 const snap = readPromptSnippets();
                 return { file: snap.file || null, source: snap.source, count: snap.items.length };
+            }
+        },
+        {
+            op: 'engines.status',
+            describe: 'Which agent CLIs this machine can run, and HOW each one is paid for — the same '
+                + 'matrix Farm Settings → Engines draws. Per engine: whether the command is on PATH, '
+                + 'the auth mode ("subscription" = signed in with a plan and no key involved, "apikey" '
+                + '= billed per token, "none" = nothing set up), the file that says so, the env var name '
+                + 'the engine reads and whether the vault holds a secret under it, and `next` — the one '
+                + 'thing to do. ‼️ NO CREDENTIAL VALUE IS EVER RETURNED and none can be set from here: '
+                + 'signing in is the CLI\'s own command in a terminal, and keys are the panel-only vault '
+                + '(the deliberate secrets exception). args: id? (claude | codex | gemini)',
+            handler: (args) => {
+                const id = (optStr(args, 'id') ?? '').trim().toLowerCase();
+                const all = engineMatrix();
+                const list = id ? all.filter(e => e.id === id) : all;
+                need(!id || list.length > 0, `no engine called "${id}" — try claude, codex or gemini`);
+                return { ...enginesSummary(all), engines: list };
             }
         }
     ]);

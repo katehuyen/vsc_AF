@@ -246,6 +246,73 @@
             </details>`;
     }
 
+    /**
+     * ‼️ X-3 — THE SECTION THAT ANSWERS "WHY CAN I NOT RUN THAT ONE HERE".
+     *
+     * Everything the extension used to say about a non-Claude engine was a row
+     * in the secret vault, and the vault is a flat name→value table that knows
+     * nothing about engines. So the question had no surface at all: the answer
+     * was Ctrl+Shift+P → Set Secret and a guess about which name to type.
+     *
+     * The fix is not a better key box. TWO OF THE THREE ENGINES ARE PAID FOR BY
+     * A SUBSCRIPTION, NOT A KEY — Claude Code with a Pro/Max plan, Codex with a
+     * ChatGPT plan — so a screen built around keys is a screen built around the
+     * exception. Each row therefore states, in this order: is the CLI here, how
+     * is it paid for, is it signed in, and the ONE thing to do next. The key
+     * box is offered where a key is genuinely the route, and named exactly
+     * (`OPENAI_API_KEY`), because half the difficulty was never knowing which
+     * name the engine reads. See src/core/engines.ts.
+     */
+    const ENGINE_TERMS = 'engine engines model models cli claude codex openai gemini '
+        + 'antigravity api key apikey login sign in subscription plan auth credentials secret vault';
+
+    function engineRow(e) {
+        const T = window.AFTip;
+        const tone = !e.cli.found ? 'off' : e.auth.mode === 'none' ? 'warn' : 'ok';
+        const badge = !e.cli.found ? 'not installed'
+            : e.auth.mode === 'subscription' ? 'on a plan'
+                : e.auth.mode === 'apikey' ? 'on a key' : 'not signed in';
+        // Figures on the hover, the way a column's own tooltip works elsewhere:
+        // where it was read from, when, and what the alternative route is.
+        const facts = T.lines([
+            `Command: ${e.cli.command}${e.cli.path ? ' — ' + e.cli.path : ' — not on PATH'}`,
+            `Billing: ${e.auth.mode === 'subscription' ? 'a plan' : e.auth.mode === 'apikey' ? 'per token' : 'nothing set up'}`,
+            e.auth.file ? `Read from: ~/${e.auth.file}` : '',
+            e.auth.refreshedAt ? `Last refreshed: ${new Date(e.auth.refreshedAt).toLocaleString()}` : '',
+            `Key name: ${e.key.env}${e.key.inVault ? ' — in the vault' : ' — not in the vault'}`
+        ]);
+        return `<div class="setitem eng eng-${tone}">
+            <div class="sethead">
+                <span class="setname">${C.esc(e.label)}</span>
+                <span class="engbadge b-${tone}" title="${C.esc(facts)}">${C.esc(badge)}</span>
+                <span style="flex:1"></span>
+                ${e.loginCommand ? `<button class="secondary small" data-englogin="${C.esc(e.loginCommand)}"
+                    title="${C.esc(`Open a terminal and run ${e.loginCommand}. The sign-in happens in your browser and the CLI keeps the grant itself — Agent Farm never sees it.`)}">Sign in with a plan</button>` : ''}
+                <button class="secondary small" data-engkey="${C.esc(e.key.env)}"
+                    title="${C.esc(`${e.key.inVault ? 'Replace' : 'Store'} ${e.key.env} in the OS keychain. This is the pay-per-token route; the value never reaches this page.`)}">${e.key.inVault ? 'Replace key' : 'Add key'}</button>
+                <button class="secondary small" data-engdocs="${C.esc(e.docs)}" title="${C.esc(e.docs)}">Docs</button>
+            </div>
+            <div class="setdesc">${C.esc(e.billing)}</div>
+            <div class="engnext">${C.esc(e.next)}</div>
+            <div class="engdetail muted small">${C.esc(e.auth.detail)}</div>
+        </div>`;
+    }
+
+    function enginesSection() {
+        const list = DATA.engines;
+        if (!list || !list.length) { return ''; }
+        if (filter && !ENGINE_TERMS.includes(filter.toLowerCase())) { return ''; }
+        const ready = list.filter(e => e.ready).length;
+        const onPlan = list.filter(e => e.ready && e.auth.mode === 'subscription').length;
+        return `
+            <h2 class="cat" id="cat-engines">Engines <span class="muted small">${ready} of ${list.length} ready</span></h2>
+            <p class="muted small" style="max-width:760px">Which agent CLIs this machine can actually run, and how each one is paid for.
+            <b>${onPlan} of ${ready}</b> are running on a subscription rather than per token — a plan sign-in lives in the CLI's own
+            credentials file and never passes through Agent Farm. A key is the other route, and it is kept in the OS keychain
+            (the <b>Secrets</b> page is the full table); it is injected into an agent's environment under the exact name the engine reads.</p>
+            ${list.map(engineRow).join('')}`;
+    }
+
     function profileBar() {
         const opts = DATA.profiles.map(p =>
             `<option value="${C.esc(p.name)}">${C.esc(p.name)} (${p.count})</option>`).join('');
@@ -419,6 +486,7 @@
         const docOpenHtml = docOpenSection();
         const foldersHtml = foldersSection();
         const claudeHtml = claudeSection();
+        const enginesHtml = enginesSection();
 
         document.getElementById('app').innerHTML = `
             <style>
@@ -472,6 +540,18 @@
                 .promptprev { font-size:10px; opacity:.6; flex:1 1 auto; overflow:hidden;
                     text-overflow:ellipsis; white-space:nowrap; }
                 .promptline { font-size:10px; opacity:.45; flex:none; }
+                /* engines — the row is read left to right: who, how paid for,
+                   what to do. The rule on the left is the state, not decoration. */
+                .setitem.eng { border-left:3px solid var(--vscode-widget-border, #4444); }
+                .setitem.eng-ok { border-left-color:var(--vscode-charts-green, #3fb950); }
+                .setitem.eng-warn { border-left-color:var(--vscode-charts-yellow, #d7ba7d); }
+                .setitem.eng-off { border-left-color:var(--vscode-descriptionForeground, #888); opacity:.75; }
+                .engbadge { font-size:10px; padding:1px 8px; border-radius:9px; white-space:nowrap; cursor:help;
+                    border:1px solid var(--vscode-widget-border, #4446); }
+                .engbadge.b-ok { background:var(--vscode-charts-green, #3fb950); color:#fff; border-color:transparent; }
+                .engbadge.b-warn { background:var(--vscode-charts-yellow, #d7ba7d); color:#000; border-color:transparent; }
+                .engnext { font-size:12px; margin-top:4px; max-width:760px; }
+                .engdetail { margin-top:2px; }
             </style>
             ${window.AFHeader.html({
                 page: 'settings',
@@ -484,13 +564,14 @@
                 <input id="filter" type="text" placeholder="Filter settings… (name or description)" value="${C.esc(filter)}" style="width:100%; max-width:420px; padding:6px 8px"
                     title="${C.esc(window.AFQuery.tip('Searched against every setting key and its description.'))}">
             </div>
-            <div class="catnav">${foldersHtml ? '<a data-cat="folders">Agent folders</a>' : ''}${docOpenHtml ? '<a data-cat="docopen">Open with</a>' : ''}${cats.map(c => `<a data-cat="${c.id}">${C.esc(c.label)}</a>`).join('')}${claudeHtml ? '<a data-cat="claude">Claude Code</a>' : ''}</div>
+            <div class="catnav">${enginesHtml ? '<a data-cat="engines">Engines</a>' : ''}${foldersHtml ? '<a data-cat="folders">Agent folders</a>' : ''}${docOpenHtml ? '<a data-cat="docopen">Open with</a>' : ''}${cats.map(c => `<a data-cat="${c.id}">${C.esc(c.label)}</a>`).join('')}${claudeHtml ? '<a data-cat="claude">Claude Code</a>' : ''}</div>
+            ${enginesHtml}
             ${foldersHtml}
             ${docOpenHtml}
             ${cats.map(c => `
                 <h2 class="cat" id="cat-${c.id}">${C.esc(c.label)} <span class="muted small">${c.items.length}</span></h2>
                 ${c.id === 'prompts' ? promptsSection(c) : c.items.map(itemHtml).join('')}`).join('')
-            || (claudeHtml || foldersHtml || docOpenHtml ? '' : '<p class="muted">No settings match the filter.</p>')}
+            || (claudeHtml || foldersHtml || docOpenHtml || enginesHtml ? '' : '<p class="muted">No settings match the filter.</p>')}
             ${claudeHtml}
         `;
 
@@ -508,6 +589,18 @@
             const el = document.getElementById(id);
             if (el) { el.addEventListener('click', () => vscode.postMessage({ type })); }
         };
+        // Engines — three gestures, and the host owns all three: a terminal it
+        // opens, the vault form it already has, and a link. Nothing about a
+        // credential is decided on this page.
+        document.querySelectorAll('[data-englogin]').forEach(b =>
+            b.addEventListener('click', () =>
+                vscode.postMessage({ type: 'engineLogin', command: b.dataset.englogin })));
+        document.querySelectorAll('[data-engkey]').forEach(b =>
+            b.addEventListener('click', () =>
+                vscode.postMessage({ type: 'engineKey', name: b.dataset.engkey })));
+        document.querySelectorAll('[data-engdocs]').forEach(b =>
+            b.addEventListener('click', () =>
+                vscode.postMessage({ type: 'engineDocs', url: b.dataset.engdocs })));
         onClick('promptspick', 'promptsPick');
         onClick('promptsopen', 'promptsOpen');
         onClick('promptsreload', 'promptsReload');

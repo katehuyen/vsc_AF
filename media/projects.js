@@ -422,7 +422,7 @@
 
     function tabsHtml() {
         return `<div class="pj-tabs">${TABS.map(t =>
-            `<button class="pj-tab ${t.id === tab ? 'on' : ''}" data-tab="${t.id}" title="${C.esc(t.tip)}">${C.esc(t.label)}</button>`
+            `<button class="pj-tab tb-${t.id}${t.id === tab ? ' on' : ''}" data-tab="${t.id}" title="${C.esc(t.tip)}">${C.esc(t.label)}</button>`
         ).join('')}</div>`;
     }
 
@@ -776,13 +776,55 @@
                 .pj-flash.good { background:var(--vscode-inputValidation-infoBackground, #0a3); color:var(--vscode-foreground); }
                 .pj-flash.bad { background:var(--vscode-inputValidation-errorBackground, #a00); color:var(--vscode-foreground); }
                 .pj-summary { margin:4px 0 0; }
-                /* tabs */
-                .pj-tabs { display:flex; gap:2px; margin:14px 0 12px; border-bottom:1px solid var(--vscode-panel-border); }
-                .pj-tab { background:none; border:none; border-bottom:2px solid transparent; border-radius:0;
-                    padding:6px 12px; font-size:12px; opacity:.7; cursor:pointer; color:inherit; }
-                .pj-tab:hover { opacity:1; background:var(--vscode-list-hoverBackground); }
-                .pj-tab.on { opacity:1; border-bottom-color:var(--vscode-focusBorder,#3794ff); font-weight:600; }
-                /* track — four views over one ledger; see trackHtml() */
+                /* tabs
+                   ‼️ THE HANDLE THE WHOLE PAGE IS OPERATED BY. Every sub-page of
+                   a project is reached from this one row, and it used to be drawn
+                   as quietly as the lines above and below it: same weight, same
+                   grey, one thin underline on the selected one. A row that opens
+                   nine pages cannot read as one more line of metadata, so each
+                   tab carries its OWN colour — the same hue in its underline, in
+                   its glyph and in the selected tab's tint, so the eye learns the
+                   position and the colour together. It is a tint and a 2px rule,
+                   not a block of paint: the page below is what is being read. */
+                .pj-tabs { display:flex; gap:2px; margin:14px 0 12px; flex-wrap:wrap;
+                    border-bottom:1px solid var(--vscode-panel-border); }
+                .pj-tab { background:none; border:none; border-radius:5px 5px 0 0;
+                    border-bottom:2px solid color-mix(in srgb, var(--tabc) 26%, transparent);
+                    padding:6px 12px; font-size:12px; opacity:.68; cursor:pointer; color:inherit;
+                    --tabc:var(--vscode-focusBorder,#3794ff); }
+                .pj-tab:hover { opacity:1; background:var(--vscode-list-hoverBackground);
+                    border-bottom-color:color-mix(in srgb, var(--tabc) 60%, transparent); }
+                .pj-tab.on { opacity:1; font-weight:600; border-bottom-color:var(--tabc);
+                    background:color-mix(in srgb, var(--tabc) 14%, transparent);
+                    box-shadow:inset 0 -1px 0 color-mix(in srgb, var(--tabc) 40%, transparent); }
+                /* Nine hues, fixed to the tab rather than to its position, so a
+                   tab that is added or moved does not repaint the whole row. */
+                .pj-tab.tb-overview { --tabc:var(--vscode-charts-blue,#3794ff); }
+                .pj-tab.tb-plan { --tabc:var(--vscode-charts-green,#3fb950); }
+                .pj-tab.tb-backlog { --tabc:var(--vscode-charts-yellow,#d7ba7d); }
+                .pj-tab.tb-track { --tabc:var(--vscode-charts-purple,#b180d7); }
+                .pj-tab.tb-timeline { --tabc:var(--vscode-charts-orange,#d18616); }
+                .pj-tab.tb-docs { --tabc:var(--vscode-charts-foreground,#8ab4f8); }
+                .pj-tab.tb-people { --tabc:var(--vscode-charts-red,#f14c4c); }
+                .pj-tab.tb-cost { --tabc:var(--vscode-charts-yellow,#d7ba7d); }
+                .pj-tab.tb-sessions { --tabc:var(--vscode-charts-blue,#3794ff); }
+                .pj-tab.tb-settings { --tabc:var(--vscode-descriptionForeground,#9d9d9d); }
+                /* track — four views over one ledger; see trackHtml()
+                   ‼️ THE TRACK'S OWN COLOUR SYSTEM. It rhymes with the backlog
+                   without inheriting it, because the two pages answer different
+                   questions: the backlog colours by WORK TYPE (what kind of job
+                   is this), the track by what HAPPENED to an item and where it
+                   stands now. Three axes, and nothing else is painted:
+                     · the event chip is filled by kind — done green, cancelled
+                       red, started blue, reopened yellow, a plain touch left
+                       outlined, because "worked on" is the quiet majority;
+                     · every row and card carries a 3px left rule in its STATE's
+                       colour, which is what makes a long list scannable;
+                     · a record that was reconstructed rather than watched wears
+                       the purple the backlog gives research — the one colour
+                       that means "worked out, not observed" on both pages.
+                   The palette is the editor's own chart colours throughout, so
+                   it follows the user's theme instead of fighting it. */
                 .pj-trk-stats { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
                 .pj-trk-stat { font-size:12px; opacity:.85; white-space:nowrap; background:none;
                     border:none; padding:0; color:inherit; }
@@ -798,19 +840,36 @@
                 .pj-trk-sep { width:1px; align-self:stretch; margin:0 4px;
                     background:var(--vscode-panel-border); }
                 .pj-trk-item { border:1px solid var(--vscode-widget-border,#4443); border-radius:6px;
-                    padding:7px 10px; margin-bottom:7px; }
+                    padding:7px 10px; margin-bottom:7px;
+                    --stc:var(--vscode-charts-blue,#3794ff);
+                    border-left:3px solid var(--stc); }
+                .pj-trk-item.st-open { --stc:var(--vscode-charts-blue,#3794ff); }
+                .pj-trk-item.st-doing { --stc:var(--vscode-charts-yellow,#d7ba7d);
+                    background:color-mix(in srgb, var(--stc) 8%, transparent); }
+                .pj-trk-item.st-done { --stc:color-mix(in srgb, var(--vscode-charts-green,#3fb950) 55%, transparent); }
+                .pj-trk-item.st-cancelled { --stc:color-mix(in srgb, var(--vscode-charts-red,#f14c4c) 45%, transparent); }
+                .pj-trk-item.st-gone { --stc:var(--vscode-editorWarning-foreground,#d29922); }
+                /* Reconstructed rather than watched — the one thing a reader has
+                   to be able to see before trusting a row (see TRK_SOURCES). */
+                .pj-trk-item.backfilled { border-top-color:color-mix(in srgb, var(--vscode-charts-purple,#b180d7) 55%, transparent);
+                    border-right-color:color-mix(in srgb, var(--vscode-charts-purple,#b180d7) 55%, transparent);
+                    border-bottom-color:color-mix(in srgb, var(--vscode-charts-purple,#b180d7) 55%, transparent); }
                 .pj-trk-head { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
                 .pj-trk-code { font-size:12px; cursor:pointer; background:none; border:none; padding:0;
                     color:inherit; font-family:var(--vscode-editor-font-family,monospace);
                     text-decoration:underline dotted; }
                 .pj-trk-code:hover { color:var(--vscode-textLink-activeForeground,#4daafc); }
-                .pj-trk-state { font-size:11px; opacity:.65; padding:0 5px; border-radius:4px;
-                    border:1px solid var(--vscode-widget-border,#4443); }
-                .pj-trk-state.s-done { opacity:.5; }
-                .pj-trk-state.s-doing { border-color:var(--vscode-charts-green,#3fb950); opacity:.9; }
-                .pj-trk-state.s-gone { border-color:var(--vscode-editorWarning-foreground,#d29922); }
+                .pj-trk-state { font-size:11px; opacity:.85; padding:0 5px; border-radius:4px;
+                    border:1px solid var(--stc,var(--vscode-widget-border,#4443));
+                    color:var(--stc,inherit); }
+                .pj-trk-state.s-done { opacity:.7; }
+                .pj-trk-state.s-gone { border-color:var(--vscode-editorWarning-foreground,#d29922);
+                    color:var(--vscode-editorWarning-foreground,#d29922); }
                 .pj-trk-sum { font-size:11px; opacity:.7; white-space:nowrap; }
                 .pj-trk-words { flex:1 1 320px; min-width:0; opacity:.85; }
+                /* the words are wrapped for their hover panel, so the wrapper is
+                   the flex child and it is the wrapper that has to grow */
+                .pj-trk-head > .af-tipw.trk-words { flex:1 1 320px; min-width:0; }
                 .pj-trk-m { font-size:11px; opacity:.8; padding:0 5px; border-radius:4px;
                     border:1px solid var(--vscode-widget-border,#4443); background:none; color:inherit; }
                 button.pj-trk-m { cursor:pointer; }
@@ -824,31 +883,81 @@
                 .pj-trk-turn { font-size:11px; padding:1px 7px; border-radius:9px; cursor:pointer;
                     border:1px solid var(--vscode-widget-border,#4443); background:none; color:inherit; }
                 .pj-trk-turn:hover { background:var(--vscode-list-hoverBackground); }
+                /* The event chip is FILLED, not outlined: it is the one mark on a
+                   row that says what actually happened, and four outlines in four
+                   tints is exactly the "everything is pale" the tab was. A plain
+                   touch stays outlined on purpose — it is most of the ledger,
+                   and a list where every row shouts says nothing. */
                 .pj-trk-ev { font-size:10px; padding:1px 6px; border-radius:8px; opacity:.85;
                     border:1px solid var(--vscode-widget-border,#4443); white-space:nowrap; }
-                .pj-trk-ev.e-done { border-color:var(--vscode-charts-green,#3fb950); }
-                .pj-trk-ev.e-cancelled { opacity:.6; }
-                .pj-trk-ev.e-doing { border-color:var(--vscode-charts-blue,#3794ff); }
-                .pj-trk-ev.e-reopen { border-color:var(--vscode-editorWarning-foreground,#d29922); }
+                .pj-trk-ev.e-done { background:var(--vscode-charts-green,#3fb950); color:#fff;
+                    border-color:transparent; opacity:1; }
+                .pj-trk-ev.e-cancelled { background:var(--vscode-charts-red,#f14c4c); color:#fff;
+                    border-color:transparent; opacity:.8; }
+                .pj-trk-ev.e-doing { background:var(--vscode-charts-blue,#3794ff); color:#fff;
+                    border-color:transparent; opacity:1; }
+                .pj-trk-ev.e-reopen { background:var(--vscode-charts-yellow,#d7ba7d); color:#000;
+                    border-color:transparent; opacity:1; }
+                .pj-trk-ev.e-touch { opacity:.7; }
                 .pj-trk-doubt { font-size:10px; padding:1px 6px; border-radius:8px; opacity:.85;
                     background:var(--vscode-inputValidation-warningBackground,#663); }
                 .pj-trk-note { margin-top:5px; padding-left:8px; font-size:12px; opacity:.9;
                     border-left:2px solid var(--vscode-focusBorder,#3794ff); }
                 /* timeline view */
                 .pj-trk-day { font-size:11px; text-transform:uppercase; opacity:.55; margin:10px 0 3px; }
-                .pj-trk-tl { display:flex; gap:8px; align-items:center; padding:2px 4px; border-radius:4px; }
+                /* ‼️ EVERY COLUMN IS GIVEN ITS WIDTH, AND THE NOTE TAKES THE REST.
+                   The row is a flex line, so a child with no basis shrinks below
+                   its own content and wraps INSIDE its box: the clock broke over
+                   two lines, the code broke after the dash, the session id broke
+                   before the turn number, and a one-line record drew as three.
+                   Nothing here shrinks except the note, which is the only column
+                   whose length is unbounded — and it ellipsises rather than
+                   wrapping, with the whole text in the hover. */
+                .pj-trk-tl { display:flex; gap:8px; align-items:center; padding:2px 4px; border-radius:4px;
+                    --stc:var(--vscode-widget-border,#4443);
+                    border-left:3px solid var(--stc); }
+                .pj-trk-tl.e-done { --stc:var(--vscode-charts-green,#3fb950); }
+                .pj-trk-tl.e-cancelled { --stc:color-mix(in srgb, var(--vscode-charts-red,#f14c4c) 70%, transparent); }
+                .pj-trk-tl.e-doing { --stc:var(--vscode-charts-blue,#3794ff); }
+                .pj-trk-tl.e-reopen { --stc:var(--vscode-charts-yellow,#d7ba7d); }
                 .pj-trk-tl:hover { background:var(--vscode-list-hoverBackground); }
-                .pj-trk-tltime { font-size:11px; opacity:.6; width:44px; flex:0 0 auto; }
+                .pj-trk-tltime { font-size:11px; opacity:.6; flex:0 0 62px; white-space:nowrap;
+                    font-variant-numeric:tabular-nums; }
+                .pj-trk-tl .pj-trk-ev { flex:0 0 92px; text-align:center; }
+                .pj-trk-tl .pj-trk-code { flex:0 0 64px; text-align:left; white-space:nowrap; }
+                /* …and when a column is wrapped for its hover panel, the WRAPPER
+                   is the flex child, so it is the wrapper that carries the width
+                   (see the cls argument of AFTip.wrap). */
+                .pj-trk-tl > .af-tipw.tl-code { flex:0 0 64px; }
+                .pj-trk-tl > .af-tipw.tl-note { flex:1 1 auto; min-width:0; }
+                .pj-trk-tl .pj-trk-turn { flex:0 0 120px; white-space:nowrap;
+                    overflow:hidden; text-overflow:ellipsis; text-align:left; }
+                .pj-trk-tlwho { font-size:11px; opacity:.6; flex:0 0 90px; white-space:nowrap;
+                    overflow:hidden; text-overflow:ellipsis; }
                 .pj-trk-tlnote { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
                     white-space:nowrap; font-size:12px; opacity:.75; }
                 .pj-trk-more { margin:10px 0; display:flex; gap:10px; align-items:center; }
                 /* code chips — sessions and gaps */
                 .pj-trk-codes { display:flex; gap:5px; flex-wrap:wrap; margin-bottom:8px; }
+                /* a chip wrapped for its hover panel is still one chip on the row */
+                .pj-trk-codes > .af-tipw, .pj-trk-run > .af-tipw { display:inline-flex; }
                 .pj-trk-scode { font-size:11px; padding:2px 7px; border-radius:5px; cursor:pointer;
                     border:1px solid var(--vscode-widget-border,#4443); background:none; color:inherit;
                     display:inline-flex; gap:5px; align-items:center; }
                 .pj-trk-scode:hover { background:var(--vscode-list-hoverBackground); }
+                /* A code chip says, at a glance, what this session DID to it —
+                   closed it, started it, or only worked on it. */
+                .pj-trk-scode.c-done { border-color:var(--vscode-charts-green,#3fb950);
+                    background:color-mix(in srgb, var(--vscode-charts-green,#3fb950) 12%, transparent); }
+                .pj-trk-scode.c-cancelled { border-color:var(--vscode-charts-red,#f14c4c);
+                    background:color-mix(in srgb, var(--vscode-charts-red,#f14c4c) 10%, transparent); }
+                .pj-trk-scode.c-doing { border-color:var(--vscode-charts-blue,#3794ff); }
+                /* …and a code with no history at all is drawn as the hole it is. */
+                .pj-trk-scode.c-gap { border-style:dashed;
+                    border-color:color-mix(in srgb, var(--vscode-editorWarning-foreground,#d29922) 70%, transparent); }
                 .pj-trk-scodee { opacity:.6; font-size:10px; }
+                .pj-trk-m.closed { color:var(--vscode-charts-green,#3fb950); opacity:1;
+                    border-color:color-mix(in srgb, var(--vscode-charts-green,#3fb950) 60%, transparent); }
                 .pj-trk-gaps .pj-card { margin-bottom:10px; }
                 /* the reconstruct preview */
                 .pj-trk-fillrows { max-height:260px; overflow:auto; margin:6px 0; }
@@ -3296,17 +3405,49 @@
         { id: 'guess', tip: 'Reconstructed from a date and a mention, never observed.' }
     ];
 
+    /**
+     * ‼️ AN AXIS DECLARES WHICH VIEWS IT CAN ACTUALLY HONOUR (U-25).
+     *
+     * The ordering used to reach `trkItemsHtml` and nothing else, while the
+     * dropdown and the ↑↓ button were drawn on all four views — so on three of
+     * them every axis did the same thing, which is to say nothing, and "last
+     * worked" and "first worked" looked identical because neither was being
+     * read. An axis that a view cannot answer is now not OFFERED by that view,
+     * and the ones that are offered work.
+     *
+     * The Timeline is the exception that proves it: it is a chronological list
+     * with day headings, so re-ordering it by an item's properties would not be
+     * a timeline any more. It offers no axis and says so — but its ↑↓ is real,
+     * which is the half of the control that was silently dead there.
+     */
     const TRK_SORTS = [
-        { id: 'last', label: 'last worked' },
-        { id: 'first', label: 'first worked' },
-        { id: 'turns', label: 'turns spent' },
-        { id: 'sessions', label: 'sessions' },
-        { id: 'span', label: 'span — first to last' },
-        { id: 'closed', label: 'closed' },
-        { id: 'code', label: 'code' },
-        { id: 'state', label: 'state' },
-        { id: 'area', label: 'area' }
+        { id: 'last', label: 'last worked', views: ['items', 'sessions'] },
+        { id: 'first', label: 'first worked', views: ['items', 'sessions'] },
+        { id: 'turns', label: 'turns spent', views: ['items', 'sessions'] },
+        { id: 'sessions', label: 'sessions', views: ['items'] },
+        { id: 'span', label: 'span — first to last', views: ['items', 'sessions'] },
+        { id: 'closed', label: 'closed', views: ['items', 'sessions'] },
+        { id: 'code', label: 'code', views: ['items', 'gaps'] },
+        { id: 'state', label: 'state', views: ['items'] },
+        { id: 'area', label: 'area', views: ['items', 'gaps'] }
     ];
+
+    /** The axes THIS view can order by. Empty on the Timeline, which is ordered
+     *  by when things happened and by nothing else. */
+    function trkSortsHere() {
+        return TRK_SORTS.filter(o => o.views.indexOf(trkView) >= 0);
+    }
+
+    /**
+     * The axis actually in force. The reader's choice is never overwritten —
+     * switching to Sessions and back must not lose "state" — so a choice the
+     * current view cannot honour falls back for the duration of that view.
+     */
+    function trkAxis() {
+        const here = trkSortsHere();
+        if (!here.length) { return ''; }
+        return here.some(o => o.id === trkSort) ? trkSort : here[0].id;
+    }
 
     /** How much of a long item is drawn on a Track card. Shorter than the
      *  backlog's, because here the words are context for the history rather than
@@ -3534,18 +3675,19 @@
 
     function trkOrder(rows) {
         const dir = trkDesc ? -1 : 1;
+        const axis = trkAxis();
         const num = {
             last: r => r.lastTs, first: r => r.firstTs, turns: r => r.turns,
             sessions: r => (r.sessions || []).length,
             span: r => Math.max(0, (r.lastTs || 0) - (r.firstTs || 0)),
             closed: r => r.closedTs,
             state: r => BL_STATE_ORDER.indexOf(r.state || 'open')
-        }[trkSort];
+        }[axis];
         const list = rows.slice();
         list.sort((a, b) => {
             let d = 0;
-            if (trkSort === 'code') { d = blCompareCodes(a.code, b.code); }
-            else if (trkSort === 'area') { d = String(a.area || '').localeCompare(String(b.area || '')); }
+            if (axis === 'code') { d = blCompareCodes(a.code, b.code); }
+            else if (axis === 'area') { d = String(a.area || '').localeCompare(String(b.area || '')); }
             else if (num) { d = (num(a) || 0) - (num(b) || 0); }
             // ‼️ The tie-break is NOT reversed with the direction. Ordering by
             // size descending should still list the codes inside one size the
@@ -3655,11 +3797,7 @@
                 ${trkFilter.q.trim() ? '<button class="pj-bl-qx" data-trkclearf="q" title="Clear the search box only">✕</button>' : ''}
             </span>
             ${trkPickHtml()}
-            <select id="trk-sort" title="Ordering. 'last worked' is the default because the question this tab is opened with is almost always what happened recently; 'turns spent' and 'span' are the two that answer how expensive something actually was.">
-                ${TRK_SORTS.map(o => `<option value="${o.id}"${trkSort === o.id ? ' selected' : ''}>${C.esc(o.label)}</option>`).join('')}
-            </select>
-            <button class="pj-bl-badge" data-act="trkDir"
-                title="${trkDesc ? 'Descending — click for ascending' : 'Ascending — click for descending'}">${trkDesc ? '↓' : '↑'}</button>
+            ${trkSortHtml()}
             <span class="grow"></span>
             <span class="muted small pj-bl-count${shown.rows.length < (d.rows || []).length ? ' narrowed' : ''}">${shown.rows.length} of ${(d.rows || []).length} tracked${shown.events.length !== d.events ? ` · ${shown.events.length} of ${d.events} events` : ''}</span>
         </div>
@@ -3669,6 +3807,35 @@
             <code>projects.tracks</code> reads all of it.</p>` : ''}
 
         ${body}`;
+    }
+
+    /**
+     * The ordering control — the axis this view can honour, and the direction.
+     *
+     * ‼️ IT DRAWS WHAT IT CAN DO, WHICH IS THE FIX. The select used to list all
+     * nine axes on every view while only the Items view read any of them; the
+     * arrow was drawn on every view and only the Items view read that either.
+     * A control that is present and inert is worse than one that is absent —
+     * you cannot tell it from a page whose data is all the same.
+     */
+    function trkSortHtml() {
+        const here = trkSortsHere();
+        const axis = trkAxis();
+        const dirTip = here.length
+            ? `${trkDesc ? 'Highest first' : 'Lowest first'} on "${(here.find(o => o.id === axis) || {}).label || axis}" — click to turn it round.`
+            : `${trkDesc ? 'Newest record first' : 'Oldest record first'} — click to turn the timeline round.`;
+        const sel = here.length
+            ? `<select id="trk-sort" title="${C.esc('Ordering, for the ' + trkView + ' view.'
+                + '\n\nOnly the axes THIS view can answer are listed: a session card has a first and a last moment and a turn count, but no single code or state, and the Gaps view is a list of codes with no history to measure. The Items view offers all nine.'
+                + '\n\n\'last worked\' is the default because the question this tab is opened with is almost always what happened recently; \'turns spent\' and \'span\' are the two that answer how expensive something actually was.')}">
+                ${here.map(o => `<option value="${o.id}"${axis === o.id ? ' selected' : ''}>${C.esc(o.label)}</option>`).join('')}
+            </select>`
+            // The Timeline is chronological by definition — it has day headings.
+            // Saying so beats a dropdown that cannot change anything.
+            : `<span class="muted small pj-trk-chrono" title="${C.esc('The Timeline is ordered by when things happened, and by nothing else — that is what makes it a timeline, and what the day headings count on.'
+                + '\n\nUse ↑↓ for oldest-first, or the Items view to order by an axis: last worked, turns spent, span, state, area.')}">chronological</span>`;
+        return `${sel}
+            <button class="pj-bl-badge" data-act="trkDir" title="${C.esc(dirTip)}">${trkDesc ? '↓' : '↑'}</button>`;
     }
 
     /** The counters, each carrying the derived figures its own row implies —
@@ -3970,7 +4137,7 @@
             : '';
         return window.AFTip.wrap(
             `<span class="pj-trk-words">${C.esc(body)}${more}</span>`,
-            `${row.code} · ${window.AFTip.sizeNote(full)}`, full);
+            `${row.code} · ${window.AFTip.sizeNote(full)}`, full, 'trk-words');
     }
 
     function trkItemHtml(d, row, events) {
@@ -3981,7 +4148,11 @@
         const sessions = grouped.runs.length;
         const turns = grouped.runs.reduce((n, g) => n + Math.max(trkTurnsOf(g.events).length, 1), 0);
         const span = trkSpan(row.firstTs, row.lastTs);
-        return `<div class="pj-trk-item" data-trkrow data-code="${C.esc(row.code)}"
+        // The card's left rule is its STATE and the frame says whether any of
+        // this was reconstructed — the two facts a reader needs before reading
+        // a word of the history (see the track colour note in the CSS).
+        return `<div class="pj-trk-item st-${C.esc(state)}${row.backfilled ? ' backfilled' : ''}"
+            data-trkrow data-code="${C.esc(row.code)}"
             data-line="${row.line || 0}" ${trkCtx(row)}>
             <div class="pj-trk-head">
                 <code class="pj-trk-code" data-trkgo="${C.esc(row.code)}"
@@ -4087,26 +4258,48 @@
 
     function trkTimelineHtml(d, sh) {
         if (!sh.events.length) { return trkEmptyHtml(d); }
-        const list = sh.events.slice().sort((a, b) => (b.ev.ts - a.ev.ts)
+        // ‼️ The direction is the reader's (U-25). It was hard-coded to newest
+        // first while the ↑↓ button sat right above the list doing nothing.
+        const dir = trkDesc ? -1 : 1;
+        const list = sh.events.slice().sort((a, b) => ((a.ev.ts - b.ev.ts) * dir)
             || blCompareCodes(a.row.code, b.row.code));
         const shown = list.slice(0, trkCap);
+        const T = window.AFTip;
         let day = '';
         const rows = shown.map(x => {
             const e = x.ev;
             const d2 = window.AFTime.stamp(e.ts).split(',')[0];
             const head = d2 === day ? '' : `<div class="pj-trk-day">${C.esc(d2)}</div>`;
             day = d2;
-            return head + `<div class="pj-trk-tl" ${trkCtx(x.row)} data-trkrow data-code="${C.esc(x.row.code)}" data-line="${x.row.line || 0}">
+            // The words are TEXT, so they hang off AFTip rather than a native
+            // title, which would repeat the row and then cut (CONVENTIONS →
+            // Hover). Both of the row's long columns carry the whole item.
+            const words = x.row.text || '';
+            const codeBtn = T.wrap(
+                `<button class="pj-trk-code" data-trkonly="${C.esc(x.row.code)}">${C.esc(x.row.code)}</button>`,
+                T.lines([
+                    `${x.row.code}${x.row.area ? ' · ' + x.row.area : ''}${x.row.state ? ' · ' + x.row.state : ''}`,
+                    words ? T.sizeNote(words) : '',
+                    'Press to see only this item’s history'
+                ]), words, 'tl-code');
+            const note = e.note || words;
+            return head + `<div class="pj-trk-tl e-${C.esc(e.event)}" ${trkCtx(x.row)} data-trkrow data-code="${C.esc(x.row.code)}" data-line="${x.row.line || 0}">
                 <span class="pj-trk-tltime" title="${C.esc(window.AFTime.tip(e.ts, 'Recorded'))}">${C.esc(window.AFTime.clock(e.ts))}</span>
                 ${trkEvHtml(e)}
-                <button class="pj-trk-code" data-trkonly="${C.esc(x.row.code)}"
-                    title="${C.esc(`${x.row.code} — press to see only this item's history. ${x.row.text ? '\n\n' + x.row.text.slice(0, 400) : ''}`)}">${C.esc(x.row.code)}</button>
+                ${codeBtn}
                 ${e.session
                     ? `<button class="pj-trk-turn" data-trackturn="${C.esc((x.run && x.run.file) || '')}" data-trackts="${e.ts}"
                         title="${C.esc(`Open ${e.session} at ${e.turn ? 'turn ' + e.turn : 'this moment'}`)}">${C.esc(e.short || '')}${e.turn ? ' #' + e.turn : ''}</button>`
-                    : '<span class="muted small">no session</span>'}
-                <span class="muted small">${C.esc(e.agent || e.by)}</span>
-                <span class="pj-trk-tlnote">${C.esc(e.note || x.row.text || '')}</span>
+                    : '<span class="pj-trk-turn" style="visibility:hidden"></span>'}
+                <span class="pj-trk-tlwho" title="${C.esc(e.agent ? 'Agent: ' + e.agent : 'Recorded by: ' + e.by)}">${C.esc(e.agent || e.by)}</span>
+                ${T.wrap(`<span class="pj-trk-tlnote">${C.esc(note)}</span>`,
+                e.note
+                    ? `The note on this record · ${T.sizeNote(e.note)}`
+                    : `${x.row.code} · ${T.sizeNote(words)}`,
+                e.note && words ? e.note + '\n\n— the item —\n\n' + words : (e.note || words),
+                // last column of the row: it opens back across the row rather
+                // than off the right edge of the panel (see common.css)
+                'tl-note tip-right')}
             </div>`;
         }).join('');
         return `<div class="pj-trk">${rows}
@@ -4117,6 +4310,41 @@
     }
 
     // ---- Sessions ---------------------------------------------------------
+
+    /**
+     * The session cards, in the order the control above them asks for.
+     *
+     * A session group answers a smaller set of questions than a backlog item —
+     * it has no single code and no single state — so `TRK_SORTS` declares which
+     * axes reach here and this reads the same choice off the same control. It
+     * was ordered by `last` and nothing else, whatever the dropdown said.
+     */
+    function trkOrderSessions(list) {
+        const dir = trkDesc ? -1 : 1;
+        const closedTs = g => {
+            let t = 0;
+            for (const c of g.codes.values()) {
+                for (const e of c.events) {
+                    if ((e.event === 'done' || e.event === 'cancelled') && e.ts > t) { t = e.ts; }
+                }
+            }
+            return t;
+        };
+        const num = {
+            last: g => g.last, first: g => g.first,
+            turns: g => g.turns.size,
+            span: g => Math.max(0, g.last - g.first),
+            closed: closedTs
+        }[trkAxis()];
+        const out = list.slice();
+        out.sort((a, b) => {
+            const d = num ? (num(a) || 0) - (num(b) || 0) : 0;
+            // Same rule as the items: the tie-break is not reversed with the
+            // direction, so the second key does not look random on every press.
+            return (d * dir) || (b.last - a.last);
+        });
+        return out;
+    }
 
     function trkSessionsHtml(d, sh) {
         if (!sh.events.length) { return trkEmptyHtml(d); }
@@ -4140,13 +4368,15 @@
             c.events.push(x.ev);
             g.codes.set(x.row.code, c);
         }
-        const list = Array.from(groups.values()).sort((a, b) => b.last - a.last);
+        const list = trkOrderSessions(Array.from(groups.values()));
         return `<div class="pj-trk">${list.map(g => {
             const info = (d.sessionInfo || {})[g.session] || {};
             const codes = Array.from(g.codes.values())
                 .sort((a, b) => blCompareCodes(a.row.code, b.row.code));
             const closed = codes.filter(c => c.events.some(e => e.event === 'done' || e.event === 'cancelled'));
-            return `<div class="pj-trk-item"
+            // A run that CLOSED something reads differently from one that only
+            // touched things — the same green the event chips use.
+            return `<div class="pj-trk-item ${closed.length ? 'st-done' : 'st-open'}"
                 ${g.session ? window.AFSessionCtx.row({ sessionId: g.session, file: g.file, agentName: g.agent, title: info.title }) : ''}>
                 <div class="pj-trk-head">
                     <code class="pj-trk-sid" title="${C.esc(window.AFTip.lines([
@@ -4166,19 +4396,29 @@
                     <span class="muted small" title="${C.esc(window.AFTime.tip(g.first, 'First backlog record in this session'))}">${C.esc(window.AFTime.stamp(g.first))}</span>
                     <span class="pj-trk-sum">⤳ ${g.turns.size || '—'}${info.turns ? ' of ' + info.turns : ''} turns · ${codes.length} code(s)</span>
                     <span class="grow"></span>
-                    ${closed.length ? `<span class="pj-trk-m" title="${C.esc('Items this session closed: ' + closed.map(c => c.row.code).join(', '))}">✓ ${closed.length} closed</span>` : ''}
+                    ${closed.length ? `<span class="pj-trk-m closed" title="${C.esc('Items this session closed: ' + closed.map(c => c.row.code).join(', '))}">✓ ${closed.length} closed</span>` : ''}
                     ${g.file ? `<button class="pj-bl-act" data-trackturn="${C.esc(g.file)}" data-trackts="${g.first}"
                         title="Open this transcript at the first moment it touched the backlog">↗</button>` : ''}
                 </div>
                 <div class="pj-trk-run">
-                    ${codes.map(c => `<button class="pj-trk-scode" data-trkonly="${C.esc(c.row.code)}"
-                        title="${C.esc(window.AFTip.lines([
-                c.row.code + (c.row.state ? ' · ' + c.row.state : ''),
-                'In this session: ' + c.events.map(e => e.event).join(', '),
-                '', c.row.text || ''
-            ]))}">${C.esc(c.row.code)}
+                    ${codes.map(c => {
+                // What this session DID to the code, as one word — the chip is
+                // coloured by it, so a card says at a glance what the run got
+                // through rather than only which codes it touched.
+                const did = c.events.some(e => e.event === 'done') ? 'done'
+                    : c.events.some(e => e.event === 'cancelled') ? 'cancelled'
+                        : c.events.some(e => e.event === 'doing') ? 'doing' : '';
+                return window.AFTip.wrap(
+                    `<button class="pj-trk-scode${did ? ' c-' + did : ''}" data-trkonly="${C.esc(c.row.code)}">${C.esc(c.row.code)}
                         <span class="pj-trk-scodee">${c.events.map(e => C.esc(TRK_EVENT_ICON[e.event] || '·')).join('')}</span>
-                    </button>`).join('')}
+                    </button>`,
+                    window.AFTip.lines([
+                        c.row.code + (c.row.state ? ' · ' + c.row.state : ''),
+                        'In this session: ' + c.events.map(e => e.event).join(', '),
+                        c.row.text ? window.AFTip.sizeNote(c.row.text) : ''
+                    ]),
+                    c.row.text || '');
+            }).join('')}
                 </div>
             </div>`;
         }).join('')}</div>`;
@@ -4195,8 +4435,17 @@
      */
     function trkGapsHtml(d, sh) {
         const gaps = d.gaps || {};
+        // The one list on this view long enough to want ordering — and the
+        // control above it offers exactly the two axes a code with no history
+        // can be ordered by (see TRK_SORTS). It used to sit in payload order
+        // whatever the dropdown said.
+        const gdir = trkDesc ? -1 : 1;
+        const gaxis = trkAxis();
         const untracked = (d.untracked || []).filter(u =>
-            !trkFilter.areas.length || trkFilter.areas.indexOf(u.area || '') >= 0);
+            !trkFilter.areas.length || trkFilter.areas.indexOf(u.area || '') >= 0)
+            .sort((a, b) => (gaxis === 'area'
+                ? (String(a.area || '').localeCompare(String(b.area || '')) * gdir)
+                : 0) || (blCompareCodes(a.code, b.code) * (gaxis === 'area' ? 1 : gdir)));
         const doubts = {};
         const looses = [];
         for (const x of trkFlat(d)) {
@@ -4217,11 +4466,13 @@
             <div class="pj-card">
                 <div class="pj-card-h">No history at all — ${untracked.length}</div>
                 ${untracked.length
-                ? `<div class="pj-trk-codes">${untracked.map(u => `<button class="pj-trk-scode"
-                        data-trkgo="${C.esc(u.code)}" title="${C.esc(window.AFTip.lines([
-                    `${u.code} · ${u.state}`, 'Nothing recorded against it.',
-                    'Press to open the backlog at its line.', '', u.text || ''
-                ]))}">${C.esc(u.code)}<span class="pj-trk-scodee">${C.esc(u.state === 'done' ? '✓' : u.state === 'cancelled' ? '✕' : '·')}</span></button>`).join('')}</div>
+                ? `<div class="pj-trk-codes">${untracked.map(u => window.AFTip.wrap(
+                    `<button class="pj-trk-scode c-gap" data-trkgo="${C.esc(u.code)}">${C.esc(u.code)}<span class="pj-trk-scodee">${C.esc(u.state === 'done' ? '✓' : u.state === 'cancelled' ? '✕' : '·')}</span></button>`,
+                    window.AFTip.lines([
+                        `${u.code} · ${u.state}${u.area ? ' · ' + u.area : ''}`,
+                        'Nothing recorded against it · press to open the backlog at its line',
+                        u.text ? window.AFTip.sizeNote(u.text) : ''
+                    ]), u.text || '')).join('')}</div>
                     <div class="pj-row">
                         <button data-act="trkFill" title="Search every transcript for these codes and show what could be reconstructed. Preview first; nothing is written until you say so.">⚕ Reconstruct what can be found</button>
                         <span class="muted small">a clue or nothing — an item nobody ever quoted stays blank</span>

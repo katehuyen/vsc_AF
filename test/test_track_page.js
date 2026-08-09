@@ -129,7 +129,7 @@ const el = (r, attr, value) => els(r, attr).find(e => e.dataset[attr.replace(/-(
     const r = run();
     const h = r.html();
     ok('the tab is on the bar and it is the open one',
-        /class="pj-tab on" data-tab="track"/.test(h));
+        /class="pj-tab tb-track on" data-tab="track"/.test(h));
     ok('four views are offered', ['items', 'timeline', 'sessions', 'gaps']
         .every(v => h.includes(`data-trkview="${v}"`)));
     ok('Items is the one that opens', /data-trkview="items"[^>]*class=|class="pj-trk-view on"\s+data-trkview="items"/.test(h)
@@ -396,7 +396,164 @@ const el = (r, attr, value) => els(r, attr).find(e => e.dataset[attr.replace(/-(
         r.last().type === 'backlogOpenItem' && r.last().code === 'P-2');
     r.send({ type: 'afctx', act: 'trkBacklog', ctx: { code: 'P-2' } });
     ok('"show it in the Backlog" leaves for the tab that can edit it',
-        r.html().includes('class="pj-tab on" data-tab="backlog"'));
+        r.html().includes('class="pj-tab tb-backlog on" data-tab="backlog"'));
+}
+
+// ---------------------------------------------------------------------------
+// U-25: the ordering control reaches every view, or says it cannot
+//
+// It used to reach `trkItemsHtml` and nothing else while being drawn on all
+// four views — so on three of them "last worked" and "first worked" produced
+// the same page, which is what the ordering looked like: broken.
+// ---------------------------------------------------------------------------
+{
+    // ‼️ `r.els` and not `r.query`: the page re-wires through getElementById,
+    // which keeps handing back the element it first saw, while a fresh query
+    // after a repaint builds a NEW one with no listeners on it. Firing at that
+    // one changes nothing and the assertion blames the page.
+    const setSort = (r, v) => {
+        const s = r.els['trk-sort'] || r.query('#trk-sort')[0];
+        s.value = v; s.fire('change');
+    };
+    const axisOn = h => (/<option value="([a-z]+)"[^>]*selected/.exec(h) || [])[1];
+    const offers = (h, id) => new RegExp(`<option value="${id}"`).test(h);
+    /** The rows on screen, in the order they are drawn — items and timeline
+     *  alike, both of which publish the code they are about. */
+    const rowsIn = h => (h.match(/data-trkrow data-code="([^"]+)"/g) || [])
+        .map(s => s.replace(/.*"([^"]+)"/, '$1'));
+
+    /**
+     * ‼️ AN ITEM THAT STARTED LAST AND FINISHED FIRST — the fixture the two date
+     * axes need. U-9 and P-2 happen to run in the same order on both, which is
+     * exactly why the bug survived: on data like that a broken "first worked"
+     * looks right. S-1 is a short job late in the week, so it is newest by
+     * `first` and only second by `last`.
+     */
+    const withShortLateItem = () => {
+        const t = track();
+        t.rows.push({
+            code: 'S-1', text: 'started last, finished first', state: 'done', area: 'S',
+            section: 'S — Oturumlar', line: 70, priority: 'normal', effort: 'S', kinds: [],
+            parent: null, children: [], plan: null, due: null,
+            turns: 1, doubtful: false, backfilled: false, sources: ['agent'],
+            stamp: null, note: '',
+            firstTs: T - 7200000, lastTs: T - 3600000, closedTs: T - 3600000,
+            closedEvent: 'done', closedBy: 'agent',
+            sessions: [{
+                session: 'dddd4444-w', short: 'dddd4444', file: 'D:\\t\\d.jsonl',
+                agent: 'developer', span: '#2', firstTs: T - 7200000, lastTs: T - 3600000,
+                uncertain: null, turns: [{ n: 2, ts: T - 7200000 }],
+                events: [
+                    { code: 'S-1', event: 'touch', ts: T - 7200000, at: '', session: 'dddd4444-w', short: 'dddd4444', turn: 2, agent: 'developer', by: 'agent', uncertain: null, note: null },
+                    { code: 'S-1', event: 'done', ts: T - 3600000, at: '', session: 'dddd4444-w', short: 'dddd4444', turn: 2, agent: 'developer', by: 'agent', uncertain: null, note: null }
+                ]
+            }],
+            loose: []
+        });
+        return { tabData: { track: t } };
+    };
+
+    // ---- Items: first worked and last worked are different questions -------
+    {
+        const r = run(withShortLateItem());
+        const h0 = r.html();
+        ok('the Items view offers every axis',
+            ['last', 'first', 'turns', 'sessions', 'span', 'closed', 'code', 'state', 'area']
+                .every(a => offers(h0, a)));
+        setSort(r, 'last');
+        const byLast = rowsIn(r.html())[0];
+        setSort(r, 'first');
+        const byFirst = rowsIn(r.html())[0];
+        ok('‼️ "last worked" and "first worked" are two different orders',
+            byLast === 'U-9' && byFirst === 'S-1');
+        setSort(r, 'code');
+        ok('…and an axis that is not a date is honoured too — descending, as the arrow says',
+            rowsIn(r.html()).join(',') === 'U-9,S-1,P-2');
+        setSort(r, 'state');
+        ok('…as is one that is neither a date nor a name', axisOn(r.html()) === 'state');
+        setSort(r, 'span');
+        ok('…and "span" puts the long-running item at the top',
+            rowsIn(r.html())[0] === 'P-2');
+    }
+
+    // ---- Timeline: no axis, but the direction is real ----------------------
+    {
+        const r = run();
+        el(r, 'trkview', 'timeline').click();
+        const h = r.html();
+        ok('the Timeline offers no axis — it is ordered by when things happened',
+            !r.query('#trk-sort').length && h.includes('chronological'));
+        ok('…and it still draws its records', (h.match(/class="pj-trk-tl /g) || []).length > 1);
+        const firstCode = rowsIn(h)[0];
+        el(r, 'act', 'trkDir').click();
+        const flipped = rowsIn(r.html())[0];
+        ok('‼️ the ↑↓ button turns the timeline round — it used to be drawn and inert',
+            firstCode === 'U-9' && flipped === 'P-2');
+    }
+
+    // ---- Sessions: the axes a session card can answer ----------------------
+    {
+        const r = run();
+        el(r, 'trkview', 'sessions').click();
+        const h = r.html();
+        ok('the Sessions view offers the axes a session HAS',
+            offers(h, 'last') && offers(h, 'first') && offers(h, 'turns') && offers(h, 'span'));
+        ok('…and not the ones it does not — a run has no single code or state',
+            !offers(h, 'state') && !offers(h, 'code') && !offers(h, 'area'));
+        // bbbb2222 ran today, cccc3333 three days ago.
+        setSort(r, 'last');
+        ok('‼️ ordering the session cards actually reorders them',
+            r.html().indexOf('bbbb2222') < r.html().indexOf('cccc3333'));
+        el(r, 'act', 'trkDir').click();
+        ok('…and the direction flips them',
+            r.html().indexOf('cccc3333') < r.html().indexOf('bbbb2222'));
+    }
+
+    // ---- the choice survives a view that cannot honour it ------------------
+    {
+        const r = run();
+        setSort(r, 'state');
+        el(r, 'trkview', 'sessions').click();
+        ok('a view that cannot answer "state" falls back rather than refusing',
+            axisOn(r.html()) === 'last');
+        el(r, 'trkview', 'items').click();
+        ok('‼️ …and the reader gets their own choice back on the view that has it',
+            axisOn(r.html()) === 'state');
+    }
+}
+
+// ---------------------------------------------------------------------------
+// U-25: the colour system, and the columns that used to wrap
+// ---------------------------------------------------------------------------
+{
+    const r = run();
+    const h = r.html();
+    ok('an item card is ruled by its STATE', /class="pj-trk-item st-done/.test(h)
+        && /class="pj-trk-item st-open/.test(h));
+    ok('…and a history that was reconstructed rather than watched is marked as such',
+        /class="pj-trk-item st-open backfilled"/.test(h));
+
+    el(r, 'trkview', 'timeline').click();
+    const tl = r.html();
+    ok('a timeline row is ruled by what happened on it',
+        /class="pj-trk-tl e-done"/.test(tl) && /class="pj-trk-tl e-touch"/.test(tl));
+    ok('‼️ the note is the only column that flexes — the rest are given their width',
+        /af-tipw tl-note/.test(tl) && /af-tipw tl-code/.test(tl));
+    ok('…and a row with no session keeps the column instead of collapsing it',
+        /pj-trk-turn" style="visibility:hidden"/.test(tl));
+    ok('the words hang off the rich panel, not a native title that would cut',
+        !/class="pj-trk-code"[^>]*title="[^"]{200,}/.test(tl));
+
+    el(r, 'trkview', 'sessions').click();
+    const ss = r.html();
+    ok('a session that closed something says so in green',
+        /class="pj-trk-item st-done"/.test(ss) && /pj-trk-m closed/.test(ss));
+    ok('…and each code chip is coloured by what that run DID to it',
+        /pj-trk-scode c-done/.test(ss));
+
+    el(r, 'trkview', 'gaps').click();
+    ok('a code with no history at all is drawn as the hole it is',
+        /pj-trk-scode c-gap/.test(r.html()));
 }
 
 // ---------------------------------------------------------------------------
@@ -406,7 +563,7 @@ const el = (r, attr, value) => els(r, attr).find(e => e.dataset[attr.replace(/-(
     const r = run({ tab: 'backlog', tabData: { track: track() } });
     r.send({ type: 'afctx', act: 'blTrack', ctx: { code: 'P-2', key: 'P-2', line: 44 } });
     const h = r.html();
-    ok('it opens the Track tab', h.includes('class="pj-tab on" data-tab="track"'));
+    ok('it opens the Track tab', h.includes('class="pj-tab tb-track on" data-tab="track"'));
     ok('‼️ …ON that item — an answer that lists eighty other codes is not an answer',
         h.includes('value="P-2"') && !h.includes('data-code="U-9"'));
 }

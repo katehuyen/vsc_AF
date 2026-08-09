@@ -170,7 +170,12 @@ const baseData = () => ({
         ok(`the ${t} tab is on the bar`, r.html().includes(`data-tab="${t}"`));
     }
     ok('overview opens first — "what is it doing now" before "what did it do"',
-        /class="pj-tab on" data-tab="overview"/.test(r.html()));
+        /class="pj-tab tb-overview on" data-tab="overview"/.test(r.html()));
+    // U-25: every tab carries its own colour class, so the row that opens nine
+    // pages reads as a control rather than as one more line of grey metadata.
+    ok('…and each tab is marked with its own hue',
+        ['overview', 'timeline', 'sessions', 'plan', 'backlog', 'track', 'docs', 'people', 'cost', 'settings']
+            .every(t => r.html().includes(`class="pj-tab tb-${t}`)));
     ok('the identity strip is above the tabs, so no tab can lose it',
         r.html().indexOf('<h2>') < r.html().indexOf('class="pj-tabs"'));
     ok('…and it carries the summary and the totals',

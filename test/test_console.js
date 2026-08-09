@@ -1292,5 +1292,92 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         fs.existsSync(path.join(__dirname, 'smoke_console_live.js')));
 }
 
+// ---------- K-12: "End session" that ended nothing ----------
+// The button was pressed, the card flipped to ended, and seconds later the
+// agent was still writing — so it was pressed again, and again. Two faults,
+// one visible symptom.
+{
+    const { killTree } = require(path.join(__dirname, '..', 'out', 'core', 'consolehost.js'));
+    // FAULT 1 — the kill order. `child.kill()` ended the shell wrapper on the
+    // spot; `taskkill /PID p /T` was still only a queued spawn, and it resolves
+    // p BEFORE walking the tree, so a p that just died is "process not found"
+    // and the real claude underneath was never touched. The property is
+    // synchronously observable: on Windows killTree must not have killed
+    // anything by the time it returns.
+    let killed = 0;
+    // A pid nothing owns: taskkill errors, and only then may the fallback run.
+    killTree({ pid: 0x7ffffffe, kill() { killed++; } });
+    ok(process.platform === 'win32'
+        ? 'killTree lets taskkill walk the tree BEFORE the shell is killed'
+        : 'off Windows killTree is the plain kill',
+        process.platform === 'win32' ? killed === 0 : killed === 1);
+
+    // FAULT 2 — the drain undid the end. Killing is not instant, and what the
+    // CLI had already written was still in the pipe: those lines went through
+    // the reducer, which put the status back to 'working'.
+    const host = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'consolehost.ts'), 'utf8');
+    ok('an ended session is marked as ended by the USER, not just by the process',
+        /closed\?: boolean;/.test(host) && /h\.closed = true;/.test(host));
+    ok('…and nothing is reduced off the pipe after that',
+        /if \(!h \|\| h\.closed\) \{ return; \}/.test(host));
+    ok('…nor written to it', /if \(!h \|\| h\.closed\) \{ return false; \}/.test(host));
+    ok('…not even a stderr complaint about being killed',
+        /if \(this\.sessions\.get\(id\)\?\.closed\) \{ return; \}/.test(host));
+    // …and pressing it AGAIN still kills. The one thing this fix must not do is
+    // turn the user's last resort into a dead button: a second press means "that
+    // did not take", and killing a pid that is already gone costs nothing. Only
+    // what must happen once — denying the parked question — is skipped.
+    ok('a second press re-issues the kill instead of being swallowed',
+        /const again = h\.closed === true;/.test(host)
+        && /if \(!again && h\.state\.pendingAsk\)/.test(host)
+        && /h\.closed = true;[\s\S]{0,700}killTree\(h\.child\);/.test(host));
+    // Every route that ends a hosted session goes through the one close().
+    const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'consolePanel.ts'), 'utf8');
+    ok('the composer button and the right-click item end it the same way',
+        /host\.close\(str\('id'\)\)/.test(panel) && /consoleHost\.close\(id\)/.test(ext));
+}
+
+// ---------- K-11: the project a session was running under, lost ----------
+// Two faults again, and the same symptom both times: the strip above the box
+// said "No project" about a session that had one.
+{
+    const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'consolePanel.ts'), 'utf8');
+    const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    const js = fs.readFileSync(path.join(__dirname, '..', 'media', 'console.js'), 'utf8');
+
+    // FAULT 1 — the panel's OWN resume was the one resume route that passed no
+    // project, so ConsoleHost.start fell back to the window's active one (which
+    // is normally none). The session came back filed nowhere and was re-told
+    // the wrong brief, or none.
+    ok('the panel can ask what project a session already belongs to',
+        /sessionProject\(s: \{ sessionId\?: string; agentId\?: string; agentName\?: string; cwd\?: string \}\): string;/.test(panel));
+    ok('…answered by the one membership order every other route uses',
+        /sessionProject: \(s: \{[^}]*\}\) =>\s*sessionOwnProject\(s\)/.test(ext));
+    ok('…and the Console\'s own resume passes it',
+        /resume: sessionId,[\s\S]{0,900}projectId: this\.deps\.sessionProject\(\{/.test(panel));
+    ok('…as does "new session in the same folder", which is the same work',
+        (panel.match(/projectId: this\.deps\.sessionProject\(\{/g) || []).length === 2);
+
+    // FAULT 2 — the chip and the picker were one field. `start` clears the
+    // picker on purpose (the next session picks its own project), so the chip
+    // flipped to "No project" the instant the button was pressed.
+    ok('the picker and the chip are two fields, not one',
+        /activeProjectId: this\.composerProject,/.test(panel)
+        && /chipProjectId: chipProject,/.test(panel));
+    ok('…the chip follows the SELECTED session, the picker only the composer',
+        /const chipProject = this\.selected[\s\S]{0,160}: this\.composerProject;/.test(panel));
+    ok('…and the verbatim context is read for the project the chip is about',
+        /projectContext: this\.deps\.projectContextText\(chipProject\)/.test(panel));
+    ok('the page reads the chip\'s field, not the picker\'s',
+        /const id = DATA\.chipProjectId \|\| '';/.test(js)
+        && !/const id = DATA\.activeProjectId \|\| '';/.test(js));
+    // The picker's list is open projects only; a session outlives that.
+    ok('a session under a finished project is still named, off its own row',
+        /s\.projectId === id && s\.projectName/.test(js));
+    ok('…and the picker still answers for the new session it is about',
+        /<option value=""\$\{DATA\.activeProjectId \? '' : ' selected'\}>/.test(js));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

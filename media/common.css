@@ -290,6 +290,13 @@ span.af-tipw { display: inline; }
    you were reading closed by itself. No delay: it is already open, and fading
    it in a second time would be a blink. */
 .af-tipw.af-on > .af-tip { visibility: visible; opacity: 1; transition-delay: 0s; }
+/* ‼️ A PANEL THAT OPENS OFF THE PAGE SHOWS NOTHING. The default anchors to the
+   trigger's left edge, which is right for a chip near the start of a row and
+   wrong for the last column of one: a 760px box hung off a trigger that already
+   sits three quarters of the way across grows straight past the panel's edge.
+   `tip-right` anchors it to the trigger's own RIGHT edge instead, so it opens
+   back across the row it belongs to. */
+.af-tipw.tip-right > .af-tip { left: auto; right: 0; }
 .af-tiph {
     display: block; margin-bottom: 6px; padding-bottom: 5px;
     font-size: 10px; opacity: .6; white-space: normal;

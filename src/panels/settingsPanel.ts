@@ -10,6 +10,7 @@ import {
     validateRawClaudeSettings
 } from '../core/claudesettings';
 import { PromptSnippetsSnapshot } from '../core/prompts';
+import { EngineStatus } from '../core/engines';
 import { normPath } from '../core/util';
 import { revealPath } from '../core/reveal';
 import { handleAfNav, htmlShell } from './base';
@@ -56,6 +57,17 @@ export interface FarmSettingsDeps {
     promptSnippets?(): PromptSnippetsSnapshot;
     /** Write the chosen path — '' hands the feature back to the built-in one. */
     setPromptSnippetsFile?(file: string): Thenable<void>;
+    /**
+     * X-3 — the engine matrix: which agent CLI is installed, how it is paid for
+     * (a plan sign-in or a key), and the one thing to do next. See
+     * core/engines.ts for why this is not simply "the API keys".
+     */
+    engines?(): EngineStatus[];
+    /** Open a terminal on the engine's own sign-in command. Agent Farm never
+     *  sees the grant — the browser and the CLI settle it between them. */
+    engineLogin?(command: string): void;
+    /** Hand the key route to the vault's own form, on that exact name. */
+    engineKey?(name: string): void;
 }
 
 const CONFIG_SECTION = 'agentFarm';
@@ -148,7 +160,12 @@ export class FarmSettingsPanel {
                 parseError: cc.parseError
             },
             docOpen: this.deps.docOpen?.() ?? null,
-            prompts: this.deps.promptSnippets?.() ?? null
+            prompts: this.deps.promptSnippets?.() ?? null,
+            // X-3 — which agent CLIs this machine can run and how each is paid
+            // for. Read on every build rather than cached: a sign-in that
+            // happened in the terminal thirty seconds ago is exactly the change
+            // somebody comes back to this page to confirm.
+            engines: this.deps.engines?.() ?? null
         };
     }
 
@@ -250,6 +267,26 @@ export class FarmSettingsPanel {
             case 'openSettingsUi':
                 if (typeof msg.key === 'string' && msg.key) {
                     void vscode.commands.executeCommand('workbench.action.openSettings', msg.key);
+                }
+                break;
+            // ---- X-3: the engine rows ------------------------------------
+            // ‼️ The page asks; the host acts. A credential is never decided
+            // here and never travels through the webview: the sign-in is the
+            // CLI's own command in a real terminal, and the key route is the
+            // vault's own form.
+            case 'engineLogin':
+                if (typeof msg.command === 'string' && msg.command) {
+                    this.deps.engineLogin?.(msg.command);
+                }
+                break;
+            case 'engineKey':
+                if (typeof msg.name === 'string' && msg.name) {
+                    this.deps.engineKey?.(msg.name);
+                }
+                break;
+            case 'engineDocs':
+                if (typeof msg.url === 'string' && /^https:\/\//.test(msg.url)) {
+                    void vscode.env.openExternal(vscode.Uri.parse(msg.url));
                 }
                 break;
             case 'docOpenSet': {

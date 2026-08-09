@@ -2446,15 +2446,30 @@
      * pointer travels into it (docs/CONVENTIONS.md → Hover).
      */
     function projectChipHtml() {
-        const id = DATA.activeProjectId || '';
-        const p = (DATA.projects || []).find(x => x.id === id);
+        // ‼️ THE CHIP IS ABOUT WHAT IS ON SCREEN, NOT ABOUT THE PICKER.
+        // `chipProjectId` is the selected session's own project, and only falls
+        // back to the composer's answer when there is no session yet. Reading
+        // the picker's field here is what made "Start session" look like it
+        // dropped the project: the picker is cleared for the NEXT session the
+        // moment one starts, and the chip repeated that as "No project".
+        const id = DATA.chipProjectId || '';
+        const s = sel();
+        // A session's project outlives the picker's list, which holds open
+        // projects only — so a session running under a project that has since
+        // been finished or archived is still named, from the session's own row.
+        const p = (DATA.projects || []).find(x => x.id === id)
+            || (s && s.projectId && s.projectId === id && s.projectName
+                ? { id, name: s.projectName, icon: s.projectIcon || '' } : undefined);
         const T = window.AFTip;
         if (!p) {
             return T.wrap(
                 '<span class="pchip none">◧ No project<span class="pchip-hint">hover to read what is sent</span></span>',
                 'No project — nothing is added to the system prompt',
-                'Sessions you start here are told nothing extra and are filed nowhere.\n\n'
-                + 'Pick a project in the row below and this chip shows the exact text it will be given.');
+                s
+                    ? 'This session was started under no project: it was told nothing extra, and it is filed nowhere.\n\n'
+                    + 'Right-click its row to file it under one. The filing is what the Projects pages read — the brief itself rides in on the system prompt at spawn, so it is fixed for as long as this process lives.'
+                    : 'Sessions you start here are told nothing extra and are filed nowhere.\n\n'
+                    + 'Pick a project in the row below and this chip shows the exact text it will be given.');
         }
         const ctx = DATA.projectContext || '';
         const trigger = `<span class="pchip">◧ ${C.esc(p.name)} — project context active<span class="pchip-hint">hover to read what is sent</span></span>`;

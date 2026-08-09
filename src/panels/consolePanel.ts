@@ -141,6 +141,19 @@ export interface ConsoleDeps {
      * channel. Describing the text would be no better; it has to be the text.
      */
     projectContextText(projectId: string): string;
+    /**
+     * ‼️ THE PROJECT A SESSION ALREADY BELONGS TO — what a RESUME must be told.
+     *
+     * A resume is not a new session, so the window's active project has nothing
+     * to do with it and the composer's picker has been cleared by then anyway.
+     * Without this the panel's own resume handed `ConsoleHost.start` no project
+     * at all, it fell back to the window's active one (normally none), and a
+     * conversation that had been running under a project came back under none:
+     * the strip above the box said "No project" and the brief the agent was
+     * re-told was the wrong one, or missing. See `sessionOwnProject` — the
+     * membership order that answers this for every other surface too.
+     */
+    sessionProject(s: { sessionId?: string; agentId?: string; agentName?: string; cwd?: string }): string;
 
     /**
      * The phrases you say over and over, read off the user's own markdown file
@@ -259,6 +272,11 @@ export class ConsolePanel {
         const d = this.deps.launchDefaults();
         const preset = this.presetAgent;
         this.presetAgent = undefined;   // one-shot: it seeds the picker once
+        // What the strip above the box is ABOUT (see chipProjectId below): the
+        // selected session's own project, or — in composer mode — the picker's.
+        const chipProject = this.selected
+            ? (hosted.find(s => s.id === this.selected)?.projectId ?? '')
+            : this.composerProject;
         return {
             generatedAt: Date.now(),
             selected: this.selected ?? '',
@@ -380,10 +398,25 @@ export class ConsolePanel {
             projects: this.deps.projects()
                 .filter(p => p.status !== 'done' && p.status !== 'archived')
                 .map(p => ({ id: p.id, name: p.name, icon: p.icon ?? '', color: p.color ?? '' })),
-            // ‼️ the COMPOSER's project, not the window's — see composerProject
+            // ‼️ the COMPOSER's project, not the window's — see composerProject.
+            // This one answers for the PICKER, which only exists before a
+            // session is started.
             activeProjectId: this.composerProject,
-            // see ConsoleDeps.projectContextText — the chip shows this verbatim
-            projectContext: this.deps.projectContextText(this.composerProject),
+            // ‼️ …and this one answers for the CHIP, which is a different
+            // question: what is on screen right now running under. With a
+            // session selected that is the session's own project; only in
+            // composer mode is it the picker's answer.
+            //
+            // They used to be one field, and that is the whole of K-11's most
+            // visible half: `start` hands the panel over to the new session and
+            // clears the picker on purpose (the next session picks its own), so
+            // the instant you pressed "Start session" the chip flipped to "No
+            // project" — about a session that had just been started under one.
+            // Nothing was lost; the strip was answering the wrong question.
+            chipProjectId: chipProject,
+            // see ConsoleDeps.projectContextText — the chip shows this verbatim,
+            // so it is read for the project the chip is about
+            projectContext: this.deps.projectContextText(chipProject),
             // the agent this composer is fixed to, when it was opened from one
             pinnedAgent: this.pinnedAgent ?? '',
             // the shelf + the transcripts the query asks for (see resumeList)
@@ -615,7 +648,14 @@ export class ConsolePanel {
                         cwd: row.cwd,
                         model: str('model') || dn.model,
                         effort: str('effort') || dn.effort,
-                        permissionMode: str('permissionMode') || dn.permissionMode
+                        permissionMode: str('permissionMode') || dn.permissionMode,
+                        // A fresh session, but reached by trying to continue that
+                        // one: it is the same work, so it starts under the same
+                        // project rather than under whatever the window says.
+                        projectId: this.deps.sessionProject({
+                            sessionId, agentId: agentForNew?.id,
+                            agentName: row.agentName, cwd: row.cwd
+                        })
                     });
                     this.refresh();
                     return;
@@ -628,6 +668,15 @@ export class ConsolePanel {
                     model: str('model') || d.model,
                     effort: str('effort') || d.effort,
                     permissionMode: str('permissionMode') || d.permissionMode,
+                    // ‼️ …and the project it comes back UNDER is its OWN. Left
+                    // out, ConsoleHost.start falls back to the window's active
+                    // project — which is not this session's answer and is
+                    // normally none at all, so a resumed conversation lost the
+                    // project it had been running under (K-11). Every other
+                    // resume route already passes this; this one did not.
+                    projectId: this.deps.sessionProject({
+                        sessionId, agentId: agent?.id, agentName: row.agentName, cwd: row.cwd
+                    }),
                     // resume means CONTINUE: what was said comes back with it
                     history: this.deps.history(sessionId),
                     // …and so does what it cost, or the composer's line would

@@ -101,6 +101,58 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             /pinned \(true\/false\) is required for a set/.test(pin));
     }
 
+    // ---------- X-3: engines.status, registered the way the extension does ----------
+    // ‼️ The one op in the catalogue that is ABOUT credentials and must never
+    // carry one. It is dispatched here with the real matrix behind it, and the
+    // result is checked for the shape a caller reads — plus checked for the
+    // absence of anything that looks like a token.
+    {
+        const { readEngines, enginesSummary } =
+            require(path.join(__dirname, '..', 'out', 'core', 'engines.js'));
+        const probe = {
+            readHome: rel => (rel === '.codex/auth.json'
+                ? JSON.stringify({
+                    auth_mode: 'chatgpt', OPENAI_API_KEY: null,
+                    tokens: { access_token: 'sk-secret-do-not-leak', refresh_token: 'rt-secret' },
+                    last_refresh: '2026-08-09T10:31:36.731385700Z'
+                })
+                : undefined),
+            existsHome: () => false,
+            which: cmd => (cmd === 'codex' ? '/usr/bin/codex' : undefined),
+            hasSecret: () => false,
+            hasEnv: () => false
+        };
+        const r2 = new BridgeRegistry();
+        r2.register([{
+            op: 'engines.status',
+            describe: 'Which agent CLIs this machine can run and how each is paid for. args: id?',
+            handler: (args) => {
+                const id = String((args && args.id) || '').trim().toLowerCase();
+                const all = readEngines(probe);
+                const list = id ? all.filter(e => e.id === id) : all;
+                return { ...enginesSummary(all), engines: list };
+            }
+        }]);
+        ok('engines.status is in the catalogue',
+            (await r2.dispatch('farm.ops', {})).result.some(c => c.op === 'engines.status'));
+
+        const all = await r2.dispatch('engines.status', {});
+        ok('it dispatches and counts what can run',
+            all.ok && all.result.total === 3 && all.result.ready === 1 && all.result.onPlan === 1);
+        const one = await r2.dispatch('engines.status', { id: 'codex' });
+        ok('…and answers about one engine when asked',
+            one.ok && one.result.engines.length === 1 && one.result.engines[0].id === 'codex');
+        ok('‼️ the answer says HOW it is paid for, which is the point of the op',
+            one.result.engines[0].auth.mode === 'subscription'
+            && /plan/.test(one.result.engines[0].next));
+        // The bridge is a plaintext file channel (core/secrets.ts, the security
+        // exception). A token reaching it would be the one unrecoverable bug.
+        const wire = JSON.stringify(all.result);
+        ok('‼️ NO CREDENTIAL CROSSES THE BRIDGE — not the access token, not the refresh token',
+            !wire.includes('sk-secret-do-not-leak') && !wire.includes('rt-secret')
+            && !/access_token|refresh_token/.test(wire));
+    }
+
     // ---------- §19.C: agents.sync op contract (cross-engine forward sync) ----------
     // Registers the real handler shape (backed by the compiled antigravity + codex
     // functions) and dispatches it, proving the op is catalogued and honours its

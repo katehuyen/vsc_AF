@@ -51,10 +51,16 @@
      * Wrap an inline trigger. The wrapper is `position:relative`, so the panel
      * opens under the trigger; pass `block:true` inside a `<td>` that is itself
      * the positioning context (see `cell`).
+     *
+     * `cls` puts a class on the WRAPPER, which matters wherever the trigger sat
+     * in a layout: wrapping it makes the wrapper the flex/grid child, so a
+     * column that was sized by its trigger's own rule silently stops being
+     * sized at all. Give the wrapper the class and size that.
      */
-    function wrap(trigger, head, body) {
+    function wrap(trigger, head, body, cls) {
         if (!String(body || '').trim()) { return trigger; }
-        return '<span class="af-tipw">' + trigger + panel(head, body) + '</span>';
+        return '<span class="af-tipw' + (cls ? ' ' + esc(cls) : '') + '">'
+            + trigger + panel(head, body) + '</span>';
     }
 
     /**

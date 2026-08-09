@@ -109,17 +109,26 @@ function mb(bytes: number): string {
  * On Windows a `shell: true` spawn gives us `cmd.exe`; `child.kill()` ends the
  * shell and leaves `claude.exe` running forever. `taskkill /T` is what the
  * task and mission runners already use for the same reason.
+ *
+ * ‼️ ON WINDOWS THE PLAIN KILL IS A FALLBACK, NEVER A COMPANION — the order is
+ * the whole thing. `child.kill()` returns having already terminated the shell,
+ * while `taskkill` is a process that has not been spawned yet; and
+ * `taskkill /PID p /T` RESOLVES p FIRST, so a p that died a millisecond ago is
+ * "process not found" and its descendants are never touched. Killing the
+ * wrapper first therefore ORPHANS the real `claude`, which keeps writing into
+ * the pipe this window still holds: an End session that ends nothing and an
+ * agent that goes on talking. So the tree kill goes first and alone, and the
+ * direct kill only runs if taskkill could not be started or came back angry.
  */
 export function killTree(child: cp.ChildProcess): void {
     const pid = child.pid;
     if (!pid) { return; }
-    if (process.platform === 'win32') {
-        try {
-            cp.execFile('taskkill', ['/PID', String(pid), '/T', '/F'],
-                { windowsHide: true }, () => { /* already gone is fine */ });
-        } catch { /* fall through to the plain kill below */ }
-    }
-    try { child.kill(); } catch { /* already gone */ }
+    const plain = () => { try { child.kill(); } catch { /* already gone */ } };
+    if (process.platform !== 'win32') { plain(); return; }
+    try {
+        cp.execFile('taskkill', ['/PID', String(pid), '/T', '/F'],
+            { windowsHide: true }, err => { if (err) { plain(); } });
+    } catch { plain(); }
 }
 
 /** Stop one process and everything under it, by pid. Best effort, never throws:
@@ -172,6 +181,13 @@ interface Hosted {
      * refused again, and the panel had reported success twice over.
      */
     retryOnGrant?: string;
+    /**
+     * The session was ENDED from a panel (see `close`). A killed process is not
+     * a silent one — whatever it already wrote is still in the pipe — and every
+     * line read after the end used to be reduced as if the session were alive.
+     * Nothing is read, written or reduced once this is set.
+     */
+    closed?: boolean;
 }
 
 export class ConsoleHost {
@@ -268,6 +284,9 @@ export class ConsoleHost {
             // The CLI writes progress noise to stderr too; only keep what looks
             // like a real failure, so the conversation is not a log dump.
             if (!text || !/error|fatal|not found|denied/i.test(text)) { return; }
+            // …and a session you ended says nothing more, not even a complaint
+            // about being killed (see close).
+            if (this.sessions.get(id)?.closed) { return; }
             this.mutate(id, s => ({
                 ...s, lastTs: Date.now(),
                 messages: [...s.messages, {
@@ -277,6 +296,9 @@ export class ConsoleHost {
             }));
         });
         child.on('error', e => {
+            // A pipe that breaks because WE killed the process is not a session
+            // that failed — it ended, and it already says so.
+            if (this.sessions.get(id)?.closed) { return; }
             this.mutate(id, s => ({
                 ...s, status: 'error', exitReason: String((e as Error).message ?? e),
                 lastTs: Date.now()
@@ -335,7 +357,7 @@ export class ConsoleHost {
 
     private onData(id: string, chunk: string): void {
         const h = this.sessions.get(id);
-        if (!h) { return; }
+        if (!h || h.closed) { return; }
         h.buffer += chunk;
         const lines = h.buffer.split('\n');
         h.buffer = lines.pop() ?? '';
@@ -375,7 +397,8 @@ export class ConsoleHost {
 
     private write(id: string, line: string): boolean {
         const h = this.sessions.get(id);
-        if (!h?.child.stdin || h.child.stdin.destroyed) { return false; }
+        if (!h || h.closed) { return false; }
+        if (!h.child.stdin || h.child.stdin.destroyed) { return false; }
         try { h.child.stdin.write(line); return true; } catch { return false; }
     }
 
@@ -594,17 +617,35 @@ export class ConsoleHost {
      * entry in the CLI's session registry. That entry is what tells everyone
      * "this session is open", so a leak here shows up as sessions that stay
      * un-resumable for hours after they were closed. Kill the tree.
+     *
+     * Calling it twice is allowed and re-issues the kill — a second press is
+     * somebody telling us the first one did not take, and refusing it would
+     * turn the safety net into a dead button. Only the parts that must happen
+     * once (denying the parked question) are skipped on the repeat.
      */
     close(id: string): void {
         const h = this.sessions.get(id);
         if (!h) { return; }
+        const again = h.closed === true;
         // A question still on the table is answered before the pipe goes: the
         // process is about to be killed either way, but a session ending on an
         // unanswered request writes that half-finished tool call into the
         // transcript, and a resume then reads back a turn that never resolved.
-        if (h.state.pendingAsk) {
+        if (!again && h.state.pendingAsk) {
             this.answer(id, { kind: 'deny', message: 'The session was closed.' });
         }
+        // ‼️ END MEANS END, AND THE PIPE IS SHUT BEFORE THE KILL — NOT AFTER.
+        // `taskkill` is asynchronous and a process that is dying still has
+        // everything it already wrote sitting in the pipe. Those lines kept
+        // arriving at `onData`, where reduceEvent read them as an ordinary
+        // running turn and moved `status` off 'ended': the button flipped to
+        // "Remove from list", the agent went on talking for another few
+        // seconds, and the button came back as "End session". It looked like
+        // the button had not worked — it had, and then the drain undid it.
+        // Nothing is read from a session that has been ended.
+        h.closed = true;
+        try { h.child.stdout?.removeAllListeners('data'); h.child.stdout?.destroy(); } catch { /* already gone */ }
+        try { h.child.stderr?.removeAllListeners('data'); h.child.stderr?.destroy(); } catch { /* already gone */ }
         try { h.child.stdin?.end(); } catch { /* already gone */ }
         killTree(h.child);
         // …and the process the CLI itself registered for this session. A
