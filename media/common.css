@@ -379,3 +379,14 @@ span.af-tipw { display: inline; }
 .affra { white-space: nowrap; }
 .affra .mini { margin-left: 3px; }
 .affra .mini[disabled] { opacity: .35; cursor: default; }
+/* ONE item of that list, opened. Nested inside the form's own card, so it is
+   visibly part of the thing being built rather than a second dialog on top of
+   it — and only ever one at a time, because a list where every row is expanded
+   is the wizard again with all its pages showing. */
+.affsub {
+    border: 1px solid var(--vscode-focusBorder); border-left-width: 3px; border-radius: 7px;
+    padding: 7px 11px; margin: 8px 0 4px;
+    background: var(--vscode-editorWidget-background, rgba(128, 128, 128, .09));
+}
+.affsub .affsec:first-of-type { margin-top: 6px; }
+.affsub code { font-size: 11px; }

@@ -176,8 +176,13 @@
                 controls: `<button class="secondary" id="pf-group">${st.group ? '☑' : '☐'} Group by project</button>
                     <button class="secondary" id="pf-dormant">${st.hideDormant ? '☑' : '☐'} Hide dormant</button>
                     <button class="secondary" id="pf-manage">Manage projects…</button>`,
+                actions: DATA.canCreate
+                    ? `<button id="pf-new"${agentForm ? ' disabled' : ''}
+                        title="Make an agent here — its folder, its default model, and the one line of CLAUDE.md that says what it is for">+ New agent</button>`
+                    : '',
                 guide: 'ajan-portfoyu'
             })}
+            ${agentForm ? agentFormHtml() : (agentMsg ? window.AFForm.msg(agentMsg, !agentMsgOk) : '')}
             <div class="chiprow">${projectChips || ''}${st.projects ? '<button class="chip" id="pf-allproj">All projects</button>' : ''}</div>
             <div class="tablewrap"><table class="pf">${head}${rows.length ? totalsRow : ''}${body || `<tr><td colspan="${COLS.length + 1}" class="muted">No agents match.</td></tr>`}</table></div>
             <p class="footnote">Rows are agents; the group header sums each project's last 30 days. "Quiet" is days since the agent's last session — 💤 marks anything older than ${DATA.dormantDays} days. Costs are API-equivalent values from local transcripts, not a bill.</p>`;
@@ -212,10 +217,103 @@
         btn('pf-dormant', () => { st.hideDormant = !st.hideDormant; save(); render(); });
         btn('pf-manage', () => vscode.postMessage({ type: 'manageProjects' }));
         btn('pf-allproj', () => { st.projects = null; save(); render(); });
+        btn('pf-new', () => openAgentForm());
+        wireAgentForm();
+    }
+
+    // ------------------------------------------------------------- NEW AGENT
+    /**
+     * ‼️ AN AGENT IS THE OBJECT AT THE CENTRE OF THIS EXTENSION, AND THE ONLY
+     * WAY TO MAKE ONE WAS A DIALOG CHAIN (U-14, surface 8).
+     *
+     * The page that lists every agent could not create one. `newAgent` asked
+     * which root folder (a quickpick, skipped when there is only one — so on
+     * most machines it was invisible) and then a name, and could say nothing
+     * about the two things that decide what the agent IS from its very first
+     * session: its default model, and the line of CLAUDE.md that states what it
+     * is for. Both are on the card, and the mission line is written straight
+     * into the template rather than left as a `{NAME}` placeholder nobody
+     * remembers to fill in.
+     */
+    let agentForm = null;
+    let agentMsg = '';
+    let agentMsgOk = false;
+
+    function openAgentForm(seed) {
+        const s = seed || {};
+        agentForm = {
+            mode: s.mode === 'import' ? 'import' : 'new',
+            root: (DATA.roots || [])[0] || '',
+            name: s.name || '',
+            model: DATA.defaultModel || '',
+            mission: '',
+            packFile: s.packFile || '',
+            packSummary: s.packSummary || '',
+            packNotes: s.packNotes || ''
+        };
+        agentMsg = '';
+        agentMsgOk = false;
+        render();
+        const box = document.getElementById('agentform');
+        if (box) { box.scrollIntoView(); }
+    }
+
+    function agentFormHtml() {
+        const F = window.AFForm;
+        const roots = DATA.roots || [];
+        const models = DATA.models || [];
+        const importing = agentForm.mode === 'import';
+        return F.card({
+            id: 'agentform',
+            title: importing ? 'Import an agent pack' : 'New agent',
+            lede: importing
+                ? 'Everything in the pack lands in a new folder. Its triggers and schedules arrive switched OFF on purpose — a pack that started firing the moment it was imported would be a pack you had to race.'
+                : 'An agent is a folder with a CLAUDE.md in it. That file IS the agent — everything else (memory, duties, skills, MCP servers) hangs off it and can be added afterwards from its own page.',
+            body: F.grid([
+                importing ? F.stat('Pack', agentForm.packSummary) : '',
+                roots.length > 1 ? F.sel('root', 'Where it lives', roots.map(r => ({ id: r, label: r })), agentForm.root, {
+                    wide: true, tip: 'One of your configured agent roots (agentFarm.agentRoots).'
+                }) : F.stat('Where it lives', roots[0] || '(no agent root configured)'),
+                F.text('name', 'Name', agentForm.name, {
+                    required: true, ph: 'e.g. researcher',
+                    tip: 'Letters, digits, - and _ . The folder is named after it, and so is the agent everywhere in the farm.'
+                }),
+                !importing && models.length ? F.sel('model', 'Default model', models, agentForm.model, {
+                    tip: 'Written into the agent\'s .claude/settings.local.json. Empty = no model key, and the Claude CLI default applies.'
+                }) : '',
+                !importing ? F.area('mission', 'What is it for', agentForm.mission, {
+                    rows: 3,
+                    ph: 'One or two lines — the agent reads this at the start of every session.',
+                    tip: 'Written into the CLAUDE.md the agent wakes up with. Leaving it empty makes an agent with a template and no job, which is the state most abandoned agents are in.'
+                }) : ''
+            ]) + (importing && agentForm.packNotes ? F.msg(agentForm.packNotes) : ''),
+            msg: agentMsg, warn: !agentMsgOk,
+            submit: importing ? 'Import it' : 'Create the agent'
+        });
+    }
+
+    function wireAgentForm() {
+        const box = document.getElementById('agentform');
+        if (!box || !agentForm) { return; }
+        window.AFForm.wire(box, {
+            onEdit: v => Object.assign(agentForm, v),
+            onRedraw: () => render(),
+            onSubmit: () => { agentMsg = ''; vscode.postMessage({ type: 'agent-new', form: agentForm }); },
+            onCancel: () => { agentForm = null; agentMsg = ''; render(); }
+        });
     }
 
     window.addEventListener('message', ev => {
-        if (ev.data && ev.data.type === 'data') { DATA = ev.data.data; render(); }
+        const m = ev.data;
+        if (!m) { return; }
+        if (m.type === 'data') { DATA = m.data; render(); return; }
+        if (m.type === 'agent-compose') { openAgentForm(m.seed || {}); return; }
+        if (m.type === 'agent-msg') {
+            agentMsg = String(m.text || '');
+            agentMsgOk = m.ok === true;
+            if (agentMsgOk) { agentForm = null; }
+            render();
+        }
     });
 
     render();

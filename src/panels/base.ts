@@ -226,6 +226,7 @@ export function handleAfNav(to: unknown): void {
         settings: 'agentfarm.openFarmSettings',
         capabilities: 'agentfarm.openCapabilities',
         toolbox: 'agentfarm.openToolbox',
+        evals: 'agentfarm.openEvals',
         secrets: 'agentfarm.openSecrets',
         turns: 'agentfarm.openTurns',
         sessions: 'agentfarm.openSessions',

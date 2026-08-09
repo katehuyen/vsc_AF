@@ -93,6 +93,18 @@ export class QueuePanel {
 
     static refreshIfOpen(): void { QueuePanel.current?.refresh(); }
 
+    /**
+     * Put the page's own capture box up, seeded — U-14.
+     *
+     * The palette's `queueAdd` used to ask for the text in an input box, which
+     * can state the text and nothing else; this page's box carries the target
+     * and the urgency too, and shows the queue you are adding to. Call it right
+     * after whatever opened the page — it acts on the panel that is there.
+     */
+    static composeCurrent(text?: string): void {
+        void QueuePanel.current?.panel.webview.postMessage({ type: 'q-compose', text: text ?? '' });
+    }
+
     private constructor(readonly panel: vscode.WebviewPanel, private deps: QueueDeps, focusItem?: string) {
         this.focusItem = focusItem;
         this.render();

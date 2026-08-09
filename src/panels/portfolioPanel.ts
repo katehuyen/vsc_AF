@@ -30,6 +30,26 @@ export interface PortfolioDeps {
     live?: LiveMonitor;
     projects(): Project[];
     budgets(): Record<string, number>;
+    /**
+     * ‼️ AN AGENT IS THE OBJECT AT THE CENTRE OF THIS EXTENSION, AND THE ONLY
+     * WAY TO MAKE ONE WAS A DIALOG CHAIN (U-14, surface 8). The page that lists
+     * every agent could not create one; `newAgent` asked which root folder,
+     * then a name, and could say nothing about the two things that decide what
+     * the agent IS from its first session — its default model, and the one line
+     * of CLAUDE.md that says what it is for.
+     */
+    agentRoots?(): string[];
+    defaultModel?(): string;
+    /** Model aliases as the launcher offers them, so "which model" reads the
+     *  same here as it does when a session is started. */
+    models?(): { id: string; label: string }[];
+    createAgent?(spec: {
+        root: string; name: string; model: string; mission: string;
+    }): { error?: string; dir?: string };
+    /** Import a pack that has already been read off disk. The OS file picker
+     *  and the reading happen in the command; what is left is where it lands
+     *  and what it is called, which is a form. */
+    importPack?(spec: { root: string; name: string; packFile: string }): { error?: string };
 }
 
 const DORMANT_DAYS = 14;
@@ -145,6 +165,13 @@ export class PortfolioPanel {
         PortfolioPanel.current = new PortfolioPanel(panel, deps);
     }
 
+    /** The ONE door to a new agent — `agentfarm.newAgent` opens this, and
+     *  `importAgentPack` opens it with the pack it just read. */
+    static compose(deps: PortfolioDeps, seed?: Record<string, unknown>): void {
+        PortfolioPanel.show(deps);
+        void PortfolioPanel.current?.panel.webview.postMessage({ type: 'agent-compose', seed: seed ?? {} });
+    }
+
     private constructor(private panel: vscode.WebviewPanel, private deps: PortfolioDeps) {
         panel.webview.html = htmlShell(panel.webview, deps.extensionUri,
             'Agent Portfolio', this.data(), 'portfolio.js');
@@ -158,7 +185,12 @@ export class PortfolioPanel {
             generatedAt: Date.now(),
             rows: buildPortfolioRows(this.deps),
             projects: this.deps.projects().map(p => p.name),
-            dormantDays: DORMANT_DAYS
+            dormantDays: DORMANT_DAYS,
+            // What the "new agent" card needs to exist (U-14, surface 8).
+            roots: this.deps.agentRoots?.() ?? [],
+            models: this.deps.models?.() ?? [],
+            defaultModel: this.deps.defaultModel?.() ?? '',
+            canCreate: !!this.deps.createAgent
         };
     }
 
@@ -189,7 +221,36 @@ export class PortfolioPanel {
                 void vscode.commands.executeCommand('agentfarm.openGuide', msg.anchor);
                 break;
             case 'afnav': handleAfNav(msg.to); break;
+            case 'agent-new': this.createAgent((msg.form ?? {}) as Record<string, unknown>); break;
         }
+    }
+
+    /** The one write behind "new agent". The refusals are the ones the old
+     *  chain's `validateInput` made, said in the card instead of under a box. */
+    private createAgent(raw: Record<string, unknown>): void {
+        const say = (text: string, ok = false) =>
+            void this.panel.webview.postMessage({ type: 'agent-msg', text, ok });
+        const s = (k: string) => String(raw[k] ?? '').trim();
+        const name = s('name');
+        if (!name) { return say('It needs a name — the folder is named after it, and so is the agent.'); }
+        if (!/^[\w-]+$/.test(name)) {
+            return say('Letters, digits, - and _ only: the name becomes a folder name and an id.');
+        }
+        const roots = this.deps.agentRoots?.() ?? [];
+        const root = s('root') || roots[0] || '';
+        if (!root) { return say('Configure an agent root folder first (Farm Settings → agentRoots).'); }
+        if (s('mode') === 'import') {
+            if (!this.deps.importPack) { return; }
+            const res = this.deps.importPack({ root, name, packFile: s('packFile') });
+            if (res.error) { return say(res.error); }
+            this.refresh();
+            return say(`Pack imported as "${name}". Its triggers and schedules arrived switched OFF — look at them before you arm them.`, true);
+        }
+        if (!this.deps.createAgent) { return; }
+        const res = this.deps.createAgent({ root, name, model: s('model'), mission: s('mission') });
+        if (res.error) { return say(res.error); }
+        this.refresh();
+        say(`"${name}" created. Its CLAUDE.md is open — that file IS the agent.`, true);
     }
 
     private dispose(): void {

@@ -10,11 +10,135 @@
     const state = { q: '' };
 
     window.addEventListener('message', ev => {
-        if (ev.data.type === 'data') { DATA = ev.data.data; render(); }
+        const m = ev.data;
+        if (m.type === 'data') { DATA = m.data; render(); return; }
+        if (m.type === 'sec-compose') { openForm(m.seed || {}); return; }
+        if (m.type === 'sec-msg') {
+            secMsg = String(m.text || '');
+            secMsgOk = m.ok === true;
+            if (secMsgOk) { form = null; }
+            render();
+        }
     });
 
     const post = (m) => vscode.postMessage(m);
     const esc = (s) => C.esc(String(s === undefined || s === null ? '' : s));
+
+    // ------------------------------------------------------------- THE FORM
+    /**
+     * ‼️ THE VAULT PAGE CAN NOW FILL ITSELF — U-14, surface 5.
+     *
+     * Four of this page's own buttons posted to the host, which asked an input
+     * box each: add (three boxes in a row), replace, edit description, and a
+     * multi-pick for the scope. So the one page whose entire subject is a table
+     * of secrets could not put a secret in it, and setting a secret's name, its
+     * value, what it is for and who may use it meant four separate trips.
+     *
+     * ‼️ AND THE VALUE STILL ONLY TRAVELS ONE WAY. `buildData` sends metadata
+     * and nothing else; the form's value box starts EMPTY on an edit and an
+     * empty box means "leave the stored value alone". There is no route by
+     * which a stored value reaches this page, which is the same promise the
+     * missing "copy the value" menu item makes.
+     */
+    let form = null;
+    let secMsg = '';
+    let secMsgOk = false;
+
+    function openForm(seed) {
+        const s = seed || {};
+        const known = (DATA.secrets || []).find(x => x.name === s.name);
+        form = {
+            mode: s.name ? 'edit' : 'new',
+            name: s.name || '',
+            value: '',
+            description: known ? (known.description || '') : '',
+            // The scope is a tick per agent. "None ticked" is not "no agent" —
+            // it is the vault's own "unrestricted", and the card says so out
+            // loud, because that default is the opposite of what an empty
+            // multi-select usually means.
+            scope: (() => {
+                const on = {};
+                if (known && !known.allAgents) { known.agents.forEach(a => { on['ag_' + a.id] = true; }); }
+                return on;
+            })()
+        };
+        secMsg = '';
+        secMsgOk = false;
+        render();
+        const box = document.getElementById('secform');
+        if (box) { box.scrollIntoView(); }
+    }
+
+    function formHtml() {
+        const F = window.AFForm;
+        const editing = form.mode === 'edit';
+        const ticked = Object.keys(form.scope).filter(k => form.scope[k]).length;
+        return F.card({
+            id: 'secform',
+            title: editing ? 'Edit “' + form.name + '”' : 'New secret',
+            lede: editing
+                ? 'The stored value is not shown and never will be — leave the value box empty to keep it, or type a new one to replace it.'
+                : 'The value goes into the OS keychain, never into a settings file and never into git. It reaches a task as an environment variable and a prompt as {secret:NAME}.',
+            body: F.grid([
+                editing
+                    ? F.stat('Name', form.name)
+                    : F.text('name', 'Name', form.name, {
+                        required: true, mono: true, ph: 'FAL_KEY',
+                        tip: 'Letters, digits, _ . and - . It becomes the environment variable name and the {secret:NAME} reference, so it is the one thing that cannot be changed later.'
+                    }),
+                F.text('value', editing ? 'New value' : 'Value', form.value, {
+                    type: 'password', required: !editing,
+                    tip: editing
+                        ? 'Empty = keep what is stored. Typing here replaces it.'
+                        : 'Held in the OS keychain (VS Code SecretStorage). It is never read back into this page.'
+                }),
+                F.text('description', 'What it is for', form.description, {
+                    wide: true, ph: 'which site / which API / whose account',
+                    tip: 'The only thing about a secret you will still recognise in six months.'
+                })
+            ])
+                + F.sec('Who may use it',
+                    'Nothing ticked means EVERY agent — that is the vault\'s own default, not "no agent". Tick some and only their tasks receive it.')
+                + F.grid((DATA.agents || []).map(a =>
+                    F.check('ag_' + a.id, a.name, !!form.scope['ag_' + a.id], {
+                        redraw: true,
+                        tip: 'Only ' + a.name + '\'s tasks would receive it.'
+                    })))
+                + F.msg(ticked
+                    ? ticked + ' agent(s) ticked — no other agent\'s task receives this secret.'
+                    : 'Unrestricted: every agent\'s tasks receive it.'),
+            msg: secMsg, warn: !secMsgOk,
+            submit: editing ? 'Save changes' : 'Store it in the keychain'
+        });
+    }
+
+    function wireForm() {
+        const F = window.AFForm;
+        const box = document.getElementById('secform');
+        if (!box || !form) { return; }
+        F.wire(box, {
+            onEdit: v => {
+                Object.keys(v).forEach(k => {
+                    if (k.indexOf('ag_') === 0) { form.scope[k] = !!v[k]; }
+                    else { form[k] = v[k]; }
+                });
+            },
+            onRedraw: () => render(),
+            onSubmit: () => {
+                secMsg = '';
+                post({
+                    type: 'sec-save',
+                    secret: {
+                        mode: form.mode, name: form.name, value: form.value,
+                        description: form.description,
+                        agents: Object.keys(form.scope)
+                            .filter(k => form.scope[k]).map(k => k.slice(3))
+                    }
+                });
+            },
+            onCancel: () => { form = null; secMsg = ''; render(); }
+        });
+    }
 
     function relTime(ts) {
         if (!ts) { return '<span class="muted">—</span>'; }
@@ -50,11 +174,9 @@
             title="${esc(window.AFCtx.hint('The value is in the OS keychain and never leaves it'))}">
             <td class="nm">${esc(s.name)}</td>
             <td class="val"><span class="dots" title="stored in the OS keychain — never shown">••••••••</span>
-                <button class="mini" data-act="setValue" data-name="${esc(s.name)}" title="replace the stored value">replace</button></td>
-            <td class="desc">${s.description ? esc(s.description) : '<span class="muted">—</span>'}
-                <button class="mini" data-act="editDescription" data-name="${esc(s.name)}" title="edit description">✎</button></td>
-            <td class="scope">${scopeCell(s)}
-                <button class="mini" data-act="editScope" data-name="${esc(s.name)}" title="choose which agents may use this secret">scope</button></td>
+                <button class="mini" data-edit="${esc(s.name)}" title="Replace the value, change what it is for, or choose which agents may use it — one card">edit</button></td>
+            <td class="desc">${s.description ? esc(s.description) : '<span class="muted">—</span>'}</td>
+            <td class="scope">${scopeCell(s)}</td>
             <td class="small muted">${relTime(s.updatedAt)}</td>
             <td class="act"><button class="mini danger" data-act="delete" data-name="${esc(s.name)}" title="delete from keychain">delete</button></td>
         </tr>`).join('');
@@ -96,7 +218,8 @@
                 page: 'secrets',
                 title: '🔑 Secrets',
                 sub: esc(sub),
-                actions: `<button class="mini add" data-act="add">+ Add secret</button>`
+                actions: `<button class="mini add" id="sec-add"${form ? ' disabled' : ''}
+                    title="Name, value, what it is for and who may use it — on one card">+ Add secret</button>`
             })}
             <div class="card sec-intro" style="margin-bottom:10px">
                 Values live in the <b>OS keychain</b> (VS Code SecretStorage) — never in settings files or git.
@@ -105,6 +228,7 @@
                 by default, or restrict a secret to specific agents so only their tasks receive it. The value itself is
                 never shown here — use <b>replace</b> to change it.
             </div>
+            ${form ? formHtml() : (secMsg ? window.AFForm.msg(secMsg, !secMsgOk) : '')}
             <div class="searchbar" style="margin-bottom:8px"><input id="sec-q" type="text" placeholder="filter secrets…" value="${esc(state.q)}"
                 title="${esc(window.AFQuery.tip('Searched against the name, the description and the agents it is scoped to.'))}"></div>
             <div class="card tablewrap"><table class="tb">
@@ -129,8 +253,13 @@
                 if (nq) { nq.focus(); nq.setSelectionRange(pos, pos); }
             });
         }
+        const add = document.getElementById('sec-add');
+        if (add) { add.addEventListener('click', () => openForm({})); }
+        document.querySelectorAll('[data-edit]').forEach(b =>
+            b.addEventListener('click', () => openForm({ name: b.dataset.edit })));
         document.querySelectorAll('[data-act]').forEach(b =>
             b.addEventListener('click', () => post({ type: b.dataset.act, name: b.dataset.name })));
+        wireForm();
     }
 
     /**
@@ -146,7 +275,13 @@
         const verb = act.split(':')[0];
         const arg = act.slice(verb.length + 1);
         const name = String(ctx.secret || '');
-        if (verb === 'scAct') { post({ type: arg, name: name }); return; }
+        // Three of the four acts became one card (U-14): replacing the value,
+        // changing the description and choosing the scope are the same edit.
+        if (verb === 'scAct') {
+            if (arg === 'delete') { post({ type: 'delete', name: name }); }
+            else { openForm({ name: name }); }
+            return;
+        }
         if (verb === 'scCopyName') { window.AFCtx.copy(name); return; }
         if (verb === 'scCopyRef') { window.AFCtx.copy(name ? '{secret:' + name + '}' : ''); }
     }

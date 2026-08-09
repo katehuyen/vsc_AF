@@ -59,7 +59,9 @@
         { id: 'tasks', label: 'Tasks' },
         { id: 'missions', label: 'Missions' },
         { id: 'studio', label: '🎬 Studio' },
-        { id: 'toolbox', label: 'Toolbox' }
+        { id: 'toolbox', label: 'Toolbox' },
+        // U-14: evals had no page at all until the sweep built one.
+        { id: 'evals', label: '🧪 Evals' }
     ];
 
     // Notices ↔ Queue read as two tabs of ONE inbox. Both pages render this strip

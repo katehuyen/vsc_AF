@@ -273,6 +273,148 @@
             <p class="footnote">Media cost is estimated from your own <code>agentFarm.mediaPricing</code> rules against each model's response — it is not a bill from the provider.</p>`;
     }
 
+    // -------------------------------------------------------------- THE CARDS
+    /**
+     * ‼️ THE STUDIO MAKES ITS OWN OBJECTS NOW — U-14, surface 6.
+     *
+     * Five acts on this page ended in a VS Code box: creating a production
+     * (title, then scene titles as one comma-separated line), varying a
+     * generation (a whole JSON input in a ONE-LINE box), regenerating with a
+     * critique, assigning an asset to a scene (a quickpick with the production
+     * tree flattened into indented labels), and exporting a sequence (which
+     * production → fps → seconds, three in a row).
+     *
+     * The worst of them is the one nobody would guess: a media input is JSON
+     * with a prompt paragraph inside it, and it was being edited in a single
+     * line of an input box.
+     */
+    let card = null;
+    let cardMsg = '';
+    let cardMsgOk = false;
+
+    function openCard(seed) {
+        const s = seed || {};
+        card = {
+            kind: s.kind || 'production',
+            // production
+            agentId: s.agentId || ((DATA.agents || [])[0] || {}).id || '',
+            title: s.title || '',
+            scenes: s.scenes || '',
+            // vary / feedback
+            taskId: s.taskId || '', model: s.model || '',
+            input: s.input || '', feedback: '',
+            // assign
+            target: s.target === undefined ? '' : s.target,
+            // export
+            projectId: s.projectId || DATA.project || '',
+            fps: '30', clipSeconds: '5'
+        };
+        cardMsg = '';
+        cardMsgOk = false;
+        render();
+        const box = document.getElementById('studiocard');
+        if (box) { box.scrollIntoView(); }
+    }
+
+    /** Every production and scene as one flat picker — the same tree the
+     *  quickpick flattened with indentation, but with the production's own name
+     *  on every row so a scene called "Opening" is never ambiguous. */
+    function sceneOptions() {
+        const out = [{ id: '', label: '— detach it from every production —' }];
+        for (const p of (DATA.productions || [])) {
+            out.push({ id: p.id, label: p.title + ' — the production, no scene' });
+            for (const s of (p.scenes || [])) {
+                out.push({ id: p.id + ' ' + s.id, label: '    ' + p.title + ' · ' + s.title + ' (' + s.status + ')' });
+            }
+        }
+        return out;
+    }
+
+    function cardHtml() {
+        const F = window.AFForm;
+        const c = card;
+        let title, lede, body, submit;
+        if (c.kind === 'production') {
+            title = 'New production';
+            lede = 'A production is a production.json in an agent folder — a title and its scenes. Everything after this (statuses, assets, the export) hangs off those scenes, and you can still edit the file by hand.';
+            body = F.grid([
+                F.sel('agentId', 'In which agent folder', (DATA.agents || []).map(a => ({ id: a.id, label: a.name })), c.agentId, {
+                    tip: 'production.json is written there. It is the folder the media runs will belong to.'
+                }),
+                F.text('title', 'Title', c.title, {
+                    required: true, ph: 'e.g. Launch Film',
+                    tip: 'What the production is called everywhere on this page.'
+                }),
+                F.area('scenes', 'Scenes — one per line', c.scenes, {
+                    rows: 5, ph: 'Opening\nProduct intro\nClosing',
+                    tip: 'ONE PER LINE, not comma separated: a scene title with a comma in it used to become two scenes silently. Order is the order they are exported in, and you can reorder them in the file later.'
+                })
+            ]);
+            submit = 'Create the production';
+        } else if (c.kind === 'vary' || c.kind === 'feedback') {
+            const varying = c.kind === 'vary';
+            title = varying ? 'Run it again, changed' : 'Run it again, with a critique';
+            lede = varying
+                ? 'The same model, with the input edited. This is the JSON the provider receives, so the prompt lives inside it — which is why it gets a real box rather than a line.'
+                : 'The original input is kept and your critique is injected into its prompt, exactly the way the vision check\'s own retry does it.';
+            body = F.grid([
+                F.stat('Model', c.model || '(unknown)'),
+                varying
+                    ? F.area('input', 'Input', c.input, {
+                        rows: 8, required: true, tip: 'The provider\'s JSON input. Edit the prompt inside it, or anything else.'
+                    })
+                    : F.area('feedback', 'What was wrong / what should change', c.feedback, {
+                        rows: 4, required: true,
+                        ph: 'e.g. hands look wrong; warmer light; closer camera',
+                        tip: 'Added to the original prompt. The original input is not replaced.'
+                    })
+            ]);
+            submit = varying ? 'Run the variation' : 'Run it with the critique';
+        } else if (c.kind === 'assign') {
+            title = 'Assign this asset';
+            lede = 'Which production and which scene this asset belongs to. That link is what the Assemble tab and the sequence export read.';
+            body = F.grid([
+                F.stat('Asset', c.title || c.taskId),
+                F.sel('target', 'Belongs to', sceneOptions(), c.target, {
+                    wide: true,
+                    tip: 'Every production and every one of its scenes. The first row detaches it from all of them.'
+                })
+            ]);
+            submit = 'Save the assignment';
+        } else {
+            title = 'Export a sequence';
+            lede = 'An FCP7 XML plus an EDL, built from the assets assigned to each scene, in scene order. The file chooser comes last — that one is the operating system\'s and stays.';
+            body = F.grid([
+                F.sel('projectId', 'Production', (DATA.productions || []).map(p => ({
+                    id: p.id, label: p.title + ' — ' + (p.scenes || []).length + ' scene(s)'
+                })), c.projectId, { wide: true, tip: 'Which production is exported.' }),
+                F.sel('fps', 'Frame rate', ['30', '25', '24', '60'].map(f => ({ id: f, label: f + ' fps' })), c.fps, {
+                    tip: 'The sequence frame rate written into the XML.'
+                }),
+                F.num('clipSeconds', 'Clip length (s)', c.clipSeconds, {
+                    min: 1, tip: 'How long each scene\'s clip is placed for. The editor refines it afterwards; this only has to be sane.'
+                })
+            ]);
+            submit = 'Choose where to save it';
+        }
+        return F.card({
+            id: 'studiocard', title: title, lede: lede, body: body,
+            msg: cardMsg, warn: !cardMsgOk, submit: submit
+        });
+    }
+
+    function wireCard() {
+        const F = window.AFForm;
+        const box = document.getElementById('studiocard');
+        if (!box || !card) { return; }
+        F.wire(box, {
+            onEdit: v => Object.assign(card, v),
+            onRedraw: () => render(),
+            onSubmit: () => { cardMsg = ''; post('studio-save', { form: card }); },
+            onCancel: () => { card = null; cardMsg = ''; render(); }
+        });
+    }
+
     function render() {
         const p = cur();
         const body = DATA.tab === 'assets' ? assetsHtml()
@@ -296,6 +438,7 @@
             })}
             <div class="tabs">${TABS.map(t =>
                 `<button class="tab${DATA.tab === t.id ? ' on' : ''}" data-tab="${t.id}" title="${t.hint}">${t.label}${counts[t.id] ? `<span class="cnt">${counts[t.id]}</span>` : ''}</button>`).join('')}</div>
+            ${card ? cardHtml() : (cardMsg ? window.AFForm.msg(cardMsg, !cardMsgOk) : '')}
             ${body}`;
 
         window.AFHeader.wire(vscode, { onRefresh: () => post('refresh') });
@@ -309,9 +452,9 @@
 
         on('[data-open]', el => el.addEventListener('click', () => post('openAsset', { path: el.dataset.open })));
         on('[data-rerun]', el => el.addEventListener('click', () => post('rerun', { taskId: el.dataset.rerun })));
-        on('[data-vary]', el => el.addEventListener('click', () => post('vary', { taskId: el.dataset.vary })));
-        on('[data-feedback]', el => el.addEventListener('click', () => post('feedback', { taskId: el.dataset.feedback })));
-        on('[data-assign]', el => el.addEventListener('click', () => post('assign', { taskId: el.dataset.assign })));
+        on('[data-vary]', el => el.addEventListener('click', () => openAssetCard('vary', el.dataset.vary)));
+        on('[data-feedback]', el => el.addEventListener('click', () => openAssetCard('feedback', el.dataset.feedback)));
+        on('[data-assign]', el => el.addEventListener('click', () => openAssetCard('assign', el.dataset.assign)));
         on('[data-status]', el => el.addEventListener('click', () =>
             post('setSceneStatus', { projectId: DATA.project, sceneId: el.dataset.status })));
         on('[data-keep]', el => el.addEventListener('click', () => post('triageDecision', { taskId: el.dataset.keep, keep: true })));
@@ -329,10 +472,21 @@
             post(a.msg, { sceneId: el.dataset.scene });
         }));
         const byId = (id, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener('click', fn); } };
-        byId('newprod', () => post('newProduction'));
-        byId('exportseq', () => post('exportSequence'));
+        byId('newprod', () => openCard({ kind: 'production' }));
+        byId('exportseq', () => openCard({ kind: 'export' }));
+        wireCard();
         byId('register', () => post('registerAsset'));
         byId('editmanifest', () => { const x = cur(); if (x) { post('openFile', { path: x.file }); } });
+    }
+
+    /** The three acts that need an asset's own numbers to fill their card. */
+    function openAssetCard(kind, taskId) {
+        const it = (DATA.items || []).find(x => x.taskId === taskId);
+        if (!it) { return; }
+        openCard({
+            kind: kind, taskId: taskId, model: it.model, input: it.input, title: it.title,
+            target: it.projectId ? (it.sceneId ? it.projectId + ' ' + it.sceneId : it.projectId) : ''
+        });
     }
 
     // ------------------------------------------------------- right-click menu
@@ -374,9 +528,9 @@
             // ---- an asset ----
             case 'asOpen': post('openAsset', { path: String(ctx.asPath || '') }); return;
             case 'asRerun': post('rerun', { taskId: String(ctx.asTask || '') }); return;
-            case 'asVary': post('vary', { taskId: String(ctx.asTask || '') }); return;
-            case 'asFeedback': post('feedback', { taskId: String(ctx.asTask || '') }); return;
-            case 'asAssign': post('assign', { taskId: String(ctx.asTask || '') }); return;
+            case 'asVary': openAssetCard('vary', String(ctx.asTask || '')); return;
+            case 'asFeedback': openAssetCard('feedback', String(ctx.asTask || '')); return;
+            case 'asAssign': openAssetCard('assign', String(ctx.asTask || '')); return;
             case 'asTriage':
                 post('triageDecision', { taskId: String(ctx.asTask || ''), keep: arg === '1' });
                 return;
@@ -396,7 +550,16 @@
     window.AFCtx.listen(ctxDo);
 
     window.addEventListener('message', ev => {
-        if (ev.data && ev.data.type === 'data') { DATA = ev.data.data; render(); }
+        const m = ev.data;
+        if (!m) { return; }
+        if (m.type === 'data') { DATA = m.data; render(); return; }
+        if (m.type === 'studio-compose') { openCard(m.seed || {}); return; }
+        if (m.type === 'studio-msg') {
+            cardMsg = String(m.text || '');
+            cardMsgOk = m.ok === true;
+            if (cardMsgOk) { card = null; }
+            render();
+        }
     });
 
     render();

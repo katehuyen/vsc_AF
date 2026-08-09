@@ -2,11 +2,15 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
-import { assetKind, mediaCandidates, MediaMeta, readMediaMetas, updateMediaMeta } from '../core/media';
 import {
-    discoverProductions, sceneMatrix, SCENE_STATUSES, SceneStatus, setSceneStatus, writeProduction
+    assetKind, injectMediaFeedback, mediaCandidates, MediaMeta, readMediaMetas, updateMediaMeta
+} from '../core/media';
+import {
+    discoverProductions, newProduction, PRODUCTION_FILENAME, sceneMatrix, SCENE_STATUSES,
+    SceneStatus, setSceneStatus, writeProduction
 } from '../core/production';
-import { pickSequenceAssets } from '../core/premiere';
+import { buildEdl, buildFcpXml, pickSequenceAssets } from '../core/premiere';
+import { revealPath } from '../core/reveal';
 import { buildStudio, pipelineSummary } from '../core/studio';
 import { TaskManager } from '../core/tasks';
 import { handleAfNav, htmlShell } from './base';
@@ -77,6 +81,13 @@ export class StudioPanel {
         StudioPanel.current?.refresh();
     }
 
+    /** The ONE door to a production, a variation, an assignment or an export —
+     *  U-14, surface 6. */
+    static compose(deps: StudioDeps, seed: Record<string, unknown>): void {
+        StudioPanel.show(deps, seed.kind === 'export' ? { tab: 'assemble' } : undefined);
+        void StudioPanel.current?.panel.webview.postMessage({ type: 'studio-compose', seed });
+    }
+
     private constructor(private panel: vscode.WebviewPanel, private deps: StudioDeps) {
         panel.webview.html = htmlShell(panel.webview, deps.extensionUri, 'Studio', this.data(), 'studio.js');
         panel.webview.onDidReceiveMessage(m => void this.onMessage(m), null, this.disposables);
@@ -128,6 +139,11 @@ export class StudioPanel {
             generatedAt: Date.now(),
             tab: this.tab,
             project: this.project,
+            // ‼️ WHO A PRODUCTION CAN BELONG TO (U-14, surface 6). `newProduction`
+            // resolved the agent with a picker of its own before it asked the
+            // first of its two boxes; the card asks it as one field among the
+            // others, so the answer is visible while the rest is decided.
+            agents: this.deps.getAgents().map(a => ({ id: a.id, name: a.name })),
             productions: state.productions.map(p => ({
                 ...p,
                 summary: pipelineSummary(p),
@@ -222,18 +238,9 @@ export class StudioPanel {
             case 'feedback':
                 void vscode.commands.executeCommand('agentfarm.rerunMedia', str('taskId'), false, true);
                 break;
-            case 'assign': {
-                const taskId = str('taskId');
-                if (!taskId) { break; }
-                const target = await this.pickScene(str('sceneId'));
-                if (target === undefined) { break; }
-                updateMediaMeta(this.deps.tasks.outputsDir, taskId,
-                    target === null
-                        ? { projectId: undefined, sceneId: undefined }
-                        : { projectId: target.projectId, sceneId: target.sceneId });
-                this.refresh();
+            case 'studio-save':
+                await this.saveForm((msg.form ?? {}) as Record<string, unknown>);
                 break;
-            }
             case 'setSceneStatus': {
                 const projectId = str('projectId');
                 const sceneId = str('sceneId');
@@ -257,10 +264,6 @@ export class StudioPanel {
                 }
                 break;
             }
-            case 'newProduction':
-                await vscode.commands.executeCommand('agentfarm.newProduction');
-                this.refresh();
-                break;
             case 'generate':
                 // Honest wiring: making NEW media is a recipe/workflow, and that
                 // is the command that exists — no invented one-click generator.
@@ -285,9 +288,6 @@ export class StudioPanel {
                 this.refresh();
                 break;
             }
-            case 'exportSequence':
-                await vscode.commands.executeCommand('agentfarm.exportSequence', { projectId: this.project });
-                break;
             case 'registerAsset':
                 await vscode.commands.executeCommand('agentfarm.registerAsset');
                 this.refresh();
@@ -305,6 +305,112 @@ export class StudioPanel {
                 break;
             case 'afnav': handleAfNav(msg.to); break;
         }
+    }
+
+    /** A refusal the FORM shows, in the form. */
+    private say(text: string, ok = false): void {
+        void this.panel.webview.postMessage({ type: 'studio-msg', text, ok });
+    }
+
+    /**
+     * The four writes the Studio's cards make.
+     *
+     * Every one of them used to be a dialog chain; the one worth naming is
+     * `vary`, which asked for a whole JSON input in a ONE-LINE input box. The
+     * file chooser at the end of an export stays native — there is no webview
+     * equivalent — and so does the modal in front of overwriting a manifest.
+     */
+    private async saveForm(raw: Record<string, unknown>): Promise<void> {
+        const s = (k: string) => String(raw[k] ?? '').trim();
+        const kind = s('kind');
+
+        if (kind === 'production') {
+            const agent = this.deps.getAgents().find(a => a.id === s('agentId'));
+            if (!agent) { return this.say('Pick the agent whose folder holds the production.'); }
+            const title = s('title');
+            if (!title) { return this.say('A production needs a title.'); }
+            // ‼️ ONE PER LINE, not comma separated. The old box split on commas,
+            // so a scene called "Opening, wide" became two scenes silently.
+            const scenes = s('scenes').split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+            const file = path.join(agent.dir, PRODUCTION_FILENAME);
+            if (fs.existsSync(file)) {
+                const over = await vscode.window.showWarningMessage(
+                    `${agent.name} already has a ${PRODUCTION_FILENAME}. Overwrite it?`,
+                    { modal: true }, 'Overwrite');
+                if (over !== 'Overwrite') { return this.say('Left as it was — nothing was written.'); }
+            }
+            writeProduction(file, newProduction(title, scenes));
+            this.project = '';
+            this.refresh();
+            return this.say(`"${title}" created with ${scenes.length} scene(s) in ${agent.name}.`, true);
+        }
+
+        if (kind === 'assign') {
+            const taskId = s('taskId');
+            if (!taskId) { return; }
+            const target = s('target');
+            if (!target) {
+                updateMediaMeta(this.deps.tasks.outputsDir, taskId,
+                    { projectId: undefined, sceneId: undefined });
+                this.refresh();
+                return this.say('Detached — it belongs to no production now.', true);
+            }
+            const [projectId, sceneId] = target.split(' ');
+            updateMediaMeta(this.deps.tasks.outputsDir, taskId, { projectId, sceneId: sceneId || undefined });
+            this.refresh();
+            return this.say('Assigned.', true);
+        }
+
+        if (kind === 'vary' || kind === 'feedback') {
+            const meta = this.metas().find(m => m.taskId === s('taskId'));
+            if (!meta) { return this.say('That generation is no longer in the outputs folder — refresh the page.'); }
+            let input = meta.input;
+            let suffix = ' (re-run)';
+            if (kind === 'vary') {
+                const edited = String(raw.input ?? '');
+                if (!edited.trim()) { return this.say('The input cannot be empty — that is what the provider receives.'); }
+                input = edited;
+                suffix = ' (vary)';
+            } else {
+                const fb = s('feedback');
+                if (!fb) { return this.say('Say what should change — the critique is what makes this different from a plain re-run.'); }
+                input = injectMediaFeedback(meta.input, fb);
+                suffix = ' (feedback)';
+            }
+            this.deps.tasks.runMediaAdhoc(meta.title + suffix, meta.model, input,
+                { projectId: meta.projectId, sceneId: meta.sceneId });
+            this.refresh();
+            return this.say(`Started — ${meta.model}. It lands on this page when it finishes.`, true);
+        }
+
+        if (kind !== 'export') { return; }
+        const found = discoverProductions(this.deps.getAgents())
+            .find(p => p.production.id === s('projectId'));
+        if (!found) { return this.say('Pick a production to export.'); }
+        const clips = pickSequenceAssets(found.production, this.metas());
+        if (!clips.length) {
+            return this.say(`"${found.production.title}" has no scene assets to place — assign assets to scenes first (the Assets tab's "assign" on each one).`);
+        }
+        const opts = {
+            fps: Number(raw.fps) || 30,
+            clipSeconds: Number(raw.clipSeconds) || 5,
+            title: found.production.title
+        };
+        const safe = found.production.id.replace(/[^\w.-]+/g, '-');
+        const uri = await vscode.window.showSaveDialog({
+            defaultUri: vscode.Uri.file(path.join(path.dirname(found.file), `${safe}.xml`)),
+            filters: { 'FCP7 XML': ['xml'] }, saveLabel: 'Export sequence'
+        });
+        if (!uri) { return this.say('Nothing was written.'); }
+        fs.writeFileSync(uri.fsPath, buildFcpXml(clips, opts), 'utf8');
+        const edlPath = uri.fsPath.replace(/\.xml$/i, '') + '.edl';
+        fs.writeFileSync(edlPath, buildEdl(clips, opts), 'utf8');
+        this.say(`${clips.length} clip(s) exported → ${path.basename(uri.fsPath)} (+ .edl). In Premiere: File → Import.`, true);
+        const choice = await vscode.window.showInformationMessage(
+            `Agent Farm: exported ${clips.length} clip(s) → ${path.basename(uri.fsPath)} (+ .edl).`,
+            'Reveal', 'Open XML');
+        if (choice === 'Reveal') { void revealPath(uri.fsPath); }
+        if (choice === 'Open XML') { void vscode.window.showTextDocument(uri); }
     }
 
     private dispose(): void {

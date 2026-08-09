@@ -92,6 +92,21 @@
             if (creating) { creating.folder = ev.data.folder; creating.folderTouched = true; render(); }
             return;
         }
+        // ‼️ THE PALETTE TYPES INTO THE PAGE'S OWN CAPTURE BOX (U-14).
+        // `backlogAdd` used to ask for the line in an input box, which can
+        // state the text and nothing else; this box also carries the area, the
+        // type, the priority, the effort, the queue position and the parent —
+        // and it shows the backlog being added to. The axes already in it are
+        // left exactly as they were: that is the whole point of them sticking.
+        if (ev.data.type === 'bl-capture') {
+            tab = 'backlog';
+            const cap = blCapture();
+            if (ev.data.text) { cap.text = String(ev.data.text); }
+            render();
+            const box = document.getElementById('bl-new');
+            if (box) { box.focus(); box.scrollIntoView(); }
+            return;
+        }
         if (ev.data.type === 'data') {
             const was = selectedId;
             DATA = ev.data.data;

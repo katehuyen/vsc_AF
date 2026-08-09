@@ -285,24 +285,46 @@ F.wire(root, { onEdit, onRedraw, onSubmit, onCancel, onBrowse, onList });
   `↑ ↓ edit copy ✕` acting on the DRAFT, never on the stored object.
 - **The refusal goes in the card** (`msg`), never in a modal.
 
-**The measurement, so the next sweep can be compared to it.** Same method both
-times: every `registerCommand` body in `extension.ts`, cut at the next
-registration.
+**The measurement, so the next sweep can be compared to it.** Every
+`registerCommand` body in `extension.ts`, cut at the next registration **or at
+its own closing line, whichever comes first**. `test/test_dialog_sweep.js`
+computes it and fails if the numbers climb back.
 
 | | commands | opens a native dialog | uses input box / quick pick | 2+ box chain |
 |---|---|---|---|---|
 | 2026-08-08 (U-9 phase 4) | 215 | 113 | 58 | 20 |
 | 2026-08-09 (U-14, surfaces 1–3) | 217 | 67 | 42 | 13 |
+| 2026-08-09 (U-14 complete, 8 surfaces) | 219 | 54 | 28 | 2 |
+
+‼️ **The first two rows over-count**, and the reason is worth knowing: cutting a
+body only at the next registration makes the LAST command of a
+`context.subscriptions.push(…)` block swallow everything up to the next block.
+That reported a fifteen-box `missionStepOutput`, which is three lines long and
+opens no dialog at all. The row above is measured with the closing-line rule and
+is the honest one.
 
 The finding worth keeping is not the count but its shape — nearly every one of
-those objects already HAS a page, and that page listed the object without being
-able to make one. The full table is in the project's `10_Notes/U-9 Faz 4 -
-diyalog supurme taramasi.md`; the remaining work is backlog `U-13` / `U-14`.
+those objects already HAD a page, and that page listed the object without being
+able to make one. The exception was **evals**, which had no page at all and got
+one. The full table is in the project's `10_Notes/U-9 Faz 4 - diyalog supurme
+taramasi.md`.
 
 ‼️ **The scan only reads `extension.ts`.** A panel may open its own dialogs and
 the number will not move — the Toolbox's `+ new skill` was two input boxes
-inside `toolboxPanel.ts` and no measurement ever saw it. When you convert a
-surface, grep its panel too.
+inside `toolboxPanel.ts` and no measurement ever saw it. The sweep test now
+greps the six converted panels as well; add yours to that list when you convert
+one.
+
+**What the remaining twenty-eight are, and why they stay.** A quickpick over
+rows that ALREADY EXIST is what a quickpick is for; this rule is about MAKING an
+object. `quickMenu` (the palette itself), `setupExample`, `worktreeRuns`,
+`browsePackGallery`, `addRecipe`, `startSessionWith`, `assignProject`,
+`dismissInsight`, `installHooks`, the `export*` pickers — all pick, none build.
+And a single box asking a single string about a thing that already exists is not
+a form either: `renameSession`, `tagSession`, `connectTelegram` (a token),
+`testDispatch` (a diagnostic). `test_dialog_sweep.js` lists them by name, so
+"finishing the job" by converting them is a decision somebody has to make on
+purpose rather than by momentum.
 
 ## Right-click
 

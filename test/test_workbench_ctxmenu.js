@@ -259,6 +259,7 @@ const NOW = Date.now();
 {
     const p = runPage('secrets.js', {
         agentCount: 2,
+        agents: [{ id: 'a1', name: 'dev' }, { id: 'a2', name: 'manager' }],
         secrets: [
             { name: 'FAL_KEY', description: 'fal.ai', allAgents: true, agents: [], updatedAt: NOW },
             { name: 'TG_TOKEN', description: '', allAgents: false, agents: [{ id: 'a1', name: 'dev' }], updatedAt: NOW }
@@ -270,17 +271,29 @@ const NOW = Date.now();
     ok('a secret publishes its NAME and nothing else',
         !!s && s.webviewSection === 'afSecretRow' && s.value === undefined && s.description === undefined);
 
+    // ‼️ The row's three edits became ONE card (U-14): replacing the value,
+    // changing what it is for and choosing who may use it are the same edit,
+    // and the row button and the menu both open exactly that card.
     p.posted.length = 0;
-    const replaceBtn = p.query('[data-act="setValue"]').find(e => e.dataset.name === 'FAL_KEY');
-    if (replaceBtn) { replaceBtn.click(); }
-    const byButton = p.last();
-    p.send({ type: 'afctx', act: 'scAct:setValue', ctx: s });
-    ok('‼️ replacing a value from the menu is the row button\'s message, to the character',
-        JSON.stringify(p.last()) === JSON.stringify(byButton));
+    const editBtn = p.query('[data-edit]').find(e => e.dataset.edit === 'FAL_KEY');
+    if (editBtn) { editBtn.click(); }
+    const byButton = p.html();
+    ok('the row opens the edit card', byButton.indexOf('id="secform"') >= 0);
+    ok('…and the card names the secret', byButton.indexOf('FAL_KEY') >= 0);
+    p.query('[data-afact="cancel"]')[0].click();
 
     p.send({ type: 'afctx', act: 'scAct:editScope', ctx: s });
-    ok('scoping it to agents is reachable from the row',
-        p.last().type === 'editScope' && p.last().name === 'FAL_KEY');
+    ok('‼️ the menu opens the same card the row button does',
+        p.html().indexOf('id="secform"') >= 0);
+    ok('scoping it to agents is on that card',
+        p.html().indexOf('data-af="ag_a1"') >= 0);
+    ok('…and the value box is EMPTY on an edit — a stored value never comes back here',
+        /data-af="value"[^>]*value=""/.test(p.html()));
+    p.query('[data-afact="cancel"]')[0].click();
+
+    p.send({ type: 'afctx', act: 'scAct:delete', ctx: s });
+    ok('deleting still goes straight to the host, and its modal',
+        p.last().type === 'delete' && p.last().name === 'FAL_KEY');
 }
 
 // ---- ‼️ the vault exception, checked against the catalogue itself ----

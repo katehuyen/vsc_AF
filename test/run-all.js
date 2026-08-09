@@ -5,6 +5,28 @@ const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
+/**
+ * ‼️ COMPILE FIRST, ALWAYS — AND DO IT HERE, NOT ONLY IN `npm test`.
+ *
+ * Several suites `require` the COMPILED file (`out/core/ctxmenu.js`,
+ * `out/core/health.js`, …) because those modules are pure by contract. Run
+ * this file directly with a stale `out/` and they compare last build's
+ * catalogue against today's package.json — and PASS, having measured nothing.
+ * That is exactly how a release shipped six right-click items that were in the
+ * catalogue and not in package.json: green tests, dead menu entries. Skip it
+ * with AF_NO_COMPILE=1 only when you know the build is current.
+ */
+if (!process.env.AF_NO_COMPILE) {
+    const tsc = spawnSync(process.execPath,
+        [path.join(__dirname, '..', 'node_modules', 'typescript', 'bin', 'tsc'), '-p', path.join(__dirname, '..')],
+        { encoding: 'utf8' });
+    if (tsc.status !== 0) {
+        console.log('FAIL compile — the tests read out/, so nothing below would have measured this build.');
+        console.log(((tsc.stdout || '') + (tsc.stderr || '')).trim());
+        process.exit(1);
+    }
+}
+
 const files = fs.readdirSync(__dirname).filter(f => /^test_.*\.js$/.test(f)).sort();
 let totalPass = 0, totalFail = 0;
 const failed = [];

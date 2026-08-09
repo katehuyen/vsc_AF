@@ -150,6 +150,10 @@ const NEED_ROW = 'webviewSection =~ /^afNeed(Row|Session)$/';
  */
 const TOOL_ROW = "webviewSection == 'afToolRow'";
 
+/** An eval case — the page the sweep had to build, so its rows start with the
+ *  menu rather than growing one later (U-14). */
+const EVAL_CASE = "webviewSection == 'afEvalCase'";
+
 /** The capability matrix: one cell, and the row's name. */
 const CAP_CELL = "webviewSection == 'afCapCell'";
 const CAP_ROW = "webviewSection == 'afCapRow'";
@@ -1340,6 +1344,20 @@ export const CTX_ITEMS: CtxItem[] = [
         id: 'memCopyPath', title: 'Copy its path', act: 'memCopy',
         when: MEMORY_ROW, group: '5_copy@1'
     },
+    // ---- an eval case ------------------------------------------------------
+    {
+        id: 'evCopyInput', title: 'Copy its input — the prompt that is replayed', act: 'evCopyInput',
+        when: EVAL_CASE, group: '5_copy@1'
+    },
+    {
+        id: 'evCopyTitle', title: 'Copy its title', act: 'evCopyTitle',
+        when: EVAL_CASE, group: '5_copy@2'
+    },
+    {
+        id: 'evDelete', title: 'Delete this case', act: 'evDelete',
+        when: EVAL_CASE, group: '9_danger@1'
+    },
+
     {
         id: 'dutyOpen', title: 'Open DUTIES.md', act: 'dutyOpen',
         when: DUTY_ROW, group: '1_open@1'

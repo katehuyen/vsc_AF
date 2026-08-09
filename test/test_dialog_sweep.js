@@ -22,8 +22,17 @@ const { runPage } = require(path.join(__dirname, 'lib_page_dom.js'));
 const src = fs.readFileSync(path.resolve(__dirname, '..', 'src', 'extension.ts'), 'utf8');
 
 // ---------------------------------------------------------------- the scan
-/** Every registerCommand body, cut at the next registration. The same method
- *  the measurement in docs/CONVENTIONS.md used, so the two are comparable. */
+/**
+ * Every registerCommand body, cut at the NEXT registration **or at its own
+ * closing line, whichever comes first**.
+ *
+ * ‼️ The "next registration" rule alone is wrong for the last command in a
+ * `context.subscriptions.push(…)` block: its body then swallows everything up
+ * to the next block, and the first sweep reported a fifteen-box command
+ * (`missionStepOutput`, which is three lines long and opens no dialog at all).
+ * A measurement with a known artefact in it is worse than no measurement,
+ * because it sends the next reader to the wrong place.
+ */
 function commandBodies() {
     const lines = src.split(/\r?\n/);
     const marks = [];
@@ -33,10 +42,29 @@ function commandBodies() {
     });
     const out = {};
     marks.forEach((mk, k) => {
-        const end = k + 1 < marks.length ? marks[k + 1].start : lines.length;
+        const hardEnd = k + 1 < marks.length ? marks[k + 1].start : lines.length;
+        let end = hardEnd;
+        for (let i = mk.start + 1; i < hardEnd; i++) {
+            if (/^ {8}\}\)[,;]?$/.test(lines[i])) { end = i + 1; break; }
+        }
         out[mk.cmd] = lines.slice(mk.start, end).join('\n');
     });
     return out;
+}
+
+/** The measurement itself, so the number in docs/CONVENTIONS.md is produced by
+ *  the same code that guards the converted commands. */
+function measure() {
+    const rows = Object.values(BODIES).map(b => ({
+        native: /showInputBox|showQuickPick|modal:\s*true|showOpenDialog|showSaveDialog/.test(b),
+        boxes: (b.match(/showInputBox|showQuickPick/g) || []).length
+    }));
+    return {
+        total: rows.length,
+        native: rows.filter(r => r.native).length,
+        builders: rows.filter(r => r.boxes > 0).length,
+        chains: rows.filter(r => r.boxes >= 2).length
+    };
 }
 const BODIES = commandBodies();
 
@@ -56,15 +84,71 @@ const CONVERTED = [
     'agentfarm.addSkill', 'agentfarm.duplicateSkill',
     // surface 3 — memory, on the memory graph
     'agentfarm.addMemory', 'agentfarm.copyMemory', 'agentfarm.fixMemoryIndex',
-    'agentfarm.distillMemory', 'agentfarm.askMemory', 'agentfarm.syncMemory'
+    'agentfarm.distillMemory', 'agentfarm.askMemory', 'agentfarm.syncMemory',
+    // surface 4 — the living checks
+    'agentfarm.configureLivingChecks',
+    // surface 5 — the vault
+    'agentfarm.setSecret', 'agentfarm.deleteSecret',
+    // surface 6 — the studio
+    'agentfarm.newProduction', 'agentfarm.rerunMedia', 'agentfarm.exportSequence',
+    // surface 7 — evals and A/B, on the page the sweep had to build
+    'agentfarm.addEvalCase', 'agentfarm.runEvals', 'agentfarm.reviewEvalCases', 'agentfarm.abTest',
+    // surface 8 — an agent, and the two capture boxes
+    'agentfarm.newAgent', 'agentfarm.importAgentPack',
+    'agentfarm.queueAdd', 'agentfarm.backlogAdd'
 ];
+
+/**
+ * ‼️ WHAT IS DELIBERATELY LEFT, AND WHY — so the next sweep does not "finish"
+ * it and make the extension worse.
+ *
+ * A quickpick over rows that ALREADY EXIST is what a quickpick is for; the rule
+ * (docs/CONVENTIONS.md) is about MAKING an object. These pick, they do not
+ * build: `quickMenu` (the palette itself), `setupExample`, `worktreeRuns`,
+ * `browsePackGallery`, `addRecipe`, `startSessionWith`, `assignProject`,
+ * `assignSessionProject`, `dismissInsight`, `delegateInsight`, `installHooks`,
+ * `terminalRenderFix`, `syncConstitution`, the three `export*` pickers. And a
+ * single box asking a single string about a thing that already exists is not a
+ * form either: `renameSession`, `tagSession`, `connectTelegram` (a token),
+ * `testDispatch` (a diagnostic), `runParallel`.
+ */
+const KEPT_ON_PURPOSE = [
+    'agentfarm.quickMenu', 'agentfarm.setupExample', 'agentfarm.worktreeRuns',
+    'agentfarm.browsePackGallery', 'agentfarm.addRecipe', 'agentfarm.startSessionWith',
+    'agentfarm.renameSession', 'agentfarm.tagSession', 'agentfarm.connectTelegram',
+    'agentfarm.testDispatch', 'agentfarm.runParallel'
+];
+KEPT_ON_PURPOSE.forEach(cmd => {
+    ok(`${cmd} is still there (it is a picker or one question, not a builder)`,
+        typeof BODIES[cmd] === 'string');
+});
+
+{
+    // The measurement, guarded. If a future change pushes these back up, the
+    // number in docs/CONVENTIONS.md is wrong and this says so.
+    const m = measure();
+    ok(`no more than 30 commands use a box (measured ${m.builders} of ${m.total})`, m.builders <= 30);
+    ok(`no more than 4 are chains of two or more (measured ${m.chains})`, m.chains <= 4);
+    ok('‼️ the scan is not fooled by the last command in a push() block',
+        (BODIES['agentfarm.missionStepOutput'] || '').split('\n').length < 8);
+}
+
+/**
+ * These converted commands keep ONE quickpick, and it is not a defect: it
+ * picks among rows that already exist (which project's backlog?) before
+ * opening the page's own capture box. A quickpick that chooses an existing
+ * thing is what a quickpick is for; the rule is about MAKING one.
+ */
+const KEEPS_A_PICKER = ['agentfarm.backlogAdd'];
 
 CONVERTED.forEach(cmd => {
     const body = BODIES[cmd];
     ok(`${cmd} still exists`, typeof body === 'string');
     if (typeof body !== 'string') { return; }
     ok(`${cmd} opens no input box`, body.indexOf('showInputBox') < 0);
-    ok(`${cmd} opens no quick pick`, body.indexOf('showQuickPick') < 0);
+    if (KEEPS_A_PICKER.indexOf(cmd) < 0) {
+        ok(`${cmd} opens no quick pick`, body.indexOf('showQuickPick') < 0);
+    }
 });
 
 // ------------------------------------------------------------------ AFForm
@@ -488,6 +572,296 @@ const memPage = () => runPage('memgraph.js', MEM_DATA());
     ok('it names what is being copied', p.html().indexOf('project-x.md') >= 0);
     p.send({ type: 'mem-msg', text: 'Copied to manager.', ok: true });
     ok('a receipt closes the card', p.html().indexOf('id="memcard"') < 0);
+}
+
+// ------------------------------------------- the panels' OWN dialogs (‼️)
+// The scan above reads extension.ts only. A panel may open its own boxes and
+// the number will not move — which is exactly what the Toolbox's "+ new skill"
+// did for three versions. These four panels are swept; the ones that stay are
+// named, so a new one cannot slip in unnoticed.
+{
+    const PANEL_ALLOW = {
+        // a destructive confirmation, and the OS file picker — both deliberate
+        'toolboxPanel.ts': [],
+        'secretsPanel.ts': [],
+        'studioPanel.ts': ['showQuickPick'],   // scene status, named by the menu
+        'livingPanel.ts': [],
+        'memoryGraph.ts': [],
+        'agentDetail.ts': []
+    };
+    for (const file of Object.keys(PANEL_ALLOW)) {
+        const src2 = fs.readFileSync(path.resolve(__dirname, '..', 'src', 'panels', file), 'utf8');
+        const found = [];
+        if (src2.indexOf('showInputBox') >= 0) { found.push('showInputBox'); }
+        if (src2.indexOf('showQuickPick') >= 0) { found.push('showQuickPick'); }
+        const unexpected = found.filter(f => PANEL_ALLOW[file].indexOf(f) < 0);
+        ok(`${file} builds no object out of dialog boxes`, unexpected.length === 0);
+    }
+}
+
+// ---------------------------------------- the living checks (surface 4)
+const LIVING_DATA = () => ({
+    generatedAt: Date.now(), score: 80, verdict: 'alive',
+    counts: { ok: 2, warn: 1, dead: 0, idle: 0 },
+    signals: [], recent: [], hasChecks: true, canEdit: true,
+    checks: [{
+        label: "Today's day file", when: { kind: 'fileMissing', path: 'D:/x/{today}.md' },
+        level: 'warn', hint: 'write it'
+    }]
+});
+
+{
+    const p = runPage('livingPage.js', LIVING_DATA());
+    ok('the button says how many checks there are', p.html().indexOf('Configure checks (1)') >= 0);
+    p.query('#cfg')[0].click();
+    let h = p.html();
+    ok('it opens the editor on the page', h.indexOf('id="checksbox"') >= 0);
+    ok('‼️ and the FIRST thing it shows is the list it is adding to',
+        h.indexOf('day file') >= 0 && h.indexOf('D:/x/{today}.md') >= 0);
+    ok('nothing is open for editing until you pick one', h.indexOf('id="checkcard"') < 0);
+
+    p.query('[data-afl="edit"]')[0].click();
+    h = p.html();
+    ok('editing one opens it in place', h.indexOf('id="checkcard"') >= 0);
+    ok('the condition is a field, not the first question', h.indexOf('data-af="kind"') >= 0);
+    ok('the path keeps the OS picker', h.indexOf('data-afbrowse="path"') >= 0);
+    ok('how loud is a field too', h.indexOf('data-af="level"') >= 0);
+
+    // The kind decides which fields exist.
+    p.query('[data-af="kind"]')[0].value = 'folderHasFiles';
+    p.query('[data-af="kind"]')[0].fire('change');
+    h = p.html();
+    ok('a folder check asks what does NOT count as work', h.indexOf('data-af="except"') >= 0);
+    ok('…and whether to look into sub-folders', h.indexOf('data-af="recursive"') >= 0);
+    ok('…and a file check\'s hour window is gone', h.indexOf('data-af="hours"') < 0);
+
+    // A <select>'s value is a child, not an attribute, so the shim cannot read
+    // it back off the redrawn markup — it is stated again here, which is what
+    // the browser does for free.
+    p.query('[data-af="kind"]')[0].value = 'folderHasFiles';
+    p.query('[data-af="except"]')[0].value = '_LOG_.md';
+    p.query('[data-afact="submit"]')[0].click();
+    const m = p.last();
+    ok('saving sends the WHOLE list, not one command per change',
+        m.type === 'checks-save' && Array.isArray(m.checks) && m.checks.length === 1);
+    ok('the saved row carries the kind it was changed to', m.checks[0].kind === 'folderHasFiles');
+    ok('…and the names that do not count as work', m.checks[0].except === '_LOG_.md');
+}
+
+{
+    const p = runPage('livingPage.js', LIVING_DATA());
+    p.query('#cfg')[0].click();
+    p.query('[data-chk="add"]')[0].click();
+    ok('a second check can be added without leaving the card',
+        (p.html().match(/class="affrow/g) || []).length === 2);
+    p.query('[data-afl="del"]')[0].click();
+    ok('…and removed again', (p.html().match(/class="affrow/g) || []).length === 1);
+    ok('‼️ nothing was written — the list is the draft until Save',
+        !p.posted.some(x => x.type === 'checks-save'));
+}
+
+// ------------------------------------------------- the vault (surface 5)
+const SEC_DATA = () => ({
+    agentCount: 2,
+    agents: [{ id: 'a1', name: 'dev' }, { id: 'a2', name: 'manager' }],
+    secrets: [{
+        name: 'FAL_KEY', description: 'fal.ai', allAgents: true, agents: [], updatedAt: Date.now()
+    }]
+});
+
+{
+    const p = runPage('secrets.js', SEC_DATA());
+    p.query('#sec-add')[0].click();
+    const h = p.html();
+    ok('the vault can fill itself now', h.indexOf('id="secform"') >= 0);
+    ok('a new secret is asked for its name', h.indexOf('data-af="name"') >= 0);
+    ok('…its value, as a password field', /data-af="value"[^>]*type="password"|type="password"[^>]*data-af="value"/.test(h));
+    ok('…what it is for', h.indexOf('data-af="description"') >= 0);
+    ok('…and who may use it, in the same card', h.indexOf('data-af="ag_a1"') >= 0 && h.indexOf('data-af="ag_a2"') >= 0);
+    ok('‼️ and it says what "none ticked" means, because it is the opposite of the usual',
+        h.indexOf('Unrestricted: every agent') >= 0);
+
+    p.query('[data-af="name"]')[0].value = 'TG_TOKEN';
+    p.query('[data-af="value"]')[0].value = 'hunter2';
+    p.query('[data-af="ag_a1"]')[0].checked = true;
+    p.query('[data-af="ag_a1"]')[0].fire('change');
+    p.query('[data-afact="submit"]')[0].click();
+    const m = p.last();
+    ok('saving posts one message', m.type === 'sec-save');
+    ok('the save carries the name', m.secret.name === 'TG_TOKEN');
+    ok('the save carries the scope as agent ids', JSON.stringify(m.secret.agents) === '["a1"]');
+}
+
+// ------------------------------------------------ the studio (surface 6)
+const STUDIO_DATA = () => ({
+    generatedAt: Date.now(), tab: 'assets', project: 'p1',
+    agents: [{ id: 'a1', name: 'media' }],
+    productions: [{
+        id: 'p1', title: 'Launch Film', progress: { approved: 0, total: 2 },
+        summary: '', matrix: [], unassigned: [],
+        scenes: [
+            { id: 's1', title: 'Opening', status: 'draft', thumbs: [], next: '' },
+            { id: 's2', title: 'Closing', status: 'draft', thumbs: [], next: '' }
+        ]
+    }],
+    loose: [], untriaged: [], cost: { month: 0 },
+    items: [{
+        taskId: 't1', title: 'shot 1', model: 'fal-ai/flux', projectId: 'p1',
+        input: '{"prompt": "a wide shot"}', estCost: 0.01, ts: Date.now(),
+        source: 'fal', selectedCount: 0, rejectedCount: 0, kind: 'image'
+    }],
+    sequence: [], providers: { fal: true, replicate: false },
+    ingestFolders: [], candidates: 0
+});
+
+{
+    const p = runPage('studio.js', STUDIO_DATA());
+    p.query('[data-vary="t1"]')[0].click();
+    const h = p.html();
+    ok('varying a generation opens a card', h.indexOf('id="studiocard"') >= 0);
+    ok('‼️ the JSON input gets a real box, not one line',
+        /<textarea[^>]*data-af="input"/.test(h) || /data-af="input"[^>]*rows=/.test(h));
+    ok('the model is stated, not asked for', h.indexOf('fal-ai/flux') >= 0);
+    p.query('[data-afact="submit"]')[0].click();
+    ok('it posts one save', p.last().type === 'studio-save' && p.last().form.kind === 'vary');
+}
+
+{
+    const p = runPage('studio.js', STUDIO_DATA());
+    p.query('[data-assign="t1"]')[0].click();
+    const h = p.html();
+    ok('assigning opens a card with every scene in it', h.indexOf('data-af="target"') >= 0);
+    ok('…and each row names its production, so two "Opening" scenes are tellable apart',
+        h.indexOf('Launch Film · Opening') >= 0);
+    ok('…and detaching is the first row', h.indexOf('detach it from every production') >= 0);
+}
+
+{
+    const p = runPage('studio.js', STUDIO_DATA());
+    p.send({ type: 'studio-compose', seed: { kind: 'production' } });
+    const h = p.html();
+    ok('a new production asks which agent folder', h.indexOf('data-af="agentId"') >= 0);
+    ok('‼️ and its scenes are ONE PER LINE — a comma in a title used to split it in two',
+        h.indexOf('data-af="scenes"') >= 0 && h.indexOf('one per line') >= 0);
+}
+
+// ------------------------------------------------- evals (surface 7) — a page
+// that had to be BUILT, not converted: everything else in the sweep already had
+// a page that listed the object and could not make it. Evals had neither.
+const EV_DATA = () => ({
+    agentId: 'a1',
+    agents: [{ id: 'a1', name: 'dev', cases: 2 }, { id: 'a2', name: 'manager', cases: 0 }],
+    hasClaudeMd: true,
+    runArgs: '--model claude-haiku-4-5-20251001',
+    cases: [
+        { id: 'c1', title: 'turkish answer', input: 'özetle', expectation: 'answers in Turkish', source: 'quality', createdAt: 1, disabled: false },
+        { id: 'c2', title: 'three points', input: 'öneriler', expectation: 'gives three concrete suggestions', source: 'manual', createdAt: 2, disabled: false }
+    ],
+    candidates: [{ id: 'q:s1', label: '⭐ 2/5 — özetle', detail: 'too long', input: 'özetle', source: { kind: 'quality' } }],
+    suggestions: [{ id: 'sg1', rule: 'always answer in Turkish' }],
+    runs: [
+        { id: 'r2', ts: 2000, passed: 1, failed: 1, results: [{ caseId: 'c1', title: 'turkish answer', pass: true }, { caseId: 'c2', title: 'three points', pass: false }] },
+        { id: 'r1', ts: 1000, passed: 2, failed: 0, results: [{ caseId: 'c1', title: 'turkish answer', pass: true }, { caseId: 'c2', title: 'three points', pass: true }] }
+    ],
+    verdicts: [
+        { caseId: 'c1', pass: true, was: true, change: 'same', reason: 'ok', durationMs: 10 },
+        { caseId: 'c2', pass: false, was: true, change: 'regressed', reason: 'only two', durationMs: 12 }
+    ],
+    lastTs: 2000, prevTs: 1000
+});
+
+const evPage = () => runPage('evals.js', EV_DATA());
+
+{
+    const p = evPage();
+    const h = p.html();
+    ok('the evals page lists the cases', h.indexOf('turkish answer') >= 0 && h.indexOf('three points') >= 0);
+    ok('‼️ and says WHAT CHANGED since the previous run — the one thing a quickpick could never say',
+        h.indexOf('regressed') >= 0);
+    ok('the summary counts the regressions', h.indexOf('1 regressed') >= 0);
+    ok('the run button says how many cases it would replay', h.indexOf('Run the set (2)') >= 0);
+    ok('every case row publishes itself for the menu',
+        p.contexts().some(c => c.evCase === 'c1'));
+    ok('runs are listed with their pass rate', h.indexOf('100%') >= 0 && h.indexOf('50%') >= 0);
+}
+
+{
+    const p = evPage();
+    p.query('#newcase')[0].click();
+    const h = p.html();
+    ok('+ New case opens a card', h.indexOf('id="evcard"') >= 0);
+    ok('‼️ it offers the BAD TRACES a case is normally born from',
+        h.indexOf('data-af="from"') >= 0 && h.indexOf('2/5') >= 0);
+    ok('it asks for the input', h.indexOf('data-af="input"') >= 0);
+    ok('it asks for the expectation the judge is handed', h.indexOf('data-af="expectation"') >= 0);
+
+    p.query('[data-af="input"]')[0].value = 'a prompt';
+    p.query('[data-af="expectation"]')[0].value = 'must be short';
+    p.query('[data-afact="submit"]')[0].click();
+    const m = p.last();
+    ok('saving posts one message', m.type === 'ev-case-save');
+    ok('the save carries the input', m.form.input === 'a prompt');
+    ok('the save carries the expectation', m.form.expectation === 'must be short');
+}
+
+{
+    const p = evPage();
+    p.query('#abtest')[0].click();
+    const h = p.html();
+    ok('A/B opens its own card', h.indexOf('id="evcard"') >= 0);
+    ok('‼️ an open suggestion is offered as the readiest variant B',
+        h.indexOf('always answer in Turkish') >= 0);
+    ok('the comparison prompts are prefilled from the eval cases',
+        h.indexOf('data-af="prompts"') >= 0);
+}
+
+{
+    const p = evPage();
+    p.query('[data-del="c1"]')[0].click();
+    ok('deleting a case goes to the host, which keeps its modal',
+        p.last().type === 'ev-case-delete' && p.last().id === 'c1');
+}
+
+// ------------------------------------------ an agent itself (surface 8)
+const PF_DATA = () => ({
+    generatedAt: Date.now(),
+    rows: [], projects: [], dormantDays: 14,
+    roots: ['D:/zone/agent/ajanlar'],
+    models: [{ id: '', label: '— no model key: the CLI default applies —' }, { id: 'opus', label: 'opus' }],
+    defaultModel: 'sonnet',
+    canCreate: true
+});
+
+{
+    const p = runPage('portfolio.js', PF_DATA());
+    ok('the fleet page offers to make an agent', p.html().indexOf('id="pf-new"') >= 0);
+    p.query('#pf-new')[0].click();
+    const h = p.html();
+    ok('+ New agent opens a card', h.indexOf('id="agentform"') >= 0);
+    ok('it asks for the name', h.indexOf('data-af="name"') >= 0);
+    ok('‼️ it asks for the default model — the old chain could not', h.indexOf('data-af="model"') >= 0);
+    ok('‼️ …and for what the agent is FOR, which goes into its CLAUDE.md',
+        h.indexOf('data-af="mission"') >= 0);
+    ok('one root is stated rather than asked about', h.indexOf('D:/zone/agent/ajanlar') >= 0);
+
+    p.query('[data-af="name"]')[0].value = 'researcher';
+    p.query('[data-afact="submit"]')[0].click();
+    const m = p.last();
+    ok('creating posts one message', m.type === 'agent-new');
+    ok('the message carries the name', m.form.name === 'researcher');
+}
+
+{
+    const p = runPage('portfolio.js', PF_DATA());
+    p.send({
+        type: 'agent-compose',
+        seed: { mode: 'import', packFile: 'D:/x.agentpack', name: 'imported', packSummary: '"pack" — 4 file(s)', packNotes: 'watch out' }
+    });
+    const h = p.html();
+    ok('an import opens the same card in import mode', h.indexOf('id="agentform"') >= 0);
+    ok('‼️ and the pack\'s contents are STATED, not recited in a modal', h.indexOf('4 file(s)') >= 0);
+    ok('the pack\'s own notes come with it', h.indexOf('watch out') >= 0);
+    ok('an import is not asked for a mission line', h.indexOf('data-af="mission"') < 0);
 }
 
 console.log(`test_dialog_sweep: ${pass} passed, ${fail} failed`);

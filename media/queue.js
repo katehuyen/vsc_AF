@@ -658,6 +658,18 @@
             DATA = ev.data.data;
             if (DATA.focusItem) { focusItem = DATA.focusItem; expanded.add(DATA.focusItem); }
             render();
+            return;
+        }
+        // ‼️ THE PALETTE OPENS THE PAGE'S OWN CAPTURE BOX (U-14). `queueAdd`
+        // asked for the text in an input box, which can state the text and
+        // nothing else — this page's box also carries the target and the
+        // urgency, and it shows the queue you are adding to.
+        if (ev.data.type === 'q-compose') {
+            addOpen = true;
+            addDraft = { text: String(ev.data.text || ''), target: '', urgency: 'normal' };
+            render();
+            const box = document.getElementById('q-add-text');
+            if (box) { box.focus(); }
         }
     });
     if (focusItem) { expanded.add(focusItem); }

@@ -221,6 +221,19 @@ export class ProjectsPanel {
 
     static refreshIfOpen(): void { ProjectsPanel.current?.refresh(); }
 
+    /**
+     * Put the cursor in the Backlog tab's own Capture box — U-14.
+     *
+     * `agentfarm.backlogAdd` used to ask for the line in an input box, which
+     * can state the text and nothing else. The Capture box carries the area,
+     * the type, the priority, the effort, the queue position and the parent,
+     * and it shows the backlog you are adding to. Call it right after `show`.
+     */
+    static captureCurrent(text?: string): void {
+        void ProjectsPanel.current?.panel.webview
+            .postMessage({ type: 'bl-capture', text: text ?? '' });
+    }
+
     private constructor(
         readonly panel: vscode.WebviewPanel, private deps: ProjectsPanelDeps,
         focusId?: string, newForm?: NewProjectSeed, tab?: string

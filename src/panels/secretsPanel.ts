@@ -64,6 +64,21 @@ export class SecretsPanel {
         SecretsPanel.current?.refresh();
     }
 
+    /**
+     * The ONE door to a secret — U-14, surface 5.
+     *
+     * `agentfarm.setSecret` asked two input boxes and could say nothing about
+     * what the secret is FOR or which agents may use it; the page's own four
+     * buttons each posted to the host for one more box. All of it is one card
+     * now, and every route opens that card.
+     */
+    static compose(deps: SecretsPanelDeps, name?: string): void {
+        SecretsPanel.show(deps);
+        void SecretsPanel.current?.panel.webview.postMessage({
+            type: 'sec-compose', seed: name ? { name } : {}
+        });
+    }
+
     private constructor(readonly panel: vscode.WebviewPanel, private deps: SecretsPanelDeps) {
         panel.webview.html = htmlShell(
             panel.webview, deps.extensionUri, 'Secrets', buildData(deps), 'secrets.js');
@@ -87,17 +102,8 @@ export class SecretsPanel {
             case 'afnav':
                 handleAfNav(msg.to);
                 break;
-            case 'add':
-                await this.add();
-                break;
-            case 'setValue':
-                await this.setValue(String(msg.name ?? ''));
-                break;
-            case 'editDescription':
-                await this.editDescription(String(msg.name ?? ''));
-                break;
-            case 'editScope':
-                await this.editScope(String(msg.name ?? ''));
+            case 'sec-save':
+                await this.save((msg.secret ?? {}) as Record<string, unknown>);
                 break;
             case 'delete':
                 await this.remove(String(msg.name ?? ''));
@@ -105,72 +111,53 @@ export class SecretsPanel {
         }
     }
 
-    private async add(): Promise<void> {
-        const name = await vscode.window.showInputBox({
-            prompt: 'Secret name — used as an env var and {secret:NAME} (e.g. X_PASS, FAL_KEY)',
-            ignoreFocusOut: true,
-            validateInput: v => {
-                if (!NAME_RE.test(v)) { return 'Letters, digits, _ . - only'; }
-                if (this.known(v)) { return `"${v}" already exists — use Replace on its row instead`; }
-                return undefined;
-            }
-        });
-        if (!name) { return; }
-        const value = await vscode.window.showInputBox({
-            prompt: `Value for ${name}`, password: true, ignoreFocusOut: true
-        });
-        if (value === undefined) { return; }
-        const description = await vscode.window.showInputBox({
-            prompt: `Description for ${name} (optional — what it is / which site)`, ignoreFocusOut: true
-        }) ?? '';
-        await this.deps.vault.set(name, value, { description });
-        this.refresh();
-        void vscode.window.showInformationMessage(
-            `Agent Farm: secret "${name}" stored in the OS keychain — injected into tasks as env + {secret:${name}}. All agents until you scope it.`);
+    /** A refusal the FORM shows, in the form. */
+    private say(text: string, ok = false): void {
+        void this.panel.webview.postMessage({ type: 'sec-msg', text, ok });
     }
 
-    private async setValue(name: string): Promise<void> {
-        if (!this.known(name)) { return; }
-        const value = await vscode.window.showInputBox({
-            prompt: `New value for ${name}`, password: true, ignoreFocusOut: true
-        });
-        if (value === undefined) { return; }
-        await this.deps.vault.set(name, value);
-        this.refresh();
-        void vscode.window.showInformationMessage(`Agent Farm: secret "${name}" value replaced.`);
-    }
+    /**
+     * One write for the four things a secret is: its name, its value, what it
+     * is for, and which agents may use it.
+     *
+     * ‼️ THE VALUE ONLY EVER TRAVELS ONE WAY. Nothing sends a stored value to
+     * the page — `buildData` ships metadata and nothing else — so on an edit an
+     * empty value box means "keep what is in the keychain", which is the only
+     * meaning it CAN have here. That is the same promise the deliberately
+     * missing "copy the value" menu item makes.
+     */
+    private async save(raw: Record<string, unknown>): Promise<void> {
+        const s = (k: string) => String(raw[k] ?? '').trim();
+        const editing = s('mode') === 'edit';
+        const name = s('name');
+        const value = String(raw.value ?? '');
+        const description = s('description');
+        const agents = Array.isArray(raw.agents)
+            ? (raw.agents as unknown[]).map(String).filter(Boolean) : [];
 
-    private async editDescription(name: string): Promise<void> {
-        if (!this.known(name)) { return; }
-        const current = this.deps.vault.list().find(s => s.name === name)?.description ?? '';
-        const description = await vscode.window.showInputBox({
-            prompt: `Description for ${name}`, value: current, ignoreFocusOut: true
-        });
-        if (description === undefined) { return; }
-        await this.deps.vault.setMeta(name, { description });
-        this.refresh();
-    }
-
-    private async editScope(name: string): Promise<void> {
-        if (!this.known(name)) { return; }
-        const agents = this.deps.getAgents();
-        if (!agents.length) {
-            void vscode.window.showWarningMessage('Agent Farm: no agents to scope to.');
-            return;
+        if (!name) { return this.say('It needs a name — that name is the environment variable and the {secret:NAME} reference.'); }
+        if (!NAME_RE.test(name)) { return this.say('Letters, digits, _ . and - only — it has to be a legal environment variable name.'); }
+        if (!editing && this.known(name)) {
+            return this.say(`"${name}" already exists. Open its row instead — the value can be replaced there without losing its description or its scope.`);
         }
-        const current = new Set(this.deps.vault.list().find(s => s.name === name)?.agents ?? []);
-        const picks = await vscode.window.showQuickPick(
-            agents.map(a => ({ label: a.name, description: a.id, picked: current.has(a.id), id: a.id })),
-            {
-                canPickMany: true,
-                ignoreFocusOut: true,
-                placeHolder: `Which agents may use "${name}"? Pick NONE = all agents (unrestricted).`
-            });
-        if (picks === undefined) { return; }   // cancelled — leave scope untouched
-        await this.deps.vault.setMeta(name, { agents: picks.map(p => p.id) });
+        if (editing && !this.known(name)) {
+            return this.say(`"${name}" is no longer in the keychain — refresh the page.`);
+        }
+        if (!editing && !value) {
+            return this.say('A new secret needs its value. It goes straight into the OS keychain and is never read back.');
+        }
+
+        if (value) {
+            // set() writes the value and merges the metadata in one go.
+            await this.deps.vault.set(name, value, { description, agents });
+        } else {
+            await this.deps.vault.setMeta(name, { description, agents });
+        }
         this.refresh();
-        const scope = picks.length ? `${picks.length} agent(s)` : 'all agents';
-        void vscode.window.showInformationMessage(`Agent Farm: "${name}" now scoped to ${scope}.`);
+        this.say(editing
+            ? `"${name}" updated${value ? ' — value replaced' : ''}. ${agents.length ? agents.length + ' agent(s) may use it.' : 'Every agent may use it.'}`
+            : `"${name}" stored in the OS keychain. It reaches a task as an environment variable and a prompt as {secret:${name}}. ${agents.length ? agents.length + ' agent(s) may use it.' : 'Every agent may use it until you scope it.'}`,
+            true);
     }
 
     private async remove(name: string): Promise<void> {

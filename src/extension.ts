@@ -196,6 +196,7 @@ import { buildToolboxInventory, ToolboxInventory } from './core/toolbox';
 import { registerToolboxOps } from './core/toolboxBridge';
 import { ToolboxPanel } from './panels/toolboxPanel';
 import { SecretsPanel } from './panels/secretsPanel';
+import { EvalsPanel } from './panels/evalsPanel';
 import { registerTurnsOps } from './core/turns';
 import { TurnsPanel } from './panels/turnsPanel';
 import { SessionsPanel } from './panels/sessionsPanel';
@@ -5105,6 +5106,84 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
     ]);
 
+    /**
+     * Evals and living checks — the two surfaces U-14 gave a form to that had
+     * nothing on the bridge at all.
+     *
+     * ‼️ AN AGENT CAN READ ITS OWN VERDICT. The regression set is the one
+     * record that says whether a change to an agent's instructions made it
+     * better or worse, and until now it was reachable only by a person opening
+     * a quickpick. `evals.list` gives the cases; `evals.runs` gives the last
+     * two runs case by case, with the same regressed/fixed verdict the page
+     * draws. Running a set is NOT on the bridge on purpose: it spends one agent
+     * call and one judge call per case, and that decision stays with the person
+     * looking at the modal.
+     */
+    bridge.register([
+        {
+            op: 'evals.list',
+            describe: "An agent's regression cases. args: agent? (name|id — omit for every agent)",
+            handler: (args) => {
+                const ref = optStr(args, 'agent');
+                return (ref ? [findAgent(ref)] : agents).map(a => ({
+                    agent: a.name,
+                    cases: evalStore.cases.filter(c => c.agentId === a.id).map(c => ({
+                        id: c.id, title: c.title, input: c.input, expectation: c.expectation,
+                        source: c.source?.kind ?? 'manual', disabled: !!c.disabled
+                    }))
+                }));
+            }
+        },
+        {
+            op: 'evals.add',
+            describe: 'Add a regression case. args: agent (name|id), input (the prompt replayed), expectation (what a good answer must satisfy — handed to the judge verbatim), title?',
+            handler: (args) => {
+                const a = findAgent(argStr(args, 'agent'));
+                const input = argStr(args, 'input');
+                const expectation = argStr(args, 'expectation');
+                const c = evalStore.addCase({
+                    agentId: a.id, agentName: a.name,
+                    title: optStr(args, 'title') || input.slice(0, 60),
+                    input, expectation, source: { kind: 'manual' }
+                });
+                EvalsPanel.refreshIfOpen();
+                return { id: c.id, agent: a.name, cases: evalStore.casesFor(a.id).length };
+            }
+        },
+        {
+            op: 'evals.runs',
+            describe: "An agent's eval runs, newest first, with the case-by-case verdict of the latest against the one before it (regressed | fixed | new | same). args: agent (name|id), limit? (default 5)",
+            handler: (args) => {
+                const a = findAgent(argStr(args, 'agent'));
+                const runs = evalStore.runs.filter(r => r.agentId === a.id).sort((x, y) => y.ts - x.ts);
+                const limit = Math.max(1, Math.min(60, Number((args as Record<string, unknown>).limit) || 5));
+                const prevBy = new Map((runs[1]?.results ?? []).map(r => [r.caseId, r.pass]));
+                return {
+                    agent: a.name,
+                    runs: runs.slice(0, limit).map(r => ({
+                        ts: r.ts, passed: r.passed, failed: r.failed,
+                        results: r.results.map(x => ({ case: x.title, pass: x.pass, reason: x.reason }))
+                    })),
+                    changed: (runs[0]?.results ?? []).map(r => ({
+                        case: r.title,
+                        pass: r.pass,
+                        change: !prevBy.has(r.caseId) ? 'new'
+                            : prevBy.get(r.caseId) === r.pass ? 'same'
+                                : (r.pass ? 'fixed' : 'regressed')
+                    })).filter(x => x.change !== 'same')
+                };
+            }
+        },
+        {
+            op: 'living.checks',
+            describe: 'The user-defined living checks (agentFarm.livingChecks) — what each one watches, how loud it is, and what closes it.',
+            handler: () => cfg().get<LivingCheck[]>('livingChecks', []).map(c => ({
+                label: c.label, level: c.level ?? 'warn', hint: c.hint ?? null,
+                when: c.when, detail: describePrecondition(c.when)
+            }))
+        }
+    ]);
+
     // Duties ops (§19.C): the standing-vigilance system (DUTIES.md) is the
     // constitution's backbone — the whole watch→do lifecycle is manageable
     // from the bridge, so the manager agent can install, tune, pause and
@@ -6636,6 +6715,192 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // Refresh — the write has to say so itself.
         refreshAll: () => refreshAll()
     };
+    /**
+     * ‼️ THE EVALS PAGE — U-14, surface 7. The only area in the sweep with no
+     * surface at all. The heavy parts (a run, an A/B) stay here because they
+     * spend real money and end in a report document and a modal; the page asks
+     * for them and draws everything they produce.
+     */
+    const evalsDeps = {
+        extensionUri: context.extensionUri,
+        getAgents: () => agents,
+        store: evalStore,
+        runArgs: () => cfg().get<string>('evalRunArgs', '--model claude-haiku-4-5-20251001'),
+        // The bad traces a regression case is normally born from — a session
+        // scored 2/5 or worse, and a task whose verification failed. Each is
+        // offered once: a trace already turned into a case is dropped.
+        candidates: (agentId: string) => {
+            const out: {
+                id: string; label: string; detail: string; input: string;
+                source: EvalCase['source'];
+            }[] = [];
+            for (const q of qualityStore.scores.filter(s => s.agentId === agentId && s.score <= 2)) {
+                if (evalStore.hasSource(q.sessionId)) { continue; }
+                out.push({
+                    id: 'q:' + q.sessionId,
+                    label: `⭐ ${q.score}/5 — ${q.promptSnippet.slice(0, 70)}`,
+                    detail: q.reason.slice(0, 90),
+                    input: q.promptSnippet,
+                    source: { kind: 'quality', sessionId: q.sessionId }
+                });
+            }
+            for (const t of taskManager.tasks.filter(t => t.agentId === agentId && t.verified === 'fail')) {
+                if (evalStore.hasSource(undefined, t.id)) { continue; }
+                out.push({
+                    id: 't:' + t.id,
+                    label: `✗ verify FAIL — ${t.title}`,
+                    detail: 'failed verification → regression case',
+                    input: t.prompt,
+                    source: { kind: 'verify', taskId: t.id }
+                });
+            }
+            return out;
+        },
+        suggestions: (agentId: string) => suggestionStore.open()
+            .filter(s => s.agentId === agentId)
+            .map(s => ({ id: s.id, rule: s.rule })),
+        run: async (agentId: string) => {
+            const agent = agents.find(a => a.id === agentId);
+            if (!agent) { return; }
+            const cases = evalStore.casesFor(agent.id);
+            if (!cases.length) { return; }
+            const runArgs = cfg().get<string>('evalRunArgs', '--model claude-haiku-4-5-20251001');
+            // ‼️ THE MODAL STAYS. One agent call and one judge call per case is
+            // real money, and a page-side notice can be missed while the focus
+            // is somewhere else.
+            const confirm = await vscode.window.showInformationMessage(
+                `Run ${cases.length} eval case(s) against ${agent.name}?\n\n`
+                + `Each case = one agent call (${runArgs || 'agent default model'}) + one cheap judge call.`,
+                { modal: true }, 'Run');
+            if (confirm !== 'Run') { return; }
+            const results = await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: `Agent Farm: evals — ${agent.name}` },
+                (progress) => runEvalSet(agent.dir, runArgs, judgeArgs(), cases,
+                    m => progress.report({ message: m })));
+            const prev = evalStore.lastRun(agent.id);
+            const cmp = compareRuns(prev, results);
+            evalStore.addRun({
+                id: newId(), agentId: agent.id, agentName: agent.name, ts: Date.now(),
+                passed: results.filter(r => r.pass).length,
+                failed: results.filter(r => !r.pass).length,
+                results
+            });
+            const doc = await vscode.workspace.openTextDocument({
+                content: buildEvalReport(agent.name, results, cmp, prev), language: 'markdown'
+            });
+            await vscode.window.showTextDocument(doc, { preview: true });
+            void vscode.window.showInformationMessage(
+                `Agent Farm evals — ${agent.name}: ${summarizeRun(results, cmp)}`);
+        },
+        abTest: async (agentId: string, variant: { rule?: string; file?: string; prompts: string[] }) => {
+            const agent = agents.find(a => a.id === agentId);
+            if (!agent?.claudeMdPath) { return 'That agent has no CLAUDE.md to experiment on.'; }
+            const current = fs.readFileSync(agent.claudeMdPath, 'utf8');
+            let variantB: string;
+            if (variant.file) {
+                try { variantB = fs.readFileSync(variant.file, 'utf8'); } catch {
+                    return 'Could not read that file.';
+                }
+            } else {
+                variantB = current.trimEnd() + `\n\n## Deneme kuralı (A/B)\n- ${variant.rule}\n`;
+            }
+            const prompts = variant.prompts.slice(0, 5);
+            const runArgs = cfg().get<string>('evalRunArgs', '--model claude-haiku-4-5-20251001');
+            const confirm = await vscode.window.showInformationMessage(
+                `A/B experiment: ${prompts.length} prompts × 2 variants + ${prompts.length} judge calls `
+                + `(${runArgs || 'agent default model'}). Run it?`,
+                { modal: true }, 'Run');
+            if (confirm !== 'Run') { return 'Not run.'; }
+            const summary = await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: `Agent Farm: A/B — ${agent.name}` },
+                (progress) => runAbTest(agent.dir, current, variantB, prompts, runArgs, judgeArgs(),
+                    m => progress.report({ message: m })));
+            const doc = await vscode.workspace.openTextDocument({
+                content: buildAbReport(agent.name, summary), language: 'markdown'
+            });
+            await vscode.window.showTextDocument(doc, { preview: true });
+            if (summary.winsB > summary.winsA) {
+                const apply = await vscode.window.showInformationMessage(
+                    `B won (${summary.winsB}-${summary.winsA}, ${summary.ties} ties). Apply variant B to CLAUDE.md? (an .afbak backup is taken)`,
+                    { modal: true }, 'Apply B');
+                if (apply === 'Apply B') {
+                    const backup = `${agent.claudeMdPath}.${Date.now()}.afbak`;
+                    fs.copyFileSync(agent.claudeMdPath, backup);
+                    fs.writeFileSync(agent.claudeMdPath, variantB, 'utf8');
+                    instrHistory.record(agent.id, variantB);
+                    void vscode.window.showInformationMessage(
+                        `Agent Farm: B applied ✓ (backup: ${path.basename(backup)})`);
+                }
+            } else {
+                void vscode.window.showInformationMessage(
+                    `Agent Farm A/B: A ${summary.winsA} · B ${summary.winsB} · ties ${summary.ties} — keeping the current instructions.`);
+            }
+            return undefined;
+        }
+    };
+    /**
+     * The fleet page, which can now MAKE an agent — U-14, surface 8.
+     *
+     * The write stays here because it touches the agent roots and the model
+     * default, both of which are settings this module owns; the page asks for
+     * it and reports what came back.
+     */
+    const portfolioDeps = {
+        extensionUri: context.extensionUri,
+        getAgents: () => agents,
+        index,
+        getInsights: () => insights,
+        live,
+        projects: () => projectStore.all(),
+        budgets: () => cfg().get<Record<string, number>>('budgets', {}),
+        agentRoots: () => cfg().get<string[]>('agentRoots', [])
+            .map(expandEnvPath).filter(r => fs.existsSync(r)),
+        defaultModel: () => cfg().get<string>('newAgentModel', 'sonnet').trim(),
+        // The launcher's own model list, so "which model" reads the same here
+        // as it does when a session is started (core/launch.ts).
+        models: () => modelChoices(cfg().get<string[]>('modelAliases', []))
+            .map(m => ({
+                id: m.id,
+                label: m.id ? m.label : '— no model key: the CLI default applies —'
+            })),
+        createAgent: (spec: { root: string; name: string; model: string; mission: string }) => {
+            const dir = path.join(spec.root, spec.name);
+            if (fs.existsSync(dir)) { return { error: `"${spec.name}" already exists in that folder.` }; }
+            try {
+                fs.mkdirSync(path.join(dir, 'memory'), { recursive: true });
+                fs.mkdirSync(path.join(dir, '.claude'), { recursive: true });
+                // ‼️ THE MISSION LINE GOES IN. The template's "Describe this
+                // agent's identity, mission and boundaries here" is a
+                // placeholder nobody comes back to fill in, which is why so
+                // many agents end up with a template and no job.
+                const md = CLAUDE_MD_TEMPLATE.replace('{NAME}', spec.name)
+                    .replace('Describe this agent\'s identity, mission and boundaries here.',
+                        spec.mission.trim() || 'Describe this agent\'s identity, mission and boundaries here.');
+                fs.writeFileSync(path.join(dir, 'CLAUDE.md'), md, 'utf8');
+                fs.writeFileSync(path.join(dir, 'memory', 'MEMORY.md'), MEMORY_MD_TEMPLATE, 'utf8');
+                fs.writeFileSync(path.join(dir, '.claude', 'settings.local.json'),
+                    JSON.stringify(spec.model ? { model: spec.model } : {}, null, 2) + '\n', 'utf8');
+            } catch (e) {
+                return { error: (e as Error).message ?? String(e) };
+            }
+            refreshAll();
+            void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(path.join(dir, 'CLAUDE.md')));
+            return { dir };
+        },
+        importPack: (spec: { root: string; name: string; packFile: string }) => {
+            const dir = path.join(spec.root, spec.name);
+            if (fs.existsSync(dir)) { return { error: `"${spec.name}" already exists in that folder.` }; }
+            void vscode.commands.executeCommand('agentfarm.importAgentPackInto', spec);
+            return {};
+        }
+    };
+    // The vault page, opened from the nav and from the two palette commands
+    // that used to ask for a secret in input boxes (U-14).
+    const secretsDeps = {
+        extensionUri: context.extensionUri,
+        vault,
+        getAgents: () => agents
+    };
     // One dependency object for the Toolbox page, because the page is now
     // opened from six places (the nav, the palette, and the four tool commands
     // that used to build their object out of input boxes — U-14).
@@ -6958,7 +7223,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         extensionUri: context.extensionUri,
         snapshot: livingSnapshot,
         onDidChange: livingEmitter.event,
-        checks: () => cfg().get<LivingCheck[]>('livingChecks', [])
+        checks: () => cfg().get<LivingCheck[]>('livingChecks', []),
+        // The page edits the whole list at once now (U-14): a reorder, an edit
+        // and a delete are one write, and nothing is written until Save.
+        setChecks: async (next: LivingCheck[]) => {
+            await cfg().update('livingChecks', next, vscode.ConfigurationTarget.Global);
+        }
     };
     taskManager.onDidChange(() => livingEmitter.fire(), null, context.subscriptions);
 
@@ -11438,15 +11708,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         // ---------- B2: the fleet on one screen ----------
         vscode.commands.registerCommand('agentfarm.openPortfolio', () => {
-            PortfolioPanel.show({
-                extensionUri: context.extensionUri,
-                getAgents: () => agents,
-                index,
-                getInsights: () => insights,
-                live,
-                projects: () => projectStore.all(),
-                budgets: () => cfg().get<Record<string, number>>('budgets', {})
-            });
+            PortfolioPanel.show(portfolioDeps);
         }),
 
         // ---------- B3: open / diff a file the agent wrote ----------
@@ -11571,12 +11833,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             ToolboxPanel.show(toolboxDeps);
         }),
 
+        // U-14, surface 7: evals finally have somewhere to live.
+        vscode.commands.registerCommand('agentfarm.openEvals', (arg?: { agentId?: string }) => {
+            EvalsPanel.show(evalsDeps, typeof arg?.agentId === 'string' ? arg.agentId : undefined);
+        }),
+
         vscode.commands.registerCommand('agentfarm.openSecrets', () => {
-            SecretsPanel.show({
-                extensionUri: context.extensionUri,
-                vault,
-                getAgents: () => agents
-            });
+            SecretsPanel.show(secretsDeps);
         }),
 
         vscode.commands.registerCommand('agentfarm.openTurns', () => {
@@ -12183,78 +12446,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }),
 
         // Wave A: scene-by-scene production manifest (production.json in an agent folder).
-        vscode.commands.registerCommand('agentfarm.newProduction', async () => {
-            const agent = await resolveAgent(undefined);
-            if (!agent) { return; }
-            const file = path.join(agent.dir, PRODUCTION_FILENAME);
-            if (fs.existsSync(file)) {
-                const over = await vscode.window.showWarningMessage(
-                    `${agent.name} already has a ${PRODUCTION_FILENAME}. Overwrite it?`,
-                    { modal: true }, 'Overwrite');
-                if (over !== 'Overwrite') { return; }
-            }
-            const title = await vscode.window.showInputBox({
-                prompt: `Production title (${agent.name})`, placeHolder: 'e.g. Launch Film', ignoreFocusOut: true
-            });
-            if (!title) { return; }
-            const scenesRaw = await vscode.window.showInputBox({
-                prompt: 'Scene titles, comma-separated — production.json can be edited by hand later',
-                placeHolder: 'e.g. Opening, Product intro, Closing', ignoreFocusOut: true
-            });
-            if (scenesRaw === undefined) { return; }
-            const sceneTitles = scenesRaw.split(',').map(s => s.trim()).filter(Boolean);
-            writeProduction(file, newProduction(title, sceneTitles));
-            const choice = await vscode.window.showInformationMessage(
-                `Agent Farm: production "${title}" created with ${sceneTitles.length} scene(s) in ${agent.name}.`,
-                'Open file', 'Open Gallery');
-            if (choice === 'Open file') { void vscode.window.showTextDocument(vscode.Uri.file(file)); }
-            if (choice === 'Open Gallery') { void vscode.commands.executeCommand('agentfarm.openGallery'); }
+        // ‼️ THE STUDIO'S OWN CARDS — U-14, surface 6. A production was two
+        // input boxes (a title, then its scenes as ONE COMMA-SEPARATED LINE,
+        // so a scene called "Opening, wide" became two scenes silently); a
+        // variation asked for a whole JSON input in a single-line box; an
+        // export asked which production, then the frame rate, then the clip
+        // length, three in a row. All of it is on the page now.
+        vscode.commands.registerCommand('agentfarm.newProduction', () => {
+            StudioPanel.compose(studioDeps, { kind: 'production' });
         }),
 
         // Wave D: export a production as an editor sequence (FCP7 XML + EDL).
-        vscode.commands.registerCommand('agentfarm.exportSequence', async (arg?: { projectId?: string }) => {
-            const productions = discoverProductions(agents);
-            if (!productions.length) {
+        vscode.commands.registerCommand('agentfarm.exportSequence', (arg?: { projectId?: string }) => {
+            if (!discoverProductions(agents).length) {
                 void vscode.window.showInformationMessage(
                     'Agent Farm: no production.json found — create one with "Agent Farm: New Production".');
                 return;
             }
-            let target = arg?.projectId ? productions.find(p => p.production.id === arg.projectId) : undefined;
-            if (!target) {
-                const pick = await vscode.window.showQuickPick(
-                    productions.map(p => ({ label: p.production.title, description: `${p.agentName} · ${p.production.scenes.length} scene(s)`, p })),
-                    { placeHolder: 'Which production to export?', ignoreFocusOut: true });
-                if (!pick) { return; }
-                target = pick.p;
-            }
-            const clips = pickSequenceAssets(target.production, readMediaMetas(taskManager.outputsDir));
-            if (!clips.length) {
-                void vscode.window.showWarningMessage(
-                    `Agent Farm: "${target.production.title}" has no scene assets to place — assign assets to scenes first.`);
-                return;
-            }
-            const fpsStr = await vscode.window.showQuickPick(['30', '25', '24', '60'],
-                { placeHolder: 'Sequence frame rate (fps)', ignoreFocusOut: true });
-            if (!fpsStr) { return; }
-            const secStr = await vscode.window.showInputBox({
-                prompt: 'Default clip length in seconds (per scene, editor refines later)', value: '5',
-                validateInput: v => /^\d+(\.\d+)?$/.test(v.trim()) ? undefined : 'A number', ignoreFocusOut: true });
-            if (secStr === undefined) { return; }
-            const opts = { fps: Number(fpsStr), clipSeconds: Number(secStr) || 5, title: target.production.title };
-            const safe = target.production.id.replace(/[^\w.-]+/g, '-');
-            const uri = await vscode.window.showSaveDialog({
-                defaultUri: vscode.Uri.file(path.join(path.dirname(target.file), `${safe}.xml`)),
-                filters: { 'FCP7 XML': ['xml'] }, saveLabel: 'Export sequence'
-            });
-            if (!uri) { return; }
-            fs.writeFileSync(uri.fsPath, buildFcpXml(clips, opts), 'utf8');
-            const edlPath = uri.fsPath.replace(/\.xml$/i, '') + '.edl';
-            fs.writeFileSync(edlPath, buildEdl(clips, opts), 'utf8');
-            const choice = await vscode.window.showInformationMessage(
-                `Agent Farm: exported ${clips.length} clip(s) → ${path.basename(uri.fsPath)} (+ .edl). Import the XML in Premiere: File → Import.`,
-                'Reveal', 'Open XML');
-            if (choice === 'Reveal') { void revealPath(uri.fsPath); }
-            if (choice === 'Open XML') { void vscode.window.showTextDocument(uri); }
+            StudioPanel.compose(studioDeps, { kind: 'export', projectId: arg?.projectId ?? '' });
         }),
 
         // Wave A: register hand-downloaded / locally produced files as gallery assets.
@@ -12280,34 +12489,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             });
         }),
 
-        vscode.commands.registerCommand('agentfarm.rerunMedia', async (taskId?: string, vary?: boolean, withFeedback?: boolean) => {
+        vscode.commands.registerCommand('agentfarm.rerunMedia', (taskId?: string, vary?: boolean, withFeedback?: boolean) => {
             const meta = readMediaMetas(taskManager.outputsDir).find(m => m.taskId === taskId);
             if (!meta) {
                 void vscode.window.showWarningMessage('Agent Farm: media metadata not found.');
                 return;
             }
-            let input = meta.input;
-            let suffix = ' (re-run)';
-            if (vary) {
-                const edited = await vscode.window.showInputBox({
-                    prompt: `Vary input for ${meta.model}`, value: meta.input, ignoreFocusOut: true
+            // A plain re-run asks nothing, so it still runs outright; the two
+            // that DO ask open the Studio's card, where the input is a real box.
+            if (vary || withFeedback) {
+                StudioPanel.compose(studioDeps, {
+                    kind: vary ? 'vary' : 'feedback',
+                    taskId: meta.taskId, model: meta.model, input: meta.input, title: meta.title
                 });
-                if (!edited) { return; }
-                input = edited;
-                suffix = ' (vary)';
-            } else if (withFeedback) {
-                // Regenerate with a critique — injected into the prompt field the
-                // same way the vision-QA retry does it.
-                const fb = await vscode.window.showInputBox({
-                    prompt: `What was wrong / what should change? (${meta.model})`,
-                    placeHolder: 'e.g. hands look wrong; warmer light; closer camera',
-                    ignoreFocusOut: true
-                });
-                if (!fb) { return; }
-                input = injectMediaFeedback(meta.input, fb);
-                suffix = ' (feedback)';
+                return;
             }
-            taskManager.runMediaAdhoc(meta.title + suffix, meta.model, input,
+            taskManager.runMediaAdhoc(meta.title + ' (re-run)', meta.model, meta.input,
                 { projectId: meta.projectId, sceneId: meta.sceneId });
             void vscode.window.showInformationMessage(`Agent Farm: media job started — ${meta.model}`);
         }),
@@ -12375,34 +12572,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 `Agent Farm: "${pick.label}" recipe installed — edit the steps (the KONU/URL placeholders) under Tasks → Workflows and run with ▶. Media steps need the FAL_KEY secret.`);
         }),
 
-        vscode.commands.registerCommand('agentfarm.setSecret', async () => {
-            const name = await vscode.window.showInputBox({
-                prompt: 'Secret name (used as env var and {secret:NAME}, e.g. FAL_KEY)',
-                validateInput: v => /^[\w.-]+$/.test(v) ? undefined : 'Letters, digits, _ . - only',
-                ignoreFocusOut: true
-            });
-            if (!name) { return; }
-            const value = await vscode.window.showInputBox({
-                prompt: `Value for ${name}`, password: true, ignoreFocusOut: true
-            });
-            if (value === undefined) { return; }
-            await vault.set(name, value);
-            SecretsPanel.refreshIfOpen();
-            void vscode.window.showInformationMessage(
-                `Agent Farm: secret "${name}" stored in the OS keychain (injected into tasks as env + {secret:${name}}).`);
+        // ‼️ THE VAULT'S OWN CARD — U-14, surface 5. Two input boxes could ask
+        // for a name and a value and nothing else: not what the secret is FOR,
+        // not which agents may use it. Both are on the card, and the value
+        // still only ever travels one way — nothing sends a stored value back
+        // to the page.
+        vscode.commands.registerCommand('agentfarm.setSecret', () => {
+            SecretsPanel.compose(secretsDeps);
         }),
 
-        vscode.commands.registerCommand('agentfarm.deleteSecret', async () => {
-            const names = vault.names();
-            if (!names.length) {
+        vscode.commands.registerCommand('agentfarm.deleteSecret', () => {
+            if (!vault.names().length) {
                 void vscode.window.showInformationMessage('Agent Farm: no secrets stored.');
                 return;
             }
-            const pick = await vscode.window.showQuickPick(names, { ignoreFocusOut: true, placeHolder: 'Delete which secret?' });
-            if (!pick) { return; }
-            await vault.delete(pick);
-            SecretsPanel.refreshIfOpen();
-            void vscode.window.showInformationMessage(`Agent Farm: secret "${pick}" deleted.`);
+            // The page lists every secret with what it is for and who may use it,
+            // which is what somebody about to delete one needs to see. The modal
+            // in front of the actual deletion stays.
+            SecretsPanel.show(secretsDeps);
         }),
 
         vscode.commands.registerCommand('agentfarm.listSecrets', () => {
@@ -12956,39 +13143,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             index.reassignAgents();
         }),
 
-        vscode.commands.registerCommand('agentfarm.newAgent', async () => {
-            const roots = cfg().get<string[]>('agentRoots', []).map(expandEnvPath).filter(r => fs.existsSync(r));
-            if (!roots.length) {
+        // ‼️ AN AGENT IS THE OBJECT AT THE CENTRE OF THIS EXTENSION AND THE
+        // ONLY WAY TO MAKE ONE WAS A DIALOG CHAIN — U-14, surface 8. It asked
+        // which root folder (a quickpick, skipped when there is only one, so on
+        // most machines it was invisible) and then a name, and could say
+        // nothing about the two things that decide what the agent IS from its
+        // first session: its default model and the line of CLAUDE.md that says
+        // what it is for. Both are on the fleet page's card.
+        vscode.commands.registerCommand('agentfarm.newAgent', () => {
+            if (!cfg().get<string[]>('agentRoots', []).map(expandEnvPath).filter(r => fs.existsSync(r)).length) {
                 void vscode.window.showWarningMessage('Agent Farm: configure an agent root folder first.');
                 return;
             }
-            const root = roots.length === 1
-                ? roots[0]
-                : (await vscode.window.showQuickPick(roots, { ignoreFocusOut: true, placeHolder: 'Where should the agent live?' }));
-            if (!root) { return; }
-            const name = await vscode.window.showInputBox({
-                ignoreFocusOut: true, prompt: 'New agent name (folder name)',
-                validateInput: v => /^[\w-]+$/.test(v) ? undefined : 'Use letters, digits, - or _ only'
-            });
-            if (!name) { return; }
-            const dir = path.join(root, name);
-            if (fs.existsSync(dir)) {
-                void vscode.window.showWarningMessage(`Agent Farm: "${name}" already exists.`);
-                return;
-            }
-            fs.mkdirSync(path.join(dir, 'memory'), { recursive: true });
-            fs.mkdirSync(path.join(dir, '.claude'), { recursive: true });
-            fs.writeFileSync(path.join(dir, 'CLAUDE.md'), CLAUDE_MD_TEMPLATE.replace('{NAME}', name), 'utf8');
-            fs.writeFileSync(path.join(dir, 'memory', 'MEMORY.md'), MEMORY_MD_TEMPLATE, 'utf8');
-            // seed the agent's default model from agentFarm.newAgentModel
-            // (empty = write no model, the Claude CLI default applies)
-            const newModel = cfg().get<string>('newAgentModel', 'sonnet').trim();
-            fs.writeFileSync(path.join(dir, '.claude', 'settings.local.json'),
-                JSON.stringify(newModel ? { model: newModel } : {}, null, 2) + '\n', 'utf8');
-            refreshAll();
-            void vscode.window.showInformationMessage(
-                `Agent Farm: agent "${name}" created${newModel ? ` (default model: ${newModel})` : ''}.`);
-            await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(path.join(dir, 'CLAUDE.md')));
+            PortfolioPanel.compose(portfolioDeps);
         }),
 
         // ---------- Phase D commands ----------
@@ -13235,19 +13402,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // itself into the queue, say. The box still opens: what goes into the
         // queue is the user's sentence, and a "one gesture" that skipped the
         // chance to edit would be filing somebody else's words under your name.
-        vscode.commands.registerCommand('agentfarm.queueAdd', async (seed?: string | { text?: string }) => {
+        // ‼️ THE PALETTE OPENS THE PAGE'S OWN CAPTURE BOX — U-14. An input box
+        // can state the text and nothing else; the Queue page's box also
+        // carries the target and the urgency, and it shows the queue you are
+        // adding to while you type.
+        vscode.commands.registerCommand('agentfarm.queueAdd', (seed?: string | { text?: string }) => {
             const from = typeof seed === 'string' ? seed : seed?.text;
-            const text = await vscode.window.showInputBox({
-                prompt: "Add to the work queue — one line is enough (it won't be lost until handled)",
-                placeHolder: 'e.g. fix the alignment glitch on the settings page',
-                value: typeof from === 'string' ? from : undefined,
-                ignoreFocusOut: true
-            });
-            if (!text || !text.trim()) { return; }
-            const item = workQueueStore.add({ text: text.trim(), author: 'user' });
-            updateNoticesBadge(); QueuePanel.refreshIfOpen();
-            void vscode.window.showInformationMessage('📥 Added to the queue.', 'Open queue')
-                .then(p => { if (p) { showQueuePanel(item.id); } });
+            showQueuePanel();
+            QueuePanel.composeCurrent(typeof from === 'string' ? from : '');
         }),
 
         /**
@@ -13261,6 +13423,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * separate, later job (the Backlog tab's `file…`, or an agent's
          * `projects.backlog.code`) done by whoever has the context.
          */
+        // Same rule for a backlog line: the project page's Capture box carries
+        // the area, the type, the priority, the effort, the queue position and
+        // the parent — none of which an input box could ask for (U-14). The
+        // project picker stays a quickpick: it chooses among rows that already
+        // exist, which is what a quickpick is for.
         vscode.commands.registerCommand('agentfarm.backlogAdd', async (arg?: unknown) => {
             const seedId = typeof arg === 'string' ? arg : '';
             let target = seedId ? projectStore.get(seedId) : activeProject();
@@ -13278,22 +13445,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 target = projectStore.get(pick.projectId);
             }
             if (!target) { return; }
-            const text = await vscode.window.showInputBox({
-                prompt: `Add to ${target.name}'s backlog — one line is enough; file it later`,
-                placeHolder: 'e.g. the console history search is case sensitive',
-                ignoreFocusOut: true
-            });
-            if (!text || !text.trim()) { return; }
-            const res = projectsPanelDeps().backlogAdd(target.id, { text: text.trim() });
-            if (res.error) {
-                void vscode.window.showErrorMessage(`Could not add it: ${res.error}`);
-                return;
-            }
-            const name = target.name;
-            const id = target.id;
-            void vscode.window.showInformationMessage(
-                `📋 Added to ${name}'s backlog${res.code ? ` as ${res.code}` : ' (inbox)'}.`, 'Open backlog')
-                .then(p => { if (p) { ProjectsPanel.show(projectsPanelDeps(), id); } });
+            ProjectsPanel.show(projectsPanelDeps(), target.id, undefined, 'backlog');
+            ProjectsPanel.captureCurrent();
         }),
 
         vscode.commands.registerCommand('agentfarm.configureDocOpen', () => {
@@ -13323,52 +13476,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // The Living page only sees the FARM until you tell it what the farm
         // exists for: a diary file that should be written, an inbox that should
         // be empty. Each check is a precondition where TRUE = "needs attention".
-        vscode.commands.registerCommand('agentfarm.configureLivingChecks', async () => {
-            const checks = cfg().get<LivingCheck[]>('livingChecks', []);
-            const pick = await vscode.window.showQuickPick([
-                { label: '$(add) Add a check…', id: 'add' },
-                ...(checks.length ? [{ label: '$(trash) Remove a check…', id: 'remove' }] : []),
-                { label: '$(json) Edit them all as JSON (settings)', id: 'json' }
-            ], { ignoreFocusOut: true, placeHolder: `Living checks (${checks.length} configured)` });
-            if (!pick) { return; }
-            if (pick.id === 'json') {
-                await vscode.commands.executeCommand('workbench.action.openSettingsJson');
-                return;
-            }
-            if (pick.id === 'remove') {
-                const victim = await vscode.window.showQuickPick(
-                    checks.map((c, i) => ({ label: c.label, description: describePrecondition(c.when), i })),
-                    { ignoreFocusOut: true, placeHolder: 'Remove which check?' });
-                if (!victim) { return; }
-                const next = checks.filter((_, i) => i !== victim.i);
-                await cfg().update('livingChecks', next, vscode.ConfigurationTarget.Global);
-                LivingPanel.refreshIfOpen();
-                return;
-            }
-            const label = await vscode.window.showInputBox({
-                title: 'What loop is this?',
-                placeHolder: "e.g. Today's day file written",
-                ignoreFocusOut: true
-            });
-            if (!label) { return; }
-            const pre = await pickPrecondition(undefined, label);
-            if (!pre?.value) { return; }
-            const level = await vscode.window.showQuickPick([
-                { label: '⚠️ Warn', description: 'needs you soon', v: 'warn' as const },
-                { label: '🛑 Alert', description: 'the loop has stopped', v: 'alert' as const },
-                { label: '· Info', description: 'worth seeing, not urgent', v: 'info' as const }
-            ], { ignoreFocusOut: true, placeHolder: 'How loud when this hits?' });
-            if (!level) { return; }
-            const hint = await vscode.window.showInputBox({
-                title: 'What closes this loop? (shown as the hint; optional)',
-                placeHolder: 'e.g. write today\'s entry, or ask the agent to open it',
-                ignoreFocusOut: true
-            });
-            if (hint === undefined) { return; }
-            const next = [...checks, { label, when: pre.value, level: level.v, hint: hint || undefined }];
-            await cfg().update('livingChecks', next, vscode.ConfigurationTarget.Global);
-            LivingPanel.refreshIfOpen();
-            void vscode.window.showInformationMessage(`Agent Farm: living check "${label}" added.`);
+        // ‼️ THE CHECKS ARE EDITED ON THE PAGE THEY BECOME ROWS ON — U-14,
+        // surface 4. This was a quickpick (add / remove / edit the JSON) that
+        // led to five more boxes, and the one thing it never showed was the
+        // list it was adding to — which is exactly why "edit the JSON" had to
+        // be offered as a third option.
+        vscode.commands.registerCommand('agentfarm.configureLivingChecks', () => {
+            LivingPanel.compose(livingDeps);
         }),
 
         // Alias kept for every pre-Tasks entry point (menus, notifications,
@@ -13428,128 +13542,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         // ---------- G3: eval set (trace→dataset) ----------
 
+        // ‼️ EVALS GOT A PAGE, NOT A FORM — U-14, surface 7. It is the only
+        // area in the sweep with no surface at all: four palette commands were
+        // the whole of it, so a suite you spent an afternoon building could
+        // only be read back one quickpick line at a time, and "which cases
+        // fail now that passed last week?" had no answer short of re-running
+        // everything and reading a generated file.
         vscode.commands.registerCommand('agentfarm.addEvalCase', async (arg?: AgentArg) => {
             const agent = await resolveAgent(arg);
             if (!agent) { return; }
-            interface Candidate extends vscode.QuickPickItem {
-                input?: string; expectation?: string;
-                source?: EvalCase['source'];
-            }
-            const candidates: Candidate[] = [];
-            for (const q of qualityStore.scores.filter(s => s.agentId === agent.id && s.score <= 2)) {
-                if (evalStore.hasSource(q.sessionId)) { continue; }
-                candidates.push({
-                    label: `⭐ ${q.score}/5 — ${q.promptSnippet}`,
-                    description: q.reason.slice(0, 60),
-                    detail: 'low-scored session → regression case',
-                    input: q.promptSnippet,
-                    expectation: '',
-                    source: { kind: 'quality', sessionId: q.sessionId }
-                });
-            }
-            for (const t of taskManager.tasks.filter(t => t.agentId === agent.id && t.verified === 'fail')) {
-                if (evalStore.hasSource(undefined, t.id)) { continue; }
-                candidates.push({
-                    label: `✗ verify FAIL — ${t.title}`,
-                    detail: 'failed verification → regression case',
-                    input: t.prompt,
-                    expectation: '',
-                    source: { kind: 'verify', taskId: t.id }
-                });
-            }
-            candidates.push({ label: '$(edit) Manual case…', detail: 'type the input yourself' });
-            const picked = await vscode.window.showQuickPick(candidates, {
-                ignoreFocusOut: true, placeHolder: `New eval case for ${agent.name} — from a bad trace, or manual`
-            });
-            if (!picked) { return; }
-            const input = await vscode.window.showInputBox({
-                prompt: 'Case input (the prompt replayed against the agent)',
-                value: picked.input ?? '',
-                ignoreFocusOut: true
-            });
-            if (!input?.trim()) { return; }
-            const expectation = await vscode.window.showInputBox({
-                prompt: 'Expectation (what a good answer must satisfy — judge criteria)',
-                placeHolder: 'e.g. must be in Turkish, contain 3 concrete suggestions, no headings',
-                ignoreFocusOut: true
-            });
-            if (!expectation?.trim()) { return; }
-            evalStore.addCase({
-                agentId: agent.id, agentName: agent.name,
-                title: input.slice(0, 60),
-                input, expectation,
-                source: picked.source ?? { kind: 'manual' }
-            });
-            void vscode.window.showInformationMessage(
-                `Agent Farm: eval case added — ${agent.name} now has ${evalStore.casesFor(agent.id).length} case(s).`);
+            EvalsPanel.compose(evalsDeps, { kind: 'case', agentId: agent.id });
         }),
 
         vscode.commands.registerCommand('agentfarm.runEvals', async (arg?: AgentArg) => {
-            const withCases = agents.filter(a => evalStore.casesFor(a.id).length);
-            if (!withCases.length) {
-                void vscode.window.showInformationMessage(
-                    'Agent Farm: no eval cases yet — use "Add Eval Case…" first (bad traces become regression tests).');
-                return;
-            }
-            let agent = await resolveAgent(arg);
-            if (agent && !evalStore.casesFor(agent.id).length) { agent = undefined; }
-            if (!agent) {
-                const pick = await vscode.window.showQuickPick(withCases.map(a => ({
-                    label: a.name,
-                    description: `${evalStore.casesFor(a.id).length} case(s)`,
-                    agent: a
-                })), { ignoreFocusOut: true, placeHolder: 'Run whose eval set?' });
-                agent = pick?.agent;
-            }
-            if (!agent) { return; }
-            const cases = evalStore.casesFor(agent.id);
-            const runArgs = cfg().get<string>('evalRunArgs', '--model claude-haiku-4-5-20251001');
-            const confirm = await vscode.window.showInformationMessage(
-                `Run ${cases.length} eval case(s) against ${agent.name}?\n\n` +
-                `Each case = one agent call (${runArgs || 'agent default model'}) + one cheap judge call.`,
-                { modal: true }, 'Run');
-            if (confirm !== 'Run') { return; }
-            const results = await vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Notification, title: `Agent Farm: evals — ${agent.name}` },
-                (progress) => runEvalSet(agent!.dir, runArgs, judgeArgs(), cases,
-                    m => progress.report({ message: m })));
-            const prev = evalStore.lastRun(agent.id);
-            const cmp = compareRuns(prev, results);
-            evalStore.addRun({
-                id: newId(), agentId: agent.id, agentName: agent.name, ts: Date.now(),
-                passed: results.filter(r => r.pass).length,
-                failed: results.filter(r => !r.pass).length,
-                results
-            });
-            const doc = await vscode.workspace.openTextDocument({
-                content: buildEvalReport(agent.name, results, cmp, prev), language: 'markdown'
-            });
-            await vscode.window.showTextDocument(doc, { preview: true });
-            void vscode.window.showInformationMessage(
-                `Agent Farm evals — ${agent.name}: ${summarizeRun(results, cmp)}`);
+            const agent = await resolveAgent(arg);
+            EvalsPanel.show(evalsDeps, agent?.id);
         }),
 
         vscode.commands.registerCommand('agentfarm.reviewEvalCases', async (arg?: AgentArg) => {
             const agent = await resolveAgent(arg);
-            if (!agent) { return; }
-            const cases = evalStore.casesFor(agent.id);
-            if (!cases.length) {
-                void vscode.window.showInformationMessage(`Agent Farm: ${agent.name} has no eval cases.`);
-                return;
-            }
-            const pick = await vscode.window.showQuickPick(cases.map(c => ({
-                label: c.title,
-                description: c.source?.kind ?? 'manual',
-                detail: `Expect: ${c.expectation.slice(0, 100)}`,
-                caseId: c.id
-            })), { ignoreFocusOut: true, placeHolder: `${agent.name} — ${cases.length} eval case(s); pick one to delete` });
-            if (!pick) { return; }
-            const del = await vscode.window.showWarningMessage(
-                `Delete eval case "${pick.label}"?`, { modal: true }, 'Delete');
-            if (del === 'Delete') {
-                evalStore.deleteCase(pick.caseId);
-                void vscode.window.showInformationMessage('Agent Farm: eval case deleted.');
-            }
+            EvalsPanel.show(evalsDeps, agent?.id);
         }),
 
         // ---------- H2/H3: reliability ----------
@@ -13667,80 +13679,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 void vscode.window.showWarningMessage('Agent Farm: agent has no CLAUDE.md to experiment on.');
                 return;
             }
-            const current = fs.readFileSync(agent.claudeMdPath, 'utf8');
-            // Variant B source: append an open suggestion, pick a file, or paste a rule.
-            interface VariantPick extends vscode.QuickPickItem { variantKind: 'suggestion' | 'file' | 'paste'; rule?: string }
-            const options: VariantPick[] = suggestionStore.open()
-                .filter(s => s.agentId === agent.id)
-                .map(s => ({
-                    label: `$(lightbulb) Try the suggestion: ${s.rule.slice(0, 70)}`,
-                    detail: 'B = mevcut CLAUDE.md + bu kural', variantKind: 'suggestion' as const, rule: s.rule
-                }));
-            options.push(
-                { label: '$(file) Pick variant B from a file…', variantKind: 'file' },
-                { label: '$(edit) Write the rule to add…', variantKind: 'paste' });
-            const picked = await vscode.window.showQuickPick(options, {
-                ignoreFocusOut: true, placeHolder: `A = ${agent.name}'s current CLAUDE.md. Where does variant B come from?`
-            });
-            if (!picked) { return; }
-            let variantB: string | undefined;
-            if (picked.variantKind === 'suggestion' && picked.rule) {
-                variantB = current.trimEnd() + `\n\n## Deneme kuralı (A/B)\n- ${picked.rule}\n`;
-            } else if (picked.variantKind === 'file') {
-                const uris = await vscode.window.showOpenDialog({
-                    canSelectMany: false, filters: { Markdown: ['md'] }, title: 'Variant B CLAUDE.md'
-                });
-                if (uris?.[0]) { variantB = fs.readFileSync(uris[0].fsPath, 'utf8'); }
-            } else {
-                const rule = await vscode.window.showInputBox({
-                    prompt: 'Rule to add to variant B (one line)', ignoreFocusOut: true
-                });
-                if (rule?.trim()) {
-                    variantB = current.trimEnd() + `\n\n## Deneme kuralı (A/B)\n- ${rule.trim()}\n`;
-                }
-            }
-            if (!variantB) { return; }
-            const evalCases = evalStore.casesFor(agent.id);
-            let prompts = evalCases.map(c => c.input).slice(0, 5);
-            if (!prompts.length) {
-                const raw = await vscode.window.showInputBox({
-                    prompt: 'Trial prompts (separate with ; — 2-5 of them)',
-                    placeHolder: 'e.g. summarize today\'s notes ; draft the weekly plan',
-                    ignoreFocusOut: true
-                });
-                prompts = (raw ?? '').split(';').map(s => s.trim()).filter(Boolean).slice(0, 5);
-            }
-            if (!prompts.length) { return; }
-            const runArgs = cfg().get<string>('evalRunArgs', '--model claude-haiku-4-5-20251001');
-            const confirm = await vscode.window.showInformationMessage(
-                `A/B experiment: ${prompts.length} prompts × 2 variants + ${prompts.length} judge calls ` +
-                `(${runArgs || 'agent default model'}). Run it?`,
-                { modal: true }, 'Run');
-            if (confirm !== 'Run') { return; }
-            const summary = await vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Notification, title: `Agent Farm: A/B — ${agent.name}` },
-                (progress) => runAbTest(agent.dir, current, variantB!, prompts, runArgs, judgeArgs(),
-                    m => progress.report({ message: m })));
-            const doc = await vscode.workspace.openTextDocument({
-                content: buildAbReport(agent.name, summary), language: 'markdown'
-            });
-            await vscode.window.showTextDocument(doc, { preview: true });
-            if (summary.winsB > summary.winsA) {
-                const apply = await vscode.window.showInformationMessage(
-                    `B won (${summary.winsB}-${summary.winsA}, ${summary.ties} ties). Apply variant B to CLAUDE.md? (an .afbak backup is taken)`,
-                    { modal: true }, 'Apply B');
-                if (apply === 'Apply B') {
-                    const backup = `${agent.claudeMdPath}.${Date.now()}.afbak`;
-                    fs.copyFileSync(agent.claudeMdPath, backup);
-                    fs.writeFileSync(agent.claudeMdPath, variantB, 'utf8');
-                    instrHistory.record(agent.id, variantB);
-                    void vscode.window.showInformationMessage(
-                        `Agent Farm: B applied ✓ (backup: ${path.basename(backup)})`);
-                }
-            } else {
-                void vscode.window.showInformationMessage(
-                    `Agent Farm A/B: A ${summary.winsA} · B ${summary.winsB} · ties ${summary.ties} — keeping the current instructions.`);
-            }
+            EvalsPanel.compose(evalsDeps, { kind: 'ab', agentId: agent.id });
         }),
 
         // ---------- I3: memory distillation ----------
@@ -14249,6 +14188,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 });
         }),
 
+        // ‼️ THE PACK IS READ HERE, AND LANDED ON THE FLEET PAGE'S CARD — U-14.
+        // The OS file picker stays (a webview cannot draw one); what followed it
+        // was a root quickpick, a name box and a modal that recited the pack's
+        // contents as text. The card states the contents, asks the two
+        // questions side by side, and refuses a clashing name in the form.
         vscode.commands.registerCommand('agentfarm.importAgentPack', async (fileArg?: unknown) => {
             // J4: the pack gallery calls this with a concrete file path.
             let packFile = typeof fileArg === 'string' && fs.existsSync(fileArg) ? fileArg : undefined;
@@ -14266,30 +14210,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 void vscode.window.showErrorMessage(`Agent Farm: cannot import — ${error}.`);
                 return;
             }
-            const roots = cfg().get<string[]>('agentRoots', []).map(expandEnvPath).filter(r => fs.existsSync(r));
-            if (!roots.length) {
+            if (!cfg().get<string[]>('agentRoots', []).map(expandEnvPath).filter(r => fs.existsSync(r)).length) {
                 void vscode.window.showWarningMessage('Agent Farm: configure an agent root folder first.');
                 return;
             }
-            const root = roots.length === 1
-                ? roots[0]
-                : await vscode.window.showQuickPick(roots, { ignoreFocusOut: true, placeHolder: 'Where should the imported agent live?' });
-            if (!root) { return; }
-            const name = await vscode.window.showInputBox({
-                ignoreFocusOut: true, prompt: 'Name for the imported agent (folder name)',
-                value: pack.name,
-                validateInput: v => !/^[\w-]+$/.test(v) ? 'Use letters, digits, - or _ only'
-                    : fs.existsSync(path.join(root, v)) ? 'A folder with this name already exists' : undefined
+            PortfolioPanel.compose(portfolioDeps, {
+                mode: 'import', packFile, name: pack.name,
+                packSummary: `"${pack.name}" — ${pack.files.length} file(s), ${pack.workflows.length} workflow(s), `
+                    + `${pack.triggers.length} trigger(s), ${pack.schedules.length} schedule(s)`,
+                packNotes: pack.notes.join(' · ')
             });
-            if (!name) { return; }
+        }),
+
+        vscode.commands.registerCommand('agentfarm.importAgentPackInto', (arg?: { packFile?: string; root?: string; name?: string }) => {
+            const packFile = String(arg?.packFile ?? '');
+            const root = String(arg?.root ?? '');
+            const name = String(arg?.name ?? '');
+            const { pack } = readAgentPack(packFile);
+            if (!pack) { return; }
             const dir = path.join(root, name);
-            const confirmed = await vscode.window.showInformationMessage(
-                `Import "${pack.name}" as "${name}"?\n\n` +
-                `${pack.files.length} file(s), ${pack.workflows.length} workflow(s), ` +
-                `${pack.triggers.length} trigger(s, disabled), ${pack.schedules.length} schedule(s, disabled).\n\n` +
-                pack.notes.join('\n'),
-                { modal: true }, 'Import');
-            if (confirmed !== 'Import') { return; }
 
             fs.mkdirSync(path.join(dir, 'memory'), { recursive: true });
             fs.writeFileSync(path.join(dir, 'memory', 'MEMORY.md'), MEMORY_MD_TEMPLATE, 'utf8');
