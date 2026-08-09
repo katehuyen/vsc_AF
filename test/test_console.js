@@ -928,8 +928,12 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     ok('…and says so plainly when it is not', /still holding that session/.test(panel));
     // The child we hold is the shell wrapper; the CLI's registry names the
     // process the session is actually about.
+    // ‼️ `h.child?.pid` — the `?` is the second engine, not sloppiness. A
+    // per-turn engine has NO process between turns and is perfectly alive
+    // (see Hosted.child), so every step of ending a session has to tolerate
+    // there being nothing to end.
     ok('End session ends the process the CLI itself registered, not just our shell',
-        /private ownerPid:/.test(host) && /if \(pid && pid !== h\.child\.pid\) \{ killPid\(pid\); \}/.test(host));
+        /private ownerPid:/.test(host) && /if \(pid && pid !== h\.child\?\.pid\) \{ killPid\(pid\); \}/.test(host));
     ok('…and the extension gives it that lookup',
         /sid => ownerOf\(readCliSessions\(claudeDir\(\)\), sid\)\?\.pid/.test(ext));
 }

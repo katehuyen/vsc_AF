@@ -1634,10 +1634,27 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         ok('sessions.start takes the project the session is filed under',
             /project\? \(id or name/.test(startBlock)
             && /resolveLaunchProject\(args\.project\)/.test(startBlock));
-        const consoleStart = src.slice(src.indexOf("op: 'console.start'"), src.indexOf("op: 'console.start'") + 3000);
+        // 5000, not 3000: the op's own description grew when the engine axis
+        // arrived, and a window too small silently stops covering the handler.
+        const consoleStart = src.slice(src.indexOf("op: 'console.start'"), src.indexOf("op: 'console.start'") + 5000);
         ok('console.start takes it too, in the same words',
             /project\? \(id or name/.test(consoleStart)
             && /resolveLaunchProject\(args\.project\)/.test(consoleStart));
+        // ‼️ THE ENGINE IS A DIMENSION OF A CONSOLE SESSION, AND IT CHANGES WHAT
+        // TALKING TO ONE MEANS — a message said mid-turn steers a Claude turn
+        // and is HELD by a Codex one, whose process is the turn. An agent that
+        // learns that by watching its message disappear has been told a lie by
+        // omission, so the contract says it on the way in.
+        ok('console.start takes an engine', /engine\?/.test(consoleStart));
+        ok('…and says what changes about talking to it',
+            /ONE PROCESS PER TURN/.test(consoleStart) && /HELD/.test(consoleStart));
+        ok('‼️ …and REFUSES one this machine cannot run, with the one thing to do '
+            + 'about it — a session started on a missing CLI dies on its first turn '
+            + 'with a shell error, which is a worse answer than "it is not installed"',
+            /engineMatrix\(\)\.find/.test(consoleStart) && /is not ready on this machine/.test(consoleStart));
+        ok('…and it answers with the shape of the session it just opened, so the '
+            + 'caller does not have to discover it on the second message',
+            /turnShape/.test(consoleStart) && /steerable/.test(consoleStart) && /reportsCost/.test(consoleStart));
         // ‼️ …and it files ONE session rather than moving the window's active
         // project: a background agent must not change what the person sitting
         // in front of the window is working on.

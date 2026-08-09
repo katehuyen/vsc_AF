@@ -121,10 +121,28 @@ ya da `--last`. Çıktı **JSONL**, her satır bir olay.
 |---|---|
 | `thread.started` | `thread_id` — Claude'un `session_id`'sinin karşılığı |
 | `turn.started` | — |
-| `turn.completed` | `usage`: `cached_input`, `cache_write_input`, `output`, `reasoning_output` |
+| `turn.completed` | `usage`: `input_tokens`, `cached_input_tokens`, `cache_write_input_tokens`, `output_tokens`, `reasoning_output_tokens` |
 | `turn.failed` | `error.message` |
 | `item.started` / `item.updated` / `item.completed` | `item: { id, type, … }` |
 | `error` | `message` (yeniden bağlanma denemeleri de buradan akar) |
+
+> **‼️ Düzeltme (3.101.0, ölçüm 2026-08-10).** Yukarıdaki `usage` satırı 3.99.0'da
+> **yanlış** yazılmıştı (`cached_input`, `cache_write_input`, `output`,
+> `reasoning_output`) ve `input_tokens` hiç yoktu. Gerçek alan adları
+> yukarıdakilerdir; ikilinin etiketlerinden değil, canlı turların çıktısından
+> alındı. Adaptörün okuyacağı alanlar bunlar olduğu için bu bir yazım hatası
+> değil, çalışmayacak bir eşlemeydi.
+>
+> **‼️ `input_tokens` ÖNBELLEKTEN GELENİ DE İÇERİR.** Ölçüldü: dört kelimelik bir
+> prompt için `input_tokens: 14310`, `cached_input_tokens: 11008`. Claude'un
+> `input_tokens`'ı yalnız TAZE girdidir ve önbellek ayrı bir alandır; Codex'in
+> sayısını olduğu gibi geçirmek bağlamı iki kez saymak olur. `codexUsage`
+> önbellek payını çıkarır. `reasoning_output_tokens` da `output_tokens`'ın
+> **içindedir**, yanında değil — toplamak düşünmeyi iki kez faturalandırır.
+>
+> **‼️ `item` kimlikleri her turda `item_0`'dan başlar.** Bir tur içinde tekil,
+> ötesinde değil; bu yüzden bir araç çağrısının kimliği turla birlikte
+> adlandırılır, yoksa ikinci turun ilk çağrısı birincininkinin üzerine yazar.
 
 **`item.type` değerleri:** `agent_message` · `reasoning` · `command_execution` ·
 `file_change` · `mcp_tool_call` · `web_search` · `todo_list` · `error`.
@@ -150,6 +168,42 @@ uydurulmuş bir ücret değil. (2) İzin akışı ayrıdır: Claude'un
 `can_use_tool` sorusunun karşılığı Codex'te `exec_approval_request` /
 `apply_patch_approval_request`'tir ve `-s` bayrağıyla önden kısıtlanır.
 
+### 5.1.1 Uygulandı (3.101.0) — adaptör ve tur başına taşıma
+
+Faz 3'ün alt yapısı yazıldı ve **gerçek turlarla** doğrulandı
+(`test/smoke_codex_console.mjs`): iki turluk bir Console oturumu, aynı thread,
+taşınan bağlam, sayılan token, uydurulmamış ücret.
+
+- **`src/core/codexproto.ts`** — saf çeviri. Codex'in JSONL'ini `reduceEvent`'in
+  zaten anladığı olaylara çevirir; panel, maliyet şeridi, adım ikonları ve
+  transkript tek kod yolu olarak kalır.
+- **`src/core/consoleEngine.ts`** — motorun makine tarafı: hangi motorun kaç
+  sürece ihtiyacı var, canlı kontrolü var mı, ücret bildiriyor mu; ve bir turun
+  komut satırı.
+- **`ConsoleHost`** — Claude yolu satırı satırına aynı; `perTurn` motorlar kendi
+  yolundan geçiyor.
+
+**Ölçülen üç gerçek, tasarımı değiştirenler:**
+
+1. **`codex exec resume`, `-s` ve `-C`'yi KABUL ETMEZ** (çıkış kodu 2). Kum
+   havuzu `-c sandbox_mode=…` ile, çalışma dizini sürecin kendi cwd'siyle gider.
+   İlk tur ile sonraki turlar aynı bayrak dağarcığını paylaşmaz.
+2. **Prompt STDIN'den gider (`-`).** Argüman olarak verildiğinde CLI, stdin bir
+   boru ise onu da okumaya çalışır ("Reading additional input from stdin…") ve
+   gelmeyecek ikinci bir kopyayı bekler.
+3. **‼️ TUR, SÜREÇ ÖLENE KADAR BİTMEZ.** `turn.completed` yazılıyor, cevap
+   tamamlanıyor — ve `codex exec` **~5,4 saniye daha yaşıyor**, bu süre boyunca
+   thread'in yazıcı kilidini tutuyor. O aralıkta başlatılan bir tur
+   `thread-store conflict: … already has an active writer` ile reddediliyor. Bu
+   yüzden durum, süreç ölene kadar `working` tutuluyor: `acceptUserText` bir
+   mesajı yalnız durum `working` iken bekletir, dolayısıyla bu tek satır kuyruğu,
+   serbest bırakmayı ve bütün tur-başına taşımayı doğru kılan şeydir.
+
+**Kapsam dışı bırakılan, bilerek:** Codex'in izin akışı
+(`exec_approval_request`) `exec` modunda yoktur — bu mod hiç sormaz. Bu yüzden
+izin modu önden bir kum havuzuna çevrilir ve yüzeyler bunun aynı şey OLMADIĞINI
+söyler (`codexModeNote`).
+
 ### 5.2 Bu makinedeki engel — Kaspersky (2026-08-09)
 
 CLI kuruldu (`0.147.0`), giriş **çalışıyor** (`codex login status` →
@@ -173,6 +227,12 @@ imzasız bir ikiliye giden bağlantıyı kısıtlamasıdır.
 çeviri katmanı, bu belgenin baştan reddettiği şeydir. Kullanıcının kararı:
 Kaspersky'de `codex.exe` için izin (Uygulama Kontrolü → güvenilir grup, ve
 gerekiyorsa Şifreli Bağlantı Taraması istisnası).
+
+> **Çözüldü (2026-08-10).** Engel kaldırıldı; turlar bu makinede tamamlanıyor ve
+> adaptör körlemesine değil, ölçülerek yazıldı (5.1.1). Bu bölüm **bir yöntem
+> kaydı olarak duruyor**: "hazır" diyen bir ekranın neden hâlâ yalan
+> söyleyebildiğinin ve bunu yalnız gerçek bir çağrının ortaya çıkardığının
+> kanıtı — Engines sayfasındaki ⚡ Test düğmesinin varlık sebebi.
 
 ## 6. Faz 4 — adanmış panel (X-14) · KARAR ALINDI
 

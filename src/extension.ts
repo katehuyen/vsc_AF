@@ -109,6 +109,7 @@ import {
     allTags, isPinned, normalizeMarks, parseTags, SessionMarks, setTags, tagsOf, togglePin
 } from './core/sessionmarks';
 import { INTERRUPT_KEY, resolveInterrupt, TermRecord } from './core/interrupt';
+import { ENGINES } from './core/consoleEngine';
 import { readEngines, enginesSummary, EngineId, EngineStatus } from './core/engines';
 import { EngineRunner, testEngine } from './core/engineTest';
 import { QUICK_MENU, QUICK_MENU_GROUPS } from './core/quickmenu';
@@ -3747,11 +3748,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'console.start',
-            describe: 'Open a Console session — a claude process this VS Code window HOSTS, not a terminal it launched: it stays alive between turns, streams its events into the panel, and can be interrupted and re-permissioned live. args: agent (name|id), prompt? (first message), model?, effort?, permissionMode?, resume? (claude session id to continue), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none). Returns the console id to talk to.',
+            describe: 'Open a Console session — an agent process this VS Code window HOSTS, not a terminal it launched: its events stream into the panel and it can be interrupted live. args: agent (name|id), prompt? (first message), engine? (claude — the default — or codex; ‼️ THE ENGINE CHANGES WHAT A SESSION IS: Claude Code is one long-lived process, so a message said mid-turn STEERS that turn and the model, effort and permission mode can be changed while it runs; Codex is ONE PROCESS PER TURN, so a message said mid-turn is HELD until the turn ends, the controls apply to the NEXT turn, and a permission mode becomes a sandbox chosen up front because the engine cannot stop and ask. An engine that is not installed or not signed in is refused here — ask engines.status for what is missing, and engines.test to prove a call really gets through), model?, effort?, permissionMode?, resume? (a session/thread id to continue), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none). Returns the console id to talk to. ‼️ A subscription engine states no per-turn price, so a Codex session reports tokens and no dollars — that is the engine, not a missing figure.',
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const d = launchDefaults();
                 const resume = optStr(args, 'resume') || undefined;
+                // ‼️ AN ENGINE THAT CANNOT RUN IS REFUSED HERE, WITH THE ONE
+                // THING TO DO ABOUT IT. Starting a session on a CLI that is not
+                // on PATH produces a session that dies on its first turn with a
+                // shell error — a worse answer than "it is not installed, here
+                // is the command", which engines.status already knows.
+                const engine = (optStr(args, 'engine') || 'claude').trim().toLowerCase();
+                need(engine in ENGINES, `unknown engine "${engine}" — ${Object.keys(ENGINES).join(', ')}`);
+                if (engine !== 'claude') {
+                    const row = engineMatrix().find(e => e.id === engine);
+                    need(!!row?.ready, row?.next
+                        ? `${engine} is not ready on this machine — ${row.next}`
+                        : `${engine} is not ready on this machine`);
+                }
                 // a resumed conversation brings its own totals with it, so the
                 // figures an agent reads back are the session's, not this
                 // process's (see CarriedTotals)
@@ -3763,6 +3777,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const projectId = resolveLaunchProject(args.project);
                 const id = consoleHost.start({
                     agentId: agent.id, agentName: agent.name, cwd: agent.dir,
+                    engine: engine as EngineId,
                     model: optStr(args, 'model') || d.model,
                     effort: optStr(args, 'effort') || d.effort,
                     permissionMode: optStr(args, 'permissionMode') || d.permissionMode,
@@ -3772,8 +3787,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     firstPrompt: optStr(args, 'prompt') || undefined
                 });
                 ConsolePanel.refreshIfOpen();
+                const spec = ENGINES[engine as EngineId];
                 return {
-                    id, agent: agent.name, cwd: agent.dir,
+                    id, agent: agent.name, cwd: agent.dir, engine,
+                    /** what changes about talking to this session — stated on the
+                     *  way in rather than discovered on the second message */
+                    turnShape: spec.shape,
+                    steerable: spec.liveControls,
+                    reportsCost: spec.reportsCost,
                     project: consoleHost.get(id)?.projectId
                         ? (projectStore.get(consoleHost.get(id)!.projectId!)?.name ?? null) : null
                 };

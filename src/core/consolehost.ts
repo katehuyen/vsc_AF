@@ -16,6 +16,8 @@
 import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { CodexState, newCodexState, translateCodex } from './codexproto';
+import { codexArgs, codexPromptText, EngineId, EngineTransport, engineOf } from './consoleEngine';
 import {
     acceptUserText, answerAsk, AskDecision, Attachment, AttachmentNote, ATTACH_LIMITS,
     CarriedTotals, ConsoleMessage, ConsoleSessionState, controlLine, editQueued, hostArgs,
@@ -144,10 +146,26 @@ export function killPid(pid: number): void {
     } catch { /* already gone is fine */ }
 }
 
+/**
+ * How many times one turn is re-attempted when the engine says the previous
+ * turn's writer is still holding the thread — and only then. Three is measured
+ * generosity: the hold has always cleared on the first retry here, and a fourth
+ * attempt would be a loop rather than a wait.
+ */
+export const RESUME_RETRIES = 3;
+/** The first backoff; it lengthens with each attempt. */
+export const RESUME_RETRY_MS = 300;
+
 export interface HostedSessionInit {
     agentId: string;
     agentName: string;
     cwd: string;
+    /**
+     * Which engine this session talks to. Absent means `claude`, which is what
+     * every caller written before engines existed means — and what the whole
+     * persistent-process path below is built around (see `Hosted.engine`).
+     */
+    engine?: EngineId;
     model?: string;
     effort?: string;
     permissionMode?: string;
@@ -170,7 +188,31 @@ export interface HostedSessionInit {
 
 interface Hosted {
     state: ConsoleSessionState;
-    child: cp.ChildProcess;
+    /**
+     * The process this session is talking to.
+     *
+     * ‼️ OPTIONAL, AND THAT IS THE WHOLE SHAPE OF THE SECOND ENGINE. A Claude
+     * session has one process for its lifetime. A Codex session has one per
+     * TURN — between turns there is no process at all, and the conversation
+     * lives in the CLI's own thread, resumed by id (see consoleEngine.ts). A
+     * host that assumed a process was always there would read "no child" as
+     * "dead session" and end a perfectly live conversation after its first turn.
+     */
+    child?: cp.ChildProcess;
+    /** What kind of machine this is — persistent or one process per turn. */
+    engine: EngineTransport;
+    /** The per-turn engine's translation state: its thread id, which turn it is
+     *  on, and the tool calls still open (see codexproto.ts). */
+    codex?: CodexState;
+    /** The turn a per-turn engine is running: what was said, what rode with it,
+     *  what the engine has complained about, and how many times this exact turn
+     *  has been attempted (see the thread-store conflict in `runTurn`). */
+    turn?: {
+        prompt: string; attachments: Attachment[]; tries: number; stderr: string;
+        /** the engine printed its own end-of-turn event; the process exiting
+         *  afterwards is an ordinary ending rather than a death */
+        reported?: boolean;
+    };
     buffer: string;
     reqSeq: number;
     /**
@@ -250,6 +292,8 @@ export class ConsoleHost {
     start(init: HostedSessionInit): string {
         const id = `cs${++this.seq}-${Date.now().toString(36)}`;
         const projectId = init.projectId ?? this.activeProjectId();
+        const engine = engineOf(init.engine);
+        if (engine.shape === 'perTurn') { return this.startPerTurn(id, engine, init, projectId); }
         const args = hostArgs({ ...init, projectContextFile: this.projectContextFile(projectId) });
         // shell:true — `claude` is a .cmd shim on Windows. Nothing user-typed
         // reaches the command line: prompts travel on stdin as JSON, and the
@@ -274,7 +318,7 @@ export class ConsoleHost {
             // never written to stdin, so it costs nothing and the model's own
             // context comes from --resume, not from here.
             state: init.history?.length ? { ...base, messages: init.history } : base,
-            child, buffer: '', reqSeq: 0
+            child, engine, buffer: '', reqSeq: 0
         };
         this.sessions.set(id, hosted);
 
@@ -325,6 +369,209 @@ export class ConsoleHost {
     }
 
     /**
+     * ‼️ A SESSION THAT HAS NO PROCESS YET, AND IS NOT BROKEN.
+     *
+     * On a per-turn engine there is nothing to spawn until there is something
+     * to say: `codex exec` takes a prompt, runs it and exits. So the session is
+     * created **idle** with no child, and the first turn is started by the first
+     * message — which is also how every later turn starts. There is no "starting"
+     * state to sit in, because nothing is starting.
+     *
+     * Everything else about the session is identical to a persistent one: the
+     * same state object, the same queue, the same panel, the same transcript
+     * shape. That is the point of the adaptor (codexproto.ts) — one Console, two
+     * machines underneath it.
+     */
+    private startPerTurn(
+        id: string, engine: EngineTransport, init: HostedSessionInit, projectId: string | undefined
+    ): string {
+        const base = newSessionState({
+            id, agentId: init.agentId, agentName: init.agentName, cwd: init.cwd,
+            model: init.model, effort: init.effort, permissionMode: init.permissionMode,
+            now: Date.now(),
+            sessionId: init.resume,
+            projectId,
+            resumed: !!init.resume,
+            carried: init.resume ? init.carried : undefined
+        });
+        const hosted: Hosted = {
+            state: {
+                ...(init.history?.length ? { ...base, messages: init.history } : base),
+                // Nothing is starting and nothing is running: it is ready.
+                status: 'idle',
+                engine: engine.id
+            },
+            engine,
+            // A resume already knows the thread; a fresh session learns it from
+            // the first `thread.started`.
+            codex: { ...newCodexState(), ...(init.resume ? { threadId: init.resume } : {}) },
+            buffer: '', reqSeq: 0
+        };
+        this.sessions.set(id, hosted);
+        const firstFiles = init.firstAttachments ?? [];
+        if (init.firstPrompt?.trim() || firstFiles.length) {
+            this.send(id, init.firstPrompt ?? '', false, firstFiles);
+        }
+        return id;
+    }
+
+    /**
+     * Run ONE turn of a per-turn engine: spawn, feed the prompt, read the JSONL.
+     *
+     * ‼️ THE PROMPT GOES ON STDIN AND STDIN IS THEN CLOSED. Measured: given the
+     * prompt as an argument the CLI still drains stdin when stdin is a pipe
+     * ("Reading additional input from stdin…") and waits for a second copy that
+     * never arrives. `-` says explicitly that the instruction is coming that way.
+     *
+     * ‼️ AND THE PROCESS EXITING IS THE END OF A TURN, NOT OF THE SESSION. The
+     * thread lives in the CLI's own store and the next turn resumes it by id —
+     * so `close` here must not do what it does on a persistent engine, or a
+     * Codex conversation would end itself the moment it finished answering.
+     */
+    private runTurn(id: string, prompt: string, attachments: Attachment[] = []): boolean {
+        const h = this.sessions.get(id);
+        if (!h || h.closed || h.engine.shape !== 'perTurn') { return false; }
+        const args = codexArgs({
+            thread: h.codex?.threadId ?? h.state.sessionId,
+            model: h.state.model,
+            effort: h.state.effort,
+            permissionMode: h.state.permissionMode,
+            cwd: h.state.cwd,
+            // ‼️ An image cannot be described, it has to be SEEN, and this engine
+            // takes one the only way it offers: as a file it opens itself. Every
+            // other kind of attachment travels as a path inside the prompt, the
+            // same judgement the Claude side makes (see Attachment).
+            images: attachments.filter(a => a.kind === 'image').map(a => a.path)
+        });
+        let child: cp.ChildProcess;
+        try {
+            // shell:true for the same reason the persistent path uses it — the
+            // engine is a shim on Windows. Nothing user-typed reaches the command
+            // line: the prompt travels on stdin and every flag value comes from a
+            // fixed vocabulary (consoleEngine.ts).
+            child = cp.spawn(h.engine.exe, args, {
+                cwd: h.state.cwd, shell: true, windowsHide: true,
+                stdio: ['pipe', 'pipe', 'pipe']
+            });
+        } catch (e) {
+            this.mutate(id, s => ({
+                ...s, status: 'idle', lastTs: Date.now(),
+                messages: [...s.messages, {
+                    id: `err-${Date.now().toString(36)}`, ts: Date.now(),
+                    role: 'error', text: `${h.engine.exe} could not be started: ${String(e)}`
+                }]
+            }));
+            return false;
+        }
+        h.child = child;
+        h.buffer = '';
+        h.turn = { prompt, attachments, tries: (h.turn?.tries ?? 0), stderr: '' };
+
+        child.stdout?.on('data', d => this.onData(id, String(d)));
+        // ‼️ STDERR IS COLLECTED, NOT PRINTED AS IT ARRIVES. A per-turn engine
+        // writes its whole diagnosis to stderr and then exits, and the LAST
+        // thing it says is the one that matters — printing each chunk as its own
+        // row gave three lines of stack for one fault, and made it impossible to
+        // decide (at `close`) whether the fault was a retryable one.
+        child.stderr?.on('data', d => {
+            const cur = this.sessions.get(id);
+            if (!cur || cur.closed || !cur.turn) { return; }
+            cur.turn.stderr = (cur.turn.stderr + String(d)).slice(-4000);
+        });
+        child.on('error', e => {
+            if (this.sessions.get(id)?.closed) { return; }
+            this.endTurn(id, `the turn could not be run: ${String((e as Error).message ?? e)}`);
+        });
+        child.on('close', code => {
+            const cur = this.sessions.get(id);
+            if (!cur || cur.closed) { return; }
+            // ‼️ A LATE CLOSE FROM A PROCESS THAT IS NO LONGER THIS SESSION'S IS
+            // NOT THIS TURN'S DEATH. A per-turn engine lingers after it has
+            // answered, so the previous turn's process can outlive the start of
+            // the next one — and its `close`, read as the current turn's, wrote
+            // "the engine stopped without finishing the turn" across a turn that
+            // was running perfectly well.
+            if (cur.child && cur.child !== child) { return; }
+            cur.child = undefined;
+            const said = (cur.turn?.stderr ?? '').trim();
+
+            // ‼️ THE ONE FAILURE THAT IS NOT A FAILURE — AND THE ENGINE NAMES IT
+            // ITSELF, WHICH IS THE ONLY REASON THIS IS A RETRY AND NOT A GUESS:
+            //   thread-store conflict: thread <id> already has an active writer
+            // The previous turn's process has exited, its `close` has fired, and
+            // its hold on the thread store is STILL being released — measured
+            // end to end on this machine, on the first real two-turn run. There
+            // is no signal to wait on other than trying again, so it is tried
+            // again, a bounded number of times, on the same prompt, and nothing
+            // about it reaches the conversation unless it keeps failing.
+            const conflict = /thread-store conflict|already has an active writer/i.test(said);
+            const tries = cur.turn?.tries ?? 0;
+            if (code !== 0 && conflict && tries < RESUME_RETRIES && cur.turn) {
+                const again = { ...cur.turn, tries: tries + 1 };
+                cur.turn = again;
+                setTimeout(() => {
+                    const now = this.sessions.get(id);
+                    if (!now || now.closed || now.child) { return; }
+                    now.turn = again;
+                    this.runTurn(id, again.prompt, again.attachments);
+                }, RESUME_RETRY_MS * (tries + 1));
+                return;
+            }
+
+            if (code !== 0 && said) {
+                // The ENGINE'S OWN WORDS. `os error 10013` is the difference
+                // between "Codex is broken" and "your security software is
+                // refusing the socket", and a tidied message throws that away.
+                const last = said.split(/\r?\n/).filter(l => l.trim()).slice(-1)[0] ?? said;
+                this.mutate(id, s => ({
+                    ...s, lastTs: Date.now(),
+                    messages: [...s.messages, {
+                        id: `err-${Date.now().toString(36)}`, ts: Date.now(),
+                        role: 'error', text: last.trim().slice(0, 400)
+                    }]
+                }));
+            }
+            // ‼️ AND HERE — NOT AT `turn.completed` — IS WHERE THE TURN ENDS.
+            // The state was held at `working` for as long as this process lived
+            // (see onData), because that is exactly how long the session could
+            // not run another turn. Now it can.
+            if (cur.turn?.reported) {
+                this.mutate(id, s => ({ ...s, status: 'idle', lastTs: Date.now() }));
+            } else {
+                this.endTurn(id, code === 0
+                    ? 'the engine stopped without finishing the turn'
+                    : `the turn did not run (exit ${code})`);
+            }
+            cur.turn = undefined;
+            // …and only NOW is the thread free for the next one (see releasePerTurn).
+            this.releasePerTurn(id);
+        });
+
+        try {
+            child.stdin?.write(prompt);
+            child.stdin?.end();
+        } catch {
+            this.endTurn(id, 'the prompt could not be delivered');
+            return false;
+        }
+        return true;
+    }
+
+    /** Close a per-turn engine's turn that ended without saying so. The SESSION
+     *  survives — the thread is in the CLI's store and the next message resumes
+     *  it, which is exactly the state a reader should be left in. */
+    private endTurn(id: string, why: string): void {
+        this.mutate(id, s => ({
+            ...s, status: 'idle', lastTs: Date.now(),
+            turnStartedAt: undefined, turnTokensAt: undefined,
+            messages: [...s.messages, {
+                id: `err-${Date.now().toString(36)}`, ts: Date.now(),
+                role: 'error', text: why
+            }]
+        }));
+    }
+
+    /**
      * "What are you really running on?" — `get_settings`, the CLI's own answer.
      *
      * ‼️ THE PANEL USED TO ANSWER THIS FROM ITS OWN PICKERS, WHICH IS TO SAY IT
@@ -343,6 +590,9 @@ export class ConsoleHost {
     private askSettings(id: string, turnStartedAt?: number): void {
         const h = this.sessions.get(id);
         if (!h) { return; }
+        // A per-turn engine has no live control channel to ask on, and nothing
+        // to resolve: the flags of the turn about to start ARE what it runs on.
+        if (h.engine.shape === 'perTurn') { return; }
         const requestId = `settings-${++h.reqSeq}`;
         if (!this.write(id, controlLine(requestId, 'get_settings'))) { return; }
         h.state = { ...h.state, pendingSettings: { requestId, turnStartedAt } };
@@ -367,6 +617,47 @@ export class ConsoleHost {
             if (!line.trim()) { continue; }
             let parsed: unknown;
             try { parsed = JSON.parse(line); } catch { continue; }
+            // ‼️ A SECOND ENGINE IS A TRANSLATION, NOT A SECOND REDUCER. Codex
+            // shares no field name with Claude's stream (codexproto.ts), so its
+            // lines are turned into the events this reducer already understands
+            // and everything downstream — state, panel, cost strip, transcript —
+            // stays one code path.
+            if (h.engine.shape === 'perTurn') {
+                const t = translateCodex(h.codex ?? newCodexState(), parsed, { model: h.state.model });
+                h.codex = t.state;
+                for (const ev of t.events) {
+                    const rr = reduceEvent(h.state, ev, now);
+                    h.state = rr.state;
+                    changed = changed || rr.changed;
+                    // The engine SAID the turn is finished. Remembered because
+                    // the process's own exit can no longer be read as the end
+                    // (see the note below) and something has to tell an ordinary
+                    // ending apart from a death.
+                    if ((ev as { type?: string }).type === 'result' && h.turn) {
+                        h.turn.reported = true;
+                    }
+                }
+                // ‼️ THE TURN IS NOT OVER UNTIL THE PROCESS IS GONE, AND THE
+                // ENGINE SAYS OTHERWISE FIVE SECONDS EARLY.
+                //
+                // Measured end to end on this machine: `turn.completed` is
+                // printed, the answer is complete — and `codex exec` then lives
+                // on for another ~5.4 SECONDS, holding the thread's writer lock
+                // the whole time. A turn started in that window is refused
+                // outright (`thread-store conflict: … already has an active
+                // writer`), so a session that called itself idle was a session
+                // that accepted a message it could not run.
+                //
+                // Holding the state at `working` is not cosmetic: `acceptUserText`
+                // only HONOURS a hold while the status is working (an idle
+                // session starts a turn whatever the caller asked for), so this
+                // one line is what makes the queue, the release and the whole
+                // per-turn transport correct rather than racing.
+                if (h.child && h.state.status === 'idle') {
+                    h.state = { ...h.state, status: 'working' };
+                }
+                continue;
+            }
             const wanted = h.state.pendingPermissionMode?.mode;
             const r = reduceEvent(h.state, parsed, now);
             h.state = r.state;
@@ -395,10 +686,34 @@ export class ConsoleHost {
         this.fire(id);
     }
 
+    /**
+     * ‼️ THE NEXT HELD MESSAGE, ON A PER-TURN ENGINE, RELEASED WHERE IT IS SAFE.
+     *
+     * Not where the persistent engine releases it. There the queue moves when
+     * the reducer says the turn ended, because the process is still there to
+     * take the next line. Here the process is the turn and it is still exiting
+     * when it says it has finished — a spawn on that signal is refused by the
+     * CLI for holding the thread twice. So the queue moves on the process's
+     * DEATH, which is the only moment the thread is really free.
+     */
+    private releasePerTurn(id: string): void {
+        const h = this.sessions.get(id);
+        if (!h || h.closed || h.child || !h.state.queued.length) { return; }
+        const next = shiftQueued(h.state);
+        h.state = next.state;
+        if (!next.text) { this.fire(id); return; }
+        h.state = {
+            ...h.state, status: 'working',
+            turnStartedAt: Date.now(), turnTokensAt: h.state.tokens
+        };
+        this.fire(id);
+        this.runTurn(id, codexPromptText(next.text));
+    }
+
     private write(id: string, line: string): boolean {
         const h = this.sessions.get(id);
         if (!h || h.closed) { return false; }
-        if (!h.child.stdin || h.child.stdin.destroyed) { return false; }
+        if (!h.child?.stdin || h.child.stdin.destroyed) { return false; }
         try { h.child.stdin.write(line); return true; } catch { return false; }
     }
 
@@ -425,16 +740,39 @@ export class ConsoleHost {
         }
         const notes: AttachmentNote[] = ready.map(a => ({ name: a.name, kind: a.kind, path: a.path, bytes: a.bytes }));
         const startedBefore = h.state.turnStartedAt;
-        const r = acceptUserText(h.state, text, Date.now(), hold, notes);
+        // ‼️ YOU CANNOT SPEAK INTO A TURN THAT IS A PROCESS. Claude's session is
+        // a live pipe, so a message said mid-turn is delivered at the turn's next
+        // step ("steering"). A Codex turn is `codex exec` with its stdin already
+        // closed — there is nowhere to put the words. Rather than accept them and
+        // lose them, they are HELD, which is a state the composer already draws
+        // and the reader can already act on.
+        const perTurn = h.engine.shape === 'perTurn';
+        // ‼️ AND A TURN IS NOT OVER UNTIL ITS PROCESS IS GONE. Measured, and it
+        // cost the first end-to-end run: `turn.completed` arrives while the
+        // process is still shutting down and still holding the thread, so a
+        // second turn spawned on the strength of that line is refused by the CLI
+        //   `thread/resume failed: thread <id> already …`
+        // and the conversation loses the message. On a persistent engine the
+        // result line genuinely ends the turn, because the process stays; here
+        // the process IS the turn, and `h.child` is what says it is still there.
+        const holdNow = hold || (perTurn && (h.state.status === 'working' || !!h.child));
+        const r = acceptUserText(h.state, text, Date.now(), holdNow, notes);
         h.state = r.state;
         // A NEW turn (not a message said into a running one) asks what it is
         // about to run on, and asks it BEFORE the prompt goes down the pipe —
         // the CLI is idle at that moment, so the answer comes straight back
-        // (see askSettings).
-        if (h.state.turnStartedAt && h.state.turnStartedAt !== startedBefore) {
+        // (see askSettings). A per-turn engine has nobody to ask: the flags of
+        // the turn about to start ARE the answer.
+        if (!perTurn && h.state.turnStartedAt && h.state.turnStartedAt !== startedBefore) {
             this.askSettings(id, h.state.turnStartedAt);
         }
-        if (r.send) { this.write(id, userMessageLine(text.trim(), ready)); }
+        if (r.send) {
+            if (perTurn) {
+                this.runTurn(id, codexPromptText(text.trim(), ready), ready);
+            } else {
+                this.write(id, userMessageLine(text.trim(), ready));
+            }
+        }
         this.fire(id);
         return { queued: !r.send };
     }
@@ -539,6 +877,18 @@ export class ConsoleHost {
         if (h.state.pendingAsk) {
             this.answer(id, { kind: 'deny', message: 'The user interrupted the turn.' });
         }
+        // ‼️ ON A PER-TURN ENGINE, STOPPING THE TURN IS STOPPING THE PROCESS —
+        // and the SESSION survives it, which is the whole reason this is safe:
+        // the conversation lives in the CLI's own thread store and the next
+        // message resumes it by id. There is no control channel to interrupt on
+        // because there is no long-lived process to hold one.
+        if (h.engine.shape === 'perTurn') {
+            if (!h.child) { return false; }
+            killTree(h.child);
+            h.child = undefined;
+            this.endTurn(id, 'turn interrupted');
+            return true;
+        }
         return this.write(id, controlLine(`int-${++h.reqSeq}`, 'interrupt'));
     }
 
@@ -553,6 +903,15 @@ export class ConsoleHost {
     setModel(id: string, model: string): boolean {
         const h = this.sessions.get(id);
         if (!h || !model.trim()) { return false; }
+        // ‼️ NOTHING IS PENDING ON AN ENGINE WITH NO LIVE CONTROLS. There is no
+        // CLI to accept or refuse the switch: the next turn is a new process and
+        // it will be started with this flag, so the change is already true. A
+        // `pendingModel` here would be a panel waiting for an answer that can
+        // never come.
+        if (!h.engine.liveControls) {
+            this.mutate(id, s => ({ ...s, model: model.trim() }));
+            return true;
+        }
         const requestId = `model-${++h.reqSeq}`;
         if (!this.write(id, controlLine(requestId, 'set_model', { model: model.trim() }))) { return false; }
         this.mutate(id, s => ({ ...s, pendingModel: { requestId, model: model.trim() } }));
@@ -573,6 +932,11 @@ export class ConsoleHost {
         const h = this.sessions.get(id);
         if (!h) { return false; }
         const want = effort.trim();
+        // see setModel — the next turn's flags are the control
+        if (!h.engine.liveControls) {
+            this.mutate(id, s => ({ ...s, effort: want }));
+            return true;
+        }
         const requestId = `effort-${++h.reqSeq}`;
         if (!this.write(id, controlLine(requestId, 'apply_flag_settings', {
             settings: { effortLevel: want || null }
@@ -596,6 +960,15 @@ export class ConsoleHost {
     setPermissionMode(id: string, mode: string, retryMessage?: string): boolean {
         const h = this.sessions.get(id);
         if (!h) { return false; }
+        // ‼️ On a per-turn engine the mode is a SANDBOX chosen when the next
+        // process starts (see codexSandboxFor), so it takes effect on the next
+        // turn and not on the one already running — and a retry nudge would be
+        // sent into a turn that is still running under the OLD sandbox, which
+        // would simply fail again. The change is recorded; nothing is said.
+        if (!h.engine.liveControls) {
+            this.mutate(id, s => ({ ...s, permissionMode: mode }));
+            return true;
+        }
         const requestId = `mode-${++h.reqSeq}`;
         if (!this.write(id, controlLine(requestId, 'set_permission_mode', { mode }))) { return false; }
         h.state = { ...h.state, pendingPermissionMode: { requestId, mode } };
@@ -644,19 +1017,25 @@ export class ConsoleHost {
         // the button had not worked — it had, and then the drain undid it.
         // Nothing is read from a session that has been ended.
         h.closed = true;
-        try { h.child.stdout?.removeAllListeners('data'); h.child.stdout?.destroy(); } catch { /* already gone */ }
-        try { h.child.stderr?.removeAllListeners('data'); h.child.stderr?.destroy(); } catch { /* already gone */ }
-        try { h.child.stdin?.end(); } catch { /* already gone */ }
-        killTree(h.child);
+        // ‼️ A per-turn engine BETWEEN turns has no process at all, and that is
+        // a live session rather than a broken one — so every step here tolerates
+        // its absence instead of assuming a child that a Codex session only has
+        // while it is actually answering.
+        try { h.child?.stdout?.removeAllListeners('data'); h.child?.stdout?.destroy(); } catch { /* already gone */ }
+        try { h.child?.stderr?.removeAllListeners('data'); h.child?.stderr?.destroy(); } catch { /* already gone */ }
+        try { h.child?.stdin?.end(); } catch { /* already gone */ }
+        if (h.child) { killTree(h.child); }
         // …and the process the CLI itself registered for this session. A
         // `claude` that survives its window keeps that registry entry, which
         // tells everyone the session is open — and Claude Code cannot join a
         // session another process holds, so a survivor does not just leak, it
         // makes the conversation UNREACHABLE. Killing it by name closes that
         // gap even when the shell tree above has already fallen apart.
-        const sid = h.state.sessionId;
+        // …and only for the engine that keeps such a registry. A per-turn engine
+        // registers nothing between turns, so there is nobody to look up.
+        const sid = h.engine.shape === 'persistent' ? h.state.sessionId : undefined;
         const pid = sid ? this.ownerPid(sid) : undefined;
-        if (pid && pid !== h.child.pid) { killPid(pid); }
+        if (pid && pid !== h.child?.pid) { killPid(pid); }
         this.mutate(id, s => ({ ...s, status: 'ended', exitReason: s.exitReason ?? 'closed by you' }));
     }
 

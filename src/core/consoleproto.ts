@@ -227,8 +227,21 @@ export interface ConsoleSessionState {
     agentId: string;
     agentName: string;
     cwd: string;
-    /** claude's session id — known up-front on a resume, otherwise once system:init arrives */
+    /** the engine's session id — known up-front on a resume, otherwise once the
+     *  engine names it (Claude's `system:init`, Codex's `thread.started`) */
     sessionId?: string;
+    /**
+     * ‼️ WHICH ENGINE IS ANSWERING. Absent means `claude`, which is what every
+     * session started before engines existed was, and what every surface that
+     * does not ask still means.
+     *
+     * It is on the STATE rather than worked out from the host, because the
+     * things that read it are the ones furthest from the process: a strip that
+     * must not print a dollar figure for an engine that states none, a picker
+     * whose permission modes mean something different here, and a record that
+     * has to be able to say months later which engine a turn ran on.
+     */
+    engine?: string;
     /** The active project this session was STARTED under, if there was one. Kept
      *  on the state because the stamp can only be written once `sessionId`
      *  arrives, and by then the status bar may already say something else — the
