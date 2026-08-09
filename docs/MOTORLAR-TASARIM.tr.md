@@ -98,33 +98,106 @@ model listeleme) sonucu satıra iliştirir. Sonuç önbelleğe alınır ve yaş�
 gösterilir; kendiliğinden çalışmaz, çünkü para harcatan bir kontrolün sessizce
 dönmesi bu sistemde kabul edilmez.
 
-## 5. Faz 3 — motor seçimi oturum yüzeylerine iner
+## 5. Faz 3 — motor seçimi oturum yüzeylerine iner (X-15)
 
-Bugün Console yalnız `claude` başlatır (`ConsoleHost.exe`). Faz 3, oturum
-başlatan her yüzeye (Console besteci, ▶ üçgeni, görevler, misyonlar) bir
-**motor** ekseni ekler ve hazır olmayan motoru seçilebilir kılmaz — seçilirse
-sebebini ve Faz 1'in `next` satırını gösterir. Bu, protokol farkları nedeniyle
-gerçek iş: Codex'in akış formatı Claude'unkiyle aynı değildir, dolayısıyla
-`consoleproto.ts` seviyesinde bir adaptör gerekir. Ayrı bir kalem olarak
-kuyruğa girmeyi hak eder.
+Bugün Console yalnız `claude` başlatır (`extension.ts` → `new ConsoleHost(() => 'claude', …)`).
+Faz 3, oturum başlatan her yüzeye (Console besteci, ▶ üçgeni, görevler,
+misyonlar) bir **motor** ekseni ekler ve hazır olmayan motoru seçilebilir
+kılmaz — seçilirse sebebini ve Faz 1'in `next` satırını gösterir.
 
-## 6. Faz 4 — adanmış panel (yerleşim kararı bekliyor)
+### 5.1 Codex'in akış protokolü — ÖLÇÜLDÜ (2026-08-09, codex-cli 0.147.0)
+
+Tahmin değil: CLI kuruldu, `codex exec --json` çalıştırıldı, ve olay etiketleri
+ayrıca `codex.exe` ikilisinden çıkarıldı. Claude Code'un `stream-json`'ı ile
+**hiçbir alan adı ortak değil**; adaptör gerçek bir çeviri katmanıdır.
+
+**Komut:** `codex exec --json [-m MODEL] [-C DIR] [-s read-only|workspace-write|danger-full-access] [PROMPT]`
+Prompt argüman olarak ya da stdin'den verilir. Devam: `codex exec resume <id>`
+ya da `--last`. Çıktı **JSONL**, her satır bir olay.
+
+**Olaylar (`type`):**
+
+| `type` | taşıdığı |
+|---|---|
+| `thread.started` | `thread_id` — Claude'un `session_id`'sinin karşılığı |
+| `turn.started` | — |
+| `turn.completed` | `usage`: `cached_input`, `cache_write_input`, `output`, `reasoning_output` |
+| `turn.failed` | `error.message` |
+| `item.started` / `item.updated` / `item.completed` | `item: { id, type, … }` |
+| `error` | `message` (yeniden bağlanma denemeleri de buradan akar) |
+
+**`item.type` değerleri:** `agent_message` · `reasoning` · `command_execution` ·
+`file_change` · `mcp_tool_call` · `web_search` · `todo_list` · `error`.
+Akış deltaları ayrıca `agent_message_content_delta` ve
+`reasoning_content_delta` olarak gelir.
+
+**Eşleme tablosu (Claude → Codex), adaptörün yazacağı şey:**
+
+| Agent Farm'ın beklediği | Claude Code | Codex |
+|---|---|---|
+| oturum kimliği | `session_id` | `thread_id` (`thread.started`) |
+| turun başı | `type: "system", subtype: "init"` | `turn.started` |
+| asistan metni | `assistant` içeriğinde `text` blokları | `item.completed` + `item.type: "agent_message"` |
+| düşünme | `thinking` bloğu | `item.type: "reasoning"` |
+| araç çağrısı | `tool_use` | `command_execution` / `file_change` / `mcp_tool_call` |
+| turun sonu + maliyet | `result` (`usage`, `total_cost_usd`) | `turn.completed` (`usage`; **ücret yok**) |
+| hata | `result` + `is_error` | `turn.failed` / `error` |
+
+**‼️ İki gerçek fark, tasarımı etkiler.** (1) Codex turun **ücretini
+söylemez** — yalnız token sayar; abonelikle çalıştığı için de zaten bir
+dolar rakamı yoktur. Konsolun maliyet şeridi bu motorda token göstermeli,
+uydurulmuş bir ücret değil. (2) İzin akışı ayrıdır: Claude'un
+`can_use_tool` sorusunun karşılığı Codex'te `exec_approval_request` /
+`apply_patch_approval_request`'tir ve `-s` bayrağıyla önden kısıtlanır.
+
+### 5.2 Bu makinedeki engel — Kaspersky (2026-08-09)
+
+CLI kuruldu (`0.147.0`), giriş **çalışıyor** (`codex login status` →
+*Logged in using ChatGPT*), ama hiçbir tur tamamlanamıyor:
+
+```
+os error 10013 — An attempt was made to access a socket in a way
+forbidden by its access permissions
+wss://chatgpt.com/backend-api/codex/responses  → başarısız
+https://chatgpt.com/backend-api/codex/responses → HTTPS fallback da başarısız
+codex doctor → reachability: ChatGPT base URL connect failed (required)
+```
+
+Aynı adrese PowerShell'den HTTPS isteği **çalışıyor** (405 döner, yani
+bağlantı kuruluyor) ve `Test-NetConnection chatgpt.com:443` başarılı. Yani
+ağ değil, **`codex.exe`'ye özgü** bir engel: makinede Windows Defender'ın
+yanında **Kaspersky** var ve 10013 tipik olarak güvenlik yazılımının yeni /
+imzasız bir ikiliye giden bağlantıyı kısıtlamasıdır.
+
+**Adaptör bu çözülmeden yazılmamalıdır** — gerçek bir tur görülmeden yazılan
+çeviri katmanı, bu belgenin baştan reddettiği şeydir. Kullanıcının kararı:
+Kaspersky'de `codex.exe` için izin (Uygulama Kontrolü → güvenilir grup, ve
+gerekiyorsa Şifreli Bağlantı Taraması istisnası).
+
+## 6. Faz 4 — adanmış panel (X-14) · KARAR ALINDI
 
 X-3 "Ayarlar sayfasından açılan, bu işe adanmış bir yönetim paneli" diyor ve
-yerleşimin önce konuşulmasını şart koşuyor. Faz 1 bilinçli olarak **bölüm**
-olarak yapıldı: bilgiyi hemen görünür kılar, ama adanmış panelin yerini
-kullanıcı adına kararlaştırmaz. Konuşulacak üç seçenek:
+yerleşimin önce konuşulmasını şart koşuyordu. Soruldu ve **2026-08-09'da
+cevaplandı: ayrı bir Engines paneli.**
 
-1. **Ayarlar içinde bölüm kalsın** (bugünkü hâli) — bir yer daha öğrenmeye gerek
-   yok, ama motorlar ayarların içinde bir satır olarak kalır.
-2. **Ayarlar'dan açılan ayrı bir Engines paneli** — kalemdeki tarif. Sağlık
-   testleri, kullanım/kota, model listeleri ve motor başına varsayılanlar için
-   yer açar; sol paneldeki gezinmeye de bir giriş ister mi, o da soruya dâhil.
-3. **Secrets sayfasının bir sekmesi** — kimlik bilgisi zaten orada; motorlar
-   "anahtarların anlamı" sekmesi olur. Anahtar olmayan iki motoru anahtar
-   sayfasına koymak pahasına.
+Yani Faz 1'in Farm Settings içindeki bölümü geçici bir yerleşimdi; kalıcı yer
+kendi panelidir. Yapılacaklar:
 
-Karar alınmadan Faz 4 uygulanmaz (Anayasa, İlke 2).
+1. **`src/panels/enginesPanel.ts`** — Faz 1'in satırı, artık dar bir bölüme
+   değil bir sayfaya sığmak zorunda olmadan: motor başına kart.
+2. **Sağlık testi (Faz 2 buraya taşınır)** — satır başına **Test** düğmesi,
+   motorun en ucuz çağrısı, sonuç yaşıyla önbellekte, **asla kendiliğinden
+   çalışmaz** (para harcatan bir kontrolün sessizce dönmesi bu sistemde kabul
+   edilmez).
+3. **Kota / kullanım** — Claude için mevcut plan kotası ucu, Codex için
+   ChatGPT planının kendi sayacı (varsa).
+4. **Model listeleri ve motor başına varsayılanlar** — hangi motorla oturum
+   açılırsa hangi model ve efor gelsin.
+5. **Girişler:** Farm Settings'teki bölüm bir başlık + "Open Engines" düğmesine
+   iner (bilgi görünür kalır, derinlik panelde); sol paneldeki gezinmeye de bir
+   ikon.
+6. **Köprü:** `engines.status` durur; panelin yeni eylemleri (`engines.test`)
+   aynı commit'te köprüye eklenir — `_REF/agentfarm-dev.md` kuralı.
 
 ## 7. Kapsam dışı bırakılanlar ve nedeni
 
