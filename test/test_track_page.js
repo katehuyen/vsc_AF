@@ -162,10 +162,29 @@ const el = (r, attr, value) => els(r, attr).find(e => e.dataset[attr.replace(/-(
     ok('…at a timestamp, and the timestamp is a real moment rather than the turn number',
         m && m.ts > 1e12);
     ok('…and it names the transcript file', m && /\.jsonl$/.test(m.file));
-    const first = els(r, 'trackturn').filter(e => e.dataset.trackts)[0];
-    const second = els(r, 'trackturn').filter(e => e.dataset.trackts)[1];
+    // ‼️ THE SESSION ID IS A DOOR TOO (A-5), so it carries the same attribute —
+    // which is why this reads the TURN chips rather than "whatever opens a
+    // session": the id opens at the run's first moment, and the first turn of
+    // that run is that same moment, so comparing those two would only ever be
+    // asking whether a run has more than one turn.
+    const chips = els(r, 'trackturn').filter(e =>
+        e.dataset.trackts && (e.className || '').indexOf('pj-trk-turn') >= 0);
     ok('‼️ each turn carries its OWN moment — one per run would land every click in the same place',
-        first.dataset.trackts !== second.dataset.trackts);
+        chips.length >= 2 && chips[0].dataset.trackts !== chips[1].dataset.trackts);
+}
+
+// ---------------------------------------------------------------------------
+// ‼️ and the session ID itself opens the transcript (A-5)
+// ---------------------------------------------------------------------------
+{
+    const r = run();
+    const sid = els(r, 'trackturn').filter(e =>
+        (e.className || '').indexOf('pj-trk-sid') >= 0)[0];
+    ok('the session id is a button, not a caption', !!sid);
+    sid.click();
+    const m = r.last();
+    ok('…and pressing it opens that session', m && m.type === 'openSession');
+    ok('…at the moment this item was first worked there', m && m.ts > 1e12);
 }
 
 // ---------------------------------------------------------------------------
@@ -600,6 +619,54 @@ const el = (r, attr, value) => els(r, attr).find(e => e.dataset[attr.replace(/-(
     const r = run({ tabData: { track: big } });
     ok('‼️ a truncated payload is announced — a silent slice is a page telling a quiet lie',
         /more records than one paint carries/.test(r.html()));
+}
+
+// ---------------------------------------------------------------------------
+// ‼️ A-5 — ONE LOOK, ONE ANCHOR, AND NO ATTRIBUTE THAT SWALLOWS THE ROW
+//
+// Three invariants a regex over the source cannot check and every one of which
+// has already been broken once on this page:
+//   · a backlog code is drawn as the same chip on all four views;
+//   · every rich panel is measured against its BLOCK, so one near the right of
+//     the panel opens exactly where one near the left does;
+//   · no native tooltip carries a paragraph, and no attribute is left unclosed
+//     — the summary badge on every Items card was invisible for four releases
+//     because one closing quote was missing and the attribute ate the row.
+// ---------------------------------------------------------------------------
+{
+    const views = ['items', 'timeline', 'sessions', 'gaps'];
+    for (const view of views) {
+        const r = run();
+        el(r, 'trkview', view).click();
+        const h = r.html();
+
+        // an attribute that never closes swallows everything up to the next
+        // quote — including the text it was supposed to describe
+        const swallowed = /(title|data-[a-z]+)="[^"]*<[a-z/]/i.exec(h);
+        ok(`${view}: no attribute swallows the markup after it`, !swallowed);
+
+        // every rich panel on this page is anchored to its row or card
+        const loose = [...h.matchAll(/class="af-tipw([^"]*)"/g)]
+            .filter(m => !/\btip-block\b/.test(m[1]));
+        ok(`${view}: every rich hover is measured against its block`, loose.length === 0);
+
+        // ‼️ ON A ROW a native tooltip is for FIGURES and nothing else. The
+        // controls ABOVE the list are exempt on purpose: a control's own hover
+        // is where that control is defined, once. What is banned is the
+        // paragraph repeated on two hundred rows, which is what the platform
+        // tooltip is worst at and what the rich panel exists for.
+        const essay = [...h.matchAll(
+            /class="[^"]*\bpj-trk-(?:code|ev|sid|state|kind|m|doubt|stamp|sum|turn|scode|words|tl[a-z]*)\b[^"]*"[^>]*title="([^"]{240,})"/g)];
+        ok(`${view}: no row tooltip carries an essay`, essay.length === 0);
+    }
+
+    const r = run();
+    ok('‼️ a code is the same chip on Items as on the Backlog tab',
+        /class="pj-trk-code"/.test(r.html()));
+    el(r, 'trkview', 'gaps').click();
+    ok('…and the Gaps rows that name a code carry it too — the view whose whole '
+        + 'job is to say what is missing used to leave the reader unable to see WHICH',
+        /class="pj-trk-code"/.test(r.html()));
 }
 
 console.log(`${pass} passed, ${fail} failed`);

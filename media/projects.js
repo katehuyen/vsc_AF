@@ -863,8 +863,14 @@
                     color:var(--vscode-list-activeSelectionForeground); font-weight:600; }
                 .pj-trk-sep { width:1px; align-self:stretch; margin:0 4px;
                     background:var(--vscode-panel-border); }
+                /* ‼️ position:relative — THE CARD IS WHAT ITS HOVERS ARE MEASURED
+                   AGAINST (see tip-block in common.css). Every rich panel
+                   inside a card, on the head or on a run row, opens at the
+                   card's own left edge in the card's own width, so a hover near
+                   the right of the panel reads exactly like one near the left
+                   instead of growing off the window. */
                 .pj-trk-item { border:1px solid var(--vscode-widget-border,#4443); border-radius:6px;
-                    padding:7px 10px; margin-bottom:7px;
+                    padding:7px 10px; margin-bottom:7px; position:relative;
                     --stc:var(--vscode-charts-blue,#3794ff);
                     border-left:3px solid var(--stc); }
                 .pj-trk-item.st-open { --stc:var(--vscode-charts-blue,#3794ff); }
@@ -881,11 +887,30 @@
                 .pj-trk-item.backfilled { border-top-color:color-mix(in srgb, var(--vscode-charts-purple,#b180d7) 55%, transparent);
                     border-right-color:color-mix(in srgb, var(--vscode-charts-purple,#b180d7) 55%, transparent);
                     border-bottom-color:color-mix(in srgb, var(--vscode-charts-purple,#b180d7) 55%, transparent); }
-                .pj-trk-head { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-                .pj-trk-code { font-size:12px; cursor:pointer; background:none; border:none; padding:0;
-                    color:inherit; font-family:var(--vscode-editor-font-family,monospace);
-                    text-decoration:underline dotted; }
-                .pj-trk-code:hover { color:var(--vscode-textLink-activeForeground,#4daafc); }
+                /* ‼️ THE HEAD IS A BLOCK OF LINES, NOT A LINE. The words are the
+                   longest thing on it and they WRAP now (see .pj-trk-words), so
+                   the badges beside them sit against the first line rather than
+                   floating in the middle of a three-line paragraph — the same
+                   thing .pj-bl-side does with align-self:flex-start on a
+                   backlog row, and for the same reason. */
+                .pj-trk-head { display:flex; gap:8px; align-items:flex-start; flex-wrap:wrap; }
+                /* ‼️ A BACKLOG CODE LOOKS THE SAME WHEREVER IT IS DRAWN, AND IT
+                   IS DECLARED ONCE (A-5). The Track page had invented its own —
+                   a size larger, no chip behind it, a dotted underline — so the
+                   one permanent handle this whole system is indexed by read as
+                   two different objects on two tabs of the same page. Both
+                   selectors are on the same rule so neither can drift again;
+                   Track draws its codes as buttons, which is the only reason
+                   the reset below is needed at all. */
+                .pj-bl-code, .pj-trk-code { font-size:11px; opacity:.85; white-space:nowrap;
+                    background:var(--vscode-textCodeBlock-background,#8881);
+                    padding:0 5px; border-radius:4px;
+                    font-family:var(--vscode-editor-font-family,monospace); }
+                .pj-trk-code { border:none; color:inherit; }
+                .pj-bl-code.open, .pj-trk-code { cursor:pointer; }
+                .pj-bl-code.open:hover, .pj-trk-code:hover {
+                    outline:1px solid var(--vscode-focusBorder);
+                    color:var(--vscode-textLink-foreground); }
                 .pj-trk-state { font-size:11px; opacity:.85; padding:0 5px; border-radius:4px;
                     border:1px solid var(--stc,var(--vscode-widget-border,#4443));
                     color:var(--stc,inherit); }
@@ -893,7 +918,15 @@
                 .pj-trk-state.s-gone { border-color:var(--vscode-editorWarning-foreground,#d29922);
                     color:var(--vscode-editorWarning-foreground,#d29922); }
                 .pj-trk-sum { font-size:11px; opacity:.7; white-space:nowrap; }
-                .pj-trk-words { flex:1 1 320px; min-width:0; opacity:.85; }
+                /* ‼️ THE WORDS WRAP TO THE CARD, THEY DO NOT RUN OFF IT (A-5).
+                   display:block is the load-bearing word: wrapping the text
+                   for its hover panel made it an inline span inside a block, and
+                   an INLINE BOX IGNORES overflow, so every width rule written
+                   here stopped applying the day the panel was added. Opened past
+                   the cut, two thousand characters went out in one line to the
+                   right of the window. */
+                .pj-trk-words { display:block; min-width:0; opacity:.85;
+                    overflow-wrap:anywhere; }
                 /* the words are wrapped for their hover panel, so the wrapper is
                    the flex child and it is the wrapper that has to grow */
                 .pj-trk-head > .af-tipw.trk-words { flex:1 1 320px; min-width:0; }
@@ -905,8 +938,14 @@
                 .pj-trk-run { display:flex; gap:7px; align-items:center; flex-wrap:wrap; margin-top:4px;
                     padding-left:6px; border-left:2px solid var(--vscode-widget-border,#4443); }
                 .pj-trk-run.loose { border-left-style:dashed; opacity:.85; }
-                .pj-trk-sid { font-size:11px; opacity:.8;
+                /* the id opens the transcript, so it behaves like the code chip
+                   beside it rather than like a caption (A-5) */
+                .pj-trk-sid { font-size:11px; opacity:.8; padding:0; border:none;
+                    background:none; color:inherit;
                     font-family:var(--vscode-editor-font-family,monospace); }
+                button.pj-trk-sid { cursor:pointer; }
+                button.pj-trk-sid:hover { opacity:1; color:var(--vscode-textLink-foreground);
+                    text-decoration:underline; }
                 .pj-trk-turn { font-size:11px; padding:1px 7px; border-radius:9px; cursor:pointer;
                     border:1px solid var(--vscode-widget-border,#4443); background:none; color:inherit; }
                 .pj-trk-turn:hover { background:var(--vscode-list-hoverBackground); }
@@ -961,8 +1000,10 @@
                    Nothing here shrinks except the note, which is the only column
                    whose length is unbounded — and it ellipsises rather than
                    wrapping, with the whole text in the hover. */
+                /* position:relative for the same reason the item card has it —
+                   a timeline row is the block its hovers are measured against. */
                 .pj-trk-tl { display:flex; gap:8px; align-items:center; padding:2px 4px; border-radius:4px;
-                    --stc:var(--vscode-widget-border,#4443);
+                    position:relative; --stc:var(--vscode-widget-border,#4443);
                     border-left:3px solid var(--stc); }
                 .pj-trk-tl.e-done { --stc:color-mix(in srgb, var(--vscode-charts-green,#3fb950) 55%, transparent); }
                 .pj-trk-tl.e-cancelled { --stc:color-mix(in srgb, var(--vscode-charts-red,#f14c4c) 55%, transparent); }
@@ -985,20 +1026,35 @@
                 .pj-trk-tltime { font-size:11px; opacity:.6; white-space:nowrap;
                     flex:0 0 calc(var(--tl-time, 5) * 1ch + 2px);
                     font-variant-numeric:tabular-nums; }
-                .pj-trk-tl .pj-trk-ev { flex:0 0 calc(var(--tl-ev, 9) * 1ch + 16px); text-align:center; }
+                /* ‼️ THE COLUMN IS WHATEVER IS THE FLEX CHILD, AND THAT CHANGES
+                   WITH THE ROW. An event chip carrying a note is wrapped for its
+                   hover panel and the WRAPPER becomes the child; one with no note
+                   is the child itself. Both are given the width, or the column
+                   silently stops lining up on exactly the rows that have a note. */
+                .pj-trk-tl > .pj-trk-ev, .pj-trk-tl > .af-tipw.tl-ev {
+                    flex:0 0 calc(var(--tl-ev, 9) * 1ch + 16px); }
+                .pj-trk-tl .pj-trk-ev { text-align:center; }
                 .pj-trk-tl .pj-trk-code { text-align:left; white-space:nowrap; }
                 /* …and when a column is wrapped for its hover panel, the WRAPPER
                    is the flex child, so it is the wrapper that carries the width
                    (see the cls argument of AFTip.wrap). */
                 .pj-trk-tl > .af-tipw.tl-code { flex:0 0 calc(var(--tl-code, 5) * 1ch + 2px); font-size:12px; }
-                .pj-trk-tl > .af-tipw.tl-note { flex:1 1 auto; min-width:0; }
+                /* ‼️ THE CLIPPING BELONGS TO THE WRAPPER, NOT TO THE SPAN INSIDE
+                   IT. .pj-trk-tlnote carries nowrap + overflow:hidden +
+                   ellipsis, and every one of those was dead: wrapping it for its
+                   hover panel turned it into an INLINE box, and an inline box
+                   ignores overflow. So the note was not ellipsised, it was
+                   drawn — all of it, on one line — and the row grew until the
+                   whole page scrolled sideways and the Items cards were stretched
+                   with it. The wrapper is the flex item; it does the clipping. */
+                .pj-trk-tl > .af-tipw.tl-note { flex:1 1 auto; min-width:0; overflow:hidden; }
                 .pj-trk-tl .pj-trk-turn { white-space:nowrap; text-align:left;
                     flex:0 0 calc(var(--tl-sid, 12) * 1ch + 18px);
                     overflow:hidden; text-overflow:ellipsis; }
                 .pj-trk-tlwho { font-size:11px; opacity:.6; white-space:nowrap;
                     flex:0 0 calc(var(--tl-who, 9) * 1ch + 2px);
                     overflow:hidden; text-overflow:ellipsis; }
-                .pj-trk-tlnote { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
+                .pj-trk-tlnote { display:block; min-width:0; overflow:hidden; text-overflow:ellipsis;
                     white-space:nowrap; font-size:12px; opacity:.75; }
                 .pj-trk-more { margin:10px 0; display:flex; gap:10px; align-items:center; }
                 /* code chips — sessions and gaps */
@@ -1047,7 +1103,10 @@
                 .pj-trk-fillrow { display:flex; gap:8px; align-items:center; padding:1px 0; font-size:11px; }
                 /* cards */
                 .pj-cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px,1fr)); gap:12px; margin-bottom:12px; }
-                .pj-card { border:1px solid var(--vscode-widget-border,#4443); border-radius:7px; padding:10px 12px; margin-bottom:12px; }
+                /* position:relative — a card is a block, and the rich hovers of
+                   the chips inside it are measured against it (tip-block). */
+                .pj-card { border:1px solid var(--vscode-widget-border,#4443); border-radius:7px; padding:10px 12px; margin-bottom:12px;
+                    position:relative; }
                 .pj-card-h { font-size:11px; text-transform:uppercase; opacity:.6; margin-bottom:8px; }
                 .pj-now, .pj-next { display:flex; flex-direction:column; gap:1px; padding:4px 0; }
                 .pj-dotlive { width:7px; height:7px; border-radius:50%; display:inline-block; margin-right:5px;
@@ -1143,8 +1202,8 @@
                 .pj-bl-row.doing { border-left-color:var(--vscode-charts-yellow,#d7ba7d);
                     background:var(--vscode-editor-selectionHighlightBackground,#d7ba7d18); }
                 .pj-bl-m.started { color:var(--vscode-charts-yellow,#d7ba7d); opacity:1; cursor:help; }
-                .pj-bl-code { font-size:11px; opacity:.85; white-space:nowrap;
-                    background:var(--vscode-textCodeBlock-background,#8881); padding:0 5px; border-radius:4px; }
+                /* the chip itself is declared with the Track's, so the two pages
+                   cannot drift — see the code-chip note above */
                 .pj-bl-code.unfiled { background:none; }
                 .pj-bl-t { flex:1; min-width:0; }
                 .pj-bl-kind { font-size:10px; padding:0 5px; border-radius:8px; opacity:.85; white-space:nowrap;
@@ -1513,10 +1572,6 @@
                    row. The sentence moved into the hover. */
                 .pj-bl-badge.filed { color:var(--vscode-charts-yellow,#d7ba7d); opacity:1; font-size:13px; }
                 .pj-bl-badge.filed:hover { outline:1px solid var(--vscode-focusBorder); }
-                /* The code opens the line, so it says so by behaving like a link. */
-                .pj-bl-code.open { cursor:pointer; }
-                .pj-bl-code.open:hover { outline:1px solid var(--vscode-focusBorder);
-                    color:var(--vscode-textLink-foreground); }
                 .pj-bl-row.dragging { opacity:.4; }
                 .pj-bl-row.drop-before { box-shadow:inset 0 2px 0 var(--vscode-focusBorder); }
                 .pj-bl-row.drop-after { box-shadow:inset 0 -2px 0 var(--vscode-focusBorder); }
@@ -4180,11 +4235,11 @@
         const out = [];
         if (row.parent) {
             out.push(`<button class="pj-trk-m" data-trkonly="${C.esc(row.parent)}"
-                title="${C.esc(`Part of ${row.parent} — press to see that item's history instead.`)}">↳ ${C.esc(row.parent)}</button>`);
+                title="${C.esc(`Part of: ${row.parent}`)}">↳ ${C.esc(row.parent)}</button>`);
         }
         if ((row.children || []).length) {
             out.push(`<span class="pj-trk-m"
-                title="${C.esc(`${row.children.length} item(s) are part of this one: ${row.children.join(', ')}. Each keeps its own history — closing a whole never closed its parts.`)}">⊂ ${row.children.length}</span>`);
+                title="${C.esc(`Parts: ${row.children.join(', ')}`)}">⊂ ${row.children.length}</span>`);
         }
         return out.join('');
     }
@@ -4210,6 +4265,63 @@
         ]))}">${C.esc(row.effort)} · ${row.turns}t</span>`;
     }
 
+    /**
+     * ‼️ A BACKLOG CODE, DRAWN ONE WAY, WHEREVER IT IS DRAWN (A-5).
+     *
+     * The code is the one permanent handle this whole record is indexed by, and
+     * it used to look like two different objects on two tabs of the same page:
+     * a chip on the Backlog, a dotted-underlined word here. The LOOK is one CSS
+     * rule (see the code-chip note); this is the other half — one hover, in the
+     * rich panel, carrying THE ITEM ITSELF, because the question somebody asks
+     * of a code they do not recognise is "what was this again".
+     *
+     * `hint` is the only part that differs between views, and it has to: the
+     * code opens the backlog line on Items and narrows the list on Timeline and
+     * Gaps. A hover that said the same sentence on all four would be the
+     * furniture this page is trying to get rid of.
+     */
+    function trkCodeHtml(row, o) {
+        const opt = o || {};
+        const full = row.text || '';
+        const head = window.AFTip.lines([
+            `${row.code}${row.area ? ' · ' + row.area : ''}${row.state ? ' · ' + row.state : ''}`,
+            full ? window.AFTip.sizeNote(full) : 'No longer in the backlog — the code was removed or renamed',
+            opt.hint || ''
+        ]);
+        const btn = `<button class="pj-trk-code" ${opt.attrs || ''}`
+            // With no words there is no panel (AFTip returns the trigger alone),
+            // so the figures fall back to a native title rather than vanishing.
+            + `${full ? '' : ` title="${C.esc(head)}"`}>${C.esc(row.code)}</button>`;
+        // layout class first, positioning second — the order every other
+        // caller on this page uses, and the one its tests read
+        return window.AFTip.wrap(btn, head, full, `${opt.cls ? opt.cls + ' ' : ''}tip-block`);
+    }
+
+    /**
+     * ‼️ A SESSION ID IS A DOOR (A-5), AND ONE DOOR ON EVERY VIEW.
+     *
+     * It sat on two views as a piece of text with the whole session described in
+     * a native tooltip — the one thing a reader wants from a session id, the
+     * transcript, was the one thing it did not do, while the turn chips beside it
+     * did. Here it opens at the given moment on both.
+     *
+     * ‼️ THE FIGURES SURVIVE A MISSING BODY. `AFTip.wrap` hands the trigger back
+     * untouched when there is no text to show, which quietly drops a hover the
+     * caller never wrote as a `title` — so the title is written when, and only
+     * when, there will be no panel.
+     */
+    function trkSidHtml(o) {
+        const head = window.AFTip.lines(o.figures || []);
+        const body = String(o.title || o.body || '').trim();
+        const attrs = o.file
+            ? ` data-trackturn="${C.esc(o.file)}" data-trackts="${o.ts || 0}"`
+            : '';
+        const tag = o.file ? 'button' : 'code';
+        const trigger = `<${tag} class="pj-trk-sid"${attrs}`
+            + `${body ? '' : ` title="${C.esc(head)}"`}>${C.esc(o.short || '')}</${tag}>`;
+        return window.AFTip.wrap(trigger, head, body, 'tip-block');
+    }
+
     function trkTextHtml(row) {
         const full = row.text || '(no longer in the backlog — the code was removed or renamed)';
         const open = trkOpen.has(row.code);
@@ -4220,7 +4332,10 @@
             : '';
         return window.AFTip.wrap(
             `<span class="pj-trk-words">${C.esc(body)}${more}</span>`,
-            `${row.code} · ${window.AFTip.sizeNote(full)}`, full, 'trk-words');
+            `${row.code} · ${window.AFTip.sizeNote(full)}`,
+            // Opened, the row already IS the whole item; a panel repeating it
+            // under the pointer is the hover this page is meant to be rid of.
+            open ? '' : full, 'trk-words tip-block');
     }
 
     function trkItemHtml(d, row, events) {
@@ -4238,10 +4353,14 @@
             data-trkrow data-code="${C.esc(row.code)}"
             data-line="${row.line || 0}" ${trkCtx(row)}>
             <div class="pj-trk-head">
-                <code class="pj-trk-code" data-trkgo="${C.esc(row.code)}"
-                    title="${C.esc(`${row.code} — permanent, quote it at an agent. Click to open the backlog AT THIS ITEM'S LINE in ${blOpenModeName()}. ${window.AFCtx.HINT}`)}">${C.esc(row.code)}</code>
+                ${trkCodeHtml(row, {
+            attrs: `data-trkgo="${C.esc(row.code)}"`,
+            hint: `Opens the backlog at line ${row.line || '?'}`
+        })}
                 <span class="pj-trk-state s-${C.esc(state)}"
-                    title="${C.esc(`Its state in the backlog right now — the checkbox decides that, the ledger only says how it got there.${row.section ? '\nSection: ' + row.section : ''}`)}">${C.esc(state)}</span>
+                    title="${C.esc(window.AFTip.lines([
+            `State: ${state}`, row.section ? `Section: ${row.section}` : ''
+        ]))}">${C.esc(state)}</span>
                 ${trkKindsHtml(row)}
                 <span class="pj-trk-sum" title="${C.esc(window.AFTip.lines([
             `Sessions: ${sessions}`,
@@ -4250,14 +4369,18 @@
             row.lastTs ? `Last: ${window.AFTime.stamp(row.lastTs)}` : '',
             span ? `Span: ${span}` : '',
             sessions ? `Turns per session: ${(turns / sessions).toFixed(1)}` : ''
-        ]))}>⊞ ${sessions} · ⤳ ${turns}${span ? ' · ' + span : ''}</span>
+        ]))}">⊞ ${sessions} · ⤳ ${turns}${span ? ' · ' + span : ''}</span>
                 ${trkTextHtml(row)}
                 <span class="grow"></span>
                 ${trkEffortHtml(d, row)}
                 ${trkFamilyHtml(row)}
-                ${row.backfilled ? `<span class="pj-trk-m" title="${C.esc('Part of this history was reconstructed afterwards from a transcript rather than watched happening. Those rows are marked guess on the runs below.')}">⚕</span>` : ''}
-                ${row.doubtful ? `<span class="pj-trk-doubt" title="${C.esc('At least one attribution here is a best effort — the run that carries it says why.')}">uncertain</span>` : ''}
-                ${row.stamp ? `<code class="pj-trk-stamp" title="${C.esc(`Closed at ${row.stamp} — the same stamp is written on the backlog line, so it is there with no extension running.${row.closedTs ? '\n' + window.AFTime.full(row.closedTs) : ''}`)}">${C.esc(row.stamp)}</code>` : ''}
+                ${row.backfilled ? `<span class="pj-trk-m" title="${C.esc('Reconstructed: some rows below are marked guess')}">⚕</span>` : ''}
+                ${row.doubtful ? `<span class="pj-trk-doubt" title="${C.esc('Uncertain: the run that carries it says why')}">uncertain</span>` : ''}
+                ${row.stamp ? `<code class="pj-trk-stamp" title="${C.esc(window.AFTip.lines([
+            `Closed at: ${row.stamp}`,
+            row.closedTs ? window.AFTime.full(row.closedTs) : '',
+            row.stampCarried ? 'Carried from the last session that worked it — the closing click itself was made in the panel, in no session' : ''
+        ]))}">${C.esc(row.stamp)}${row.stampCarried ? '~' : ''}</code>` : ''}
                 <button class="pj-bl-act" data-trkgo="${C.esc(row.code)}"
                     title="Open the backlog at this item's line">↗</button>
                 <button class="pj-bl-act" data-trkcopy="${C.esc(row.code)}"
@@ -4284,7 +4407,7 @@
         // ‼️ The session's COST is stated as the session's, never divided by the
         // item: one run touches many codes and a per-item share of it would be a
         // figure with a denominator nobody can defend.
-        const head = window.AFTip.lines([
+        const headFigures = [
             `Session: ${run.session}`,
             info.agent ? `Agent: ${info.agent}` : (run.agent ? `Agent: ${run.agent}` : ''),
             (info.models || []).length ? `Model: ${info.models.join(', ')}` : '',
@@ -4293,17 +4416,31 @@
             first ? `Worked here: ${window.AFTime.stamp(first)}` : '',
             trkSpan(first, last) ? `Over: ${trkSpan(first, last)}` : '',
             typeof info.cost === 'number' && info.cost > 0
-                ? `Session cost: $${info.cost.toFixed(2)} — the whole run, not this item's share` : '',
-            info.title ? '' : '',
-            window.AFSessionCtx.HINT
-        ]);
+                ? `Session cost: $${info.cost.toFixed(2)} — the whole run, not this item's share` : ''
+        ];
         return `<div class="pj-trk-run"
             ${window.AFSessionCtx.row({ sessionId: run.session, file: run.file, agentName: run.agent, title: info.title })}>
-            <code class="pj-trk-sid" title="${C.esc(head)}">${C.esc(run.short)}</code>
+            ${/* ‼️ THE ID IS A DOOR, NOT A LABEL (A-5). It sat there as a piece of
+                  text with the whole session described in a native tooltip: the
+                  one thing a reader wants from a session id — the transcript —
+                  was the one thing it did not do, while the turn chips beside it
+                  did. It opens at the first moment this item was worked here. */''}
+            ${trkSidHtml({
+                short: run.short, session: run.session, file: run.file, ts: first,
+                title: info.title, figures: headFigures
+            })}
             ${turns.length
                 ? turns.map(t => `<button class="pj-trk-turn" data-trackturn="${C.esc(run.file)}" data-trackts="${t.ts}"
-                    title="${C.esc(`Open this transcript at turn ${t.n} — ${window.AFTime.stamp(t.ts)}`)}">#${t.n}</button>`).join('')
-                : `<span class="muted small" title="${C.esc('The session is known; which turn of it is not. That is what the turn doubt means — it is not a missing link, it is an honest one.')}">no turn recorded</span>`}
+                    title="${C.esc(window.AFTip.lines([
+                    `Turn ${t.n}${info.turns ? ` of ${info.turns}` : ''} · ${window.AFTime.stamp(t.ts)}`,
+                    // ‼️ WHY IT SO OFTEN SAYS #1, ANSWERED ON THE CHIP. A turn is
+                    // one thing the USER said and everything the agent did about
+                    // it, so a session given a single long instruction and left
+                    // to run for hours is honestly one turn. Without this the
+                    // number reads as a placeholder nobody filled in.
+                    'A turn is one instruction and everything done about it'
+                ]))}">#${t.n}</button>`).join('')
+                : `<span class="muted small" title="Turn: not recorded">no turn recorded</span>`}
             <span class="muted small" title="${C.esc(window.AFTime.tip(first, 'First record in this session'))}">${C.esc(window.AFTime.clock(first))}</span>
             <span class="muted small">${C.esc(run.agent || info.agent || '?')}</span>
             ${events.map(e => trkEvHtml(e)).join('')}
@@ -4317,7 +4454,7 @@
      *  noticed (a box ticked in Obsidian, whose real moment nobody recorded). */
     function trkLooseHtml(e) {
         return `<div class="pj-trk-run loose">
-            <code class="pj-trk-sid" title="${C.esc('No session — this did not happen inside a conversation, so there is no transcript to open.')}">no session</code>
+            <code class="pj-trk-sid" title="${C.esc(`Recorded by: ${e.by} · no session`)}">no session</code>
             <span class="muted small" title="${C.esc(window.AFTime.tip(e.ts, e.uncertain === 'none' ? 'Noticed' : 'Happened'))}">${C.esc(window.AFTime.stamp(e.ts))}${e.uncertain === 'none' ? ' noticed' : ''}</span>
             ${trkEvHtml(e)}
             ${e.note ? `<span class="muted small">${C.esc(e.note)}</span>` : ''}
@@ -4331,9 +4468,11 @@
      * placeholder on the rest is a column of nothing.
      */
     function trkKindsHtml(row) {
+        // The figure, not the explanation: "the same colour the Backlog gives
+        // it" was a sentence repeated on every chip of every row, which is the
+        // definition of furniture (A-5). The colour says it without words.
         return (row.kinds || []).map(k =>
-            `<span class="pj-trk-kind t-${C.esc(k)}"
-                title="${C.esc(`Work type: ${k} — the same tag, and the same colour, the Backlog tab gives it.`)}">${C.esc(k)}</span>`
+            `<span class="pj-trk-kind t-${C.esc(k)}" title="${C.esc(`Work type: ${k}`)}">${C.esc(k)}</span>`
         ).join('');
     }
 
@@ -4365,16 +4504,30 @@
 
     /** One event, as a chip. The note rides in the hover rather than on the row:
      *  a run with five events would otherwise be five sentences wide. */
-    function trkEvHtml(e) {
-        const def = TRK_EVENTS.find(x => x.id === e.event) || { tip: '' };
-        const src = TRK_SOURCES.find(x => x.id === e.by);
-        return `<span class="pj-trk-ev e-${C.esc(e.event)}" title="${C.esc(window.AFTip.lines([
+    /**
+     * ‼️ THE ROW SAYS WHAT IS TRUE OF THIS ROW, AND NOTHING ELSE (A-5).
+     *
+     * This chip used to carry three paragraphs in a native `title`: the record's
+     * own figures, then the definition of the event, then the definition of the
+     * source — the same two paragraphs on every one of two hundred chips, in the
+     * platform tooltip that repeats and then cuts. Both definitions are already
+     * stated ONCE, on the filter chips above the list (TRK_EVENTS / TRK_SOURCES),
+     * which is where a vocabulary belongs.
+     *
+     * What is left is this record's own: figures in the native tooltip, and the
+     * one thing here that is genuinely TEXT — the note somebody wrote — in the
+     * rich panel, measured against the row (docs/CONVENTIONS.md → Hover).
+     */
+    function trkEvHtml(e, cls) {
+        const head = window.AFTip.lines([
             `${e.event} · ${window.AFTime.stamp(e.ts)}`,
             `Recorded by: ${e.by}`,
-            e.note ? `Note: ${e.note}` : '',
-            e.uncertain ? `Uncertain: ${e.uncertain}` : '',
-            '', def.tip, src ? src.tip : ''
-        ]))}">${C.esc(TRK_EVENT_ICON[e.event] || '·')} ${C.esc(e.event)}</span>`;
+            e.uncertain ? `Uncertain: ${e.uncertain}` : ''
+        ]);
+        const chip = `<span class="pj-trk-ev e-${C.esc(e.event)}"`
+            + `${e.note ? '' : ` title="${C.esc(head)}"`}>`
+            + `${C.esc(TRK_EVENT_ICON[e.event] || '·')} ${C.esc(e.event)}</span>`;
+        return window.AFTip.wrap(chip, head, e.note || '', `${cls ? cls + ' ' : ''}tip-block`);
     }
 
     // ---- Timeline ---------------------------------------------------------
@@ -4398,21 +4551,23 @@
             // title, which would repeat the row and then cut (CONVENTIONS →
             // Hover). Both of the row's long columns carry the whole item.
             const words = x.row.text || '';
-            const codeBtn = T.wrap(
-                `<button class="pj-trk-code" data-trkonly="${C.esc(x.row.code)}">${C.esc(x.row.code)}</button>`,
-                T.lines([
-                    `${x.row.code}${x.row.area ? ' · ' + x.row.area : ''}${x.row.state ? ' · ' + x.row.state : ''}`,
-                    words ? T.sizeNote(words) : '',
-                    'Press to see only this item’s history'
-                ]), words, 'tl-code');
+            const codeBtn = trkCodeHtml(x.row, {
+                attrs: `data-trkonly="${C.esc(x.row.code)}"`,
+                hint: 'Shows only this item’s history',
+                cls: 'tl-code'
+            });
             const note = e.note || words;
             return head + `<div class="pj-trk-tl e-${C.esc(e.event)}" ${trkCtx(x.row)} data-trkrow data-code="${C.esc(x.row.code)}" data-line="${x.row.line || 0}">
                 <span class="pj-trk-tltime" title="${C.esc(window.AFTime.tip(e.ts, 'Recorded'))}">${C.esc(window.AFTime.clock(e.ts))}</span>
-                ${trkEvHtml(e)}
+                ${trkEvHtml(e, 'tl-ev')}
                 ${codeBtn}
                 ${e.session
                     ? `<button class="pj-trk-turn" data-trackturn="${C.esc((x.run && x.run.file) || '')}" data-trackts="${e.ts}"
-                        title="${C.esc(`Open ${e.session} at ${e.turn ? 'turn ' + e.turn : 'this moment'}`)}">${C.esc(e.short || '')}${e.turn ? ' #' + e.turn : ''}</button>`
+                        title="${C.esc(window.AFTip.lines([
+                        `Session: ${e.session}`,
+                        e.turn ? `Turn: ${e.turn}` : 'Turn: not recorded',
+                        `Opens the transcript at ${window.AFTime.stamp(e.ts)}`
+                    ]))}">${C.esc(e.short || '')}${e.turn ? ' #' + e.turn : ''}</button>`
                     : '<span class="pj-trk-turn" style="visibility:hidden"></span>'}
                 <span class="pj-trk-tlwho" title="${C.esc(e.agent ? 'Agent: ' + e.agent : 'Recorded by: ' + e.by)}">${C.esc(e.agent || e.by)}</span>
                 ${T.wrap(`<span class="pj-trk-tlnote">${C.esc(note)}</span>`,
@@ -4420,9 +4575,12 @@
                     ? `The note on this record · ${T.sizeNote(e.note)}`
                     : `${x.row.code} · ${T.sizeNote(words)}`,
                 e.note && words ? e.note + '\n\n— the item —\n\n' + words : (e.note || words),
-                // last column of the row: it opens back across the row rather
-                // than off the right edge of the panel (see common.css)
-                'tl-note tip-right')}
+                // ‼️ Measured against the ROW, not against this column. It is the
+                // last one on the line, so anchoring it to the trigger opened it
+                // hard against the right edge of the panel; `tip-right` half-fixed
+                // that by flipping the anchor, and `tip-block` finishes it — every
+                // hover on this row now opens in the same place (see common.css).
+                'tl-note tip-block')}
             </div>`;
         }).join('');
         return `<div class="pj-trk" style="${trkTlWidths(shown)}">${rows}
@@ -4502,19 +4660,23 @@
             return `<div class="pj-trk-item ${closed.length ? 'st-done' : 'st-open'}"
                 ${g.session ? window.AFSessionCtx.row({ sessionId: g.session, file: g.file, agentName: g.agent, title: info.title }) : ''}>
                 <div class="pj-trk-head">
-                    <code class="pj-trk-sid" title="${C.esc(window.AFTip.lines([
-                g.session ? `Session: ${g.session}` : 'No session — panel clicks and outside edits',
-                info.title ? `Title: ${info.title}` : '',
-                info.agent || g.agent ? `Agent: ${info.agent || g.agent}` : '',
-                (info.models || []).length ? `Model: ${info.models.join(', ')}` : '',
-                info.turns ? `Session turns: ${info.turns}` : '',
-                g.turns.size ? `Turns that touched the backlog: ${g.turns.size}`
-                    + (info.turns ? ` (${Math.round(g.turns.size / info.turns * 100)}%)` : '') : '',
-                `Codes touched: ${codes.length}`,
-                closed.length ? `Closed here: ${closed.map(c => c.row.code).join(', ')}` : '',
-                typeof info.cost === 'number' && info.cost > 0 ? `Session cost: $${info.cost.toFixed(2)}` : '',
-                g.session ? window.AFSessionCtx.HINT : ''
-            ]))}">${C.esc(g.short)}</code>
+                    ${/* the id opens the transcript here too — one behaviour for
+                          one thing, on every view of this page (A-5) */''}
+                    ${trkSidHtml({
+                short: g.short, session: g.session, file: g.file, ts: g.first,
+                title: info.title,
+                figures: [
+                    g.session ? `Session: ${g.session}` : 'No session',
+                    info.agent || g.agent ? `Agent: ${info.agent || g.agent}` : '',
+                    (info.models || []).length ? `Model: ${info.models.join(', ')}` : '',
+                    info.turns ? `Session turns: ${info.turns}` : '',
+                    g.turns.size ? `Turns that touched the backlog: ${g.turns.size}`
+                        + (info.turns ? ` (${Math.round(g.turns.size / info.turns * 100)}%)` : '') : '',
+                    `Codes touched: ${codes.length}`,
+                    closed.length ? `Closed here: ${closed.map(c => c.row.code).join(', ')}` : '',
+                    typeof info.cost === 'number' && info.cost > 0 ? `Session cost: $${info.cost.toFixed(2)}` : ''
+                ]
+            })}
                     <span class="muted small">${C.esc(g.agent || '—')}</span>
                     <span class="muted small" title="${C.esc(window.AFTime.tip(g.first, 'First backlog record in this session'))}">${C.esc(window.AFTime.stamp(g.first))}</span>
                     <span class="pj-trk-sum">⤳ ${g.turns.size || '—'}${info.turns ? ' of ' + info.turns : ''} turns · ${codes.length} code(s)</span>
@@ -4531,16 +4693,16 @@
                 const did = c.events.some(e => e.event === 'done') ? 'done'
                     : c.events.some(e => e.event === 'cancelled') ? 'cancelled'
                         : c.events.some(e => e.event === 'doing') ? 'doing' : '';
+                const chipHead = window.AFTip.lines([
+                    c.row.code + (c.row.state ? ' · ' + c.row.state : ''),
+                    'In this session: ' + c.events.map(e => e.event).join(', '),
+                    c.row.text ? window.AFTip.sizeNote(c.row.text) : ''
+                ]);
                 return window.AFTip.wrap(
-                    `<button class="pj-trk-scode${did ? ' c-' + did : ''}" data-trkonly="${C.esc(c.row.code)}">${C.esc(c.row.code)}
+                    `<button class="pj-trk-scode${did ? ' c-' + did : ''}" data-trkonly="${C.esc(c.row.code)}"${c.row.text ? '' : ` title="${C.esc(chipHead)}"`}>${C.esc(c.row.code)}
                         <span class="pj-trk-scodee">${c.events.map(e => C.esc(TRK_EVENT_ICON[e.event] || '·')).join('')}</span>
                     </button>`,
-                    window.AFTip.lines([
-                        c.row.code + (c.row.state ? ' · ' + c.row.state : ''),
-                        'In this session: ' + c.events.map(e => e.event).join(', '),
-                        c.row.text ? window.AFTip.sizeNote(c.row.text) : ''
-                    ]),
-                    c.row.text || '');
+                    chipHead, c.row.text || '', 'tip-block');
             }).join('')}
                 </div>
             </div>`;
@@ -4594,12 +4756,12 @@
                 <div class="pj-card-h">No history at all — <span class="gp-n">${untracked.length}</span></div>
                 ${untracked.length
                 ? `<div class="pj-trk-codes">${untracked.map(u => window.AFTip.wrap(
-                    `<button class="pj-trk-scode c-gap" data-trkgo="${C.esc(u.code)}">${C.esc(u.code)}<span class="pj-trk-scodee">${C.esc(u.state === 'done' ? '✓' : u.state === 'cancelled' ? '✕' : '·')}</span></button>`,
+                    `<button class="pj-trk-scode c-gap" data-trkgo="${C.esc(u.code)}"${u.text ? '' : ` title="${C.esc(`${u.code} · ${u.state}${u.area ? ' · ' + u.area : ''} · nothing recorded`)}"`}>${C.esc(u.code)}<span class="pj-trk-scodee">${C.esc(u.state === 'done' ? '✓' : u.state === 'cancelled' ? '✕' : '·')}</span></button>`,
                     window.AFTip.lines([
                         `${u.code} · ${u.state}${u.area ? ' · ' + u.area : ''}`,
                         'Nothing recorded against it · press to open the backlog at its line',
                         u.text ? window.AFTip.sizeNote(u.text) : ''
-                    ]), u.text || '')).join('')}</div>
+                    ]), u.text || '', 'tip-block')).join('')}</div>
                     <div class="pj-row">
                         <button data-act="trkFill" title="Search every transcript for these codes and show what could be reconstructed. Preview first; nothing is written until you say so.">⚕ Reconstruct what can be found</button>
                         <span class="muted small">a clue or nothing — an item nobody ever quoted stays blank</span>
@@ -4634,8 +4796,16 @@
                 ${looses.length
                 ? `<p class="small">A click in this panel, or a box ticked in Obsidian. Real, and deliberately
                         not given a session: nothing was running, so there is no transcript these lead to.</p>
+                    ${/* ‼️ The code here was the one on the whole page with NO
+                          hover at all — the view whose entire job is to explain
+                          what is missing left the reader unable to see WHICH
+                          item was missing it (A-5). Same chip, same panel, same
+                          behaviour as every other view. */''}
                     ${looses.slice(0, 40).map(x => `<div class="pj-trk-run loose">
-                        <button class="pj-trk-code" data-trkonly="${C.esc(x.row.code)}">${C.esc(x.row.code)}</button>
+                        ${trkCodeHtml(x.row, {
+                    attrs: `data-trkonly="${C.esc(x.row.code)}"`,
+                    hint: 'Shows only this item’s history'
+                })}
                         ${trkEvHtml(x.ev)}
                         <span class="muted small">${C.esc(window.AFTime.stamp(x.ev.ts))}${x.ev.uncertain === 'none' ? ' noticed' : ''}</span>
                         <span class="muted small">${C.esc(x.ev.note || '')}</span>

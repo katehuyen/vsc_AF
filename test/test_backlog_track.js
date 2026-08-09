@@ -86,9 +86,46 @@ const RECORDS = [
     ]);
     ok('an item reopened and not closed again has no closing stamp',
         T.closingStamp(T.summarizeCode('K-8', reopenedOnly)) === undefined);
-    ok('a closing event with no session gets no stamp — a pointer to nowhere is worse than none',
+    ok('a closing event with no session and no history before it gets no stamp — '
+        + 'a pointer to nowhere is worse than none',
         T.closingStamp(T.summarizeCode('K-11',
             [{ code: 'K-11', event: 'done', ts: T0, by: 'outside' }])) === undefined);
+}
+
+// ---------- ‼️ the tick that happens in no session (A-5) ----------
+//
+// Ticking the box in the Backlog panel is honestly `by: 'panel'` with no
+// session — the click happened in no conversation. But the question the stamp
+// exists to answer still HAS an answer, and the ledger is holding it: the agent
+// session that did the work minutes earlier. Measured on the real project on
+// 2026-08-10, four items closed this way had a full recorded history and no
+// stamp at all, and showed up as "no session to point at" — the record looked
+// as if it had lost the day's work.
+{
+    const worked = [
+        { code: 'K-8', event: 'doing', ts: T0, session: '3f2a1b2c-aaaa', turn: 11, agent: 'developer', by: 'agent' },
+        { code: 'K-8', event: 'touch', ts: T0 + 60000, session: '3f2a1b2c-aaaa', turn: 12, agent: 'developer', by: 'agent' },
+        { code: 'K-8', event: 'done', ts: T0 + 120000, by: 'panel' }
+    ];
+    const att = T.closingAttribution(T.summarizeCode('K-8', worked));
+    ok('the stamp is carried from the session that did the work',
+        att && att.stamp === '3f2a1b2c#12');
+    ok('…and it SAYS it was carried rather than passing itself off as observed',
+        att && att.carried === true);
+    ok('an observed closing is not marked carried',
+        T.closingAttribution(T.summarizeCode('K-8', RECORDS)).carried === false);
+
+    // ‼️ A run that started AFTER the item closed is later work on something
+    // reopened, not the thing that finished this one.
+    const later = worked.concat([
+        { code: 'K-8', event: 'touch', ts: T0 + 5 * DAY, session: 'ffff9999', turn: 2, by: 'agent' }
+    ]);
+    ok('a session that began after the close is not credited with it',
+        T.closingAttribution(T.summarizeCode('K-8', later)).stamp === '3f2a1b2c#12');
+
+    ok('the log says WHY the pointer is where it is',
+        T.renderBacklogLog({ project: 'Demo', items, records: worked })
+            .includes('[uncertain:: carried]'));
 }
 
 // ---------- turn spans ----------

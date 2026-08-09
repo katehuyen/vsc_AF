@@ -130,7 +130,7 @@ import {
     tracksFolder, writeBrief, writeProjectDoc
 } from './core/projectDocs';
 import {
-    appendTrack, backfillFromHits, closingStamp, parseBacklogLog, reconcileOutside,
+    appendTrack, backfillFromHits, closingAttribution, closingStamp, parseBacklogLog, reconcileOutside,
     readTrackFile, renderBacklogLog, summarizeCode, shortSession, trackedCodes, trackFileIn,
     TRACK_EVENTS, TRACK_LIVE_WINDOW_MS, TrackDoubt, TrackEvent, TrackRecord, TrackSource, turnSpan
 } from './core/backlogTrack';
@@ -4967,7 +4967,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             })),
                             turns: sum.turns,
                             closed: sum.closed ? trackOut(sum.closed) : null,
-                            stamp: closingStamp(sum) ?? null,
+                            stamp: closingAttribution(sum)?.stamp ?? null,
+                            /** the stamp came from the last session that WORKED
+                             *  it, because the closing tick was a panel click
+                             *  and happened in no session — see
+                             *  closingAttribution */
+                            stampCarried: closingAttribution(sum)?.carried ?? false,
                             doubtful: sum.doubtful,
                             events: sum.runs.flatMap(r => r.events).concat(sum.loose)
                                 .sort((a, b) => a.ts - b.ts).map(trackOut)
@@ -10197,7 +10202,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                  *  they trust a history. */
                 backfilled: [...sum.runs.flatMap(r => r.events), ...sum.loose].some(e => e.by === 'backfill'),
                 sources: [...new Set([...sum.runs.flatMap(r => r.events), ...sum.loose].map(e => e.by))],
-                stamp: closingStamp(sum) ?? null,
+                stamp: closingAttribution(sum)?.stamp ?? null,
+                /** ‼️ The stamp points at the last session that WORKED the item
+                 *  rather than at the closing record's own, because that record
+                 *  was a panel click and clicks happen in no session. The card
+                 *  says so rather than passing the pointer off as observed. */
+                stampCarried: closingAttribution(sum)?.carried ?? false,
                 note: notes.get(code) ?? '',
                 firstTs: sum.firstTs,
                 lastTs: sum.lastTs,

@@ -582,7 +582,9 @@ const LOG_LEGEND = (ledger: string): string => `<!-- af:backloglog — WHO OWNS 
      uncertain WHY an attribution is not sure: multi (two sessions could have
                been the caller) · none (nothing was live) · stale (the candidate
                had gone quiet) · turn (session sure, turn not) · guess
-               (reconstructed from a date, never observed)
+               (reconstructed from a date, never observed) · carried (the tick
+               itself was a click in the panel, which happens in no session, so
+               closed points at the last session that WORKED the item)
 
      An item appears here once something has happened to it. An untouched open
      item has no history and no line. -->`;
@@ -650,13 +652,18 @@ function itemBlock(item: BacklogItem, sum: TrackSummary, kept: string[]): string
     if (sum.lastTs && localDay(sum.lastTs) !== localDay(sum.firstTs)) {
         fields.push(`[last:: ${localDay(sum.lastTs)}]`);
     }
-    const stamp = closingStamp(sum);
-    if (stamp) { fields.push(`[closed:: ${stamp}]`); }
-    if (sum.doubtful) {
-        const why = [...new Set([...sum.runs.map(r => r.uncertain), ...sum.loose.map(r => r.uncertain)]
-            .filter(Boolean))].join('|');
-        fields.push(`[uncertain:: ${why}]`);
-    }
+    const att = closingAttribution(sum);
+    if (att) { fields.push(`[closed:: ${att.stamp}]`); }
+    // ‼️ `carried` rides in the field that already means "why this attribution is
+    // not certain" rather than inventing a second one. It is the ONE doubt that
+    // is derived rather than recorded: no ledger line carries it, because no
+    // ledger line is wrong — the stamp is a pointer the summary worked out (see
+    // closingAttribution).
+    const why = [...new Set([
+        ...sum.runs.map(r => r.uncertain), ...sum.loose.map(r => r.uncertain),
+        ...(att?.carried ? ['carried'] : [])
+    ].filter(Boolean))].join('|');
+    if (why) { fields.push(`[uncertain:: ${why}]`); }
 
     const lines = [`- **${item.code}** ${fields.join(' ')}`];
     for (const run of sum.runs) {
@@ -689,13 +696,56 @@ const noteOf = (events: TrackRecord[]): string => {
     return notes.length ? ` — ${notes[notes.length - 1]}` : '';
 };
 
-/** `9c4d1f2a#3` — what goes on the backlog line itself. Undefined when the
- *  closing event has no session to point at, because a stamp that points
- *  nowhere is worse than no stamp. */
-export function closingStamp(sum: TrackSummary): string | undefined {
+/** Where an item was closed — and whether that is the closing record's own
+ *  session or the one carried from the work that preceded it. */
+export interface ClosingAttribution {
+    /** `9c4d1f2a#3` — what goes on the backlog line itself. */
+    stamp: string;
+    session: string;
+    turn: number;
+    /** ‼️ The closing RECORD named no session; this points at the last one that
+     *  actually worked the code. See `closingAttribution`. */
+    carried: boolean;
+}
+
+/**
+ * ‼️ WHERE THE WORK HAPPENED, WHEN THE CLICK THAT CLOSED IT DID NOT.
+ *
+ * A tick in the Backlog panel is honestly `by: 'panel'` with no session — the
+ * click happened in no conversation, and the ledger must not pretend otherwise.
+ * But the QUESTION this stamp exists to answer ("which turn was this solved
+ * in?") still has an answer, and the ledger is already holding it: the agent
+ * session that did the work, minutes earlier, in the same project.
+ *
+ * Measured on this installation (2026-08-10): four items closed by the user in
+ * the panel — each with a full agent-recorded history — carried no stamp at all
+ * and showed up under "no session to point at", so the record looked as if it
+ * had lost today's work. The inference is made HERE, in the derived stamp, and
+ * never written back into the ledger: the ledger keeps saying the click had no
+ * session, because that is true, and `carried` says the pointer came from
+ * somewhere else, because that is also true.
+ *
+ * Only a run that had ALREADY STARTED when the item was closed can be carried.
+ * A later run is work on something reopened, not the thing that finished this.
+ */
+export function closingAttribution(sum: TrackSummary): ClosingAttribution | undefined {
     const c = sum.closed;
-    if (!c?.session || typeof c.turn !== 'number') { return undefined; }
-    return `${shortSession(c.session)}#${c.turn}`;
+    if (!c) { return undefined; }
+    if (c.session && typeof c.turn === 'number') {
+        return { stamp: `${shortSession(c.session)}#${c.turn}`, session: c.session, turn: c.turn, carried: false };
+    }
+    const before = sum.runs.filter(r => r.firstTs <= c.ts && r.turns.length);
+    const run = before[before.length - 1];
+    if (!run) { return undefined; }
+    const turn = run.turns[run.turns.length - 1];
+    return { stamp: `${shortSession(run.session)}#${turn}`, session: run.session, turn, carried: true };
+}
+
+/** `9c4d1f2a#3` — what goes on the backlog line itself. Undefined when nothing
+ *  in the whole record can name a turn, because a stamp that points nowhere is
+ *  worse than no stamp. */
+export function closingStamp(sum: TrackSummary): string | undefined {
+    return closingAttribution(sum)?.stamp;
 }
 
 /** Where the ledger lives, given the folder that holds tracks. */

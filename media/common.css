@@ -297,6 +297,23 @@ span.af-tipw { display: inline; }
    `tip-right` anchors it to the trigger's own RIGHT edge instead, so it opens
    back across the row it belongs to. */
 .af-tipw.tip-right > .af-tip { left: auto; right: 0; }
+/* ‼️ MEASURED AGAINST THE BLOCK, NOT AGAINST THE THING YOU TOUCHED.
+   `tip-right` fixes the last column of a row; this fixes everything else, and it
+   is the rule the backlog proved and every other page kept getting wrong. A
+   panel anchored to its trigger opens WHERE THE POINTER IS: hover a chip three
+   quarters of the way across a panel and a 760px box grows straight off the
+   right edge, so the half you wanted to read is the half that is not there.
+   `tip-block` makes the wrapper `position:static`, which hands the containing
+   block to the ROW or CARD the trigger sits in — so the panel opens at that
+   block's left edge, in that block's width, always in the same place whichever
+   word of the row you happened to be pointing at.
+   ‼️ THE BLOCK MUST BE `position:relative`, or this walks further up and opens
+   against the page. Every row that carries a `tip-block` says so in its own
+   rule. */
+.af-tipw.tip-block { position: static; }
+.af-tipw.tip-block > .af-tip {
+    left: 0; right: auto; width: 100%; min-width: 0; max-width: min(820px, 100%);
+}
 .af-tiph {
     display: block; margin-bottom: 6px; padding-bottom: 5px;
     font-size: 10px; opacity: .6; white-space: normal;
