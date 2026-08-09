@@ -318,12 +318,21 @@
         if (filter && !ENGINE_TERMS.includes(filter.toLowerCase())) { return ''; }
         const ready = list.filter(e => e.ready).length;
         const onPlan = list.filter(e => e.ready && e.auth.mode === 'subscription').length;
+        // ‼️ THIS IS THE SUMMARY; THE PANEL IS THE PAGE (X-14, settled
+        // 2026-08-09). The section stays because the answer belongs where
+        // somebody is already looking, but the depth — a real call with a
+        // verdict and an age on it, quota, model lists, per-engine defaults —
+        // needs a surface of its own. So the rows stay readable here and the
+        // button is the first control, not a footnote under them.
         return `
             <h2 class="cat" id="cat-engines">Engines <span class="muted small">${ready} of ${list.length} ready</span></h2>
             <p class="muted small" style="max-width:760px">Which agent CLIs this machine can actually run, and how each one is paid for.
             <b>${onPlan} of ${ready}</b> are running on a subscription rather than per token — a plan sign-in lives in the CLI's own
             credentials file and never passes through Agent Farm. A key is the other route, and it is kept in the OS keychain
             (the <b>Secrets</b> page is the full table); it is injected into an agent's environment under the exact name the engine reads.</p>
+            <div class="pj-row" style="margin:0 0 10px"><button id="openengines"
+                title="${C.esc('The Engines page: the same rows, plus a real call that proves a turn actually gets through — everything here was read off disk.')}">⚙ Open Engines</button>
+                <span class="muted small">everything below was read off disk — only a call proves it works</span></div>
             ${list.map(engineRow).join('')}`;
     }
 
@@ -621,6 +630,7 @@
         document.querySelectorAll('[data-engdocs]').forEach(b =>
             b.addEventListener('click', () =>
                 vscode.postMessage({ type: 'engineDocs', url: b.dataset.engdocs })));
+        onClick('openengines', 'openEngines');
         onClick('promptspick', 'promptsPick');
         onClick('promptsopen', 'promptsOpen');
         onClick('promptsreload', 'promptsReload');

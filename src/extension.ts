@@ -109,7 +109,8 @@ import {
     allTags, isPinned, normalizeMarks, parseTags, SessionMarks, setTags, tagsOf, togglePin
 } from './core/sessionmarks';
 import { INTERRUPT_KEY, resolveInterrupt, TermRecord } from './core/interrupt';
-import { readEngines, enginesSummary, EngineStatus } from './core/engines';
+import { readEngines, enginesSummary, EngineId, EngineStatus } from './core/engines';
+import { EngineRunner, testEngine } from './core/engineTest';
 import { QUICK_MENU, QUICK_MENU_GROUPS } from './core/quickmenu';
 import { describeOwner, mergeSessionNames, ownerOf, pidAlive, readCliSessions, sessionsDir } from './core/cliSessions';
 import { revealPath } from './core/reveal';
@@ -198,6 +199,7 @@ import { buildToolboxInventory, ToolboxInventory } from './core/toolbox';
 import { registerStudioOps } from './core/studioBridge';
 import { registerToolboxOps } from './core/toolboxBridge';
 import { ToolboxPanel } from './panels/toolboxPanel';
+import { EnginesPanel } from './panels/enginesPanel';
 import { SecretsPanel } from './panels/secretsPanel';
 import { EvalsPanel } from './panels/evalsPanel';
 import { registerTurnsOps } from './core/turns';
@@ -7052,6 +7054,60 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         hasEnv: (name: string): boolean => !!process.env[name]
     };
     const engineMatrix = (): EngineStatus[] => readEngines(engineProbe);
+
+    /**
+     * ‼️ ONE REAL TURN AGAINST AN ENGINE — the only thing that proves a call
+     * gets through, and therefore the only thing here that costs anything.
+     *
+     * `engineMatrix` reads disk; disk can say "signed in" while nothing works.
+     * Measured on this machine 2026-08-09: `codex login status` reported a live
+     * ChatGPT grant and every turn still died at the socket. So the check is a
+     * spawn, and because it spends a turn of the user's plan it is NEVER run on
+     * a timer, on page open, or by a refresh — only by the button.
+     */
+    const engineRunner: EngineRunner = (command, args, timeoutMs) =>
+        new Promise((resolve, reject) => {
+            cp.execFile(command, args, {
+                timeout: timeoutMs, windowsHide: true, shell: true,
+                // A chatty engine must not be able to blow up the host.
+                maxBuffer: 4 * 1024 * 1024
+            }, (err, stdout, stderr) => {
+                const out = String(stdout ?? '');
+                const errOut = String(stderr ?? '');
+                if (err && (err as { code?: unknown }).code === undefined && !out && !errOut) {
+                    // Could not be started at all — that IS the finding.
+                    reject(err);
+                    return;
+                }
+                const code = typeof (err as { code?: unknown })?.code === 'number'
+                    ? (err as { code: number }).code : (err ? 1 : 0);
+                resolve({ code, stdout: out, stderr: errOut });
+            });
+        });
+    /**
+     * ‼️ THE LINE IS TYPED, NOT RUN — and that `false` is the whole safety of
+     * the gesture. An install and a sign-in do exactly one thing here: they put
+     * the engine's own command in front of the user, who reads it and presses
+     * Enter. Nothing installs, signs in or spends anything on their behalf, and
+     * no credential passes through the extension. One function because it is
+     * one act; it used to be called `engineLogin` while already carrying a
+     * command that was not a login.
+     */
+    const engineTerminal = (command: string): void => {
+        const term = vscode.window.createTerminal({ name: 'Agent Farm: engine' });
+        term.show();
+        term.sendText(command, false);
+        void vscode.window.showInformationMessage(
+            `Agent Farm: "${command}" is typed into a terminal — press Enter to run it. `
+            + 'Nothing is run for you, and no credential passes through Agent Farm.');
+    };
+    const enginesPanelDeps = {
+        extensionUri: context.extensionUri,
+        engines: () => engineMatrix(),
+        test: (id: EngineId) => testEngine(id, engineRunner),
+        command: (command: string) => engineTerminal(command),
+        key: (name: string) => { SecretsPanel.compose(secretsDeps, name); }
+    };
     // One dependency object for the Toolbox page, because the page is now
     // opened from six places (the nav, the palette, and the four tool commands
     // that used to build their object out of input boxes — U-14).
@@ -12270,6 +12326,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             SecretsPanel.show(secretsDeps);
         }),
 
+        // X-14 — the engines get their own page. The Farm Settings section is
+        // the summary of it; this is where a call actually gets made.
+        vscode.commands.registerCommand('agentfarm.openEngines', () => {
+            EnginesPanel.show(enginesPanelDeps);
+        }),
+
         vscode.commands.registerCommand('agentfarm.openTurns', () => {
             TurnsPanel.show({
                 extensionUri: context.extensionUri,
@@ -13683,17 +13745,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // file), and the key route hands over to the vault's own
                     // form, which is the one surface allowed to hold a value.
                     engines: () => engineMatrix(),
-                    engineCommand: (command: string) => {
-                        const term = vscode.window.createTerminal({ name: 'Agent Farm: engine' });
-                        term.show();
-                        // `false` is the whole safety of this gesture: the line
-                        // is TYPED, not submitted, so nothing installs or signs
-                        // in until the user has read it and pressed Enter.
-                        term.sendText(command, false);
-                        void vscode.window.showInformationMessage(
-                            `Agent Farm: "${command}" is typed into a terminal — press Enter to run it. `
-                            + 'Nothing is run for you, and no credential passes through Agent Farm.');
-                    },
+                    engineCommand: (command: string) => engineTerminal(command),
+                    // ‼️ The section here is the SUMMARY; the panel is the page.
+                    // X-14 settled the placement (2026-08-09): engines get their
+                    // own surface, because interrogating a thing — is it
+                    // installed, does a call get through, what did it cost to
+                    // find out — is not what a list of `agentFarm.*` keys is for.
+                    openEngines: () => { EnginesPanel.show(enginesPanelDeps); },
                     engineKey: (name: string) => { SecretsPanel.compose(secretsDeps, name); },
                     // Which editor a .md document opens in — reports and answers
                     // (Notices, Work Queue) AND the project documents.
@@ -14852,6 +14910,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const list = id ? all.filter(e => e.id === id) : all;
                 need(!id || list.length > 0, `no engine called "${id}" — try claude, codex or gemini`);
                 return { ...enginesSummary(all), engines: list };
+            }
+        },
+        {
+            op: 'engines.test',
+            describe: '‼️ RUN ONE REAL TURN against an engine and report whether it answered — the '
+                + 'only thing that proves a call gets through. `engines.status` reads disk, and disk '
+                + 'can say "signed in" while nothing works: measured on this machine, a live ChatGPT '
+                + 'grant sat in ~/.codex/auth.json while every Codex turn died at the socket. ‼️ THIS '
+                + 'COSTS A TURN of that engine\'s plan or key, so it is never run on a schedule, on a '
+                + 'refresh or on a page open — a person or an agent asks for it, once. It uses the '
+                + 'engine\'s smallest model, a four-word prompt, and read-only sandboxing where the '
+                + 'engine offers it, so it can never touch a file. Returns ok, how long it took, and '
+                + 'the engine\'s OWN words when it failed — never an invented reason. No credential '
+                + 'is read or returned. args: id (claude | codex | gemini)',
+            handler: async (args) => {
+                const id = argStr(args, 'id').trim().toLowerCase();
+                const engine = engineMatrix().find(e => e.id === id);
+                need(!!engine, `no engine called "${id}" — try claude, codex or gemini`);
+                // Refuse rather than spend: there is nothing to call.
+                need(engine!.cli.found,
+                    `${engine!.label} is not installed — ${engine!.next}`);
+                return await testEngine(id as EngineId, engineRunner);
             }
         }
     ]);

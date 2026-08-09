@@ -1444,6 +1444,48 @@ Example: connecting the fal.ai key —
 
 The same method works for every service: `ELEVENLABS_KEY`, `N8N_TOKEN`… — whatever the name, it enters tasks as an env var and is accessible via the `{secret:NAME}` template. **Three golden rules:** never write a key to a file/prompt; if you pasted it into chat/screen, rotate it from the service panel; delete what you don't use with **Delete Secret…**.
 
+## Engines {#engines}
+
+**Looking at this as "API keys" was the wrong way to look at it.** Two of the
+three engines are not paid for with a key but with a **subscription**: Claude
+Code on a Pro/Max plan, Codex on a ChatGPT plan. Both keep their own OAuth
+grant in their own file and never hand it to Agent Farm. The only one that
+really does want a key now is Gemini — its "sign in with Google" route was
+retired in June 2026. So this is not a key screen; it answers **four
+questions** per engine:
+
+1. Is the CLI on this machine?
+2. **How** is this engine paid for?
+3. Is it signed in?
+4. What is the **one** thing to do next?
+
+No row stops at naming a state. An engine that is not installed is never told
+to sign in — the install command is on the row and **Install** is the primary
+button; the sign-in appears only once there is something to sign in to.
+
+**⚡ Test — the one thing disk cannot tell you.** Everything above is read off
+disk, and disk can say "signed in" while nothing works: on this machine
+`~/.codex/auth.json` held a live ChatGPT grant while every Codex turn died at
+the socket (`os error 10013`, local security software). No amount of reading
+files finds that; only a call does. The button runs **one real turn**: the
+engine's smallest model, a four-word prompt, and read-only sandboxing where the
+engine offers it — a health check must never be able to touch a file.
+
+**‼️ It costs a turn, so it never runs by itself.** Not on a schedule, not on
+page open, not on a refresh — only when the button is pressed. The verdict is
+cached for the life of the window and shown **with its age**: a tick from four
+hours ago is not the same claim as one from four seconds ago. On failure it
+prints the **engine's own words**, never an invented reason.
+
+No credential passes through the extension on any of these paths: the sign-in
+and install commands are **typed** into a terminal and not run; the key route
+opens the vault's own form; the docs link is `https` only. On the bridge as
+`engines.status` (reads) and `engines.test` (spends a turn, and refuses on an
+engine that is not installed).
+
+The **Engines** section in Farm Settings is the summary of this page; the depth
+is here.
+
 ## Media Production Pipeline
 
 ### 🎬 Studio — the pipeline on one page (3.30.0) {#studio}

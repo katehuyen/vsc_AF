@@ -161,8 +161,14 @@ const by = (list, id) => list.find(e => e.id === id);
     // agentfarm-dev.md: a user-triggerable function reaches the bridge in the
     // same commit as the feature, never later.
     ok('…and the bridge, in the same commit', /op: 'engines\.status'/.test(ext));
+    // ‼️ ONE function for both gestures, and both surfaces (the Settings
+    // section and the Engines panel) go through it — two copies of "write a
+    // command into a terminal" is how one of them quietly starts running it.
     ok('the install and the sign-in are terminal commands, not things the extension performs',
-        /engineCommand: \(command: string\) => \{/.test(ext) && /createTerminal/.test(ext));
+        /const engineTerminal = \(command: string\): void =>/.test(ext)
+        && /createTerminal/.test(ext)
+        && /engineCommand: \(command: string\) => engineTerminal\(command\)/.test(ext)
+        && /command: \(command: string\) => engineTerminal\(command\)/.test(ext));
     ok('‼️ …and the line is TYPED, not run — the user reads it and presses Enter',
         /term\.sendText\(command, false\)/.test(ext));
     // ‼️ An engine that is not installed cannot be signed into. The row that
@@ -179,5 +185,114 @@ const by = (list, id) => list.find(e => e.id === id);
     ok('a docs link can only be https', /\/\^https:\\\/\\\/\/\.test\(msg\.url\)/.test(panel));
 }
 
-console.log(`${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+// ---------------------------------------------------------------------------
+// X-14 phase 2 — the health check. "Ready" and "actually works" are different
+// questions, and this machine is why: ~/.codex/auth.json held a live ChatGPT
+// grant while every Codex turn died at the socket (os error 10013). No amount
+// of reading files finds that; only a call does. So what is pinned here is that
+// the call is real, that a failure quotes the ENGINE rather than inventing a
+// reason, and that nothing spends anything without being asked.
+// ---------------------------------------------------------------------------
+{
+    const { testEngine, firstFault, verdictAge } =
+        require(path.join(__dirname, '..', 'out', 'core', 'engineTest.js'));
+
+    /** A runner that answers from a script — nothing is spawned, nothing spent. */
+    const runner = (script) => {
+        const calls = [];
+        const fn = (command, args, timeoutMs) => {
+            calls.push({ command, args, timeoutMs });
+            if (script.throws) { return Promise.reject(new Error(script.throws)); }
+            return Promise.resolve({
+                code: script.code ?? 0, stdout: script.stdout ?? '', stderr: script.stderr ?? ''
+            });
+        };
+        fn.calls = calls;
+        return fn;
+    };
+    const clock = (start) => { let t = start; return () => (t += 1200); };
+
+    (async () => {
+        // ‼️ A Codex turn is proved by the stream saying so, not by exit code:
+        // the CLI exits 0 on a turn it never completed, which is exactly the
+        // shape this machine produced.
+        const good = runner({ stdout: '{"type":"thread.started"}\n{"type":"turn.completed","usage":{}}\n' });
+        const okRes = await testEngine('codex', good, clock(1000));
+        ok('a completed turn reads as ok', okRes.ok === true && okRes.id === 'codex');
+        ok('…and it is timed', okRes.ms > 0 && okRes.at > 0);
+        ok('‼️ the call is READ-ONLY and does not depend on where the editor is',
+            good.calls[0].args.includes('-s') && good.calls[0].args.includes('read-only')
+            && good.calls[0].args.includes('--skip-git-repo-check'));
+        ok('…and it is one non-interactive turn in JSONL',
+            good.calls[0].args[0] === 'exec' && good.calls[0].args.includes('--json'));
+
+        // ‼️ THE CASE THAT MADE THIS FILE: exit 0, a stream full of retries, and
+        // a turn that failed. Calling that "ready" is the whole defect.
+        const failed = runner({
+            code: 0,
+            stdout: '{"type":"turn.started"}\n'
+                + '{"type":"turn.failed","error":{"message":"stream disconnected before completion"}}\n'
+        });
+        const bad = await testEngine('codex', failed, clock(1000));
+        ok('‼️ exit 0 with a failed turn is NOT ok', bad.ok === false);
+
+        // A failure quotes the engine. An invented reason is worse than none:
+        // the whole point is that the user can act on what was actually said.
+        ok('a failure carries the engine\'s own words', /stream disconnected/.test(bad.error || ''));
+        ok('‼️ the socket refusal survives verbatim', /os error 10013/.test(firstFault(
+            'ERROR codex_api: failed to connect to websocket: IO error: An attempt was made to '
+            + 'access a socket in a way forbidden by its access permissions. (os error 10013)', '')));
+
+        // A spawn that cannot start IS the finding, not a crash.
+        const dead = await testEngine('claude', runner({ throws: 'ENOENT' }), clock(1000));
+        ok('a command that cannot be run reports that, and does not throw',
+            dead.ok === false && /could not be run/.test(dead.detail) && /ENOENT/.test(dead.error || ''));
+
+        // Claude's check is one turn on the SMALLEST model — a health check that
+        // costs a real turn must not also pick an expensive one.
+        const claude = runner({ stdout: 'OK' });
+        await testEngine('claude', claude, clock(1000));
+        ok('the cheapest model is the one asked for',
+            claude.calls[0].args.includes('--model') && claude.calls[0].args.includes('haiku'));
+
+        // ‼️ The verdict's AGE is part of the claim: a tick from four hours ago
+        // is not the same statement as one from four seconds ago.
+        ok('a verdict says how old it is', verdictAge(1000, 1000) === '0s ago'
+            && verdictAge(0, 3600000) === '1h ago' && verdictAge(0, 300000) === '5m ago');
+
+        // ---------- the panel: nothing spends anything on its own ----------
+        const fs = require('fs');
+        const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'enginesPanel.ts'), 'utf8');
+        const ext2 = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        const page = fs.readFileSync(path.join(__dirname, '..', 'media', 'engines.js'), 'utf8');
+
+        ok('‼️ the test runs from the button and from nothing else',
+            /case 'engineTest'/.test(panel)
+            // refresh and open rebuild the page out of the CACHE, never by calling
+            && !/refresh\(\)[\s\S]{0,200}this\.deps\.test\(/.test(panel)
+            && !/setInterval|setTimeout/.test(panel));
+        ok('…and a second press does not buy a second turn',
+            /this\.running\.has\(id\)/.test(panel) && /this\.running\.add\(id\)/.test(panel));
+        ok('…and a missing CLI is refused rather than spent',
+            /if \(!engine\.cli\.found\)/.test(panel));
+        ok('the verdict is cached with its own timestamp, so looking twice is free',
+            /private verdicts = new Map/.test(panel) && /verdicts: \[\.\.\.verdicts\.values\(\)\]/.test(panel));
+        ok('the page says what the button costs before it is pressed',
+            /costs a turn of your plan or key/.test(page));
+        ok('a docs link can only be https, on this panel too',
+            /\/\^https:\\\/\\\/\/\.test\(msg\.url\)/.test(panel));
+        ok('no credential is read on this path', !/vault\.get\(/.test(panel) && !/vault\.get\(/.test(page));
+
+        // agentfarm-dev.md: a user-triggerable function reaches the bridge in
+        // the SAME commit as the feature.
+        ok('‼️ the health check is on the bridge, in the same commit',
+            /op: 'engines\.test'/.test(ext2) && /COSTS A TURN/.test(ext2));
+        ok('…and the bridge refuses to spend on an engine that is not installed',
+            /need\(engine!\.cli\.found,/.test(ext2));
+        ok('the panel has a command and Settings is the summary that opens it',
+            /agentfarm\.openEngines/.test(ext2) && /openEngines: \(\) => \{ EnginesPanel\.show/.test(ext2));
+
+        console.log(`${pass} passed, ${fail} failed`);
+        process.exit(fail ? 1 : 0);
+    })();
+}

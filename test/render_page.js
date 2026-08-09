@@ -188,7 +188,16 @@ function main() {
         // it here too — the shim binds the same handlers the webview does, so a
         // variant never has to reach into the page's private state.
         if (v.act) { v.act(r); }
-        return `<h1 class="rndr-h">${v.label || v.id}</h1>\n<div class="rndr-page">${r.html()}</div>`;
+        // ‼️ `#app` ALONE WHEN IT HAS THE PAGE. The shim's `html()` concatenates
+        // every element it has ever handed out, which is right for a test asking
+        // "does this markup exist anywhere" and wrong for a picture: an element
+        // the page filled a second time drew the whole page twice, one under the
+        // other, and a reviewer would have been comparing a rendering artefact.
+        // Pages that render into slots instead (the Console) have an empty #app,
+        // and for those the concatenation is still the only way to see anything.
+        const app = r.els.app && r.els.app.innerHTML;
+        const body = app && app.trim() ? app : r.html();
+        return `<h1 class="rndr-h">${v.label || v.id}</h1>\n<div class="rndr-page">${body}</div>`;
     }).join('\n');
 
     const html = `<!doctype html>
@@ -200,10 +209,16 @@ ${css}
 body { margin: 0; padding: 0 0 60px;
     background: var(--vscode-editor-background); color: var(--vscode-foreground);
     font-family: var(--vscode-font-family); font-size: 13px; }
-.rndr-h { position: sticky; top: 0; z-index: 50; margin: 0; padding: 6px 16px;
+.rndr-h { margin: 0; padding: 6px 16px;
     font-size: 11px; font-weight: 400; letter-spacing: .08em; text-transform: uppercase;
     background: #7c3aed; color: #fff; }
 .rndr-page { padding: 12px 16px 28px; }
+/* ‼️ NOTHING STICKS IN A PHOTOGRAPH. A full-page screenshot draws a sticky or
+   fixed element AGAIN where the viewport would have ended, so a page header
+   appears a second time halfway down the picture and reads as the page having
+   rendered twice — which is a bug report about the renderer, not the page.
+   Pinning is a scrolling behaviour and there is no scrolling here. */
+.rndr-page .af-head, .rndr-page [class*="sticky"] { position: static !important; }
 </style></head>
 <body>
 ${sections}

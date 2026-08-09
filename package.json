@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.98.0",
+  "version": "3.99.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -1140,6 +1140,12 @@
         "title": "Manage Secrets (keychain vault)",
         "category": "Agent Farm",
         "icon": "$(lock)"
+      },
+      {
+        "command": "agentfarm.openEngines",
+        "title": "Open Engines (which CLI can run, and how it is paid for)",
+        "category": "Agent Farm",
+        "icon": "$(plug)"
       },
       {
         "command": "agentfarm.openTurns",

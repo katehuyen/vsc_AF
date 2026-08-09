@@ -1487,6 +1487,46 @@ API anahtarları ayar dosyalarında düz metin gezmesin (0.9.0): **Set Secret…
 
 Aynı yöntem her servis için geçerlidir: `ELEVENLABS_KEY`, `N8N_TOKEN`… — ad ne olursa görevlere env değişkeni olarak girer ve `{secret:AD}` şablonuyla erişilir. **Üç altın kural:** anahtarı asla bir dosyaya/prompt'a yazma; sohbete/ekrana yapıştırdıysan servis panelinden yenile (rotate); kullanmadığını **Delete Secret…** ile sil.
 
+## Motorlar {#engines}
+
+**Anahtar merkezli bakmak yanlış bakmaktı.** Üç motorun ikisi anahtarla değil
+**abonelikle** ödeniyor: Claude Code bir Pro/Max planıyla, Codex bir ChatGPT
+planıyla. İkisi de kendi OAuth grant'ini kendi dosyasında tutar ve Agent Farm'a
+hiç vermez. Gerçekten anahtar isteyen tek motor Gemini — "Google ile giriş"
+yolu Haziran 2026'da kapatıldığı için. Bu yüzden sayfa "API anahtarları"
+sayfası değil; motor başına **dört soruyu** yanıtlar:
+
+1. CLI bu makinede var mı?
+2. Bu motor **nasıl** ödeniyor?
+3. Giriş yapılmış mı?
+4. Yapılacak **tek şey** nedir?
+
+Hiçbir satır yalnızca durum söylemez. Kurulu olmayan bir motora "giriş yap"
+denmez — kurulum komutu satırdadır ve **Install** birincil düğmedir; giriş
+ancak girilecek bir şey varken çıkar.
+
+**⚡ Test — diskin söylemediği tek şey.** Yukarıdaki her satır diskten okunur ve
+disk "giriş yapılmış" derken hiçbir şey çalışmıyor olabilir: bu makinede
+`~/.codex/auth.json` canlı bir ChatGPT grant'i tutarken her Codex turu soket
+seviyesinde ölüyordu (`os error 10013`, yerel güvenlik yazılımı). Bunu hiçbir
+dosya okuması bulmaz; yalnız bir çağrı bulur. Test düğmesi **bir gerçek tur**
+çalıştırır: motorun en küçük modeli, dört kelimelik bir prompt, ve motorun
+sunduğu yerde salt-okunur kum havuzu — bir sağlık kontrolü dosyaya
+dokunamamalıdır.
+
+**‼️ Bu bir tur harcar, o yüzden kendiliğinden asla çalışmaz.** Zamanlamayla
+değil, sayfa açılışında değil, yenilemede değil — yalnız düğmeye basınca.
+Sonuç pencere boyunca önbellekte tutulur ve **yaşıyla** gösterilir: dört saat
+önceki bir onay, dört saniye öncekiyle aynı iddia değildir. Başarısızlıkta
+**motorun kendi sözleri** yazılır, uydurulmuş bir sebep değil.
+
+Kimlik bilgisi hiçbir yolda eklentiden geçmez: giriş ve kurulum komutları bir
+terminale **yazılır, çalıştırılmaz**; anahtar yolu kasanın kendi formunu açar;
+belge bağlantısı yalnız `https`. Köprüde `engines.status` (okur) ve
+`engines.test` (bir tur harcar, kurulu olmayan motorda reddeder).
+
+Farm Settings'teki **Engines** bölümü bu sayfanın özetidir; derinlik burada.
+
 ## Medya Üretim Hattı
 
 1.0 ile eklenti kategori değiştirdi: metin ajanların ve **medya modelleri** (görsel/video/ses) aynı zincirde çalışır — İçerik Fabrikası.

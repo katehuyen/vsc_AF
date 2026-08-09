@@ -72,6 +72,8 @@ export interface FarmSettingsDeps {
     engineCommand?(command: string): void;
     /** Hand the key route to the vault's own form, on that exact name. */
     engineKey?(name: string): void;
+    /** Open the Engines panel — the page this section is the summary of (X-14). */
+    openEngines?(): void;
 }
 
 const CONFIG_SECTION = 'agentFarm';
@@ -282,6 +284,9 @@ export class FarmSettingsPanel {
                 if (typeof msg.command === 'string' && msg.command) {
                     this.deps.engineCommand?.(msg.command);
                 }
+                break;
+            case 'openEngines':
+                this.deps.openEngines?.();
                 break;
             case 'engineKey':
                 if (typeof msg.name === 'string' && msg.name) {
