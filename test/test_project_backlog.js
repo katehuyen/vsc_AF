@@ -857,5 +857,81 @@ const FAMILY = [
         dotted.items[0].code === 'P-9.1' && !dotted.items[0].warn);
 }
 
+// ---------- gather: the parts come to the whole, the whole does not move ------
+//
+// ‼️ THE ONE THING THIS MUST NOT DO IS MOVE A HEAD. Where a family sits in the
+// queue is a decision about the WHOLE; a "tidy" that also re-prioritised it
+// would be a button nobody could press twice in a row without checking.
+{
+    // K-8 and P-12 are parts of P-5, and both are queued away from it — K-8
+    // right at the front, ahead of its own whole.
+    const FAM = [
+        '# B',
+        '',
+        '## 🎯 Queue',
+        '',
+        '1. K-8',
+        '2. P-5',
+        '3. P-5.1',
+        '4. P-12',
+        '5. P-5.2',
+        '',
+        '## P — Projects',
+        '',
+        '- [ ] P-5 the work layer',
+        '- [ ] P-5.1 projectId on four models',
+        '- [ ] P-5.2 stamping [parent:: P-12]',
+        '- [ ] P-12 orphaned projectId [parent:: P-5]',
+        '',
+        '## K — Console',
+        '',
+        '- [ ] K-8 history search [parent:: P-5]',
+        ''
+    ].join('\n');
+    ok('the fixture starts scattered',
+        B.queueOrder(B.parseBacklog(FAM).items, B.parseBacklog(FAM).queue).join()
+        === 'K-8,P-5,P-5.1,P-12,P-5.2');
+
+    const all = B.gatherFamilies(FAM);
+    ok('every part follows its whole, depth first',
+        all.ok && all.queue.join() === 'P-5,K-8,P-12,P-5.2,P-5.1');
+    ok('‼️ a part that was queued AHEAD of its whole comes back down to it — K-8 was first',
+        all.queue.indexOf('K-8') > all.queue.indexOf('P-5'));
+    ok('‼️ the wholes keep their order among themselves — P-5 still leads P-5.1',
+        all.queue.indexOf('P-5') < all.queue.indexOf('P-5.1'));
+    ok('a part two levels down rides under its own part', all.queue.join().includes('P-12,P-5.2'));
+    ok('it says how much moved', /moved/.test(all.note || ''));
+    ok('‼️ NO LINE MOVED — this writes the 🎯 block and nothing else',
+        all.text.split('\n').filter(l => /^- \[/.test(l)).join()
+        === FAM.split('\n').filter(l => /^- \[/.test(l)).join());
+
+    ok('running it again is a no-op that says so',
+        /already together/.test(B.gatherFamilies(all.text).note || ''));
+
+    // ---- one family only: everything else is left exactly where it stands ----
+    const one = B.gatherFamilies(FAM, 'P-12');
+    ok('a named family pulls only its own parts',
+        one.ok && one.queue.join() === 'K-8,P-5,P-5.1,P-12,P-5.2');
+    ok('…and says which one it was about', /P-12/.test(one.note || ''));
+    const mine = B.gatherFamilies(FAM, 'P-5');
+    ok('the whole chain comes when the head of it is named',
+        mine.queue.join() === 'P-5,K-8,P-12,P-5.2,P-5.1');
+
+    ok('a code that is not in the queue is refused by name',
+        /no backlog item with code Z-9/.test(B.gatherFamilies(FAM, 'Z-9').error || ''));
+
+    // ---- a chain that loops is survived, not hung on ----
+    const LOOP = [
+        '# B', '', '## P — P', '',
+        '- [ ] P-1 one [parent:: P-2]',
+        '- [ ] P-2 two [parent:: P-1]',
+        '- [ ] P-3 three',
+        ''
+    ].join('\n');
+    const looped = B.gatherFamilies(LOOP);
+    ok('‼️ a parent chain that loops leaves every item in the queue exactly once',
+        looped.queue.slice().sort().join() === 'P-1,P-2,P-3');
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

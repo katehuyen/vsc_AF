@@ -1,19 +1,16 @@
-import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
-import {
-    addMcpServer, copyMcpServerTo, mcpUsage, readAgentMcpServers, readServerRawDef,
-    removeMcpServer, setServerDisabled, updateMcpServer
-} from '../core/mcp';
+import { mcpUsage, readAgentMcpServers, readServerRawDef, setServerDisabled } from '../core/mcp';
 import { loadProbeCache, McpServerConfig, probeMcpServer, saveProbeCache } from '../core/mcpProbe';
-import { copySkillTo, readAgentSkills, skillUsage } from '../core/skills';
+import { readAgentSkills, skillUsage } from '../core/skills';
 import { SessionIndex } from '../core/sessions';
 import { revealPath } from '../core/reveal';
 import {
-    buildToolboxInventory, HookEntry, removeHookEntry, removeUserMcpServer, removeWithBackup,
-    scaffoldItem, setPluginEnabled, ToolboxItem, userClaudeDir, userConfigJson
+    buildToolboxInventory, setPluginEnabled, ToolboxItem, userClaudeDir, userConfigJson
 } from '../core/toolbox';
-import { probeCacheKey, resolveServerConfig } from '../core/toolboxBridge';
+import {
+    formatToolPairs, probeCacheKey, removeToolboxItem, resolveServerConfig, saveToolboxItem
+} from '../core/toolboxBridge';
 import { handleAfNav, htmlShell } from './base';
 
 /**
@@ -57,27 +54,6 @@ export interface ToolCompose {
     env?: string;
     url?: string;
     headers?: string;
-}
-
-/** `KEY=value` lines ⇄ an object. The env block an MCP server needs is a
- *  handful of pairs; a JSON box for it would be a JSON box people get wrong. */
-function parsePairs(text: string): Record<string, string> | undefined {
-    const out: Record<string, string> = {};
-    let any = false;
-    for (const line of String(text || '').split(/\r?\n/)) {
-        const t = line.trim();
-        if (!t) { continue; }
-        const eq = t.indexOf('=');
-        if (eq <= 0) { continue; }
-        out[t.slice(0, eq).trim()] = t.slice(eq + 1).trim();
-        any = true;
-    }
-    return any ? out : undefined;
-}
-function formatPairs(v: unknown): string {
-    if (!v || typeof v !== 'object') { return ''; }
-    return Object.entries(v as Record<string, unknown>)
-        .map(([k, val]) => `${k}=${String(val)}`).join('\n');
 }
 
 const USAGE_WINDOW_MS = 30 * 24 * 3600 * 1000;
@@ -214,9 +190,9 @@ export class ToolboxPanel {
                         transport: def.url ? 'http' : 'stdio',
                         command: String(def.command ?? ''),
                         args: Array.isArray(def.args) ? (def.args as unknown[]).map(String).join('\n') : '',
-                        env: formatPairs(def.env),
+                        env: formatToolPairs(def.env),
                         url: String(def.url ?? ''),
-                        headers: formatPairs(def.headers)
+                        headers: formatToolPairs(def.headers)
                     }
                 });
                 break;
@@ -294,38 +270,12 @@ export class ToolboxPanel {
             `Remove ${item.kind} "${item.name}" from ${where}? A backup copy is kept next to it (.afbak).`,
             { modal: true }, 'Remove');
         if (ok !== 'Remove') { return; }
-        let done = false;
-        switch (item.kind) {
-            case 'skill':
-                done = !!item.dir && removeWithBackup(item.dir);
-                break;
-            case 'subagent':
-            case 'command':
-            case 'style':
-                done = removeWithBackup(item.source);
-                break;
-            case 'mcp':
-                if (item.scope === 'user') {
-                    done = removeUserMcpServer(item.name, this.deps.home);
-                } else {
-                    const agent = this.agentById(item.agentId ?? '');
-                    const def = agent ? readAgentMcpServers(agent).find(s => s.name === item.name) : undefined;
-                    done = !!def && removeMcpServer(def);
-                }
-                break;
-            case 'hook': {
-                const d = item.detail as { event?: string; matcher?: string; command?: string };
-                done = !!d.event && !!d.command && removeHookEntry({
-                    event: d.event, matcher: d.matcher ?? '', command: d.command, source: item.source
-                } as HookEntry);
-                break;
-            }
-            default:
-                this.warn(`${item.kind} entries are not removable from here.`);
-                return;
-        }
-        if (done) { this.changed(); }
-        else { this.warn(`could not remove "${item.name}" — see its source file.`); }
+        // ‼️ The modal is the PANEL's half of this and stays here (a page-side
+        // warning can be missed while the focus is elsewhere — docs/CONVENTIONS).
+        // WHAT actually goes is decided in the one place both this page and the
+        // bridge call, so the two can never remove different things.
+        const res = removeToolboxItem(item, this.deps.getAgents(), this.deps.home);
+        if (res.ok) { this.changed(); } else { this.warn(res.error ?? `could not remove "${item.name}".`); }
     }
 
     /** A refusal the FORM shows, in the form. */
@@ -336,105 +286,30 @@ export class ToolboxPanel {
     /**
      * The one write behind every "make a tool" route.
      *
-     * Three kinds scaffold a markdown file (skill · subagent · command) and one
-     * edits a JSON entry (mcp). What the form can state that no chain of boxes
-     * could: an MCP server's `args`, its `env` and its `headers` — the fields
-     * that decide whether the server it just wrote can actually authenticate.
+     * ‼️ THE COMPOSITION LIVES IN core/toolboxBridge.ts, NOT HERE (B-2). It used
+     * to live in this method alone, which is exactly why an agent could not
+     * install a skill or write an MCP server without being told to open this
+     * page by hand: the bridge had nothing to call. What stays here is the two
+     * things only a panel can do — print the refusal INSIDE the form next to the
+     * button that was pressed, and open the file that was just scaffolded so the
+     * instructions can be written straight away.
      */
     private async saveTool(raw: Record<string, unknown>): Promise<void> {
         const s = (k: string) => String(raw[k] ?? '').trim();
-        const kind = s('kind');
-        const mode = s('mode') || 'new';
-        const name = s('name');
-        if (!name) { return this.say('It needs a name — that is what claude loads it by.'); }
-
-        if (kind === 'skill' || kind === 'subagent' || kind === 'command') {
-            if (mode === 'copy') {
-                const from = this.skillNode(s('agentId'), name);
-                const target = this.agentById(s('target'));
-                if (!from) { return this.say('That skill is no longer where it was — refresh the page.'); }
-                if (!target) { return this.say('Pick the agent it is copied to.'); }
-                try { copySkillTo(from.skill, target); } catch (e) {
-                    return this.say((e as Error).message ?? String(e));
-                }
-                this.changed();
-                return this.say(`Copied to ${target.name}.`, true);
-            }
-            const agent = s('agentId') ? this.agentById(s('agentId')) : undefined;
-            if (s('agentId') && !agent) { return this.say('That agent is gone — pick another scope.'); }
-            try {
-                const claudeDir = agent ? path.join(agent.dir, '.claude') : userClaudeDir(this.deps.home);
-                const file = scaffoldItem(kind, claudeDir, name, s('description'));
-                this.changed();
-                this.say(`Created — ${path.basename(file)} is open for the instructions.`, true);
-                void vscode.window.showTextDocument(vscode.Uri.file(file));
-            } catch (e) {
-                this.say((e as Error).message ?? String(e));
-            }
-            return;
-        }
-
-        if (kind !== 'mcp') { return; }
-
-        if (mode === 'copy') {
-            const from = this.mcpNode(s('agentId'), name);
-            const target = this.agentById(s('target'));
-            if (!from) { return this.say('That server is no longer where it was — refresh the page.'); }
-            if (!target) { return this.say('Pick the agent it is copied to.'); }
-            const file = copyMcpServerTo(from.server, target);
-            if (!file) { return this.say('Could not read the server definition to copy it.'); }
-            this.changed();
-            return this.say(`Copied to ${target.name} (${path.basename(file)}).`, true);
-        }
-
-        // ‼️ AN EDIT KEEPS EVERYTHING IT WAS NOT ASKED ABOUT. The old editor
-        // read the definition, replaced `command`+`args` (or `url`) from one
-        // text box and wrote the object back — so any key it had no question
-        // for survived by luck. Here the untouched keys are carried over
-        // explicitly, and the ones the form owns are rewritten.
-        const http = s('transport') === 'http';
-        const def: Record<string, unknown> = {};
-        if (mode === 'edit') {
-            const from = this.mcpNode(s('agentId'), name);
-            if (!from) { return this.say('That server is no longer where it was — refresh the page.'); }
-            const prev = readServerRawDef(from.server) ?? {};
-            for (const [k, v] of Object.entries(prev)) {
-                if (['command', 'args', 'env', 'url', 'headers', 'type'].indexOf(k) < 0) { def[k] = v; }
-            }
-        }
-        if (http) {
-            if (!s('url')) { return this.say('An http server needs its URL.'); }
-            def.type = 'http';
-            def.url = s('url');
-            const headers = parsePairs(s('headers'));
-            if (headers) { def.headers = headers; }
-        } else {
-            if (!s('command')) { return this.say('A stdio server needs the command that starts it.'); }
-            def.command = s('command');
-            const args = s('args').split(/\r?\n/).map(x => x.trim()).filter(Boolean);
-            if (args.length) { def.args = args; }
-            const env = parsePairs(s('env'));
-            if (env) { def.env = env; }
-        }
-
-        if (mode === 'edit') {
-            const from = this.mcpNode(s('agentId'), name);
-            if (!from) { return this.say('That server is no longer where it was — refresh the page.'); }
-            if (!updateMcpServer(from.server, def)) {
-                return this.say('Could not update it — the source file is unreadable or the entry is gone.');
-            }
-            this.changed();
-            return this.say(`"${name}" updated — a one-time .afbak backup is kept. Restart the agent's sessions to load it.`, true);
-        }
-
-        const agent = this.agentById(s('agentId'));
-        if (!agent) { return this.say('An MCP server belongs to an agent — pick which one.'); }
-        if (readAgentMcpServers(agent).some(x => x.name === name)) {
-            return this.say(`${agent.name} already has a server called "${name}".`);
-        }
-        const file = addMcpServer(agent, name, def);
+        const res = saveToolboxItem({
+            kind: s('kind'), mode: s('mode') || 'new', agentId: s('agentId'),
+            name: s('name'), description: s('description'), target: s('target'),
+            transport: s('transport'), command: s('command'), args: s('args'),
+            env: s('env'), url: s('url'), headers: s('headers')
+        }, this.deps.getAgents(), this.deps.home);
+        if (!res.ok) { return this.say(res.error ?? 'Could not write it.'); }
         this.changed();
-        this.say(`"${name}" added to ${path.basename(file)}. Restart the agent's sessions to load it.`, true);
+        this.say(res.note ?? 'Done.', true);
+        // A scaffolded markdown file is empty on purpose — the next thing anybody
+        // does with it is write the instructions, so it opens.
+        if (res.file && s('kind') !== 'mcp' && (s('mode') || 'new') === 'new') {
+            void vscode.window.showTextDocument(vscode.Uri.file(res.file));
+        }
     }
 
     private dispose(): void {

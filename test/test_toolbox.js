@@ -276,6 +276,92 @@ rl.on('line', l => {
     const probeMiss = await reg.dispatch('toolbox.mcptools', { server: 'ghost' });
     ok('unknown server named honestly', !probeMiss.ok && /not found/.test(probeMiss.error));
 
+    // ---------- B-2: the page could WRITE all of this and the bridge could not
+    //
+    // ‼️ ONE IMPLEMENTATION, TWO DOORS. Everything below goes through the same
+    // saveToolboxItem/removeToolboxItem the Toolbox panel now calls, so a test
+    // here is a test of the page's write surface as well.
+    {
+        const second = { id: 'ops', name: 'ops', dir: path.join(root, 'agents', 'ops') };
+        w(path.join(second.dir, 'CLAUDE.md'), '# ops agent\n');
+        const reg2 = new BridgeRegistry();
+        registerToolboxOps(reg2, {
+            getAgents: () => [agent, second], home, cacheFile: path.join(root, 'probe-cache.json')
+        });
+
+        // ---- install: user scope reaches every agent, agent scope only one ----
+        const made = await reg2.dispatch('toolbox.install',
+            { kind: 'skill', name: 'release', description: 'cut a release' });
+        ok('toolbox.install scaffolds a user-scope skill',
+            made.ok && made.result.scope === 'user' && fs.existsSync(made.result.file));
+        ok('…and what it wrote is what claude loads it by',
+            /name: release/.test(fs.readFileSync(made.result.file, 'utf8')));
+        const mine = await reg2.dispatch('toolbox.install',
+            { kind: 'subagent', name: 'auditor', description: 'checks', agent: 'ops' });
+        ok('…and an agent-scope one lands in that agent\'s folder',
+            mine.ok && mine.result.file.includes(path.join('ops', '.claude')));
+        const noName = await reg2.dispatch('toolbox.install', { kind: 'skill', name: '' });
+        ok('a nameless install is refused in words', !noName.ok && /name/i.test(noName.error));
+
+        // ---- an MCP server, with the three fields no dialog chain could ask ----
+        const srv = await reg2.dispatch('toolbox.install', {
+            kind: 'mcp', name: 'api', agent: 'ops', transport: 'stdio',
+            command: 'node', args: 'server.js\n--port=9', env: 'API_KEY=abc\nMODE=live'
+        });
+        ok('toolbox.install writes an MCP server with args and env', srv.ok);
+        const opsCfg = JSON.parse(fs.readFileSync(path.join(second.dir, '.mcp.json'), 'utf8'));
+        ok('‼️ …one arg per line, and the env as a real object',
+            opsCfg.mcpServers.api.args.join() === 'server.js,--port=9'
+            && opsCfg.mcpServers.api.env.API_KEY === 'abc');
+        const dupe = await reg2.dispatch('toolbox.install',
+            { kind: 'mcp', name: 'api', agent: 'ops', command: 'node' });
+        ok('…and a second server of the same name is refused, not merged',
+            !dupe.ok && /already has a server/.test(dupe.error));
+        // An edit keeps every key it was not asked about — the whole reason the
+        // form replaced a one-line text box.
+        opsCfg.mcpServers.api.timeout = 30;
+        fs.writeFileSync(path.join(second.dir, '.mcp.json'), JSON.stringify(opsCfg, null, 2));
+        const edited = await reg2.dispatch('toolbox.install',
+            { kind: 'mcp', name: 'api', agent: 'ops', mode: 'edit', command: 'bun', args: 'server.js' });
+        const afterEdit = JSON.parse(fs.readFileSync(path.join(second.dir, '.mcp.json'), 'utf8'));
+        ok('‼️ an edit rewrites what it owns and keeps what it does not',
+            edited.ok && afterEdit.mcpServers.api.command === 'bun'
+            && afterEdit.mcpServers.api.timeout === 30);
+
+        // ---- enable / disable: reversible, and per the right scope ----
+        const off = await reg2.dispatch('toolbox.enable',
+            { kind: 'mcp', name: 'api', agent: 'ops', on: false });
+        ok('toolbox.enable switches one server off for one agent', off.ok && off.result.on === false);
+        ok('…and the definition is still there — this is the reversible half',
+            !!JSON.parse(fs.readFileSync(path.join(second.dir, '.mcp.json'), 'utf8')).mcpServers.api);
+        const ghost = await reg2.dispatch('toolbox.enable',
+            { kind: 'mcp', name: 'nope', agent: 'ops', on: false });
+        ok('…and a server that is not there is named, not silently skipped',
+            !ghost.ok && /no MCP server called/.test(ghost.error));
+        const plug = await reg2.dispatch('toolbox.enable',
+            { kind: 'plugin', name: 'alpha@mkt', on: true });
+        ok('a plugin is switched in user settings.json instead', plug.ok && plug.result.scope === 'user');
+
+        // ---- copy, and the share that MOVES ----
+        const copied = await reg2.dispatch('toolbox.copy',
+            { kind: 'skill', name: 'local', from: 'dev', to: 'ops' });
+        ok('toolbox.copy puts a skill on another agent',
+            copied.ok && fs.existsSync(path.join(second.dir, '.claude', 'skills', 'local', 'SKILL.md')));
+        const shared = await reg2.dispatch('toolbox.copy',
+            { kind: 'skill', name: 'local', from: 'ops', to: 'user' });
+        ok('‼️ to:"user" SHARES it — and moves it, so there is no shadow',
+            shared.ok && !fs.existsSync(path.join(second.dir, '.claude', 'skills', 'local')));
+
+        // ---- remove keeps a way back ----
+        const gone = await reg2.dispatch('toolbox.remove', { kind: 'subagent', name: 'auditor', agent: 'ops' });
+        ok('toolbox.remove takes it out', gone.ok && !fs.existsSync(mine.result.file));
+        ok('‼️ …and leaves the .afbak that is the only way back',
+            fs.existsSync(path.join(second.dir, '.claude', 'agents.afbak', 'auditor.md')));
+        const missing = await reg2.dispatch('toolbox.remove', { kind: 'skill', name: 'ghost' });
+        ok('…and a name that is not there is refused before anything is touched',
+            !missing.ok && /No skill named/.test(missing.error));
+    }
+
     fs.rmSync(root, { recursive: true, force: true });
     console.log(`${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);

@@ -1554,6 +1554,119 @@ export function dropInQueue(
     return setBacklogQueue(src, moved);
 }
 
+/**
+ * PULL EVERY PART TO ITS WHOLE — the queue, rearranged so a family reads as one
+ * run instead of being scattered through two hundred entries.
+ *
+ * ‼️ THE PARTS MOVE, INCLUDING THE ONES THAT WERE ABOVE. "Gather" means every
+ * part leaves wherever it is and settles under its whole — a part queued ahead
+ * of the thing it belongs to is the case this is most often pressed for, and
+ * leaving it where it stood would be gathering the family everywhere except the
+ * one place a reader had already noticed. What is kept is the WHOLES' order
+ * among themselves: where a family sits is a decision about the whole, and a
+ * button that re-prioritised those could not be pressed twice without checking.
+ * Inside a run the parts keep the order they already had, depth first.
+ *
+ * `root`, when given, narrows it to one family: the row's own "gather its parts"
+ * rather than the whole list. Everything outside that family stays exactly where
+ * it stands, which is why it is a different pass and not the full one over a
+ * filtered list.
+ *
+ * No line in the file moves — this writes the 🎯 block, like every other
+ * ordering write here. Cycle-safe by construction (`placed` plus a final sweep),
+ * because a `[parent:: …]` chain that loops is something a user can type in
+ * Obsidian and the parse reports rather than repairs.
+ */
+export function gatherFamilies(text: string, root?: string): QueueEditResult {
+    const src = String(text ?? '');
+    const parsed = parseBacklog(src);
+    const order = queueOrder(parsed.items, parsed.queue);
+    const want = String(root ?? '').trim().toUpperCase();
+    if (want && order.indexOf(want) < 0) {
+        return { ok: false, queue: order, error: queueRefusal(parsed, want) };
+    }
+
+    const rank = new Map(order.map((c, n) => [c, n]));
+    const parentOf = new Map<string, string>();
+    const kids = new Map<string, string[]>();
+    for (const it of parsed.items) {
+        if (!it.parent || !it.code || !rank.has(it.code)) { continue; }
+        // A parent that is closed, uncoded or missing is not in the queue, so
+        // its part has nothing to gather to and stays a head of its own.
+        if (!rank.has(it.parent)) { continue; }
+        parentOf.set(it.code, it.parent);
+        const list = kids.get(it.parent) ?? [];
+        list.push(it.code);
+        kids.set(it.parent, list);
+    }
+    // Parts in the order they are QUEUED in, not the order they were written —
+    // the run under a whole has to read the same way the rest of the strip does.
+    for (const list of kids.values()) {
+        list.sort((a, b) => (rank.get(a) ?? 1e9) - (rank.get(b) ?? 1e9));
+    }
+
+    const placed = new Set<string>();
+    /** One family, depth first — the run that goes under `code`. */
+    const run = (code: string, into: string[]): void => {
+        for (const kid of kids.get(code) ?? []) {
+            if (placed.has(kid)) { continue; }
+            placed.add(kid);
+            into.push(kid);
+            run(kid, into);
+        }
+    };
+
+    let out: string[];
+    if (want) {
+        // ONE family. The parts come out of wherever they were and go back in
+        // directly behind their whole; every other entry keeps its place.
+        const mine: string[] = [];
+        placed.add(want);
+        run(want, mine);
+        const rest = order.filter(c => c === want || !placed.has(c));
+        out = [];
+        for (const c of rest) {
+            out.push(c);
+            if (c === want) { out.push(...mine); }
+        }
+    } else {
+        // EVERY family. The wholes keep their order among themselves; each one
+        // takes its run with it.
+        out = [];
+        for (const code of order) {
+            if (parentOf.has(code) || placed.has(code)) { continue; }
+            placed.add(code);
+            out.push(code);
+            run(code, out);
+        }
+        // Members of a loop reach no whole of their own; they are drawn in their
+        // old order rather than dropped, because an entry the queue refuses to
+        // carry is an item nobody can fix.
+        for (const code of order) {
+            if (placed.has(code)) { continue; }
+            placed.add(code);
+            out.push(code);
+        }
+    }
+
+    const same = out.length === order.length && out.every((c, n) => c === order[n]);
+    if (same) {
+        return {
+            ok: true, text: src, queue: order,
+            note: want ? `every part of ${want} is already under it`
+                : 'every family is already together in the queue'
+        };
+    }
+    const moved = out.filter((c, n) => c !== order[n]).length;
+    const res = setBacklogQueue(src, out);
+    return res.ok
+        ? {
+            ...res, note: `${moved} entr${moved === 1 ? 'y' : 'ies'} moved — `
+                + (want ? `the parts of ${want} now follow it` : 'each part now follows its whole')
+        }
+        : res;
+}
+
 /** Why a code is not in the queue, said precisely. ‼️ Three different causes, and
  *  one message covering all of them would send somebody to read the file: not a
  *  code at all, no such item, or closed. */

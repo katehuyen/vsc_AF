@@ -319,6 +319,13 @@ export const CTX_ITEMS: CtxItem[] = [
         id: 'backlogQueue', title: 'Put it in the work queue…', act: 'blQueue',
         when: BACKLOG_ROW, group: '4_link@1'
     },
+    // ‼️ ONLY ON A ROW THAT HAS PARTS. It reads as an offer about THIS item, so
+    // on an item with nothing under it the entry would be a menu line that does
+    // nothing — and the page already knows which rows those are (`afParts`).
+    {
+        id: 'backlogGather', title: 'Gather its parts under it', act: 'blGather',
+        when: `${BACKLOG_ROW} && afParts`, group: '3_move@2'
+    },
     ...picker(CTX_PREFIX + 'blOpenWith', BACKLOG_ROW, 'blGo', OPEN_MODES),
     ...picker(CTX_PREFIX + 'blState', BACKLOG_ROW, 'blState', [
         ['open', 'Open — not started'],

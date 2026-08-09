@@ -139,9 +139,9 @@ import {
     addBacklogItem, archiveBacklogDone, BACKLOG_CODE, BACKLOG_EFFORTS, BACKLOG_MOVES,
     BACKLOG_ORIGIN_TAGS, BACKLOG_PRIORITIES,
     BACKLOG_STATES, BacklogEffort, BacklogItem, BacklogMoveDir, BacklogPriority, BacklogState,
-    BacklogTarget, codeBacklogItem, descendantCodes, dropInQueue, findBacklogItem, moveInQueue,
-    nextBacklog, parseBacklog, placeInQueue, queueOrder, setBacklogFields, setBacklogQueue,
-    setBacklogState, stampBacklogClosed, tidyBacklogFile
+    BacklogTarget, codeBacklogItem, descendantCodes, dropInQueue, findBacklogItem, gatherFamilies,
+    moveInQueue, nextBacklog, parseBacklog, placeInQueue, queueOrder, setBacklogFields,
+    setBacklogQueue, setBacklogState, stampBacklogClosed, tidyBacklogFile
 } from './core/projectBacklog';
 import {
     buildProjectContext, contextFileName, isQuotableContextPath, PROJECT_BRIEF_MAX
@@ -194,6 +194,7 @@ import { dayKey, expandEnvPath, fmtTokens, fmtUSD, normPath, readFileTail, relTi
 import { AgentDetailPanel } from './panels/agentDetail';
 import { CapabilitiesPanel } from './panels/capabilities';
 import { buildToolboxInventory, ToolboxInventory } from './core/toolbox';
+import { registerStudioOps } from './core/studioBridge';
 import { registerToolboxOps } from './core/toolboxBridge';
 import { ToolboxPanel } from './panels/toolboxPanel';
 import { SecretsPanel } from './panels/secretsPanel';
@@ -4811,6 +4812,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            op: 'projects.backlog.gather',
+            describe: 'Pull every PART up under its WHOLE in the queue, so a family reads as one run instead of being scattered through the list. The heads do not move — where a family sits is a decision about the whole and it is kept exactly; the parts come to it, keeping the relative order they already had among themselves. A part that was queued ahead of its whole comes back down to it. With `code` it does one family only (that item and everything under it); without one, every family in the queue. Like every ordering op here it rewrites the 🎯 block and moves no line, so codes, areas and sections are untouched — projects.backlog.tidy is the one that touches the FILE. args: project (id or name), code? (one family; omit for the whole queue)',
+            handler: (args) => {
+                const { project, folder, file } = backlogDoc(argStr(args, 'project'));
+                const code = optStr(args, 'code').trim().toUpperCase();
+                let queue: string[] = [];
+                const out = editProjectDoc(folder, file, src => {
+                    const res = gatherFamilies(src, code || undefined);
+                    queue = res.queue;
+                    return res;
+                });
+                projectDocWritten(project.id);
+                return {
+                    project: project.name, file: relDoc(folder, out.file),
+                    code: code || null, queue, note: out.note ?? null
+                };
+            }
+        },
+        {
             op: 'projects.backlog.tidy',
             describe: 'Put the file back in its own order, in two moves. FIRST, an item filed under somebody else\'s heading is carried back under its own — a P-coded line parked in the `## U` section is invisible to the person who scrolls to `## P` looking for it, and the panel hides the damage because it groups by the CODE and draws it in the right place regardless. THEN each area\'s items go back in code order — K-1, K-2, K-3 — so the file reads as the dictionary it is. Safe by construction: the queue names CODES and a code does not care which line it is on, so the order a person sees is untouched by this. ‼️ A section with PROSE between its items is left alone and reported: somebody wrote that paragraph where it is for a reason and no sort knows what it was. Blank lines between items are furniture and are closed up. An area with no heading in the file is never invented; the inbox (nothing to sort by) and the archive (a record, not a list) are skipped. Returns `reseated` (the codes that went home, by name) and `moved` (how many were re-ordered). args: project (id or name)',
             handler: (args) => {
@@ -7163,6 +7183,67 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             op: 'needs.restore',
             describe: 'Bring every cleared Needs You row back. args: none',
             handler: async () => ({ restored: await restoreNeeds() })
+        },
+        // ---- the fleet can MAKE an agent, so the bridge can too (B-2) --------
+        // Registered here rather than beside agents.list because the write lives
+        // in portfolioDeps, which is what the fleet page calls: one function, two
+        // doors (_REF/agentfarm-dev.md).
+        {
+            op: 'agents.create',
+            describe: '‼️ MAKE A NEW AGENT — a folder with CLAUDE.md, memory/MEMORY.md and .claude/settings.local.json, which is everything the farm needs to see it as one. `root` is the parent folder and must be one of the configured agentRoots (agents.roots lists them); leave it out when there is only one. `mission` is not decoration: it replaces the template\'s "describe this agent\'s identity" placeholder, and an agent created without it is a template nobody comes back to fill in — say what this one is FOR, in a sentence. `model` is the launcher\'s own vocabulary (agents.models lists it) and is written as the folder\'s default; empty means the CLI default. Refuses rather than merges if the folder already exists. args: name, mission?, model?, root? (one of agentRoots)',
+            handler: (args) => {
+                const roots = portfolioDeps.agentRoots();
+                need(roots.length, 'No agent roots are configured — set agentFarm.agentRoots first.');
+                const wantRoot = optStr(args, 'root');
+                const root = wantRoot
+                    ? roots.find(r => r === wantRoot || path.basename(r) === wantRoot)
+                    : roots[0];
+                need(root, `"${wantRoot}" is not one of the configured agent roots: ${roots.join(' · ')}`);
+                const name = argStr(args, 'name').trim();
+                need(/^[A-Za-z0-9._-]+$/.test(name),
+                    `"${name}" cannot be a folder name — letters, digits, dot, dash and underscore.`);
+                const res = portfolioDeps.createAgent({
+                    root: root as string, name,
+                    model: optStr(args, 'model'), mission: optStr(args, 'mission')
+                });
+                need(!res.error, res.error ?? 'could not create it');
+                return {
+                    name, dir: res.dir ?? null, root,
+                    model: optStr(args, 'model') || portfolioDeps.defaultModel() || null,
+                    note: `${name} created. Its CLAUDE.md is the one file worth writing next.`
+                };
+            }
+        },
+        {
+            op: 'agents.roots',
+            describe: 'Where a new agent may be created, and what a model may be called there — the two lists agents.create validates against, so a caller never has to guess a folder or a model alias. args: none',
+            handler: () => ({
+                roots: portfolioDeps.agentRoots(),
+                defaultModel: portfolioDeps.defaultModel() || null,
+                models: portfolioDeps.models()
+            })
+        },
+        {
+            op: 'agents.pack.import',
+            describe: 'Create an agent FROM A PACK file (.afpack / .json exported by the fleet page) rather than from the blank template — the pack carries the CLAUDE.md, the duties, the skills and the MCP servers that were exported with it. `root` follows the same rule as agents.create; the folder must not exist. args: file (path to the pack), name (the folder it becomes), root? (one of agentRoots)',
+            handler: (args) => {
+                const roots = portfolioDeps.agentRoots();
+                need(roots.length, 'No agent roots are configured — set agentFarm.agentRoots first.');
+                const wantRoot = optStr(args, 'root');
+                const root = wantRoot
+                    ? roots.find(r => r === wantRoot || path.basename(r) === wantRoot)
+                    : roots[0];
+                need(root, `"${wantRoot}" is not one of the configured agent roots: ${roots.join(' · ')}`);
+                const packFile = argStr(args, 'file');
+                need(fs.existsSync(packFile), `No pack file at ${packFile}`);
+                const name = argStr(args, 'name').trim();
+                const res = portfolioDeps.importPack({ root: root as string, name, packFile });
+                need(!res.error, res.error ?? 'could not import it');
+                return {
+                    name, root, file: packFile,
+                    note: `Importing ${path.basename(packFile)} into ${name} — the pack\'s own summary appears in VS Code.`
+                };
+            }
         }
     ]);
 
@@ -7983,6 +8064,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             replicate: !!vault.get(cfg().get<string>('replicateAuthSecret', 'REPLICATE_API_TOKEN'))
         })
     };
+    // …and the same write surface over the bridge (B-2). Producing media is the
+    // long, many-step job an agent should be able to drive; until now every one
+    // of these gestures existed only as a card somebody had to click.
+    registerStudioOps(bridge, {
+        getAgents: () => agents,
+        outputsDir: () => (taskManagerRef as TaskManager).outputsDir,
+        runMedia: (title, model, input, opts) =>
+            (taskManagerRef as TaskManager).runMediaAdhoc(title, model, input, opts)
+    });
 
     // ---------- DALGA 1: the Console's session host ----------
     // Long-lived claude processes this window owns, spoken to over the CLI's
@@ -10368,6 +10458,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         place === 'before' ? 'before' : 'after')),
                 backlogQueue: (id: string, codes: string[]) =>
                     edit(id, text => setBacklogQueue(text, codes)),
+                backlogGather: (id: string, code?: string) =>
+                    edit(id, text => gatherFamilies(text, code)),
                 backlogTidy: (id: string) => {
                     let moved = 0;
                     let reseated: string[] = [];

@@ -107,10 +107,15 @@ export function copySkillTo(skill: SkillDef, target: AgentInfo): string {
 /**
  * Move a skill between scopes: agent → ~/.claude/skills (share with every
  * agent) or user → this agent's .claude/skills (make it private).
+ *
+ * `home` overrides where "user scope" is — the same override every other reader
+ * in core/toolbox.ts takes. Without it this reached for the real `os.homedir()`
+ * unconditionally, which meant a test of the share could only be written by
+ * writing into the machine's own `~/.claude`.
  */
-export function moveSkillScope(skill: SkillDef, agent: AgentInfo): string {
+export function moveSkillScope(skill: SkillDef, agent: AgentInfo, home?: string): string {
     const destRoot = skill.scope === 'agent'
-        ? path.join(os.homedir(), '.claude', 'skills')
+        ? path.join(home || os.homedir(), '.claude', 'skills')
         : path.join(agent.dir, '.claude', 'skills');
     const destDir = path.join(destRoot, path.basename(skill.dir));
     if (fs.existsSync(destDir)) {

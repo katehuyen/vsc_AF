@@ -201,5 +201,111 @@ const production = (scenes) => ({
         + (offenders.length ? ' — ' + offenders.join(', ') : ''), offenders.length === 0);
 }
 
-console.log(`${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+// ---------- B-2: the Studio over the bridge -------------------------------
+//
+// ‼️ THIS PAGE HAD NO BRIDGE AT ALL, and it is the surface where that cost the
+// most: producing media is the long, repetitive, many-step job an agent should
+// be able to drive. Every op below calls the same core function the panel calls.
+(async () => {
+    const { registerStudioOps } = require(path.join(__dirname, '..', 'out', 'core', 'studioBridge.js'));
+    const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'bridge.js'));
+    const root = fs.mkdtempSync(path.join(__dirname, 'tmp-studio-'));
+    const agentDir = path.join(root, 'agents', 'media');
+    const outputs = path.join(root, 'outputs');
+    fs.mkdirSync(agentDir, { recursive: true });
+    fs.mkdirSync(outputs, { recursive: true });
+    fs.writeFileSync(path.join(agentDir, 'CLAUDE.md'), '# media agent\n');
+    const agent = { id: 'media', name: 'media', dir: agentDir };
+    const started = [];
+    const reg = new BridgeRegistry();
+    registerStudioOps(reg, {
+        getAgents: () => [agent],
+        outputsDir: () => outputs,
+        runMedia: (title, model, input, opts) => started.push({ title, model, input, opts })
+    });
+
+    // ---- the manifest, and the one thing it refuses to do twice ----
+    const made = await reg.dispatch('studio.production.new',
+        { agent: 'media', title: 'The Film', scenes: 'Opening, wide\nThe reply' });
+    ok('studio.production.new writes a manifest', made.ok && made.result.scenes.length === 2);
+    ok('‼️ …splitting on NEWLINES, so "Opening, wide" stays one scene',
+        made.result.scenes[0].title === 'Opening, wide');
+    const again = await reg.dispatch('studio.production.new',
+        { agent: 'media', title: 'Another', scenes: 'x' });
+    ok('…and it refuses to overwrite an existing manifest by accident',
+        !again.ok && /already has a production/.test(again.error));
+
+    const projectId = made.result.id;
+    const sceneId = made.result.scenes[0].id;
+
+    // ---- an asset, filed, judged, and re-asked ----
+    const meta1 = {
+        taskId: 'gen1', title: 'wide shot', model: 'fal-ai/x',
+        input: '{"prompt":"a wide shot"}', assetFiles: [path.join(outputs, 'a.png')],
+        estCost: 0.02, ts: NOW
+    };
+    fs.writeFileSync(path.join(outputs, 'gen1.media.json'), JSON.stringify(meta1, null, 2));
+
+    const loose = await reg.dispatch('studio.assets', { unassigned: true });
+    ok('studio.assets finds what is filed nowhere', loose.ok && loose.result.total === 1);
+    const assigned = await reg.dispatch('studio.assign',
+        { taskId: 'gen1', project: 'The Film', scene: sceneId });
+    ok('studio.assign files it against a scene, by TITLE or by id', assigned.ok);
+    const badScene = await reg.dispatch('studio.assign',
+        { taskId: 'gen1', project: projectId, scene: 'nope' });
+    ok('…and a scene that is not in that production is named, not written',
+        !badScene.ok && /not a scene in/.test(badScene.error));
+    const kept = await reg.dispatch('studio.triage', { taskId: 'gen1', keep: true });
+    ok('studio.triage keeps it', kept.ok && kept.result.keep === true);
+    const undecided = await reg.dispatch('studio.assets', { state: 'undecided' });
+    ok('…so it is no longer in the undecided pile', undecided.ok && undecided.result.total === 0);
+
+    const rows = (await reg.dispatch('studio.productions', { project: projectId })).result.productions[0];
+    ok('studio.productions counts the asset against its scene',
+        rows.scenes.find(s => s.id === sceneId).assets === 1);
+
+    // ---- the three re-asks, and what makes them different ----
+    const plain = await reg.dispatch('studio.rerun', { taskId: 'gen1' });
+    ok('studio.rerun sends the identical input again',
+        plain.ok && started[0].input === meta1.input && /re-run/.test(started[0].title));
+    ok('‼️ …and the new run inherits where the first one was filed',
+        started[0].opts.projectId === projectId && started[0].opts.sceneId === sceneId);
+    const varied = await reg.dispatch('studio.rerun',
+        { taskId: 'gen1', mode: 'vary', input: '{"prompt":"a tighter shot"}' });
+    ok('vary sends the input you rewrote', varied.ok && /tighter/.test(started[1].input));
+    const noInput = await reg.dispatch('studio.rerun', { taskId: 'gen1', mode: 'vary' });
+    ok('…and vary with nothing to send is refused', !noInput.ok && /input/.test(noInput.error));
+    const fed = await reg.dispatch('studio.rerun',
+        { taskId: 'gen1', mode: 'feedback', feedback: 'warmer light' });
+    ok('feedback folds a critique into the ORIGINAL input',
+        fed.ok && /warmer light/.test(started[2].input) && /a wide shot/.test(started[2].input));
+    const noFb = await reg.dispatch('studio.rerun', { taskId: 'gen1', mode: 'feedback' });
+    ok('…and a feedback run that says nothing is refused', !noFb.ok && /what should change/.test(noFb.error));
+
+    // ---- status, and the export that only places what is assigned ----
+    const approved = await reg.dispatch('studio.scene.status',
+        { project: projectId, scene: sceneId, status: 'approved' });
+    ok('studio.scene.status moves the scene', approved.ok && approved.result.status === 'approved');
+    const badStatus = await reg.dispatch('studio.scene.status',
+        { project: projectId, scene: sceneId, status: 'lovely' });
+    ok('…and an invented status lists the real ones', !badStatus.ok && /draft/.test(badStatus.error));
+
+    const xml = await reg.dispatch('studio.export', { project: projectId });
+    ok('studio.export writes a timeline beside the manifest',
+        xml.ok && fs.existsSync(xml.result.file) && xml.result.clips === 1);
+    const edl = await reg.dispatch('studio.export',
+        { project: projectId, format: 'edl', file: path.join(root, 'cut.edl') });
+    ok('…and an EDL where it was asked for', edl.ok && fs.existsSync(path.join(root, 'cut.edl')));
+    const empty = await reg.dispatch('studio.export', { project: 'not a film' });
+    ok('an unknown production is named honestly', !empty.ok && /No production/.test(empty.error));
+
+    // Detaching is a real state, not an error.
+    const off = await reg.dispatch('studio.assign', { taskId: 'gen1' });
+    ok('studio.assign with no project detaches it', off.ok && off.result.project === null);
+    ok('…and the export then has nothing to place',
+        !(await reg.dispatch('studio.export', { project: projectId })).ok);
+
+    fs.rmSync(root, { recursive: true, force: true });
+    console.log(`${pass} passed, ${fail} failed`);
+    process.exit(fail ? 1 : 0);
+})();

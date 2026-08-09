@@ -1,9 +1,18 @@
+import * as path from 'path';
 import { AgentInfo } from './agents';
 import { argStr, BridgeRegistry, need, optStr } from './bridge';
-import { readAgentMcpServers, readServerRawDef } from './mcp';
+import {
+    addMcpServer, copyMcpServerTo, McpServerDef, readAgentMcpServers, readServerRawDef,
+    removeMcpServer, setServerDisabled, updateMcpServer
+} from './mcp';
 import { loadProbeCache, McpProbeResult, McpServerConfig, probeMcpServer, saveProbeCache } from './mcpProbe';
 import { queryMatches } from './query';
-import { buildToolboxInventory, readUserMcpServerRaw, ToolboxKind, TOOLBOX_KINDS } from './toolbox';
+import { copySkillTo, moveSkillScope, readAgentSkills, SkillDef } from './skills';
+import {
+    buildToolboxInventory, HookEntry, readUserMcpServerRaw, removeHookEntry, removeUserMcpServer,
+    removeWithBackup, scaffoldItem, setPluginEnabled, ToolboxItem, ToolboxKind, TOOLBOX_KINDS,
+    userClaudeDir
+} from './toolbox';
 
 /**
  * Toolbox bridge ops (§ constitution 19.C) — everything the Toolbox page can
@@ -31,6 +40,238 @@ export function resolveServerConfig(
     if (!agent) { return readUserMcpServerRaw(server, home) as McpServerConfig | undefined; }
     const def = readAgentMcpServers(agent).find(s => s.name === server);
     return def ? readServerRawDef(def) as McpServerConfig | undefined : undefined;
+}
+
+// ---------------------------------------------------------------------------
+// WRITING — the one implementation the page and the bridge both call
+//
+// ‼️ THE PANEL USED TO OWN ALL OF THIS AND THE BRIDGE HAD NONE OF IT (B-2).
+// The Toolbox page can install a skill, a subagent, a command and an MCP server,
+// copy one to another agent, remove one, and switch a plugin or a server off —
+// and an agent asked to do any of it had to be told "open the page yourself".
+// Both sides now go through the functions below, which is the rule
+// (_REF/agentfarm-dev.md): the handler CALLS what the UI calls, so the two can
+// never answer differently. Everything that touches the disk still lives in
+// core/skills.ts, core/mcp.ts and core/toolbox.ts; this is the composition
+// above them, and it was the part that was duplicated.
+// ---------------------------------------------------------------------------
+
+/** `KEY=value` lines ⇄ an object. The env block an MCP server needs is a handful
+ *  of pairs; a JSON box for it would be a JSON box people get wrong. */
+export function parseToolPairs(text: string): Record<string, string> | undefined {
+    const out: Record<string, string> = {};
+    let any = false;
+    for (const line of String(text || '').split(/\r?\n/)) {
+        const t = line.trim();
+        if (!t) { continue; }
+        const eq = t.indexOf('=');
+        if (eq <= 0) { continue; }
+        out[t.slice(0, eq).trim()] = t.slice(eq + 1).trim();
+        any = true;
+    }
+    return any ? out : undefined;
+}
+
+export function formatToolPairs(v: unknown): string {
+    if (!v || typeof v !== 'object') { return ''; }
+    return Object.entries(v as Record<string, unknown>)
+        .map(([k, val]) => `${k}=${String(val)}`).join('\n');
+}
+
+/** What either side asks for. Every field is a string because both callers
+ *  arrive with strings — a webview form and a bridge request. */
+export interface ToolWriteSpec {
+    kind: string;
+    /** new · edit (mcp only) · copy */
+    mode?: string;
+    /** '' = user scope; otherwise the agent the item belongs to / is made on. */
+    agentId?: string;
+    name?: string;
+    description?: string;
+    /** copy destination agent id */
+    target?: string;
+    transport?: string;
+    command?: string;
+    args?: string;
+    env?: string;
+    url?: string;
+    headers?: string;
+}
+
+/** ‼️ A REFUSAL IS A SENTENCE, not a thrown error: the page prints it inside the
+ *  form next to the button that was pressed, and the bridge hands it back as the
+ *  op's error. One wording, both places. */
+export interface ToolWriteResult {
+    ok: boolean;
+    /** why not, said the way the reader can act on */
+    error?: string;
+    /** what happened, when it did */
+    note?: string;
+    /** the file that was written, when there is one to open */
+    file?: string;
+}
+
+const byId = (agents: AgentInfo[], id: string): AgentInfo | undefined =>
+    agents.find(a => a.id === id);
+
+function skillNode(agents: AgentInfo[], agentId: string, name: string):
+    { agent: AgentInfo; skill: SkillDef } | undefined {
+    const agent = byId(agents, agentId);
+    const skill = agent ? readAgentSkills(agent).find(s => s.name === name) : undefined;
+    return agent && skill ? { agent, skill } : undefined;
+}
+
+function mcpNode(agents: AgentInfo[], agentId: string, name: string):
+    { agent: AgentInfo; server: McpServerDef } | undefined {
+    const agent = byId(agents, agentId);
+    const server = agent ? readAgentMcpServers(agent).find(s => s.name === name) : undefined;
+    return agent && server ? { agent, server } : undefined;
+}
+
+/**
+ * Install, edit or copy one tool.
+ *
+ * Three kinds scaffold a markdown file (skill · subagent · command) and one
+ * writes a JSON entry (mcp). What this can state that no chain of boxes could:
+ * an MCP server's `args`, its `env` and its `headers` — the fields that decide
+ * whether the server it just wrote can actually authenticate.
+ */
+export function saveToolboxItem(
+    spec: ToolWriteSpec, agents: AgentInfo[], home?: string
+): ToolWriteResult {
+    const s = (k: keyof ToolWriteSpec): string => String(spec[k] ?? '').trim();
+    const kind = s('kind');
+    const mode = s('mode') || 'new';
+    const name = s('name');
+    if (!name) { return { ok: false, error: 'It needs a name — that is what claude loads it by.' }; }
+
+    if (kind === 'skill' || kind === 'subagent' || kind === 'command') {
+        if (mode === 'copy') {
+            const from = skillNode(agents, s('agentId'), name);
+            const target = byId(agents, s('target'));
+            if (!from) { return { ok: false, error: 'That skill is no longer where it was — refresh the page.' }; }
+            if (!target) { return { ok: false, error: 'Pick the agent it is copied to.' }; }
+            try { copySkillTo(from.skill, target); } catch (e) {
+                return { ok: false, error: (e as Error).message ?? String(e) };
+            }
+            return { ok: true, note: `Copied to ${target.name}.` };
+        }
+        const agent = s('agentId') ? byId(agents, s('agentId')) : undefined;
+        if (s('agentId') && !agent) { return { ok: false, error: 'That agent is gone — pick another scope.' }; }
+        try {
+            const claudeDir = agent ? path.join(agent.dir, '.claude') : userClaudeDir(home);
+            const file = scaffoldItem(kind, claudeDir, name, s('description'));
+            return { ok: true, file, note: `Created — ${path.basename(file)} is open for the instructions.` };
+        } catch (e) {
+            return { ok: false, error: (e as Error).message ?? String(e) };
+        }
+    }
+
+    if (kind !== 'mcp') {
+        return { ok: false, error: `"${kind}" is not something this makes — skill, subagent, command or mcp.` };
+    }
+
+    if (mode === 'copy') {
+        const from = mcpNode(agents, s('agentId'), name);
+        const target = byId(agents, s('target'));
+        if (!from) { return { ok: false, error: 'That server is no longer where it was — refresh the page.' }; }
+        if (!target) { return { ok: false, error: 'Pick the agent it is copied to.' }; }
+        const file = copyMcpServerTo(from.server, target);
+        if (!file) { return { ok: false, error: 'Could not read the server definition to copy it.' }; }
+        return { ok: true, file, note: `Copied to ${target.name} (${path.basename(file)}).` };
+    }
+
+    // ‼️ AN EDIT KEEPS EVERYTHING IT WAS NOT ASKED ABOUT. The old editor read the
+    // definition, replaced `command`+`args` (or `url`) from one text box and
+    // wrote the object back — so any key it had no question for survived by
+    // luck. Here the untouched keys are carried over explicitly, and the ones
+    // this owns are rewritten.
+    const http = s('transport') === 'http';
+    const def: Record<string, unknown> = {};
+    if (mode === 'edit') {
+        const from = mcpNode(agents, s('agentId'), name);
+        if (!from) { return { ok: false, error: 'That server is no longer where it was — refresh the page.' }; }
+        const prev = readServerRawDef(from.server) ?? {};
+        for (const [k, v] of Object.entries(prev)) {
+            if (['command', 'args', 'env', 'url', 'headers', 'type'].indexOf(k) < 0) { def[k] = v; }
+        }
+    }
+    if (http) {
+        if (!s('url')) { return { ok: false, error: 'An http server needs its URL.' }; }
+        def.type = 'http';
+        def.url = s('url');
+        const headers = parseToolPairs(s('headers'));
+        if (headers) { def.headers = headers; }
+    } else {
+        if (!s('command')) { return { ok: false, error: 'A stdio server needs the command that starts it.' }; }
+        def.command = s('command');
+        const list = s('args').split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+        if (list.length) { def.args = list; }
+        const env = parseToolPairs(s('env'));
+        if (env) { def.env = env; }
+    }
+
+    if (mode === 'edit') {
+        const from = mcpNode(agents, s('agentId'), name);
+        if (!from) { return { ok: false, error: 'That server is no longer where it was — refresh the page.' }; }
+        if (!updateMcpServer(from.server, def)) {
+            return { ok: false, error: 'Could not update it — the source file is unreadable or the entry is gone.' };
+        }
+        return {
+            ok: true,
+            note: `"${name}" updated — a one-time .afbak backup is kept. Restart the agent's sessions to load it.`
+        };
+    }
+
+    const agent = byId(agents, s('agentId'));
+    if (!agent) { return { ok: false, error: 'An MCP server belongs to an agent — pick which one.' }; }
+    if (readAgentMcpServers(agent).some(x => x.name === name)) {
+        return { ok: false, error: `${agent.name} already has a server called "${name}".` };
+    }
+    const written = addMcpServer(agent, name, def);
+    return written
+        ? { ok: true, file: written, note: `"${name}" added to ${agent.name} (${path.basename(written)}).` }
+        : { ok: false, error: `Could not write the server into ${agent.name}'s config.` };
+}
+
+/** Take one item out, keeping a `.afbak` beside it. The caller does the asking:
+ *  the page shows a modal, the bridge makes the request itself the consent. */
+export function removeToolboxItem(
+    item: ToolboxItem | undefined, agents: AgentInfo[], home?: string
+): ToolWriteResult {
+    if (!item?.kind || !item.name) { return { ok: false, error: 'Nothing named to remove.' }; }
+    let done = false;
+    switch (item.kind) {
+        case 'skill':
+            done = !!item.dir && removeWithBackup(item.dir);
+            break;
+        case 'subagent':
+        case 'command':
+        case 'style':
+            done = removeWithBackup(item.source);
+            break;
+        case 'mcp':
+            if (item.scope === 'user') {
+                done = removeUserMcpServer(item.name, home);
+            } else {
+                const agent = byId(agents, item.agentId ?? '');
+                const def = agent ? readAgentMcpServers(agent).find(s => s.name === item.name) : undefined;
+                done = !!def && removeMcpServer(def);
+            }
+            break;
+        case 'hook': {
+            const d = item.detail as { event?: string; matcher?: string; command?: string };
+            done = !!d.event && !!d.command && removeHookEntry({
+                event: d.event, matcher: d.matcher ?? '', command: d.command, source: item.source
+            } as HookEntry);
+            break;
+        }
+        default:
+            return { ok: false, error: `${item.kind} entries are not removable from here.` };
+    }
+    return done
+        ? { ok: true, note: `Removed "${item.name}" — a .afbak copy is kept beside it.` }
+        : { ok: false, error: `Could not remove "${item.name}" — see its source file.` };
 }
 
 export function registerToolboxOps(bridge: BridgeRegistry, deps: ToolboxBridgeDeps): void {
@@ -130,6 +371,93 @@ export function registerToolboxOps(bridge: BridgeRegistry, deps: ToolboxBridgeDe
                 cache[key] = result;
                 saveProbeCache(deps.cacheFile, cache);
                 return { cached: false, ...result };
+            }
+        },
+        // ---- writing (B-2) — the same four gestures the page has -------------
+        {
+            op: 'toolbox.install',
+            describe: 'Install a tool, or edit an MCP server that already exists. skill · subagent · command each scaffold their markdown file and are then written by hand or by an agent; the file comes back as `file`. `mcp` writes a JSON entry and is the one with a shape worth reading: `transport` stdio (then `command`, `args` one per line, `env` as KEY=value lines) or http (then `url` and `headers` as KEY=value lines) — those are the fields that decide whether the server can authenticate, and no other route to this can state them. ‼️ SCOPE IS `agent`: with one, the tool belongs to that agent alone; without one a skill/subagent/command goes to USER scope, where every agent on this machine gets it. An MCP server always belongs to an agent. `mode:"edit"` (mcp only) keeps every key it was not asked about and rewrites the ones here; a `.afbak` copy is kept once. Restart that agent\'s sessions to load it. args: kind (skill|subagent|command|mcp), name, description?, agent? (name|id), mode? (new|edit, default new), transport?, command?, args?, env?, url?, headers?',
+            handler: (args) => {
+                const kind = argStr(args, 'kind');
+                const agentRef = optStr(args, 'agent');
+                const agent = agentRef ? findAgent(agentRef) : undefined;
+                const res = saveToolboxItem({
+                    kind, mode: optStr(args, 'mode') || 'new',
+                    agentId: agent?.id ?? '', name: argStr(args, 'name'),
+                    description: optStr(args, 'description'),
+                    transport: optStr(args, 'transport'), command: optStr(args, 'command'),
+                    args: optStr(args, 'args'), env: optStr(args, 'env'),
+                    url: optStr(args, 'url'), headers: optStr(args, 'headers')
+                }, deps.getAgents(), deps.home);
+                need(res.ok, res.error ?? 'could not write it');
+                return {
+                    kind, name: argStr(args, 'name'),
+                    scope: agent ? 'agent' : 'user', agent: agent?.name ?? null,
+                    file: res.file ?? null, note: res.note ?? null
+                };
+            }
+        },
+        {
+            op: 'toolbox.copy',
+            describe: 'Copy a skill or an MCP server from one agent to another, or SHARE a skill up to user scope where every agent gets it. `to` names the receiving agent; `to:"user"` is the share, and it MOVES the skill (a copy at both scopes is a shadow, and which one runs is then a question about load order — see toolbox.list). Copying an MCP server carries its whole definition including env and headers. args: kind (skill|mcp), name, from (agent name|id), to (agent name|id, or "user" for a skill)',
+            handler: (args) => {
+                const kind = argStr(args, 'kind');
+                need(kind === 'skill' || kind === 'mcp', `copy takes a skill or an mcp, not "${kind}"`);
+                const name = argStr(args, 'name');
+                const from = findAgent(argStr(args, 'from'));
+                const to = argStr(args, 'to');
+                if (kind === 'skill' && to.toLowerCase() === 'user') {
+                    const node = skillNode(deps.getAgents(), from.id, name);
+                    need(node, `${from.name} has no skill called "${name}" at agent scope — a user-scope skill is already shared.`);
+                    const file = moveSkillScope((node as { skill: SkillDef }).skill, from, deps.home);
+                    return { kind, name, from: from.name, to: 'user', file, note: `"${name}" is now shared by every agent.` };
+                }
+                const target = findAgent(to);
+                const res = saveToolboxItem(
+                    { kind, mode: 'copy', agentId: from.id, name, target: target.id },
+                    deps.getAgents(), deps.home);
+                need(res.ok, res.error ?? 'could not copy it');
+                return { kind, name, from: from.name, to: target.name, file: res.file ?? null, note: res.note ?? null };
+            }
+        },
+        {
+            op: 'toolbox.remove',
+            describe: '‼️ TAKE A TOOL OUT — and it is not undone by an undo, so name it exactly. A `.afbak` copy is left beside whatever went, which is the only way back. skill · subagent · command · style · mcp · hook are removable; a plugin is switched off instead (toolbox.enable), because it belongs to a marketplace and not to this machine. Without `agent` this removes the USER-scope entry, which every agent on the machine loses at once. args: kind, name, agent? (name|id — omit for user scope)',
+            handler: (args) => {
+                const kind = argStr(args, 'kind');
+                const name = argStr(args, 'name');
+                const agentRef = optStr(args, 'agent');
+                const agentId = agentRef ? findAgent(agentRef).id : '';
+                const inv = buildToolboxInventory(deps.getAgents(), deps.home);
+                const item = inv.items.find(it => it.kind === kind && it.name === name &&
+                    (agentId ? it.agentId === agentId : it.scope === 'user'));
+                need(item, `No ${kind} named "${name}" at ${agentId ? 'agent' : 'user'} scope — toolbox.list shows what exists.`);
+                const res = removeToolboxItem(item, deps.getAgents(), deps.home);
+                need(res.ok, res.error ?? 'could not remove it');
+                return { kind, name, scope: agentId ? 'agent' : 'user', note: res.note ?? null };
+            }
+        },
+        {
+            op: 'toolbox.enable',
+            describe: 'Switch one thing on or off without removing it. An MCP SERVER is switched per agent (`agent` + `name`) and the change lands in that agent\'s own config; a PLUGIN is switched in user settings.json by its `marketplace:plugin` key and applies to every new claude session on this machine. Either way the definition stays exactly where it is — this is the reversible half of toolbox.remove, and it is what to reach for when a server is suspected rather than unwanted. Restart the sessions that should feel it. args: kind (mcp|plugin), name (server name, or the plugin key), agent? (required for mcp), on (true|false)',
+            handler: (args) => {
+                const kind = argStr(args, 'kind');
+                const name = argStr(args, 'name');
+                const on = args.on !== false && args.on !== 'false';
+                if (kind === 'plugin') {
+                    need(setPluginEnabled(name, on, deps.home),
+                        `Could not update enabledPlugins in user settings.json for "${name}".`);
+                    return { kind, name, on, scope: 'user', note: `"${name}" ${on ? 'enabled' : 'disabled'} — applies to new claude sessions.` };
+                }
+                need(kind === 'mcp', `enable takes an mcp or a plugin, not "${kind}"`);
+                const agent = findAgent(argStr(args, 'agent'));
+                need(readAgentMcpServers(agent).some(s => s.name === name),
+                    `${agent.name} has no MCP server called "${name}" — toolbox.list kind:mcp shows what it has.`);
+                const file = setServerDisabled(agent, name, !on);
+                return {
+                    kind, name, on, agent: agent.name, file,
+                    note: `"${name}" ${on ? 'enabled' : 'disabled'} for ${agent.name} — restart its sessions.`
+                };
             }
         }
     ]);

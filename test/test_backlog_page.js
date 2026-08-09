@@ -1165,6 +1165,37 @@ const famData = () => {
     ok('‼️ a part whose whole is gone is marked, not silently unlinked',
         /pj-bl-m warn[^>]*>↳ Z-9 \?</.test(r3.html()));
     ok('…and it is not a link to nowhere', !/data-bljump="Z-9"/.test(r3.html()));
+    // U-23: the mark on the far right of the row is not where the eye is, so
+    // being a part is also said on the ROW, in every ordering.
+    ok('‼️ a part is marked as one on the row itself, outside the family view',
+        /class="pj-bl-row[^"]*\bchild\b/.test(r.html()));
+    ok('…and a part whose whole is gone is not drawn as a live family',
+        /class="pj-bl-row[^"]*child orphan/.test(r3.html()));
+    ok('…while an item that is part of nothing carries neither class',
+        !/data-key="P-2"[\s\S]{0,20}child/.test(r.html()));
+}
+
+// U-24 — ⚭ Gather families: the QUEUE is rearranged so a family reads as one
+// run. It is the twin of Tidy and the pair has to stay distinguishable: this one
+// writes the 🎯 block, that one moves lines.
+{
+    const r = run(famData());
+    ok('the toolbar offers it, beside Tidy', !!r.one('[data-act="blGather"]'));
+    r.one('[data-act="blGather"]').click();
+    const all = r.posted.filter(m => m.type === 'backlogGather').pop();
+    ok('the button asks for every family — no code', all && !all.code);
+    // One family at a time is the row's own right-click, and it is only offered
+    // where there is something to gather.
+    const ctxOf = key => {
+        const m = new RegExp('data-key="' + key + '"[\\s\\S]{0,1400}?data-vscode-context="([^"]*)"')
+            .exec(r.html());
+        return m ? JSON.parse(m[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&')) : null;
+    };
+    ok('‼️ a row that HAS parts publishes so to its menu', ctxOf('P-1').afParts === true);
+    ok('…and one that has none says that instead', ctxOf('P-2').afParts === false);
+    r.send({ type: 'afctx', act: 'blGather', ctx: { code: 'P-1', key: 'P-1', line: 13 } });
+    const one = r.posted.filter(m => m.type === 'backlogGather').pop();
+    ok('the row\'s menu asks for that one family', one && one.code === 'P-1');
 }
 
 // The picker on the row: what it offers, and the one thing it must never offer.
@@ -1192,31 +1223,66 @@ const famData = () => {
 }
 
 // The capture box gained a sixth axis, and it waits on none of the others.
+//
+// ‼️ IT IS A BOX YOU TYPE INTO, NOT A `<select>` (U-21). The list is every open
+// item in the project — fifty of them on a real backlog — so the control that
+// asks "which whole is this a part of" has to be searchable by WORDS as well as
+// by code, which is the one thing a native select cannot do.
+/** Open the picker and pick a code out of it, the way a hand does. */
+function pickParent(r, code) {
+    r.byId('bl-parent').fire('focus');
+    const line = r.els('blpp').find(e => e.dataset.blpp === code);
+    if (line) { line.fire('mousedown'); }
+    return line;
+}
 {
     const r = run(famData());
-    const sel = r.byId('bl-parent');
-    ok('the capture box offers a parent', !!sel);
+    const box = r.byId('bl-parent');
+    ok('the capture box offers a parent', !!box);
+    ok('‼️ …and it is a box you can type in, not a dropdown of fifty', box.tag === 'input');
     ok('‼️ …without an area having to be picked first — one control, one question',
-        !r.byId('bl-area').attrs.disabled && !sel.attrs.disabled);
-    sel.value = 'P-1';
-    sel.fire('change');
+        !r.byId('bl-area').attrs.disabled && !box.attrs.disabled);
+    box.fire('focus');
+    ok('focus opens the whole list before a character is typed',
+        r.els('blpp').length > 1);
+    ok('"no parent" leads it here too', r.els('blpp')[0].dataset.blpp === '');
+    ok('a closed item is not offered as a whole to belong to',
+        !r.els('blpp').some(e => e.dataset.blpp === 'U-1'));
+    // Typing filters by WORDS, which is the whole reason this is not a select.
+    const typed = r.byId('bl-parent');
+    typed.value = 'work layer';
+    typed.fire('input');
+    const hits = r.els('blpp').map(e => e.dataset.blpp).filter(Boolean);
+    ok('‼️ typing filters the list by the items\' own words',
+        hits.length === 1 && hits[0] === 'P-1');
+    typed.value = 'P-2';
+    typed.fire('input');
+    ok('…and by code', r.els('blpp').map(e => e.dataset.blpp).filter(Boolean).join() === 'P-2');
+    typed.value = 'nothing matches this at all';
+    typed.fire('input');
+    ok('a query that matches nothing says so rather than closing', /Nothing open matches/.test(r.html()));
+
+    const r2 = run(famData());
+    pickParent(r2, 'P-1');
     ok('the choice survives the repaint it causes, like every other axis',
-        /<option value="P-1" selected/.test(r.html()));
-    r.els('blarea').find(e => e.dataset.blarea === 'K').click();      // any repaint
-    ok('…and any other repaint too', /<option value="P-1" selected/.test(r.html()));
-    r.byId('bl-new').value = 'a new part';
-    r.byId('bl-new').fire('input');
-    r.one('[data-act="blAdd"]').click();
-    const add = r.posted.filter(m => m.type === 'backlogAdd').pop();
+        /value="P-1 — /.test(r2.html()));
+    r2.els('blarea').find(e => e.dataset.blarea === 'K').click();      // any repaint
+    ok('…and any other repaint too', /value="P-1 — /.test(r2.html()));
+    r2.byId('bl-new').value = 'a new part';
+    r2.byId('bl-new').fire('input');
+    r2.one('[data-act="blAdd"]').click();
+    const add = r2.posted.filter(m => m.type === 'backlogAdd').pop();
     ok('Add sends it', add && add.parent === 'P-1' && add.text === 'a new part');
     // ‼️ The parent is kept after a successful add, exactly like the area:
     // filing three parts of one epic is ONE choice, not three. The queue place
     // is the only thing that goes, because it is about the item just written.
-    r.send({ type: 'result', ok: 'Added.' });
-    r.send({ type: 'data', data: famData() });
-    ok('…and keeps it for the next part of the same whole',
-        /<option value="P-1" selected/.test(r.html()));
-    ok('the ↺ reset covers it', /part of: P-1/.test(r.html()));
+    r2.send({ type: 'result', ok: 'Added.' });
+    r2.send({ type: 'data', data: famData() });
+    ok('…and keeps it for the next part of the same whole', /value="P-1 — /.test(r2.html()));
+    ok('the ↺ reset covers it', /part of: P-1/.test(r2.html()));
+    // ✕ is one press for both halves of the gesture.
+    r2.one('[data-blppclear]').fire('mousedown');
+    ok('✕ clears the link', !/value="P-1 — /.test(r2.html()));
 }
 
 // ‼️ A CHOICE THE FILE CAN NO LONGER HONOUR IS SAID, NOT SWALLOWED. The parent
@@ -1224,9 +1290,7 @@ const famData = () => {
 // the item quietly at the top level would lose the one thing that was set.
 {
     const r = run(famData());
-    const sel = r.byId('bl-parent');
-    sel.value = 'P-1';
-    sel.fire('change');
+    pickParent(r, 'P-1');
     const gone = famData();
     gone.tabData.backlog.items = gone.tabData.backlog.items.map(i =>
         i.code === 'P-1' ? Object.assign({}, i, { state: 'done' }) : i);

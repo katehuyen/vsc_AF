@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local Claude Code agents: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.94.0",
+  "version": "3.95.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -1115,7 +1115,7 @@
         "command": "agentfarm.openCapabilities",
         "title": "Open Capability Matrix (Skills × MCP × Agents)",
         "category": "Agent Farm",
-        "icon": "$(table)"
+        "icon": "$(compass)"
       },
       {
         "command": "agentfarm.openBacklog",
@@ -1479,6 +1479,11 @@
       {
         "command": "agentfarm.ctx.backlogQueue",
         "title": "Put it in the work queue…",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.backlogGather",
+        "title": "Gather its parts under it",
         "category": "Agent Farm"
       },
       {
@@ -4310,6 +4315,11 @@
           "group": "4_link@1"
         },
         {
+          "command": "agentfarm.ctx.backlogGather",
+          "when": "webviewSection == 'afBacklogRow' && afParts",
+          "group": "3_move@2"
+        },
+        {
           "command": "agentfarm.ctx.planTick",
           "when": "webviewSection == 'afPlanItem' && !afDone",
           "group": "2_edit@1"
@@ -5790,6 +5800,11 @@
         },
         {
           "command": "agentfarm.ctx.backlogQueue",
+          "when": "false",
+          "group": "ctx"
+        },
+        {
+          "command": "agentfarm.ctx.backlogGather",
           "when": "false",
           "group": "ctx"
         },

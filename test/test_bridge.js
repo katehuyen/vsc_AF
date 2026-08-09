@@ -1710,8 +1710,8 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         const { addPlanItem, checkPlanItem, planSummary } =
             require(path.join(__dirname, '..', 'out', 'core', 'projectPlan.js'));
         const {
-            addBacklogItem, BACKLOG_CODE, moveInQueue, nextBacklog, parseBacklog,
-            placeInQueue, setBacklogQueue, setBacklogState, tidyBacklogFile
+            addBacklogItem, BACKLOG_CODE, gatherFamilies, moveInQueue, nextBacklog, parseBacklog,
+            placeInQueue, setBacklogFields, setBacklogQueue, setBacklogState, tidyBacklogFile
         } = require(path.join(__dirname, '..', 'out', 'core', 'projectBacklog.js'));
         const { appendTrack, closingStamp, readTrackFile, summarizeCode, trackedCodes, TRACK_EVENTS } =
             require(path.join(__dirname, '..', 'out', 'core', 'backlogTrack.js'));
@@ -2020,6 +2020,14 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
                     }
                 },
                 {
+                    op: 'projects.backlog.gather',
+                    describe: 'pull every part under its whole IN THE QUEUE. args: project, code?',
+                    handler: a => {
+                        const r = editBacklog(t => gatherFamilies(t, optStr(a, 'code') || undefined));
+                        return { queue: r.queue, note: r.note ?? null };
+                    }
+                },
+                {
                     op: 'projects.backlog.check', describe: 'change state. args: project, code?, state?',
                     handler: a => {
                         const target = {
@@ -2087,6 +2095,19 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             const afterMove = await reg.dispatch('projects.backlog.next',
                 { project: 'Agent Farm', limit: 5, maxEffort: 'XL' });
             ok('…and next reads exactly that order', afterMove.ok && afterMove.result.items[0] === 'P-2');
+            // ---- U-24: the parts come to the whole, over the bridge ----
+            // P-3 is written as a part of P-1 on the file itself, so what the op
+            // is asked to do is the real thing rather than a fixture's promise.
+            editBacklog(t => setBacklogFields(t, { code: 'P-3' }, { parent: 'P-1' }));
+            const gathered = await reg.dispatch('projects.backlog.gather', { project: 'Agent Farm' });
+            ok('projects.backlog.gather answers with the order it wrote',
+                gathered.ok && Array.isArray(gathered.result.queue) && gathered.result.queue.length > 1);
+            ok('‼️ …and a part really does end up directly behind its whole',
+                gathered.result.queue.indexOf('P-3') === gathered.result.queue.indexOf('P-1') + 1);
+            ok('…and running it a second time says there was nothing to do',
+                /already/.test(((await reg.dispatch('projects.backlog.gather',
+                    { project: 'Agent Farm' })).result || {}).note || ''));
+
             const emptied = await reg.dispatch('projects.backlog.queue',
                 { project: 'Agent Farm', codes: [] });
             ok('emptying the queue leaves no heading behind',
@@ -2171,10 +2192,24 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             'projects.backlog.check', 'projects.backlog.set', 'projects.backlog.code',
             'projects.backlog.move', 'projects.backlog.reorder', 'projects.backlog.archive',
             'projects.backlog.promote', 'projects.backlog.open',
-            'projects.backlog.queue', 'projects.backlog.tidy',
-            'projects.track', 'projects.tracks', 'projects.tracks.backfill']) {
+            'projects.backlog.queue', 'projects.backlog.tidy', 'projects.backlog.gather',
+            'projects.track', 'projects.tracks', 'projects.tracks.backfill',
+            // B-2 — the fleet page can MAKE an agent, so the bridge can too.
+            'agents.create', 'agents.roots', 'agents.pack.import']) {
             ok(`extension.ts registers ${op}`, src.includes(`op: '${op}'`));
         }
+        // ‼️ B-2 — THE THREE PAGES THAT COULD WRITE AND WHOSE BRIDGE COULD ONLY
+        // READ. Each op is registered in its own module (so a fixture registry
+        // can dispatch it), and each module is wired into extension.ts.
+        for (const [mod, ops] of [
+            ['toolboxBridge', ['toolbox.install', 'toolbox.copy', 'toolbox.remove', 'toolbox.enable']],
+            ['studioBridge', ['studio.productions', 'studio.assets', 'studio.production.new',
+                'studio.scene.status', 'studio.assign', 'studio.triage', 'studio.rerun', 'studio.export']]
+        ]) {
+            const text = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', `${mod}.ts`), 'utf8');
+            for (const op of ops) { ok(`${mod} registers ${op}`, text.includes(`op: '${op}'`)); }
+        }
+        ok('…and extension.ts wires the Studio ops in', src.includes('registerStudioOps(bridge'));
         const nextBlock = src.slice(src.indexOf("op: 'projects.backlog.next'"),
             src.indexOf("op: 'projects.backlog.next'") + 2600);
         ok('‼️ backlog.next\'s contract explains the effort ceiling rather than hiding it',
@@ -2210,6 +2245,13 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
             src.indexOf("op: 'projects.backlog.reorder'") + 2600);
         ok('‼️ backlog.reorder says it has NO area rule, since that was the old surprise',
             /no area rule/.test(reorderBlock) && /never a line/.test(reorderBlock));
+        const gatherBlock = src.slice(src.indexOf("op: 'projects.backlog.gather'"),
+            src.indexOf("op: 'projects.backlog.gather'") + 2600);
+        ok('‼️ backlog.gather says the heads do not move, which is the promise that makes it repeatable',
+            /heads do not move/.test(gatherBlock));
+        ok('…and names the one it is most confused with — this one moves no line',
+            /moves no line/.test(gatherBlock) && /backlog\.tidy/.test(gatherBlock));
+        ok('…and offers the whole queue or one family', /code\? \(one family/.test(gatherBlock));
         const tidyBlock = src.slice(src.indexOf("op: 'projects.backlog.tidy'"),
             src.indexOf("op: 'projects.backlog.tidy'") + 2600);
         ok('‼️ backlog.tidy promises the queue survives it, which is why it is safe',

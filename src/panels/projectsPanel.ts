@@ -108,6 +108,9 @@ export interface ProjectsPanelDeps {
      *  ‼️ Codes only: an entry has to mean the same item after the file is
      *  edited, and a line number does not survive that. */
     backlogQueue(id: string, codes: string[]): { error?: string; note?: string };
+    /** Pull every part up under its whole in the QUEUE, keeping each family's
+     *  head exactly where it stands. `code` narrows it to that one family. */
+    backlogGather(id: string, code?: string): { error?: string; note?: string };
     /** Carry misfiled items back under their own heading, then put each area's
      *  items in code order. The queue is unaffected by either. */
     backlogTidy(id: string): { error?: string; note?: string; moved?: number; reseated?: string[] };
@@ -602,6 +605,16 @@ export class ProjectsPanel {
                 const res = this.deps.backlogQueue(id, codes);
                 this.done(res.error, res.error ? undefined
                     : (res.note ?? (codes.length ? 'Queue rearranged.' : 'Queue cleared.')));
+                break;
+            }
+            // Same block, same rule: this one rearranges the queue so the parts
+            // of a whole follow it. `code` narrows it to one family — the row's
+            // own "gather"; without one every family is pulled together.
+            case 'backlogGather': {
+                if (!id) { break; }
+                const code = String(msg.code ?? '').trim().toUpperCase();
+                const res = this.deps.backlogGather(id, code || undefined);
+                this.done(res.error, res.error ? undefined : (res.note ?? 'Queue rearranged.'));
                 break;
             }
             case 'backlogTidy': {

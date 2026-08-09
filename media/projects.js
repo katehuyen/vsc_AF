@@ -913,8 +913,29 @@
                 /* The one indent in the whole page, and it is drawn ONLY in the
                    family ordering — the sort that says it is showing a tree. The
                    depth is capped so a chain nobody meant to build cannot push
-                   the text off the row. */
-                .pj-bl-row.nested { padding-left:calc(var(--bl-depth,0) * 15px); }
+                   the text off the row.
+                   22px, not 15: at fifteen a step was the width of two
+                   characters and the eye had to measure the left edge of one row
+                   against the next to see it at all, which is exactly what an
+                   indent is supposed to save you from. */
+                .pj-bl-row.nested { padding-left:calc(var(--bl-depth,0) * 22px); }
+                /* ‼️ A PART, AT A GLANCE, IN EVERY ORDERING — and quiet enough to
+                   read two hundred of them.
+                   Nothing new is drawn on the line: the CODE, which the eye is
+                   already on, says it. Italic (a code that belongs to another
+                   code), and a hairline down its leading edge in the green the
+                   ⊂ badge already uses for this one relation, so the two are
+                   obviously the same fact. That is the whole difference —
+                   colouring the words or fading them would say "this matters
+                   less", which is the opposite of what being part of something
+                   means. In the family ordering it rides on top of the indent
+                   and reads as the line the indent implies. */
+                .pj-bl-row.child .pj-bl-code { font-style:italic; padding-left:7px;
+                    box-shadow:inset 2px 0 0 var(--vscode-charts-green,#3fb950); }
+                /* The link points at nothing. Same shape, the warning hue, no
+                   claim of a live family — the row's ⚠ badge carries the why. */
+                .pj-bl-row.child.orphan .pj-bl-code {
+                    box-shadow:inset 2px 0 0 var(--vscode-editorWarning-foreground,#cca700); }
                 /* ‼️ THE BADGES AND THE ACTIONS ARE TWO STACKED ROWS, AND THE
                    BLOCK IS AS WIDE AS THE WIDER OF THEM — no more.
                    Every axis this page can set is a control, and on one line the
@@ -1018,13 +1039,61 @@
                    it is the one that needs the whole width: a line reading
                    "P-4 — complete the project system phases" does not fit beside
                    three others, and a parent picker showing four codes and no
-                   words is a picker nobody can choose from. Own line, stretched. */
-                .pj-bl-capf .pj-bl-capparent { flex:1 1 100%; min-width:0; }
+                   words is a picker nobody can choose from. Own line, stretched,
+                   and position:relative because the list it opens hangs off it
+                   rather than off the capture strip — the strip wraps, and a
+                   panel measured against a box that moves under it is a panel
+                   that lands somewhere else on a narrow window. */
+                .pj-bl-capf .pj-bl-pp { flex:1 1 100%; min-width:0; position:relative;
+                    display:flex; align-items:center; }
+                .pj-bl-pp .pj-bl-ppq { flex:1 1 auto; min-width:0; font-family:inherit;
+                    font-size:12px; padding:2px 22px 2px 6px; }
                 /* A parent that has been closed or deleted since it was picked —
                    marked, not silently dropped. The same amber the queue-place
                    box uses for a place the file cannot keep. */
-                .pj-bl-capf .pj-bl-capparent.wants {
+                .pj-bl-pp.wants .pj-bl-ppq {
                     border-color:var(--vscode-editorWarning-foreground,#cca700); }
+                /* Inside the box's right edge, like every other clearable box on
+                   this page (common.css .af-clr) — clearing happens where the
+                   text is, not at a second widget along the row. Drawn only when
+                   there IS something to clear. */
+                .pj-bl-pp .pj-bl-ppx { position:absolute; right:2px; padding:0 5px; font-size:11px;
+                    background:none; border:none; color:inherit; opacity:.55; cursor:pointer; }
+                .pj-bl-pp .pj-bl-ppx:hover { opacity:1;
+                    background:var(--vscode-toolbar-hoverBackground,#8882); border-radius:4px; }
+                /* THE LIST. Capped and scrollable for the reason the row's parent
+                   menu is: on a real backlog this is fifty items, and an uncapped
+                   list runs off the bottom of the window with its own end
+                   unreachable. It hangs BELOW the box and over everything after
+                   it, so the capture strip does not reflow while it is open. */
+                .pj-bl-pp .pj-bl-ppm { position:absolute; top:100%; left:0; right:0; z-index:34;
+                    display:block; margin-top:2px; padding:3px; border-radius:6px;
+                    max-height:min(360px,52vh); overflow:auto; overscroll-behavior:contain;
+                    border:1px solid var(--vscode-widget-border,#4446);
+                    background:var(--vscode-menu-background, var(--vscode-editorWidget-background,#252526));
+                    box-shadow:0 4px 14px #0007; }
+                .pj-bl-ppi { display:flex; align-items:baseline; gap:7px; width:100%; text-align:left;
+                    background:none; border:none; color:inherit; cursor:pointer; font-size:12px;
+                    padding:3px 7px; border-radius:4px; }
+                .pj-bl-ppi:hover { background:var(--vscode-list-hoverBackground); }
+                /* Where the KEYBOARD is, which is not where the pointer is — two
+                   different questions, and a list that answered only the second
+                   could not be driven by ↑ ↓ at all. */
+                .pj-bl-ppi.at { background:var(--vscode-list-activeSelectionBackground);
+                    color:var(--vscode-list-activeSelectionForeground); }
+                .pj-bl-ppc { flex:0 0 58px; font-family:var(--vscode-editor-font-family,monospace);
+                    font-size:11px; opacity:.9; }
+                .pj-bl-ppt { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
+                    white-space:nowrap; }
+                .pj-bl-ppe { flex:0 0 auto; font-size:10px; opacity:.6; }
+                .pj-bl-ppn { flex:0 0 auto; font-size:10px; color:var(--vscode-charts-green,#3fb950); }
+                .pj-bl-ppnone { display:block; padding:6px 8px; font-size:11px; opacity:.7; }
+                /* The line's hover panel is measured against the LIST, not against
+                   the line: a box 760px wide anchored to a row inside a 340px
+                   column opens off the right of the panel every time. Same fix,
+                   same reason, as the Next up strip's chips. */
+                .pj-bl-ppm .af-tipw { display:block; }
+                .pj-bl-ppm .af-tipw > .af-tip { left:0; top:100%; max-width:min(620px,52vw); }
                 /* The last row of the footer: the box's own four text tools on
                    the left, Add on the right. Add is a BUTTON, not a banner —
                    it used to span the whole width, which said "this is the big
@@ -1158,6 +1227,24 @@
                 .pj-bl-mi.on { background:var(--vscode-list-activeSelectionBackground);
                     color:var(--vscode-list-activeSelectionForeground); }
                 .pj-bl-mig { flex:0 0 30px; opacity:.85; font-size:11px; }
+                .pj-bl-mil { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
+                    white-space:nowrap; }
+                /* ‼️ THE WIDE MENU OPENS WHERE THE ROW STARTS, NOT WHERE THE
+                   BUTTON IS — the same fix, and for the same reason, as the Next
+                   up strip's hover panels. ↳ is the LAST control on the row's
+                   lower line, so a menu anchored to it opened hard against the
+                   right edge of the panel and ran off it; and being anchored
+                   there it also had to stay narrow, which is what forced fifty
+                   live items to be described in forty-six characters each.
+                   position:static on the wrapper hands the containing block to
+                   .pj-bl-row, which is position:relative for exactly this
+                   (see the "more" hover) — so the menu is the width of the line
+                   it belongs to, always in the same place, and the label gets
+                   the room to say which item it is naming. */
+                .pj-bl-mw.wide { position:static; }
+                .pj-bl-menu.wide { left:0; width:100%; max-width:min(820px,100%);
+                    max-height:min(420px,58vh); }
+                .pj-bl-menu.wide .pj-bl-mig { flex:0 0 58px; font-family:var(--vscode-editor-font-family,monospace); }
                 /* Unfiled: a coloured filing glyph rather than the words "file it
                    under an area…", which were a whole sentence on every uncoded
                    row. The sentence moved into the hover. */
@@ -1599,6 +1686,9 @@
                 parent: '',
                 at: '', boxH: '', sending: false
             };
+            // A half-typed search in the "part of" box belongs to the project it
+            // was typed in — see blPP.
+            blPP = { q: '', open: false, at: -1 };
         }
         return blCap;
     }
@@ -1698,12 +1788,12 @@
      * its first `</div>` — in the DOM-stub test AND in the reader's head. A nested
      * div here would have broken the row boundary everything else relies on.
      */
-    function blMenuHtml(kind, key, rows, current) {
+    function blMenuHtml(kind, key, rows, current, wide) {
         if (!blMenuOpen(kind, key)) { return ''; }
-        return `<span class="pj-bl-menu">${rows.map(r =>
+        return `<span class="pj-bl-menu${wide ? ' wide' : ''}">${rows.map(r =>
             `<button class="pj-bl-mi${r.value === current ? ' on' : ''}" data-blpick="${C.esc(r.value)}"
                 ${r.title ? `title="${C.esc(r.title)}"` : ''}>
-                <span class="pj-bl-mig">${r.glyph || ''}</span>${C.esc(r.label)}</button>`).join('')}</span>`;
+                <span class="pj-bl-mig">${r.glyph || ''}</span><span class="pj-bl-mil">${C.esc(r.label)}</span></button>`).join('')}</span>`;
     }
 
     const blPrioRows = () => PRIO_ORDER.slice().reverse().map(p => ({
@@ -1724,12 +1814,20 @@
 
     /** How much of a parent's words fit on a picker line. Long enough to tell
      *  two items in the same area apart, short enough that the list stays a
-     *  list. */
+     *  list.
+     *
+     *  ‼️ TWO LENGTHS, BECAUSE THERE ARE TWO PICKERS AND THEY ARE NOT THE SAME
+     *  WIDTH. The capture box's list is the width of the capture strip; the
+     *  row's menu is now the width of the ROW (see `.pj-bl-menu.wide`), which is
+     *  most of the panel — and describing an item in forty-six characters there
+     *  was a limit inherited from a menu that no longer exists. Both still end
+     *  on a word boundary, and the whole item is in the line's own hover. */
     const BL_PARENT_LABEL = 46;
-    const blShort = t => {
+    const BL_PARENT_LABEL_WIDE = 110;
+    const blShort = (t, max) => {
+        const n = max || BL_PARENT_LABEL;
         const s = String(t || '').replace(/\s+/g, ' ').trim();
-        return s.length > BL_PARENT_LABEL
-            ? s.slice(0, BL_PARENT_LABEL).replace(/\s+\S*$/, '') + '…' : s;
+        return s.length > n ? s.slice(0, n).replace(/\s+\S*$/, '') + '…' : s;
     };
 
     /**
@@ -1780,7 +1878,7 @@
         value: '', label: 'no parent', glyph: '–',
         title: 'Clears the [parent:: …] field. Nothing else on the line moves.'
     }].concat(blParentChoices(all, exclude).map(i => ({
-        value: i.code, label: blShort(i.text), glyph: i.code,
+        value: i.code, label: blShort(i.text, BL_PARENT_LABEL_WIDE), glyph: i.code,
         title: `${i.code}${i.effort ? ' · ' + i.effort : ''} — ${(i.children || []).length} part(s) already`
     })));
 
@@ -1829,6 +1927,109 @@
     function blAtWarnHtml(cap) {
         if (!cap.at || cap.area) { return ''; }
         return `<span class="pj-bl-atwarn" title="The 🎯 Queue block lists codes, because a code is the only handle that survives somebody editing the file in Obsidian. An inbox capture has none yet.">⚠ pick an area to keep place ${C.esc(String(cap.at))}</span>`;
+    }
+
+    /**
+     * "— part of —" WHILE IT IS BEING SEARCHED. Not part of the draft: what the
+     * capture keeps is the CHOICE (`cap.parent`), and a half-typed query is a
+     * gesture in progress, not something to carry into the next project or the
+     * next item. Cleared whenever the box closes.
+     *   q    — what has been typed
+     *   open — is the list showing
+     *   at   — which line the keyboard is on, -1 for none
+     */
+    let blPP = { q: '', open: false, at: -1 };
+
+    /** The matches for what has been typed, in the order they are offered. The
+     *  query goes through AFQuery (the one place a query becomes a match here),
+     *  so `part of*`, quotes and OR work in this box exactly as they do in the
+     *  search box above the list — a picker with its own private grammar is a
+     *  grammar somebody has to learn twice. Searched against CODE and WORDS,
+     *  because a reader reaching for a whole knows one or the other. */
+    function blParentMatches(picks) {
+        const q = window.AFQuery.compile(blPP.q);
+        return (picks || []).filter(i => q.test((i.code || '') + ' ' + (i.text || '')));
+    }
+
+    /** How the chosen parent reads when the box is closed — the code IS the
+     *  answer, and the words are what tells two codes in one area apart. */
+    const blParentLabel = i => `${i.code} — ${blShort(i.text, BL_PARENT_LABEL_WIDE)}`;
+
+    /**
+     * ‼️ A PICKER YOU TYPE INTO, BECAUSE A LIST OF FIFTY IS NOT A DROPDOWN.
+     *
+     * This was a native `<select>`, on the reasoning that typing a code jumps to
+     * it. That holds for a code you already know and fails for everything else:
+     * a `<select>` jumps on the FIRST characters only, so nothing about an item
+     * except its code can be searched, the list is as tall as the window lets it
+     * be, and the one line each option gets is unreadable at the width of a
+     * capture strip. The real question here is "which of my open items is this a
+     * part of", and it is asked with words far more often than with a code.
+     *
+     * So: a text box that filters live, and a list under it that carries the
+     * code, the size and enough of the words to recognise the item — with the
+     * WHOLE item in each line's hover panel, the same box the Next up strip's
+     * codes use, because that is the one thing a short label can never do.
+     *
+     * The chosen value is drawn IN the box when it is closed (a control that
+     * shows a code and hides which item it is would be the `<select>`'s own
+     * failure again) and gives way to the query while typing. ✕ clears the
+     * choice and the query in one press; both are one gesture to the reader.
+     */
+    function blParentBoxHtml(cap, picks, gone) {
+        const chosen = picks.find(i => i.code === cap.parent);
+        const shown = blPP.open ? blPP.q : (chosen ? blParentLabel(chosen) : (cap.parent || ''));
+        const tip = '‼️ WHAT THIS ITEM IS PART OF — the epic, the phase, the bigger job it belongs to. '
+            + 'Type to filter every open item by CODE or by WORDS; ↑ ↓ move, Enter takes the one that is lit, Esc closes. '
+            + 'Rest on a line and the whole item opens beside it.\n\n'
+            + 'It is a link on THIS line ([parent:: CODE]), so nothing in the file moves and this item still '
+            + 'gets its own next free code in its own area: a U item is a part of a P epic as often as not. '
+            + 'It is NOT ⛔ — a part is not waiting on its whole. And the queue does not know about it: both '
+            + 'queue on their own account, which is why choosing this never changes where anything is worked. '
+            + 'Independent of the area box; an uncoded capture carries the link too.\n\n'
+            + window.AFQuery.tip('Searched against each open item\'s code and its words.');
+        const rows = blPP.open ? blParentBoxRows(picks) : '';
+        return `<span class="pj-bl-pp${gone ? ' wants' : ''}">
+            <input id="bl-parent" class="pj-bl-ppq" type="text" autocomplete="off" spellcheck="false"
+                placeholder="— part of —" value="${C.esc(shown)}" title="${C.esc(tip)}">
+            ${cap.parent || blPP.q
+            ? `<button class="pj-bl-ppx" data-blppclear title="Clear the link and the search — nothing else on the capture is touched">✕</button>` : ''}
+            ${rows}</span>`;
+    }
+
+    /** The open list. `no parent` leads for the same reason it does in the row's
+     *  menu: taking a link off is the commonest single thing either is opened
+     *  for. A query that matches nothing SAYS so rather than closing the list —
+     *  an empty box with no explanation reads as a broken control. */
+    function blParentBoxRows(picks) {
+        const hits = blParentMatches(picks);
+        const line = (i, n) => {
+            const head = `${i.code} · ${i.state}${i.effort ? ' · ' + i.effort : ''}`
+                + ` · ${(i.children || []).length} part(s) already`
+                + ` · ${window.AFTip.sizeNote(i.text || '')}`;
+            const body = (i.text || '(empty)') + '\n\n' + window.AFTip.lines([
+                i.section ? `Section: ${i.section}` : '',
+                `Priority: ${i.priority || 'normal'}`,
+                (i.kinds || []).length ? `Type: ${i.kinds.map(k => '#' + k).join(' ')}` : '',
+                i.parent ? `Itself part of: ${i.parent}` : '',
+                (i.children || []).length ? `Has parts: ${i.children.join(' ')}` : ''
+            ]);
+            return window.AFTip.wrap(
+                `<button class="pj-bl-ppi${n === blPP.at ? ' at' : ''}" data-blpp="${C.esc(i.code)}">
+                    <span class="pj-bl-ppc">${C.esc(i.code)}</span>
+                    <span class="pj-bl-ppt">${C.esc(blShort(i.text, BL_PARENT_LABEL_WIDE))}</span>
+                    ${i.effort ? `<span class="pj-bl-ppe">${C.esc(i.effort)}</span>` : ''}
+                    ${(i.children || []).length ? `<span class="pj-bl-ppn">⊂ ${(i.children || []).length}</span>` : ''}
+                </button>`, head, body);
+        };
+        return `<span class="pj-bl-ppm">
+            <button class="pj-bl-ppi none${blPP.at === -1 ? ' at' : ''}" data-blpp=""
+                title="No parent — the item is a whole of its own. This is what a capture starts as.">
+                <span class="pj-bl-ppc">–</span><span class="pj-bl-ppt">no parent</span></button>
+            ${hits.map(line).join('')}
+            ${hits.length ? '' : `<span class="pj-bl-ppnone">Nothing open matches — only LIVE coded items can be a whole, `
+            + `and a closed one is a state you reach by finishing it rather than one you pick.</span>`}
+        </span>`;
     }
 
     /** The five axes a capture carries, in the order they are drawn — the one
@@ -1927,15 +2128,8 @@
         const areaOpts = [`<option value=""${cap.area ? '' : ' selected'}>— area —</option>`]
             .concat(areas.map(a => `<option value="${C.esc(a.code)}"${a.code === cap.area ? ' selected' : ''}>${C.esc(a.code)} · ${C.esc(a.label)}</option>`))
             .join('');
-        // What the new item is PART OF. A native select on purpose: it is the
-        // same control as the four beside it, and typing a code jumps to it —
-        // which on a list of live items is the fastest way there is to reach a
-        // code you already know. A parent chosen last time is KEPT, like the
-        // other axes: filing three parts of one epic is one choice, not three.
+        // What the new item is PART OF — a box you TYPE INTO, see blParentBoxHtml.
         const parentPicks = blParentChoices(all, '');
-        const parentOpts = [`<option value=""${cap.parent ? '' : ' selected'}>— part of —</option>`]
-            .concat(parentPicks.map(i => `<option value="${C.esc(i.code)}"${i.code === cap.parent ? ' selected' : ''}>${C.esc(i.code)} — ${C.esc(blShort(i.text))}</option>`))
-            .join('');
         // ‼️ A choice the file can no longer honour is SAID, not silently
         // dropped: the parent was closed or deleted in Obsidian while the box
         // sat there holding it, and an Add that quietly filed the item at the
@@ -1960,6 +2154,13 @@
             <span class="muted small">${C.esc(d.path)}</span>
             ${blHelpHtml(d)}
             <span class="grow"></span>
+            ${/* ‼️ NEXT TO TIDY BECAUSE THE PAIR IS THE POINT, AND OPPOSITE TO IT
+                  BECAUSE THEY TOUCH DIFFERENT THINGS: this one rearranges the
+                  QUEUE and moves no line, Tidy rearranges the FILE and moves no
+                  queue entry. Naming them side by side is the cheapest way to
+                  stop the two being confused for each other. */''}
+            <button class="secondary" data-act="blGather"
+                title="Pull every PART up under its whole, so a family reads as one run in the queue instead of being scattered through it. The heads do not move — where a family sits is a decision you made about the WHOLE and it is kept exactly; the parts come to it, keeping the order they already had among themselves, and a part that was queued ahead of its whole comes back down to it. Everything else in the queue stays where it is. This writes the 🎯 block ONLY: no line moves, no code changes, no item is filed anywhere else — that is the button beside it. One family at a time is on a row's own right-click menu (Gather its parts under it).">⚭ Gather families</button>
             <button class="secondary" data-act="blTidy"
                 title="Put the file back in its own order, in two moves. FIRST, an item filed under somebody else's heading goes back under its own — a P-coded line parked in the ## U section is invisible to anyone scrolling to ## P for it, and this page hides that damage because it groups by the CODE and draws the row in the right place regardless. THEN each area's items go back in code order — K-1, K-2, K-3 — so the file reads as the dictionary it is. Your order is untouched by both: the queue names codes, and a code does not care which line it is on. A section with prose between its items is left alone and said so, and an area with no heading in the file is never invented.">🧹 Tidy file order</button>
             <button class="secondary" data-act="blArchive"
@@ -1986,8 +2187,7 @@
                     <select id="bl-effort" title="Effort">
                         ${EFFORT_ORDER.map(e => `<option value="${e}"${e === cap.effort ? ' selected' : ''}>${e || '— size —'}</option>`).join('')}
                     </select>
-                    <select id="bl-parent" class="pj-bl-capparent${parentGone ? ' wants' : ''}"
-                        title="‼️ WHAT THIS ITEM IS PART OF — the epic, the phase, the bigger job it belongs to. It is a link on THIS line ([parent:: CODE]), so nothing in the file moves and this item still gets its own next free code in its own area: a U item is a part of a P epic as often as not. It is NOT ⛔ — a part is not waiting on its whole. And the queue does not know about it: both queue on their own account, which is why choosing this never changes where anything is worked. Independent of the area box; an uncoded capture carries the link too.">${parentOpts}</select>
+                    ${blParentBoxHtml(cap, parentPicks, parentGone)}
                     <span class="pj-bl-capr">
                         ${parentGone ? `<span class="pj-bl-atwarn" title="${C.esc(cap.parent + ' is closed or gone from the file, so it cannot be a parent any more. Pick another, or clear the box — Add will refuse it as it stands.')}">⚠ ${C.esc(cap.parent)} is gone</span>` : ''}
                         ${window.AFTextTools.html('bl', { wrap: 'span', className: 'tatools inline' })}
@@ -2595,7 +2795,11 @@
         // enough: the handler looks the item up in the data it already holds.
         return window.AFCtx.row('afBacklogRow', {
             key: key, code: i.code || '', line: i.line,
-            afCoded: !!i.code, afQueued: !!queueAt, afState: i.state || 'open'
+            afCoded: !!i.code, afQueued: !!queueAt, afState: i.state || 'open',
+            // Whether this item HAS parts — "gather its parts under it" is an
+            // offer about a whole, and on a row with nothing under it the menu
+            // line would do nothing at all.
+            afParts: (i.children || []).length > 0
         });
     }
 
@@ -2608,6 +2812,14 @@
         if (closed) { cls.push('closed'); }
         if (doing) { cls.push('doing'); }
         if (isNext) { cls.push('next'); }
+        // ‼️ BEING A PART IS A FACT ABOUT THE ITEM, SO IT IS DRAWN IN EVERY
+        // ORDERING. The indent exists only in the family view; in the other ten
+        // the only sign was a badge at the far right of the row, which is not
+        // where the eye is when you are reading down a list of codes. `orphan`
+        // is the same fact with the link dangling — the parent was deleted or
+        // renamed in Obsidian — and it is deliberately NOT drawn as a live
+        // family, because the row's ⚠ badge is already saying it is not one.
+        if (i.parent) { cls.push(rel.byCode.has(i.parent) ? 'child' : 'child orphan'); }
         const type = blTypeOf(i);
         // The canonical type is one settable badge; anything else the user tagged
         // rides along beside it, read-only, because it is theirs.
@@ -2648,9 +2860,23 @@
         // The handle carries the row's place in the queue. Off means there is no
         // place to carry: an uncoded capture cannot be in the queue, and a
         // closed item is not work waiting to be done.
+        // ‼️ A DROP IS ALWAYS AGAINST THE WHOLE QUEUE, AND WHILE THE LIST IS
+        // NARROWED THAT HAS TO BE SAID. Dragging inside the ⊂ family view is
+        // deliberate and safe — the host moves the code against the full order,
+        // exactly as it does with everything shown — but the ROWS IN BETWEEN ARE
+        // HIDDEN, so the move can be real and look like nothing happened (drop a
+        // part under its whole and the two were already adjacent on screen). It
+        // is also the manual version of "gather": this is how one part is placed
+        // by hand instead of by the button.
+        const narrowed = !!blFilter.family;
         const gripTip = queueAt
             ? (dragging
                 ? `#${queueAt} in the queue. Drag it anywhere — areas do not hold it, and its code, line and section do not change.`
+                + (narrowed
+                    ? ` The list is narrowed to ⊂ ${blFilter.family}, and a drop still lands against the WHOLE queue:`
+                    + ' dropping this on the lower half of its whole puts it directly behind it, however many'
+                    + ' hidden entries were between them. That is the by-hand version of ⚭ Gather families.'
+                    : '')
                 : `#${queueAt} in the queue. Dragging needs the list in queue order; the other sorts are ways of LOOKING, not of changing.`)
             : (i.code
                 ? 'Not in the queue — a closed item is not work waiting.'
@@ -2729,7 +2955,7 @@
                           the SET link lives with the hover actions, where ▶ ✕ ▲▼
                           already are, and the badge above appears only once
                           there is a fact to state. */''}
-                    <span class="pj-bl-mw"><button class="pj-bl-act${i.parent ? ' on' : ''}" data-blparent
+                    <span class="pj-bl-mw wide"><button class="pj-bl-act${i.parent ? ' on' : ''}" data-blparent
                         title="${C.esc('What this is PART OF' + (i.parent ? ` — ${i.parent}` : '')
                     + '. A link on this line: no code changes, no line moves, and the queue is untouched — '
                     + 'a part and its whole are queued separately. It is not ⛔: a part does not wait on its whole.')}">↳</button>
@@ -2741,7 +2967,7 @@
                               hundred times, on a page that repaints on every
                               filter chip, host push and keystroke. */''}
                         ${blMenuOpen('parent', key)
-                    ? blMenuHtml('parent', key, blParentRows(rel.all, i.code || ''), i.parent || '') : ''}</span>
+                    ? blMenuHtml('parent', key, blParentRows(rel.all, i.code || ''), i.parent || '', true) : ''}</span>
                     ${queueAt ? blStepHtml('up', queueAt) + blStepHtml('down', queueAt) : ''}
                 </span>
             </span>
@@ -3321,17 +3547,107 @@
             const el = document.getElementById(pair[0]);
             if (el) { el.addEventListener('change', () => { blCapture()[pair[1]] = el.value; }); }
         }
-        // The parent box repaints for the same reason area and position do: the
-        // ⚠ beside it (a parent that has been closed or deleted since it was
-        // picked) has to be current, and nothing else about the box depends on
-        // this choice — picking one never disables another control.
-        const blParentSel = document.getElementById('bl-parent');
-        if (blParentSel) {
-            blParentSel.addEventListener('change', () => {
-                blCapture().parent = blParentSel.value;
+        // ---- "— part of —", the box you type into (blParentBoxHtml).
+        //
+        // ‼️ EVERY PATH REPAINTS AND PUTS THE CARET BACK, the same bargain the
+        // search box above the list makes: this page redraws itself whole, so a
+        // control that filters has to be re-found and re-focused afterwards or
+        // the second keystroke lands nowhere. The caret goes to the END, which
+        // is where it is in the gesture this box exists for.
+        const blParentBox = document.getElementById('bl-parent');
+        if (blParentBox) {
+            const refocus = () => {
+                const again = document.getElementById('bl-parent');
+                if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
+            };
+            // Opening on focus shows the whole list before a character is typed
+            // — the reader who does not know what is there is exactly the reader
+            // this box is for. The chosen label gives way to an empty query, so
+            // the first keystroke is not appended to somebody else's words.
+            blParentBox.addEventListener('focus', () => {
+                if (blPP.open) { return; }
+                blPP = { q: '', open: true, at: -1 };
                 render();
+                refocus();
+            });
+            blParentBox.addEventListener('input', () => {
+                blPP.q = blParentBox.value;
+                blPP.open = true;
+                // A new query is a new list, so the keyboard goes back to the
+                // top of it rather than staying on a line number that now means
+                // a different item.
+                blPP.at = -1;
+                render();
+                refocus();
+            });
+            blParentBox.addEventListener('keydown', ev => {
+                const picks = blParentChoices(blItems(), '');
+                const hits = blParentMatches(picks);
+                if (ev.key === 'Escape') {
+                    ev.preventDefault();
+                    blPP = { q: '', open: false, at: -1 };
+                    render();
+                    return;
+                }
+                if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+                    ev.preventDefault();
+                    if (!blPP.open) { blPP.open = true; }
+                    // -1 is the `no parent` line, so the range runs from -1 up.
+                    const step = ev.key === 'ArrowDown' ? 1 : -1;
+                    blPP.at = Math.max(-1, Math.min(hits.length - 1, blPP.at + step));
+                    render();
+                    refocus();
+                    return;
+                }
+                if (ev.key === 'Enter') {
+                    ev.preventDefault();
+                    // Enter with nothing lit takes the ONE match when there is
+                    // exactly one — typing enough to leave a single item and
+                    // then having to press ↓ first is a keystroke that means
+                    // nothing.
+                    const pick = blPP.at >= 0 ? hits[blPP.at]
+                        : (blPP.q.trim() && hits.length === 1 ? hits[0] : null);
+                    blCapture().parent = pick ? pick.code : '';
+                    blPP = { q: '', open: false, at: -1 };
+                    render();
+                    return;
+                }
+            });
+            // Clicking away is not choosing: the list closes and the choice that
+            // was already there stays exactly as it was.
+            blParentBox.addEventListener('blur', () => {
+                if (!blPP.open) { return; }
+                // ‼️ DEFERRED, AND THEN CHECKED AGAIN. Deferred because the click
+                // on a line has not been delivered yet and a repaint here would
+                // destroy the button being pressed. Checked again because THIS
+                // BOX'S OWN REPAINT BLURS IT: every keystroke rebuilds the page,
+                // which takes the focused element away and puts focus on its
+                // replacement — so a timer that trusted the blur would close the
+                // list a seventh of a second into somebody typing.
+                setTimeout(() => {
+                    const now = document.getElementById('bl-parent');
+                    if (!blPP.open || (now && document.activeElement === now)) { return; }
+                    blPP = { q: '', open: false, at: -1 };
+                    render();
+                }, 140);
             });
         }
+        document.querySelectorAll('[data-blpp]').forEach(el =>
+            el.addEventListener('mousedown', ev => {
+                // mousedown, not click: the box's own blur fires first otherwise
+                // and takes the list away before the press lands.
+                ev.preventDefault();
+                blCapture().parent = el.dataset.blpp || '';
+                blPP = { q: '', open: false, at: -1 };
+                render();
+            }));
+        document.querySelectorAll('[data-blppclear]').forEach(el =>
+            el.addEventListener('mousedown', ev => {
+                ev.preventDefault();
+                blCapture().parent = '';
+                blPP = { q: '', open: false, at: -1 };
+                render();
+            }));
         // ‼️ AREA AND POSITION BOTH REPAINT, AND NEITHER OVERRULES THE OTHER.
         // They are one question asked twice — "where does this go?" — and the
         // panel used to answer it for you in both directions: the position box
@@ -3917,6 +4233,10 @@
                 // Empties the 🎯 block. Nothing is lost: every item falls back
                 // to the place the file already has for it.
                 case 'blTidy': vscode.postMessage({ type: 'backlogTidy', id }); break;
+                // The QUEUE, not the file — the one next to it moves lines and
+                // this one moves nothing but the 🎯 block. No code sent: every
+                // family at once. The row's right-click does one.
+                case 'blGather': vscode.postMessage({ type: 'backlogGather', id }); break;
                 case 'blFilters': blFiltersOpen = !blFiltersOpen; render(); break;
                 case 'blDir': blDesc = !blDesc; render(); break;
                 case 'blClear':
@@ -4102,6 +4422,11 @@
                 syncView();
                 render();
                 return;
+            // One family, from the row that heads it — the same write the
+            // toolbar's button does for every family at once.
+            case 'blGather':
+                vscode.postMessage({ type: 'backlogGather', id: id(), code: ctx.code || '' });
+                return;
             // The queue's box opens with the item already written into it —
             // quoting a backlog line at yourself is the whole gesture, and the
             // sentence that lands in the queue is still one you approved.
@@ -4214,9 +4539,15 @@
         }
     }
 
+    /** Every item in the open backlog — the same list the render reads, for the
+     *  handlers that run between two paints and must not work from a stale copy. */
+    function blItems() {
+        return ((td().backlog || {}).items) || [];
+    }
+
     /** One item out of the open backlog, by the key its row carries. */
     function blItem(key) {
-        return (((td().backlog || {}).items) || []).find(i => blKey(i) === key);
+        return blItems().find(i => blKey(i) === key);
     }
 
     /** Open a document the way every other open on this page does it. */
