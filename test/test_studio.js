@@ -161,5 +161,45 @@ const production = (scenes) => ({
     ok('Studio is in the global nav', /id: 'studio'/.test(nav));
 }
 
+// ---------- ‼️ the assign picker: one separator, spelled the same twice ----------
+//
+// The bug this pins down shipped in 3.92.0 and could not be seen: the page
+// joined a production id to a scene id with a raw NUL byte and the panel split
+// the result on a SPACE, so every scene assignment filed the asset under a
+// project id that was really the whole joined string, with no scene. Both
+// halves are machine-generated ids, so nothing downstream could tell.
+{
+    const { SCENE_TARGET_SEP } = require(path.join(__dirname, '..', 'out', 'core', 'studio.js'));
+    ok('there is one separator, and it is printable',
+        typeof SCENE_TARGET_SEP === 'string' && SCENE_TARGET_SEP.length > 0
+        && !/[\x00-\x1f\s]/.test(SCENE_TARGET_SEP));
+
+    const page = fs.readFileSync(path.join(__dirname, '..', 'media', 'studio.js'), 'utf8');
+    const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'studioPanel.ts'), 'utf8');
+    ok('the page joins with exactly that separator',
+        page.includes("p.id + '" + SCENE_TARGET_SEP + "' + s.id"));
+    ok('…and the panel splits on the shared constant, not a literal of its own',
+        /indexOf\(SCENE_TARGET_SEP\)/.test(panel) && !/target\.split\(' '\)/.test(panel));
+
+    // ‼️ AND NO SOURCE FILE CARRIES A RAW NUL. One did, and ripgrep called the
+    // whole file BINARY and skipped it — media/studio.js was invisible to every
+    // content search in this repo, by a person or an agent, for as long as it
+    // was there.
+    const roots = ['media', 'src', 'src/core', 'src/panels', 'src/views', 'test'];
+    const offenders = [];
+    for (const r of roots) {
+        const dir = path.join(__dirname, '..', r);
+        if (!fs.existsSync(dir)) { continue; }
+        for (const f of fs.readdirSync(dir)) {
+            if (!/\.(ts|js|css)$/.test(f)) { continue; }
+            const p = path.join(dir, f);
+            if (!fs.statSync(p).isFile()) { continue; }
+            if (fs.readFileSync(p).includes(0)) { offenders.push(r + '/' + f); }
+        }
+    }
+    ok('no source file carries a literal NUL byte'
+        + (offenders.length ? ' — ' + offenders.join(', ') : ''), offenders.length === 0);
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

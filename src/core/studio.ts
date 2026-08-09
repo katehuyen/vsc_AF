@@ -22,6 +22,19 @@
 import { assetKind, MediaMeta } from './media';
 import { Production, SceneStatus } from './production';
 
+/**
+ * What joins a production id to a scene id in the assign picker's option value.
+ *
+ * ‼️ ONE SPELLING, IN ONE PLACE, OR THE TWO SIDES DRIFT — which is exactly what
+ * happened: the page joined with a character the panel did not split on, so
+ * every scene assignment filed the asset under a project id that was really the
+ * whole joined string, and nothing could tell, because both halves are
+ * machine-generated ids. A space is not available as a separator: production and
+ * scene ids come out of a JSON file the user edits by hand. `::` is, and unlike
+ * a raw NUL byte it is visible to every search over this repo.
+ */
+export const SCENE_TARGET_SEP = '::';
+
 /** What a scene is waiting for. Derived, in this order, from what exists. */
 export type SceneAction =
     | 'generate'   // nothing has been made for it yet

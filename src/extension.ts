@@ -80,7 +80,8 @@ import { removeMcpServer, setServerDisabled } from './core/mcp';
 import { queryMatches } from './core/query';
 import { moveSkillScope, removeSkill } from './core/skills';
 import {
-    addMemoryFile, applyIndexFixes, archiveMemoryFile, copyMemoryFileTo, MEMORY_TYPES, planIndexFixes
+    addMemoryFile, applyIndexFixes, archiveMemoryFile, copyMemoryFileTo, MEMORY_TYPES, planIndexFixes,
+    readMemoryFrontmatter
 } from './core/memusage';
 import {
     DEFAULT_MEDIA_PRICING, MediaPriceRule, injectMediaFeedback, mediaCostSince, readMediaMetas, registerExternalAsset
@@ -2769,6 +2770,65 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 sessions: index.forAgent(a.id).length
             }))
         },
+        /**
+         * ‼️ MEMORY HAD NO OPS AT ALL — not even a read.
+         *
+         * The memory page learned to MAKE a file in 3.91.0 and the bridge was
+         * never told, which is the rule in `_REF/agentfarm-dev.md` being broken
+         * in the same commit that wrote it down. It matters more here than
+         * almost anywhere else: an agent's memory is the one store an agent is
+         * expected to keep itself, and until now it could only do so by writing
+         * files behind the extension's back — no index entry, no refresh, no
+         * frontmatter convention. Both ops call the very functions the page
+         * calls (`core/memusage.ts`), so the index is written the same way from
+         * either door.
+         */
+        {
+            op: 'memory.list',
+            describe: 'An agent\'s memory files: name, path, type and the one-line description that IS its index entry, plus whether the index still points at it. args: agent (name|id)',
+            handler: (args) => {
+                const agent = findAgent(argStr(args, 'agent'));
+                const dir = path.join(agent.dir, 'memory');
+                const index = path.join(dir, 'MEMORY.md');
+                const indexText = fs.existsSync(index) ? fs.readFileSync(index, 'utf8') : '';
+                const files = fs.existsSync(dir)
+                    ? fs.readdirSync(dir).filter(f => /\.md$/i.test(f) && f !== 'MEMORY.md') : [];
+                return {
+                    agent: agent.name,
+                    dir,
+                    indexed: fs.existsSync(index),
+                    files: files.map(f => {
+                        const meta = readMemoryFrontmatter(path.join(dir, f));
+                        return {
+                            name: f.replace(/\.md$/i, ''), file: path.join(dir, f),
+                            type: meta.type ?? null, description: meta.description ?? null,
+                            // ‼️ The honest question about a memory file is not
+                            // "does it exist" but "will the agent ever open it":
+                            // the index is the only thing loaded every session.
+                            inIndex: indexText.includes(f)
+                        };
+                    })
+                };
+            }
+        },
+        {
+            op: 'memory.add',
+            describe: 'Make one memory file on an agent — scaffolded with the frontmatter convention and registered in MEMORY.md in the same write, so it is never born an orphan. ‼️ The description is not decoration: that line IS the index entry, and the index is what the agent reads to decide whether to open the file. args: agent (name|id), name (kebab-case, no .md), description, type? (user|feedback|project|reference, default project)',
+            handler: (args) => {
+                const agent = findAgent(argStr(args, 'agent'));
+                const name = argStr(args, 'name');
+                need(/^[a-z0-9][a-z0-9_-]*$/.test(name),
+                    'name: lowercase letters, digits, - and _ only — it becomes a file name and an index target');
+                const description = argStr(args, 'description');
+                need(!!description, 'description is required — it is the line the index carries');
+                const type = optStr(args, 'type') || 'project';
+                need(['user', 'feedback', 'project', 'reference'].includes(type),
+                    'type must be one of: user, feedback, project, reference');
+                const file = addMemoryFile(agent.dir, name, type, description);
+                MemoryGraphPanel.refreshIfOpen();
+                return { agent: agent.name, name, type, file };
+            }
+        },
         {
             op: 'tasks.list',
             describe: 'Current task queue/board rows. args: none',
@@ -5189,6 +5249,54 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 label: c.label, level: c.level ?? 'warn', hint: c.hint ?? null,
                 when: c.when, detail: describePrecondition(c.when)
             }))
+        },
+        /**
+         * ‼️ THE LIST WAS READABLE AND NOT WRITABLE. 3.92.0 turned living checks
+         * into rows a person can add and remove on the page, and left the bridge
+         * with the read op it already had — the definition-of-done rule in
+         * `_REF/agentfarm-dev.md` half-applied. A check is exactly the kind of
+         * thing an agent should be able to install after noticing the gap it
+         * closes, so both directions exist now.
+         *
+         * The whole list is written on every call, which is what the page does
+         * too: the setting IS the list, and a partial write would be a second
+         * way of meaning the same thing.
+         */
+        {
+            op: 'living.check.add',
+            describe: 'Add (or replace, by label) one living check. `when` is the precondition object the page writes — living.checks shows the shape of the ones already installed, and its `detail` line is that object said in words. args: label, when (object), level? (info|warn|alert, default warn), hint?',
+            handler: async (args) => {
+                const label = argStr(args, 'label');
+                const when = (args as Record<string, unknown>).when;
+                need(!!when && typeof when === 'object' && !Array.isArray(when),
+                    'when must be the precondition object — see living.checks for installed examples');
+                const level = optStr(args, 'level') || 'warn';
+                need(['info', 'warn', 'alert'].includes(level), 'level must be info, warn or alert');
+                const hint = optStr(args, 'hint');
+                const current = cfg().get<LivingCheck[]>('livingChecks', []);
+                const next = current.filter(c => c.label !== label).concat([{
+                    label, when: when as LivingCheck['when'],
+                    level: level as LivingCheck['level'],
+                    ...(hint ? { hint } : {})
+                }]);
+                await cfg().update('livingChecks', next, vscode.ConfigurationTarget.Global);
+                LivingPanel.refreshIfOpen();
+                return { label, level, checks: next.length, replaced: current.length === next.length };
+            }
+        },
+        {
+            op: 'living.check.remove',
+            describe: 'Remove one living check by its label. args: label',
+            handler: async (args) => {
+                const label = argStr(args, 'label');
+                const current = cfg().get<LivingCheck[]>('livingChecks', []);
+                const next = current.filter(c => c.label !== label);
+                need(next.length !== current.length,
+                    `no living check called "${label}" — living.checks lists them`);
+                await cfg().update('livingChecks', next, vscode.ConfigurationTarget.Global);
+                LivingPanel.refreshIfOpen();
+                return { label, removed: true, checks: next.length };
+            }
         }
     ]);
 

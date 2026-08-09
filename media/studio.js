@@ -324,7 +324,9 @@
         for (const p of (DATA.productions || [])) {
             out.push({ id: p.id, label: p.title + ' — the production, no scene' });
             for (const s of (p.scenes || [])) {
-                out.push({ id: p.id + ' ' + s.id, label: '    ' + p.title + ' · ' + s.title + ' (' + s.status + ')' });
+                // ‼️ SCENE_TARGET_SEP in core/studio.ts — the panel splits on
+                // exactly this, and a test pins the two spellings together.
+                out.push({ id: p.id + '::' + s.id, label: '    ' + p.title + ' · ' + s.title + ' (' + s.status + ')' });
             }
         }
         return out;

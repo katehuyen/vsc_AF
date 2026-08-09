@@ -11,7 +11,7 @@ import {
 } from '../core/production';
 import { buildEdl, buildFcpXml, pickSequenceAssets } from '../core/premiere';
 import { revealPath } from '../core/reveal';
-import { buildStudio, pipelineSummary } from '../core/studio';
+import { buildStudio, pipelineSummary, SCENE_TARGET_SEP } from '../core/studio';
 import { TaskManager } from '../core/tasks';
 import { handleAfNav, htmlShell } from './base';
 
@@ -355,7 +355,20 @@ export class StudioPanel {
                 this.refresh();
                 return this.say('Detached — it belongs to no production now.', true);
             }
-            const [projectId, sceneId] = target.split(' ');
+            // ‼️ THE TWO SIDES OF THIS STRING HAVE TO AGREE, AND THEY DID NOT.
+            // The picker joins a production to a scene with SCENE_TARGET_SEP
+            // (media/studio.js) and this line used to split on a SPACE, so
+            // assigning an output to a scene filed it under a project id that
+            // was really "<projectId><sep><sceneId>" with no scene at all —
+            // silently, because every id involved is machine-generated and
+            // nothing downstream could tell the difference. A space was never
+            // safe either: production and scene ids come out of a JSON file the
+            // user edits by hand, so one of them may well contain one. Split at
+            // the FIRST separator: a production alone carries none, and detach
+            // is the empty string handled above.
+            const cut = target.indexOf(SCENE_TARGET_SEP);
+            const projectId = cut < 0 ? target : target.slice(0, cut);
+            const sceneId = cut < 0 ? '' : target.slice(cut + SCENE_TARGET_SEP.length);
             updateMediaMeta(this.deps.tasks.outputsDir, taskId, { projectId, sceneId: sceneId || undefined });
             this.refresh();
             return this.say('Assigned.', true);

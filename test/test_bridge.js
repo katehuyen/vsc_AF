@@ -2365,6 +2365,163 @@ const { syncCodexExtras } = require(path.join(__dirname, '..', 'out', 'core', 'c
         }
     }
 
+    // ---------- ‼️ memory: the store an agent is meant to keep ITSELF ----------
+    //
+    // The memory page learned to make a file in 3.91.0 and the bridge was not
+    // told, so `memory.*` did not exist AT ALL — not even a read. The two ops
+    // call the very functions the page calls, which is what keeps the index
+    // written the same way from either door: a memory file that MEMORY.md does
+    // not point at is a file the agent will never open.
+    {
+        const { addMemoryFile, readMemoryFrontmatter } =
+            require(path.join(__dirname, '..', 'out', 'core', 'memusage.js'));
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-bridge-mem-'));
+        const agent = { id: 'a1', name: 'dev', dir };
+        const reg = new BridgeRegistry();
+        reg.register([
+            {
+                op: 'memory.list',
+                describe: 'An agent\'s memory files. args: agent',
+                handler: () => {
+                    const memDir = path.join(agent.dir, 'memory');
+                    const index = path.join(memDir, 'MEMORY.md');
+                    const indexText = fs.existsSync(index) ? fs.readFileSync(index, 'utf8') : '';
+                    const files = fs.existsSync(memDir)
+                        ? fs.readdirSync(memDir).filter(f => /\.md$/i.test(f) && f !== 'MEMORY.md') : [];
+                    return {
+                        agent: agent.name, dir: memDir, indexed: fs.existsSync(index),
+                        files: files.map(f => {
+                            const meta = readMemoryFrontmatter(path.join(memDir, f));
+                            return {
+                                name: f.replace(/\.md$/i, ''), file: path.join(memDir, f),
+                                type: meta.type || null, description: meta.description || null,
+                                inIndex: indexText.includes(f)
+                            };
+                        })
+                    };
+                }
+            },
+            {
+                op: 'memory.add',
+                describe: 'Make one memory file. args: agent, name, description, type?',
+                handler: (args) => {
+                    const name = argStr(args, 'name');
+                    need(/^[a-z0-9][a-z0-9_-]*$/.test(name),
+                        'name: lowercase letters, digits, - and _ only — it becomes a file name and an index target');
+                    const description = argStr(args, 'description');
+                    need(!!description, 'description is required — it is the line the index carries');
+                    const type = optStr(args, 'type') || 'project';
+                    need(['user', 'feedback', 'project', 'reference'].indexOf(type) >= 0,
+                        'type must be one of: user, feedback, project, reference');
+                    return { agent: agent.name, name, type, file: addMemoryFile(agent.dir, name, type, description) };
+                }
+            }
+        ]);
+        const empty = await reg.dispatch('memory.list', { agent: 'dev' });
+        ok('memory.list answers for an agent with no memory yet',
+            empty.ok === true && empty.result.files.length === 0 && empty.result.indexed === false);
+
+        const made = await reg.dispatch('memory.add', {
+            agent: 'dev', name: 'feedback-permission-refusals',
+            description: 'why a refused mode switch must be said out loud', type: 'feedback'
+        });
+        ok('memory.add writes the file', made.ok === true && fs.existsSync(made.result.file));
+
+        const after = await reg.dispatch('memory.list', { agent: 'dev' });
+        const row = after.result.files[0];
+        // ‼️ The point of the op, and the reason it calls the page's own writer:
+        // an unindexed memory file is invisible to the agent that owns it.
+        ok('…and MEMORY.md points at it in the same write',
+            after.result.indexed === true && row.inIndex === true);
+        ok('…carrying the type and the description the index line is made of',
+            row.type === 'feedback' && /refused mode switch/.test(row.description));
+
+        const dupe = await reg.dispatch('memory.add', {
+            agent: 'dev', name: 'feedback-permission-refusals', description: 'again'
+        });
+        ok('a second file with the same name is refused, not silently merged',
+            dupe.ok === false && /already exists/.test(dupe.error));
+
+        for (const [bad, why] of [
+            [{ agent: 'dev', name: 'Not Kebab', description: 'x' }, 'a name that cannot be a file name'],
+            [{ agent: 'dev', name: 'ok-name', description: '' }, 'a missing description'],
+            [{ agent: 'dev', name: 'ok-name', description: 'x', type: 'whatever' }, 'a type outside the convention']
+        ]) {
+            ok(`memory.add refuses ${why}`, (await reg.dispatch('memory.add', bad)).ok === false);
+        }
+        try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
+    }
+
+    // ---------- ‼️ living checks: readable is not the same as writable ----------
+    {
+        let stored = [{ label: 'kept', when: { kind: 'noSessionsFor', hours: 24 }, level: 'warn' }];
+        const reg = new BridgeRegistry();
+        reg.register([
+            {
+                op: 'living.checks',
+                describe: 'The user-defined living checks.',
+                handler: () => stored.map(c => ({ label: c.label, level: c.level || 'warn', when: c.when }))
+            },
+            {
+                op: 'living.check.add',
+                describe: 'Add (or replace, by label) one living check. args: label, when, level?, hint?',
+                handler: (args) => {
+                    const label = argStr(args, 'label');
+                    const when = args.when;
+                    need(!!when && typeof when === 'object' && !Array.isArray(when),
+                        'when must be the precondition object — see living.checks for installed examples');
+                    const level = optStr(args, 'level') || 'warn';
+                    need(['info', 'warn', 'alert'].indexOf(level) >= 0, 'level must be info, warn or alert');
+                    const before = stored.length;
+                    stored = stored.filter(c => c.label !== label).concat([{ label, when, level }]);
+                    return { label, level, checks: stored.length, replaced: before === stored.length };
+                }
+            },
+            {
+                op: 'living.check.remove',
+                describe: 'Remove one living check by its label. args: label',
+                handler: (args) => {
+                    const label = argStr(args, 'label');
+                    const before = stored.length;
+                    stored = stored.filter(c => c.label !== label);
+                    need(stored.length !== before, `no living check called "${label}" — living.checks lists them`);
+                    return { label, removed: true, checks: stored.length };
+                }
+            }
+        ]);
+        const added = await reg.dispatch('living.check.add',
+            { label: 'stale brief', when: { kind: 'noSessionsFor', hours: 72 }, level: 'alert' });
+        ok('living.check.add installs one', added.ok === true && added.result.checks === 2
+            && added.result.replaced === false);
+        // ‼️ By LABEL, so calling it twice tunes a check instead of growing a
+        // pile of near-identical ones nobody can tell apart on the page.
+        const again = await reg.dispatch('living.check.add',
+            { label: 'stale brief', when: { kind: 'noSessionsFor', hours: 12 }, level: 'info' });
+        ok('…and adding the same label again replaces it rather than duplicating',
+            again.ok === true && again.result.checks === 2 && again.result.replaced === true);
+        ok('…the replacement is the one that is stored',
+            (await reg.dispatch('living.checks', {}))
+                .result.find(c => c.label === 'stale brief').level === 'info');
+        ok('a check with no precondition object is refused',
+            (await reg.dispatch('living.check.add', { label: 'x' })).ok === false);
+        ok('an unknown level is refused',
+            (await reg.dispatch('living.check.add',
+                { label: 'x', when: { kind: 'a' }, level: 'loud' })).ok === false);
+        ok('living.check.remove takes one out',
+            (await reg.dispatch('living.check.remove', { label: 'stale brief' })).result.checks === 1);
+        ok('…and says so when the label is not there, instead of reporting a no-op as success',
+            (await reg.dispatch('living.check.remove', { label: 'never' })).ok === false);
+    }
+
+    // ---------- the real catalogue carries the new ops ----------
+    {
+        const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        for (const op of ['memory.list', 'memory.add', 'living.check.add', 'living.check.remove']) {
+            ok(`${op} is registered in the extension's own catalogue`,
+                src.includes(`op: '${op}'`));
+        }
+    }
+
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })();

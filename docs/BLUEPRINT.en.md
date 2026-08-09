@@ -89,6 +89,20 @@ Every filter in the extension follows one contract, so what you learn on one pag
 
 Filters that scope a whole page (the Sessions tables' 🧑/🤖 origin, a production in the Media Gallery) stay one-of, because they are a drill-down and not a subset.
 
+### ‼️ The form is the same control everywhere too — `AFForm` (3.91.0) {#form}
+
+A page that **listed** an object and could not **make** one was this extension's longest-running structural contradiction: eight surfaces listed something they could not create, and the work fell to chains of VS Code boxes. The measurement says why willpower never fixed it: writing a form was a day's work per page, so nobody did, and the platform's own boxes won by default.
+
+So the card is a **component** — `media/afForm.js`, its CSS in `common.css`, both shipped from `htmlShell` to **every page**. A component a page has to opt into is a component the next surface skips, which is exactly how eight of them ended up left behind.
+
+- **A field declares the key it writes and the type it writes it as**, so `read()` hands back a typed draft and nothing lists its field ids twice.
+- **`{redraw:true}`** marks the fields that change what *exists* — changing a transport redraws half the card instead of starting over.
+- **The OS file picker stays**, as one button next to the box it fills: a folder chooser is the one thing a webview genuinely cannot draw, and typing `D:\zone\know\note\…` by hand is what the dialog chains were defending.
+- **Cancel really cancels.** Esc in a chain of boxes left half the job written to a file; the card holds its draft and only Save writes.
+- **A refusal shows inside the form**, not in a notification that closed the card.
+
+The surfaces on the card today: tasks · schedules · triggers · templates · workflows · duties · toolbox (skill/subagent/command/MCP) · memory · living checks · the secret vault · the studio · an agent itself · evals. The rule for a new surface is one line: **whatever object the list shows, the card that makes it is on the same page.**
+
 ## Right-Click Everywhere {#sag-tik}
 
 Every row in this extension is an **object**: a backlog item, a session, a task
@@ -1605,6 +1619,14 @@ The agent's memory (`memory/*.md`) is no longer just listed — **whether it's a
 - **Hubs:** the records that receive the most links — the centers of knowledge; don't bloat them, keep them maintained.
 - The **Fix Memory Index…** button in the **Not in MEMORY.md** card starts the repair from the panel.
 - The agent selector is on top; data is read fresh from the files on every open/Refresh.
+- **The page makes the file itself (3.91.0):** a new memory file, a copy onto another agent and a distillation are all cards on this page — name + type + one-line description, and the file and its MEMORY.md line are born in the **same write**.
+
+### ‼️ Memory on the bridge: the one store an agent is meant to keep itself (3.93.0)
+
+3.91.0 gave the page the power to make a file and did not tell the bridge; `memory.*` did not exist **at all** — not even a read. It matters more here than almost anywhere: an agent's memory is the store the agent itself is expected to keep, and until now it could only do that by writing files behind the extension's back — no index line, no refresh, no frontmatter convention.
+
+- **`memory.list { agent }`** — the files, their `type` and `description`, and on every row **`inIndex`**. The honest question about a memory file is not "does it exist" but "will the agent ever open it": the index is the only thing loaded every session.
+- **`memory.add { agent, name, description, type? }`** — calls the very writer the page calls (`core/memusage.ts`), so the file and its **MEMORY.md line are written together**. The `description` is not decoration: **that line IS the index entry.** The name must be kebab-case (it becomes a file name and an index target), the type is one of `user|feedback|project|reference`, and a second file with the same name is refused rather than silently merged.
 
 ## Memory Synchronization
 
@@ -1811,7 +1833,7 @@ Rows:
 - **Automations** — all switched off = dead; enabled but silent for 7 days = the quiet death; enabled but unguarded = a cost warning; a closed gate gets its own row.
 - **Duties** — a `[daily]`/`[weekly]` duty with no schedule or trigger behind it (`[every-turn]` is passive by design, exempt).
 - **Spend** — today against the ceiling; with no ceiling set it reads "idle", not healthy.
-- **Your own checks** — `agentFarm.livingChecks`: the precondition engine read as **"TRUE = needs attention"**, so the same `{today}` tokens check a diary file or a folder that should be empty. Added via `Configure Living Checks…`.
+- **Your own checks** — `agentFarm.livingChecks`: the precondition engine read as **"TRUE = needs attention"**, so the same `{today}` tokens check a diary file or a folder that should be empty. The checks are **rows on this page** (3.92.0): one open at a time, and the whole list written on Save — so a reorder is one write and Cancel is not a lie. On the bridge: `living.checks` (read), `living.check.add` and `living.check.remove` (write — **by label**, so adding the same label again *tunes* a check instead of growing a pile of near-identical ones nobody can tell apart on the page).
 
 **Score:** a dead loop counts zero, a warning counts half — a system with one dead loop must not read as "94% healthy". At the bottom sits the **automation decision log**: when, what fired, what was skipped, and **why**.
 

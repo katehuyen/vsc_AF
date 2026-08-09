@@ -89,6 +89,20 @@ Eklentideki her filtre tek bir sözleşmeyi izler; bir sayfada öğrendiğin, di
 
 Sayfanın tamamını kapsayan filtreler (Sessions tablolarındaki 🧑/🤖 kaynağı, Media Gallery'deki prodüksiyon) tek seçimli kalır: onlar bir alt küme değil, bir derinleşmedir.
 
+### ‼️ Form da her yerde aynı kontrol — `AFForm` (3.91.0) {#form}
+
+Bir nesneyi **listeleyen** sayfanın onu **kuramaması**, bu eklentinin en uzun süren yapısal çelişkisiydi: sekiz yüzey listelediği şeyi yapamıyordu ve iş, arka arkaya açılan VS Code kutularına düşüyordu. Ölçüm, bunun neden iradeyle çözülmediğini söylüyor: sayfa başına bir form yazmak bir günlük işti, dolayısıyla kimse yazmadı ve platformun kendi kutuları varsayılan olarak kazandı.
+
+Bu yüzden kart bir **bileşendir** — `media/afForm.js`, CSS'i `common.css`'te, ikisi de `htmlShell`'den **her sayfaya** gönderilir. Katılmak için "opt-in" gereken bir bileşen, bir sonraki yüzeyin atlayacağı bileşendir; sekiz yüzeyin nasıl geride kaldığı tam olarak budur.
+
+- **Alan yazdığı anahtarı ve yazdığı türü kendisi bildirir**, dolayısıyla `read()` türlenmiş bir taslak döndürür ve hiçbir yer alan kimliklerini iki kez listelemez.
+- **`{redraw:true}`**, *neyin var olduğunu* değiştiren alanları işaretler — taşıma türünü değiştirmek kartın yarısını yeniden çizer, baştan başlatmaz.
+- **İşletim sisteminin dosya seçicisi kalır**, doldurduğu kutunun yanında tek düğme olarak: bir klasör seçici, bir webview'ın gerçekten çizemeyeceği tek şeydir ve `D:\zone\know\note\…` yolunu elle yazmak, diyalog zincirlerinin savunduğu şeydi.
+- **Cancel gerçekten iptal eder.** Zincir bir kutuda Esc'e basmak yapılanın yarısını dosyaya yazılmış bırakıyordu; kart taslağı kendinde tutar ve yalnızca Save yazar.
+- **Ret formun içinde görünür** — kartı kapatıp bir bildirim kutusunda değil.
+
+Bugün bu kartı kullanan yüzeyler: görevler · zamanlamalar · tetikleyiciler · şablonlar · iş akışları · nöbetler · alet çantası (skill/subagent/command/MCP) · hafıza · yaşam çekleri · sır kasası · stüdyo · ajanın kendisi · evals. Yeni bir yüzey eklerken kural tektir: **liste hangi nesneyi gösteriyorsa, onu kuran kart aynı sayfadadır.**
+
 ## Sağ Tık Her Yerde {#sag-tik}
 
 Eklentideki her satır bir **nesne**: bir backlog maddesi, bir oturum, bir görev
@@ -1648,6 +1662,14 @@ Ajanın hafızası (`memory/*.md`) artık yalnız listelenmiyor — **gerçekten
 - **Hubs:** en çok link alan kayıtlar — bilginin merkezleri; bunları şişirme, bakımlı tut.
 - **Not in MEMORY.md** kartındaki **Fix Memory Index…** düğmesi onarımı panelden başlatır.
 - Ajan seçici üstte; veriler her açılış/Refresh'te dosyalardan taze okunur.
+- **Sayfa dosyayı kendisi kurar (3.91.0):** yeni hafıza dosyası, başka ajana kopya ve damıtma bu sayfanın kartındadır — ad + tür + tek satır açıklama, ve dosya ile MEMORY.md satırı **aynı yazımda** doğar.
+
+### ‼️ Hafıza köprüde: ajanın kendi tutması beklenen tek depo (3.93.0)
+
+3.91.0 sayfaya "dosya kur" yeteneğini verdi ve köprüye söylemedi; `memory.*` **hiç yoktu** — okuması bile. Burada bu, başka herhangi bir yerden daha çok önemli: bir ajanın hafızası, ajanın **kendisinin** tutması beklenen depodur, ve o güne kadar bunu ancak eklentinin arkasından dosya yazarak yapabiliyordu — indeks satırı yok, tazeleme yok, frontmatter geleneği yok.
+
+- **`memory.list { agent }`** — dosyalar, `type` ve `description`, ve her satırda **`inIndex`**. Bir hafıza dosyası hakkında dürüst soru "var mı" değil, "ajan onu hiç açacak mı"dır: her oturumda yüklenen tek şey indekstir.
+- **`memory.add { agent, name, description, type? }`** — sayfanın çağırdığı yazarın aynısını (`core/memusage.ts`) çağırır, dolayısıyla dosya ve **MEMORY.md satırı tek yazımda** doğar. `description` süs değildir: **o satır indeks girdisinin kendisidir.** Ad kebab-case olmak zorundadır (dosya adı ve indeks hedefi olur), tür `user|feedback|project|reference`, ve aynı adla ikinci dosya sessizce birleştirilmez — reddedilir.
 
 ## Hafıza Senkronizasyonu
 
@@ -1854,7 +1876,7 @@ Satırlar:
 - **Otomasyonlar** — hepsi kapalıysa **ölü**; açık ama 7 gündür ateşleyememişse **sessiz ölüm**; açık ama korumasızsa maliyet uyarısı; kapı kapalıysa ayrı satır.
 - **Nöbetler** — `[daily]`/`[weekly]` kadanslı olup arkasında hiçbir zamanlama/tetikleyici olmayan görev (`[every-turn]` tasarım gereği pasiftir, muaf).
 - **Harcama** — bugünkü tutar / tavan; tavan yoksa "idle" (sağlıklı değil).
-- **Kendi çeklerin** — `agentFarm.livingChecks`: önkoşul motoru burada **"DOĞRU = dikkat gerekiyor"** olarak okunur, yani aynı `{today}` token'larıyla gün dosyası / boş olması gereken klasör kontrol edilir. `Configure Living Checks…` ile eklenir.
+- **Kendi çeklerin** — `agentFarm.livingChecks`: önkoşul motoru burada **"DOĞRU = dikkat gerekiyor"** olarak okunur, yani aynı `{today}` token'larıyla gün dosyası / boş olması gereken klasör kontrol edilir. Çekler **sayfanın kendi satırları**dır (3.92.0): bir kerede biri açık, liste Save'de tek yazımla kaydedilir — dolayısıyla yeniden sıralama tek yazma, Cancel de gerçekten iptal. Köprüde `living.checks` (oku), `living.check.add` ve `living.check.remove` (yaz — **etikete göre**, aynı etiketi ikinci kez eklemek çeki *ayarlar*, sayfada birbirinden ayırt edilemeyen bir yığın üretmez).
 
 **Skor:** ölü döngü 0, uyarı 0,5 sayılır — tek ölü döngüsü olan sistem "%94 sağlıklı" diye okunmaz. Sayfanın altında **otomasyon karar kuyruğu**: ne zaman, ne ateşlendi, ne atlandı ve **neden**.
 
