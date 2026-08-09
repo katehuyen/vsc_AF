@@ -36,7 +36,16 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     const args = hostArgs({});
     ok('the streaming transport flags are always there',
         args.join(' ') === '-p --input-format stream-json --output-format stream-json --verbose '
-            + '--permission-prompt-tool stdio');
+            + '--permission-prompt-tool stdio --allow-dangerously-skip-permissions');
+    // ‼️ It ENABLES the choice, it does not make it. Without it the CLI refuses
+    // a live switch to bypassPermissions outright ("the session was not
+    // launched with --dangerously-skip-permissions", measured 2026-08-09), so
+    // the panel's own ⚠ picker row and its "Allow everything" button were
+    // controls that could never work. Note which flag it is: the `--allow-`
+    // one, whose whole purpose is to leave the decision with the user.
+    ok('…and the one that makes the panel\'s own bypass control possible',
+        args.includes('--allow-dangerously-skip-permissions')
+        && !args.includes('--dangerously-skip-permissions'));
     // ‼️ The flag that makes the channel two-way. Drop it and the CLI answers
     // its own permission prompts and its own AskUserQuestion calls (with
     // "nobody answered"), the tool fails, and the turn ends on a question the
@@ -48,8 +57,8 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
             .endsWith('--model opus --effort high --permission-mode plan'));
     ok('resume comes right after the transport flags, before the tuning ones',
         hostArgs({ resume: 'sid-1', model: 'opus' }).join(' ')
-            .endsWith('stdio --resume sid-1 --model opus'));
-    ok('empty values add nothing', hostArgs({ model: '  ', effort: '' }).length === 8);
+            .endsWith('--allow-dangerously-skip-permissions --resume sid-1 --model opus'));
+    ok('empty values add nothing', hostArgs({ model: '  ', effort: '' }).length === args.length);
 
     const line = JSON.parse(userMessageLine('hello'));
     ok('a user message is one JSON line of the expected shape',

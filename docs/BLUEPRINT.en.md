@@ -292,7 +292,17 @@ Every hosted session runs with **`--permission-prompt-tool stdio`**, the flag th
 A card **between the conversation and the composer** appears the moment a turn parks on a question, and the session's row says **`asking you`** instead of the misleading `working` a turn that cannot proceed would otherwise show. Two shapes, and the CLI itself says which (`requires_user_interaction`):
 
 - **A question** (`AskUserQuestion`) — its own options, one click each; a multi-select question keeps collecting until you press **Answer**, a single-select one sends on the click that completes it. Free text is always offered too, for "neither — do this instead", which no list of options can hold. The measured contract: the chosen label rides back **inside the tool's own input**, keyed by the question's exact text (`answers["<question>"] = "<label>"`) — `allow` with the input untouched is *not* an answer and produces the same "did not answer" the tool falls back to on its own.
-- **A permission** (any other tool) — **Allow once** or **Deny**, with a reason. This is the one-off decision the earlier `PERMISSION_GRANTS` box could never make honestly, because the CLI never used to ask.
+- **A permission** (any other tool) — **three** ways out, the same three a terminal offers (3.93.0): **Allow once**, **Allow \<rule\>**, or **Deny** with a reason.
+
+#### ‼️ The middle button: "allow, and stop asking" (3.93.0)
+
+The panel had only the outer two for a long time, so a run that needed `npm` twenty times asked twenty times and the only escape was widening the whole session. The middle one is a real capability of the channel: the `allow` answer may carry `updatedPermissions`, and the CLI installs them **before** it runs the tool. Measured (2.1.226): three `touch` commands in a `default`-mode session meant **three asks**; approving the first one this way took it to **one**.
+
+- **Bash is scoped by command prefix** (`npm:*`) — the way the CLI writes its own bash rules. A person approving `npm run package` is not saying "allow every Bash".
+- **Every other tool** is scoped by name; that is all a tool rule can hold.
+- The rule is `destination: 'session'` — it lives as long as the process and is **never written to any settings file**.
+- The button **names** the rule it installs; "don't ask again" without saying again about *what* is the kind of button nobody dares press.
+- It is not offered on an `AskUserQuestion`: there is no permission to widen there.
 
 Answering a question the CLI has already withdrawn (turn interrupted, session closed, answered from elsewhere) is silently a no-op — the request id is what makes an answer valid, not a click. Interrupting a turn or closing a session with a question still parked answers it with a deny first, so the process is never left holding a request nobody will ever respond to.
 
@@ -300,7 +310,34 @@ Answering a question the CLI has already withdrawn (turn interrupted, session cl
 
 ### The leftover case: a rule, not a dialog
 
-Most permission decisions now arrive as the card above. What is left is the refusal **nobody was asked about** — a permission RULE, a hook, or an older CLI without the flag — and for that the Console still offers what it can honestly do: **change this session's standing permission rule, live, and ask the agent to retry** — `Allow file edits` · `Let it decide` · `⚠ Allow everything` · `Plan only`. The permission selector stays live for the whole session, which the terminal path cannot do at all.
+Most permission decisions now arrive as the card above. What is left is the refusal **nobody was asked about** — a permission RULE, a hook, or an older CLI without the flag — and for that the Console still offers what it can honestly do: **change this session's standing permission rule, live, and ask the agent to retry** — `Allow file edits` · `⚠ Allow everything` · `Plan only`. The permission selector stays live for the whole session, which the terminal path cannot do at all.
+
+#### ‼️ The live vocabulary is not the launcher's — and the CLI can say no (3.93.0)
+
+The live picker was fed the **launcher's** list (`PERMISSION_CHOICES`) for a long time. A running session speaks a shorter one; every row was put to the installed CLI one at a time (2.1.226):
+
+| sent | the CLI's answer |
+|---|---|
+| `bypassPermissions` | `success` — **only** if the session was launched with the enabling flag |
+| `default` · `acceptEdits` · `plan` · `dontAsk` | `success` |
+| `auto` | `error: auto mode unavailable for this model` |
+| `manual` | `success`, but the CLI answers back `mode: "default"` |
+| `""` (the launcher's "Default" row) | `error: must be one of acceptEdits, auto, bypassPermissions, default, dontAsk, plan` |
+
+So of seven rows, **two could never work and one quietly meant something else**. The live picker has its own list now (`PERMISSION_MODES_LIVE`): `default · acceptEdits · plan · dontAsk · ⚠ bypassPermissions`. The start picker is unchanged; the refusal box's `Let it decide` button is gone for the same measured reason.
+
+**‼️ And a refusal is no longer silent.** `set_permission_mode` was the one control request sent fire-and-forget: written to stdin, reported as done, never reconciled with its answer. The reducer only ever handled a *success*, so a refusal changed nothing, said nothing, and the picker snapped back on the next repaint — that is the whole of "I set it to bypass and it kept asking". Worse, the **"grant + retry"** button told the agent *"Permission granted — please retry"* on the strength of a successful **write**, so it retried a permission nobody had. It is a **tracked** request now, like `setModel`/`setEffort`: a refusal becomes a line in the conversation in the CLI's own words; an acceptance shows the mode **the CLI accepted**, not the one asked for (`manual` comes back as `default`); the retry nudge only goes out after the yes. On the bridge, `console.permissionMode` reports the request as **sent** — the CLI has the last word and it arrives on the wire.
+
+#### ‼️ `bypassPermissions` in the settings file no longer applies by itself (S-18, 2026-08-08)
+
+`permissions.defaultMode: "bypassPermissions"` in `~/.claude/settings.json` covered every session for months. The CLI build installed on 2026-08-08 carries a gate the one before it does **not** — the strings are in the binary, and only in the new one:
+
+> `settings defaultMode "bypassPermissions" ignored for a VS Code-owned session without the allow-bypass setting`
+> `Permission mode bypassPermissions from settings was ignored — enable the "Claude Code: Allow Dangerously Skip Permissions" setting in VS Code to consent to it`
+
+telemetry key `tengu_settings_bypass_unconsented_noninteractive_ignored` — **present** in `claude.exe`, **absent** from `claude.exe.old`. A hosted Console session is exactly that: VS Code-owned and non-interactive. Two older kill-switches sit beside it — `bypassPermissions mode is disabled by feature gate` (`tengu_disable_bypass_permissions_mode`) and `…disabled by settings` — and they are consulted **per call**, not once at startup, which is why the asking can begin **in the middle of a turn** rather than at a session boundary.
+
+Hosted sessions therefore carry `--allow-dangerously-skip-permissions`. The CLI's own help: *"Enable bypassing all permission checks as an option, without it being enabled by default."* It **grants nothing** — it makes the panel's own ⚠ control possible. The flag that really turns bypass on, `--dangerously-skip-permissions`, is never put on the command line.
 
 ### Code changes, inline
 

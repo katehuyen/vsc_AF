@@ -132,6 +132,23 @@ const textOf = s => s.messages.filter(m => m.role === 'agent').map(m => m.text).
         s.messages.some(m => m.tool && m.tool.name === 'Write' && /note\.txt$/.test(m.tool.file || '')));
     ok('…and nothing is left waiting', !host.get(id).pendingAsk);
 
+    // ---------- 4b. ‼️ the THIRD answer: allow, and stop asking ----------
+    // The claim: an allow that carries `updatedPermissions` installs a
+    // session-scoped rule, so the SAME kind of call is not asked about again.
+    // Three `touch` commands in `default` mode ask three times; answering the
+    // first one this way must take it to one.
+    await waitFor(id, x => x.status === 'idle', 60_000);
+    host.send(id, 'Run these three Bash commands one at a time, in order: '
+        + '`touch p1.txt`, then `touch p2.txt`, then `touch p3.txt`. Then say TOUCHED.');
+    s = await waitFor(id, x => x.pendingAsk && x.pendingAsk.tool === 'Bash', 90_000);
+    ok('a Bash call asks before it runs', !!s.pendingAsk && s.pendingAsk.tool === 'Bash');
+    ok('allowing it "always" is accepted', host.answer(id, { kind: 'allow', always: true }) === true);
+    s = await waitFor(id, x => x.status === 'idle' && /TOUCHED/.test(textOf(x)), 120_000);
+    ok('…all three files are written', ['p1', 'p2', 'p3']
+        .every(n => fs.existsSync(path.join(dir, n + '.txt'))));
+    ok('…and it never asked again — one ask, three commands',
+        s.messages.filter(m => m.role === 'ask' && m.ask && m.ask.tool === 'Bash').length === 1);
+
     // a deny is an answer too: the tool does not run and the agent is told why
     await waitFor(id, x => x.status === 'idle', 60_000);
     host.send(id, 'Use the Write tool to create secret.txt containing exactly: nope');

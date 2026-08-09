@@ -241,6 +241,104 @@ const ASK_PERMISSION = {
         /pendingAsk/.test(body('close')) && /kind: 'deny'/.test(body('close')));
 }
 
+// ---------- ‼️ the THIRD answer: "…and stop asking me this" ----------
+//
+// Measured against the installed CLI (2.1.226, 2026-08-09): a session in
+// `default` mode asked to run three `touch` commands asks three times; allowing
+// the FIRST one with
+//   updatedPermissions: [{ type:'addRules', rules:[{toolName:'Bash',
+//                          ruleContent:'touch:*'}], behavior:'allow',
+//                          destination:'session' }]
+// takes it to ONE. Both the tool-wide and the prefix shape were accepted.
+{
+    const ASK_BASH = {
+        type: 'control_request', request_id: 'perm-bash-1',
+        request: {
+            subtype: 'can_use_tool', tool_name: 'Bash', display_name: 'Bash',
+            tool_use_id: 'toolu_bash_1', requires_user_interaction: false,
+            input: { command: 'npm run package', description: 'build the vsix' }
+        }
+    };
+    resetIds();
+    const b = reduce(fresh(), ASK_BASH);
+    const always = answerAsk(b, { kind: 'allow', always: true }, NOW);
+    const sent = JSON.parse(always.line).response.response;
+    ok('an "allow always" still allows THIS call', sent.behavior === 'allow');
+    ok('…and rides a session-scoped rule back with it',
+        Array.isArray(sent.updatedPermissions) && sent.updatedPermissions.length === 1
+        && sent.updatedPermissions[0].type === 'addRules'
+        && sent.updatedPermissions[0].behavior === 'allow'
+        && sent.updatedPermissions[0].destination === 'session');
+    // ‼️ "Allow every Bash" is not what a person means when they approve
+    // `npm run package`. Bash is scoped by command prefix, the way the CLI
+    // writes its own bash rules.
+    ok('…scoped to the COMMAND, not to all of Bash',
+        sent.updatedPermissions[0].rules[0].toolName === 'Bash'
+        && sent.updatedPermissions[0].rules[0].ruleContent === 'npm:*');
+    ok('…and the conversation says exactly what was granted',
+        /npm:\* commands for the rest of this session/.test(always.state.messages.slice(-1)[0].answer));
+
+    // a tool that is not Bash has no command to scope by — the name is the rule
+    const w = reduce(fresh(), ASK_PERMISSION);
+    const wa = JSON.parse(answerAsk(w, { kind: 'allow', always: true }, NOW).line).response.response;
+    ok('a non-Bash tool is scoped by its name',
+        wa.updatedPermissions[0].rules[0].toolName === 'Write'
+        && wa.updatedPermissions[0].rules[0].ruleContent === undefined);
+
+    // …and the plain allow is untouched: one call, no standing rule
+    const once = JSON.parse(answerAsk(b, { kind: 'allow' }, NOW).line).response.response;
+    ok('a plain "allow once" installs nothing', once.updatedPermissions === undefined);
+    // ‼️ An AskUserQuestion is not a permission at all, so there is nothing to
+    // widen — the option must not even be offered there.
+    const q = reduce(fresh(), ASK_QUESTION);
+    const qa = JSON.parse(answerAsk(q, { kind: 'answer', answers: { 'Tea or coffee?': 'Tea' } }, NOW).line);
+    ok('answering a QUESTION never carries a permission rule',
+        qa.response.response.updatedPermissions === undefined);
+}
+
+// ---------- ‼️ a refused mode switch is a line, not a silence ----------
+//
+// The bug behind "I set it to bypass and it kept asking". Measured refusals
+// from the installed CLI (2.1.226, 2026-08-09):
+//   bypassPermissions without the launch flag → "…the session was not launched
+//     with --dangerously-skip-permissions"
+//   auto → "auto mode unavailable for this model"
+//   manual → success, but the CLI answers back mode:"default"
+{
+    resetIds();
+    const base = { ...fresh(), pendingPermissionMode: { requestId: 'mode-1', mode: 'bypassPermissions' } };
+    const refused = reduce(base, {
+        type: 'control_response',
+        response: {
+            subtype: 'error', request_id: 'mode-1',
+            error: 'Cannot set permission mode to bypassPermissions because the session was not launched with --dangerously-skip-permissions'
+        }
+    });
+    ok('a refused switch leaves the mode exactly where it was',
+        refused.permissionMode === 'default' && !refused.pendingPermissionMode);
+    ok('…and says so, in the CLI\'s own words',
+        refused.messages.slice(-1)[0].role === 'error'
+        && /was not launched with --dangerously-skip-permissions/.test(refused.messages.slice(-1)[0].text));
+
+    const took = reduce(base, {
+        type: 'control_response',
+        response: { subtype: 'success', request_id: 'mode-1', response: { mode: 'bypassPermissions' } }
+    });
+    ok('an accepted switch moves the mode', took.permissionMode === 'bypassPermissions'
+        && !took.pendingPermissionMode);
+
+    // …and what is shown is what the CLI ACCEPTED, not what we asked for
+    const downgraded = reduce(
+        { ...fresh(), pendingPermissionMode: { requestId: 'mode-2', mode: 'manual' } },
+        {
+            type: 'control_response',
+            response: { subtype: 'success', request_id: 'mode-2', response: { mode: 'default' } }
+        });
+    ok('a mode the CLI rewrites is shown as the CLI rewrote it',
+        downgraded.permissionMode === 'default'
+        && /does not have a "manual" mode/.test(downgraded.messages.slice(-1)[0].text));
+}
+
 // ---------- the panel and the bridge tell the same story ----------
 {
     const page = fs.readFileSync(path.join(__dirname, '..', 'media', 'console.js'), 'utf8');
@@ -251,6 +349,14 @@ const ASK_PERMISSION = {
         /pendingAsk[\s\S]{0,220}asking you/.test(page));
     ok('the answer is sent as one message the host validates',
         /type: 'askAnswer'/.test(page) && /kind: 'allow'/.test(page) && /kind: 'deny'/.test(page));
+    // ‼️ Three ways out of a permission card, the same three a terminal offers.
+    ok('a permission card offers the middle option too',
+        /id="c-ask-always"/.test(page) && /kind: 'allowAlways'/.test(page));
+    ok('…and names the rule it would install rather than saying "again"',
+        /a\.alwaysLabel/.test(page));
+    // the live picker is not the launcher's list — see PERMISSION_MODES_LIVE
+    ok('a running session is offered only modes it can really be moved to',
+        /DATA\.livePermissions/.test(page));
     ok('a single-select question sends on the click, without a second press',
         /every\(x => \(askPick\.by\[x\.question\] \|\| \[\]\)\.length\)/.test(page));
     ok('free text typed into the card survives a repaint',

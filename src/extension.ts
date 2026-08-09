@@ -186,7 +186,7 @@ import { PortfolioPanel } from './panels/portfolioPanel';
 import { ConsolePanel } from './panels/consolePanel';
 import { transcriptHistory } from './core/consolehistory';
 import { ConsoleHost, describeAttachment, killPid } from './core/consolehost';
-import { carriedTotals, ConsoleMessage } from './core/consoleproto';
+import { carriedTotals, ConsoleMessage, PERMISSION_MODES_LIVE } from './core/consoleproto';
 import { MissionNode, MissionsTreeProvider } from './views/missionsTree';
 import { TriggerManager } from './core/triggers';
 import { dayKey, expandEnvPath, fmtTokens, fmtUSD, normPath, readFileTail, relTime, remapStorageIds } from './core/util';
@@ -3901,19 +3901,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'console.permissionMode',
-            describe: 'Change a hosted session\'s standing permission RULE, live and mid-conversation (plan | acceptEdits | auto | manual | dontAsk | bypassPermissions) — how much it may do without stopping to ask at all. For a tool it HAS stopped to ask about, the one-off decision is the user\'s, in the Console panel. args: id, mode, retry? (default false — true also tells the agent to try a refused action again)',
+            describe: 'Change a hosted session\'s standing permission RULE, live and mid-conversation (default | acceptEdits | plan | dontAsk | bypassPermissions) — how much it may do without stopping to ask at all. ‼️ The CLI has the last word and can refuse: the answer comes back on the wire, so this op reports the request as SENT, and the session\'s own line (console.sessions → permissionMode, or the conversation) says what was accepted. For a tool it HAS stopped to ask about, the one-off decision is the user\'s, in the Console panel. args: id, mode, retry? (default false — true also tells the agent to try a refused action again, and only once the CLI has agreed)',
             handler: (args) => {
                 const id = argStr(args, 'id');
                 const mode = argStr(args, 'mode');
-                need(PERMISSION_CHOICES.some(c => c.id === mode),
-                    `unknown permission mode "${mode}" — one of: ${PERMISSION_CHOICES.filter(c => c.id).map(c => c.id).join(', ')}`);
-                const ok = consoleHost.setPermissionMode(id, mode);
+                // The LIVE vocabulary, which is not the launcher's: `''`,
+                // `auto` and `manual` are refused or silently rewritten by the
+                // CLI mid-conversation (measured — see PERMISSION_MODES_LIVE).
+                need(PERMISSION_MODES_LIVE.some(c => c.id === mode),
+                    `unknown permission mode "${mode}" — one of: ${PERMISSION_MODES_LIVE.map(c => c.id).join(', ')}`);
+                const ok = consoleHost.setPermissionMode(id, mode, args.retry === true
+                    ? 'Permission granted — please retry the action you were refused.'
+                    : undefined);
                 need(ok, 'no such live console session');
-                if (args.retry === true) {
-                    consoleHost.send(id, 'Permission granted — please retry the action you were refused.');
-                }
                 ConsolePanel.refreshIfOpen();
-                return { id, mode };
+                return { id, mode, sent: true, note: 'the CLI answers on the wire — read permissionMode back to see what it accepted' };
             }
         },
         {

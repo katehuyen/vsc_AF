@@ -320,7 +320,17 @@ Her barındırılan oturum **`--permission-prompt-tool stdio`** ile çalışır 
 Tur bir soruda beklemeye başladığı an **konuşma ile kompozitör arasında** bir kart belirir, ve oturumun satırı — çalışamayan bir turun göstereceği yanıltıcı `working` yerine — **`asking you`** der. İki şekil var, ve hangisi olduğunu CLI'ın kendisi söylüyor (`requires_user_interaction`):
 
 - **Bir soru** (`AskUserQuestion`) — kendi seçenekleri, her biri tek tıkla; çoklu seçim sorusu **Answer**'a basana kadar toplamaya devam eder, tekli seçim ise onu tamamlayan tıklamada gönderir. Serbest metin de her zaman sunulur — "hiçbiri değil, şunu yap" için, ki bunu hiçbir seçenek listesi taşıyamaz. Ölçülmüş sözleşme: seçilen etiket **aracın kendi girdisinin içine**, sorunun tam metniyle anahtarlanarak geri gider (`answers["<soru>"] = "<etiket>"`) — girdi dokunulmadan `allow` göndermek bir cevap **DEĞİLDİR** ve aracın kendi düştüğü "cevaplanmadı" durumunu üretir.
-- **Bir izin** (başka herhangi bir araç) — **Allow once** ya da bir gerekçeyle **Deny**. Bu, eski `PERMISSION_GRANTS` kutusunun asla dürüstçe veremediği tek seferlik karardır, çünkü CLI eskiden hiç sormuyordu.
+- **Bir izin** (başka herhangi bir araç) — **üç** çıkış yolu, terminalin sunduğu üçün aynısı (3.93.0): **Allow once**, **Allow \<kural\>**, ya da bir gerekçeyle **Deny**.
+
+#### ‼️ Ortadaki düğme: "izin ver ve bir daha sorma" (3.93.0)
+
+Panelde uzun süre yalnızca dıştaki iki seçenek vardı, dolayısıyla `npm`'e yirmi kez ihtiyaç duyan bir koşu yirmi kez soruyordu ve tek kaçış yolu bütün oturumun kuralını genişletmekti. Ortadaki seçenek kanalın gerçek bir yeteneği: `allow` cevabı `updatedPermissions` taşıyabilir ve CLI onları aracı çalıştırmadan **önce** kurar. Ölçüldü (2.1.226): `default` modundaki bir oturumda üç `touch` komutu **üç soru** demekti; ilkini bu şekilde onaylamak onu **bire** indirdi.
+
+- **Bash komut önekiyle** kapsanır (`npm:*`) — CLI'ın kendi bash kurallarını yazdığı gibi. `npm run package`'ı onaylayan bir insan "her Bash'e izin veriyorum" demiyor.
+- **Diğer her araç** adıyla kapsanır; bir araç kuralının taşıyabileceği tek şey odur.
+- Kural `destination: 'session'` — süreç kadar yaşar, **hiçbir ayar dosyasına yazılmaz**.
+- Düğme hangi kuralı kuracağını **adıyla söyler**; "bir daha sorma" deyip neyi sormayacağını söylememek, kimsenin basmaya cesaret edemediği düğme türüdür.
+- Bir `AskUserQuestion`'da sunulmaz: orada genişletilecek bir izin yoktur.
 
 CLI'ın çoktan geri aldığı bir soruyu cevaplamak (tur kesildi, oturum kapandı, başka yerden cevaplandı) sessizce hiçbir şey yapmaz — bir cevabı geçerli kılan tıklama değil, istek kimliğidir. Bir soru hâlâ beklerken turu kesmek ya da oturumu kapatmak, önce onu bir "deny" ile cevaplar; böylece süreç, kimsenin hiç cevap vermeyeceği bir isteği elinde tutarak kalmaz.
 
@@ -328,7 +338,34 @@ CLI'ın çoktan geri aldığı bir soruyu cevaplamak (tur kesildi, oturum kapand
 
 ### Geriye kalan durum: bir kural, bir diyalog değil
 
-Artık izin kararlarının çoğu yukarıdaki kart olarak geliyor. Geriye kalan, **kimseye sorulmamış** ret — bir izin KURALI, bir hook, ya da bayrağı olmayan eski bir CLI — ve bunun için Console yine dürüstçe yapabileceğini sunuyor: **bu oturumun kalıcı izin kuralını canlı değiştirmek ve ajana tekrar denemesini söylemek** — `Allow file edits` · `Let it decide` · `⚠ Allow everything` · `Plan only`. İzin seçici oturum boyunca canlıdır; terminal yolunda bu hiç mümkün değildi.
+Artık izin kararlarının çoğu yukarıdaki kart olarak geliyor. Geriye kalan, **kimseye sorulmamış** ret — bir izin KURALI, bir hook, ya da bayrağı olmayan eski bir CLI — ve bunun için Console yine dürüstçe yapabileceğini sunuyor: **bu oturumun kalıcı izin kuralını canlı değiştirmek ve ajana tekrar denemesini söylemek** — `Allow file edits` · `⚠ Allow everything` · `Plan only`. İzin seçici oturum boyunca canlıdır; terminal yolunda bu hiç mümkün değildi.
+
+#### ‼️ Canlı izin sözlüğü, başlatma sözlüğü değildir — ve CLI hayır diyebilir (3.93.0)
+
+Canlı seçici uzun süre **başlatıcının** listesini (`PERMISSION_CHOICES`) kullandı. Çalışan bir oturum daha kısa bir sözlük konuşuyor; her satır kurulu CLI'a tek tek soruldu (2.1.226):
+
+| gönderilen | CLI'ın cevabı |
+|---|---|
+| `bypassPermissions` | `success` — **yalnızca** oturum uygun bayrakla başlatıldıysa |
+| `default` · `acceptEdits` · `plan` · `dontAsk` | `success` |
+| `auto` | `error: auto mode unavailable for this model` |
+| `manual` | `success` ama CLI geri `mode: "default"` diyor |
+| `""` (başlatıcının "Default" satırı) | `error: must be one of acceptEdits, auto, bypassPermissions, default, dontAsk, plan` |
+
+Yani yedi satırın **ikisi hiç çalışamazdı, biri sessizce başka bir şey demekti**. Canlı seçicinin artık kendi listesi var (`PERMISSION_MODES_LIVE`): `default · acceptEdits · plan · dontAsk · ⚠ bypassPermissions`. Başlatma seçicisi değişmedi; ret kutusundaki `Let it decide` düğmesi aynı ölçülmüş sebeple kaldırıldı.
+
+**‼️ Ve ret artık sessiz değil.** `set_permission_mode`, ateşle-unut gönderilen tek kontrol isteğiydi: stdin'e yazılıyor, "oldu" deniyor, cevabıyla hiç karşılaştırılmıyordu. Reducer yalnızca *başarıyı* işlediği için bir ret hiçbir şeyi değiştirmiyor, hiçbir şey söylemiyor, seçici bir sonraki çizimde eski hâline dönüyordu — "bypass'a getirdim, sormaya devam etti"nin tamamı budur. Dahası **"grant + retry"** düğmesi, başarılı bir **yazma** üzerine ajana *"Permission granted — please retry"* diyordu; ajan kimsenin vermediği bir izinle tekrar deniyordu. Artık `setModel`/`setEffort` gibi **izlenen** bir istek: ret, CLI'ın kendi cümlesiyle konuşmaya düşen bir satır; kabul, **CLI'ın kabul ettiği** modu gösterir (istenen değil — `manual` geri `default` olarak gelir); tekrar-dene dürtüsü ancak evetten sonra gider. Köprüde `console.permissionMode` isteği **gönderilmiş** olarak raporlar: son sözü CLI söyler ve o söz kablodan gelir.
+
+#### ‼️ Ayar dosyasındaki `bypassPermissions` artık kendiliğinden geçerli değil (S-18, 2026-08-08)
+
+`~/.claude/settings.json` içindeki `permissions.defaultMode: "bypassPermissions"` aylarca her oturumu kapsadı. 2026-08-08'de kurulan CLI yapısı, bir öncekinde **olmayan** bir kapı taşıyor — dizeler ikilinin içinde, ve yalnızca yenisinde:
+
+> `settings defaultMode "bypassPermissions" ignored for a VS Code-owned session without the allow-bypass setting`
+> `Permission mode bypassPermissions from settings was ignored — enable the "Claude Code: Allow Dangerously Skip Permissions" setting in VS Code to consent to it`
+
+telemetri anahtarı `tengu_settings_bypass_unconsented_noninteractive_ignored` — `claude.exe`'de **var**, `claude.exe.old`'da **yok**. Barındırılan bir Console oturumu tam olarak budur: VS Code'a ait ve etkileşimsiz. Yanında iki eski kesici duruyor — `bypassPermissions mode is disabled by feature gate` (`tengu_disable_bypass_permissions_mode`) ve `…disabled by settings` — ve bunlar **her çağrıda** değerlendiriliyor, başlangıçta bir kez değil; sormanın oturum sınırında değil **turun ortasında** başlayabilmesinin sebebi budur.
+
+Barındırılan oturumlar bu yüzden `--allow-dangerously-skip-permissions` taşıyor. CLI'ın kendi yardımı: *"Enable bypassing all permission checks as an option, without it being enabled by default."* **Hiçbir şey vermez** — panelin kendi ⚠ kontrolünü mümkün kılar. Bypass'ı gerçekten açan `--dangerously-skip-permissions` komut satırına hiç konmaz.
 
 ### Kod değişiklikleri, akışın içinde
 

@@ -4,7 +4,10 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
 import { ConsoleHost, describeAttachment, looksLikeUri, safeAttachmentName } from '../core/consolehost';
-import { Attachment, ATTACH_LIMITS, carriedTotals, ConsoleMessage, PERMISSION_GRANTS } from '../core/consoleproto';
+import {
+    Attachment, ATTACH_LIMITS, carriedTotals, ConsoleMessage, PERMISSION_GRANTS, PERMISSION_MODES_LIVE,
+    sessionAllowRule
+} from '../core/consoleproto';
 import {
     filterResumable, isResumeFiltered, RESUME_DEFAULT_N, RESUME_MAX, ResumeQuery
 } from '../core/consoleresume';
@@ -315,7 +318,17 @@ export class ConsolePanel {
                 pendingPermission: s.pendingPermission ?? null,
                 // the question the turn is parked on — the card and the composer
                 // both need it, and it outranks everything else on the page
-                pendingAsk: s.pendingAsk ?? null,
+                // …with the STANDING rule its third button would install spelled
+                // out, derived where the rule itself is built so the button can
+                // never promise something else (see sessionAllowRule). Null for
+                // an AskUserQuestion: there is no permission to widen there.
+                pendingAsk: s.pendingAsk
+                    ? {
+                        ...s.pendingAsk,
+                        alwaysLabel: s.pendingAsk.questions.length
+                            ? '' : sessionAllowRule(s.pendingAsk).label
+                    }
+                    : null,
                 exitReason: s.exitReason ?? '',
                 // the project this session was STARTED under — a badge on the
                 // card, because the stamp is otherwise invisible and a session
@@ -332,7 +345,14 @@ export class ConsolePanel {
             agents: this.deps.getAgents().map(a => ({ id: a.id, name: a.name, dir: a.dir })),
             models: modelChoices(this.deps.modelAliases()),
             efforts: EFFORT_CHOICES,
+            // Two lists, because they are two different questions. Starting a
+            // session picks a FLAG (and "Default" — pass none — is a real
+            // answer). Moving a running one sends `set_permission_mode`, which
+            // has its own, shorter vocabulary and refuses the rest — measured,
+            // see PERMISSION_MODES_LIVE. One list served both and offered three
+            // rows that could not work.
             permissions: PERMISSION_CHOICES,
+            livePermissions: PERMISSION_MODES_LIVE,
             grants: PERMISSION_GRANTS,
             defaults: { model: d.model ?? '', effort: d.effort ?? '', permissionMode: d.permissionMode ?? '' },
             // The page-wide drop zone, and a way to turn it off. It is on by
@@ -796,7 +816,9 @@ export class ConsolePanel {
                 const done = host.answer(str('id'),
                     kind === 'deny' ? { kind: 'deny', message: str('message') }
                         : kind === 'allow' ? { kind: 'allow' }
-                            : { kind: 'answer', answers, response: str('response') });
+                            // the terminal's middle option — see sessionAllowRule
+                            : kind === 'allowAlways' ? { kind: 'allow', always: true }
+                                : { kind: 'answer', answers, response: str('response') });
                 if (!done) {
                     // A stale click: the CLI already took the question back, or
                     // it was answered from somewhere else. Say so — silence here
@@ -809,9 +831,12 @@ export class ConsolePanel {
             case 'permissionMode':
                 // The standing RULE — how much may happen without stopping to
                 // ask at all. One specific request is settled by 'askAnswer'.
-                if (host.setPermissionMode(str('id'), str('mode')) && msg.retry === true) {
-                    host.send(str('id'), 'Permission granted — please retry the action you were refused.');
-                }
+                // The retry nudge is HANDED OVER, not sent: it goes out when
+                // the CLI has agreed to the wider mode, and not at all when it
+                // refuses (see setPermissionMode).
+                host.setPermissionMode(str('id'), str('mode'), msg.retry === true
+                    ? 'Permission granted — please retry the action you were refused.'
+                    : undefined);
                 break;
             case 'clearQueue':
                 host.clearQueue(str('id'));

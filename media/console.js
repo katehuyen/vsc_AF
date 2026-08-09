@@ -933,7 +933,16 @@
         const actions = qs.length
             ? `<button id="c-ask-send">Answer</button>
                <button class="secondary" id="c-ask-deny" title="The turn carries on and the agent is told you did not answer">Skip the question</button>`
+            // ‼️ THREE, NOT TWO. A terminal has always offered the middle one —
+            // "yes, and stop asking me about this kind of command" — and its
+            // absence here is what turned a long run into twenty identical
+            // prompts whose only escape was widening the whole session's rule.
+            // The label names the exact rule that gets installed (a Bash
+            // command prefix, or the tool), because "don't ask again" without
+            // saying again about WHAT is the kind of button nobody dares press.
             : `<button id="c-ask-allow">Allow once</button>
+               ${a.alwaysLabel ? `<button id="c-ask-always"
+                   title="Allows this now and adds a rule for ${C.esc(a.alwaysLabel)} that lasts as long as this session — it is never written to a settings file">Allow ${C.esc(a.alwaysLabel)}</button>` : ''}
                <button class="secondary" id="c-ask-deny" title="The tool does not run; the agent is told why and carries on">Deny</button>`;
         // How many are still open, said in the header — with the questions
         // scrollable, "am I done?" can no longer be answered by looking.
@@ -1044,6 +1053,7 @@
         }));
         byId('c-ask-send', 'click', answer);
         byId('c-ask-allow', 'click', () => vscode.postMessage({ type: 'askAnswer', id: s.id, kind: 'allow' }));
+        byId('c-ask-always', 'click', () => vscode.postMessage({ type: 'askAnswer', id: s.id, kind: 'allowAlways' }));
         byId('c-ask-deny', 'click', () => vscode.postMessage({
             type: 'askAnswer', id: s.id, kind: 'deny', message: free()
         }));
@@ -1934,8 +1944,8 @@
                 <label class="permlbl" title="How hard it thinks per turn — the same thing /effort does in a terminal. It applies from the next turn; on a model with no effort levels the CLI accepts it and it means nothing.">effort
                     <select id="c-effort-live">${opts(DATA.efforts, s.effort)}</select>
                 </label>
-                <label class="permlbl" title="What it may do without asking — applied live">permissions
-                    <select id="c-perm">${opts(DATA.permissions, s.permissionMode)}</select>
+                <label class="permlbl" title="What it may do without asking — applied live. Fewer rows than the start picker on purpose: a running session can only be moved to modes the CLI accepts mid-conversation, and it says so out loud when it refuses one.">permissions
+                    <select id="c-perm">${opts(DATA.livePermissions || DATA.permissions, s.permissionMode)}</select>
                 </label>
                 ${window.AFFilter.multi({
                     // allLabel is what follows "show: " — repeating the word

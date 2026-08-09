@@ -164,6 +164,14 @@ interface Hosted {
     child: cp.ChildProcess;
     buffer: string;
     reqSeq: number;
+    /**
+     * "Now try that again" — held back until the CLI has actually AGREED to the
+     * wider permission (see setPermissionMode). It used to be said the moment
+     * the request was written, which meant the agent was told "Permission
+     * granted, please retry" for a switch the CLI had refused: it retried, was
+     * refused again, and the panel had reported success twice over.
+     */
+    retryOnGrant?: string;
 }
 
 export class ConsoleHost {
@@ -337,9 +345,18 @@ export class ConsoleHost {
             if (!line.trim()) { continue; }
             let parsed: unknown;
             try { parsed = JSON.parse(line); } catch { continue; }
+            const wanted = h.state.pendingPermissionMode?.mode;
             const r = reduceEvent(h.state, parsed, now);
             h.state = r.state;
             changed = changed || r.changed;
+            // The nudge waits for the CLI's yes (see retryOnGrant). "Agreed"
+            // means the pending switch resolved AND the mode really moved —
+            // a refusal clears the pending field too, and must say nothing.
+            if (wanted && !h.state.pendingPermissionMode && h.retryOnGrant) {
+                const nudge = h.retryOnGrant;
+                h.retryOnGrant = undefined;
+                if (h.state.permissionMode === wanted) { this.send(id, nudge); }
+            }
         }
         if (!changed) { return; }
         // a finished turn releases the next queued message
@@ -544,11 +561,24 @@ export class ConsoleHost {
     /**
      * Grant (or narrow) what this session may do, live — the standing RULE, as
      * opposed to `answer`, which settles one specific request.
+     *
+     * ‼️ THE CLI CAN SAY NO, AND USED TO SAY IT INTO A VOID. Like `setModel`
+     * and `setEffort`, the switch is now recorded as PENDING and only becomes
+     * the session's mode when the CLI answers — and a refusal becomes a line in
+     * the conversation instead of a picker that quietly snaps back (see
+     * `pendingPermissionMode` in consoleproto). `true` here means the request
+     * went out, which is all a write can honestly claim; whether the mode
+     * changed is answered later, on the wire.
      */
-    setPermissionMode(id: string, mode: string): boolean {
+    setPermissionMode(id: string, mode: string, retryMessage?: string): boolean {
         const h = this.sessions.get(id);
         if (!h) { return false; }
-        return this.write(id, controlLine(`mode-${++h.reqSeq}`, 'set_permission_mode', { mode }));
+        const requestId = `mode-${++h.reqSeq}`;
+        if (!this.write(id, controlLine(requestId, 'set_permission_mode', { mode }))) { return false; }
+        h.state = { ...h.state, pendingPermissionMode: { requestId, mode } };
+        h.retryOnGrant = retryMessage?.trim() || undefined;
+        this.fire(id);
+        return true;
     }
 
     /** Drop the queue without touching the running turn. */

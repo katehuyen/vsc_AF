@@ -466,6 +466,34 @@ export interface ConsoleSessionState {
      */
     pendingSettings?: { requestId: string; turnStartedAt?: number };
     /**
+     * ‼️ A permission-mode switch we have asked for and not heard back about —
+     * and the reason this field had to exist at all.
+     *
+     * `set_permission_mode` was the one control request sent fire-and-forget:
+     * written to stdin, reported as done, and never reconciled with the answer.
+     * The reducer only ever acted on a SUCCESS (it looked for `mode` in the
+     * payload), so a refusal changed nothing and said nothing — the picker
+     * simply snapped back on the next repaint. Measured refusals from the
+     * installed CLI (2.1.226):
+     *
+     *   bypassPermissions on a session without the launch flag →
+     *     "Cannot set permission mode to bypassPermissions because the session
+     *      was not launched with --dangerously-skip-permissions"
+     *   auto → "auto mode unavailable for this model"
+     *   ""   → "must be one of acceptEdits, auto, bypassPermissions, default,
+     *           dontAsk, plan"
+     *
+     * That silence is the whole of the bug behind "I set it to bypass and it
+     * kept asking". A refusal is now a line in the conversation, in the CLI's
+     * own words.
+     *
+     * The id is the link back, exactly as for `pendingModel`: the success
+     * payload does carry a mode, but it is not always the one we asked for —
+     * `manual` comes back as `default`, and what the panel must show is what
+     * the CLI accepted, never what we hoped for.
+     */
+    pendingPermissionMode?: { requestId: string; mode: string };
+    /**
      * What the CLI says is REALLY in force — its own `get_settings.applied`.
      *
      * Kept because it is the seed for the next turn's pair: the probe's answer
@@ -477,15 +505,20 @@ export interface ConsoleSessionState {
     applied?: { model: string; effort: string };
 }
 
-/** The honest set of things a panel button can actually grant, live. */
+/**
+ * The honest set of things a panel button can actually grant, live.
+ *
+ * "Honest" is load-bearing and was not true: `auto` sat here as "Let it decide"
+ * and the installed CLI answers `set_permission_mode: auto` with
+ * `error "auto mode unavailable for this model"` — a button that could only
+ * ever do nothing. It is gone rather than left to fail politely, because the
+ * refusal is a property of the model, not of the moment. See
+ * PERMISSION_MODES_LIVE for the whole measured vocabulary.
+ */
 export const PERMISSION_GRANTS: { mode: string; label: string; detail: string }[] = [
     {
         mode: 'acceptEdits', label: 'Allow file edits',
         detail: 'file writes are auto-approved from now on; everything else still asks'
-    },
-    {
-        mode: 'auto', label: 'Let it decide',
-        detail: 'the CLI approves what it considers safe to run unattended'
     },
     {
         mode: 'bypassPermissions', label: '⚠ Allow everything',
@@ -512,7 +545,21 @@ export function hostArgs(o: {
     projectContextFile?: string;
 }): string[] {
     const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
-        '--permission-prompt-tool', 'stdio'];
+        '--permission-prompt-tool', 'stdio',
+        // ‼️ THIS FLAG GRANTS NOTHING. It makes the panel's own bypass control
+        // POSSIBLE, which is a different thing — the CLI's help says it in as
+        // many words: "Enable bypassing all permission checks as an option,
+        // without it being enabled by default."
+        //
+        // Measured against the installed CLI (2.1.226): a hosted session
+        // started without it answers `set_permission_mode: bypassPermissions`
+        // with
+        //   error "Cannot set permission mode to bypassPermissions because the
+        //   session was not launched with --dangerously-skip-permissions"
+        // …so the ⚠ entry in the permissions picker and the "⚠ Allow
+        // everything" button in the refusal box were both dead controls: the
+        // panel offered them, the CLI refused them, and nobody was told.
+        '--allow-dangerously-skip-permissions'];
     if (o.resume) { args.push('--resume', o.resume); }
     if (o.model?.trim()) { args.push('--model', o.model.trim()); }
     if (o.effort?.trim()) { args.push('--effort', o.effort.trim()); }
@@ -577,7 +624,11 @@ export function controlLine(requestId: string, subtype: string, extra: Record<st
  * (the same input with `answers` filled in) rather than merely permitted.
  */
 export function askAnswerLine(
-    requestId: string, verdict: { behavior: 'allow'; updatedInput: Record<string, unknown> }
+    requestId: string, verdict: {
+        behavior: 'allow'; updatedInput: Record<string, unknown>;
+        /** see PermissionRule — a standing allow that rides on this one answer */
+        updatedPermissions?: unknown[];
+    }
         | { behavior: 'deny'; message: string }
 ): string {
     return JSON.stringify({
@@ -585,6 +636,73 @@ export function askAnswerLine(
         response: { subtype: 'success', request_id: requestId, response: verdict }
     }) + '\n';
 }
+
+/**
+ * ‼️ THE THIRD ANSWER — "…and stop asking me this".
+ *
+ * A terminal offers three ways out of a permission prompt, not two: yes, yes
+ * *and don't ask again for this kind of command in this session*, and no. The
+ * panel only ever had the outer two, so a run that needed the same command
+ * twenty times asked twenty times, and the only way to stop it was a standing
+ * rule that changes far more than the one command you were happy with.
+ *
+ * The middle one is a REAL capability of the channel, not a trick: the allow
+ * answer may carry `updatedPermissions`, and the CLI installs them before it
+ * runs the tool. Measured against the installed CLI (2.1.226) on a session in
+ * `default` mode asked to run three `touch` commands: allowing the first one
+ * with this rule attached took the asks from three to ONE.
+ *
+ * `destination: 'session'` is the whole point — it lives as long as the process
+ * and is never written to anybody's settings file.
+ *
+ * Bash is scoped by COMMAND PREFIX (`npm:*`), the way the CLI writes its own
+ * bash rules, because "allow every Bash" is not what a person means when they
+ * approve `npm test`. Every other tool is scoped by name, which is all a tool
+ * rule has.
+ */
+export function sessionAllowRule(ask: ConsoleAsk): { rule: Record<string, unknown>; label: string } {
+    const first = String((ask.input?.['command'] as string) ?? '').trim().split(/\s+/)[0];
+    const content = ask.tool === 'Bash' && first ? `${first}:*` : undefined;
+    return {
+        rule: {
+            type: 'addRules',
+            rules: [{ toolName: ask.tool, ...(content ? { ruleContent: content } : {}) }],
+            behavior: 'allow',
+            destination: 'session'
+        },
+        label: content ? `${content} commands` : `every ${ask.tool}`
+    };
+}
+
+/**
+ * The permission modes a LIVE session can really be moved to — which is not the
+ * launcher's list (`PERMISSION_CHOICES`), and the difference is not cosmetic.
+ * Every entry here was put to the installed CLI (2.1.226) and answered:
+ *
+ *   bypassPermissions → success            (only with the launch flag — see hostArgs)
+ *   default           → success
+ *   acceptEdits       → success
+ *   plan              → success
+ *   dontAsk           → success
+ *   auto              → ERROR "auto mode unavailable for this model"
+ *   manual            → success, but the CLI answers back `mode: "default"`
+ *   "" (the launcher's "Default" row)
+ *                     → ERROR "must be one of acceptEdits, auto,
+ *                       bypassPermissions, default, dontAsk, plan"
+ *
+ * So the live picker offered seven rows of which two could not work at all and
+ * one quietly meant something else. `auto` stays out because the refusal is a
+ * model-wide circuit breaker rather than a typo, and a row that is dead on the
+ * models this panel runs is worse than no row; a refusal is still surfaced if
+ * one arrives from anywhere else (see the pendingPermissionMode branch).
+ */
+export const PERMISSION_MODES_LIVE: { id: string; label: string; detail: string }[] = [
+    { id: 'default', label: 'default', detail: 'asks before anything that is not read-only' },
+    { id: 'acceptEdits', label: 'acceptEdits', detail: 'file edits auto-approved, everything else still asks' },
+    { id: 'plan', label: 'plan', detail: 'plans only — changes nothing until you switch back' },
+    { id: 'dontAsk', label: 'dontAsk', detail: 'stops instead of asking when it would need permission' },
+    { id: 'bypassPermissions', label: '⚠ bypassPermissions', detail: 'EVERY action auto-approved for the rest of this session' }
+];
 
 /**
  * What an AskUserQuestion call is really asking, pulled out of its input.
@@ -1030,8 +1148,44 @@ export function reduceEvent(
                 changed: true
             };
         }
+        // …and the live permission-mode switch (see pendingPermissionMode). The
+        // refusal branch is the point: it used to fall through and change
+        // nothing, which is how a dead control looks from the outside.
+        const pm = state.pendingPermissionMode;
+        if (pm && r.request_id === pm.requestId) {
+            if (r.subtype === 'error') {
+                return {
+                    state: {
+                        ...state, lastTs: now, pendingPermissionMode: undefined,
+                        messages: [...state.messages, {
+                            id: nextId(), ts: now, role: 'error',
+                            text: `permission mode stayed "${state.permissionMode}" — `
+                                + String(r.error ?? 'the CLI refused the switch')
+                        }]
+                    },
+                    changed: true
+                };
+            }
+            // What the CLI ACCEPTED, not what we asked for: `manual` comes back
+            // as `default`, and the picker must show the mode really in force.
+            const got = typeof inner.mode === 'string' ? inner.mode : pm.mode;
+            return {
+                state: {
+                    ...state, permissionMode: got, pendingPermissionMode: undefined,
+                    pendingPermission: undefined, lastTs: now,
+                    messages: [...state.messages, {
+                        id: nextId(), ts: now, role: 'system',
+                        text: got === pm.mode
+                            ? `permission mode is now "${got}"`
+                            : `permission mode is now "${got}" — the CLI does not have a "${pm.mode}" mode`
+                    }]
+                },
+                changed: true
+            };
+        }
         if (typeof inner.mode === 'string') {
-            // the live permission-mode change was accepted
+            // a mode change nobody here asked for — another client, a hook, the
+            // CLI's own doing. Still ours to show: it decides what runs next.
             return {
                 state: {
                     ...state, permissionMode: inner.mode, pendingPermission: undefined, lastTs: now,
@@ -1224,7 +1378,8 @@ export function acceptUserText(
  */
 export type AskDecision =
     | { kind: 'answer'; answers?: Record<string, string | string[]>; response?: string }
-    | { kind: 'allow' }
+    /** `always` is the terminal's middle option — see sessionAllowRule */
+    | { kind: 'allow'; always?: boolean }
     | { kind: 'deny'; message?: string };
 
 /** One line saying what you chose, for the transcript row and the log. */
@@ -1232,7 +1387,11 @@ export function describeAnswer(ask: ConsoleAsk, d: AskDecision): string {
     if (d.kind === 'deny') {
         return d.message?.trim() ? `declined — ${d.message.trim()}` : 'declined';
     }
-    if (d.kind === 'allow') { return `allowed ${ask.tool}`; }
+    if (d.kind === 'allow') {
+        return d.always
+            ? `allowed ${ask.tool} — and ${sessionAllowRule(ask).label} for the rest of this session`
+            : `allowed ${ask.tool}`;
+    }
     const picked = Object.entries(d.answers ?? {})
         .map(([q, a]) => `${q} → ${Array.isArray(a) ? a.join(', ') : a}`)
         .filter(s => !s.endsWith('→ '));
@@ -1264,7 +1423,12 @@ export function answerAsk(
                         ? { answers: decision.answers } : {}),
                     ...(decision.response?.trim() ? { response: decision.response.trim() } : {})
                 }
-                : ask.input
+                : ask.input,
+            // ‼️ Only ever on a plain allow. An AskUserQuestion is not a
+            // permission at all (see ConsoleAsk), so "don't ask again" has
+            // nothing to attach itself to there.
+            ...(decision.kind === 'allow' && decision.always
+                ? { updatedPermissions: [sessionAllowRule(ask).rule] } : {})
         };
     return {
         state: {
